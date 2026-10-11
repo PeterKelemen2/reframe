@@ -3968,7 +3968,12 @@
       'TrackRoleInfo',
       'VideoStream',
     ]),
-    'description': 'Everything Reframe knows about one source file.',
+    'description': '''
+      Everything Reframe knows about one source file.
+      
+      Known gap: ``-show_programs`` output (the programs of a multi-program MPEG-TS) has no model
+      yet; C-3 reads streams across all programs.
+    ''',
     'properties': dict({
       'attachments': dict({
         'items': dict({

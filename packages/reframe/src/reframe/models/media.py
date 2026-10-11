@@ -436,7 +436,11 @@ class ContainerInfo(DocumentModel):
 
 
 class MediaSource(DocumentModel):
-    """Everything Reframe knows about one source file."""
+    """Everything Reframe knows about one source file.
+
+    Known gap: ``-show_programs`` output (the programs of a multi-program MPEG-TS) has no model
+    yet; C-3 reads streams across all programs.
+    """
 
     schema_version: PositiveInt = 1
     ref: SourceRef
