@@ -48,6 +48,7 @@ reframe/
 ├── docker/                       # Dockerfile, compose example
 ├── tools/                        # ffmpeg.toml: pinned FFmpeg version, URLs and SHA-256 per platform
 ├── scripts/                      # dev helpers (generate API types, make test media, …)
+├── testing/                      # shared test infrastructure (`reframe_testing`): fake FFmpeg, fixture helpers
 ├── testdata/                     # small generated fixtures (git-ignored large ones)
 └── docs/
     └── plan/                     # this folder
@@ -66,8 +67,8 @@ reframe/
 | Release-name parsing | `guessit` (LGPL-3.0) | Title, year, season/episode, episode title and release tags from file and folder names, with their positions, for [output naming](03-features.md#output-naming) |
 | Storage | JSON files (presets, settings) + SQLite (queue, history) | Presets stay portable. The queue needs safe updates |
 | Server | **FastAPI** + uvicorn, WebSocket for events | Async, OpenAPI out of the box |
-| Frontend | **Vue 3.5+**, TypeScript, Vite, Pinia, Vue Router | As requested |
-| UI kit | **PrimeVue 4** (styled mode, custom Aura tokens) + Lucide icons | Rich DataTable, TreeTable, Slider, InputNumber, Tabs. Light/dark theming |
+| Frontend | **Vue 3.5+**, TypeScript 6, Vite, Pinia, Vue Router | As requested. TypeScript 6, not 7: vue-tsc does not run on TypeScript 7 yet ([decision 0003](../decisions/0003-frontend-held-back-majors.md)) |
+| UI kit | **PrimeVue 4** (styled mode, custom Aura tokens) + Lucide icons | Rich DataTable, TreeTable, Slider, InputNumber, Tabs. Light/dark theming. PrimeVue 4 is MIT. PrimeVue 5 has a proprietary licence with a licence key, so Reframe does not use it ([decision 0003](../decisions/0003-frontend-held-back-majors.md)) |
 | API client | `openapi-typescript` + `openapi-fetch` | Types generated from the server's OpenAPI. No hand-written DTOs |
 | Desktop | **Tauri 2** | Modern webview UI, small bundles, native dialogs and drag-and-drop with real paths |
 | Lint / format / types | ruff, mypy (strict on core), **oxlint**, **oxfmt**, vue-tsc | oxlint and oxfmt are fast Rust tools with one config each. oxlint checks only `<script>` in `.vue` files, so vue-tsc (strict templates) checks the templates |

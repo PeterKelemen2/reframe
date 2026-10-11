@@ -1,0 +1,2 @@
+# Captured real FFmpeg output: keep the exact bytes (no CRLF conversion on Windows).
+* -text

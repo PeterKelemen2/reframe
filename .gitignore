@@ -1,0 +1,49 @@
+# --- Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# --- Frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# --- Desktop (Tauri)
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/resources/sidecar/
+desktop/src-tauri/resources/tools/
+
+# --- Generated test media (scripts/make-testdata.py). Never commit media.
+testdata/media/
+*.mkv
+*.mp4
+*.m4v
+*.webm
+*.m2ts
+*.mts
+*.avi
+*.mov
+*.sup
+*.part.*
+
+# --- Downloaded pinned tools (tools/ffmpeg.toml)
+.tools/
+
+# --- Agent worktrees, editors, OS
+.claude/worktrees/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

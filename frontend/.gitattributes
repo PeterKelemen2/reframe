@@ -1,0 +1,3 @@
+# oxfmt writes and checks LF (endOfLine: "lf"). Keep LF on Windows checkouts too
+# (GitHub windows runners default to core.autocrlf=true), or `npm run fmt:check` fails.
+* text=auto eol=lf

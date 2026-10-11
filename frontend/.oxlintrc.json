@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "oxc", "typescript", "vue", "import", "unicorn", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "rules": {
+    "eslint/no-console": ["warn", { "allow": ["warn", "error"] }],
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-explicit-any": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
+    "promise/no-return-wrap": "error",
+    "promise/param-names": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "plugins": ["vitest"],
+      "rules": {
+        "vitest/no-focused-tests": "error",
+        "vitest/no-disabled-tests": "warn"
+      }
+    },
+    {
+      "files": ["vite.config.ts", "scripts/**"],
+      "env": {
+        "browser": false,
+        "node": true
+      }
+    }
+  ],
+  "ignorePatterns": ["dist/**", "coverage/**"]
+}

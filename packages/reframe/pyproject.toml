@@ -1,0 +1,41 @@
+[project]
+name = "reframe"
+dynamic = ["version"]
+description = "Reframe core: probing, encoder capabilities, command building, presets, batch and queue for an FFmpeg-based video transcoder"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "GPL-3.0-or-later"
+authors = [{ name = "Peter Kelemen" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Multimedia :: Video :: Conversion",
+    "Typing :: Typed",
+]
+dependencies = [
+    "guessit>=4.4.0",
+    "langcodes>=3.5.1",
+    "language-data>=1.4.0",
+    "platformdirs>=4.13.0",
+    "psutil>=7.2.2",
+    "pydantic>=2.14.0",
+]
+
+[project.optional-dependencies]
+cli = ["typer>=0.27.3"]
+mediainfo = ["pymediainfo>=7.0.1"]
+
+[project.scripts]
+reframe = "reframe.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.32.4"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/reframe/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reframe"]

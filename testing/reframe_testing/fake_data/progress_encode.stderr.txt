@@ -1,0 +1,26 @@
+Input #0, lavfi, from 'testsrc2=size=320x180:rate=25:duration=2':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 320x180 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (libx264))
+[libx264 @ 0x55a334f28e80] using SAR=1/1
+[libx264 @ 0x55a334f28e80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x55a334f28e80] profile Constrained Baseline, level 1.2, 4:2:0, 8-bit
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf63.1.102
+  Stream #0:0: Video: h264, yuv420p(tv, progressive), 320x180 [SAR 1:1 DAR 16:9], q=2-31, 25 fps, 25 tbn
+    Metadata:
+      encoder         : Lavc63.1.102 libx264
+    Side data:
+      CPB properties: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+[out#0/null @ 0x55a334f28580] video:146KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=   50 fps=0.0 q=-1.0 Lsize=N/A time=00:00:02.00 bitrate=N/A speed= 222x elapsed=0:00:00.00    
+[libx264 @ 0x55a334f28e80] frame I:1     Avg QP:20.00  size:  7553
+[libx264 @ 0x55a334f28e80] frame P:49    Avg QP:21.00  size:  2903
+[libx264 @ 0x55a334f28e80] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x55a334f28e80] mb P  I16..4:  6.1%  0.0%  0.0%  P16..4: 26.7%  0.0%  0.0%  0.0%  0.0%    skip:67.2%
+[libx264 @ 0x55a334f28e80] coded y,uvDC,uvAC intra: 15.4% 32.3% 20.9% inter: 13.3% 23.9% 20.3%
+[libx264 @ 0x55a334f28e80] i16 v,h,dc,p: 83% 12%  4%  1%
+[libx264 @ 0x55a334f28e80] i8c dc,h,v,p: 40% 18% 40%  2%
+[libx264 @ 0x55a334f28e80] kb/s:599.12
