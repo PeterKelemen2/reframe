@@ -149,7 +149,8 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
 - [ ] **HDR**: read stream side data (mastering display, content light level, DOVI
       configuration). If it is missing, read the first frame's side data
       (`-show_frames -read_intervals %+#1 -select_streams v:0`). Detect HDR10, HDR10+, HLG, and
-      Dolby Vision profile.
+      Dolby Vision profile. HDR10+ is only in frame side data, so the first frame is read for
+      every PQ stream (decision XXXX).
 - [ ] **Commercial codec names**: map `(codec_name, profile)` to a display name. Examples:
       `dts/DTS-HD MA → DTS-HD MA`, `dts/DTS-HD MA + DTS:X → DTS:X`,
       `truehd/… + Dolby Atmos → TrueHD Atmos`, `eac3/… + Dolby Atmos → E-AC-3 Atmos`,
@@ -163,6 +164,8 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       hearing impaired; forced, foreign, signs, songs; audio description, descriptive, AD),
       then structure (a 2.0 track with low bitrate in the same language as a multichannel
       main track → possible commentary). Each role records `evidence: flag | title | heuristic`.
+      Keywords match whole words, case-insensitive; the acronyms `AD` and `CC` only in upper
+      case. A track with no other role gets `main` (decision XXXX).
 - [ ] Probe cache: key = absolute path + size + mtime. Stored as JSON in the cache dir.
 - [ ] Folder probe: a task with a concurrency limit (default 4) that reports progress.
 
