@@ -1,0 +1,577 @@
+"""ffprobe JSON → :class:`~reframe.models.MediaSource` (C-3). Pure: no I/O.
+
+Input is the output of ``ffprobe -v error -of json -show_format -show_streams -show_chapters
+-show_programs`` (:func:`reframe.probe.ffprobe.probe_argv`) and, optionally, the first frame of
+the main video stream (``-show_frames -read_intervals %+#1``) for HDR side data.
+
+Rules (see also the ``reframe.models.media`` docstrings):
+
+- Streams with ``disposition.attached_pic`` are cover art (:class:`AttachedPicture`), never
+  video tracks. ``type_index`` counts every stream of the same ffprobe ``codec_type`` (cover
+  art included), so it matches FFmpeg's ``0:v:N`` stream specifier.
+- ``codec_type`` ``attachment`` → :class:`Attachment` (``size`` = ``extradata_size``, the
+  attached file's size); ``data`` and unknown types → :class:`DataStream`. A video stream
+  without a frame size also becomes a data stream (with a warning).
+- Frame rates: ``0/0`` is unknown (``None``). VFR: ``r_frame_rate`` and ``avg_frame_rate``
+  differ by more than 0.5 % (an exact 2:1 field-rate ratio on interlaced video does not
+  count). In Matroska an unknown average means the file has no default frame duration, which
+  FFmpeg writes only for constant frame rate (testdata/README.md, "VFR in Matroska"), so
+  there an unknown average with a known base rate counts as VFR.
+- ``field_order``: ``tt`` / ``tb`` → top field first, ``bb`` / ``bt`` → bottom field first.
+- Durations: the stream's ``duration``, else the Matroska ``DURATION`` tag; the container's
+  ``duration``, else ``None`` with a warning.
+- Rotation: the ``Display Matrix`` side data (ffprobe prints degrees counter-clockwise, so
+  ``-90`` is a 90° clockwise rotation), or the old ``rotate`` tag (clockwise).
+- ``unknown`` / ``unspecified`` colour values, ``profile`` ``unknown`` and ``level`` ``-99``
+  are ``None``.
+- Event counts of subtitles: the Matroska ``NUMBER_OF_FRAMES`` statistics tag.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from fractions import Fraction
+from pathlib import Path
+from typing import Any, Literal, cast
+
+from pydantic import ValidationError
+
+from reframe.models.base import Rational
+from reframe.models.media import (
+    AttachedPicture,
+    Attachment,
+    AudioStream,
+    Chapter,
+    ColorInfo,
+    ContainerInfo,
+    DataStream,
+    Disposition,
+    FieldOrder,
+    MediaSource,
+    SourceFingerprint,
+    SourceRef,
+    SubtitleStream,
+    VideoStream,
+)
+from reframe.probe import hdr, names, roles
+from reframe.probe.bitrate import parse_duration_tag, positive_int, stream_bitrate, tag_value
+
+__all__ = [
+    "PARSER_VERSION",
+    "layout_hash",
+    "main_video_index",
+    "parse_ffprobe",
+    "parse_rational",
+    "video_bit_depth",
+]
+
+#: Bump when the parser changes what it produces: the probe cache drops older entries.
+PARSER_VERSION = 1
+
+_UNKNOWN = frozenset({"", "unknown", "unspecified", "reserved", "N/A"})
+_LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
+_PIX_FMT_DEPTH_RE = re.compile(r"(\d{1,2})(?:le|be)$")
+_EIGHT_BIT_PIX_FMTS = frozenset(
+    {
+        "yuv420p",
+        "yuvj420p",
+        "yuv422p",
+        "yuvj422p",
+        "yuv444p",
+        "yuvj444p",
+        "yuv411p",
+        "yuv410p",
+        "yuv440p",
+        "nv12",
+        "nv21",
+        "nv16",
+        "gray",
+        "rgb24",
+        "bgr24",
+        "rgba",
+        "bgra",
+        "argb",
+        "abgr",
+        "yuva420p",
+        "pal8",
+    }
+)
+_VFR_TOLERANCE = 0.005
+_FIELD_ORDERS: Mapping[str, FieldOrder] = {
+    "progressive": FieldOrder.PROGRESSIVE,
+    "tt": FieldOrder.TOP_FIRST,
+    "tb": FieldOrder.TOP_FIRST,
+    "bb": FieldOrder.BOTTOM_FIRST,
+    "bt": FieldOrder.BOTTOM_FIRST,
+}
+
+
+# --------------------------------------------------------------------------- small helpers
+
+
+def _text(value: Any) -> str | None:
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    text = str(value).strip()
+    return None if text in _UNKNOWN else text
+
+
+def _float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _nonneg(value: Any) -> float | None:
+    number = _float(value)
+    return number if number is not None and number >= 0 else None
+
+
+def _int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        number = _float(value)
+        return int(number) if number is not None else None
+
+
+def _tags(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, Mapping):
+        return {}
+    return {str(key): str(value) for key, value in raw.items()}
+
+
+def parse_rational(value: Any) -> Rational | None:
+    """``"24000/1001"`` or ``"32:27"`` → ``Rational``; ``0/0``, ``0:1``, junk → ``None``."""
+    text = _text(value)
+    if text is None:
+        return None
+    parts = re.split(r"[/:]", text)
+    if len(parts) != 2:
+        return None
+    try:
+        num, den = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if num <= 0 or den <= 0:
+        return None
+    frac = Fraction(num, den)
+    return Rational(num=frac.numerator, den=frac.denominator)
+
+
+def _language(tags: Mapping[str, str], warnings: list[str], index: int) -> str | None:
+    value = tag_value(tags, "language")
+    if value is None or not value.strip():
+        return None
+    value = value.strip()
+    if not _LANGUAGE_RE.match(value) or len(value) > 64:
+        warnings.append(f"Stream {index}: language tag {value!r} is not a language code.")
+        return None
+    return value
+
+
+def _disposition(raw: Any) -> Disposition:
+    if not isinstance(raw, Mapping):
+        return Disposition()
+    known = Disposition.model_fields
+    return Disposition.model_validate(
+        {key: bool(_int(value)) for key, value in raw.items() if key in known}
+    )
+
+
+def video_bit_depth(stream: Mapping[str, Any]) -> int | None:
+    """``bits_per_raw_sample``, else derived from ``pix_fmt`` (``yuv420p10le`` → 10)."""
+    depth = positive_int(stream.get("bits_per_raw_sample"))
+    if depth is not None:
+        return depth
+    pix_fmt = _text(stream.get("pix_fmt"))
+    if pix_fmt is None:
+        return None
+    match = _PIX_FMT_DEPTH_RE.search(pix_fmt)
+    if match is not None:
+        return int(match.group(1))
+    return 8 if pix_fmt in _EIGHT_BIT_PIX_FMTS else None
+
+
+def _color_range(value: Any) -> Literal["tv", "pc"] | None:
+    if value == "tv":
+        return "tv"
+    if value == "pc":
+        return "pc"
+    return None
+
+
+def _is_cover_art(stream: Mapping[str, Any]) -> bool:
+    disposition = stream.get("disposition")
+    return isinstance(disposition, Mapping) and bool(_int(disposition.get("attached_pic")))
+
+
+def main_video_index(data: Mapping[str, Any]) -> int | None:
+    """Absolute index of the first video stream that is not cover art."""
+    for stream in _streams(data):
+        if stream.get("codec_type") == "video" and not _is_cover_art(stream):
+            index = _int(stream.get("index"))
+            if index is not None and index >= 0:
+                return index
+    return None
+
+
+def _streams(data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    raw = data.get("streams")
+    if not isinstance(raw, list):
+        return []
+    return [stream for stream in raw if isinstance(stream, Mapping)]
+
+
+def _first_frame(frames: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    if frames is None:
+        return None
+    raw = frames.get("frames")
+    if isinstance(raw, list):
+        for frame in raw:
+            if isinstance(frame, Mapping):
+                return frame
+    return None
+
+
+def _rotation(stream: Mapping[str, Any], tags: Mapping[str, str]) -> Literal[0, 90, 180, 270]:
+    degrees: float | None = None
+    side_data = stream.get("side_data_list")
+    if isinstance(side_data, list):
+        for entry in side_data:
+            if isinstance(entry, Mapping) and entry.get("side_data_type") == "Display Matrix":
+                ccw = _float(entry.get("rotation"))
+                if ccw is not None:
+                    degrees = -ccw
+                break
+    if degrees is None:
+        degrees = _float(tag_value(tags, "rotate"))
+    if degrees is None:
+        return 0
+    quarter = round(degrees / 90) % 4
+    return cast("Literal[0, 90, 180, 270]", quarter * 90)
+
+
+def _vfr(
+    r_rate: Rational | None,
+    avg_rate: Rational | None,
+    field_order: FieldOrder,
+    matroska: bool,
+) -> bool:
+    if r_rate is None:
+        return False
+    if avg_rate is None:
+        return matroska
+    ratio = float(r_rate) / float(avg_rate)
+    if abs(ratio - 1) <= _VFR_TOLERANCE:
+        return False
+    interlaced = field_order in (FieldOrder.TOP_FIRST, FieldOrder.BOTTOM_FIRST)
+    return not (interlaced and abs(ratio - 2) <= 2 * _VFR_TOLERANCE)
+
+
+def _duration(stream: Mapping[str, Any], tags: Mapping[str, str]) -> float | None:
+    duration = _nonneg(stream.get("duration"))
+    if duration is None:
+        duration = parse_duration_tag(tag_value(tags, "DURATION"))
+    return duration
+
+
+def _frame_count(stream: Mapping[str, Any], tags: Mapping[str, str]) -> int | None:
+    count = _int(stream.get("nb_frames"))
+    if count is None or count < 0:
+        count = _int(tag_value(tags, "NUMBER_OF_FRAMES"))
+    return count if count is not None and count >= 0 else None
+
+
+def _common(stream: Mapping[str, Any], type_index: int, warnings: list[str]) -> dict[str, Any]:
+    index = _int(stream.get("index")) or 0
+    tags = _tags(stream.get("tags"))
+    return {
+        "index": index,
+        "type_index": type_index,
+        "codec": _text(stream.get("codec_name")),
+        "codec_long": _text(stream.get("codec_long_name")),
+        "profile": _text(stream.get("profile")),
+        "language": _language(tags, warnings, index),
+        "title": _text(tag_value(tags, "title")),
+        "disposition": _disposition(stream.get("disposition")),
+        "start_time": _float(stream.get("start_time")),
+        "duration": _duration(stream, tags),
+        "frame_count": _frame_count(stream, tags),
+        "tags": tags,
+    }
+
+
+# --------------------------------------------------------------------------- streams
+
+
+def _video(
+    stream: Mapping[str, Any],
+    common: dict[str, Any],
+    frame: Mapping[str, Any] | None,
+    matroska: bool,
+) -> VideoStream:
+    field_order = _FIELD_ORDERS.get(str(stream.get("field_order", "")), FieldOrder.UNKNOWN)
+    r_rate = parse_rational(stream.get("r_frame_rate"))
+    avg_rate = parse_rational(stream.get("avg_frame_rate"))
+    level = _int(stream.get("level"))
+    return VideoStream(
+        **common,
+        display_codec=names.video_display_name(common["codec"], common["profile"]),
+        level=None if level is None or level < 0 else level,
+        width=positive_int(stream.get("width")) or 1,
+        height=positive_int(stream.get("height")) or 1,
+        sar=parse_rational(stream.get("sample_aspect_ratio")),
+        dar=parse_rational(stream.get("display_aspect_ratio")),
+        pix_fmt=_text(stream.get("pix_fmt")),
+        bit_depth=video_bit_depth(stream),
+        frame_rate=r_rate,
+        avg_frame_rate=avg_rate,
+        vfr=_vfr(r_rate, avg_rate, field_order, matroska),
+        field_order=field_order,
+        rotation=_rotation(stream, common["tags"]),
+        color=ColorInfo(
+            primaries=_text(stream.get("color_primaries")),
+            transfer=_text(stream.get("color_transfer")),
+            matrix=_text(stream.get("color_space")),
+            range=_color_range(stream.get("color_range")),
+            chroma_location=_text(stream.get("chroma_location")),
+        ),
+        hdr=hdr.parse_hdr(stream, frame),
+        closed_captions=bool(_int(stream.get("closed_captions"))),
+        bitrate=stream_bitrate(stream),
+    )
+
+
+def _audio(stream: Mapping[str, Any], common: dict[str, Any]) -> AudioStream:
+    codec, profile = common["codec"], common["profile"]
+    depth = positive_int(stream.get("bits_per_raw_sample")) or positive_int(
+        stream.get("bits_per_sample")
+    )
+    return AudioStream(
+        **common,
+        display_codec=names.audio_display_name(codec, profile),
+        channels=max(_int(stream.get("channels")) or 0, 0),
+        channel_layout=_text(stream.get("channel_layout")),
+        sample_rate=positive_int(stream.get("sample_rate")),
+        bit_depth=depth,
+        sample_fmt=_text(stream.get("sample_fmt")),
+        lossless=names.is_lossless_audio(codec, profile),
+        bitrate=stream_bitrate(stream),
+    )
+
+
+def _subtitle(stream: Mapping[str, Any], common: dict[str, Any]) -> SubtitleStream:
+    codec = common["codec"]
+    bitmap = codec in names.BITMAP_SUBTITLE_CODECS
+    events = _int(tag_value(common["tags"], "NUMBER_OF_FRAMES"))
+    if events is not None and events < 0:
+        events = None
+    return SubtitleStream(
+        **common,
+        display_codec=names.subtitle_display_name(codec),
+        subtitle_kind="bitmap" if bitmap else "text",
+        width=positive_int(stream.get("width")) if bitmap else None,
+        height=positive_int(stream.get("height")) if bitmap else None,
+        event_count=events,
+        event_count_source="stats_tag" if events is not None else None,
+    )
+
+
+def _attachment(stream: Mapping[str, Any]) -> Attachment:
+    tags = _tags(stream.get("tags"))
+    size = _int(stream.get("extradata_size"))
+    return Attachment(
+        index=_int(stream.get("index")) or 0,
+        filename=tag_value(tags, "filename"),
+        mimetype=tag_value(tags, "mimetype"),
+        size=size if size is not None and size >= 0 else None,
+        codec=_text(stream.get("codec_name")),
+        tags=tags,
+    )
+
+
+def _cover_art(stream: Mapping[str, Any]) -> AttachedPicture:
+    tags = _tags(stream.get("tags"))
+    return AttachedPicture(
+        index=_int(stream.get("index")) or 0,
+        codec=_text(stream.get("codec_name")),
+        width=positive_int(stream.get("width")),
+        height=positive_int(stream.get("height")),
+        filename=tag_value(tags, "filename"),
+        title=_text(tag_value(tags, "title")) or _text(tag_value(tags, "comment")),
+        tags=tags,
+    )
+
+
+def _data(stream: Mapping[str, Any]) -> DataStream:
+    tags = _tags(stream.get("tags"))
+    codec_tag = _text(stream.get("codec_tag_string"))
+    return DataStream(
+        index=_int(stream.get("index")) or 0,
+        codec=_text(stream.get("codec_name")),
+        codec_tag=None if codec_tag is None or codec_tag.startswith("[0]") else codec_tag,
+        title=_text(tag_value(tags, "title")) or _text(tag_value(tags, "handler_name")),
+        tags=tags,
+    )
+
+
+# --------------------------------------------------------------------------- container
+
+
+def _creation_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _container(fmt: Mapping[str, Any], path: Path, warnings: list[str]) -> ContainerInfo:
+    tags = _tags(fmt.get("tags"))
+    format_name = _text(fmt.get("format_name"))
+    duration = _nonneg(fmt.get("duration"))
+    if duration is None:
+        warnings.append("The container reports no duration.")
+    size = _int(fmt.get("size"))
+    return ContainerInfo(
+        format_name=format_name,
+        format_long_name=_text(fmt.get("format_long_name")),
+        display_name=names.container_display_name(format_name, path.name),
+        duration=duration,
+        size=size if size is not None and size >= 0 else None,
+        bitrate=positive_int(fmt.get("bit_rate")),
+        start_time=_float(fmt.get("start_time")),
+        title=_text(tag_value(tags, "title")),
+        creation_time=_creation_time(tag_value(tags, "creation_time")),
+        tags=tags,
+    )
+
+
+def _chapters(raw: Any) -> list[Chapter]:
+    if not isinstance(raw, list):
+        return []
+    chapters: list[Chapter] = []
+    for chapter in raw:
+        if not isinstance(chapter, Mapping):
+            continue
+        start = max(_float(chapter.get("start_time")) or 0.0, 0.0)
+        end = max(_float(chapter.get("end_time")) or start, start)
+        tags = _tags(chapter.get("tags"))
+        chapters.append(
+            Chapter(
+                index=len(chapters),
+                start=start,
+                end=end,
+                title=_text(tag_value(tags, "title")),
+                tags=tags,
+            )
+        )
+    return chapters
+
+
+def layout_hash(source: MediaSource) -> str:
+    """A short hash of the stream layout (for :attr:`SourceFingerprint.probe_hash`)."""
+    layout: list[Sequence[Any]] = []
+    for v in source.video:
+        layout.append(("v", v.index, v.codec, v.profile, v.width, v.height))
+    for a in source.audio:
+        layout.append(("a", a.index, a.codec, a.profile, a.channels, a.language, a.title))
+    for s in source.subtitles:
+        layout.append(("s", s.index, s.codec, s.language, s.title))
+    for t in source.attachments:
+        layout.append(("t", t.index, t.filename, t.size))
+    layout.append(("d", source.container.duration, len(source.chapters)))
+    text = json.dumps(layout, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+# --------------------------------------------------------------------------- entry point
+
+
+def parse_ffprobe(
+    data: Mapping[str, Any],
+    path: Path,
+    *,
+    frames: Mapping[str, Any] | None = None,
+    fingerprint: SourceFingerprint | None = None,
+    probe_tool: str | None = None,
+    probed_at: datetime | None = None,
+    warnings: Sequence[str] = (),
+) -> MediaSource:
+    """Build a :class:`MediaSource` from ffprobe JSON.
+
+    :param frames: ``-show_frames`` JSON of the main video stream (first frame), for HDR side
+        data when the stream has none.
+    :param warnings: problems found before parsing (for example "the frame side data could not
+        be read"); the parser adds its own.
+    :raises pydantic.ValidationError: only for output that no ffprobe produces (the caller
+        turns it into a probe error).
+    """
+    notes: list[str] = list(warnings)
+    fmt_raw = data.get("format")
+    fmt: Mapping[str, Any] = fmt_raw if isinstance(fmt_raw, Mapping) else {}
+    container = _container(fmt, path, notes)
+    matroska = (container.format_name or "").startswith("matroska")
+    frame = _first_frame(frames)
+    main_index = main_video_index(data)
+
+    source = MediaSource(
+        ref=SourceRef(path=path, fingerprint=fingerprint),
+        container=container,
+        chapters=_chapters(data.get("chapters")),
+        probe_tool=probe_tool,
+        probed_at=probed_at,
+    )
+    type_counts: dict[str, int] = {}
+    for stream in _streams(data):
+        codec_type = str(stream.get("codec_type", ""))
+        type_index = type_counts.get(codec_type, 0)
+        type_counts[codec_type] = type_index + 1
+        try:
+            if codec_type == "video" and _is_cover_art(stream):
+                source.cover_art.append(_cover_art(stream))
+            elif codec_type == "video":
+                common = _common(stream, type_index, notes)
+                if positive_int(stream.get("width")) is None or not positive_int(
+                    stream.get("height")
+                ):
+                    notes.append(f"Video stream {common['index']} has no frame size.")
+                    source.data.append(_data(stream))
+                    continue
+                own_frame = frame if common["index"] == main_index else None
+                source.video.append(_video(stream, common, own_frame, matroska))
+            elif codec_type == "audio":
+                source.audio.append(_audio(stream, _common(stream, type_index, notes)))
+            elif codec_type == "subtitle":
+                source.subtitles.append(_subtitle(stream, _common(stream, type_index, notes)))
+            elif codec_type == "attachment":
+                source.attachments.append(_attachment(stream))
+            else:
+                source.data.append(_data(stream))
+        except ValidationError as exc:
+            notes.append(
+                f"Stream {stream.get('index')} ({codec_type or 'unknown type'}) could not be "
+                f"read: {exc.errors()[0].get('msg', exc)}"
+            )
+    if not _streams(data):
+        notes.append("ffprobe found no streams.")
+    roles.assign_audio_roles(source.audio)
+    roles.assign_subtitle_roles(source.subtitles)
+    source.warnings = notes
+    if fingerprint is not None:
+        source.ref.fingerprint = fingerprint.model_copy(update={"probe_hash": layout_hash(source)})
+    return source
