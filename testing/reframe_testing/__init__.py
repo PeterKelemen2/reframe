@@ -11,6 +11,7 @@ Modules:
 - ``fake_ffmpeg``: the fake itself (a standalone script); ``fake_data/`` holds real FFmpeg
   output that it prints (``capture_fake_data.py`` refreshes it).
 - ``pytest_plugin``: fixtures ``fixture_media`` and ``fake_tools``; skips ``needs_ffmpeg``
-  tests when there is no ffmpeg. Registered for all tests in ``pyproject.toml``.
+  tests when there is no usable ffmpeg (fails them with ``REFRAME_REQUIRE_FFMPEG=1``).
+  Registered for all tests in ``pyproject.toml``.
 - ``vobsub``, ``boxfont``: helpers of the generator (VobSub writer, tiny TrueType font).
 """

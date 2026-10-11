@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
 import json
 import os
+import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -15,11 +18,13 @@ from pathlib import Path
 import psutil
 import pytest
 
+from reframe_testing import fake_ffmpeg
 from reframe_testing import fake_tools as ft
 from reframe_testing.fake_tools import FakeTools
 
 POSIX = os.name != "nt"
 posix_only = pytest.mark.skipif(not POSIX, reason="POSIX signals")
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows exit codes")
 
 
 def run(
@@ -193,6 +198,38 @@ def test_every_capture_has_its_files() -> None:
             if name is not None:
                 assert (ft.DATA_DIR / name).is_file(), name
     assert b"No VA display found" in data("hw_h264_vaapi_bad_device.stderr.txt")
+    assert b"Failed to initialise VAAPI connection" in data("hw_h264_vaapi_init_failed.stderr.txt")
+    assert caps["hw_h264_vaapi_init_failed"].env == {"LIBVA_DRIVER_NAME": "reframe_nonexistent"}
+
+
+PINNED_BUILD = "n9.0.2-17-g2a571b6068-20260930"  # tools/ffmpeg.toml [builds.default] version
+
+
+def test_captures_come_from_the_pinned_build() -> None:
+    """C-4 parses -version / -encoders / -h encoder= texts of the build that ships."""
+    for cap in ft.captures().values():
+        assert cap.build is not None
+        assert cap.build.split()[2] == PINNED_BUILD, cap.name
+    version = data("ffmpeg_version.stdout.txt").decode()
+    assert version.startswith(f"ffmpeg version {PINNED_BUILD} ")
+    assert "configuration: --prefix=/ffbuild/prefix" in version  # BtbN's build flags
+
+
+def test_library_strings_confirm_the_c4_texts() -> None:
+    """Exact hardware error texts in the pinned build (see testdata/README.md)."""
+    found = {text: {e["file"] for e in hits} for text, hits in ft.library_strings().items()}
+    lib = "lib/libavcodec.so.63.1.102"
+    util = "lib/libavutil.so.61.1.102"
+    assert lib in found["Driver does not support the required nvenc API version"]
+    assert lib in found["No capable devices found"]
+    assert {lib, util} <= found["Cannot load %s"]
+    assert lib in found["Error creating a MFX session"]
+    assert util in found["Failed to initialise VAAPI connection"]
+    assert util in found["No VA display found for device"]
+    assert "bin/ffmpeg" in found["Conversion failed!"]
+    # names the plan or memory suggest, but the build does not contain
+    assert found["MFX_ERR_UNSUPPORTED"] == set()
+    assert found["No NVENC capable devices found"] == set()
 
 
 def test_sleep(fake_tools: FakeTools) -> None:
@@ -236,6 +273,60 @@ def test_crash_with_exit_code_and_plain_failure(fake_tools: FakeTools) -> None:
     assert run(fake_tools, "a").returncode == 134
     r = run(fake_tools, "b")
     assert (r.returncode, r.stderr) == (1, b"Conversion failed!\n")
+
+
+def test_exit_code_for_os_fits_a_c_int() -> None:
+    code = fake_ffmpeg.exit_code_for_os(0xC0000005)
+    assert code == -1073741819
+    assert ctypes.c_int(code).value == code  # os._exit() accepts it (0xC0000005 overflows)
+    assert code & 0xFFFFFFFF == ft.WINDOWS_CRASH_CODE  # what Windows reports
+    assert [fake_ffmpeg.exit_code_for_os(c) for c in (0, 1, 255, -1)] == [0, 1, 255, -1]
+
+
+class _Exited(Exception):
+    pass
+
+
+def _record_exit(code: int) -> None:
+    raise _Exited(code)
+
+
+def test_windows_crash_exit_code_is_computed_without_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Windows branch of ``crash``, run on any OS with ``os._exit`` replaced."""
+    monkeypatch.setattr(os, "_exit", _record_exit)
+    with pytest.raises(_Exited) as crashed:
+        fake_ffmpeg._crash({}, windows=True)
+    (code,) = crashed.value.args
+    assert code == -1073741819
+    assert ctypes.c_int(code).value == code
+    with pytest.raises(_Exited) as explicit:
+        fake_ffmpeg._crash({"exit_code": 0xC0000005}, windows=False)
+    assert explicit.value.args == (-1073741819,)
+
+
+def test_a_rule_exit_code_above_int_max_is_passed_as_a_c_int(fake_tools: FakeTools) -> None:
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(exit_code=0xC0000005)]))
+    r = run(fake_tools, "-version")
+    # POSIX keeps the low 8 bits (0x05); Windows reports all 32 bits
+    assert r.returncode == (0xC0000005 if sys.platform == "win32" else 0x05)
+    assert b"OverflowError" not in r.stderr
+
+
+@windows_only
+def test_crash_on_windows_exits_with_access_violation(fake_tools: FakeTools) -> None:
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.crash()])]))
+    r = subprocess.run(
+        [*fake_tools.argv(), "-i", "x", "y.mkv"],
+        capture_output=True,
+        env=fake_tools.env(),
+        timeout=30,
+        check=False,
+    )
+    assert r.returncode == 0xC0000005
+    assert r.stderr == b""
+    assert run(fake_tools, "-i", "x", "y.mkv").returncode == 0xC0000005  # through cmd.exe
 
 
 def test_flood_prints_64_mib(fake_tools: FakeTools) -> None:
@@ -308,6 +399,76 @@ def test_progress_blocks_then_output(fake_tools: FakeTools, tmp_path: Path) -> N
     assert list(blocks[0]) == real[: len(blocks[0])]
 
 
+def parse_blocks(text: str) -> list[dict[str, str]]:
+    blocks: list[dict[str, str]] = [{}]
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        blocks[-1][key] = value
+        if key == "progress":
+            blocks.append({})
+    assert blocks.pop() == {}
+    return blocks
+
+
+def test_real_long_progress_captures() -> None:
+    """The real multi-block runs that C-11's parser must handle (pinned build)."""
+    caps = ft.captures()
+    null = parse_blocks(data("progress_null_long.stdout.txt").decode())
+    mkv = parse_blocks(data("progress_mkv_long.stdout.txt").decode())
+    for name, blocks in (("progress_null_long", null), ("progress_mkv_long", mkv)):
+        assert caps[name].exit_code == 0
+        assert "-stats_period" in caps[name].command
+        assert len(blocks) >= 5, name
+        assert [b["progress"] for b in blocks] == ["continue"] * (len(blocks) - 1) + ["end"]
+        assert all(tuple(b) == ft.PROGRESS_FIELDS for b in blocks), name
+    # before the first packet: N/A times and speed; -f null: bitrate and size N/A throughout
+    assert {k: null[0][k] for k in fake_ffmpeg.STARTUP_BLOCK} == fake_ffmpeg.STARTUP_BLOCK
+    assert all(b["bitrate"] == "N/A" for b in null)
+    assert null[-1]["total_size"] == "N/A"
+    # a real file: bitrate and speed are padded with spaces
+    assert all(re.fullmatch(r" *\d+\.\dkbits/s", b["bitrate"]) for b in mkv)
+    assert any(b["bitrate"].startswith(" ") for b in mkv)
+
+
+def test_progress_with_na_startup_blocks_and_na_fields(fake_tools: FakeTools) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    actions=[
+                        ft.progress(
+                            blocks=3,
+                            na_blocks=2,
+                            na_fields=["bitrate", "total_size"],
+                            media_seconds=3.0,
+                        )
+                    ]
+                )
+            ]
+        )
+    )
+    r = run(fake_tools, "-i", "x", "-progress", "pipe:1", "-f", "null", "-")
+    blocks = parse_blocks(r.stdout.decode())
+    assert len(blocks) == 5
+    assert all(tuple(b) == ft.PROGRESS_FIELDS for b in blocks)
+    real_first = parse_blocks(data("progress_null_long.stdout.txt").decode())[0]
+    startup = {**real_first, "total_size": "N/A"}  # na_fields applies to every block
+    assert blocks[0] == blocks[1] == startup
+    assert [b["out_time_us"] for b in blocks] == ["N/A", "N/A", "1000000", "2000000", "3000000"]
+    assert all(b["bitrate"] == b["total_size"] == "N/A" for b in blocks)
+    assert [b["progress"] for b in blocks] == ["continue"] * 4 + ["end"]
+
+
+def test_progress_block_formats_like_real_ffmpeg() -> None:
+    block = parse_blocks(
+        fake_ffmpeg.progress_block({"blocks": 1, "bytes_per_second": 5475}, 0, 1.0)
+    )[0]
+    assert block["bitrate"] == "  43.8kbits/s"  # "%6.1fkbits/s"
+    assert block["speed"] == "   2x"  # "%4.3gx"
+    with pytest.raises(ValueError, match="unknown"):
+        ft.progress(na_fields=["nope"])
+
+
 def test_progress_to_stderr(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.progress(blocks=2, end=False)])]))
     r = run(fake_tools, "-i", "x", "-progress", "pipe:2", "-f", "null", "-")
@@ -325,8 +486,32 @@ def test_invocation_log_records_tool_pid_and_argv(fake_tools: FakeTools) -> None
     ]
     assert all(c.role == "main" and c.pid > 0 for c in calls)
     assert fake_tools.calls("ffprobe") == [("-version",)]
+    assert calls[0].monotonic_ns < calls[1].monotonic_ns
     fake_tools.clear_log()
     assert fake_tools.invocations() == []
+
+
+def test_parallel_invocations_each_write_their_own_log_file(fake_tools: FakeTools) -> None:
+    """One file per invocation (temporary name, then rename): no shared append-only file."""
+    procs = [
+        subprocess.Popen(
+            [str(fake_tools.ffmpeg), "-hide_banner", "-h", f"encoder=e{i}"],
+            stdout=subprocess.DEVNULL,
+        )
+        for i in range(16)
+    ]
+    for proc in procs:
+        assert proc.wait(timeout=60) == 0
+    calls = fake_tools.invocations()
+    assert sorted(c.argv[-1] for c in calls) == sorted(f"encoder=e{i}" for i in range(16))
+    assert len({c.pid for c in calls}) == 16
+    assert [c.monotonic_ns for c in calls] == sorted(c.monotonic_ns for c in calls)
+    files = list(fake_tools.log_dir.iterdir())
+    assert len(files) == 16
+    assert all(
+        f.suffix == ".json" and f.name.startswith(f"{json.loads(f.read_text())['pid']}-")
+        for f in files
+    )
 
 
 def test_environment_overrides_the_baked_scenario(fake_tools: FakeTools, tmp_path: Path) -> None:
@@ -377,9 +562,10 @@ def test_tree_kill_leaves_no_process(fake_tools: FakeTools) -> None:
         main_pid = next(i.pid for i in fake_tools.invocations() if i.role == "main")
         grandchild = next(i for i in fake_tools.invocations() if i.role == "grandchild")
         assert grandchild.ppid == main_pid
-        # on POSIX the launcher execs python, so the launcher pid is the fake's pid; on Windows
-        # it is cmd.exe, the parent of the fake
-        assert main_pid == proc.pid or psutil.Process(main_pid).ppid() == proc.pid
+        # On POSIX the launcher execs python, so the launcher pid is the fake's pid. On Windows
+        # it is cmd.exe, and the fake is one of its descendants.
+        descendants = {p.pid for p in psutil.Process(proc.pid).children(recursive=True)}
+        assert main_pid == proc.pid or main_pid in descendants
         killed = kill_tree(proc.pid)
         assert {p.pid for p in killed} >= set(pids)
         _, alive = psutil.wait_procs(killed, timeout=10)
@@ -410,6 +596,65 @@ def test_killing_only_the_parent_orphans_the_grandchild(fake_tools: FakeTools) -
             kill_tree(grandchild_pid)
         proc.wait(timeout=10)
     wait_for(lambda: gone(grandchild_pid))
+
+
+def test_hang_and_grandchild_end_after_the_max_lifetime(fake_tools: FakeTools) -> None:
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
+    env = {**fake_tools.env(), ft.MAX_LIFETIME_ENV: "1"}
+    started = time.monotonic()
+    proc = subprocess.Popen(
+        [*fake_tools.argv(), "-i", "x", "y.mkv"], env=env, stderr=subprocess.PIPE
+    )
+    try:
+        _, err = proc.communicate(timeout=20)
+        assert time.monotonic() - started >= 1.0
+        assert proc.returncode == ft.LIFETIME_EXIT_CODE
+        assert ft.MAX_LIFETIME_ENV.encode() in err
+        grandchild = next(i.pid for i in fake_tools.invocations() if i.role == "grandchild")
+        wait_for(lambda: gone(grandchild), timeout=20)
+    finally:
+        kill_tree(proc.pid)
+        proc.wait(timeout=10)
+
+
+def test_max_lifetime_default_and_bad_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(ft.MAX_LIFETIME_ENV, raising=False)
+    assert fake_ffmpeg.max_lifetime() == 120.0
+    for bad in ("", "soon", "-1"):
+        monkeypatch.setenv(ft.MAX_LIFETIME_ENV, bad)
+        assert fake_ffmpeg.max_lifetime() == 120.0
+    monkeypatch.setenv(ft.MAX_LIFETIME_ENV, "2.5")
+    assert fake_ffmpeg.max_lifetime() == 2.5
+
+
+def test_kill_leftovers_kills_every_logged_process(fake_tools: FakeTools) -> None:
+    """What the ``fake_tools`` fixture teardown does when a test fails."""
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
+    proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
+    try:
+        wait_for(lambda: len(fake_tools.pids()) == 2)
+        pids = fake_tools.pids()
+        assert sorted(fake_tools.kill_leftovers()) == sorted(pids)
+        assert all(gone(pid) for pid in pids)
+        proc.wait(timeout=10)
+        assert fake_tools.kill_leftovers() == []
+    finally:
+        kill_tree(proc.pid)
+        proc.wait(timeout=10)
+
+
+def test_kill_leftovers_leaves_a_reused_pid_alone(fake_tools: FakeTools) -> None:
+    """A logged pid whose process started after the log entry belongs to someone else."""
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        fake_tools.log_dir.mkdir(parents=True, exist_ok=True)
+        entry = {"role": "main", "tool": "ffmpeg", "pid": other.pid, "ppid": 1, "time_ns": 1}
+        (fake_tools.log_dir / f"{other.pid}-old.json").write_text(json.dumps(entry))
+        assert fake_tools.kill_leftovers() == []
+        assert other.poll() is None
+    finally:
+        other.kill()
+        other.wait(timeout=10)
 
 
 @posix_only
@@ -466,19 +711,23 @@ async def test_launcher_works_with_asyncio_create_subprocess_exec(fake_tools: Fa
 async def test_asyncio_timeout_and_tree_kill(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = await asyncio.create_subprocess_exec(fake_tools.ffmpeg, "-i", "x", "y.mkv")
-    with pytest.raises(TimeoutError):
-        await asyncio.wait_for(proc.wait(), timeout=0.5)
-    for _ in range(200):
-        if len(fake_tools.pids()) == 2:
-            break
-        await asyncio.sleep(0.02)
-    pids = fake_tools.pids()
-    assert len(pids) == 2
-    killed = kill_tree(proc.pid)
-    await proc.wait()
-    _, alive = psutil.wait_procs(killed, timeout=10)
-    assert alive == []
-    assert all(gone(pid) for pid in pids)
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(proc.wait(), timeout=0.5)
+        for _ in range(500):
+            if len(fake_tools.pids()) == 2:
+                break
+            await asyncio.sleep(0.02)
+        pids = fake_tools.pids()
+        assert len(pids) == 2
+        killed = kill_tree(proc.pid)
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        _, alive = psutil.wait_procs(killed, timeout=10)
+        assert alive == []
+        assert all(gone(pid) for pid in pids)
+    finally:
+        kill_tree(proc.pid)
+        await asyncio.wait_for(proc.wait(), timeout=10)
 
 
 # --------------------------------------------------------------------------- launchers
@@ -518,8 +767,33 @@ def test_posix_launcher_uses_a_python_shebang(fake_tools: FakeTools) -> None:
     if not POSIX:
         pytest.skip("POSIX launcher")
     text = fake_tools.ffmpeg.read_text()
-    assert text.splitlines()[0] == f"#!{sys.executable} -I"
+    first = text.splitlines()[0]
+    assert first == f"#!{ft.PYTHON} -I" or (
+        first == "#!/bin/sh" and f"exec {shlex.quote(ft.PYTHON)} -I" in text
+    )
     assert os.access(fake_tools.ffmpeg, os.X_OK)
+
+
+def test_the_fake_runs_with_the_base_interpreter_not_a_venv_launcher(
+    fake_tools: FakeTools, tmp_path: Path
+) -> None:
+    """Windows venvs: ``.venv\\Scripts\\python.exe`` is a launcher that adds a child process."""
+    base = getattr(sys, "_base_executable", None) or sys.executable
+    assert base == ft.PYTHON
+    assert fake_tools.argv("ffprobe")[0] == base
+    win = ft.make_fake_tools(tmp_path / "win", platform="win32")
+    run_line = next(line for line in win.ffmpeg.read_text().splitlines() if "--fake-tool" in line)
+    assert run_line.startswith(f'"{base}" -I ')
+    # the processes really run the base interpreter (main and grandchild)
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
+    proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
+    try:
+        wait_for(lambda: len(fake_tools.pids()) == 2)
+        for pid in fake_tools.pids():
+            assert os.path.samefile(psutil.Process(pid).exe(), base)
+    finally:
+        kill_tree(proc.pid)
+        proc.wait(timeout=10)
 
 
 def test_windows_launcher_written_on_any_os(tmp_path: Path) -> None:

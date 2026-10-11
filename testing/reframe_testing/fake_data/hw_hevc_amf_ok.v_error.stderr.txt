@@ -1,0 +1,1 @@
+radv: RADV_PERFTEST=video_decode is deprecated and will be removed in future Mesa releases. Please use RADV_EXPERIMENTAL=video_decode instead.

@@ -13,22 +13,31 @@ Typical use::
     tools.set_scenario(ft.Scenario([ft.captured("hw_hevc_nvenc_no_driver")]))       # real stderr
     tools.invocations()   # every call: tool, pid, argv
     tools.pids()          # every process the fake started (main and grandchildren)
+    tools.kill_leftovers()  # kill those that still run (the ``fake_tools`` fixture does this)
 
 ``tools.ffmpeg`` / ``tools.ffprobe`` are paths that ``subprocess`` and
-``asyncio.create_subprocess_exec`` can run directly:
+``asyncio.create_subprocess_exec`` can run directly. They run the fake with the base
+interpreter (:data:`PYTHON`, ``sys._base_executable``), never with a venv's ``python``: on
+Windows that is a launcher that starts the real interpreter as one more child process.
 
-- POSIX: a Python file with a ``#!`` line that points at ``sys.executable`` (a ``/bin/sh``
-  wrapper with ``exec`` if that path is too long for a ``#!`` line or has spaces).
+- POSIX: a Python file with a ``#!`` line that points at :data:`PYTHON` (a ``/bin/sh`` wrapper
+  with ``exec`` if that path is too long for a ``#!`` line or has spaces). The process that
+  ``subprocess`` starts is the fake itself.
 - Windows: ``ffmpeg.cmd`` / ``ffprobe.cmd`` batch files. ``CreateProcess`` runs them through
-  ``cmd.exe``, so the process tree is ``cmd.exe -> python.exe``: a tree kill is needed, which
-  is what Reframe does anyway. Limitation: ``cmd.exe`` interprets ``& | < > ^ %`` in arguments
-  that ``subprocess.list2cmdline`` does not quote (it quotes only arguments with spaces). For
-  such arguments use :meth:`FakeTools.argv`, which runs the script with ``sys.executable``.
+  ``cmd.exe``, so the process tree is ``cmd.exe -> python.exe (the fake)``: a tree kill is
+  needed, which is what Reframe does anyway. Limitation: ``cmd.exe`` interprets
+  ``& | < > ^ %`` in arguments that ``subprocess.list2cmdline`` does not quote (it quotes only
+  arguments with spaces). For such arguments use :meth:`FakeTools.argv`, which runs the script
+  with :data:`PYTHON` directly.
+
+``hang`` and the grandchild exit by themselves after ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME``
+seconds (default 120).
 """
 
 from __future__ import annotations
 
 import codecs
+import contextlib
 import json
 import os
 import shlex
@@ -42,8 +51,14 @@ from reframe_testing import fake_ffmpeg
 
 SCENARIO_ENV = fake_ffmpeg.SCENARIO_ENV
 LOG_ENV = fake_ffmpeg.LOG_ENV
+MAX_LIFETIME_ENV = fake_ffmpeg.MAX_LIFETIME_ENV
+LIFETIME_EXIT_CODE = fake_ffmpeg.LIFETIME_EXIT_CODE
+WINDOWS_CRASH_CODE = fake_ffmpeg.WINDOWS_CRASH_CODE
+PROGRESS_FIELDS = fake_ffmpeg.PROGRESS_FIELDS
 SCRIPT = Path(fake_ffmpeg.__file__).resolve()
 DATA_DIR = fake_ffmpeg.DATA_DIR
+#: The interpreter that runs the fake: ``sys._base_executable`` (not a venv launcher).
+PYTHON = fake_ffmpeg.python_executable()
 
 Tool = Literal["ffmpeg", "ffprobe"]
 #: One fake action, as JSON. Build it with the helper functions below.
@@ -84,12 +99,13 @@ def sleep(seconds: float) -> Action:
 
 
 def hang() -> Action:
-    """Sleep forever (until killed)."""
+    """Sleep until killed, or until ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` (default 120 s) is over
+    (then exit with :data:`LIFETIME_EXIT_CODE`)."""
     return {"hang": True}
 
 
 def crash(*, signal: str = "SIGSEGV", exit_code: int | None = None) -> Action:
-    """Die abruptly: by ``signal`` on POSIX (exit 0xC0000005 on Windows),
+    """Die abruptly: by ``signal`` on POSIX (exit code 0xC0000005 on Windows),
     or with ``os._exit(exit_code)`` if ``exit_code`` is given."""
     return {"crash": {"exit_code": exit_code} if exit_code is not None else {"signal": signal}}
 
@@ -100,7 +116,8 @@ def flood(nbytes: int, stream: Literal["stdout", "stderr"] = "stdout") -> Action
 
 
 def spawn_grandchild() -> Action:
-    """Start a child process that hangs forever (to test process-tree kill). Logged with its pid."""
+    """Start a child process that hangs (to test process-tree kill). Logged with its pid. It
+    exits by itself after ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` (default 120 s)."""
     return {"spawn_grandchild": {}}
 
 
@@ -112,13 +129,26 @@ def progress(
     fps: float = 25.0,
     bytes_per_second: int = 50_000,
     end: bool = True,
+    na_fields: Sequence[str] = (),
+    na_blocks: int = 0,
 ) -> Action:
-    """Emit ``blocks`` ``-progress`` blocks, one every ``interval`` seconds.
+    """Emit ``na_blocks + blocks`` ``-progress`` blocks, one every ``interval`` seconds.
 
     The destination is the value of ``-progress`` in argv (``pipe:1``, ``pipe:2`` or a file),
-    default stdout. ``out_time_us`` goes linearly up to ``media_seconds``; the last block has
-    ``progress=end`` (unless ``end=False``).
+    default stdout. Field names and order are :data:`PROGRESS_FIELDS` (real ffmpeg n9.0.2).
+
+    - ``na_blocks``: first print this many start-up blocks, as real ffmpeg does before the
+      encoder returns its first packet: ``frame=0``, ``bitrate=N/A``, ``total_size=0``,
+      ``out_time_us`` / ``out_time_ms`` / ``out_time`` / ``speed`` ``=N/A``
+      (``fake_data/progress_null_long``).
+    - Then ``blocks`` blocks: ``out_time_us`` goes linearly up to ``media_seconds``. The last
+      block has ``progress=end`` (unless ``end=False``).
+    - ``na_fields``: these fields are ``N/A`` in every block. Real ffmpeg prints
+      ``bitrate=N/A`` and ``total_size=N/A`` when the output is ``-f null``.
     """
+    unknown = set(na_fields) - set(PROGRESS_FIELDS[:-1])
+    if unknown:
+        raise ValueError(f"unknown -progress fields: {sorted(unknown)}")
     return {
         "progress": {
             "blocks": blocks,
@@ -127,6 +157,8 @@ def progress(
             "fps": fps,
             "bytes_per_second": bytes_per_second,
             "end": end,
+            "na_fields": list(na_fields),
+            "na_blocks": na_blocks,
         }
     }
 
@@ -220,6 +252,10 @@ class Capture:
     stdout: str | None
     stderr: str | None
     machine: str | None = None
+    build: str | None = None
+    """First line of ``-version`` of the binary that made the capture."""
+    env: Mapping[str, str] | None = None
+    """Extra environment variables of the capture command (for example ``LIBVA_DRIVER_NAME``)."""
 
 
 def captures() -> dict[str, Capture]:
@@ -235,9 +271,22 @@ def captures() -> dict[str, Capture]:
             stdout=entry.get("stdout"),
             stderr=entry.get("stderr"),
             machine=entry.get("machine"),
+            build=entry.get("build"),
+            env=entry.get("env"),
         )
         for name, entry in raw.items()
     }
+
+
+def library_strings() -> dict[str, list[dict[str, str]]]:
+    """``fake_data/library_strings.json``: for each hardware error text, the files of the pinned
+    build that contain it (``[{"file": "lib/libavcodec.so.63.1.102", "string": "..."}]``; an
+    empty list means the text is not in the build)."""
+    raw: dict[str, Any] = json.loads(
+        (DATA_DIR / "library_strings.json").read_text(encoding="utf-8")
+    )
+    strings: dict[str, list[dict[str, str]]] = raw["strings"]
+    return strings
 
 
 def captured(
@@ -287,6 +336,16 @@ class Invocation:
     ppid: int
     argv: tuple[str, ...] = ()
     cwd: str | None = None
+    monotonic_ns: int = 0
+    """``time.monotonic_ns()`` when the entry was written (a system-wide clock): the sort key."""
+    time_ns: int = 0
+    """``time.time_ns()`` when the entry was written."""
+
+
+#: A logged process that started more than this many seconds after its log entry was written
+#: is not ours: the OS gave its pid to a new process. (psutil's ``create_time`` on Linux is
+#: computed from the boot time in whole seconds, so it can be up to 1 s off.)
+_PID_REUSE_TOLERANCE = 2.0
 
 
 @dataclass
@@ -297,7 +356,8 @@ class FakeTools:
     ffmpeg: Path
     ffprobe: Path
     scenario_path: Path
-    log_path: Path
+    log_dir: Path
+    """One JSON file per invocation (see ``fake_ffmpeg``); read with :meth:`invocations`."""
 
     def set_scenario(self, scenario: Scenario | Mapping[str, Any]) -> None:
         data = scenario.to_json() if isinstance(scenario, Scenario) else dict(scenario)
@@ -309,7 +369,7 @@ class FakeTools:
         """An environment for a child process that selects this scenario and log explicitly."""
         env = dict(os.environ if base is None else base)
         env[SCENARIO_ENV] = str(self.scenario_path)
-        env[LOG_ENV] = str(self.log_path)
+        env[LOG_ENV] = str(self.log_dir)
         return env
 
     def argv(self, tool: Tool = "ffmpeg") -> list[str]:
@@ -317,16 +377,18 @@ class FakeTools:
 
         Uses the default scenario and log only through :meth:`env`; pass ``env=tools.env()``.
         """
-        return [sys.executable, "-I", str(SCRIPT), "--fake-tool", tool]
+        return [PYTHON, "-I", str(SCRIPT), "--fake-tool", tool]
 
     def invocations(self) -> list[Invocation]:
-        if not self.log_path.exists():
+        """Every logged process, in the order the entries were written (``monotonic_ns``)."""
+        if not self.log_dir.is_dir():
             return []
         result: list[Invocation] = []
-        for line in self.log_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
+        for path in self.log_dir.glob("*.json"):
+            try:
+                entry = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:  # removed by clear_log() in the meantime
                 continue
-            entry = json.loads(line)
             result.append(
                 Invocation(
                     role=entry["role"],
@@ -335,8 +397,11 @@ class FakeTools:
                     ppid=int(entry["ppid"]),
                     argv=tuple(entry.get("argv", ())),
                     cwd=entry.get("cwd"),
+                    monotonic_ns=int(entry.get("monotonic_ns", 0)),
+                    time_ns=int(entry.get("time_ns", 0)),
                 )
             )
+        result.sort(key=lambda inv: (inv.monotonic_ns, inv.time_ns, inv.pid))
         return result
 
     def pids(self) -> list[int]:
@@ -352,7 +417,36 @@ class FakeTools:
         ]
 
     def clear_log(self) -> None:
-        self.log_path.unlink(missing_ok=True)
+        if self.log_dir.is_dir():
+            for path in self.log_dir.iterdir():
+                if path.suffix == ".json":
+                    path.unlink(missing_ok=True)
+
+    def kill_leftovers(self, timeout: float = 10.0) -> list[int]:
+        """Kill every logged process that is still running and wait for it; return the pids.
+
+        A pid is skipped when its process started after the log entry was written: the OS
+        reused the pid for an unrelated process. The ``fake_tools`` fixture calls this in its
+        teardown, so a failed test does not leave hanging fakes behind.
+        """
+        import psutil  # only the tests need it, not the fake itself
+
+        procs: list[psutil.Process] = []
+        for inv in self.invocations():
+            try:
+                proc = psutil.Process(inv.pid)
+                if proc.create_time() > inv.time_ns / 1e9 + _PID_REUSE_TOLERANCE:
+                    continue
+                if proc.status() == psutil.STATUS_ZOMBIE:
+                    continue
+            except psutil.Error:
+                continue
+            procs.append(proc)
+        for proc in procs:
+            with contextlib.suppress(psutil.Error):
+                proc.kill()
+        psutil.wait_procs(procs, timeout=timeout)
+        return [proc.pid for proc in procs]
 
 
 def posix_launcher(tool: Tool, *, python: str, script: Path, scenario: Path, log: Path) -> str:
@@ -416,30 +510,31 @@ def make_fake_tools(
     """Write ``ffmpeg`` and ``ffprobe`` launchers (``.cmd`` on Windows) into ``directory``.
 
     ``scenario`` is written to ``directory/scenario.json`` and is the launchers' default; the
-    ``REFRAME_FAKE_FFMPEG_SCENARIO`` environment variable overrides it. Calls are logged to
-    ``directory/calls.jsonl`` (``REFRAME_FAKE_FFMPEG_LOG`` overrides it).
+    ``REFRAME_FAKE_FFMPEG_SCENARIO`` environment variable overrides it. Calls are logged as one
+    file each in ``directory/calls.d/`` (``REFRAME_FAKE_FFMPEG_LOG`` overrides it).
 
+    ``python`` defaults to :data:`PYTHON` (the base interpreter, not a venv launcher).
     ``platform`` and ``python`` exist so that the Windows launcher can be written (and
     unit-tested) on Linux.
     """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    python = python or sys.executable
+    python = python or PYTHON
     scenario_path = directory / "scenario.json"
-    log_path = directory / "calls.jsonl"
+    log_dir = directory / "calls.d"
     windows = platform.startswith("win")
     paths: dict[str, Path] = {}
     for tool in ("ffmpeg", "ffprobe"):
         if windows:
             path = directory / f"{tool}.cmd"
             text = windows_launcher(
-                tool, python=python, script=SCRIPT, scenario=scenario_path, log=log_path
+                tool, python=python, script=SCRIPT, scenario=scenario_path, log=log_dir
             )
             path.write_bytes(text.encode(_cmd_encoding()))
         else:
             path = directory / tool
             text = posix_launcher(
-                tool, python=python, script=SCRIPT, scenario=scenario_path, log=log_path
+                tool, python=python, script=SCRIPT, scenario=scenario_path, log=log_dir
             )
             path.write_text(text, encoding="utf-8", newline="\n")
             path.chmod(0o755)
@@ -449,7 +544,7 @@ def make_fake_tools(
         ffmpeg=paths["ffmpeg"],
         ffprobe=paths["ffprobe"],
         scenario_path=scenario_path,
-        log_path=log_path,
+        log_dir=log_dir,
     )
     tools.set_scenario(scenario if scenario is not None else Scenario())
     return tools
