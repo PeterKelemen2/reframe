@@ -189,9 +189,8 @@ class ToolsService:
         return task
 
     async def _discover(self) -> ToolSet:
-        # discover_tools(), but with a TaskGroup instead of asyncio.gather(): a cancelled
-        # gather() returns as soon as its first child ends, while the other version checks
-        # are still being killed; a TaskGroup waits for all of them, so close() returns only
+        # discover_tools(), but locate_tools() runs in a thread (a network share can be slow
+        # to stat). The TaskGroup waits for every version check, so close() returns only
         # after every child process is gone.
         located = await asyncio.to_thread(
             locate_tools, self._settings().tools, bundled_roots=self._bundled_roots
@@ -306,25 +305,16 @@ class SourceService:
                 ctx.progress(done=done, total=total, message=f"{done}/{total} files")
 
             ctx.progress(0.0, "Listing files")
-            inner = asyncio.ensure_future(
-                probe_folder(
-                    prober,
-                    root,
-                    concurrency=concurrency,
-                    recursive=recursive,
-                    cancel=ctx.cancel,
-                    on_progress=report,
-                )
+            # A cancel arrives both as the task's CancelledError and through ctx.cancel;
+            # probe_folder() returns only after every ffprobe it started is gone.
+            result = await probe_folder(
+                prober,
+                root,
+                concurrency=concurrency,
+                recursive=recursive,
+                cancel=ctx.cancel,
+                on_progress=report,
             )
-            try:
-                # Shielded: a cancel reaches the probes through the token only. Cancelling
-                # probe_folder()'s asyncio.gather() would return before every ffprobe is
-                # killed and reaped.
-                result = await asyncio.shield(inner)
-            except asyncio.CancelledError:
-                ctx.cancel.cancel("cancelled")
-                await asyncio.wait({inner})
-                raise
             for source in result.sources:
                 self._remember(source)
             return result

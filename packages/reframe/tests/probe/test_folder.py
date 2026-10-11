@@ -260,3 +260,24 @@ def _proc(pid: int) -> Any:
         return psutil.Process(pid)
     except psutil.Error:
         return None
+
+
+async def test_cancelling_probe_folder_reaps_every_ffprobe(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    """A cancelled probe_folder() returns only after every running ffprobe is gone.
+
+    Regression: with ``asyncio.gather`` a cancel returned as soon as the first probe ended,
+    and the other probes' process kills could be dropped when the loop stopped (orphans).
+    """
+    fake_tools.set_scenario(
+        ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=[ft.hang()])])
+    )
+    touch(tmp_path, *(f"E{i}.mkv" for i in range(8)))
+    task = asyncio.ensure_future(probe_folder(_fake_prober(fake_tools), tmp_path))
+    await until(lambda: len(fake_tools.pids()) >= 4)
+    pids = fake_tools.pids()
+    task.cancel()
+    await asyncio.wait({task})
+    alive = [p for p in pids if (proc := _proc(p)) and proc.status() != psutil.STATUS_ZOMBIE]
+    assert alive == []

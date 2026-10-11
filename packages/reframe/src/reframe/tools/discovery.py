@@ -443,8 +443,12 @@ async def discover_tools(
         search_path=search_path,
         platform=platform,
     )
-    infos = await asyncio.gather(*(check_tool(located[t], timeout=timeout) for t in TOOL_NAMES))
-    return ToolSet(**{info.name: info for info in infos})
+    # A TaskGroup, not gather(): a cancelled gather() returns as soon as its first child ends,
+    # and the other children's process kills can then be dropped when the loop stops
+    # (orphaned ffmpeg/ffprobe). A TaskGroup returns only after every child has finished.
+    async with asyncio.TaskGroup() as group:
+        checks = [group.create_task(check_tool(located[t], timeout=timeout)) for t in TOOL_NAMES]
+    return ToolSet(**{check.result().name: check.result() for check in checks})
 
 
 def discover_tools_sync(

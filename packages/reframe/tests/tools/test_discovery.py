@@ -773,3 +773,40 @@ def test_main_reports_and_checks_the_origin(
 
     with pytest.raises(SystemExit):
         main(["--require", "ffmpeeg"])
+
+
+# --------------------------------------------------------------------------- cancellation
+
+
+def _alive(pid: int) -> bool:
+    import psutil
+
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.Error:
+        return False
+
+
+@pytest.mark.anyio
+async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path: str) -> None:
+    """Cancelling discovery returns only after every version check's process is gone.
+
+    Regression: with ``asyncio.gather`` a cancel returned as soon as the first check ended,
+    and the other checks' process kills could be dropped when the loop stopped (orphans).
+    """
+    import asyncio
+    import time
+
+    fake = _fake(tmp_path / "fake", ft.Rule(argv_has=["-version"], actions=[ft.hang()]))
+    env = _env(REFRAME_FFMPEG=str(fake.ffmpeg), REFRAME_FFPROBE=str(fake.ffprobe))
+    task = asyncio.ensure_future(
+        discover_tools(environ=env, bundled_roots=[], search_path=empty_path, timeout=60)
+    )
+    deadline = time.monotonic() + 30
+    while len(fake.pids()) < 2:
+        assert time.monotonic() < deadline, "the fake tools did not start"
+        await asyncio.sleep(0.02)
+    pids = fake.pids()
+    task.cancel()
+    await asyncio.wait({task})
+    assert [pid for pid in pids if _alive(pid)] == []

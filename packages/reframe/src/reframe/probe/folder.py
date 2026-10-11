@@ -180,7 +180,12 @@ async def probe_folder(
         if on_progress is not None:
             on_progress(done, total, path)
 
-    await asyncio.gather(*(one(i, path) for i, path in enumerate(files)))
+    # A TaskGroup, not gather(): a cancelled gather() returns as soon as its first child ends,
+    # and the other probes' process kills can then be dropped when the loop stops (orphaned
+    # ffprobe). A TaskGroup returns only after every probe has finished.
+    async with asyncio.TaskGroup() as group:
+        for i, path in enumerate(files):
+            group.create_task(one(i, path))
     for outcome in outcomes:
         if isinstance(outcome, MediaSource):
             result.sources.append(outcome)
