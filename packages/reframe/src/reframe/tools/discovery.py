@@ -7,10 +7,19 @@ Search order for each tool (02 §Bundled FFmpeg):
 2. **Settings path** (``AppSettings.tools``). Origin ``settings``.
 3. ffprobe only: if ffmpeg came from 1 or 2 and ffprobe has no override of its own,
    **ffprobe next to that ffmpeg** (same folder; ``ffprobe``, ``ffprobe.exe``, or the
-   ffmpeg file name with ``ffmpeg`` replaced, so ``ffmpeg.cmd`` → ``ffprobe.cmd``). It gets
-   the ffmpeg's origin and ``next_to_ffmpeg=True``.
+   ffmpeg file name with ``ffmpeg`` replaced, so ``ffmpeg-9.exe`` → ``ffprobe-9.exe``). It
+   gets the ffmpeg's origin and ``next_to_ffmpeg=True``.
 4. **Bundled build** (:func:`reframe.paths.bundled_tool_roots`). Origin ``bundled``.
-5. **PATH**, only when there is no bundled build of the tool. Origin ``path``.
+5. **PATH**, only when there is no bundled build of the tool. Origin ``path``. Only the
+   absolute folders of ``PATH`` are searched, never the current folder (``shutil.which``
+   searches the current folder first on Windows, so it is not used).
+
+**Windows: only ``.exe`` programs.** ``CreateProcess`` runs a ``.cmd`` / ``.bat`` file
+through ``cmd.exe``, which interprets ``& | % ^ < >`` in the arguments: a file name such as
+``Tom & Jerry.mkv`` would break the command or inject another one. So discovery accepts only
+``.exe`` files on Windows; an override that names a ``.cmd`` / ``.bat`` is ``broken``. The
+test suites set ``REFRAME_ALLOW_SCRIPT_TOOLS=1`` (:data:`ALLOW_SCRIPT_TOOLS_ENV`), so the
+fake ``.cmd`` tools of ``reframe_testing`` work; nothing else should set it.
 
 An override (1 or 2) may name the binary or a folder that holds it (or its ``bin/``).
 
@@ -36,7 +45,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -51,6 +59,7 @@ from reframe.tools import versions
 from reframe.tools.runner import run
 
 __all__ = [
+    "ALLOW_SCRIPT_TOOLS_ENV",
     "ENV_VARS",
     "LIBVA_DRIVER_DIRS",
     "TOOL_NAMES",
@@ -62,6 +71,9 @@ __all__ = [
     "discover_tools_sync",
     "locate_tools",
 ]
+
+#: Test-only opt-in: accept ``.cmd`` / ``.bat`` tools on Windows (see the module doc).
+ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
 
 TOOL_NAMES: tuple[ToolName, ...] = ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")
 ENV_VARS: Mapping[ToolName, str] = {
@@ -107,11 +119,13 @@ class ToolLocation:
     path: Path | None
     origin: ToolOrigin | None
     problem: str | None = None
-    """Set when the tool cannot be used without running it (missing file); status missing."""
+    """Set when the tool cannot be used without running it (missing file)."""
     env_var: str | None = None
     next_to_ffmpeg: bool = False
     env: dict[str, str] = field(default_factory=dict)
     fixes: list[Fix] = field(default_factory=list)
+    problem_status: ToolStatus = ToolStatus.MISSING
+    """The status that ``problem`` gives (``broken`` for a script tool on Windows)."""
 
 
 @dataclass(frozen=True)
@@ -126,9 +140,20 @@ class _Context:
     def windows(self) -> bool:
         return self.platform == "win32"
 
+    @property
+    def allow_scripts(self) -> bool:
+        value = self.environ.get(ALLOW_SCRIPT_TOOLS_ENV, "").strip().lower()
+        return value not in ("", "0", "false", "no")
+
+    def runnable(self, path: Path) -> bool:
+        """On Windows only ``.exe`` (unless script tools are allowed); elsewhere anything."""
+        return not self.windows or self.allow_scripts or path.suffix.lower() == ".exe"
+
     def exe_names(self, tool: str) -> list[str]:
         if not self.windows:
             return [tool]
+        if not self.allow_scripts:
+            return [tool + ".exe"]
         exts = [
             e.strip().lower()
             for e in self.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
@@ -199,6 +224,15 @@ def _override(
     if not path.is_file():
         problem = f"{where}: the file does not exist.{cannot_fix}"
         return ToolLocation(tool, path, origin, problem, env_var, fixes=fixes)
+    if not ctx.runnable(path):
+        problem = (
+            f"{where}: not an .exe file. On Windows Reframe runs only .exe programs: a .cmd "
+            f"or .bat file goes through cmd.exe, which interprets & | % ^ < > in file "
+            f"names.{cannot_fix}"
+        )
+        return ToolLocation(
+            tool, path, origin, problem, env_var, problem_status=ToolStatus.BROKEN, fixes=fixes
+        )
     return ToolLocation(tool, path, origin, None, env_var, fixes=fixes)
 
 
@@ -210,8 +244,22 @@ def _sibling_ffprobe(ctx: _Context, ffmpeg: Path) -> Path | None:
     names += ctx.exe_names("ffprobe")
     for name in names:
         candidate = directory / name
-        if candidate != ffmpeg and candidate.is_file():
+        if candidate != ffmpeg and candidate.is_file() and ctx.runnable(candidate):
             return candidate
+    return None
+
+
+def _search_path(ctx: _Context, tool: str) -> Path | None:
+    """Search the absolute folders of ``PATH`` (never the current folder)."""
+    separator = ";" if ctx.windows else ":"
+    for entry in (ctx.search_path or "").split(separator):
+        folder = entry.strip().strip('"')
+        if not folder or not os.path.isabs(folder):
+            continue
+        for name in ctx.exe_names(tool):
+            candidate = Path(folder) / name
+            if candidate.is_file() and (ctx.windows or os.access(candidate, os.X_OK)):
+                return candidate
     return None
 
 
@@ -259,9 +307,9 @@ def _locate(
             return ToolLocation(tool, None, ToolOrigin.BUNDLED, problem, env_var)
         return ToolLocation(tool, bundled, ToolOrigin.BUNDLED, None, env_var, env=env)
 
-    found = shutil.which(tool, path=ctx.search_path)
+    found = _search_path(ctx, tool)
     if found is not None:
-        return ToolLocation(tool, Path(found), ToolOrigin.PATH, None, env_var)
+        return ToolLocation(tool, found, ToolOrigin.PATH, None, env_var)
     if tool in ("mkvpropedit", "mediainfo"):
         problem = f"{tool} was not found (optional: install it, or set its path in Settings)."
     else:
@@ -297,7 +345,7 @@ def locate_tools(
             if bundled_roots is None
             else bundled_roots
         ),
-        search_path=env.get("PATH", os.defpath) if search_path is None else search_path,
+        search_path=env.get("PATH", "") if search_path is None else search_path,
         platform=sys.platform if platform is None else platform,
     )
     located: dict[ToolName, ToolLocation] = {}
@@ -367,7 +415,7 @@ async def check_tool(
 ) -> ToolInfo:
     """Run the tool's version command and turn the result into a :class:`ToolInfo`."""
     if loc.problem is not None or loc.path is None:
-        return _info(loc, ToolStatus.MISSING, loc.problem or f"{loc.name} was not found.")
+        return _info(loc, loc.problem_status, loc.problem or f"{loc.name} was not found.")
     result = await run(_version_argv(loc.name, loc.path), timeout=timeout, extra_env=loc.env)
     label = f"{loc.path}"
     if result.error is not None:

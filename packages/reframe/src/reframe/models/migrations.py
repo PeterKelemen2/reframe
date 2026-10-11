@@ -18,6 +18,18 @@ is version 1. A document **newer** than this Reframe raises
 Embedded documents (the presets inside a ``preset_file``, the ``JobSettings`` inside a queue
 row) carry their own ``schema_version``; a container's loader migrates them with their own
 kind.
+
+**Forward compatibility rules** (for everyone who changes a document model):
+
+- A new *field* needs nothing: older versions keep it unchanged (``extra="allow"``).
+- A new *value* of a persisted ``Literal`` or enum (for example a new ``WhenDone`` action,
+  a ``Container``, or a new ``kind`` / ``mode`` of the ``Range`` and ``SizeSettings``
+  unions) is **not** covered by that: an older Reframe rejects the whole file. Such a change
+  needs a ``schema_version`` bump of the document (with a migration, even an empty one), so
+  an older Reframe reports "newer file" (:class:`UnsupportedSchemaVersion`) and leaves the
+  file alone instead of failing on it. Add a down-level note to the migration's docstring:
+  which value is new and what an older version would have to do with it.
+- Removing or renaming a field or a value also needs a bump and a migration.
 """
 
 from __future__ import annotations

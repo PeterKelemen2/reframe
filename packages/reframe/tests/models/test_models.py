@@ -42,6 +42,7 @@ from reframe.models import (
     MigrationRegistry,
     MoveOp,
     OutputTrackRule,
+    PlanFile,
     PlanStep,
     Preset,
     PresetFile,
@@ -350,7 +351,8 @@ def test_filter_settings_keep_their_order() -> None:
 def test_event_types_match_the_union() -> None:
     members = TypeAdapter(Event).json_schema()["discriminator"]["mapping"]
     assert set(members) == set(EVENT_TYPES)
-    assert len(EVENT_TYPES) == 11
+    assert len(EVENT_TYPES) == 12
+    assert EVENT_TYPES[-1] == "resync"
     assert EVENT_TYPES[:7] == (
         "capabilities.changed",
         "task.progress",
@@ -457,3 +459,25 @@ def test_cover_art_is_not_a_video_track() -> None:
     assert [v.index for v in source.video] == [0]
     assert source.cover_art[0].codec == "mjpeg"
     assert source.video[0].field_order is FieldOrder.TOP_FIRST
+
+
+def test_plan_files_for_generated_chapters() -> None:
+    """C-7 stays pure: the FFMETADATA chapter file is data in the plan; the runner writes it."""
+    chapters = PlanFile(
+        path=Path("/out/Show.part.chapters.txt"),
+        content=";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=60000\ntitle=Opening\n",
+        description="FFMETADATA chapters",
+    )
+    plan = EncodePlan(
+        job_type="encode",
+        steps=[PlanStep(kind="encode", tool="ffmpeg", argv=["-i", str(chapters.path)])],
+        output_tmp=Path("/out/Show.part.mkv"),
+        output_final=Path("/out/Show.mkv"),
+        expected_duration=60.0,
+        display="ffmpeg …",
+        files=[chapters],
+    )
+    again = EncodePlan.model_validate_json(plan.model_dump_json())
+    assert again.files == [chapters]
+    assert again.files[0].content.startswith(";FFMETADATA1\n")
+    assert EncodePlan.model_validate({**plan.model_dump(mode="json"), "files": []}).files == []

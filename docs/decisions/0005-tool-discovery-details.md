@@ -43,9 +43,20 @@ write to.
 ## Consequences
 
 - No orphaned FFmpeg after a Reframe crash on Windows, even when FFmpeg starts helpers.
+- Side effect: every process that Reframe starts is in the job and is killed when Reframe
+  exits, also user-facing programs such as a video player or the file manager
+  (`os.startfile` and `webbrowser` start them as Reframe's children). Remedy (added in the
+  M1 review): start such programs with `reframe.platform.childproc.launch_detached(argv)`
+  (or `spawn_options(user_facing=True)`), which passes `CREATE_BREAKAWAY_FROM_JOB` (the job
+  allows it with `BREAKAWAY_OK`) and no `CREATE_NO_WINDOW`; to open a file or folder with
+  its default program on Windows, launch `explorer.exe <path>` this way. Never call
+  `os.startfile` or `webbrowser` from the core. If an outer job forbids breakaway, the
+  launch is retried inside the job.
 - `D-7` must put MKVToolNix and MediaInfo into `tools/mkvtoolnix/` and `tools/mediainfo/`.
 - Not verified on Windows yet (only with mocked `kernel32` calls): joining a job from inside the
   GitHub runner's own job, and the fallback. Check on the first Windows CI run and in `D-0`.
+  `tests/tools/test_runner.py::test_children_die_when_reframe_is_killed` runs on Windows too,
+  so the first Windows CI run checks the job for real.
 
 ## Plan changes
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -391,6 +392,25 @@ def test_missing_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
 def test_folder_is_not_a_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     line = assert_clean_failure(invoke("probe", str(tmp_path)), EXIT_NOT_FOUND)
     assert "The path is not a file." in line
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or getattr(os, "geteuid", lambda: 1)() == 0,
+    reason="POSIX permissions (root can read anything)",
+)
+def test_unreadable_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
+    """An unreadable file is the facade's one-line exit 3, not click's usage error (exit 2)."""
+    path = tmp_path / "locked.mkv"
+    path.write_bytes(b"\x1aE\xdf\xa3")
+    path.chmod(0o000)
+    try:
+        line = assert_clean_failure(invoke("probe", str(path)), EXIT_NOT_FOUND)
+        assert line.startswith(f"error: {path}: The file cannot be read.")
+        assert_clean_failure(invoke("probe", "--json", str(path)), EXIT_NOT_FOUND)
+    finally:
+        path.chmod(0o644)
+    # Reported before ffprobe reads the file (only discovery's version checks ran).
+    assert all(call == ("-version",) for call in fake_env.calls("ffprobe"))
 
 
 def test_garbage_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:

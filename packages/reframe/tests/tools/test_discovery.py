@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from reframe.models import RemoveOp, ToolOrigin, ToolStatus
 from reframe.tools import discovery
 from reframe.tools.discovery import (
+    ALLOW_SCRIPT_TOOLS_ENV,
     TOOL_NAMES,
     check_tool,
     discover_tools,
@@ -63,7 +64,8 @@ def _fake(directory: Path, *rules: ft.Rule) -> ft.FakeTools:
 
 
 def _env(**values: str) -> dict[str, str]:
-    env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD"} if WINDOWS else {}
+    # On Windows the fake tools are .cmd launchers: allow script tools (test-only opt-in).
+    env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD", ALLOW_SCRIPT_TOOLS_ENV: "1"} if WINDOWS else {}
     env.update(values)
     return env
 
@@ -325,49 +327,168 @@ def test_sibling_with_a_renamed_ffmpeg(tmp_path: Path, empty_path: str) -> None:
     assert located["ffprobe"].next_to_ffmpeg
 
 
-def test_windows_names_cmd_and_exe(tmp_path: Path, empty_path: str) -> None:
-    """On Windows the binary may be ``ffprobe.exe`` or a ``.cmd`` launcher (checked on Linux)."""
+def _exe(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"MZ")
+    return path
+
+
+WIN_ENV = {"PATHEXT": ".COM;.EXE;.BAT;.CMD"}
+
+
+def test_windows_accepts_only_exe(tmp_path: Path, empty_path: str) -> None:
+    """On Windows only .exe programs are used (checked on Linux with platform="win32")."""
     custom = tmp_path / "custom"
-    custom.mkdir()
-    (custom / "ffmpeg.cmd").write_text("@echo off\r\n", encoding="utf-8")
-    (custom / "ffprobe.cmd").write_text("@echo off\r\n", encoding="utf-8")
+    _exe(custom / "ffmpeg.cmd")
+    _exe(custom / "ffprobe.cmd")
     bundled_bin = tmp_path / "root" / "ffmpeg" / "bin"
-    bundled_bin.mkdir(parents=True)
-    (bundled_bin / "ffmpeg.exe").write_bytes(b"MZ")
-    (bundled_bin / "ffprobe.exe").write_bytes(b"MZ")
-    env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD"}
+    _exe(bundled_bin / "ffmpeg.exe")
+    _exe(bundled_bin / "ffprobe.exe")
+    _exe(bundled_bin / "ffmpeg.cmd")  # never preferred, never used
 
     located = locate_tools(
         {"ffmpeg": str(custom / "ffmpeg.cmd")},
-        environ=env,
+        environ=WIN_ENV,
         bundled_roots=[tmp_path / "root"],
         search_path=empty_path,
         platform="win32",
     )
-    assert located["ffmpeg"].path == custom / "ffmpeg.cmd"
-    assert located["ffprobe"].path == custom / "ffprobe.cmd"
-    assert located["ffprobe"].next_to_ffmpeg
+    ffmpeg = located["ffmpeg"]
+    assert ffmpeg.path == custom / "ffmpeg.cmd"
+    assert ffmpeg.origin is ToolOrigin.SETTINGS  # reported, never silently replaced
+    assert ffmpeg.problem is not None
+    assert "not an .exe" in ffmpeg.problem
+    assert ffmpeg.problem_status is ToolStatus.BROKEN
+    assert [f.label for f in ffmpeg.fixes] == ["Use bundled FFmpeg"]
+    # No sibling search next to a rejected override: the bundled ffprobe.exe.
+    assert located["ffprobe"].path == bundled_bin / "ffprobe.exe"
 
     located = locate_tools(
-        environ=env, bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="win32"
+        environ=WIN_ENV, bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="win32"
     )
     assert located["ffmpeg"].path == bundled_bin / "ffmpeg.exe"
     assert located["ffprobe"].path == bundled_bin / "ffprobe.exe"
     assert located["ffmpeg"].env == {}  # no LIBVA_DRIVERS_PATH on Windows
 
-    # A folder override finds ffmpeg.exe in it, and ffprobe.exe next to it.
-    exe_dir = tmp_path / "exe"
-    exe_dir.mkdir()
-    (exe_dir / "ffmpeg.exe").write_bytes(b"MZ")
-    (exe_dir / "ffprobe.exe").write_bytes(b"MZ")
+
+@pytest.mark.anyio
+async def test_windows_script_override_is_broken(tmp_path: Path, empty_path: str) -> None:
+    script = _exe(tmp_path / "tools" / "mkvpropedit.bat")
+    info = await check_tool(
+        locate_tools(
+            {"mkvpropedit": str(script)},
+            environ=WIN_ENV,
+            bundled_roots=[],
+            search_path=empty_path,
+            platform="win32",
+        )["mkvpropedit"]
+    )
+    assert info.status is ToolStatus.BROKEN
+    assert info.reason is not None
+    assert "cmd.exe" in info.reason
+
+
+def test_windows_path_search_ignores_scripts(tmp_path: Path) -> None:
+    only_scripts = tmp_path / "scripts"
+    _exe(only_scripts / "mkvpropedit.cmd")
+    _exe(only_scripts / "mkvpropedit.bat")
+    with_exe = tmp_path / "exe"
+    _exe(with_exe / "mkvpropedit.exe")
+    _exe(with_exe / "mkvpropedit.cmd")
     located = locate_tools(
-        environ={**env, "REFRAME_FFMPEG": str(exe_dir)},
+        environ=WIN_ENV,
+        bundled_roots=[],
+        search_path=f"{only_scripts};{with_exe}",
+        platform="win32",
+    )
+    assert located["mkvpropedit"].path == with_exe / "mkvpropedit.exe"
+    assert located["mkvpropedit"].origin is ToolOrigin.PATH
+
+
+def test_windows_script_tools_with_the_test_opt_in(tmp_path: Path, empty_path: str) -> None:
+    custom = tmp_path / "custom"
+    _exe(custom / "ffmpeg.cmd")
+    _exe(custom / "ffprobe.cmd")
+    env = {**WIN_ENV, ALLOW_SCRIPT_TOOLS_ENV: "1"}
+    located = locate_tools(
+        {"ffmpeg": str(custom / "ffmpeg.cmd")},
+        environ=env,
+        bundled_roots=[],
+        search_path=empty_path,
+        platform="win32",
+    )
+    assert located["ffmpeg"].problem is None
+    assert located["ffprobe"].path == custom / "ffprobe.cmd"
+    assert located["ffprobe"].next_to_ffmpeg
+    scripts = tmp_path / "path"
+    _exe(scripts / "mediainfo.cmd")
+    located = locate_tools(
+        environ=env, bundled_roots=[], search_path=str(scripts), platform="win32"
+    )
+    assert located["mediainfo"].path == scripts / "mediainfo.cmd"
+    for off in ("0", "false", "no", ""):
+        off_env = {**WIN_ENV, ALLOW_SCRIPT_TOOLS_ENV: off}
+        located = locate_tools(
+            environ=off_env, bundled_roots=[], search_path=str(scripts), platform="win32"
+        )
+        assert located["mediainfo"].path is None
+
+
+def test_windows_folder_override_and_renamed_sibling(tmp_path: Path, empty_path: str) -> None:
+    exe_dir = tmp_path / "exe"
+    _exe(exe_dir / "ffmpeg.exe")
+    _exe(exe_dir / "ffprobe.exe")
+    located = locate_tools(
+        environ={**WIN_ENV, "REFRAME_FFMPEG": str(exe_dir)},
         bundled_roots=[],
         search_path=empty_path,
         platform="win32",
     )
     assert located["ffmpeg"].path == exe_dir / "ffmpeg.exe"
     assert located["ffprobe"].path == exe_dir / "ffprobe.exe"
+
+    renamed = tmp_path / "renamed"
+    _exe(renamed / "ffmpeg-9.exe")
+    _exe(renamed / "ffprobe-9.exe")
+    located = locate_tools(
+        {"ffmpeg": str(renamed / "ffmpeg-9.exe")},
+        environ=WIN_ENV,
+        bundled_roots=[],
+        search_path=empty_path,
+        platform="win32",
+    )
+    assert located["ffprobe"].path == renamed / "ffprobe-9.exe"
+
+
+def test_path_search_never_uses_the_current_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """shutil.which searches the current folder first on Windows; discovery never does,
+    and relative PATH entries are skipped."""
+    cwd = tmp_path / "cwd"
+    _fake(cwd)
+    _exe(cwd / "ffmpeg.exe")
+    _exe(cwd / "ffprobe.exe")
+    monkeypatch.chdir(cwd)
+    for platform in ("win32", "linux"):
+        for search_path in ("", ".", "relative/bin", ";" if platform == "win32" else ":"):
+            located = locate_tools(
+                environ=WIN_ENV, bundled_roots=[], search_path=search_path, platform=platform
+            )
+            assert located["ffmpeg"].path is None, (platform, search_path)
+    # Without PATH in the environment nothing is searched (not os.defpath, which has ".").
+    located = locate_tools(environ={}, bundled_roots=[], platform="win32")
+    assert located["ffmpeg"].path is None
+
+
+@pytest.mark.skipif(WINDOWS, reason="POSIX file modes")
+def test_path_search_skips_files_that_are_not_executable(tmp_path: Path) -> None:
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    (folder / "mkvpropedit").write_text("#!/bin/sh\n", encoding="utf-8")
+    (folder / "mkvpropedit").chmod(0o644)
+    located = locate_tools(environ={}, bundled_roots=[], search_path=str(folder))
+    assert located["mkvpropedit"].path is None
 
 
 # --------------------------------------------------------------------------- broken overrides

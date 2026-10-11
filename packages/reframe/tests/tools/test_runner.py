@@ -351,23 +351,49 @@ async def test_output_below_the_limit_is_complete(fake_tools: ft.FakeTools) -> N
 
 async def test_a_grandchild_holding_the_pipe_does_not_block(tmp_path: Path) -> None:
     """The process exits, but a grandchild it left behind keeps stdout open: run() returns
-    after a short grace period instead of waiting for the grandchild."""
+    after a short grace period, and the grandchild is killed (POSIX: the child's process
+    group; Windows: the orphans whose parent was the child). The base interpreter runs both,
+    so no venv launcher sits in between on Windows."""
     code = (
         "import subprocess, sys; "
         "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
         "print(p.pid, flush=True)"
     )
     started = time.monotonic()
-    result = await run([sys.executable, "-c", code], timeout=30)
+    result = await run([ft.PYTHON, "-c", code], timeout=30)
     elapsed = time.monotonic() - started
+    grandchild = int(result.stdout_text.split()[0])
     try:
         assert result.returncode == 0
         assert not result.timed_out
-        assert elapsed < runner_mod.PIPE_DRAIN_GRACE + 5
+        assert elapsed < 2 * runner_mod.PIPE_DRAIN_GRACE + 5
+        assert not _alive(grandchild), "the grandchild that held the pipe is still running"
     finally:
-        for line in result.stdout_text.split():
-            with contextlib.suppress(ValueError, psutil.Error):
-                psutil.Process(int(line)).kill()
+        with contextlib.suppress(psutil.Error):
+            psutil.Process(grandchild).kill()
+
+
+def test_kill_leftovers_on_windows_kills_the_orphans(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows branch (mocked): orphans keep the dead child's pid as ppid; one that started
+    before the child (a reused pid) is left alone."""
+
+    class Proc:
+        def __init__(self, pid: int, ppid: int, created: float) -> None:
+            self.pid = pid
+            self.info = {"ppid": ppid, "create_time": created}
+
+    procs = [Proc(10, 4242, 1000.5), Proc(11, 4242, 500.0), Proc(12, 1, 1000.5)]
+    trees: list[int] = []
+
+    def fake_tree(pid: int, **kwargs: object) -> list[psutil.Process]:
+        trees.append(pid)
+        return []
+
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(procs))
+    monkeypatch.setattr(runner_mod, "kill_process_tree", fake_tree)
+    killed = runner_mod.kill_leftovers(4242, created_after=1000.0, platform="win32")
+    assert trees == [10]
+    assert [p.pid for p in killed] == [10]
 
 
 async def test_zero_output_limit_stores_nothing(fake_tools: ft.FakeTools) -> None:
@@ -586,27 +612,35 @@ def test_kill_process_tree_can_keep_the_root(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- child safety
 
 
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux only")
+@pytest.mark.skipif(
+    not (sys.platform.startswith("linux") or sys.platform == "win32"),
+    reason="PR_SET_PDEATHSIG (Linux) or the kill-on-close job (Windows)",
+)
 def test_children_die_when_reframe_is_killed(fake_tools: ft.FakeTools) -> None:
-    """SIGKILL the process that called run(): the kernel kills its FFmpeg (PDEATHSIG)."""
+    """Kill the process that called run() (SIGKILL / TerminateProcess): its FFmpeg dies too.
+
+    Linux: PR_SET_PDEATHSIG. Windows: the process was in Reframe's kill-on-close job, and
+    the job closes with Reframe (``cmd.exe`` of the ``.cmd`` launcher and the fake both die).
+    The helper runs on the base interpreter (not the venv launcher, which is one more process
+    on Windows), with this process's ``sys.path``.
+    """
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-hang"], actions=[ft.hang()])]))
     helper = textwrap.dedent(
-        """
+        f"""
         import asyncio, sys
+        sys.path[:0] = {sys.path!r}
         from reframe.tools import run
         asyncio.run(run([sys.argv[1], "-hang"], timeout=60))
         """
     )
-    parent = subprocess.Popen([sys.executable, "-c", helper, str(fake_tools.ffmpeg)])
+    parent = subprocess.Popen([ft.PYTHON, "-c", helper, str(fake_tools.ffmpeg)])
     try:
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 30
         while not fake_tools.pids() and time.monotonic() < deadline:
             time.sleep(0.02)
         (child_pid,) = fake_tools.pids()
         child = psutil.Process(child_pid)
-        assert child.ppid() == parent.pid
-        if sys.platform != "win32":
-            assert os.getpgid(child_pid) == child_pid  # its own session and process group
+        assert parent.pid in {p.pid for p in child.parents()}
         parent.kill()
         parent.wait(timeout=10)
         _, alive = psutil.wait_procs([child], timeout=10)

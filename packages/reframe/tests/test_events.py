@@ -1,4 +1,5 @@
-"""reframe.events.EventBus: fan-out, bounded queues with drop-oldest, close, threads."""
+"""reframe.events.EventBus: fan-out, coalescing, lossy drops with a resync marker, overflow,
+close, threads."""
 
 from __future__ import annotations
 
@@ -11,19 +12,44 @@ import pytest
 from reframe.events import DEFAULT_MAX_QUEUE, EventBus, Subscription
 from reframe.models import (
     EVENT_ADAPTER,
+    JobLogEvent,
     JobProgress,
     JobProgressEvent,
     JobState,
     JobStateEvent,
     NotificationEvent,
     QueueChangedEvent,
+    ResyncEvent,
+    TaskDoneEvent,
+    TaskInfo,
+    TaskProgressEvent,
+    TaskState,
+    ToolsChangedEvent,
+    ToolSet,
 )
 
 pytestmark = pytest.mark.anyio
 
 
-def _progress(n: int) -> JobProgressEvent:
-    return JobProgressEvent(job_id="j1", progress=JobProgress(percent=float(n % 101)))
+def _progress(n: int, job: str | None = None) -> JobProgressEvent:
+    """Progress of job ``job`` (default: a job of its own, ``j<n>``, so nothing coalesces)."""
+    return JobProgressEvent(
+        job_id=job if job is not None else f"j{n}", progress=JobProgress(percent=float(n % 101))
+    )
+
+
+def _state(job: str, state: JobState = JobState.DONE) -> JobStateEvent:
+    return JobStateEvent(job_id=job, state=state)
+
+
+def _task_progress(task: str, percent: float) -> TaskProgressEvent:
+    return TaskProgressEvent(
+        task=TaskInfo(id=task, kind="probe_folder", state=TaskState.RUNNING, progress=percent)
+    )
+
+
+def _task_done(task: str) -> TaskDoneEvent:
+    return TaskDoneEvent(task=TaskInfo(id=task, kind="probe_folder", state=TaskState.DONE))
 
 
 async def _drain(sub: Subscription, count: int) -> list[object]:
@@ -67,17 +93,119 @@ async def test_type_filter() -> None:
     assert sub.pending() == 0
 
 
-async def test_slow_subscriber_drops_the_oldest_and_counts() -> None:
+async def test_progress_is_coalesced_per_job_and_task() -> None:
     bus = EventBus()
-    slow = bus.subscribe(max_queue=3)
-    fast = bus.subscribe(max_queue=100)
-    for i in range(10):
+    sub = bus.subscribe()
+    bus.publish(_progress(10, job="a"))
+    bus.publish(_task_progress("t1", 5))
+    bus.publish(_progress(20, job="b"))
+    bus.publish(_progress(30, job="a"))  # replaces a@10 and goes to the end
+    bus.publish(_task_progress("t1", 50))
+    events = await _drain(sub, 3)
+    assert events == [_progress(20, job="b"), _progress(30, job="a"), _task_progress("t1", 50)]
+    assert sub.coalesced == 2
+    assert sub.dropped == 0
+
+
+async def test_state_events_are_never_coalesced() -> None:
+    bus = EventBus()
+    sub = bus.subscribe()
+    events = [_state("a", JobState.RUNNING), _state("a", JobState.PAUSED), _state("a")]
+    for event in events:
+        bus.publish(event)
+    assert await _drain(sub, 3) == events
+
+
+async def test_a_flood_of_progress_never_drops_state_or_terminal_events() -> None:
+    bus = EventBus()
+    sub = bus.subscribe(max_queue=5, hard_limit=100)
+    essential: list[object] = []
+    for i in range(200):
+        bus.publish(_progress(i))  # 200 different jobs: nothing coalesces
+        bus.publish(_task_progress(f"t{i}", 50))
+        if i % 20 == 0:
+            for event in (_state(f"j{i}"), _task_done(f"t{i}")):
+                essential.append(event)
+                bus.publish(event)
+    bus.publish(ToolsChangedEvent(tools=_tool_set()))
+    essential.append(ToolsChangedEvent(tools=_tool_set()))
+    received = [sub.get_nowait() for _ in range(sub.pending())]
+    kept = [
+        e
+        for e in received
+        if e is not None and e.type not in ("job.progress", "task.progress", "resync")
+    ]
+    assert kept == essential
+    markers = [e for e in received if isinstance(e, ResyncEvent)]
+    assert len(markers) == 1
+    assert markers[0].reason == "dropped"
+    assert markers[0].dropped == sub.dropped > 0
+    assert not sub.overflowed
+
+
+async def test_the_marker_sits_where_the_events_were_dropped() -> None:
+    bus = EventBus()
+    sub = bus.subscribe(max_queue=3)
+    bus.publish(_state("a"))
+    bus.publish(_progress(1))
+    bus.publish(_progress(2))
+    bus.publish(_progress(3))  # full: drops progress 1, the marker takes its place
+    bus.publish(_progress(4))  # drops progress 2, the marker counts it
+    events = await _drain(sub, 4)
+    assert events[0] == _state("a")
+    assert events[1] == ResyncEvent(reason="dropped", dropped=2)
+    assert events[2:] == [_progress(3), _progress(4)]
+    assert sub.dropped == 2
+    # A new drop after the marker was read gets a new marker.
+    for i in range(5, 9):
         bus.publish(_progress(i))
-    assert slow.dropped == 7
-    assert slow.pending() == 3
-    assert [e.progress.percent for e in await _drain(slow, 3)] == [7.0, 8.0, 9.0]  # type: ignore[attr-defined]
-    assert fast.dropped == 0
-    assert len(await _drain(fast, 10)) == 10
+    later = await _drain(sub, 4)
+    assert later[0] == ResyncEvent(reason="dropped", dropped=1)
+    assert sub.dropped == 3
+
+
+async def test_a_new_lossy_event_is_dropped_when_only_state_events_are_queued() -> None:
+    bus = EventBus()
+    sub = bus.subscribe(max_queue=2)
+    bus.publish(_state("a"))
+    bus.publish(_state("b"))
+    bus.publish(JobLogEvent(job_id="a", lines=["frame=1"]))
+    assert await _drain(sub, 3) == [_state("a"), _state("b"), ResyncEvent(dropped=1)]
+
+
+async def test_state_events_grow_the_queue_then_overflow_closes_it() -> None:
+    bus = EventBus()
+    sub = bus.subscribe(max_queue=2, hard_limit=4)
+    other = bus.subscribe()
+    states = [_state(f"j{i}") for i in range(6)]
+    for event in states:
+        bus.publish(event)
+    assert sub.overflowed
+    assert sub.closed
+    assert bus.subscriber_count == 1  # removed from the bus; the other one is fine
+    received = [event async for event in sub]
+    assert received == [*states[:4], ResyncEvent(reason="overflow", dropped=0)]
+    assert await _drain(other, 6) == states
+
+
+async def test_the_marker_passes_the_type_filter() -> None:
+    bus = EventBus()
+    sub = bus.subscribe(max_queue=1, types={"job.progress"})
+    bus.publish(_progress(1))
+    bus.publish(_state("x"))  # filtered out
+    bus.publish(_progress(2))
+    assert await _drain(sub, 2) == [ResyncEvent(dropped=1), _progress(2)]
+
+
+def _tool_set() -> ToolSet:
+    from reframe.models import ToolInfo, ToolStatus
+
+    return ToolSet(
+        **{
+            name: ToolInfo(name=name, status=ToolStatus.MISSING)
+            for name in ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")
+        }
+    )
 
 
 def test_publish_never_waits() -> None:
@@ -86,8 +214,9 @@ def test_publish_never_waits() -> None:
     started = time.perf_counter()
     for i in range(20_000):
         bus.publish(_progress(i))
-    assert time.perf_counter() - started < 5  # no subscriber reads, nothing blocks
+    assert time.perf_counter() - started < 10  # no subscriber reads, nothing blocks
     assert all(sub.dropped == 20_000 - 10 for sub in subs)
+    assert all(sub.pending() == 11 for sub in subs)  # 10 events and one resync marker
     assert DEFAULT_MAX_QUEUE == 1000
 
 

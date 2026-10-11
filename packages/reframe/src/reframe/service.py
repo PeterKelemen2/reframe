@@ -265,9 +265,13 @@ class SourceService:
                     ProbeErrorKind.CANCELLED,
                     "The probe was cancelled: Reframe is shutting down.",
                 )
+            # The file checks first (missing, not a file, unreadable), so an unreadable file is
+            # reported as such and not as an ffprobe failure.
+            problem = await asyncio.to_thread(_check_file, path)
             if isinstance(prober, ToolInfo):
-                problem = await asyncio.to_thread(_check_file, path)
                 return problem or _tool_error(_absolute(path), prober)
+            if problem is not None:
+                return problem
             outcome = await prober.probe(path, cancel=token, use_cache=use_cache)
             if isinstance(outcome, MediaSource):
                 self._remember(outcome)
@@ -415,7 +419,8 @@ def _absolute(path: str | os.PathLike[str]) -> Path:
 
 
 def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
-    """The file checks of :meth:`Prober.probe` (missing, not a file, unreadable)."""
+    """The file checks of :meth:`Prober.probe` (missing, not a file), plus a real open, because
+    ``stat()`` succeeds on a file without read permission."""
     file = _absolute(path)
     try:
         stat = os.stat(file)
@@ -425,6 +430,11 @@ def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
         return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
     if not S_ISREG(stat.st_mode):
         return ProbeError(file, ProbeErrorKind.NOT_A_FILE, "The path is not a file.")
+    try:  # stat() works without read permission; open() tells
+        with open(file, "rb"):
+            pass
+    except OSError as exc:
+        return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
     return None
 
 

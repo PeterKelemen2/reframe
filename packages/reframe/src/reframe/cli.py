@@ -702,7 +702,12 @@ def build_app() -> typer.Typer:
 
     @app.command(epilog=_EXIT_HELP)
     def probe(
-        file: Annotated[Path, typer.Argument(help="The media file to probe.", metavar="FILE")],
+        # readable=False: the facade reports an unreadable file (exit 3, one line), not
+        # click (exit 2 with a usage box).
+        file: Annotated[
+            Path,
+            typer.Argument(help="The media file to probe.", metavar="FILE", readable=False),
+        ],
         as_json: Annotated[
             bool, typer.Option("--json", help="Print the MediaSource model as JSON.")
         ] = False,
