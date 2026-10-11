@@ -1,0 +1,63 @@
+import type { Platform } from './types'
+
+function notImplemented(step: string): Error {
+  return new Error(`not implemented (${step})`)
+}
+
+/** Browser implementation. The server serves the UI, so the backend is the page's origin. */
+export function createWebPlatform(): Platform {
+  let baseTitle: string | null = null
+
+  return {
+    kind: 'web',
+
+    backend() {
+      return Promise.resolve({ baseUrl: window.location.origin })
+    },
+
+    pickFiles() {
+      return Promise.reject(notImplemented('F-5'))
+    },
+
+    pickFolder() {
+      return Promise.reject(notImplemented('F-5'))
+    },
+
+    pickSavePath() {
+      return Promise.reject(notImplemented('F-5'))
+    },
+
+    onFilesDropped() {
+      // Browsers do not expose real file paths on drop.
+      return () => {}
+    },
+
+    revealInFolder() {
+      return null
+    },
+
+    openExternal(target) {
+      window.open(target, '_blank', 'noopener,noreferrer')
+      return Promise.resolve()
+    },
+
+    async notify(title, body) {
+      if (typeof Notification === 'undefined') return
+      const permission =
+        Notification.permission === 'default'
+          ? await Notification.requestPermission()
+          : Notification.permission
+      if (permission !== 'granted') return
+      const notification = new Notification(title, { body })
+      notification.addEventListener('click', () => window.focus())
+    },
+
+    setTaskbarProgress(value) {
+      baseTitle ??= document.title
+      document.title =
+        value === null
+          ? baseTitle
+          : `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}% · ${baseTitle}`
+    },
+  }
+}

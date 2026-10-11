@@ -1,0 +1,16 @@
+/* Global base styles. Design tokens live in the PrimeVue preset (theme.ts); F-1 extends both. */
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--p-content-background);
+  color: var(--p-text-color);
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  min-height: 100%;
+}
