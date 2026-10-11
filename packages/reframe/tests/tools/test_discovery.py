@@ -150,16 +150,15 @@ async def test_bundled_wins_over_path(tmp_path: Path) -> None:
     assert tools.ffprobe.path == bundled.ffprobe
 
 
-@pytest.mark.anyio
-async def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
+def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
     path_dir = tmp_path / "path"
     on_path = _fake(path_dir)
-    tools = await discover_tools(
+    tools = discover_tools_sync(
         environ=_env(), bundled_roots=[tmp_path / "no-root"], search_path=str(path_dir)
     )
     assert tools.ffmpeg.origin is ToolOrigin.PATH
     assert tools.ffmpeg.path is not None
-    assert tools.ffmpeg.path.resolve() == on_path.ffmpeg.resolve()
+    assert os.path.samefile(tools.ffmpeg.path, on_path.ffmpeg)
     assert tools.ffprobe.origin is ToolOrigin.PATH
     assert tools.ffmpeg.env == {}  # LIBVA_DRIVERS_PATH only for the bundled build
 
@@ -679,12 +678,11 @@ def test_libva_drivers_path_none_found(
     assert located["ffmpeg"].env == {}
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="LIBVA_DRIVERS_PATH is Linux only")
 @pytest.mark.anyio
 async def test_tool_env_reaches_the_version_check(
     tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
 ) -> None:
-    if not sys.platform.startswith("linux"):
-        pytest.skip("LIBVA_DRIVERS_PATH is Linux only")
     _fake(
         tmp_path / "root" / "ffmpeg" / "bin",
         ft.Rule(argv_has=["-version"], actions=[ft.version()]),

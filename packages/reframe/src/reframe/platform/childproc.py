@@ -53,7 +53,7 @@ import signal
 import sys
 import threading
 from collections.abc import Callable
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 __all__ = [
     "CREATE_BREAKAWAY_FROM_JOB",
@@ -84,10 +84,12 @@ PROCESS_SET_QUOTA = 0x0100
 
 
 def _load_prctl() -> Callable[..., int] | None:
+    """libc ``prctl``, or ``None`` where there is none (not Linux: ``CDLL(None)`` raises
+    ``TypeError`` on Windows, and other libcs have no ``prctl``)."""
     try:
         libc = ctypes.CDLL(None, use_errno=True)
         prctl: Callable[..., int] = libc.prctl
-    except (OSError, AttributeError):  # pragma: no cover - every Linux libc has prctl
+    except (OSError, AttributeError, TypeError, ValueError):  # pragma: no cover - not Linux
         return None
     return prctl
 
@@ -197,8 +199,7 @@ def _load_kernel32() -> Kernel32:  # pragma: no cover - Windows only
         k32.OpenProcess.restype = wintypes.HANDLE
         k32.CloseHandle.argtypes = (wintypes.HANDLE,)
         k32.CloseHandle.restype = wintypes.BOOL
-        result: Kernel32 = k32
-        return result
+        return cast("Kernel32", k32)
     raise OSError("kernel32 exists only on Windows")
 
 
