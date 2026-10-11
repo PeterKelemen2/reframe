@@ -1,0 +1,20 @@
+# Video encoders (C-6). Contract stub: two software encoders only; C-6 adds the rest.
+# Table key = FFmpeg encoder name.
+
+[encoder.libx264]
+label = "x264"
+codec = "h264"
+codec_label = "H.264"
+handbrake_key = "x264"
+family = "software"
+hardware = false
+pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+
+[encoder.libx265]
+label = "x265"
+codec = "hevc"
+codec_label = "H.265"
+handbrake_key = "x265"
+family = "software"
+hardware = false
+pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
