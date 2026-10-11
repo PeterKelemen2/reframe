@@ -341,9 +341,16 @@ async def test_probe_folder_emits_task_events(fake: ft.FakeTools, env: Path) -> 
         assert len(progress) + len(done) == len(received)
         assert all(e.task.id == info.id for e in progress)
         assert all(e.task.id == info.id for e in done)
+        # The bus coalesces the progress of one task (only the latest is queued), and this
+        # test reads after the task ended: the last progress is always there.
         messages = [e.task.message for e in progress]
-        assert "Waiting for tool discovery" in messages
-        assert {"1/3 files", "2/3 files", "3/3 files"} <= set(messages)
+        assert set(messages) <= {
+            "Waiting for tool discovery",
+            "1/3 files",
+            "2/3 files",
+            "3/3 files",
+        }
+        assert messages[-1] == "3/3 files"
         assert progress[-1].task.progress == 100.0
         assert len(done) == 1
         assert done[0].task.result == {

@@ -2,7 +2,9 @@
 
 :data:`Event` is one discriminated union (discriminator ``type``). The table of 02 §Events
 gives the first seven types; C-1, C-9 and C-14 add ``tools.changed``, ``app.warning``,
-``power.countdown`` and ``notification``. The bus itself is ``reframe.events.EventBus``.
+``power.countdown`` and ``notification``. ``resync`` is never published: the event bus puts
+it into a subscriber's stream when that subscriber lost events (``reframe.events``). The
+bus itself is ``reframe.events.EventBus``.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ __all__ = [
     "PowerAction",
     "PowerCountdownEvent",
     "QueueChangedEvent",
+    "ResyncEvent",
     "TaskDoneEvent",
     "TaskProgressEvent",
     "ToolsChangedEvent",
@@ -137,6 +140,22 @@ class NotificationEvent(ReframeModel):
     job_id: str | None = None
 
 
+class ResyncEvent(ReframeModel):
+    """In-band marker of one subscription: events were lost, re-read the snapshots.
+
+    The event bus inserts it where events were dropped (``reason="dropped"``: progress or log
+    events of a subscriber that fell behind), or as the last event before it closes a
+    subscription that fell too far behind (``reason="overflow"``: subscribe again). The
+    receiver should fetch the current queue, tasks and statuses again. S-3 sends the same
+    marker over the WebSocket.
+    """
+
+    type: Literal["resync"] = "resync"
+    reason: Literal["dropped", "overflow"] = "dropped"
+    dropped: NonNegativeInt = 0
+    """Events lost since the previous marker."""
+
+
 #: Every event, discriminated by ``type``.
 Event = Annotated[
     CapabilitiesChangedEvent
@@ -149,7 +168,8 @@ Event = Annotated[
     | ToolsChangedEvent
     | AppWarningEvent
     | PowerCountdownEvent
-    | NotificationEvent,
+    | NotificationEvent
+    | ResyncEvent,
     Field(discriminator="type"),
 ]
 

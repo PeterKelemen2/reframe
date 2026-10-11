@@ -77,6 +77,14 @@ commands on Ubuntu and Windows.
   corpus `testdata/names.toml` and recorded probe JSON in `testdata/probes/` are committed.
 - Use current stable dependency versions, pinned in `uv.lock` / `frontend/package-lock.json`.
 
+## Persistence rules
+
+- Persisted documents (settings, presets, job settings in the queue, probe cache) keep unknown
+  fields and write them back unchanged (`DocumentModel`, `extra="allow"`).
+- A new value in a persisted `Literal`/enum (or a new union `kind`/`mode`) makes older versions
+  reject the file: bump `schema_version`, register a migration and add a down-level note
+  (`reframe/models/migrations.py`). So do removals and renames.
+
 ## Decision records
 
 `docs/decisions/NNNN-short-title.md`, numbered in order. `0001` (desktop shell, `D-0`) and

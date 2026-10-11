@@ -21,6 +21,13 @@ an argv with templates into plain strings. Example (one audio track)::
 
 The command preview (:attr:`EncodePlan.display`) shows a reference as
 ``<a0.input_i>``.
+
+**Files.** The builder is pure, but some steps read a file that it generates: the FFMETADATA
+chapter file for renamed or generated chapters (``-i <file> -map_chapters 1``). Such files
+are :class:`PlanFile` entries in :attr:`EncodePlan.files` (path and full text). The runner
+writes them (UTF-8) before the first step, next to ``output_tmp``
+(``<name>.part.chapters.txt``), and removes them when the job ends, also when it fails or is
+cancelled. The steps' argv refer to the same paths.
 """
 
 from __future__ import annotations
@@ -39,6 +46,7 @@ __all__ = [
     "JobType",
     "Measurement",
     "PlanArg",
+    "PlanFile",
     "PlanStep",
     "StepKind",
     "ValueRef",
@@ -87,8 +95,19 @@ class PlanStep(ReframeModel):
     measures: list[Measurement] = Field(default_factory=list)
 
 
+class PlanFile(ReframeModel):
+    """A file that the runner writes before the steps run (see the module doc)."""
+
+    path: Path
+    """Where to write it: next to ``output_tmp`` (``<name>.part.chapters.txt``)."""
+    content: str
+    """The full text, written as UTF-8 with LF line ends."""
+    description: str = ""
+    """For the log: ``FFMETADATA chapters``."""
+
+
 class EncodePlan(ReframeModel):
-    """``EncodePlan`` exactly as C-7 sketches it."""
+    """``EncodePlan`` as C-7 sketches it, plus ``files`` (inputs that the builder generates)."""
 
     job_type: JobType
     steps: list[PlanStep]
@@ -99,6 +118,8 @@ class EncodePlan(ReframeModel):
     """Seconds, range-adjusted, for progress."""
     display: str
     """Shell-quoted command preview (POSIX or Windows style)."""
+    files: list[PlanFile] = Field(default_factory=list)
+    """Files to write before the first step and remove after the job."""
 
 
 def resolve_argv(argv: Sequence[PlanArg], values: Mapping[str, str]) -> list[str]:

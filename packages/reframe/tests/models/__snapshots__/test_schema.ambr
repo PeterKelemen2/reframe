@@ -2176,11 +2176,12 @@
     '$defs': list([
       'ArgTemplate',
       'Measurement',
+      'PlanFile',
       'PlanStep',
       'ValueRef',
     ]),
     'additionalProperties': False,
-    'description': '``EncodePlan`` exactly as C-7 sketches it.',
+    'description': '``EncodePlan`` as C-7 sketches it, plus ``files`` (inputs that the builder generates).',
     'properties': dict({
       'display': dict({
         'description': 'Shell-quoted command preview (POSIX or Windows style).',
@@ -2192,6 +2193,14 @@
         'minimum': 0.0,
         'title': 'Expected Duration',
         'type': 'number',
+      }),
+      'files': dict({
+        'description': 'Files to write before the first step and remove after the job.',
+        'items': dict({
+          '$ref': '#/$defs/PlanFile',
+        }),
+        'title': 'Files',
+        'type': 'array',
       }),
       'job_type': dict({
         'enum': list([
@@ -2397,6 +2406,7 @@
       'QueueChangedEvent',
       'RemoveOp',
       'ReplaceOp',
+      'ResyncEvent',
       'TaskDoneEvent',
       'TaskInfo',
       'TaskProgressEvent',
@@ -2418,6 +2428,7 @@
         'notification': '#/$defs/NotificationEvent',
         'power.countdown': '#/$defs/PowerCountdownEvent',
         'queue.changed': '#/$defs/QueueChangedEvent',
+        'resync': '#/$defs/ResyncEvent',
         'task.done': '#/$defs/TaskDoneEvent',
         'task.progress': '#/$defs/TaskProgressEvent',
         'tools.changed': '#/$defs/ToolsChangedEvent',
@@ -2457,6 +2468,9 @@
       }),
       dict({
         '$ref': '#/$defs/NotificationEvent',
+      }),
+      dict({
+        '$ref': '#/$defs/ResyncEvent',
       }),
     ]),
   })
@@ -4606,6 +4620,39 @@
     ]),
   })
 # ---
+# name: test_json_schema_snapshot[PlanFile]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'A file that the runner writes before the steps run (see the module doc).',
+    'properties': dict({
+      'content': dict({
+        'description': 'The full text, written as UTF-8 with LF line ends.',
+        'title': 'Content',
+        'type': 'string',
+      }),
+      'description': dict({
+        'default': '',
+        'description': 'For the log: ``FFMETADATA chapters``.',
+        'title': 'Description',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': 'Where to write it: next to ``output_tmp`` (``<name>.part.chapters.txt``).',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'path',
+      'content',
+    ]),
+    'title': 'PlanFile',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[PlanStep]
   dict({
     '$defs': list([
@@ -5082,6 +5129,7 @@
       'Measurement',
       'MoveOp',
       'OutputSettings',
+      'PlanFile',
       'PlanStep',
       'Rational',
       'RemoveOp',
@@ -5423,6 +5471,48 @@
       'value',
     ]),
     'title': 'ReplaceOp',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ResyncEvent]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      In-band marker of one subscription: events were lost, re-read the snapshots.
+      
+      The event bus inserts it where events were dropped (``reason="dropped"``: progress or log
+      events of a subscriber that fell behind), or as the last event before it closes a
+      subscription that fell too far behind (``reason="overflow"``: subscribe again). The
+      receiver should fetch the current queue, tasks and statuses again. S-3 sends the same
+      marker over the WebSocket.
+    ''',
+    'properties': dict({
+      'dropped': dict({
+        'default': 0,
+        'description': 'Events lost since the previous marker.',
+        'minimum': 0,
+        'title': 'Dropped',
+        'type': 'integer',
+      }),
+      'reason': dict({
+        'default': 'dropped',
+        'enum': list([
+          'dropped',
+          'overflow',
+        ]),
+        'title': 'Reason',
+        'type': 'string',
+      }),
+      'type': dict({
+        'const': 'resync',
+        'default': 'resync',
+        'title': 'Type',
+        'type': 'string',
+      }),
+    }),
+    'title': 'ResyncEvent',
     'type': 'object',
   })
 # ---

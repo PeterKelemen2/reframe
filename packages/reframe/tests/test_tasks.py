@@ -47,6 +47,14 @@ def drain(sub: Subscription) -> list[TaskProgressEvent | TaskDoneEvent]:
 async def test_start_returns_at_once_and_progress_events_are_in_order() -> None:
     bus = EventBus()
     sub = bus.subscribe()
+    published: list[Any] = []
+    publish = bus.publish
+
+    def record(event: Any) -> None:
+        published.append(event)
+        publish(event)
+
+    bus.publish = record  # type: ignore[method-assign]
     tasks = TaskManager(bus)
     gate = asyncio.Event()
 
@@ -70,12 +78,18 @@ async def test_start_returns_at_once_and_progress_events_are_in_order() -> None:
     assert final.result == {"items": 3}
     assert final.progress == 100.0
     assert final.finished_at is not None
-    events = drain(sub)
-    assert [(e.type, e.task.state, e.task.progress, e.task.message) for e in events] == [
+    assert [(e.type, e.task.state, e.task.progress, e.task.message) for e in published] == [
         ("task.progress", TaskState.QUEUED, None, "Scanning"),
         ("task.progress", TaskState.RUNNING, None, "Scanning"),
         ("task.progress", TaskState.RUNNING, pytest.approx(100 / 3), "1/3"),
         ("task.progress", TaskState.RUNNING, pytest.approx(200 / 3), "2/3"),
+        ("task.progress", TaskState.RUNNING, 100.0, "3/3"),
+        ("task.done", TaskState.DONE, 100.0, "3/3"),
+    ]
+    # A subscriber that reads late gets the latest progress (the bus coalesces per task)
+    # and always the terminal event.
+    events = drain(sub)
+    assert [(e.type, e.task.state, e.task.progress, e.task.message) for e in events] == [
         ("task.progress", TaskState.RUNNING, 100.0, "3/3"),
         ("task.done", TaskState.DONE, 100.0, "3/3"),
     ]
