@@ -105,7 +105,7 @@ jobs:
       - run: npm ci
       - run: npm run lint # oxlint
       - run: npm run fmt:check # oxfmt --check
-      - run: npm run typecheck # vue-tsc --noEmit
+      - run: npm run typecheck # vue-tsc --noEmit on tsconfig.app.json and tsconfig.node.json
       - run: npm test # vitest run
       - run: npm run build:web
 

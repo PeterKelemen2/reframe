@@ -19,6 +19,14 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    # Majors held back on purpose: docs/decisions/0003-frontend-held-back-majors.md
+    ignore:
+      - dependency-name: primevue # PrimeVue 5+ has a proprietary licence
+        versions: [">=5.0.0"]
+      - dependency-name: "@primeuix/themes" # 3+ belongs to PrimeVue 5
+        versions: [">=3.0.0"]
+      - dependency-name: typescript # vue-tsc does not run on TypeScript 7
+        versions: [">=7.0.0"]
 
   # The actions are pinned to commit SHAs; Dependabot updates the SHA and the version comment.
   - package-ecosystem: github-actions
