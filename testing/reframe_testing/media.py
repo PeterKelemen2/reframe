@@ -913,7 +913,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ffmpeg = find_ffmpeg()
         if ffmpeg is None:
             raise MediaError(
-                f"ffmpeg not found: set {FFMPEG_ENV}, install the bundled build, or put ffmpeg on PATH"
+                f"ffmpeg not found: set {FFMPEG_ENV}, install the bundled build, "
+                "or put ffmpeg on PATH"
             )
         font = fixture_font()
         print(f"ffmpeg: {ffmpeg} ({ffmpeg_version(ffmpeg)})")
