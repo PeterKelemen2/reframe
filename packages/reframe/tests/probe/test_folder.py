@@ -182,17 +182,21 @@ async def test_probe_folder_problems(tmp_path: Path, monkeypatch: pytest.MonkeyP
 async def test_folder_task_events(tmp_path: Path) -> None:
     touch(tmp_path, "E1.mkv", "E2.mkv", "E3.mkv")
     bus = EventBus()
-    sub = bus.subscribe()
+    events: list[Any] = []  # every published event (a late subscriber gets them coalesced)
+    publish = bus.publish
+
+    def record(event: Any) -> None:
+        events.append(event)
+        publish(event)
+
+    bus.publish = record  # type: ignore[method-assign]
     tasks = TaskManager(bus)
     info = start_probe_folder(tasks, FakeProber(), tmp_path)
     assert info.kind == "probe_folder"
     assert info.state is TaskState.QUEUED
     final = await tasks.wait(info.id)
     assert final.state is TaskState.DONE
-    events = []
-    while (event := sub.get_nowait()) is not None:
-        events.append(event)
-    summary = [(e.type, e.task.state.value, e.task.progress, e.task.message) for e in events]  # type: ignore[union-attr]
+    summary = [(e.type, e.task.state.value, e.task.progress, e.task.message) for e in events]
     assert summary == [
         ("task.progress", "queued", None, f"Probing {tmp_path.name}"),
         ("task.progress", "running", None, f"Probing {tmp_path.name}"),

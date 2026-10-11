@@ -36,6 +36,7 @@ __all__ = [
     "CancelToken",
     "LineCallback",
     "RunResult",
+    "kill_leftovers",
     "kill_process_tree",
     "run",
     "run_streaming",
@@ -319,6 +320,51 @@ def kill_process_tree(pid: int, *, kill_root: bool = True) -> list[psutil.Proces
     return list(killed.values())
 
 
+def _create_time(pid: int) -> float | None:
+    try:
+        return psutil.Process(pid).create_time()
+    except psutil.Error:
+        return None
+
+
+def kill_leftovers(
+    pid: int, *, created_after: float | None = None, platform: str | None = None
+) -> list[psutil.Process]:
+    """Kill what is left of the tree of ``pid`` after ``pid`` itself exited.
+
+    POSIX: Reframe's children lead their own process group (``start_new_session``), so every
+    remaining member of the group ``pid`` is killed. The kernel does not reuse a pid while it
+    is still a process group id, so this cannot hit an unrelated group.
+
+    Windows: orphans keep their parent's pid as ``ppid``, so the processes whose ``ppid`` is
+    ``pid`` and that started after ``created_after`` (the dead child's start time; this rules
+    out a reused pid) are killed with their trees.
+
+    Returns the processes that were signalled (wait for them with psutil).
+    """
+    platform = sys.platform if platform is None else platform
+    killed: list[psutil.Process] = []
+    if platform != "win32":
+        for candidate in psutil.process_iter():
+            with contextlib.suppress(psutil.Error, OSError):
+                if sys.platform != "win32" and os.getpgid(candidate.pid) == pid:
+                    killed.append(candidate)
+        if sys.platform != "win32":
+            with contextlib.suppress(OSError):
+                os.killpg(pid, signal.SIGKILL)
+        return killed
+    for candidate in psutil.process_iter(["ppid", "create_time"]):
+        info = candidate.info
+        if info.get("ppid") != pid:
+            continue
+        started = info.get("create_time")
+        if created_after is not None and (started is None or started < created_after - 1.0):
+            continue
+        killed.extend(kill_process_tree(candidate.pid))
+        killed.append(candidate)
+    return killed
+
+
 async def _wait_gone(procs: Sequence[psutil.Process], limit: float) -> None:
     """Wait (without blocking the loop) until ``procs`` are gone or zombies."""
     deadline = time.monotonic() + limit
@@ -394,6 +440,7 @@ async def _execute(
             argv=tuple(args),
         )
     childproc.after_spawn(proc.pid)
+    created = _create_time(proc.pid)
 
     readers = [
         asyncio.ensure_future(_pump(proc.stdout, out_sink)),
@@ -431,6 +478,11 @@ async def _execute(
             await _kill_and_reap(proc)
         # The process has exited: give the pipes a short time to reach EOF.
         _, still_open = await asyncio.wait(readers, timeout=PIPE_DRAIN_GRACE)
+        if still_open:
+            # A descendant that outlived the process still holds a pipe: kill what is left.
+            leftovers = kill_leftovers(proc.pid, created_after=created)
+            _, still_open = await asyncio.wait(still_open, timeout=PIPE_DRAIN_GRACE)
+            await _wait_gone(leftovers, limit=5.0)
         for task in still_open:
             task.cancel()
         for task in readers:

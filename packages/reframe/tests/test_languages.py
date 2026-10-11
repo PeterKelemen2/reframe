@@ -838,3 +838,43 @@ def test_mkvpropedit_agrees_with_our_matroska_codes(tmp_path: Path) -> None:
         _propedit(mkvpropedit, path, f"language={tag}")
         expected = (to_matroska_legacy(tag), to_matroska_ietf(tag))
         assert _mkvmerge_language(mkvmerge, path) == expected, tag
+
+
+#: Tags where ``mkvpropedit --set language=<tag>`` (101.0) writes another legacy code than
+#: Reframe; the IETF tag is the same.
+MKVTOOLNIX_DIFFERENT_LEGACY = {
+    "ase": ("sgn", "und"),
+    "bfi": ("sgn", "und"),
+    "fsl": ("sgn", "und"),
+    "gsg": ("sgn", "und"),
+    "pes": ("und", "per"),
+    "ekk": ("und", "est"),
+    "kmr": ("und", "kur"),
+    "ckb": ("und", "kur"),
+    "azb": ("und", "aze"),
+    "bcc": ("und", "bal"),
+}
+
+
+@pytest.mark.needs_ffmpeg
+def test_mkvpropedit_legacy_differences_and_explicit_pairs(tmp_path: Path) -> None:
+    """Why C-13 passes language= and language-ietf= explicitly: for these tags mkvpropedit's
+    own legacy code differs from Reframe's; with both values given, Reframe's are written."""
+    ffmpeg, _ = _ffmpeg_tools()
+    mkvpropedit, mkvmerge = _tool("mkvpropedit"), _tool("mkvmerge")
+    source = tmp_path / "source.mkv"
+    _mux(ffmpeg, source, "ger")
+    path = tmp_path / "a.mkv"
+    for tag, (theirs, ours) in MKVTOOLNIX_DIFFERENT_LEGACY.items():
+        assert to_matroska_legacy(tag) == ours
+        shutil.copyfile(source, path)
+        _propedit(mkvpropedit, path, f"language={tag}")
+        assert _mkvmerge_language(mkvmerge, path) == (theirs, to_matroska_ietf(tag)), tag
+        shutil.copyfile(source, path)
+        _propedit(
+            mkvpropedit,
+            path,
+            f"language={to_matroska_legacy(tag)}",
+            f"language-ietf={to_matroska_ietf(tag)}",
+        )
+        assert _mkvmerge_language(mkvmerge, path) == (ours, to_matroska_ietf(tag)), tag

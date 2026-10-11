@@ -30,9 +30,17 @@ Windows
     ``cmd.exe`` of a ``.cmd`` launcher) may start a grandchild before the assignment, and that
     grandchild is then outside the job. So Reframe puts **its own process** into the job, the
     first time it starts a tool: every child inherits the job at creation, with no window.
-    The job also allows ``JOB_OBJECT_LIMIT_BREAKAWAY_OK``, so code that deliberately starts a
-    process that must outlive Reframe can pass ``CREATE_BREAKAWAY_FROM_JOB`` (Reframe itself
-    does not do this). The job handle is never closed: it closes when the process ends.
+    The job handle is never closed: it closes when the process ends.
+
+    **Side effect:** every process that Reframe starts is in the job, so it is killed when
+    Reframe exits, also a video player or the file manager (``os.startfile`` and
+    ``webbrowser`` start their programs as children of Reframe). User-facing programs must
+    therefore be started with :func:`launch_detached` (or :func:`spawn_options` with
+    ``user_facing=True``): ``CREATE_BREAKAWAY_FROM_JOB`` (the job allows it with
+    ``JOB_OBJECT_LIMIT_BREAKAWAY_OK``), no ``CREATE_NO_WINDOW``. To open a file or folder
+    with its default program on Windows, launch ``explorer.exe <path>`` this way. If an
+    outer job that Reframe did not create forbids breakaway, the launch is retried without
+    it (then the program ends with that outer job, for example the Tauri shell).
 
     Since Windows 8, a process can be in several (nested) jobs, so this works when Reframe
     already runs inside a job (Tauri puts the sidecar in its own job, CI runners use jobs). If
@@ -50,9 +58,10 @@ import contextlib
 import ctypes
 import os
 import signal
+import subprocess
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, Protocol, cast
 
 __all__ = [
@@ -62,6 +71,7 @@ __all__ = [
     "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE",
     "KillOnCloseJob",
     "after_spawn",
+    "launch_detached",
     "linux_preexec",
     "spawn_options",
     "windows_job",
@@ -73,6 +83,7 @@ PR_SET_PDEATHSIG = 1
 
 CREATE_NO_WINDOW = 0x08000000
 CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
 JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9  # JobObjectExtendedLimitInformation
@@ -315,9 +326,18 @@ def windows_job() -> KillOnCloseJob:
 # --------------------------------------------------------------------------- public API
 
 
-def spawn_options(platform: str | None = None) -> dict[str, Any]:
-    """Extra keyword arguments for ``asyncio.create_subprocess_exec`` / ``subprocess.Popen``."""
+def spawn_options(platform: str | None = None, *, user_facing: bool = False) -> dict[str, Any]:
+    """Extra keyword arguments for ``asyncio.create_subprocess_exec`` / ``subprocess.Popen``.
+
+    ``user_facing=True``: for a program that the user sees and that must outlive Reframe (a
+    player, the file manager). Windows: ``CREATE_BREAKAWAY_FROM_JOB`` and a new process group,
+    no ``CREATE_NO_WINDOW``. POSIX: a new session and no death signal.
+    """
     platform = sys.platform if platform is None else platform
+    if user_facing:
+        if platform == "win32":
+            return {"creationflags": CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP}
+        return {"start_new_session": True}
     if platform == "win32":
         windows_job()  # Reframe joins the job before its first child starts
         return {"creationflags": CREATE_NO_WINDOW}
@@ -333,3 +353,39 @@ def after_spawn(pid: int, platform: str | None = None) -> None:
     if platform == "win32":
         with contextlib.suppress(OSError):
             windows_job().adopt(pid)
+
+
+def launch_detached(
+    argv: Sequence[str],
+    *,
+    cwd: str | os.PathLike[str] | None = None,
+    platform: str | None = None,
+    popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+) -> int:
+    """Start a user-facing program that must outlive Reframe; return its pid.
+
+    This is the one exception to "every subprocess goes through ``reframe.tools.run``": the
+    program is not a tool, it is not waited for, it has no timeout, and it is not killed with
+    Reframe (see the module doc). Its stdin, stdout and stderr are the null device. A daemon
+    thread reaps it when it exits. Raises ``OSError`` if it cannot be started.
+    """
+    platform = sys.platform if platform is None else platform
+    options = spawn_options(platform, user_facing=True)
+    kwargs: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "cwd": cwd,
+        "close_fds": True,
+        **options,
+    }
+    try:
+        proc = popen(list(argv), **kwargs)
+    except PermissionError:
+        if platform != "win32":
+            raise
+        # An outer job that does not allow breakaway (ERROR_ACCESS_DENIED): start it inside.
+        kwargs["creationflags"] = CREATE_NEW_PROCESS_GROUP
+        proc = popen(list(argv), **kwargs)
+    threading.Thread(target=proc.wait, name=f"reap-{proc.pid}", daemon=True).start()
+    return proc.pid
