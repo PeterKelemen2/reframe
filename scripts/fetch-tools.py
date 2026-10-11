@@ -3,7 +3,7 @@
 Usage::
 
     uv run python scripts/fetch-tools.py [--build default|override-test]
-        [--platform auto|linux-x64|windows-x64] [--dest .tools]
+        [--platform auto|linux-x64|windows-x64] [--dest .tools | --install-dir DIR]
 
 The script:
 
@@ -12,7 +12,12 @@ The script:
    anything. A mismatch is a hard failure;
 3. extracts the archive safely (no absolute paths, no ``..``, no links that leave the archive
    folder), keeps the executable bit on POSIX and keeps the layout of the archive, so the shared
-   libraries stay where the binaries expect them;
+   libraries stay where the binaries expect them. By default it goes to
+   ``<dest>/ffmpeg/<build>-<platform>/<archive root>/``. With ``--install-dir DIR`` the
+   archive's root folder becomes ``DIR`` (``DIR/bin/ffmpeg``, ``DIR/lib/`` on Linux): the
+   layout of a bundled build, so ``--install-dir "$REFRAME_DATA_DIR/tools/ffmpeg"`` makes it
+   the bundled FFmpeg for Reframe's tool discovery (C-1). A non-empty ``DIR`` that this script
+   did not create is never deleted;
 4. runs ``ffmpeg -version`` and ``ffprobe -version`` and checks the pinned version string
    (only when the platform is the host platform);
 5. prints the absolute ``bin`` folder on stdout, and nothing else, so CI can append it to
@@ -444,6 +449,44 @@ def install_dir_for(build: Build, pbuild: PlatformBuild, dest: Path) -> Path:
     return dest / "ffmpeg" / f"{build.name}-{pbuild.platform}"
 
 
+def _download_and_extract(
+    build: Build,
+    pbuild: PlatformBuild,
+    work: Path,
+    downloader: Callable[[str, Path], None] | None,
+) -> Path:
+    """Download into ``work``, verify, extract. Return the staging folder (it holds the root)."""
+    archive = work / pbuild.file_name
+    _log(f"downloading {pbuild.url}")
+    if downloader is None:
+        download(pbuild.url, archive, max_bytes=pbuild.size)
+    else:
+        downloader(pbuild.url, archive)
+    verify_file(archive, pbuild.sha256, pbuild.size)
+    _log(f"SHA-256 verified: {pbuild.sha256}")
+    staging = work / "extract"
+    staging.mkdir()
+    safe_extract(archive, pbuild.format, pbuild.root, staging)
+    archive.unlink()
+    for tool in (pbuild.ffmpeg, pbuild.ffprobe):
+        if not (staging / pbuild.root / tool).is_file():
+            raise FetchError(f"{tool} not found in the archive under {pbuild.root}/")
+    return staging
+
+
+def _write_marker(folder: Path, build: Build, pbuild: PlatformBuild, layout: str) -> None:
+    marker = {
+        "build": build.name,
+        "version": build.version,
+        "platform": pbuild.platform,
+        "url": pbuild.url,
+        "sha256": pbuild.sha256,
+        "layout": layout,
+        "files": tree_digest(folder),
+    }
+    (folder / MARKER_NAME).write_text(json.dumps(marker, indent=1), encoding="utf-8")
+
+
 def install(
     build: Build,
     pbuild: PlatformBuild,
@@ -463,34 +506,57 @@ def install(
     install_dir.parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=".tmp-", dir=install_dir.parent))
     try:
-        archive = work / pbuild.file_name
-        _log(f"downloading {pbuild.url}")
-        if downloader is None:
-            download(pbuild.url, archive, max_bytes=pbuild.size)
-        else:
-            downloader(pbuild.url, archive)
-        verify_file(archive, pbuild.sha256, pbuild.size)
-        _log(f"SHA-256 verified: {pbuild.sha256}")
-        staging = work / "extract"
-        staging.mkdir()
-        safe_extract(archive, pbuild.format, pbuild.root, staging)
-        archive.unlink()
-        for tool in (pbuild.ffmpeg, pbuild.ffprobe):
-            if not (staging / pbuild.root / tool).is_file():
-                raise FetchError(f"{tool} not found in the archive under {pbuild.root}/")
-        marker = {
-            "build": build.name,
-            "version": build.version,
-            "platform": pbuild.platform,
-            "url": pbuild.url,
-            "sha256": pbuild.sha256,
-            "files": tree_digest(staging),
-        }
-        (staging / MARKER_NAME).write_text(json.dumps(marker, indent=1), encoding="utf-8")
+        staging = _download_and_extract(build, pbuild, work, downloader)
+        _write_marker(staging, build, pbuild, "archive")
         _move_into_place(staging, install_dir)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     _log(f"extracted to {install_dir}")
+    return install_dir
+
+
+def _check_replaceable(install_dir: Path) -> None:
+    """Refuse to delete a folder that is not empty and was not made by this script."""
+    if not install_dir.exists():
+        return
+    if not install_dir.is_dir():
+        raise FetchError(f"--install-dir {install_dir} exists and is not a folder")
+    if (install_dir / MARKER_NAME).is_file() or not any(install_dir.iterdir()):
+        return
+    raise FetchError(
+        f"refusing to replace {install_dir}: it is not empty and was not installed by "
+        f"fetch-tools (no {MARKER_NAME})"
+    )
+
+
+def install_bundled(
+    build: Build,
+    pbuild: PlatformBuild,
+    install_dir: Path,
+    *,
+    downloader: Callable[[str, Path], None] | None = None,
+) -> Path:
+    """Install the build in the layout of a bundled build: ``install_dir/bin/ffmpeg`` …
+
+    The contents of the archive's root folder become ``install_dir`` (``bin/``, and ``lib/``
+    with the shared libraries on Linux; on Windows the DLLs are in ``bin/``). This is where
+    Reframe's tool discovery looks for the bundled build, for example
+    ``$REFRAME_DATA_DIR/tools/ffmpeg`` (``reframe.paths``). Idempotent like :func:`install`.
+    """
+    if _is_installed(install_dir, pbuild):
+        _log(f"{build.name} ({build.version}, {pbuild.platform}) already installed and verified")
+        return install_dir
+    _check_replaceable(install_dir)
+    install_dir.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=".tmp-", dir=install_dir.parent))
+    try:
+        staging = _download_and_extract(build, pbuild, work, downloader)
+        layout = staging / pbuild.root
+        _write_marker(layout, build, pbuild, "bundled")
+        _move_into_place(layout, install_dir)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    _log(f"installed to {install_dir}")
     return install_dir
 
 
@@ -519,6 +585,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--build", default="default", help="build name in the manifest")
     parser.add_argument("--platform", default="auto", choices=("auto", *PLATFORMS))
     parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="default: <repo>/.tools")
+    parser.add_argument(
+        "--install-dir",
+        type=Path,
+        default=None,
+        help="install in the bundled layout (DIR/bin, DIR/lib) instead of under --dest",
+    )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
@@ -531,7 +603,10 @@ def main(argv: list[str] | None = None) -> int:
         if target not in build.platforms:
             raise FetchError(f"build {build.name!r} has no archive for {target}")
         pbuild = build.platforms[target]
-        base = install(build, pbuild, Path(args.dest).resolve()) / pbuild.root
+        if args.install_dir is not None:
+            base = install_bundled(build, pbuild, Path(args.install_dir).resolve())
+        else:
+            base = install(build, pbuild, Path(args.dest).resolve()) / pbuild.root
         bin_dir = (base / pbuild.bin_dir).resolve()
         try:
             host = detect_platform()

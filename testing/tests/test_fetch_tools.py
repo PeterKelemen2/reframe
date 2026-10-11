@@ -436,6 +436,145 @@ def test_main_reports_unknown_build(capsys: pytest.CaptureFixture[str]) -> None:
     assert "unknown build 'nope'" in err
 
 
+# --------------------------------------------------------------------------- --install-dir
+
+
+def test_install_bundled_lays_out_bin_and_lib(tmp_path: Path) -> None:
+    archive = _good_tar()
+    pbuild = _platform_build(archive)
+    calls: list[str] = []
+    target = tmp_path / "data" / "tools" / "ffmpeg"
+    result = ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, calls))
+    assert result == target
+    assert (target / "bin" / "ffmpeg").read_bytes() == b"#!/bin/sh\necho ffmpeg\n"
+    assert (target / "bin" / "ffprobe").is_file()
+    assert (target / "lib" / "libavutil.so.61").is_file()
+    assert (target / "LICENSE.txt").is_file()
+    assert not (target / ROOT).exists()  # the archive's root folder is the install dir
+    if os.name == "posix":
+        assert os.access(target / "bin" / "ffmpeg", os.X_OK)
+    # No temporary folders are left next to it.
+    assert sorted(p.name for p in target.parent.iterdir()) == ["ffmpeg"]
+
+    # Idempotent: verified, no second download.
+    ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, calls))
+    assert len(calls) == 1
+    # Damage is repaired.
+    (target / "lib" / "libavutil.so.61").write_bytes(b"corrupt")
+    ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, calls))
+    assert len(calls) == 2
+    assert (target / "lib" / "libavutil.so.61").read_bytes() == b"library"
+
+
+def test_install_bundled_is_what_discovery_finds(tmp_path: Path) -> None:
+    from reframe.models import ToolOrigin
+    from reframe.tools.discovery import locate_tools
+
+    archive = _good_tar()
+    pbuild = _platform_build(archive)
+    data = tmp_path / "data"
+    target = data / "tools" / "ffmpeg"
+    ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, []))
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    located = locate_tools(
+        environ={"REFRAME_DATA_DIR": str(data)}, search_path=str(empty), platform="linux"
+    )
+    for tool in ("ffmpeg", "ffprobe"):
+        assert located[tool].origin is ToolOrigin.BUNDLED
+        assert located[tool].path == target / "bin" / tool
+
+
+def test_install_bundled_replaces_an_empty_folder(tmp_path: Path) -> None:
+    archive = _good_tar()
+    pbuild = _platform_build(archive)
+    target = tmp_path / "ffmpeg"
+    target.mkdir()
+    ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, []))
+    assert (target / "bin" / "ffmpeg").is_file()
+
+
+def test_install_bundled_never_deletes_a_foreign_folder(tmp_path: Path) -> None:
+    archive = _good_tar()
+    pbuild = _platform_build(archive)
+    target = tmp_path / "home"
+    target.mkdir()
+    (target / "precious.txt").write_text("keep me", encoding="utf-8")
+    calls: list[str] = []
+    with pytest.raises(ft.FetchError, match="refusing to replace"):
+        ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, calls))
+    assert (target / "precious.txt").read_text(encoding="utf-8") == "keep me"
+    assert calls == []  # it refused before downloading
+
+
+def test_install_bundled_refuses_a_file(tmp_path: Path) -> None:
+    archive = _good_tar()
+    pbuild = _platform_build(archive)
+    target = tmp_path / "file"
+    target.write_text("x", encoding="utf-8")
+    with pytest.raises(ft.FetchError, match="not a folder"):
+        ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, []))
+
+
+def test_install_bundled_replaces_an_older_install(tmp_path: Path) -> None:
+    old = _good_tar()
+    pbuild_old = _platform_build(old)
+    target = tmp_path / "ffmpeg"
+    ft.install_bundled(_build(pbuild_old), pbuild_old, target, downloader=_copier(old, []))
+    new = _tar_xz(
+        [
+            (_file(f"{ROOT}/bin/ffmpeg", 0o755), b"new ffmpeg"),
+            (_file(f"{ROOT}/bin/ffprobe", 0o755), b"new ffprobe"),
+        ]
+    )
+    pbuild_new = _platform_build(new)
+    ft.install_bundled(_build(pbuild_new), pbuild_new, target, downloader=_copier(new, []))
+    assert (target / "bin" / "ffmpeg").read_bytes() == b"new ffmpeg"
+    assert not (target / "lib").exists()
+
+
+def test_main_install_dir_prints_its_bin_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
+) -> None:
+    archive = _good_tar()
+    pbuild = _platform_build(archive)
+    manifest = tmp_path / "ffmpeg.toml"
+    manifest.write_text(
+        f"""
+schema_version = 1
+[builds.default]
+version = "n9.0-test"
+release_version = "9.0"
+license = "GPL-3.0-or-later"
+source_repository = "https://example.invalid/ffmpeg"
+source_commit = "{"0" * 40}"
+release_tag = "test"
+[builds.default.platforms.linux-x64]
+url = "{pbuild.url}"
+sha256 = "{pbuild.sha256}"
+size = {pbuild.size}
+format = "tar.xz"
+root = "{ROOT}"
+bin_dir = "bin"
+ffmpeg = "bin/ffmpeg"
+ffprobe = "bin/ffprobe"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ft, "download", lambda url, dest, **_: dest.write_bytes(archive))
+    # Pretend the host is another platform so the fake binaries are not executed.
+    monkeypatch.setattr(ft, "detect_platform", lambda *a: "windows-x64")
+    target = tmp_path / "data" / "tools" / "ffmpeg"
+    code = ft.main(
+        ["--platform", "linux-x64", "--install-dir", str(target), "--manifest", str(manifest)]
+    )
+    out, err = capsysbinary.readouterr()
+    assert code == 0
+    assert out == f"{(target / 'bin').resolve()}\n".encode()
+    assert (target / "bin" / "ffmpeg").is_file()
+    assert b"installed to" in err
+
+
 # --------------------------------------------------------------------------- download retries
 
 

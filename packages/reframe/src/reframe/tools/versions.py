@@ -1,0 +1,178 @@
+"""Parse the version output of FFmpeg, ffprobe, mkvpropedit and mediainfo (C-1).
+
+FFmpeg ``-version`` output (checked with real builds, see ``tests/tools/data/``)::
+
+    ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers
+    built with gcc 16.2.0 (crosstool-NG 1.29.0.7_b1a94f6)
+    configuration: --prefix=/ffbuild/prefix ... --enable-libx265 ...
+    libavutil      61.  1.102 / 61.  1.102
+    libavcodec     63.  1.102 / 63.  1.102
+    ...
+
+    Exiting with exit code 0
+
+- The version token takes several forms: ``n9.0.2`` (Arch), ``n9.0.2-17-g2a571b6068-20260930``
+  (BtbN release branch), ``7.1.1-1+b1`` (Debian), ``7.0.2-static https://…`` (static builds),
+  ``7.1-full_build-www.gyan.dev``, and **git master** builds with no release number:
+  ``N-127032-g6ae491a26c-20260930`` (BtbN), ``2024-10-10-git-0f5592cfc7-full_build-…``.
+- FFmpeg 8 and 9 print ``Exiting with exit code 0`` after ``-version`` (7.1 does not): it is
+  ignored.
+- For a git master build, the release series comes from the **library major versions**.
+  Checked against real binaries: FFmpeg 6.1 → libavcodec/libavformat 60, 7.1 → 61, 8.1 → 62,
+  9.0 → 63, and the master build ``N-127032`` (after 9.0) → 63. A major version is bumped
+  on master some time before the release that carries it, so a master build is placed in the
+  series of its major version: ``libavcodec 61`` counts as 7.0. The minimum (7.0) therefore
+  means ``libavcodec >= 61`` and ``libavformat >= 61`` for master builds.
+"""
+
+from __future__ import annotations
+
+import re
+import shlex
+from dataclasses import dataclass, field
+
+__all__ = [
+    "MIN_FFMPEG",
+    "FfmpegVersion",
+    "SimpleVersion",
+    "lib_major_to_series",
+    "parse_ffmpeg_version",
+    "parse_mediainfo_version",
+    "parse_mkvpropedit_version",
+]
+
+#: Reframe needs at least FFmpeg 7.0 (C-1).
+MIN_FFMPEG: tuple[int, int] = (7, 0)
+
+#: libavcodec / libavformat major version → FFmpeg release series, checked against real
+#: builds (``tests/tools/data/ffmpeg-*.txt``). Older majors follow the same rule
+#: (series = major - 54: 58 → 4.x, 59 → 5.x) from FFmpeg's release notes.
+_VERIFIED_LIB_MAJORS = {60: 6, 61: 7, 62: 8, 63: 9}
+
+_FIRST_LINE_RE = re.compile(
+    r"^(?P<tool>ffmpeg|ffprobe) version (?P<version>.+?)(?:\s+Copyright\b.*)?$"
+)
+_RELEASE_RE = re.compile(r"^n?(?P<major>\d+)\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?(?![\d.])")
+_LIB_RE = re.compile(r"^(?P<name>lib\w+)\s+(?P<a>\d+)\.\s*(?P<b>\d+)\.\s*(?P<c>\d+)\s*/")
+
+
+def lib_major_to_series(major: int) -> int:
+    """The FFmpeg release series (major version) for a libavcodec/libavformat major."""
+    return _VERIFIED_LIB_MAJORS.get(major, major - 54)
+
+
+@dataclass(frozen=True)
+class FfmpegVersion:
+    """Parsed ``ffmpeg -version`` / ``ffprobe -version`` output."""
+
+    tool: str
+    """``ffmpeg`` or ``ffprobe`` (from the first line)."""
+    version: str
+    """The version token as printed (``n9.0.2-17-g2a571b6068-20260930``)."""
+    release: tuple[int, int, int] | None
+    """``(9, 0, 2)``; ``None`` for git master builds. A missing patch number is 0."""
+    configuration: list[str] = field(default_factory=list)
+    """The arguments of the ``configuration:`` line."""
+    libraries: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    """``{"libavcodec": (63, 1, 102), …}`` (the version the binary runs with)."""
+
+    @property
+    def is_git_build(self) -> bool:
+        return self.release is None
+
+    @property
+    def release_text(self) -> str | None:
+        if self.release is None:
+            return None
+        return ".".join(map(str, self.release))
+
+    @property
+    def series(self) -> tuple[int, int] | None:
+        """``(major, minor)`` of the release, or of the library versions for a master build."""
+        if self.release is not None:
+            return self.release[:2]
+        majors = [
+            lib_major_to_series(self.libraries[name][0])
+            for name in ("libavcodec", "libavformat")
+            if name in self.libraries
+        ]
+        if not majors:
+            return None
+        return (min(majors), 0)
+
+    @property
+    def build_flags(self) -> list[str]:
+        """The ``--enable-*`` / ``--disable-*`` options of the configuration."""
+        return [a for a in self.configuration if a.startswith(("--enable-", "--disable-"))]
+
+    def meets_minimum(self, minimum: tuple[int, int] = MIN_FFMPEG) -> bool | None:
+        """True / False, or ``None`` when the version cannot be determined."""
+        series = self.series
+        return None if series is None else series >= minimum
+
+
+def parse_ffmpeg_version(text: str) -> FfmpegVersion | None:
+    """Parse ``ffmpeg -version`` (or ``ffprobe -version``) stdout. ``None`` if it is not one."""
+    lines = [line.rstrip("\r") for line in text.splitlines()]
+    first = next((line for line in lines if line.strip()), "")
+    match = _FIRST_LINE_RE.match(first.strip())
+    if match is None:
+        return None
+    version = match["version"].strip()
+    release_match = _RELEASE_RE.match(version)
+    release = None
+    if release_match is not None:
+        release = (
+            int(release_match["major"]),
+            int(release_match["minor"]),
+            int(release_match["patch"] or 0),
+        )
+    configuration: list[str] = []
+    libraries: dict[str, tuple[int, int, int]] = {}
+    for line in lines[1:]:
+        if line.startswith("configuration:"):
+            raw = line.removeprefix("configuration:").strip()
+            try:
+                configuration = shlex.split(raw)
+            except ValueError:  # unbalanced quotes: keep the words
+                configuration = raw.split()
+            continue
+        lib = _LIB_RE.match(line)
+        if lib is not None:
+            libraries[lib["name"]] = (int(lib["a"]), int(lib["b"]), int(lib["c"]))
+    return FfmpegVersion(
+        tool=match["tool"],
+        version=version,
+        release=release,
+        configuration=configuration,
+        libraries=libraries,
+    )
+
+
+@dataclass(frozen=True)
+class SimpleVersion:
+    """A version like ``101.0`` (mkvpropedit) or ``24.06`` (mediainfo)."""
+
+    version: str
+    parts: tuple[int, ...]
+
+
+_MKVPROPEDIT_RE = re.compile(r"^mkvpropedit v(?P<v>\d+(?:\.\d+)*)")
+_MEDIAINFO_RE = re.compile(r"MediaInfoLib - v(?P<v>\d+(?:\.\d+)*)")
+
+
+def _simple(match: re.Match[str] | None) -> SimpleVersion | None:
+    if match is None:
+        return None
+    text = match["v"]
+    return SimpleVersion(text, tuple(int(p) for p in text.split(".")))
+
+
+def parse_mkvpropedit_version(text: str) -> SimpleVersion | None:
+    """``mkvpropedit v101.0 ('Time To Turn') 64-bit`` → ``101.0``."""
+    return _simple(_MKVPROPEDIT_RE.match(text.strip()))
+
+
+def parse_mediainfo_version(text: str) -> SimpleVersion | None:
+    """``MediaInfo Command line,\\nMediaInfoLib - v24.06`` → ``24.06``."""
+    return _simple(_MEDIAINFO_RE.search(text))
