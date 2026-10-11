@@ -1,0 +1,556 @@
+# serializer version: 1
+# name: test_recorded_probe_snapshot[ass-fonts]
+  '''
+  anime-ass-fonts.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:04.021
+    Size       4.5 MiB (4 723 055 bytes)
+    Bitrate    9 397 kb/s
+    Tracks     1 video track · 2 audio tracks · 2 subtitle tracks · 2 attachments
+    Chapters   2
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1920×1080 · 23.976 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 9 152 kb/s (stats tag) · flags: default
+  
+  Audio (2)
+  ┌───┬──────────────┬──────────┬───────────────┬──────────────┬─────────────────┬──────────────────────┬──────────────┐
+  │ # │ Lang         │ Name     │ Codec         │ Channels     │ Rate / depth    │ Bitrate              │ Role & flags │
+  ├───┼──────────────┼──────────┼───────────────┼──────────────┼─────────────────┼──────────────────────┼──────────────┤
+  │ 1 │ jpn Japanese │ Japanese │ FLAC lossless │ stereo, 2 ch │ 48 kHz / 16-bit │ 134 kb/s (stats tag) │ [Main]       │
+  │   │              │          │               │              │                 │                      │ default      │
+  ├───┼──────────────┼──────────┼───────────────┼──────────────┼─────────────────┼──────────────────────┼──────────────┤
+  │ 2 │ eng English  │ English  │ AAC-LC        │ stereo, 2 ch │ 48 kHz          │ 128 kb/s (stats tag) │ (Main?)      │
+  └───┴──────────────┴──────────┴───────────────┴──────────────┴─────────────────┴──────────────────────┴──────────────┘
+  
+  Subtitles (2)
+  ┌───┬─────────────┬────────────────┬────────┬──────┬───────────────┬──────────────────┐
+  │ # │ Lang        │ Name           │ Format │ Type │ Events        │ Role & flags     │
+  ├───┼─────────────┼────────────────┼────────┼──────┼───────────────┼──────────────────┤
+  │ 3 │ eng English │ Signs & Songs  │ ASS    │ text │ 2 (stats tag) │ (Signs & Songs?) │
+  ├───┼─────────────┼────────────────┼────────┼──────┼───────────────┼──────────────────┤
+  │ 4 │ eng English │ Full Subtitles │ ASS    │ text │ 8 (stats tag) │ [Main]           │
+  │   │             │                │        │      │               │ default          │
+  └───┴─────────────┴────────────────┴────────┴──────┴───────────────┴──────────────────┘
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  (Main?)  no commentary, description or music evidence
+    #3  (Signs & Songs?)  title contains "Signs"
+    #4  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  Attachments (2)
+    #5  ReframeBox.ttf · application/x-truetype-font · 1.6 KiB
+    #6  ReframeBox-Alt.ttf · font/ttf · 1.6 KiB
+  
+  Chapters (2)
+     1  0:00:00.000  Opening
+     2  0:00:01.500  Part A
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[cover-art]
+  '''
+  song-cover.m4a
+    Container  M4A (QuickTime / MOV)
+    Title      Test Song
+    Duration   0:00:00.981
+    Size       26.5 KiB (27 156 bytes)
+    Bitrate    221 kb/s
+    Tracks     0 video tracks · 1 audio track · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (0)
+    —
+  
+  Audio (1)
+  ┌───┬──────────────────┬──────┬────────┬──────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang             │ Name │ Codec  │ Channels     │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼──────────────────┼──────┼────────┼──────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 0 │ und Undetermined │ —    │ AAC-LC │ stereo, 2 ch │ 48 kHz       │ 127 kb/s (stream) │ [Main]       │
+  │   │                  │      │        │              │              │                   │ default      │
+  └───┴──────────────────┴──────┴────────┴──────────────┴──────────────┴───────────────────┴──────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #0  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  Cover art (1)
+    #1  PNG 300×300
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[dts-hd-ma]
+  '''
+  movie-dts-hd-ma.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:04.004
+    Size       5.1 MiB (5 389 127 bytes)
+    Bitrate    10 767 kb/s
+    Tracks     1 video track · 2 audio tracks · 1 subtitle track · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1920×1080 · 23.976 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 9 152 kb/s (stats tag) · flags: default
+  
+  Audio (2)
+  ┌───┬─────────────┬───────────────┬────────────────┬────────────────┬─────────────────┬────────────────┬───────────────┐
+  │ # │ Lang        │ Name          │ Codec          │ Channels       │ Rate / depth    │ Bitrate        │ Role & flags  │
+  ├───┼─────────────┼───────────────┼────────────────┼────────────────┼─────────────────┼────────────────┼───────────────┤
+  │ 1 │ eng English │ DTS-HD MA 5.1 │ DTS-HD MA      │ 5.1(side), 6   │ 48 kHz / 24-bit │ 1 413 kb/s     │ [Main]        │
+  │   │             │               │ lossless       │ ch             │                 │ (stats tag)    │ default       │
+  ├───┼─────────────┼───────────────┼────────────────┼────────────────┼─────────────────┼────────────────┼───────────────┤
+  │ 2 │ eng English │ —             │ AC-3           │ stereo, 2 ch   │ 48 kHz          │ 192 kb/s       │ (Commentary?) │
+  │   │             │               │                │                │                 │ (stream)       │               │
+  └───┴─────────────┴───────────────┴────────────────┴────────────────┴─────────────────┴────────────────┴───────────────┘
+  
+  Subtitles (1)
+  ┌───┬─────────────┬──────┬────────┬──────┬───────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Format │ Type │ Events        │ Role & flags │
+  ├───┼─────────────┼──────┼────────┼──────┼───────────────┼──────────────┤
+  │ 3 │ eng English │ —    │ SRT    │ text │ 8 (stats tag) │ (Main?)      │
+  └───┴─────────────┴──────┴────────┴──────┴───────────────┴──────────────┘
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  (Commentary?)  2.0 at 192 kb/s after the 6-channel track #1 in the same language (eng)
+    #3  (Main?)  no forced, SDH, signs or commentary evidence
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[dts-x]
+  '''
+  movie-dts-x.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:02.005
+    Size       2.4 MiB (2 538 950 bytes)
+    Bitrate    10 130 kb/s
+    Tracks     1 video track · 2 audio tracks · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1920×1080 · 23.976 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 8 266 kb/s (stats tag) · flags: default
+  
+  Audio (2)
+  ┌───┬─────────────┬────────────────┬────────────────┬────────────────┬─────────────────┬────────────────┬──────────────┐
+  │ # │ Lang        │ Name           │ Codec          │ Channels       │ Rate / depth    │ Bitrate        │ Role & flags │
+  ├───┼─────────────┼────────────────┼────────────────┼────────────────┼─────────────────┼────────────────┼──────────────┤
+  │ 1 │ eng English │ DTS:X          │ DTS:X lossless │ 5.1(side), 6   │ 48 kHz / 24-bit │ 1 417 kb/s     │ [Main]       │
+  │   │             │                │                │ ch             │                 │ (stats tag)    │ default      │
+  ├───┼─────────────┼────────────────┼────────────────┼────────────────┼─────────────────┼────────────────┼──────────────┤
+  │ 2 │ ger German  │ Deutsch AC3    │ AC-3           │ 5.1(side), 6   │ 48 kHz          │ 448 kb/s       │ (Main?)      │
+  │   │             │ 5.1            │                │ ch             │                 │ (stream)       │              │
+  └───┴─────────────┴────────────────┴────────────────┴────────────────┴─────────────────┴────────────────┴──────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  (Main?)  no commentary, description or music evidence
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[dv-p8]
+  '''
+  movie-dv-p8.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:01.001
+    Size       367.0 KiB (375 803 bytes)
+    Bitrate    3 003 kb/s
+    Tracks     1 video track · 0 audio tracks · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  HEVC Main 10 · 1920×1080 · 23.976 fps · HDR10 + Dolby Vision 8.1 · BT.2020 PQ
+        10-bit yuv420p10le · progressive · SAR 1:1 · DAR 16:9 · mastering 0.0001-1000 cd/m² · MaxCLL 1000 / MaxFALL 400 ·
+        bitrate 2 975 kb/s (stats tag) · flags: default
+  
+  Audio (0)
+  
+  Subtitles (0)
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[dvd-interlaced-vob]
+  '''
+  dvd-title-interlaced.vob
+    Container  VOB (MPEG-PS (MPEG-2 Program Stream))
+    Duration   0:00:04.009
+    Size       2.7 MiB (2 836 480 bytes)
+    Bitrate    5 660 kb/s
+    Tracks     1 video track · 2 audio tracks · 2 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  MPEG-2 Main · 720×480 · 29.97 fps · SDR
+        8-bit yuv420p · interlaced TFF · SAR 32:27 · DAR 16:9 · bitrate — (unknown)
+  
+  Audio (2)
+  ┌───┬──────┬──────┬───────┬──────────────┬──────────────┬───────────────────┬───────────────┐
+  │ # │ Lang │ Name │ Codec │ Channels     │ Rate / depth │ Bitrate           │ Role & flags  │
+  ├───┼──────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼───────────────┤
+  │ 1 │ —    │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)       │
+  │   │      │      │       │              │              │                   │ delay +528 ms │
+  ├───┼──────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼───────────────┤
+  │ 2 │ —    │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)       │
+  │   │      │      │       │              │              │                   │ delay +528 ms │
+  └───┴──────┴──────┴───────┴──────────────┴──────────────┴───────────────────┴───────────────┘
+  
+  Subtitles (2)
+  ┌───┬──────┬──────┬────────┬────────┬─────────────┬──────────────┐
+  │ # │ Lang │ Name │ Format │ Type   │ Events      │ Role & flags │
+  ├───┼──────┼──────┼────────┼────────┼─────────────┼──────────────┤
+  │ 3 │ —    │ —    │ VobSub │ bitmap │ — (unknown) │ (Main?)      │
+  ├───┼──────┼──────┼────────┼────────┼─────────────┼──────────────┤
+  │ 4 │ —    │ —    │ VobSub │ bitmap │ — (unknown) │ (Main?)      │
+  └───┴──────┴──────┴────────┴────────┴─────────────┴──────────────┘
+  
+  Role evidence
+    #1  (Main?)  no commentary, description or music evidence
+    #2  (Main?)  no commentary, description or music evidence
+    #3  (Main?)  no forced, SDH, signs or commentary evidence
+    #4  (Main?)  no forced, SDH, signs or commentary evidence
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[dvd-interlaced]
+  '''
+  dvd-title-interlaced.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:04.004
+    Size       2.7 MiB (2 788 778 bytes)
+    Bitrate    5 572 kb/s
+    Tracks     1 video track · 2 audio tracks · 2 subtitle tracks · 0 attachments
+    Chapters   2
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  MPEG-2 Main · 720×480 · 29.97 fps · SDR
+        8-bit yuv420p · interlaced TFF · SAR 32:27 · DAR 16:9 · bitrate 5 164 kb/s (stats tag) · flags: default
+  
+  Audio (2)
+  ┌───┬─────────────┬──────┬───────┬──────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Codec │ Channels     │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼─────────────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 1 │ eng English │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ [Main]       │
+  │   │             │      │       │              │              │                   │ default      │
+  ├───┼─────────────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 2 │ fre French  │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)      │
+  └───┴─────────────┴──────┴───────┴──────────────┴──────────────┴───────────────────┴──────────────┘
+  
+  Subtitles (2)
+  ┌───┬─────────────┬──────┬────────┬────────────────┬───────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Format │ Type           │ Events        │ Role & flags │
+  ├───┼─────────────┼──────┼────────┼────────────────┼───────────────┼──────────────┤
+  │ 3 │ eng English │ —    │ VobSub │ bitmap 720×480 │ 6 (stats tag) │ (Main?)      │
+  ├───┼─────────────┼──────┼────────┼────────────────┼───────────────┼──────────────┤
+  │ 4 │ fre French  │ —    │ VobSub │ bitmap 720×480 │ 5 (stats tag) │ (Main?)      │
+  └───┴─────────────┴──────┴────────┴────────────────┴───────────────┴──────────────┘
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  (Main?)  no commentary, description or music evidence
+    #3  (Main?)  no forced, SDH, signs or commentary evidence
+    #4  (Main?)  no forced, SDH, signs or commentary evidence
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  Chapters (2)
+     1  0:00:00.000  Chapter 01
+     2  0:00:02.000  Chapter 02
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[eac3-atmos]
+  '''
+  show-eac3-atmos.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:04.004
+    Size       4.7 MiB (4 905 037 bytes)
+    Bitrate    9 800 kb/s
+    Tracks     1 video track · 1 audio track · 3 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1920×1080 · 23.976 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 9 152 kb/s (stats tag) · flags: default
+  
+  Audio (1)
+  ┌───┬─────────────┬─────────┬──────────────┬─────────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang        │ Name    │ Codec        │ Channels        │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼─────────────┼─────────┼──────────────┼─────────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 1 │ eng English │ English │ E-AC-3 Atmos │ 5.1(side), 6 ch │ 48 kHz       │ 640 kb/s (stream) │ [Main]       │
+  │   │             │         │              │                 │              │                   │ default      │
+  └───┴─────────────┴─────────┴──────────────┴─────────────────┴──────────────┴───────────────────┴──────────────┘
+  
+  Subtitles (3)
+  ┌───┬─────────────┬──────────────────┬────────┬──────┬────────────────┬──────────────┐
+  │ # │ Lang        │ Name             │ Format │ Type │ Events         │ Role & flags │
+  ├───┼─────────────┼──────────────────┼────────┼──────┼────────────────┼──────────────┤
+  │ 2 │ eng English │ English          │ SRT    │ text │ 8 (stats tag)  │ (Main?)      │
+  ├───┼─────────────┼──────────────────┼────────┼──────┼────────────────┼──────────────┤
+  │ 3 │ eng English │ English [SDH]    │ SRT    │ text │ 10 (stats tag) │ (SDH?)       │
+  ├───┼─────────────┼──────────────────┼────────┼──────┼────────────────┼──────────────┤
+  │ 4 │ eng English │ English [Forced] │ SRT    │ text │ 1 (stats tag)  │ (Forced?)    │
+  └───┴─────────────┴──────────────────┴────────┴──────┴────────────────┴──────────────┘
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  (Main?)  no forced, SDH, signs or commentary evidence
+    #3  (SDH?)  title contains "SDH"
+    #4  (Forced?)  title contains "Forced"
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[hdr10-sei-only]
+  '''
+  movie-hdr10-sei.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:01.001
+    Size       410.6 KiB (420 470 bytes)
+    Bitrate    3 360 kb/s
+    Tracks     1 video track · 0 audio tracks · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  HEVC Main 10 · 1920×1080 · 23.976 fps · HDR10 · BT.2020 PQ
+        10-bit yuv420p10le · progressive · SAR 1:1 · DAR 16:9 · mastering 0.0001-1000 cd/m² · MaxCLL 1000 / MaxFALL 400 ·
+        bitrate 3 334 kb/s (stats tag) · flags: default
+  
+  Audio (0)
+  
+  Subtitles (0)
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[hdr10]
+  '''
+  movie-hdr10-2160p.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:01.005
+    Size       1.4 MiB (1 415 789 bytes)
+    Bitrate    11 270 kb/s
+    Tracks     1 video track · 1 audio track · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ
+        10-bit yuv420p10le · progressive · SAR 1:1 · DAR 16:9 · mastering 0.0001-1000 cd/m² · MaxCLL 1000 / MaxFALL 400 ·
+        bitrate 10 633 kb/s (stats tag) · flags: default
+  
+  Audio (1)
+  ┌───┬─────────────┬──────┬────────┬─────────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Codec  │ Channels        │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼─────────────┼──────┼────────┼─────────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 1 │ eng English │ —    │ E-AC-3 │ 5.1(side), 6 ch │ 48 kHz       │ 640 kb/s (stream) │ [Main]       │
+  │   │             │      │        │                 │              │                   │ default      │
+  └───┴─────────────┴──────┴────────┴─────────────────┴──────────────┴───────────────────┴──────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[hlg]
+  '''
+  broadcast-hlg.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:01.021
+    Size       495.0 KiB (506 901 bytes)
+    Bitrate    3 972 kb/s
+    Tracks     1 video track · 1 audio track · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  HEVC Main 10 · 1920×1080 · 50 fps · HLG · BT.2020 HLG
+        10-bit yuv420p10le · progressive · SAR 1:1 · DAR 16:9 · bitrate 3 887 kb/s (stats tag) · flags: default
+  
+  Audio (1)
+  ┌───┬─────────────┬──────┬────────┬──────────────┬──────────────┬──────────────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Codec  │ Channels     │ Rate / depth │ Bitrate              │ Role & flags │
+  ├───┼─────────────┼──────┼────────┼──────────────┼──────────────┼──────────────────────┼──────────────┤
+  │ 1 │ eng English │ —    │ AAC-LC │ stereo, 2 ch │ 48 kHz       │ 128 kb/s (stats tag) │ [Main]       │
+  │   │             │      │        │              │              │                      │ default      │
+  └───┴─────────────┴──────┴────────┴──────────────┴──────────────┴──────────────────────┴──────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[pgs]
+  '''
+  movie-pgs.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:04.004
+    Size       4.6 MiB (4 825 093 bytes)
+    Bitrate    9 641 kb/s
+    Tracks     1 video track · 1 audio track · 4 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1920×1080 · 23.976 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 9 152 kb/s (stats tag) · flags: default
+  
+  Audio (1)
+  ┌───┬─────────────┬──────┬───────┬─────────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Codec │ Channels        │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼─────────────┼──────┼───────┼─────────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 1 │ eng English │ —    │ AC-3  │ 5.1(side), 6 ch │ 48 kHz       │ 448 kb/s (stream) │ [Main]       │
+  │   │             │      │       │                 │              │                   │ default      │
+  └───┴─────────────┴──────┴───────┴─────────────────┴──────────────┴───────────────────┴──────────────┘
+  
+  Subtitles (4)
+  ┌───┬───────────────┬─────────────┬────────┬──────────────────┬───────────────┬──────────────────┐
+  │ # │ Lang          │ Name        │ Format │ Type             │ Events        │ Role & flags     │
+  ├───┼───────────────┼─────────────┼────────┼──────────────────┼───────────────┼──────────────────┤
+  │ 2 │ eng English   │ English     │ PGS    │ bitmap 1920×1080 │ 8 (stats tag) │ [Main]           │
+  │   │               │             │        │                  │               │ default          │
+  ├───┼───────────────┼─────────────┼────────┼──────────────────┼───────────────┼──────────────────┤
+  │ 3 │ eng English   │ —           │ PGS    │ bitmap 1920×1080 │ 1 (stats tag) │ (Forced?)        │
+  ├───┼───────────────┼─────────────┼────────┼──────────────────┼───────────────┼──────────────────┤
+  │ 4 │ eng English   │ English SDH │ PGS    │ bitmap 1920×1080 │ 9 (stats tag) │ [SDH]            │
+  │   │               │             │        │                  │               │ hearing impaired │
+  ├───┼───────────────┼─────────────┼────────┼──────────────────┼───────────────┼──────────────────┤
+  │ 5 │ hun Hungarian │ —           │ PGS    │ bitmap 1920×1080 │ 8 (stats tag) │ (Main?)          │
+  └───┴───────────────┴─────────────┴────────┴──────────────────┴───────────────┴──────────────────┘
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  [Main]  disposition default
+    #3  (Forced?)  1 events, 11 % of the 9 events of track #4 in the same language (eng)
+    #4  [SDH]  disposition hearing_impaired
+    #5  (Main?)  no forced, SDH, signs or commentary evidence
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[phone-rotated]
+  '''
+  phone-rotated.mov
+    Container  MOV (QuickTime / MOV)
+    Duration   0:00:02.000
+    Size       1.1 MiB (1 195 963 bytes)
+    Bitrate    4 784 kb/s
+    Tracks     1 video track · 1 audio track · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1280×720 · 30 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · rotated 90° · bitrate 4 639 kb/s (stream) · flags: default
+  
+  Audio (1)
+  ┌───┬──────┬──────┬────────┬──────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang │ Name │ Codec  │ Channels     │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼──────┼──────┼────────┼──────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 1 │ —    │ —    │ AAC-LC │ stereo, 2 ch │ 48 kHz       │ 128 kb/s (stream) │ [Main]       │
+  │   │      │      │        │              │              │                   │ default      │
+  └───┴──────┴──────┴────────┴──────────────┴──────────────┴───────────────────┴──────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  Data streams (1)
+    #2  tmcd · TimeCodeHandler
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[truehd-atmos]
+  '''
+  movie-truehd-atmos.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:02.005
+    Size       2.3 MiB (2 392 057 bytes)
+    Bitrate    9 544 kb/s
+    Tracks     1 video track · 3 audio tracks · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1920×1080 · 23.976 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 8 266 kb/s (stats tag) · flags: default
+  
+  Audio (3)
+  ┌───┬─────────────┬────────────────┬────────────────┬────────────────┬────────────────┬────────────────┬───────────────┐
+  │ # │ Lang        │ Name           │ Codec          │ Channels       │ Rate / depth   │ Bitrate        │ Role & flags  │
+  ├───┼─────────────┼────────────────┼────────────────┼────────────────┼────────────────┼────────────────┼───────────────┤
+  │ 1 │ eng English │ Dolby TrueHD   │ TrueHD Atmos   │ 5.1(side), 6   │ 48 kHz /       │ 385 kb/s       │ [Main]        │
+  │   │             │ Atmos 5.1      │ lossless       │ ch             │ 24-bit         │ (stats tag)    │ default       │
+  ├───┼─────────────┼────────────────┼────────────────┼────────────────┼────────────────┼────────────────┼───────────────┤
+  │ 2 │ eng English │ Dolby Digital  │ AC-3           │ 5.1(side), 6   │ 48 kHz         │ 640 kb/s       │ (Main?)       │
+  │   │             │ 5.1            │                │ ch             │                │ (stream)       │               │
+  ├───┼─────────────┼────────────────┼────────────────┼────────────────┼────────────────┼────────────────┼───────────────┤
+  │ 3 │ eng English │ Director's     │ AC-3           │ stereo, 2 ch   │ 48 kHz         │ 192 kb/s       │ (Commentary?) │
+  │   │             │ Commentary     │                │                │                │ (stream)       │               │
+  └───┴─────────────┴────────────────┴────────────────┴────────────────┴────────────────┴────────────────┴───────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    #2  (Main?)  no commentary, description or music evidence
+    #3  (Commentary?)  title contains "Commentary"
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[vfr]
+  '''
+  phone-vfr.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:03.021
+    Size       2.0 MiB (2 058 075 bytes)
+    Bitrate    5 450 kb/s
+    Tracks     1 video track · 1 audio track · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1280×720 · VFR (base 120 fps) · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate 5 380 kb/s (stats tag) · flags: default
+  
+  Audio (1)
+  ┌───┬─────────────┬──────┬────────┬──────────────┬──────────────┬──────────────────────┬──────────────┐
+  │ # │ Lang        │ Name │ Codec  │ Channels     │ Rate / depth │ Bitrate              │ Role & flags │
+  ├───┼─────────────┼──────┼────────┼──────────────┼──────────────┼──────────────────────┼──────────────┤
+  │ 1 │ eng English │ —    │ AAC-LC │ stereo, 2 ch │ 48 kHz       │ 128 kb/s (stats tag) │ [Main]       │
+  │   │             │      │        │              │              │                      │ default      │
+  └───┴─────────────┴──────┴────────┴──────────────┴──────────────┴──────────────────────┴──────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
