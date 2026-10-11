@@ -90,7 +90,7 @@ jobs:
       - name: Generate the test media (incremental)
         run: uv run python scripts/make-testdata.py
 
-      - run: uv run pytest -m "not needs_gpu"
+      - run: uv run pytest -m "not needs_gpu and not benchmark"
 
   frontend:
     name: Frontend (${{ matrix.os }})
@@ -176,4 +176,48 @@ jobs:
 
       - name: Tests that need FFmpeg
         # pytest exits with 5 when no test is selected: that is a failure here.
-        run: uv run pytest -m "needs_ffmpeg and not needs_gpu"
+        run: uv run pytest -m "needs_ffmpeg and not needs_gpu and not benchmark"
+
+  benchmark:
+    # 09 Q-3: performance budgets run as a NON-blocking job. A failure here does not fail the
+    # workflow; it is a signal to look at (a later step comments on PRs with regressions).
+    name: Benchmarks (${{ matrix.os }}, non-blocking)
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      REFRAME_REQUIRE_FFMPEG: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Point REFRAME_DATA_DIR to a temporary folder
+        run: echo "REFRAME_DATA_DIR=$RUNNER_TEMP/reframe-data" >> "$GITHUB_ENV"
+
+      - name: Cache the pinned FFmpeg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/reframe-data/tools/ffmpeg
+          key: tools-${{ runner.os }}-default-bundled-${{ hashFiles('tools/ffmpeg.toml') }}
+
+      - name: Install the pinned FFmpeg as the bundled build (tools/ffmpeg.toml)
+        run: >-
+          uv run --no-project python scripts/fetch-tools.py --build default
+          --install-dir "$REFRAME_DATA_DIR/tools/ffmpeg"
+
+      - run: uv sync --frozen
+
+      - name: Generate the test media (incremental)
+        run: uv run python scripts/make-testdata.py
+
+      - name: Performance budgets (09 Q-3)
+        run: uv run pytest -m "benchmark and not needs_gpu" -v
