@@ -40,7 +40,14 @@ uv run pytest                             # all tests
 uv run pytest -m "not needs_gpu"          # what CI runs
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
+uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir
 ```
+
+Tests that need real media use the `fixture_media("multitrack")` pytest fixture (generated on
+demand) and the `needs_ffmpeg` marker. Fault-injection tests use the `fake_tools` fixture or
+`reframe_testing.fake_tools` (a fake ffmpeg/ffprobe driven by a scenario). Shared test
+infrastructure lives in `testing/reframe_testing/`; real tool behaviour that tests rely on is
+recorded in `testdata/README.md` ("Verified tool behaviour").
 
 Frontend (from `frontend/`):
 
@@ -50,6 +57,7 @@ npm run lint          # oxlint
 npm run fmt:check     # oxfmt --check (npm run fmt to fix)
 npm run typecheck     # vue-tsc --noEmit (strict templates)
 npm test              # vitest run
+npm run build:web     # production build (web); build:desktop for the Tauri build
 ```
 
 All of these must be green before a step is done. CI (`.github/workflows/`) runs the same

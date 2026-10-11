@@ -73,7 +73,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: testdata/media
-          key: testdata-${{ runner.os }}-default-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/media.py', 'tools/ffmpeg.toml') }}
+          key: testdata-${{ runner.os }}-default-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/**/*.py', 'tools/ffmpeg.toml') }}
 
       - name: Generate the test media (incremental)
         run: uv run python scripts/make-testdata.py
@@ -151,19 +151,11 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: testdata/media
-          key: testdata-${{ runner.os }}-override-test-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/media.py', 'tools/ffmpeg.toml') }}
+          key: testdata-${{ runner.os }}-override-test-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/**/*.py', 'tools/ffmpeg.toml') }}
 
       - name: Generate the test media with the override build (incremental)
         run: uv run python scripts/make-testdata.py
 
       - name: Tests that need FFmpeg
-        run: |
-          # pytest exits with 5 when no test is selected. Until C-1 adds needs_ffmpeg tests,
-          # that is a warning, not a failure.
-          status=0
-          uv run pytest -m "needs_ffmpeg and not needs_gpu" || status=$?
-          if [ "$status" -eq 5 ]; then
-            echo "::warning::No needs_ffmpeg tests were collected."
-            exit 0
-          fi
-          exit "$status"
+        # pytest exits with 5 when no test is selected: that is a failure here.
+        run: uv run pytest -m "needs_ffmpeg and not needs_gpu"
