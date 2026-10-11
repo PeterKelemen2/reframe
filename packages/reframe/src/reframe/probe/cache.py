@@ -1,0 +1,183 @@
+"""The probe cache (C-3, 02 §State model): memory + JSON files in ``<cache dir>/probe/``.
+
+- **Key**: absolute path + size + mtime (nanoseconds). A changed file gets a new key.
+- **Entry**: one JSON file per key (``<sha256 of the key>.json``) with the key, the probe tool
+  identity (the ffprobe version, or the binary's path/size/mtime when the version is not
+  known), the parser version (:data:`reframe.probe.parse.PARSER_VERSION`), the probe options
+  and the :class:`MediaSource`. An entry made by another ffprobe, another parser version or
+  other options is a miss (and is overwritten by the next :meth:`ProbeCache.put`).
+- Writes are atomic (a temporary file in the same folder, then ``os.replace``). A corrupt or
+  unreadable entry is a miss; the next probe rewrites it. Cache errors never fail a probe.
+- A small in-memory layer (LRU, :data:`MEMORY_ENTRIES`) avoids reading the same file twice in
+  one process. Callers get copies, so changing a returned source does not change the cache.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+import os
+import tempfile
+import threading
+from collections import OrderedDict
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
+
+from reframe import paths
+from reframe.models.media import MediaSource
+from reframe.probe.parse import PARSER_VERSION
+
+__all__ = ["CACHE_FORMAT", "MEMORY_ENTRIES", "CacheKey", "ProbeCache"]
+
+#: Version of the entry layout.
+CACHE_FORMAT = 1
+MEMORY_ENTRIES = 512
+
+
+@dataclass(frozen=True, slots=True)
+class CacheKey:
+    path: str
+    """Absolute path as a string."""
+    size: int
+    mtime_ns: int
+
+    @classmethod
+    def for_file(cls, path: Path, stat: os.stat_result) -> CacheKey:
+        return cls(str(path.absolute()), stat.st_size, stat.st_mtime_ns)
+
+    def digest(self) -> str:
+        text = f"{self.path}\0{self.size}\0{self.mtime_ns}"
+        return hashlib.sha256(text.encode("utf-8", errors="surrogatepass")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class _Entry:
+    tool: str
+    options: Mapping[str, Any]
+    source: MediaSource
+
+
+class ProbeCache:
+    """Probe results by file version. Thread-safe; file I/O is small and synchronous."""
+
+    def __init__(self, directory: Path | None = None, *, memory_entries: int = MEMORY_ENTRIES):
+        self.directory = directory if directory is not None else paths.cache_dir() / "probe"
+        self._memory: OrderedDict[CacheKey, _Entry] = OrderedDict()
+        self._memory_entries = memory_entries
+        self._lock = threading.Lock()
+
+    def entry_path(self, key: CacheKey) -> Path:
+        return self.directory / f"{key.digest()}.json"
+
+    # ------------------------------------------------------------------ read
+
+    def get(
+        self, key: CacheKey, *, tool: str, options: Mapping[str, Any] | None = None
+    ) -> MediaSource | None:
+        """The cached source for ``key`` made by ``tool`` with ``options``, else ``None``."""
+        opts = dict(options or {})
+        with self._lock:
+            entry = self._memory.get(key)
+            if entry is not None:
+                self._memory.move_to_end(key)
+        if entry is None:
+            entry = self._read(key)
+            if entry is not None:
+                self._remember(key, entry)
+        if entry is None or entry.tool != tool or dict(entry.options) != opts:
+            return None
+        return entry.source.model_copy(deep=True)
+
+    def _read(self, key: CacheKey) -> _Entry | None:
+        try:
+            raw = json.loads(self.entry_path(key).read_text(encoding="utf-8"))
+        except (OSError, ValueError):  # missing, unreadable, or not JSON (corrupt)
+            return None
+        if not isinstance(raw, dict):
+            return None
+        stored_key = raw.get("key")
+        if (
+            raw.get("format") != CACHE_FORMAT
+            or raw.get("parser") != PARSER_VERSION
+            or not isinstance(stored_key, dict)
+            or stored_key.get("path") != key.path
+            or stored_key.get("size") != key.size
+            or stored_key.get("mtime_ns") != key.mtime_ns
+            or not isinstance(raw.get("tool"), str)
+            or not isinstance(raw.get("options"), dict)
+        ):
+            return None
+        try:
+            source = MediaSource.model_validate(raw.get("source"))
+        except ValidationError:
+            return None
+        return _Entry(raw["tool"], raw["options"], source)
+
+    # ------------------------------------------------------------------ write
+
+    def put(
+        self,
+        key: CacheKey,
+        source: MediaSource,
+        *,
+        tool: str,
+        options: Mapping[str, Any] | None = None,
+    ) -> bool:
+        """Store ``source``. Returns ``False`` if the file could not be written (the memory
+        layer still has it)."""
+        entry = _Entry(tool, dict(options or {}), source.model_copy(deep=True))
+        self._remember(key, entry)
+        doc = {
+            "format": CACHE_FORMAT,
+            "parser": PARSER_VERSION,
+            "key": {"path": key.path, "size": key.size, "mtime_ns": key.mtime_ns},
+            "tool": tool,
+            "options": entry.options,
+            "source": source.model_dump(mode="json"),
+        }
+        text = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=f".{key.digest()[:16]}-", suffix=".tmp", dir=self.directory
+            )
+        except OSError:
+            return False
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, self.entry_path(key))
+        except OSError:  # disk full, read-only, or (Windows) the target is open elsewhere
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+            return False
+        return True
+
+    def _remember(self, key: CacheKey, entry: _Entry) -> None:
+        with self._lock:
+            self._memory[key] = entry
+            self._memory.move_to_end(key)
+            while len(self._memory) > self._memory_entries:
+                self._memory.popitem(last=False)
+
+    # ------------------------------------------------------------------ maintenance
+
+    def forget_memory(self) -> None:
+        """Drop the in-memory layer (the files stay)."""
+        with self._lock:
+            self._memory.clear()
+
+    def clear(self) -> None:
+        """Remove every entry (memory and files)."""
+        self.forget_memory()
+        if not self.directory.is_dir():
+            return
+        for path in self.directory.glob("*.json"):
+            with contextlib.suppress(OSError):
+                path.unlink()

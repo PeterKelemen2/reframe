@@ -29,7 +29,10 @@
 
 - [ ] **Q-2.1** Fixture generator (below) and the fake FFmpeg.
 - [ ] **Q-2.2** Recorded real-world ffprobe JSON in `testdata/probes/` (anonymised file names),
-      for codecs that cannot be generated (TrueHD Atmos, DTS:X, PGS, DV).
+      for codecs that cannot be generated (TrueHD Atmos, DTS:X, PGS, DV). Until true recordings
+      exist, these are synthesised from real output: the real ffprobe JSON of the closest file
+      FFmpeg can make, with only the fields FFmpeg cannot generate edited, each edit documented
+      in `testdata/probes/index.json` (decision XXXX).
 - [ ] **Q-2.3** API contract check: regenerate `schema.d.ts` and fail on any diff.
 - [ ] **Q-2.4** Optional local suite on your own files: `REFRAME_SAMPLES=/path pytest -m samples`.
       It is never run in CI.

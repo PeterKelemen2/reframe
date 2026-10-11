@@ -1,0 +1,407 @@
+{
+    "build": "ffprobe version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2007-2026 the FFmpeg developers",
+    "files": [
+        "build: bin/ffprobe",
+        "build: lib/libavcodec.so.63.1.102",
+        "build: lib/libavutil.so.61.1.102",
+        "system: /usr/bin/ffprobe",
+        "system: /usr/lib/libavcodec.so.63.1.102",
+        "system: /usr/lib/libavutil.so.61.1.102"
+    ],
+    "strings": {
+        "aac profiles": {
+            "LC": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: lib/libavutil.so.61.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavutil.so.61.1.102": "suffix"
+            },
+            "HE-AAC": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "HE-AACv2": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "LD": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: lib/libavutil.so.61.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "ELD": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Main": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "SSR": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: lib/libavutil.so.61.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavutil.so.61.1.102": "standalone"
+            },
+            "LTP": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "xHE-AAC": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "dts profiles": {
+            "DTS": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "DTS-ES": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DTS 96/24": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DTS-HD HRA": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DTS-HD MA": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DTS-HD MA + DTS:X": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DTS-HD MA + DTS:X IMAX": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DTS Express": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "eac3 profiles": {
+            "Dolby Digital Plus + Dolby Atmos": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "truehd profiles": {
+            "Dolby TrueHD + Dolby Atmos": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "video profiles": {
+            "Constrained Baseline": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Baseline": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "Main": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "High": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "High 10": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "High 4:2:2": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "High 4:4:4 Predictive": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Main 10": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "Main Still Picture": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Rext": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Professional": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Profile 0": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Profile 2": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Simple": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "4:2:2": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "HQ": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: lib/libavutil.so.61.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "codec names": {
+            "hdmv_pgs_subtitle": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "dvd_subtitle": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "dvb_subtitle": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "subrip": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "ass": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: lib/libavutil.so.61.1.102": "suffix",
+                "build: bin/ffprobe": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavutil.so.61.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "suffix"
+            },
+            "webvtt": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "mov_text": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "truehd": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "eac3": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "ac3": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "dts": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: bin/ffprobe": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "suffix"
+            },
+            "aac": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "flac": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "opus": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix"
+            },
+            "pcm_s24le": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "pcm_bluray": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "h264": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: lib/libavutil.so.61.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavutil.so.61.1.102": "suffix"
+            },
+            "hevc": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "av1": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: lib/libavutil.so.61.1.102": "suffix",
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavutil.so.61.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "vp9": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: lib/libavutil.so.61.1.102": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/lib/libavutil.so.61.1.102": "suffix"
+            },
+            "mpeg2video": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "ttf": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "otf": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: lib/libavutil.so.61.1.102": "suffix",
+                "build: bin/ffprobe": "suffix",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavutil.so.61.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "suffix"
+            }
+        },
+        "codec long names": {
+            "HDMV Presentation Graphic Stream subtitles": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "DVD subtitles": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "side data types": {
+            "Mastering display metadata": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: lib/libavutil.so.61.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavutil.so.61.1.102": "standalone"
+            },
+            "Content light level metadata": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: lib/libavutil.so.61.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavutil.so.61.1.102": "standalone"
+            },
+            "DOVI configuration record": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)": {
+                "build: lib/libavutil.so.61.1.102": "standalone",
+                "system: /usr/lib/libavutil.so.61.1.102": "standalone"
+            },
+            "HDR10+ Dynamic Metadata (SMPTE 2094-40)": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            },
+            "Display Matrix": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone"
+            }
+        },
+        "ffprobe fields": {
+            "side_data_type": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "red_x": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "white_point_x": {
+                "build: lib/libavcodec.so.63.1.102": "standalone",
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "min_luminance": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "max_luminance": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "max_content": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "max_average": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "dv_version_major": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "dv_version_minor": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "dv_profile": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "dv_level": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "rpu_present_flag": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "el_present_flag": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "bl_present_flag": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "dv_bl_signal_compatibility_id": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "dv_md_compression": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "rotation": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "field_order": {
+                "build: lib/libavcodec.so.63.1.102": "suffix",
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/lib/libavcodec.so.63.1.102": "suffix",
+                "system: /usr/bin/ffprobe": "standalone"
+            },
+            "closed_captions": {
+                "build: bin/ffprobe": "standalone",
+                "system: /usr/bin/ffprobe": "standalone"
+            }
+        }
+    }
+}
