@@ -1,4 +1,4 @@
-# XXXX — Probing uses the pymediainfo library; delay, LanguageIETF, VFR in Matroska
+# 0007 — Probing uses the pymediainfo library; delay, LanguageIETF, VFR in Matroska
 
 - Status: accepted
 - Date: 2026-10-11

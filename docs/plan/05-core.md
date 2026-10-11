@@ -147,7 +147,7 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`; in Matroska
       also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then MediaInfo, then a packet
       timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
-      to the main video stream, shown as audio delay), and missing durations (decision XXXX).
+      to the main video stream, shown as audio delay), and missing durations (decision 0007).
 - [ ] **HDR**: read stream side data (mastering display, content light level, DOVI
       configuration). If it is missing, read the first frame's side data
       (`-show_frames -read_intervals %+#5 -select_streams v:0`). Detect HDR10, HDR10+, HLG, and
@@ -162,7 +162,7 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       `unknown`. The value records its source. Statistics tags are used only when they are
       plausible for the file (size, bit rate, duration); FFmpeg copies stale ones on re-encode.
       MediaInfo also gives `language_ietf` (Matroska `LanguageIETF`, which ffprobe does not
-      show) (decision XXXX).
+      show) (decision 0007).
 - [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present and plausible.
 - [ ] **Role heuristics** (`probe/roles.py`): dispositions first, then title keywords
       (commentary, kommentar, commentaire, comentario, commento, kommentár, コメンタリー; SDH, CC,

@@ -9,7 +9,7 @@ What it adds to a probe:
 - **``FrameRate_Mode``** (``CFR`` / ``VFR``) for the Matroska streams whose VFR state
   ffprobe's output cannot tell (:func:`reframe.probe.parse.vfr_undecided`).
 
-Probing uses the **pymediainfo library** (decision XXXX): ``pymediainfo`` must import and its
+Probing uses the **pymediainfo library** (decision 0007): ``pymediainfo`` must import and its
 MediaInfo library must load (``MediaInfo.can_parse()``). The ``pymediainfo`` 7 wheels bundle
 ``libmediainfo``, so with the ``[mediainfo]`` extra it works without a system MediaInfo. The
 ``mediainfo`` entry of tool discovery (the CLI, ``REFRAME_MEDIAINFO``, Settings → Tools) is for
