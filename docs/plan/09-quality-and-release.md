@@ -32,7 +32,7 @@
       for codecs that cannot be generated (TrueHD Atmos, DTS:X, PGS, DV). Until true recordings
       exist, these are synthesised from real output: the real ffprobe JSON of the closest file
       FFmpeg can make, with only the fields FFmpeg cannot generate edited, each edit documented
-      in `testdata/probes/index.json` (decision XXXX).
+      in `testdata/probes/index.json` (decision 0006).
 - [ ] **Q-2.3** API contract check: regenerate `schema.d.ts` and fail on any diff.
 - [ ] **Q-2.4** Optional local suite on your own files: `REFRAME_SAMPLES=/path pytest -m samples`.
       It is never run in CI.

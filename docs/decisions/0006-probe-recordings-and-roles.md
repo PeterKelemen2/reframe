@@ -1,4 +1,4 @@
-# XXXX — Synthesised probe recordings; probe details (HDR10+ frame read, roles, MediaInfo)
+# 0006 — Synthesised probe recordings; probe details (HDR10+ frame read, roles, MediaInfo)
 
 - Status: accepted
 - Date: 2026-10-11

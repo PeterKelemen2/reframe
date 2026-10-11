@@ -6,7 +6,7 @@ Test data for Reframe. Nothing in `media/` is committed: it is generated.
 |------|-----------|------|
 | `media/` | no (git-ignored) | Generated fixture media (`scripts/make-testdata.py`) |
 | `names.toml` | yes (later, `C-16`) | File-name corpus for guessit / output naming |
-| `probes/` | yes (later, `Q-2.2`) | Recorded real-world ffprobe JSON |
+| `probes/` | yes | Recorded ffprobe JSON (`Q-2.2`, synthesised from real output; see `probes/README.md`) and the JSON of every generated fixture |
 
 ## Generated media
 
