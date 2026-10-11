@@ -36,6 +36,7 @@
         'channels': 2,
         'codec': 'flac',
         'codec_long': 'FLAC (Free Lossless Audio Codec)',
+        'delay': 0.0,
         'display_codec': 'FLAC',
         'disposition': dict({
           'attached_pic': False,
@@ -63,6 +64,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': True,
         'profile': None,
         'roles': list([
@@ -100,6 +102,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -127,6 +130,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -208,6 +212,7 @@
       dict({
         'codec': 'ass',
         'codec_long': 'ASS (Advanced SSA) subtitle',
+        'delay': 0.5,
         'display_codec': 'ASS',
         'disposition': dict({
           'attached_pic': False,
@@ -239,6 +244,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -267,6 +273,7 @@
       dict({
         'codec': 'ass',
         'codec_long': 'ASS (Advanced SSA) subtitle',
+        'delay': 0.05,
         'display_codec': 'ASS',
         'disposition': dict({
           'attached_pic': False,
@@ -298,6 +305,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -349,6 +357,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -383,6 +392,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 40,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -427,6 +437,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -454,6 +465,7 @@
         'index': 0,
         'kind': 'audio',
         'language': 'und',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -543,6 +555,7 @@
         'channels': 6,
         'codec': 'dts',
         'codec_long': 'DCA (DTS Coherent Acoustics)',
+        'delay': 0.0,
         'display_codec': 'DTS-HD MA',
         'disposition': dict({
           'attached_pic': False,
@@ -570,6 +583,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': True,
         'profile': 'DTS-HD MA',
         'roles': list([
@@ -607,6 +621,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -634,6 +649,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -696,6 +712,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.05,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -727,6 +744,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -778,6 +796,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -812,6 +831,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 40,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -856,6 +876,7 @@
         'channels': 6,
         'codec': 'dts',
         'codec_long': 'DCA (DTS Coherent Acoustics)',
+        'delay': 0.0,
         'display_codec': 'DTS:X',
         'disposition': dict({
           'attached_pic': False,
@@ -883,6 +904,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': True,
         'profile': 'DTS-HD MA + DTS:X',
         'roles': list([
@@ -920,6 +942,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -947,6 +970,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'ger',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -1033,6 +1057,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -1067,6 +1092,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 40,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -1160,6 +1186,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'HEVC Main 10',
         'disposition': dict({
           'attached_pic': False,
@@ -1224,6 +1251,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 120,
         'pix_fmt': 'yuv420p10le',
         'profile': 'Main 10',
@@ -1268,6 +1296,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': -0.005334,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -1295,6 +1324,7 @@
         'index': 1,
         'kind': 'audio',
         'language': None,
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -1322,6 +1352,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': -0.005334,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -1349,6 +1380,7 @@
         'index': 2,
         'kind': 'audio',
         'language': None,
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -1401,6 +1433,7 @@
       dict({
         'codec': 'dvd_subtitle',
         'codec_long': 'DVD subtitles',
+        'delay': 0.02,
         'display_codec': 'VobSub',
         'disposition': dict({
           'attached_pic': False,
@@ -1432,6 +1465,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': None,
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -1451,6 +1485,7 @@
       dict({
         'codec': 'dvd_subtitle',
         'codec_long': 'DVD subtitles',
+        'delay': 0.02,
         'display_codec': 'VobSub',
         'disposition': dict({
           'attached_pic': False,
@@ -1482,6 +1517,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': None,
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -1524,6 +1560,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'MPEG-2 Main',
         'disposition': dict({
           'attached_pic': False,
@@ -1558,6 +1595,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 8,
         'pix_fmt': 'yuv420p',
         'profile': 'Main',
@@ -1594,6 +1632,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -1621,6 +1660,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -1657,6 +1697,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -1684,6 +1725,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'fre',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -1764,6 +1806,7 @@
       dict({
         'codec': 'dvd_subtitle',
         'codec_long': 'DVD subtitles',
+        'delay': 0.0,
         'display_codec': 'VobSub',
         'disposition': dict({
           'attached_pic': False,
@@ -1795,6 +1838,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -1823,6 +1867,7 @@
       dict({
         'codec': 'dvd_subtitle',
         'codec_long': 'DVD subtitles',
+        'delay': 0.0,
         'display_codec': 'VobSub',
         'disposition': dict({
           'attached_pic': False,
@@ -1854,6 +1899,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'fre',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -1905,6 +1951,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'MPEG-2 Main',
         'disposition': dict({
           'attached_pic': False,
@@ -1939,6 +1986,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 8,
         'pix_fmt': 'yuv420p',
         'profile': 'Main',
@@ -1983,6 +2031,7 @@
         'channels': 6,
         'codec': 'eac3',
         'codec_long': 'ATSC A/52B (AC-3, E-AC-3)',
+        'delay': 0.0,
         'display_codec': 'E-AC-3 Atmos',
         'disposition': dict({
           'attached_pic': False,
@@ -2010,6 +2059,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'Dolby Digital Plus + Dolby Atmos',
         'roles': list([
@@ -2073,6 +2123,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.05,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -2104,6 +2155,7 @@
         'index': 2,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -2133,6 +2185,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.05,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -2164,6 +2217,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -2193,6 +2247,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -2224,6 +2279,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -2276,6 +2332,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -2310,6 +2367,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 40,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -2403,6 +2461,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -2437,6 +2496,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 30,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -2475,6 +2535,7 @@
         'channels': 1,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -2502,6 +2563,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -2618,6 +2680,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -2652,6 +2715,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -2739,6 +2803,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'HEVC Main 10',
         'disposition': dict({
           'attached_pic': False,
@@ -2795,6 +2860,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 60,
         'pix_fmt': 'yuv420p10le',
         'profile': 'Main 10',
@@ -2882,6 +2948,7 @@
           'den': 3,
           'num': 4,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Main',
         'disposition': dict({
           'attached_pic': False,
@@ -2916,6 +2983,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 21,
         'pix_fmt': 'yuv420p',
         'profile': 'Main',
@@ -3003,6 +3071,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -3037,6 +3106,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -3075,6 +3145,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -3102,6 +3173,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -3133,6 +3205,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -3160,6 +3233,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -3191,6 +3265,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -3218,6 +3293,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -3276,6 +3352,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -3307,6 +3384,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -3330,6 +3408,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -3361,6 +3440,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -3384,6 +3464,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -3415,6 +3496,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -3466,6 +3548,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -3500,6 +3583,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -3538,6 +3622,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -3565,6 +3650,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -3596,6 +3682,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -3623,6 +3710,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -3654,6 +3742,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -3681,6 +3770,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -3739,6 +3829,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -3770,6 +3861,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -3793,6 +3885,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -3824,6 +3917,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -3847,6 +3941,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -3878,6 +3973,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -3929,6 +4025,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -3963,6 +4060,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -4001,6 +4099,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -4028,6 +4127,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -4059,6 +4159,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -4086,6 +4187,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -4117,6 +4219,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -4144,6 +4247,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -4202,6 +4306,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -4233,6 +4338,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -4256,6 +4362,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -4287,6 +4394,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -4310,6 +4418,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -4341,6 +4450,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -4392,6 +4502,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -4426,6 +4537,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -4464,6 +4576,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -4491,6 +4604,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -4522,6 +4636,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -4549,6 +4664,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -4580,6 +4696,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -4607,6 +4724,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -4665,6 +4783,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -4696,6 +4815,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -4719,6 +4839,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -4750,6 +4871,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -4773,6 +4895,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -4804,6 +4927,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -4855,6 +4979,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -4889,6 +5014,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -4927,6 +5053,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -4954,6 +5081,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -4985,6 +5113,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -5012,6 +5141,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -5043,6 +5173,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -5070,6 +5201,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -5128,6 +5260,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -5159,6 +5292,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -5182,6 +5316,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -5213,6 +5348,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -5236,6 +5372,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -5267,6 +5404,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -5318,6 +5456,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -5352,6 +5491,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -5390,6 +5530,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -5417,6 +5558,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -5448,6 +5590,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -5475,6 +5618,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -5506,6 +5650,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -5533,6 +5678,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -5564,6 +5710,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -5591,6 +5738,7 @@
         'index': 4,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -5649,6 +5797,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -5680,6 +5829,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -5703,6 +5853,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -5734,6 +5885,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -5757,6 +5909,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -5788,6 +5941,7 @@
         'index': 7,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -5839,6 +5993,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -5873,6 +6028,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -5911,6 +6067,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -5938,6 +6095,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -5969,6 +6127,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -5996,6 +6155,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -6027,6 +6187,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -6054,6 +6215,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -6112,6 +6274,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -6143,6 +6306,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -6166,6 +6330,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -6197,6 +6362,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -6220,6 +6386,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -6251,6 +6418,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -6302,6 +6470,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -6336,6 +6505,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -6374,6 +6544,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -6401,6 +6572,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -6432,6 +6604,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -6459,6 +6632,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -6490,6 +6664,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -6517,6 +6692,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -6575,6 +6751,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -6606,6 +6783,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -6629,6 +6807,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -6660,6 +6839,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -6683,6 +6863,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -6714,6 +6895,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -6765,6 +6947,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -6799,6 +6982,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -6837,6 +7021,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -6864,6 +7049,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -6895,6 +7081,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -6922,6 +7109,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -6953,6 +7141,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -6980,6 +7169,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -7038,6 +7228,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7069,6 +7260,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7092,6 +7284,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7123,6 +7316,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7146,6 +7340,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7177,6 +7372,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7228,6 +7424,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -7262,6 +7459,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -7300,6 +7498,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -7327,6 +7526,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -7358,6 +7558,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -7385,6 +7586,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -7443,6 +7645,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7474,6 +7677,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7497,6 +7701,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7528,6 +7733,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7551,6 +7757,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7582,6 +7789,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7633,6 +7841,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -7667,6 +7876,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -7705,6 +7915,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -7732,6 +7943,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -7763,6 +7975,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -7790,6 +8003,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -7821,6 +8035,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -7848,6 +8063,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -7906,6 +8122,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7937,6 +8154,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -7960,6 +8178,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -7991,6 +8210,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8014,6 +8234,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8045,6 +8266,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8096,6 +8318,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -8130,6 +8353,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -8168,6 +8392,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -8195,6 +8420,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -8226,6 +8452,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -8253,6 +8480,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -8284,6 +8512,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -8311,6 +8540,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -8369,6 +8599,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8400,6 +8631,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8423,6 +8655,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8454,6 +8687,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8477,6 +8711,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8508,6 +8743,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8559,6 +8795,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -8593,6 +8830,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -8631,6 +8869,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -8658,6 +8897,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'jpn',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -8689,6 +8929,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -8716,6 +8957,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -8747,6 +8989,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -8774,6 +9017,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -8832,6 +9076,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8863,6 +9108,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8886,6 +9132,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.2,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8917,6 +9164,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -8940,6 +9188,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -8971,6 +9220,7 @@
         'index': 6,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9022,6 +9272,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -9056,6 +9307,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -9119,6 +9371,7 @@
       dict({
         'codec': 'ass',
         'codec_long': 'ASS (Advanced SSA) subtitle',
+        'delay': None,
         'display_codec': 'ASS',
         'disposition': dict({
           'attached_pic': False,
@@ -9150,6 +9403,7 @@
         'index': 0,
         'kind': 'subtitle',
         'language': None,
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9214,6 +9468,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': None,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -9245,6 +9500,7 @@
         'index': 0,
         'kind': 'subtitle',
         'language': None,
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9295,6 +9551,7 @@
         'channels': 1,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -9322,6 +9579,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -9378,6 +9636,7 @@
       dict({
         'codec': 'subrip',
         'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
         'display_codec': 'SRT',
         'disposition': dict({
           'attached_pic': False,
@@ -9409,6 +9668,7 @@
         'index': 2,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9432,6 +9692,7 @@
       dict({
         'codec': 'ass',
         'codec_long': 'ASS (Advanced SSA) subtitle',
+        'delay': 0.0,
         'display_codec': 'ASS',
         'disposition': dict({
           'attached_pic': False,
@@ -9463,6 +9724,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9509,6 +9771,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -9543,6 +9806,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 12,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -9627,6 +9891,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -9661,6 +9926,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 62,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -9751,6 +10017,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -9785,6 +10052,7 @@
         'index': 0,
         'kind': 'video',
         'language': 'und',
+        'language_ietf': None,
         'level': 62,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -9850,6 +10118,7 @@
       dict({
         'codec': 'dvd_subtitle',
         'codec_long': 'DVD subtitles',
+        'delay': 0.0,
         'display_codec': 'VobSub',
         'disposition': dict({
           'attached_pic': False,
@@ -9881,6 +10150,7 @@
         'index': 1,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9904,6 +10174,7 @@
       dict({
         'codec': 'dvd_subtitle',
         'codec_long': 'DVD subtitles',
+        'delay': 0.0,
         'display_codec': 'VobSub',
         'disposition': dict({
           'attached_pic': False,
@@ -9935,6 +10206,7 @@
         'index': 2,
         'kind': 'subtitle',
         'language': 'fre',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -9981,6 +10253,7 @@
           'den': 2,
           'num': 3,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -10015,6 +10288,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 30,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -10102,6 +10376,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'HEVC Main 10',
         'disposition': dict({
           'attached_pic': False,
@@ -10158,6 +10433,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 120,
         'pix_fmt': 'yuv420p10le',
         'profile': 'Main 10',
@@ -10202,6 +10478,7 @@
         'channels': 6,
         'codec': 'eac3',
         'codec_long': 'ATSC A/52B (AC-3, E-AC-3)',
+        'delay': 0.0,
         'display_codec': 'E-AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -10229,6 +10506,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -10314,6 +10592,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'HEVC Main 10',
         'disposition': dict({
           'attached_pic': False,
@@ -10370,6 +10649,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 150,
         'pix_fmt': 'yuv420p10le',
         'profile': 'Main 10',
@@ -10414,6 +10694,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -10441,6 +10722,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -10526,6 +10808,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'HEVC Main 10',
         'disposition': dict({
           'attached_pic': False,
@@ -10568,6 +10851,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 123,
         'pix_fmt': 'yuv420p10le',
         'profile': 'Main 10',
@@ -10597,6 +10881,199 @@
     ]),
   })
 # ---
+# name: test_media_source_snapshot[mkvmerge-vfr.json]
+  dict({
+    'attachments': list([
+    ]),
+    'audio': list([
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'source': 'stats_tag',
+          'value': 127820,
+        }),
+        'channel_layout': 'stereo',
+        'channels': 2,
+        'codec': 'aac',
+        'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': -0.021,
+        'display_codec': 'AAC-LC',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 3.029,
+        'frame_count': 142,
+        'index': 1,
+        'kind': 'audio',
+        'language': None,
+        'language_ietf': None,
+        'lossless': False,
+        'profile': 'LC',
+        'roles': list([
+          dict({
+            'detail': 'disposition default',
+            'evidence': 'flag',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '127820',
+          'DURATION': '00:00:03.029000000',
+          'NUMBER_OF_BYTES': '48396',
+          'NUMBER_OF_FRAMES': '142',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v101.0 ('Time To Turn') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2026-10-11 14:18:21',
+        }),
+        'title': None,
+        'type_index': 0,
+      }),
+    ]),
+    'chapters': list([
+    ]),
+    'container': dict({
+      'bitrate': 5444167,
+      'creation_time': '2026-10-11T14:18:21Z',
+      'display_name': 'MKV',
+      'duration': 3.031,
+      'format_long_name': 'Matroska / WebM',
+      'format_name': 'matroska,webm',
+      'size': 2062659,
+      'start_time': 0.0,
+      'tags': dict({
+        'MOVIE/ENCODER': 'Lavf63.1.102',
+        'creation_time': '2026-10-11T14:18:21.000000Z',
+        'encoder': 'libebml v1.4.7 + libmatroska v1.7.2',
+      }),
+      'title': None,
+    }),
+    'cover_art': list([
+    ]),
+    'data': list([
+    ]),
+    'probe_tool': None,
+    'probed_at': None,
+    'ref': dict({
+      'fingerprint': dict({
+        'mtime': 0.0,
+        'probe_hash': '4ce7bef83ddd37f2',
+        'size': 0,
+      }),
+      'path': 'phone-vfr-mkvmerge.mkv',
+    }),
+    'schema_version': 1,
+    'subtitles': list([
+    ]),
+    'video': list([
+      dict({
+        'avg_frame_rate': dict({
+          'den': 500,
+          'num': 29999,
+        }),
+        'bit_depth': 8,
+        'bitrate': dict({
+          'source': 'stats_tag',
+          'value': 5332167,
+        }),
+        'closed_captions': False,
+        'codec': 'h264',
+        'codec_long': 'H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10',
+        'color': dict({
+          'chroma_location': 'left',
+          'matrix': None,
+          'primaries': None,
+          'range': None,
+          'transfer': None,
+        }),
+        'dar': dict({
+          'den': 9,
+          'num': 16,
+        }),
+        'delay': 0.0,
+        'display_codec': 'H.264 Constrained Baseline',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 3.01,
+        'field_order': 'progressive',
+        'frame_count': 114,
+        'frame_rate': dict({
+          'den': 500,
+          'num': 29999,
+        }),
+        'hdr': None,
+        'height': 720,
+        'index': 0,
+        'kind': 'video',
+        'language': None,
+        'language_ietf': None,
+        'level': 62,
+        'pix_fmt': 'yuv420p',
+        'profile': 'Constrained Baseline',
+        'rotation': 0,
+        'sar': dict({
+          'den': 1,
+          'num': 1,
+        }),
+        'start_time': 0.021,
+        'tags': dict({
+          'BPS': '5332167',
+          'DURATION': '00:00:03.010000000',
+          'NUMBER_OF_BYTES': '2006228',
+          'NUMBER_OF_FRAMES': '114',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v101.0 ('Time To Turn') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2026-10-11 14:18:21',
+        }),
+        'title': None,
+        'type_index': 0,
+        'vfr': True,
+        'width': 1280,
+      }),
+    ]),
+    'warnings': list([
+    ]),
+  })
+# ---
 # name: test_media_source_snapshot[pgs.json]
   dict({
     'attachments': list([
@@ -10612,6 +11089,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -10639,6 +11117,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -10701,6 +11180,7 @@
       dict({
         'codec': 'hdmv_pgs_subtitle',
         'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.02,
         'display_codec': 'PGS',
         'disposition': dict({
           'attached_pic': False,
@@ -10732,6 +11212,7 @@
         'index': 2,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -10761,6 +11242,7 @@
       dict({
         'codec': 'hdmv_pgs_subtitle',
         'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.02,
         'display_codec': 'PGS',
         'disposition': dict({
           'attached_pic': False,
@@ -10792,6 +11274,7 @@
         'index': 3,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -10820,6 +11303,7 @@
       dict({
         'codec': 'hdmv_pgs_subtitle',
         'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.02,
         'display_codec': 'PGS',
         'disposition': dict({
           'attached_pic': False,
@@ -10851,6 +11335,7 @@
         'index': 4,
         'kind': 'subtitle',
         'language': 'eng',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -10880,6 +11365,7 @@
       dict({
         'codec': 'hdmv_pgs_subtitle',
         'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.02,
         'display_codec': 'PGS',
         'disposition': dict({
           'attached_pic': False,
@@ -10911,6 +11397,7 @@
         'index': 5,
         'kind': 'subtitle',
         'language': 'hun',
+        'language_ietf': None,
         'profile': None,
         'roles': list([
           dict({
@@ -10962,6 +11449,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -10996,6 +11484,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 40,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -11040,6 +11529,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -11067,6 +11557,7 @@
         'index': 1,
         'kind': 'audio',
         'language': None,
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -11162,6 +11653,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -11196,6 +11688,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 31,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -11222,6 +11715,136 @@
     ]),
   })
 # ---
+# name: test_media_source_snapshot[stale-stats.json]
+  dict({
+    'attachments': list([
+    ]),
+    'audio': list([
+    ]),
+    'chapters': list([
+    ]),
+    'container': dict({
+      'bitrate': 341034,
+      'creation_time': None,
+      'display_name': 'MKV',
+      'duration': 2.002,
+      'format_long_name': 'Matroska / WebM',
+      'format_name': 'matroska,webm',
+      'size': 85344,
+      'start_time': 0.0,
+      'tags': dict({
+        'ENCODER': 'Lavf63.1.102',
+      }),
+      'title': None,
+    }),
+    'cover_art': list([
+    ]),
+    'data': list([
+    ]),
+    'probe_tool': None,
+    'probed_at': None,
+    'ref': dict({
+      'fingerprint': dict({
+        'mtime': 0.0,
+        'probe_hash': '976b392befe2afee',
+        'size': 0,
+      }),
+      'path': 'movie-stale-stats.mkv',
+    }),
+    'schema_version': 1,
+    'subtitles': list([
+    ]),
+    'video': list([
+      dict({
+        'avg_frame_rate': dict({
+          'den': 1001,
+          'num': 30000,
+        }),
+        'bit_depth': 8,
+        'bitrate': dict({
+          'source': 'unknown',
+          'value': None,
+        }),
+        'closed_captions': False,
+        'codec': 'h264',
+        'codec_long': 'H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10',
+        'color': dict({
+          'chroma_location': 'left',
+          'matrix': None,
+          'primaries': None,
+          'range': 'tv',
+          'transfer': None,
+        }),
+        'dar': dict({
+          'den': 9,
+          'num': 16,
+        }),
+        'delay': 0.0,
+        'display_codec': 'H.264 Constrained Baseline',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 2.002,
+        'field_order': 'progressive',
+        'frame_count': None,
+        'frame_rate': dict({
+          'den': 1001,
+          'num': 30000,
+        }),
+        'hdr': None,
+        'height': 720,
+        'index': 0,
+        'kind': 'video',
+        'language': None,
+        'language_ietf': None,
+        'level': 31,
+        'pix_fmt': 'yuv420p',
+        'profile': 'Constrained Baseline',
+        'rotation': 0,
+        'sar': dict({
+          'den': 1,
+          'num': 1,
+        }),
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '9582197',
+          'DURATION': '00:00:02.002000000',
+          'ENCODER': 'Lavc63.1.102 libx264',
+          'NUMBER_OF_BYTES': '2397945',
+          'NUMBER_OF_FRAMES': '60',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v101.0 ('Time To Turn') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2026-10-11 14:18:21',
+        }),
+        'title': None,
+        'type_index': 0,
+        'vfr': False,
+        'width': 1280,
+      }),
+    ]),
+    'warnings': list([
+      "Stream 0: the statistics tags look stale (the tracks' NUMBER_OF_BYTES add up to 2397945 bytes, more than the file's 85344 bytes); not used.",
+    ]),
+  })
+# ---
 # name: test_media_source_snapshot[truehd-atmos.json]
   dict({
     'attachments': list([
@@ -11237,6 +11860,7 @@
         'channels': 6,
         'codec': 'truehd',
         'codec_long': 'TrueHD',
+        'delay': 0.0,
         'display_codec': 'TrueHD Atmos',
         'disposition': dict({
           'attached_pic': False,
@@ -11264,6 +11888,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': True,
         'profile': 'Dolby TrueHD + Dolby Atmos',
         'roles': list([
@@ -11301,6 +11926,7 @@
         'channels': 6,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -11328,6 +11954,7 @@
         'index': 2,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -11365,6 +11992,7 @@
         'channels': 2,
         'codec': 'ac3',
         'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
         'display_codec': 'AC-3',
         'disposition': dict({
           'attached_pic': False,
@@ -11392,6 +12020,7 @@
         'index': 3,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': None,
         'roles': list([
@@ -11478,6 +12107,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -11512,6 +12142,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 40,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',
@@ -11556,6 +12187,7 @@
         'channels': 2,
         'codec': 'aac',
         'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.0,
         'display_codec': 'AAC-LC',
         'disposition': dict({
           'attached_pic': False,
@@ -11583,6 +12215,7 @@
         'index': 1,
         'kind': 'audio',
         'language': 'eng',
+        'language_ietf': None,
         'lossless': False,
         'profile': 'LC',
         'roles': list([
@@ -11665,6 +12298,7 @@
           'den': 9,
           'num': 16,
         }),
+        'delay': 0.0,
         'display_codec': 'H.264 Constrained Baseline',
         'disposition': dict({
           'attached_pic': False,
@@ -11699,6 +12333,7 @@
         'index': 0,
         'kind': 'video',
         'language': None,
+        'language_ietf': None,
         'level': 62,
         'pix_fmt': 'yuv420p',
         'profile': 'Constrained Baseline',

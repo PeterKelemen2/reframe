@@ -4,6 +4,7 @@ fault injection (hang → timeout, crash, garbage JSON, missing tool, cancel).""
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -42,6 +43,12 @@ async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
 
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
 MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
+
+
+def probe_calls(fake: ft.FakeTools) -> list[tuple[str, ...]]:
+    """ffprobe calls without the packet-timestamp samples (the VFR check of Matroska files
+    without statistics tags when MediaInfo is off)."""
+    return [c for c in fake.calls("ffprobe") if "packet=pts_time" not in c]
 
 
 def _append(path: Path, data: bytes) -> None:
@@ -91,7 +98,7 @@ async def test_probe_parses_the_output(fake_tools: ft.FakeTools, media_file: Pat
     assert source.ref.fingerprint.probe_hash
     assert source.probe_tool == "n-fake"
     assert source.probed_at is not None
-    assert fake_tools.calls("ffprobe") == [
+    assert probe_calls(fake_tools) == [
         tuple(probe_argv(str(fake_tools.ffprobe), str(media_file))[1:])
     ]
 
@@ -106,17 +113,17 @@ async def test_cache_hit_runs_no_ffprobe(
     second = await prober.probe(media_file)
     assert isinstance(first, MediaSource)
     assert second == first
-    assert len(fake_tools.calls("ffprobe")) == 1
+    assert len(probe_calls(fake_tools)) == 1
     # Another process (new cache object, same folder) also hits.
     again = await make_prober(fake_tools, cache=ProbeCache(tmp_path / "cache")).probe(media_file)
     assert again == first
-    assert len(fake_tools.calls("ffprobe")) == 1
+    assert len(probe_calls(fake_tools)) == 1
     # use_cache=False probes again; a touched file is a miss.
     await prober.probe(media_file, use_cache=False)
-    assert len(fake_tools.calls("ffprobe")) == 2
+    assert len(probe_calls(fake_tools)) == 2
     _append(media_file, b"more")
     await prober.probe(media_file)
-    assert len(fake_tools.calls("ffprobe")) == 3
+    assert len(probe_calls(fake_tools)) == 3
 
 
 async def test_hdr_reads_the_first_frame(fake_tools: ft.FakeTools, media_file: Path) -> None:
@@ -138,7 +145,7 @@ async def test_hdr_reads_the_first_frame(fake_tools: ft.FakeTools, media_file: P
     assert hdr is not None
     assert hdr.source == "frame"
     assert hdr.mastering_display is not None
-    frame_call = fake_tools.calls("ffprobe")[1]
+    frame_call = probe_calls(fake_tools)[1]
     assert frame_call[frame_call.index("-select_streams") + 1] == "0"
 
 
@@ -159,7 +166,7 @@ async def test_frame_read_failure_is_a_warning(fake_tools: ft.FakeTools, media_f
     source = await make_prober(fake_tools).probe(media_file)
     assert isinstance(source, MediaSource)
     assert source.warnings == [
-        "The HDR side data of the first frame could not be read: ffprobe could not read the "
+        "The HDR side data of the first frames could not be read: ffprobe could not read the "
         "file (exit code 1). (Error while decoding stream #0:0)"
     ]
     assert source.video[0].hdr is not None  # PQ alone still says HDR10
@@ -201,7 +208,7 @@ async def test_cancel_during_frame_read(fake_tools: ft.FakeTools, media_file: Pa
     )
     token = CancelToken()
     task = asyncio.create_task(make_prober(fake_tools).probe(media_file, cancel=token))
-    await until(lambda: len(fake_tools.calls("ffprobe")) >= 2)
+    await until(lambda: len(probe_calls(fake_tools)) >= 2)
     token.cancel()
     result = await task
     assert isinstance(result, ProbeError)
@@ -282,7 +289,7 @@ async def test_missing_file_and_folder(tmp_path: Path, fake_tools: ft.FakeTools)
     folder = await make_prober(fake_tools).probe(tmp_path)
     assert isinstance(folder, ProbeError)
     assert folder.kind is ProbeErrorKind.NOT_A_FILE
-    assert fake_tools.calls("ffprobe") == []
+    assert probe_calls(fake_tools) == []
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
@@ -334,7 +341,187 @@ def test_probe_tool_from_tool_info_and_identity(tmp_path: Path) -> None:
 
 def test_cache_options_follow_mediainfo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
-    assert Prober("ffprobe").cache_options() == {"mediainfo": True}
+    monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "pymediainfo 1, libmediainfo 2")
+    assert Prober("ffprobe").cache_options() == {"mediainfo": "pymediainfo 1, libmediainfo 2"}
     assert Prober("ffprobe", use_mediainfo=False).cache_options() == {"mediainfo": False}
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     assert Prober("ffprobe").cache_options() == {"mediainfo": False}
+
+
+# --------------------------------------------------------------------------- review fixes (M1)
+
+
+def _packets_json(tmp_path: Path, steps_ms: list[float]) -> Path:
+    t, packets = 0.0, []
+    for step in [0.0, *steps_ms]:
+        t += step / 1000
+        packets.append({"pts_time": f"{t:.6f}"})
+    path = tmp_path / "packets.json"
+    path.write_text(json.dumps({"packets": [*packets, {"pts_time": "N/A"}, {}]}), "utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("steps", "vfr"),
+    [([41.7] * 24 + [33.3] * 30 + [16.7] * 60, True), ([40.0] * 100, False), ([], False)],
+)
+async def test_undecided_matroska_vfr_samples_packets(
+    fake_tools: ft.FakeTools, media_file: Path, tmp_path: Path, steps: list[float], vfr: bool
+) -> None:
+    """A Matroska stream with r = avg and no statistics tags (MediaInfo off): packet sample."""
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    tool="ffprobe",
+                    argv_has=["packet=pts_time"],
+                    actions=[stdout_file(_packets_json(tmp_path, steps))],
+                ),
+                streams_rule(stdout_file(MULTITRACK)),
+            ]
+        )
+    )
+    source = await make_prober(fake_tools).probe(media_file)
+    assert isinstance(source, MediaSource)
+    assert source.video[0].vfr is vfr
+    [call] = [c for c in fake_tools.calls("ffprobe") if "packet=pts_time" in c]
+    assert call[call.index("-read_intervals") + 1] == "%+#120"
+
+
+async def test_packet_sample_failure_is_a_warning(
+    fake_tools: ft.FakeTools, media_file: Path
+) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(tool="ffprobe", argv_has=["packet=pts_time"], exit_code=1),
+                streams_rule(stdout_file(MULTITRACK)),
+            ]
+        )
+    )
+    source = await make_prober(fake_tools).probe(media_file)
+    assert isinstance(source, MediaSource)
+    assert not source.video[0].vfr
+    assert source.warnings[-1].startswith("Video stream 0: the packet timestamps could not be read")
+
+
+async def test_no_decoded_frame_is_a_warning(fake_tools: ft.FakeTools, media_file: Path) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(tool="ffprobe", argv_has=["-show_frames"], actions=[ft.stdout("{}")]),
+                streams_rule(stdout_file(PROBES / "hdr10-sei-only.json")),
+            ]
+        )
+    )
+    source = await make_prober(fake_tools).probe(media_file)
+    assert isinstance(source, MediaSource)
+    assert source.warnings == [
+        "No frame of video stream 0 could be decoded from its first 5 packets: HDR metadata "
+        "that is only in the frames (SEI, HDR10+) was not checked."
+    ]
+    frame_call = next(c for c in fake_tools.calls("ffprobe") if "-show_frames" in c)
+    assert frame_call[frame_call.index("-read_intervals") + 1] == "%+#5"
+
+
+async def test_mediainfo_gives_language_ietf_and_frame_rate_mode(
+    fake_tools: ft.FakeTools, media_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    info = mediainfo.MediaInfoData(
+        languages={("audio", 1): "ja-JP", ("subtitle", 4): "en-US"},
+        frame_rate_modes={("video", 0): "VFR"},
+    )
+    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
+    monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "fake 1")
+    monkeypatch.setattr(mediainfo, "read_mediainfo", lambda path: info)
+    fake_tools.set_scenario(ft.Scenario([streams_rule(stdout_file(MULTITRACK))]))
+    prober = Prober(ProbeTool(str(fake_tools.ffprobe)), use_mediainfo=True)
+    source = await prober.probe(media_file)
+    assert isinstance(source, MediaSource)
+    assert (source.audio[0].language, source.audio[0].language_ietf) == ("jpn", "ja-JP")
+    assert source.subtitles[0].language_ietf == "en-US"
+    assert source.audio[1].language_ietf is None
+    assert source.video[0].vfr  # MediaInfo decided: no packet sample
+    assert [c for c in fake_tools.calls("ffprobe") if "packet=pts_time" in c] == []
+
+
+async def test_concurrent_probes_of_one_file_share_one_ffprobe(
+    fake_tools: ft.FakeTools, media_file: Path
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([streams_rule(ft.sleep(0.3), stdout_file(MULTITRACK))]))
+    prober = make_prober(fake_tools)
+    results = await asyncio.gather(*(prober.probe(media_file) for _ in range(5)))
+    assert all(isinstance(r, MediaSource) for r in results)
+    assert len([c for c in fake_tools.calls("ffprobe") if "-show_streams" in c]) == 1
+    first, second = results[0], results[1]
+    assert first == second
+    assert first is not second
+    # After the flight landed, a new probe runs ffprobe again.
+    await prober.probe(media_file)
+    assert len([c for c in fake_tools.calls("ffprobe") if "-show_streams" in c]) == 2
+
+
+async def test_one_cancelled_caller_does_not_cancel_the_others(
+    fake_tools: ft.FakeTools, media_file: Path
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([streams_rule(ft.sleep(0.5), stdout_file(MULTITRACK))]))
+    prober = make_prober(fake_tools)
+    token = CancelToken()
+    quitter = asyncio.create_task(prober.probe(media_file, cancel=token))
+    stayer = asyncio.create_task(prober.probe(media_file))
+    await until(lambda: bool(fake_tools.pids()))
+    token.cancel()
+    left = await quitter
+    assert isinstance(left, ProbeError)
+    assert left.kind is ProbeErrorKind.CANCELLED
+    assert isinstance(await stayer, MediaSource)
+
+
+async def test_last_caller_gone_kills_the_shared_ffprobe(
+    fake_tools: ft.FakeTools, media_file: Path
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([streams_rule(ft.hang())]))
+    prober = make_prober(fake_tools)
+    task = asyncio.create_task(prober.probe(media_file))
+    await until(lambda: bool(fake_tools.pids()))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ffprobe_procs_alive(fake_tools) == []  # gone before probe() returned
+    assert prober._flights == {}
+
+
+async def test_cancel_during_a_slow_stat(
+    tmp_path: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    release = threading.Event()
+    real_prepare = Prober._prepare
+
+    def slow_prepare(self: Prober, *args: object) -> object:
+        release.wait(5)  # a network share that does not answer
+        return real_prepare(self, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Prober, "_prepare", slow_prepare)
+    token = CancelToken()
+    task = asyncio.create_task(make_prober(fake_tools).probe(tmp_path / "a.mkv", cancel=token))
+    await asyncio.sleep(0.05)
+    started = time.monotonic()
+    token.cancel()
+    try:
+        result = await asyncio.wait_for(task, 1.0)
+    finally:
+        release.set()
+    assert time.monotonic() - started < 1.0
+    assert isinstance(result, ProbeError)
+    assert result.kind is ProbeErrorKind.CANCELLED
+
+
+async def test_already_cancelled_token(fake_tools: ft.FakeTools, media_file: Path) -> None:
+    token = CancelToken()
+    token.cancel()
+    result = await make_prober(fake_tools).probe(media_file, cancel=token)
+    assert isinstance(result, ProbeError)
+    assert result.kind is ProbeErrorKind.CANCELLED
+    assert fake_tools.calls("ffprobe") == []

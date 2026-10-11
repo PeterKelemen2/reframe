@@ -92,6 +92,77 @@ def test_tag_value_prefers_the_exact_key() -> None:
     assert bitrate.tag_value({"BPSX": "1"}, "BPS") is None
 
 
+# --------------------------------------------------------------------------- stale statistics
+
+
+def _doc(*streams: dict[str, Any], **fmt: Any) -> dict[str, Any]:
+    return {"streams": list(streams), "format": fmt}
+
+
+def _stats(index: int, **tags: str) -> dict[str, Any]:
+    return {"index": index, "codec_type": "video", "tags": {"_STATISTICS_TAGS": "BPS", **tags}}
+
+
+def test_plausible_stats_are_trusted() -> None:
+    check = bitrate.check_stats_tags(
+        _doc(
+            _stats(0, BPS="900000", NUMBER_OF_BYTES="225000", DURATION="00:00:02.000"),
+            _stats(1, BPS="96000", NUMBER_OF_BYTES="24000", DURATION="00:00:02.000"),
+            size="260000",
+            bit_rate="1040000",
+            duration="2.0",
+        )
+    )
+    assert check.stale == {}
+    assert check.trusted(0)
+    assert check.trusted(1)
+
+
+@pytest.mark.parametrize(
+    ("stream", "fmt", "reason"),
+    [
+        (
+            _stats(0, NUMBER_OF_BYTES="465185"),
+            {"size": "49428"},
+            "the tracks' NUMBER_OF_BYTES add up to 465185 bytes, more than the file's 49428 bytes",
+        ),
+        (
+            _stats(0, BPS="1858881"),
+            {"bit_rate": "197514"},
+            "BPS 1858881 is more than the file's bit rate 197514",
+        ),
+        (
+            _stats(0, DURATION="01:00:00.000"),
+            {"duration": "2.0"},
+            "DURATION 3600 s is longer than the file (2 s)",
+        ),
+    ],
+)
+def test_stale_stats(stream: dict[str, Any], fmt: dict[str, Any], reason: str) -> None:
+    assert bitrate.check_stats_tags(_doc(stream, **fmt)).stale == {0: reason}
+
+
+def test_the_byte_sum_check_covers_every_stream() -> None:
+    check = bitrate.check_stats_tags(
+        _doc(_stats(0, NUMBER_OF_BYTES="900"), _stats(1, NUMBER_OF_BYTES="200"), size="1000")
+    )
+    assert set(check.stale) == {0, 1}
+
+
+def test_streams_without_stats_and_junk() -> None:
+    plain = {"index": 0, "codec_type": "video", "tags": {"DURATION": "99:00:00"}}  # FFmpeg's tag
+    assert bitrate.check_stats_tags(_doc(plain, duration="1.0")).stale == {}
+    assert bitrate.check_stats_tags({"streams": "junk", "format": []}).stale == {}
+    tiny_rate = _stats(0, BPS="1000")
+    assert bitrate.check_stats_tags(_doc(tiny_rate, bit_rate="1000", duration="inf")).stale == {}
+
+
+def test_stream_bitrate_skips_untrusted_stats() -> None:
+    stream = {"tags": {"BPS": "1000"}}
+    assert bitrate.stream_bitrate(stream, trust_stats=False) == BitrateInfo()
+    assert bitrate.stream_bitrate({"bit_rate": "5"}, trust_stats=False).value == 5
+
+
 # --------------------------------------------------------------------------- MediaInfo
 
 
@@ -101,33 +172,44 @@ class FakeTrack:
     streamorder: str | None
     bit_rate: Any = None
     bit_rate_nominal: Any = None
+    language: Any = None
+    frame_rate_mode: Any = None
 
 
-def test_track_bitrates() -> None:
+def test_track_data() -> None:
     tracks = [
         FakeTrack("General", None, 5_000_000),
-        FakeTrack("Video", "0", 4_000_000),
-        FakeTrack("Audio", "1", "2104000 / 1509000"),  # several values: the first counts
-        FakeTrack("Audio", "2", None, 640_000.0),  # nominal
-        FakeTrack("Audio", "3", "junk"),
+        FakeTrack("Video", "0", 4_000_000, language="zh-Hant-TW", frame_rate_mode="VFR"),
+        FakeTrack("Audio", "1", "2104000 / 1509000", language="pt-BR"),  # first value counts
+        FakeTrack("Audio", "2", None, 640_000.0, language="Portuguese (BR)"),  # not a tag
+        FakeTrack("Audio", "3", "junk", frame_rate_mode="VFR"),  # audio: no mode
         FakeTrack("Audio", "0-1", 128000),  # MPEG-TS program order: not matched
-        FakeTrack("Text", "4", 100),
+        FakeTrack("Text", "4", 100, language="hu"),  # subtitles: language only
         FakeTrack("Audio", "5", 0),
         FakeTrack("Audio", "6", True),
-        FakeTrack("Audio", "7", -2.0),
+        FakeTrack("Audio", "7", -2.0, frame_rate_mode="CFR"),
+        FakeTrack("Video", "8", frame_rate_mode="weird"),
+        FakeTrack("Menu", "9", 1),
     ]
-    assert mediainfo.track_bitrates(tracks) == {
+    data = mediainfo.track_data(tracks)
+    assert data.bitrates == {
         ("video", 0): 4_000_000,
         ("audio", 1): 2_104_000,
         ("audio", 2): 640_000,
     }
+    assert data.languages == {
+        ("video", 0): "zh-Hant-TW",
+        ("audio", 1): "pt-BR",
+        ("subtitle", 4): "hu",
+    }
+    assert data.frame_rate_modes == {("video", 0): "VFR"}
 
 
 @pytest.fixture
 def no_mediainfo_cache() -> Any:
-    mediainfo._parser.cache_clear()
+    mediainfo._library.cache_clear()
     yield
-    mediainfo._parser.cache_clear()
+    mediainfo._library.cache_clear()
 
 
 def test_mediainfo_not_importable(
@@ -138,17 +220,26 @@ def test_mediainfo_not_importable(
 
     monkeypatch.setattr(importlib, "import_module", fail)
     assert not mediainfo.mediainfo_available()
-    assert mediainfo.read_bitrates(Path("x.mkv")) == {}
+    assert mediainfo.mediainfo_version() is None
+    assert mediainfo.read_mediainfo(Path("x.mkv")) == mediainfo.MediaInfoData()
 
 
 class _FakeModule:
-    def __init__(self, can_parse: bool, tracks: list[FakeTrack]) -> None:
+    __version__ = "9.9"
+
+    def __init__(self, can_parse: bool, tracks: list[FakeTrack], library: bool = True) -> None:
         tracks_ = tracks
 
         class MediaInfo:
             @staticmethod
             def can_parse() -> bool:
                 return can_parse
+
+            @staticmethod
+            def _get_library() -> tuple[object, object, str, tuple[int, ...]]:
+                if not library:
+                    raise OSError("no")
+                return (None, None, "25.04", (25, 4))
 
             @staticmethod
             def parse(path: str) -> Any:
@@ -167,13 +258,23 @@ def test_mediainfo_library_does_not_load(
     assert not mediainfo.mediainfo_available()
 
 
-def test_mediainfo_reads_bitrates(
+def test_mediainfo_reads_tracks_and_version(
     monkeypatch: pytest.MonkeyPatch, no_mediainfo_cache: None
 ) -> None:
-    module = _FakeModule(True, [FakeTrack("Audio", "1", 1_509_000)])
+    module = _FakeModule(True, [FakeTrack("Audio", "1", 1_509_000, language="pt-BR")])
     monkeypatch.setattr(importlib, "import_module", lambda name: module)
     assert mediainfo.mediainfo_available()
-    assert mediainfo.read_bitrates(Path("x.mkv")) == {("audio", 1): 1_509_000}
+    assert mediainfo.mediainfo_version() == "pymediainfo 9.9, libmediainfo 25.04"
+    data = mediainfo.read_mediainfo(Path("x.mkv"))
+    assert data.bitrates == {("audio", 1): 1_509_000}
+    assert data.languages == {("audio", 1): "pt-BR"}
+
+
+def test_mediainfo_version_without_library_version(
+    monkeypatch: pytest.MonkeyPatch, no_mediainfo_cache: None
+) -> None:
+    monkeypatch.setattr(importlib, "import_module", lambda name: _FakeModule(True, [], False))
+    assert mediainfo.mediainfo_version() == "pymediainfo 9.9"
 
 
 def _source() -> Any:
@@ -195,69 +296,95 @@ def _source() -> Any:
                 "tags": {"language": "eng"},
             },
             {"index": 3, "codec_type": "audio", "codec_name": "ac3", "bit_rate": "448000"},
+            {"index": 4, "codec_type": "subtitle", "codec_name": "subrip"},
         ],
         "format": {"format_name": "matroska,webm", "duration": "1"},
     }
     return parse_ffprobe(data, Path("/m/x.mkv"))
 
 
-async def test_apply_mediainfo_fills_unknown_bitrates_and_redoes_roles(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    rates = {("audio", 1): 1_509_000, ("audio", 2): 192_000, ("audio", 3): 1, ("video", 0): 9}
-    monkeypatch.setattr(mediainfo, "read_bitrates", lambda path: rates)
+def test_apply_mediainfo_fills_bitrates_languages_vfr_and_redoes_roles() -> None:
+    info = mediainfo.MediaInfoData(
+        bitrates={("audio", 1): 1_509_000, ("audio", 2): 192_000, ("audio", 3): 1, ("video", 0): 9},
+        languages={("audio", 1): "en-GB", ("subtitle", 4): "pt-BR"},
+        frame_rate_modes={("video", 0): "VFR"},
+    )
     source = _source()
     assert source.audio[1].roles[0].role is TrackRole.MAIN  # unknown bit rate: no heuristic
-    await prober._apply_mediainfo(source, Path("/m/x.mkv"))
+    undecided = {0}
+    prober._apply_mediainfo(source, info, undecided)
     assert source.video[0].bitrate == BitrateInfo(value=9, source=BitrateSource.MEDIAINFO)
     assert source.audio[0].bitrate == BitrateInfo(value=1_509_000, source=BitrateSource.MEDIAINFO)
     assert source.audio[2].bitrate.source is BitrateSource.STREAM  # not replaced
     assert [(r.role, r.evidence) for r in source.audio[1].roles] == [
         (TrackRole.COMMENTARY, RoleEvidence.HEURISTIC)
     ]
+    assert (source.audio[0].language, source.audio[0].language_ietf) == ("eng", "en-GB")
+    assert source.subtitles[0].language_ietf == "pt-BR"
+    assert source.video[0].vfr
+    assert undecided == set()
 
 
-async def test_apply_mediainfo_skips_when_nothing_is_unknown(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def explode(path: Path) -> Any:
-        raise AssertionError("must not be called")
-
-    monkeypatch.setattr(mediainfo, "read_bitrates", explode)
+def test_apply_mediainfo_leaves_decided_vfr_alone() -> None:
     source = _source()
-    for stream in [*source.video, *source.audio]:
-        stream.bitrate = BitrateInfo(value=1, source=BitrateSource.STREAM)
-    await prober._apply_mediainfo(source, Path("/m/x.mkv"))
+    info = mediainfo.MediaInfoData(frame_rate_modes={("video", 0): "VFR"})
+    undecided: set[int] = set()
+    prober._apply_mediainfo(source, info, undecided)
+    assert not source.video[0].vfr
 
 
-async def test_apply_mediainfo_error_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_read_mediainfo_error_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     def fail(path: Path) -> Any:
         raise RuntimeError("cannot parse")
 
-    monkeypatch.setattr(mediainfo, "read_bitrates", fail)
+    monkeypatch.setattr(mediainfo, "read_mediainfo", fail)
     source = _source()
-    await prober._apply_mediainfo(source, Path("/m/x.mkv"))
+    from reframe.tools import CancelToken
+
+    assert await prober._read_mediainfo(source, Path("/m/x.mkv"), CancelToken()) is None
     assert source.warnings[-1] == "MediaInfo could not read the file: cannot parse"
-    assert source.audio[0].bitrate.source is BitrateSource.UNKNOWN
 
 
-async def test_apply_mediainfo_timeout_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_read_mediainfo_timeout_and_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
     import threading
+
+    from reframe.tools import CancelToken
 
     release = threading.Event()
 
     def slow(path: Path) -> Any:
         release.wait(5)
-        return {}
+        return mediainfo.MediaInfoData()
 
-    monkeypatch.setattr(mediainfo, "read_bitrates", slow)
+    monkeypatch.setattr(mediainfo, "read_mediainfo", slow)
     monkeypatch.setattr(prober, "MEDIAINFO_TIMEOUT", 0.05)
     source = _source()
     try:
-        await prober._apply_mediainfo(source, Path("/m/x.mkv"))
+        assert await prober._read_mediainfo(source, Path("/m/x.mkv"), CancelToken()) is None
+        assert source.warnings[-1] == "MediaInfo did not finish within 0.05 s."
+        monkeypatch.setattr(prober, "MEDIAINFO_TIMEOUT", 30.0)
+        token = CancelToken()
+        import asyncio
+
+        task = asyncio.create_task(prober._read_mediainfo(source, Path("/m/x.mkv"), token))
+        await asyncio.sleep(0.02)
+        token.cancel()
+        assert isinstance(await asyncio.wait_for(task, 1.0), prober._Cancelled)
     finally:
         release.set()
-    assert source.warnings[-1] == "MediaInfo did not finish within 0.05 s."
 
 
 pytestmark = pytest.mark.anyio
+
+
+def test_apply_mediainfo_rejects_a_bit_rate_above_the_container() -> None:
+    """MediaInfo repeats stale statistics tags (it reads BPS as well)."""
+    source = _source()
+    source.container.bitrate = 200_000
+    info = mediainfo.MediaInfoData(bitrates={("video", 0): 1_858_881, ("audio", 2): 192_000})
+    prober._apply_mediainfo(source, info, set())
+    assert source.video[0].bitrate == BitrateInfo()
+    assert source.audio[1].bitrate.value == 192_000
+    assert source.warnings == [
+        "Stream 0: MediaInfo's bit rate 1858881 is more than the file's 200000; not used."
+    ]

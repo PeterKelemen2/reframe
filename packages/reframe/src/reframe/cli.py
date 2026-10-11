@@ -452,7 +452,9 @@ def _audio_table(streams: Sequence[AudioStream]) -> Table:
         codec = _text(s.display_codec or s.codec, "bold")
         if s.lossless:
             codec.append(" lossless", style="dim")
-        delay = [f"delay {round(s.start_time * 1000):+d} ms"] if s.start_time else []
+        delay = (
+            [f"delay {round(s.delay * 1000):+d} ms"] if s.delay and round(s.delay * 1000) else []
+        )
         table.add_row(
             _text(str(s.index)),
             _text(fmt_language(s.language)),

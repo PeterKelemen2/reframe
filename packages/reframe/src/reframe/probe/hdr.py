@@ -181,7 +181,9 @@ def needs_frame_side_data(stream: Mapping[str, Any], bit_depth: int | None) -> b
 
 
 def parse_hdr(stream: Mapping[str, Any], frame: Mapping[str, Any] | None = None) -> HdrInfo | None:
-    """HDR info of one video stream (``None`` for SDR).
+    """HDR info of one video stream (``None`` for SDR, even when the stream carries mastering
+    display or light level data with an SDR transfer: such metadata describes nothing that
+    Reframe acts on, and the model contract is "``None`` for SDR").
 
     ``frame`` is the first frame of this stream from ``-show_frames`` (or ``None``). Static
     metadata comes from the stream when it has any, else from the frame (``source="frame"``).
@@ -215,7 +217,7 @@ def parse_hdr(stream: Mapping[str, Any], frame: Mapping[str, Any] | None = None)
     if dovi is not None:
         formats.append(HdrFormat.DOLBY_VISION)
 
-    if not formats and mastering is None and light is None:
+    if not formats:  # SDR: static metadata on an SDR transfer is ignored (contract: None)
         return None
     return HdrInfo(
         formats=formats,

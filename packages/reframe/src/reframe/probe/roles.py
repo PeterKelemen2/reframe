@@ -7,13 +7,18 @@ Evidence, strongest first; a role is given once, by the strongest evidence that 
    Subtitles: ``forced`` → forced, ``hearing_impaired`` / ``captions`` → SDH, ``comment`` →
    commentary, ``descriptions`` → description.
 2. **title**: keywords in the track title, as whole words, case-insensitive (so ``AD`` does
-   not match ``Leader``). Exception: the two-letter acronyms ``AD`` and ``CC`` must be upper
+   not match ``Leader``). Exceptions: the two-letter acronyms ``AD`` and ``CC`` must be upper
    case, because ``ad`` and ``cc`` are ordinary words or abbreviations in titles such as
-   ``Ad Astra``. Japanese keywords (no spaces between words) match as substrings.
+   ``Ad Astra``; Japanese keywords (no spaces between words) and German compound parts
+   (``kommentar`` in ``Audiokommentar``, ``deskription``, ``hörfilm``) match as substrings;
+   ``forced`` does not match after ``non``, ``non-`` or ``not`` (``Non-Forced``,
+   ``Full (not forced)``).
 3. **heuristic**: the structure of the file.
 
-   - Audio: a track with at most 2 channels and a known bit rate ≤ 192 kb/s, not ``default``,
-     that comes after a multichannel track in the same language → possible commentary.
+   - Audio: an **untitled** track with at most 2 channels and a known bit rate ≤ 192 kb/s,
+     not ``default``, that comes after a multichannel track in the same language → possible
+     commentary. A titled track without a keyword is left alone: its title says what it is
+     (``English Stereo (compatibility)``, ``Original Mono Mix``).
    - Subtitles: a track whose event count is ≤ 25 % of the largest event count of another
      track in the same language → possible forced track (03: "a low count relative to other
      tracks in the same language suggests a forced track").
@@ -69,13 +74,16 @@ class Keyword:
     role: TrackRole
     case_sensitive: bool = False
     substring: bool = False
-    """Match anywhere (for Japanese, which has no spaces between words)."""
+    """Match anywhere (Japanese, which has no spaces between words; German compounds)."""
+    not_after: tuple[str, ...] = ()
+    """No match right after one of these (``("non", "non-", "not ")`` for ``forced``)."""
 
     def pattern(self) -> re.Pattern[str]:
         body = r"[\s_.\-]+".join(re.escape(word) for word in self.text.split())
         if not self.substring:
             body = rf"(?<!\w){body}(?!\w)"
-        return re.compile(body, 0 if self.case_sensitive else re.IGNORECASE)
+        guards = "".join(f"(?<!{re.escape(prefix)})" for prefix in self.not_after)
+        return re.compile(guards + body, 0 if self.case_sensitive else re.IGNORECASE)
 
 
 _COMMENTARY = [
@@ -83,19 +91,25 @@ _COMMENTARY = [
     for word in (
         "commentary",
         "commentaries",
-        "kommentar",
         "commentaire",
         "comentario",
         "commento",
         "kommentár",
     )
-] + [Keyword("コメンタリー", TrackRole.COMMENTARY, substring=True)]
+] + [
+    Keyword("kommentar", TrackRole.COMMENTARY, substring=True),  # Audiokommentar, Regie…
+    Keyword("コメンタリー", TrackRole.COMMENTARY, substring=True),
+]
+_NOT_FORCED = ("non", "non-", "non ", "not ", "not-")
 
 #: Title keywords for audio tracks.
 AUDIO_KEYWORDS: Sequence[Keyword] = (
     *_COMMENTARY,
     Keyword("audio description", TrackRole.DESCRIPTION),
     Keyword("descriptive", TrackRole.DESCRIPTION),
+    Keyword("described", TrackRole.DESCRIPTION),
+    Keyword("deskription", TrackRole.DESCRIPTION, substring=True),  # Audiodeskription
+    Keyword("hörfilm", TrackRole.DESCRIPTION, substring=True),  # Hörfilmfassung
     Keyword("AD", TrackRole.DESCRIPTION, case_sensitive=True),
     Keyword("music only", TrackRole.MUSIC),
     Keyword("isolated score", TrackRole.MUSIC),
@@ -103,7 +117,7 @@ AUDIO_KEYWORDS: Sequence[Keyword] = (
 
 #: Title keywords for subtitle tracks.
 SUBTITLE_KEYWORDS: Sequence[Keyword] = (
-    Keyword("forced", TrackRole.FORCED),
+    Keyword("forced", TrackRole.FORCED, not_after=_NOT_FORCED),
     Keyword("foreign", TrackRole.FORCED),
     Keyword("signs", TrackRole.SIGNS),
     Keyword("songs", TrackRole.SIGNS),
@@ -219,7 +233,7 @@ def assign_audio_roles(streams: Sequence[AudioStream]) -> None:
             audio_flag_roles(stream.disposition), title_roles(stream.title, AUDIO_KEYWORDS)
         )
     for position, stream in enumerate(streams):
-        if stream.roles or stream.disposition.default or stream.channels > 2:
+        if stream.roles or stream.title or stream.disposition.default or stream.channels > 2:
             continue
         bitrate = stream.bitrate.value
         lang = _language(stream.language)

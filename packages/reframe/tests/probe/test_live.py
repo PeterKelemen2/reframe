@@ -8,6 +8,7 @@ The timing test measures the Q-3 budgets: one local file < 500 ms, a 24-file fol
 from __future__ import annotations
 
 import shutil
+import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -23,7 +24,7 @@ from reframe.models import (
     RoleEvidence,
     TrackRole,
 )
-from reframe.probe import FolderProbeResult, ProbeCache, Prober, probe_folder
+from reframe.probe import FolderProbeResult, ProbeCache, Prober, mediainfo, probe_folder
 from reframe.tools import discover_tools
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
@@ -151,6 +152,7 @@ async def test_season_folder(prober: Prober, fixture_media: Media) -> None:
     assert roles(e05) == [(TrackRole.COMMENTARY, RoleEvidence.FLAG)]
 
 
+@pytest.mark.benchmark
 async def test_probe_budgets(prober: Prober, fixture_media: Media, tmp_path: Path) -> None:
     """Q-3: one local file < 500 ms; a 24-file folder < 5 s (cold, no cache)."""
     single = fixture_media("multitrack")
@@ -183,3 +185,118 @@ async def test_probe_budgets(prober: Prober, fixture_media: Media, tmp_path: Pat
     )
     assert one < 0.5
     assert folder_time < 5.0
+
+
+def _run(argv: list[str], *, check: bool = True) -> None:
+    """A helper process (mkvmerge, mkvpropedit, ffmpeg) for preparing a test file."""
+    subprocess.run(argv, check=check)
+
+
+def _tool(name: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        pytest.skip(f"needs {name}")
+    return path
+
+
+async def test_mkvmerge_vfr_without_stats_is_found_by_packet_sampling(
+    prober: Prober, fixture_media: Media, tmp_path: Path
+) -> None:
+    """mkvmerge writes DefaultDuration (r = avg); without statistics tags and without
+    MediaInfo the prober samples packet timestamps."""
+    out = tmp_path / "vfr-mkvmerge.mkv"
+    _run(
+        [
+            _tool("mkvmerge"),
+            "--quiet",
+            "--disable-track-statistics-tags",
+            "-o",
+            str(out),
+            str(fixture_media("vfr")),
+        ],
+        check=True,
+    )
+    no_mediainfo = Prober(prober.tool, use_mediainfo=False)
+    video = (await probe(no_mediainfo, out)).video[0]
+    assert video.frame_rate == video.avg_frame_rate  # ffprobe alone says CFR
+    assert video.vfr
+    cfr = tmp_path / "cfr-mkvmerge.mkv"
+    _run(
+        [
+            _tool("mkvmerge"),
+            "--quiet",
+            "--disable-track-statistics-tags",
+            "-o",
+            str(cfr),
+            str(fixture_media("multitrack")),
+        ],
+        check=True,
+    )
+    assert not (await probe(no_mediainfo, cfr)).video[0].vfr
+
+
+async def test_language_ietf_from_mediainfo(
+    prober: Prober, fixture_media: Media, tmp_path: Path
+) -> None:
+    if not mediainfo.mediainfo_available():
+        pytest.skip("needs the MediaInfo library (pymediainfo)")
+    copy = tmp_path / "pt.mkv"
+    shutil.copyfile(fixture_media("multitrack"), copy)
+    _run(
+        [
+            _tool("mkvpropedit"),
+            "--quiet",
+            str(copy),
+            "--edit",
+            "track:a2",
+            "--set",
+            "language=pt-BR",
+        ],
+        check=True,
+    )
+    source = await probe(prober, copy)
+    audio = source.audio[1]
+    assert audio.language == "por"  # what ffprobe shows
+    assert audio.language_ietf == "pt-BR"  # the LanguageIETF element, from MediaInfo
+
+
+async def test_stale_statistics_after_an_ffmpeg_reencode(
+    prober: Prober, fixture_media: Media, tmp_path: Path
+) -> None:
+    """mkvmerge writes statistics tags; an FFmpeg re-encode keeps them (stale). Neither the
+    tags nor MediaInfo (which reads the same tags) may give the bit rate then."""
+    from reframe_testing import media
+
+    muxed = tmp_path / "muxed.mkv"
+    _run(
+        [_tool("mkvmerge"), "--quiet", "-o", str(muxed), str(fixture_media("anamorphic"))],
+        check=True,
+    )
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg is not None
+    stale = tmp_path / "stale.mkv"
+    _run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-i",
+            str(muxed),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-b:v",
+            "50k",
+            "-an",
+            str(stale),
+        ],
+        check=True,
+    )
+    source = await probe(prober, stale)
+    video = source.video[0]
+    assert "BPS" in video.tags  # the old tag is still there
+    assert video.bitrate.source is not BitrateSource.STATS_TAG
+    if video.bitrate.value is not None and source.container.bitrate is not None:
+        assert video.bitrate.value <= source.container.bitrate * 1.05
+    assert any("statistics tags look stale" in w for w in source.warnings)

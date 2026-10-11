@@ -9,8 +9,10 @@ Conventions:
 - ``index`` is the **absolute stream index** in the file (ffprobe ``index``, the number in
   ``-map 0:3``). ``type_index`` is the index among streams of the same type (``0:a:1``).
 - Times are seconds (float). Bit rates are bits per second.
-- ``start_time`` is the stream's start offset relative to the container start: for audio it
-  is shown as the delay. ``None`` when ffprobe does not say.
+- ``start_time`` is ffprobe's raw ``start_time``: the timestamp of the stream's first packet
+  (an M2TS or a Blu-ray stream can start at 1.4 s or 600 s). ``delay`` is the start relative
+  to the main video stream (else the container start): this is the audio delay that the UI
+  shows, as mkvmerge and HandBrake do. Both are ``None`` when ffprobe does not say.
 - Attached pictures (cover art, ``disposition.attached_pic``) are **not** video tracks: they
   are in :attr:`MediaSource.cover_art`, never in :attr:`MediaSource.video`.
 """
@@ -283,11 +285,23 @@ class _StreamBase(DocumentModel):
     profile: str | None = None
     """ffprobe ``profile`` (``Main 10``, ``DTS-HD MA``)."""
     language: LanguageTag | None = None
-    """The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent."""
+    """The language tag as ffprobe reports it (``eng``, ``hun``; for Matroska the legacy
+    ISO 639-2 ``Language`` element); ``None`` if absent."""
+    language_ietf: LanguageTag | None = None
+    """The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
+    ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
+    language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+
+    The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+    ``language``."""
     title: str | None = None
     disposition: Disposition = Field(default_factory=Disposition)
     start_time: float | None = None
-    """Start offset in seconds (audio: shown as delay)."""
+    """ffprobe's raw ``start_time`` in seconds (the first packet's timestamp)."""
+    delay: float | None = None
+    """Seconds relative to the main video stream's ``start_time`` (or the container's
+    ``start_time`` when there is no video); negative = starts earlier. The audio delay of the
+    UI."""
     duration: NonNegativeFloat | None = None
     frame_count: NonNegativeInt | None = None
     tags: dict[str, str] = Field(default_factory=dict)
@@ -328,7 +342,7 @@ class VideoStream(_StreamBase):
 class AudioStream(_StreamBase):
     kind: Literal["audio"] = "audio"
     display_codec: str | None = None
-    """Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 JOC``, ``AAC-LC``."""
+    """Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``, ``AAC-LC``."""
     channels: NonNegativeInt = 0
     channel_layout: str | None = None
     """ffprobe ``channel_layout`` (``5.1(side)``)."""

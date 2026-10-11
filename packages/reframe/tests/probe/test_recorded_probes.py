@@ -120,8 +120,13 @@ def test_interlaced_dvd(probe_source: Load) -> None:
     vob = probe_source("dvd-interlaced-vob")
     assert vob.container.display_name == "VOB"
     assert vob.video[0].field_order is FieldOrder.TOP_FIRST  # "tt" in MPEG-PS
-    assert vob.audio[0].start_time == pytest.approx(0.528033)  # the delay shown in the UI
+    # Raw start times, and the delay relative to the video (what the UI shows): the audio
+    # starts 5 ms before the video, not 528 ms after the container start.
+    assert vob.audio[0].start_time == pytest.approx(0.528033)
     assert vob.video[0].start_time == pytest.approx(0.533367)
+    assert vob.audio[0].delay == pytest.approx(-0.005334)
+    assert vob.video[0].delay == 0.0
+    assert mkv.audio[0].delay == 0.0
 
 
 def test_hdr10(probe_source: Load) -> None:
@@ -179,3 +184,30 @@ def test_phone_rotation_timecode_and_creation_time(probe_source: Load) -> None:
     assert source.video[0].rotation == 90  # ffprobe "rotation": -90 (counter-clockwise)
     assert [(d.codec_tag, d.title) for d in source.data] == [("tmcd", "TimeCodeHandler")]
     assert source.container.creation_time == datetime(2026, 5, 1, 10, 20, 30, tzinfo=UTC)
+
+
+def test_mkvmerge_vfr_is_detected_from_the_statistics_tags(probe_source: Load) -> None:
+    """mkvmerge writes DefaultDuration, so r_frame_rate = avg_frame_rate = 29999/500; its
+    statistics tags say 114 frames in 3.01 s (37.9 fps): VFR."""
+    source = probe_source("mkvmerge-vfr")
+    video = source.video[0]
+    assert video.frame_rate == video.avg_frame_rate == Rational(num=29999, den=500)
+    assert video.vfr
+    assert video.frame_count == 114
+    assert source.audio[0].delay == pytest.approx(-0.021)  # mkvmerge shifted the video
+    assert source.warnings == []
+
+
+def test_stale_statistics_tags_are_not_used(probe_source: Load) -> None:
+    """A 200 kb/s FFmpeg re-encode of an mkvmerge file keeps the old tags (BPS 9.6 Mb/s,
+    2.4 MB in an 85 kB file)."""
+    source = probe_source("stale-stats")
+    video = source.video[0]
+    assert video.tags["BPS"] == "9582197"  # still visible in the tags
+    assert video.bitrate.source is BitrateSource.UNKNOWN
+    assert video.frame_count is None
+    assert not video.vfr
+    assert source.warnings == [
+        "Stream 0: the statistics tags look stale (the tracks' NUMBER_OF_BYTES add up to "
+        "2397945 bytes, more than the file's 85344 bytes); not used."
+    ]

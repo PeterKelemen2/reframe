@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -67,7 +68,7 @@ def test_invalidation(
 
 def test_another_parser_version_is_a_miss(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ProbeCache(tmp_path).put(key(), source(), tool=TOOL)
-    monkeypatch.setattr(cache_mod, "PARSER_VERSION", PARSER_VERSION + 1)
+    monkeypatch.setattr(cache_mod, "parser_fingerprint", lambda: f"{PARSER_VERSION + 1}:x")
     assert ProbeCache(tmp_path).get(key(), tool=TOOL) is None
 
 
@@ -184,3 +185,79 @@ def test_key_for_file(tmp_path: Path) -> None:
     k = CacheKey.for_file(file, stat)
     assert (k.path, k.size, k.mtime_ns) == (str(file.absolute()), 5, stat.st_mtime_ns)
     assert k.digest() != CacheKey(k.path, 6, k.mtime_ns).digest()
+
+
+# --------------------------------------------------------------------------- pruning, parser
+
+
+def _age(path: Path, seconds: float) -> None:
+    then = time.time() - seconds
+    os.utime(path, (then, then))
+
+
+def test_prune_by_age_count_and_leftovers(tmp_path: Path) -> None:
+    cache = ProbeCache(tmp_path, max_entries=2, max_age=100.0)
+    for i in range(4):
+        cache.put(key(size=i), source(), tool=TOOL)
+    paths = [cache.entry_path(key(size=i)) for i in range(4)]
+    _age(paths[0], 1000)  # too old
+    _age(paths[1], 50)
+    _age(paths[2], 40)
+    _age(paths[3], 30)
+    leftover = tmp_path / ".abc-123.tmp"
+    leftover.write_text("x")
+    _age(leftover, 7200)
+    fresh_tmp = tmp_path / ".def-456.tmp"
+    fresh_tmp.write_text("x")
+    (tmp_path / "notes.txt").write_text("not ours")
+    assert cache.prune() == 3  # paths[0] (age), paths[1] (count), the old leftover
+    assert [p.exists() for p in paths] == [False, False, True, True]
+    assert not leftover.exists()
+    assert fresh_tmp.exists()
+    assert (tmp_path / "notes.txt").exists()
+    assert ProbeCache(tmp_path / "missing").prune() == 0
+
+
+def test_put_prunes_on_the_first_put_and_then_every_n(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(cache_mod, "PRUNE_EVERY", 3)
+    cache = ProbeCache(tmp_path)
+
+    def fake_prune() -> int:
+        calls.append(1)
+        return 0
+
+    monkeypatch.setattr(cache, "prune", fake_prune)
+    for i in range(7):
+        cache.put(key(size=i), source(), tool=TOOL)
+    assert len(calls) == 3  # puts 1, 4 and 7
+
+
+def test_parser_fingerprint_follows_the_source() -> None:
+    fingerprint = cache_mod.parser_fingerprint()
+    assert fingerprint.startswith(f"{PARSER_VERSION}:")
+    assert len(fingerprint.split(":")[1]) == 16
+    doc_path_names = cache_mod._PARSER_MODULES
+    here = Path(cache_mod.__file__).parent
+    assert all((here / name).is_file() for name in doc_path_names)
+
+
+def test_parser_fingerprint_without_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    import reframe
+
+    monkeypatch.setattr(cache_mod, "_PARSER_MODULES", ("missing-module.py",))
+    cache_mod.parser_fingerprint.cache_clear()
+    try:
+        assert cache_mod.parser_fingerprint() == f"{PARSER_VERSION}:reframe-{reframe.__version__}"
+    finally:
+        cache_mod.parser_fingerprint.cache_clear()
+
+
+def test_entry_of_another_parser_source_is_a_miss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ProbeCache(tmp_path).put(key(), source(), tool=TOOL)
+    monkeypatch.setattr(cache_mod, "parser_fingerprint", lambda: "1:0000000000000000")
+    assert ProbeCache(tmp_path).get(key(), tool=TOOL) is None

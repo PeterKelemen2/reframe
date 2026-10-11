@@ -2,8 +2,10 @@
 
 The probe command is the plan's
 ``ffprobe -v error -of json -show_format -show_streams -show_chapters -show_programs`` with a
-60 s timeout (network shares can be slow). The HDR fallback reads the first frame of the main
-video stream: ``-show_frames -read_intervals %+#1 -select_streams <index>``. Both go through
+60 s timeout (network shares can be slow). The HDR fallback reads the first frames of the
+main video stream: ``-show_frames -read_intervals %+#5 -select_streams <index>`` (five packets:
+the first packet alone may decode to no frame, and SEI-only HDR would then be missed). The VFR
+check samples packet timestamps (:func:`packets_argv`). All go through
 :func:`reframe.tools.run` (timeout, cancel, process-tree kill).
 
 A failure is a :class:`ProbeError` value with a :class:`ProbeErrorKind`, never an exception.
@@ -29,6 +31,7 @@ __all__ = [
     "ProbeErrorKind",
     "ProbeTool",
     "frames_argv",
+    "packets_argv",
     "probe_argv",
     "run_json",
 ]
@@ -37,6 +40,10 @@ __all__ = [
 PROBE_TIMEOUT = 60.0
 #: Seconds for the first-frame read (it decodes one frame).
 FRAME_TIMEOUT = 30.0
+#: Packets read for the HDR frame fallback.
+FRAME_PACKETS = 5
+#: Packets sampled for the VFR check of a Matroska stream without statistics tags.
+VFR_SAMPLE_PACKETS = 120
 #: ffprobe JSON of a file with many streams and chapters is small; this is a safety limit.
 MAX_OUTPUT = 64 * 2**20
 
@@ -139,9 +146,28 @@ def frames_argv(ffprobe: str, path: str, stream_index: int) -> list[str]:
         "json",
         "-show_frames",
         "-read_intervals",
-        "%+#1",
+        f"%+#{FRAME_PACKETS}",
         "-select_streams",
         str(stream_index),
+        "-i",
+        path,
+    ]
+
+
+def packets_argv(ffprobe: str, path: str, stream_index: int) -> list[str]:
+    """Packet timestamps of the first :data:`VFR_SAMPLE_PACKETS` packets of one stream."""
+    return [
+        ffprobe,
+        "-v",
+        "error",
+        "-of",
+        "json",
+        "-select_streams",
+        str(stream_index),
+        "-show_entries",
+        "packet=pts_time",
+        "-read_intervals",
+        f"%+#{VFR_SAMPLE_PACKETS}",
         "-i",
         path,
     ]

@@ -232,7 +232,7 @@ async def test_folder_task_with_fake_ffprobe(fake_tools: ft.FakeTools, tmp_path:
     assert len(value.sources) == 24
     assert value.errors == []
     assert all(len(s.audio) == 3 for s in value.sources)
-    assert len(fake_tools.calls("ffprobe")) == 24
+    assert len([c for c in fake_tools.calls("ffprobe") if "-show_streams" in c]) == 24
 
 
 async def test_cancel_folder_task_kills_ffprobe(fake_tools: ft.FakeTools, tmp_path: Path) -> None:
@@ -281,3 +281,22 @@ async def test_cancelling_probe_folder_reaps_every_ffprobe(
     await asyncio.wait({task})
     alive = [p for p in pids if (proc := _proc(p)) and proc.status() != psutil.STATUS_ZOMBIE]
     assert alive == []
+
+
+async def test_no_new_probe_after_a_cancel(tmp_path: Path) -> None:
+    touch(tmp_path, *(f"E{i}.mkv" for i in range(5)))
+    token = CancelToken()
+    prober = FakeProber()
+    progress: list[int] = []
+
+    def on_progress(done: int, total: int, path: Path) -> None:
+        progress.append(done)
+        token.cancel()  # cancel after the first file
+
+    result = await probe_folder(
+        prober, tmp_path, concurrency=1, cancel=token, on_progress=on_progress
+    )
+    assert prober.seen == ["E0.mkv"]
+    assert len(result.sources) == 1
+    assert [e.kind for e in result.errors] == [ProbeErrorKind.CANCELLED] * 4
+    assert progress == [1, 2, 3, 4, 5]
