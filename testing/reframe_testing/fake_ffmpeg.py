@@ -30,18 +30,31 @@ Scenario format::
 The first matching rule wins. Actions run in order; each is an object with one key:
 
 ``stdout`` / ``stderr``: text. ``stdout_data`` / ``stderr_data``: a file name in ``fake_data/``.
-``stdout_file`` / ``stderr_file``: any file path. ``sleep``: seconds. ``hang``: sleep forever.
-``crash``: ``{"signal": "SIGSEGV"}`` (POSIX; on Windows exit 0xC0000005) or
-``{"exit_code": N}`` (abrupt ``os._exit``, no flush). ``flood``: ``{"bytes": N, "stream":
-"stdout"}``. ``spawn_grandchild``: ``{}``, starts a child process that hangs forever.
-``progress``: ``{"blocks": N, "interval": s, "media_seconds": s, "fps": f, "bytes_per_second":
-n}``. ``write_output``: ``{"bytes": N}``, writes the last argv element. ``version``:
-``{"version": "7.1", "configuration": "--enable-gpl ..."}``. ``on_sigterm``: ``"ignore"`` or
-``{"exit_code": 255}``. ``exit``: exit code now.
+``stdout_file`` / ``stderr_file``: any file path. ``sleep``: seconds. ``hang``: sleep until the
+maximum lifetime (below) is over. ``crash``: ``{"signal": "SIGSEGV"}`` (POSIX; on Windows exit
+0xC0000005) or ``{"exit_code": N}`` (abrupt ``os._exit``, no flush). ``flood``: ``{"bytes": N,
+"stream": "stdout"}``. ``spawn_grandchild``: ``{}``, starts a child process that hangs (with the
+same maximum lifetime). ``progress``: ``{"blocks": N, "interval": s, "media_seconds": s, "fps":
+f, "bytes_per_second": n, "end": true, "na_fields": ["bitrate", ...], "na_blocks": N}``.
+``write_output``: ``{"bytes": N}``, writes the last argv element. ``version``: ``{"version":
+"7.1", "configuration": "--enable-gpl ..."}``. ``on_sigterm``: ``"ignore"`` or ``{"exit_code":
+255}``. ``exit``: exit code now.
 
-Every invocation appends one JSON line to the log named by ``REFRAME_FAKE_FFMPEG_LOG`` (if
-set): ``{"role": "main" | "grandchild", "tool", "pid", "ppid", "argv", "cwd"}``. Tests use it as
-the pid file and as a record of the commands that were run.
+``hang`` and the grandchild do not run forever: they exit when
+``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` seconds (default 120) have passed since the process
+started, so a failed test cannot leave processes behind for long. ``hang`` then exits with
+:data:`LIFETIME_EXIT_CODE`.
+
+Exit codes above ``2**31 - 1`` (such as ``0xC0000005``) are given to the OS as the signed C
+``int`` with the same 32 bits, because ``os._exit`` and ``sys.exit`` take a C ``int``.
+
+Every invocation writes one JSON file into the folder named by ``REFRAME_FAKE_FFMPEG_LOG`` (if
+set): ``<pid>-<random hex>.json`` with ``{"role": "main" | "grandchild", "tool", "pid", "ppid",
+"argv", "cwd", "monotonic_ns", "time_ns"}``. The file is written under a ``.tmp`` name and then
+renamed, so a reader never sees a partial file, and parallel processes never share a file (an
+``O_APPEND`` log is not atomic between processes on Windows). Tests use the folder as the pid
+file and as a record of the commands that were run, sorted by ``monotonic_ns`` (a system-wide
+clock on Linux, macOS and Windows).
 """
 
 from __future__ import annotations
@@ -59,13 +72,55 @@ from typing import Any, NoReturn
 
 SCENARIO_ENV = "REFRAME_FAKE_FFMPEG_SCENARIO"
 LOG_ENV = "REFRAME_FAKE_FFMPEG_LOG"
+MAX_LIFETIME_ENV = "REFRAME_FAKE_FFMPEG_MAX_LIFETIME"
+DEFAULT_MAX_LIFETIME = 120.0
+#: Exit code of ``hang`` when the maximum lifetime is over (the code of ``timeout(1)``).
+LIFETIME_EXIT_CODE = 124
 DATA_DIR = Path(__file__).resolve().parent / "fake_data"
 TOOLS = ("ffmpeg", "ffprobe")
 
 #: Exit code that Windows reports for an access violation (what a segfault looks like there).
 WINDOWS_CRASH_CODE = 0xC0000005
 
-_GRANDCHILD_CODE = "import time\nwhile True:\n    time.sleep(60)\n"
+#: The grandchild sleeps until its maximum lifetime (``sys.argv[1]`` seconds) is over.
+_GRANDCHILD_CODE = (
+    "import sys, time\n"
+    "end = time.monotonic() + float(sys.argv[1])\n"
+    "while (left := end - time.monotonic()) > 0:\n"
+    "    time.sleep(left)\n"
+)
+
+_STARTED = time.monotonic()
+
+
+def python_executable() -> str:
+    """The real interpreter, never a venv launcher.
+
+    On Windows, ``.venv\\Scripts\\python.exe`` is a launcher that starts the base interpreter as
+    a child process, so it would add one more process to every tree. The fake needs only the
+    standard library (it runs with ``-I``), so it runs with ``sys._base_executable``.
+    """
+    base: str | None = getattr(sys, "_base_executable", None)
+    return base or sys.executable
+
+
+def max_lifetime() -> float:
+    """``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` in seconds (default 120)."""
+    try:
+        value = float(os.environ.get(MAX_LIFETIME_ENV, ""))
+    except ValueError:
+        return DEFAULT_MAX_LIFETIME
+    return value if value >= 0 else DEFAULT_MAX_LIFETIME
+
+
+def exit_code_for_os(code: int) -> int:
+    """``code`` as the C ``int`` that ``os._exit`` / ``sys.exit`` take (same low 32 bits).
+
+    ``os._exit(0xC0000005)`` raises ``OverflowError``; ``os._exit(-1073741819)`` makes Windows
+    report the exit code ``0xC0000005``.
+    """
+    code &= 0xFFFFFFFF
+    return code - 2**32 if code >= 2**31 else code
 
 
 # --------------------------------------------------------------------------- output helpers
@@ -107,16 +162,17 @@ def _flood(stream: str, nbytes: int) -> None:
 
 
 def _log(entry: dict[str, Any]) -> None:
-    path = os.environ.get(LOG_ENV)
-    if not path:
+    """Write ``entry`` as a new file in the log folder (a temporary name, then a rename)."""
+    folder = os.environ.get(LOG_ENV)
+    if not folder:
         return
-    line = json.dumps(entry, separators=(",", ":")) + "\n"
-    # One write() per line with O_APPEND: lines from parallel processes do not interleave.
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-    try:
-        os.write(fd, line.encode("utf-8"))
-    finally:
-        os.close(fd)
+    entry = {**entry, "monotonic_ns": time.monotonic_ns(), "time_ns": time.time_ns()}
+    os.makedirs(folder, exist_ok=True)
+    name = f"{os.getpid()}-{os.urandom(16).hex()}"
+    tmp = os.path.join(folder, name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(entry, f, separators=(",", ":"))
+    os.replace(tmp, os.path.join(folder, name + ".json"))
 
 
 # --------------------------------------------------------------------------- argv helpers
@@ -145,42 +201,99 @@ def _progress_target(argv: Sequence[str]) -> str | None:
     return _option_value(argv, "-progress")
 
 
-# --------------------------------------------------------------------------- actions
+# --------------------------------------------------------------------------- progress
+
+#: Fields of a ``-progress`` block, in the order that real ffmpeg n9.0.2 prints them.
+PROGRESS_FIELDS = (
+    "frame",
+    "fps",
+    "stream_0_0_q",
+    "bitrate",
+    "total_size",
+    "out_time_us",
+    "out_time_ms",
+    "out_time",
+    "dup_frames",
+    "drop_frames",
+    "speed",
+    "progress",
+)
+
+#: A block that real ffmpeg prints before the encoder has returned its first packet (copied
+#: from ``fake_data/progress_null_long.stdout.txt``: libx264 to ``-f null``, ``-stats_period``).
+STARTUP_BLOCK = {
+    "frame": "0",
+    "fps": "0.00",
+    "stream_0_0_q": "0.0",
+    "bitrate": "N/A",
+    "total_size": "0",
+    "out_time_us": "N/A",
+    "out_time_ms": "N/A",
+    "out_time": "N/A",
+    "dup_frames": "0",
+    "drop_frames": "0",
+    "speed": "N/A",
+}
 
 
-def _emit_progress(argv: Sequence[str], spec: dict[str, Any]) -> None:
+def progress_block(spec: dict[str, Any], n: int, elapsed: float) -> str:
+    """Text of block ``n`` (from 0) of a ``progress`` action; ``elapsed``: wall seconds so far.
+
+    The first ``na_blocks`` blocks are :data:`STARTUP_BLOCK`. Then ``blocks`` blocks follow, with
+    ``out_time_us`` going linearly up to ``media_seconds``. The fields in ``na_fields`` are
+    ``N/A`` in every block (real ffmpeg prints ``bitrate=N/A`` and ``total_size=N/A`` with
+    ``-f null``). The last block has ``progress=end`` unless ``end`` is false.
+    """
     blocks = max(1, int(spec.get("blocks", 5)))
-    interval = float(spec.get("interval", 0.01))
     media_seconds = float(spec.get("media_seconds", 2.0))
     fps = float(spec.get("fps", 25.0))
     bytes_per_second = int(spec.get("bytes_per_second", 50_000))
     end = bool(spec.get("end", True))
-    target = _progress_target(argv) or "pipe:1"
-    started = time.monotonic()
-    for i in range(1, blocks + 1):
-        time.sleep(interval)
-        out_us = round(media_seconds * 1_000_000 * i / blocks)
-        elapsed = max(time.monotonic() - started, 1e-6)
+    na_fields = [str(f) for f in spec.get("na_fields", ())]
+    unknown = set(na_fields) - set(PROGRESS_FIELDS[:-1])
+    if unknown:
+        raise ValueError(f"unknown -progress fields for N/A: {sorted(unknown)}")
+    na_blocks = max(0, int(spec.get("na_blocks", 0)))
+    values: dict[str, str]
+    if n < na_blocks:
+        values = dict(STARTUP_BLOCK)
+    else:
+        out_us = round(media_seconds * 1_000_000 * (n - na_blocks + 1) / blocks)
+        wall = max(elapsed, 1e-6)
         frame = int(out_us / 1_000_000 * fps)
         secs, us = divmod(out_us, 1_000_000)
         mins, secs = divmod(secs, 60)
         hours, mins = divmod(mins, 60)
-        last = i == blocks
-        # Field set and order copied from real ffmpeg n9.0.2 (fake_data/progress_encode).
-        block = (
-            f"frame={frame}\n"
-            f"fps={frame / elapsed:.2f}\n"
-            "stream_0_0_q=28.0\n"
-            f"bitrate={bytes_per_second * 8 / 1000:.1f}kbits/s\n"
-            f"total_size={int(bytes_per_second * out_us / 1_000_000)}\n"
-            f"out_time_us={out_us}\n"
-            f"out_time_ms={out_us}\n"
-            f"out_time={hours:02d}:{mins:02d}:{secs:02d}.{us:06d}\n"
-            "dup_frames=0\n"
-            "drop_frames=0\n"
-            f"speed={out_us / 1_000_000 / elapsed:4.3g}x\n"
-            f"progress={'end' if last and end else 'continue'}\n"
-        )
+        # The formats of fftools/ffmpeg.c print_report(): "%6.1fkbits/s" and "%4.3gx" pad with
+        # spaces ("bitrate=  43.8kbits/s", "speed= 4.3x"), as in fake_data/progress_mkv_long.
+        values = {
+            "frame": str(frame),
+            "fps": f"{frame / wall:.2f}",
+            "stream_0_0_q": "28.0",
+            "bitrate": f"{bytes_per_second * 8 / 1000:6.1f}kbits/s",
+            "total_size": str(int(bytes_per_second * out_us / 1_000_000)),
+            "out_time_us": str(out_us),
+            "out_time_ms": str(out_us),
+            "out_time": f"{hours:02d}:{mins:02d}:{secs:02d}.{us:06d}",
+            "dup_frames": "0",
+            "drop_frames": "0",
+            "speed": f"{out_us / 1_000_000 / wall:4.3g}x",
+        }
+    for field in na_fields:
+        values[field] = "N/A"
+    last = n == na_blocks + blocks - 1
+    values["progress"] = "end" if last and end else "continue"
+    return "".join(f"{key}={values[key]}\n" for key in PROGRESS_FIELDS)
+
+
+def _emit_progress(argv: Sequence[str], spec: dict[str, Any]) -> None:
+    interval = float(spec.get("interval", 0.01))
+    total = max(1, int(spec.get("blocks", 5))) + max(0, int(spec.get("na_blocks", 0)))
+    target = _progress_target(argv) or "pipe:1"
+    started = time.monotonic()
+    for n in range(total):
+        time.sleep(interval)
+        block = progress_block(spec, n, time.monotonic() - started)
         if target == "pipe:1":
             _write("stdout", block.encode())
         elif target == "pipe:2":
@@ -188,6 +301,9 @@ def _emit_progress(argv: Sequence[str], spec: dict[str, Any]) -> None:
         else:
             with open(target, "a", encoding="utf-8") as f:
                 f.write(block)
+
+
+# --------------------------------------------------------------------------- actions
 
 
 def _write_output(argv: Sequence[str], spec: dict[str, Any]) -> None:
@@ -216,13 +332,15 @@ def _version_text(tool: str, spec: dict[str, Any]) -> bytes:
     return "".join(lines).encode("utf-8")
 
 
-def _crash(spec: dict[str, Any]) -> NoReturn:
+def _crash(spec: dict[str, Any], *, windows: bool | None = None) -> NoReturn:
+    if windows is None:
+        windows = os.name == "nt"
     if "exit_code" in spec:
-        os._exit(int(spec["exit_code"]))
+        os._exit(exit_code_for_os(int(spec["exit_code"])))
     sys.stdout.flush()
     sys.stderr.flush()
-    if os.name == "nt":
-        os._exit(WINDOWS_CRASH_CODE)
+    if windows:
+        os._exit(exit_code_for_os(WINDOWS_CRASH_CODE))
     signum = getattr(signal, str(spec.get("signal", "SIGSEGV")))
     signal.signal(signum, signal.SIG_DFL)
     os.kill(os.getpid(), signum)
@@ -230,9 +348,19 @@ def _crash(spec: dict[str, Any]) -> NoReturn:
     os._exit(1)
 
 
+def _hang() -> NoReturn:
+    """Sleep until the maximum lifetime is over, then exit with :data:`LIFETIME_EXIT_CODE`."""
+    end = _STARTED + max_lifetime()
+    while (left := end - time.monotonic()) > 0:
+        time.sleep(left)
+    _write("stderr", f"fake ffmpeg: {MAX_LIFETIME_ENV} is over, exiting\n".encode())
+    sys.stdout.flush()
+    os._exit(LIFETIME_EXIT_CODE)
+
+
 def _spawn_grandchild(tool: str) -> None:
     child = subprocess.Popen(
-        [sys.executable, "-I", "-c", _GRANDCHILD_CODE],
+        [python_executable(), "-I", "-c", _GRANDCHILD_CODE, repr(max_lifetime())],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -274,8 +402,7 @@ def run_action(tool: str, argv: Sequence[str], action: dict[str, Any]) -> None:
     elif kind == "sleep":
         time.sleep(float(value))
     elif kind == "hang":
-        while True:
-            time.sleep(60)
+        _hang()
     elif kind == "crash":
         _crash(dict(value) if isinstance(value, dict) else {})
     elif kind == "flood":
@@ -293,7 +420,7 @@ def run_action(tool: str, argv: Sequence[str], action: dict[str, Any]) -> None:
     elif kind == "exit":
         sys.stdout.flush()
         sys.stderr.flush()
-        raise SystemExit(int(value))
+        raise SystemExit(exit_code_for_os(int(value)))
     else:
         raise ValueError(f"unknown fake ffmpeg action: {kind!r}")
 
@@ -383,7 +510,7 @@ def main(tool: str, argv: Sequence[str]) -> int:
         if rule_matches(rule, tool, argv):
             for action in rule.get("actions", ()):
                 run_action(tool, argv, action)
-            return int(rule.get("exit_code", 0))
+            return exit_code_for_os(int(rule.get("exit_code", 0)))
     if scenario.get("defaults", True):
         return run_defaults(tool, argv)
     return 0

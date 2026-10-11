@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -81,8 +83,8 @@ def test_no_absolute_paths_in_ffmpeg_arguments() -> None:
 
 def test_text_templates() -> None:
     assert media.srt([(0.5, 61.25, "Hi")]) == "1\n00:00:00,500 --> 00:01:01,250\nHi\n"
-    text = media.ass("DejaVu Sans", [(1.0, 2.5, "Default", "Hi")])
-    assert "Style: Default,DejaVu Sans,18," in text
+    text = media.ass("Reframe Box", [(1.0, 2.5, "Default", "Hi")])
+    assert "Style: Default,Reframe Box,18," in text
     assert text.endswith("Dialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,Hi\n")
 
 
@@ -221,16 +223,129 @@ def test_script_wrapper_runs(fake_tools: FakeTools, out_dir: Path) -> None:
 # --------------------------------------------------------------------------- fonts
 
 
-def test_font_choice_falls_back_to_the_generated_font(monkeypatch: pytest.MonkeyPatch) -> None:
-    media.find_font.cache_clear()
-    monkeypatch.setattr(media, "_font_dirs", list)
-    try:
-        font = media.find_font()
-        assert font.family == boxfont.FAMILY
-        assert font.source == "generated"
-        assert font.data == boxfont.build_font()
-    finally:
-        media.find_font.cache_clear()
+def test_the_ass_fixture_always_attaches_the_generated_box_font() -> None:
+    """No system font: text-subs.mkv is the same on every machine (C-3 snapshots)."""
+    font = media.fixture_font()
+    assert (font.family, font.file_name, font.source) == (
+        boxfont.FAMILY,
+        "ReframeBox.ttf",
+        "generated",
+    )
+    assert font.data == boxfont.build_font()
+    recipe = media.build_recipes()["text-subs"]
+    writes = {s.path: s.data for s in recipe.steps if isinstance(s, media.WriteFile)}
+    assert writes["ReframeBox.ttf"] == boxfont.build_font()
+    assert "Style: Default,Reframe Box,18," in writes["text-subs.en.ass"].decode()
+    (ffmpeg,) = [s for s in recipe.steps if isinstance(s, media.Ffmpeg)]
+    assert ffmpeg.args[ffmpeg.args.index("-attach") + 1] == "ReframeBox.ttf"
+    assert not hasattr(media, "find_font")  # the system font search is gone
+    assert media.GENERATOR_VERSION >= 2  # fixtures made with a system font are regenerated
+
+
+# --------------------------------------------------------------------------- manifest races
+
+
+class _RecordingLock:
+    """A stand-in for ``_manifest_lock`` that records whether it is held."""
+
+    def __init__(self) -> None:
+        self.depth = 0
+        self.entered = 0
+
+    def __enter__(self) -> None:
+        self.depth += 1
+        self.entered += 1
+
+    def __exit__(self, *exc: object) -> None:
+        self.depth -= 1
+
+
+def test_manifest_reads_hold_the_lock(
+    fake_tools: FakeTools, out_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows: reading manifest.json while another thread replaces it is a PermissionError."""
+    _gen(["anamorphic"], out_dir, fake_tools)
+    lock = _RecordingLock()
+    monkeypatch.setattr(media, "_manifest_lock", lock)
+    real_read = media._read_manifest
+    held_during_read: list[bool] = []
+
+    def read(path: Path) -> dict[str, object]:
+        held_during_read.append(lock.depth > 0)
+        return real_read(path)
+
+    monkeypatch.setattr(media, "_read_manifest", read)
+    recipe = media.build_recipes()["anamorphic"]
+    version = media.ffmpeg_version(str(fake_tools.ffmpeg))
+    assert media.is_up_to_date(recipe, out_dir, version)
+    assert held_during_read == [True]
+
+
+def test_replace_retries_on_permission_error(
+    out_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir.mkdir()
+    real_replace = os.replace
+    attempts: list[str] = []
+
+    def flaky(src: object, dst: object) -> None:
+        attempts.append(str(dst))
+        if len(attempts) <= 2:
+            raise PermissionError(13, "The process cannot access the file")
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "replace", flaky)
+    media._update_manifest(out_dir, "x", {"hash": "h"})
+    assert len(attempts) == 3
+    assert media._read_manifest(out_dir)["fixtures"] == {"x": {"hash": "h"}}
+
+    # it gives up after the back-off and raises the last error
+    monkeypatch.setattr(media, "_RETRY_DELAYS", (0.0, 0.0))
+    attempts.clear()
+
+    def always(src: object, dst: object) -> None:
+        attempts.append(str(dst))
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(os, "replace", always)
+    with pytest.raises(PermissionError):
+        media._replace(out_dir / "a", out_dir / "b")
+    assert len(attempts) == 3
+
+
+def test_manifest_read_retries_on_permission_error(
+    out_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir.mkdir()
+    media._update_manifest(out_dir, "x", {"hash": "h"})
+    real_read_text = Path.read_text
+    failures = [PermissionError(13, "in use")]
+
+    def read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == media.MANIFEST_NAME and failures:
+            raise failures.pop()
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert media._read_manifest(out_dir)["fixtures"] == {"x": {"hash": "h"}}
+    assert failures == []
+
+
+def test_parallel_generation_and_up_to_date_checks(fake_tools: FakeTools, out_dir: Path) -> None:
+    """Many generator threads write the manifest while others read it."""
+    names = ["anamorphic", "interlaced", "vfr", "vfr-mkv", "letterbox", "chapters"]
+    media.generate(names, out_dir=out_dir, ffmpeg=str(fake_tools.ffmpeg), jobs=6)
+    version = media.ffmpeg_version(str(fake_tools.ffmpeg))
+    recipes = media.build_recipes()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        regen = pool.submit(
+            media.generate, names, out_dir=out_dir, ffmpeg=str(fake_tools.ffmpeg), force=True
+        )
+        checks = [pool.submit(media.is_up_to_date, recipes[n], out_dir, version) for n in names * 5]
+        regen.result()
+        for check in checks:
+            check.result()  # no exception
+    assert all(media.is_up_to_date(recipes[n], out_dir, version) for n in names)
 
 
 def _tables(font: bytes) -> dict[bytes, bytes]:

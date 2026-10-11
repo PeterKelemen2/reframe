@@ -1,4 +1,4 @@
-[VAAPI @ 0x55a609594c40] No VA display found for device /dev/dri/renderD999.
+[VAAPI @ 0x55ae81d6dd40] No VA display found for device /dev/dri/renderD999.
 Device creation failed: -22.
 Failed to set value '/dev/dri/renderD999' for option 'vaapi_device': Invalid argument
 Error parsing global options: Invalid argument

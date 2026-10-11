@@ -1,5 +1,4 @@
 Hardware acceleration methods:
-vdpau
 cuda
 vaapi
 qsv

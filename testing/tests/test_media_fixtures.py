@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from reframe_testing import media
+from reframe_testing import boxfont, media
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -155,17 +155,19 @@ def test_text_subs(all_media: Path, probe: Callable[..., Probe]) -> None:
     ]
     assert flags(subs[0]) == {"default"}
     (att,) = streams(p, "attachment")
-    font = media.find_font()
+    # always the generated font, so the file is the same on every machine
     assert att["codec_name"] == "ttf"
-    assert tags(att) == {"filename": font.file_name, "mimetype": "application/x-truetype-font"}
+    assert tags(att) == {"filename": "ReframeBox.ttf", "mimetype": "application/x-truetype-font"}
+    assert att["extradata_size"] == len(boxfont.build_font())  # the attached font file
     ass_text = (all_media / "text-subs.en.ass").read_text(encoding="utf-8")
-    assert f"Style: Default,{font.family}," in ass_text
+    assert "Style: Default,Reframe Box," in ass_text
+    assert "Style: Sign,Reframe Box," in ass_text
     assert "Árvíztűrő" in ass_text
     assert (all_media / "text-subs.en.srt").read_text(encoding="utf-8").count(" --> ") == 2
 
 
 def test_text_subs_font_renders_with_libass(all_media: Path, tmp_path: Path) -> None:
-    """The attached font (system or generated) is usable: libass draws the ASS text with it."""
+    """The attached font is usable: libass draws the ASS text with it (not a fallback font)."""
     ffmpeg = media.find_ffmpeg()
     assert ffmpeg
     filters = subprocess.run(
@@ -173,7 +175,7 @@ def test_text_subs_font_renders_with_libass(all_media: Path, tmp_path: Path) -> 
     ).stdout
     if not re.search(r"^\s*\S+\s+ass\s", filters, re.M):
         pytest.skip("this ffmpeg has no libass")
-    font = media.find_font()
+    font = media.fixture_font()
     (tmp_path / "fonts").mkdir()
     (tmp_path / "fonts" / font.file_name).write_bytes(font.data)
     (tmp_path / "t.ass").write_text(
@@ -204,7 +206,13 @@ def test_text_subs_font_renders_with_libass(all_media: Path, tmp_path: Path) -> 
         timeout=60,
     ).stdout
     assert len(frame) == 320 * 180
-    assert sum(1 for b in frame if b > 128) > 100
+    bright = [(i % 320, i // 320) for i, b in enumerate(frame) if b > 128]
+    assert len(bright) > 100
+    # Every glyph of Reframe Box is a filled box, so the text is mostly solid. A fallback font
+    # (libass did not use the attached font) fills far less of its bounding box.
+    xs, ys = [x for x, _ in bright], [y for _, y in bright]
+    box = (max(xs) - min(xs) + 1) * (max(ys) - min(ys) + 1)
+    assert len(bright) / box > 0.6
 
 
 def test_vobsub(probe: Callable[..., Probe]) -> None:

@@ -94,7 +94,6 @@ Filters:
  TS bandreject        A->A       Apply a two-pole Butterworth band-reject filter.
  TS bass              A->A       Boost or cut lower frequencies.
  TS biquad            A->A       Apply a biquad IIR filter with the given coefficients.
- .. bs2b              A->A       Bauer stereo-to-binaural filter.
  .. channelmap        A->A       Remap audio channels.
  .. channelsplit      A->N       Split audio into per-channel streams.
  .. chorus            A->A       Add a chorus effect to the audio.
@@ -119,10 +118,10 @@ Filters:
  TS highpass          A->A       Apply a high-pass filter with 3dB point frequency.
  TS highshelf         A->A       Apply a high shelf filter.
  .. join              N->A       Join multiple audio streams into multi-channel output.
- .. ladspa            N->A       Apply LADSPA effect.
  .. loudnorm          A->A       EBU R128 loudness normalization
  TS lowpass           A->A       Apply a low-pass filter with 3dB point frequency.
  TS lowshelf          A->A       Apply a low shelf filter.
+ .. lv2               N->A       Apply LV2 effect.
  .. mcompand          A->A       Multiband Compress or expand audio dynamic range.
  .. pan               A->A       Remix channels with coefficients (panning).
  .. replaygain        A->A       ReplayGain scanner.
@@ -300,8 +299,6 @@ Filters:
  .. hwupload          V->V       Upload a normal frame to a hardware frame
  .. hwupload_cuda     V->V       Upload a system memory frame to a CUDA device.
  T. hysteresis        VV->V      Grow first stream into second stream by connecting components.
- .. iccdetect         V->V       Detect and parse ICC profiles.
- .. iccgen            V->V       Generate and attach ICC profiles.
  TS identity          VV->V      Calculate the Identity between two video streams.
  .. idet              V->V       Interlace detect Filter.
  T. il                V->V       Deinterleave or interleave fields.
@@ -313,6 +310,7 @@ Filters:
  TS kirsch            V->V       Apply kirsch operator.
  TS lagfun            V->V       Slowly update darker pixels.
  T. latency           V->V       Report video filtering latency.
+ .. lcevc             V->V       LCEVC
  TS lenscorrection    V->V       Rectify the image by correcting for lens distortion.
  .. libplacebo        N->V       Apply various GPU filters from libplacebo
  .. libvmaf           VV->V      Calculate the VMAF between two video streams.

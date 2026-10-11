@@ -1,0 +1,143 @@
+{
+  "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+  "method": "byte search for printable runs of >= 5 characters (like strings(1)) in bin/ffmpeg, lib/libav*.so.*.*.* and bin/av*.dll",
+  "strings": {
+    "Cannot load %s": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Cannot load %s\n"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "Cannot load %s\n"
+      }
+    ],
+    "Conversion failed!": [
+      {
+        "file": "bin/ffmpeg",
+        "string": "Conversion failed!\n"
+      }
+    ],
+    "Device creation failed": [
+      {
+        "file": "bin/ffmpeg",
+        "string": "Device creation failed: %d.\n"
+      }
+    ],
+    "Driver does not support the required nvenc API version": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Driver does not support the required nvenc API version. Required: %d.%d Found: %d.%d\n"
+      }
+    ],
+    "Error creating a MFX session": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Error creating a MFX session: %d.\n"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Error creating a MFX session"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "Error creating a MFX session: %d.\n"
+      }
+    ],
+    "Error initializing an MFX session": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Error initializing an MFX session\n"
+      }
+    ],
+    "Error querying a MFX session": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "Error querying a MFX session: %d.\n"
+      }
+    ],
+    "Error while opening encoder": [
+      {
+        "file": "bin/ffmpeg",
+        "string": "Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+      }
+    ],
+    "Failed to create  hardware device context (AMF)": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Failed to create  hardware device context (AMF) : %s\n"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed to create  hardware device context (AMF) : %s\n"
+      }
+    ],
+    "Failed to create a VAAPI device": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Failed to create a VAAPI device.\n"
+      }
+    ],
+    "Failed to initialise VAAPI connection": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "Failed to initialise VAAPI connection: %d (%s).\n"
+      }
+    ],
+    "MFX_ERR_UNSUPPORTED": [],
+    "No CUDA capable devices found": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "No CUDA capable devices found\n"
+      }
+    ],
+    "No NVENC capable devices found": [],
+    "No VA display found for any default device": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "No VA display found for any default device.\n"
+      }
+    ],
+    "No VA display found for device": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "No VA display found for device %s.\n"
+      }
+    ],
+    "No capable devices found": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "No capable devices found\n"
+      }
+    ],
+    "Nothing was written into output file": [
+      {
+        "file": "bin/ffmpeg",
+        "string": "Nothing was written into output file, because at least one of its streams received no packets.\n"
+      }
+    ],
+    "OpenEncodeSessionEx failed": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "OpenEncodeSessionEx failed"
+      }
+    ],
+    "The minimum required Nvidia driver for nvenc is": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "The minimum required Nvidia driver for nvenc is %s or newer\n"
+      }
+    ],
+    "libcuda.so.1": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "libcuda.so.1"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "libcuda.so.1"
+      }
+    ],
+    "nvcuda.dll": []
+  }
+}

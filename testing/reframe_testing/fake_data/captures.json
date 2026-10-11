@@ -1,5 +1,6 @@
 {
   "encoders": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -9,6 +10,7 @@
     "stdout": "encoders.stdout.txt"
   },
   "ffmpeg_banner": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-h",
@@ -19,6 +21,7 @@
     "stdout": "ffmpeg_banner.stdout.txt"
   },
   "ffmpeg_version": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-version"
@@ -27,6 +30,7 @@
     "stdout": "ffmpeg_version.stdout.txt"
   },
   "ffprobe_version": {
+    "build": "ffprobe version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2007-2026 the FFmpeg developers",
     "command": [
       "ffprobe",
       "-version"
@@ -35,6 +39,7 @@
     "stdout": "ffprobe_version.stdout.txt"
   },
   "filters": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -44,6 +49,7 @@
     "stdout": "filters.stdout.txt"
   },
   "help_encoder/aac": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -54,6 +60,7 @@
     "stdout": "help_encoder/aac.stdout.txt"
   },
   "help_encoder/ac3": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -64,6 +71,7 @@
     "stdout": "help_encoder/ac3.stdout.txt"
   },
   "help_encoder/ass": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -74,6 +82,7 @@
     "stdout": "help_encoder/ass.stdout.txt"
   },
   "help_encoder/av1_amf": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -84,6 +93,7 @@
     "stdout": "help_encoder/av1_amf.stdout.txt"
   },
   "help_encoder/av1_nvenc": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -94,6 +104,7 @@
     "stdout": "help_encoder/av1_nvenc.stdout.txt"
   },
   "help_encoder/av1_qsv": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -104,6 +115,7 @@
     "stdout": "help_encoder/av1_qsv.stdout.txt"
   },
   "help_encoder/av1_vaapi": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -114,6 +126,7 @@
     "stdout": "help_encoder/av1_vaapi.stdout.txt"
   },
   "help_encoder/dvdsub": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -124,6 +137,7 @@
     "stdout": "help_encoder/dvdsub.stdout.txt"
   },
   "help_encoder/eac3": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -134,6 +148,7 @@
     "stdout": "help_encoder/eac3.stdout.txt"
   },
   "help_encoder/flac": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -144,6 +159,7 @@
     "stdout": "help_encoder/flac.stdout.txt"
   },
   "help_encoder/h264_amf": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -154,6 +170,7 @@
     "stdout": "help_encoder/h264_amf.stdout.txt"
   },
   "help_encoder/h264_nvenc": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -164,6 +181,7 @@
     "stdout": "help_encoder/h264_nvenc.stdout.txt"
   },
   "help_encoder/h264_qsv": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -174,6 +192,7 @@
     "stdout": "help_encoder/h264_qsv.stdout.txt"
   },
   "help_encoder/h264_vaapi": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -184,6 +203,7 @@
     "stdout": "help_encoder/h264_vaapi.stdout.txt"
   },
   "help_encoder/hevc_amf": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -194,6 +214,7 @@
     "stdout": "help_encoder/hevc_amf.stdout.txt"
   },
   "help_encoder/hevc_nvenc": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -204,6 +225,7 @@
     "stdout": "help_encoder/hevc_nvenc.stdout.txt"
   },
   "help_encoder/hevc_qsv": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -214,6 +236,7 @@
     "stdout": "help_encoder/hevc_qsv.stdout.txt"
   },
   "help_encoder/hevc_vaapi": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -224,6 +247,7 @@
     "stdout": "help_encoder/hevc_vaapi.stdout.txt"
   },
   "help_encoder/libaom-av1": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -234,6 +258,7 @@
     "stdout": "help_encoder/libaom-av1.stdout.txt"
   },
   "help_encoder/libmp3lame": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -244,6 +269,7 @@
     "stdout": "help_encoder/libmp3lame.stdout.txt"
   },
   "help_encoder/libopus": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -254,6 +280,7 @@
     "stdout": "help_encoder/libopus.stdout.txt"
   },
   "help_encoder/libsvtav1": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -264,6 +291,7 @@
     "stdout": "help_encoder/libsvtav1.stdout.txt"
   },
   "help_encoder/libvpx-vp9": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -274,6 +302,7 @@
     "stdout": "help_encoder/libvpx-vp9.stdout.txt"
   },
   "help_encoder/libx264": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -284,6 +313,7 @@
     "stdout": "help_encoder/libx264.stdout.txt"
   },
   "help_encoder/libx265": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -294,6 +324,7 @@
     "stdout": "help_encoder/libx265.stdout.txt"
   },
   "help_encoder/mov_text": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -304,6 +335,7 @@
     "stdout": "help_encoder/mov_text.stdout.txt"
   },
   "help_encoder/srt": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -314,6 +346,7 @@
     "stdout": "help_encoder/srt.stdout.txt"
   },
   "help_encoder_unknown": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -324,6 +357,7 @@
     "stdout": "help_encoder_unknown.stdout.txt"
   },
   "hw_h264_nvenc_no_driver": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -345,6 +379,7 @@
     "stderr": "hw_h264_nvenc_no_driver.stderr.txt"
   },
   "hw_h264_nvenc_no_driver.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -368,6 +403,7 @@
     "stderr": "hw_h264_nvenc_no_driver.v_error.stderr.txt"
   },
   "hw_h264_vaapi_bad_device": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -393,6 +429,7 @@
     "stderr": "hw_h264_vaapi_bad_device.stderr.txt"
   },
   "hw_h264_vaapi_bad_device.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -419,7 +456,68 @@
     "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
     "stderr": "hw_h264_vaapi_bad_device.v_error.stderr.txt"
   },
+  "hw_h264_vaapi_init_failed": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-vaapi_device",
+      "/dev/dri/renderD128",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "env": {
+      "LIBVA_DRIVER_NAME": "reframe_nonexistent"
+    },
+    "exit_code": 251,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_init_failed.stderr.txt"
+  },
+  "hw_h264_vaapi_init_failed.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-vaapi_device",
+      "/dev/dri/renderD128",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "env": {
+      "LIBVA_DRIVER_NAME": "reframe_nonexistent"
+    },
+    "exit_code": 251,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_init_failed.v_error.stderr.txt"
+  },
   "hw_h264_vaapi_no_hwupload": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -441,6 +539,7 @@
     "stderr": "hw_h264_vaapi_no_hwupload.stderr.txt"
   },
   "hw_h264_vaapi_no_hwupload.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -463,7 +562,62 @@
     "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
     "stderr": "hw_h264_vaapi_no_hwupload.v_error.stderr.txt"
   },
+  "hw_h264_vaapi_not_drm": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-vaapi_device",
+      "/dev/null",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 187,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_not_drm.stderr.txt"
+  },
+  "hw_h264_vaapi_not_drm.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-vaapi_device",
+      "/dev/null",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 187,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_not_drm.v_error.stderr.txt"
+  },
   "hw_h264_vaapi_ok": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -489,6 +643,7 @@
     "stderr": "hw_h264_vaapi_ok.stderr.txt"
   },
   "hw_h264_vaapi_ok.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -514,7 +669,54 @@
     "exit_code": 0,
     "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))"
   },
+  "hw_hevc_amf_ok": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "hevc_amf",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_hevc_amf_ok.stderr.txt"
+  },
+  "hw_hevc_amf_ok.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "hevc_amf",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_hevc_amf_ok.v_error.stderr.txt"
+  },
   "hw_hevc_nvenc_no_driver": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -536,6 +738,7 @@
     "stderr": "hw_hevc_nvenc_no_driver.stderr.txt"
   },
   "hw_hevc_nvenc_no_driver.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -559,6 +762,7 @@
     "stderr": "hw_hevc_nvenc_no_driver.v_error.stderr.txt"
   },
   "hw_hevc_qsv_no_device": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -580,6 +784,7 @@
     "stderr": "hw_hevc_qsv_no_device.stderr.txt"
   },
   "hw_hevc_qsv_no_device.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -603,6 +808,7 @@
     "stderr": "hw_hevc_qsv_no_device.v_error.stderr.txt"
   },
   "hw_qsv_init_failed": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -630,6 +836,7 @@
     "stderr": "hw_qsv_init_failed.stderr.txt"
   },
   "hw_qsv_init_failed.v_error": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -659,6 +866,7 @@
     "stderr": "hw_qsv_init_failed.v_error.stderr.txt"
   },
   "hwaccels": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -668,6 +876,7 @@
     "stdout": "hwaccels.stdout.txt"
   },
   "progress_encode": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [
       "ffmpeg",
       "-hide_banner",
@@ -690,5 +899,70 @@
     "exit_code": 0,
     "stderr": "progress_encode.stderr.txt",
     "stdout": "progress_encode.stdout.txt"
+  },
+  "progress_mkv_long": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-y",
+      "-readrate",
+      "2",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=640x360:rate=25:duration=4",
+      "-readrate",
+      "2",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:duration=4",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-c:a",
+      "aac",
+      "-progress",
+      "pipe:1",
+      "-nostats",
+      "-stats_period",
+      "0.1",
+      "progress.mkv"
+    ],
+    "exit_code": 0,
+    "stderr": "progress_mkv_long.stderr.txt",
+    "stdout": "progress_mkv_long.stdout.txt"
+  },
+  "progress_null_long": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-readrate",
+      "2",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=640x360:rate=25:duration=4",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-progress",
+      "pipe:1",
+      "-nostats",
+      "-stats_period",
+      "0.1",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "stderr": "progress_null_long.stderr.txt",
+    "stdout": "progress_null_long.stdout.txt"
   }
 }

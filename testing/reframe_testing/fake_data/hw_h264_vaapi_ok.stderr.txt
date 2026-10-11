@@ -3,12 +3,12 @@ Input #0, lavfi, from 'color=size=640x360':
   Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
 Stream mapping:
   Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (h264_vaapi))
-[h264_vaapi @ 0x55a5453a2680] No quality level set; using default (20).
+[h264_vaapi @ 0x562de7c49240] No quality level set; using default (20).
 Output #0, null, to 'pipe:':
   Metadata:
     encoder         : Lavf63.1.102
   Stream #0:0: Video: h264 (High), nv12(tv, progressive), 640x360 [SAR 1:1 DAR 16:9], q=2-31, 25 fps, 25 tbn
     Metadata:
       encoder         : Lavc63.1.102 h264_vaapi
-[out#0/null @ 0x55a5453a1d80] video:0KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
-frame=    3 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.08 bitrate=N/A speed=4.08x elapsed=0:00:00.01    
+[out#0/null @ 0x562de7c48a80] video:0KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    3 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.08 bitrate=N/A speed=11.8x elapsed=0:00:00.00    

@@ -1,0 +1,34 @@
+ffmpeg stats and -progress period set to 0.1.
+Input #0, lavfi, from 'testsrc2=size=640x360:rate=25:duration=4':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (libx264))
+[libx264 @ 0x555eefee4640] using SAR=1/1
+[libx264 @ 0x555eefee4640] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x555eefee4640] profile High, level 3.0, 4:2:0, 8-bit
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf63.1.102
+  Stream #0:0: Video: h264, yuv420p(tv, progressive), 640x360 [SAR 1:1 DAR 16:9], q=2-31, 25 fps, 25 tbn
+    Metadata:
+      encoder         : Lavc63.1.102 libx264
+    Side data:
+      CPB properties: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+[out#0/null @ 0x555eefee3d40] video:345KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=  100 fps= 58 q=-1.0 Lsize=N/A time=00:00:03.92 bitrate=N/A speed=2.26x elapsed=0:00:01.73    
+[libx264 @ 0x555eefee4640] frame I:1     Avg QP:12.26  size:  8453
+[libx264 @ 0x555eefee4640] frame P:33    Avg QP:17.27  size:  4875
+[libx264 @ 0x555eefee4640] frame B:66    Avg QP:27.93  size:  2792
+[libx264 @ 0x555eefee4640] consecutive B-frames:  1.0% 30.0%  9.0% 60.0%
+[libx264 @ 0x555eefee4640] mb I  I16..4: 82.7%  2.5% 14.8%
+[libx264 @ 0x555eefee4640] mb P  I16..4: 13.3%  2.1%  2.2%  P16..4:  6.1%  4.1%  2.3%  0.0%  0.0%    skip:70.0%
+[libx264 @ 0x555eefee4640] mb B  I16..4:  1.0%  0.1%  0.0%  B16..8: 10.8%  5.4%  0.8%  direct: 2.3%  skip:79.5%  L0:43.8% L1:41.8% BI:14.3%
+[libx264 @ 0x555eefee4640] 8x8 transform intra:10.4% inter:12.2%
+[libx264 @ 0x555eefee4640] coded y,uvDC,uvAC intra: 16.6% 32.7% 28.1% inter: 3.8% 8.8% 7.2%
+[libx264 @ 0x555eefee4640] i16 v,h,dc,p: 85% 12%  3%  0%
+[libx264 @ 0x555eefee4640] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 17% 22% 38%  7%  2%  1%  3%  4%  6%
+[libx264 @ 0x555eefee4640] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 30% 24% 29%  4%  2%  2%  3%  3%  4%
+[libx264 @ 0x555eefee4640] i8c dc,h,v,p: 61% 16% 21%  2%
+[libx264 @ 0x555eefee4640] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x555eefee4640] kb/s:707.21
