@@ -1,0 +1,777 @@
+"""Tool discovery (C-1): search order, origins, ffprobe next to ffmpeg, broken overrides.
+
+Every test passes the environment, the bundled roots and ``PATH`` explicitly, and the
+``REFRAME_*`` variables of the test process are removed (CI's override job sets
+``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``). The tools are fake FFmpeg launchers
+(``reframe_testing.fake_tools``) and small script tools for mkvpropedit / mediainfo.
+"""
+
+from __future__ import annotations
+
+import os
+import shlex
+import sys
+from pathlib import Path
+
+import pytest
+from pydantic import BaseModel
+
+from reframe.models import RemoveOp, ToolOrigin, ToolStatus
+from reframe.tools import discovery
+from reframe.tools.discovery import (
+    TOOL_NAMES,
+    check_tool,
+    discover_tools,
+    discover_tools_sync,
+    locate_tools,
+)
+from reframe_testing import fake_tools as ft
+
+WINDOWS = sys.platform == "win32"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("REFRAME_") and not key.startswith("REFRAME_FAKE_"):
+            monkeypatch.delenv(key)
+    monkeypatch.delenv("LIBVA_DRIVERS_PATH", raising=False)
+
+
+def _script_tool(directory: Path, name: str, text: str, exit_code: int = 0) -> Path:
+    """An executable ``name`` (``name.cmd`` on Windows) that prints ``text``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    script = directory / f"_{name}_impl.py"
+    script.write_text(
+        f"import sys\nsys.stdout.write({text!r})\nsys.exit({exit_code})\n", encoding="utf-8"
+    )
+    if WINDOWS:
+        launcher = directory / f"{name}.cmd"
+        launcher.write_text(f'@"{ft.PYTHON}" -I "{script}" %*\r\n', encoding="utf-8")
+        return launcher
+    launcher = directory / name
+    launcher.write_text(
+        f'#!/bin/sh\nexec {shlex.quote(ft.PYTHON)} -I {shlex.quote(str(script))} "$@"\n',
+        encoding="utf-8",
+    )
+    launcher.chmod(0o755)
+    return launcher
+
+
+def _fake(directory: Path, *rules: ft.Rule) -> ft.FakeTools:
+    return ft.make_fake_tools(directory, ft.Scenario(list(rules)))
+
+
+def _env(**values: str) -> dict[str, str]:
+    env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD"} if WINDOWS else {}
+    env.update(values)
+    return env
+
+
+MKVPROPEDIT_OUT = "mkvpropedit v101.0 ('Time To Turn') 64-bit\n"
+MEDIAINFO_OUT = "MediaInfo Command line, \nMediaInfoLib - v24.06\n"
+TOO_OLD = ft.Rule(argv_has=["-version"], actions=[ft.version("n6.1.2-21-gac60bc2bb0-20250131")])
+
+
+@pytest.fixture
+def empty_path(tmp_path: Path) -> str:
+    folder = tmp_path / "empty-path"
+    folder.mkdir()
+    return str(folder)
+
+
+# --------------------------------------------------------------------------- search order
+
+
+@pytest.mark.anyio
+async def test_env_override_wins_over_settings_bundled_and_path(
+    tmp_path: Path, empty_path: str
+) -> None:
+    env_tools = _fake(tmp_path / "env")
+    settings_tools = _fake(tmp_path / "settings")
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    path_dir = tmp_path / "path"
+    _fake(path_dir)
+    tools = await discover_tools(
+        {"ffmpeg": str(settings_tools.ffmpeg)},
+        environ=_env(REFRAME_FFMPEG=str(env_tools.ffmpeg)),
+        bundled_roots=[tmp_path / "root"],
+        search_path=str(path_dir),
+    )
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffmpeg.origin is ToolOrigin.ENV
+    assert tools.ffmpeg.path == env_tools.ffmpeg
+    assert tools.ffmpeg.env_var == "REFRAME_FFMPEG"
+    assert tools.ffmpeg.version == "n9.0.2-17-g2a571b6068-20260930"
+    assert tools.ffmpeg.release == "9.0.2"
+    assert tools.ffmpeg.release_series == "9.0"
+    assert "--enable-libx265" in tools.ffmpeg.build_flags
+    assert tools.ffmpeg.library_versions["libavcodec"] == "63.1.102"
+    assert tools.ffmpeg.fixes == []
+    # ffprobe next to the overridden ffmpeg beats the bundled ffprobe.
+    assert tools.ffprobe.origin is ToolOrigin.ENV
+    assert tools.ffprobe.path == env_tools.ffprobe
+    assert tools.ffprobe.next_to_ffmpeg
+    assert tools.ffprobe.status is ToolStatus.FOUND
+
+
+@pytest.mark.anyio
+async def test_settings_path_wins_over_bundled(tmp_path: Path, empty_path: str) -> None:
+    settings_tools = _fake(tmp_path / "custom")
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    tools = await discover_tools(
+        {"ffmpeg": str(settings_tools.ffmpeg)},
+        environ=_env(),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    assert tools.ffmpeg.origin is ToolOrigin.SETTINGS
+    assert tools.ffmpeg.path == settings_tools.ffmpeg
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffmpeg.fixes == []  # a fix only when something is wrong
+    assert tools.ffprobe.origin is ToolOrigin.SETTINGS
+    assert tools.ffprobe.next_to_ffmpeg
+    assert tools.ffprobe.path == settings_tools.ffprobe
+
+
+@pytest.mark.anyio
+async def test_bundled_wins_over_path(tmp_path: Path) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    path_dir = tmp_path / "path"
+    _fake(path_dir)
+    tools = await discover_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=str(path_dir)
+    )
+    for info in (tools.ffmpeg, tools.ffprobe):
+        assert info.origin is ToolOrigin.BUNDLED
+        assert info.status is ToolStatus.FOUND
+        assert not info.next_to_ffmpeg
+    assert tools.ffmpeg.path == bundled.ffmpeg
+    assert tools.ffprobe.path == bundled.ffprobe
+
+
+@pytest.mark.anyio
+async def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
+    path_dir = tmp_path / "path"
+    on_path = _fake(path_dir)
+    tools = await discover_tools(
+        environ=_env(), bundled_roots=[tmp_path / "no-root"], search_path=str(path_dir)
+    )
+    assert tools.ffmpeg.origin is ToolOrigin.PATH
+    assert tools.ffmpeg.path is not None
+    assert tools.ffmpeg.path.resolve() == on_path.ffmpeg.resolve()
+    assert tools.ffprobe.origin is ToolOrigin.PATH
+    assert tools.ffmpeg.env == {}  # LIBVA_DRIVERS_PATH only for the bundled build
+
+
+def test_bundled_build_in_the_folder_itself(tmp_path: Path, empty_path: str) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg")  # no bin/ folder
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path
+    )
+    assert located["ffmpeg"].path == bundled.ffmpeg
+    assert located["ffmpeg"].origin is ToolOrigin.BUNDLED
+
+
+def test_bin_folder_before_the_folder_itself(tmp_path: Path, empty_path: str) -> None:
+    in_bin = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    _fake(tmp_path / "root" / "ffmpeg")
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path
+    )
+    assert located["ffmpeg"].path == in_bin.ffmpeg
+
+
+def test_first_bundled_root_wins(tmp_path: Path, empty_path: str) -> None:
+    first = _fake(tmp_path / "a" / "ffmpeg" / "bin")
+    _fake(tmp_path / "b" / "ffmpeg" / "bin")
+    located = locate_tools(
+        environ=_env(),
+        bundled_roots=[tmp_path / "missing", tmp_path / "a", tmp_path / "b"],
+        search_path=empty_path,
+    )
+    assert located["ffmpeg"].path == first.ffmpeg
+    assert located["ffprobe"].path == first.ffprobe
+
+
+@pytest.mark.anyio
+async def test_damaged_bundled_build_does_not_fall_back_to_path(tmp_path: Path) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    bundled.ffprobe.unlink()
+    path_dir = tmp_path / "path"
+    _fake(path_dir)
+    tools = await discover_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=str(path_dir)
+    )
+    assert tools.ffmpeg.origin is ToolOrigin.BUNDLED
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffprobe.status is ToolStatus.MISSING
+    assert tools.ffprobe.origin is ToolOrigin.BUNDLED
+    assert tools.ffprobe.path is None
+    assert tools.ffprobe.reason is not None
+    assert "damaged" in tools.ffprobe.reason
+
+
+@pytest.mark.anyio
+async def test_mkvpropedit_from_path_next_to_a_bundled_ffmpeg(tmp_path: Path) -> None:
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    path_dir = tmp_path / "path"
+    _script_tool(path_dir, "mkvpropedit", MKVPROPEDIT_OUT)
+    _script_tool(path_dir, "mediainfo", MEDIAINFO_OUT)
+    tools = await discover_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=str(path_dir)
+    )
+    assert tools.mkvpropedit.origin is ToolOrigin.PATH
+    assert tools.mkvpropedit.status is ToolStatus.FOUND
+    assert tools.mkvpropedit.version == "101.0"
+    assert tools.mediainfo.origin is ToolOrigin.PATH
+    assert tools.mediainfo.version == "24.06"
+
+
+@pytest.mark.anyio
+async def test_bundled_mkvpropedit_and_mediainfo(tmp_path: Path, empty_path: str) -> None:
+    root = tmp_path / "root"
+    _script_tool(root / "mkvtoolnix", "mkvpropedit", MKVPROPEDIT_OUT)
+    _script_tool(root / "mediainfo" / "bin", "mediainfo", MEDIAINFO_OUT)
+    tools = await discover_tools(environ=_env(), bundled_roots=[root], search_path=empty_path)
+    assert tools.mkvpropedit.origin is ToolOrigin.BUNDLED
+    assert tools.mkvpropedit.status is ToolStatus.FOUND
+    assert tools.mediainfo.origin is ToolOrigin.BUNDLED
+    assert tools.mediainfo.status is ToolStatus.FOUND
+    assert tools.ffmpeg.status is ToolStatus.MISSING
+
+
+@pytest.mark.anyio
+async def test_env_overrides_for_mkvpropedit_and_mediainfo(tmp_path: Path, empty_path: str) -> None:
+    mkv = _script_tool(tmp_path / "m", "mkvpropedit", MKVPROPEDIT_OUT)
+    mi = _script_tool(tmp_path / "i", "mediainfo", MEDIAINFO_OUT)
+    tools = await discover_tools(
+        environ=_env(REFRAME_MKVPROPEDIT=str(mkv), REFRAME_MEDIAINFO=str(mi)),
+        bundled_roots=[],
+        search_path=empty_path,
+    )
+    assert tools.mkvpropedit.origin is ToolOrigin.ENV
+    assert tools.mkvpropedit.env_var == "REFRAME_MKVPROPEDIT"
+    assert tools.mediainfo.origin is ToolOrigin.ENV
+    assert tools.mediainfo.status is ToolStatus.FOUND
+
+
+@pytest.mark.anyio
+async def test_nothing_found(tmp_path: Path, empty_path: str) -> None:
+    tools = await discover_tools(environ=_env(), bundled_roots=[], search_path=empty_path)
+    for name in TOOL_NAMES:
+        info = tools.get(name)
+        assert info.status is ToolStatus.MISSING
+        assert info.origin is None
+        assert info.path is None
+        assert info.reason
+    assert tools.ffmpeg.reason is not None
+    assert "REFRAME_FFMPEG" in tools.ffmpeg.reason
+    assert tools.mediainfo.reason is not None
+    assert "optional" in tools.mediainfo.reason
+
+
+# --------------------------------------------------------------------------- ffprobe next to ffmpeg
+
+
+@pytest.mark.anyio
+async def test_own_ffprobe_override_beats_the_sibling(tmp_path: Path, empty_path: str) -> None:
+    a = _fake(tmp_path / "a")
+    b = _fake(tmp_path / "b")
+    tools = await discover_tools(
+        {"ffprobe": str(b.ffprobe)},
+        environ=_env(REFRAME_FFMPEG=str(a.ffmpeg)),
+        bundled_roots=[],
+        search_path=empty_path,
+    )
+    assert tools.ffprobe.path == b.ffprobe
+    assert tools.ffprobe.origin is ToolOrigin.SETTINGS
+    assert not tools.ffprobe.next_to_ffmpeg
+
+
+def test_no_sibling_falls_back_to_bundled_ffprobe(tmp_path: Path, empty_path: str) -> None:
+    custom = _fake(tmp_path / "custom")
+    custom.ffprobe.unlink()
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        {"ffmpeg": str(custom.ffmpeg)},
+        environ=_env(),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    assert located["ffmpeg"].origin is ToolOrigin.SETTINGS
+    assert located["ffprobe"].origin is ToolOrigin.BUNDLED
+    assert located["ffprobe"].path == bundled.ffprobe
+
+
+def test_no_sibling_search_next_to_a_missing_override(tmp_path: Path, empty_path: str) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        environ=_env(REFRAME_FFMPEG=str(tmp_path / "gone" / "ffmpeg")),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    assert located["ffmpeg"].problem is not None
+    assert located["ffprobe"].path == bundled.ffprobe
+
+
+def test_sibling_with_a_renamed_ffmpeg(tmp_path: Path, empty_path: str) -> None:
+    folder = tmp_path / "custom"
+    ffmpeg = _script_tool(folder, "ffmpeg-9", "x")
+    ffprobe = _script_tool(folder, "ffprobe-9", "x")
+    located = locate_tools(
+        {"ffmpeg": str(ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert located["ffprobe"].path == ffprobe
+    assert located["ffprobe"].next_to_ffmpeg
+
+
+def test_windows_names_cmd_and_exe(tmp_path: Path, empty_path: str) -> None:
+    """On Windows the binary may be ``ffprobe.exe`` or a ``.cmd`` launcher (checked on Linux)."""
+    custom = tmp_path / "custom"
+    custom.mkdir()
+    (custom / "ffmpeg.cmd").write_text("@echo off\r\n", encoding="utf-8")
+    (custom / "ffprobe.cmd").write_text("@echo off\r\n", encoding="utf-8")
+    bundled_bin = tmp_path / "root" / "ffmpeg" / "bin"
+    bundled_bin.mkdir(parents=True)
+    (bundled_bin / "ffmpeg.exe").write_bytes(b"MZ")
+    (bundled_bin / "ffprobe.exe").write_bytes(b"MZ")
+    env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD"}
+
+    located = locate_tools(
+        {"ffmpeg": str(custom / "ffmpeg.cmd")},
+        environ=env,
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+        platform="win32",
+    )
+    assert located["ffmpeg"].path == custom / "ffmpeg.cmd"
+    assert located["ffprobe"].path == custom / "ffprobe.cmd"
+    assert located["ffprobe"].next_to_ffmpeg
+
+    located = locate_tools(
+        environ=env, bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="win32"
+    )
+    assert located["ffmpeg"].path == bundled_bin / "ffmpeg.exe"
+    assert located["ffprobe"].path == bundled_bin / "ffprobe.exe"
+    assert located["ffmpeg"].env == {}  # no LIBVA_DRIVERS_PATH on Windows
+
+    # A folder override finds ffmpeg.exe in it, and ffprobe.exe next to it.
+    exe_dir = tmp_path / "exe"
+    exe_dir.mkdir()
+    (exe_dir / "ffmpeg.exe").write_bytes(b"MZ")
+    (exe_dir / "ffprobe.exe").write_bytes(b"MZ")
+    located = locate_tools(
+        environ={**env, "REFRAME_FFMPEG": str(exe_dir)},
+        bundled_roots=[],
+        search_path=empty_path,
+        platform="win32",
+    )
+    assert located["ffmpeg"].path == exe_dir / "ffmpeg.exe"
+    assert located["ffprobe"].path == exe_dir / "ffprobe.exe"
+
+
+# --------------------------------------------------------------------------- broken overrides
+
+
+def _use_bundled_patch(tool: str) -> list[RemoveOp]:
+    return [RemoveOp(path=f"/tools/{tool}")]
+
+
+@pytest.mark.anyio
+async def test_missing_settings_path_offers_use_bundled(tmp_path: Path, empty_path: str) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    bad = tmp_path / "nowhere" / "ffmpeg"
+    tools = await discover_tools(
+        {"ffmpeg": str(bad)},
+        environ=_env(),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    info = tools.ffmpeg
+    assert info.status is ToolStatus.MISSING
+    assert info.origin is ToolOrigin.SETTINGS  # never silently the bundled build
+    assert info.path == bad
+    assert info.reason is not None
+    assert str(bad) in info.reason
+    assert [f.label for f in info.fixes] == ["Use bundled FFmpeg"]
+    assert info.fixes[0].target == "settings"
+    assert info.fixes[0].patch == _use_bundled_patch("ffmpeg")
+    # ffprobe has no override and nothing next to the bad path: the bundled one.
+    assert tools.ffprobe.path == bundled.ffprobe
+
+
+@pytest.mark.anyio
+async def test_missing_settings_path_without_bundled_build(tmp_path: Path, empty_path: str) -> None:
+    tools = await discover_tools(
+        {"mkvpropedit": str(tmp_path / "x")},
+        environ=_env(),
+        bundled_roots=[],
+        search_path=empty_path,
+    )
+    assert tools.mkvpropedit.status is ToolStatus.MISSING
+    assert [f.label for f in tools.mkvpropedit.fixes] == ["Remove the path override"]
+    assert tools.mkvpropedit.fixes[0].patch == _use_bundled_patch("mkvpropedit")
+
+
+@pytest.mark.anyio
+async def test_missing_env_override_cannot_be_fixed_in_the_app(
+    tmp_path: Path, empty_path: str
+) -> None:
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    bad = tmp_path / "nowhere" / "ffmpeg"
+    tools = await discover_tools(
+        environ=_env(REFRAME_FFMPEG=str(bad)),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    info = tools.ffmpeg
+    assert info.status is ToolStatus.MISSING
+    assert info.origin is ToolOrigin.ENV
+    assert info.fixes == []
+    assert info.reason is not None
+    assert "REFRAME_FFMPEG" in info.reason
+    assert "cannot be changed in Reframe" in info.reason
+
+
+@pytest.mark.anyio
+async def test_folder_override_without_binary(tmp_path: Path, empty_path: str) -> None:
+    folder = tmp_path / "empty-build"
+    folder.mkdir()
+    tools = await discover_tools(
+        {"ffmpeg": str(folder)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.MISSING
+    assert tools.ffmpeg.reason is not None
+    assert "no ffmpeg executable" in tools.ffmpeg.reason
+
+
+@pytest.mark.anyio
+async def test_folder_override_with_bin(tmp_path: Path, empty_path: str) -> None:
+    build = _fake(tmp_path / "my-build" / "bin")
+    tools = await discover_tools(
+        environ=_env(REFRAME_FFMPEG=str(tmp_path / "my-build")),
+        bundled_roots=[],
+        search_path=empty_path,
+    )
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffmpeg.path == build.ffmpeg
+    assert tools.ffprobe.path == build.ffprobe
+    assert tools.ffprobe.next_to_ffmpeg
+
+
+@pytest.mark.anyio
+async def test_too_old_settings_override(tmp_path: Path, empty_path: str) -> None:
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    old = _fake(tmp_path / "old", TOO_OLD)
+    tools = await discover_tools(
+        {"ffmpeg": str(old.ffmpeg)},
+        environ=_env(),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    info = tools.ffmpeg
+    assert info.status is ToolStatus.TOO_OLD
+    assert info.origin is ToolOrigin.SETTINGS
+    assert info.release == "6.1.2"
+    assert info.reason is not None
+    assert "7.0" in info.reason
+    assert [f.label for f in info.fixes] == ["Use bundled FFmpeg"]
+    # The sibling ffprobe of the old build is too old as well, with the same fix.
+    assert tools.ffprobe.status is ToolStatus.TOO_OLD
+    assert tools.ffprobe.next_to_ffmpeg
+    assert tools.ffprobe.fixes == info.fixes
+
+
+@pytest.mark.anyio
+async def test_too_old_env_override(tmp_path: Path, empty_path: str) -> None:
+    old = _fake(tmp_path / "old", TOO_OLD)
+    tools = await discover_tools(
+        environ=_env(REFRAME_FFMPEG=str(old.ffmpeg)), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.TOO_OLD
+    assert tools.ffmpeg.fixes == []
+    assert tools.ffmpeg.reason is not None
+    assert "REFRAME_FFMPEG" in tools.ffmpeg.reason
+
+
+@pytest.mark.anyio
+async def test_broken_override_exit_code(tmp_path: Path, empty_path: str) -> None:
+    broken = _fake(
+        tmp_path / "broken",
+        ft.Rule(
+            argv_has=["-version"],
+            exit_code=127,
+            actions=[ft.stderr("error while loading shared libraries: libavdevice.so.63\n")],
+        ),
+    )
+    tools = await discover_tools(
+        {"ffmpeg": str(broken.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    info = tools.ffmpeg
+    assert info.status is ToolStatus.BROKEN
+    assert info.reason is not None
+    assert "code 127" in info.reason
+    assert "libavdevice.so.63" in info.reason
+    assert info.fixes[0].patch == _use_bundled_patch("ffmpeg")
+
+
+@pytest.mark.anyio
+async def test_broken_override_crash(tmp_path: Path, empty_path: str) -> None:
+    broken = _fake(tmp_path / "broken", ft.Rule(argv_has=["-version"], actions=[ft.crash()]))
+    tools = await discover_tools(
+        {"ffmpeg": str(broken.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.BROKEN
+
+
+@pytest.mark.anyio
+async def test_override_that_is_not_ffmpeg(tmp_path: Path, empty_path: str) -> None:
+    other = _fake(
+        tmp_path / "other", ft.Rule(argv_has=["-version"], actions=[ft.stdout("hello\n")])
+    )
+    tools = await discover_tools(
+        {"ffmpeg": str(other.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.BROKEN
+    assert tools.ffmpeg.reason is not None
+    assert "does not look like ffmpeg" in tools.ffmpeg.reason
+
+
+@pytest.mark.anyio
+async def test_ffprobe_override_pointing_at_ffmpeg(tmp_path: Path, empty_path: str) -> None:
+    fake = _fake(tmp_path / "f")
+    tools = await discover_tools(
+        {"ffprobe": str(fake.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffprobe.status is ToolStatus.BROKEN  # it answers "ffmpeg version …"
+
+
+@pytest.mark.anyio
+async def test_hanging_override_times_out(tmp_path: Path, empty_path: str) -> None:
+    slow = _fake(tmp_path / "slow", ft.Rule(argv_has=["-version"], actions=[ft.hang()]))
+    try:
+        tools = await discover_tools(
+            {"ffmpeg": str(slow.ffmpeg)},
+            environ=_env(),
+            bundled_roots=[],
+            search_path=empty_path,
+            timeout=1,
+        )
+    finally:
+        slow.kill_leftovers()
+    assert tools.ffmpeg.status is ToolStatus.BROKEN
+    assert tools.ffmpeg.reason is not None
+    assert "within 1 s" in tools.ffmpeg.reason
+
+
+@pytest.mark.skipif(WINDOWS, reason="POSIX file modes")
+@pytest.mark.anyio
+async def test_not_executable_override(tmp_path: Path, empty_path: str) -> None:
+    fake = _fake(tmp_path / "f")
+    fake.ffmpeg.chmod(0o644)
+    tools = await discover_tools(
+        {"ffmpeg": str(fake.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.BROKEN
+    assert tools.ffmpeg.reason is not None
+    assert "cannot run" in tools.ffmpeg.reason
+    assert "PermissionError" in tools.ffmpeg.reason
+
+
+@pytest.mark.anyio
+async def test_broken_mkvpropedit(tmp_path: Path, empty_path: str) -> None:
+    junk = _script_tool(tmp_path / "j", "mkvpropedit", "something else\n")
+    tools = await discover_tools(
+        {"mkvpropedit": str(junk)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.mkvpropedit.status is ToolStatus.BROKEN
+    assert tools.mkvpropedit.reason is not None
+    assert "does not look like mkvpropedit" in tools.mkvpropedit.reason
+
+
+@pytest.mark.anyio
+async def test_master_build_is_accepted(tmp_path: Path, empty_path: str) -> None:
+    master = _fake(
+        tmp_path / "master",
+        ft.Rule(argv_has=["-version"], actions=[ft.version("N-127032-g6ae491a26c-20260930")]),
+    )
+    tools = await discover_tools(
+        {"ffmpeg": str(master.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffmpeg.release is None
+    assert tools.ffmpeg.release_series == "9.0"  # from libavcodec 63
+
+
+@pytest.mark.anyio
+async def test_unknown_version_is_found_with_a_note(tmp_path: Path, empty_path: str) -> None:
+    odd = _fake(
+        tmp_path / "odd",
+        ft.Rule(argv_has=["-version"], actions=[ft.stdout("ffmpeg version custom-build\n")]),
+    )
+    tools = await discover_tools(
+        {"ffmpeg": str(odd.ffmpeg)}, environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffmpeg.reason is not None
+    assert "could not be checked" in tools.ffmpeg.reason
+
+
+# --------------------------------------------------------------------------- LIBVA_DRIVERS_PATH
+
+
+@pytest.fixture
+def driver_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    first = tmp_path / "dri-missing"
+    second = tmp_path / "dri"
+    second.mkdir()
+    monkeypatch.setattr(discovery, "LIBVA_DRIVER_DIRS", (first, second))
+    return first, second
+
+
+def test_libva_drivers_path_for_the_bundled_build(
+    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+) -> None:
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
+    )
+    assert located["ffmpeg"].env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
+    assert located["ffprobe"].env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
+
+
+def test_libva_drivers_path_is_not_changed_when_set(
+    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+) -> None:
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        environ=_env(LIBVA_DRIVERS_PATH="/custom/dri"),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+        platform="linux",
+    )
+    assert located["ffmpeg"].env == {}
+
+
+def test_libva_drivers_path_not_for_overrides(
+    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+) -> None:
+    custom = _fake(tmp_path / "custom")
+    located = locate_tools(
+        environ=_env(REFRAME_FFMPEG=str(custom.ffmpeg)),
+        bundled_roots=[],
+        search_path=empty_path,
+        platform="linux",
+    )
+    assert located["ffmpeg"].env == {}
+    assert located["ffprobe"].env == {}
+
+
+def test_libva_drivers_path_none_found(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(discovery, "LIBVA_DRIVER_DIRS", (tmp_path / "x",))
+    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
+    )
+    assert located["ffmpeg"].env == {}
+
+
+@pytest.mark.anyio
+async def test_tool_env_reaches_the_version_check(
+    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+) -> None:
+    if not sys.platform.startswith("linux"):
+        pytest.skip("LIBVA_DRIVERS_PATH is Linux only")
+    _fake(
+        tmp_path / "root" / "ffmpeg" / "bin",
+        ft.Rule(argv_has=["-version"], actions=[ft.version()]),
+    )
+    tools = await discover_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path
+    )
+    assert tools.ffmpeg.env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+
+
+# --------------------------------------------------------------------------- inputs
+
+
+def test_empty_env_variable_counts_as_unset(tmp_path: Path, empty_path: str) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        {"ffmpeg": "  "},
+        environ=_env(REFRAME_FFMPEG=""),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+    )
+    assert located["ffmpeg"].origin is ToolOrigin.BUNDLED
+    assert located["ffmpeg"].path == bundled.ffmpeg
+
+
+def test_settings_as_a_model(tmp_path: Path, empty_path: str) -> None:
+    class Paths(BaseModel):
+        ffmpeg: str | None = None
+        ffprobe: str | None = None
+
+    custom = _fake(tmp_path / "custom")
+    located = locate_tools(
+        Paths(ffmpeg=str(custom.ffmpeg)), environ=_env(), bundled_roots=[], search_path=empty_path
+    )
+    assert located["ffmpeg"].origin is ToolOrigin.SETTINGS
+
+
+def test_default_roots_use_the_data_dir(tmp_path: Path, empty_path: str) -> None:
+    data = tmp_path / "data"
+    bundled = _fake(data / "tools" / "ffmpeg" / "bin")
+    located = locate_tools(environ=_env(REFRAME_DATA_DIR=str(data)), search_path=empty_path)
+    assert located["ffmpeg"].origin is ToolOrigin.BUNDLED
+    assert located["ffmpeg"].path == bundled.ffmpeg
+
+
+def test_discover_tools_sync(tmp_path: Path, empty_path: str) -> None:
+    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    tools = discover_tools_sync(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path
+    )
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.get("ffmpeg").path == bundled.ffmpeg
+    assert tools.mkvpropedit.status is ToolStatus.MISSING
+
+
+@pytest.mark.anyio
+async def test_check_tool_of_a_location_without_path() -> None:
+    info = await check_tool(discovery.ToolLocation("ffmpeg", None, None))
+    assert info.status is ToolStatus.MISSING
+    assert info.reason == "ffmpeg was not found."
+
+
+# --------------------------------------------------------------------------- __main__
+
+
+def test_main_reports_and_checks_the_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from reframe.tools.__main__ import main
+
+    data = tmp_path / "data"
+    _fake(data / "tools" / "ffmpeg" / "bin")
+    monkeypatch.setenv("REFRAME_DATA_DIR", str(data))
+    assert main(["--require", "ffmpeg,ffprobe", "--expect-origin", "bundled"]) == 0
+    out = capsys.readouterr().out
+    assert "ffmpeg       found    bundled" in out
+
+    assert main(["--require", "ffmpeg", "--expect-origin", "env"]) == 1
+    assert "expected env" in capsys.readouterr().err
+
+    assert main(["--json"]) == 0
+    assert '"ffprobe"' in capsys.readouterr().out
+
+    monkeypatch.setenv("REFRAME_FFMPEG", str(tmp_path / "missing"))
+    assert main(["--require", "ffmpeg"]) == 1
+    assert "ffmpeg is missing" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit):
+        main(["--require", "ffmpeeg"])
