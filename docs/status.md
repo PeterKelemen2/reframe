@@ -1,0 +1,144 @@
+# Implementation status
+
+Last updated: 2026-10-11. Implementation is **paused** at the start of milestone M2.
+
+This file says which parts of the plan (`docs/plan/`) are built. Update it in the same commit
+as each step that lands.
+
+Status values:
+
+- **Done**: every bullet of the step is built, and its "Done when" criteria pass on Linux.
+- **Partial**: some bullets are built. The notes say what is missing.
+- **Not started**: no code yet. Many of these steps already have their Pydantic models in
+  `reframe.models` (C-2), but no behaviour.
+
+Nothing has run on Windows or on GitHub Actions yet: the branches were never pushed. See
+[Not verified](#not-verified).
+
+## Milestones
+
+| Milestone | Status | Notes |
+|-----------|--------|-------|
+| M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
+| M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
+| M2 Encode from the CLI | **Not started** | Branch `m2-encode-cli` has one commit: the definitions contract stub (see C-6) |
+| M3 – M10 | Not started | |
+
+## Steps
+
+### Core (`reframe`, 05-core.md)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| C-0 Project skeleton | **Done** | uv workspace, strict mypy, ruff, pytest markers (`slow`, `needs_ffmpeg`, `needs_gpu`, `benchmark`) |
+| C-1 Tool runner and discovery | **Done** | `reframe.tools`: `run` / `run_streaming` (timeout, cancel, output limit, process-tree kill), discovery env → Settings → bundled → `PATH`, version parsing (minimum FFmpeg 7.0), child safety (Linux `PR_SET_PDEATHSIG`; Windows Job Object, [0005](decisions/0005-tool-discovery-details.md)). Windows code is tested with mocks only. `LIBVA_DRIVERS_PATH` handling stays until D-7 decides |
+| C-2 Data models | **Done** | All public models with JSON Schema snapshots and round-trip property tests. Known gaps: no `FieldChange` model (C-9 adds it), no language-list model for `GET /api/languages` (S-2), `-show_programs` output is not modelled |
+| C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
+| C-4 Encoder capabilities | Not started | |
+| C-5 Dimensions maths | Not started | Models only (`DimensionSettings`, `Geometry`, `CropRect`) |
+| C-6 Definitions | **Partial** | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli` only:** a contract stub (`VideoEncoderDef`, `load_definitions()`, data for libx264 and libx265). **Not started:** encoder data, option schema and option sets, audio encoders, containers, filters, the definitions linter |
+| C-7 Command builder | Not started | Models only (`EncodePlan`, `PlanStep`, `PlanFile`) |
+| C-8 Validation | Not started | Models only (`ValidationIssue`, `Fix`). `reframe.jsonpatch` (RFC 6902, for fixes) is done |
+| C-9 Presets and settings stores | Not started | Models only (`Preset`, `AppSettings`, migrations registry). The facade uses `AppSettings()` defaults |
+| C-10 Preview and analysis tasks | **Partial** | **Done:** the background task manager `reframe.tasks` (id, progress, cancel, limit per kind). **Not started:** frames, crop detection, preview clips, bitrate and subtitle scans, loudness measurement |
+| C-11 Queue and job runner | Not started | Models only (`QueueJob`, `JobState`, `JobProgress`). The event bus `reframe.events` is done |
+| C-12 Batch engine | Not started | Models only (`TrackSelector`, `OutputTrackRule`, `AudioDefaults`, …) |
+| C-13 Metadata edit and remux | Not started | The language-tag behaviour of FFmpeg and mkvpropedit is verified and recorded (`testdata/README.md`) |
+| C-14 Platform services | Not started | Sleep inhibit, power actions and the notification hook are not built. (`reframe.platform` already has child-process safety from C-1 and `launch_detached` for user-facing programs) |
+| C-15 Service facade and CLI | **Partial** | **Done:** `Reframe.create()` / `close()` with `tools`, `sources`, `tasks` and `events`; CLI `reframe probe FILE [--json]` and `reframe version`; `python -m reframe.tools` (tool status). **Not started:** the capabilities, presets, jobs, batch, queue and settings services; CLI `encoders`, `tools status\|fetch`, `name`, `presets`, `plan`, `encode`, `batch` |
+| C-16 Output naming | Not started | Model only (`NamingOptions`) |
+
+### Server (`reframe-server`, 06-web-app.md Part A)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| S-0 … S-6 | Not started | Only the empty package from C-0 exists |
+
+### Frontend (`frontend/`, 06-web-app.md Part B)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| F-0 Scaffold | **Done** | Vue 3.5, Vite, Pinia, Router, PrimeVue 4, vue-i18n, oxlint, oxfmt, vue-tsc (strict templates), Vitest, the `Platform` interface. PrimeVue 4 and TypeScript 6 are held back on purpose ([0003](decisions/0003-frontend-held-back-majors.md)) |
+| F-1 … F-18 | Not started | |
+
+### Desktop (`desktop/`, 07-desktop-app.md)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| D-0 … D-9 | Not started | `docs/decisions/0001-desktop-shell.md` and `0002-bundled-ffmpeg.md` are still to be written (D-0, D-7) |
+
+### Quality and release (09-quality-and-release.md)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Q-1.1 CI matrix | **Done, never run** | `.github/workflows/ci.yml`: Python (Ubuntu + Windows, plus Python 3.13 on Ubuntu), frontend, override job, non-blocking benchmark job. Checked with actionlint and by running every Linux step locally |
+| Q-1.2 Pinned FFmpeg in CI | **Done, never run** | `tools/ffmpeg.toml` pins BtbN `autobuild-2026-09-30` (n9.0.2; override test n8.1.3). `scripts/fetch-tools.py` checks the SHA-256. BtbN keeps month-end builds for 2 years, so re-pin or mirror before about 2028-09 |
+| Q-1.3 Dependency updates and audits | **Done, never run** | Dependabot (uv, npm, GitHub Actions), `pip-audit`, `npm audit --audit-level=high` |
+| Q-2.1 Fixtures and fake FFmpeg | **Done** | `scripts/make-testdata.py` (all rows of the test media table) and the fake ffmpeg / ffprobe in `testing/reframe_testing/` ([0004](decisions/0004-shared-testing-package.md)) |
+| Q-2.2 Recorded probes | **Done** | `testdata/probes/`. The TrueHD Atmos, DTS-HD MA, DTS:X, PGS and DV probes are **synthesised from real output**, not recorded from real files ([0006](decisions/0006-probe-recordings-and-roles.md)). Replace them with real recordings when you can |
+| Q-2.3 API contract check | Not started | Needs S-5 |
+| Q-2.4 Local samples suite | Not started | |
+| Q-3 Performance budgets | **Partial** | The `benchmark` marker and job exist. Only the probe budgets are checked (one file: 58 ms of 500 ms; 24 files: 0.39 s of 5 s) |
+| Q-4 Logging and diagnostics | Not started | |
+| Q-5 Release process | Not started | Licence: GPL-3.0-or-later is set in the package metadata (open question 2, default) |
+
+## Features
+
+This table maps the product features ([01 §Must-have](plan/01-scope.md#must-have-for-v1) and
+the parity table) to what exists. No feature has a user interface yet.
+
+| Feature | Status | What exists |
+|---------|--------|-------------|
+| Rich audio and subtitle information, role detection | **Partial** | Core and CLI: commercial codec names, bitrate with its source, roles with evidence, flags, subtitle event counts from statistics tags. Missing: the **Measure** bitrate scan (C-10), the UI |
+| Source open (file, folder of files) | **Partial** | Core: probe one file, probe a folder as a task. CLI: one file. Missing: the UI, the server file browser |
+| HDR information | **Partial** | Detection of HDR10, HDR10+, HLG and Dolby Vision profile, with mastering display and MaxCLL. Missing: tone mapping, HDR metadata in encodes |
+| Tool paths and bundled FFmpeg | **Partial** | Core discovery with overrides and fixes, the manifest and the fetch script. Missing: `reframe tools fetch`, Settings → Tools UI, packaging |
+| Languages (search, codes, display) | **Partial** | Core module done. Missing: the language picker UI |
+| Non-blocking encoder detection with fallbacks | Not started | |
+| Presets (built-in, user, import/export) | Not started | |
+| Range, Dimensions, Filters, Video, advanced encoder options | Not started | |
+| Audio and subtitle output tracks, audio defaults, track rules | Not started | |
+| Track metadata editing, remux-only and metadata-edit jobs | Not started | |
+| Chapters, tags | Not started | Chapters are probed |
+| Output naming (variables, release-name parsing, templates) | Not started | |
+| Queue, logs, when done, sleep inhibit | Not started | The event bus and the task manager exist |
+| Batch / season mode | Not started | |
+| Crop preview, filter preview, live preview clip | Not started | |
+| Web app | Not started | Frontend scaffold only |
+| Desktop app | Not started | |
+
+## What you can run today
+
+```sh
+uv run reframe probe FILE            # every track: codec, channels, bitrate + source, language, title, roles, flags
+uv run reframe probe --json FILE     # the MediaSource model as JSON
+uv run python -m reframe.tools       # which ffmpeg / ffprobe / mkvpropedit / mediainfo is used, and why
+uv run python scripts/make-testdata.py
+uv run --no-project python scripts/fetch-tools.py
+uv run pytest                        # about 1 770 tests
+cd frontend && npm run dev:web       # placeholder page only
+```
+
+## Not verified
+
+- **Windows**: nothing has run on Windows. That includes the Job Object, `CREATE_NO_WINDOW`,
+  the `.exe`-only tool lookup, the `.cmd` test launchers, console encoding, and the Windows CI
+  jobs.
+- **GitHub Actions**: no workflow has run, because nothing was pushed.
+- **GPU encoders**: not built yet (C-4).
+
+## Open items for the next steps
+
+- **C-4**: the plan's pattern `MFX_ERR_UNSUPPORTED` does not appear in real FFmpeg output, and
+  the last stderr line of a failed encode is a generic `Conversion failed!`. The real texts are
+  recorded in `testdata/README.md`. C-4 needs a decision record that changes the plan.
+- **C-13**: ffprobe cannot read Matroska `LanguageIETF`. Reframe reads it through MediaInfo
+  (`language_ietf`). Decide in C-13 how a metadata edit is checked after the re-probe.
+- **C-7**: FFmpeg writes language codes verbatim. The builder must pass ISO 639-2/B to
+  Matroska and ISO 639-2/T to MP4, and must set the default flag explicitly
+  (`testdata/README.md`).
+- **D-7**: follow the bundled layout of [0005](decisions/0005-tool-discovery-details.md)
+  (`tools/ffmpeg/`, `tools/mkvtoolnix/`, `tools/mediainfo/`), and decide on
+  `LIBVA_DRIVERS_PATH`.
+- **M2 plan** (not started): wave 1 = C-4, C-5, C-6, C-16, C-14; wave 2 = C-7, C-8, C-9;
+  wave 3 = C-11, C-15. C-4, C-6 and C-16 build on the definitions stub on `m2-encode-cli`.

@@ -3,7 +3,7 @@
 The milestones put the steps from [05](05-core.md), [06](06-web-app.md), [07](07-desktop-app.md)
 and [09](09-quality-and-release.md) in order. Each milestone ends with something you can
 **use or demo**. A milestone is done only when its demo works and CI is green on Linux and
-Windows.
+Windows. The current state of each milestone and step is in [../status.md](../status.md).
 
 ## Dependency graph
 

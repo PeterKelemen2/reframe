@@ -8,6 +8,8 @@ Tauri 2 desktop app. FFmpeg/FFprobe run as subprocesses.
 - The plan lives in `docs/plan/`. Start with `docs/plan/README.md`. Milestones are in
   `08-roadmap.md`, core steps in `05-core.md`, the feature spec in `03-features.md`.
 - Build what the plan says. A step is done only when its **"Done when"** criteria pass.
+- `docs/status.md` says which steps and features are built (done, partial, not started).
+  Update it in the same commit as each step that lands.
 - If the plan is wrong or cannot be done, do not quietly change course: write a decision
   record (below) and update the affected plan file **in the same commit**.
 - Do not rely on memory for FFmpeg, ffprobe, mkvpropedit, guessit or library behaviour. Check

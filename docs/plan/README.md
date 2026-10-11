@@ -4,7 +4,8 @@ Reframe is a video transcoder in the spirit of HandBrake. It keeps HandBrake's w
 presets. It adds better track information, mkvtoolnix-style track metadata editing, season-wide
 batch editing, a crop preview with zoom, and StaxRip-level encoder options.
 
-This folder holds the plan. Each file covers one part. Read them in this order:
+This folder holds the plan. Each file covers one part. What is already built is tracked in
+[../status.md](../status.md). Read the plan files in this order:
 
 | # | File | What it covers |
 |---|------|----------------|
