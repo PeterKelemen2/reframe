@@ -1,0 +1,201 @@
+# 07 — Desktop App (Linux + Windows)
+
+## Decision: Tauri 2
+
+The desktop app is a **Tauri 2** shell. It shows the shared Vue frontend in the system webview
+(WebView2 on Windows, WebKitGTK on Linux). The Python core runs as a **sidecar process**: the
+frozen `reframe-server` in desktop mode, bound to `127.0.0.1` with a random port and a
+per-launch token.
+
+Reasons:
+
+- **One UI codebase.** Every frontend step in [06](06-web-app.md) also delivers the desktop UI.
+  Only the `Platform` adapter differs.
+- **Modern look.** It is the same Vue/PrimeVue UI, with native window chrome and OS theme
+  detection.
+- **The native features Reframe needs**, as official plugins: file and folder dialogs,
+  drag-and-drop with **real file paths**, notifications, taskbar progress, single instance with
+  open-with forwarding, window state, reveal in file manager, updater, tray.
+- **Small shell** (no bundled Chromium). The bundled FFmpeg is the largest part of every
+  installer. Per-user install on Windows.
+- **The same API as the web app**, so the desktop app gets the server's tests and behaviour for
+  free.
+
+### Alternatives considered
+
+| Option | For | Against | Verdict |
+|--------|-----|---------|---------|
+| **Tauri 2** + shared Vue + Python sidecar | One UI. Strong native integration. Small bundles. Active ecosystem | Two toolchains (Rust + Python). Sidecar lifecycle to manage. WebKitGTK codec support depends on GStreamer | **Chosen** |
+| pywebview + shared Vue + in-process server | Python only, one PyInstaller build | No taskbar progress or single-instance plugin. Fewer packaging tools. Linux backend quirks (GTK vs Qt) | Fallback if you do not want Rust in the stack. The frontend `Platform` adapter makes a later switch cheap |
+| PySide6 / Qt Quick (QML) | Native. Core runs in-process. Qt Multimedia for playback | A **second UI codebase** that must keep parity with the Vue app. A modern QML look takes extra work | Rejected |
+| Electron | Mature. The same Chromium everywhere (consistent codecs) | 100 MB+ installers, high memory use, and it still needs the Python sidecar | Rejected |
+| Flet (Flutter) | Python only, modern look | A separate UI codebase. Canvas-heavy views (crop magnifier) and file drag-and-drop are less mature | Rejected |
+
+## Runtime architecture
+
+```
+┌──────────────────────── Reframe.exe / reframe (Tauri, Rust) ────────────────────────┐
+│ main window (webview: Vue, VITE_PLATFORM=desktop)    preview window (optional)       │
+│        │ invoke('backend_info') → {baseUrl, token}                                   │
+│        │ HTTP + WS → 127.0.0.1:<port>                                                │
+│ Rust: sidecar manager · plugins (dialog, notification, single-instance, opener,     │
+│       window-state, updater) · Job Object (Windows)                                 │
+└──────────────┬──────────────────────────────────────────────────────────────────────┘
+               │ spawn (onedir, resources/sidecar/reframe-server[.exe])
+       ┌───────┴─────────────────────────┐
+       │ reframe-server --mode desktop   │──► ffmpeg / ffprobe (bundled, or override)
+       │   --port 0 --auth token         │
+       │   --parent-pid <pid>            │
+       └─────────────────────────────────┘
+```
+
+## Sidecar lifecycle
+
+1. In the Tauri `setup` hook, spawn the sidecar from the resources directory. Pass
+   `--mode desktop --port 0 --auth token --parent-pid <pid>`. The token is generated in Rust
+   and passed through an environment variable, not on the command line.
+2. Read stdout until the ready line `{"event":"ready","port":…}` arrives (20 s timeout). On
+   timeout or early exit, show an error screen with the sidecar log path and a **Retry** button.
+3. Keep `{baseUrl, token}` in Tauri managed state. The frontend gets it through
+   `invoke('backend_info')`.
+4. **Cleanup on every exit path**:
+   - Normal quit: Tauri asks the server to shut down (`POST /api/system/shutdown`), waits up to
+     5 s, then kills the process tree.
+   - Tauri crash: on Windows, the sidecar is in a Job Object with `KILL_ON_JOB_CLOSE`. On
+     Linux, the server watches `--parent-pid` and exits when the parent is gone. The server's own
+     FFmpeg children follow (`C-1` child safety).
+5. **Sidecar crash**: the frontend shows a "Reconnecting…" overlay. Rust restarts the sidecar
+   (max 3 attempts in 60 s). The queue restores from SQLite, and running jobs become
+   `Interrupted`.
+6. **Quit while jobs run**: a dialog offers **Stop jobs and quit** · **Keep running in tray** ·
+   **Cancel**.
+
+## Native integrations
+
+| Feature | Implementation |
+|---------|----------------|
+| Open files / folder, save path | `tauri-plugin-dialog` |
+| Drag and drop with paths | Webview drag-drop event → `Platform.onFilesDropped` |
+| Notifications (job done, queue done, error) | `tauri-plugin-notification` |
+| Taskbar progress | `Window.setProgressBar` (Windows taskbar; Linux launchers that support the Unity LauncherEntry API) |
+| Single instance + "Open with Reframe" | `tauri-plugin-single-instance`. Paths from argv are forwarded to the running window and probed |
+| File associations (optional) | NSIS registry entries. Linux `.desktop` `MimeType=` |
+| Reveal in folder, open externally | `tauri-plugin-opener` |
+| Remember window size/position | `tauri-plugin-window-state` |
+| Detached preview window | A second webview window on route `/preview/:sourceId`, same backend |
+| Tray (optional) | Queue progress, pause all, show, quit |
+| Theme | Follows the OS light/dark setting, unless set in Settings |
+| Updates | `tauri-plugin-updater` with signed release manifests |
+
+### In-app video playback
+
+Webview codec support differs: WebView2 plays H.264 out of the box, but HEVC and AV1 need
+Windows extensions. WebKitGTK depends on the GStreamer plugins that are installed. Because of
+this:
+
+- The preview clip plays in-app when the webview can decode it (checked with
+  `HTMLMediaElement.canPlayType`).
+- **Frame compare works for every codec.** FFmpeg decodes frames from the encoded preview clip
+  to PNG, and the split view shows them next to the source frame. This is the main quality
+  check and does not depend on the webview.
+- **Open in external player** (mpv, VLC, or the system default) is always available.
+
+## Tool bundling
+
+Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
+([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
+
+| Platform | FFmpeg | mkvpropedit / mediainfo |
+|----------|--------|-------------------------|
+| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MKVToolNix CLI tools (`mkvpropedit.exe`) and MediaInfo CLI |
+| Linux AppImage | Bundled inside the AppImage | System packages, if installed |
+| Linux .deb / .rpm | Bundled in `/usr/lib/reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mkvtoolnix, mediainfo` |
+
+**Override**: Settings → Tools has a path field for each tool, a **Test** button and a **Use
+bundled** reset. Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
+read-only. The first-run screen shows which binary is in use and where it came from.
+
+## Steps
+
+### D-0 Spike (do this before the frontend is far along)
+- [ ] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
+      endpoint, on Windows and Linux.
+- [ ] Measure cold start to "ready" (target < 2 s from SSD).
+- [ ] Prove cleanup: kill the Tauri process from Task Manager / `kill -9`, then check that no
+      sidecar or FFmpeg process remains.
+- [ ] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
+      WebKitGTK.
+- [ ] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+
+Done when: a short written result goes into `docs/decisions/0001-desktop-shell.md` and confirms
+or revisits this choice.
+
+### D-1 Project scaffold
+- [ ] `desktop/src-tauri` (Tauri 2). `tauri.conf.json`: `devUrl` = Vite dev server,
+      `beforeBuildCommand` = `npm --prefix ../../frontend run build:desktop`, `frontendDist` =
+      the frontend output.
+- [ ] Tauri v2 capability files: grant only the plugin permissions that the app uses.
+- [ ] CSP that allows `connect-src http://127.0.0.1:* ws://127.0.0.1:*` and nothing else
+      remote.
+
+### D-2 Sidecar build
+- [ ] `desktop/sidecar/build.py`: PyInstaller onedir build of `reframe_server.__main__`. It
+      includes the `reframe/definitions/data` and built-in preset files and stamps the version.
+- [ ] Output to `desktop/src-tauri/resources/sidecar/`. It is listed under `bundle.resources`.
+- [ ] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
+      line.
+
+### D-3 Sidecar manager (Rust)
+- [ ] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
+- [ ] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
+- [ ] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
+      sidecar to it (`windows` crate).
+- [ ] The quit flow with the running-jobs dialog.
+
+### D-4 Desktop platform adapter
+- [ ] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
+- [ ] The desktop build hides web-only UI (server file browser) and shows desktop-only UI
+      (reveal, tray settings, when-done power actions).
+
+### D-5 Single instance, open-with, CLI arguments
+- [ ] `reframe file1.mkv folder/` opens the app (or focuses the running one) and probes the
+      paths.
+- [ ] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
+
+### D-6 Windows and comfort
+- [ ] Window state, minimum size (1100×700), detached preview window, theme follow, tray
+      (optional, off by default).
+
+### D-7 Tool bundling
+- [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
+      [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on Intel (VAAPI + QSV),
+      AMD (VAAPI, AMF on Windows) and NVIDIA (NVENC) hosts, on Windows and on at least two
+      Linux distros (Debian/Ubuntu and Fedora or Arch). Record the result in
+      `docs/decisions/0002-bundled-ffmpeg.md`.
+- [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
+      and puts them in `resources/tools/<os>/`. The same step feeds the .deb/.rpm layout.
+- [ ] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
+      read-only. The first-run check runs before the main UI.
+
+### D-8 Packaging, signing, updates
+- [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
+      Code signing is strongly recommended (SmartScreen warns about unsigned installers).
+- [ ] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
+      `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
+- [ ] Updater: signed `latest.json` in GitHub Releases.
+
+### D-9 Desktop smoke tests
+- [ ] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
+      ready, a fixture opens from argv, a job is queued and finishes, and quitting leaves no
+      orphan processes.
+
+## Risks
+
+| Risk | Mitigation |
+|------|-----------|
+| Orphaned FFmpeg or sidecar after a crash | Job Object (Windows), PDEATHSIG + parent watch (Linux). Tested in D-0 and D-9 |
+| Antivirus false positives on the PyInstaller binary (Windows) | Onedir build (not onefile), code signing, submit to vendors if needed |
+| WebKitGTK differences (CSS, performance, codecs) | D-0 spike, Playwright WebKit project in CI, frame compare that does not need webview codecs |
+| The bundled FFmpeg cannot use VAAPI/QSV on some Linux hosts (driver path or libva mismatch) | D-7 tests on several distros. `LIBVA_DRIVERS_PATH` handling in `C-1`. Capability reasons in Settings name the cause. Users can point the override to their distro FFmpeg |
+| The bundled FFmpeg makes installers larger | Shared-library build (one copy of the libraries for `ffmpeg` and `ffprobe`). Installer compression |
+| Startup time of the Python sidecar | Onedir build, lazy imports, the UI shows a skeleton while it connects |
