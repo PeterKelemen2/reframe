@@ -33,6 +33,11 @@ NO_FFMPEG_REASON = "needs ffmpeg and ffprobe"
 
 _PROBLEM = pytest.StashKey[str | None]()
 
+#: Reframe's tool discovery accepts only .exe programs on Windows; the fake tools are .cmd
+#: launchers, so the test session opts in (test-only; see reframe.tools.discovery).
+ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
+os.environ.setdefault(ALLOW_SCRIPT_TOOLS_ENV, "1")
+
 
 def require_ffmpeg() -> bool:
     """``REFRAME_REQUIRE_FFMPEG`` is set to something other than empty, ``0``, ``false``, ``no``."""

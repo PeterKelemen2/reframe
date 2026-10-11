@@ -9,6 +9,8 @@ from __future__ import annotations
 import ctypes
 import os
 import signal
+import subprocess
+import sys
 from typing import Any
 from unittest import mock
 
@@ -217,3 +219,98 @@ def test_preexec_kills_itself_when_the_parent_is_already_gone(
 def test_real_prctl_is_loaded() -> None:
     preexec = childproc.linux_preexec()
     assert callable(preexec)
+
+
+# --------------------------------------------------------------------------- user-facing programs
+
+
+class _FakePopen:
+    """Records the arguments; ``wait`` returns at once (the reaper thread calls it)."""
+
+    calls: list[tuple[list[str], dict[str, Any]]]
+
+    def __init__(self, fail_first: BaseException | None = None) -> None:
+        self.calls = []
+        self.fail_first = fail_first
+
+    def __call__(self, argv: list[str], **kwargs: Any) -> Any:
+        self.calls.append((argv, kwargs))
+        if self.fail_first is not None:
+            error, self.fail_first = self.fail_first, None
+            raise error
+        return mock.Mock(pid=4321, wait=mock.Mock(return_value=0))
+
+
+def _no_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail() -> None:
+        raise AssertionError("a user-facing launch must not need the job")
+
+    monkeypatch.setattr(childproc, "windows_job", fail)
+
+
+def test_user_facing_spawn_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_job(monkeypatch)
+    win = childproc.spawn_options("win32", user_facing=True)
+    assert win == {
+        "creationflags": childproc.CREATE_BREAKAWAY_FROM_JOB | childproc.CREATE_NEW_PROCESS_GROUP
+    }
+    assert not win["creationflags"] & CREATE_NO_WINDOW
+    assert childproc.CREATE_BREAKAWAY_FROM_JOB == 0x01000000
+    linux = childproc.spawn_options("linux", user_facing=True)
+    assert linux == {"start_new_session": True}  # no PDEATHSIG: it outlives Reframe
+
+
+def test_launch_detached_on_windows_breaks_away_from_the_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _no_job(monkeypatch)
+    popen = _FakePopen()
+    pid = childproc.launch_detached(
+        ["explorer.exe", "C:\\Videos\\out.mkv"], platform="win32", popen=popen
+    )
+    assert pid == 4321
+    ((argv, kwargs),) = popen.calls
+    assert argv == ["explorer.exe", "C:\\Videos\\out.mkv"]
+    assert kwargs["creationflags"] & childproc.CREATE_BREAKAWAY_FROM_JOB
+    assert not kwargs["creationflags"] & CREATE_NO_WINDOW
+    assert kwargs["stdin"] == kwargs["stdout"] == kwargs["stderr"] == subprocess.DEVNULL
+    assert kwargs["close_fds"] is True
+
+
+def test_launch_detached_retries_inside_a_job_that_forbids_breakaway() -> None:
+    popen = _FakePopen(fail_first=PermissionError(13, "Access is denied"))
+    assert childproc.launch_detached(["player.exe", "a.mkv"], platform="win32", popen=popen) == 4321
+    first, second = (kwargs["creationflags"] for _, kwargs in popen.calls)
+    assert first & childproc.CREATE_BREAKAWAY_FROM_JOB
+    assert second == childproc.CREATE_NEW_PROCESS_GROUP
+
+
+def test_launch_detached_on_posix() -> None:
+    popen = _FakePopen()
+    childproc.launch_detached(
+        ["xdg-open", "/media/out.mkv"], cwd="/media", platform="linux", popen=popen
+    )
+    ((_, kwargs),) = popen.calls
+    assert kwargs["start_new_session"] is True
+    assert "preexec_fn" not in kwargs
+    assert kwargs["cwd"] == "/media"
+
+
+def test_launch_detached_posix_errors_are_raised() -> None:
+    popen = _FakePopen(fail_first=PermissionError(13, "denied"))
+    with pytest.raises(PermissionError):
+        childproc.launch_detached(["x"], platform="linux", popen=popen)
+    assert len(popen.calls) == 1
+
+
+def test_launch_detached_real_process() -> None:
+    import psutil
+
+    code = "import time; time.sleep(30)"
+    pid = childproc.launch_detached([sys.executable, "-c", code])
+    try:
+        assert psutil.Process(pid).is_running()
+        if sys.platform != "win32":  # its own session (Windows: checked with mocks above)
+            assert os.getsid(pid) == pid != os.getsid(0)
+    finally:
+        psutil.Process(pid).kill()
