@@ -8,6 +8,7 @@ process tree).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import subprocess
@@ -346,6 +347,27 @@ async def test_output_below_the_limit_is_complete(fake_tools: ft.FakeTools) -> N
     result = await run([str(fake_tools.ffmpeg), "-flood"], timeout=120, max_output=4 * 2**20)
     assert not result.truncated
     assert len(result.stderr) == 3 * 2**20
+
+
+async def test_a_grandchild_holding_the_pipe_does_not_block(tmp_path: Path) -> None:
+    """The process exits, but a grandchild it left behind keeps stdout open: run() returns
+    after a short grace period instead of waiting for the grandchild."""
+    code = (
+        "import subprocess, sys; "
+        "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+        "print(p.pid, flush=True)"
+    )
+    started = time.monotonic()
+    result = await run([sys.executable, "-c", code], timeout=30)
+    elapsed = time.monotonic() - started
+    try:
+        assert result.returncode == 0
+        assert not result.timed_out
+        assert elapsed < runner_mod.PIPE_DRAIN_GRACE + 5
+    finally:
+        for line in result.stdout_text.split():
+            with contextlib.suppress(ValueError, psutil.Error):
+                psutil.Process(int(line)).kill()
 
 
 async def test_zero_output_limit_stores_nothing(fake_tools: ft.FakeTools) -> None:
