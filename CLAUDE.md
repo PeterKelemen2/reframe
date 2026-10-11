@@ -35,7 +35,7 @@ Python (from the repository root; uv workspace, Python ≥ 3.13):
 uv sync                                   # install everything (dev group is the default)
 uv run ruff check                         # lint
 uv run ruff format --check                # format check (uv run ruff format to fix)
-uv run mypy packages/reframe packages/reframe-server   # strict type check
+uv run mypy                               # strict type check (files listed in pyproject.toml)
 uv run pytest                             # all tests
 uv run pytest -m "not needs_gpu"          # what CI runs
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage

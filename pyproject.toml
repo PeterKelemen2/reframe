@@ -31,7 +31,7 @@ default-groups = ["dev"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["packages/reframe/src", "packages/reframe-server/src", "scripts"]
+src = ["packages/reframe/src", "packages/reframe-server/src", "testing", "scripts"]
 extend-exclude = ["frontend", "desktop", "docs", "*.md"]
 
 [tool.ruff.lint]
@@ -51,7 +51,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["reframe", "reframe_server"]
+known-first-party = ["reframe", "reframe_server", "reframe_testing"]
 
 # --------------------------------------------------------------------------- mypy
 
@@ -60,8 +60,16 @@ python_version = "3.13"
 strict = true
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
-mypy_path = ["packages/reframe/src", "packages/reframe-server/src"]
+mypy_path = ["packages/reframe/src", "packages/reframe-server/src", "testing"]
 explicit_package_bases = true
+files = [
+    "packages/reframe/src",
+    "packages/reframe/tests",
+    "packages/reframe-server/src",
+    "packages/reframe-server/tests",
+    "testing",
+    "scripts",
+]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -72,7 +80,10 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 minversion = "9.0"
-testpaths = ["packages/reframe/tests", "packages/reframe-server/tests"]
+testpaths = ["packages/reframe/tests", "packages/reframe-server/tests", "testing/tests"]
+# testing/ holds shared test infrastructure (fake FFmpeg, fixture media helpers) used by the
+# core, server and end-to-end tests: import it as `reframe_testing`.
+pythonpath = ["testing"]
 addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "-ra"]
 xfail_strict = true
 markers = [
