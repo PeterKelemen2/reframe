@@ -1,0 +1,9 @@
+[h264_nvenc @ 0x55743d432900] Cannot load libcuda.so.1
+[vost#0:0/h264_nvenc @ 0x55743d4322c0] [enc:h264_nvenc @ 0x55743d412500] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0x55743d44dd00] Error sending frames to consumers: Operation not permitted
+[vf#0:0 @ 0x55743d44dd00] Task finished with error code: -1 (Operation not permitted)
+[vf#0:0 @ 0x55743d44dd00] Terminating thread with return code -1 (Operation not permitted)
+[vost#0:0/h264_nvenc @ 0x55743d4322c0] [enc:h264_nvenc @ 0x55743d412500] Could not open encoder before EOF
+[vost#0:0/h264_nvenc @ 0x55743d4322c0] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/h264_nvenc @ 0x55743d4322c0] Terminating thread with return code -22 (Invalid argument)
+[out#0/null @ 0x55743d431f40] Nothing was written into output file, because at least one of its streams received no packets.

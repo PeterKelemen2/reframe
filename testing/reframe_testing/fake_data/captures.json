@@ -1,0 +1,694 @@
+{
+  "encoders": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-encoders"
+    ],
+    "exit_code": 0,
+    "stdout": "encoders.stdout.txt"
+  },
+  "ffmpeg_banner": {
+    "command": [
+      "ffmpeg",
+      "-h",
+      "encoder=reframe_nonexistent"
+    ],
+    "exit_code": 0,
+    "stderr": "ffmpeg_banner.stderr.txt",
+    "stdout": "ffmpeg_banner.stdout.txt"
+  },
+  "ffmpeg_version": {
+    "command": [
+      "ffmpeg",
+      "-version"
+    ],
+    "exit_code": 0,
+    "stdout": "ffmpeg_version.stdout.txt"
+  },
+  "ffprobe_version": {
+    "command": [
+      "ffprobe",
+      "-version"
+    ],
+    "exit_code": 0,
+    "stdout": "ffprobe_version.stdout.txt"
+  },
+  "filters": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-filters"
+    ],
+    "exit_code": 0,
+    "stdout": "filters.stdout.txt"
+  },
+  "help_encoder/aac": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=aac"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/aac.stdout.txt"
+  },
+  "help_encoder/ac3": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=ac3"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/ac3.stdout.txt"
+  },
+  "help_encoder/ass": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=ass"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/ass.stdout.txt"
+  },
+  "help_encoder/av1_amf": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=av1_amf"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/av1_amf.stdout.txt"
+  },
+  "help_encoder/av1_nvenc": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=av1_nvenc"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/av1_nvenc.stdout.txt"
+  },
+  "help_encoder/av1_qsv": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=av1_qsv"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/av1_qsv.stdout.txt"
+  },
+  "help_encoder/av1_vaapi": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=av1_vaapi"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/av1_vaapi.stdout.txt"
+  },
+  "help_encoder/dvdsub": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=dvdsub"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/dvdsub.stdout.txt"
+  },
+  "help_encoder/eac3": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=eac3"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/eac3.stdout.txt"
+  },
+  "help_encoder/flac": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=flac"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/flac.stdout.txt"
+  },
+  "help_encoder/h264_amf": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=h264_amf"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/h264_amf.stdout.txt"
+  },
+  "help_encoder/h264_nvenc": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=h264_nvenc"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/h264_nvenc.stdout.txt"
+  },
+  "help_encoder/h264_qsv": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=h264_qsv"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/h264_qsv.stdout.txt"
+  },
+  "help_encoder/h264_vaapi": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=h264_vaapi"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/h264_vaapi.stdout.txt"
+  },
+  "help_encoder/hevc_amf": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=hevc_amf"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/hevc_amf.stdout.txt"
+  },
+  "help_encoder/hevc_nvenc": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=hevc_nvenc"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/hevc_nvenc.stdout.txt"
+  },
+  "help_encoder/hevc_qsv": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=hevc_qsv"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/hevc_qsv.stdout.txt"
+  },
+  "help_encoder/hevc_vaapi": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=hevc_vaapi"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/hevc_vaapi.stdout.txt"
+  },
+  "help_encoder/libaom-av1": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libaom-av1"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libaom-av1.stdout.txt"
+  },
+  "help_encoder/libmp3lame": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libmp3lame"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libmp3lame.stdout.txt"
+  },
+  "help_encoder/libopus": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libopus"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libopus.stdout.txt"
+  },
+  "help_encoder/libsvtav1": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libsvtav1"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libsvtav1.stdout.txt"
+  },
+  "help_encoder/libvpx-vp9": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libvpx-vp9"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libvpx-vp9.stdout.txt"
+  },
+  "help_encoder/libx264": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libx264"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libx264.stdout.txt"
+  },
+  "help_encoder/libx265": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=libx265"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/libx265.stdout.txt"
+  },
+  "help_encoder/mov_text": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=mov_text"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/mov_text.stdout.txt"
+  },
+  "help_encoder/srt": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=srt"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder/srt.stdout.txt"
+  },
+  "help_encoder_unknown": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-h",
+      "encoder=reframe_nonexistent"
+    ],
+    "exit_code": 0,
+    "stdout": "help_encoder_unknown.stdout.txt"
+  },
+  "hw_h264_nvenc_no_driver": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "h264_nvenc",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 255,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_nvenc_no_driver.stderr.txt"
+  },
+  "hw_h264_nvenc_no_driver.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "h264_nvenc",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 255,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_nvenc_no_driver.v_error.stderr.txt"
+  },
+  "hw_h264_vaapi_bad_device": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-vaapi_device",
+      "/dev/dri/renderD999",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 234,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_bad_device.stderr.txt"
+  },
+  "hw_h264_vaapi_bad_device.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-vaapi_device",
+      "/dev/dri/renderD999",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 234,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_bad_device.v_error.stderr.txt"
+  },
+  "hw_h264_vaapi_no_hwupload": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 218,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_no_hwupload.stderr.txt"
+  },
+  "hw_h264_vaapi_no_hwupload.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 218,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_no_hwupload.v_error.stderr.txt"
+  },
+  "hw_h264_vaapi_ok": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-vaapi_device",
+      "/dev/dri/renderD128",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_h264_vaapi_ok.stderr.txt"
+  },
+  "hw_h264_vaapi_ok.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-vaapi_device",
+      "/dev/dri/renderD128",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload",
+      "-c:v",
+      "h264_vaapi",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))"
+  },
+  "hw_hevc_nvenc_no_driver": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "hevc_nvenc",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 255,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_hevc_nvenc_no_driver.stderr.txt"
+  },
+  "hw_hevc_nvenc_no_driver.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "hevc_nvenc",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 255,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_hevc_nvenc_no_driver.v_error.stderr.txt"
+  },
+  "hw_hevc_qsv_no_device": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "hevc_qsv",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 171,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_hevc_qsv_no_device.stderr.txt"
+  },
+  "hw_hevc_qsv_no_device.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-c:v",
+      "hevc_qsv",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 171,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_hevc_qsv_no_device.v_error.stderr.txt"
+  },
+  "hw_qsv_init_failed": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-init_hw_device",
+      "qsv=hw",
+      "-filter_hw_device",
+      "hw",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload=extra_hw_frames=64",
+      "-c:v",
+      "hevc_qsv",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 187,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_qsv_init_failed.stderr.txt"
+  },
+  "hw_qsv_init_failed.v_error": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-v",
+      "error",
+      "-init_hw_device",
+      "qsv=hw",
+      "-filter_hw_device",
+      "hw",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "3",
+      "-vf",
+      "format=nv12,hwupload=extra_hw_frames=64",
+      "-c:v",
+      "hevc_qsv",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 187,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "hw_qsv_init_failed.v_error.stderr.txt"
+  },
+  "hwaccels": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-hwaccels"
+    ],
+    "exit_code": 0,
+    "stdout": "hwaccels.stdout.txt"
+  },
+  "progress_encode": {
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=320x180:rate=25:duration=2",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-progress",
+      "pipe:1",
+      "-nostats",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "stderr": "progress_encode.stderr.txt",
+    "stdout": "progress_encode.stdout.txt"
+  }
+}
