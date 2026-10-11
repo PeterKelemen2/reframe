@@ -1,4 +1,4 @@
-# XXXX — Stay on PrimeVue 4 and TypeScript 6
+# 0003 — Stay on PrimeVue 4 and TypeScript 6
 
 - Status: accepted
 - Date: 2026-10-11
