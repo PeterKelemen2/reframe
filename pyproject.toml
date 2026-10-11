@@ -84,7 +84,15 @@ testpaths = ["packages/reframe/tests", "packages/reframe-server/tests", "testing
 # testing/ holds shared test infrastructure (fake FFmpeg, fixture media helpers) used by the
 # core, server and end-to-end tests: import it as `reframe_testing`.
 pythonpath = ["testing"]
-addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "-ra"]
+# -p: fixtures `fixture_media` and `fake_tools`, and the needs_ffmpeg auto-skip, for every test.
+addopts = [
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "-p",
+    "reframe_testing.pytest_plugin",
+]
 xfail_strict = true
 markers = [
     "slow: long-running test (seconds, not milliseconds)",

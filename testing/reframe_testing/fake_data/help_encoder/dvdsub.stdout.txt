@@ -1,0 +1,8 @@
+Encoder dvdsub [DVD subtitles]:
+    General capabilities: none
+VOBSUB subtitle encoder AVOptions:
+  -palette           <string>     E....S..... set the global palette
+  -even_rows_fix     <boolean>    E....S..... Make number of rows even (workaround for some players) (default false)
+
+
+Exiting with exit code 0
