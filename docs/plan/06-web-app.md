@@ -165,8 +165,11 @@ available and encodes a fixture file.
 
 ## Stack
 
-Vue 3.5+ · TypeScript (strict) · Vite · Pinia · Vue Router · oxlint · oxfmt · PrimeVue 4 (styled mode, custom
+Vue 3.5+ · TypeScript 6 (strict) · Vite · Pinia · Vue Router · oxlint · oxfmt · PrimeVue 4 (styled mode, custom
 Aura preset) · Lucide icons · VueUse · vue-i18n · `openapi-fetch` · Vitest · Playwright.
+
+PrimeVue stays on 4 (MIT) with `@primeuix/themes` 2.x, and TypeScript stays on 6 (vue-tsc
+needs it). See [decision XXXX](../decisions/XXXX-frontend-held-back-majors.md).
 
 ## Structure
 
