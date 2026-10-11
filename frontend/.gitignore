@@ -1,0 +1,5 @@
+# Local Vite env overrides (never commit secrets)
+*.local
+
+# Vitest coverage output
+coverage/
