@@ -282,14 +282,29 @@ def download(
     attempts: int = 4,
     timeout: float = 60.0,
     sleep: Callable[[float], None] = time.sleep,
+    max_bytes: int | None = None,
 ) -> None:
-    """Download ``url`` to ``dest``. Retry network errors and HTTP 429/5xx with back-off."""
+    """Download ``url`` to ``dest``. Retry network errors and HTTP 429/5xx with back-off.
+
+    With ``max_bytes``, stop reading as soon as the response is longer than that (the pinned
+    size), so a wrong or hostile server cannot fill the disk. That is not retried.
+    """
     for attempt in range(1, attempts + 1):
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as f:
-                shutil.copyfileobj(response, f, 1 << 20)
+                written = 0
+                for chunk in iter(lambda: response.read(1 << 20), b""):
+                    written += len(chunk)
+                    if max_bytes is not None and written > max_bytes:
+                        raise ChecksumError(
+                            f"{url}: response is larger than the pinned size of {max_bytes} bytes"
+                        )
+                    f.write(chunk)
             return
+        except ChecksumError:
+            dest.unlink(missing_ok=True)
+            raise
         except urllib.error.HTTPError as e:
             retryable = e.code == 429 or e.code >= 500
             error: Exception = e
@@ -450,7 +465,10 @@ def install(
     try:
         archive = work / pbuild.file_name
         _log(f"downloading {pbuild.url}")
-        (downloader or download)(pbuild.url, archive)
+        if downloader is None:
+            download(pbuild.url, archive, max_bytes=pbuild.size)
+        else:
+            downloader(pbuild.url, archive)
         verify_file(archive, pbuild.sha256, pbuild.size)
         _log(f"SHA-256 verified: {pbuild.sha256}")
         staging = work / "extract"

@@ -23,19 +23,28 @@ defaults:
 
 jobs:
   python:
-    name: Python (${{ matrix.os }})
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        python: ["3.14"] # .python-version
+        include:
+          # requires-python is ">=3.13": test the minimum once.
+          - os: ubuntu-latest
+            python: "3.13"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+      # A missing or broken ffmpeg/ffprobe fails the needs_ffmpeg tests instead of skipping them.
+      REFRAME_REQUIRE_FFMPEG: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # uv installs the Python version from .python-version.
+      # uv installs the Python version from UV_PYTHON (matrix.python).
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
@@ -73,7 +82,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: testdata/media
-          key: testdata-${{ runner.os }}-default-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/**/*.py', 'tools/ffmpeg.toml') }}
+          key: testdata-${{ runner.os }}-py${{ matrix.python }}-default-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/**/*.py', 'tools/ffmpeg.toml') }}
 
       - name: Generate the test media (incremental)
         run: uv run python scripts/make-testdata.py
@@ -108,6 +117,7 @@ jobs:
       - run: npm run typecheck # vue-tsc --noEmit on tsconfig.app.json and tsconfig.node.json
       - run: npm test # vitest run
       - run: npm run build:web
+      - run: npm run build:desktop
 
   ffmpeg-override:
     # Q-1.2: the path override (REFRAME_FFMPEG / REFRAME_FFPROBE) with a different FFmpeg build.
@@ -115,6 +125,8 @@ jobs:
     name: FFmpeg override path (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      REFRAME_REQUIRE_FFMPEG: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

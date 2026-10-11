@@ -14,7 +14,7 @@
     "build:web": "vite build --mode web",
     "build:desktop": "vite build --mode desktop",
     "preview": "vite preview --mode web",
-    "lint": "oxlint",
+    "lint": "oxlint --deny-warnings",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json",

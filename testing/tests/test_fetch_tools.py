@@ -415,7 +415,7 @@ ffprobe = "bin/ffprobe"
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(ft, "download", lambda url, dest: dest.write_bytes(archive))
+    monkeypatch.setattr(ft, "download", lambda url, dest, **_: dest.write_bytes(archive))
     # Pretend the host is another platform so the fake binaries are not executed.
     monkeypatch.setattr(ft, "detect_platform", lambda *a: "windows-x64")
 
@@ -473,3 +473,19 @@ def test_download_does_not_retry_404(tmp_path: Path, monkeypatch: pytest.MonkeyP
         ft.download("https://x/a.zip", tmp_path / "a.zip", sleep=lambda _: None)
     assert len(calls) == 1
     assert not (tmp_path / "a.zip").exists()
+
+
+def test_download_stops_at_the_pinned_size(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+
+    def urlopen(request: object, timeout: float) -> _Response:
+        calls.append(request)
+        return _Response(b"x" * 10)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    with pytest.raises(ft.ChecksumError, match="larger than the pinned size"):
+        ft.download("https://x/a.zip", tmp_path / "a.zip", sleep=lambda _: None, max_bytes=9)
+    assert len(calls) == 1  # not retried
+    assert not (tmp_path / "a.zip").exists()
+    ft.download("https://x/a.zip", tmp_path / "a.zip", sleep=lambda _: None, max_bytes=10)
+    assert (tmp_path / "a.zip").read_bytes() == b"x" * 10

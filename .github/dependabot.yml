@@ -25,6 +25,9 @@ updates:
         versions: [">=5.0.0"]
       - dependency-name: "@primeuix/themes" # 3+ belongs to PrimeVue 5
         versions: [">=3.0.0"]
+      # Node types follow the CI Node major in frontend/.node-version (24). Raise both together.
+      - dependency-name: "@types/node"
+        versions: [">=25.0.0"]
       - dependency-name: typescript # vue-tsc does not run on TypeScript 7
         versions: [">=7.0.0"]
 

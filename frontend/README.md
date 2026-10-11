@@ -6,7 +6,7 @@ inside the Tauri shell. The spec is `docs/plan/06-web-app.md`, Part B.
 Stack: Vue 3.5 · TypeScript 6 (strict) · Vite 8 · Pinia · Vue Router · PrimeVue 4 (styled
 mode, Aura-based preset) · Lucide (`@lucide/vue`) · vue-i18n · Vitest · oxlint · oxfmt ·
 vue-tsc. PrimeVue and TypeScript stay one major behind the latest release; see
-`docs/decisions/XXXX-frontend-held-back-majors.md`.
+`docs/decisions/0003-frontend-held-back-majors.md`.
 
 ## Commands
 

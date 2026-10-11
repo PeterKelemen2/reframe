@@ -48,6 +48,7 @@ reframe/
 ├── docker/                       # Dockerfile, compose example
 ├── tools/                        # ffmpeg.toml: pinned FFmpeg version, URLs and SHA-256 per platform
 ├── scripts/                      # dev helpers (generate API types, make test media, …)
+├── testing/                      # shared test infrastructure (`reframe_testing`): fake FFmpeg, fixture helpers
 ├── testdata/                     # small generated fixtures (git-ignored large ones)
 └── docs/
     └── plan/                     # this folder
