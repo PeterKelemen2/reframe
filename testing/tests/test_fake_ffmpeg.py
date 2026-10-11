@@ -669,7 +669,8 @@ def test_ignore_sigterm_needs_sigkill(fake_tools: FakeTools) -> None:
     with pytest.raises(subprocess.TimeoutExpired):
         proc.wait(timeout=0.3)
     proc.kill()
-    assert proc.wait(timeout=10) == -signal.SIGKILL
+    if sys.platform != "win32":  # posix_only; the check also satisfies mypy --platform win32
+        assert proc.wait(timeout=10) == -signal.SIGKILL
     proc.stdout.close()
 
 

@@ -71,7 +71,10 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
       never raises for a non-zero exit code. It raises only for programming errors.
 - [ ] Timeout and cancel kill the **whole process tree** (psutil).
 - [ ] Child safety: on Linux, set `PR_SET_PDEATHSIG` (ctypes `prctl` in `preexec_fn`). On
-      Windows, assign children to a Job Object with `KILL_ON_JOB_CLOSE`. FFmpeg then dies if
+      Windows, children run inside a Job Object with `KILL_ON_JOB_CLOSE`: Reframe puts its own
+      process into the job before it starts the first tool, so every child is born in the job
+      (no assignment race). If that fails, each child is assigned after start
+      ([decision 0005](../decisions/0005-tool-discovery-details.md)). FFmpeg then dies if
       Reframe dies.
 - [ ] Windows: `CREATE_NO_WINDOW`, so no console window flashes.
 - [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mkvpropedit`, `mediainfo`) in the order
@@ -141,25 +144,33 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
 - [ ] Run `ffprobe -v error -of json -show_format -show_streams -show_chapters -show_programs`
       with a 60 s timeout (network shares can be slow).
 - [ ] Parse it into `MediaSource`. Handle: attached pictures (cover art is not a video track),
-      attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`), interlacing
-      (`field_order`), stream start offsets (shown as audio delay), and missing durations.
+      attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`; in Matroska
+      also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then MediaInfo, then a packet
+      timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
+      to the main video stream, shown as audio delay), and missing durations (decision 0007).
 - [ ] **HDR**: read stream side data (mastering display, content light level, DOVI
       configuration). If it is missing, read the first frame's side data
-      (`-show_frames -read_intervals %+#1 -select_streams v:0`). Detect HDR10, HDR10+, HLG, and
-      Dolby Vision profile.
+      (`-show_frames -read_intervals %+#5 -select_streams v:0`). Detect HDR10, HDR10+, HLG, and
+      Dolby Vision profile. HDR10+ is only in frame side data, so the first frame is read for
+      every PQ stream (decision 0006).
 - [ ] **Commercial codec names**: map `(codec_name, profile)` to a display name. Examples:
       `dts/DTS-HD MA → DTS-HD MA`, `dts/DTS-HD MA + DTS:X → DTS:X`,
       `truehd/… + Dolby Atmos → TrueHD Atmos`, `eac3/… + Dolby Atmos → E-AC-3 Atmos`,
       `aac/LC → AAC-LC`, `hdmv_pgs_subtitle → PGS`. A table-driven test covers the map.
 - [ ] **Bitrate chain**: `bit_rate` → Matroska statistics tags (`BPS`, `BPS-eng`,
-      `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (if installed) → `unknown`. The value records
-      its source.
-- [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present.
+      `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (the pymediainfo library, if it loads) →
+      `unknown`. The value records its source. Statistics tags are used only when they are
+      plausible for the file (size, bit rate, duration); FFmpeg copies stale ones on re-encode.
+      MediaInfo also gives `language_ietf` (Matroska `LanguageIETF`, which ffprobe does not
+      show) (decision 0007).
+- [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present and plausible.
 - [ ] **Role heuristics** (`probe/roles.py`): dispositions first, then title keywords
       (commentary, kommentar, commentaire, comentario, commento, kommentár, コメンタリー; SDH, CC,
       hearing impaired; forced, foreign, signs, songs; audio description, descriptive, AD),
       then structure (a 2.0 track with low bitrate in the same language as a multichannel
       main track → possible commentary). Each role records `evidence: flag | title | heuristic`.
+      Keywords match whole words, case-insensitive; the acronyms `AD` and `CC` only in upper
+      case. A track with no other role gets `main` (decision 0006).
 - [ ] Probe cache: key = absolute path + size + mtime. Stored as JSON in the cache dir.
 - [ ] Folder probe: a task with a concurrency limit (default 4) that reports progress.
 

@@ -33,6 +33,11 @@ NO_FFMPEG_REASON = "needs ffmpeg and ffprobe"
 
 _PROBLEM = pytest.StashKey[str | None]()
 
+#: Reframe's tool discovery accepts only .exe programs on Windows; the fake tools are .cmd
+#: launchers, so the test session opts in (test-only; see reframe.tools.discovery).
+ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
+os.environ.setdefault(ALLOW_SCRIPT_TOOLS_ENV, "1")
+
 
 def require_ffmpeg() -> bool:
     """``REFRAME_REQUIRE_FFMPEG`` is set to something other than empty, ``0``, ``false``, ``no``."""
@@ -44,7 +49,7 @@ def _tool_problem(name: str, env: str, path: str | None) -> str | None:
         value = os.environ.get(env)
         if value:
             return f"{name}: {env}={value} is not a file"
-        return f"{name} not found: set {env} or put {name} on PATH"
+        return f"{name} not found: set {env}, install the bundled build, or put {name} on PATH"
     try:
         out = subprocess.run(
             [path, "-hide_banner", "-version"], capture_output=True, timeout=30, check=False

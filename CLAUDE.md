@@ -36,11 +36,13 @@ uv sync                                   # install everything (dev group is the
 uv run ruff check                         # lint
 uv run ruff format --check                # format check (uv run ruff format to fix)
 uv run mypy                               # strict type check (files listed in pyproject.toml)
+uv run mypy --platform win32              # the same, as the Windows CI runner sees it
 uv run pytest                             # all tests
 uv run pytest -m "not needs_gpu"          # what CI runs
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
 uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir
+uv run python -m reframe.tools            # which ffmpeg/ffprobe/mkvpropedit/mediainfo discovery picks, and why
 ```
 
 Tests that need real media use the `fixture_media("multitrack")` pytest fixture (generated on
@@ -74,6 +76,14 @@ commands on Ubuntu and Windows.
 - Never commit generated media. `scripts/make-testdata.py` creates the fixtures. The name
   corpus `testdata/names.toml` and recorded probe JSON in `testdata/probes/` are committed.
 - Use current stable dependency versions, pinned in `uv.lock` / `frontend/package-lock.json`.
+
+## Persistence rules
+
+- Persisted documents (settings, presets, job settings in the queue, probe cache) keep unknown
+  fields and write them back unchanged (`DocumentModel`, `extra="allow"`).
+- A new value in a persisted `Literal`/enum (or a new union `kind`/`mode`) makes older versions
+  reject the file: bump `schema_version`, register a migration and add a down-level note
+  (`reframe/models/migrations.py`). So do removals and renames.
 
 ## Decision records
 

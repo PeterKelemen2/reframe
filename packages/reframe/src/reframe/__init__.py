@@ -1,9 +1,11 @@
 """Reframe core package.
 
-The public API is the ``Reframe`` facade (added in C-15) and ``reframe.models``. Everything
-else is internal and can change.
+The public API is the :class:`Reframe` facade (C-15, ``reframe.service``) and
+``reframe.models``. Everything else is internal and can change.
 """
 
 __version__ = "0.1.0.dev0"
 
-__all__ = ["__version__"]
+from reframe.service import Reframe
+
+__all__ = ["Reframe", "__version__"]

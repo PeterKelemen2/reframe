@@ -1,0 +1,483 @@
+"""Behaviour of the C-2 models: persistence (unknown fields, migrations), validators, unions."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+from pydantic import TypeAdapter, ValidationError
+
+from reframe.jsonpatch import apply_patch
+from reframe.models import (
+    DOCUMENT_MODELS,
+    EVENT_ADAPTER,
+    EVENT_TYPES,
+    AppSettings,
+    ArgTemplate,
+    AudioCodecRule,
+    AudioCodecRules,
+    AudioDefaults,
+    AudioOutputSettings,
+    AudioOutputTrack,
+    BitrateInfo,
+    BitrateSource,
+    ChapterRange,
+    Disposition,
+    DocumentModel,
+    EncodePlan,
+    Event,
+    ExternalSubtitle,
+    FieldOrder,
+    FilterConfig,
+    FilterSettings,
+    FullRange,
+    JobSettings,
+    JobTemplate,
+    LanguageTag,
+    Measurement,
+    MediaSource,
+    MigrationError,
+    MigrationRegistry,
+    MoveOp,
+    OutputTrackRule,
+    PlanFile,
+    PlanStep,
+    Preset,
+    PresetFile,
+    Range,
+    Rational,
+    SourceRef,
+    SubtitleDefaults,
+    SubtitleOutputTrack,
+    TimeRange,
+    ToolPaths,
+    TrackSelector,
+    UnsupportedSchemaVersion,
+    ValueRef,
+    VideoStream,
+    current_version,
+    load_document,
+    migrate,
+    resolve_argv,
+)
+from reframe.models import migrations as migrations_mod
+from reframe.tools.discovery import locate_tools
+
+# --------------------------------------------------------------------------- persistence
+
+
+def _full_settings() -> dict[str, Any]:
+    data = AppSettings().model_dump(mode="json")
+    data["queue"]["future_option"] = {"nested": [1, 2, 3]}
+    data["output"]["naming"]["future_flag"] = True
+    data["brand_new_section"] = {"x": 1}
+    return data
+
+
+def _full_presets() -> dict[str, Any]:
+    preset = Preset(id="p1", name="H.265 MKV 1080p", category="Matroska")
+    preset.audio_defaults.codec_rules = [
+        AudioCodecRule(
+            languages=["hun"], source_channels="5.1_or_more", codec="ac3", max_bitrate=320
+        ),
+        AudioCodecRule(codec="libopus", mixdown="up_to_5.1", max_bitrate=256, if_fits="reencode"),
+    ]
+    preset.audio_rules = [
+        OutputTrackRule(
+            selector=TrackSelector(kind="audio", languages=["jpn"]),
+            settings=AudioOutputSettings(encoder="libopus", bitrate=448),
+        )
+    ]
+    data = PresetFile(presets=[preset], default_preset_id="p1").model_dump(mode="json")
+    data["presets"][0]["video"]["future_video_field"] = "x265-next"
+    data["presets"][0]["audio_defaults"]["codec_rules"][0]["extras"]["future"] = 1
+    data["presets"][0]["audio_rules"][0]["settings"]["future"] = [None]
+    data["presets"][0]["audio_rules"][0]["selector"]["future"] = {"a": "b"}
+    data["future_top_level"] = "kept"
+    return data
+
+
+def _full_job() -> dict[str, Any]:
+    job = JobSettings(
+        source=SourceRef(path=Path("/media/Show.S01E01.mkv")),
+        audio=[AudioOutputTrack(source_stream=1, encoder="ac3", bitrate=640)],
+        subtitles=[
+            SubtitleOutputTrack(source=4),
+            SubtitleOutputTrack(source=ExternalSubtitle(path=Path("/media/Show.S01E01.hu.srt"))),
+        ],
+        filters=FilterSettings({"deinterlace": FilterConfig(preset="bob")}),
+    )
+    data = job.model_dump(mode="json")
+    data["dimensions"]["crop"]["future"] = "kept"
+    data["audio"][0]["metadata"]["future_flag"] = True
+    data["subtitles"][1]["source"]["future_charset_guess"] = "cp1250"
+    data["range"]["future"] = 1
+    data["filters"]["deinterlace"]["future_param"] = 3
+    data["video"]["rate_control"]["future"] = 0.5
+    return data
+
+
+@pytest.mark.parametrize(
+    ("kind", "make"),
+    [("settings", _full_settings), ("preset_file", _full_presets), ("job_settings", _full_job)],
+)
+def test_unknown_fields_are_kept(kind: str, make: Any) -> None:
+    """Load JSON with unknown (nested) fields and dump it back unchanged (02 rule 4)."""
+    text = json.dumps(make())
+    original = json.loads(text)
+    loaded = load_document(kind, json.loads(text))
+    assert json.loads(loaded.model_dump_json()) == original
+    # Through the model's own JSON parser as well.
+    model = DOCUMENT_MODELS[kind]
+    assert json.loads(model.model_validate_json(text).model_dump_json()) == original
+
+
+def test_media_source_keeps_unknown_fields() -> None:
+    data = MediaSource(
+        ref=SourceRef(path=Path("/m.mkv")),
+        video=[VideoStream(index=0, width=1920, height=1080)],
+    ).model_dump(mode="json")
+    data["video"][0]["future_hdr_field"] = {"x": 1}
+    data["video"][0]["color"]["future"] = "bt2100"
+    assert MediaSource.model_validate(data).model_dump(mode="json") == data
+
+
+def test_every_persisted_model_has_schema_version() -> None:
+    for kind, model in DOCUMENT_MODELS.items():
+        assert issubclass(model, DocumentModel), kind
+        assert model.model_fields["schema_version"].default == 1
+        assert current_version(kind) == 1
+
+
+def test_runtime_models_reject_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        EncodePlan.model_validate(
+            {
+                "job_type": "encode",
+                "steps": [],
+                "output_tmp": "a.part.mkv",
+                "output_final": "a.mkv",
+                "expected_duration": 1.0,
+                "display": "ffmpeg",
+                "typo": 1,
+            }
+        )
+
+
+# --------------------------------------------------------------------------- migrations
+
+
+def test_migration_chain_keeps_unknown_fields() -> None:
+    registry = MigrationRegistry()
+    registry.add_kind("thing", 3)
+
+    @registry.register("thing", from_version=1)
+    def one_to_two(data: dict[str, Any]) -> dict[str, Any]:
+        data["queue"] = {"parallel_jobs": data.pop("parallel", 1)}
+        return data
+
+    @registry.register("thing", from_version=2)
+    def two_to_three(data: dict[str, Any]) -> dict[str, Any]:
+        data["queue"]["when_done"] = "nothing"
+        return data
+
+    original = {"parallel": 2, "unknown": {"keep": True}}
+    migrated = registry.migrate("thing", original)
+    assert migrated == {
+        "schema_version": 3,
+        "queue": {"parallel_jobs": 2, "when_done": "nothing"},
+        "unknown": {"keep": True},
+    }
+    assert original == {"parallel": 2, "unknown": {"keep": True}}  # not changed
+    assert registry.migrate("thing", {"schema_version": 2, "queue": {}})["schema_version"] == 3
+    assert registry.migrate("thing", {"schema_version": 3}) == {"schema_version": 3}
+
+
+def test_migration_errors() -> None:
+    registry = MigrationRegistry()
+    registry.add_kind("thing", 2)
+    with pytest.raises(MigrationError, match="no migration from version 1"):
+        registry.migrate("thing", {})
+    with pytest.raises(UnsupportedSchemaVersion) as info:
+        registry.migrate("thing", {"schema_version": 3})
+    assert (info.value.kind, info.value.found, info.value.current) == ("thing", 3, 2)
+    for bad in (0, -1, "1", True, 1.5, None):
+        with pytest.raises(UnsupportedSchemaVersion):
+            registry.migrate("thing", {"schema_version": bad})
+    with pytest.raises(MigrationError, match="unknown document kind"):
+        registry.migrate("nope", {})
+    registry.register("thing", 1)(lambda d: d)
+    with pytest.raises(MigrationError, match="exists"):
+        registry.register("thing", 1)(lambda d: d)
+    with pytest.raises(ValueError, match="start at 1"):
+        registry.add_kind("other", 0)
+
+
+def test_module_level_migrate() -> None:
+    assert migrate("settings", {}) == {"schema_version": 1}
+    settings = load_document("settings", {"queue": {"parallel_jobs": 2}})
+    assert isinstance(settings, AppSettings)
+    assert settings.queue.parallel_jobs == 2
+    with pytest.raises(UnsupportedSchemaVersion):
+        migrate("preset_file", {"schema_version": 99})
+
+
+def test_register_migration_uses_the_global_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = MigrationRegistry()
+    registry.add_kind("settings", 2)
+    monkeypatch.setattr(migrations_mod, "REGISTRY", registry)
+
+    @migrations_mod.register_migration("settings", from_version=1)
+    def rename(data: dict[str, Any]) -> dict[str, Any]:
+        data["renamed"] = True
+        return data
+
+    assert migrate("settings", {"schema_version": 1}) == {"schema_version": 2, "renamed": True}
+
+
+# --------------------------------------------------------------------------- validators
+
+
+def test_audio_defaults_end_with_a_catch_all() -> None:
+    assert AudioDefaults().codec_rules[-1].is_catch_all
+    # The example of 03 §Audio defaults.
+    rules = [
+        AudioCodecRule(
+            languages=["hun"],
+            source_channels="5.1_or_more",
+            codec="ac3",
+            mixdown="5.1",
+            max_bitrate=320,
+        ),
+        AudioCodecRule(
+            languages=["eng"],
+            source_channels="5.1_or_more",
+            codec="ac3",
+            mixdown="5.1",
+            max_bitrate=384,
+        ),
+        AudioCodecRule(
+            source_channels="stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=160
+        ),
+        AudioCodecRule(codec="libopus", mixdown="up_to_5.1", max_bitrate=256, if_fits="reencode"),
+    ]
+    assert len(AudioDefaults(codec_rules=rules).codec_rules) == 4
+    with pytest.raises(ValidationError, match="catch-all"):
+        AudioDefaults(codec_rules=rules[:3])
+    with pytest.raises(ValidationError, match="at least one"):
+        AudioDefaults(codec_rules=[])
+    with pytest.raises(ValidationError, match="catch-all"):
+        AudioCodecRules(rules=[AudioCodecRule(languages=["eng"])])
+    with pytest.raises(ValidationError, match="catch-all"):
+        AudioDefaults.model_validate({"codec_rules": [{"source_channels": "mono"}]})
+
+
+def test_bitrate_value_matches_its_source() -> None:
+    assert BitrateInfo().source is BitrateSource.UNKNOWN
+    assert BitrateInfo(value=192000, source=BitrateSource.STREAM).value == 192000
+    with pytest.raises(ValidationError):
+        BitrateInfo(value=192000)
+    with pytest.raises(ValidationError):
+        BitrateInfo(source=BitrateSource.STATS_TAG)
+
+
+@pytest.mark.parametrize(
+    "tag", ["en", "hun", "pt-BR", "zh-Hans", "es-419", "sr-Latn", "und", "de-CH-1996"]
+)
+def test_language_tags(tag: str) -> None:
+    assert TypeAdapter(LanguageTag).validate_python(tag) == tag
+
+
+@pytest.mark.parametrize("tag", ["", "e", "en_US", "english language", "1en", "en-", "-en"])
+def test_bad_language_tags(tag: str) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(LanguageTag).validate_python(tag)
+
+
+def test_subtitle_defaults_differ_from_audio() -> None:
+    selection = SubtitleDefaults().selection
+    assert selection.no_match == "none"
+    assert selection.default_track == "none"
+    assert AudioDefaults().selection.no_match == "default_flagged"
+    assert AudioDefaults().selection.default_track == "first_output"
+
+
+def test_preset_needs_id_and_name() -> None:
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"name": "x"})
+    with pytest.raises(ValidationError):
+        Preset(id="", name="x")
+    assert Preset(id="a", name="b").category == "Custom"
+
+
+# --------------------------------------------------------------------------- unions
+
+
+def test_range_union() -> None:
+    adapter: TypeAdapter[Range] = TypeAdapter(Range)
+    assert adapter.validate_python({"kind": "chapters", "start": 2, "end": 5}) == ChapterRange(
+        start=2, end=5
+    )
+    assert adapter.validate_python({"kind": "time", "start": 10.5}) == TimeRange(start=10.5)
+    assert JobSettings(source=SourceRef(path=Path("a.mkv"))).range == FullRange()
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"kind": "minutes"})
+
+
+def test_subtitle_source_is_a_stream_or_a_file() -> None:
+    stream = SubtitleOutputTrack.model_validate({"source": 3})
+    assert stream.source == 3
+    external = SubtitleOutputTrack.model_validate(
+        {"source": {"path": "subs/a.srt", "offset_ms": -250, "charset": "cp1250"}}
+    )
+    assert isinstance(external.source, ExternalSubtitle)
+    assert external.source.offset_ms == -250
+
+
+def test_filter_settings_keep_their_order() -> None:
+    filters = FilterSettings.model_validate(
+        {
+            "sharpen": {"preset": "light"},
+            "deinterlace": {},
+            "denoise": {"preset": "medium", "tune": "film"},
+        }
+    )
+    assert list(filters.root) == ["sharpen", "deinterlace", "denoise"]
+    assert list(json.loads(filters.model_dump_json())) == ["sharpen", "deinterlace", "denoise"]
+
+
+def test_event_types_match_the_union() -> None:
+    members = TypeAdapter(Event).json_schema()["discriminator"]["mapping"]
+    assert set(members) == set(EVENT_TYPES)
+    assert len(EVENT_TYPES) == 12
+    assert EVENT_TYPES[-1] == "resync"
+    assert EVENT_TYPES[:7] == (
+        "capabilities.changed",
+        "task.progress",
+        "task.done",
+        "job.state",
+        "job.progress",
+        "job.log",
+        "queue.changed",
+    )
+    event = EVENT_ADAPTER.validate_python({"type": "job.state", "job_id": "1", "state": "running"})
+    assert event.type == "job.state"
+
+
+def test_move_op_alias() -> None:
+    op = MoveOp(from_="/a", path="/b")
+    assert op.model_dump() == {"op": "move", "from": "/a", "path": "/b"}
+    assert MoveOp.model_validate({"from": "/a", "path": "/b"}) == op
+
+
+# --------------------------------------------------------------------------- plan
+
+
+def test_plan_placeholders_resolve() -> None:
+    analyse = PlanStep(
+        kind="analyse",
+        tool="ffmpeg",
+        argv=["-i", "in.mkv", "-af", "loudnorm=print_format=json", "-f", "null", "-"],
+        measures=[Measurement(id="a0", parser="loudnorm")],
+    )
+    encode = PlanStep(
+        kind="encode",
+        tool="ffmpeg",
+        argv=[
+            "-filter:a:0",
+            ArgTemplate(
+                parts=["loudnorm=I=-23:measured_I=", ValueRef(ref="a0.input_i"), ":linear=true"]
+            ),
+            "out.part.mkv",
+        ],
+    )
+    assert resolve_argv(analyse.argv, {}) == analyse.argv
+    assert resolve_argv(encode.argv, {"a0.input_i": "-27.61"}) == [
+        "-filter:a:0",
+        "loudnorm=I=-23:measured_I=-27.61:linear=true",
+        "out.part.mkv",
+    ]
+    with pytest.raises(KeyError):
+        resolve_argv(encode.argv, {})
+    with pytest.raises(ValidationError):
+        ValueRef(ref="no-dot")
+
+
+# --------------------------------------------------------------------------- fixes on settings
+
+
+def test_use_bundled_fix_applies_to_app_settings(tmp_path: Path) -> None:
+    settings = AppSettings(tools=ToolPaths(ffmpeg=tmp_path / "missing" / "ffmpeg"))
+    located = locate_tools(settings.tools, environ={}, bundled_roots=[], search_path=str(tmp_path))
+    (fix,) = located["ffmpeg"].fixes
+    assert fix.target == "settings"
+    patched = apply_patch(settings.model_dump(mode="json"), fix.patch)
+    assert AppSettings.model_validate(patched).tools.ffmpeg is None
+
+
+def test_template_defaults() -> None:
+    template = JobTemplate()
+    assert template.crop_policy == "detect_per_file"
+    assert template.chapter_name_policy == "source"
+    assert template.naming is None
+    assert template.audio_rules == []
+    assert template.dimensions.size.mode == "fit"
+
+
+# --------------------------------------------------------------------------- media
+
+
+@pytest.mark.needs_ffmpeg
+def test_disposition_has_every_ffprobe_flag(fixture_media: Any) -> None:
+    from reframe_testing import media
+
+    info = media.probe(fixture_media("multitrack"))
+    for stream in info["streams"]:
+        # FFmpeg 8.1 and 9.0 print the same 19 flags; older builds may print fewer.
+        assert set(stream["disposition"]) <= set(Disposition.model_fields)
+    assert len(Disposition.model_fields) == 19
+
+
+def test_rational() -> None:
+    assert float(Rational(num=24000, den=1001)) == pytest.approx(23.976, abs=1e-3)
+    assert str(Rational(num=32, den=27)) == "32/27"
+    assert Rational.square() == Rational(num=1, den=1)
+    with pytest.raises(ValidationError):
+        Rational(num=0, den=0)  # ffprobe's 0/0 is stored as None, never as a Rational
+
+
+def test_cover_art_is_not_a_video_track() -> None:
+    source = MediaSource.model_validate(
+        {
+            "ref": {"path": "/m/a.mkv"},
+            "video": [{"index": 0, "width": 1920, "height": 1080, "field_order": "tff"}],
+            "cover_art": [{"index": 5, "codec": "mjpeg", "width": 600, "height": 600}],
+        }
+    )
+    assert [v.index for v in source.video] == [0]
+    assert source.cover_art[0].codec == "mjpeg"
+    assert source.video[0].field_order is FieldOrder.TOP_FIRST
+
+
+def test_plan_files_for_generated_chapters() -> None:
+    """C-7 stays pure: the FFMETADATA chapter file is data in the plan; the runner writes it."""
+    chapters = PlanFile(
+        path=Path("/out/Show.part.chapters.txt"),
+        content=";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=60000\ntitle=Opening\n",
+        description="FFMETADATA chapters",
+    )
+    plan = EncodePlan(
+        job_type="encode",
+        steps=[PlanStep(kind="encode", tool="ffmpeg", argv=["-i", str(chapters.path)])],
+        output_tmp=Path("/out/Show.part.mkv"),
+        output_final=Path("/out/Show.mkv"),
+        expected_duration=60.0,
+        display="ffmpeg …",
+        files=[chapters],
+    )
+    again = EncodePlan.model_validate_json(plan.model_dump_json())
+    assert again.files == [chapters]
+    assert again.files[0].content.startswith(";FFMETADATA1\n")
+    assert EncodePlan.model_validate({**plan.model_dump(mode="json"), "files": []}).files == []

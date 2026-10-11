@@ -64,26 +64,27 @@ class MediaError(RuntimeError):
 # --------------------------------------------------------------------------- tool discovery
 
 
+def _discovered(tool: Literal["ffmpeg", "ffprobe"]) -> str | None:
+    """The binary that ``reframe.tools`` discovery picks (no Settings file in tests), if it
+    exists: ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` → ffprobe next to an overridden ffmpeg →
+    the bundled build (``$REFRAME_DATA_DIR/tools/ffmpeg`` in CI) → ``PATH`` (only without a
+    bundled build). File checks only; the plugin runs ``-version`` itself."""
+    from reframe.tools.discovery import locate_tools
+
+    location = locate_tools()[tool]
+    if location.problem is not None or location.path is None:
+        return None
+    return str(location.path)
+
+
 def find_ffmpeg() -> str | None:
-    """``REFRAME_FFMPEG`` if set (and it exists), else ``ffmpeg`` on ``PATH``."""
-    env = os.environ.get(FFMPEG_ENV)
-    if env:
-        return env if Path(env).is_file() else None
-    return shutil.which("ffmpeg")
+    """The ffmpeg that Reframe's tool discovery picks, or ``None``."""
+    return _discovered("ffmpeg")
 
 
 def find_ffprobe() -> str | None:
-    """``REFRAME_FFPROBE``, else ``ffprobe`` next to the ffmpeg in use, else ``PATH``."""
-    env = os.environ.get(FFPROBE_ENV)
-    if env:
-        return env if Path(env).is_file() else None
-    ffmpeg = find_ffmpeg()
-    if ffmpeg:
-        ff = Path(ffmpeg)
-        sibling = ff.with_name(ff.name.replace("ffmpeg", "ffprobe"))
-        if sibling != ff and sibling.is_file():
-            return str(sibling)
-    return shutil.which("ffprobe")
+    """The ffprobe that Reframe's tool discovery picks, or ``None``."""
+    return _discovered("ffprobe")
 
 
 @functools.cache
@@ -846,7 +847,9 @@ def generate(
     out_dir = Path(out_dir or DEFAULT_MEDIA_DIR)
     ffmpeg = ffmpeg or find_ffmpeg()
     if ffmpeg is None:
-        raise MediaError(f"ffmpeg not found: set {FFMPEG_ENV} or put ffmpeg on PATH")
+        raise MediaError(
+            f"ffmpeg not found: set {FFMPEG_ENV}, install the bundled build, or put ffmpeg on PATH"
+        )
     version_line = ffmpeg_version(ffmpeg)
     recipes = build_recipes()
     selected: list[Recipe] = []
@@ -885,7 +888,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="make-testdata.py",
         description="Generate the Reframe test media fixtures with FFmpeg lavfi sources "
-        f"(ffmpeg from ${FFMPEG_ENV}, else PATH).",
+        f"(ffmpeg from reframe tool discovery: ${FFMPEG_ENV}, the bundled build, else PATH).",
     )
     parser.add_argument("--only", nargs="+", metavar="NAME", help="only these fixtures")
     parser.add_argument("--force", action="store_true", help="regenerate even if up to date")
@@ -909,7 +912,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         ffmpeg = find_ffmpeg()
         if ffmpeg is None:
-            raise MediaError(f"ffmpeg not found: set {FFMPEG_ENV} or put ffmpeg on PATH")
+            raise MediaError(
+                f"ffmpeg not found: set {FFMPEG_ENV}, install the bundled build, "
+                "or put ffmpeg on PATH"
+            )
         font = fixture_font()
         print(f"ffmpeg: {ffmpeg} ({ffmpeg_version(ffmpeg)})")
         print(f"font:   {font.family} ({font.source})")

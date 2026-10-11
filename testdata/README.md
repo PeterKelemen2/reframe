@@ -6,7 +6,7 @@ Test data for Reframe. Nothing in `media/` is committed: it is generated.
 |------|-----------|------|
 | `media/` | no (git-ignored) | Generated fixture media (`scripts/make-testdata.py`) |
 | `names.toml` | yes (later, `C-16`) | File-name corpus for guessit / output naming |
-| `probes/` | yes (later, `Q-2.2`) | Recorded real-world ffprobe JSON |
+| `probes/` | yes | Recorded ffprobe JSON (`Q-2.2`, synthesised from real output; see `probes/README.md`) and the JSON of every generated fixture |
 
 ## Generated media
 
@@ -17,8 +17,10 @@ uv run python scripts/make-testdata.py --force         # regenerate even if up t
 uv run python scripts/make-testdata.py --list          # names and descriptions
 ```
 
-- FFmpeg comes from `$REFRAME_FFMPEG`, else `ffmpeg` on `PATH`. ffprobe (used by the tests)
-  comes from `$REFRAME_FFPROBE`, else next to that ffmpeg, else `PATH`.
+- FFmpeg and ffprobe come from Reframe's own tool discovery (`reframe.tools`, step C-1):
+  `$REFRAME_FFMPEG` / `$REFRAME_FFPROBE` → the bundled build (in CI:
+  `$REFRAME_DATA_DIR/tools/ffmpeg`, installed with `scripts/fetch-tools.py --install-dir`) →
+  `PATH`. `uv run python -m reframe.tools` shows which binaries it picks and why.
 - Incremental: `media/manifest.json` stores a hash of each recipe (files written, FFmpeg
   arguments, generator version, first line of `ffmpeg -version`). A fixture whose outputs exist
   and whose hash did not change is skipped. Each fixture is built in a temporary folder
@@ -337,3 +339,28 @@ uv run python testing/reframe_testing/capture_fake_data.py --ffmpeg "$BIN/ffmpeg
 | `Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n` | `bin/ffmpeg` | any encoder that cannot open |
 | `Conversion failed!\n` | `bin/ffmpeg` | generic last line |
 | `MFX_ERR_UNSUPPORTED` | **not found** | the plan's pattern; never printed |
+
+### Language tags (FFmpeg n9.0.2, MKVToolNix v101.0)
+
+Checked in `C-6` (`packages/reframe/tests/test_languages.py`, `needs_ffmpeg` tests):
+
+```sh
+ffmpeg -v error -y -f lavfi -i sine=d=0.2 -c:a aac -metadata:s:a:0 language=X out.mkv   # and out.mp4
+ffprobe -v error -show_entries stream_tags -of compact out.mkv
+mkvpropedit out.mkv --edit track:a1 --set language-ietf=pt-BR ; mkvmerge -J out.mkv
+```
+
+- **Matroska, FFmpeg:** writes the value **verbatim** into the legacy `Language` element and
+  never writes `LanguageIETF` (`de` → `de`, `pt-BR` → `pt-BR`). ffprobe reads it back verbatim;
+  `und` reads back as no tag. So the command builder must pass ISO 639-2/B
+  (`reframe.languages.to_matroska_legacy`).
+- **MP4, FFmpeg:** keeps 3-letter codes (`deu`, `ger`) and **silently drops** 2-letter codes and
+  BCP 47 tags (`de`, `pt-BR` → no language). The builder must pass ISO 639-2/T (`to_mp4`).
+- **mkvpropedit:** `--set language=X` writes both elements (`pt-BR` → `por` + `pt-BR`);
+  `--set language-ietf=X` alone changes only `LanguageIETF` and can leave the track
+  inconsistent.
+- **ffprobe never shows `LanguageIETF`.** After `language-ietf=pt-BR` it still reports
+  `language=por`. Reading region/script subtags back needs `mkvmerge -J` (`language_ietf`) or
+  MediaInfo. This matters for `C-3` (source language) and `C-13` (re-probe after a metadata
+  edit); it is decided with `C-13`.
+
