@@ -90,6 +90,11 @@ class Rational(DocumentModel):
     num: int
     den: Annotated[int, Field(ge=1)] = 1
 
+    @classmethod
+    def square(cls) -> Rational:
+        """``1/1`` (square pixels)."""
+        return cls(num=1, den=1)
+
     def __float__(self) -> float:
         return self.num / self.den
 
