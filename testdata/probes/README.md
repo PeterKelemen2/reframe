@@ -17,7 +17,7 @@ uv run pytest packages/reframe/tests/probe/test_snapshots.py --snapshot-update  
 | Path | What |
 |------|------|
 | `<name>.json` | ffprobe output of Reframe's probe command (`reframe.probe.probe_argv`: `-v error -of json -show_format -show_streams -show_chapters -show_programs`) |
-| `<name>.frames.json` | The first frame of the main video stream (`reframe.probe.frames_argv`: `-show_frames -read_intervals %+#1 -select_streams <index>`), recorded when Reframe would read it (HDR) |
+| `<name>.frames.json` | The first frames of the main video stream (`reframe.probe.frames_argv`), recorded when Reframe would read them (HDR). The files recorded before the M1 review fix used `-read_intervals %+#1` (one packet); the command now reads `%+#5`, of which one frame is a subset, so the snapshots are unchanged |
 | `fixtures/<file>.json` | The same for every generated fixture file (`reframe_testing.media`), so the snapshots do not depend on the FFmpeg that runs the tests |
 | `index.json` | For each recorded probe: file name, description, the exact FFmpeg / mkvpropedit commands, `synthesised`, and **every edit** (stream, field, old value, new value, why) |
 | `confirmed_strings.json` | Byte search: every ffprobe string that `reframe.probe` matches on, and the files of the pinned build and of this machine's FFmpeg that contain it |
@@ -55,6 +55,8 @@ available (keep the name; the snapshot diff then shows what changed).
 | `dv-p8` | `movie-dv-p8.mkv` | The HDR10 stream (1080p) + a DOVI configuration record, profile 8.1 | yes | stream 0 `side_data_list`: `DOVI configuration record` appended (`dv_profile` 8, `dv_level` 4, `rpu_present_flag` 1, `el_present_flag` 0, `bl_present_flag` 1, `dv_bl_signal_compatibility_id` 1, `dv_md_compression` 0) |
 | `hlg` | `broadcast-hlg.mkv` | HEVC Main 10 1080p50 BT.2020 / `arib-std-b67`, AAC | no | — |
 | `cover-art` | `song-cover.m4a` | AAC + PNG cover (`attached_pic`) | no | — |
+| `mkvmerge-vfr` | `phone-vfr-mkvmerge.mkv` | The VFR clip (24 / 30 / 60 fps) as MP4, remuxed by **mkvmerge** (`mkvmerge -o … source.mp4`): `r_frame_rate = avg_frame_rate = 29999/500` from `DefaultDuration`; mkvmerge's own statistics tags (114 frames, 3.01 s) | no | — |
+| `stale-stats` | `movie-stale-stats.mkv` | A 29.97 fps clip muxed by mkvmerge, then re-encoded by FFmpeg at 200 kb/s: the **stale** statistics tags of the source stay (`BPS` 9582197, `NUMBER_OF_BYTES` 2397945 in an 85 344-byte file) | no | — |
 | `phone-rotated` | `phone-rotated.mov` | H.264 1280×720 with a display matrix (`-display_rotation -90`, i.e. 90° clockwise), AAC, QuickTime timecode (`tmcd`) data stream, `creation_time` | no | — |
 
 ### Why each edit is what a real file would show
@@ -101,6 +103,16 @@ Checked with the pinned build on 2026-10-11 (most are asserted in
   needed, otherwise FFmpeg rotates the pixels and writes no matrix.
 - **`-dolbyvision 1` in libx265 also needs VBV** (`Dolby Vision requires VBV settings to
   enable HRD`), before it fails on the missing frame metadata.
+- **mkvmerge and VFR.** For a Matroska file written by mkvmerge, ffprobe takes both
+  `r_frame_rate` and `avg_frame_rate` from `DefaultDuration`, so a VFR source looks CFR
+  (`29999/500`). The statistics tags (`NUMBER_OF_FRAMES` / `DURATION`) or MediaInfo
+  (`FrameRate_Mode` VFR, 37.886 fps) show the truth. mkvmerge also starts the video at
+  0.021 s here (audio delay −21 ms).
+- **FFmpeg keeps stale statistics tags.** Re-encoding with FFmpeg copies the stream tags,
+  `BPS` and `NUMBER_OF_BYTES` included, and replaces only `DURATION`.
+- **The container `ENCODER` tag does not name the writer.** mkvmerge copies a source's global
+  `ENCODER=Lavf…` tag (seen in the review's `mm-cfr.mkv`), so it cannot tell an FFmpeg file
+  from an mkvmerge file.
 - **Inherited `default` flags.** Each `.idx` input brings a `default` disposition into the
   output unless `-disposition:s:N 0` clears it.
 

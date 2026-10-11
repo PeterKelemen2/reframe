@@ -82,6 +82,14 @@ class Ffmpeg:
 
 
 @dataclass(frozen=True)
+class Tool:
+    """Run another program found on ``PATH`` (``mkvmerge``)."""
+
+    program: str
+    args: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Edit:
     """Set (or with ``delete``, remove) ``field`` of stream ``stream`` (or the format)."""
 
@@ -106,7 +114,7 @@ class Probe:
     name: str
     file: str
     description: str
-    steps: list[Write | Ffmpeg]
+    steps: Sequence[Write | Ffmpeg | Tool]
     stats_tags: bool = True
     edits: list[Edit | AddSideData] = field(default_factory=list)
 
@@ -672,6 +680,60 @@ def recipes() -> list[Probe]:
             stats_tags=False,
         )
     )
+
+    # ---- mkvmerge: VFR with DefaultDuration; stale statistics after an FFmpeg re-encode -------
+    probes.append(
+        Probe(
+            "mkvmerge-vfr",
+            "phone-vfr-mkvmerge.mkv",
+            "The VFR clip (1 s each at 24, 30, 60 fps, H.264 720p, AAC) as MP4, remuxed by "
+            "mkvmerge: mkvmerge writes DefaultDuration, so ffprobe shows r = avg; its own "
+            "statistics tags show the real average (114 frames in 3 s)",
+            [
+                Ffmpeg(
+                    (
+                        *vfr_inputs,
+                        *sine(440, 3),
+                        *("-filter_complex", graph, "-map", "[v]", "-map", "3:a"),
+                        *("-fps_mode", "vfr"),
+                        *X264,
+                        *("-c:a", "aac", "-b:a", "128k", "-ac", "2"),
+                        "source.mp4",
+                    )
+                ),
+                Tool("mkvmerge", ("--quiet", "-o", "phone-vfr-mkvmerge.mkv", "source.mp4")),
+            ],
+            stats_tags=False,
+        )
+    )
+    probes.append(
+        Probe(
+            "stale-stats",
+            "movie-stale-stats.mkv",
+            "A 29.97 fps H.264 720p clip muxed by mkvmerge (statistics tags: BPS about 1.9 "
+            "Mb/s), then re-encoded by FFmpeg at 200 kb/s: FFmpeg copies the old tags",
+            [
+                Ffmpeg(
+                    (
+                        *video("1280x720", "30000/1001", 2),
+                        *X264[:-4],
+                        *("-crf", "18", "-pix_fmt", "yuv420p"),
+                        "source.mkv",
+                    )
+                ),
+                Tool("mkvmerge", ("--quiet", "-o", "muxed.mkv", "source.mkv")),
+                Ffmpeg(
+                    (
+                        "-i",
+                        "muxed.mkv",
+                        *("-c:v", "libx264", "-preset", "ultrafast", "-b:v", "200k", "-an"),
+                        "movie-stale-stats.mkv",
+                    )
+                ),
+            ],
+            stats_tags=False,
+        )
+    )
     return probes
 
 
@@ -758,6 +820,12 @@ def record_probe(
         for step in probe.steps:
             if isinstance(step, Write):
                 (work / step.path).write_bytes(step.data)
+            elif isinstance(step, Tool):
+                program = shutil.which(step.program)
+                if program is None:
+                    raise SystemExit(f"{step.program} is needed for {probe.name}")
+                run([program, *step.args], work)
+                commands.append([step.program, *step.args])
             else:
                 argv = [ffmpeg, *COMMON, *step.args]
                 run(argv, work)
