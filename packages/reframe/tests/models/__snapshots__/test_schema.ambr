@@ -89,6 +89,7 @@
     ''',
     'properties': dict({
       'code': dict({
+        'description': '``settings.corrupt``, ``presets.corrupt``, ``sleep_inhibit.unavailable``, …',
         'title': 'Code',
         'type': 'string',
       }),
@@ -203,6 +204,7 @@
           }),
         ]),
         'default': None,
+        'description': '``mjpeg``, ``png``.',
         'title': 'Codec',
       }),
       'filename': dict({
@@ -291,6 +293,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_name`` (``ttf``, ``otf``), if any.',
         'title': 'Codec',
       }),
       'filename': dict({
@@ -546,10 +549,12 @@
           }),
         ]),
         'default': None,
+        'description': "kb/s; ``None`` = the encoder's default (or ``quality``).",
         'title': 'Bitrate',
       }),
       'drc': dict({
         'default': 0.0,
+        'description': "Dynamic range compression, 0 (off) to 4 (HandBrake's scale).",
         'minimum': 0.0,
         'title': 'Drc',
         'type': 'number',
@@ -564,10 +569,16 @@
           }),
         ]),
         'default': 'aac',
+        'description': '''
+          ``aac``, ``ac3``, ``eac3``, ``libopus``, ``flac``, ``libmp3lame``; for ``passthru`` the
+          encoder used when the container cannot hold the source codec (HandBrake's auto passthru);
+          ``None`` = the preset's fallback encoder.
+        ''',
         'title': 'Encoder',
       }),
       'gain': dict({
         'default': 0.0,
+        'description': 'dB.',
         'title': 'Gain',
         'type': 'number',
       }),
@@ -604,6 +615,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` = keep the source layout.',
         'title': 'Mixdown',
       }),
       'quality': dict({
@@ -616,6 +628,7 @@
           }),
         ]),
         'default': None,
+        'description': 'VBR quality for encoders that have one; used when ``bitrate`` is ``None``.',
         'title': 'Quality',
       }),
       'samplerate': dict({
@@ -629,6 +642,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Hz; ``None`` = same as source.',
         'title': 'Samplerate',
       }),
     }),
@@ -663,10 +677,12 @@
           }),
         ]),
         'default': None,
+        'description': "kb/s; ``None`` = the encoder's default (or ``quality``).",
         'title': 'Bitrate',
       }),
       'drc': dict({
         'default': 0.0,
+        'description': "Dynamic range compression, 0 (off) to 4 (HandBrake's scale).",
         'minimum': 0.0,
         'title': 'Drc',
         'type': 'number',
@@ -681,10 +697,16 @@
           }),
         ]),
         'default': 'aac',
+        'description': '''
+          ``aac``, ``ac3``, ``eac3``, ``libopus``, ``flac``, ``libmp3lame``; for ``passthru`` the
+          encoder used when the container cannot hold the source codec (HandBrake's auto passthru);
+          ``None`` = the preset's fallback encoder.
+        ''',
         'title': 'Encoder',
       }),
       'gain': dict({
         'default': 0.0,
+        'description': 'dB.',
         'title': 'Gain',
         'type': 'number',
       }),
@@ -718,6 +740,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` = keep the source layout.',
         'title': 'Mixdown',
       }),
       'quality': dict({
@@ -730,6 +753,7 @@
           }),
         ]),
         'default': None,
+        'description': 'VBR quality for encoders that have one; used when ``bitrate`` is ``None``.',
         'title': 'Quality',
       }),
       'samplerate': dict({
@@ -743,6 +767,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Hz; ``None`` = same as source.',
         'title': 'Samplerate',
       }),
       'source_stream': dict({
@@ -756,6 +781,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Absolute stream index of the source audio track.',
         'title': 'Source Stream',
       }),
     }),
@@ -813,6 +839,7 @@
           }),
         ]),
         'default': None,
+        'description': '``{lang_native} {channels}`` → ``Magyar 5.1``.',
         'title': 'Name Template',
       }),
       'samplerate': dict({
@@ -870,6 +897,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``channel_layout`` (``5.1(side)``).',
         'title': 'Channel Layout',
       }),
       'channels': dict({
@@ -888,6 +916,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_name`` (``hevc``, ``truehd``, ``subrip``).',
         'title': 'Codec',
       }),
       'codec_long': dict({
@@ -900,6 +929,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_long_name``.',
         'title': 'Codec Long',
       }),
       'display_codec': dict({
@@ -912,6 +942,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 JOC``, ``AAC-LC``.',
         'title': 'Display Codec',
       }),
       'disposition': dict({
@@ -944,6 +975,7 @@
         'title': 'Frame Count',
       }),
       'index': dict({
+        'description': 'Absolute stream index in the file (``-map 0:<index>``).',
         'minimum': 0,
         'title': 'Index',
         'type': 'integer',
@@ -966,10 +998,12 @@
           }),
         ]),
         'default': None,
+        'description': 'The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent.',
         'title': 'Language',
       }),
       'lossless': dict({
         'default': False,
+        'description': 'TrueHD, DTS-HD MA, FLAC, PCM, ALAC: encoded at the maximum by codec rules (03).',
         'title': 'Lossless',
         'type': 'boolean',
       }),
@@ -983,6 +1017,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``profile`` (``Main 10``, ``DTS-HD MA``).',
         'title': 'Profile',
       }),
       'roles': dict({
@@ -1027,12 +1062,14 @@
           }),
         ]),
         'default': None,
+        'description': 'Start offset in seconds (audio: shown as delay).',
         'title': 'Start Time',
       }),
       'tags': dict({
         'additionalProperties': dict({
           'type': 'string',
         }),
+        'description': 'All stream tags as ffprobe prints them.',
         'title': 'Tags',
         'type': 'object',
       }),
@@ -1050,6 +1087,7 @@
       }),
       'type_index': dict({
         'default': 0,
+        'description': 'Index among streams of the same type (``0:a:<type_index>``).',
         'minimum': 0,
         'title': 'Type Index',
         'type': 'integer',
@@ -1081,6 +1119,7 @@
       }),
       'turbo_first_pass': dict({
         'default': False,
+        'description': 'Faster first pass (2-pass only).',
         'title': 'Turbo First Pass',
         'type': 'boolean',
       }),
@@ -1119,6 +1158,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Bits per second.',
         'title': 'Value',
       }),
     }),
@@ -1165,6 +1205,7 @@
     'description': 'Encoder detection changed a status (C-4).',
     'properties': dict({
       'encoders': dict({
+        'description': 'The encoders whose status changed (all of them after a full re-scan).',
         'items': dict({
           '$ref': '#/$defs/EncoderStatus',
         }),
@@ -1218,6 +1259,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Minutes, when the source has no chapters.',
         'title': 'Generate Every',
       }),
     }),
@@ -1276,6 +1318,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Minutes: generate chapters every N minutes when the source has none.',
         'title': 'Generate Every',
       }),
       'names': dict({
@@ -1291,6 +1334,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Chapter names in order; ``None`` = the source names.',
         'title': 'Names',
       }),
     }),
@@ -1309,6 +1353,7 @@
         'type': 'number',
       }),
       'index': dict({
+        'description': 'Position (0-based) in the chapter list.',
         'minimum': 0,
         'title': 'Index',
         'type': 'integer',
@@ -1387,6 +1432,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``color_space``.',
         'title': 'Matrix',
       }),
       'primaries': dict({
@@ -1415,6 +1461,7 @@
           }),
         ]),
         'default': None,
+        'description': '``tv`` = limited, ``pc`` = full.',
         'title': 'Range',
       }),
       'transfer': dict({
@@ -1472,6 +1519,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Overall bit rate, bits per second.',
         'title': 'Bitrate',
       }),
       'creation_time': dict({
@@ -1497,6 +1545,7 @@
           }),
         ]),
         'default': None,
+        'description': '``MKV``, ``MP4``, ``WebM``, ``M2TS``.',
         'title': 'Display Name',
       }),
       'duration': dict({
@@ -1510,6 +1559,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` when ffprobe reports no duration.',
         'title': 'Duration',
       }),
       'format_long_name': dict({
@@ -1534,6 +1584,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``format_name`` (``matroska,webm``, ``mov,mp4,m4a,3gp,3g2,mj2``).',
         'title': 'Format Name',
       }),
       'size': dict({
@@ -2080,6 +2131,7 @@
           }),
         ]),
         'default': None,
+        'description': 'For profile 8: 1 = HDR10, 2 = SDR, 4 = HLG (8.1 / 8.2 / 8.4).',
         'title': 'Bl Signal Compatibility Id',
       }),
       'el_present': dict({
@@ -2101,6 +2153,7 @@
         'title': 'Level',
       }),
       'profile': dict({
+        'description': '5, 7, 8, …',
         'minimum': 0,
         'title': 'Profile',
         'type': 'integer',
@@ -2130,10 +2183,12 @@
     'description': '``EncodePlan`` exactly as C-7 sketches it.',
     'properties': dict({
       'display': dict({
+        'description': 'Shell-quoted command preview (POSIX or Windows style).',
         'title': 'Display',
         'type': 'string',
       }),
       'expected_duration': dict({
+        'description': 'Seconds, range-adjusted, for progress.',
         'minimum': 0.0,
         'title': 'Expected Duration',
         'type': 'number',
@@ -2153,6 +2208,7 @@
         'type': 'string',
       }),
       'output_tmp': dict({
+        'description': '``<name>.part.<ext>``.',
         'format': 'path',
         'title': 'Output Tmp',
         'type': 'string',
@@ -2184,6 +2240,7 @@
     'properties': dict({
       'hardware_tests': dict({
         'default': True,
+        'description': 'Run the hardware test encodes (C-4). Off: hardware encoders stay "unknown".',
         'title': 'Hardware Tests',
         'type': 'boolean',
       }),
@@ -2238,6 +2295,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The FFmpeg line the reason was derived from (for the log and bug reports).',
         'title': 'Detail',
       }),
       'hardware': dict({
@@ -2246,6 +2304,7 @@
         'type': 'boolean',
       }),
       'id': dict({
+        'description': 'Encoder id as FFmpeg names it: ``libx265``, ``hevc_nvenc``.',
         'title': 'Id',
         'type': 'string',
       }),
@@ -2259,9 +2318,11 @@
           }),
         ]),
         'default': None,
+        'description': 'Listed by ``ffmpeg -encoders``; ``None`` before the list was read.',
         'title': 'In Build',
       }),
       'presets': dict({
+        'description': 'Speed presets this build offers, if the encoder lists them.',
         'items': dict({
           'type': 'string',
         }),
@@ -2269,6 +2330,7 @@
         'type': 'array',
       }),
       'private_options': dict({
+        'description': 'Private options this build supports (``ffmpeg -h encoder=<id>``).',
         'items': dict({
           'type': 'string',
         }),
@@ -2285,6 +2347,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Plain-language reason for ``unavailable`` / ``error`` ("NVIDIA driver not found").',
         'title': 'Reason',
       }),
       'state': dict({
@@ -2301,6 +2364,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` = not known (not tested).',
         'title': 'Supports 10Bit',
       }),
     }),
@@ -2467,6 +2531,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Character encoding (``-sub_charenc``); ``None`` = auto-detected.',
         'title': 'Charset',
       }),
       'flags': dict({
@@ -2500,6 +2565,7 @@
       }),
       'offset_ms': dict({
         'default': 0,
+        'description': 'Time offset (``-itsoffset``), milliseconds; may be negative.',
         'title': 'Offset Ms',
         'type': 'integer',
       }),
@@ -2870,6 +2936,7 @@
       }),
       'rotation': dict({
         'default': 0,
+        'description': 'Total rotation applied (source + job).',
         'enum': list([
           0,
           90,
@@ -2974,6 +3041,7 @@
       }),
       'source': dict({
         'default': 'stream',
+        'description': "Where the side data was read: stream side data, or the first frame's (C-3 fallback).",
         'enum': list([
           'stream',
           'frame',
@@ -2995,6 +3063,7 @@
     'properties': dict({
       'dropped': dict({
         'default': 0,
+        'description': 'Lines left out by the rate limit since the previous event.',
         'minimum': 0,
         'title': 'Dropped',
         'type': 'integer',
@@ -3047,6 +3116,7 @@
           }),
         ]),
         'default': None,
+        'description': 'File name without folder; the extension comes from the container.',
         'title': 'Manual Name',
       }),
       'mode': dict({
@@ -3139,6 +3209,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Seconds left (from a smoothed speed); ``None`` while unknown.',
         'title': 'Eta',
       }),
       'fps': dict({
@@ -3165,10 +3236,12 @@
           }),
         ]),
         'default': None,
+        'description': 'Bytes written so far.',
         'title': 'Output Size',
       }),
       'percent': dict({
         'default': 0.0,
+        'description': 'Whole job, weighted across steps.',
         'maximum': 100.0,
         'minimum': 0.0,
         'title': 'Percent',
@@ -3185,10 +3258,12 @@
           }),
         ]),
         'default': None,
+        'description': 'Encoding speed as a multiple of real time (``2.5`` = 2.5x).',
         'title': 'Speed',
       }),
       'step': dict({
         'default': 0,
+        'description': 'Index of the running step.',
         'minimum': 0,
         'title': 'Step',
         'type': 'integer',
@@ -3287,6 +3362,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The preset this job started from (for the *modified* marker).',
         'title': 'Preset Id',
       }),
       'preset_name': dict({
@@ -3299,6 +3375,7 @@
           }),
         ]),
         'default': None,
+        'description': 'For the ``{preset}`` naming variable.',
         'title': 'Preset Name',
       }),
       'range': dict({
@@ -3517,6 +3594,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` = the naming options from Settings → Output.',
       }),
       'output': dict({
         '$ref': '#/$defs/OutputOptions',
@@ -3539,6 +3617,7 @@
       }),
       'tags': dict({
         '$ref': '#/$defs/TagSettings',
+        'description': 'Tag templates (they may use naming variables).',
       }),
       'video': dict({
         '$ref': '#/$defs/VideoSettings',
@@ -3657,6 +3736,7 @@
     ]),
     'properties': dict({
       'favourites': dict({
+        'description': 'Shown first in the language picker.',
         'items': dict({
           'maxLength': 64,
           'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
@@ -3666,6 +3746,7 @@
         'type': 'array',
       }),
       'preferred_audio': dict({
+        'description': 'Used by preset rules whose language list is empty (``TrackSelection.languages``).',
         'items': dict({
           'maxLength': 64,
           'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
@@ -3881,6 +3962,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The ffprobe version that produced it (``n9.0.2-17-g2a571b6068-20260930``).',
         'title': 'Probe Tool',
       }),
       'probed_at': dict({
@@ -3920,6 +4002,7 @@
         'type': 'array',
       }),
       'warnings': dict({
+        'description': 'Problems found while probing (missing duration, unreadable side data…).',
         'items': dict({
           'type': 'string',
         }),
@@ -4025,6 +4108,7 @@
     'properties': dict({
       'episode_template': dict({
         'default': '{main_title}',
+        'description': 'Used when a season and episode are recognised.',
         'title': 'Episode Template',
         'type': 'string',
       }),
@@ -4035,6 +4119,7 @@
       }),
       'mp4_extension': dict({
         'default': 'mp4',
+        'description': '``auto``: ``.m4v`` with AC-3 passthru, chapters or 3GPP subtitles.',
         'enum': list([
           'mp4',
           'm4v',
@@ -4064,6 +4149,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The fixed output folder (``output_folder_mode="fixed"``).',
         'title': 'Output Folder',
       }),
       'output_folder_mode': dict({
@@ -4077,6 +4163,7 @@
       }),
       'remove_punctuation': dict({
         'default': False,
+        'description': 'Remove dashes, periods and commas (HandBrake).',
         'title': 'Remove Punctuation',
         'type': 'boolean',
       }),
@@ -4092,6 +4179,7 @@
       }),
       'word_separator': dict({
         'default': 'keep',
+        'description': 'Applies to text that comes from the name.',
         'enum': list([
           'keep',
           'space',
@@ -4204,6 +4292,10 @@
     'properties': dict({
       'collision': dict({
         'default': 'auto_rename',
+        'description': '''
+          ``ask`` needs a UI: the CLI and the queue treat it as an error with fixes. The default
+          never overwrites and never blocks.
+        ''',
         'enum': list([
           'ask',
           'auto_rename',
@@ -4227,6 +4319,7 @@
       }),
       'partial_file': dict({
         'default': 'delete',
+        'description': 'What happens to ``<name>.part.<ext>`` when a job fails or is cancelled.',
         'enum': list([
           'delete',
           'keep',
@@ -4273,11 +4366,13 @@
       }),
       'passthru_metadata': dict({
         'default': True,
+        'description': "Copy the source's common metadata (``-map_metadata 0``) before the overrides.",
         'title': 'Passthru Metadata',
         'type': 'boolean',
       }),
       'web_optimized': dict({
         'default': False,
+        'description': 'MP4 ``+faststart``.',
         'title': 'Web Optimized',
         'type': 'boolean',
       }),
@@ -4310,6 +4405,7 @@
       }),
       'edit_in_place': dict({
         'default': False,
+        'description': 'Remux-only jobs on MKV: edit metadata in place with mkvpropedit (03 §Remux-only).',
         'title': 'Edit In Place',
         'type': 'boolean',
       }),
@@ -4318,6 +4414,7 @@
       }),
       'passthru_metadata': dict({
         'default': True,
+        'description': "Copy the source's common metadata (``-map_metadata 0``) before the overrides.",
         'title': 'Passthru Metadata',
         'type': 'boolean',
       }),
@@ -4332,10 +4429,12 @@
           }),
         ]),
         'default': None,
+        'description': 'The final output path once naming resolved it; ``None`` until then.',
         'title': 'Path',
       }),
       'web_optimized': dict({
         'default': False,
+        'description': 'MP4 ``+faststart``.',
         'title': 'Web Optimized',
         'type': 'boolean',
       }),
@@ -4368,11 +4467,13 @@
       }),
       'multiple': dict({
         'default': False,
+        'description': 'True: one output track per matching source track.',
         'title': 'Multiple',
         'type': 'boolean',
       }),
       'required': dict({
         'default': True,
+        'description': 'No match: an error (True) or skip with a warning (False).',
         'title': 'Required',
         'type': 'boolean',
       }),
@@ -4465,6 +4566,10 @@
       }),
       'fallback_encoder': dict({
         'default': 'aac',
+        'description': '''
+          Used when a rule says passthru but the codec is not allowed or the container cannot
+          hold it.
+        ''',
         'title': 'Fallback Encoder',
         'type': 'string',
       }),
@@ -4512,6 +4617,7 @@
     'description': 'One step of a plan.',
     'properties': dict({
       'argv': dict({
+        'description': 'Arguments **after** the program (the runner prepends the discovered tool path).',
         'items': dict({
           'anyOf': list([
             dict({
@@ -4551,6 +4657,7 @@
       }),
       'progress_weight': dict({
         'default': 1.0,
+        'description': "Share of the job's progress bar (relative; the runner normalises the weights).",
         'minimum': 0.0,
         'title': 'Progress Weight',
         'type': 'number',
@@ -4569,6 +4676,7 @@
             'type': 'null',
           }),
         ]),
+        'description': '``None`` for ``finalize`` (rename ``.part`` → final name, done in Python).',
         'title': 'Tool',
       }),
     }),
@@ -4830,6 +4938,10 @@
         '$ref': '#/$defs/FilterSettings',
       }),
       'id': dict({
+        'description': '''
+          Stable identifier (built-ins: a slug such as ``h265-mkv-1080p``; user presets: a
+          UUID).
+        ''',
         'minLength': 1,
         'title': 'Id',
         'type': 'string',
@@ -4849,6 +4961,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` = the naming options from Settings → Output.',
       }),
       'output': dict({
         '$ref': '#/$defs/OutputOptions',
@@ -4871,6 +4984,7 @@
       }),
       'tags': dict({
         '$ref': '#/$defs/TagSettings',
+        'description': 'Tag templates (they may use naming variables).',
       }),
       'video': dict({
         '$ref': '#/$defs/VideoSettings',
@@ -4915,6 +5029,7 @@
     'description': "The queue's order or membership changed.",
     'properties': dict({
       'job_ids': dict({
+        'description': 'All job ids, in queue order.',
         'items': dict({
           'type': 'string',
         }),
@@ -5085,6 +5200,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Live progress while running (not a database column).',
       }),
       'settings': dict({
         '$ref': '#/$defs/JobSettings',
@@ -5468,6 +5584,7 @@
           }),
         ]),
         'default': None,
+        'description': 'A hash of the probe result (stream layout); ``None`` before the file is probed.',
         'title': 'Probe Hash',
       }),
       'size': dict({
@@ -5494,12 +5611,17 @@
     'properties': dict({
       'chroma_step_x': dict({
         'default': 2,
+        'description': 'Horizontal crop step for the chroma grid (2 for 4:2:0 and 4:2:2, 1 for 4:4:4).',
         'minimum': 1,
         'title': 'Chroma Step X',
         'type': 'integer',
       }),
       'chroma_step_y': dict({
         'default': 2,
+        'description': '''
+          Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
+          4:2:0).
+        ''',
         'minimum': 1,
         'title': 'Chroma Step Y',
         'type': 'integer',
@@ -5516,6 +5638,7 @@
       }),
       'rotation': dict({
         'default': 0,
+        'description': "Rotation from the source's display matrix (added to the job's ``rotate``).",
         'enum': list([
           0,
           90,
@@ -5527,6 +5650,7 @@
       }),
       'sar': dict({
         '$ref': '#/$defs/Rational',
+        'description': 'Sample (pixel) aspect ratio; 1:1 when unknown.',
       }),
       'width': dict({
         'minimum': 1,
@@ -5559,8 +5683,10 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` when the job was created without probing (for example from the CLI).',
       }),
       'path': dict({
+        'description': 'Absolute path of the source file.',
         'format': 'path',
         'title': 'Path',
         'type': 'string',
@@ -5732,10 +5858,12 @@
           }),
         ]),
         'default': None,
+        'description': 'For ``convert`` (text → text only; FFmpeg cannot make bitmaps from text).',
         'title': 'Convert To',
       }),
       'forced_only': dict({
         'default': False,
+        'description': 'Burn in / keep only forced events (PGS ``forced_subs_only``).',
         'title': 'Forced Only',
         'type': 'boolean',
       }),
@@ -5785,10 +5913,12 @@
           }),
         ]),
         'default': None,
+        'description': 'For ``convert`` (text → text only; FFmpeg cannot make bitmaps from text).',
         'title': 'Convert To',
       }),
       'forced_only': dict({
         'default': False,
+        'description': 'Burn in / keep only forced events (PGS ``forced_subs_only``).',
         'title': 'Forced Only',
         'type': 'boolean',
       }),
@@ -5834,6 +5964,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_name`` (``hevc``, ``truehd``, ``subrip``).',
         'title': 'Codec',
       }),
       'codec_long': dict({
@@ -5846,6 +5977,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_long_name``.',
         'title': 'Codec Long',
       }),
       'display_codec': dict({
@@ -5858,6 +5990,7 @@
           }),
         ]),
         'default': None,
+        'description': '``SRT``, ``ASS``, ``PGS``, ``VobSub``, ``WebVTT``, ``mov_text``.',
         'title': 'Display Codec',
       }),
       'disposition': dict({
@@ -5887,6 +6020,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Number of subtitle events (``NUMBER_OF_FRAMES`` tag or a scan); ``None`` if unknown.',
         'title': 'Event Count',
       }),
       'event_count_source': dict({
@@ -5916,6 +6050,7 @@
           }),
         ]),
         'default': None,
+        'description': 'PGS: events with the forced flag (decode scan, C-10).',
         'title': 'Forced Event Count',
       }),
       'frame_count': dict({
@@ -5945,6 +6080,7 @@
         'title': 'Height',
       }),
       'index': dict({
+        'description': 'Absolute stream index in the file (``-map 0:<index>``).',
         'minimum': 0,
         'title': 'Index',
         'type': 'integer',
@@ -5967,6 +6103,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent.',
         'title': 'Language',
       }),
       'profile': dict({
@@ -5979,6 +6116,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``profile`` (``Main 10``, ``DTS-HD MA``).',
         'title': 'Profile',
       }),
       'roles': dict({
@@ -5998,6 +6136,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Start offset in seconds (audio: shown as delay).',
         'title': 'Start Time',
       }),
       'subtitle_kind': dict({
@@ -6013,6 +6152,7 @@
         'additionalProperties': dict({
           'type': 'string',
         }),
+        'description': 'All stream tags as ffprobe prints them.',
         'title': 'Tags',
         'type': 'object',
       }),
@@ -6030,6 +6170,7 @@
       }),
       'type_index': dict({
         'default': 0,
+        'description': 'Index among streams of the same type (``0:a:<type_index>``).',
         'minimum': 0,
         'title': 'Type Index',
         'type': 'integer',
@@ -6045,6 +6186,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Bitmap subtitles: canvas size.',
         'title': 'Width',
       }),
     }),
@@ -6241,6 +6383,7 @@
         'type': 'string',
       }),
       'kind': dict({
+        'description': '``probe_folder``, ``cropdetect``, ``bitrate_scan``, ``frames``, …',
         'title': 'Kind',
         'type': 'string',
       }),
@@ -6268,11 +6411,13 @@
           }),
         ]),
         'default': None,
+        'description': 'Percent; ``None`` = indeterminate.',
         'title': 'Progress',
       }),
       'result': dict({
         '$ref': '#/$defs/JsonValue',
         'default': None,
+        'description': "The task's result when ``done`` (its shape depends on ``kind``).",
       }),
       'state': dict({
         '$ref': '#/$defs/TaskState',
@@ -6420,6 +6565,10 @@
     ''',
     'properties': dict({
       'build_flags': dict({
+        'description': '''
+          FFmpeg: the arguments of the ``configuration:`` line (``--enable-libx265`` …), for
+          diagnostics.
+        ''',
         'items': dict({
           'type': 'string',
         }),
@@ -6430,6 +6579,11 @@
         'additionalProperties': dict({
           'type': 'string',
         }),
+        'description': '''
+          Extra environment variables to set when running this tool (for example
+          ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux). Pass as ``extra_env`` to
+          :func:`reframe.tools.run`.
+        ''',
         'title': 'Env',
         'type': 'object',
       }),
@@ -6443,6 +6597,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The environment variable that overrides this tool (``REFRAME_FFMPEG``).',
         'title': 'Env Var',
       }),
       'fixes': dict({
@@ -6456,6 +6611,7 @@
         'additionalProperties': dict({
           'type': 'string',
         }),
+        'description': 'FFmpeg: ``{"libavcodec": "63.1.102", …}``.',
         'title': 'Library Versions',
         'type': 'object',
       }),
@@ -6471,6 +6627,7 @@
       }),
       'next_to_ffmpeg': dict({
         'default': False,
+        'description': "ffprobe only: it was found next to an overridden ffmpeg (its ``origin`` is the ffmpeg's).",
         'title': 'Next To Ffmpeg',
         'type': 'boolean',
       }),
@@ -6484,6 +6641,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` when nothing was found.',
       }),
       'path': dict({
         'anyOf': list([
@@ -6496,6 +6654,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The binary that is (or would be) run. Set for a missing override too (the bad path).',
         'title': 'Path',
       }),
       'reason': dict({
@@ -6508,6 +6667,10 @@
           }),
         ]),
         'default': None,
+        'description': '''
+          Why the status is not ``found``; for ``found`` an optional note (for example "version
+          could not be read").
+        ''',
         'title': 'Reason',
       }),
       'release': dict({
@@ -6520,6 +6683,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The upstream release, ``9.0.2``; ``None`` for git master builds.',
         'title': 'Release',
       }),
       'release_series': dict({
@@ -6532,6 +6696,10 @@
           }),
         ]),
         'default': None,
+        'description': '''
+          ``9.0`` for a release; for a git master build the series of its library versions
+          (``9.0`` for ``libavcodec 63``), used for the minimum-version check.
+        ''',
         'title': 'Release Series',
       }),
       'status': dict({
@@ -6547,6 +6715,10 @@
           }),
         ]),
         'default': None,
+        'description': '''
+          The version string as the tool prints it: ``n9.0.2-17-g2a571b6068-20260930``,
+          ``N-127032-g6ae491a26c-20260930``, ``101.0``.
+        ''',
         'title': 'Version',
       }),
     }),
@@ -6863,6 +7035,7 @@
           }),
         ]),
         'default': None,
+        'description': '``{lang_name} {channels} {codec}`` → ``Japanese 5.1 Opus``; ``None`` = source title.',
         'title': 'Name Template',
       }),
       'original': dict({
@@ -6938,6 +7111,7 @@
           }),
         ]),
         'default': None,
+        'description': 'BCP 47 (``hu``, ``pt-BR``). MKV gets ISO 639-2/B + ``LanguageIETF``, MP4 ISO 639-2/T.',
         'title': 'Language',
       }),
       'name': dict({
@@ -6984,6 +7158,7 @@
           }),
         ]),
         'default': None,
+        'description': 'For the tooltip: ``disposition comment``, ``title contains "Commentary"``…',
         'title': 'Detail',
       }),
       'evidence': dict({
@@ -7070,6 +7245,7 @@
     'properties': dict({
       'commentary': dict({
         'default': 'drop',
+        'description': 'Commentary and audio description tracks.',
         'enum': list([
           'drop',
           'keep_after_main',
@@ -7079,6 +7255,7 @@
       }),
       'default_track': dict({
         'default': 'first_output',
+        'description': '``forced`` is meant for subtitles (03 §Subtitles: none / first output / forced).',
         'enum': list([
           'first_output',
           'first_in_first_language',
@@ -7107,6 +7284,7 @@
       }),
       'no_match': dict({
         'default': 'default_flagged',
+        'description': 'No listed language found. ``none`` = take none (a validation error for audio).',
         'enum': list([
           'default_flagged',
           'first_track',
@@ -7136,6 +7314,10 @@
       }),
       'tie_break': dict({
         'default': 'best_quality',
+        'description': '''
+          If a language has several tracks. ``best_quality``: lossless first, then the highest
+          bit rate.
+        ''',
         'enum': list([
           'source_order',
           'most_channels',
@@ -7156,6 +7338,7 @@
       }),
       'undetermined': dict({
         'default': 'other',
+        'description': '``und`` tracks: treat as the first listed language, or as an other language.',
         'enum': list([
           'first_language',
           'other',
@@ -7201,6 +7384,7 @@
           }),
         ]),
         'default': None,
+        'description': '``truehd``, ``dts``, ``ac3``, …',
         'title': 'Codecs',
       }),
       'exclude_roles': dict({
@@ -7241,10 +7425,12 @@
           }),
         ]),
         'default': None,
+        'description': 'BCP 47, in order of preference.',
         'title': 'Languages',
       }),
       'nth': dict({
         'default': 0,
+        'description': 'The nth candidate after filtering and sorting.',
         'minimum': 0,
         'title': 'Nth',
         'type': 'integer',
@@ -7262,6 +7448,7 @@
           }),
         ]),
         'default': None,
+        'description': '``DTS-HD MA``, ``TrueHD Atmos``, …',
         'title': 'Profiles',
       }),
       'roles': dict({
@@ -7299,6 +7486,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Case-insensitive regular expression.',
         'title': 'Title Pattern',
       }),
     }),
@@ -7418,6 +7606,7 @@
             }),
           ]),
         }),
+        'description': 'Advanced encoder options by key (C-6 ``EncoderOption.key``); only changed values.',
         'title': 'Advanced',
         'type': 'object',
       }),
@@ -7432,6 +7621,7 @@
       }),
       'custom_params': dict({
         'default': '',
+        'description': 'Free ``key=value:…`` text, appended last.',
         'title': 'Custom Params',
         'type': 'string',
       }),
@@ -7455,6 +7645,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` = same as source.',
       }),
       'framerate_mode': dict({
         'default': 'variable',
@@ -7476,6 +7667,7 @@
           }),
         ]),
         'default': None,
+        'description': '``4.1``, ``5.1``; ``None`` = auto.',
         'title': 'Level',
       }),
       'metadata': dict({
@@ -7496,6 +7688,7 @@
           }),
         ]),
         'default': None,
+        'description': "Speed preset (``slow``, ``p5``, ``6``); ``None`` = the encoder's default.",
         'title': 'Preset',
       }),
       'profile': dict({
@@ -7571,6 +7764,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``avg_frame_rate``; ``None`` for ``0/0`` (Matroska written by FFmpeg).',
       }),
       'bit_depth': dict({
         'anyOf': list([
@@ -7590,6 +7784,7 @@
       }),
       'closed_captions': dict({
         'default': False,
+        'description': 'ffprobe ``closed_captions`` (A/53 captions inside the video stream).',
         'title': 'Closed Captions',
         'type': 'boolean',
       }),
@@ -7603,6 +7798,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_name`` (``hevc``, ``truehd``, ``subrip``).',
         'title': 'Codec',
       }),
       'codec_long': dict({
@@ -7615,6 +7811,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``codec_long_name``.',
         'title': 'Codec Long',
       }),
       'color': dict({
@@ -7641,6 +7838,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Commercial name: ``HEVC Main 10``, ``H.264 High``, ``AV1``.',
         'title': 'Display Codec',
       }),
       'disposition': dict({
@@ -7686,6 +7884,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``r_frame_rate`` (the base rate); ``None`` for ``0/0``.',
       }),
       'hdr': dict({
         'anyOf': list([
@@ -7697,6 +7896,7 @@
           }),
         ]),
         'default': None,
+        'description': '``None`` for SDR.',
       }),
       'height': dict({
         'minimum': 1,
@@ -7704,6 +7904,7 @@
         'type': 'integer',
       }),
       'index': dict({
+        'description': 'Absolute stream index in the file (``-map 0:<index>``).',
         'minimum': 0,
         'title': 'Index',
         'type': 'integer',
@@ -7726,6 +7927,7 @@
           }),
         ]),
         'default': None,
+        'description': 'The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent.',
         'title': 'Language',
       }),
       'level': dict({
@@ -7738,6 +7940,7 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``level`` (H.264 ``41``, HEVC ``150``); ``None`` when unknown (``-99``).',
         'title': 'Level',
       }),
       'pix_fmt': dict({
@@ -7762,10 +7965,12 @@
           }),
         ]),
         'default': None,
+        'description': 'ffprobe ``profile`` (``Main 10``, ``DTS-HD MA``).',
         'title': 'Profile',
       }),
       'rotation': dict({
         'default': 0,
+        'description': 'Clockwise rotation from the display matrix, normalised.',
         'enum': list([
           0,
           90,
@@ -7785,6 +7990,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Sample (pixel) aspect ratio; ``None`` when unknown (``0:1``).',
       }),
       'start_time': dict({
         'anyOf': list([
@@ -7796,12 +8002,14 @@
           }),
         ]),
         'default': None,
+        'description': 'Start offset in seconds (audio: shown as delay).',
         'title': 'Start Time',
       }),
       'tags': dict({
         'additionalProperties': dict({
           'type': 'string',
         }),
+        'description': 'All stream tags as ffprobe prints them.',
         'title': 'Tags',
         'type': 'object',
       }),
@@ -7819,12 +8027,17 @@
       }),
       'type_index': dict({
         'default': 0,
+        'description': 'Index among streams of the same type (``0:a:<type_index>``).',
         'minimum': 0,
         'title': 'Type Index',
         'type': 'integer',
       }),
       'vfr': dict({
         'default': False,
+        'description': '''
+          Variable frame rate: ``r_frame_rate`` ≠ ``avg_frame_rate`` (C-3 decides when the
+          average is unknown).
+        ''',
         'title': 'Vfr',
         'type': 'boolean',
       }),

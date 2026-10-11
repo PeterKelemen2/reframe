@@ -16,7 +16,9 @@ Two base classes:
 
 Both serialise by alias and accept the field name or the alias on input (only
 :class:`~reframe.models.issues.JsonPatchOp` uses an alias: ``from``). Floats must be finite
-(``allow_inf_nan=False``): JSON has no NaN or infinity.
+(``allow_inf_nan=False``): JSON has no NaN or infinity. The docstring under a field becomes
+its ``description`` in the JSON Schema (``use_attribute_docstrings``), so the frontend's
+generated types carry the same documentation.
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ class ReframeModel(BaseModel):
         validate_by_alias=True,
         serialize_by_alias=True,
         allow_inf_nan=False,
+        use_attribute_docstrings=True,
     )
 
 
@@ -63,6 +66,7 @@ class DocumentModel(BaseModel):
         validate_by_alias=True,
         serialize_by_alias=True,
         allow_inf_nan=False,
+        use_attribute_docstrings=True,
         json_schema_extra=_drop_additional_properties,
     )
 
