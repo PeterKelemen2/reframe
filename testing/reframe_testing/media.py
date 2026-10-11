@@ -847,7 +847,9 @@ def generate(
     out_dir = Path(out_dir or DEFAULT_MEDIA_DIR)
     ffmpeg = ffmpeg or find_ffmpeg()
     if ffmpeg is None:
-        raise MediaError(f"ffmpeg not found: set {FFMPEG_ENV} or put ffmpeg on PATH")
+        raise MediaError(
+            f"ffmpeg not found: set {FFMPEG_ENV}, install the bundled build, or put ffmpeg on PATH"
+        )
     version_line = ffmpeg_version(ffmpeg)
     recipes = build_recipes()
     selected: list[Recipe] = []
@@ -886,7 +888,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="make-testdata.py",
         description="Generate the Reframe test media fixtures with FFmpeg lavfi sources "
-        f"(ffmpeg from ${FFMPEG_ENV}, else PATH).",
+        f"(ffmpeg from reframe tool discovery: ${FFMPEG_ENV}, the bundled build, else PATH).",
     )
     parser.add_argument("--only", nargs="+", metavar="NAME", help="only these fixtures")
     parser.add_argument("--force", action="store_true", help="regenerate even if up to date")
@@ -910,7 +912,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         ffmpeg = find_ffmpeg()
         if ffmpeg is None:
-            raise MediaError(f"ffmpeg not found: set {FFMPEG_ENV} or put ffmpeg on PATH")
+            raise MediaError(
+                f"ffmpeg not found: set {FFMPEG_ENV}, install the bundled build, or put ffmpeg on PATH"
+            )
         font = fixture_font()
         print(f"ffmpeg: {ffmpeg} ({ffmpeg_version(ffmpeg)})")
         print(f"font:   {font.family} ({font.source})")

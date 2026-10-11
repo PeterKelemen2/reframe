@@ -108,7 +108,11 @@ build behaves the same.
   set of libraries. `D-7` confirms the choice.
 - **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/reframe/tools/ffmpeg/`
   (.deb/.rpm, so it does not conflict with the distro's `ffmpeg` package),
-  `/opt/reframe/tools/ffmpeg/` (Docker).
+  `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
+  CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
+  it. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
+  `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` override the platform folders
+  ([decision 0005](../decisions/0005-tool-discovery-details.md)).
 
 **Path override.** Each tool path is resolved in this order:
 

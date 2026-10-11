@@ -17,8 +17,10 @@ uv run python scripts/make-testdata.py --force         # regenerate even if up t
 uv run python scripts/make-testdata.py --list          # names and descriptions
 ```
 
-- FFmpeg comes from `$REFRAME_FFMPEG`, else `ffmpeg` on `PATH`. ffprobe (used by the tests)
-  comes from `$REFRAME_FFPROBE`, else next to that ffmpeg, else `PATH`.
+- FFmpeg and ffprobe come from Reframe's own tool discovery (`reframe.tools`, step C-1):
+  `$REFRAME_FFMPEG` / `$REFRAME_FFPROBE` → the bundled build (in CI:
+  `$REFRAME_DATA_DIR/tools/ffmpeg`, installed with `scripts/fetch-tools.py --install-dir`) →
+  `PATH`. `uv run python -m reframe.tools` shows which binaries it picks and why.
 - Incremental: `media/manifest.json` stores a hash of each recipe (files written, FFmpeg
   arguments, generator version, first line of `ffmpeg -version`). A fixture whose outputs exist
   and whose hash did not change is skipped. Each fixture is built in a temporary folder

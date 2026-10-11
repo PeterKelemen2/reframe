@@ -71,7 +71,10 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
       never raises for a non-zero exit code. It raises only for programming errors.
 - [ ] Timeout and cancel kill the **whole process tree** (psutil).
 - [ ] Child safety: on Linux, set `PR_SET_PDEATHSIG` (ctypes `prctl` in `preexec_fn`). On
-      Windows, assign children to a Job Object with `KILL_ON_JOB_CLOSE`. FFmpeg then dies if
+      Windows, children run inside a Job Object with `KILL_ON_JOB_CLOSE`: Reframe puts its own
+      process into the job before it starts the first tool, so every child is born in the job
+      (no assignment race). If that fails, each child is assigned after start
+      ([decision 0005](../decisions/0005-tool-discovery-details.md)). FFmpeg then dies if
       Reframe dies.
 - [ ] Windows: `CREATE_NO_WINDOW`, so no console window flashes.
 - [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mkvpropedit`, `mediainfo`) in the order

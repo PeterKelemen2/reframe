@@ -44,7 +44,7 @@ def _tool_problem(name: str, env: str, path: str | None) -> str | None:
         value = os.environ.get(env)
         if value:
             return f"{name}: {env}={value} is not a file"
-        return f"{name} not found: set {env} or put {name} on PATH"
+        return f"{name} not found: set {env}, install the bundled build, or put {name} on PATH"
     try:
         out = subprocess.run(
             [path, "-hide_banner", "-version"], capture_output=True, timeout=30, check=False
