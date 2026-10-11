@@ -209,7 +209,7 @@ def test_validation_error_in_a_stream_becomes_a_warning(monkeypatch: pytest.Monk
     source = parse_ffprobe(doc({"index": 1, "codec_type": "audio", "disposition": "junk"}), FILE)
     assert source.audio[0].disposition.default is False
 
-    def broken(stream: Any, common: Any) -> Any:
+    def broken(stream: Any, common: Any, ctx: Any) -> Any:
         from reframe.models import AudioStream
 
         return AudioStream.model_validate({"index": -1})
@@ -256,10 +256,12 @@ def test_frames_only_for_the_main_video_stream() -> None:
         ]
     }
     second = video(index=1, color_transfer="smpte2084")
-    source = parse_ffprobe(doc(video(color_transfer="bt709"), second), FILE, frames=frames)
-    assert source.video[0].hdr is not None  # the frame's CLL belongs to stream 0
-    assert source.video[1].hdr is not None
-    assert source.video[1].hdr.content_light is None
+    source = parse_ffprobe(doc(video(color_transfer="smpte2084"), second), FILE, frames=frames)
+    hdr0, hdr1 = source.video[0].hdr, source.video[1].hdr
+    assert hdr0 is not None
+    assert hdr0.content_light is not None
+    assert hdr1 is not None
+    assert hdr1.content_light is None
     empty = parse_ffprobe(doc(video()), FILE, frames={"frames": ["junk"]})
     assert empty.video[0].hdr is None
 
@@ -276,3 +278,129 @@ def test_fingerprint_gets_the_layout_hash() -> None:
     assert changed.ref.fingerprint is not None
     assert changed.ref.fingerprint.probe_hash != first.ref.fingerprint.probe_hash
     assert parse_ffprobe(data, FILE).ref.fingerprint is None
+
+
+# --------------------------------------------------------------------------- delay
+
+
+def test_delay_is_relative_to_the_main_video_stream() -> None:
+    """An M2TS clip: everything starts near 1.4 s; the audio starts 5 ms before the video."""
+    v = video(start_time="1.405000")
+    a = {"index": 1, "codec_type": "audio", "start_time": "1.400000"}
+    s = {"index": 2, "codec_type": "subtitle", "start_time": "2.405"}
+    source = parse_ffprobe(doc(v, a, s, fmt={"format_name": "mpegts", "start_time": "1.4"}), FILE)
+    assert source.video[0].start_time == pytest.approx(1.405)
+    assert source.video[0].delay == 0.0
+    assert source.audio[0].delay == pytest.approx(-0.005)
+    assert source.subtitles[0].delay == pytest.approx(1.0)
+
+
+def test_delay_without_video_uses_the_container_start() -> None:
+    a = {"index": 0, "codec_type": "audio", "start_time": "0.75"}
+    source = parse_ffprobe(doc(a, fmt={"start_time": "0.5"}), FILE)
+    assert source.audio[0].delay == pytest.approx(0.25)
+    unknown = parse_ffprobe(doc({"index": 0, "codec_type": "audio"}), FILE)
+    assert unknown.audio[0].delay is None
+    cover = video(disposition={"attached_pic": 1}, start_time="9")
+    a1 = {**a, "index": 1}
+    with_cover = parse_ffprobe(doc(cover, a1, fmt={"start_time": "0.5"}), FILE)
+    assert with_cover.audio[0].delay == pytest.approx(0.25)  # cover art is not the reference
+
+
+# --------------------------------------------------------------------------- VFR in Matroska
+
+MKV = {"format_name": "matroska,webm", "duration": "3.1", "size": "10000000", "bit_rate": "9000000"}
+
+
+def mkv_video(
+    frames: str | None, duration: str, rate: str = "29999/500", **extra: Any
+) -> dict[str, Any]:
+    tags = {"DURATION": duration, "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES"}
+    if frames is not None:
+        tags["NUMBER_OF_FRAMES"] = frames
+    return video(r_frame_rate=rate, avg_frame_rate=rate, tags=tags, **extra)
+
+
+@pytest.mark.parametrize(
+    ("stream", "vfr", "undecided"),
+    [
+        (mkv_video("114", "00:00:03.009"), True, False),  # mkvmerge-remuxed VFR: 37.9 vs 60
+        (mkv_video("180", "00:00:03.000"), False, False),  # 60 fps CFR
+        (mkv_video("60", "00:00:02.002", "30000/1001"), False, False),
+        # Interlaced with a field-rate DefaultDuration: half the frames, not VFR.
+        (mkv_video("60", "00:00:02.002", "60000/1001", field_order="tt"), False, False),
+        (mkv_video(None, "00:00:03.000"), False, True),  # no NUMBER_OF_FRAMES
+        (video(r_frame_rate="25/1", avg_frame_rate="25/1"), False, True),  # no tags at all
+    ],
+)
+def test_matroska_vfr_from_statistics(stream: dict[str, Any], vfr: bool, undecided: bool) -> None:
+    data = doc(stream, fmt=MKV)
+    assert parse_ffprobe(data, FILE).video[0].vfr is vfr
+    assert parse.vfr_undecided(data) == ([0] if undecided else [])
+
+
+def test_stale_statistics_make_vfr_undecided() -> None:
+    data = doc(mkv_video("114", "00:00:03.009"), fmt={**MKV, "size": "100"})
+    data["streams"][0]["tags"]["NUMBER_OF_BYTES"] = "5000"
+    source = parse_ffprobe(data, FILE)
+    assert not source.video[0].vfr
+    assert parse.vfr_undecided(data) == [0]
+    assert source.warnings[0].startswith("Stream 0: the statistics tags look stale")
+
+
+def test_vfr_undecided_ignores_other_streams() -> None:
+    cover = video(index=1, disposition={"attached_pic": 1})
+    audio = {"index": 2, "codec_type": "audio"}
+    assert parse.vfr_undecided(doc(cover, audio, fmt=MKV)) == []
+    assert parse.vfr_undecided(doc(video(r_frame_rate="25/1", avg_frame_rate="25/1"))) == [0]
+    mp4 = doc(video(r_frame_rate="25/1", avg_frame_rate="25/1"), fmt={"format_name": "mov,mp4"})
+    assert parse.vfr_undecided(mp4) == []
+
+
+def _pts(*steps_ms: float, start: float = 0.0) -> list[float]:
+    out, t = [start], start
+    for step in steps_ms:
+        t += step / 1000
+        out.append(t)
+    return out
+
+
+@pytest.mark.parametrize(
+    ("pts", "vfr"),
+    [
+        (_pts(*[41, 42] * 30), False),  # 23.976 fps with millisecond timestamps
+        (_pts(*[40] * 59, 80), False),  # one dropped frame
+        (_pts(*[41.7] * 24, *[33.3] * 30, *[16.7] * 60), True),  # 24 / 30 / 60 fps
+        (_pts(*[33.3] * 10, *[16.7] * 10), True),
+        (_pts(40, 40, 40), None),  # too few
+        ([], None),
+    ],
+)
+def test_vfr_from_timestamps(pts: list[float], vfr: bool | None) -> None:
+    assert parse.vfr_from_timestamps(pts) is vfr
+    assert parse.vfr_from_timestamps(list(reversed(pts))) is vfr  # order does not matter
+
+
+# --------------------------------------------------------------------------- stale counts
+
+
+def test_stale_stats_drop_frame_and_event_counts() -> None:
+    tags = {"NUMBER_OF_FRAMES": "500", "NUMBER_OF_BYTES": "99999", "BPS": "1"}
+    sub = {"index": 1, "codec_type": "subtitle", "codec_name": "subrip", "tags": dict(tags)}
+    source = parse_ffprobe(doc(video(tags=dict(tags)), sub, fmt={"size": "1000"}), FILE)
+    assert source.video[0].frame_count is None
+    assert source.subtitles[0].event_count is None
+    assert source.subtitles[0].event_count_source is None
+    trusted = parse_ffprobe(doc(video(tags=dict(tags)), sub, fmt={"size": "10000000"}), FILE)
+    assert trusted.video[0].frame_count == 500
+    assert trusted.subtitles[0].event_count == 500
+
+
+def test_hdr_uses_the_first_frame_with_side_data() -> None:
+    cll = {"side_data_type": "Content light level metadata", "max_content": 7, "max_average": 3}
+    frames = {"frames": [{"pict_type": "I"}, {"side_data_list": [cll]}]}
+    source = parse_ffprobe(doc(video(color_transfer="smpte2084")), FILE, frames=frames)
+    hdr_info = source.video[0].hdr
+    assert hdr_info is not None
+    assert hdr_info.content_light is not None
+    assert hdr_info.content_light.max_cll == 7

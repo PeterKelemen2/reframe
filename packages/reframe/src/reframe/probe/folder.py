@@ -175,7 +175,10 @@ async def probe_folder(
     async def one(i: int, path: Path) -> None:
         nonlocal done
         async with semaphore:
-            outcomes[i] = await prober.probe(path, cancel=cancel)
+            if cancel is not None and cancel.cancelled:  # no new ffprobe after a cancel
+                outcomes[i] = ProbeError(path, ProbeErrorKind.CANCELLED, "The probe was cancelled.")
+            else:
+                outcomes[i] = await prober.probe(path, cancel=cancel)
         done += 1
         if on_progress is not None:
             on_progress(done, total, path)

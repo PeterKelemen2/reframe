@@ -144,11 +144,13 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
 - [ ] Run `ffprobe -v error -of json -show_format -show_streams -show_chapters -show_programs`
       with a 60 s timeout (network shares can be slow).
 - [ ] Parse it into `MediaSource`. Handle: attached pictures (cover art is not a video track),
-      attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`), interlacing
-      (`field_order`), stream start offsets (shown as audio delay), and missing durations.
+      attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`; in Matroska
+      also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then MediaInfo, then a packet
+      timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
+      to the main video stream, shown as audio delay), and missing durations (decision XXXX).
 - [ ] **HDR**: read stream side data (mastering display, content light level, DOVI
       configuration). If it is missing, read the first frame's side data
-      (`-show_frames -read_intervals %+#1 -select_streams v:0`). Detect HDR10, HDR10+, HLG, and
+      (`-show_frames -read_intervals %+#5 -select_streams v:0`). Detect HDR10, HDR10+, HLG, and
       Dolby Vision profile. HDR10+ is only in frame side data, so the first frame is read for
       every PQ stream (decision 0006).
 - [ ] **Commercial codec names**: map `(codec_name, profile)` to a display name. Examples:
@@ -156,9 +158,12 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       `truehd/… + Dolby Atmos → TrueHD Atmos`, `eac3/… + Dolby Atmos → E-AC-3 Atmos`,
       `aac/LC → AAC-LC`, `hdmv_pgs_subtitle → PGS`. A table-driven test covers the map.
 - [ ] **Bitrate chain**: `bit_rate` → Matroska statistics tags (`BPS`, `BPS-eng`,
-      `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (if installed) → `unknown`. The value records
-      its source.
-- [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present.
+      `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (the pymediainfo library, if it loads) →
+      `unknown`. The value records its source. Statistics tags are used only when they are
+      plausible for the file (size, bit rate, duration); FFmpeg copies stale ones on re-encode.
+      MediaInfo also gives `language_ietf` (Matroska `LanguageIETF`, which ffprobe does not
+      show) (decision XXXX).
+- [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present and plausible.
 - [ ] **Role heuristics** (`probe/roles.py`): dispositions first, then title keywords
       (commentary, kommentar, commentaire, comentario, commento, kommentár, コメンタリー; SDH, CC,
       hearing impaired; forced, foreign, signs, songs; audio description, descriptive, AD),

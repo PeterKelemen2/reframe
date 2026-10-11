@@ -306,3 +306,38 @@ def test_forced_heuristic_needs_another_track_with_a_count() -> None:
     zero = sub(3, events=0)
     roles.assign_subtitle_roles([zero, sub(4, events=0)])
     assert role_set(zero) == {(TrackRole.MAIN, RoleEvidence.HEURISTIC)}
+
+
+# --------------------------------------------------------------------------- review fixes (M1)
+
+
+@pytest.mark.parametrize("title", ["Non-Forced", "Not Forced", "Full (not forced)", "non forced"])
+def test_not_forced_is_not_forced(title: str) -> None:
+    assert roles.title_roles(title, roles.SUBTITLE_KEYWORDS) == []
+
+
+@pytest.mark.parametrize(
+    ("title", "role"),
+    [
+        ("Audiokommentar", TrackRole.COMMENTARY),
+        ("Regiekommentar mit dem Regisseur", TrackRole.COMMENTARY),
+        ("Kommentar", TrackRole.COMMENTARY),
+        ("Audiodeskription", TrackRole.DESCRIPTION),
+        ("Deutsch (Hörfilmfassung)", TrackRole.DESCRIPTION),
+        ("Described Video", TrackRole.DESCRIPTION),
+    ],
+)
+def test_german_compounds_and_described(title: str, role: TrackRole) -> None:
+    found = roles.title_roles(title, roles.AUDIO_KEYWORDS)
+    assert [(r.role, r.evidence) for r in found] == [(role, RoleEvidence.TITLE)]
+
+
+@pytest.mark.parametrize(
+    ("title", "kbps"),
+    [("English Stereo (compatibility)", 160), ("Original Mono Mix", 192), ("Stereo", 128)],
+)
+def test_commentary_heuristic_only_for_untitled_tracks(title: str, kbps: int) -> None:
+    main = audio(1, channels=6, kbps=640)
+    stereo = audio(2, kbps=kbps, title=title, channels=1 if "Mono" in title else 2)
+    roles.assign_audio_roles([main, stereo])
+    assert role_set(stereo) == {(TrackRole.MAIN, RoleEvidence.HEURISTIC)}

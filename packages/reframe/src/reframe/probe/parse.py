@@ -2,7 +2,7 @@
 
 Input is the output of ``ffprobe -v error -of json -show_format -show_streams -show_chapters
 -show_programs`` (:func:`reframe.probe.ffprobe.probe_argv`) and, optionally, the first frame of
-the main video stream (``-show_frames -read_intervals %+#1``) for HDR side data.
+the main video stream (``-show_frames -read_intervals %+#5``) for HDR side data.
 
 Rules (see also the ``reframe.models.media`` docstrings):
 
@@ -16,7 +16,18 @@ Rules (see also the ``reframe.models.media`` docstrings):
   differ by more than 0.5 % (an exact 2:1 field-rate ratio on interlaced video does not
   count). In Matroska an unknown average means the file has no default frame duration, which
   FFmpeg writes only for constant frame rate (testdata/README.md, "VFR in Matroska"), so
-  there an unknown average with a known base rate counts as VFR.
+  there an unknown average with a known base rate counts as VFR. A known average is **not**
+  proof of CFR in Matroska: the demuxer takes both rates from ``DefaultDuration``, which
+  mkvmerge always writes (a VFR file remuxed by mkvmerge shows ``r = avg = 29999/500``). So
+  for Matroska the frame rate from the (plausible) statistics tags, ``NUMBER_OF_FRAMES`` /
+  ``DURATION``, is compared with the average (VFR if they differ by more than 1 %); without
+  those tags the stream is *undecided* (:func:`vfr_undecided`) and the prober asks MediaInfo
+  (``FrameRate_Mode``) or samples packet timestamps.
+- Statistics tags that fail :func:`reframe.probe.bitrate.check_stats_tags` (stale tags copied
+  by a re-encode) are not used for the bit rate, frame count, event count or VFR check; the
+  source gets a warning.
+- ``delay`` = ``start_time`` minus the main video stream's ``start_time`` (else the container's
+  ``start_time``), rounded to microseconds.
 - ``field_order``: ``tt`` / ``tb`` → top field first, ``bb`` / ``bt`` → bottom field first.
 - Durations: the stream's ``duration``, else the Matroska ``DURATION`` tag; the container's
   ``duration``, else ``None`` with a warning.
@@ -25,6 +36,7 @@ Rules (see also the ``reframe.models.media`` docstrings):
 - ``unknown`` / ``unspecified`` colour values, ``profile`` ``unknown`` and ``level`` ``-99``
   are ``None``.
 - Event counts of subtitles: the Matroska ``NUMBER_OF_FRAMES`` statistics tag.
+- HDR from the frames: the first frame that has side data (or the first frame).
 """
 
 from __future__ import annotations
@@ -34,8 +46,10 @@ import json
 import math
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from fractions import Fraction
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -59,7 +73,14 @@ from reframe.models.media import (
     VideoStream,
 )
 from reframe.probe import hdr, names, roles
-from reframe.probe.bitrate import parse_duration_tag, positive_int, stream_bitrate, tag_value
+from reframe.probe.bitrate import (
+    StatsCheck,
+    check_stats_tags,
+    parse_duration_tag,
+    positive_int,
+    stream_bitrate,
+    tag_value,
+)
 
 __all__ = [
     "PARSER_VERSION",
@@ -67,6 +88,8 @@ __all__ = [
     "main_video_index",
     "parse_ffprobe",
     "parse_rational",
+    "vfr_from_timestamps",
+    "vfr_undecided",
     "video_bit_depth",
 ]
 
@@ -102,6 +125,8 @@ _EIGHT_BIT_PIX_FMTS = frozenset(
     }
 )
 _VFR_TOLERANCE = 0.005
+#: Statistics frame rate vs ``avg_frame_rate`` (Matroska): more than this is VFR.
+_STATS_VFR_TOLERANCE = 0.01
 _FIELD_ORDERS: Mapping[str, FieldOrder] = {
     "progressive": FieldOrder.PROGRESSIVE,
     "tt": FieldOrder.TOP_FIRST,
@@ -238,11 +263,13 @@ def _first_frame(frames: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
     if frames is None:
         return None
     raw = frames.get("frames")
-    if isinstance(raw, list):
-        for frame in raw:
-            if isinstance(frame, Mapping):
-                return frame
-    return None
+    if not isinstance(raw, list):
+        return None
+    usable = [frame for frame in raw if isinstance(frame, Mapping)]
+    for frame in usable:
+        if frame.get("side_data_list"):
+            return frame
+    return usable[0] if usable else None
 
 
 def _rotation(stream: Mapping[str, Any], tags: Mapping[str, str]) -> Literal[0, 90, 180, 270]:
@@ -263,21 +290,89 @@ def _rotation(stream: Mapping[str, Any], tags: Mapping[str, str]) -> Literal[0, 
     return cast("Literal[0, 90, 180, 270]", quarter * 90)
 
 
-def _vfr(
-    r_rate: Rational | None,
-    avg_rate: Rational | None,
-    field_order: FieldOrder,
-    matroska: bool,
-) -> bool:
+@dataclass(frozen=True)
+class _Context:
+    matroska: bool
+    stats: StatsCheck
+    reference_start: float | None
+    """``start_time`` that ``delay`` is relative to."""
+
+
+def _field_order(stream: Mapping[str, Any]) -> FieldOrder:
+    return _FIELD_ORDERS.get(str(stream.get("field_order", "")), FieldOrder.UNKNOWN)
+
+
+def _is_ratio(ratio: float, target: float, tolerance: float) -> bool:
+    return abs(ratio - target) <= target * tolerance
+
+
+def _vfr_decision(stream: Mapping[str, Any], ctx: _Context) -> bool | None:
+    """VFR from the stream's own data; ``None`` = undecided (see the module doc)."""
+    r_rate = parse_rational(stream.get("r_frame_rate"))
+    avg_rate = parse_rational(stream.get("avg_frame_rate"))
+    interlaced = _field_order(stream) in (FieldOrder.TOP_FIRST, FieldOrder.BOTTOM_FIRST)
     if r_rate is None:
         return False
     if avg_rate is None:
-        return matroska
+        return ctx.matroska
     ratio = float(r_rate) / float(avg_rate)
-    if abs(ratio - 1) <= _VFR_TOLERANCE:
+    if not _is_ratio(ratio, 1, _VFR_TOLERANCE):
+        return not (interlaced and _is_ratio(ratio, 2, _VFR_TOLERANCE))
+    if not ctx.matroska:
         return False
-    interlaced = field_order in (FieldOrder.TOP_FIRST, FieldOrder.BOTTOM_FIRST)
-    return not (interlaced and abs(ratio - 2) <= 2 * _VFR_TOLERANCE)
+    index = _int(stream.get("index")) or 0
+    tags = _tags(stream.get("tags"))
+    frames = _int(tag_value(tags, "NUMBER_OF_FRAMES"))
+    seconds = parse_duration_tag(tag_value(tags, "DURATION"))
+    if not ctx.stats.trusted(index) or not frames or not seconds:
+        return None
+    stats_ratio = frames / seconds / float(avg_rate)
+    if _is_ratio(stats_ratio, 1, _STATS_VFR_TOLERANCE):
+        return False
+    return not (interlaced and _is_ratio(stats_ratio, 0.5, _STATS_VFR_TOLERANCE))
+
+
+def _context(data: Mapping[str, Any], fmt: Mapping[str, Any]) -> _Context:
+    format_name = str(fmt.get("format_name") or "")
+    main = main_video_index(data)
+    reference: float | None = None
+    for stream in _streams(data):
+        if main is not None and _int(stream.get("index")) == main:
+            reference = _float(stream.get("start_time"))
+    if reference is None:
+        reference = _float(fmt.get("start_time"))
+    return _Context(format_name.startswith("matroska"), check_stats_tags(data), reference)
+
+
+def vfr_undecided(data: Mapping[str, Any]) -> list[int]:
+    """Indexes of the video streams whose VFR state ffprobe's output cannot tell (Matroska
+    with a known average frame rate and no usable statistics tags)."""
+    fmt_raw = data.get("format")
+    ctx = _context(data, fmt_raw if isinstance(fmt_raw, Mapping) else {})
+    undecided: list[int] = []
+    for stream in _streams(data):
+        if stream.get("codec_type") != "video" or _is_cover_art(stream):
+            continue
+        if _vfr_decision(stream, ctx) is None:
+            undecided.append(_int(stream.get("index")) or 0)
+    return undecided
+
+
+def vfr_from_timestamps(pts: Sequence[float]) -> bool | None:
+    """VFR from a sample of packet timestamps (seconds, any order); ``None`` if too few.
+
+    Matroska timestamps are rounded to milliseconds, so 23.976 fps shows 41 and 42 ms steps.
+    A step counts as different when it is more than max(2.5 ms, 10 %) away from the median
+    step; VFR when more than 5 % of the steps are different (one dropped frame is not VFR).
+    """
+    ordered = sorted(pts)
+    steps = [b - a for a, b in pairwise(ordered) if b - a > 0]
+    if len(steps) < 10:
+        return None
+    median = sorted(steps)[len(steps) // 2]
+    tolerance = max(0.0025, 0.1 * median)
+    different = sum(1 for step in steps if abs(step - median) > tolerance)
+    return different > 0.05 * len(steps)
 
 
 def _duration(stream: Mapping[str, Any], tags: Mapping[str, str]) -> float | None:
@@ -287,16 +382,24 @@ def _duration(stream: Mapping[str, Any], tags: Mapping[str, str]) -> float | Non
     return duration
 
 
-def _frame_count(stream: Mapping[str, Any], tags: Mapping[str, str]) -> int | None:
+def _frame_count(stream: Mapping[str, Any], tags: Mapping[str, str], trusted: bool) -> int | None:
     count = _int(stream.get("nb_frames"))
-    if count is None or count < 0:
+    if (count is None or count < 0) and trusted:
         count = _int(tag_value(tags, "NUMBER_OF_FRAMES"))
     return count if count is not None and count >= 0 else None
 
 
-def _common(stream: Mapping[str, Any], type_index: int, warnings: list[str]) -> dict[str, Any]:
+def _common(
+    stream: Mapping[str, Any], type_index: int, warnings: list[str], ctx: _Context
+) -> dict[str, Any]:
     index = _int(stream.get("index")) or 0
     tags = _tags(stream.get("tags"))
+    start = _float(stream.get("start_time"))
+    delay = (
+        round(start - ctx.reference_start, 6)
+        if start is not None and ctx.reference_start is not None
+        else None
+    )
     return {
         "index": index,
         "type_index": type_index,
@@ -306,9 +409,10 @@ def _common(stream: Mapping[str, Any], type_index: int, warnings: list[str]) -> 
         "language": _language(tags, warnings, index),
         "title": _text(tag_value(tags, "title")),
         "disposition": _disposition(stream.get("disposition")),
-        "start_time": _float(stream.get("start_time")),
+        "start_time": start,
+        "delay": delay,
         "duration": _duration(stream, tags),
-        "frame_count": _frame_count(stream, tags),
+        "frame_count": _frame_count(stream, tags, ctx.stats.trusted(index)),
         "tags": tags,
     }
 
@@ -320,9 +424,9 @@ def _video(
     stream: Mapping[str, Any],
     common: dict[str, Any],
     frame: Mapping[str, Any] | None,
-    matroska: bool,
+    ctx: _Context,
 ) -> VideoStream:
-    field_order = _FIELD_ORDERS.get(str(stream.get("field_order", "")), FieldOrder.UNKNOWN)
+    field_order = _field_order(stream)
     r_rate = parse_rational(stream.get("r_frame_rate"))
     avg_rate = parse_rational(stream.get("avg_frame_rate"))
     level = _int(stream.get("level"))
@@ -338,7 +442,7 @@ def _video(
         bit_depth=video_bit_depth(stream),
         frame_rate=r_rate,
         avg_frame_rate=avg_rate,
-        vfr=_vfr(r_rate, avg_rate, field_order, matroska),
+        vfr=bool(_vfr_decision(stream, ctx)),
         field_order=field_order,
         rotation=_rotation(stream, common["tags"]),
         color=ColorInfo(
@@ -350,11 +454,11 @@ def _video(
         ),
         hdr=hdr.parse_hdr(stream, frame),
         closed_captions=bool(_int(stream.get("closed_captions"))),
-        bitrate=stream_bitrate(stream),
+        bitrate=stream_bitrate(stream, trust_stats=ctx.stats.trusted(common["index"])),
     )
 
 
-def _audio(stream: Mapping[str, Any], common: dict[str, Any]) -> AudioStream:
+def _audio(stream: Mapping[str, Any], common: dict[str, Any], ctx: _Context) -> AudioStream:
     codec, profile = common["codec"], common["profile"]
     depth = positive_int(stream.get("bits_per_raw_sample")) or positive_int(
         stream.get("bits_per_sample")
@@ -368,15 +472,15 @@ def _audio(stream: Mapping[str, Any], common: dict[str, Any]) -> AudioStream:
         bit_depth=depth,
         sample_fmt=_text(stream.get("sample_fmt")),
         lossless=names.is_lossless_audio(codec, profile),
-        bitrate=stream_bitrate(stream),
+        bitrate=stream_bitrate(stream, trust_stats=ctx.stats.trusted(common["index"])),
     )
 
 
-def _subtitle(stream: Mapping[str, Any], common: dict[str, Any]) -> SubtitleStream:
+def _subtitle(stream: Mapping[str, Any], common: dict[str, Any], ctx: _Context) -> SubtitleStream:
     codec = common["codec"]
     bitmap = codec in names.BITMAP_SUBTITLE_CODECS
     events = _int(tag_value(common["tags"], "NUMBER_OF_FRAMES"))
-    if events is not None and events < 0:
+    if not ctx.stats.trusted(common["index"]) or (events is not None and events < 0):
         events = None
     return SubtitleStream(
         **common,
@@ -525,7 +629,9 @@ def parse_ffprobe(
     fmt_raw = data.get("format")
     fmt: Mapping[str, Any] = fmt_raw if isinstance(fmt_raw, Mapping) else {}
     container = _container(fmt, path, notes)
-    matroska = (container.format_name or "").startswith("matroska")
+    ctx = _context(data, fmt)
+    for index, reason in sorted(ctx.stats.stale.items()):
+        notes.append(f"Stream {index}: the statistics tags look stale ({reason}); not used.")
     frame = _first_frame(frames)
     main_index = main_video_index(data)
 
@@ -545,7 +651,7 @@ def parse_ffprobe(
             if codec_type == "video" and _is_cover_art(stream):
                 source.cover_art.append(_cover_art(stream))
             elif codec_type == "video":
-                common = _common(stream, type_index, notes)
+                common = _common(stream, type_index, notes, ctx)
                 if positive_int(stream.get("width")) is None or not positive_int(
                     stream.get("height")
                 ):
@@ -553,11 +659,12 @@ def parse_ffprobe(
                     source.data.append(_data(stream))
                     continue
                 own_frame = frame if common["index"] == main_index else None
-                source.video.append(_video(stream, common, own_frame, matroska))
+                source.video.append(_video(stream, common, own_frame, ctx))
             elif codec_type == "audio":
-                source.audio.append(_audio(stream, _common(stream, type_index, notes)))
+                source.audio.append(_audio(stream, _common(stream, type_index, notes, ctx), ctx))
             elif codec_type == "subtitle":
-                source.subtitles.append(_subtitle(stream, _common(stream, type_index, notes)))
+                common = _common(stream, type_index, notes, ctx)
+                source.subtitles.append(_subtitle(stream, common, ctx))
             elif codec_type == "attachment":
                 source.attachments.append(_attachment(stream))
             else:

@@ -150,7 +150,9 @@ def assert_every_track(output: str, source: MediaSource) -> None:
     has its evidence line."""
     rows = table_rows(output)
     for a in source.audio:
-        delay = [f"delay {round(a.start_time * 1000):+d} ms"] if a.start_time else []
+        delay = (
+            [f"delay {round(a.delay * 1000):+d} ms"] if a.delay and round(a.delay * 1000) else []
+        )
         codec = (a.display_codec or "") + (" lossless" if a.lossless else "")
         assert rows[str(a.index)] == [
             str(a.index),
@@ -751,7 +753,8 @@ def test_render_edge_cases() -> None:
                 display_codec="PCM",
                 lossless=True,
                 channels=2,
-                start_time=-0.042,
+                start_time=1.358,
+                delay=-0.042,
             )
         ],
         attachments=[Attachment(index=1)],

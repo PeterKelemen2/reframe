@@ -121,11 +121,9 @@ def test_frame_transfer_fills_an_unknown_stream_transfer() -> None:
     assert info.formats == [HdrFormat.HLG]
 
 
-def test_static_metadata_with_sdr_transfer_is_kept_without_format() -> None:
-    info = hdr.parse_hdr(stream("bt709", CLL))
-    assert info is not None
-    assert info.formats == []
-    assert info.content_light is not None
+def test_static_metadata_with_sdr_transfer_is_none() -> None:
+    """The contract: ``hdr`` is ``None`` for SDR, even with stray HDR metadata."""
+    assert hdr.parse_hdr(stream("bt709", CLL, MASTERING)) is None
 
 
 @pytest.mark.parametrize(

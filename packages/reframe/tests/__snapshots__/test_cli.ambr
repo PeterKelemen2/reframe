@@ -199,15 +199,15 @@
         8-bit yuv420p · interlaced TFF · SAR 32:27 · DAR 16:9 · bitrate — (unknown)
   
   Audio (2)
-  ┌───┬──────┬──────┬───────┬──────────────┬──────────────┬───────────────────┬───────────────┐
-  │ # │ Lang │ Name │ Codec │ Channels     │ Rate / depth │ Bitrate           │ Role & flags  │
-  ├───┼──────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼───────────────┤
-  │ 1 │ —    │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)       │
-  │   │      │      │       │              │              │                   │ delay +528 ms │
-  ├───┼──────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼───────────────┤
-  │ 2 │ —    │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)       │
-  │   │      │      │       │              │              │                   │ delay +528 ms │
-  └───┴──────┴──────┴───────┴──────────────┴──────────────┴───────────────────┴───────────────┘
+  ┌───┬──────┬──────┬───────┬──────────────┬──────────────┬───────────────────┬──────────────┐
+  │ # │ Lang │ Name │ Codec │ Channels     │ Rate / depth │ Bitrate           │ Role & flags │
+  ├───┼──────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 1 │ —    │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)      │
+  │   │      │      │       │              │              │                   │ delay -5 ms  │
+  ├───┼──────┼──────┼───────┼──────────────┼──────────────┼───────────────────┼──────────────┤
+  │ 2 │ —    │ —    │ AC-3  │ stereo, 2 ch │ 48 kHz       │ 192 kb/s (stream) │ (Main?)      │
+  │   │      │      │       │              │              │                   │ delay -5 ms  │
+  └───┴──────┴──────┴───────┴──────────────┴──────────────┴───────────────────┴──────────────┘
   
   Subtitles (2)
   ┌───┬──────┬──────┬────────┬────────┬─────────────┬──────────────┐
@@ -402,6 +402,38 @@
   
   '''
 # ---
+# name: test_recorded_probe_snapshot[mkvmerge-vfr]
+  '''
+  phone-vfr-mkvmerge.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:03.031
+    Size       2.0 MiB (2 062 659 bytes)
+    Bitrate    5 444 kb/s
+    Tracks     1 video track · 1 audio track · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1280×720 · 59.998 fps average (VFR) · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · base rate 59.998 fps · bitrate 5 332 kb/s (stats tag) · flags:
+        default
+  
+  Audio (1)
+  ┌───┬──────┬──────┬────────┬──────────────┬──────────────┬──────────────────────┬───────────────────────┐
+  │ # │ Lang │ Name │ Codec  │ Channels     │ Rate / depth │ Bitrate              │ Role & flags          │
+  ├───┼──────┼──────┼────────┼──────────────┼──────────────┼──────────────────────┼───────────────────────┤
+  │ 1 │ —    │ —    │ AAC-LC │ stereo, 2 ch │ 48 kHz       │ 128 kb/s (stats tag) │ [Main]                │
+  │   │      │      │        │              │              │                      │ default, delay -21 ms │
+  └───┴──────┴──────┴────────┴──────────────┴──────────────┴──────────────────────┴───────────────────────┘
+  
+  Subtitles (0)
+  
+  Role evidence
+    #1  [Main]  disposition default
+    [Role] = set by a flag in the file; (Role?) = guessed from the title or layout.
+  
+  '''
+# ---
 # name: test_recorded_probe_snapshot[pgs]
   '''
   movie-pgs.mkv
@@ -481,6 +513,31 @@
   
   Data streams (1)
     #2  tmcd · TimeCodeHandler
+  
+  '''
+# ---
+# name: test_recorded_probe_snapshot[stale-stats]
+  '''
+  movie-stale-stats.mkv
+    Container  MKV (Matroska / WebM)
+    Duration   0:00:02.002
+    Size       83.3 KiB (85 344 bytes)
+    Bitrate    341 kb/s
+    Tracks     1 video track · 0 audio tracks · 0 subtitle tracks · 0 attachments
+    Chapters   0
+    Probed by  ffprobe n9.0.2-17-g2a571b6068-20260930
+  
+  Video (1)
+    #0  H.264 Constrained Baseline · 1280×720 · 29.97 fps · SDR
+        8-bit yuv420p · progressive · SAR 1:1 · DAR 16:9 · bitrate — (unknown)
+  
+  Audio (0)
+  
+  Subtitles (0)
+  
+  Warnings (1)
+    Stream 0: the statistics tags look stale (the tracks' NUMBER_OF_BYTES add up to 2397945 bytes, more than the file's
+    85344 bytes); not used.
   
   '''
 # ---

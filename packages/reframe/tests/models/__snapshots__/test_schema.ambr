@@ -932,6 +932,23 @@
         'description': 'ffprobe ``codec_long_name``.',
         'title': 'Codec Long',
       }),
+      'delay': dict({
+        'anyOf': list([
+          dict({
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Seconds relative to the main video stream's ``start_time`` (or the container's
+          ``start_time`` when there is no video); negative = starts earlier. The audio delay of the
+          UI.
+        ''',
+        'title': 'Delay',
+      }),
       'display_codec': dict({
         'anyOf': list([
           dict({
@@ -942,7 +959,7 @@
           }),
         ]),
         'default': None,
-        'description': 'Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 JOC``, ``AAC-LC``.',
+        'description': 'Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``, ``AAC-LC``.',
         'title': 'Display Codec',
       }),
       'disposition': dict({
@@ -998,8 +1015,33 @@
           }),
         ]),
         'default': None,
-        'description': 'The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent.',
+        'description': '''
+          The language tag as ffprobe reports it (``eng``, ``hun``; for Matroska the legacy
+          ISO 639-2 ``Language`` element); ``None`` if absent.
+        ''',
         'title': 'Language',
+      }),
+      'language_ietf': dict({
+        'anyOf': list([
+          dict({
+            'maxLength': 64,
+            'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
+          ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
+          language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+          
+          The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+          ``language``.
+        ''',
+        'title': 'Language Ietf',
       }),
       'lossless': dict({
         'default': False,
@@ -1062,7 +1104,7 @@
           }),
         ]),
         'default': None,
-        'description': 'Start offset in seconds (audio: shown as delay).',
+        'description': "ffprobe's raw ``start_time`` in seconds (the first packet's timestamp).",
         'title': 'Start Time',
       }),
       'tags': dict({
@@ -3926,7 +3968,12 @@
       'TrackRoleInfo',
       'VideoStream',
     ]),
-    'description': 'Everything Reframe knows about one source file.',
+    'description': '''
+      Everything Reframe knows about one source file.
+      
+      Known gap: ``-show_programs`` output (the programs of a multi-program MPEG-TS) has no model
+      yet; C-3 reads streams across all programs.
+    ''',
     'properties': dict({
       'attachments': dict({
         'items': dict({
@@ -6070,6 +6117,23 @@
         'description': 'ffprobe ``codec_long_name``.',
         'title': 'Codec Long',
       }),
+      'delay': dict({
+        'anyOf': list([
+          dict({
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Seconds relative to the main video stream's ``start_time`` (or the container's
+          ``start_time`` when there is no video); negative = starts earlier. The audio delay of the
+          UI.
+        ''',
+        'title': 'Delay',
+      }),
       'display_codec': dict({
         'anyOf': list([
           dict({
@@ -6193,8 +6257,33 @@
           }),
         ]),
         'default': None,
-        'description': 'The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent.',
+        'description': '''
+          The language tag as ffprobe reports it (``eng``, ``hun``; for Matroska the legacy
+          ISO 639-2 ``Language`` element); ``None`` if absent.
+        ''',
         'title': 'Language',
+      }),
+      'language_ietf': dict({
+        'anyOf': list([
+          dict({
+            'maxLength': 64,
+            'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
+          ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
+          language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+          
+          The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+          ``language``.
+        ''',
+        'title': 'Language Ietf',
       }),
       'profile': dict({
         'anyOf': list([
@@ -6226,7 +6315,7 @@
           }),
         ]),
         'default': None,
-        'description': 'Start offset in seconds (audio: shown as delay).',
+        'description': "ffprobe's raw ``start_time`` in seconds (the first packet's timestamp).",
         'title': 'Start Time',
       }),
       'subtitle_kind': dict({
@@ -7918,6 +8007,23 @@
         ]),
         'default': None,
       }),
+      'delay': dict({
+        'anyOf': list([
+          dict({
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Seconds relative to the main video stream's ``start_time`` (or the container's
+          ``start_time`` when there is no video); negative = starts earlier. The audio delay of the
+          UI.
+        ''',
+        'title': 'Delay',
+      }),
       'display_codec': dict({
         'anyOf': list([
           dict({
@@ -8017,8 +8123,33 @@
           }),
         ]),
         'default': None,
-        'description': 'The language tag as stored (``eng``, ``hun``, ``pt-BR``); ``None`` if absent.',
+        'description': '''
+          The language tag as ffprobe reports it (``eng``, ``hun``; for Matroska the legacy
+          ISO 639-2 ``Language`` element); ``None`` if absent.
+        ''',
         'title': 'Language',
+      }),
+      'language_ietf': dict({
+        'anyOf': list([
+          dict({
+            'maxLength': 64,
+            'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
+          ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
+          language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+          
+          The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+          ``language``.
+        ''',
+        'title': 'Language Ietf',
       }),
       'level': dict({
         'anyOf': list([
@@ -8092,7 +8223,7 @@
           }),
         ]),
         'default': None,
-        'description': 'Start offset in seconds (audio: shown as delay).',
+        'description': "ffprobe's raw ``start_time`` in seconds (the first packet's timestamp).",
         'title': 'Start Time',
       }),
       'tags': dict({
