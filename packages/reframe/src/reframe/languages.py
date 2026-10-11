@@ -35,9 +35,15 @@ Matroska and MP4 codes
 - :func:`to_matroska_ietf`: the Matroska ``LanguageIETF`` (BCP 47) element: the canonical tag.
 - :func:`to_mp4`: ISO 639-2/**T** (``deu``) for the MP4 ``mdhd`` language, same fallbacks.
 
-For every tag that mkvpropedit accepts, ``mkvpropedit --set language=<tag>`` writes exactly
-``to_matroska_legacy(tag)`` + ``to_matroska_ietf(tag)`` (a ``needs_ffmpeg`` test compares
-them for ~35 tags, including ``pt-BR``, ``yue``, ``sh``, ``tl``, ``arb``, ``zsm``, ``qaa``).
+``mkvpropedit --set language=<tag>`` writes the same legacy + IETF pair as
+``to_matroska_legacy(tag)`` + ``to_matroska_ietf(tag)`` for the ~35 tags that a
+``needs_ffmpeg`` test compares (including ``pt-BR``, ``yue``, ``sh``, ``tl``, ``arb``, ``zsm``,
+``qaa``), but **not for every tag**. mkvpropedit 101.0 writes the legacy code ``sgn`` for the
+sign languages ``ase``, ``bfi``, ``fsl``, ``gsg`` (Reframe: ``und``), and ``und`` for ``pes``,
+``ekk``, ``kmr``, ``ckb``, ``azb``, ``bcc`` (Reframe: the macrolanguage codes ``per``,
+``est``, ``kur``, ``kur``, ``aze``, ``bal``, which tell a legacy player more). The IETF tag is
+the same in all these cases. So C-13 must always pass **both** ``--set language=<legacy>`` and
+``--set language-ietf=<tag>`` explicitly, never ``language=<BCP 47 tag>`` alone.
 
 Verified tool behaviour (FFmpeg n9.0.2, mkvtoolnix 101.0, Linux; ``needs_ffmpeg`` tests)
 -----------------------------------------------------------------------------------------
