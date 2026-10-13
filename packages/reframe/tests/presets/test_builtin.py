@@ -534,3 +534,48 @@ def test_a_bad_parameter_key_is_only_a_warning(encoder: str, defs: Definitions) 
     """The control for the test above: a made-up key is reported in the log, not by the exit
     code (``Error parsing option`` for x264 / SVT-AV1, ``Unknown option`` for x265)."""
     assert BAD_PARAM.search(run_params(encoder, 8, "bogus-key=1", defs))
+
+
+# --------------------------------------------------------------------------- M2 drafts
+
+MULTITRACK = (
+    Path(__file__).resolve().parents[4] / "testdata" / "probes" / "fixtures" / "multitrack.mkv.json"
+)
+
+
+AAC = [(1, "encode", "aac", 160), (2, "encode", "aac", 160), (3, "encode", "aac", 160)]
+OPUS = [(n, "encode", "libopus", 160) for n in (1, 2, 3)]
+AC3_PASSTHRU = [(1, "passthru", "ac3", None), *AAC]
+
+
+@pytest.mark.parametrize(
+    ("preset_id", "expected"),
+    [
+        # jpn AC-3 5.1 (192 kb/s), eng AAC 2.0, eng AAC 2.0 (no bit rate in the MKV)
+        ("h265-mkv-1080p", AAC),
+        ("hq-1080p30-surround", AC3_PASSTHRU),
+        ("vp9-mkv-1080p", OPUS),
+        ("h265-nvenc-1080p", AAC),
+    ],
+)
+def test_m2_draft_of_the_multitrack_fixture(
+    preset_id: str, expected: list[tuple[int, str, str, int | None]]
+) -> None:
+    """What an M2 draft (decision 0018, C-12 ``draft_tracks``) does with the audio of the
+    ``multitrack`` fixture: HandBrake re-encodes to AAC / Opus stereo and passes AC-3 5.1
+    through only in the Surround presets (plus an AAC stereo copy of it)."""
+    import json
+
+    from reframe.batch import draft_tracks
+    from reframe.models import SourceFingerprint
+    from reframe.probe import parse_ffprobe
+
+    source = parse_ffprobe(
+        json.loads(MULTITRACK.read_text("utf-8")),
+        Path("/media/multitrack.mkv"),
+        fingerprint=SourceFingerprint(size=0, mtime=0.0),
+    )
+    draft = draft_tracks(source, by_id(preset_id))
+    got = [(t.source_stream, t.action, t.encoder, t.bitrate) for t in draft.audio]
+    assert got == expected
+    assert all(t.mixdown in (None, "stereo") for t in draft.audio)
