@@ -5,6 +5,8 @@ The data lives in ``definitions/data/*.toml`` and is validated by Pydantic at lo
 
 from reframe.definitions.loader import load_definitions
 from reframe.definitions.models import (
+    AudioCodec,
+    AudioEncoderDef,
     Definitions,
     EncoderFamily,
     HardwareSetup,
@@ -15,6 +17,8 @@ from reframe.definitions.models import (
 )
 
 __all__ = [
+    "AudioCodec",
+    "AudioEncoderDef",
     "Definitions",
     "EncoderFamily",
     "HardwareSetup",

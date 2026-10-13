@@ -7,12 +7,13 @@ Detection runs in the background and never blocks the UI. States:
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import AwareDatetime, Field
 
 from reframe.models.base import ReframeModel
 
-__all__ = ["EncoderState", "EncoderStatus"]
+__all__ = ["CapabilitySnapshot", "EncoderState", "EncoderStatus"]
 
 
 class EncoderState(StrEnum):
@@ -46,3 +47,36 @@ class EncoderStatus(ReframeModel):
     """Private options this build supports (``ffmpeg -h encoder=<id>``)."""
     presets: list[str] = Field(default_factory=list)
     """Speed presets this build offers, if the encoder lists them."""
+
+
+class CapabilitySnapshot(ReframeModel):
+    """Every known encoder's status at one moment (C-4), plus the filters of the build.
+
+    The ``caps`` argument of ``build_plan`` (C-7) and ``validate`` (C-8). The capability
+    service returns one at once (from the cache, or all ``unknown``) and never blocks; a
+    finished detection replaces it and publishes ``capabilities.changed``.
+    """
+
+    encoders: dict[str, EncoderStatus] = Field(default_factory=dict)
+    """By encoder id: every video and audio encoder of the definitions (C-6)."""
+    filters: list[str] | None = None
+    """Filters in this FFmpeg build (``ffmpeg -filters``: ``libplacebo``, ``zscale``, …);
+    ``None`` until the list was read."""
+    ffmpeg: Path | None = None
+    """The ffmpeg binary these results belong to."""
+    ffmpeg_version: str | None = None
+    detecting: bool = False
+    """A detection is running; statuses may still change."""
+    from_cache: bool = False
+    """The statuses come from the cache and have not been checked again yet."""
+    checked_at: AwareDatetime | None = None
+    """When the last full detection ended."""
+
+    def status(self, encoder_id: str) -> EncoderStatus:
+        """The status of ``encoder_id``; ``unknown`` for an encoder that is not listed."""
+        found = self.encoders.get(encoder_id)
+        return found if found is not None else EncoderStatus(id=encoder_id)
+
+    def has_filter(self, name: str) -> bool | None:
+        """``True`` / ``False`` once the filter list was read, else ``None``."""
+        return None if self.filters is None else name in self.filters

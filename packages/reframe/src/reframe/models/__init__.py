@@ -21,7 +21,7 @@ from reframe.models.base import (
     Rational,
     ReframeModel,
 )
-from reframe.models.capabilities import EncoderState, EncoderStatus
+from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.defaults import (
     AudioCodecRule,
     AudioDefaults,
@@ -224,6 +224,7 @@ __all__ = [
     "BitrateSource",
     "BurnInBehaviour",
     "CapabilitiesChangedEvent",
+    "CapabilitySnapshot",
     "Chapter",
     "ChapterNamePolicy",
     "ChapterOptions",

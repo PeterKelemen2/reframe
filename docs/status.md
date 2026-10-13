@@ -1,6 +1,7 @@
 # Implementation status
 
-Last updated: 2026-10-11. Implementation is **paused** at the start of milestone M2.
+Last updated: 2026-10-13. Milestone M2 is in progress on branch `m2-encode-cli`
+([task breakdown](m2-breakdown.md)).
 
 This file says which parts of the plan (`docs/plan/`) are built. Update it in the same commit
 as each step that lands.
@@ -21,7 +22,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 |-----------|--------|-------|
 | M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
 | M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
-| M2 Encode from the CLI | **Not started** | Branch `m2-encode-cli` has one commit: the definitions contract stub (see C-6) |
+| M2 Encode from the CLI | **In progress** | Branch `m2-encode-cli`. The lead's contract ([m2-breakdown.md](m2-breakdown.md)) is committed; wave 1 = C-4, C-5, C-6, C-14, C-16 |
 | M3 – M10 | Not started | |
 
 ## Steps
@@ -36,7 +37,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
 | C-4 Encoder capabilities | Not started | |
 | C-5 Dimensions maths | Not started | Models only (`DimensionSettings`, `Geometry`, `CropRect`) |
-| C-6 Definitions | **Partial** | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli` only:** a contract stub (`VideoEncoderDef`, `load_definitions()`, data for libx264 and libx265). **Not started:** encoder data, option schema and option sets, audio encoders, containers, filters, the definitions linter |
+| C-6 Definitions | **Partial** | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli` only:** the M2 contract (`VideoEncoderDef` for every video encoder with hardware setup and fallback chain, `AudioEncoderDef` identities, `load_definitions()`). **Not started:** encoder data, option schema and option sets, audio encoders, containers, filters, the definitions linter |
 | C-7 Command builder | Not started | Models only (`EncodePlan`, `PlanStep`, `PlanFile`) |
 | C-8 Validation | Not started | Models only (`ValidationIssue`, `Fix`). `reframe.jsonpatch` (RFC 6902, for fixes) is done |
 | C-9 Presets and settings stores | Not started | Models only (`Preset`, `AppSettings`, migrations registry). The facade uses `AppSettings()` defaults |
@@ -140,5 +141,5 @@ cd frontend && npm run dev:web       # placeholder page only
 - **D-7**: follow the bundled layout of [0005](decisions/0005-tool-discovery-details.md)
   (`tools/ffmpeg/`, `tools/mkvtoolnix/`, `tools/mediainfo/`), and decide on
   `LIBVA_DRIVERS_PATH`.
-- **M2 plan** (not started): wave 1 = C-4, C-5, C-6, C-16, C-14; wave 2 = C-7, C-8, C-9;
-  wave 3 = C-11, C-15. C-4, C-6 and C-16 build on the definitions stub on `m2-encode-cli`.
+- **M2**: wave 1 = C-4, C-5, C-6, C-16, C-14; wave 2 = C-7, C-8, C-9; wave 3 = C-11, C-15
+  ([m2-breakdown.md](m2-breakdown.md)).

@@ -7,7 +7,7 @@ from functools import cache
 from importlib import resources
 from typing import Any
 
-from reframe.definitions.models import Definitions, VideoEncoderDef
+from reframe.definitions.models import AudioEncoderDef, Definitions, VideoEncoderDef
 
 __all__ = ["load_definitions"]
 
@@ -23,9 +23,12 @@ def _read(name: str) -> dict[str, Any]:
 @cache
 def load_definitions() -> Definitions:
     """The validated definitions. Cached; raises ``pydantic.ValidationError`` on bad data."""
-    raw = _read("video_encoders.toml")
-    encoders = {
+    video = {
         key: VideoEncoderDef.model_validate({"id": key, **value})
-        for key, value in raw.get("encoder", {}).items()
+        for key, value in _read("video_encoders.toml").get("encoder", {}).items()
     }
-    return Definitions(video_encoders=encoders)
+    audio = {
+        key: AudioEncoderDef.model_validate({"id": key, **value})
+        for key, value in _read("audio_encoders.toml").get("encoder", {}).items()
+    }
+    return Definitions(video_encoders=video, audio_encoders=audio)

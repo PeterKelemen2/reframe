@@ -1,0 +1,34 @@
+# Audio encoders (C-6). Table key = FFmpeg encoder name.
+#
+# M2 contract (docs/m2-breakdown.md): identity only, so that C-4 lists every audio encoder in
+# the capability snapshot. C-6 owns this file and adds bitrates per mixdown, allowed bitrate
+# values, sample rates and passthru data. libfdk_aac is not in the GPL builds; it is listed so
+# that a preset that names it gets "not in this build" instead of "unknown encoder".
+
+[encoder.aac]
+label = "AAC"
+codec = "aac"
+
+[encoder.libfdk_aac]
+label = "AAC (FDK)"
+codec = "aac"
+
+[encoder.ac3]
+label = "AC-3"
+codec = "ac3"
+
+[encoder.eac3]
+label = "E-AC-3"
+codec = "eac3"
+
+[encoder.libopus]
+label = "Opus"
+codec = "opus"
+
+[encoder.flac]
+label = "FLAC"
+codec = "flac"
+
+[encoder.libmp3lame]
+label = "MP3"
+codec = "mp3"

@@ -23,10 +23,13 @@ from reframe.models import (
     AudioOutputTrack,
     BitrateInfo,
     BitrateSource,
+    CapabilitySnapshot,
     ChapterRange,
     Disposition,
     DocumentModel,
     EncodePlan,
+    EncoderState,
+    EncoderStatus,
     Event,
     ExternalSubtitle,
     FieldOrder,
@@ -481,3 +484,15 @@ def test_plan_files_for_generated_chapters() -> None:
     assert again.files == [chapters]
     assert again.files[0].content.startswith(";FFMETADATA1\n")
     assert EncodePlan.model_validate({**plan.model_dump(mode="json"), "files": []}).files == []
+
+
+def test_capability_snapshot_lookups() -> None:
+    snapshot = CapabilitySnapshot(
+        encoders={"libx265": EncoderStatus(id="libx265", state=EncoderState.AVAILABLE)},
+        filters=["zscale"],
+    )
+    assert snapshot.status("libx265").state is EncoderState.AVAILABLE
+    assert snapshot.status("hevc_nvenc") == EncoderStatus(id="hevc_nvenc")
+    assert snapshot.has_filter("zscale") is True
+    assert snapshot.has_filter("libplacebo") is False
+    assert CapabilitySnapshot().has_filter("zscale") is None

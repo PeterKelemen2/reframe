@@ -364,3 +364,38 @@ mkvpropedit out.mkv --edit track:a1 --set language-ietf=pt-BR ; mkvmerge -J out.
   MediaInfo. This matters for `C-3` (source language) and `C-13` (re-probe after a metadata
   edit); it is decided with `C-13`.
 
+
+### Hardware setup of the encoder definitions (M2 contract)
+
+Checked on 2026-10-13 with `/usr/bin/ffmpeg` (Arch n9.0.2) on the machine above (AMD RX 7600,
+no NVIDIA, no Intel GPU), encoding 3 frames to `-f null -`:
+
+```sh
+ffmpeg -hide_banner -nostdin -v error -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va \
+  -f lavfi -i color=size=640x360 -frames:v 3 -vf format=p010le,hwupload -c:v hevc_vaapi -profile:v main10 -f null -
+ffmpeg -hide_banner -nostdin -v error -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt p010le -c:v hevc_amf -f null -
+```
+
+| Encoder | Setup | 8-bit | 10-bit |
+|---------|-------|-------|--------|
+| `h264_vaapi`, `hevc_vaapi`, `av1_vaapi` | `-init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va`, `-vf format=nv12\|p010le,hwupload` | exit 0 | exit 0 (`hevc`, `av1`) |
+| `hevc_amf`, `av1_amf` | none, software frames (`-pix_fmt yuv420p` / `p010le`) | exit 0 | exit 0 |
+| `h264_amf` | none | exit 0 | exit 183: `10-bit input video is not supported by AMF H264 encoder` |
+| `hevc_nvenc` | none | exit 255: `Cannot load libcuda.so.1` | not run |
+| `hevc_qsv` | `-init_hw_device qsv=hw -filter_hw_device hw`, `-vf hwupload=extra_hw_frames=64,format=qsv` | exit 187: `Device creation failed: -542398533.` | not run |
+| `libsvtav1`, `libvpx-vp9` | software, `-pix_fmt yuv420p10le` | exit 0 | exit 0 |
+
+`libsvtav1` prints `Svt[info]: …` lines on stderr even with `-v error` (the SVT library logs on
+its own). The QSV setup is the plan's; it is not verified on an Intel GPU.
+
+### Encoder detection (C-4)
+
+Nothing recorded yet.
+
+### Encoder definitions (C-6)
+
+Nothing recorded yet.
+
+### Sleep inhibit (C-14)
+
+Nothing recorded yet.

@@ -1,5 +1,28 @@
-# Video encoders (C-6). Contract stub: two software encoders only; C-6 adds the rest.
-# Table key = FFmpeg encoder name.
+# Video encoders (C-6). Table key = FFmpeg encoder name.
+#
+# M2 contract (docs/m2-breakdown.md): the lead wrote the identity, platforms, pixel formats,
+# hardware setup and fallback chain of every encoder before wave 1, so that C-4 can run its
+# hardware test encodes on real data. C-6 owns this file from now on and adds the rest
+# (rate control, presets, tunes, profiles, levels, options, quality conversion).
+#
+# Hardware setup, checked with FFmpeg n9.0.2 (Arch package and the pinned BtbN build) on
+# Linux with an AMD Navi 33 GPU (Mesa radeonsi VAAPI, AMF), 2026-10-13, encoding 3 frames of
+# `-f lavfi -i color=size=640x360` to `-f null -`:
+#   VAAPI: `-init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va` and
+#          `-vf format=nv12,hwupload` (8-bit) / `format=p010le,hwupload` (10-bit): h264, hevc
+#          and av1 (8 and 10-bit) exit 0.
+#   AMF:   no setup, software frames (`-pix_fmt yuv420p` / `p010le`): hevc and av1 (8 and
+#          10-bit) and h264 (8-bit) exit 0. h264 10-bit fails: "10-bit input video is not
+#          supported by AMF H264 encoder".
+#   NVENC: no setup; with no NVIDIA driver: "Cannot load libcuda.so.1" (exit 255).
+#   QSV:   `-init_hw_device qsv=hw` fails without an Intel GPU ("Device creation failed:
+#          -542398533."). The QSV setup below is the plan's (05 §C-6) and is NOT verified on
+#          a machine with QSV yet.
+# Placeholders: {vaapi_device} (default /dev/dri/renderD128), {sw_pix_fmt} (pix_fmts below).
+#
+# Fallback chains (05 §C-4): the same codec on the other hardware families, then software.
+
+# --------------------------------------------------------------------------- software
 
 [encoder.libx264]
 label = "x264"
@@ -18,3 +41,168 @@ handbrake_key = "x265"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+
+[encoder.libsvtav1]
+label = "SVT-AV1"
+codec = "av1"
+codec_label = "AV1"
+handbrake_key = "svt_av1"
+family = "software"
+hardware = false
+pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+
+[encoder.libvpx-vp9]
+label = "VP9"
+codec = "vp9"
+codec_label = "VP9"
+handbrake_key = "VP9"
+family = "software"
+hardware = false
+pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+
+# --------------------------------------------------------------------------- NVIDIA NVENC
+
+[encoder.h264_nvenc]
+label = "NVIDIA NVENC H.264"
+codec = "h264"
+codec_label = "H.264"
+handbrake_key = "nvenc_h264"
+family = "nvenc"
+hardware = true
+vendor = "nvidia"
+# 10-bit H.264 needs a recent GPU: the 10-bit test encode (C-4) decides.
+pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
+fallback = ["h264_qsv", "h264_amf", "h264_vaapi", "libx264"]
+
+[encoder.hevc_nvenc]
+label = "NVIDIA NVENC H.265"
+codec = "hevc"
+codec_label = "H.265"
+handbrake_key = "nvenc_h265"
+family = "nvenc"
+hardware = true
+vendor = "nvidia"
+pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
+fallback = ["hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265"]
+
+[encoder.av1_nvenc]
+label = "NVIDIA NVENC AV1"
+codec = "av1"
+codec_label = "AV1"
+handbrake_key = "nvenc_av1"
+family = "nvenc"
+hardware = true
+vendor = "nvidia"
+pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
+fallback = ["av1_qsv", "av1_amf", "av1_vaapi", "libsvtav1"]
+
+# --------------------------------------------------------------------------- Intel QSV
+
+[encoder.h264_qsv]
+label = "Intel QSV H.264"
+codec = "h264"
+codec_label = "H.264"
+handbrake_key = "qsv_h264"
+family = "qsv"
+hardware = true
+vendor = "intel"
+pix_fmts = { "8" = "nv12" }
+hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
+fallback = ["h264_nvenc", "h264_amf", "h264_vaapi", "libx264"]
+
+[encoder.hevc_qsv]
+label = "Intel QSV H.265"
+codec = "hevc"
+codec_label = "H.265"
+handbrake_key = "qsv_h265"
+family = "qsv"
+hardware = true
+vendor = "intel"
+pix_fmts = { "8" = "nv12", "10" = "p010le" }
+hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
+fallback = ["hevc_nvenc", "hevc_amf", "hevc_vaapi", "libx265"]
+
+[encoder.av1_qsv]
+label = "Intel QSV AV1"
+codec = "av1"
+codec_label = "AV1"
+handbrake_key = "qsv_av1"
+family = "qsv"
+hardware = true
+vendor = "intel"
+pix_fmts = { "8" = "nv12", "10" = "p010le" }
+hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
+fallback = ["av1_nvenc", "av1_amf", "av1_vaapi", "libsvtav1"]
+
+# --------------------------------------------------------------------------- AMD AMF
+
+[encoder.h264_amf]
+label = "AMD AMF H.264"
+codec = "h264"
+codec_label = "H.264"
+handbrake_key = "vce_h264"
+family = "amf"
+hardware = true
+vendor = "amd"
+pix_fmts = { "8" = "nv12" }
+fallback = ["h264_nvenc", "h264_qsv", "h264_vaapi", "libx264"]
+
+[encoder.hevc_amf]
+label = "AMD AMF H.265"
+codec = "hevc"
+codec_label = "H.265"
+handbrake_key = "vce_h265"
+family = "amf"
+hardware = true
+vendor = "amd"
+pix_fmts = { "8" = "nv12", "10" = "p010le" }
+fallback = ["hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
+
+[encoder.av1_amf]
+label = "AMD AMF AV1"
+codec = "av1"
+codec_label = "AV1"
+handbrake_key = "vce_av1"
+family = "amf"
+hardware = true
+vendor = "amd"
+pix_fmts = { "8" = "nv12", "10" = "p010le" }
+fallback = ["av1_nvenc", "av1_qsv", "av1_vaapi", "libsvtav1"]
+
+# --------------------------------------------------------------------------- VAAPI (Linux)
+
+[encoder.h264_vaapi]
+label = "VAAPI H.264"
+codec = "h264"
+codec_label = "H.264"
+handbrake_key = "vaapi_h264"
+family = "vaapi"
+hardware = true
+platforms = ["linux"]
+pix_fmts = { "8" = "nv12" }
+hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
+fallback = ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]
+
+[encoder.hevc_vaapi]
+label = "VAAPI H.265"
+codec = "hevc"
+codec_label = "H.265"
+handbrake_key = "vaapi_h265"
+family = "vaapi"
+hardware = true
+platforms = ["linux"]
+pix_fmts = { "8" = "nv12", "10" = "p010le" }
+hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
+fallback = ["hevc_nvenc", "hevc_qsv", "hevc_amf", "libx265"]
+
+[encoder.av1_vaapi]
+label = "VAAPI AV1"
+codec = "av1"
+codec_label = "AV1"
+handbrake_key = "vaapi_av1"
+family = "vaapi"
+hardware = true
+platforms = ["linux"]
+pix_fmts = { "8" = "nv12", "10" = "p010le" }
+hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
+fallback = ["av1_nvenc", "av1_qsv", "av1_amf", "libsvtav1"]

@@ -1268,6 +1268,105 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[CapabilitySnapshot]
+  dict({
+    '$defs': list([
+      'EncoderState',
+      'EncoderStatus',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      Every known encoder's status at one moment (C-4), plus the filters of the build.
+      
+      The ``caps`` argument of ``build_plan`` (C-7) and ``validate`` (C-8). The capability
+      service returns one at once (from the cache, or all ``unknown``) and never blocks; a
+      finished detection replaces it and publishes ``capabilities.changed``.
+    ''',
+    'properties': dict({
+      'checked_at': dict({
+        'anyOf': list([
+          dict({
+            'format': 'date-time',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'When the last full detection ended.',
+        'title': 'Checked At',
+      }),
+      'detecting': dict({
+        'default': False,
+        'description': 'A detection is running; statuses may still change.',
+        'title': 'Detecting',
+        'type': 'boolean',
+      }),
+      'encoders': dict({
+        'additionalProperties': dict({
+          '$ref': '#/$defs/EncoderStatus',
+        }),
+        'description': 'By encoder id: every video and audio encoder of the definitions (C-6).',
+        'title': 'Encoders',
+        'type': 'object',
+      }),
+      'ffmpeg': dict({
+        'anyOf': list([
+          dict({
+            'format': 'path',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The ffmpeg binary these results belong to.',
+        'title': 'Ffmpeg',
+      }),
+      'ffmpeg_version': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Ffmpeg Version',
+      }),
+      'filters': dict({
+        'anyOf': list([
+          dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Filters in this FFmpeg build (``ffmpeg -filters``: ``libplacebo``, ``zscale``, …);
+          ``None`` until the list was read.
+        ''',
+        'title': 'Filters',
+      }),
+      'from_cache': dict({
+        'default': False,
+        'description': 'The statuses come from the cache and have not been checked again yet.',
+        'title': 'From Cache',
+        'type': 'boolean',
+      }),
+    }),
+    'title': 'CapabilitySnapshot',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ChapterNamePolicy]
   dict({
     '$defs': list([

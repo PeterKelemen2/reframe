@@ -33,3 +33,48 @@ def test_unknown_fields_are_rejected() -> None:
                 "typo_field": 1,
             }
         )
+
+
+def test_every_video_encoder_of_the_m2_contract_is_defined() -> None:
+    expected = {
+        "libx264",
+        "libx265",
+        "libsvtav1",
+        "libvpx-vp9",
+        *(
+            f"{codec}_{family}"
+            for codec in ("h264", "hevc", "av1")
+            for family in ("nvenc", "qsv", "amf", "vaapi")
+        ),
+    }
+    assert set(load_definitions().video_encoders) == expected
+
+
+def test_fallback_chains_name_known_encoders_and_end_in_software() -> None:
+    encoders = load_definitions().video_encoders
+    for encoder in encoders.values():
+        assert encoder.hardware == (encoder.family != "software"), encoder.id
+        if not encoder.hardware:
+            assert encoder.fallback == [], encoder.id
+            continue
+        assert encoder.fallback, encoder.id
+        assert all(step in encoders for step in encoder.fallback), encoder.id
+        assert encoder.id not in encoder.fallback, encoder.id
+        assert not encoders[encoder.fallback[-1]].hardware, encoder.id
+        assert all(encoders[step].codec == encoder.codec for step in encoder.fallback), encoder.id
+
+
+def test_vaapi_is_linux_only_and_uploads_frames() -> None:
+    for encoder in load_definitions().video_encoders.values():
+        if encoder.family != "vaapi":
+            continue
+        assert encoder.platforms == ["linux"]
+        assert encoder.hardware_setup is not None
+        assert encoder.hardware_setup.filter_tail == ["format={sw_pix_fmt}", "hwupload"]
+
+
+def test_audio_encoders_have_labels() -> None:
+    audio = load_definitions().audio_encoders
+    assert {"aac", "ac3", "eac3", "libopus", "flac", "libmp3lame", "libfdk_aac"} <= set(audio)
+    assert audio["ac3"].label == "AC-3"
+    assert audio["libopus"].codec == "opus"

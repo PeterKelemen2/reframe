@@ -1,14 +1,16 @@
 """Definition schemas (C-6), validated by Pydantic when the TOML data is loaded.
 
 M2 contract stub, written by the lead before M2 wave 1 so that C-4 (encoder detection),
-C-6 (definitions) and C-16 (naming) can work in parallel:
+C-6 (definitions) and C-16 (naming) can work in parallel (``docs/m2-breakdown.md``):
 
 - C-6 owns this module and the data. It may **add** models and fields, but must not rename,
   remove or retype the fields below.
 - C-4 reads ``VideoEncoderDef`` (``id``, ``hardware``, ``family``, ``vendor``,
   ``platforms``, ``pix_fmts``, ``hardware_setup``, ``fallback``) for the hardware test
-  encodes and ``closest_available()``.
-- C-16 reads ``codec_label`` (``{codec}``) and ``handbrake_key`` (``{encoder}``).
+  encodes and ``closest_available()``, and the ids of ``AudioEncoderDef`` for the
+  capability snapshot.
+- C-16 reads ``codec_label`` (``{codec}``) and ``handbrake_key`` (``{encoder}``), and the
+  audio ``label`` (``{acodec}``).
 
 Placeholders in argument lists are ``{name}`` strings that the caller resolves, for example
 ``{vaapi_device}`` (default ``/dev/dri/renderD128``) and ``{sw_pix_fmt}`` (the software pixel
@@ -24,6 +26,8 @@ from pydantic import Field
 from reframe.models.base import ReframeModel
 
 __all__ = [
+    "AudioCodec",
+    "AudioEncoderDef",
     "Definitions",
     "EncoderFamily",
     "HardwareSetup",
@@ -37,6 +41,7 @@ EncoderFamily = Literal["software", "nvenc", "qsv", "amf", "vaapi"]
 """Picker group (03 §Video): Software, NVIDIA NVENC, Intel QSV, AMD AMF, VAAPI."""
 Vendor = Literal["nvidia", "intel", "amd"]
 VideoCodec = Literal["h264", "hevc", "av1", "vp9", "mpeg2", "mpeg4"]
+AudioCodec = Literal["aac", "ac3", "eac3", "opus", "flac", "mp3"]
 OperatingSystem = Literal["linux", "windows", "macos"]
 _ALL_PLATFORMS: list[OperatingSystem] = ["linux", "windows"]
 
@@ -77,8 +82,19 @@ class VideoEncoderDef(ReframeModel):
     encoder (the C-6 linter checks it)."""
 
 
+class AudioEncoderDef(ReframeModel):
+    """One FFmpeg audio encoder that Reframe knows. C-6 adds bitrates, mixdowns, sample
+    rates and passthru data."""
+
+    id: str
+    """The FFmpeg encoder name: ``aac``, ``libopus``."""
+    label: str
+    """Display name and ``{acodec}``: ``AAC``, ``AC-3``, ``Opus``."""
+    codec: AudioCodec
+
+
 class Definitions(ReframeModel):
-    """Everything in ``definitions/data``. C-6 adds audio encoders, options, containers and
-    filters."""
+    """Everything in ``definitions/data``. C-6 adds options, containers and filters."""
 
     video_encoders: dict[str, VideoEncoderDef] = Field(default_factory=dict)
+    audio_encoders: dict[str, AudioEncoderDef] = Field(default_factory=dict)
