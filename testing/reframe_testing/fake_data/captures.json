@@ -265,6 +265,53 @@
     "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
     "stderr": "c4_hevc_vaapi_10bit_ok.stderr.txt"
   },
+  "c4_libplacebo_no_vulkan": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "1",
+      "-vf",
+      "libplacebo",
+      "-f",
+      "null",
+      "-"
+    ],
+    "env": {
+      "VK_ICD_FILENAMES": "/nonexistent/icd.json"
+    },
+    "exit_code": 187,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "c4_libplacebo_no_vulkan.stderr.txt"
+  },
+  "c4_libplacebo_ok": {
+    "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=size=640x360",
+      "-frames:v",
+      "1",
+      "-vf",
+      "libplacebo",
+      "-f",
+      "null",
+      "-"
+    ],
+    "exit_code": 0,
+    "machine": "Linux 7.2.8-1-cachyos (Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600] (rev cf))",
+    "stderr": "c4_libplacebo_ok.stderr.txt"
+  },
   "encoders": {
     "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
     "command": [

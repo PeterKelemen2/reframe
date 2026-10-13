@@ -33,6 +33,8 @@ AVAILABLE = EncoderState.AVAILABLE
 CHECKING = EncoderState.CHECKING
 UNKNOWN = EncoderState.UNKNOWN
 GPU = "linux; drm 0x1002:0x7480 amdgpu; nvidia none"
+NODE = "/dev/dri/renderD128"
+OTHER_NODE = "/dev/dri/renderD129"
 
 
 async def until(condition: Callable[[], bool], limit: float = 15.0) -> None:
@@ -72,6 +74,7 @@ class Harness:
         self.events = EventBus()
         self.subscription = self.events.subscribe()
         self.tools = StubTools(tool_set(ffmpeg_info(fake.ffmpeg)))
+        self.nodes = [NODE]
         self.service = self.make(**kw)
 
     def make(self, **kw: Any) -> CapabilityService:
@@ -81,7 +84,7 @@ class Harness:
             lambda: self.settings,
             cache_dir=self.cache_dir,
             platform="linux",
-            **{"gpu_fingerprint": lambda: GPU, **kw},
+            **{"gpu_fingerprint": lambda: GPU, "render_nodes": lambda: self.nodes, **kw},
         )
 
     async def close(self) -> None:
@@ -460,3 +463,103 @@ async def test_tool_discovery_closed_under_the_detection(harness: Harness) -> No
     snapshot = await harness.service.wait()
     assert {s.state for s in snapshot.encoders.values()} == {UNKNOWN}
     assert harness.fake.calls() == []
+
+
+# --------------------------------------------------------------------------- VAAPI, libplacebo
+
+
+def no_driver_on(node: str) -> ft.Rule:
+    """The real "no VA driver" failure for every VAAPI test encode on ``node``."""
+    capture = ft.captures()["c4_h264_vaapi_no_driver"]
+    assert capture.stderr is not None
+    return ft.Rule(
+        actions=[ft.stderr_data(capture.stderr)],
+        exit_code=capture.exit_code,
+        argv_contains=[f"vaapi=va:{node}"],
+    )
+
+
+def vaapi_nodes_used(fake: ft.FakeTools) -> set[str]:
+    return {
+        arg.removeprefix("vaapi=va:")
+        for call in encode_calls(fake)
+        for arg in call
+        if arg.startswith("vaapi=va:")
+    }
+
+
+async def test_every_render_node_is_tried(harness: Harness, fake_tools: ft.FakeTools) -> None:
+    harness.nodes = [NODE, OTHER_NODE]
+    fake_tools.set_scenario(ft.Scenario([no_driver_on(NODE)]))
+    final = await harness.service.wait()
+    for encoder in ("h264_vaapi", "hevc_vaapi", "av1_vaapi"):
+        status = final.status(encoder)
+        assert (status.state, status.device) == (AVAILABLE, OTHER_NODE), status
+    assert vaapi_nodes_used(fake_tools) == {NODE, OTHER_NODE}
+
+
+async def test_the_setting_forces_one_node(harness: Harness, fake_tools: ft.FakeTools) -> None:
+    harness.nodes = [NODE, OTHER_NODE]
+    harness.settings.encoders.vaapi_device = OTHER_NODE
+    final = await harness.service.wait()
+    assert final.status("hevc_vaapi").device == OTHER_NODE
+    assert vaapi_nodes_used(fake_tools) == {OTHER_NODE}
+
+
+async def test_the_setting_and_the_nodes_are_in_the_cache_key(
+    harness: Harness, fake_tools: ft.FakeTools
+) -> None:
+    await harness.service.wait()
+    await harness.service.close()
+
+    async def second_start() -> bool:
+        """Start again; was the first snapshot after tool discovery from the cache?"""
+        drain(harness.subscription)
+        harness.service = harness.make()
+        harness.service.start()
+        await harness.service.wait()
+        events = changed(drain(harness.subscription))
+        cached = {s.state for s in events[0].encoders} != {CHECKING}
+        await harness.service.close()
+        return cached
+
+    assert await second_start()  # same setting, same nodes: from the cache
+    harness.settings.encoders.vaapi_device = OTHER_NODE
+    assert not await second_start()  # the setting changed
+    harness.settings.encoders.vaapi_device = None
+    harness.nodes = [NODE, OTHER_NODE]
+    assert not await second_start()  # another node appeared
+    assert await second_start()
+
+
+async def test_libplacebo_result_is_in_the_snapshot(
+    harness: Harness, fake_tools: ft.FakeTools
+) -> None:
+    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    assert capture.stderr is not None
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    argv_has=["-vf", "libplacebo"],
+                    actions=[ft.sleep(0.5), ft.stderr_data(capture.stderr)],
+                    exit_code=capture.exit_code,
+                )
+            ]
+        )
+    )
+    first = await harness.service.wait()
+    assert first.usable_filter("libplacebo") is False
+    assert first.filter_failures["libplacebo"].startswith("No working Vulkan driver")
+    # a re-scan keeps the last filter results until the new ones are in
+    rescan = asyncio.ensure_future(harness.service.rescan())
+    await until(lambda: harness.service.snapshot.status("libx265").state is CHECKING)
+    assert harness.service.snapshot.usable_filter("libplacebo") is False
+    await rescan
+
+
+async def test_libplacebo_untested_with_hardware_tests_off(harness: Harness) -> None:
+    harness.settings.encoders.hardware_tests = False
+    final = await harness.service.wait()
+    assert final.usable_filter("libplacebo") is None
+    assert final.untested_filters == ["libplacebo"]

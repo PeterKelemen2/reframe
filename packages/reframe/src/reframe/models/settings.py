@@ -49,6 +49,10 @@ class ToolPaths(DocumentModel):
 class EncoderSettings(DocumentModel):
     hardware_tests: bool = True
     """Run the hardware test encodes (C-4). Off: hardware encoders stay "unknown"."""
+    vaapi_device: str | None = None
+    """The VAAPI render node to use (``/dev/dri/renderD129``). ``None`` or empty = automatic:
+    detection tests the VAAPI encoders on every ``/dev/dri/renderD*`` node and each encoder
+    uses the first node where it works (decision 0020)."""
 
 
 class OutputDefaults(DocumentModel):

@@ -12,6 +12,14 @@ encoder definitions and §Encoder detection)::
   ``/dev/dri/renderD128``) and ``{sw_pix_fmt}`` (the encoder's ``pix_fmts`` for the bit depth).
 - Without a filter tail (NVENC, AMF: software frames), ``-pix_fmt <sw_pix_fmt>``.
 - The 10-bit test is the same command with ``pix_fmts["10"]``.
+- VAAPI encoders (a hardware setup with ``{vaapi_device}``) are tested on every render node,
+  or on the node that Settings → Encoders forces (decision 0020): see
+  :mod:`reframe.capabilities.detect`.
+
+**Filter run tests.** ``libplacebo`` is listed by ``ffmpeg -filters`` but fails without a
+working Vulkan device, so one frame goes through it (:data:`FILTER_TESTS`)::
+
+    ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 1 -vf libplacebo -f null -
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ from reframe.tools import CancelToken, run
 
 __all__ = [
     "DEFAULT_VAAPI_DEVICE",
+    "FILTER_TESTS",
     "TEST_FRAMES",
     "TEST_MAX_OUTPUT",
     "TEST_SOURCE",
@@ -36,9 +45,12 @@ __all__ = [
     "BitDepth",
     "DefinitionError",
     "TestOutcome",
+    "filter_test_argv",
     "hardware_test_argv",
     "resolve_placeholders",
+    "run_filter_test",
     "run_hardware_test",
+    "uses_vaapi_device",
 ]
 
 DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
@@ -51,6 +63,11 @@ TEST_MAX_OUTPUT = 2**20
 
 BitDepth = Literal["8", "10"]
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+_VAAPI_PLACEHOLDER = "{vaapi_device}"
+
+#: Filters that ``ffmpeg -filters`` lists but that need a run test, with the ``-vf`` value of
+#: the test: ``libplacebo`` needs a working Vulkan device.
+FILTER_TESTS: Mapping[str, str] = {"libplacebo": "libplacebo"}
 
 
 class DefinitionError(ValueError):
@@ -68,6 +85,14 @@ def resolve_placeholders(arg: str, values: Mapping[str, str]) -> str:
         return values[name]
 
     return _PLACEHOLDER.sub(replace, arg)
+
+
+def uses_vaapi_device(encoder: VideoEncoderDef) -> bool:
+    """The hardware setup names ``{vaapi_device}``: the encoder runs on a render node."""
+    setup = encoder.hardware_setup
+    if setup is None:
+        return False
+    return any(_VAAPI_PLACEHOLDER in arg for arg in (*setup.init_args, *setup.filter_tail))
 
 
 def hardware_test_argv(
@@ -120,6 +145,55 @@ class TestOutcome:
     argv: tuple[str, ...] = ()
 
 
+def filter_test_argv(ffmpeg: str | Path, name: str) -> list[str]:
+    """The run test of the filter ``name`` (a key of :data:`FILTER_TESTS`). Pure."""
+    return [
+        str(ffmpeg),
+        "-hide_banner",
+        "-nostdin",
+        "-f",
+        "lavfi",
+        "-i",
+        TEST_SOURCE,
+        "-frames:v",
+        "1",
+        "-vf",
+        FILTER_TESTS[name],
+        "-f",
+        "null",
+        "-",
+    ]
+
+
+async def _run_test(
+    argv: list[str],
+    ctx: TestContext,
+    *,
+    what: str,
+    timeout: float,  # noqa: ASYNC109 - passed to run()
+    cancel: CancelToken | None,
+    extra_env: Mapping[str, str] | None,
+) -> TestOutcome:
+    result = await run(
+        argv, timeout=timeout, cancel=cancel, max_output=TEST_MAX_OUTPUT, extra_env=extra_env
+    )
+
+    def outcome(failure: Failure | None = None, *, cancelled: bool = False) -> TestOutcome:
+        ok = failure is None and not cancelled
+        return TestOutcome(ok, failure, cancelled, result.duration, tuple(argv))
+
+    if result.cancelled:
+        return outcome(cancelled=True)
+    if result.error is not None:
+        return outcome(Failure(EncoderState.ERROR, f"FFmpeg could not be started: {result.error}"))
+    if result.timed_out:
+        reason = f"{what} did not finish within {timeout:g} s"
+        return outcome(Failure(EncoderState.ERROR, reason))
+    if result.returncode == 0:
+        return outcome()
+    return outcome(explain_failure(result.stderr_text, ctx, returncode=result.returncode))
+
+
 async def run_hardware_test(
     ffmpeg: str | Path,
     encoder: VideoEncoderDef,
@@ -136,25 +210,33 @@ async def run_hardware_test(
     except DefinitionError as exc:
         reason = f"The encoder definition is broken: {exc}"
         return TestOutcome(ok=False, failure=Failure(EncoderState.ERROR, reason))
-    result = await run(
-        argv, timeout=timeout, cancel=cancel, max_output=TEST_MAX_OUTPUT, extra_env=extra_env
-    )
-
-    def outcome(failure: Failure | None = None, *, cancelled: bool = False) -> TestOutcome:
-        ok = failure is None and not cancelled
-        return TestOutcome(ok, failure, cancelled, result.duration, tuple(argv))
-
-    if result.cancelled:
-        return outcome(cancelled=True)
-    if result.error is not None:
-        return outcome(Failure(EncoderState.ERROR, f"FFmpeg could not be started: {result.error}"))
-    if result.timed_out:
-        reason = f"The test encode did not finish within {timeout:g} s"
-        return outcome(Failure(EncoderState.ERROR, reason))
-    if result.returncode == 0:
-        return outcome()
-    device = vaapi_device if encoder.family == "vaapi" else None
     ctx = TestContext(
-        encoder=encoder.id, family=encoder.family, codec_label=encoder.codec_label, device=device
+        encoder=encoder.id,
+        family=encoder.family,
+        codec_label=encoder.codec_label,
+        device=vaapi_device if uses_vaapi_device(encoder) else None,
     )
-    return outcome(explain_failure(result.stderr_text, ctx, returncode=result.returncode))
+    return await _run_test(
+        argv, ctx, what="The test encode", timeout=timeout, cancel=cancel, extra_env=extra_env
+    )
+
+
+async def run_filter_test(
+    ffmpeg: str | Path,
+    name: str,
+    *,
+    timeout: float = TEST_TIMEOUT,  # noqa: ASYNC109 - passed to run()
+    cancel: CancelToken | None = None,
+    extra_env: Mapping[str, str] | None = None,
+) -> TestOutcome:
+    """Run one frame through the filter ``name`` and explain a failure. Never raises for
+    FFmpeg problems."""
+    ctx = TestContext(encoder=name, family="filter")
+    return await _run_test(
+        filter_test_argv(ffmpeg, name),
+        ctx,
+        what=f"The {name} test",
+        timeout=timeout,
+        cancel=cancel,
+        extra_env=extra_env,
+    )

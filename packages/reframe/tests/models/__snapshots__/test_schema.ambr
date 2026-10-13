@@ -1337,6 +1337,18 @@
         'default': None,
         'title': 'Ffmpeg Version',
       }),
+      'filter_failures': dict({
+        'additionalProperties': dict({
+          'type': 'string',
+        }),
+        'description': '''
+          Filters of the build whose run test failed, with the reason. ``libplacebo`` is listed
+          by ``ffmpeg -filters`` but needs a working Vulkan device, so detection runs one frame
+          through it ("No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)").
+        ''',
+        'title': 'Filter Failures',
+        'type': 'object',
+      }),
       'filters': dict({
         'anyOf': list([
           dict({
@@ -1361,6 +1373,17 @@
         'description': 'The statuses come from the cache and have not been checked again yet.',
         'title': 'From Cache',
         'type': 'boolean',
+      }),
+      'untested_filters': dict({
+        'description': '''
+          Filters of the build that need a run test that has not passed or failed: while the
+          detection runs, or when hardware tests are off (Settings → Encoders).
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Untested Filters',
+        'type': 'array',
       }),
     }),
     'title': 'CapabilitySnapshot',
@@ -2397,6 +2420,23 @@
         'title': 'Hardware Tests',
         'type': 'boolean',
       }),
+      'vaapi_device': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The VAAPI render node to use (``/dev/dri/renderD129``). ``None`` or empty = automatic:
+          detection tests the VAAPI encoders on every ``/dev/dri/renderD*`` node and each encoder
+          uses the first node where it works (decision 0020).
+        ''',
+        'title': 'Vaapi Device',
+      }),
     }),
     'title': 'EncoderSettings',
     'type': 'object',
@@ -2450,6 +2490,24 @@
         'default': None,
         'description': 'The FFmpeg line the reason was derived from (for the log and bug reports).',
         'title': 'Detail',
+      }),
+      'device': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The device the encoder works on, for encoders that need one: the VAAPI render node
+          (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
+          Settings → Encoders forces (decision 0020). The command builder (C-7) uses it. ``None``
+          for encoders without a device choice and for encoders that are not available.
+        ''',
+        'title': 'Device',
       }),
       'hardware': dict({
         'default': False,

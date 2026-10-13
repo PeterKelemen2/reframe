@@ -96,6 +96,24 @@
         "string": "Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
       }
     ],
+    "Failed creating instance: %s": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed creating instance: %s"
+      }
+    ],
+    "Failed creating logical device": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed creating logical device!"
+      }
+    ],
+    "Failed initializing vulkan device": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed initializing vulkan device"
+      }
+    ],
     "Failed to create  hardware device context (AMF)": [
       {
         "file": "lib/libavcodec.so.63.1.102",
@@ -122,6 +140,12 @@
       {
         "file": "bin/ffmpeg",
         "string": "Failed to set value '%s' for option '%s': %s\n"
+      }
+    ],
+    "Found no suitable device, giving up.": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Found no suitable device, giving up."
       }
     ],
     "MFX_ERR_UNSUPPORTED": [],
@@ -166,6 +190,12 @@
       {
         "file": "lib/libavcodec.so.63.1.102",
         "string": "The minimum required Nvidia driver for nvenc is %s or newer\n"
+      }
+    ],
+    "Vulkan device does not support all required features": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Vulkan device does not support all required features!"
       }
     ],
     "libamfrt64.so.1": [

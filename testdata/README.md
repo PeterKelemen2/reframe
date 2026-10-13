@@ -437,23 +437,55 @@ command and the captures were not made again):
   and lists only the pixel format `vaapi`.
 - **`-filters`**: FFmpeg 9 prints two flag columns (`T.`, `.S`), FFmpeg 7 printed three
   (`TSC`). The pinned build has 562 filters, `libplacebo` and `zscale` among them.
+- **`libplacebo` needs a working Vulkan device.** `-filters` lists it whether Vulkan works or
+  not, so detection runs one frame through it (checked 2026-10-13, both builds; the commands
+  are the `c4_libplacebo_*` captures):
+
+  ```sh
+  ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 1 -vf libplacebo -f null -
+  ```
+
+  With RADV (Mesa) on the RX 7600: exit 0 in about 0.18 s (Vulkan start-up). With
+  `VK_ICD_FILENAMES=/nonexistent/icd.json` (no Vulkan driver): exit 187 and
+
+  ```
+  [libplacebo @ 0x…] Failed creating instance: VK_ERROR_INCOMPATIBLE_DRIVER
+  [libplacebo @ 0x…] Failed initializing vulkan instance
+  [libplacebo @ 0x…] Failed initializing vulkan device
+  [Parsed_libplacebo_0 @ 0x…] Failed creating Vulkan device!
+  [AVFilterGraph @ 0x…] Error initializing filters
+  Error opening output file -.
+  Error opening output files: Generic error in an external library
+  ```
+
+  → "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)". libplacebo is linked into
+  `libavfilter` and loads `libvulkan.so.1` at run time; its other device errors (`Found no
+  suitable device, giving up.`, `Vulkan device does not support all required features!`,
+  `Failed creating logical device!`) are confirmed in `lib/libavfilter.so.12.1.102` only
+  (`library_strings.json`).
+- **Render nodes** (decision 0020): this machine has one, `/dev/dri/renderD128` (plus
+  `card1` and `by-path/`). Detection lists `/dev/dri/renderD*` sorted by number and tests each
+  VAAPI encoder on them in turn; the multi-node logic is proved with the fake ffmpeg
+  (`test_detect.py`: two nodes, the first fails with the real "no VA driver" text).
 - **Timing**: `-encoders`, `-filters` and each `-h encoder=` take about 10 ms, a test encode
-  about 30 ms. A full detection (23 encoders of the definitions, 12 hardware tests plus the
-  10-bit tests): **0.20 – 0.26 s** with the pinned build, 0.40 s with the Arch package.
+  about 30 ms, the libplacebo test about 0.18 s. A full detection (23 encoders of the
+  definitions, 12 hardware tests plus the 10-bit tests, the libplacebo test): **0.36 s** with
+  the pinned build, 0.69 s with the Arch package (0.20 – 0.40 s before the libplacebo test).
 
-Real result with the pinned build (`detect_capabilities`, hardware tests on):
+Real result with the pinned build (`detect_capabilities`, hardware tests on; `libplacebo`
+usable):
 
-| Encoder | State | 10-bit | Reason |
-|---------|-------|--------|--------|
-| `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | |
-| `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | NVIDIA driver not found |
-| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | No Intel QSV device (needs an Intel GPU with its media driver) |
-| `h264_amf` | available | no (no 10-bit format in the definition) | |
-| `hevc_amf`, `av1_amf` | available | yes | |
-| `h264_vaapi` | available | no (no 10-bit format in the definition) | |
-| `hevc_vaapi`, `av1_vaapi` | available | yes | |
-| `aac`, `ac3`, `eac3`, `libopus`, `flac`, `libmp3lame` | available | – | |
-| `libfdk_aac` | unavailable | – | Not in this FFmpeg build |
+| Encoder | State | 10-bit | Device | Reason |
+|---------|-------|--------|--------|--------|
+| `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | – | |
+| `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | – | NVIDIA driver not found |
+| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `h264_amf` | available | no (no 10-bit format in the definition) | – | |
+| `hevc_amf`, `av1_amf` | available | yes | – | |
+| `h264_vaapi` | available | no (no 10-bit format in the definition) | `/dev/dri/renderD128` | |
+| `hevc_vaapi`, `av1_vaapi` | available | yes | `/dev/dri/renderD128` | |
+| `aac`, `ac3`, `eac3`, `libopus`, `flac`, `libmp3lame` | available | – | – | |
+| `libfdk_aac` | unavailable | – | – | Not in this FFmpeg build |
 
 ### Encoder definitions (C-6)
 

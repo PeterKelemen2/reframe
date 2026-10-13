@@ -10,7 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from reframe.capabilities import NOT_IN_BUILD, DetectionOptions, detect_capabilities
+from reframe.capabilities import (
+    NOT_IN_BUILD,
+    DetectionOptions,
+    detect_capabilities,
+    filter_test_argv,
+    vaapi_nodes,
+)
 from reframe.capabilities import hwtest as hwtest_module
 from reframe.definitions import load_definitions
 from reframe.models import EncoderState, EncoderStatus, ToolInfo, ToolStatus
@@ -21,7 +27,16 @@ from reframe_testing.capabilities import c4_rule, ffmpeg_info
 pytestmark = pytest.mark.anyio
 
 DEFS = load_definitions()
-LINUX = DetectionOptions(os="linux")
+NODE = "/dev/dri/renderD128"
+OTHER_NODE = "/dev/dri/renderD129"
+
+
+def linux(**kw: object) -> DetectionOptions:
+    """Linux with one render node (the test does not depend on this machine's /dev/dri)."""
+    return DetectionOptions(**{"os": "linux", "render_nodes": (NODE,), **kw})  # type: ignore[arg-type]
+
+
+LINUX = linux()
 HARDWARE = [enc.id for enc in DEFS.video_encoders.values() if enc.hardware]
 SOFTWARE = [enc.id for enc in DEFS.video_encoders.values() if not enc.hardware]
 AVAILABLE = EncoderState.AVAILABLE
@@ -146,7 +161,7 @@ async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
             ]
         )
     )
-    options = DetectionOptions(os="linux", test_timeout=0.5)
+    options = linux(test_timeout=0.5)
     started = time.monotonic()
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
     assert time.monotonic() - started < 10
@@ -176,7 +191,7 @@ async def test_a_crash_is_an_error(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
 
 
 async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
-    options = DetectionOptions(os="linux", hardware_tests=False)
+    options = linux(hardware_tests=False)
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
     for encoder in HARDWARE:
         status = snap.status(encoder)
@@ -238,7 +253,7 @@ async def test_no_encoder_list(
     fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo, rule: ft.Rule, reason: str
 ) -> None:
     fake_tools.set_scenario(ft.Scenario([rule]))
-    options = DetectionOptions(os="linux", list_timeout=0.5)
+    options = linux(list_timeout=0.5)
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
     assert {s.state for s in snap.encoders.values()} == {ERROR}
     assert {s.reason for s in snap.encoders.values()} == {reason}
@@ -328,3 +343,178 @@ async def test_task_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg
     await asyncio.wait({task})
     assert task.cancelled()
     assert fake_tools.kill_leftovers() == []
+
+
+# --------------------------------------------------------------------------- VAAPI nodes
+
+
+def vaapi_calls(fake: ft.FakeTools, encoder: str) -> list[tuple[str, str]]:
+    """``(node, pixel format)`` of each test encode of ``encoder``, in order."""
+    calls = []
+    for call in encode_calls(fake):
+        if call[call.index("-c:v") + 1] != encoder:
+            continue
+        node = next(a.removeprefix("vaapi=va:") for a in call if a.startswith("vaapi=va:"))
+        vf = call[call.index("-vf") + 1]
+        calls.append((node, vf.split(",")[0].removeprefix("format=")))
+    return calls
+
+
+def node_rule(capture: str, node: str, encoder: str | None = None) -> ft.Rule:
+    """Replay ``capture`` for the VAAPI test encodes on ``node`` only."""
+    rule = c4_rule(capture, encoder=encoder)
+    return ft.Rule(
+        actions=rule.actions,
+        exit_code=rule.exit_code,
+        argv_has=rule.argv_has,
+        argv_contains=[f"vaapi=va:{node}"],
+    )
+
+
+async def test_vaapi_uses_the_first_node_that_works(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    """Decision 0020: two render nodes, the encoder fails on the first one (no VA driver)."""
+    fake_tools.set_scenario(
+        ft.Scenario([node_rule("c4_h264_vaapi_no_driver", NODE, encoder="hevc_vaapi")])
+    )
+    options = linux(render_nodes=(NODE, OTHER_NODE))
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
+    hevc = snap.status("hevc_vaapi")
+    assert (hevc.state, hevc.device, hevc.supports_10bit) == (AVAILABLE, OTHER_NODE, True)
+    assert hevc.reason is None
+    # 8-bit on the first node (fails), 8-bit on the second (works), 10-bit on the second
+    assert vaapi_calls(fake_tools, "hevc_vaapi") == [
+        (NODE, "nv12"),
+        (OTHER_NODE, "nv12"),
+        (OTHER_NODE, "p010le"),
+    ]
+    # the other VAAPI encoders work on the first node and never try the second
+    h264 = snap.status("h264_vaapi")
+    assert (h264.state, h264.device) == (AVAILABLE, NODE)
+    assert vaapi_calls(fake_tools, "h264_vaapi") == [(NODE, "nv12")]
+    # encoders without a device choice have none
+    assert snap.status("hevc_amf").device is None
+    assert snap.status("libx265").device is None
+
+
+async def test_vaapi_fails_on_every_node(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                node_rule("c4_h264_vaapi_no_driver", NODE),
+                node_rule("c4_h264_vaapi_bad_device", OTHER_NODE),
+            ]
+        )
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(render_nodes=(NODE, OTHER_NODE)))
+    status = snap.status("h264_vaapi")
+    # the first node's reason (its own failure), no device
+    assert (status.state, status.reason, status.device) == (
+        UNAVAILABLE,
+        "VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error)",
+        None,
+    )
+    assert [node for node, _ in vaapi_calls(fake_tools, "h264_vaapi")] == [NODE, OTHER_NODE]
+
+
+async def test_vaapi_without_a_render_node(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(render_nodes=()))
+    for encoder in ("h264_vaapi", "hevc_vaapi", "av1_vaapi"):
+        status = snap.status(encoder)
+        assert (status.state, status.reason) == (
+            UNAVAILABLE,
+            "No VAAPI device (no render node in /dev/dri)",
+        )
+        assert vaapi_calls(fake_tools, encoder) == []
+    assert snap.status("hevc_amf").state is AVAILABLE
+
+
+async def test_a_forced_vaapi_device_is_the_only_one_tested(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([node_rule("c4_h264_vaapi_no_driver", OTHER_NODE)]))
+    options = linux(render_nodes=(NODE, OTHER_NODE), vaapi_device=OTHER_NODE)
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
+    status = snap.status("h264_vaapi")
+    assert (status.state, status.device) == (UNAVAILABLE, None)
+    assert status.reason == (
+        "VAAPI driver failed to start on /dev/dri/renderD129 (unknown libva error)"
+    )
+    assert vaapi_calls(fake_tools, "h264_vaapi") == [(OTHER_NODE, "nv12")]
+    assert snap.status("hevc_vaapi").device == OTHER_NODE
+
+
+def test_vaapi_nodes(tmp_path: Path) -> None:
+    assert vaapi_nodes(DetectionOptions(vaapi_device=" /dev/dri/renderD130 ")) == [
+        "/dev/dri/renderD130"
+    ]
+    assert vaapi_nodes(DetectionOptions(vaapi_device="", render_nodes=(NODE,))) == [NODE]
+    assert vaapi_nodes(DetectionOptions(render_nodes=())) == []
+
+
+# --------------------------------------------------------------------------- libplacebo
+
+
+async def test_libplacebo_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    assert snap.usable_filter("libplacebo") is True
+    assert (snap.filter_failures, snap.untested_filters) == ({}, [])
+    (call,) = [c for c in fake_tools.calls() if "libplacebo" in c]
+    assert call == tuple(filter_test_argv("ffmpeg", "libplacebo")[1:])
+
+
+async def test_libplacebo_without_vulkan(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
+    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    assert capture.stderr is not None
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    argv_has=["-vf", "libplacebo"],
+                    actions=[ft.stderr_data(capture.stderr)],
+                    exit_code=capture.exit_code,
+                )
+            ]
+        )
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    assert snap.has_filter("libplacebo") is True  # listed by -filters
+    assert snap.usable_filter("libplacebo") is False  # but it does not work
+    assert snap.filter_failures == {
+        "libplacebo": "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)"
+    }
+    assert snap.usable_filter("zscale") is True
+
+
+async def test_libplacebo_timeout(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario([ft.Rule(argv_has=["-vf", "libplacebo"], actions=[ft.hang()])])
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(test_timeout=0.5))
+    assert snap.filter_failures == {"libplacebo": "The libplacebo test did not finish within 0.5 s"}
+    assert snap.usable_filter("libplacebo") is False
+    assert fake_tools.kill_leftovers() == []
+
+
+async def test_libplacebo_untested_when_hardware_tests_are_off(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(hardware_tests=False))
+    assert snap.untested_filters == ["libplacebo"]
+    assert snap.usable_filter("libplacebo") is None
+    assert [c for c in fake_tools.calls() if "libplacebo" in c] == []
+
+
+async def test_libplacebo_not_in_the_build(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
+    listing = (ft.DATA_DIR / "filters.stdout.txt").read_text(encoding="utf-8")
+    trimmed = "".join(
+        line for line in listing.splitlines(keepends=True) if " libplacebo " not in line
+    )
+    fake_tools.set_scenario(
+        ft.Scenario([ft.Rule(argv_has=["-filters"], actions=[ft.stdout(trimmed)])])
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    assert snap.usable_filter("libplacebo") is False
+    assert snap.untested_filters == []
+    assert [c for c in fake_tools.calls() if "libplacebo" in c] == []

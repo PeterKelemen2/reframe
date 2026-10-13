@@ -13,8 +13,8 @@ code                      severity  when
 ``encoder.untested``      warning   a hardware encoder in the build that was not tested,
                                     because hardware test encodes are off
 ``encoder.unavailable``   error     ``unavailable`` or ``error``: the reason is in the message;
-                                    the fix switches to :func:`closest_available` (no fix when
-                                    nothing is available)
+                                    the fix switches to :func:`closest_available` (video and
+                                    audio chains; no fix when nothing is available)
 ========================  ========  ==========================================================
 
 ``encoder.checking`` is ``info``, not an error: 03 says "a preset or job can be edited.
@@ -41,14 +41,15 @@ def closest_available(
     encoder_id: str, caps: CapabilitySnapshot, definitions: Definitions
 ) -> str | None:
     """``encoder_id`` itself when it is available, else the first available encoder of its
-    fallback chain (``hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265``); ``None``
-    when none is available or the encoder is not in the definitions."""
+    fallback chain in the definitions: video (``hevc_nvenc → hevc_qsv → hevc_amf →
+    hevc_vaapi → libx265``) or audio (``libfdk_aac → aac``, decision 0020). ``None`` when
+    none is available or the encoder is not in the definitions."""
     if caps.status(encoder_id).state is EncoderState.AVAILABLE:
         return encoder_id
     video = definitions.video_encoders.get(encoder_id)
-    if video is None:
-        return None
-    for candidate in video.fallback:
+    audio = definitions.audio_encoders.get(encoder_id)
+    chain = video.fallback if video is not None else audio.fallback if audio is not None else []
+    for candidate in chain:
         if caps.status(candidate).state is EncoderState.AVAILABLE:
             return candidate
     return None
@@ -56,7 +57,7 @@ def closest_available(
 
 def field_pointer(path: str) -> str:
     """The JSON Pointer of a dotted field path: ``video.encoder`` → ``/video/encoder``,
-    ``audio.tracks[2].encoder`` → ``/audio/tracks/2/encoder``."""
+    ``audio[2].encoder`` → ``/audio/2/encoder`` (the third audio track of a job)."""
     parts = _INDEX.sub(r".\1", path).split(".")
     escaped = (part.replace("~", "~0").replace("/", "~1") for part in parts if part)
     return "".join(f"/{part}" for part in escaped)

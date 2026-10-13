@@ -60,7 +60,16 @@ def test_closest_available_none() -> None:
     assert closest_available("hevc_nvenc", nothing, DEFS) is None
     assert closest_available("libx265", caps(libx265=UNAVAILABLE), DEFS) is None  # no chain
     assert closest_available("reframe_nonexistent", caps(), DEFS) is None
-    assert closest_available("libfdk_aac", caps(libfdk_aac=UNAVAILABLE), DEFS) is None
+    no_aac = caps(libfdk_aac=UNAVAILABLE, aac=UNAVAILABLE)
+    assert closest_available("libfdk_aac", no_aac, DEFS) is None
+    assert closest_available("aac", caps(aac=UNAVAILABLE), DEFS) is None  # no chain
+
+
+def test_closest_available_audio() -> None:
+    """Decision 0020: audio encoders have a fallback chain too (``libfdk_aac → aac``)."""
+    assert DEFS.audio_encoders["libfdk_aac"].fallback == ["aac"]
+    assert closest_available("libfdk_aac", caps(libfdk_aac=UNAVAILABLE), DEFS) == "aac"
+    assert closest_available("libfdk_aac", caps(), DEFS) == "libfdk_aac"
 
 
 def test_every_chain_ends_in_software() -> None:
@@ -73,8 +82,20 @@ def test_every_chain_ends_in_software() -> None:
             assert DEFS.video_encoders[closest].codec == encoder.codec
 
 
+def test_every_audio_chain_ends_in_a_gpl_encoder() -> None:
+    for encoder in DEFS.audio_encoders.values():
+        if not encoder.fallback:
+            continue
+        gone = {e.id: UNAVAILABLE for e in DEFS.audio_encoders.values() if not e.in_gpl_builds}
+        closest = closest_available(encoder.id, caps(**gone), DEFS)
+        assert closest is not None, encoder.id
+        assert DEFS.audio_encoders[closest].in_gpl_builds
+        assert DEFS.audio_encoders[closest].codec == encoder.codec
+
+
 def test_field_pointer() -> None:
     assert field_pointer("video.encoder") == "/video/encoder"
+    assert field_pointer("audio[2].encoder") == "/audio/2/encoder"
     assert field_pointer("audio.tracks[2].encoder") == "/audio/tracks/2/encoder"
     assert field_pointer("a/b.c~d") == "/a~1b/c~0d"
 
@@ -151,12 +172,59 @@ def test_unavailable_without_anything_available() -> None:
     assert issue.fixes == []
 
 
-def test_audio_encoder_path() -> None:
+def test_audio_encoder_unavailable_with_a_fix() -> None:
     snapshot = caps(libfdk_aac=(UNAVAILABLE, "Not in this FFmpeg build"))
-    (issue,) = encoder_issues("libfdk_aac", snapshot, DEFS, path="audio.tracks[1].encoder")
-    assert issue.path == "audio.tracks[1].encoder"
+    (issue,) = encoder_issues("libfdk_aac", snapshot, DEFS, path="audio[1].encoder")
+    assert (issue.code, issue.severity, issue.path) == (
+        "encoder.unavailable",
+        Severity.ERROR,
+        "audio[1].encoder",
+    )
     assert issue.message == "libfdk_aac (AAC (FDK)) is not available: Not in this FFmpeg build."
-    assert issue.fixes == []  # audio encoders have no fallback chain (yet)
+    (fix,) = issue.fixes
+    assert fix.label == "Use aac (closest match)"
+    assert fix.patch == [ReplaceOp(path="/audio/1/encoder", value="aac")]
+    assert fix.target == "job"
+
+
+def test_audio_encoder_without_anything_available() -> None:
+    snapshot = caps(libfdk_aac=UNAVAILABLE, aac=UNAVAILABLE)
+    (issue,) = encoder_issues("libfdk_aac", snapshot, DEFS, path="audio[0].encoder")
+    assert issue.code == "encoder.unavailable"
+    assert issue.fixes == []
+
+
+def test_job_with_a_libfdk_aac_track() -> None:
+    """Decision 0020: a job whose second audio track uses libfdk_aac (not in GPL builds)."""
+    job = JobSettings.model_validate(
+        {
+            "source": {"path": "/media/a.mkv"},
+            "audio": [
+                {"source_stream": 1, "encoder": "ac3", "bitrate": 448},
+                {"source_stream": 2, "encoder": "libfdk_aac", "bitrate": 160},
+            ],
+        }
+    )
+    snapshot = caps(libfdk_aac=(UNAVAILABLE, "Not in this FFmpeg build"))
+    issues = [
+        issue
+        for index, track in enumerate(job.audio)
+        if track.encoder is not None
+        for issue in encoder_issues(track.encoder, snapshot, DEFS, path=f"audio[{index}].encoder")
+    ]
+    (issue,) = issues
+    assert issue.path == "audio[1].encoder"
+    (fix,) = issue.fixes
+    assert fix.label == "Use aac (closest match)"
+    fixed = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), fix.patch))
+    assert [track.encoder for track in fixed.audio] == ["ac3", "aac"]
+    assert fixed.audio[1].bitrate == 160  # only the encoder changes
+    assert fixed.audio[1].source_stream == 2
+    assert all(
+        encoder_issues(track.encoder, snapshot, DEFS) == []
+        for track in fixed.audio
+        if track.encoder is not None
+    )
 
 
 def test_job_fix_applies() -> None:

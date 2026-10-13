@@ -10,7 +10,12 @@
 3. ``ffmpeg -hide_banner -h encoder=<id>`` for every encoder in the build (private options,
    presets, pixel formats; ``max_parallel_help`` at a time, about 10 ms each).
 4. The hardware test encodes (at most ``max_parallel_tests`` at a time), each followed by
-   the 10-bit test when the encoder has a 10-bit pixel format.
+   the 10-bit test when the encoder has a 10-bit pixel format. A VAAPI encoder is tested on
+   every render node in order (``/dev/dri/renderD*``) and uses the first node where it works,
+   or only on the node that Settings → Encoders forces (decision 0020); the node goes into
+   ``EncoderStatus.device``. In the same queue: the run test of ``libplacebo`` (one frame;
+   it needs a working Vulkan device), when the build lists it. With hardware tests off it
+   stays in ``untested_filters``.
 
 ``on_update`` gets the statuses that changed, as soon as they change: once when every status
 that needs no test is known (after steps 2 and 3), then after each hardware test (with its
@@ -30,12 +35,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from reframe.capabilities.devices import render_nodes
 from reframe.capabilities.hwtest import (
     DEFAULT_VAAPI_DEVICE,
+    FILTER_TESTS,
     TEST_TIMEOUT,
     BitDepth,
     TestOutcome,
+    run_filter_test,
     run_hardware_test,
+    uses_vaapi_device,
 )
 from reframe.capabilities.parse import (
     EncoderHelp,
@@ -61,6 +70,7 @@ __all__ = [
     "detect_capabilities",
     "initial_statuses",
     "unusable_snapshot",
+    "vaapi_nodes",
 ]
 
 log = logging.getLogger(__name__)
@@ -96,7 +106,14 @@ class DetectionOptions:
     """``AppSettings.encoders.hardware_tests``: off leaves hardware encoders ``unknown``."""
     os: OperatingSystem | None = None
     """The OS for the definitions' ``platforms`` (default: this one)."""
-    vaapi_device: str = DEFAULT_VAAPI_DEVICE
+    vaapi_device: str | None = None
+    """``AppSettings.encoders.vaapi_device``: test VAAPI only on this render node. ``None``
+    or empty: automatic (every node of :attr:`render_nodes`)."""
+    render_nodes: tuple[str, ...] | None = None
+    """The render nodes to try, in order; ``None``: list ``/dev/dri/renderD*`` when a VAAPI
+    encoder is tested (:func:`reframe.capabilities.devices.render_nodes`)."""
+    filter_tests: tuple[str, ...] = tuple(FILTER_TESTS)
+    """Filters that get a run test when the build lists them (``libplacebo``)."""
     test_timeout: float = TEST_TIMEOUT
     list_timeout: float = LIST_TIMEOUT
     max_parallel_tests: int = MAX_PARALLEL_TESTS
@@ -105,6 +122,18 @@ class DetectionOptions:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def vaapi_nodes(options: DetectionOptions) -> list[str]:
+    """The render nodes to test VAAPI encoders on: the forced one, else
+    :attr:`DetectionOptions.render_nodes`, else ``/dev/dri/renderD*`` (blocking: lists a
+    folder)."""
+    forced = (options.vaapi_device or "").strip()
+    if forced:
+        return [forced]
+    if options.render_nodes is not None:
+        return list(options.render_nodes)
+    return render_nodes()
 
 
 def initial_statuses(
@@ -190,6 +219,9 @@ class _Detection:
         self.statuses = initial_statuses(definitions, EncoderState.CHECKING)
         self.tests = asyncio.Semaphore(max(1, options.max_parallel_tests))
         self.helps = asyncio.Semaphore(max(1, options.max_parallel_help))
+        self.filter_failures: dict[str, str] = {}
+        self.untested_filters: list[str] = []
+        self.nodes: list[str] = []
 
     # ------------------------------------------------------------------ helpers
 
@@ -219,6 +251,7 @@ class _Detection:
             filters_task = group.create_task(self.ffmpeg_run("-filters", timeout=timeout))
         encoders_result, filters_result = encoders_task.result(), filters_task.result()
         filters = self.filters(filters_result)
+        self.untested_filters = [f for f in self.options.filter_tests if f in (filters or ())]
 
         problem = _list_problem(encoders_result, "encoders", timeout)
         listing = parse_encoders(encoders_result.stdout_text) if problem is None else {}
@@ -239,9 +272,15 @@ class _Detection:
         # One update with every status that needs no test (help data included), so a status
         # is never published without its options and then again with them.
         self.publish([s for s in self.statuses.values() if s.state is not EncoderState.CHECKING])
+        if any(uses_vaapi_device(encoder) for encoder in pending):
+            self.nodes = await asyncio.to_thread(vaapi_nodes, self.options)
+            log.info("encoder detection: VAAPI render nodes %s", self.nodes or "none")
         async with asyncio.TaskGroup() as group:
             for encoder in pending:
                 group.create_task(self.test(encoder))
+            if self.options.hardware_tests:
+                for name in list(self.untested_filters):
+                    group.create_task(self.test_filter(name))
         return self.snapshot(filters)
 
     def filters(self, result: RunResult) -> list[str] | None:
@@ -326,49 +365,70 @@ class _Detection:
                     update["supports_10bit"] = ten in parsed.pix_fmts
             self.set(encoder_id, **update)
 
-    async def run_test(self, encoder: VideoEncoderDef, bit_depth: BitDepth) -> TestOutcome:
+    async def run_test(
+        self, encoder: VideoEncoderDef, bit_depth: BitDepth, device: str | None = None
+    ) -> TestOutcome:
         async with self.tests:
             started = time.monotonic()
             outcome = await run_hardware_test(
                 self.binary,
                 encoder,
                 bit_depth,
-                vaapi_device=self.options.vaapi_device,
+                vaapi_device=device or DEFAULT_VAAPI_DEVICE,
                 timeout=self.options.test_timeout,
                 cancel=self.cancel,
                 extra_env=self.env,
             )
-        log.debug(
-            "test encode %s %s-bit: %s in %.2f s (%s)",
-            encoder.id,
-            bit_depth,
-            "ok" if outcome.ok else (outcome.failure.reason if outcome.failure else "cancelled"),
-            time.monotonic() - started,
-            " ".join(outcome.argv),
-        )
+        _log_outcome(f"test encode {encoder.id} {bit_depth}-bit", outcome, started)
         return outcome
 
     async def test(self, encoder: VideoEncoderDef) -> None:
-        outcome = await self.run_test(encoder, "8")
-        if outcome.cancelled:
+        """The 8-bit test (on each render node in turn for VAAPI), then the 10-bit test on the
+        device that worked."""
+        vaapi = uses_vaapi_device(encoder)
+        devices: list[str | None] = list(self.nodes) if vaapi else [None]
+        if not devices:
+            reason = "No VAAPI device (no render node in /dev/dri)"
+            status = self.set(
+                encoder.id, state=EncoderState.UNAVAILABLE, reason=reason, checked_at=_now()
+            )
+            self.publish([status])
             return
-        if not outcome.ok:
-            failure = outcome.failure
-            assert failure is not None
+        first_failure = None
+        device: str | None = None
+        for candidate in devices:
+            outcome = await self.run_test(encoder, "8", candidate)
+            if outcome.cancelled:
+                return
+            if outcome.ok:
+                device = candidate
+                break
+            first_failure = first_failure or outcome.failure
+            if vaapi:
+                assert outcome.failure is not None
+                log.info("%s on %s: %s", encoder.id, candidate, outcome.failure.reason)
+        else:
+            assert first_failure is not None
             status = self.set(
                 encoder.id,
-                state=failure.state,
-                reason=failure.reason,
-                detail=failure.detail,
+                state=first_failure.state,
+                reason=first_failure.reason,
+                detail=first_failure.detail,
+                device=None,
                 checked_at=_now(),
             )
             self.publish([status])
             return
-        update: dict[str, object] = {"state": EncoderState.AVAILABLE, "reason": None}
+        update: dict[str, object] = {
+            "state": EncoderState.AVAILABLE,
+            "reason": None,
+            "detail": None,
+            "device": device,
+        }
         if "10" not in encoder.pix_fmts:
             update["supports_10bit"] = False
         else:
-            ten = await self.run_test(encoder, "10")
+            ten = await self.run_test(encoder, "10", device)
             if ten.cancelled:
                 return
             update["supports_10bit"] = ten.ok
@@ -382,16 +442,48 @@ class _Detection:
                 )
         self.publish([self.set(encoder.id, checked_at=_now(), **update)])
 
+    async def test_filter(self, name: str) -> None:
+        """The run test of a filter (``libplacebo``): one frame through it."""
+        async with self.tests:
+            started = time.monotonic()
+            outcome = await run_filter_test(
+                self.binary,
+                name,
+                timeout=self.options.test_timeout,
+                cancel=self.cancel,
+                extra_env=self.env,
+            )
+        _log_outcome(f"filter test {name}", outcome, started)
+        if outcome.cancelled:
+            return
+        self.untested_filters = [f for f in self.untested_filters if f != name]
+        if outcome.failure is not None:
+            self.filter_failures[name] = outcome.failure.reason
+            log.info(
+                "filter %s cannot be used: %s (%s)",
+                name,
+                outcome.failure.reason,
+                outcome.failure.detail,
+            )
+
     def snapshot(self, filters: list[str] | None) -> CapabilitySnapshot:
         return CapabilitySnapshot(
             encoders=dict(self.statuses),
             filters=filters,
+            filter_failures=dict(self.filter_failures),
+            untested_filters=list(self.untested_filters),
             ffmpeg=self.binary,
             ffmpeg_version=self.ffmpeg.version,
             detecting=False,
             from_cache=False,
             checked_at=_now(),
         )
+
+
+def _log_outcome(what: str, outcome: TestOutcome, started: float) -> None:
+    result = "ok" if outcome.ok else (outcome.failure.reason if outcome.failure else "cancelled")
+    took = time.monotonic() - started
+    log.debug("%s: %s in %.2f s (%s)", what, result, took, " ".join(outcome.argv))
 
 
 async def detect_capabilities(
