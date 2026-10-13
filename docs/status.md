@@ -45,7 +45,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-11 Queue and job runner | Not started | Models only (`QueueJob`, `JobState`, `JobProgress`). The event bus `reframe.events` is done |
 | C-12 Batch engine | Not started | Models only (`TrackSelector`, `OutputTrackRule`, `AudioDefaults`, …) |
 | C-13 Metadata edit and remux | Not started | The language-tag behaviour of FFmpeg and mkvpropedit is verified and recorded (`testdata/README.md`) |
-| C-14 Platform services | Not started | Sleep inhibit, power actions and the notification hook are not built. (`reframe.platform` already has child-process safety from C-1 and `launch_detached` for user-facing programs) |
+| C-14 Platform services | **Partial** | **Branch `m2-encode-cli` only:** sleep inhibit, `reframe.platform.sleep` (counted `SleepInhibitor`; Linux logind `Inhibit` through a stdlib D-Bus client, then `systemd-inhibit`; Windows `SetThreadExecutionState` on one dedicated thread, mock-tested only; `sleep_inhibit.unavailable` warning), [0011](decisions/0011-sleep-inhibit.md). **Not started:** power actions, the notification hook. (`reframe.platform` also has child-process safety from C-1 and `launch_detached` for user-facing programs) |
 | C-15 Service facade and CLI | **Partial** | **Done:** `Reframe.create()` / `close()` with `tools`, `sources`, `tasks` and `events`; CLI `reframe probe FILE [--json]` and `reframe version`; `python -m reframe.tools` (tool status). **Not started:** the capabilities, presets, jobs, batch, queue and settings services; CLI `encoders`, `tools status\|fetch`, `name`, `presets`, `plan`, `encode`, `batch` |
 | C-16 Output naming | Not started | Model only (`NamingOptions`) |
 
@@ -102,7 +102,7 @@ the parity table) to what exists. No feature has a user interface yet.
 | Track metadata editing, remux-only and metadata-edit jobs | Not started | |
 | Chapters, tags | Not started | Chapters are probed |
 | Output naming (variables, release-name parsing, templates) | Not started | |
-| Queue, logs, when done, sleep inhibit | Not started | The event bus and the task manager exist |
+| Queue, logs, when done, sleep inhibit | Not started | The event bus and the task manager exist. Sleep inhibit is built in the core (C-14, branch `m2-encode-cli`); the queue (C-11) does not use it yet |
 | Batch / season mode | Not started | |
 | Crop preview, filter preview, live preview clip | Not started | |
 | Web app | Not started | Frontend scaffold only |

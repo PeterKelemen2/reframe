@@ -398,4 +398,123 @@ Nothing recorded yet.
 
 ### Sleep inhibit (C-14)
 
-Nothing recorded yet.
+Checked on 2026-10-13 on Arch Linux, systemd 262, KDE Plasma (Wayland), dbus on
+`/run/dbus/system_bus_socket`. Decision record
+[0011](../docs/decisions/0011-sleep-inhibit.md). The lock test is
+`packages/reframe/tests/platform/test_sleep_real.py` (skipped without logind).
+
+The logind method (input `ssss`, output one fd):
+
+```console
+$ busctl introspect org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager | grep -i inhibit
+.Inhibit                          method   ssss                h                                                                            -
+.ListInhibitors                   method   -                   a(ssssuu)                                                                    -
+.BlockInhibited                   property s                   "handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch" emits-change
+.BlockWeakInhibited               property s                   ""                                                                           emits-change
+.DelayInhibited                   property s                   "shutdown:sleep"                                                             emits-change
+.InhibitDelayMaxUSec              property t                   5000000                                                                      const
+...
+$ busctl --verbose call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Inhibit ssss sleep:idle Reframe test block
+MESSAGE "h" {
+        UNIX_FD 5;
+};
+$ busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Inhibit ssss bogus Reframe x block
+Call failed: Invalid what specification bogus
+```
+
+Reframe's own client gets the error name too:
+`org.freedesktop.DBus.Error.InvalidArgs: Invalid what specification bogus`. Its message bytes
+for the Inhibit call are identical to jeepney 0.9.0's `new_method_call(…, 'Inhibit', 'ssss',
+…).serialise(serial=2)` (compared byte for byte; kept as `INHIBIT_CALL` in
+`tests/platform/test_sleep_dbus.py`).
+
+What a lock does (`CanSuspend` is what the desktop asks before it suspends):
+
+| Lock held | `CanSuspend` | `BlockInhibited` gets | KDE PolicyAgent `HasInhibition` 1 (suspend) / 4 (screen) |
+|-----------|--------------|-----------------------|----------------------------------------------------------|
+| none | `yes` | – | `false` / `false` |
+| `--what=sleep --mode=block` | `inhibited` | not checked | `false` / `false` |
+| `--what=idle --mode=block` | `yes` | `idle` | `false` / `false` |
+| `sleep:idle` block (Reframe, logind backend) | `inhibited` | `sleep:idle` | `false` / `false` |
+
+`BlockInhibited` before and after Reframe's lock is
+`handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch` (KDE's own lock),
+during it `sleep:idle:handle-power-key:…`.
+
+```console
+$ busctl --user call org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement/PolicyAgent org.kde.Solid.PowerManagement.PolicyAgent HasInhibition u 1
+b false
+```
+
+So KDE does not dim, lock or suspend on its own account because of a logind lock; logind
+refuses the suspend. polkit defaults (`/usr/share/polkit-1/actions/org.freedesktop.login1.policy`):
+
+| Action | allow_any | allow_inactive | allow_active |
+|--------|-----------|----------------|--------------|
+| `inhibit-block-sleep` | `auth_admin_keep` | `yes` | `yes` |
+| `inhibit-block-idle` | `yes` | `yes` | `yes` |
+| `inhibit-delay-sleep` | `yes` | `yes` | `yes` |
+| `suspend-ignore-inhibit` | `auth_admin_keep` | `auth_admin_keep` | `auth_admin_keep` |
+
+A `systemd-run --user` unit (no session) could also take the `sleep` block lock here.
+`man systemd-inhibit` (262): `--mode=` takes `block`, `delay` or `block-weak`; `block-weak`
+"is not enforced against operations initiated by privileged clients or those owned by the
+user that also owns the inhibitor lock"; `delay` is limited by `InhibitDelayMaxSec` (5 s).
+`man logind.conf`: `LidSwitchIgnoreInhibited=` defaults to `yes`.
+
+`systemd-inhibit` failures (exit 1, the command is not run):
+
+```console
+$ systemd-inhibit --what=idle --mode=delay --who=Reframe --why=x --no-ask-password sh -c 'echo ready'
+Failed to inhibit: Delay inhibitors only supported for shutdown and sleep
+$ systemd-inhibit --what=bogus --who=Reframe --why=x sh -c 'echo ready'
+Failed to inhibit: Invalid what specification bogus
+$ DBUS_SYSTEM_BUS_ADDRESS=unix:path=/nonexistent systemd-inhibit --what=sleep:idle --who=Reframe --why=x --no-ask-password sh -c 'echo ready'
+Failed to connect to system scope bus via local transport: No such file or directory
+```
+
+The lock before, during and after, from `test_sleep_real.py` (`uv run pytest -s`;
+`systemd-inhibit --list --no-legend --no-pager`, columns joined by one space). logind backend:
+
+```text
+--- before (7 inhibitors; ours: 0)
+NetworkManager 0 root 637 NetworkManager sleep NetworkManager needs to turn off networks delay
+Realtime Kit 0 root 865 rtkit-daemon sleep Demote realtime scheduling and stop canary. delay
+UPower 0 root 926 upowerd sleep Pause device polling delay
+PowerDevil 1000 peti 1766 org_kde_powerde handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch KDE handles power events block
+code 1000 peti 24708 code shutdown Ensure a clean shutdown delay
+code 1000 peti 24708 code sleep Application cleanup before suspend delay
+compositor 1000 peti 1610 kwin_wayland sleep Ensuring that the screen gets locked before going to sleep delay
+--- during (8 inhibitors; ours: 1)
+...
+Reframe 1000 peti 91163 pytest sleep:idle Reframe test 3d6f1033 block
+...
+CanSuspend before: yes, during: inhibited
+--- after (7 inhibitors; ours: 0)
+(the same 7 lines as before)
+```
+
+systemd-inhibit backend (the helper is the process that logind lists):
+
+```text
+--- during (8 inhibitors; ours: 1)
+Reframe 1000 peti 91179 systemd-inhibit sleep:idle Reframe test fd470398 block
+--- after (7 inhibitors; ours: 0)
+```
+
+Without a bus (both backends pointed at a missing socket), the one warning event:
+
+```json
+{
+  "type": "app.warning",
+  "code": "sleep_inhibit.unavailable",
+  "message": "Sleep inhibit is not available: the computer may go to sleep while the queue runs.",
+  "detail": "logind: no system bus: FileNotFoundError: [Errno 2] No such file or directory; systemd-inhibit: systemd-inhibit exited with code 1: Failed to connect to system scope bus via local transport: No such file or directory"
+}
+```
+
+Windows (`SetThreadExecutionState`) is not checked on a real machine: the values and the
+"return value is NULL on failure" rule are from
+<https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate>
+(`ES_CONTINUOUS` 0x80000000, `ES_SYSTEM_REQUIRED` 0x00000001; "cannot be used to prevent the
+user from putting the computer to sleep").
