@@ -461,120 +461,143 @@ Nothing recorded yet.
 
 ### Sleep inhibit (C-14)
 
-Checked on 2026-10-13 on Arch Linux, systemd 262, KDE Plasma (Wayland), dbus on
-`/run/dbus/system_bus_socket`. Decision record
-[0011](../docs/decisions/0011-sleep-inhibit.md). The lock test is
-`packages/reframe/tests/platform/test_sleep_real.py` (skipped without logind).
+Checked on 2026-10-13 on Arch Linux, systemd 262, KDE Plasma 6 (Wayland, PowerDevil),
+dbus on `/run/dbus/system_bus_socket`, session bus `unix:path=/run/user/1000/bus`.
+Decisions [0011](../docs/decisions/0011-sleep-inhibit.md) (client, Windows thread) and
+[0020](../docs/decisions/0020-m2-wave-1-product-decisions.md) (only automatic sleep). Code:
+`reframe/platform/sleep.py`, `reframe/platform/dbus.py`. Tests:
+`packages/reframe/tests/platform/test_sleep_real.py` (skipped without the bus or service).
 
-The logind method (input `ssss`, output one fd):
+**Timing on KDE.** PowerDevil makes every inhibition active about **5 s** after it is
+requested, also the ones it mirrors from logind (polled every second: `false` at 0–4 s,
+`true` from 5 s). An earlier check in this section looked after 1 s and wrongly found that
+KDE ignores logind locks (0011's context and 0020's context repeat that); it does not.
 
-```console
-$ busctl introspect org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager | grep -i inhibit
-.Inhibit                          method   ssss                h                                                                            -
-.ListInhibitors                   method   -                   a(ssssuu)                                                                    -
-.BlockInhibited                   property s                   "handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch" emits-change
-.BlockWeakInhibited               property s                   ""                                                                           emits-change
-.DelayInhibited                   property s                   "shutdown:sleep"                                                             emits-change
-.InhibitDelayMaxUSec              property t                   5000000                                                                      const
-...
-$ busctl --verbose call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Inhibit ssss sleep:idle Reframe test block
-MESSAGE "h" {
-        UNIX_FD 5;
-};
-$ busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Inhibit ssss bogus Reframe x block
-Call failed: Invalid what specification bogus
+What each lock does on KDE, measured 6–7 s after it was taken. `suspend` / `screen` are
+PowerDevil's `PolicyAgent.HasInhibition(1)` (InterruptSession: the automatic suspend on idle)
+and `HasInhibition(4)` (ChangeScreenSettings: dimming, screen off, lock).
+
+| Lock | `CanSuspend` (logind) | KDE `ActiveInhibitions` | suspend | screen |
+|------|-----------------------|-------------------------|---------|--------|
+| none | `yes` | – | `false` | `false` |
+| logind `sleep` block | `inhibited` | `"sleep" … "block"` | `true` | `false` |
+| logind `idle` block | `yes` | `"idle" … "block"` | `true` | **`true`** |
+| `org.freedesktop.PowerManagement.Inhibit.Inhibit("Reframe", why)` | `yes` | `"sleep" "Reframe" why "block"` | `true` | `false` |
+| portal `Inhibit("", 4 /*suspend*/, {reason})` | `yes` | `"sleep" "com.microsoft.VSCode" why "block"` | `true` | `false` |
+| portal `Inhibit("", 8 /*idle*/, {reason})` | `yes` | `"idle" … "block"` | `true` | **`true`** |
+
+So, for "stop only automatic sleep, the screen may still lock" (0020), the right lock on
+KDE is the PowerManagement inhibit (or the portal with flag 4). A logind `sleep` lock refuses
+the user's own suspend (`inhibited`); a logind `idle` lock and the portal's idle flag also
+keep the screen on. The portal names the app from the caller's cgroup (here the terminal's
+VS Code scope), PowerManagement shows "Reframe". `CanSuspend` stays `yes` with every lock
+but the logind `sleep` one. Not checked: an actual suspend (this machine was never
+suspended), KDE's handling of the power button and lid during an inhibit.
+
+Reframe's Linux hold (the default inhibitor, `create_sleep_inhibitor()`):
+
+1. The session inhibit: PowerManagement, else the portal with flag 4. It lasts while the
+   connection is open. Release calls `UnInhibit(cookie)` / `Request.Close()` and then closes
+   the connection. Each of these alone ends it (checked: `UnInhibit` with the connection
+   open; `Request.Close()` with the connection open; closing the connection without either).
+   No session bus → skipped (nothing on a headless machine suspends on the desktop's idle).
+2. The logind `idle` lock, only where needed: when the session inhibit is not held, or when
+   logind's `IdleAction` is not `ignore` (here: `ignore`, `IdleActionUSec` 30 min).
+3. `systemd-inhibit` is not used: with `--what=idle` it reaches the same logind with the same
+   polkit rule (`inhibit-block-idle` is `yes` for every caller) as the direct call, so it
+   adds a long-running process and no coverage, and it cannot take the session inhibit.
+
+Session-bus services on this desktop (`busctl --user list`, trimmed):
+
+```text
+org.freedesktop.PowerManagement          1766 org_kde_powerde
+org.freedesktop.PowerManagement.Inhibit  1766 org_kde_powerde
+org.freedesktop.ScreenSaver              1610 kwin_wayland
+org.freedesktop.portal.Desktop           2047 xdg-desktop-por
+org.freedesktop.impl.portal.desktop.kde  2101 xdg-desktop-por
+org.kde.Solid.PowerManagement.PolicyAgent 1766 org_kde_powerde
 ```
 
-Reframe's own client gets the error name too:
-`org.freedesktop.DBus.Error.InvalidArgs: Invalid what specification bogus`. Its message bytes
-for the Inhibit call are identical to jeepney 0.9.0's `new_method_call(…, 'Inhibit', 'ssss',
-…).serialise(serial=2)` (compared byte for byte; kept as `INHIBIT_CALL` in
-`tests/platform/test_sleep_dbus.py`).
-
-What a lock does (`CanSuspend` is what the desktop asks before it suspends):
-
-| Lock held | `CanSuspend` | `BlockInhibited` gets | KDE PolicyAgent `HasInhibition` 1 (suspend) / 4 (screen) |
-|-----------|--------------|-----------------------|----------------------------------------------------------|
-| none | `yes` | – | `false` / `false` |
-| `--what=sleep --mode=block` | `inhibited` | not checked | `false` / `false` |
-| `--what=idle --mode=block` | `yes` | `idle` | `false` / `false` |
-| `sleep:idle` block (Reframe, logind backend) | `inhibited` | `sleep:idle` | `false` / `false` |
-
-`BlockInhibited` before and after Reframe's lock is
-`handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch` (KDE's own lock),
-during it `sleep:idle:handle-power-key:…`.
-
 ```console
-$ busctl --user call org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement/PolicyAgent org.kde.Solid.PowerManagement.PolicyAgent HasInhibition u 1
+$ busctl --user introspect org.freedesktop.PowerManagement.Inhibit /org/freedesktop/PowerManagement/Inhibit org.freedesktop.PowerManagement.Inhibit
+NAME               TYPE   SIGNATURE RESULT/VALUE FLAGS
+.HasInhibit        method -         b            -
+.Inhibit           method ss        u            -
+.UnInhibit         method u         -            -
+.HasInhibitChanged signal b         -            -
+$ busctl --user introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.Inhibit
+NAME              TYPE     SIGNATURE RESULT/VALUE FLAGS
+.CreateMonitor    method   sa{sv}    o            -
+.Inhibit          method   sua{sv}   o            -
+.QueryEndResponse method   o         -            -
+.version          property u         3            emits-change
+.StateChanged     signal   oa{sv}    -            -
+$ busctl introspect org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager | grep -i inhibit
+.Inhibit                          method   ssss                h                                                                            -
+...
+$ busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager IdleAction IdleActionUSec IdleHint
+s "ignore"
+t 1800000000
 b false
 ```
 
-So KDE does not dim, lock or suspend on its own account because of a logind lock; logind
-refuses the suspend. polkit defaults (`/usr/share/polkit-1/actions/org.freedesktop.login1.policy`):
-
-| Action | allow_any | allow_inactive | allow_active |
-|--------|-----------|----------------|--------------|
-| `inhibit-block-sleep` | `auth_admin_keep` | `yes` | `yes` |
-| `inhibit-block-idle` | `yes` | `yes` | `yes` |
-| `inhibit-delay-sleep` | `yes` | `yes` | `yes` |
-| `suspend-ignore-inhibit` | `auth_admin_keep` | `auth_admin_keep` | `auth_admin_keep` |
-
-A `systemd-run --user` unit (no session) could also take the `sleep` block lock here.
-`man systemd-inhibit` (262): `--mode=` takes `block`, `delay` or `block-weak`; `block-weak`
-"is not enforced against operations initiated by privileged clients or those owned by the
-user that also owns the inhibitor lock"; `delay` is limited by `InhibitDelayMaxSec` (5 s).
-`man logind.conf`: `LidSwitchIgnoreInhibited=` defaults to `yes`.
-
-`systemd-inhibit` failures (exit 1, the command is not run):
-
-```console
-$ systemd-inhibit --what=idle --mode=delay --who=Reframe --why=x --no-ask-password sh -c 'echo ready'
-Failed to inhibit: Delay inhibitors only supported for shutdown and sleep
-$ systemd-inhibit --what=bogus --who=Reframe --why=x sh -c 'echo ready'
-Failed to inhibit: Invalid what specification bogus
-$ DBUS_SYSTEM_BUS_ADDRESS=unix:path=/nonexistent systemd-inhibit --what=sleep:idle --who=Reframe --why=x --no-ask-password sh -c 'echo ready'
-Failed to connect to system scope bus via local transport: No such file or directory
-```
-
-The lock before, during and after, from `test_sleep_real.py` (`uv run pytest -s`;
-`systemd-inhibit --list --no-legend --no-pager`, columns joined by one space). logind backend:
+The PowerManagement inhibit with a held connection, polled every second (KDE's
+`RequestedInhibitions` / `ActiveInhibitions`), then the connection closed without
+`UnInhibit`:
 
 ```text
---- before (7 inhibitors; ours: 0)
-NetworkManager 0 root 637 NetworkManager sleep NetworkManager needs to turn off networks delay
-Realtime Kit 0 root 865 rtkit-daemon sleep Demote realtime scheduling and stop canary. delay
-UPower 0 root 926 upowerd sleep Pause device polling delay
-PowerDevil 1000 peti 1766 org_kde_powerde handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch KDE handles power events block
-code 1000 peti 24708 code shutdown Ensure a clean shutdown delay
-code 1000 peti 24708 code sleep Application cleanup before suspend delay
-compositor 1000 peti 1610 kwin_wayland sleep Ensuring that the screen gets locked before going to sleep delay
---- during (8 inhibitors; ours: 1)
-...
-Reframe 1000 peti 91163 pytest sleep:idle Reframe test 3d6f1033 block
-...
-CanSuspend before: yes, during: inhibited
---- after (7 inhibitors; ours: 0)
-(the same 7 lines as before)
+ 0.0s suspend=b false requested=a(ssssu) 0 active=a(ssssu) 0
+ 4.0s suspend=b false requested=a(ssssu) 0 active=a(ssssu) 0
+ 5.0s suspend=b true requested=a(ssssu) 1 "sleep" "Reframe" "probe pm" "block" 3 active=a(ssssu) 1 "sleep" "Reframe" "probe pm" "block" 3
+closed+1.0s suspend=b false requested=a(ssssu) 0 active=a(ssssu) 0
 ```
 
-systemd-inhibit backend (the helper is the process that logind lists):
+The real tests (`uv run pytest -s packages/reframe/tests/platform/test_sleep_real.py`):
 
 ```text
---- during (8 inhibitors; ours: 1)
-Reframe 1000 peti 91179 systemd-inhibit sleep:idle Reframe test fd470398 block
---- after (7 inhibitors; ours: 0)
+logind during: ['Reframe 1000 peti 748992 pytest idle Reframe test ff1140ad block']; CanSuspend before=yes during=yes
+logind after: []
+desktop before: PowerManagement HasInhibit=0; KDE PolicyAgent suspend=0 screen=0; ActiveInhibitions: a(ssssu) 0
+desktop during: PowerManagement HasInhibit=1; KDE PolicyAgent suspend=1 screen=0; ActiveInhibitions: a(ssssu) 1 "sleep" "Reframe" "Reframe session test" "block" 3
+desktop after: PowerManagement HasInhibit=0; KDE PolicyAgent suspend=0 screen=0; ActiveInhibitions: a(ssssu) 0
+default: backends=('session',) IdleAction=ignore
+default during: logind []; PowerManagement HasInhibit=1; KDE PolicyAgent suspend=1 screen=0; ActiveInhibitions: a(ssssu) 1 "sleep" "Reframe" "Reframe default 14a58319" "block" 3; CanSuspend yes
+headless: backends=('logind',) during=['Reframe 1000 peti 748992 pytest idle Reframe headless d1e0ab3f block']
+portal during: PowerManagement HasInhibit=1; KDE PolicyAgent suspend=1 screen=0; ActiveInhibitions: a(ssssu) 1 "sleep" "com.microsoft.VSCode" "Reframe portal test" "block" 3
+portal after Request.Close (connection open): PowerManagement HasInhibit=0; KDE PolicyAgent suspend=0 screen=0; ActiveInhibitions: a(ssssu) 0
+PowerManagement after the connection closed: PowerManagement HasInhibit=0; KDE PolicyAgent suspend=0 screen=0; ActiveInhibitions: a(ssssu) 0
+logind idle lock only, KDE during: PowerManagement HasInhibit=1; KDE PolicyAgent suspend=1 screen=1; ActiveInhibitions: a(ssssu) 1 "idle" "Reframe" "Reframe KDE mirror test" "block" 3
 ```
 
-Without a bus (both backends pointed at a missing socket), the one warning event:
+Without any bus, the one warning event:
 
 ```json
 {
   "type": "app.warning",
   "code": "sleep_inhibit.unavailable",
-  "message": "Sleep inhibit is not available: the computer may go to sleep while the queue runs.",
-  "detail": "logind: no system bus: FileNotFoundError: [Errno 2] No such file or directory; systemd-inhibit: systemd-inhibit exited with code 1: Failed to connect to system scope bus via local transport: No such file or directory"
+  "message": "Sleep inhibit is not available: the computer may go to sleep on its own while the queue runs.",
+  "detail": "logind: no system bus: FileNotFoundError: [Errno 2] No such file or directory; session: no session bus: FileNotFoundError: [Errno 2] No such file or directory"
 }
 ```
+
+polkit defaults (`/usr/share/polkit-1/actions/org.freedesktop.login1.policy`):
+`inhibit-block-idle` is `yes` for any, inactive and active callers; `inhibit-block-sleep` is
+`auth_admin_keep` for any other caller (not used any more). No call sets
+`ALLOW_INTERACTIVE_AUTHORIZATION`, and none of the session calls asked for anything.
+
+The client's bytes for the three calls are identical to jeepney 0.9.0's
+`new_method_call(…).serialise(serial=2)` (logind `Inhibit` `ssss`, PowerManagement `Inhibit`
+`ss`, portal `Inhibit` `sua{sv}`; kept as golden values in `test_sleep_dbus.py`). A logind
+error reaches it as `org.freedesktop.DBus.Error.InvalidArgs: Invalid what specification
+bogus`.
+
+**GNOME (not tested, no GNOME here).** GNOME has no `org.freedesktop.PowerManagement`
+service, so Reframe uses the portal there. The portal documentation
+(<https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Inhibit.html>)
+gives the flags (1 logout, 2 user switch, 4 suspend, 8 idle) and ends an inhibition with
+`Request.Close()`; it does not say what happens when the caller disconnects, which is why
+release calls `Close()` first. Whether GNOME's automatic suspend honours a suspend inhibit
+and still lets the user suspend from the menu is not verified.
 
 Windows (`SetThreadExecutionState`) is not checked on a real machine: the values and the
 "return value is NULL on failure" rule are from

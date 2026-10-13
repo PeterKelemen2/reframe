@@ -454,10 +454,13 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 ## C-14 Platform services
 
 - [ ] Sleep inhibit: Windows `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`.
-      Linux: the logind `Inhibit` D-Bus call, or `systemd-inhibit` as a fallback. If neither
-      is available, emit a warning and continue. Only automatic (idle) sleep is stopped: the
-      user's own Sleep is never blocked, so on Linux there is no logind `sleep` block lock,
-      only the idle lock and the desktop session's inhibit for automatic suspend
+      Linux: the desktop session's inhibit for automatic suspend
+      (`org.freedesktop.PowerManagement.Inhibit`, else the XDG portal `Inhibit` with the
+      suspend flag) and the logind `Inhibit` D-Bus call with `what=idle` where it is needed
+      (no session inhibit, or logind's `IdleAction` is not `ignore`: KDE turns a logind idle
+      lock into a screen inhibit). No `systemd-inhibit`. If none is available, emit a
+      warning and continue. Only automatic (idle) sleep is stopped: the user's own Sleep is
+      never blocked, so on Linux there is no logind `sleep` block lock
       ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md), which supersedes the lock of
       [0011](../decisions/0011-sleep-inhibit.md)). The D-Bus calls use a small stdlib client
       (no D-Bus dependency); on Windows one dedicated thread sets and clears the state.

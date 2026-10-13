@@ -701,8 +701,8 @@ Same behaviour as HandBrake:
   removes its partial file (configurable). File name collisions follow the setting: ask,
   auto-rename, or overwrite.
 - **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
-- **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux
-  `systemd-inhibit` / D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
+- **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux the desktop
+  session's inhibit and logind over D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
   power button and the lid always work, and the encode then pauses with the system and
   continues after wake ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - Per-job **log**: the full command, FFmpeg output, timing, and a copy button for bug reports.

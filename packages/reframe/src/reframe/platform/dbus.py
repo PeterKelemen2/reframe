@@ -1,18 +1,24 @@
-"""A minimal, blocking D-Bus client: one method call that can return file descriptors (C-14).
+"""A minimal, blocking D-Bus client for the sleep inhibit calls (C-14).
 
-Reframe needs exactly one D-Bus call: logind's ``Inhibit`` on the system bus, which returns
-a file descriptor (the lock lasts while the descriptor is open). This module implements the
-small part of the D-Bus specification (https://dbus.freedesktop.org/doc/dbus-specification.html)
-that this call needs, with the standard library only (decision record 0011):
+Reframe needs a few D-Bus calls: logind's ``Inhibit`` on the system bus (it returns a file
+descriptor; the lock lasts while the descriptor is open) and the desktop session's inhibit
+on the session bus (``org.freedesktop.PowerManagement.Inhibit`` or the XDG desktop portal;
+these last while the caller's bus connection stays open). This module implements the small
+part of the D-Bus specification (https://dbus.freedesktop.org/doc/dbus-specification.html)
+that these calls need, with the standard library only (decision record 0011):
 
 - connect to a ``unix:path=`` or ``unix:abstract=`` bus address,
 - SASL ``EXTERNAL`` authentication with the process uid, then ``NEGOTIATE_UNIX_FD``,
-- ``Hello``, then one ``METHOD_CALL`` with string arguments,
+- ``Hello``, then method calls with simple arguments (``s``, ``o``, ``u``, ``h`` and an
+  ``a{sv}`` of strings),
 - read messages until the reply (``METHOD_RETURN`` or ``ERROR``) arrives; file descriptors
   come as ``SCM_RIGHTS`` ancillary data and are received with ``MSG_CMSG_CLOEXEC``, so a
   child process never inherits a duplicate (a duplicate would keep the lock alive).
 
-The call never sets ``ALLOW_INTERACTIVE_AUTHORIZATION``: a background queue must never make
+:func:`call` opens a connection, makes one call and closes it. :class:`Connection` stays
+open until :meth:`Connection.close` (for an inhibit that lasts as long as the connection).
+
+No message sets ``ALLOW_INTERACTIVE_AUTHORIZATION``: a background queue must never make
 polkit ask the user for a password.
 
 Errors: :class:`DBusError` for an error reply of the remote side (``name`` is the D-Bus
@@ -20,7 +26,7 @@ error name, for example ``org.freedesktop.DBus.Error.AccessDenied``); ``OSError`
 ``TimeoutError``) when the bus cannot be reached; :class:`DBusProtocolError` for anything
 the bus sends that this client does not understand. The callers turn all of them into data.
 
-Linux only (the module imports on Windows, but :func:`call` raises ``OSError`` there).
+Linux only (the module imports on Windows, but connecting raises ``OSError`` there).
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ from dataclasses import dataclass, field
 
 __all__ = [
     "DEFAULT_SYSTEM_BUS",
+    "Connection",
     "DBusError",
     "DBusProtocolError",
     "Message",
@@ -47,6 +54,7 @@ __all__ = [
     "encode_method_call",
     "message_length",
     "parse_address",
+    "session_bus_address",
     "system_bus_address",
 ]
 
@@ -79,6 +87,10 @@ _FIELD_TYPES = {
     FIELD_SIGNATURE: "g",
     FIELD_UNIX_FDS: "u",
 }
+
+#: A body value: a string (``s``, ``o``, ``g``), a number (``u``, ``h``) or an ``a{sv}``
+#: whose values are strings.
+Value = str | int | dict[str, str]
 
 MAX_MESSAGE = 128 * 2**20  # the spec's maximum message size
 MAX_FDS = 16  # file descriptors accepted per read (the Inhibit reply carries one)
@@ -116,6 +128,18 @@ class Reply:
 def system_bus_address() -> str:
     """``DBUS_SYSTEM_BUS_ADDRESS`` if set, else the default system bus socket."""
     return os.environ.get("DBUS_SYSTEM_BUS_ADDRESS") or DEFAULT_SYSTEM_BUS
+
+
+def session_bus_address() -> str | None:
+    """``DBUS_SESSION_BUS_ADDRESS`` if set, else ``$XDG_RUNTIME_DIR/bus`` if that socket
+    exists (the systemd user bus, as sd-bus does), else ``None`` (no session bus)."""
+    address = os.environ.get("DBUS_SESSION_BUS_ADDRESS")
+    if address:
+        return address
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime and os.path.exists(os.path.join(runtime, "bus")):
+        return "unix:path=" + os.path.join(runtime, "bus")
+    return None
 
 
 def parse_address(address: str) -> list[str | bytes]:
@@ -184,28 +208,39 @@ class _Writer:
         self.byte(len(data))
         self.buf += data + b"\0"
 
-    def value(self, sig: str, value: str | int) -> None:
-        if sig in ("s", "o"):
-            self.string(str(value))
-        elif sig == "g":
-            self.signature(str(value))
-        elif sig in ("u", "h"):
-            self.uint32(int(value))
+    def value(self, sig: str, value: Value) -> None:
+        if sig == "a{sv}" and isinstance(value, dict):
+            self.uint32(0)  # the length, filled in below
+            length_at = len(self.buf) - 4
+            self.align(8)  # dict entries are 8-aligned; the length does not count this
+            start = len(self.buf)
+            for key, item in value.items():
+                self.align(8)
+                self.string(key)
+                self.signature("s")
+                self.string(item)
+            struct.pack_into(self.endian + "I", self.buf, length_at, len(self.buf) - start)
+        elif sig in ("s", "o") and isinstance(value, str):
+            self.string(value)
+        elif sig == "g" and isinstance(value, str):
+            self.signature(value)
+        elif sig in ("u", "h") and isinstance(value, int):
+            self.uint32(value)
         else:
-            raise ValueError(f"unsupported type {sig!r}")
+            raise ValueError(f"unsupported type {sig!r} for {type(value).__name__}")
 
 
 def encode(
     msg_type: int,
     serial: int,
     fields: Sequence[tuple[int, str | int]],
-    body: Sequence[tuple[str, str | int]] = (),
+    body: Sequence[tuple[str, Value]] = (),
     *,
     flags: int = 0,
     endian: str = "<",
 ) -> bytes:
-    """A complete message. ``body`` is a list of ``(type, value)`` with simple types only
-    (``s``, ``o``, ``g``, ``u``, ``h``); the ``SIGNATURE`` field is added from it."""
+    """A complete message. ``body`` is a list of ``(type, value)`` with the types of
+    :data:`Value` only; the ``SIGNATURE`` field is added from it."""
     writer = _Writer(endian)
     # The fixed header is 12 bytes and the header-field array length is at offset 12, so
     # the array content starts at offset 16 (already 8-aligned).
@@ -222,8 +257,8 @@ def encode(
     fields_len = len(writer.buf) - 16
     writer.align(8)
     body_start = len(writer.buf)
-    for sig, value in body:
-        writer.value(sig, value)
+    for body_sig, body_value in body:
+        writer.value(body_sig, body_value)
     body_len = len(writer.buf) - body_start
     flag = b"l" if endian == "<" else b"B"
     writer.buf[0:16] = struct.pack(
@@ -240,9 +275,11 @@ def encode_method_call(
     member: str,
     destination: str,
     args: Sequence[str] = (),
+    body: Sequence[tuple[str, Value]] = (),
 ) -> bytes:
-    """A ``METHOD_CALL`` with string arguments and no flags (so never
-    ``ALLOW_INTERACTIVE_AUTHORIZATION``)."""
+    """A ``METHOD_CALL`` with no flags (so never ``ALLOW_INTERACTIVE_AUTHORIZATION``).
+
+    The arguments are ``args`` (strings) followed by ``body`` (typed values)."""
     return encode(
         METHOD_CALL,
         serial,
@@ -252,7 +289,7 @@ def encode_method_call(
             (FIELD_MEMBER, member),
             (FIELD_DESTINATION, destination),
         ],
-        [("s", arg) for arg in args],
+        [*(("s", arg) for arg in args), *body],
     )
 
 
@@ -327,6 +364,11 @@ class _Reader:
             return self.uint32()
         if sig == "y":
             return self.byte()
+        if sig == "v":  # a variant of one simple type (a property value)
+            inner = self.signature()
+            if len(inner) != 1 or inner == "v":
+                raise DBusProtocolError(f"unsupported variant type {inner!r}")
+            return self.value(inner)
         raise DBusProtocolError(f"unsupported type {sig!r}")
 
 
@@ -353,7 +395,8 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
     """Parse one complete message. Takes ``UNIX_FDS`` descriptors from the front of ``fds``.
 
     Bodies are parsed only for simple signatures (``s``, ``o``, ``g``, ``u``, ``h``, ``i``,
-    ``b``, ``y``); other bodies are left empty (this client never needs them).
+    ``b``, ``y``, and ``v`` holding one of these); other bodies are left empty (this client
+    never needs them).
     """
     endian = _endian(data[0:1])
     msg_type, _flags, version = data[1], data[2], data[3]
@@ -379,7 +422,7 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
     del fds[:n_fds]
     body: list[str | int] = []
     sig = str(fields.get(FIELD_SIGNATURE, ""))
-    if sig and all(c in "sogyuhib" for c in sig):
+    if sig and all(c in "sogyuhibv" for c in sig):
         body_reader = _Reader(data[: body_start + body_len], endian)
         body_reader.pos = body_start
         try:
@@ -405,6 +448,7 @@ class _Connection:
         self.deadline = deadline
         self.data = bytearray()
         self.fds: list[int] = []
+        self.closed = False
 
     def _settimeout(self) -> None:
         remaining = self.deadline - time.monotonic()
@@ -457,6 +501,7 @@ class _Connection:
         return decode_message(raw, self.fds)
 
     def close(self) -> None:
+        self.closed = True
         _close_all(self.fds)
         self.fds.clear()
         with contextlib.suppress(OSError):
@@ -505,6 +550,100 @@ def _connect(addresses: Sequence[str | bytes], deadline: float) -> socket.socket
         raise last
 
 
+class Connection:
+    """An open, authenticated bus connection (blocking; use it from one thread at a time).
+
+    Open it with :meth:`open`; it stays open (and with it every inhibit that the bus ties
+    to the connection) until :meth:`close`.
+    """
+
+    def __init__(self, conn: _Connection, unique_name: str) -> None:
+        self._conn = conn
+        self._serial = 1  # Hello was serial 1
+        self.unique_name = unique_name
+
+    @classmethod
+    def open(cls, address: str, *, timeout: float = 5.0) -> Connection:
+        """Connect, authenticate and say ``Hello``. Raises like :func:`call`."""
+        deadline = time.monotonic() + timeout
+        conn = _Connection(_connect(parse_address(address), deadline), deadline)
+        try:
+            _authenticate(conn, want_fds=True)
+            conn.send(
+                encode_method_call(
+                    serial=1,
+                    path="/org/freedesktop/DBus",
+                    interface="org.freedesktop.DBus",
+                    member="Hello",
+                    destination="org.freedesktop.DBus",
+                )
+            )
+            reply = _wait_reply(conn, 1)
+        except BaseException:
+            conn.close()
+            raise
+        _close_all(reply.fds)
+        name = reply.body[0] if reply.body else ""
+        return cls(conn, str(name))
+
+    @property
+    def closed(self) -> bool:
+        return self._conn.closed
+
+    def call(
+        self,
+        *,
+        destination: str,
+        path: str,
+        interface: str,
+        member: str,
+        args: Sequence[str] = (),
+        body: Sequence[tuple[str, Value]] = (),
+        timeout: float = 5.0,
+    ) -> Reply:
+        """Call a method and wait for its reply (``args`` are strings, ``body`` typed)."""
+        if self._conn.closed:
+            raise OSError("the D-Bus connection is closed")
+        self._serial += 1
+        serial = self._serial
+        self._conn.deadline = time.monotonic() + timeout
+        self._conn.send(
+            encode_method_call(
+                serial=serial,
+                path=path,
+                interface=interface,
+                member=member,
+                destination=destination,
+                args=args,
+                body=body,
+            )
+        )
+        return _wait_reply(self._conn, serial)
+
+    def close(self) -> None:
+        """Close the connection (idempotent). The bus then drops what it tied to it."""
+        self._conn.close()
+
+    def __enter__(self) -> Connection:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+def _wait_reply(conn: _Connection, serial: int) -> Reply:
+    """Read messages until the reply to ``serial``; other messages are dropped."""
+    while True:
+        message = conn.read_message()
+        if message.msg_type not in (METHOD_RETURN, ERROR) or message.reply_serial != serial:
+            _close_all(message.fds)  # signals (NameAcquired), stray calls, old replies
+            continue
+        if message.msg_type == ERROR:
+            _close_all(message.fds)
+            raise _error(message)
+        return Reply(message.signature, message.body, message.fds)
+
+
 def call(
     *,
     destination: str,
@@ -512,58 +651,32 @@ def call(
     interface: str,
     member: str,
     args: Sequence[str] = (),
+    body: Sequence[tuple[str, Value]] = (),
     address: str | None = None,
     timeout: float = 5.0,
 ) -> Reply:
-    """Call one method with string arguments on a bus and return its reply.
+    """Open a connection, call one method, close the connection, and return the reply.
 
     ``address`` defaults to the system bus (:func:`system_bus_address`). Blocking: run it in
-    a thread from async code. Raises :class:`DBusError`, :class:`DBusProtocolError` or
-    ``OSError`` (see the module doc).
+    a thread from async code. ``timeout`` covers the whole exchange. Raises
+    :class:`DBusError`, :class:`DBusProtocolError` or ``OSError`` (see the module doc).
     """
     deadline = time.monotonic() + timeout
-    targets = parse_address(address if address is not None else system_bus_address())
-    conn = _Connection(_connect(targets, deadline), deadline)
+    connection = Connection.open(
+        address if address is not None else system_bus_address(), timeout=timeout
+    )
     try:
-        _authenticate(conn, want_fds=True)
-        conn.send(
-            encode_method_call(
-                serial=1,
-                path="/org/freedesktop/DBus",
-                interface="org.freedesktop.DBus",
-                member="Hello",
-                destination="org.freedesktop.DBus",
-            )
+        return connection.call(
+            destination=destination,
+            path=path,
+            interface=interface,
+            member=member,
+            args=args,
+            body=body,
+            timeout=max(deadline - time.monotonic(), 0.0),
         )
-        conn.send(
-            encode_method_call(
-                serial=2,
-                path=path,
-                interface=interface,
-                member=member,
-                destination=destination,
-                args=args,
-            )
-        )
-        while True:
-            message = conn.read_message()
-            if message.msg_type not in (METHOD_RETURN, ERROR):
-                _close_all(message.fds)  # signals (NameAcquired) and stray calls
-                continue
-            if message.reply_serial == 1:
-                _close_all(message.fds)
-                if message.msg_type == ERROR:
-                    raise _error(message)
-                continue
-            if message.reply_serial != 2:
-                _close_all(message.fds)
-                continue
-            if message.msg_type == ERROR:
-                _close_all(message.fds)
-                raise _error(message)
-            return Reply(message.signature, message.body, message.fds)
     finally:
-        conn.close()
+        connection.close()
 
 
 def _error(message: Message) -> DBusError:

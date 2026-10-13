@@ -1,18 +1,15 @@
-"""The sleep inhibit backends: Windows (mocked kernel32), logind (fake D-Bus call) and
-systemd-inhibit (a fake ``systemd-inhibit`` script, run for real through run_streaming)."""
+"""The sleep inhibit backends: Windows (mocked kernel32), logind (fake D-Bus call) and the
+desktop session's inhibit (fake connections; the real ones are in test_sleep_real.py)."""
 
 from __future__ import annotations
 
 import asyncio
 import os
-import stat
 import sys
 import threading
-from pathlib import Path
 from typing import Any
 from unittest import mock
 
-import psutil
 import pytest
 
 from reframe.events import EventBus
@@ -23,18 +20,18 @@ from reframe.platform.sleep import (
     ES_SYSTEM_REQUIRED,
     InhibitState,
     LogindBackend,
+    SessionInhibitBackend,
+    Skipped,
     SleepInhibitor,
-    SystemdInhibitBackend,
     WindowsExecutionStateBackend,
 )
+
+PM = "org.freedesktop.PowerManagement.Inhibit"
+PORTAL = "org.freedesktop.portal.Inhibit"
 
 pytestmark = pytest.mark.anyio
 
 linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
-
-
-def _no_lost(reason: str) -> None:  # pragma: no cover - must not be called
-    raise AssertionError(f"lost: {reason}")
 
 
 # --------------------------------------------------------------------------- Windows
@@ -133,18 +130,14 @@ async def test_windows_binding_error_is_data() -> None:
     k32 = mock.Mock(spec=["SetThreadExecutionState"])
     k32.SetThreadExecutionState.side_effect = OSError("broken binding")
     backend = WindowsExecutionStateBackend(k32)
-    assert await backend.hold("x", _no_lost) == (
-        "SetThreadExecutionState failed: OSError: broken binding"
-    )
+    assert await backend.hold("x") == ("SetThreadExecutionState failed: OSError: broken binding")
     assert backend.thread is None
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="kernel32 exists on Windows")
 async def test_windows_backend_without_kernel32_is_unavailable() -> None:
     backend = WindowsExecutionStateBackend()
-    assert await backend.hold("x", _no_lost) == (
-        "kernel32 not available: kernel32 exists only on Windows"
-    )
+    assert await backend.hold("x") == ("kernel32 not available: kernel32 exists only on Windows")
     await backend.free()
 
 
@@ -178,19 +171,19 @@ async def test_logind_holds_the_returned_fd_and_closes_it_on_free() -> None:
     os.set_inheritable(read_end, True)
     call = FakeCall(dbus.Reply("h", [0], [read_end]))
     backend = LogindBackend(call=call, address="unix:path=/x", timeout=2.0)
-    assert await backend.hold("Encoding 3 jobs", _no_lost) is None
+    assert await backend.hold("Encoding 3 jobs") is None
     assert call.kwargs == {
         "destination": "org.freedesktop.login1",
         "path": "/org/freedesktop/login1",
         "interface": "org.freedesktop.login1.Manager",
         "member": "Inhibit",
-        "args": ("sleep:idle", "Reframe", "Encoding 3 jobs", "block"),
+        "args": ("idle", "Reframe", "Encoding 3 jobs", "block"),
         "address": "unix:path=/x",
         "timeout": 2.0,
     }
     assert backend.fd == read_end
     assert not os.get_inheritable(read_end)  # a child must never keep the lock alive
-    assert await backend.hold("again", _no_lost) is None  # already held: no second call
+    assert await backend.hold("again") is None  # already held: no second call
     await backend.free()
     assert _fd(backend) is None
     with pytest.raises(OSError, match="Bad file descriptor"):
@@ -205,17 +198,17 @@ async def test_logind_closes_extra_fds_and_rejects_a_reply_without_one() -> None
     before = _open_fds()
     a, b = os.pipe()
     backend = LogindBackend(call=FakeCall(dbus.Reply("h", [1], [a, b])))
-    assert await backend.hold("x", _no_lost) is None
+    assert await backend.hold("x") is None
     assert backend.fd == b
     with pytest.raises(OSError, match="Bad file descriptor"):
         os.fstat(a)
     await backend.free()
     c, d = os.pipe()
     bad = LogindBackend(call=FakeCall(dbus.Reply("h", [5], [c, d])))
-    assert await bad.hold("x", _no_lost) == ("Inhibit returned no file descriptor (signature 'h')")
+    assert await bad.hold("x") == ("Inhibit returned no file descriptor (signature 'h')")
     assert bad.fd is None
     empty = LogindBackend(call=FakeCall(dbus.Reply("", [], [])))
-    assert await empty.hold("x", _no_lost) == "Inhibit returned no file descriptor (signature '')"
+    assert await empty.hold("x") == "Inhibit returned no file descriptor (signature '')"
     assert _open_fds() == before
 
 
@@ -239,165 +232,8 @@ async def test_logind_closes_extra_fds_and_rejects_a_reply_without_one() -> None
 )
 async def test_logind_expected_failures_are_data(error: BaseException, message: str) -> None:
     backend = LogindBackend(call=FakeCall(error))
-    assert await backend.hold("x", _no_lost) == message
+    assert await backend.hold("x") == message
     assert backend.fd is None
-
-
-# --------------------------------------------------------------------------- systemd-inhibit
-
-
-FAKE_OK = """#!/bin/sh
-# A fake systemd-inhibit: record the arguments, skip the options, run the command.
-printf '%s\\n' "$@" > "$0.args"
-while [ "${1#--}" != "$1" ]; do shift; done
-exec "$@"
-"""
-
-FAKE_DENIED = """#!/bin/sh
-echo "Failed to inhibit: Access denied" >&2
-exit 1
-"""
-
-FAKE_HANGS = """#!/bin/sh
-exec sleep 30
-"""
-
-
-def _script(tmp_path: Path, name: str, text: str) -> str:
-    path = tmp_path / name
-    path.write_text(text)
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
-    return str(path)
-
-
-def _tree() -> list[psutil.Process]:
-    return psutil.Process().children(recursive=True)
-
-
-async def _gone(procs: list[psutil.Process]) -> bool:
-    for _ in range(100):
-        alive = []
-        for p in procs:
-            try:
-                if p.status() != psutil.STATUS_ZOMBIE:
-                    alive.append(p)
-            except psutil.NoSuchProcess:
-                pass
-        if not alive:
-            return True
-        await asyncio.sleep(0.02)
-    return False
-
-
-@linux_only
-async def test_systemd_inhibit_runs_until_released_and_leaves_nothing(tmp_path: Path) -> None:
-    fake = _script(tmp_path, "systemd-inhibit", FAKE_OK)
-    before = {p.pid for p in _tree()}
-    fds_before = _open_fds()
-    backend = SystemdInhibitBackend(which=lambda _: fake)
-    inhibitor = SleepInhibitor([backend])
-    assert await inhibitor.acquire("Encoding: Show S01E01") is InhibitState.ACTIVE
-    assert inhibitor.backend == "systemd-inhibit"
-    args = await asyncio.to_thread(Path(fake + ".args").read_text)
-    assert args.splitlines() == [
-        "--what=sleep:idle",
-        "--who=Reframe",
-        "--why=Encoding: Show S01E01",
-        "--mode=block",
-        "--no-ask-password",
-        "sh",
-        "-c",
-        "echo ready && exec sleep infinity",
-    ]
-    children = [p for p in _tree() if p.pid not in before]
-    assert children  # the fake execs into sh, then sleep
-    assert any("sleep" in " ".join(p.cmdline()) for p in children)
-    await inhibitor.release()
-    assert await _gone(children)
-    assert backend.task is None
-    assert inhibitor.state is InhibitState.INACTIVE
-    await inhibitor.close()
-    assert _open_fds() == fds_before
-
-
-@linux_only
-async def test_systemd_inhibit_failure_is_data(tmp_path: Path) -> None:
-    fake = _script(tmp_path, "systemd-inhibit", FAKE_DENIED)
-    backend = SystemdInhibitBackend(which=lambda _: fake)
-    assert await backend.hold("x", _no_lost) == (
-        "systemd-inhibit exited with code 1: Failed to inhibit: Access denied"
-    )
-    assert backend.task is None
-
-
-async def test_systemd_inhibit_missing() -> None:
-    backend = SystemdInhibitBackend(which=lambda _: None)
-    assert await backend.hold("x", _no_lost) == "systemd-inhibit not found"
-    await backend.free()
-
-
-@linux_only
-async def test_systemd_inhibit_that_cannot_run_is_data(tmp_path: Path) -> None:
-    path = tmp_path / "systemd-inhibit"
-    path.write_text("not a program")  # not executable
-    backend = SystemdInhibitBackend(which=lambda _: str(path))
-    error = await backend.hold("x", _no_lost)
-    assert error is not None
-    assert error.startswith("PermissionError")
-
-
-@linux_only
-async def test_systemd_inhibit_that_never_gets_ready_is_stopped(tmp_path: Path) -> None:
-    fake = _script(tmp_path, "systemd-inhibit", FAKE_HANGS)
-    before = {p.pid for p in _tree()}
-    backend = SystemdInhibitBackend(which=lambda _: fake, start_timeout=0.3)
-    assert await backend.hold("x", _no_lost) == "systemd-inhibit did not start within 0.3 s"
-    assert backend.task is None
-    leftovers = [p for p in _tree() if p.pid not in before]
-    assert await _gone(leftovers)
-
-
-@linux_only
-async def test_systemd_inhibit_killed_from_outside_is_a_lost_lock(tmp_path: Path) -> None:
-    fake = _script(tmp_path, "systemd-inhibit", FAKE_OK)
-    bus = EventBus()
-    sub = bus.subscribe()
-    before = {p.pid for p in _tree()}
-    inhibitor = SleepInhibitor([SystemdInhibitBackend(which=lambda _: fake)], bus)
-    await inhibitor.acquire("job")
-    (child,) = [p for p in psutil.Process().children() if p.pid not in before]
-    child.kill()
-    for _ in range(100):
-        if inhibitor.state is InhibitState.UNAVAILABLE:
-            break
-        await asyncio.sleep(0.02)
-    assert inhibitor.state is InhibitState.UNAVAILABLE
-    event = sub.get_nowait()
-    assert isinstance(event, AppWarningEvent)
-    assert event.detail == "systemd-inhibit exited unexpectedly (code -9)"
-    await inhibitor.release()
-    await inhibitor.close()
-
-
-@linux_only
-async def test_systemd_inhibit_hold_cancelled_while_starting_stops_the_child(
-    tmp_path: Path,
-) -> None:
-    fake = _script(tmp_path, "systemd-inhibit", FAKE_HANGS)
-    before = {p.pid for p in _tree()}
-    backend = SystemdInhibitBackend(which=lambda _: fake, start_timeout=30)
-    task = asyncio.ensure_future(backend.hold("x", _no_lost))
-    for _ in range(100):
-        if [p for p in _tree() if p.pid not in before]:
-            break
-        await asyncio.sleep(0.02)
-    leftovers = [p for p in _tree() if p.pid not in before]
-    assert leftovers
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert await _gone(leftovers)
-    assert backend.task is None
 
 
 async def test_windows_backend_accepts_a_mock_kernel32() -> None:
@@ -406,10 +242,282 @@ async def test_windows_backend_accepts_a_mock_kernel32() -> None:
     k32 = mock.Mock(spec=["SetThreadExecutionState"])
     k32.SetThreadExecutionState.return_value = ES_CONTINUOUS
     backend = sleep.WindowsExecutionStateBackend(k32)
-    assert await backend.hold("x", _no_lost) is None
+    assert await backend.hold("x") is None
     await backend.free()
     await backend.free()
     assert k32.SetThreadExecutionState.call_args_list == [
         mock.call(0x80000001),
         mock.call(0x80000000),
     ]
+
+
+async def test_logind_unless_held_and_idle_action_ignore_is_skipped() -> None:
+    calls: list[dict[str, Any]] = []
+
+    def call(**kwargs: Any) -> dbus.Reply:
+        calls.append(kwargs)
+        return dbus.Reply("v", ["ignore"])
+
+    backend = LogindBackend(call=call, unless=lambda: True)
+    result = await backend.hold("x")
+    assert isinstance(result, Skipped)
+    assert "IdleAction is 'ignore'" in result
+    assert backend.fd is None
+    (get,) = calls
+    assert get["interface"] == "org.freedesktop.DBus.Properties"
+    assert get["member"] == "Get"
+    assert get["args"] == ("org.freedesktop.login1.Manager", "IdleAction")
+
+
+@linux_only
+@pytest.mark.parametrize(
+    "idle_action",
+    [dbus.Reply("v", ["suspend"]), dbus.Reply("", []), dbus.DBusError("x.Failed", "no")],
+)
+async def test_logind_takes_the_lock_when_logind_acts_on_idle_or_it_is_unknown(
+    idle_action: dbus.Reply | BaseException,
+) -> None:
+    read_end, write_end = os.pipe()
+    members: list[str] = []
+
+    def call(**kwargs: Any) -> dbus.Reply:
+        members.append(kwargs["member"])
+        if kwargs["member"] == "Get":
+            if isinstance(idle_action, BaseException):
+                raise idle_action
+            return idle_action
+        return dbus.Reply("h", [0], [read_end])
+
+    backend = LogindBackend(call=call, unless=lambda: True)
+    assert await backend.hold("x") is None
+    assert members == ["Get", "Inhibit"]
+    await backend.free()
+    os.close(write_end)
+
+
+@linux_only
+async def test_logind_without_unless_never_asks_for_idle_action() -> None:
+    read_end, write_end = os.pipe()
+    call = FakeCall(dbus.Reply("h", [0], [read_end]))
+    backend = LogindBackend(call=call, unless=lambda: False)
+    assert await backend.hold("x") is None
+    assert call.kwargs["member"] == "Inhibit"
+    await backend.free()
+    os.close(write_end)
+
+
+# --------------------------------------------------------------------------- session
+
+
+def _held(backend: SessionInhibitBackend) -> bool:
+    return backend.held
+
+
+def _interface(backend: SessionInhibitBackend) -> str | None:
+    return backend.interface  # through a function, so that mypy does not narrow it
+
+
+class FakeConnection:
+    """A session bus connection: ``answers`` maps an interface to a reply or an error."""
+
+    def __init__(self, answers: dict[str, dbus.Reply | BaseException]) -> None:
+        self.answers = answers
+        self.calls: list[dict[str, Any]] = []
+        self.closed = 0
+
+    def call(self, **kwargs: Any) -> dbus.Reply:
+        self.calls.append(kwargs)
+        answer = self.answers.get(kwargs["interface"], dbus.Reply("", []))
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+UNKNOWN = dbus.DBusError("org.freedesktop.DBus.Error.ServiceUnknown", "not provided")
+
+
+def _connector(conn: FakeConnection | BaseException) -> tuple[list[tuple[str, float]], Any]:
+    opened: list[tuple[str, float]] = []
+
+    def connect(address: str, timeout: float) -> FakeConnection:
+        opened.append((address, timeout))
+        if isinstance(conn, BaseException):
+            raise conn
+        return conn
+
+    return opened, connect
+
+
+async def test_session_uses_power_management_and_keeps_the_connection_open() -> None:
+    conn = FakeConnection({PM: dbus.Reply("u", [42])})
+    opened, connect = _connector(conn)
+    backend = SessionInhibitBackend(address="unix:path=/fake", timeout=3.0, connect=connect)
+    assert await backend.hold("Encoding: Show S01E01") is None
+    assert opened == [("unix:path=/fake", 3.0)]
+    assert backend.held
+    assert backend.interface == PM
+    (call,) = conn.calls
+    assert call == {
+        "destination": "org.freedesktop.PowerManagement.Inhibit",
+        "path": "/org/freedesktop/PowerManagement/Inhibit",
+        "interface": PM,
+        "member": "Inhibit",
+        "args": ("Reframe", "Encoding: Show S01E01"),
+        "timeout": 3.0,
+    }
+    assert conn.closed == 0  # the inhibit lasts while the connection is open
+    assert await backend.hold("again") is None  # already held: no second call
+    assert len(conn.calls) == 1
+    await backend.free()
+    assert conn.calls[1] == {
+        "destination": "org.freedesktop.PowerManagement.Inhibit",
+        "path": "/org/freedesktop/PowerManagement/Inhibit",
+        "interface": PM,
+        "member": "UnInhibit",
+        "body": (("u", 42),),
+        "timeout": 2.0,
+    }
+    assert conn.closed == 1
+    assert not _held(backend)
+    assert _interface(backend) is None
+    await backend.free()
+    assert conn.closed == 1
+    assert len(conn.calls) == 2
+
+
+async def test_session_falls_back_to_the_portal_with_the_suspend_flag() -> None:
+    conn = FakeConnection(
+        {PM: UNKNOWN, PORTAL: dbus.Reply("o", ["/org/freedesktop/portal/desktop/request/1_2/t"])}
+    )
+    _, connect = _connector(conn)
+    backend = SessionInhibitBackend(address="unix:path=/fake", connect=connect)
+    assert await backend.hold("Encoding") is None
+    assert backend.interface == PORTAL
+    portal = conn.calls[1]
+    assert portal["destination"] == "org.freedesktop.portal.Desktop"
+    assert portal["path"] == "/org/freedesktop/portal/desktop"
+    assert portal["member"] == "Inhibit"
+    assert portal["body"] == (("s", ""), ("u", 4), ("a{sv}", {"reason": "Encoding"}))
+    await backend.free()
+    assert conn.calls[2] == {
+        "destination": "org.freedesktop.portal.Desktop",
+        "path": "/org/freedesktop/portal/desktop/request/1_2/t",
+        "interface": "org.freedesktop.portal.Request",
+        "member": "Close",
+        "timeout": 2.0,
+    }
+    assert conn.closed == 1
+
+
+async def test_session_free_closes_the_connection_when_ending_fails() -> None:
+    conn = FakeConnection(
+        {PM: dbus.Reply("u", [7]), "org.example.never": dbus.Reply("", [])},
+    )
+    _, connect = _connector(conn)
+    backend = SessionInhibitBackend(address="unix:path=/fake", connect=connect)
+    assert await backend.hold("x") is None
+    conn.answers[PM] = TimeoutError("D-Bus call timed out")
+    await backend.free()
+    assert conn.calls[-1]["member"] == "UnInhibit"
+    assert conn.closed == 1
+
+
+async def test_session_portal_only_and_unknown_interfaces() -> None:
+    conn = FakeConnection({PORTAL: dbus.Reply("o", ["/r"])})
+    _, connect = _connector(conn)
+    backend = SessionInhibitBackend(
+        address="unix:path=/fake", connect=connect, interfaces=(PORTAL,)
+    )
+    assert await backend.hold("x") is None
+    assert [c["interface"] for c in conn.calls] == [PORTAL]
+    await backend.free()
+    with pytest.raises(ValueError, match="unknown session inhibit interfaces"):
+        SessionInhibitBackend(interfaces=("org.example.Nope",))
+
+
+async def test_session_without_any_service_fails_and_closes_the_connection() -> None:
+    conn = FakeConnection({PM: UNKNOWN, PORTAL: UNKNOWN})
+    _, connect = _connector(conn)
+    backend = SessionInhibitBackend(address="unix:path=/fake", connect=connect)
+    result = await backend.hold("x")
+    assert result == (
+        f"{PM}: org.freedesktop.DBus.Error.ServiceUnknown: not provided; "
+        f"{PORTAL}: org.freedesktop.DBus.Error.ServiceUnknown: not provided"
+    )
+    assert not isinstance(result, Skipped)
+    assert conn.closed == 1
+    assert not _held(backend)
+
+
+async def test_session_connection_lost_during_the_calls_is_data() -> None:
+    conn = FakeConnection({PM: ConnectionError("the bus closed the connection")})
+    _, connect = _connector(conn)
+    backend = SessionInhibitBackend(address="unix:path=/fake", connect=connect)
+    assert await backend.hold("x") == (
+        "session bus: ConnectionError: the bus closed the connection"
+    )
+    assert conn.closed == 1
+    assert len(conn.calls) == 1  # no portal call on a broken connection
+
+
+async def test_no_session_bus_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    opened, connect = _connector(FakeConnection({}))
+    backend = SessionInhibitBackend(connect=connect)
+    result = await backend.hold("x")
+    assert isinstance(result, Skipped)
+    assert result == "no session bus (DBUS_SESSION_BUS_ADDRESS is not set)"
+    assert opened == []
+
+
+@pytest.mark.parametrize(
+    ("error", "skipped", "message"),
+    [
+        (FileNotFoundError(2, "No such file"), True, "no session bus: FileNotFoundError: "),
+        (
+            dbus.DBusProtocolError("authentication refused: 'REJECTED'"),
+            False,
+            "session bus: authentication refused",
+        ),
+        (
+            dbus.DBusError("org.freedesktop.DBus.Error.AccessDenied", "no"),
+            False,
+            "session bus refused the connection: org.freedesktop.DBus.Error.AccessDenied",
+        ),
+    ],
+)
+async def test_session_bus_connection_failures(
+    error: BaseException, skipped: bool, message: str
+) -> None:
+    _, connect = _connector(error)
+    backend = SessionInhibitBackend(address="unix:path=/fake", connect=connect)
+    result = await backend.hold("x")
+    assert result is not None
+    assert isinstance(result, Skipped) is skipped
+    assert result.startswith(message)
+
+
+async def test_linux_default_takes_logind_only_where_needed() -> None:
+    session, logind = sleep.default_backends("linux")
+    assert isinstance(session, SessionInhibitBackend)
+    assert isinstance(logind, LogindBackend)
+    conn = FakeConnection({PM: dbus.Reply("u", [1])})
+    _, connect = _connector(conn)
+    session._connect = connect
+    session._address = "unix:path=/fake"
+    members: list[str] = []
+
+    def call(**kwargs: Any) -> dbus.Reply:
+        members.append(kwargs["member"])
+        return dbus.Reply("v", ["ignore"])
+
+    logind._call = call
+    inhibitor = SleepInhibitor([session, logind])
+    assert await inhibitor.acquire("x") is InhibitState.ACTIVE
+    assert inhibitor.backends == ("session",)  # the desktop handles idle; logind does nothing
+    assert members == ["Get"]
+    await inhibitor.close()
