@@ -428,7 +428,10 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 
 - [ ] Sleep inhibit: Windows `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`.
       Linux: the logind `Inhibit` D-Bus call, or `systemd-inhibit` as a fallback. If neither
-      is available, emit a warning and continue.
+      is available, emit a warning and continue. The Linux lock is `what=sleep:idle`,
+      `mode=block`; the D-Bus call uses a small stdlib client (no D-Bus dependency); on
+      Windows one dedicated thread sets and clears the state
+      ([0011](../decisions/0011-sleep-inhibit.md)).
 - [ ] Power actions: shut down, sleep (Windows: `shutdown /s /t 60` and `SetSuspendState`.
       Linux: `systemctl poweroff|suspend`). Always after a cancellable 60 s countdown event.
 - [ ] Notification hook: emits an event only. The UI layer shows the notification.
