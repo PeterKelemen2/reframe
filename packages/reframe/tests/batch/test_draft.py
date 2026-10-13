@@ -49,7 +49,8 @@ def flags(**on: bool) -> dict[str, bool]:
 
 
 #: ``draft_tracks(multitrack, JobTemplate())``: the default catch-all rule (AAC, up to 5.1,
-#: 256 kb/s, passthru when the source fits).
+#: 256 kb/s, passthru when the source fits). The AAC tracks have no bit rate in an
+#: FFmpeg-made MKV; a lossy source fits at any bit rate (decision 0023), so they pass through.
 MULTITRACK_AUDIO = [
     AudioOutputTrack(
         action="passthru",
@@ -58,16 +59,14 @@ MULTITRACK_AUDIO = [
         metadata=TrackMetadata(language="ja", name="Japanese 5.1", **flags(default=True)),
     ),
     AudioOutputTrack(
-        action="encode",
+        action="passthru",
         encoder="aac",
-        bitrate=256,
         source_stream=2,
         metadata=TrackMetadata(language="en", name="English Stereo", **flags()),
     ),
     AudioOutputTrack(
-        action="encode",
+        action="passthru",
         encoder="aac",
-        bitrate=256,
         source_stream=3,
         metadata=TrackMetadata(
             language="en", name="Director's Commentary", **flags(commentary=True)
@@ -93,8 +92,8 @@ MULTITRACK_SUBTITLES = [
 ]
 MULTITRACK_REASONS = [
     (1, 1, "AC-3, 5.1, 192 ≤ 256: passthru", False),
-    (2, 1, "Bitrate unknown: treated as above the max; Measure", True),
-    (3, 1, "Bitrate unknown: treated as above the max; Measure", True),
+    (2, 1, "AAC, 2.0: passthru", False),
+    (3, 1, "AAC, 2.0: passthru", False),
 ]
 
 

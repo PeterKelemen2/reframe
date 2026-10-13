@@ -106,74 +106,119 @@ EXAMPLE_RULES = AudioDefaults(
     ]
 )  # fmt: skip
 
-#: The source tracks of the example (the first four are 03's; the fifth shows the passthru
-#: that 03's last row meant, decision 0019).
+#: The four source tracks of 03's example, exactly as written there.
 EXAMPLE = [
-    # (source, rule, (action, encoder, mixdown, bitrate), reason)
+    # (source, rule, (action, encoder, mixdown, bitrate), reason, measure)
     (
         stream("dts", 6, 2104, language="hun", profile="DTS-HD MA",
                display_codec="DTS-HD MA", lossless=True),
         1,
         ("encode", "ac3", "5.1", 320),
         "Lossless source → encode at the max",
+        False,
     ),
     (
         stream("ac3", 6, 224, language="hun", display_codec="AC-3"),
         1,
         ("passthru", "ac3", None, None),
         "AC-3, 5.1, 224 ≤ 320: passthru",
+        False,
     ),
     (
+        # 03 gives no bit rate: unknown, so the preview offers Measure.
         stream("truehd", 8, None, profile="Dolby TrueHD + Dolby Atmos",
                display_codec="TrueHD Atmos", lossless=True),
         2,
         ("encode", "ac3", "5.1", 384),
         "Downmix 7.1 → 5.1. Lossless source → encode at the max",
+        True,
     ),
     (
         stream("ac3", 2, 192, display_codec="AC-3"),
         3,
-        ("encode", "aac", "stereo", 160),
-        "Rule 2 needs 5.1 or more. Rule 3 matches. 192 > 160 → encode at the max",
-    ),
-    (
-        stream("ac3", 2, 128, display_codec="AC-3"),
-        3,
         ("passthru", "aac", None, None),
-        "Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits",
+        "Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits (a lossy source is"
+        " kept above the max)",
+        False,
     ),
 ]  # fmt: skip
 
 
 @pytest.mark.parametrize(
-    ("source", "rule", "expected", "reason"),
+    ("source", "rule", "expected", "reason", "measure"),
     EXAMPLE,
-    ids=["hun DTS-HD MA 5.1", "hun AC-3 5.1 224", "eng TrueHD Atmos 7.1", "eng AC-3 2.0 192",
-         "eng AC-3 2.0 128"],
-)  # fmt: skip
+    ids=["hun DTS-HD MA 5.1", "hun AC-3 5.1 224", "eng TrueHD Atmos 7.1", "eng AC-3 2.0 192"],
+)
 def test_example_of_03_row_by_row(
-    source: AudioStream, rule: int, expected: tuple[Any, ...], reason: str
+    source: AudioStream, rule: int, expected: tuple[Any, ...], reason: str, measure: bool
 ) -> None:
     """C-12 "Done when": Hungarian 5.1 → 320, English 5.1 → 384, AC-3 224 passthru, stereo
-    fallback."""
+    passthru (decision 0023)."""
     track, decision = run(source, EXAMPLE_RULES)
     assert decision.rule == rule
     assert summary(track) == expected
     assert decision.reason == reason
     assert decision.source_stream == source.index
     assert decision.notes == []
-    assert not decision.measure
+    assert decision.measure is measure
 
 
 # --------------------------------------------------------------------------- max bitrate rules
 
 AC3_51_448 = AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=448)
+NO_DTS = PassthruPolicy(allowed=["ac3", "eac3", "aac"])
 
 
 @pytest.mark.parametrize(
     ("source", "defaults", "expected", "reason", "measure"),
     [
-        # Lossless → encode at the max.
+        # Row 1. The source fits → passthru: a lossy source at any bit rate …
+        (
+            stream("eac3", 6, 384, display_codec="E-AC-3"),
+            rules(AC3_51_448),
+            ("passthru", "ac3", None, None),
+            "E-AC-3, 5.1, 384 ≤ 448: passthru",
+            False,
+        ),
+        (
+            stream("ac3", 6, 640, display_codec="AC-3"),
+            rules(AC3_51_448),
+            ("passthru", "ac3", None, None),
+            "AC-3, 5.1, 640 > 448: passthru (a lossy source is kept above the max)",
+            False,
+        ),
+        (
+            stream("aac", 2, None, display_codec="AAC-LC"),
+            rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=160)),
+            ("passthru", "aac", None, None),
+            "AAC, 2.0: passthru",
+            False,
+        ),
+        # … a lossless source at or below the max …
+        (
+            stream("flac", 2, 133.718, display_codec="FLAC", lossless=True),
+            rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=160)),
+            ("passthru", "aac", None, None),
+            "FLAC, 2.0, 133.7 ≤ 160: passthru",
+            False,
+        ),
+        # … or re-encode, if the rule says so (with the encoding rules).
+        (
+            stream("ac3", 6, 384, display_codec="AC-3"),
+            rules(AC3_51_448.model_copy(update={"if_fits": "reencode"})),
+            ("encode", "ac3", "5.1", 384),
+            "384 ≤ 448, but the rule says re-encode → encode at 384 kb/s, the smallest"
+            " allowed value ≥ 384",
+            False,
+        ),
+        (
+            stream("ac3", 6, 640, display_codec="AC-3"),
+            rules(AC3_51_448.model_copy(update={"if_fits": "reencode"})),
+            ("encode", "ac3", "5.1", 448),
+            "The rule says re-encode, 640 > 448 → encode at the max",
+            False,
+        ),
+        # Row 2. Lossless above the max or unknown → encode at the max …
         (
             stream("truehd", 6, 3912, display_codec="TrueHD", lossless=True),
             rules(AC3_51_448),
@@ -186,34 +231,24 @@ AC3_51_448 = AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=448)
             rules(AC3_51_448),
             ("encode", "ac3", None, 448),
             "Lossless source → encode at the max",
-            False,
+            True,
         ),
-        # A bit rate above the max → encode at the max.
+        # … and a source that does not fit, above the max.
         (
-            stream("ac3", 6, 640, display_codec="AC-3"),
-            rules(AC3_51_448),
+            stream("dts", 6, 1509, display_codec="DTS"),
+            rules(AC3_51_448, passthru=NO_DTS),
             ("encode", "ac3", "5.1", 448),
-            "640 > 448 → encode at the max",
+            "DTS passthru is not allowed, 1509 > 448 → encode at the max",
             False,
         ),
-        # The source fits → passthru …
         (
-            stream("eac3", 6, 384, display_codec="E-AC-3"),
-            rules(AC3_51_448),
-            ("passthru", "ac3", None, None),
-            "E-AC-3, 5.1, 384 ≤ 448: passthru",
+            stream("pcm_s16le", 2, 1536, display_codec="PCM", lossless=False),
+            rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=1000)),
+            ("encode", "aac", "stereo", 512),
+            "PCM cannot be passed through, 1536 > 1000 → encode at the max",
             False,
         ),
-        # … or re-encode, if the rule says so.
-        (
-            stream("ac3", 6, 384, display_codec="AC-3"),
-            rules(AC3_51_448.model_copy(update={"if_fits": "reencode"})),
-            ("encode", "ac3", "5.1", 384),
-            "384 ≤ 448, but the rule says re-encode → encode at 384 kb/s, the smallest"
-            " allowed value ≥ 384",
-            False,
-        ),
-        # At or below the max, but another codec (not on the passthru list).
+        # Row 3. At or below the max, but another codec …
         (
             stream("pcm_s16le", 2, 1536, display_codec="PCM", lossless=False),
             rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=2000)),
@@ -238,27 +273,42 @@ AC3_51_448 = AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=448)
             " kb/s, the smallest allowed value ≥ 384",
             False,
         ),
-        # Bit rate unknown → treated as above the max; Measure.
+        # Row 4. Bit rate unknown, and the source does not fit → as above the max; Measure.
         (
-            stream("aac", 2, None, display_codec="AAC-LC"),
+            stream("vorbis", 2, None, display_codec="Vorbis"),
             rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=160)),
             ("encode", "aac", "stereo", 160),
-            "Bitrate unknown: treated as above the max; Measure",
+            "Vorbis cannot be passed through. Bitrate unknown: treated as above the max;"
+            " Measure",
+            True,
+        ),
+        (
+            stream("aac", 2, None, display_codec="AAC-LC"),
+            rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=160,
+                                 if_fits="reencode")),
+            ("encode", "aac", "stereo", 160),
+            "The rule says re-encode. Bitrate unknown: treated as above the max; Measure",
             True,
         ),
     ],
     ids=[
-        "lossless",
+        "fits, lossy",
+        "fits, lossy above the max",
+        "fits, lossy bitrate unknown",
+        "fits, lossless at or below the max",
+        "fits, re-encode",
+        "fits, re-encode above the max",
+        "lossless above the max",
         "lossless, bitrate unknown",
-        "above the max",
-        "fits: passthru",
-        "fits: re-encode",
+        "does not fit, above the max",
+        "does not fit, above the max and the encoder range",
         "another codec, above the encoder range",
         "another codec, snapped up",
         "too many channels",
-        "bitrate unknown",
+        "does not fit, bitrate unknown",
+        "re-encode, bitrate unknown",
     ],
-)
+)  # fmt: skip
 def test_max_bitrate_rules(
     source: AudioStream,
     defaults: AudioDefaults,
@@ -365,7 +415,7 @@ def test_no_max_uses_the_encoder_default() -> None:
         rules(AudioCodecRule(codec="aac", max_bitrate=None), passthru=no_passthru),
     )
     assert track.bitrate == 384  # AAC 5.1 default
-    assert decision.reason == "1509 > 384 → encode at the default"
+    assert decision.reason == "DTS passthru is not allowed, 1509 > 384 → encode at the default"
     track, decision = run(
         stream("ac3", 2, 128, display_codec="AC-3"),
         rules(AudioCodecRule(codec="aac", max_bitrate=None), passthru=no_passthru),
@@ -426,13 +476,16 @@ def test_passthru_policy_and_container() -> None:
     assert decision.reason == (
         "DTS-HD passthru is not allowed → fallback encoder AC-3. 2104 > 640 → encode at the default"
     )
-    # A passthru rule with a max: over the max → the fallback encoder at the max.
+    # A passthru rule with a max: a lossy source passes at any bit rate (decision 0023) …
     capped = AudioCodecRule(codec="passthru", mixdown="keep", max_bitrate=640)
     track, decision = run(stream("ac3", 6, None, display_codec="AC-3"), rules(capped))
+    assert summary(track) == ("passthru", "aac", None, None)
+    assert decision.reason == "AC-3, 5.1: passthru"
+    assert not decision.measure
+    # … a lossless one with an unknown bit rate is encoded with the fallback at the max.
+    track, decision = run(stream("truehd", 6, None, lossless=True), rules(capped))
     assert summary(track) == ("encode", "aac", None, 640)
-    assert decision.reason == (
-        "Fallback encoder AAC. Bitrate unknown: treated as above the max; Measure"
-    )
+    assert decision.reason == "Fallback encoder AAC. Lossless source → encode at the max"
     assert decision.measure
 
 
@@ -490,7 +543,10 @@ def test_mixdown_in_the_output() -> None:
     # MP3 has no 5.1: stereo.
     track, decision = run(
         stream("ac3", 6, 640),
-        rules(AudioCodecRule(codec="libmp3lame", mixdown="5.1", max_bitrate=320)),
+        rules(
+            AudioCodecRule(codec="libmp3lame", mixdown="5.1", max_bitrate=320),
+            passthru=no_passthru,
+        ),
     )
     assert (track.mixdown, track.bitrate) == ("stereo", 320)
     assert decision.notes == ["MP3 cannot make 5.1: Stereo"]
@@ -500,13 +556,18 @@ def test_mixdown_in_the_output() -> None:
         rules(AudioCodecRule(codec="aac", mixdown="dpl2", max_bitrate=160), passthru=no_passthru),
     )
     assert (track.mixdown, track.bitrate) == ("dpl2", 160)
-    assert decision.reason == "Downmix 5.1 → Dolby Pro Logic II. 1509 > 160 → encode at the max"
+    assert decision.reason == (
+        "Downmix 5.1 → Dolby Pro Logic II. DTS passthru is not allowed, 1509 > 160 → encode at"
+        " the max"
+    )
     # mono.
     track, decision = run(
         stream("ac3", 2, 192), rules(AudioCodecRule(codec="aac", mixdown="mono", max_bitrate=96))
     )
     assert (track.mixdown, track.bitrate) == ("mono", 96)
-    assert decision.reason == "Downmix 2.0 → Mono. 192 > 96 → encode at the max"
+    assert decision.reason == (
+        "Downmix 2.0 → Mono. 2.0 is more than Mono, 192 > 96 → encode at the max"
+    )
 
 
 def test_no_upmix() -> None:
@@ -598,7 +659,10 @@ def test_first_match_wins_and_language_misses_are_not_explained() -> None:
         AudioCodecRule(languages=["en"], codec="ac3", mixdown="5.1", max_bitrate=448),
     )
     _, decision = run(stream("dts", 6, 1509), defaults)
-    assert (decision.rule, decision.reason) == (2, "1509 > 384 → encode at the max")
+    assert (decision.rule, decision.reason) == (
+        2,
+        "DTS, 5.1, 1509 > 384: passthru (a lossy source is kept above the max)",
+    )
     _, decision = run(stream("dts", 6, 1509, language="ger"), defaults)
     assert decision.rule == 4  # the catch-all
 
@@ -709,7 +773,9 @@ def test_extra_outputs() -> None:
             ExtraAudioOutput(codec="passthru", mixdown="keep"),
         ],
     )
-    rule = AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=640, extras=extras)
+    rule = AudioCodecRule(
+        codec="ac3", mixdown="5.1", max_bitrate=640, if_fits="reencode", extras=extras
+    )
     source = stream("dts", 6, 1509, display_codec="DTS", disposition=Disposition(default=True))
     outputs, decision = apply_codec_rules(source, rules(rule), "mkv")
     assert [summary(t) for t in outputs] == [
@@ -724,10 +790,10 @@ def test_extra_outputs() -> None:
     ]
     assert [t.metadata.default for t in outputs] == [True, False, False]
     assert {t.source_stream for t in outputs} == {1}
-    assert decision.reason == "1509 > 640 → encode at the max"
+    assert decision.reason == "The rule says re-encode, 1509 > 640 → encode at the max"
     assert decision.notes == [
-        "Extra output 1: AAC Stereo · 160 kb/s (Downmix 5.1 → Stereo. 1509 > 160 → encode at"
-        " the max)",
+        "Extra output 1: AAC Stereo · 160 kb/s (Downmix 5.1 → Stereo. The rule says re-encode,"
+        " 1509 > 160 → encode at the max)",
         "Extra output 2: Passthru (DTS, 5.1: passthru)",
     ]
     # An extra output is always encoded, never above the source.
@@ -756,7 +822,7 @@ def test_first_track_of_language_only() -> None:
     assert decision.rule == 2
     assert decision.reason == (
         "Rule 1 is only for the first track of a language. Rule 2 matches. Downmix 5.1 → Stereo."
-        " 1509 > 96 → encode at the max"
+        " 5.1 is more than Stereo, 1509 > 96 → encode at the max"
     )
 
 
@@ -815,8 +881,9 @@ def test_unknown_channels_and_codec() -> None:
         source, rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=128))
     )
     assert summary(track) == ("encode", "aac", "stereo", 128)
-    assert decision.reason == "Bitrate unknown: treated as above the max; Measure"
-    assert "unknown codec cannot be passed through" not in decision.reason
+    assert decision.reason == (
+        "Unknown codec cannot be passed through. Bitrate unknown: treated as above the max; Measure"
+    )
     # Unknown channels: the rule's layout (the catch-all of a new preset: up to 5.1).
     track, _ = run(source, rules())
     assert (track.mixdown, track.bitrate) == ("5.1", 256)
@@ -824,7 +891,9 @@ def test_unknown_channels_and_codec() -> None:
 
 def test_default_definitions_are_loaded() -> None:
     outputs, decision = apply_codec_rules(stream("ac3", 6, 448), AudioDefaults(), "mkv")
-    assert [summary(t) for t in outputs] == [("encode", "aac", None, 256)]
-    assert decision.reason == "448 > 256 → encode at the max"
+    assert [summary(t) for t in outputs] == [("passthru", "aac", None, None)]
+    assert (
+        decision.reason == "AC-3, 5.1, 448 > 256: passthru (a lossy source is kept above the max)"
+    )
     with_defs = apply_codec_rules(stream("ac3", 6, 448), AudioDefaults(), "mkv", definitions=DEFS)
     assert with_defs == (outputs, decision)
