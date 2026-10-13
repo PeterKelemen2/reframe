@@ -24,8 +24,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from fractions import Fraction
+from typing import Literal
 
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from reframe.dimensions import compute_geometry
@@ -256,8 +257,29 @@ def test_no_upscale_unless_allowed(case: tuple[SourceGeometry, DimensionSettings
         assert not g.upscaled
 
 
+#: Extreme aspect ratios (1:10923) found by hypothesis: the acceptable sizes are thousands of
+#: modulus steps apart on the long side, so the search walks the short side.
+EXTREME_SIZES: list[tuple[int, Literal[4, 8]]] = [(1, 4), (36, 8)]
+EXTREME = [
+    (
+        SourceGeometry(width=1, height=3641),
+        DimensionSettings(
+            crop=CropSettings(mode="none"),
+            size=ExactWidth(width=width),
+            allow_upscaling=True,
+            pixel_aspect="custom",
+            custom_par=Rational(num=3, den=1),
+            modulus=modulus,
+        ),
+    )
+    for width, modulus in EXTREME_SIZES
+]
+
+
 @PROPERTY
 @given(cases())
+@example(EXTREME[0])
+@example(EXTREME[1])
 def test_display_aspect_error_is_below_half_a_percent_or_one_pixel(
     case: tuple[SourceGeometry, DimensionSettings],
 ) -> None:

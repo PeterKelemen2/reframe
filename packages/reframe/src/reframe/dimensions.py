@@ -46,7 +46,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Literal, cast
@@ -94,8 +94,8 @@ MAX_PIXEL_ERROR = Fraction(1)
 #: for the rare 4:1:1 / 4:1:0 formats.
 ASSUMED_CHROMA_STEPS = (2, 2)
 
-#: Upper bound on the sizes the modulus search looks at (one per modulus step on the long
-#: axis). It is reached only for absurd inputs; the search normally stops after a few steps.
+#: Upper bound on the short-side lengths the modulus search looks at (one per modulus step).
+#: It is reached only for absurd inputs; the search normally stops after a few steps.
 _SEARCH_STEPS = 8192
 
 # --------------------------------------------------------------------------- source
@@ -411,19 +411,21 @@ def _candidate(width: int, height: int, ratio: Fraction) -> _Candidate:
     return _Candidate(width, height, rel, px)
 
 
-def _closest_first(x: Fraction, lo: int, hi: int) -> Iterator[int]:
-    """Integers of ``[lo, hi]`` by their distance to ``x``; a tie goes to the smaller one."""
-    down = min(max(math.floor(x), lo - 1), hi)
-    up = down + 1
-    for _ in range(_SEARCH_STEPS):
-        if down < lo and up > hi:
-            return
-        if up > hi or (down >= lo and x - down <= up - x):
-            yield down
-            down -= 1
-        else:
-            yield up
-            up += 1
+def _span(b: int, per_minor: Fraction, major_is_width: bool) -> tuple[Fraction, Fraction]:
+    """The open interval of long-side lengths ``a`` for which ``a`` x ``b`` (long x short side)
+    meets the tolerance: pixel error < 1 or display aspect error < 0.5 %.
+
+    With ``per_minor`` = long / short side (>= 1), the pixel error is below 1 exactly when
+    ``|a - b x per_minor| < per_minor``; the relative error is measured as width / (height x
+    ratio), so its interval depends on which side is the width.
+    """
+    center = b * per_minor
+    half = MAX_PIXEL_ERROR * per_minor
+    if major_is_width:
+        rel_lo, rel_hi = center * (1 - MAX_ASPECT_ERROR), center * (1 + MAX_ASPECT_ERROR)
+    else:
+        rel_lo, rel_hi = center / (1 + MAX_ASPECT_ERROR), center / (1 - MAX_ASPECT_ERROR)
+    return min(center - half, rel_lo), max(center + half, rel_hi)
 
 
 def _snap_size(
@@ -434,43 +436,80 @@ def _snap_size(
 ) -> _Candidate:
     """The size on the modulus grid for ``target`` (see the module notes).
 
-    Sizes are tried by their distance to the target on the long axis; for each, the two
-    nearest multiples on the short axis (inside the limits). The first acceptable one wins
-    (the smaller error at the same distance); if none is acceptable, the smallest error.
-    A limit below one modulus step gives one step.
+    The winner is the acceptable size whose long side is closest to the target's (a tie goes
+    to the shorter one, then to the smaller error); if no size is acceptable, the one with the
+    smallest error. The search walks the short side outward from the target: for each short
+    side the acceptable long sides form one interval (:func:`_span`), so even an extreme
+    aspect ratio needs few steps. A limit below one modulus step gives one step.
     """
     major = 0 if ratio >= 1 else 1
     minor = 1 - major
     mod_major, mod_minor = mods[major], mods[minor]
-    per_minor = ratio if major == 0 else 1 / ratio  # long side / short side
+    per_minor = ratio if major == 0 else 1 / ratio  # long side / short side, >= 1
     limit_major, limit_minor = limits[major], limits[minor]
+    goal = target[major]
+    m_max = max(1, limit_major // mod_major) if limit_major is not None else None
+    x = goal / per_minor / mod_minor  # the target's short side, in modulus steps
     k_max = (
-        max(1, limit_major // mod_major)
-        if limit_major is not None
-        else math.ceil(target[major] / mod_major) + _SEARCH_STEPS
+        max(1, limit_minor // mod_minor)
+        if limit_minor is not None
+        else math.ceil(x) + _SEARCH_STEPS
     )
-    b_max = (
-        max(mod_minor, limit_minor // mod_minor * mod_minor) if limit_minor is not None else None
-    )
-    best: _Candidate | None = None
-    for k in _closest_first(target[major] / mod_major, 1, k_max):
-        a = k * mod_major
-        low = max(mod_minor, math.floor(a / per_minor / mod_minor) * mod_minor)
-        options = {low, low + mod_minor}
-        if b_max is not None:
-            options = {min(b, b_max) for b in options}
-        level = [
-            _candidate(a, b, ratio) if major == 0 else _candidate(b, a, ratio)
-            for b in sorted(options)
-        ]
-        good = [c for c in level if c.acceptable]
-        if good:
-            return min(good, key=lambda c: (c.rel_error, c.px_error))
-        for c in level:
-            if best is None or c.rel_error < best.rel_error:
-                best = c
-    assert best is not None  # k = 1 is always tried
-    return best
+
+    def multiple(m: int) -> int:
+        return max(1, m if m_max is None else min(m, m_max)) * mod_major
+
+    def size(a: int, b: int) -> _Candidate:
+        return _candidate(a, b, ratio) if major == 0 else _candidate(b, a, ratio)
+
+    best: tuple[tuple[Fraction, int, Fraction, Fraction], _Candidate] | None = None
+    closest: tuple[tuple[Fraction, Fraction], _Candidate] | None = None
+    down = min(max(math.floor(x), 0), k_max)
+    up = down + 1
+    for _ in range(_SEARCH_STEPS):
+        if down < 1 and up > k_max:
+            break
+        if up <= k_max and (down < 1 or up - x < x - down):
+            k, up = up, up + 1
+        else:
+            k, down = down, down - 1
+        b = k * mod_minor
+        lo, hi = _span(b, per_minor, major == 0)
+        distance = lo - goal if goal < lo else (goal - hi if goal > hi else Fraction(0))
+        if best is not None and distance > best[0][0]:
+            # Farther out on this side only gets farther: stop this direction.
+            if k > x:
+                up = k_max + 1
+            else:
+                down = 0
+            continue
+        # The best error for this short side (for the fallback) ...
+        center = b * per_minor / mod_major
+        options = {multiple(math.floor(center)), multiple(math.ceil(center))}
+        # ... and the acceptable long sides closest to the goal.
+        m_low, m_high = math.floor(lo / mod_major) + 1, math.ceil(hi / mod_major) - 1
+        if m_max is not None:
+            m_high = min(m_high, m_max)
+        m_low = max(m_low, 1)
+        if m_low <= m_high:
+            near = goal / mod_major
+            options |= {
+                min(max(math.floor(near), m_low), m_high) * mod_major,
+                min(max(math.ceil(near), m_low), m_high) * mod_major,
+            }
+        for a in options:
+            c = size(a, b)
+            gap = abs(a - goal)
+            if c.acceptable:
+                key = (gap, a, c.rel_error, c.px_error)
+                if best is None or key < best[0]:
+                    best = (key, c)
+            if closest is None or (c.rel_error, gap) < closest[0]:
+                closest = ((c.rel_error, gap), c)
+    if best is not None:
+        return best[1]
+    assert closest is not None  # the short side of one step is always tried
+    return closest[1]
 
 
 def natural_size(
