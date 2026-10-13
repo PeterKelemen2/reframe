@@ -62,7 +62,7 @@ record. Numbers that end up unused are noted at the end of the milestone.
 
 | 0008 | 0009 | 0010 | 0011 | 0012 | 0013 | 0014 | 0015 | 0016 | 0017 | 0018 | 0019 | 0020+ |
 |------|------|------|------|------|------|------|------|------|------|------|------|-------|
-| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead (0020, 0021 used; next 0022) |
+| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead (0020–0022 used; next 0023) |
 
 ## Interfaces between the steps
 

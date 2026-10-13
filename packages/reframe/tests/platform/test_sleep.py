@@ -1,8 +1,8 @@
-"""reframe.platform.sleep: the counted inhibitor, the backend chain and the warning event.
+"""reframe.platform.sleep: the counted inhibitor, backends held together, the warning event.
 
-The backends are replaced with fakes here; the logind and systemd-inhibit backends have
+The backends are replaced with fakes here; the logind, session and Windows backends have
 their own tests (``test_sleep_backends.py``), the D-Bus client ``test_sleep_dbus.py``, and
-``test_sleep_real.py`` checks the real lock on a machine with logind.
+``test_sleep_real.py`` checks the real locks on a machine with logind and a desktop.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from reframe.platform import sleep
 from reframe.platform.sleep import (
     InhibitState,
     LogindBackend,
-    LostCallback,
+    SessionInhibitBackend,
+    Skipped,
     SleepInhibitor,
-    SystemdInhibitBackend,
     WindowsExecutionStateBackend,
     create_sleep_inhibitor,
 )
@@ -28,26 +28,26 @@ pytestmark = pytest.mark.anyio
 
 
 class FakeBackend:
-    """Records hold/free; ``error`` makes hold fail; ``gate`` makes hold wait."""
+    """Records hold/free; ``error`` makes hold fail (a :class:`Skipped` skips it); ``gate``
+    makes hold wait."""
 
     def __init__(
         self, name: str = "fake", *, error: str | None = None, gate: asyncio.Event | None = None
     ) -> None:
         self.name = name
+        self.stops = f"what {name} stops"
         self.error = error
         self.gate = gate
         self.calls: list[str] = []
         self.held = False
-        self.on_lost: LostCallback | None = None
 
-    async def hold(self, why: str, on_lost: LostCallback) -> str | None:
+    async def hold(self, why: str) -> str | None:
         self.calls.append(f"hold:{why}")
         if self.gate is not None:
             await self.gate.wait()
         if self.error is not None:
             return self.error
         self.held = True
-        self.on_lost = on_lost
         return None
 
     def is_held(self) -> bool:
@@ -61,6 +61,10 @@ class FakeBackend:
 def _state(inhibitor: SleepInhibitor) -> InhibitState:
     """The state, read through a function so that mypy does not narrow the property."""
     return inhibitor.state
+
+
+def _not_stopped(inhibitor: SleepInhibitor) -> tuple[str, ...]:
+    return inhibitor.not_stopped
 
 
 def _backend(inhibitor: SleepInhibitor) -> str | None:
@@ -138,25 +142,67 @@ async def test_concurrent_first_acquires_take_the_lock_once() -> None:
     assert inhibitor.count == 2
 
 
-async def test_falls_back_to_the_next_backend_without_a_warning() -> None:
+async def test_all_backends_are_held_together() -> None:
     bus = EventBus()
     sub = bus.subscribe()
-    broken = FakeBackend("logind", error="Inhibit failed: AccessDenied")
-    working = FakeBackend("systemd-inhibit")
-    inhibitor = SleepInhibitor([broken, working], bus)
+    session = FakeBackend("session")
+    logind = FakeBackend("logind")
+    inhibitor = SleepInhibitor([session, logind], bus)
     assert await inhibitor.acquire("encode") is InhibitState.ACTIVE
-    assert inhibitor.backend == "systemd-inhibit"
-    assert _warnings(sub) == []
+    assert inhibitor.backends == ("session", "logind")
+    assert inhibitor.backend == "session+logind"
+    assert inhibitor.not_stopped == ()
+    assert inhibitor.last_error is None
     await inhibitor.release()
-    assert broken.calls == ["hold:encode"]
-    assert working.calls == ["hold:encode", "free"]
+    assert session.calls == ["hold:encode", "free"]
+    assert logind.calls == ["hold:encode", "free"]
+    assert _warnings(sub) == []
+
+
+async def test_one_backend_fails_active_says_what_is_not_stopped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    bus = EventBus()
+    sub = bus.subscribe()
+    session = FakeBackend("session", error="org.freedesktop.portal.Inhibit: ServiceUnknown")
+    logind = FakeBackend("logind")
+    inhibitor = SleepInhibitor([session, logind], bus)
+    with caplog.at_level("WARNING", logger="reframe.platform.sleep"):
+        assert await inhibitor.acquire("encode") is InhibitState.ACTIVE
+    assert inhibitor.backend == "logind"
+    assert inhibitor.not_stopped == ("what session stops",)
+    assert inhibitor.last_error == "session: org.freedesktop.portal.Inhibit: ServiceUnknown"
+    assert "only partly active: what session stops not stopped" in caplog.text
+    assert _warnings(sub) == []  # the event is for "nothing held" only
+    await inhibitor.release()
+    assert _not_stopped(inhibitor) == ()
+    assert session.calls == ["hold:encode"]  # nothing to free
+    assert logind.calls == ["hold:encode", "free"]
+
+
+async def test_a_skipped_backend_is_not_a_failure() -> None:
+    session = FakeBackend("session", error=Skipped("no session bus"))
+    logind = FakeBackend("logind")
+    inhibitor = SleepInhibitor([session, logind])
+    assert await inhibitor.acquire("encode") is InhibitState.ACTIVE
+    assert inhibitor.not_stopped == ()
+    assert inhibitor.last_error is None
+    await inhibitor.close()
+
+
+async def test_only_skipped_backends_is_unavailable() -> None:
+    bus = EventBus()
+    sub = bus.subscribe()
+    inhibitor = SleepInhibitor([FakeBackend("session", error=Skipped("no session bus"))], bus)
+    assert await inhibitor.acquire("encode") is InhibitState.UNAVAILABLE
+    assert [w.detail for w in _warnings(sub)] == ["session: no session bus"]
 
 
 async def test_no_backend_works_one_warning_and_goes_on() -> None:
     bus = EventBus()
     sub = bus.subscribe()
     inhibitor = SleepInhibitor(
-        [FakeBackend("logind", error="no system bus"), FakeBackend("systemd-inhibit", error="x")],
+        [FakeBackend("session", error="x"), FakeBackend("logind", error="no system bus")],
         bus,
     )
     assert await inhibitor.acquire("job 1") is InhibitState.UNAVAILABLE
@@ -171,7 +217,11 @@ async def test_no_backend_works_one_warning_and_goes_on() -> None:
     assert len(warnings) == 1
     (warning,) = warnings
     assert warning.code == "sleep_inhibit.unavailable"
-    assert warning.detail == "logind: no system bus; systemd-inhibit: x"
+    assert warning.detail == "session: x; logind: no system bus"
+    assert warning.message == (
+        "Sleep inhibit is not available: the computer may go to sleep on its own while the "
+        "queue runs."
+    )
     assert inhibitor.last_error == warning.detail
     await inhibitor.close()
 
@@ -198,21 +248,6 @@ async def test_no_events_bus_is_fine() -> None:
     inhibitor = SleepInhibitor([FakeBackend(error="down")])
     assert await inhibitor.acquire("a") is InhibitState.UNAVAILABLE
     await inhibitor.close()
-
-
-async def test_a_lost_lock_turns_unavailable_with_a_warning() -> None:
-    bus = EventBus()
-    sub = bus.subscribe()
-    backend = FakeBackend()
-    inhibitor = SleepInhibitor([backend], bus)
-    await inhibitor.acquire("job")
-    assert backend.on_lost is not None
-    backend.on_lost("systemd-inhibit exited unexpectedly (code -9)")
-    assert _state(inhibitor) is InhibitState.UNAVAILABLE
-    assert _backend(inhibitor) is None
-    await inhibitor.release()  # nothing to free any more
-    assert backend.calls == ["hold:job"]
-    assert [w.detail for w in _warnings(sub)] == ["systemd-inhibit exited unexpectedly (code -9)"]
 
 
 async def test_cancelled_acquire_frees_the_lock_once_it_was_taken() -> None:
@@ -266,7 +301,7 @@ async def test_unsupported_platform_warns_once() -> None:
 
 def test_backends_per_platform() -> None:
     linux = sleep.default_backends("linux")
-    assert [type(b) for b in linux] == [LogindBackend, SystemdInhibitBackend]
+    assert [type(b) for b in linux] == [SessionInhibitBackend, LogindBackend]
     windows = sleep.default_backends("win32")
     assert [type(b) for b in windows] == [WindowsExecutionStateBackend]
     assert sleep.default_backends("darwin") == []
@@ -275,8 +310,9 @@ def test_backends_per_platform() -> None:
 
 
 def test_lock_parameters() -> None:
-    # Decision record 0011: sleep + idle, mode block (not delay, not block-weak).
-    assert sleep.WHAT == "sleep:idle"
+    # Decision 0020: only automatic sleep, so the logind lock is "idle" and never "sleep".
+    assert sleep.WHAT == "idle"
+    assert sleep.PORTAL_INHIBIT_SUSPEND == 4  # not 8 (idle): that keeps the screen on
     assert sleep.MODE == "block"
     assert sleep.WHO == "Reframe"
     assert InhibitState("unavailable") is InhibitState.UNAVAILABLE

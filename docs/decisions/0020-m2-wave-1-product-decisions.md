@@ -1,6 +1,6 @@
 # 0020 — M2 wave 1: sleep inhibit stops only automatic sleep, portrait fit, VAAPI device, audio fallback
 
-- Status: accepted
+- Status: accepted; the Linux mechanism of item 1 is superseded by [0022](0022-linux-sleep-inhibit-mechanism.md)
 - Date: 2026-10-13
 - Steps: C-4, C-5, C-6, C-14
 - Supersedes in part: [0009](0009-dimension-maths-conventions.md) (item 4, "the fit box is not

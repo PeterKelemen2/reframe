@@ -1,6 +1,6 @@
 # 0011 — Sleep inhibit: stdlib D-Bus client, `sleep:idle` block lock, one state thread on Windows
 
-- Status: accepted; item 2 (the `sleep:idle` block lock) superseded by [0020](0020-m2-wave-1-product-decisions.md)
+- Status: accepted; item 2 (the `sleep:idle` block lock) superseded by [0020](0020-m2-wave-1-product-decisions.md) and [0022](0022-linux-sleep-inhibit-mechanism.md)
 - Date: 2026-10-13
 - Steps: C-14 (sleep inhibit only, M2), C-11
 
