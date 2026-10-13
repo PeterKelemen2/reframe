@@ -269,13 +269,100 @@ def draft_tracks(source: MediaSource, template: JobTemplate, *,
 - Decision 0018: every audio track goes through the codec rules in source order; every
   subtitle is copied; language, title and flags come from the source track.
 
-### Wave 3 offers
+### Wave 3 offers (contract written by the lead after wave 2 was merged)
 
-- **C-11** `reframe.queue`: SQLite store, runner, `-progress` parser, `Reframe.queue`.
-  `run_streaming(..., on_start=callback)` gives the pid of the started process for
-  pause/resume (built by the lead, commit "C-1: pid hook …").
-- **C-15** `Reframe.jobs` (`draft_from_preset`, `validate`, `plan`) and the CLI commands
-  `encoders`, `plan`, `encode FILE|DIR… --preset NAME [-o OUT]` (decision 0018), `name`.
+What wave 2 delivered (read the code; use these names):
+
+- C-7 `reframe.command`: `build_plan(job, source, caps, tools, *, definitions, shell, naming,
+  now) -> EncodePlan` (pure; `PlanError` for a job that skipped validation), `job_type`,
+  `command_line`. Steps run in order: `analyse`* → `pass1` + `pass2` or `encode` →
+  `mkvpropedit` (on `output_tmp`) → `finalize` (`tool=None`: rename `output_tmp` →
+  `output_final`). Weights: analyse 0.05, pass1 0.4, pass2 0.6, encode 1, mkvpropedit 0.01.
+  `EncodePlan.files` are written (UTF-8, LF) before the first step; `files` and `temp_files`
+  are removed when the job ends, whatever the outcome. Each analyse step prints one
+  `loudnorm` JSON block on stderr: store its keys as `<id>.<key>`, clamp `-inf`/`inf`
+  (silent tracks) to loudnorm's ranges, then `resolve_argv`. Decision 0013.
+- C-8 `reframe.validation`: `validate(job, source, caps, tools, fs, *, settings, definitions,
+  naming)`, `validate_template`, `LocalFileSystem`, `next_free_path` (`Name (1).mkv`).
+  `error` blocks queueing; `encoder.checking` is info, so wait for detection
+  (`CapabilityService.wait()`) and validate again before a job starts. Decision 0014.
+- C-9 `Reframe.settings` (`get()`, `await update(...)`, `problems`) and `Reframe.presets`
+  (`find(name_or_id)`, `default()`, `list()`, …). Read the queue settings
+  (`parallel_jobs`, `when_done`, `sleep_inhibit`, `output.collision`, `output.partial_file`)
+  through `settings.get()` each time. Decision 0015; default preset H.265 MKV 1080p (0024).
+- C-12 `reframe.batch.draft_tracks(source, template) -> TrackDraft` (every audio track
+  through the codec rules, every subtitle copied, source metadata). Decisions 0018, 0019,
+  0023.
+- C-14 `reframe.platform.sleep.create_sleep_inhibitor(events)`: `acquire(reason)` when a job
+  starts running, `release()` once when it stops (done, failed, cancelled, paused), `close()`
+  at shutdown. Decisions 0011, 0020, 0022.
+- C-16 `reframe.naming.resolve_output_name(...)`; C-5 `compute_geometry` gives
+  `output_size`.
+- Lead: `run_streaming(..., on_start=callback)` gives the pid (pause/resume).
+
+**C-11 `reframe.queue`** — `Reframe.queue: QueueService` (binding; C-15 codes against it in
+parallel)
+
+```python
+class QueueService:
+    async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob
+        # validates at once; a job with errors is still added, in state FAILED with its issues
+    def list(self) -> list[QueueJob]                      # queue order
+    def get(self, job_id: str) -> QueueJob | None
+    async def remove(self, job_id: str) -> None           # not while running
+    async def reorder(self, job_ids: Sequence[str]) -> None
+    async def retry(self, job_id: str) -> QueueJob        # FAILED / CANCELLED / INTERRUPTED → WAITING
+    def start(self) -> None                               # start processing WAITING jobs (parallel_jobs at a time)
+    async def stop(self) -> None                          # no new jobs; running ones go on
+    async def pause(self, job_id: str | None = None) -> None   # None = every running job
+    async def resume(self, job_id: str | None = None) -> None
+    async def cancel(self, job_id: str | None = None) -> None  # kill the tree, remove the .part file
+    async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]  # until they end
+    def log_path(self, job_id: str) -> Path
+    async def close(self) -> None                         # cancel running jobs, flush the store
+```
+
+- SQLite store at `<data dir>/queue.sqlite3` (05 §C-11 columns); logs at
+  `<data dir>/logs/<job id>.log` (the full command lines and stderr).
+- Before a job runs: probe the source again (`Reframe.sources.probe`, cached), wait for
+  encoder detection when an encoder is `checking`, validate again, build the plan.
+- Events: `job.state`, `job.progress` (`JobProgress`: percent weighted across steps, fps,
+  speed, ETA from a smoothed speed, output size), `job.log` (rate-limited),
+  `queue.changed`. ETA must survive a system sleep (decision 0020: the encode pauses with
+  the system).
+- Finalize: rename `.part` → final name with `settings.output.collision` (`auto_rename` →
+  `next_free_path`, `overwrite`, `ask` → the job fails with the issue, as a CLI has no
+  dialog), then re-probe the output and check the stream layout and languages.
+- Failure or cancel: remove the `.part` file when `output.partial_file == "delete"`, always
+  remove `plan.files` and `plan.temp_files`.
+- Restart recovery: `running` → `interrupted`.
+- Sleep inhibit while any job runs (when `queue.sleep_inhibit`). When-done: only `nothing`
+  and `notify` (a `notification` event) are in M2; `quit`, `sleep` and `shutdown` need C-14's
+  power actions (later): report them as not done.
+
+**C-15 `Reframe.jobs` and the CLI**
+
+```python
+class JobService:
+    async def draft(self, source: str | os.PathLike[str] | MediaSource, preset: Preset | str | None = None, *,
+                    output: Path | None = None) -> JobDraft | ProbeError
+        # preset None = the default preset; output None = the naming template
+    async def validate(self, job: JobSettings, source: MediaSource | None = None) -> list[ValidationIssue]
+    async def plan(self, job: JobSettings, source: MediaSource | None = None) -> EncodePlan | list[ValidationIssue]
+```
+
+- `JobDraft` (a model): the `JobSettings`, the track decisions (C-12), the naming result
+  (C-16) and the issues. The draft fills the job from the preset (output options,
+  dimensions, filters, video, chapters, tags), the tracks with `draft_tracks`, the video
+  track's metadata from the source with the default flag (decision 0024), and
+  `output.path`: `-o` as a manual name, else `resolve_output_name` with the preset's naming
+  options (or Settings → Output) and C-5's output size.
+- CLI: `reframe encoders` (the cached snapshot at once, then the updates while detection
+  runs: M2 demo item 1), `reframe plan FILE [--preset NAME] [-o OUT]` (the issues, then the
+  command: item 2; a preset with an unavailable encoder fails validation and names the
+  closest encoder: item 4), `reframe encode FILE|DIR… [--preset NAME] [-o OUT]` (decision
+  0018: one job per media file; progress and ETA; Ctrl+C cancels and the `.part` file is
+  removed: item 3), `reframe name PATH… [--template T]` (item 5).
 
 ## Decided questions
 
