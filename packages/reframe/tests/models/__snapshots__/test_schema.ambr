@@ -3079,6 +3079,28 @@
         'title': 'Display Aspect',
         'type': 'number',
       }),
+      'filter_rotation': dict({
+        'default': 0,
+        'description': '''
+          Clockwise rotation that the filter graph applies after the crop: the job's ``rotate``.
+          FFmpeg's automatic rotation has already applied the source's display matrix before the
+          filter graph, so the crop is in that orientation (``reframe.dimensions``).
+        ''',
+        'enum': list([
+          0,
+          90,
+          180,
+          270,
+        ]),
+        'title': 'Filter Rotation',
+        'type': 'integer',
+      }),
+      'flip_horizontal': dict({
+        'default': False,
+        'description': 'Mirror the picture left to right, after the rotation.',
+        'title': 'Flip Horizontal',
+        'type': 'boolean',
+      }),
       'notes': dict({
         'items': dict({
           'type': 'string',
@@ -5845,6 +5867,15 @@
     'additionalProperties': False,
     'description': 'What C-5 needs to know about the source picture.',
     'properties': dict({
+      'chroma_assumed': dict({
+        'default': False,
+        'description': '''
+          ``True`` when the pixel format is unknown and the chroma steps are C-5's assumption
+          (4:2:0, steps of 2).
+        ''',
+        'title': 'Chroma Assumed',
+        'type': 'boolean',
+      }),
       'chroma_step_x': dict({
         'default': 2,
         'description': 'Horizontal crop step for the chroma grid (2 for 4:2:0 and 4:2:2, 1 for 4:4:4).',

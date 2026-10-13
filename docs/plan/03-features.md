@@ -79,7 +79,8 @@ is upscaled. It turns red when a value is invalid.
 
 ### 2. Orientation
 
-Rotate (0 / 90 / 180 / 270) and Flip horizontal, in one compact row.
+Rotate (0 / 90 / 180 / 270) and Flip horizontal, in one compact row. The rotation is
+clockwise, and the flip mirrors the picture after the rotation.
 
 ### 3. Crop
 
@@ -129,7 +130,9 @@ One control replaces Resolution limit + Scaled size + Pixel aspect + Final dimen
 | Allow upscaling | on / off | off |
 
 "Fit within 1080p" means: the output fits inside 1920×1080, keeps its aspect ratio, and is
-never upscaled unless you turn upscaling on.
+never upscaled unless you turn upscaling on. Upscaling is measured against the source's
+display size: a 720×480 16:9 DVD made square becomes 854×480, which is not an upscale
+([decision 0009](../decisions/0009-dimension-maths-conventions.md)).
 
 ### 5. Advanced (collapsed)
 
