@@ -1,0 +1,741 @@
+# Filters (C-6, 03 §Filters). Table key = the filter id of `reframe.models.job.FilterSettings`.
+#
+# Each filter has one or more FFmpeg implementations (FilterConfig.implementation; the first
+# is the default), each with its own presets and tunes (HandBrake's names: NLMeans / HQDN3D,
+# Bwdif / Yadif, …), and the help panel text of 03 §Filters. A chain is the text of one `-vf`
+# segment; `{custom}` is FilterConfig.custom. Every chain was run with
+# FFmpeg n9.0.2 (both builds) on `-f lavfi -i testsrc2=size=320x240 … -frames:v 2 -f null -`
+# (colour filters on the HDR10 fixture); tests/definitions/test_tools.py repeats it.
+#
+# HandBrake parity: preset and tune values come from HandBrake 1.11.2 libhb/param.c; each
+# preset's `handbrake` field quotes the values it maps from. The mappings:
+# - Denoise NLMeans: HandBrake's weight is exp(-SSD / (patch² · strength²)), FFmpeg nlmeans'
+#   is exp(-SSD / (10 · s)²) (libavfilter/vf_nlmeans.c), so s = patch · strength / 10 with
+#   the luma values, clamped to FFmpeg's 1 … 30. The patch (p / pc) and research window
+#   (r / rc) sizes are HandBrake's luma / chroma values. FFmpeg's nlmeans is spatial only and
+#   has one strength for all planes, so HandBrake's chroma strength, origin tune, frame count
+#   and prefilter have no equivalent (the Grain tune, luma strength 0, becomes the weakest
+#   s=1).
+# - Denoise HQDN3D: HandBrake's y/cb/cr spatial and temporal strengths map 1:1 to hqdn3d's
+#   luma_spatial, chroma_spatial, luma_tmp, chroma_tmp (cb = cr in every preset).
+# - Deblock: HandBrake converts its own settings to FFmpeg's deblock filter
+#   (libhb/deblock.c): filter = strength, block = blocksize (tune), alpha = thresh · 0.01,
+#   beta = gamma = delta = alpha / 2. Reframe writes exactly that.
+# - Sharpen (unsharp) and chroma smooth: HandBrake's filters are ports of FFmpeg's unsharp
+#   (amount = strength · 65536, size = matrix size), so strength = unsharp amount and size =
+#   msize. Chroma smooth is unsharp on the chroma planes with a negative amount
+#   (libhb/chroma_smooth.c subtracts); FFmpeg's amount stops at -2, so Very strong (2.4) is
+#   written as -2.
+# - Deinterlace: HandBrake drives FFmpeg's yadif / bwdif (libhb/deinterlace.c): Default =
+#   send_frame, Bob = send_field, Skip spatial check = send_frame_nospatial; interlace
+#   detection adds deint=interlaced.
+# - Interlace detection: HandBrake's comb detector has no FFmpeg equivalent. Reframe uses
+#   idet, which flags the frames it finds interlaced (libavfilter/vf_idet.c sets
+#   AV_FRAME_FLAG_INTERLACED), and the deinterlacer then processes only those. "Less
+#   sensitive" raises idet's interlace threshold (1.04 → 1.5); "Fast" is the same as
+#   Default (idet has no faster mode).
+# - Detelecine: HandBrake's pullup settings (skip-*, plane) have no fieldmatch equivalent;
+#   Default is FFmpeg's fieldmatch + decimate with their defaults.
+# - Colorspace: HandBrake's colorspace presets (primaries / transfer / matrix) become zscale
+#   or libplacebo parameters; HandBrake's built-in tone mapping is the separate Tone mapping
+#   filter here.
+
+filter_order = [
+    "detelecine",
+    "interlace_detection",
+    "deinterlace",
+    "denoise",
+    "deblock",
+    "crop",
+    "custom",
+    "scale",
+    "tonemap",
+    "colorspace",
+    "sharpen",
+    "chroma_smooth",
+    "grayscale",
+    "format",
+]
+
+# --------------------------------------------------------------------------- detelecine
+
+[filter.detelecine]
+label = "Detelecine"
+
+[filter.detelecine.help]
+what = "Undoes 3:2 pulldown: rebuilds the original 24 fps film frames from 29.97 fps telecined video and drops the duplicates."
+use_when = "NTSC DVDs and broadcasts of film or TV series that show combing in a regular 3-of-5 frame pattern."
+avoid_when = "The source is already progressive, true interlaced video (sports, news), or PAL."
+speed_cost = "low"
+settings = "Default: field matching with FFmpeg's defaults, then one frame in five dropped. Custom: your fieldmatch parameters."
+
+[[filter.detelecine.implementations]]
+id = "fieldmatch"
+label = "Field match"
+filters = ["fieldmatch", "decimate"]
+default_preset = "default"
+
+[[filter.detelecine.implementations.presets]]
+id = "default"
+label = "Default"
+handbrake = "skip-top=4:skip-bottom=4:skip-left=1:skip-right=1:plane=0 (pullup; no fieldmatch equivalent)"
+chain = "fieldmatch,decimate"
+
+[[filter.detelecine.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "fieldmatch={custom},decimate"
+
+# --------------------------------------------------------------------------- interlace detection
+
+[filter.interlace_detection]
+label = "Interlace detection"
+analysis = true
+
+[filter.interlace_detection.help]
+what = "Finds interlaced frames, so that Deinterlace processes only those and leaves progressive frames untouched."
+use_when = "Mixed sources: progressive video with some interlaced parts (DVD extras, broadcasts)."
+avoid_when = "The whole source is interlaced (deinterlace everything instead) or fully progressive."
+speed_cost = "low"
+settings = "Default: FFmpeg's idet thresholds. Less sensitive: fewer frames count as interlaced. Fast: the same as Default (idet has no faster mode). Custom: your idet parameters."
+
+[[filter.interlace_detection.implementations]]
+id = "idet"
+label = "idet"
+filters = ["idet"]
+default_preset = "default"
+
+[[filter.interlace_detection.implementations.presets]]
+id = "default"
+label = "Default"
+handbrake = "mode=3:spatial-metric=2:motion-thresh=1:spatial-thresh=1:filter-mode=2:block-thresh=40:block-width=16:block-height=16"
+chain = "idet"
+
+[[filter.interlace_detection.implementations.presets]]
+id = "permissive"
+label = "Less sensitive"
+handbrake = "mode=3:spatial-metric=2:motion-thresh=3:spatial-thresh=3:filter-mode=2:block-thresh=40:block-width=16:block-height=16"
+chain = "idet=intl_thres=1.5"
+
+[[filter.interlace_detection.implementations.presets]]
+id = "fast"
+label = "Fast"
+handbrake = "mode=0:spatial-metric=2:motion-thresh=2:spatial-thresh=3:filter-mode=1:block-thresh=80:block-width=16:block-height=16"
+chain = "idet"
+
+[[filter.interlace_detection.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "idet={custom}"
+
+# --------------------------------------------------------------------------- deinterlace
+
+[filter.deinterlace]
+label = "Deinterlace"
+
+[filter.deinterlace.help]
+what = "Turns interlaced video (two half-pictures per frame) into progressive frames, removing the comb artefacts."
+use_when = "DVDs and broadcasts that show combing on motion. With Interlace detection on, only the detected frames are processed."
+avoid_when = "Progressive sources: deinterlacing them only softens the picture."
+speed_cost = "low"
+settings = "Bwdif (the default) or Yadif. Default: one output frame per frame. Bob: one frame per field, double frame rate, smoother motion. Skip spatial check (Yadif): faster. Custom: your bwdif / yadif parameters."
+
+[[filter.deinterlace.implementations]]
+id = "bwdif"
+label = "Bwdif"
+filters = ["bwdif"]
+combed_only = "deint=interlaced"
+default_preset = "default"
+note = "Bob Weaver: sharper than yadif, the default."
+
+[[filter.deinterlace.implementations.presets]]
+id = "default"
+label = "Default"
+handbrake = "bwdif mode=3 (send_frame)"
+chain = "bwdif=mode=send_frame:parity=auto"
+
+[[filter.deinterlace.implementations.presets]]
+id = "bob"
+label = "Bob"
+handbrake = "bwdif mode=7 (send_field)"
+chain = "bwdif=mode=send_field:parity=auto"
+
+[[filter.deinterlace.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "bwdif={custom}"
+
+[[filter.deinterlace.implementations]]
+id = "yadif"
+label = "Yadif"
+filters = ["yadif"]
+combed_only = "deint=interlaced"
+default_preset = "default"
+note = "Yet Another Deinterlacing Filter: HandBrake's classic."
+
+[[filter.deinterlace.implementations.presets]]
+id = "default"
+label = "Default"
+handbrake = "yadif mode=3 (send_frame)"
+chain = "yadif=mode=send_frame:parity=auto"
+
+[[filter.deinterlace.implementations.presets]]
+id = "skip-spatial"
+label = "Skip spatial check"
+handbrake = "yadif mode=1 (send_frame_nospatial)"
+chain = "yadif=mode=send_frame_nospatial:parity=auto"
+
+[[filter.deinterlace.implementations.presets]]
+id = "bob"
+label = "Bob"
+handbrake = "yadif mode=7 (send_field)"
+chain = "yadif=mode=send_field:parity=auto"
+
+[[filter.deinterlace.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "yadif={custom}"
+
+# --------------------------------------------------------------------------- denoise
+
+[filter.denoise]
+label = "Denoise"
+
+[filter.denoise.help]
+what = "Removes noise and grain. A cleaner picture compresses much better."
+use_when = "Noisy sources: old films, low-light video, VHS, DVD with visible noise."
+avoid_when = "Clean sources, or grain you want to keep (use the encoder's grain tune or SVT-AV1 film grain instead)."
+speed_cost = "high"
+settings = "NLMeans (the default): Ultralight to Strong (HandBrake's presets); tunes adapt it to the content. HQDN3D: the same strengths, much faster, can smear at high strength. Custom: your nlmeans or hqdn3d parameters."
+
+[[filter.denoise.implementations]]
+id = "nlmeans"
+label = "NLMeans"
+filters = ["nlmeans"]
+default_preset = "light"
+note = "Non-local means: the best quality, slow."
+tunes = [
+    { id = "film", label = "Film", help = "Most content, live action." },
+    { id = "grain", label = "Grain", help = "Keeps luma grain; FFmpeg's nlmeans cannot leave luma alone, so it denoises very lightly." },
+    { id = "highmotion", label = "High motion", help = "Avoids colour smearing in fast motion." },
+    { id = "animation", label = "Animation", help = "Cel animation: cartoons, anime." },
+    { id = "tape", label = "Tape", help = "Analogue tape: VHS." },
+    { id = "sprite", label = "Sprite", help = "1- to 16-bit 2D games." },
+]
+
+[[filter.denoise.implementations.presets]]
+id = "ultralight"
+label = "Ultralight"
+handbrake = "NLMeans ultralight: y-strength=1.5, cb-strength=1.5, patch 7/7, range 3/3"
+chain = "nlmeans=s=1.05:p=7:pc=7:r=3:rc=3"
+tune_chains = { film = "nlmeans=s=1.05:p=7:pc=7:r=3:rc=3", grain = "nlmeans=s=1:p=7:pc=7:r=3:rc=3", highmotion = "nlmeans=s=1.05:p=7:pc=7:r=3:rc=5", animation = "nlmeans=s=1.25:p=5:pc=5:r=7:rc=7", tape = "nlmeans=s=1:p=3:pc=5:r=5:rc=5", sprite = "nlmeans=s=1:p=5:pc=5:r=5:rc=7" }
+
+[[filter.denoise.implementations.presets]]
+id = "light"
+label = "Light"
+handbrake = "NLMeans light: y-strength=3, cb-strength=3, patch 7/7, range 3/3"
+chain = "nlmeans=s=2.1:p=7:pc=7:r=3:rc=3"
+tune_chains = { film = "nlmeans=s=2.1:p=7:pc=7:r=3:rc=3", grain = "nlmeans=s=1:p=7:pc=7:r=3:rc=3", highmotion = "nlmeans=s=2.1:p=7:pc=7:r=3:rc=5", animation = "nlmeans=s=1.5:p=5:pc=5:r=7:rc=7", tape = "nlmeans=s=1:p=3:pc=5:r=5:rc=5", sprite = "nlmeans=s=1:p=5:pc=5:r=5:rc=9" }
+
+[[filter.denoise.implementations.presets]]
+id = "medium"
+label = "Medium"
+handbrake = "NLMeans medium: y-strength=6, cb-strength=6, patch 7/7, range 3/3"
+chain = "nlmeans=s=4.2:p=7:pc=7:r=3:rc=3"
+tune_chains = { film = "nlmeans=s=4.2:p=7:pc=7:r=3:rc=3", grain = "nlmeans=s=1:p=7:pc=7:r=3:rc=3", highmotion = "nlmeans=s=4.2:p=7:pc=7:r=3:rc=5", animation = "nlmeans=s=2.5:p=5:pc=5:r=7:rc=7", tape = "nlmeans=s=1:p=3:pc=5:r=5:rc=5", sprite = "nlmeans=s=1.5:p=5:pc=5:r=5:rc=9" }
+
+[[filter.denoise.implementations.presets]]
+id = "strong"
+label = "Strong"
+handbrake = "NLMeans strong: y-strength=10, cb-strength=10, patch 7/7, range 3/3"
+chain = "nlmeans=s=7:p=7:pc=7:r=3:rc=3"
+tune_chains = { film = "nlmeans=s=5.6:p=7:pc=7:r=3:rc=3", grain = "nlmeans=s=1:p=7:pc=7:r=3:rc=3", highmotion = "nlmeans=s=5.6:p=7:pc=7:r=3:rc=5", animation = "nlmeans=s=5:p=5:pc=5:r=7:rc=7", tape = "nlmeans=s=1.75:p=5:pc=5:r=5:rc=5", sprite = "nlmeans=s=1.5:p=5:pc=5:r=7:rc=11" }
+
+[[filter.denoise.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "nlmeans={custom}"
+
+[[filter.denoise.implementations]]
+id = "hqdn3d"
+label = "HQDN3D"
+filters = ["hqdn3d"]
+default_preset = "light"
+note = "High-quality 3D denoiser: fast, can smear at high strength."
+
+[[filter.denoise.implementations.presets]]
+id = "ultralight"
+label = "Ultralight"
+handbrake = "HQDN3D ultralight: y-spatial=1, cb/cr-spatial=0.7, y-temporal=1, cb/cr-temporal=2"
+chain = "hqdn3d=luma_spatial=1:chroma_spatial=0.7:luma_tmp=1:chroma_tmp=2"
+
+[[filter.denoise.implementations.presets]]
+id = "light"
+label = "Light"
+handbrake = "HQDN3D light: y-spatial=2, cb/cr-spatial=1, y-temporal=2, cb/cr-temporal=3"
+chain = "hqdn3d=luma_spatial=2:chroma_spatial=1:luma_tmp=2:chroma_tmp=3"
+
+[[filter.denoise.implementations.presets]]
+id = "medium"
+label = "Medium"
+handbrake = "HQDN3D medium: y-spatial=3, cb/cr-spatial=2, y-temporal=2, cb/cr-temporal=3"
+chain = "hqdn3d=luma_spatial=3:chroma_spatial=2:luma_tmp=2:chroma_tmp=3"
+
+[[filter.denoise.implementations.presets]]
+id = "strong"
+label = "Strong"
+handbrake = "HQDN3D strong: y-spatial=7, cb/cr-spatial=7, y-temporal=5, cb/cr-temporal=5"
+chain = "hqdn3d=luma_spatial=7:chroma_spatial=7:luma_tmp=5:chroma_tmp=5"
+
+[[filter.denoise.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "hqdn3d={custom}"
+
+# --------------------------------------------------------------------------- deblock
+
+[filter.deblock]
+label = "Deblock"
+
+[filter.deblock.help]
+what = "Smooths the block edges of heavily compressed sources."
+use_when = "Low-bitrate sources with visible 8×8 blocks: old web video, low-quality DVDs."
+avoid_when = "Good sources: it softens real detail."
+speed_cost = "low"
+settings = "Ultralight to Very strong: weak or strong filter with a higher threshold (HandBrake's presets). Tunes: block size. Custom: your deblock parameters."
+
+[[filter.deblock.implementations]]
+id = "deblock"
+label = "Deblock"
+filters = ["deblock"]
+default_preset = "medium"
+tunes = [
+    { id = "small", label = "Small (4×4)", help = "Blocks of 4×4 pixels." },
+    { id = "medium", label = "Medium (8×8)", help = "The default: MPEG-2 and MPEG-4 blocks." },
+    { id = "large", label = "Large (16×16)", help = "Large blocks, for heavily upscaled sources." },
+]
+
+[[filter.deblock.implementations.presets]]
+id = "ultralight"
+label = "Ultralight"
+handbrake = "strength=weak:thresh=20"
+chain = "deblock=filter=weak:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1"
+tune_chains = { small = "deblock=filter=weak:block=4:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1", medium = "deblock=filter=weak:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1", large = "deblock=filter=weak:block=16:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1" }
+
+[[filter.deblock.implementations.presets]]
+id = "light"
+label = "Light"
+handbrake = "strength=weak:thresh=50"
+chain = "deblock=filter=weak:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25"
+tune_chains = { small = "deblock=filter=weak:block=4:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25", medium = "deblock=filter=weak:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25", large = "deblock=filter=weak:block=16:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25" }
+
+[[filter.deblock.implementations.presets]]
+id = "medium"
+label = "Medium"
+handbrake = "strength=strong:thresh=20"
+chain = "deblock=filter=strong:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1"
+tune_chains = { small = "deblock=filter=strong:block=4:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1", medium = "deblock=filter=strong:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1", large = "deblock=filter=strong:block=16:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1" }
+
+[[filter.deblock.implementations.presets]]
+id = "strong"
+label = "Strong"
+handbrake = "strength=strong:thresh=50"
+chain = "deblock=filter=strong:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25"
+tune_chains = { small = "deblock=filter=strong:block=4:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25", medium = "deblock=filter=strong:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25", large = "deblock=filter=strong:block=16:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25" }
+
+[[filter.deblock.implementations.presets]]
+id = "stronger"
+label = "Stronger"
+handbrake = "strength=strong:thresh=75"
+chain = "deblock=filter=strong:block=8:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375"
+tune_chains = { small = "deblock=filter=strong:block=4:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375", medium = "deblock=filter=strong:block=8:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375", large = "deblock=filter=strong:block=16:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375" }
+
+[[filter.deblock.implementations.presets]]
+id = "verystrong"
+label = "Very strong"
+handbrake = "strength=strong:thresh=100"
+chain = "deblock=filter=strong:block=8:alpha=1:beta=0.5:gamma=0.5:delta=0.5"
+tune_chains = { small = "deblock=filter=strong:block=4:alpha=1:beta=0.5:gamma=0.5:delta=0.5", medium = "deblock=filter=strong:block=8:alpha=1:beta=0.5:gamma=0.5:delta=0.5", large = "deblock=filter=strong:block=16:alpha=1:beta=0.5:gamma=0.5:delta=0.5" }
+
+[[filter.deblock.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "deblock={custom}"
+
+# --------------------------------------------------------------------------- custom
+
+[filter.custom]
+label = "Custom filter"
+
+[filter.custom.help]
+what = "Your own FFmpeg filter chain, inserted after cropping and before scaling."
+use_when = "A filter Reframe has no control for."
+avoid_when = "A built-in filter does the job: the built-in ones are checked and explained."
+speed_cost = "medium"
+settings = "Default: the text is used as it is (validated with a dry run)."
+
+[[filter.custom.implementations]]
+id = "custom"
+label = "Custom"
+filters = []
+default_preset = "default"
+
+[[filter.custom.implementations.presets]]
+id = "default"
+label = "Custom"
+custom = true
+chain = "{custom}"
+
+# --------------------------------------------------------------------------- tone mapping
+
+[filter.tonemap]
+label = "HDR → SDR tone mapping"
+
+[filter.tonemap.help]
+what = "Converts HDR (BT.2020 PQ or HLG) to SDR BT.709, compressing the highlights so they fit, instead of clipping and washing out the picture."
+use_when = "An HDR source must play on SDR screens or players."
+avoid_when = "The output stays HDR (encode 10-bit H.265 or AV1 with HDR metadata instead), or the source is SDR."
+speed_cost = "medium"
+settings = "libplacebo (the default, needs Vulkan): dynamic peak detection, or Static with the mastering metadata only; tunes pick the curve. zscale + tonemap (CPU): Hable, Mobius or Reinhard, no peak detection."
+
+[[filter.tonemap.implementations]]
+id = "libplacebo"
+label = "libplacebo"
+filters = ["libplacebo"]
+needs_vulkan = true
+default_preset = "default"
+note = "GPU (Vulkan) tone mapping with dynamic peak detection. Needs a working Vulkan driver."
+tunes = [
+    { id = "bt2390", label = "BT.2390", help = "The ITU recommendation: natural, keeps highlights. The default." },
+    { id = "hable", label = "Hable", help = "Filmic curve, a little darker and more contrast." },
+    { id = "mobius", label = "Mobius", help = "Keeps colours and contrast in the mid tones." },
+    { id = "reinhard", label = "Reinhard", help = "Simple, brighter highlights." },
+]
+
+[[filter.tonemap.implementations.presets]]
+id = "default"
+label = "On"
+handbrake = "HandBrake tone maps inside its colorspace filter with tonemap=hable:desat=0"
+chain = "libplacebo=tonemapping=bt.2390:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+tune_chains = { bt2390 = "libplacebo=tonemapping=bt.2390:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv", hable = "libplacebo=tonemapping=hable:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv", mobius = "libplacebo=tonemapping=mobius:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv", reinhard = "libplacebo=tonemapping=reinhard:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv" }
+
+[[filter.tonemap.implementations.presets]]
+id = "static"
+label = "On, no peak detection"
+chain = "libplacebo=tonemapping=bt.2390:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+tune_chains = { bt2390 = "libplacebo=tonemapping=bt.2390:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv", hable = "libplacebo=tonemapping=hable:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv", mobius = "libplacebo=tonemapping=mobius:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv", reinhard = "libplacebo=tonemapping=reinhard:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv" }
+
+[[filter.tonemap.implementations]]
+id = "zscale"
+label = "zscale + tonemap"
+filters = ["zscale", "tonemap"]
+requires_tagged_input = true
+default_preset = "default"
+note = "CPU tone mapping (zscale + tonemap); no BT.2390 curve, no peak detection."
+tunes = [
+    { id = "hable", label = "Hable", help = "Filmic curve, a little darker and more contrast. The default." },
+    { id = "mobius", label = "Mobius", help = "Keeps colours and contrast in the mid tones." },
+    { id = "reinhard", label = "Reinhard", help = "Simple, brighter highlights." },
+]
+
+[[filter.tonemap.implementations.presets]]
+id = "default"
+label = "On"
+handbrake = "tonemap=hable:desat=0 (HandBrake's colorspace filter)"
+chain = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv"
+tune_chains = { hable = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv", mobius = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv", reinhard = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=reinhard:desat=0,zscale=t=bt709:m=bt709:r=tv" }
+
+# --------------------------------------------------------------------------- colorspace
+
+[filter.colorspace]
+label = "Colorspace"
+
+[filter.colorspace.help]
+what = "Converts the colour primaries, transfer and matrix to another standard, and tags the output so that players do not have to guess."
+use_when = "SD sources (BT.601) for modern players that assume BT.709, or a deliberate BT.2020 output."
+avoid_when = "The source already has the target colours. HDR to SDR needs Tone mapping, not only this filter."
+speed_cost = "low"
+settings = "BT.709: HD and SDR standard. BT.2020: UHD (SDR, 10-bit transfer). BT.601 SMPTE-C: NTSC SD. BT.601 EBU: PAL SD. zscale (the default, CPU) or libplacebo (Vulkan)."
+
+[[filter.colorspace.implementations]]
+id = "zscale"
+label = "zscale"
+filters = ["zscale"]
+requires_tagged_input = true
+default_preset = "bt709"
+note = "CPU conversion (zimg)."
+
+[[filter.colorspace.implementations.presets]]
+id = "bt709"
+label = "BT.709"
+handbrake = "primaries=bt709:transfer=bt709:matrix=bt709"
+chain = "zscale=p=bt709:t=bt709:m=bt709"
+
+[[filter.colorspace.implementations.presets]]
+id = "bt2020"
+label = "BT.2020"
+handbrake = "primaries=bt2020:transfer=bt2020-10:matrix=bt2020ncl"
+chain = "zscale=p=bt2020:t=bt2020-10:m=bt2020nc"
+
+[[filter.colorspace.implementations.presets]]
+id = "bt601-6-525"
+label = "BT.601 SMPTE-C (NTSC)"
+handbrake = "primaries=smpte170m:transfer=bt709:matrix=smpte170m"
+chain = "zscale=p=smpte170m:t=bt709:m=smpte170m"
+
+[[filter.colorspace.implementations.presets]]
+id = "bt601-6-625"
+label = "BT.601 EBU (PAL)"
+handbrake = "primaries=bt470bg:transfer=bt709:matrix=smpte170m"
+chain = "zscale=p=bt470bg:t=bt709:m=smpte170m"
+
+[[filter.colorspace.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "zscale={custom}"
+
+[[filter.colorspace.implementations]]
+id = "libplacebo"
+label = "libplacebo"
+filters = ["libplacebo"]
+needs_vulkan = true
+default_preset = "bt709"
+note = "GPU (Vulkan) conversion. Needs a working Vulkan driver."
+
+[[filter.colorspace.implementations.presets]]
+id = "bt709"
+label = "BT.709"
+handbrake = "primaries=bt709:transfer=bt709:matrix=bt709"
+chain = "libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709"
+
+[[filter.colorspace.implementations.presets]]
+id = "bt2020"
+label = "BT.2020"
+handbrake = "primaries=bt2020:transfer=bt2020-10:matrix=bt2020ncl"
+chain = "libplacebo=colorspace=bt2020nc:color_primaries=bt2020:color_trc=bt2020-10"
+
+[[filter.colorspace.implementations.presets]]
+id = "bt601-6-525"
+label = "BT.601 SMPTE-C (NTSC)"
+handbrake = "primaries=smpte170m:transfer=bt709:matrix=smpte170m"
+chain = "libplacebo=colorspace=smpte170m:color_primaries=smpte170m:color_trc=bt709"
+
+[[filter.colorspace.implementations.presets]]
+id = "bt601-6-625"
+label = "BT.601 EBU (PAL)"
+handbrake = "primaries=bt470bg:transfer=bt709:matrix=smpte170m"
+chain = "libplacebo=colorspace=smpte170m:color_primaries=bt470bg:color_trc=bt709"
+
+[[filter.colorspace.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "libplacebo={custom}"
+
+# --------------------------------------------------------------------------- sharpen
+
+[filter.sharpen]
+label = "Sharpen"
+
+[filter.sharpen.help]
+what = "Makes edges and detail look crisper."
+use_when = "Soft sources, or after downscaling or denoising."
+avoid_when = "Noisy or grainy sources (it sharpens the noise) and when file size matters: sharp pictures need more bits."
+speed_cost = "low"
+settings = "Unsharp (the default): Ultralight to Very strong (HandBrake's presets); tunes set the size of the detail that is sharpened. CAS: contrast adaptive sharpening, Light / Medium / Strong (0.25 / 0.5 / 0.75). Custom: your unsharp or cas parameters."
+
+[[filter.sharpen.implementations]]
+id = "unsharp"
+label = "Unsharp"
+filters = ["unsharp"]
+default_preset = "light"
+note = "Unsharp mask (HandBrake's Unsharp)."
+tunes = [
+    { id = "ultrafine", label = "Ultrafine", help = "3×3: the finest detail." },
+    { id = "fine", label = "Fine" },
+    { id = "medium", label = "Medium" },
+    { id = "coarse", label = "Coarse" },
+    { id = "verycoarse", label = "Very coarse", help = "13×13: large structures." },
+]
+
+[[filter.sharpen.implementations.presets]]
+id = "ultralight"
+label = "Ultralight"
+handbrake = "Unsharp ultralight: y-strength=0.05, cb-strength=0.05, size 7/7"
+chain = "unsharp=lx=7:ly=7:la=0.05:cx=7:cy=7:ca=0.05"
+tune_chains = { ultrafine = "unsharp=lx=3:ly=3:la=0.15:cx=3:cy=3:ca=0.1", fine = "unsharp=lx=7:ly=7:la=0.055:cx=5:cy=5:ca=0.033", medium = "unsharp=lx=9:ly=9:la=0.055:cx=7:cy=7:ca=0.033", coarse = "unsharp=lx=11:ly=11:la=0.055:cx=7:cy=7:ca=0.033", verycoarse = "unsharp=lx=13:ly=13:la=0.055:cx=9:cy=9:ca=0.033" }
+
+[[filter.sharpen.implementations.presets]]
+id = "light"
+label = "Light"
+handbrake = "Unsharp light: y-strength=0.15, cb-strength=0.15, size 7/7"
+chain = "unsharp=lx=7:ly=7:la=0.15:cx=7:cy=7:ca=0.15"
+tune_chains = { ultrafine = "unsharp=lx=3:ly=3:la=0.25:cx=3:cy=3:ca=0.15", fine = "unsharp=lx=7:ly=7:la=0.165:cx=5:cy=5:ca=0.1", medium = "unsharp=lx=9:ly=9:la=0.165:cx=7:cy=7:ca=0.1", coarse = "unsharp=lx=11:ly=11:la=0.165:cx=7:cy=7:ca=0.1", verycoarse = "unsharp=lx=13:ly=13:la=0.165:cx=9:cy=9:ca=0.1" }
+
+[[filter.sharpen.implementations.presets]]
+id = "medium"
+label = "Medium"
+handbrake = "Unsharp medium: y-strength=0.25, cb-strength=0.25, size 7/7"
+chain = "unsharp=lx=7:ly=7:la=0.25:cx=7:cy=7:ca=0.25"
+tune_chains = { ultrafine = "unsharp=lx=3:ly=3:la=0.4:cx=3:cy=3:ca=0.25", fine = "unsharp=lx=7:ly=7:la=0.275:cx=5:cy=5:ca=0.165", medium = "unsharp=lx=9:ly=9:la=0.275:cx=7:cy=7:ca=0.165", coarse = "unsharp=lx=11:ly=11:la=0.275:cx=7:cy=7:ca=0.165", verycoarse = "unsharp=lx=13:ly=13:la=0.275:cx=9:cy=9:ca=0.165" }
+
+[[filter.sharpen.implementations.presets]]
+id = "strong"
+label = "Strong"
+handbrake = "Unsharp strong: y-strength=0.5, cb-strength=0.5, size 7/7"
+chain = "unsharp=lx=7:ly=7:la=0.5:cx=7:cy=7:ca=0.5"
+tune_chains = { ultrafine = "unsharp=lx=3:ly=3:la=0.8:cx=3:cy=3:ca=0.5", fine = "unsharp=lx=7:ly=7:la=0.55:cx=5:cy=5:ca=0.33", medium = "unsharp=lx=9:ly=9:la=0.55:cx=7:cy=7:ca=0.33", coarse = "unsharp=lx=11:ly=11:la=0.55:cx=7:cy=7:ca=0.33", verycoarse = "unsharp=lx=13:ly=13:la=0.55:cx=9:cy=9:ca=0.33" }
+
+[[filter.sharpen.implementations.presets]]
+id = "stronger"
+label = "Stronger"
+handbrake = "Unsharp stronger: y-strength=0.8, cb-strength=0.8, size 7/7"
+chain = "unsharp=lx=7:ly=7:la=0.8:cx=7:cy=7:ca=0.8"
+tune_chains = { ultrafine = "unsharp=lx=3:ly=3:la=1.2:cx=3:cy=3:ca=0.75", fine = "unsharp=lx=7:ly=7:la=0.9:cx=5:cy=5:ca=0.6", medium = "unsharp=lx=9:ly=9:la=0.9:cx=7:cy=7:ca=0.6", coarse = "unsharp=lx=11:ly=11:la=0.9:cx=7:cy=7:ca=0.6", verycoarse = "unsharp=lx=13:ly=13:la=0.9:cx=9:cy=9:ca=0.6" }
+
+[[filter.sharpen.implementations.presets]]
+id = "verystrong"
+label = "Very strong"
+handbrake = "Unsharp verystrong: y-strength=1.2, cb-strength=1.2, size 7/7"
+chain = "unsharp=lx=7:ly=7:la=1.2:cx=7:cy=7:ca=1.2"
+tune_chains = { ultrafine = "unsharp=lx=3:ly=3:la=1.5:cx=3:cy=3:ca=0.9", fine = "unsharp=lx=7:ly=7:la=1.35:cx=5:cy=5:ca=0.9", medium = "unsharp=lx=9:ly=9:la=1.35:cx=7:cy=7:ca=0.9", coarse = "unsharp=lx=11:ly=11:la=1.35:cx=7:cy=7:ca=0.9", verycoarse = "unsharp=lx=13:ly=13:la=1.35:cx=9:cy=9:ca=0.9" }
+
+[[filter.sharpen.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "unsharp={custom}"
+
+[[filter.sharpen.implementations]]
+id = "cas"
+label = "CAS"
+filters = ["cas"]
+default_preset = "light"
+note = "AMD FidelityFX Contrast Adaptive Sharpening: sharpens low-contrast detail more, with fewer halos. No HandBrake equivalent (HandBrake's second sharpener, LapSharp, is not in FFmpeg)."
+
+[[filter.sharpen.implementations.presets]]
+id = "light"
+label = "Light"
+chain = "cas=strength=0.25"
+
+[[filter.sharpen.implementations.presets]]
+id = "medium"
+label = "Medium"
+chain = "cas=strength=0.5"
+
+[[filter.sharpen.implementations.presets]]
+id = "strong"
+label = "Strong"
+chain = "cas=strength=0.75"
+
+[[filter.sharpen.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "cas={custom}"
+
+# --------------------------------------------------------------------------- chroma smooth
+
+[filter.chroma_smooth]
+label = "Chroma smooth"
+
+[filter.chroma_smooth.help]
+what = "Blurs only the colour information: removes colour noise and rainbow artefacts, keeps luma detail."
+use_when = "Colour noise, chroma blocking or dot crawl (analogue sources, low-quality DVDs)."
+avoid_when = "Clean sources: it makes colours bleed."
+speed_cost = "low"
+settings = "Ultralight to Very strong: blur amount (HandBrake's presets; Very strong is limited to FFmpeg's maximum). Tunes: blur size. Custom: your unsharp parameters."
+
+[[filter.chroma_smooth.implementations]]
+id = "unsharp"
+label = "Unsharp (chroma)"
+filters = ["unsharp"]
+default_preset = "light"
+note = "Unsharp with a negative amount on the chroma planes only."
+tunes = [
+    { id = "tiny", label = "Tiny", help = "3×3." },
+    { id = "small", label = "Small", help = "5×5." },
+    { id = "medium", label = "Medium", help = "7×7, the default." },
+    { id = "wide", label = "Wide", help = "9×9." },
+    { id = "verywide", label = "Very wide", help = "11×11." },
+]
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "ultralight"
+label = "Ultralight"
+handbrake = "cb-strength=0.4, cb-size=7 (tune: size)"
+chain = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.4"
+tune_chains = { tiny = "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-0.4", small = "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-0.4", medium = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.4", wide = "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-0.4", verywide = "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-0.4" }
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "light"
+label = "Light"
+handbrake = "cb-strength=0.8, cb-size=7 (tune: size)"
+chain = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.8"
+tune_chains = { tiny = "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-0.8", small = "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-0.8", medium = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.8", wide = "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-0.8", verywide = "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-0.8" }
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "medium"
+label = "Medium"
+handbrake = "cb-strength=1.2, cb-size=7 (tune: size)"
+chain = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.2"
+tune_chains = { tiny = "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-1.2", small = "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-1.2", medium = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.2", wide = "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-1.2", verywide = "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-1.2" }
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "strong"
+label = "Strong"
+handbrake = "cb-strength=1.6, cb-size=7 (tune: size)"
+chain = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.6"
+tune_chains = { tiny = "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-1.6", small = "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-1.6", medium = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.6", wide = "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-1.6", verywide = "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-1.6" }
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "stronger"
+label = "Stronger"
+handbrake = "cb-strength=2, cb-size=7 (tune: size)"
+chain = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2"
+tune_chains = { tiny = "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-2", small = "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-2", medium = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2", wide = "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-2", verywide = "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-2" }
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "verystrong"
+label = "Very strong"
+handbrake = "cb-strength=2.4, cb-size=7 (tune: size)"
+chain = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2"
+tune_chains = { tiny = "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-2", small = "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-2", medium = "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2", wide = "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-2", verywide = "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-2" }
+
+[[filter.chroma_smooth.implementations.presets]]
+id = "custom"
+label = "Custom"
+custom = true
+chain = "unsharp={custom}"
+
+# --------------------------------------------------------------------------- grayscale
+
+[filter.grayscale]
+label = "Grayscale"
+
+[filter.grayscale.help]
+what = "Removes all colour."
+use_when = "Black-and-white films that carry colour noise or a colour cast."
+avoid_when = "Colour sources."
+speed_cost = "low"
+settings = "On: saturation 0."
+
+[[filter.grayscale.implementations]]
+id = "hue"
+label = "hue"
+filters = ["hue"]
+default_preset = "default"
+note = "hue=s=0 keeps 4:2:0, so every encoder and player accepts it."
+
+[[filter.grayscale.implementations.presets]]
+id = "default"
+label = "On"
+chain = "hue=s=0"

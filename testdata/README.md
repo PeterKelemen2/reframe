@@ -457,7 +457,141 @@ Real result with the pinned build (`detect_capabilities`, hardware tests on):
 
 ### Encoder definitions (C-6)
 
-Nothing recorded yet.
+Checked on 2026-10-13 with both n9.0.2 builds (Arch `/usr/bin/ffmpeg` and the pinned BtbN
+build; x264 core 165, x265 4.1, SVT-AV1 v4.2.0) and, for AMF and VAAPI, an AMD RX 7600.
+`packages/reframe/tests/definitions/test_tools.py` repeats every check (`needs_ffmpeg`; the
+AMF / VAAPI encodes are `needs_gpu`), so a different build shows up as a test failure:
+
+```sh
+uv run pytest packages/reframe/tests/definitions/test_tools.py           # the active build
+REFRAME_FFMPEG=…/bin/ffmpeg REFRAME_FFPROBE=…/bin/ffprobe uv run pytest …  # another build
+```
+
+HandBrake values (encoder keys, filter presets, audio bitrates, quality ranges, presets) come
+from HandBrake **1.11.2** (`libhb/common.c`, `libhb/param.c`, `libhb/encavcodec.c`,
+`preset/preset_builtin.json`). The `handbrake_key` values of the M2 contract match
+`hb_video_encoders` (`x264`, `x265`, `svt_av1`, `VP9`, `nvenc_h264` … `vce_av1`); HandBrake has
+no VAAPI encoders, so the `vaapi_*` keys are Reframe's own.
+
+**Encoder options.** Every private option, preset, tune, profile and level that the definitions
+write exists in `ffmpeg -h encoder=<id>` (named constants included), for all 16 video encoders;
+help works without the hardware. x264 and x265 take free text and print their own lists for a
+bad value:
+
+```
+$ ffmpeg -f lavfi -i testsrc2 -c:v libx264 -preset bogus -f null -
+[libx264 @ …] Possible presets: ultrafast superfast veryfast faster fast medium slow slower veryslow placebo
+[libx264 @ …] Possible tunes: film animation grain stillimage psnr ssim fastdecode zerolatency
+$ … -c:v libx265 -profile:v bogus …
+[libx265 @ …] Possible profiles: main main10 mainstillpicture msp main-intra main10-intra main444-8 …
+```
+
+**x264 / x265 per-preset defaults** are read from the settings both libraries write into the
+stream (`x264 - core 165 … options: cabac=1 ref=3 …`, `x265 … options: … bframes=4 b-adapt=2
+…`) after a 3-frame encode per preset. The tables are in `definitions/data/options/x26*.toml`;
+a summary:
+
+| Preset | x264 bframes / ref / subme / rc-lookahead / me | x265 bframes / ref / rd / rc-lookahead / ctu |
+|--------|-----|-----|
+| ultrafast | 0 / 1 / 0 / – / dia | 3 / 1 / 2 / 5 / 32 |
+| veryfast | 3 / 1 / 2 / 10 / hex | 4 / 2 / 2 / 15 / 64 |
+| medium | 3 / 3 / 7 / 40 / hex | 4 / 3 / 3 / 20 / 64 |
+| slow | 3 / 5 / 8 / 50 / hex | 4 / 4 / 4 / 25 / 64 |
+| veryslow | 8 / 16 / 10 / 60 / umh | 8 / 5 / 6 / 40 / 64 |
+| placebo | 16 / 16 / 11 / 60 / tesa | 8 / 5 / 6 / 60 / 64 |
+
+**Bad parameters do not fail.** `-x264-params bogus=1` logs `Error parsing option 'bogus = 1'.`,
+`-x265-params bogus=1` logs `Unknown option: bogus.`, `-svtav1-params bogus=1` logs `Error
+parsing option bogus: 1.`, and all three encode on with exit code 0. A dry run of custom
+parameters (C-8) must read the log, not only the exit code. Other library behaviour:
+
+- x265 turns SAO back on for `selective-sao=N` (N > 0) even with `sao=0`; `hdr10-opt=1` is
+  dropped unless the output is tagged BT.2020 ("Recommended Settings for HDR10-opt: colour
+  primaries should be BT.2020, Disabling hdr10-opt."). `level-idc=4.1` is written as 41.
+- FFmpeg's libx265 wrapper sets `repeat-headers` when the muxer has no global headers.
+- libx264's `fastfirstpass` is on by default: a full first pass needs `-fastfirstpass 0`.
+- SVT-AV1 v4.2: default preset 8 and tune 1 (PSNR) (log: `preset / tune / pred struct : 8 /
+  PSNR`); presets 12 and 13 are mapped to 11; tune 3 (IQ) fails for normal (random access)
+  encodes; `level=4.1` is rejected, `level=41` works.
+- libvpx-vp9: `-crf N` alone gives the same file as `-crf N -b:v 0`.
+
+**Hardware rate control (AMF, VAAPI on radeonsi).** Every preset, profile, level, the quality
+mode at min / default / max, average bitrate and every option encode:
+
+| Encoder | Quality mode (as in the definitions) | Notes |
+|---------|------------------|-------|
+| `h264_amf`, `av1_amf` | `-rc cqp -qp_i Q -qp_p Q+2 -qp_b Q+4` (AV1: +8 / +16, range 0–255) | HandBrake's offsets. `hevc_amf` has no `-qp_b` |
+| `h264_vaapi`, `hevc_vaapi`, `av1_vaapi` | `-rc_mode CQP -global_quality Q` | ICQ fails: "Driver does not support ICQ RC mode (supported modes: CQP, CBR, VBR, QVBR)". `av1_vaapi` has no `-qp`. With no quality option h264 uses QP 20 and hevc QP 25 (same files as `-qp 20` / `-qp 25`) |
+
+`-bf 2` gives B-frames on `h264_amf` (ffprobe `has_b_frames=2`); `h264_vaapi` uses B-frames
+by default and `-bf 0` turns them off; `hevc_vaapi` and `av1_amf` encode without B-frames
+whatever `-bf` says ("The current GPU in use does not support AV1 B-frame encoding"). With no
+profile set, `h264_vaapi` writes High and `h264_amf` Main.
+
+**Audio encoders.** Each mixdown at its minimum, default and maximum bitrate (and every value of
+the fixed-step lists), every listed sample rate and the VBR quality range encode. Behaviour
+behind the data:
+
+| Encoder | What FFmpeg does |
+|---------|------------------|
+| `ac3` | Snaps silently to the AC-3 rates: `-b:a 150k` → 160 kb/s, 24k → 32k, 700k → 640k. 5.1 below 40k fails. 7.1 input is negotiated down to 5.1(side). Default without `-b:a`: 96 / 192 / 448 kb/s (mono / stereo / 5.1) |
+| `eac3` | Takes any value from 24k to 6144k (7000k fails); 5.1 maximum (7.1 → 5.1(side)) |
+| `aac` | Above 6144 bits per frame per channel: "Too many bits … clamping to max" (stereo 600k) |
+| `libopus` | 0.5 kb/s to 256 kb/s per channel: "The bit rate 600000 bps is unsupported. Please choose a value between 500 and 512000." 7.1 works (2048k maximum) |
+| `libmp3lame` | Snaps to the MPEG-1 Layer III rates (150k → 160k, 8k → 32k at 48 kHz); mono and stereo only |
+| all | An unlisted output rate fails: "Specified sample rate 44100 is not supported by the libopus encoder" (`ac3` at 96000 too). Without `-ar` FFmpeg picks a supported rate itself |
+
+**Containers** (`-c copy` from Matroska sources, read back with ffprobe):
+
+| Codec | MKV | MP4 | WebM |
+|-------|-----|-----|------|
+| h264, hevc | yes | yes (`avc1`, `hev1`; `-tag:v hvc1` works) | no ("Could not write header") |
+| av1, vp9 | yes | yes | yes |
+| vp8 | yes | no ("Could not find tag for codec vp8") | yes |
+| mpeg1video, mpeg2video, mpeg4, mjpeg | yes | yes | no |
+| prores, wmv2, msmpeg4v3, theora | yes | no | no |
+| aac, ac3, eac3, mp3, opus, flac, alac, pcm_s16le/s24le/s32le | yes | yes | opus only |
+| truehd | yes | only with `-strict -2` ("truehd in MP4 support is experimental") | no |
+| dts | yes | yes (tag `mp4a`) | no |
+| vorbis | yes | yes (tag `mp4a`; HandBrake does not allow it) | yes |
+| subrip, ass, webvtt | yes | no (only mov_text) | webvtt only |
+| mov_text | no ("Subtitle codec mov_text … is not supported") | yes | no |
+| dvd_subtitle (VobSub) | yes | **yes** (tag `mp4s`) | no |
+| hdmv_pgs_subtitle | yes (from libavformat/matroskaenc.c: FFmpeg has no PGS encoder to test) | no (no tag in libavformat/movenc.c `codec_mp4_tags`) | no |
+| ttf attachment | yes | no ("Could not find tag for codec ttf") | dropped without an error |
+
+Chapters: all three keep the 4 chapters of the `chapters` fixture.
+
+Dispositions (two AAC / Opus tracks, `-disposition:a:0 X -disposition:a:1 0`, read back):
+
+| Disposition | MP4 | WebM |
+|-------------|-----|------|
+| `default`, `forced` | yes | yes |
+| `comment` | yes | no |
+| `hearing_impaired` | yes (ffprobe also shows `captions`) | no |
+| `visual_impaired` | yes (ffprobe also shows `descriptions`) | no |
+| `original` | no | no |
+
+With no default track of a type, the MP4 muxer marks the first one default (`[1, 0]` for
+`-disposition 0` on both); Matroska and WebM write `[0, 0]`. Matroska writes all six flags
+(see above). mkvpropedit's names are `flag-default`, `flag-forced`, `flag-commentary`,
+`flag-hearing-impaired`, `flag-visual-impaired`, `flag-original` (`mkvpropedit
+--list-property-names`, v101.0).
+
+**Filters.** Both builds have every filter the definitions use: `fieldmatch`, `decimate`,
+`idet`, `bwdif`, `yadif`, `nlmeans`, `hqdn3d`, `deblock`, `unsharp`, `cas`, `hue`, `zscale`,
+`tonemap`, `libplacebo`, `colorspace`. Every preset and tune chain runs (`-frames:v 2 -f null
+-`; colour filters on the `hdr10` fixture). Behaviour behind the data:
+
+- `zscale` fails on an untagged source (`testsrc2`): "no path between colorspaces". After
+  `setparams=color_primaries=…:color_trc=…:colorspace=…` it works.
+- `libplacebo` needs a Vulkan driver: with `VK_ICD_FILENAMES=/nonexistent.json` it fails
+  ("Error initializing filters", "Generic error in an external library") although
+  `ffmpeg -filters` lists it.
+- `idet` sets the interlaced flag on the frames it detects
+  (`setfield=prog,idet,showinfo` on the `interlaced` fixture shows `i:T`), so
+  `bwdif` / `yadif` `deint=interlaced` processes only those.
+- `colorspace=all=bt709` fails on the 10-bit HDR fixture; the definitions use `zscale`.
 
 ### Sleep inhibit (C-14)
 

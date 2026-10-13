@@ -188,8 +188,15 @@ class FilterConfig(DocumentModel):
     :class:`FilterSettings` at all."""
 
     preset: str = "default"
+    """A preset of the chosen implementation (``FilterImplementation.presets`` in C-6)."""
     tune: str | None = None
     custom: str | None = None
+    implementation: str | None = None
+    """The FFmpeg implementation (C-6 ``FilterImplementation.id``): ``nlmeans`` or
+    ``hqdn3d`` for Denoise, ``bwdif`` or ``yadif`` for Deinterlace, ``unsharp`` or ``cas``
+    for Sharpen, ``zscale`` or ``libplacebo`` for Colorspace and Tone mapping. ``None`` = the
+    filter's default: the first implementation the FFmpeg build can run (HandBrake stores
+    this choice separately too, for example ``PictureDenoiseFilter``)."""
 
 
 class FilterSettings(RootModel[dict[str, FilterConfig]]):
