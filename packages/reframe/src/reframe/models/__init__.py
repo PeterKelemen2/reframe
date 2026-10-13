@@ -33,6 +33,8 @@ from reframe.models.defaults import (
     RuleMixdown,
     SourceChannels,
     SubtitleDefaults,
+    TrackDecision,
+    TrackDraft,
     TrackSelection,
 )
 from reframe.models.events import (
@@ -382,6 +384,8 @@ __all__ = [
     "ToolSet",
     "ToolStatus",
     "ToolsChangedEvent",
+    "TrackDecision",
+    "TrackDraft",
     "TrackFlags",
     "TrackMetadata",
     "TrackMetadataTemplate",
