@@ -39,10 +39,12 @@ character rules of [0012](0012-output-naming-rules.md) stay (`": "` → `" - "` 
    inhibit for automatic suspend (for example `org.freedesktop.PowerManagement.Inhibit` or the
    XDG desktop portal's `Inhibit` with the suspend/idle flags, chosen and checked by C-14 on a
    real desktop). If none of these works: the `sleep_inhibit.unavailable` warning, as before.
-2. **"Fit within W×H" turns the box for portrait output.** When the output picture (after
-   cropping, pixel aspect and rotation) is taller than wide, it fits inside H×W instead: a
-   1080×1920 phone video stays 1080×1920 with "Fit within 1080p". Exact width and exact
-   height are not changed.
+2. **"Fit within W×H" turns the box for portrait output.** The box takes the orientation of
+   the output picture (after cropping, pixel aspect and rotation): a picture that is taller
+   than wide fits inside the box with its long side vertical, a wider one with its long side
+   horizontal, a square one inside the box as written. So a 1080×1920 phone video stays
+   1080×1920 with "Fit within 1080p" (1920×1080). Exact width and exact height are not
+   changed.
 3. **VAAPI device: automatic, with a setting.** Detection tests the VAAPI encoders on every
    render node (`/dev/dri/renderD*`) and uses, for each encoder, the first node where it works.
    The encoder status records that node, and the command builder uses it. An optional
