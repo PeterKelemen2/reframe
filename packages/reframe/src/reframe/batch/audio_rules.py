@@ -8,25 +8,27 @@ the bitrate rules of 03 ("Reframe never makes a track bigger than its source"):
 =================================================  ========================================
 Source                                             Result
 =================================================  ========================================
-A bit rate above the max (``Lossless source``      Encode at the max (snapped to the
-when it is lossless), or lossless and unknown      encoder's allowed values)
 The source **fits**                                Passthru (or re-encode if the rule says
                                                    so)
+Lossless above the max or unknown, or a source     Encode at the max (snapped to the
+that does not fit above the max                    encoder's allowed values)
 At or below the max, but it does not fit           Encode at the smallest allowed value at
                                                    or above the source bit rate
-Bit rate unknown                                   As above the max; the preview offers
+Bit rate unknown, lossless or does not fit         As above the max; the preview offers
                                                    **Measure**
 =================================================  ========================================
 
 The source fits when its codec is on the passthru list and allowed by the
 :class:`~reframe.models.PassthruPolicy`, the container can hold it, its channels are within
-the rule's mixdown, its bit rate is at or below the max, and the rule changes nothing that
-needs a decode (gain, DRC, loudness, sample rate). A rule whose codec is ``passthru`` encodes
-with the policy's fallback encoder when the source does not fit.
+the rule's mixdown, and the rule changes nothing that needs a decode (gain, DRC, loudness,
+sample rate). A **lossy** source that fits is passed through at any bit rate, also an unknown
+one (re-encoding it would only add a generation loss, decision 0023); a **lossless** source
+fits only when its known bit rate is at or below the max. The max applies when the track is
+encoded. A rule whose codec is ``passthru`` encodes with the policy's fallback encoder when
+the source does not fit.
 
 Interpretations of the plan (decision 0019): a mixdown never upmixes; a lossless source with
-a known bit rate at or below the max is treated like any other source; the example of 03 is
-reproduced with its last row corrected (192 kb/s is above a 160 kb/s max).
+a known bit rate at or below the max is treated like any other source.
 
 Pure: no I/O.
 """
@@ -73,6 +75,9 @@ _CHANNEL_CONDITIONS: dict[SourceChannels, str] = {
     "5.1_or_more": "5.1 or more",
     "7.1_or_more": "7.1 or more",
 }
+
+#: Added to the reason of a lossy source that is passed through above the max (decision 0023).
+_KEPT_ABOVE = " (a lossy source is kept above the max)"
 
 BitrateState = Literal["no_max", "within", "above", "lossless", "unknown"]
 
@@ -226,6 +231,8 @@ class _Outcome:
     """The reason, without the rule prefix."""
     notes: list[str] = field(default_factory=list)
     measure: bool = False
+    kept_above: bool = False
+    """A lossy source passed through above the max (decision 0023)."""
     name_values: dict[str, Value] = field(default_factory=dict)
 
 
@@ -285,12 +292,16 @@ def _passthru(ctx: _Context, request: _Request, state: BitrateState) -> _Outcome
         else ctx.source_label
     )
     parts = [label, _source_layout(stream)]
-    if state == "within" and stream.bitrate.value is not None:
-        parts.append(f"{_kbps(stream.bitrate.value)} ≤ {request.max_bitrate}")
+    value = stream.bitrate.value
+    if state == "within" and value is not None:
+        parts.append(f"{_kbps(value)} ≤ {request.max_bitrate}")
+    elif state == "above" and value is not None:
+        parts.append(f"{_kbps(value)} > {request.max_bitrate}")
     return _Outcome(
         track=track,
         passthru=True,
-        sentences=[f"{', '.join(parts)}: passthru"],
+        sentences=[f"{', '.join(parts)}: passthru{_KEPT_ABOVE if state == 'above' else ''}"],
+        kept_above=state == "above",
         name_values={
             "channels": _source_layout(stream),
             "codec": ctx.source_label,
@@ -409,12 +420,17 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
                 bitrate = cap
                 if effective == "lossless":
                     sentences.append(f"Lossless source → {at_max}")
+                    measure = value is None
                 elif effective == "unknown":
+                    # A lossy source only gets here when it does not fit (decision 0023).
+                    if why:
+                        sentences.append(_sentence(why))
                     sentences.append("Bitrate unknown: treated as above the max; Measure")
                     measure = True
                 else:
                     assert value is not None
-                    sentences.append(f"{_kbps(value)} > {maximum} → {at_max}")
+                    above = f"{_kbps(value)} > {maximum} → {at_max}"
+                    sentences.append(_sentence(f"{why}, {above}") if why else above)
 
     extras = request.extras
     track = AudioOutputTrack(
@@ -458,7 +474,10 @@ def _resolve(ctx: _Context, request: _Request) -> _Outcome:
     blockers = _blockers(ctx, request)
     state = _bitrate_state(ctx.stream, request.max_bitrate)
     wants_passthru = request.codec == PASSTHRU or request.if_fits == "passthru"
-    if wants_passthru and not blockers and state in ("no_max", "within"):
+    # Decision 0023: a lossy source fits at any bit rate; a lossless one only at or below
+    # the max (``_bitrate_state`` calls a lossless source above the max or unknown
+    # "lossless").
+    if wants_passthru and not blockers and state != "lossless":
         return _passthru(ctx, request, state)
     return _encode(ctx, request, state, blockers)
 
@@ -567,6 +586,8 @@ def apply_codec_rules(
             sentences = [*skipped, f"Rule {number} matches"]
             if main.passthru:
                 sentences[-1] += ", and the source fits"
+                if main.kept_above:
+                    sentences[-1] += _KEPT_ABOVE
             else:
                 sentences.extend(main.sentences)
         else:

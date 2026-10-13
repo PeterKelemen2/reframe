@@ -389,7 +389,7 @@ With your setup (the codec in this example is AC-3; any encoder works):
 | hun · DTS-HD MA 5.1 · 2 104 kb/s | 1 | AC-3 5.1 · 320 kb/s | Lossless source → encode at the max |
 | hun · AC-3 5.1 · 224 kb/s | 1 | Passthru | AC-3, 5.1, 224 ≤ 320: passthru |
 | eng · TrueHD Atmos 7.1 | 2 | AC-3 5.1 · 384 kb/s | Downmix 7.1 → 5.1. Lossless source → encode at the max |
-| eng · AC-3 2.0 · 192 kb/s | 3 | Passthru | Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits (a lossy source is kept above the max: [0023](../decisions/0023-lossy-passthru-above-the-max.md)) |
+| eng · AC-3 2.0 · 192 kb/s | 3 | Passthru | Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits (a lossy source is kept above the max) |
 
 #### 3. Passthru and fallback (HandBrake parity)
 
