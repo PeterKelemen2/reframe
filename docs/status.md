@@ -117,7 +117,7 @@ uv run reframe probe --json FILE     # the MediaSource model as JSON
 uv run python -m reframe.tools       # which ffmpeg / ffprobe / mkvpropedit / mediainfo is used, and why
 uv run python scripts/make-testdata.py
 uv run --no-project python scripts/fetch-tools.py
-uv run pytest                        # about 3 700 tests (M2 branch; 18 more with -m needs_gpu)
+uv run pytest                        # about 3 730 tests (M2 branch; 18 more with -m needs_gpu)
 cd frontend && npm run dev:web       # placeholder page only
 ```
 
