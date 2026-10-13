@@ -47,7 +47,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-13 Metadata edit and remux | Not started | The language-tag behaviour of FFmpeg and mkvpropedit is verified and recorded (`testdata/README.md`) |
 | C-14 Platform services | Not started | Sleep inhibit, power actions and the notification hook are not built. (`reframe.platform` already has child-process safety from C-1 and `launch_detached` for user-facing programs) |
 | C-15 Service facade and CLI | **Partial** | **Done:** `Reframe.create()` / `close()` with `tools`, `sources`, `tasks` and `events`; CLI `reframe probe FILE [--json]` and `reframe version`; `python -m reframe.tools` (tool status). **Not started:** the capabilities, presets, jobs, batch, queue and settings services; CLI `encoders`, `tools status\|fetch`, `name`, `presets`, `plan`, `encode`, `batch` |
-| C-16 Output naming | Not started | Model only (`NamingOptions`) |
+| C-16 Output naming | **Done** | `reframe.naming`: `resolve_output_name` (name source Auto / File / Folder with generic-folder skipping, season packs and scores; guessit parsing that keeps the original text and positions; templates with format specs, `<…>` groups, `/` subfolders, `{{ }}`; the 17 HandBrake variables and the Reframe ones; word separator and HandBrake clean-up; Windows-safe names on every OS; MP4/M4V rule; the job's manual name, template, name source and per-file `field_overrides`) and `check_template` (syntax, unknown variables with "did you mean" fixes, format specs). Models `NameResult`, `NameCandidate`, `ParsedName`, `NameSpan`, `NamingVariable`. Name corpus `testdata/names.toml`: 146 real-world cases. Decision [0012](decisions/0012-output-naming-rules.md). Collisions are C-8 / C-11; the `reframe name` command is C-15 |
 
 ### Server (`reframe-server`, 06-web-app.md Part A)
 
@@ -101,7 +101,7 @@ the parity table) to what exists. No feature has a user interface yet.
 | Audio and subtitle output tracks, audio defaults, track rules | Not started | |
 | Track metadata editing, remux-only and metadata-edit jobs | Not started | |
 | Chapters, tags | Not started | Chapters are probed |
-| Output naming (variables, release-name parsing, templates) | Not started | |
+| Output naming (variables, release-name parsing, templates) | **Partial** | Core done (C-16). Missing: `reframe name` and the default name of `reframe encode` (C-15), name collisions (C-8, C-11), `POST /api/naming/preview` and the variable list in `GET /api/definitions` (S-2), the naming editor (F-18) |
 | Queue, logs, when done, sleep inhibit | Not started | The event bus and the task manager exist |
 | Batch / season mode | Not started | |
 | Crop preview, filter preview, live preview clip | Not started | |

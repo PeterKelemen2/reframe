@@ -511,8 +511,12 @@ better one. This is the **name source**.
      the opened folder or media root). Generic folders are `Season 03`, `S03`, `Specials`,
      `Extras`, `Featurettes`, `Disc 1`, `CD1`, `BDMV`, `STREAM`, `VIDEO_TS`.
   2. If the folder holds several episode files (a season pack), the **file name** is the name
-     source, because only it has the episode number and title. The folder only fills fields
-     that the file name does not have (for example the year).
+     source, because only it has the episode number and title. The same holds when only the
+     file name has an episode number (a season folder such as `The.Sopranos.S03.1080p…`, or a
+     show folder such as `Breaking Bad (2008)`, when the other episodes are not there).
+     The folder only fills fields that the file name does not have (for example the year,
+     or the show name in front of a bare `S01E01.mkv`). Files in `BDMV`, `STREAM` and
+     `VIDEO_TS` are never episodes. ([0012](../decisions/0012-output-naming-rules.md))
   3. Otherwise, the candidate with the higher score wins. Score: +1 for each recognised field
      (title, year, resolution, source, video codec, audio codec, HDR, edition, release group),
      +2 if the title has word separators (`Hacksaw.Ridge`, not `hacksawridge`). On a tie, the
@@ -567,7 +571,7 @@ this: `{date:%d.%m.%Y}`.
 
 | Variable | Example |
 |----------|---------|
-| `{resolution}` | `2160p`, `1080p`, `720p`, `576p`, `480p`, or `W×H` for other sizes |
+| `{resolution}` | `2160p`, `1080p`, `720p`, `576p`, `480p`, or `WxH` (ASCII `x`: `640x360`) for other sizes |
 | `{hdr}` | `HDR10`, `HDR10+`, `DV`, `HLG`. Empty for SDR |
 | `{acodec}` · `{audio_channels}` | First output audio track: `AC-3` · `5.1` |
 | `{audio_langs}` · `{sub_langs}` | Output track languages: `HUN-ENG` |
@@ -623,10 +627,13 @@ Output to MKV at 1080p:
 ### Safe file names
 
 - Windows rules apply on **every** OS, because files move between systems: the characters
-  `< > : " / \ | ? *` and control characters are replaced, reserved names (`CON`, `NUL`, …)
-  are changed, and trailing dots and spaces are removed.
-- Each path part has a limit of 255 bytes. `{sub_title}` is shortened first, then
-  `{main_title}`. An empty result falls back to `{file_name}`.
+  `< > : " / \ | ? *` and control characters are replaced (`": "` → `" - "`; `:` `/` `\` `|`
+  → `-`; `"` → `'`; `< > ? *` and control characters are removed), reserved names (`CON`,
+  `NUL`, …) get a `_`, and trailing dots and spaces are removed.
+- Each path part has a limit of 255 bytes. The file name (with its extension) keeps room for
+  the `.part` of the partial file, so it has 250 bytes. `{sub_title}` is shortened first,
+  then `{main_title}`. An empty result falls back to `{file_name}`.
+  ([0012](../decisions/0012-output-naming-rules.md))
 - Collisions follow the collision setting ([Queue](#queue)). In a batch, duplicate names are
   errors ([04 §Output naming](04-batch-mode.md#output-naming)).
 
