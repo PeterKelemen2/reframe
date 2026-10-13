@@ -1,0 +1,965 @@
+# Name corpus for output naming (C-16; 05 §C-16 "Done when").
+#
+# Names only, no media: `tests/naming/test_corpus.py` resolves each `path` with the real
+# guessit and the default naming options, and compares the result with the expectations.
+# Add your own library's names here to tune the parser.
+#
+# Keys of a case:
+#   category  movie · movie-folder · episode · multi-episode · anime · year-in-show ·
+#             no-separators · season-pack · daily · plex
+#   path      The source file, relative to a media root. A path with a folder is resolved
+#             under the root `/library` (generic-folder skipping stops there); a bare file
+#             name has no folder at all.
+#   siblings  Other files in the file's folder (season packs). Default: none.
+#   source    The expected name source: "file" or "folder". Optional.
+#   main_title  The expected {main_title}. Always given.
+#   fields    Other expected parsed fields (ParsedName names): name, sub_title, season,
+#             episode, episodes, episode_code, year, edition, source_type, release_group.
+#             A field that is not listed is not checked; `""` means "not recognised".
+#   output    Optional: the expected file name with the default template {main_title}.
+
+# --------------------------------------------------------------------------- 03 §Examples
+
+[[case]]
+category = "movie-folder"
+path = "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson/hacksawridge.2160p.remux-henderson.mkv"
+source = "folder"
+main_title = "Hacksaw.Ridge"
+fields = { name = "Hacksaw.Ridge", year = 2016, source_type = "UHD.BluRay", release_group = "HenDerson", sub_title = "", season = "", episode = "", edition = "" }
+output = "Hacksaw.Ridge.mkv"
+
+[[case]]
+category = "season-pack"
+path = "The.Sopranos.S03.1080p.BluRay.REMUX-Kataklysm/The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm.mkv"
+siblings = [
+    "The.Sopranos.S03E01.Mr.Ruggerios.Neighborhood.1080p.BluRay.REMUX-Kataklysm.mkv",
+    "The.Sopranos.S03E03.Fortunate.Son.1080p.BluRay.REMUX-Kataklysm.mkv",
+]
+source = "file"
+main_title = "The.Sopranos.S03E02.Proshai.Livushka"
+fields = { name = "The.Sopranos", sub_title = "Proshai.Livushka", season = 3, episode = 2, episode_code = "S03E02", source_type = "BluRay", release_group = "Kataklysm", year = "" }
+output = "The.Sopranos.S03E02.Proshai.Livushka.mkv"
+
+# --------------------------------------------------------------------------- movies
+
+[[case]]
+category = "movie"
+path = "Blade.Runner.2049.2017.2160p.UHD.BluRay.REMUX.HDR.HEVC.Atmos-EPSiLON.mkv"
+main_title = "Blade.Runner.2049"
+fields = { name = "Blade.Runner.2049", year = 2017, source_type = "UHD.BluRay", release_group = "EPSiLON" }
+
+[[case]]
+category = "movie"
+path = "2001.A.Space.Odyssey.1968.1080p.BluRay.x264-AMIABLE.mkv"
+main_title = "2001.A.Space.Odyssey"
+fields = { year = 1968, source_type = "BluRay", release_group = "AMIABLE" }
+
+[[case]]
+category = "movie"
+path = "1917.2019.1080p.BluRay.x264-SPARKS.mkv"
+main_title = "1917"
+fields = { name = "1917", year = 2019, release_group = "SPARKS" }
+
+[[case]]
+category = "movie"
+path = "Harry.Potter.and.the.Deathly.Hallows.Part.2.2011.1080p.BluRay.x264-SECTOR7.mkv"
+main_title = "Harry.Potter.and.the.Deathly.Hallows.Part.2"
+fields = { year = 2011, release_group = "SECTOR7" }
+
+[[case]]
+category = "movie"
+path = "The.Lord.of.the.Rings.The.Fellowship.of.the.Ring.2001.EXTENDED.1080p.BluRay.x264-SiNNERS.mkv"
+main_title = "The.Lord.of.the.Rings.The.Fellowship.of.the.Ring"
+fields = { year = 2001, edition = "EXTENDED", release_group = "SiNNERS" }
+
+[[case]]
+category = "movie"
+path = "Apocalypse.Now.1979.Final.Cut.1080p.BluRay.x264-SADPANDA.mkv"
+main_title = "Apocalypse.Now"
+fields = { year = 1979, sub_title = "", season = "", release_group = "SADPANDA" }
+
+[[case]]
+category = "movie"
+path = "Mad Max Fury Road (2015) [2160p] [4K] [BluRay] [5.1] [YTS.MX].mp4"
+main_title = "Mad Max Fury Road"
+fields = { year = 2015, source_type = "BluRay", release_group = "YTS.MX" }
+
+[[case]]
+category = "movie"
+path = "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv"
+main_title = "Dune.Part.Two"
+fields = { name = "Dune.Part.Two", year = 2024, source_type = "WEB-DL", release_group = "FLUX" }
+
+[[case]]
+category = "movie"
+path = "Oppenheimer.2023.IMAX.2160p.UHD.BluRay.REMUX.DV.HDR.HEVC.TrueHD.Atmos.7.1-FraMeSToR.mkv"
+main_title = "Oppenheimer"
+fields = { year = 2023, edition = "IMAX", source_type = "UHD.BluRay", release_group = "FraMeSToR" }
+
+[[case]]
+category = "movie"
+path = "Avengers.Endgame.2019.IMAX.2160p.WEB-DL.DDP5.1.Atmos.HDR.HEVC-EVO.mkv"
+main_title = "Avengers.Endgame"
+fields = { year = 2019, edition = "IMAX", source_type = "WEB-DL", release_group = "EVO" }
+
+[[case]]
+category = "movie"
+path = "Star.Wars.Episode.IV.A.New.Hope.1977.1080p.BluRay.x264-AMIABLE.mkv"
+main_title = "Star.Wars.Episode.IV.A.New.Hope"
+fields = { year = 1977, season = "", episode = "" }
+
+[[case]]
+category = "movie"
+path = "Spider-Man.Into.the.Spider-Verse.2018.2160p.UHD.BluRay.x265-TERMiNAL.mkv"
+main_title = "Spider-Man.Into.the.Spider-Verse"
+fields = { year = 2018, source_type = "UHD.BluRay", release_group = "TERMiNAL" }
+
+[[case]]
+category = "movie"
+path = "The.Italian.Job.1969.1080p.BluRay.x264-HD4U.mkv"
+main_title = "The.Italian.Job"
+fields = { year = 1969, release_group = "HD4U" }
+
+[[case]]
+category = "movie"
+path = "Amelie.2001.FRENCH.1080p.BluRay.x264-ENCOUNTERS.mkv"
+main_title = "Amelie"
+fields = { year = 2001, release_group = "ENCOUNTERS" }
+
+[[case]]
+category = "movie"
+path = "Leon.The.Professional.1994.Extended.1080p.BluRay.x264-CiNEFiLE.mkv"
+main_title = "Leon.The.Professional"
+fields = { year = 1994, edition = "Extended", release_group = "CiNEFiLE" }
+
+[[case]]
+category = "movie"
+path = "Alien.1979.Directors.Cut.1080p.BluRay.x264-AMIABLE.mkv"
+main_title = "Alien"
+fields = { year = 1979, edition = "Directors.Cut" }
+
+[[case]]
+category = "movie"
+path = "Mission.Impossible.Dead.Reckoning.Part.One.2023.1080p.AMZN.WEB-DL.DDP5.1.H.264-FLUX.mkv"
+main_title = "Mission.Impossible.Dead.Reckoning.Part.One"
+fields = { year = 2023, source_type = "WEB-DL", release_group = "FLUX" }
+
+[[case]]
+category = "movie"
+path = "Kill.Bill.Vol.1.2003.1080p.BluRay.x264-HDMI.mkv"
+main_title = "Kill.Bill.Vol.1"
+fields = { year = 2003, release_group = "HDMI" }
+
+[[case]]
+category = "movie"
+path = "Back.to.the.Future.Part.II.1989.1080p.BluRay.x264-SADPANDA.mkv"
+main_title = "Back.to.the.Future.Part.II"
+fields = { year = 1989 }
+
+[[case]]
+category = "movie"
+path = "Up.2009.1080p.BluRay.x264-REFiNED.mkv"
+main_title = "Up"
+fields = { year = 2009, release_group = "REFiNED" }
+
+[[case]]
+category = "movie"
+path = "It.2017.1080p.BluRay.x264-SPARKS.mkv"
+main_title = "It"
+fields = { year = 2017 }
+
+[[case]]
+category = "movie"
+path = "Joker.2019.2160p.UHD.BluRay.x265.10bit.HDR.TrueHD.7.1.Atmos-DON.mkv"
+main_title = "Joker"
+fields = { year = 2019, source_type = "UHD.BluRay", release_group = "DON" }
+
+[[case]]
+category = "movie"
+path = "Tenet.2020.IMAX.2160p.UHD.BluRay.REMUX.HDR.HEVC.DTS-HD.MA.5.1-FGT.mkv"
+main_title = "Tenet"
+fields = { year = 2020, edition = "IMAX", release_group = "FGT" }
+
+[[case]]
+category = "movie"
+path = "The.Good.the.Bad.and.the.Ugly.1966.EXTENDED.REMASTERED.1080p.BluRay.x264-SADPANDA.mkv"
+main_title = "The.Good.the.Bad.and.the.Ugly"
+fields = { year = 1966, edition = "EXTENDED.REMASTERED" }
+
+[[case]]
+category = "movie"
+path = "The.Dark.Knight.2008.IMAX.EDITION.1080p.BluRay.x264-SPARKS.mkv"
+main_title = "The.Dark.Knight"
+fields = { year = 2008, edition = "IMAX.EDITION" }
+
+[[case]]
+category = "movie"
+path = "Gladiator.2000.Extended.Remastered.1080p.BluRay.x264-SADPANDA.mkv"
+main_title = "Gladiator"
+fields = { year = 2000, edition = "Extended.Remastered" }
+
+[[case]]
+category = "movie"
+path = "Dr.Strangelove.1964.Criterion.Collection.1080p.BluRay.x264-AMIABLE.mkv"
+main_title = "Dr.Strangelove"
+fields = { year = 1964, release_group = "AMIABLE" }
+
+[[case]]
+category = "movie"
+path = "Parasite.2019.KOREAN.1080p.BluRay.x264-USURY.mkv"
+main_title = "Parasite"
+fields = { year = 2019, release_group = "USURY" }
+
+[[case]]
+category = "movie"
+path = "Inception 2010 1080p BluRay x264 DTS-HD MA 5.1-FGT.mkv"
+main_title = "Inception"
+fields = { year = 2010, source_type = "BluRay", release_group = "FGT" }
+
+[[case]]
+category = "movie"
+path = "Inception_2010_1080p_BluRay_x264-SPARKS.mkv"
+main_title = "Inception"
+fields = { year = 2010, release_group = "SPARKS" }
+
+[[case]]
+category = "movie"
+path = "WALL-E.2008.1080p.BluRay.x264-SPARKS.mkv"
+main_title = "WALL-E"
+fields = { year = 2008 }
+
+[[case]]
+category = "movie"
+path = "X-Men.Days.of.Future.Past.2014.The.Rogue.Cut.1080p.BluRay.x264-SPARKS.mkv"
+main_title = "X-Men.Days.of.Future.Past"
+fields = { year = 2014 }
+
+[[case]]
+category = "movie"
+path = "Brazil.1985.Directors.Cut.BDRip.x264-HAiKU.mkv"
+main_title = "Brazil"
+fields = { year = 1985, edition = "Directors.Cut", source_type = "BDRip", release_group = "HAiKU" }
+
+[[case]]
+category = "movie"
+path = "The.Prestige.2006.720p.BRRip.x264-YIFY.mp4"
+main_title = "The.Prestige"
+fields = { year = 2006, source_type = "BRRip", release_group = "YIFY" }
+
+[[case]]
+category = "movie"
+path = "Spirited.Away.2001.JAPANESE.1080p.BluRay.x264-HAiKU.mkv"
+main_title = "Spirited.Away"
+fields = { year = 2001, release_group = "HAiKU" }
+
+[[case]]
+category = "movie"
+path = "Akira.1988.REMASTERED.JAPANESE.1080p.BluRay.x264-HAiKU.mkv"
+main_title = "Akira"
+fields = { year = 1988, edition = "REMASTERED" }
+
+[[case]]
+category = "movie"
+path = "Terminator.2.Judgment.Day.1991.REMASTERED.1080p.BluRay.x264-SADPANDA.mkv"
+main_title = "Terminator.2.Judgment.Day"
+fields = { year = 1991, edition = "REMASTERED" }
+
+[[case]]
+category = "movie"
+path = "Se7en.1995.REMASTERED.1080p.BluRay.x264-SADPANDA.mkv"
+main_title = "Se7en"
+fields = { year = 1995 }
+
+[[case]]
+category = "movie"
+path = "Taxi.Driver.1976.40th.Anniversary.Edition.1080p.BluRay.x264-PSYCHD.mkv"
+main_title = "Taxi.Driver"
+fields = { year = 1976, release_group = "PSYCHD" }
+
+[[case]]
+category = "movie"
+path = "Movie.2020.1080p.WEBRip.x264-GRP.mkv"
+main_title = "Movie"
+fields = { year = 2020, source_type = "WEBRip" }
+
+# --------------------------------------------------------------------------- movie folders
+
+[[case]]
+category = "movie-folder"
+path = "Inception.2010.1080p.BluRay.x264-SPARKS/sparks-inception-1080p.mkv"
+source = "folder"
+main_title = "Inception"
+fields = { year = 2010, release_group = "SPARKS" }
+
+[[case]]
+category = "movie-folder"
+path = "The.Matrix.1999.1080p.BluRay.x264-AMIABLE/amiable-thematrix-1080p.mkv"
+source = "folder"
+main_title = "The.Matrix"
+fields = { year = 1999, release_group = "AMIABLE" }
+
+[[case]]
+category = "movie-folder"
+path = "The Matrix (1999)/The.Matrix.1999.1080p.BluRay.x264-AMIABLE.mkv"
+source = "file"
+main_title = "The.Matrix"
+fields = { year = 1999 }
+
+[[case]]
+category = "movie-folder"
+path = "Hacksaw Ridge (2016)/hacksawridge.mkv"
+source = "folder"
+main_title = "Hacksaw Ridge"
+fields = { year = 2016 }
+
+[[case]]
+category = "movie-folder"
+path = "Blade.Runner.2049.2017.COMPLETE.UHD.BLURAY-TERMiNAL/BDMV/STREAM/00800.m2ts"
+source = "folder"
+main_title = "Blade.Runner.2049"
+fields = { year = 2017, source_type = "UHD.BLURAY", release_group = "TERMiNAL" }
+
+[[case]]
+category = "movie-folder"
+path = "The.Third.Man.1949.PAL.DVDR-iNTENSiTY/VIDEO_TS/VTS_01_1.VOB"
+siblings = ["VTS_01_0.VOB", "VTS_01_2.VOB", "VTS_01_3.VOB"]
+source = "folder"
+main_title = "The.Third.Man"
+fields = { year = 1949, source_type = "DVDR", release_group = "iNTENSiTY", episode = "" }
+
+[[case]]
+category = "movie-folder"
+path = "Inception.2010.DVDRip.XviD-SPARKS/CD1/sparks-inception-cd1.avi"
+source = "folder"
+main_title = "Inception"
+fields = { year = 2010, source_type = "DVDRip" }
+
+[[case]]
+category = "movie-folder"
+path = "Lawrence.of.Arabia.1962.1080p.BluRay.x264-AMIABLE/Disc 1/lawrence.of.arabia.disc1.mkv"
+source = "folder"
+main_title = "Lawrence.of.Arabia"
+fields = { year = 1962 }
+
+[[case]]
+category = "movie-folder"
+path = "Arrival (2016)/Arrival (2016) [imdbid-tt2543164] - [Bluray-1080p][DTS 5.1][x264]-SPARKS.mkv"
+source = "file"
+main_title = "Arrival"
+fields = { year = 2016, release_group = "SPARKS" }
+
+# --------------------------------------------------------------------------- episodes
+
+[[case]]
+category = "episode"
+path = "Breaking.Bad.S05E14.Ozymandias.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "Breaking.Bad.S05E14.Ozymandias"
+fields = { name = "Breaking.Bad", sub_title = "Ozymandias", season = 5, episode = 14, episode_code = "S05E14", release_group = "ROVERS" }
+
+[[case]]
+category = "episode"
+path = "breaking.bad.s05e14.1080p.bluray.x264-rovers.mkv"
+main_title = "breaking.bad.s05e14"
+fields = { name = "breaking.bad", sub_title = "", season = 5, episode = 14, episode_code = "s05e14" }
+
+[[case]]
+category = "episode"
+path = "The.Office.US.S05E01.Weight.Loss.720p.WEB-DL.DD5.1.H.264-CtrlHD.mkv"
+main_title = "The.Office.US.S05E01.Weight.Loss"
+fields = { name = "The.Office.US", sub_title = "Weight.Loss", season = 5, episode = 1, source_type = "WEB-DL", release_group = "CtrlHD" }
+
+[[case]]
+category = "episode"
+path = "Marvels.Agents.of.S.H.I.E.L.D.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "Marvels.Agents.of.S.H.I.E.L.D.S01E01.Pilot"
+fields = { name = "Marvels.Agents.of.S.H.I.E.L.D", sub_title = "Pilot", episode_code = "S01E01" }
+
+[[case]]
+category = "episode"
+path = "Game.of.Thrones.S08E06.The.Iron.Throne.2160p.UHD.BluRay.REMUX.HDR.HEVC.Atmos-EPSiLON.mkv"
+main_title = "Game.of.Thrones.S08E06.The.Iron.Throne"
+fields = { name = "Game.of.Thrones", sub_title = "The.Iron.Throne", season = 8, episode = 6, source_type = "UHD.BluRay" }
+
+[[case]]
+category = "episode"
+path = "Sherlock.S02E01.A.Scandal.in.Belgravia.1080p.BluRay.x264-SHORTBREHD.mkv"
+main_title = "Sherlock.S02E01.A.Scandal.in.Belgravia"
+fields = { name = "Sherlock", sub_title = "A.Scandal.in.Belgravia", season = 2, episode = 1 }
+
+[[case]]
+category = "episode"
+path = "The.Mandalorian.S02E08.Chapter.16.The.Rescue.2160p.DSNP.WEB-DL.DDP5.1.Atmos.DV.HEVC-FLUX.mkv"
+main_title = "The.Mandalorian.S02E08.Chapter.16.The.Rescue"
+fields = { name = "The.Mandalorian", sub_title = "Chapter.16.The.Rescue", source_type = "WEB-DL", release_group = "FLUX" }
+
+[[case]]
+category = "episode"
+path = "House.of.the.Dragon.S01E01.The.Heirs.of.the.Dragon.2160p.MAX.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv"
+main_title = "House.of.the.Dragon.S01E01.The.Heirs.of.the.Dragon"
+fields = { name = "House.of.the.Dragon", sub_title = "The.Heirs.of.the.Dragon" }
+
+[[case]]
+category = "episode"
+path = "Dark.S01E01.Secrets.GERMAN.1080p.NF.WEBRip.x264-ASCENDANCE.mkv"
+main_title = "Dark.S01E01.Secrets"
+fields = { name = "Dark", sub_title = "Secrets", source_type = "WEBRip", release_group = "ASCENDANCE" }
+
+[[case]]
+category = "episode"
+path = "The.Expanse.S06E01.Strange.Dogs.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"
+main_title = "The.Expanse.S06E01.Strange.Dogs"
+fields = { name = "The.Expanse", sub_title = "Strange.Dogs", season = 6, episode = 1, release_group = "NTb" }
+
+[[case]]
+category = "episode"
+path = "Star.Trek.The.Next.Generation.S03E15.Yesterdays.Enterprise.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "Star.Trek.The.Next.Generation.S03E15.Yesterdays.Enterprise"
+fields = { name = "Star.Trek.The.Next.Generation", season = 3, episode = 15 }
+
+[[case]]
+category = "episode"
+path = "The.Wire.1x01.The.Target.720p.BluRay.x264.mkv"
+main_title = "The.Wire.1x01.The.Target"
+fields = { name = "The.Wire", sub_title = "The.Target", season = 1, episode = 1, episode_code = "1x01" }
+
+[[case]]
+category = "episode"
+path = "Show Name - S01E02 - Episode Title.mkv"
+main_title = "Show Name - S01E02 - Episode Title"
+fields = { name = "Show Name", sub_title = "Episode Title", season = 1, episode = 2 }
+
+[[case]]
+category = "episode"
+path = "Fargo.S01E01.The.Crocodiles.Dilemma.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "Fargo.S01E01.The.Crocodiles.Dilemma"
+fields = { name = "Fargo", sub_title = "The.Crocodiles.Dilemma" }
+
+[[case]]
+category = "episode"
+path = "24.S01E01.12.00.AM-1.00.AM.720p.BluRay.x264-SiNNERS.mkv"
+main_title = "24.S01E01.12.00.AM-1.00.AM"
+fields = { name = "24", sub_title = "12.00.AM-1.00.AM", season = 1, episode = 1 }
+
+[[case]]
+category = "episode"
+path = "Chernobyl.S01E01.1.23.45.2160p.AMZN.WEB-DL.DDP5.1.HDR.HEVC-NTb.mkv"
+main_title = "Chernobyl.S01E01.1.23.45"
+fields = { name = "Chernobyl", sub_title = "1.23.45" }
+
+[[case]]
+category = "episode"
+path = "Twin.Peaks.S03E08.Part.8.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"
+main_title = "Twin.Peaks.S03E08.Part.8"
+fields = { name = "Twin.Peaks", sub_title = "Part.8", season = 3, episode = 8 }
+
+[[case]]
+category = "episode"
+path = "Stranger.Things.S04E09.Chapter.Nine.The.Piggyback.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv"
+main_title = "Stranger.Things.S04E09.Chapter.Nine.The.Piggyback"
+fields = { name = "Stranger.Things", sub_title = "Chapter.Nine.The.Piggyback" }
+
+[[case]]
+category = "episode"
+path = "Planet.Earth.II.S01E01.Islands.2160p.UHD.BluRay.x265-SCOTLUHD.mkv"
+main_title = "Planet.Earth.II.S01E01.Islands"
+fields = { name = "Planet.Earth.II", sub_title = "Islands", source_type = "UHD.BluRay" }
+
+[[case]]
+category = "episode"
+path = "Top.Gear.S22E01.720p.HDTV.x264-FTP.mkv"
+main_title = "Top.Gear.S22E01"
+fields = { name = "Top.Gear", sub_title = "", season = 22, episode = 1, source_type = "HDTV" }
+
+[[case]]
+category = "episode"
+path = "Shameless.US.S01E01.Pilot.720p.BluRay.x264-DEMAND.mkv"
+main_title = "Shameless.US.S01E01.Pilot"
+fields = { name = "Shameless.US", sub_title = "Pilot" }
+
+[[case]]
+category = "episode"
+path = "The Office (US) - S05E01 - Weight Loss.mkv"
+main_title = "The Office (US) - S05E01 - Weight Loss"
+fields = { name = "The Office (US)", sub_title = "Weight Loss", season = 5, episode = 1 }
+
+[[case]]
+category = "episode"
+path = "The_Office_US_S05E01_Weight_Loss_720p.mkv"
+main_title = "The_Office_US_S05E01_Weight_Loss"
+fields = { name = "The_Office_US", sub_title = "Weight_Loss" }
+
+[[case]]
+category = "episode"
+path = "Show.Name.S00E01.Special.Name.1080p.WEB.h264-GRP.mkv"
+main_title = "Show.Name.S00E01.Special.Name"
+fields = { season = 0, episode = 1, sub_title = "Special.Name" }
+
+[[case]]
+category = "episode"
+path = "Show.Name.S01E01.Episode.Name.1080p.WEB.h264-GRP[rarbg].mkv"
+main_title = "Show.Name.S01E01.Episode.Name"
+fields = { release_group = "GRP" }
+
+[[case]]
+category = "episode"
+path = "Show.Name.S01E01.Episode.Name.REPACK.1080p.WEB.h264-GRP.mkv"
+main_title = "Show.Name.S01E01.Episode.Name"
+fields = { sub_title = "Episode.Name" }
+
+[[case]]
+category = "episode"
+path = "www.Torrenting.com - Show.Name.S01E01.1080p.WEB.h264-GRP.mkv"
+main_title = "Show.Name.S01E01"
+fields = { name = "Show.Name" }
+
+[[case]]
+category = "episode"
+path = "Ted.Lasso.S03E12.So.Long.Farewell.2160p.ATVP.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX.mkv"
+main_title = "Ted.Lasso.S03E12.So.Long.Farewell"
+fields = { name = "Ted.Lasso", sub_title = "So.Long.Farewell", season = 3, episode = 12 }
+
+[[case]]
+category = "episode"
+path = "The.X-Files.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "The.X-Files.S01E01.Pilot"
+fields = { name = "The.X-Files", sub_title = "Pilot" }
+
+[[case]]
+category = "episode"
+path = "Fawlty.Towers.S01E01.A.Touch.of.Class.1080p.BluRay.x264-SHORTBREHD.mkv"
+main_title = "Fawlty.Towers.S01E01.A.Touch.of.Class"
+fields = { name = "Fawlty.Towers", sub_title = "A.Touch.of.Class" }
+
+[[case]]
+category = "episode"
+path = "The.Boys.S04E01.Department.of.Dirty.Tricks.2160p.AMZN.WEB-DL.DDP5.1.Atmos.HDR.H.265-FLUX.mkv"
+main_title = "The.Boys.S04E01.Department.of.Dirty.Tricks"
+fields = { name = "The.Boys", sub_title = "Department.of.Dirty.Tricks", season = 4, episode = 1 }
+
+# --------------------------------------------------------------------------- multi-episode codes
+
+[[case]]
+category = "multi-episode"
+path = "The.Sopranos.S03E02E03.1080p.BluRay.REMUX-Kataklysm.mkv"
+main_title = "The.Sopranos.S03E02E03"
+fields = { name = "The.Sopranos", season = 3, episode = 2, episodes = [2, 3], episode_code = "S03E02E03" }
+
+[[case]]
+category = "multi-episode"
+path = "Friends.S01E16-E17.The.One.With.Two.Parts.1080p.BluRay.x265-RARBG.mkv"
+main_title = "Friends.S01E16-E17.The.One.With.Two.Parts"
+fields = { name = "Friends", sub_title = "The.One.With.Two.Parts", episodes = [16, 17], episode_code = "S01E16-E17" }
+
+[[case]]
+category = "multi-episode"
+path = "The.Sopranos.S01E01-02.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "The.Sopranos.S01E01-02"
+fields = { episodes = [1, 2], episode_code = "S01E01-02" }
+
+[[case]]
+category = "multi-episode"
+path = "Seinfeld.S04E23E24.The.Pilot.720p.WEB-DL.AAC2.0.H.264-NTb.mkv"
+main_title = "Seinfeld.S04E23E24.The.Pilot"
+fields = { name = "Seinfeld", sub_title = "The.Pilot", season = 4, episodes = [23, 24], episode_code = "S04E23E24" }
+
+[[case]]
+category = "multi-episode"
+path = "Lost.S01E01-E02.Pilot.1080p.BluRay.x264-ROVERS.mkv"
+main_title = "Lost.S01E01-E02.Pilot"
+fields = { name = "Lost", sub_title = "Pilot", episodes = [1, 2], episode_code = "S01E01-E02" }
+
+[[case]]
+category = "multi-episode"
+path = "The.Simpsons.1x01-1x02.Simpsons.Roasting.on.an.Open.Fire.DVDRip.XviD-SAiNTS.avi"
+main_title = "The.Simpsons.1x01-1x02.Simpsons.Roasting.on.an.Open.Fire"
+fields = { name = "The.Simpsons", episodes = [1, 2], episode_code = "1x01-1x02", source_type = "DVDRip" }
+
+[[case]]
+category = "multi-episode"
+path = "Stargate.SG-1.S01E01E02.Children.of.the.Gods.1080p.BluRay.x264-DEMAND.mkv"
+main_title = "Stargate.SG-1.S01E01E02.Children.of.the.Gods"
+fields = { name = "Stargate.SG-1", sub_title = "Children.of.the.Gods", episodes = [1, 2], episode_code = "S01E01E02" }
+
+[[case]]
+category = "multi-episode"
+path = "Naruto Shippuden - 001-002 [1080p].mkv"
+main_title = "Naruto Shippuden - 001-002"
+fields = { name = "Naruto Shippuden", season = "", episodes = [1, 2], episode_code = "001-002" }
+
+# --------------------------------------------------------------------------- anime, absolute numbers
+
+[[case]]
+category = "anime"
+path = "[SubsPlease] Sousou no Frieren - 01 (1080p) [8F2A1B3C].mkv"
+main_title = "Sousou no Frieren - 01"
+fields = { name = "Sousou no Frieren", season = "", episode = 1, episode_code = "01", release_group = "SubsPlease" }
+
+[[case]]
+category = "anime"
+path = "[HorribleSubs] One Piece - 1071 [1080p].mkv"
+main_title = "One Piece - 1071"
+fields = { name = "One Piece", season = "", episode = 1071, release_group = "HorribleSubs" }
+
+[[case]]
+category = "anime"
+path = "One Piece - 1000 - Overwhelming Strength! The Straw Hats Come Together!.mkv"
+main_title = "One Piece - 1000 - Overwhelming Strength! The Straw Hats Come Together!"
+fields = { name = "One Piece", season = "", episode = 1000, episode_code = "1000", sub_title = "Overwhelming Strength! The Straw Hats Come Together!" }
+
+[[case]]
+category = "anime"
+path = "Bleach - 001 - The Day I Became a Shinigami.mkv"
+main_title = "Bleach - 001 - The Day I Became a Shinigami"
+fields = { name = "Bleach", season = "", episode = 1, episode_code = "001", sub_title = "The Day I Became a Shinigami" }
+
+[[case]]
+category = "anime"
+path = "Dragon Ball Z - 001 - The Arrival of Raditz [DVD 480p].mkv"
+main_title = "Dragon Ball Z - 001 - The Arrival of Raditz"
+fields = { name = "Dragon Ball Z", season = "", episode = 1, sub_title = "The Arrival of Raditz", source_type = "DVD" }
+
+[[case]]
+category = "anime"
+path = "One.Piece.E1071.1080p.WEB.H264-SKYANiME.mkv"
+main_title = "One.Piece.E1071"
+fields = { name = "One.Piece", season = "", episode = 1071, episode_code = "E1071", release_group = "SKYANiME" }
+
+[[case]]
+category = "anime"
+path = "Detective.Conan.E1000.1080p.WEB.H264-SKYANiME.mkv"
+main_title = "Detective.Conan.E1000"
+fields = { name = "Detective.Conan", episode = 1000 }
+
+[[case]]
+category = "anime"
+path = "[Anime Time] Naruto Shippuden - 500 [1080p][HEVC 10bit x265][AAC][Multi Sub].mkv"
+main_title = "Naruto Shippuden - 500"
+fields = { name = "Naruto Shippuden", episode = 500, release_group = "Anime Time" }
+
+[[case]]
+category = "anime"
+path = "[Erai-raws] Boku no Hero Academia 6th Season - 138 [1080p].mkv"
+main_title = "Boku no Hero Academia 6th Season - 138"
+fields = { episode = 138, release_group = "Erai-raws" }
+
+[[case]]
+category = "anime"
+path = "[Erai-raws] Jujutsu Kaisen 2nd Season - 23 [1080p][Multiple Subtitle][ABCDEF12].mkv"
+main_title = "Jujutsu Kaisen 2nd Season - 23"
+fields = { episode = 23 }
+
+[[case]]
+category = "anime"
+path = "[SubsPlease] Bleach - Sennen Kessen-hen - 14 (1080p) [AB12CD34].mkv"
+main_title = "Bleach - Sennen Kessen-hen - 14"
+fields = { name = "Bleach - Sennen Kessen-hen", sub_title = "", episode = 14 }
+
+[[case]]
+category = "anime"
+path = "[Kametsu] Neon Genesis Evangelion - 26 (BD 1080p Hi10 FLAC) [CRC32].mkv"
+main_title = "Neon Genesis Evangelion - 26"
+fields = { name = "Neon Genesis Evangelion", episode = 26, source_type = "BD" }
+
+[[case]]
+category = "anime"
+path = "[DB] Fullmetal Alchemist Brotherhood - 01 [Dual Audio 10bit 1080p][HEVC-x265].mkv"
+main_title = "Fullmetal Alchemist Brotherhood - 01"
+fields = { episode = 1, release_group = "DB" }
+
+[[case]]
+category = "anime"
+path = "Cowboy Bebop - 01 - Asteroid Blues [BD 1080p].mkv"
+main_title = "Cowboy Bebop - 01 - Asteroid Blues"
+fields = { name = "Cowboy Bebop", sub_title = "Asteroid Blues", episode = 1 }
+
+[[case]]
+category = "anime"
+path = "[Commie] Steins;Gate - 01 [BD 1080p AAC] [3A7E8C4F].mkv"
+main_title = "Steins;Gate - 01"
+fields = { name = "Steins;Gate", episode = 1, release_group = "Commie" }
+
+[[case]]
+category = "anime"
+path = "[Judas] Vinland Saga - S02E01 [1080p][HEVC x265 10bit][Multi-Subs].mkv"
+main_title = "Vinland Saga - S02E01"
+fields = { name = "Vinland Saga", season = 2, episode = 1, release_group = "Judas" }
+
+[[case]]
+category = "anime"
+path = "[HorribleSubs] Mob Psycho 100 S2 - 13 [1080p].mkv"
+main_title = "Mob Psycho 100 S2 - 13"
+fields = { name = "Mob Psycho 100", season = 2, episode = 13 }
+
+[[case]]
+category = "anime"
+path = "Lupin.the.Third.Part.6.E01.1080p.WEB.H264-SKYANiME.mkv"
+main_title = "Lupin.the.Third.Part.6.E01"
+fields = { name = "Lupin.the.Third.Part.6", episode = 1 }
+
+[[case]]
+category = "anime"
+path = "[SubsPlease] Spy x Family - 37 (1080p) [7E8F9A0B].mkv"
+main_title = "Spy x Family - 37"
+fields = { name = "Spy x Family", episode = 37 }
+
+# --------------------------------------------------------------------------- a year in the show name
+
+[[case]]
+category = "year-in-show"
+path = "Doctor.Who.2005.S01E01.Rose.1080p.BluRay.x264-SHORTBREHD.mkv"
+main_title = "Doctor.Who.2005.S01E01.Rose"
+fields = { name = "Doctor.Who", year = 2005, sub_title = "Rose", season = 1, episode = 1 }
+
+[[case]]
+category = "year-in-show"
+path = "Doctor.Who.2005.S10E12.The.Doctor.Falls.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"
+main_title = "Doctor.Who.2005.S10E12.The.Doctor.Falls"
+fields = { name = "Doctor.Who", year = 2005, season = 10, episode = 12 }
+
+[[case]]
+category = "year-in-show"
+path = "Battlestar.Galactica.2003.S01E01.33.1080p.BluRay.x264-SHORTBREHD.mkv"
+main_title = "Battlestar.Galactica.2003.S01E01.33"
+fields = { name = "Battlestar.Galactica", year = 2003, sub_title = "33" }
+
+[[case]]
+category = "year-in-show"
+path = "House.of.Cards.2013.S01E01.Chapter.1.1080p.NF.WEB-DL.DD5.1.x264-NTb.mkv"
+main_title = "House.of.Cards.2013.S01E01.Chapter.1"
+fields = { name = "House.of.Cards", year = 2013, sub_title = "Chapter.1" }
+
+[[case]]
+category = "year-in-show"
+path = "The.Flash.2014.S01E01.Pilot.1080p.BluRay.x264-DEMAND.mkv"
+main_title = "The.Flash.2014.S01E01.Pilot"
+fields = { name = "The.Flash", year = 2014 }
+
+[[case]]
+category = "year-in-show"
+path = "Hawaii.Five-0.2010.S01E01.Pilot.720p.BluRay.x264-DEMAND.mkv"
+main_title = "Hawaii.Five-0.2010.S01E01.Pilot"
+fields = { name = "Hawaii.Five-0", year = 2010 }
+
+[[case]]
+category = "year-in-show"
+path = "Magnum.P.I.2018.S01E01.720p.HDTV.x264-AVS.mkv"
+main_title = "Magnum.P.I.2018.S01E01"
+fields = { name = "Magnum.P.I", year = 2018, sub_title = "" }
+
+[[case]]
+category = "year-in-show"
+path = "Lost.in.Space.2018.S01E01.Impact.2160p.NF.WEBRip.DDP5.1.x265-NTb.mkv"
+main_title = "Lost.in.Space.2018.S01E01.Impact"
+fields = { name = "Lost.in.Space", year = 2018, source_type = "WEBRip" }
+
+[[case]]
+category = "year-in-show"
+path = "The.Twilight.Zone.2019.S01E01.The.Comedian.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"
+main_title = "The.Twilight.Zone.2019.S01E01.The.Comedian"
+fields = { name = "The.Twilight.Zone", year = 2019, sub_title = "The.Comedian" }
+
+[[case]]
+category = "year-in-show"
+path = "Doctor Who (2005) - S01E01 - Rose.mkv"
+main_title = "Doctor Who (2005) - S01E01 - Rose"
+fields = { name = "Doctor Who", year = 2005, sub_title = "Rose" }
+
+[[case]]
+category = "year-in-show"
+path = "Shogun.2024.S01E01.Anjin.2160p.DSNP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv"
+main_title = "Shogun.2024.S01E01.Anjin"
+fields = { name = "Shogun", year = 2024, sub_title = "Anjin" }
+
+# --------------------------------------------------------------------------- titles without separators
+
+[[case]]
+category = "no-separators"
+path = "hacksawridge.2160p.remux-henderson.mkv"
+main_title = "hacksawridge"
+fields = { name = "hacksawridge", release_group = "henderson" }
+
+[[case]]
+category = "no-separators"
+path = "bladerunner2049.2017.2160p.uhd.bluray.x265-terminal.mkv"
+main_title = "bladerunner2049"
+fields = { year = 2017, source_type = "uhd.bluray", release_group = "terminal" }
+
+[[case]]
+category = "no-separators"
+path = "madmaxfuryroad.2015.1080p.bluray.x264-sparks.mkv"
+main_title = "madmaxfuryroad"
+fields = { year = 2015 }
+
+[[case]]
+category = "no-separators"
+path = "thesopranos.s03e02.1080p.bluray.x264-rovers.mkv"
+main_title = "thesopranos.s03e02"
+fields = { name = "thesopranos", season = 3, episode = 2 }
+
+[[case]]
+category = "no-separators"
+path = "Mad.Max.Fury.Road.2015.1080p.BluRay.x264-SPARKS/sparks-madmaxfuryroad-1080p.mkv"
+source = "folder"
+main_title = "Mad.Max.Fury.Road"
+fields = { year = 2015 }
+
+[[case]]
+category = "no-separators"
+path = "Game.of.Thrones.S08E06.1080p.WEB.H264-MEMENTO/gameofthrones.s08e06.1080p.web.h264-memento.mkv"
+source = "folder"
+main_title = "Game.of.Thrones.S08E06"
+fields = { name = "Game.of.Thrones", season = 8, episode = 6, release_group = "MEMENTO" }
+
+[[case]]
+category = "no-separators"
+path = "Hacksaw.Ridge.2016.1080p.BluRay.x264-SPARKS/sparks-hacksawridge-1080p.mkv"
+source = "folder"
+main_title = "Hacksaw.Ridge"
+fields = { year = 2016 }
+
+# --------------------------------------------------------------------------- season packs
+
+[[case]]
+category = "season-pack"
+path = "Breaking.Bad.S05.1080p.BluRay.x264-ROVERS/Breaking.Bad.S05E14.Ozymandias.1080p.BluRay.x264-ROVERS.mkv"
+siblings = ["Breaking.Bad.S05E13.To.hajiilee.1080p.BluRay.x264-ROVERS.mkv", "Breaking.Bad.S05E15.Granite.State.1080p.BluRay.x264-ROVERS.mkv"]
+source = "file"
+main_title = "Breaking.Bad.S05E14.Ozymandias"
+fields = { season = 5, episode = 14 }
+
+[[case]]
+category = "season-pack"
+path = "Breaking.Bad.S05.1080p.BluRay.x264-ROVERS/breaking.bad.s05e14.1080p.bluray.x264-rovers.mkv"
+source = "file"
+main_title = "breaking.bad.s05e14"
+fields = { name = "breaking.bad", season = 5, episode = 14 }
+
+[[case]]
+category = "season-pack"
+path = "Breaking.Bad.S01.1080p.BluRay.x264-ROVERS/S01E01.mkv"
+siblings = ["S01E02.mkv", "S01E03.mkv"]
+source = "file"
+main_title = "Breaking.Bad.S01E01"
+fields = { name = "Breaking.Bad", season = 1, episode = 1, release_group = "ROVERS", source_type = "BluRay" }
+
+[[case]]
+category = "season-pack"
+path = "Fargo.S01.1080p.BluRay.x264-ROVERS/01 - The Crocodile's Dilemma.mkv"
+siblings = ["02 - The Rooster Prince.mkv"]
+source = "file"
+main_title = "Fargo - 01 - The Crocodile's Dilemma"
+fields = { name = "Fargo", season = 1, episode = 1, sub_title = "The Crocodile's Dilemma" }
+
+[[case]]
+category = "season-pack"
+path = "Doctor.Who.2005.S01.1080p.BluRay.x264-SHORTBREHD/doctor.who.2005.s01e01.1080p.bluray.x264-shortbrehd.mkv"
+siblings = ["doctor.who.2005.s01e02.1080p.bluray.x264-shortbrehd.mkv"]
+source = "file"
+main_title = "doctor.who.2005.s01e01"
+fields = { name = "doctor.who", year = 2005, season = 1, episode = 1 }
+
+[[case]]
+category = "season-pack"
+path = "The.Expanse.S06.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb/The.Expanse.S06E01.Strange.Dogs.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"
+siblings = ["The.Expanse.S06E02.Azure.Dragon.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"]
+source = "file"
+main_title = "The.Expanse.S06E01.Strange.Dogs"
+fields = { sub_title = "Strange.Dogs" }
+
+[[case]]
+category = "season-pack"
+path = "[SubsPlease] Sousou no Frieren (01-28) (1080p) [Batch]/[SubsPlease] Sousou no Frieren - 05 (1080p) [ABCDEF12].mkv"
+siblings = ["[SubsPlease] Sousou no Frieren - 06 (1080p) [12345678].mkv"]
+source = "file"
+main_title = "Sousou no Frieren - 05"
+fields = { episode = 5, release_group = "SubsPlease" }
+
+[[case]]
+category = "season-pack"
+path = "Shogun.2024.S01.2160p.DSNP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX/Shogun.2024.S01E01.Anjin.2160p.DSNP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv"
+siblings = ["Shogun.2024.S01E02.Servants.of.Two.Masters.2160p.DSNP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX.mkv"]
+source = "file"
+main_title = "Shogun.2024.S01E01.Anjin"
+fields = { name = "Shogun", year = 2024 }
+
+[[case]]
+category = "season-pack"
+path = "The.Office.US.S05.720p.WEB-DL.DD5.1.H.264-CtrlHD/The.Office.US.S05E01.Weight.Loss.720p.WEB-DL.DD5.1.H.264-CtrlHD.mkv"
+siblings = ["The.Office.US.S05E02.Weight.Loss.Part.2.720p.WEB-DL.DD5.1.H.264-CtrlHD.mkv"]
+source = "file"
+main_title = "The.Office.US.S05E01.Weight.Loss"
+fields = { name = "The.Office.US" }
+
+# --------------------------------------------------------------------------- Plex / Kodi style layouts
+
+[[case]]
+category = "plex"
+path = "Breaking Bad (2008)/Season 05/Breaking Bad - S05E14 - Ozymandias.mkv"
+siblings = ["Breaking Bad - S05E13 - To'hajiilee.mkv"]
+source = "file"
+main_title = "Breaking Bad - S05E14 - Ozymandias"
+fields = { name = "Breaking Bad", year = 2008, season = 5, episode = 14, sub_title = "Ozymandias" }
+
+[[case]]
+category = "plex"
+path = "Westworld/Season 1/Westworld.S01E01.The.Original.1080p.BluRay.x264-ROVERS.mkv"
+siblings = ["Westworld.S01E02.Chestnut.1080p.BluRay.x264-ROVERS.mkv"]
+source = "file"
+main_title = "Westworld.S01E01.The.Original"
+fields = { name = "Westworld", sub_title = "The.Original" }
+
+[[case]]
+category = "plex"
+path = "The Sopranos (1999)/Season 03/The Sopranos - S03E02 - Proshai, Livushka.mkv"
+siblings = ["The Sopranos - S03E01 - Mr. Ruggerio's Neighborhood.mkv"]
+source = "file"
+main_title = "The Sopranos - S03E02 - Proshai, Livushka"
+fields = { name = "The Sopranos", year = 1999, sub_title = "Proshai, Livushka" }
+
+[[case]]
+category = "plex"
+path = "The Mandalorian (2019)/S02/The Mandalorian (2019) - S02E08 - Chapter 16 - The Rescue.mkv"
+siblings = ["The Mandalorian (2019) - S02E07 - Chapter 15 - The Believer.mkv"]
+source = "file"
+main_title = "The Mandalorian (2019) - S02E08 - Chapter 16 - The Rescue"
+fields = { name = "The Mandalorian", year = 2019, sub_title = "Chapter 16 - The Rescue" }
+
+[[case]]
+category = "plex"
+path = "Planet Earth II (2016)/Specials/Planet Earth II (2016) - S00E01 - Making of.mkv"
+source = "file"
+main_title = "Planet Earth II (2016) - S00E01 - Making of"
+fields = { name = "Planet Earth II", year = 2016, season = 0, episode = 1 }
+
+[[case]]
+category = "plex"
+path = "Inception (2010)/Inception (2010).mkv"
+main_title = "Inception"
+fields = { year = 2010 }
+
+[[case]]
+category = "plex"
+path = "Spirited Away (2001)/Spirited Away (2001) [1080p].mkv"
+source = "file"
+main_title = "Spirited Away"
+fields = { year = 2001 }
+
+# --------------------------------------------------------------------------- daily shows
+
+[[case]]
+category = "daily"
+path = "The.Daily.Show.2016.01.15.Kevin.Hart.720p.HDTV.x264-BATV.mkv"
+main_title = "The.Daily.Show.2016.01.15.Kevin.Hart"
+fields = { name = "The.Daily.Show", sub_title = "Kevin.Hart", season = "", episode = "" }
+
+[[case]]
+category = "daily"
+path = "Last.Week.Tonight.with.John.Oliver.2024.02.18.1080p.WEB.h264-EDITH.mkv"
+main_title = "Last.Week.Tonight.with.John.Oliver.2024.02.18"
+fields = { name = "Last.Week.Tonight.with.John.Oliver", release_group = "EDITH" }
+
+[[case]]
+category = "daily"
+path = "The.Tonight.Show.Starring.Jimmy.Fallon.2024.03.01.Ryan.Gosling.720p.WEB.h264-EDITH.mkv"
+main_title = "The.Tonight.Show.Starring.Jimmy.Fallon.2024.03.01.Ryan.Gosling"
+fields = { name = "The.Tonight.Show.Starring.Jimmy.Fallon", sub_title = "Ryan.Gosling" }

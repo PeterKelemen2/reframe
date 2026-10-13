@@ -3311,9 +3311,24 @@
       
       ``mode="manual"`` uses ``manual_name`` (*Reset to template* sets ``mode`` back).
       ``template`` and ``name_source`` override the preset's naming options for this job only
-      (``None`` = use them). C-16 adds the parsed-name fields next to these.
+      (``None`` = use them). ``field_overrides`` holds the parsed-name fields that the user
+      corrected for this file (03 §Naming editor, 04 §Per-file overrides).
     ''',
     'properties': dict({
+      'field_overrides': dict({
+        'additionalProperties': dict({
+          'type': 'string',
+        }),
+        'description': '''
+          Parsed-name fields corrected for this file, by variable name: ``name``,
+          ``main_title``, ``sub_title``, ``season``, ``episode``, ``episode_code``, ``year``,
+          ``edition``, ``source_type``, ``release_group``. They replace what the parser found;
+          ``""`` clears a field. Numbers are written as text (``"3"``). Unknown names and bad
+          numbers are naming issues, not load errors.
+        ''',
+        'title': 'Field Overrides',
+        'type': 'object',
+      }),
       'manual_name': dict({
         'anyOf': list([
           dict({
@@ -3363,6 +3378,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Used for movies and episodes alike (it replaces both templates of the options).',
         'title': 'Template',
       }),
     }),
@@ -4092,6 +4108,17 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[MediaKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'movie',
+      'episode',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[MediaSource]
   dict({
     '$defs': list([
@@ -4301,6 +4328,234 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[NameCandidate]
+  dict({
+    '$defs': list([
+      'NameSpan',
+      'ParsedName',
+    ]),
+    'additionalProperties': False,
+    'description': 'The file name or the folder name, parsed and scored (03 §Where the name comes from).',
+    'properties': dict({
+      'fields': dict({
+        '$ref': '#/$defs/ParsedName',
+      }),
+      'kind': dict({
+        'enum': list([
+          'file',
+          'folder',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': 'The file, or the folder.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'recognised': dict({
+        'description': '''
+          The scored fields found: ``title``, ``year``, ``resolution``, ``source``,
+          ``video_codec``, ``audio_codec``, ``hdr``, ``edition``, ``release_group``.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Recognised',
+        'type': 'array',
+      }),
+      'score': dict({
+        'description': '+1 for each recognised field, +2 when the title has word separators.',
+        'title': 'Score',
+        'type': 'integer',
+      }),
+      'spans': dict({
+        'items': dict({
+          '$ref': '#/$defs/NameSpan',
+        }),
+        'title': 'Spans',
+        'type': 'array',
+      }),
+      'text': dict({
+        'description': 'What was parsed: the file name without its extension, or the folder name.',
+        'title': 'Text',
+        'type': 'string',
+      }),
+      'word_separators': dict({
+        'default': False,
+        'description': 'The title has word separators (``Hacksaw.Ridge``, not ``hacksawridge``).',
+        'title': 'Word Separators',
+        'type': 'boolean',
+      }),
+    }),
+    'required': list([
+      'kind',
+      'text',
+      'path',
+      'score',
+    ]),
+    'title': 'NameCandidate',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[NameKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'file',
+      'folder',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[NameResult]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'CopyOp',
+      'Fix',
+      'JsonValue',
+      'MoveOp',
+      'NameCandidate',
+      'NameSpan',
+      'ParsedName',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
+      'TestOp',
+      'ValidationIssue',
+    ]),
+    'additionalProperties': False,
+    'description': 'The output name of one source file (:func:`reframe.naming.resolve_output_name`).',
+    'properties': dict({
+      'candidates': dict({
+        'description': 'The file name first, then the folder name (when there is a usable folder).',
+        'items': dict({
+          '$ref': '#/$defs/NameCandidate',
+        }),
+        'title': 'Candidates',
+        'type': 'array',
+      }),
+      'extension': dict({
+        'description': 'Without the dot: ``mkv``, ``mp4``, ``m4v``, ``webm``.',
+        'title': 'Extension',
+        'type': 'string',
+      }),
+      'fields': dict({
+        '$ref': '#/$defs/ParsedName',
+        'description': '''
+          The fields used for the name: the chosen candidate's, plus folder fields for a season
+          pack, plus the job's per-file overrides.
+        ''',
+      }),
+      'issues': dict({
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'notes': dict({
+        'description': '''
+          What naming changed: skipped folders, merged fields, replaced characters, shortened
+          parts, fallbacks.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+      'path': dict({
+        'anyOf': list([
+          dict({
+            'format': 'path',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The full output path, when the output folder is known.',
+        'title': 'Path',
+      }),
+      'reason': dict({
+        'description': '''
+          Why, for example ``Folder name: 8 fields recognised, title with word separators
+          (10 points); file name: 3 fields recognised (3 points)``.
+        ''',
+        'title': 'Reason',
+        'type': 'string',
+      }),
+      'relative_path': dict({
+        'description': '''
+          The rendered name, relative to the output folder: subfolders separated by ``/``, and
+          the extension (``The.Sopranos/Season 03/The.Sopranos.S03E02.Proshai.Livushka.mkv``).
+        ''',
+        'title': 'Relative Path',
+        'type': 'string',
+      }),
+      'season_pack': dict({
+        'default': False,
+        'description': "The file's folder holds several episode files.",
+        'title': 'Season Pack',
+        'type': 'boolean',
+      }),
+      'skipped_folders': dict({
+        'description': 'Generic folders (``Season 03``, ``BDMV``…) skipped to find the folder name.',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Skipped Folders',
+        'type': 'array',
+      }),
+      'source': dict({
+        'description': 'The chosen name source.',
+        'enum': list([
+          'file',
+          'folder',
+        ]),
+        'title': 'Source',
+        'type': 'string',
+      }),
+      'template': dict({
+        'description': 'The template that made the name (or the manual name).',
+        'title': 'Template',
+        'type': 'string',
+      }),
+      'template_kind': dict({
+        'enum': list([
+          'movie',
+          'episode',
+          'manual',
+        ]),
+        'title': 'Template Kind',
+        'type': 'string',
+      }),
+      'variables': dict({
+        'additionalProperties': dict({
+          'type': 'string',
+        }),
+        'description': "Every variable's value for this file (default format), for the variable chips.",
+        'title': 'Variables',
+        'type': 'object',
+      }),
+    }),
+    'required': list([
+      'source',
+      'reason',
+      'template',
+      'template_kind',
+      'relative_path',
+      'extension',
+    ]),
+    'title': 'NameResult',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[NameSource]
   dict({
     '$defs': list([
@@ -4311,6 +4566,50 @@
       'folder',
     ]),
     'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[NameSpan]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      One recognised part of a name, with its position (for the coloured spans of the
+      naming editor). ``text`` is ``candidate.text[start:end]``.
+    ''',
+    'properties': dict({
+      'end': dict({
+        'minimum': 0,
+        'title': 'End',
+        'type': 'integer',
+      }),
+      'field': dict({
+        'description': '''
+          ``name``, ``year``, ``episode_code``, ``sub_title``, ``resolution``, ``source_type``,
+          ``edition``, ``release_group``, ``hdr``, ``date``, or a guessit property name for other
+          release tags (``video_codec``, ``audio_codec``, ``language``, ``other``…).
+        ''',
+        'title': 'Field',
+        'type': 'string',
+      }),
+      'start': dict({
+        'minimum': 0,
+        'title': 'Start',
+        'type': 'integer',
+      }),
+      'text': dict({
+        'title': 'Text',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'field',
+      'start',
+      'end',
+      'text',
+    ]),
+    'title': 'NameSpan',
+    'type': 'object',
   })
 # ---
 # name: test_json_schema_snapshot[NamingOptions]
@@ -4404,6 +4703,51 @@
       }),
     }),
     'title': 'NamingOptions',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[NamingVariable]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'One template variable, for the naming editor (autocomplete, chips) and the docs.',
+    'properties': dict({
+      'description': dict({
+        'title': 'Description',
+        'type': 'string',
+      }),
+      'group': dict({
+        'enum': list([
+          'handbrake',
+          'name',
+          'media',
+        ]),
+        'title': 'Group',
+        'type': 'string',
+      }),
+      'kind': dict({
+        'enum': list([
+          'text',
+          'number',
+          'date',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'name': dict({
+        'description': 'Without braces: ``main_title``, ``creation-date``.',
+        'title': 'Name',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'name',
+      'group',
+      'kind',
+      'description',
+    ]),
+    'title': 'NamingVariable',
     'type': 'object',
   })
 # ---
@@ -4721,6 +5065,197 @@
       'settings',
     ]),
     'title': 'OutputTrackRule',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ParsedName]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The name parts of 03 §Variables. Text keeps its original spelling and separators.
+      ``None``: not recognised.
+    ''',
+    'properties': dict({
+      'edition': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Edition',
+      }),
+      'episode': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The first episode number (an absolute number when there is no season).',
+        'title': 'Episode',
+      }),
+      'episode_code': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'As written in the name: ``S03E02``, ``S03E02E03``, ``1x01``, ``E1071``, ``001``.',
+        'title': 'Episode Code',
+      }),
+      'episodes': dict({
+        'description': 'Every episode number of a multi-episode code (``S03E02E03`` → ``[2, 3]``).',
+        'items': dict({
+          'minimum': 0,
+          'type': 'integer',
+        }),
+        'title': 'Episodes',
+        'type': 'array',
+      }),
+      'kind': dict({
+        'default': 'movie',
+        'enum': list([
+          'movie',
+          'episode',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'main_title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The leading part of the name, cut at the first release tag. For an episode, the
+          episode code and title stay (and a year between the show name and the code).
+        ''',
+        'title': 'Main Title',
+      }),
+      'name': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Movie title or show name only.',
+        'title': 'Name',
+      }),
+      'release_group': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Release Group',
+      }),
+      'resolution': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The resolution written in the name (``2160p``); not the output resolution.',
+        'title': 'Resolution',
+      }),
+      'season': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Season',
+      }),
+      'separator': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The word separator of the name (`` ``, ``.``, ``_`` or ``-``); ``None`` if none.',
+        'title': 'Separator',
+      }),
+      'source_type': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``BluRay``, ``UHD.BluRay``, ``WEB-DL``, ``WEBRip``… as written.',
+        'title': 'Source Type',
+      }),
+      'sub_title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Episode title.',
+        'title': 'Sub Title',
+      }),
+      'year': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Year',
+      }),
+    }),
+    'title': 'ParsedName',
     'type': 'object',
   })
 # ---
@@ -6813,6 +7348,18 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[TemplateKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'movie',
+      'episode',
+      'manual',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[TestOp]
   dict({
     '$defs': list([
@@ -7912,6 +8459,30 @@
     ]),
     'title': 'ValueRef',
     'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[VariableGroup]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'handbrake',
+      'name',
+      'media',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[VariableKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'text',
+      'number',
+      'date',
+    ]),
+    'type': 'string',
   })
 # ---
 # name: test_json_schema_snapshot[VideoSettings]
