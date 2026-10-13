@@ -184,22 +184,33 @@ This step fixes the HandBrake freeze. Detection runs in the background, has stri
 and returns statuses, never exceptions.
 
 - [ ] Parse `ffmpeg -hide_banner -encoders` to list the encoders in this build.
+- [ ] Parse `ffmpeg -hide_banner -filters` into the snapshot's filter list: `C-7` chooses
+      `libplacebo` or `zscale,tonemap` with it
+      ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)).
 - [ ] Parse `ffmpeg -h encoder=<name>` for each known encoder to find its private options and
       presets. Options in the definitions that this build does not support are hidden.
 - [ ] **Hardware test encode** for each hardware encoder in the build: encode 3 frames of
       `lavfi color=size=640x360` to `-f null -`, with the encoder's hardware init arguments and
-      a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test where relevant.
-- [ ] **Reason mapping**: map known stderr patterns to plain-language reasons. Examples:
-      `Cannot load libcuda` → "NVIDIA driver not found";
-      `Driver does not support the required nvenc API version` → "NVIDIA driver too old";
-      `No VA display found` / `Failed to initialise VAAPI` → "No VAAPI device (/dev/dri)";
-      `MFX_ERR_UNSUPPORTED` → "Intel QSV not supported on this GPU". Unknown patterns keep the
-      last stderr line.
+      a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test when the
+      encoder's definition has a 10-bit pixel format (result: `supports_10bit`).
+- [ ] **Reason mapping** ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)):
+      map the texts that real FFmpeg prints (recorded in `testdata/README.md`) to
+      plain-language reasons. Examples: `Cannot load libcuda.so.1` → "NVIDIA driver not
+      found"; `Driver does not support the required nvenc API version` → "NVIDIA driver too
+      old"; `No VA display found for device X` → "No VAAPI device (X)";
+      `Failed to initialise VAAPI connection` → "VAAPI driver failed to start";
+      `Error creating a MFX session` or a failed `-init_hw_device qsv=hw` → "No Intel QSV
+      device"; `DLL libamfrt64.so.1 failed to open` → "AMD AMF runtime not found". A known
+      text gives `unavailable`. Any other failure gives `error` with the most informative
+      line: the first line that the encoder logs (`[hevc_nvenc @ …]`), else the first line of
+      a hardware device (`[VAAPI @ …]`), else the first line that is not fftools bookkeeping.
+      Never the last line: it is a generic `Conversion failed!`.
 - [ ] **Cache**: key = ffmpeg path + size + mtime + version, plus a GPU fingerprint (Linux:
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
-      result is used at once and checked again in the background. A change emits
-      `capabilities.changed`.
+      result is used at once and checked again in the background: the full detection runs, and
+      the cached statuses stay until their new results are in. A change emits
+      `capabilities.changed`. A new ffmpeg (`tools.changed`) starts a new detection.
 - [ ] States: `unknown → checking → available | unavailable(reason) | error(reason)`.
 - [ ] `closest_available(encoder_id) -> encoder_id | None` uses the fallback chain from the
       definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.).

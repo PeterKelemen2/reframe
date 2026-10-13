@@ -390,7 +390,70 @@ its own). The QSV setup is the plan's; it is not verified on an Intel GPU.
 
 ### Encoder detection (C-4)
 
-Nothing recorded yet.
+Checked on 2026-10-13 with the pinned build (and the Arch n9.0.2 package where noted) on the
+machine above (AMD RX 7600, no NVIDIA driver, no Intel GPU). Decision
+[0008](../docs/decisions/0008-encoder-detection-reasons-and-filters.md) is based on these.
+
+**The test encode** that C-4 runs is built from the hardware setup of the definitions
+(`reframe.capabilities.hardware_test_argv`):
+
+```sh
+# VAAPI (10-bit: format=p010le); QSV: -init_hw_device qsv=hw -filter_hw_device hw and
+# -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv
+ffmpeg -hide_banner -nostdin -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va \
+  -f lavfi -i color=size=640x360 -frames:v 3 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
+# NVENC and AMF take software frames (10-bit: -pix_fmt p010le)
+ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt nv12 \
+  -c:v hevc_amf -f null -
+```
+
+The `c4_*` captures in `fake_data/` are exactly these commands
+(`capture_fake_data.py --only c4_…`; `test_hwtest.py` fails when the definitions change the
+command and the captures were not made again):
+
+| Capture | Exit code | Key stderr line | C-4 reason (state) |
+|---------|-----------|-----------------|--------------------|
+| `c4_h264_vaapi_ok`, `c4_hevc_vaapi_10bit_ok`, `c4_hevc_amf_ok`, `c4_hevc_amf_10bit_ok` | 0 | — | available |
+| `c4_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
+| `c4_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `c4_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
+| `c4_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
+| `c4_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
+| `c4_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
+
+- **A missing AMF runtime can be provoked without root**: `LD_LIBRARY_PATH` pointing at a
+  folder with an empty `libamfrt64.so.1` makes `dlopen` fail (the capture records the folder
+  as a placeholder).
+- **`-h encoder=` pixel formats do not tell 10-bit support for hardware encoders**: `h264_amf`
+  lists `p010le` and still refuses 10-bit. Only the test encode decides. (For software
+  encoders the list is right: `libx265` lists `yuv420p10le`.)
+- **QSV at `-v verbose`** says why the device fails here (`[VAAPI @ …] Ignoring device 0 with
+  non-matching vendor id (0x8086).` … `Cannot open a VA display from DRM device (null).`); at
+  the default level, which C-4 uses, only the fftools lines above are printed.
+- **Presets in `-h encoder=`**: `libx264` / `libx265` have `-preset <string>`, so FFmpeg does
+  not list them; `libsvtav1` has `-preset <int> … (from -2 to 13)` without names; NVENC lists
+  `slow`, `medium`, `fast`, `p1` … `p7`; QSV `veryfast` … `veryslow`; AMF `quality`,
+  `balanced`, `speed`, `high_quality` (under `-preset` and `-quality`); VAAPI has no `-preset`
+  and lists only the pixel format `vaapi`.
+- **`-filters`**: FFmpeg 9 prints two flag columns (`T.`, `.S`), FFmpeg 7 printed three
+  (`TSC`). The pinned build has 562 filters, `libplacebo` and `zscale` among them.
+- **Timing**: `-encoders`, `-filters` and each `-h encoder=` take about 10 ms, a test encode
+  about 30 ms. A full detection (23 encoders of the definitions, 12 hardware tests plus the
+  10-bit tests): **0.20 – 0.26 s** with the pinned build, 0.40 s with the Arch package.
+
+Real result with the pinned build (`detect_capabilities`, hardware tests on):
+
+| Encoder | State | 10-bit | Reason |
+|---------|-------|--------|--------|
+| `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | |
+| `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | NVIDIA driver not found |
+| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `h264_amf` | available | no (no 10-bit format in the definition) | |
+| `hevc_amf`, `av1_amf` | available | yes | |
+| `h264_vaapi` | available | no (no 10-bit format in the definition) | |
+| `hevc_vaapi`, `av1_vaapi` | available | yes | |
+| `aac`, `ac3`, `eac3`, `libopus`, `flac`, `libmp3lame` | available | – | |
+| `libfdk_aac` | unavailable | – | Not in this FFmpeg build |
 
 ### Encoder definitions (C-6)
 
