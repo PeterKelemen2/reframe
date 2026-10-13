@@ -89,6 +89,7 @@ __all__ = [
     "VideoCodec",
     "VideoEncoderDef",
     "X26xParam",
+    "channels_mixdown",
 ]
 
 EncoderFamily = Literal["software", "nvenc", "qsv", "amf", "vaapi"]
@@ -553,6 +554,66 @@ class AudioEncoderDef(ReframeModel):
     ``libfdk_aac → aac``). Ends with an encoder that every GPL build has (the linter checks
     it); empty for encoders that are always there."""
 
+    # ---- snapping (decision 0024: the builder snaps, validation shows an info note)
+
+    def snap_mixdown(
+        self,
+        requested: Mixdown | None,
+        source_channels: int,
+        mixdowns: Mapping[Mixdown, MixdownDef],
+    ) -> Mixdown | None:
+        """The layout this encoder really produces; ``None`` = the source layout stays.
+
+        ``requested`` is the track's mixdown (``None`` = keep the source layout);
+        ``source_channels`` the source track's channel count (0 = unknown); ``mixdowns`` is
+        ``Definitions.mixdowns``. Rules, in order:
+
+        1. **Never an upmix** (decision 0019 item 3): a requested layout with more channels
+           than a known source is treated as "keep the source layout". Dolby Pro Logic II on
+           a source with two channels or fewer keeps it too (there is nothing to
+           matrix-encode).
+        2. A requested layout the encoder can make is returned as it is.
+        3. "Keep" with a source the encoder takes (``source_channels <= max_channels``, or
+           unknown) returns ``None``.
+        4. Otherwise the encoder's largest layout below the wanted channel count (never Dolby
+           Pro Logic II, which is a matrix encoding, not a channel count): AC-3 / E-AC-3 make
+           5.1 of 7.1, MP3 makes stereo of 5.1. If the encoder has nothing that small, its
+           smallest layout (but the source layout stays when that would be an upmix).
+        """
+        if requested is not None and source_channels > 0:
+            wanted = mixdowns[requested].channels
+            if source_channels < wanted or (requested == "dpl2" and source_channels <= wanted):
+                requested = None
+        if requested is not None:
+            if not self.mixdowns or requested in self.mixdowns:
+                return requested
+            limit = mixdowns[requested].channels
+        else:
+            if source_channels == 0 or source_channels <= self.max_channels:
+                return None
+            limit = source_channels
+        plain = [m for m in self.mixdowns if m != "dpl2" and m in mixdowns]
+        below = [m for m in plain if mixdowns[m].channels <= limit]
+        if below:
+            return max(below, key=lambda m: mixdowns[m].channels)
+        if not plain:
+            return None
+        smallest = min(plain, key=lambda m: mixdowns[m].channels)
+        if 0 < source_channels < mixdowns[smallest].channels:
+            return None  # still never an upmix of a known source
+        return smallest
+
+    def snap_samplerate(self, rate: int | None, source_rate: int | None = None) -> int | None:
+        """The output sample rate in Hz: ``rate`` (``None`` = the same as the source,
+        ``source_rate``), moved to the nearest rate in :attr:`samplerates`. A tie goes to the
+        higher rate (20 000 Hz, halfway between Opus's 16 000 and 24 000, becomes 24 000), as
+        C-7, C-8 and C-12 did. An encoder that lists no rates keeps the rate. ``None`` when
+        neither rate is known (FFmpeg then picks one itself)."""
+        wanted = rate if rate is not None else source_rate
+        if wanted is None or not self.samplerates or wanted in self.samplerates:
+            return wanted
+        return min(self.samplerates, key=lambda r: (abs(r - wanted), -r))
+
 
 class MixdownDef(ReframeModel):
     """How a ``Mixdown`` is produced (03 §Audio)."""
@@ -802,3 +863,15 @@ def interpolate(points: list[tuple[float, float]], x: float) -> float:
                 return y0
             return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def channels_mixdown(channels: int) -> Mixdown:
+    """The mixdown whose bitrate table fits a kept source layout of ``channels`` channels:
+    1 mono, 2 stereo, 3 to 6 5.1, 7 and more 7.1; unknown (0) stereo."""
+    if channels == 1:
+        return "mono"
+    if channels <= 2:
+        return "stereo"
+    if channels <= 6:
+        return "5.1"
+    return "7.1"

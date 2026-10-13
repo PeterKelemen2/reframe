@@ -16,6 +16,8 @@ How the other steps use it:
   always written. The builder adds stream specifiers (``-preset:v:0``).
 - **Audio (C-7 / C-12)**: ``audio_encoders[id]`` (:class:`AudioEncoderDef`):
   ``bitrate.by_mixdown`` limits and :meth:`AudioBitrateDef.snap`, ``quality.arg``,
+  :meth:`AudioEncoderDef.snap_mixdown`, :meth:`AudioEncoderDef.snap_samplerate` and
+  :func:`channels_mixdown` (decision 0024: one snapping rule for C-7, C-8 and C-12),
   ``samplerates``, ``mixdowns``; ``Definitions.mixdowns`` (layout, ``matrix_encoding``);
   ``Definitions.passthru_codecs`` (source matching).
 - **Containers (C-7 / C-8)**: ``containers[id]`` (:class:`ContainerDef`):
@@ -78,6 +80,7 @@ from reframe.definitions.models import (
     VideoCodec,
     VideoEncoderDef,
     X26xParam,
+    channels_mixdown,
 )
 from reframe.definitions.quality import convert_quality
 from reframe.definitions.support import mapping_supported, supported_options, supported_presets
@@ -126,6 +129,7 @@ __all__ = [
     "VideoCodec",
     "VideoEncoderDef",
     "X26xParam",
+    "channels_mixdown",
     "convert_quality",
     "lint_definitions",
     "load_definitions",
