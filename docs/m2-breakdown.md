@@ -182,7 +182,8 @@ tests can replace.
 ### Wave 3 offers
 
 - **C-11** `reframe.queue`: SQLite store, runner, `-progress` parser, `Reframe.queue`.
-  `run_streaming` gets a pid hook for pause/resume (lead, before wave 3).
+  `run_streaming(..., on_start=callback)` gives the pid of the started process for
+  pause/resume (built by the lead, commit "C-1: pid hook …").
 - **C-15** `Reframe.jobs` (`draft_from_preset`, `validate`, `plan`) and the CLI commands
   `encoders`, `plan`, `encode FILE|DIR… --preset NAME [-o OUT]` (decision 0018), `name`.
 

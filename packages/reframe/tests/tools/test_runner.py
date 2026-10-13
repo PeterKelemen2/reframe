@@ -655,3 +655,72 @@ def test_run_result_defaults() -> None:
     assert result.ok
     assert result.started
     assert result.argv == ()
+
+
+async def test_on_start_gets_the_pid_of_the_running_process() -> None:
+    seen: list[tuple[int, bool]] = []
+    code = "import time; print('ready', flush=True); time.sleep(0.3)"
+
+    def on_start(pid: int) -> None:
+        seen.append((pid, _alive(pid)))
+
+    result = await run_streaming(
+        [sys.executable, "-c", code],
+        on_stdout_line=None,
+        on_stderr_line=None,
+        cancel=None,
+        timeout=30,
+        on_start=on_start,
+    )
+    assert result.ok
+    assert len(seen) == 1
+    pid, alive = seen[0]
+    assert alive
+    assert not _alive(pid)
+
+
+async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
+    # What the queue runner (C-11) does for pause/resume: psutil suspend()/resume().
+    lines: list[str] = []
+    pids: list[int] = []
+    code = "import time\nfor i in range(400):\n    print(i, flush=True)\n    time.sleep(0.01)"
+    task = asyncio.ensure_future(
+        run_streaming(
+            [sys.executable, "-c", code],
+            on_stdout_line=lines.append,
+            on_stderr_line=None,
+            cancel=None,
+            timeout=60,
+            on_start=pids.append,
+        )
+    )
+    await _wait_for(lambda: len(lines) > 5)
+    proc = psutil.Process(pids[0])
+    proc.suspend()
+    await asyncio.sleep(0.3)  # let the pipe drain what was printed before the suspend
+    count = len(lines)
+    await asyncio.sleep(0.3)
+    assert len(lines) == count, "a suspended process printed more lines"
+    proc.resume()
+    result = await task
+    assert result.ok
+    assert lines[-1] == "399"
+
+
+async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:
+    pids: list[int] = []
+
+    def on_start(pid: int) -> None:
+        pids.append(pid)
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await run_streaming(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            on_stdout_line=None,
+            on_stderr_line=None,
+            cancel=None,
+            on_start=on_start,
+        )
+    assert pids
+    await _wait_for(lambda: not _alive(pids[0]))

@@ -416,6 +416,7 @@ async def _execute(
     stdin: bytes | None,
     out_sink: _Sink,
     err_sink: _Sink,
+    on_start: Callable[[int], None] | None = None,
 ) -> RunResult:
     started = time.monotonic()
     if cancel is not None and cancel.cancelled:
@@ -454,6 +455,8 @@ async def _execute(
     timed_out = cancelled = False
     deadline = None if timeout is None else started + timeout
     try:
+        if on_start is not None:
+            on_start(proc.pid)  # inside the try: if it raises, the finally kills the tree
         watch: set[asyncio.Future[Any]] = {waiter, *readers}
         if cancel_waiter is not None:
             watch.add(cancel_waiter)
@@ -586,6 +589,7 @@ async def run_streaming(
     max_output: int = DEFAULT_STREAMING_TAIL,
     cwd: Path | None = None,
     extra_env: Mapping[str, str] | None = None,
+    on_start: Callable[[int], None] | None = None,
 ) -> RunResult:
     """Run ``argv`` and pass each output line to a callback as it arrives.
 
@@ -596,6 +600,9 @@ async def run_streaming(
 
     :param timeout: ``None`` (the default) means no time limit: use ``cancel`` to stop it.
     :param max_output: the result keeps the **last** ``max_output`` bytes of each stream.
+    :param on_start: called once with the pid of the started process, before any output is
+        read (the queue runner uses it to suspend and resume the process tree). If it
+        raises, the process tree is killed and the exception propagates.
     """
     args = _check_args(argv, timeout, max_output)
     return await _execute(
@@ -607,4 +614,5 @@ async def run_streaming(
         stdin=None,
         out_sink=_LineSink(on_stdout_line, max_output),
         err_sink=_LineSink(on_stderr_line, max_output),
+        on_start=on_start,
     )
