@@ -38,7 +38,6 @@ _NUMBER_OVERRIDES = ("season", "episode", "year")
 #: The parsed-name fields a job can override (``JobNaming.field_overrides``).
 OVERRIDE_FIELDS = _TEXT_OVERRIDES + _NUMBER_OVERRIDES
 _OVERRIDES_PATH = "output.naming.field_overrides"
-_EXTENSIONS: dict[Container, str] = {"mkv": "mkv", "mp4": "mp4", "webm": "webm"}
 
 
 def output_extension(
@@ -46,12 +45,15 @@ def output_extension(
     options: NamingOptions,
     job: JobSettings | None = None,
     source: MediaSource | None = None,
+    *,
+    definitions: Definitions | None = None,
 ) -> str:
-    """The extension (no dot). MP4: ``mp4``, ``m4v``, or *Auto* (HandBrake): ``m4v`` with
-    AC-3 audio (encoded or passed through), chapter markers, or 3GPP (``mov_text``)
-    subtitles."""
+    """The extension (no dot). Other containers: the first extension of the container's
+    definition (C-6). MP4: ``mp4``, ``m4v``, or *Auto* (HandBrake): ``m4v`` with AC-3 audio
+    (encoded or passed through), chapter markers, or 3GPP (``mov_text``) subtitles."""
     if container != "mp4":
-        return _EXTENSIONS[container]
+        defs = definitions if definitions is not None else load_definitions()
+        return defs.containers[container].extensions[0].lstrip(".")
     if options.mp4_extension == "m4v":
         return "m4v"
     if options.mp4_extension == "mp4" or job is None:
@@ -181,7 +183,7 @@ def resolve_output_name(
     notes.extend(override_notes)
 
     target: Container = job.output.container if job is not None else (container or "mkv")
-    extension = output_extension(target, options, job, source)
+    extension = output_extension(target, options, job, source, definitions=definitions)
     file_stem, _ = split_extension(file.name)
     values = build_values(
         NameContext(
