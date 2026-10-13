@@ -403,7 +403,8 @@ overrides for `C-16`), and per-group resolution with a match report.
     behaviour, roles, order, default track.
   - Codec-rule stage: first match wins. Bitrate cap: never bigger than the source; passthru
     when the source fits; snap to the allowed encoder values; unknown bitrate counts as above
-    the max.
+    the max. Built in M2, before the selection stage: an M2 draft job takes every audio track
+    through the codec rules ([decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)).
   - `explain(defaults, source) -> list[TrackDecision]`, with a reason string for every
     selected or dropped track and every chosen rule. It feeds the live preview.
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
@@ -456,7 +457,7 @@ class Reframe:
 - [ ] CLI (`reframe` entry point, `[cli]` extra):
       `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status|fetch` ·
       `reframe name PATH… [--template T]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
-      `reframe plan FILE --preset NAME` (prints the command) · `reframe encode FILE --preset NAME -o OUT` ·
+      `reframe plan FILE --preset NAME` (prints the command) · `reframe encode FILE|DIR… --preset NAME [-o OUT]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
       `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
 
 Done when: the CLI can encode a season folder end to end with no UI. This is the first point

@@ -7,7 +7,13 @@ which order, and what each step must offer to the steps after it. Status: [statu
 ## Scope
 
 C-4, C-5, C-6 (encoders, containers, filters; basic options), C-7, C-8, C-9, C-11,
-C-14 (sleep inhibit only), C-15 (CLI `encoders`, `plan`, `encode`, `name`), C-16.
+C-12 (codec-rule stage of the audio defaults only), C-14 (sleep inhibit only), C-15 (CLI
+`encoders`, `plan`, `encode`, `name`), C-16.
+
+C-12's codec-rule stage and the multi-file `reframe encode` were added by the user's
+decision [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md): an M2 draft job
+takes every audio track through the preset's codec rules (no selection stage) and copies
+every subtitle track.
 
 ## Waves
 
@@ -17,7 +23,7 @@ when the current one is merged into `m2-encode-cli` and every check is green.
 | Wave | Steps | Builds on |
 |------|-------|-----------|
 | 1 | C-4, C-5, C-6, C-14, C-16 | M1, this contract |
-| 2 | C-7, C-8, C-9 | wave 1 |
+| 2 | C-7, C-8, C-9, C-12 (codec rules) | wave 1 |
 | 3 | C-11, C-15 | wave 2 |
 
 ## Who owns which files
@@ -34,6 +40,7 @@ An agent edits only the files of its step. A change anywhere else goes back to t
 | C-7 | `reframe/command/` (new), `tests/command/` |
 | C-8 | `reframe/validation/` (new), `tests/validation/` |
 | C-9 | `reframe/presets/` (new), `reframe/settings.py` (new), the `settings` / `presets` wiring in `reframe/service.py`, `tests/presets/`, `tests/test_settings.py` |
+| C-12 (codec rules) | `reframe/batch/` (new; the audio defaults part), `reframe/models/defaults.py` (additions: the track decision model), `tests/batch/` |
 | C-11 | `reframe/queue/` (new), the `queue` wiring in `reframe/service.py`, `tests/queue/` |
 | C-15 | `reframe/cli.py`, the `jobs` service in `reframe/service.py`, `tests/test_cli.py` |
 
@@ -53,9 +60,9 @@ Shared files:
 Next free was 0008. One record per step; a step with several topics uses sections in its one
 record. Numbers that end up unused are noted at the end of the milestone.
 
-| 0008 | 0009 | 0010 | 0011 | 0012 | 0013 | 0014 | 0015 | 0016 | 0017 | 0018+ |
-|------|------|------|------|------|------|------|------|------|------|-------|
-| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead |
+| 0008 | 0009 | 0010 | 0011 | 0012 | 0013 | 0014 | 0015 | 0016 | 0017 | 0018 | 0019 | 0020+ |
+|------|------|------|------|------|------|------|------|------|------|------|------|-------|
+| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead |
 
 ## Interfaces between the steps
 
@@ -166,15 +173,21 @@ tests can replace.
 - **C-9** `reframe.settings` and `reframe.presets` stores, built-in presets (including
   "H.265 MKV 1080p"), `diff()` with a `FieldChange` model; `Reframe.settings` and
   `Reframe.presets`.
+- **C-12 (codec rules)** `reframe.batch`: the codec-rule stage of 05 §C-12 (first match
+  wins, bitrate cap, passthru when the source fits, snap to allowed values, unknown bitrate
+  = above the max, passthru policy and fallback encoder), a reason per track, and the draft
+  of a job's output tracks from a template (every audio track through the rules, every
+  subtitle copied, source metadata kept).
 
 ### Wave 3 offers
 
 - **C-11** `reframe.queue`: SQLite store, runner, `-progress` parser, `Reframe.queue`.
   `run_streaming` gets a pid hook for pause/resume (lead, before wave 3).
 - **C-15** `Reframe.jobs` (`draft_from_preset`, `validate`, `plan`) and the CLI commands
-  `encoders`, `plan`, `encode`, `name`.
+  `encoders`, `plan`, `encode FILE|DIR… --preset NAME [-o OUT]` (decision 0018), `name`.
 
-## Open questions
+## Decided questions
 
-- Which audio and subtitle tracks does an M2 draft job get? The audio/subtitle defaults
-  engine is C-12 (M6). Asked of the user before wave 2.
+- Which audio and subtitle tracks does an M2 draft job get, and how does the CLI encode a
+  season? The user's answer is decision
+  [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md).

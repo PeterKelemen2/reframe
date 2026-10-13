@@ -45,7 +45,7 @@ the `MediaSource` model.
 
 ## M2 — Encode from the CLI
 
-| Steps | `C-4`, `C-5`, `C-6` (encoders, containers, filters; basic options), `C-7`, `C-8`, `C-9`, `C-11`, `C-14` (sleep inhibit), `C-15` (`encoders`, `plan`, `encode`, `name`), `C-16` |
+| Steps | `C-4`, `C-5`, `C-6` (encoders, containers, filters; basic options), `C-7`, `C-8`, `C-9`, `C-11`, `C-12` (codec-rule stage of the audio defaults only, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)), `C-14` (sleep inhibit), `C-15` (`encoders`, `plan`, `encode`, `name`), `C-16` |
 |-------|---|
 
 **Demo:**
