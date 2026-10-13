@@ -308,7 +308,7 @@ async def test_presets_are_read_at_first_use_not_in_create(env: Path) -> None:
 async def test_preset_service_round_trip(config: Path) -> None:
     async with await Reframe.create() as app:
         presets = app.presets
-        assert presets.default().name == "Fast 1080p30"
+        assert presets.default().name == "H.265 MKV 1080p"
         demo = presets.find("h.265 mkv 1080p")
         assert demo is not None
         assert demo.built_in

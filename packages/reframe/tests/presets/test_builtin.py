@@ -118,8 +118,14 @@ def test_presets_of_the_m2_demo_exist() -> None:
     assert nvenc.category == "Hardware"
 
 
-def test_default_preset_is_handbrakes_default() -> None:
-    assert by_id(DEFAULT_BUILTIN_ID).name == "Fast 1080p30"
+def test_default_preset_is_h265_mkv_1080p() -> None:
+    """Decision 0024 (HandBrake's default would be Fast 1080p30)."""
+    import json
+
+    assert DEFAULT_BUILTIN_ID == "h265-mkv-1080p"
+    assert by_id(DEFAULT_BUILTIN_ID).name == "H.265 MKV 1080p"
+    data = json.loads(BUILTIN_JSON.read_text("utf-8"))
+    assert data["default_preset_id"] == DEFAULT_BUILTIN_ID
 
 
 def test_builtin_presets_returns_copies() -> None:

@@ -9,7 +9,7 @@ field, and the differences:
 Reframe id                 HandBrake 1.11.2 preset         Difference
 ========================== ============================== ====================================
 very-fast-1080p30          Very Fast 1080p30
-fast-1080p30               Fast 1080p30 (the default)
+fast-1080p30               Fast 1080p30                    HandBrake's default
 fast-720p30                Fast 720p30
 hq-1080p30-surround        HQ 1080p30 Surround
 super-hq-1080p30-surround  Super HQ 1080p30 Surround
@@ -19,7 +19,7 @@ social-25-mb-1-minute-...  Social 25 MB 1 Minute 720p60
 android-1080p30            Android 1080p30
 apple-1080p30-surround     Apple 1080p30 Surround
 chromecast-1080p30-sur...  Chromecast 1080p30 Surround
-h265-mkv-1080p             H.265 MKV 1080p30               source frame rate, name without 30
+h265-mkv-1080p             H.265 MKV 1080p30               default (0024), source fps
 h265-mkv-720p              H.265 MKV 720p30                source frame rate, name without 30
 h265-mkv-2160p-4k          H.265 MKV 2160p60 4K            source frame rate, name without 60
 h264-mkv-1080p             H.264 MKV 1080p30               source frame rate, name without 30
@@ -49,9 +49,9 @@ from reframe.models.preset import Preset, PresetFile
 __all__ = ["BUILTIN_FILE", "DEFAULT_BUILTIN_ID", "builtin_ids", "builtin_presets"]
 
 BUILTIN_FILE = "builtin.json"
-#: The default preset when the user has not chosen one: HandBrake's default ("Default": true
-#: in ``preset_builtin.json``).
-DEFAULT_BUILTIN_ID = "fast-1080p30"
+#: The default preset when the user has not chosen one (decision 0024; HandBrake's default is
+#: Fast 1080p30). ``builtin.json`` names the same id in ``default_preset_id``.
+DEFAULT_BUILTIN_ID = "h265-mkv-1080p"
 
 
 @cache
