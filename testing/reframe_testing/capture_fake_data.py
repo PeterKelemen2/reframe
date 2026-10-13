@@ -17,6 +17,15 @@ depend on the machine (GPU, drivers); the ``machine`` field says where they were
 the libraries of the build that contain it (a plain byte search in ``lib/libav*`` and the
 ``ffmpeg`` binary). It confirms the exact texts of errors that cannot be provoked on the
 capture machine.
+
+The ``c4_*`` captures run the exact test-encode command of ``C-4``
+(``reframe.capabilities.hardware_test_argv`` with the encoder definitions), so the reason
+mapping is tested against the command that detection runs. ``--only NAME…`` captures just those
+hardware captures (``hw_*`` with their ``.v_error`` twin, ``c4_*``), keeps the other files and
+merges ``captures.json``; ``library_strings.json`` is always written again::
+
+    uv run python testing/reframe_testing/capture_fake_data.py \\
+        --ffmpeg "$BIN/ffmpeg" --ffprobe "$BIN/ffprobe" --only c4_hevc_amf_no_runtime
 """
 
 from __future__ import annotations
@@ -32,6 +41,7 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Literal
 
 DATA_DIR = Path(__file__).resolve().parent / "fake_data"
 #: Files in DATA_DIR that this script does not generate (kept when it cleans the folder).
@@ -118,12 +128,54 @@ HW_CAPTURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
     "hw_hevc_amf_ok": ((*_TEST_INPUT, "-c:v", "hevc_amf", "-f", "null", "-"), {}),
 }
 
+#: Placeholder in a capture's environment: a temporary folder with an empty
+#: ``libamfrt64.so.1``. With ``LD_LIBRARY_PATH`` pointing there, the AMF runtime fails to load
+#: ("DLL libamfrt64.so.1 failed to open"): what a machine without the AMF runtime prints.
+EMPTY_AMF_RUNTIME = "{folder with an empty libamfrt64.so.1}"
+
+
+def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
+    """The C-4 test encodes (``hardware_test_argv``) captured on the capture machine: name ->
+    (arguments without the ffmpeg path, extra environment variables)."""
+    from reframe.capabilities import hardware_test_argv  # needs the workspace (uv run)
+    from reframe.definitions import load_definitions
+
+    encoders = load_definitions().video_encoders
+
+    def argv(encoder: str, bit_depth: Literal["8", "10"] = "8", **kw: str) -> tuple[str, ...]:
+        return tuple(hardware_test_argv("ffmpeg", encoders[encoder], bit_depth, **kw)[1:])
+
+    no_driver = {"LIBVA_DRIVER_NAME": "reframe_nonexistent"}
+    h264_amf_10bit = (
+        *("-hide_banner", "-nostdin", "-f", "lavfi", "-i", "color=size=640x360"),
+        *("-frames:v", "3", "-pix_fmt", "p010le", "-c:v", "h264_amf", "-f", "null", "-"),
+    )
+    return {
+        # Working encoders on the capture machine (AMD: VAAPI and AMF).
+        "c4_h264_vaapi_ok": (argv("h264_vaapi"), {}),
+        "c4_hevc_vaapi_10bit_ok": (argv("hevc_vaapi", "10"), {}),
+        "c4_hevc_amf_ok": (argv("hevc_amf"), {}),
+        "c4_hevc_amf_10bit_ok": (argv("hevc_amf", "10"), {}),
+        # h264_amf has no 10-bit pixel format in the definitions; this shows why.
+        "c4_h264_amf_10bit": (h264_amf_10bit, {}),
+        # Failures: no NVIDIA driver, no Intel GPU, a missing render node, no VA driver, no
+        # AMF runtime.
+        "c4_hevc_nvenc_no_driver": (argv("hevc_nvenc"), {}),
+        "c4_hevc_qsv_no_device": (argv("hevc_qsv"), {}),
+        "c4_h264_vaapi_bad_device": (argv("h264_vaapi", vaapi_device="/dev/dri/renderD999"), {}),
+        "c4_h264_vaapi_no_driver": (argv("h264_vaapi"), no_driver),
+        "c4_hevc_amf_no_runtime": (argv("hevc_amf"), {"LD_LIBRARY_PATH": EMPTY_AMF_RUNTIME}),
+    }
+
+
 #: Environment variables removed for every capture: they change the log format.
 _DROP_ENV = ("AV_LOG_FORCE_COLOR", "AV_LOG_FORCE_NOCOLOR", "AV_LOG_FORCE_256COLOR")
 
 #: Texts that C-4's reason mapping may use (or that the plan names), searched in the build.
 LIBRARY_STRINGS = (
     # NVIDIA
+    "10 bit encode not supported",
+    "Codec not supported",
     "Cannot load %s",
     "libcuda.so.1",
     "nvcuda.dll",
@@ -145,8 +197,13 @@ LIBRARY_STRINGS = (
     "Failed to create a VAAPI device",
     # AMD AMF
     "Failed to create  hardware device context (AMF)",
+    "DLL %s failed to open",
+    "libamfrt64.so.1",
+    "10-bit input video is not supported by AMF",
+    "10-bit encoder is not supported by AMD GPU drivers",
     # generic (fftools)
     "Device creation failed",
+    "Failed to set value '%s' for option '%s': %s",
     "Error while opening encoder",
     "Nothing was written into output file",
     "Conversion failed!",
@@ -205,7 +262,10 @@ class Capturer:
         machine: bool = False,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        recorded_env: Mapping[str, str] | None = None,
     ) -> int:
+        """Run and store one capture. ``recorded_env`` is what ``captures.json`` shows as
+        ``env`` (default: ``env``), for a value that is a temporary path."""
         exe = self.ffmpeg if tool == "ffmpeg" else self.ffprobe
         result = _run([exe, *args], env=env, cwd=cwd)
         entry: dict[str, object] = {
@@ -213,8 +273,9 @@ class Capturer:
             "exit_code": result.returncode,
             "build": self.builds[tool],
         }
-        if env:
-            entry["env"] = dict(env)
+        shown = recorded_env if recorded_env is not None else env
+        if shown:
+            entry["env"] = dict(shown)
         for stream, data in (("stdout", result.stdout), ("stderr", result.stderr)):
             path = DATA_DIR / f"{name}.{stream}.txt"
             if data:
@@ -284,13 +345,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--ffprobe", default=os.environ.get("REFRAME_FFPROBE", shutil.which("ffprobe"))
     )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="NAME",
+        help="capture only these hardware captures (hw_*, c4_*); keep the other files",
+    )
     args = parser.parse_args(argv)
     if not args.ffmpeg or not args.ffprobe:
         print("ffmpeg/ffprobe not found", file=sys.stderr)
         return 2
 
-    _clean()
     cap = Capturer(args.ffmpeg, args.ffprobe)
+    if args.only:
+        cap.index = json.loads((DATA_DIR / "captures.json").read_text(encoding="utf-8"))
+        _hardware_captures(cap, set(args.only))
+        _write_indexes(cap, args.ffmpeg)
+        return 0
+
+    _clean()
 
     cap.capture("ffmpeg_version", "ffmpeg", ["-version"])
     cap.capture("ffprobe_version", "ffprobe", ["-version"])
@@ -396,7 +469,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             ],
             cwd=Path(tmp),
         )
+    _hardware_captures(cap, None)
+    _write_indexes(cap, args.ffmpeg)
+    return 0
+
+
+def _hardware_captures(cap: Capturer, only: set[str] | None) -> None:
+    """The ``hw_*`` captures (each with a ``-v error`` twin) and the ``c4_*`` captures
+    (``only``: just these names)."""
+
+    def wanted(name: str) -> bool:
+        return only is None or name in only
+
     for name, (hw_args, env) in HW_CAPTURES.items():
+        if not wanted(name):
+            continue
         cap.capture(name, "ffmpeg", ["-hide_banner", "-nostdin", *hw_args], machine=True, env=env)
         cap.capture(
             f"{name}.v_error",
@@ -405,16 +492,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             machine=True,
             env=env,
         )
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "libamfrt64.so.1").write_bytes(b"")
+        for name, (c4_args, recorded) in c4_captures().items():
+            if not wanted(name):
+                continue
+            env = {k: v.replace(EMPTY_AMF_RUNTIME, tmp) for k, v in recorded.items()}
+            cap.capture(name, "ffmpeg", list(c4_args), machine=True, env=env, recorded_env=recorded)
 
+
+def _write_indexes(cap: Capturer, ffmpeg: str) -> None:
     (DATA_DIR / "captures.json").write_text(
         json.dumps(cap.index, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
     (DATA_DIR / "library_strings.json").write_text(
-        json.dumps(library_strings(args.ffmpeg), indent=2, sort_keys=True) + "\n",
+        json.dumps(library_strings(ffmpeg), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
         newline="\n",
     )
-    return 0
 
 
 if __name__ == "__main__":

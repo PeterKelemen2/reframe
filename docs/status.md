@@ -35,7 +35,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-1 Tool runner and discovery | **Done** | `reframe.tools`: `run` / `run_streaming` (timeout, cancel, output limit, process-tree kill), discovery env → Settings → bundled → `PATH`, version parsing (minimum FFmpeg 7.0), child safety (Linux `PR_SET_PDEATHSIG`; Windows Job Object, [0005](decisions/0005-tool-discovery-details.md)). Windows code is tested with mocks only. `LIBVA_DRIVERS_PATH` handling stays until D-7 decides |
 | C-2 Data models | **Done** | All public models with JSON Schema snapshots and round-trip property tests. Known gaps: no `FieldChange` model (C-9 adds it), no language-list model for `GET /api/languages` (S-2), `-show_programs` output is not modelled |
 | C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
-| C-4 Encoder capabilities | Not started | |
+| C-4 Encoder capabilities | **Done** (branch `m2-encode-cli`) | `reframe.capabilities`: `CapabilityService` (`Reframe.capabilities`: cached result at once, full detection in the background, `capabilities.changed`, re-scan, a new ffmpeg starts a new detection), `-encoders` / `-filters` / `-h encoder=` parsing, hardware test encodes (3 at a time, 10 s, 10-bit test), reason mapping of the real FFmpeg texts, cache keyed by binary + GPU fingerprint, `closest_available`, `encoder_issues` (`encoder.unknown` / `checking` / `untested` / `unavailable`) for C-8. Decision [0008](decisions/0008-encoder-detection-reasons-and-filters.md). Checked on one Linux machine (AMD: VAAPI and AMF work; NVENC and QSV only as failures); the Windows registry fingerprint is tested with mocks only |
 | C-5 Dimensions maths | **Done** (branch `m2-encode-cli`) | `reframe.dimensions`: `compute_geometry` (crop snapped to the chroma grid, rotation, the four size modes, square / keep / custom pixel aspect, modulus rounding within 0.5 % or 1 px, notes), `detect_crop_consensus` (auto, conservative), `source_geometry`, `rotate_crop`. Hypothesis properties of "Done when", table tests of the classic cases, and real-FFmpeg tests (crop grid of all 200 pixel formats, the filter chain for C-7 on the anamorphic, letterbox and rotated files). Conventions and corner cases: [0009](decisions/0009-dimension-maths-conventions.md) |
 | C-6 Definitions | **Partial** | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli` only:** the M2 contract (`VideoEncoderDef` for every video encoder with hardware setup and fallback chain, `AudioEncoderDef` identities, `load_definitions()`). **Not started:** encoder data, option schema and option sets, audio encoders, containers, filters, the definitions linter |
 | C-7 Command builder | Not started | Models only (`EncodePlan`, `PlanStep`, `PlanFile`) |
@@ -95,7 +95,7 @@ the parity table) to what exists. No feature has a user interface yet.
 | HDR information | **Partial** | Detection of HDR10, HDR10+, HLG and Dolby Vision profile, with mastering display and MaxCLL. Missing: tone mapping, HDR metadata in encodes |
 | Tool paths and bundled FFmpeg | **Partial** | Core discovery with overrides and fixes, the manifest and the fetch script. Missing: `reframe tools fetch`, Settings → Tools UI, packaging |
 | Languages (search, codes, display) | **Partial** | Core module done. Missing: the language picker UI |
-| Non-blocking encoder detection with fallbacks | Not started | |
+| Non-blocking encoder detection with fallbacks | **Partial** | Core: detection in the background with strict timeouts, plain-language reasons, cache, fallback chain and the `encoder.unavailable` fix. Missing: the C-8 rule registration, CLI `reframe encoders` (C-15), the encoder picker and Settings → Encoders UI |
 | Presets (built-in, user, import/export) | Not started | |
 | Range, Dimensions, Filters, Video, advanced encoder options | **Partial** | Core: the dimension maths (C-5, branch `m2-encode-cli`). Missing: the command builder (C-7), range, filters, video and encoder options, crop detection (C-10), the UI |
 | Audio and subtitle output tracks, audio defaults, track rules | Not started | |
@@ -126,13 +126,11 @@ cd frontend && npm run dev:web       # placeholder page only
   the `.exe`-only tool lookup, the `.cmd` test launchers, console encoding, and the Windows CI
   jobs.
 - **GitHub Actions**: no workflow has run, because nothing was pushed.
-- **GPU encoders**: not built yet (C-4).
+- **GPU encoders**: detection is checked on one Linux machine (AMD RX 7600: VAAPI and AMF
+  work); NVENC and QSV only as failures (no NVIDIA driver, no Intel GPU); Windows not at all.
 
 ## Open items for the next steps
 
-- **C-4**: the plan's pattern `MFX_ERR_UNSUPPORTED` does not appear in real FFmpeg output, and
-  the last stderr line of a failed encode is a generic `Conversion failed!`. The real texts are
-  recorded in `testdata/README.md`. C-4 needs a decision record that changes the plan.
 - **C-13**: ffprobe cannot read Matroska `LanguageIETF`. Reframe reads it through MediaInfo
   (`language_ietf`). Decide in C-13 how a metadata edit is checked after the re-probe.
 - **C-7**: FFmpeg writes language codes verbatim. The builder must pass ISO 639-2/B to

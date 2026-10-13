@@ -2474,6 +2474,18 @@
         'description': 'Listed by ``ffmpeg -encoders``; ``None`` before the list was read.',
         'title': 'In Build',
       }),
+      'pix_fmts': dict({
+        'description': '''
+          Pixel formats the encoder accepts in this build (``Supported pixel formats`` of
+          ``ffmpeg -h encoder=<id>``; only ``vaapi`` for VAAPI encoders, which take hardware frames).
+          Empty when not read.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Pix Fmts',
+        'type': 'array',
+      }),
       'presets': dict({
         'description': 'Speed presets this build offers, if the encoder lists them.',
         'items': dict({
@@ -2502,6 +2514,22 @@
         'default': None,
         'description': 'Plain-language reason for ``unavailable`` / ``error`` ("NVIDIA driver not found").',
         'title': 'Reason',
+      }),
+      'reason_10bit': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
+          supported by this encoder").
+        ''',
+        'title': 'Reason 10Bit',
       }),
       'state': dict({
         '$ref': '#/$defs/EncoderState',
