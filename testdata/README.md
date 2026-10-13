@@ -633,6 +633,11 @@ Decisions [0011](../docs/decisions/0011-sleep-inhibit.md) (client, Windows threa
 [0020](../docs/decisions/0020-m2-wave-1-product-decisions.md) (only automatic sleep). Code:
 `reframe/platform/sleep.py`, `reframe/platform/dbus.py`. Tests:
 `packages/reframe/tests/platform/test_sleep_real.py` (skipped without the bus or service).
+Other programs hold inhibits too (here a playing Jellyfin client: KDE lists `"idle"
+"jellyfin-desktop" "playing"`, which sets both PolicyAgent flags; parallel test runs), so each
+real test finds only its own inhibit by a unique reason in logind `ListInhibitors` and KDE
+`ActiveInhibitions` (`busctl --json=short`), and checks a global flag only when it was false
+before.
 
 **Timing on KDE.** PowerDevil makes every inhibition active about **5 s** after it is
 requested, also the ones it mirrors from logind (polled every second: `false` at 0–4 s,
