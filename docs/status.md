@@ -22,7 +22,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 |-----------|--------|-------|
 | M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
 | M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
-| M2 Encode from the CLI | **In progress** | Branch `m2-encode-cli`. The lead's contract ([m2-breakdown.md](m2-breakdown.md)) is committed; wave 1 = C-4, C-5, C-6, C-14, C-16 |
+| M2 Encode from the CLI | **In progress** | Branch `m2-encode-cli` ([m2-breakdown.md](m2-breakdown.md)). Wave 1 (C-4, C-5, C-6, C-14, C-16) is merged; wave 2 (C-7, C-8, C-9, C-12 codec rules) is next |
 | M3 – M10 | Not started | |
 
 ## Steps
@@ -139,5 +139,6 @@ cd frontend && npm run dev:web       # placeholder page only
 - **D-7**: follow the bundled layout of [0005](decisions/0005-tool-discovery-details.md)
   (`tools/ffmpeg/`, `tools/mkvtoolnix/`, `tools/mediainfo/`), and decide on
   `LIBVA_DRIVERS_PATH`.
-- **M2**: wave 1 = C-4, C-5, C-6, C-16, C-14; wave 2 = C-7, C-8, C-9; wave 3 = C-11, C-15
+- **M2**: wave 1 = C-4, C-5, C-6, C-16, C-14 (merged); wave 2 = C-7, C-8, C-9, C-12 (codec
+  rules, [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)); wave 3 = C-11, C-15
   ([m2-breakdown.md](m2-breakdown.md)).
