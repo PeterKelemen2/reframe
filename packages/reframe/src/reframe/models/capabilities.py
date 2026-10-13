@@ -54,6 +54,11 @@ class EncoderStatus(ReframeModel):
     reason_10bit: str | None = None
     """Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
     supported by this encoder")."""
+    device: str | None = None
+    """The device the encoder works on, for encoders that need one: the VAAPI render node
+    (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
+    Settings → Encoders forces (decision 0020). The command builder (C-7) uses it. ``None``
+    for encoders without a device choice and for encoders that are not available."""
 
 
 class CapabilitySnapshot(ReframeModel):
@@ -69,6 +74,13 @@ class CapabilitySnapshot(ReframeModel):
     filters: list[str] | None = None
     """Filters in this FFmpeg build (``ffmpeg -filters``: ``libplacebo``, ``zscale``, …);
     ``None`` until the list was read."""
+    filter_failures: dict[str, str] = Field(default_factory=dict)
+    """Filters of the build whose run test failed, with the reason. ``libplacebo`` is listed
+    by ``ffmpeg -filters`` but needs a working Vulkan device, so detection runs one frame
+    through it ("No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)")."""
+    untested_filters: list[str] = Field(default_factory=list)
+    """Filters of the build that need a run test that has not passed or failed: while the
+    detection runs, or when hardware tests are off (Settings → Encoders)."""
     ffmpeg: Path | None = None
     """The ffmpeg binary these results belong to."""
     ffmpeg_version: str | None = None
@@ -85,5 +97,18 @@ class CapabilitySnapshot(ReframeModel):
         return found if found is not None else EncoderStatus(id=encoder_id)
 
     def has_filter(self, name: str) -> bool | None:
-        """``True`` / ``False`` once the filter list was read, else ``None``."""
+        """``True`` / ``False`` once the filter list was read, else ``None``. Says only that
+        the build has the filter; use :meth:`usable_filter` to choose a filter."""
         return None if self.filters is None else name in self.filters
+
+    def usable_filter(self, name: str) -> bool | None:
+        """Can a job use the filter? ``False`` when it is not in the build or its run test
+        failed (:attr:`filter_failures`); ``None`` when not known (the filter list was not read,
+        or the run test has not finished: :attr:`untested_filters`); else ``True``."""
+        if self.filters is None:
+            return None
+        if name not in self.filters or name in self.filter_failures:
+            return False
+        if name in self.untested_filters:
+            return None
+        return True

@@ -16,7 +16,9 @@ texts are in ``testdata/README.md`` §Hardware encoder failures and §Encoder de
   'init_hw_device': …``: the reason comes from the encoder family.
 
 A known text gives ``unavailable`` with its reason. Anything else gives ``error`` ("the check
-itself failed") with the most informative line (:func:`informative_line`).
+itself failed") with the most informative line (:func:`informative_line`). The same mapping
+explains a failed filter run test (``libplacebo`` without Vulkan: ``[libplacebo @ 0x…] Failed
+creating instance: VK_ERROR_INCOMPATIBLE_DRIVER``).
 """
 
 from __future__ import annotations
@@ -199,6 +201,23 @@ _RULES: tuple[_Rule, ...] = (
         re.compile(r"Failed to create\s+hardware device context \(AMF\)\s*:\s*(?P<rest>.*)$"),
         _with_rest("AMD AMF could not start", "unknown error"),
     ),
+    # Vulkan, for the libplacebo run test (libplacebo, linked into libavfilter)
+    _Rule(
+        re.compile(r"Failed creating instance: (?P<code>VK_\w+)"),
+        lambda m, _ctx, _t: f"No working Vulkan driver ({m['code']})",
+    ),
+    _Rule(
+        re.compile(r"Found no suitable device, giving up"),
+        _fixed("No Vulkan device that libplacebo can use"),
+    ),
+    _Rule(
+        re.compile(r"Vulkan device does not support all required features"),
+        _fixed("The Vulkan device lacks features that libplacebo needs"),
+    ),
+    _Rule(
+        re.compile(r"Failed creating logical device"),
+        _fixed("The Vulkan device could not be opened"),
+    ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(
         re.compile(
@@ -271,15 +290,14 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
             if match is not None:
                 return Failure(EncoderState.UNAVAILABLE, rule.reason(match, ctx, texts), line)
     detail = informative_line(stderr, ctx.encoder)
+    test = f"the {ctx.encoder} test" if ctx.family == "filter" else "the test encode"
     crash = _crash(returncode)
     if crash is not None:
-        return Failure(
-            EncoderState.ERROR, f"FFmpeg crashed during the test encode ({crash})", detail
-        )
+        return Failure(EncoderState.ERROR, f"FFmpeg crashed during {test} ({crash})", detail)
     if detail is None:
         code = "" if returncode is None else f" (exit code {returncode})"
-        return Failure(EncoderState.ERROR, f"The test encode failed with no message{code}")
-    return Failure(EncoderState.ERROR, f"The test encode failed: {_split(detail)[1]}", detail)
+        return Failure(EncoderState.ERROR, f"{test.capitalize()} failed with no message{code}")
+    return Failure(EncoderState.ERROR, f"{test.capitalize()} failed: {_split(detail)[1]}", detail)
 
 
 def _crash(returncode: int | None) -> str | None:

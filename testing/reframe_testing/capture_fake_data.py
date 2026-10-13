@@ -135,9 +135,10 @@ EMPTY_AMF_RUNTIME = "{folder with an empty libamfrt64.so.1}"
 
 
 def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
-    """The C-4 test encodes (``hardware_test_argv``) captured on the capture machine: name ->
-    (arguments without the ffmpeg path, extra environment variables)."""
-    from reframe.capabilities import hardware_test_argv  # needs the workspace (uv run)
+    """The C-4 test encodes (``hardware_test_argv``) and filter run tests
+    (``filter_test_argv``) captured on the capture machine: name -> (arguments without the
+    ffmpeg path, extra environment variables)."""
+    from reframe.capabilities import filter_test_argv, hardware_test_argv  # needs uv run
     from reframe.definitions import load_definitions
 
     encoders = load_definitions().video_encoders
@@ -146,6 +147,7 @@ def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
         return tuple(hardware_test_argv("ffmpeg", encoders[encoder], bit_depth, **kw)[1:])
 
     no_driver = {"LIBVA_DRIVER_NAME": "reframe_nonexistent"}
+    libplacebo = tuple(filter_test_argv("ffmpeg", "libplacebo")[1:])
     h264_amf_10bit = (
         *("-hide_banner", "-nostdin", "-f", "lavfi", "-i", "color=size=640x360"),
         *("-frames:v", "3", "-pix_fmt", "p010le", "-c:v", "h264_amf", "-f", "null", "-"),
@@ -165,6 +167,10 @@ def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
         "c4_h264_vaapi_bad_device": (argv("h264_vaapi", vaapi_device="/dev/dri/renderD999"), {}),
         "c4_h264_vaapi_no_driver": (argv("h264_vaapi"), no_driver),
         "c4_hevc_amf_no_runtime": (argv("hevc_amf"), {"LD_LIBRARY_PATH": EMPTY_AMF_RUNTIME}),
+        # libplacebo needs a working Vulkan device (RADV on the capture machine); a Vulkan ICD
+        # file that does not exist gives "no Vulkan driver".
+        "c4_libplacebo_ok": (libplacebo, {}),
+        "c4_libplacebo_no_vulkan": (libplacebo, {"VK_ICD_FILENAMES": "/nonexistent/icd.json"}),
     }
 
 
@@ -201,6 +207,12 @@ LIBRARY_STRINGS = (
     "libamfrt64.so.1",
     "10-bit input video is not supported by AMF",
     "10-bit encoder is not supported by AMD GPU drivers",
+    # Vulkan (libplacebo, linked into libavfilter)
+    "Failed creating instance: %s",
+    "Found no suitable device, giving up.",
+    "Vulkan device does not support all required features",
+    "Failed creating logical device",
+    "Failed initializing vulkan device",
     # generic (fftools)
     "Device creation failed",
     "Failed to set value '%s' for option '%s': %s",

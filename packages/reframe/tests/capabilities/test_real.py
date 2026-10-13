@@ -15,7 +15,12 @@ from pathlib import Path
 
 import pytest
 
-from reframe.capabilities import DetectionOptions, detect_capabilities
+from reframe.capabilities import (
+    DetectionOptions,
+    detect_capabilities,
+    render_nodes,
+    run_filter_test,
+)
 from reframe.definitions import load_definitions
 from reframe.models import CapabilitySnapshot, EncoderState, ToolInfo, ToolStatus
 from reframe.service import Reframe
@@ -45,6 +50,10 @@ async def test_real_detection_without_hardware_tests() -> None:
     assert snap.status("libsvtav1").presets  # the integer range of -preset
     assert snap.has_filter("scale") is True
     assert snap.has_filter("zscale") is not None
+    # hardware tests off: libplacebo is not run, so it is not known to work
+    if snap.has_filter("libplacebo"):
+        assert snap.usable_filter("libplacebo") is None
+        assert snap.untested_filters == ["libplacebo"]
     for hardware in HARDWARE:
         status = snap.status(hardware.id)
         assert status.state in (EncoderState.UNKNOWN, EncoderState.UNAVAILABLE), status
@@ -130,8 +139,11 @@ async def test_qsv_without_an_intel_gpu(hardware_snapshot: CapabilitySnapshot) -
 async def test_vaapi_and_amf_on_an_amd_gpu(hardware_snapshot: CapabilitySnapshot) -> None:
     if "0x1002" not in pci_vendors() or not exists("/dev/dri/renderD128"):
         pytest.skip("no AMD GPU at /dev/dri/renderD128")
+    nodes = render_nodes()
     for encoder in ("h264_vaapi", "hevc_vaapi"):
-        assert hardware_snapshot.status(encoder).state is EncoderState.AVAILABLE, encoder
+        status = hardware_snapshot.status(encoder)
+        assert status.state is EncoderState.AVAILABLE, encoder
+        assert status.device in nodes, status  # decision 0020: the node it works on
     assert hardware_snapshot.status("hevc_vaapi").supports_10bit is True
     assert hardware_snapshot.status("h264_vaapi").supports_10bit is False  # no 10-bit format
     amf = hardware_snapshot.status("hevc_amf")
@@ -163,3 +175,32 @@ async def test_the_facade_caches_the_real_result(
         second = await app.capabilities.wait()
     assert not second.from_cache
     assert {key: status.state for key, status in second.encoders.items()} == states
+
+
+@pytest.mark.needs_gpu
+async def test_libplacebo_run_test(hardware_snapshot: CapabilitySnapshot) -> None:
+    """The real libplacebo test gives a definite answer; with a Vulkan driver and a GPU
+    (RADV here) it works."""
+    if not hardware_snapshot.has_filter("libplacebo"):
+        pytest.skip("this FFmpeg has no libplacebo")
+    usable = hardware_snapshot.usable_filter("libplacebo")
+    assert usable is not None
+    if not usable:
+        assert hardware_snapshot.filter_failures["libplacebo"]
+    elif "0x1002" in pci_vendors():
+        assert usable is True
+
+
+@pytest.mark.needs_gpu
+async def test_libplacebo_without_a_vulkan_driver() -> None:
+    """``VK_ICD_FILENAMES`` pointing to nothing: the real failure and its reason."""
+    ffmpeg = await real_ffmpeg()
+    assert ffmpeg.path is not None
+    outcome = await run_filter_test(
+        ffmpeg.path,
+        "libplacebo",
+        extra_env={**ffmpeg.env, "VK_ICD_FILENAMES": "/nonexistent/icd.json"},
+    )
+    assert outcome.failure is not None
+    assert outcome.failure.state is EncoderState.UNAVAILABLE
+    assert outcome.failure.reason == "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)"

@@ -299,3 +299,59 @@ def test_informative_line_order() -> None:
 def test_normalise_line() -> None:
     assert normalise_line("[hevc_nvenc @ 0x55b9952bd600] Cannot load") == "[hevc_nvenc] Cannot load"
     assert normalise_line("  plain  ") == "plain"
+
+
+# --------------------------------------------------------------------------- libplacebo
+
+FILTER = TestContext(encoder="libplacebo", family="filter")
+
+
+def test_libplacebo_without_vulkan_real() -> None:
+    """``VK_ICD_FILENAMES`` pointing to nothing (``c4_libplacebo_no_vulkan``, pinned build)."""
+    failure = explain_failure(stderr("c4_libplacebo_no_vulkan"), FILTER, returncode=187)
+    assert (failure.state, failure.reason, failure.detail) == (
+        UNAVAILABLE,
+        "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)",
+        "[libplacebo] Failed creating instance: VK_ERROR_INCOMPATIBLE_DRIVER",
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "reason"),
+    [
+        ("Found no suitable device, giving up.", "No Vulkan device that libplacebo can use"),
+        (
+            "Vulkan device does not support all required features!",
+            "The Vulkan device lacks features that libplacebo needs",
+        ),
+        ("Failed creating logical device!", "The Vulkan device could not be opened"),
+    ],
+)
+def test_vulkan_texts_confirmed_in_the_build(line: str, reason: str) -> None:
+    text = f"[libplacebo @ 0x55] {line}\n[libplacebo @ 0x55] Failed initializing vulkan device\n"
+    failure = explain_failure(text, FILTER, returncode=187)
+    assert (failure.state, failure.reason) == (UNAVAILABLE, reason)
+
+
+def test_the_vulkan_texts_are_in_the_pinned_build() -> None:
+    found = {text: {e["file"] for e in hits} for text, hits in ft.library_strings().items()}
+    for text in (
+        "Failed creating instance: %s",
+        "Found no suitable device, giving up.",
+        "Vulkan device does not support all required features",
+        "Failed creating logical device",
+        "Failed initializing vulkan device",
+    ):
+        assert "lib/libavfilter.so.12.1.102" in found[text], text
+
+
+def test_unknown_filter_failure() -> None:
+    text = "[libplacebo @ 0x55] Something else\n[AVFilterGraph @ 0x56] Error initializing filters\n"
+    failure = explain_failure(text, FILTER, returncode=1)
+    assert (failure.state, failure.reason, failure.detail) == (
+        ERROR,
+        "The libplacebo test failed: Something else",
+        "[libplacebo] Something else",
+    )
+    crash = explain_failure("", FILTER, returncode=-11)
+    assert crash.reason == "FFmpeg crashed during the libplacebo test (signal 11)"

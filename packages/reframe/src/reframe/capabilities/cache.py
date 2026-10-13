@@ -3,8 +3,9 @@
 **Key** (:class:`CacheKey`): the ffmpeg binary (absolute path, size, mtime) and its version
 and extra environment (``LIBVA_DRIVERS_PATH``), the GPU fingerprint
 (:mod:`reframe.capabilities.fingerprint`), the detection options (hardware tests on/off, the
-VAAPI device, the OS), a hash of the definition fields that detection uses (ids, platforms,
-pixel formats, hardware setup) and a hash of the detection code. Any change is a miss.
+VAAPI device forced in the settings, the render nodes, the filter tests, the OS), a hash of
+the definition fields that detection uses (ids, platforms, pixel formats, hardware setup)
+and a hash of the detection code. Any change is a miss.
 
 **Entry**: ``<cache dir>/<digest>.json`` = ``{"format": 1, "key": {…}, "snapshot": {…}}``.
 Writes are atomic (a temporary file, then ``os.replace``). An entry that cannot be read, has
@@ -52,7 +53,7 @@ log = logging.getLogger(__name__)
 CACHE_FORMAT = 1
 MAX_ENTRIES = 8
 #: The modules whose source decides what a detection produces.
-_DETECTOR_MODULES = ("parse.py", "reasons.py", "hwtest.py", "detect.py")
+_DETECTOR_MODULES = ("parse.py", "reasons.py", "hwtest.py", "detect.py", "devices.py")
 
 
 @functools.cache
@@ -126,6 +127,8 @@ def cache_key(
         "hardware_tests": options.hardware_tests,
         "os": options.os or current_os(),
         "vaapi_device": options.vaapi_device,
+        "render_nodes": list(options.render_nodes) if options.render_nodes is not None else None,
+        "filter_tests": list(options.filter_tests),
     }
     return CacheKey(
         ffmpeg=str(path),

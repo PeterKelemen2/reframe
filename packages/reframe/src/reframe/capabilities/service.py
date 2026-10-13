@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,8 +36,9 @@ from reframe.capabilities.detect import (
     initial_statuses,
     unusable_snapshot,
 )
+from reframe.capabilities.devices import render_nodes as list_render_nodes
 from reframe.capabilities.fingerprint import gpu_fingerprint
-from reframe.capabilities.hwtest import DEFAULT_VAAPI_DEVICE, TEST_TIMEOUT
+from reframe.capabilities.hwtest import TEST_TIMEOUT
 from reframe.capabilities.issues import closest_available
 from reframe.definitions import Definitions, load_definitions
 from reframe.events import EventBus, Subscription
@@ -84,7 +85,9 @@ class CapabilityService:
     :param definitions: the encoder definitions (default :func:`load_definitions`).
     :param platform: a ``sys.platform`` value for the definitions' ``platforms`` (default:
         this one); tests use it to get the same results on every OS.
-    :param vaapi_device: the ``{vaapi_device}`` of the VAAPI hardware setup.
+    :param render_nodes: lists the VAAPI render nodes to try (blocking; called in a worker
+        thread before each detection on Linux; default ``/dev/dri/renderD*``). Settings →
+        Encoders ``vaapi_device`` replaces the list with one node.
     :param gpu_fingerprint: returns the GPU fingerprint of the cache key (blocking; called
         in a worker thread once per service).
     :param watch_tools: start a new detection when ``tools.changed`` reports another ffmpeg.
@@ -99,7 +102,7 @@ class CapabilityService:
         cache_dir: Path,
         definitions: Definitions | None = None,
         platform: str | None = None,
-        vaapi_device: str = DEFAULT_VAAPI_DEVICE,
+        render_nodes: Callable[[], Sequence[str]] | None = None,
         test_timeout: float = TEST_TIMEOUT,
         list_timeout: float = LIST_TIMEOUT,
         max_parallel_tests: int = MAX_PARALLEL_TESTS,
@@ -112,7 +115,7 @@ class CapabilityService:
         self._definitions = definitions if definitions is not None else load_definitions()
         self._cache = CapabilityCache(cache_dir)
         self._os = current_os(platform)
-        self._vaapi_device = vaapi_device
+        self._render_nodes = render_nodes or list_render_nodes
         self._test_timeout = test_timeout
         self._list_timeout = list_timeout
         self._max_parallel_tests = max_parallel_tests
@@ -217,11 +220,17 @@ class CapabilityService:
         self._task = task
         return task
 
-    def _options(self) -> DetectionOptions:
+    async def _options(self) -> DetectionOptions:
+        encoders = self._settings().encoders
+        forced = (encoders.vaapi_device or "").strip() or None
+        nodes: tuple[str, ...] = ()
+        if self._os == "linux" and encoders.hardware_tests and forced is None:
+            nodes = tuple(await asyncio.to_thread(self._render_nodes))
         return DetectionOptions(
-            hardware_tests=self._settings().encoders.hardware_tests,
+            hardware_tests=encoders.hardware_tests,
             os=self._os,
-            vaapi_device=self._vaapi_device,
+            vaapi_device=forced,
+            render_nodes=nodes,
             test_timeout=self._test_timeout,
             list_timeout=self._list_timeout,
             max_parallel_tests=self._max_parallel_tests,
@@ -253,7 +262,7 @@ class CapabilityService:
         self, ffmpeg: ToolInfo, *, use_cache: bool, token: CancelToken
     ) -> CapabilitySnapshot:
         definitions = self._definitions
-        options = self._options()
+        options = await self._options()
         if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
             return self._finish(unusable_snapshot(ffmpeg, definitions), token)
 
@@ -266,7 +275,10 @@ class CapabilityService:
         else:
             first = CapabilitySnapshot(
                 encoders=initial_statuses(definitions, EncoderState.CHECKING),
+                # the filter results of the last detection stay until the new ones are in
                 filters=self._snapshot.filters,
+                filter_failures=self._snapshot.filter_failures,
+                untested_filters=self._snapshot.untested_filters,
                 ffmpeg=ffmpeg.path,
                 ffmpeg_version=ffmpeg.version,
                 detecting=True,
