@@ -316,28 +316,40 @@ class EncodePlan(BaseModel):
     output_final: Path
     expected_duration: float     # range-adjusted, for progress
     display: str                 # shell-quoted for the command preview (POSIX or Windows style)
+    files: list[PlanFile]        # written before the first step (FFMETADATA chapters)
+    temp_files: list[Path]       # removed when the job ends (2-pass statistics; 0013)
 ```
 
 - [ ] Argument order: global (`-hide_banner -nostdin -y -progress pipe:1 -nostats`) →
-      hardware init → input options (range seek) → `-i source` → external subtitle inputs
-      (`-itsoffset`, `-sub_charenc`) → chapter metadata input → `-map` with **absolute stream
-      indexes** (`0:3`) → filter graph → per-stream codec args → per-stream metadata and
-      dispositions → chapters → global tags → container flags (`-movflags +faststart`) → output.
+      hardware init → input options (decoder options `-drc_scale` / `-forced_subs_only`,
+      range seek `-ss`) → `-i source` → external subtitle inputs (`-itsoffset`, `-ss`,
+      `-sub_charenc`) → chapter metadata input → `-map` with **absolute stream indexes**
+      (`0:3`) → range end (`-t`, an output option, so FFmpeg cuts the copied chapters) →
+      filter graph → per-stream codec args → per-stream metadata and dispositions (no source
+      stream tags: `-map_metadata:s -1`) → chapters → global tags → container flags
+      (`-movflags +faststart`, `-strict -2`) → `-f <muxer>` → output
+      ([decision 0013](../decisions/0013-command-builder-details.md)).
 - [ ] **Filter graph builder** (`command/filtergraph.py`): fixed filter order (see
-      [03 §Filters](03-features.md#filters)), colour tagging, hardware upload tail, burn-in
-      overlay. Correct escaping of filter arguments, including Windows paths in `subtitles=`
-      (`C\:/…`). This is a known source of bugs, so it needs dedicated tests.
+      [03 §Filters](03-features.md#filters)), colour tagging (`setparams` for untagged
+      sources), HDR metadata removed after tone mapping, hardware upload tail, burn-in (text
+      last, bitmap `overlay` after the crop; 0013). Correct escaping of filter arguments,
+      including Windows paths in `subtitles=` (`C\:/…`). This is a known source of bugs, so it
+      needs dedicated tests.
 - [ ] **Video**: rate control, preset/tune/profile/level, `-x264-params` / `-x265-params` /
       `-svtav1-params` assembled from advanced options + colour + HDR metadata. 2-pass for x264
-      (`-pass`/`-passlogfile`) and x265 (`pass=`/`stats=` in params).
-- [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ac:a:N`, `-ar:a:N`, `-filter:a:N` (gain, DRC, downmix
-      with `aresample=matrix_encoding=dplii`, loudnorm with the measured values from the
-      analyse step).
+      (`-pass`/`-passlogfile`) and x265 (`pass=`/`stats=` in params); the statistics files are
+      listed in `EncodePlan.temp_files` for the runner to remove. Frame rate: constant
+      `-r -fps_mode cfr`, peak `-fpsmax` (0013).
+- [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ar:a:N` (always), `-filter:a:N` (output layout and
+      downmix with `aresample=[matrix_encoding=dplii:]out_chlayout=…`, gain, loudnorm with the
+      measured values of the track's own analyse step); DRC is the AC-3 decoder's
+      `-drc_scale` (0013).
 - [ ] **Subtitles**: copy, convert, burn. For MKV, copy attachments (`-map 0:t?`) when ASS
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N
-      default+forced+comment+hearing_impaired+visual_impaired+original`. Flags the muxer cannot
-      write go to an `mkvpropedit` step.
+      default+forced+comment+hearing_impaired+visual_impaired+original` (every flag, `0` for
+      none). Flags the muxer cannot write, and Matroska `LanguageIETF`, go to an
+      `mkvpropedit` step.
 - [ ] **Chapters**: `-map_chapters 0|-1`, or a generated FFMETADATA file for renamed or
       generated chapters.
 - [ ] Tags with `-metadata`. Passthru common metadata = `-map_metadata 0` before the overrides.

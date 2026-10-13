@@ -193,7 +193,9 @@ or HQDN3D); each implementation has its own presets and tunes
   not have to guess.
 
 Filter order is fixed and documented: detelecine → deinterlace → denoise → deblock →
-crop → scale → tone map / colorspace → sharpen → chroma smooth → grayscale → format/upload.
+crop (→ burned-in bitmap subtitles) → rotate/flip → custom → scale → tone map / colorspace (→
+the source's HDR metadata removed) → sharpen → chroma smooth → grayscale → burned-in text
+subtitles → format/upload ([decision 0013](../decisions/0013-command-builder-details.md)).
 
 ---
 
@@ -207,7 +209,9 @@ Same as HandBrake, plus:
   not select them. Hover to read the reason.
 - **Video passthrough** (HandBrake does not have this): copy the video stream unchanged. All
   dimension and filter controls are then disabled, with a note.
-- Framerate: Same as source / fixed value. Mode: Variable / Constant / Peak.
+- Framerate: Same as source / fixed value. Mode: Variable / Constant / Peak. FFmpeg has no
+  variable-with-a-maximum mode: Peak keeps a slower source's rate and makes a faster or
+  variable source constant at the peak rate ([decision 0013](../decisions/0013-command-builder-details.md)).
 - Quality: **Constant quality** (CRF / CQ / QP, depending on the encoder). The slider uses the
   encoder's scale and shades a recommended band for the output resolution. **Average
   bitrate** also has 2-pass and turbo first pass options.
@@ -435,7 +439,7 @@ rule does.
 | Action | Allowed for | Notes |
 |--------|-------------|-------|
 | Copy | all formats the container supports | MP4: only `mov_text` (text is converted automatically) and VobSub (as HandBrake does). PGS cannot go into MP4: a validation error offers burn-in or MKV ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
-| Burn in | one track per job | Text uses the `subtitles` filter. Bitmap uses `overlay`. **Forced only** uses the PGS decoder option `forced_subs_only` |
+| Burn in | one track per job | Text uses the `subtitles` filter, on the final picture. Bitmap uses `overlay` after the crop; when the crop removes lines, the subtitle canvas is aligned with the bottom of the picture ([0013](../decisions/0013-command-builder-details.md)). **Forced only** uses the PGS / VobSub decoder option `forced_subs_only` |
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 
 - **Foreign audio search** (HandBrake parity): Reframe suggests a forced-subtitle track from

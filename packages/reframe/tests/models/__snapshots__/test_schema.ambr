@@ -2396,6 +2396,18 @@
         'title': 'Steps',
         'type': 'array',
       }),
+      'temp_files': dict({
+        'description': '''
+          Files that the steps create and that the runner removes when the job ends, whatever
+          the outcome (2-pass statistics). A file that does not exist is skipped.
+        ''',
+        'items': dict({
+          'format': 'path',
+          'type': 'string',
+        }),
+        'title': 'Temp Files',
+        'type': 'array',
+      }),
     }),
     'required': list([
       'job_type',
