@@ -127,6 +127,9 @@ class SourceGeometry(ReframeModel):
     """Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
     4:2:0)."""
     interlaced: bool = False
+    chroma_assumed: bool = False
+    """``True`` when the pixel format is unknown and the chroma steps are C-5's assumption
+    (4:2:0, steps of 2)."""
 
 
 class Geometry(ReframeModel):
@@ -148,3 +151,9 @@ class Geometry(ReframeModel):
     """Total rotation applied (source + job)."""
     upscaled: bool = False
     notes: list[str] = Field(default_factory=list)
+    filter_rotation: Rotation = 0
+    """Clockwise rotation that the filter graph applies after the crop: the job's ``rotate``.
+    FFmpeg's automatic rotation has already applied the source's display matrix before the
+    filter graph, so the crop is in that orientation (``reframe.dimensions``)."""
+    flip_horizontal: bool = False
+    """Mirror the picture left to right, after the rotation."""

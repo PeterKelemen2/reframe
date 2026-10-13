@@ -217,6 +217,7 @@ A pure module with no I/O.
 def compute_geometry(src: SourceGeometry, settings: DimensionSettings) -> Geometry
 # Geometry: crop rect, scaled size, output SAR, display aspect, upscaled: bool, notes: list[str]
 def detect_crop_consensus(samples: list[CropRect], mode: Literal["auto", "conservative"]) -> CropRect
+def source_geometry(stream: VideoStream) -> SourceGeometry
 ```
 
 - [ ] Size modes: same as cropped source, fit within W×H, exact width, exact height.
@@ -226,11 +227,20 @@ def detect_crop_consensus(samples: list[CropRect], mode: Literal["auto", "conser
 - [ ] Modulus rounding keeps the aspect error as small as possible. Crop snaps to the chroma
       grid.
 - [ ] `notes` explain every snap or limit ("Crop left 141 → 140 for 4:2:0").
+- [ ] Conventions ([decision 0009](../decisions/0009-dimension-maths-conventions.md)): the crop
+      is measured on the picture as FFmpeg decodes it (display matrix applied, job rotation
+      not yet); the filter chain for `C-7` (automatic rotation on, then crop → transpose →
+      hflip → scale → setsar); upscaling is measured against the display size (DVD 16:9 →
+      854×480 is not an upscale); the rounding rule.
 
 Done when: hypothesis tests prove these properties: the output is inside the fit box; no
 upscale unless allowed; the result is a multiple of the modulus; display aspect error
-< 0.5 % (or < 1 px); the crop is never negative and never removes the full frame. Table tests
-cover the classic cases (DVD NTSC 720×480 anamorphic 16:9, 1080p 2.40:1 letterbox, 4K → 1080p).
+< 0.5 % (or < 1 px); the crop is never negative and never removes the full frame. Corner
+cases are defined, not skipped ([0009](../decisions/0009-dimension-maths-conventions.md)): a
+fit box or a picture smaller than one modulus step gives one step on that axis, and when no
+size inside the limits meets the aspect tolerance, the closest one is used (the test proves
+that none exists). Table tests cover the classic cases (DVD NTSC 720×480 anamorphic 16:9,
+1080p 2.40:1 letterbox, 4K → 1080p).
 
 ## C-6 Definitions: encoders, options, filters, containers, languages
 

@@ -36,7 +36,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-2 Data models | **Done** | All public models with JSON Schema snapshots and round-trip property tests. Known gaps: no `FieldChange` model (C-9 adds it), no language-list model for `GET /api/languages` (S-2), `-show_programs` output is not modelled |
 | C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
 | C-4 Encoder capabilities | Not started | |
-| C-5 Dimensions maths | Not started | Models only (`DimensionSettings`, `Geometry`, `CropRect`) |
+| C-5 Dimensions maths | **Done** (branch `m2-encode-cli`) | `reframe.dimensions`: `compute_geometry` (crop snapped to the chroma grid, rotation, the four size modes, square / keep / custom pixel aspect, modulus rounding within 0.5 % or 1 px, notes), `detect_crop_consensus` (auto, conservative), `source_geometry`, `rotate_crop`. Hypothesis properties of "Done when", table tests of the classic cases, and real-FFmpeg tests (crop grid of all 200 pixel formats, the filter chain for C-7 on the anamorphic, letterbox and rotated files). Conventions and corner cases: [0009](decisions/0009-dimension-maths-conventions.md) |
 | C-6 Definitions | **Partial** | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli` only:** the M2 contract (`VideoEncoderDef` for every video encoder with hardware setup and fallback chain, `AudioEncoderDef` identities, `load_definitions()`). **Not started:** encoder data, option schema and option sets, audio encoders, containers, filters, the definitions linter |
 | C-7 Command builder | Not started | Models only (`EncodePlan`, `PlanStep`, `PlanFile`) |
 | C-8 Validation | Not started | Models only (`ValidationIssue`, `Fix`). `reframe.jsonpatch` (RFC 6902, for fixes) is done |
@@ -97,7 +97,7 @@ the parity table) to what exists. No feature has a user interface yet.
 | Languages (search, codes, display) | **Partial** | Core module done. Missing: the language picker UI |
 | Non-blocking encoder detection with fallbacks | Not started | |
 | Presets (built-in, user, import/export) | Not started | |
-| Range, Dimensions, Filters, Video, advanced encoder options | Not started | |
+| Range, Dimensions, Filters, Video, advanced encoder options | **Partial** | Core: the dimension maths (C-5, branch `m2-encode-cli`). Missing: the command builder (C-7), range, filters, video and encoder options, crop detection (C-10), the UI |
 | Audio and subtitle output tracks, audio defaults, track rules | Not started | |
 | Track metadata editing, remux-only and metadata-edit jobs | Not started | |
 | Chapters, tags | Not started | Chapters are probed |
