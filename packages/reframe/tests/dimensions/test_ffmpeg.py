@@ -364,6 +364,22 @@ async def test_rotation_chain(
     assert bright_corner(out_path, out["width"], out["height"]) is None
 
 
+@pytest.mark.anyio
+async def test_portrait_fit_turns_the_box(tmp_path: Path, corner_source: Path) -> None:
+    """Decision 0020: the 64x32 corner file turned 90° by its display matrix is portrait
+    (32x64, SAR 27:32); "Fit within 48x24" fits it inside 24x48 with its long side vertical."""
+    source = with_display_matrix(corner_source, 90, tmp_path / "rotated.mkv")
+    src = source_geometry(await video_stream(source))
+    s = DimensionSettings(crop=CropSettings(mode="none"), size=FitWithin(width=48, height=24))
+    g = compute_geometry(src, s)
+    assert g.notes[0] == "Portrait picture: fit box turned to 24\u00d748."
+    assert (g.scaled_width, g.scaled_height) == (20, 48)
+    out_path = tmp_path / "portrait.mkv"
+    out = encode(source, out_path, filter_chain(g))
+    assert (out["width"], out["height"], sar_of(out)) == (20, 48, "1:1")
+    assert bright_corner(out_path, 20, 48) == expected_corner(90, False)
+
+
 def test_noautorotate_keeps_the_display_matrix(tmp_path: Path, corner_source: Path) -> None:
     source = with_display_matrix(corner_source, 90, tmp_path / "rotated.mkv")
     out = encode(source, tmp_path / "noauto.mkv", "transpose=clock", "-noautorotate")

@@ -4,6 +4,9 @@
 of the modulus; display aspect error < 0.5 % (or < 1 px); the crop is never negative and never
 removes the full frame."
 
+"The fit box" is the box turned to the shape of the output frame (decision 0020): long side
+vertical for a frame taller than wide, horizontal for a wider one, as written for a square one.
+
 The corners where a property cannot hold are defined behaviour (decision record 0009, module
 docstring of ``reframe.dimensions``) and are asserted here, not skipped:
 
@@ -123,6 +126,7 @@ class Expect:
     """What the definitions say about one case."""
 
     frame: tuple[int, int]  # the picture the crop filter sees (source rotation applied)
+    box: tuple[int, int] | None  # the fit box turned to the output frame's shape
     crop_steps: tuple[int, int]
     out_mods: tuple[int, int]  # modulus and chroma step, output orientation
     picture: tuple[int, int]  # cropped and rotated by the job
@@ -159,15 +163,25 @@ def expect(src: SourceGeometry, s: DimensionSettings, g: Geometry) -> Expect:
     natural = (display[0] / par, display[1]) if par >= 1 else (display[0], display[1] * par)
     no_up = (math.ceil(natural[0]), math.ceil(natural[1]))
     limits: tuple[int | None, int | None]
+    box: tuple[int, int] | None = None
     if isinstance(s.size, FitWithin):
-        box = (s.size.width, s.size.height)
+        # The output frame's shape is its storage aspect: display aspect / output pixel aspect.
+        storage = aspect / par
+        long_side = max(s.size.width, s.size.height)
+        short_side = min(s.size.width, s.size.height)
+        if storage < 1:
+            box = (short_side, long_side)
+        elif storage > 1:
+            box = (long_side, short_side)
+        else:
+            box = (s.size.width, s.size.height)
         limits = box if s.allow_upscaling else (min(box[0], no_up[0]), min(box[1], no_up[1]))
     elif isinstance(s.size, SameAsSource) or not s.allow_upscaling:
         limits = no_up
     else:
         limits = (None, None)
     mods = (math.lcm(s.modulus, out_steps[0]), math.lcm(s.modulus, out_steps[1]))
-    return Expect(frame, steps, mods, picture, sar, aspect, par, natural, limits)
+    return Expect(frame, box, steps, mods, picture, sar, aspect, par, natural, limits)
 
 
 def acceptable(width: int, height: int, ratio: Fraction) -> bool:
@@ -210,9 +224,10 @@ def test_the_output_is_inside_the_fit_box(case: tuple[SourceGeometry, DimensionS
     g = compute_geometry(src, s)
     e = expect(src, s, g)
     assert isinstance(s.size, FitWithin)
-    for value, box, mod in zip(
-        (g.scaled_width, g.scaled_height), (s.size.width, s.size.height), e.out_mods, strict=True
-    ):
+    assert e.box is not None
+    turned = e.box != (s.size.width, s.size.height)
+    assert any("fit box turned" in n for n in g.notes) == turned
+    for value, box, mod in zip((g.scaled_width, g.scaled_height), e.box, e.out_mods, strict=True):
         if box >= mod:
             assert value <= box
         else:  # corner: the box is smaller than one modulus step

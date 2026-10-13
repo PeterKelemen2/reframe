@@ -24,7 +24,10 @@ Conventions (decision record 0009):
   a frame whose size is not on the grid the right or bottom edge grows so the cropped size is.
   Interlaced sources double the vertical step (both fields keep their chroma and their order).
 - **Output size.** The size modes give a target size for the stored output frame in the
-  output orientation (after the rotation). The *natural size* is the cropped picture's display
+  output orientation (after the rotation). "Fit within W x H" turns the box to the shape of
+  that frame (decision 0020): a frame taller than wide fits with the box's long side
+  vertical, a wider one with it horizontal, a square one inside the box as written. Exact
+  width and exact height are never turned. The *natural size* is the cropped picture's display
   size (the stretched axis of an anamorphic picture is expanded: DVD 16:9 is 853.3 x 480),
   converted to the output pixel aspect. "No upscaling" means: the output is not one pixel or
   more larger than the natural size on either axis (DVD 16:9 → 854 x 480 is not upscaling).
@@ -75,6 +78,7 @@ __all__ = [
     "crop_agreement",
     "detect_crop_consensus",
     "natural_size",
+    "oriented_box",
     "rotate_crop",
     "source_geometry",
 ]
@@ -505,6 +509,21 @@ def _min_limit(a: int, b: int | None) -> int:
     return a if b is None else min(a, b)
 
 
+def oriented_box(width: int, height: int, ratio: Fraction) -> tuple[int, int]:
+    """The fit box ``width`` x ``height`` turned to the shape of the output frame (storage
+    aspect ``ratio`` = width / height, decision 0020).
+
+    Taller than wide → the box's long side is vertical; wider → horizontal; square → the box
+    as written. So "Fit within 1920x1080" keeps a 1080x1920 phone video at 1080x1920.
+    """
+    long_side, short_side = max(width, height), min(width, height)
+    if ratio < 1:
+        return (short_side, long_side)
+    if ratio > 1:
+        return (long_side, short_side)
+    return (width, height)
+
+
 @dataclass(frozen=True, slots=True)
 class _SizeResult:
     width: int
@@ -530,7 +549,10 @@ def _scaled_size(
     limits: tuple[int | None, int | None] = up_limits
     target = natural
     if isinstance(size, FitWithin):
-        box = (size.width, size.height)
+        box = oriented_box(size.width, size.height, ratio)
+        if box != (size.width, size.height):
+            shape = "Portrait" if ratio < 1 else "Landscape"
+            notes.append(f"{shape} picture: fit box turned to {_size_text(box)}.")
         factor = min(box[0] / natural[0], box[1] / natural[1])
         if factor > 1 and not allow_upscaling:
             notes.append(
