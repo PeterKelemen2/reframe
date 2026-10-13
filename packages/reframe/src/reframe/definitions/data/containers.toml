@@ -1,0 +1,124 @@
+# Output containers (C-6). Table key = `reframe.models.job.Container`.
+#
+# Checked with FFmpeg n9.0.2 by muxing short streams (`-c copy` from Matroska sources, and
+# encodes), reading the result back with ffprobe; tests/definitions/test_tools.py repeats it,
+# testdata/README.md "Encoder definitions (C-6)" has the tables. Where FFmpeg accepts more
+# than HandBrake does (Vorbis in MP4 with a generic `mp4a` tag), the HandBrake 1.11.2 muxer
+# masks (libhb/common.c `hb_audio_encoders`, `hb_video_encoders`) decide.
+#
+# Codec names are ffprobe `codec_name`s; `copy = ["*"]` means any codec FFmpeg can mux.
+
+[container.mkv]
+label = "Matroska (MKV)"
+muxer = "matroska"
+extensions = [".mkv"]
+chapters = true
+attachments = true
+# All six flags are written by FFmpeg (testdata/README.md "Matroska muxer: dispositions").
+flags = ["default", "forced", "commentary", "hearing_impaired", "visual_impaired", "original"]
+language_format = "iso639_2b"
+# A copied mov_text track (from MP4) cannot go into Matroska: it becomes SRT.
+text_subtitle_target = "srt"
+help = "Holds almost every codec, chapters, attachments (fonts) and all track flags. The best choice for a media library."
+
+[container.mkv.video]
+copy = ["*"]
+encode = ["h264", "hevc", "av1", "vp9"]
+
+[container.mkv.audio]
+copy = ["*"]
+encode = ["aac", "ac3", "eac3", "opus", "flac", "mp3"]
+
+[container.mkv.subtitles]
+# mov_text cannot go into Matroska ("Subtitle codec mov_text … is not supported"): convert it.
+# PGS: FFmpeg has no PGS encoder to test with; libavformat/matroskaenc.c maps it to S_HDMV/PGS.
+copy = ["subrip", "ass", "webvtt", "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"]
+encode = ["srt", "ass", "webvtt"]
+
+[container.mp4]
+label = "MP4"
+muxer = "mp4"
+extensions = [".mp4", ".m4v"]
+chapters = true
+# "Could not find tag for codec ttf … codec not currently supported in container".
+attachments = false
+# Written and read back: default, forced, comment, hearing_impaired (ffprobe also shows
+# captions), visual_impaired (also descriptions). `original` is not written.
+flags = ["default", "forced", "commentary", "hearing_impaired", "visual_impaired"]
+# With no default track of a type, the MP4 muxer marks the first one default.
+default_always_set = true
+language_format = "iso639_2t"
+# Text subtitles (SRT, ASS, WebVTT) are converted to mov_text (03 §Subtitles).
+text_subtitle_target = "mov_text"
+# HandBrake writes H.265 in MP4 as `hvc1` (Apple players need it); FFmpeg's default is `hev1`.
+codec_tags = { hevc = "hvc1" }
+format_flags = { web_optimized = ["-movflags", "+faststart"] }
+help = "Plays on almost everything, including Apple devices and browsers. Text subtitles become mov_text; PGS cannot be copied."
+
+[container.mp4.video]
+copy = ["h264", "hevc", "av1", "vp9", "mpeg1video", "mpeg2video", "mpeg4", "mjpeg"]
+encode = ["h264", "hevc", "av1", "vp9"]
+
+[container.mp4.audio]
+copy = ["aac", "ac3", "eac3", "mp3", "opus", "flac", "alac", "dts", "truehd", "pcm_s16le", "pcm_s24le", "pcm_s32le"]
+encode = ["aac", "ac3", "eac3", "opus", "flac", "mp3"]
+# "truehd in MP4 support is experimental, add '-strict -2' if you want to use it."
+copy_args = { truehd = ["-strict", "-2"] }
+
+[container.mp4.subtitles]
+# PGS has no MP4 tag (libavformat/movenc.c codec_mp4_tags); VobSub muxes as `mp4s`.
+copy = ["mov_text", "dvd_subtitle"]
+encode = ["mov_text"]
+
+[container.webm]
+label = "WebM"
+muxer = "webm"
+extensions = [".webm"]
+chapters = true
+# The WebM muxer drops attachments without an error (libavformat/matroskaenc.c).
+attachments = false
+# Only FlagDefault and FlagForced are written (the WebM subset of Matroska).
+flags = ["default", "forced"]
+language_format = "iso639_2b"
+text_subtitle_target = "webvtt"
+help = "For the web: VP9 or AV1 video, Opus or Vorbis audio, WebVTT subtitles."
+
+[container.webm.video]
+copy = ["vp8", "vp9", "av1"]
+encode = ["vp9", "av1"]
+
+[container.webm.audio]
+copy = ["opus", "vorbis"]
+encode = ["opus"]
+
+[container.webm.subtitles]
+copy = ["webvtt"]
+encode = ["webvtt"]
+
+# --------------------------------------------------------------------------- track flags
+# FFmpeg disposition and the mkvpropedit property for each flag of 03 §Track metadata
+# (`mkvpropedit --list-property-names`, MKVToolNix v101.0).
+
+[flag.default]
+disposition = "default"
+mkvpropedit = "flag-default"
+
+[flag.forced]
+disposition = "forced"
+mkvpropedit = "flag-forced"
+
+[flag.commentary]
+disposition = "comment"
+mkvpropedit = "flag-commentary"
+
+[flag.hearing_impaired]
+disposition = "hearing_impaired"
+mkvpropedit = "flag-hearing-impaired"
+
+[flag.visual_impaired]
+disposition = "visual_impaired"
+mkvpropedit = "flag-visual-impaired"
+
+[flag.original]
+disposition = "original"
+mkvpropedit = "flag-original"
