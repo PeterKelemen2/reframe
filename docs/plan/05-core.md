@@ -184,9 +184,13 @@ This step fixes the HandBrake freeze. Detection runs in the background, has stri
 and returns statuses, never exceptions.
 
 - [ ] Parse `ffmpeg -hide_banner -encoders` to list the encoders in this build.
-- [ ] Parse `ffmpeg -hide_banner -filters` into the snapshot's filter list: `C-7` chooses
-      `libplacebo` or `zscale,tonemap` with it
+- [ ] Parse `ffmpeg -hide_banner -filters` into the snapshot's filter list
       ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)).
+      `libplacebo` also needs a working Vulkan device, which the list cannot show: detection
+      runs one frame through it (same timeout, cancel and parallel limit as the test encodes;
+      not run when hardware tests are off). `C-7` chooses `libplacebo` only when
+      `CapabilitySnapshot.usable_filter("libplacebo")` is true, else `zscale,tonemap`
+      ([decision 0021](../decisions/0021-libplacebo-run-test.md)).
 - [ ] Parse `ffmpeg -h encoder=<name>` for each known encoder to find its private options and
       presets. Options in the definitions that this build does not support are hidden.
 - [ ] **Hardware test encode** for each hardware encoder in the build: encode 3 frames of
