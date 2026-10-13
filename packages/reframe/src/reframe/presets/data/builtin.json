@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "default_preset_id": "h265-mkv-1080p",
   "presets": [
     {
       "id": "very-fast-1080p30",

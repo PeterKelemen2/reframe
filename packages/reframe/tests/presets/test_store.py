@@ -255,13 +255,14 @@ def test_duplicate_builtin_and_user_presets(store: PresetStore) -> None:
 
 
 def test_default_preset(tmp_path: Path, store: PresetStore) -> None:
+    assert DEFAULT_BUILTIN_ID == "h265-mkv-1080p"
     assert store.default().id == DEFAULT_BUILTIN_ID
     mine = created(store, "Mine")
     assert store.set_default(mine.id) == mine
     assert PresetStore(tmp_path).default() == mine
-    builtin = store.set_default("h265-mkv-1080p")
+    builtin = store.set_default("fast-1080p30")
     assert isinstance(builtin, Preset)
-    assert builtin.id == "h265-mkv-1080p"
+    assert builtin.id == "fast-1080p30"
     assert store.set_default(mine.id) == mine
     store.delete(mine.id)  # deleting the default falls back to the built-in default
     assert store.default().id == DEFAULT_BUILTIN_ID
