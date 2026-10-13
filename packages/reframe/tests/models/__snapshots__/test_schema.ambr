@@ -2815,6 +2815,58 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[FieldChange]
+  dict({
+    '$defs': list([
+      'JsonValue',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      One difference between edited settings and the preset they started from: C-9's
+      ``diff(job_template, preset) -> list[FieldChange]`` for the *modified* marker (03
+      §Presets: "Hover it to see what changed").
+    ''',
+    'properties': dict({
+      'kind': dict({
+        'default': 'changed',
+        'description': '''
+          ``added``: only the edited settings have the field (or list item); ``removed``: only
+          the preset has it.
+        ''',
+        'enum': list([
+          'changed',
+          'added',
+          'removed',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': '''
+          Dotted field path, as in ``ValidationIssue.path``: ``video.encoder``,
+          ``audio_defaults.codec_rules[0].max_bitrate``.
+        ''',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'preset_value': dict({
+        '$ref': '#/$defs/JsonValue',
+        'default': None,
+        'description': "The preset's value (``None`` for ``added``).",
+      }),
+      'value': dict({
+        '$ref': '#/$defs/JsonValue',
+        'default': None,
+        'description': 'The edited value (``None`` for ``removed``).',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'FieldChange',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[FieldOrder]
   dict({
     '$defs': list([

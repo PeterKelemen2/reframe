@@ -163,21 +163,111 @@ size (the caller computes it); `container` is used when `job` is `None` (default
 File-system reads (the folder listing for season packs) go through one small function that
 tests can replace.
 
-### Wave 2 offers (exact contract written by the lead before wave 2)
+### Wave 2 offers (contract written by the lead after wave 1 was merged)
 
-- **C-7** `reframe.command.build_plan(job, source, caps, tools, *, definitions=None,
-  shell=None) -> EncodePlan`. Pure. Needs `job.output.path`. M2 job types: `encode`,
-  `remux` (`metadata_edit` is C-13, M6).
-- **C-8** `reframe.validation.validate(job, source, caps, tools, fs, *, settings=None,
-  definitions=None) -> list[ValidationIssue]`, with a file-system view (real and fake).
-- **C-9** `reframe.settings` and `reframe.presets` stores, built-in presets (including
-  "H.265 MKV 1080p"), `diff()` with a `FieldChange` model; `Reframe.settings` and
-  `Reframe.presets`.
-- **C-12 (codec rules)** `reframe.batch`: the codec-rule stage of 05 §C-12 (first match
-  wins, bitrate cap, passthru when the source fits, snap to allowed values, unknown bitrate
-  = above the max, passthru policy and fallback encoder), a reason per track, and the draft
-  of a job's output tracks from a template (every audio track through the rules, every
-  subtitle copied, source metadata kept).
+What wave 1 delivered (read the code; the names below are the ones to use):
+
+- C-4 `reframe.capabilities`: `CapabilitySnapshot` (`status(id)`, `has_filter`,
+  `usable_filter` after the C-4 follow-up), `closest_available(id, caps, defs)`,
+  `encoder_issues(id, caps, defs, *, path, target, subject)` (codes `encoder.unknown`,
+  `encoder.checking` (info), `encoder.untested` (warning), `encoder.unavailable` with the
+  closest-match fix), `field_pointer(path)`. Decision 0008. VAAPI encoders carry their render
+  node in the status (follow-up, decision 0020).
+- C-5 `reframe.dimensions`: `compute_geometry`, `source_geometry`, `detect_crop_consensus`;
+  the filter chain and the crop orientation are fixed by decision 0009 (automatic rotation
+  on; `crop` only when an edge is non-zero; transpose for `filter_rotation`; `hflip`;
+  `scale`; `setsar` always after `scale`). Portrait fit: decision 0020.
+- C-6 `reframe.definitions`: `load_definitions()` → video encoders (rate control, presets,
+  tunes, profiles, levels, params argument, basic options), audio encoders (bitrates per
+  mixdown, `snap`, fallback), `containers` (`CodecSupport.can_copy`, `encode`,
+  `text_subtitle_target`, `codec_tags`, `copy_args`, flags, `language_format`), `filters`
+  and `filter_order` (`FilterDef.implementation_for`, `chain_for`); `convert_quality`,
+  `supported_options`, `supported_presets`. Decision 0010.
+- C-14 `reframe.platform.sleep`: `create_sleep_inhibitor`. Decisions 0011, 0020.
+- C-16 `reframe.naming`: `resolve_output_name`, `check_template`, `output_extension`.
+  Decision 0012.
+- Lead: `reframe.models.FieldChange` (for C-9).
+
+**C-7 `reframe.command`** (pure: no I/O, no clock, no subprocess)
+
+```python
+def build_plan(job: JobSettings, source: MediaSource, caps: CapabilitySnapshot, tools: ToolSet, *,
+               definitions: Definitions | None = None,
+               shell: Literal["posix", "windows"] | None = None) -> EncodePlan
+def job_type(job: JobSettings, source: MediaSource, *,
+             definitions: Definitions | None = None) -> tuple[JobType, str]   # with the reason
+class PlanError(ValueError): ...   # the job cannot be planned (it has validation errors)
+```
+
+- `job.output.path` is the final path (naming resolved it). `output_tmp` is
+  `<stem>.part.<ext>` next to it. `shell=None` = the style of this OS.
+- The caller runs `validate()` first; `build_plan` on a job with validation errors is a
+  programming error (`PlanError`), never a half-built plan.
+- M2 job types: `encode`, `remux` (video passthrough and every track copied).
+  `metadata_edit` is C-13 (M6).
+- Open item from docs/status.md: FFmpeg writes language codes verbatim: ISO 639-2/B to
+  Matroska, ISO 639-2/T to MP4 (`reframe.languages`), and set every disposition explicitly
+  (FFmpeg's Matroska muxer leaves single streams without the default flag).
+
+**C-8 `reframe.validation`**
+
+```python
+def validate(job: JobSettings, source: MediaSource, caps: CapabilitySnapshot, tools: ToolSet,
+             fs: FileSystemView, *, settings: AppSettings | None = None,
+             definitions: Definitions | None = None) -> list[ValidationIssue]
+def validate_template(template: JobTemplate, caps: CapabilitySnapshot, *,
+                      subject: str | None = None,
+                      definitions: Definitions | None = None) -> list[ValidationIssue]  # fixes target "template"
+class FileSystemView(Protocol): ...   # exists, is_dir, writable_dir, free_bytes, same_file …
+class LocalFileSystem: ...            # the real one (no subprocess)
+```
+
+- Rules are small functions in a registry, grouped by area (05 §C-8). C-4's
+  `encoder_issues` is the encoder rule; C-8 adds the quality conversion (`convert_quality`)
+  to the closest-match fix. C-16's issues (`resolve_output_name(...).issues`,
+  `check_template`) are the naming rule.
+- `validate_template` covers what a preset alone can be checked for (encoder, container
+  codecs, naming template): M2 demo item 4.
+
+**C-9 `reframe.settings`, `reframe.presets`**
+
+```python
+class SettingsStore:                       # <config>/settings.json, atomic writes, migrations
+    def __init__(self, config_dir: Path, events: EventBus | None = None) -> None: ...
+    def load(self) -> AppSettings          # corrupt → backed up, defaults, app.warning
+    def save(self, settings: AppSettings) -> None
+def builtin_presets() -> list[Preset]      # JSON inside the package, read-only
+class PresetStore:                         # <config>/presets.json
+    def __init__(self, config_dir: Path, events: EventBus | None = None) -> None: ...
+    # list, get(id), find(name), save, delete, rename, duplicate, set_default, default,
+    # export(ids) -> PresetFile, import_(PresetFile, on_conflict) …
+def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]
+```
+
+- `Reframe.settings` (get, update, the settings getter of every service) and
+  `Reframe.presets` (built-in + user presets) in `reframe/service.py`; `_load_settings`
+  is replaced. A change of the tool paths re-runs tool discovery; a change of
+  `encoders.hardware_tests` or `encoders.vaapi_device` calls `capabilities.rescan()`.
+- Built-in presets modelled on HandBrake's (categories of `BUILT_IN_CATEGORIES`), using
+  only encoders, containers and filters of the definitions, including **"H.265 MKV 1080p"**
+  (M2 demo item 2) and at least one hardware preset (an NVENC one, for demo item 4).
+
+**C-12 (codec rules) `reframe.batch`**
+
+```python
+def apply_codec_rules(stream: AudioStream, defaults: AudioDefaults, container: Container, *,
+                      definitions: Definitions | None = None
+                      ) -> tuple[list[AudioOutputTrack], TrackDecision]
+def draft_tracks(source: MediaSource, template: JobTemplate, *,
+                 definitions: Definitions | None = None) -> TrackDraft
+# TrackDraft: audio: list[AudioOutputTrack], subtitles: list[SubtitleOutputTrack],
+#             decisions: list[TrackDecision]
+```
+
+- `TrackDecision` (a model in `reframe/models/defaults.py`): source stream, rule number,
+  outputs, the reason string (the "why" column of 03 §Audio defaults → Live preview).
+- Decision 0018: every audio track goes through the codec rules in source order; every
+  subtitle is copied; language, title and flags come from the source track.
 
 ### Wave 3 offers
 

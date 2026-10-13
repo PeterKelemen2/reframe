@@ -32,6 +32,7 @@ from reframe.models import (
     EncoderStatus,
     Event,
     ExternalSubtitle,
+    FieldChange,
     FieldOrder,
     FilterConfig,
     FilterSettings,
@@ -496,3 +497,13 @@ def test_capability_snapshot_lookups() -> None:
     assert snapshot.has_filter("zscale") is True
     assert snapshot.has_filter("libplacebo") is False
     assert CapabilitySnapshot().has_filter("zscale") is None
+
+
+def test_field_change_round_trips_json_values() -> None:
+    change = FieldChange(path="video.encoder", preset_value="libx265", value="hevc_nvenc")
+    assert change.kind == "changed"
+    assert FieldChange.model_validate_json(change.model_dump_json()) == change
+    removed = FieldChange(
+        path="audio_defaults.codec_rules[1]", kind="removed", preset_value={"codec": "aac"}
+    )
+    assert removed.value is None

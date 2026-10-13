@@ -183,7 +183,7 @@ from reframe.models.plan import (
     ValueRef,
     resolve_argv,
 )
-from reframe.models.preset import BUILT_IN_CATEGORIES, Preset, PresetFile
+from reframe.models.preset import BUILT_IN_CATEGORIES, FieldChange, Preset, PresetFile
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import (
     AppearanceSettings,
@@ -270,6 +270,7 @@ __all__ = [
     "ExactWidth",
     "ExternalSubtitle",
     "ExtraAudioOutput",
+    "FieldChange",
     "FieldOrder",
     "FilterConfig",
     "FilterSettings",
