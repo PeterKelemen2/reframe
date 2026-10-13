@@ -163,13 +163,13 @@ Help panel template (the core stores this text with each filter definition):
 |--------|----------------------|----------------------------|
 | Detelecine | `fieldmatch,decimate` | Off / Default / Custom |
 | Interlace detection | `idet` (analysis) controls deinterlace on combed frames only | Off / Default / Less sensitive / Fast / Custom |
-| Deinterlace | `bwdif` (default) or `yadif` | Off / Default / Bob / Custom |
-| Denoise | `hqdn3d`, `nlmeans` | Off / Ultralight / Light / Medium / Strong, Tune: Film / Grain / High motion / Animation / Tape / Sprite |
-| Chroma smooth | `unsharp` (on chroma only) | Off / Ultralight … Stronger |
-| Sharpen | `unsharp`, `cas` | Off / Ultralight … Strong, Tune |
+| Deinterlace | `bwdif` (default) or `yadif` | Off / Default / Bob / Custom; yadif: Yadif default / Yadif skip spatial / Yadif bob / Yadif custom ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
+| Denoise | `nlmeans`, `hqdn3d` | Off / Ultralight / Light / Medium / Strong (NLMeans), Tune: Film / Grain / High motion / Animation / Tape / Sprite; Fast ultralight … Fast strong (hqdn3d) ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
+| Chroma smooth | `unsharp` (on chroma only) | Off / Ultralight … Very strong, Tune: Tiny … Very wide |
+| Sharpen | `unsharp`, `cas` | Off / Ultralight … Very strong, Tune (unsharp); CAS light / medium / strong ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
 | Deblock | `deblock` | Off / Ultralight … Strong |
 | **Colorspace** | `zscale` (or `libplacebo`) | Keep source / BT.709 / BT.2020 / BT.601 |
-| **HDR → SDR tone mapping** (new) | `libplacebo` if available, else `zscale,tonemap` | Off / On (algorithm: BT.2390 / Hable / Mobius / Reinhard, peak detect) |
+| **HDR → SDR tone mapping** (new) | `libplacebo` if available and Vulkan works, else `zscale,tonemap` | Off / On (algorithm: BT.2390 / Hable / Mobius / Reinhard, peak detect) |
 | Grayscale | `format=gray` / `hue=s=0` | Off / On |
 | Custom | Raw filter string, inserted before scaling | Validated with a dry run |
 
@@ -425,7 +425,7 @@ rule does.
 
 | Action | Allowed for | Notes |
 |--------|-------------|-------|
-| Copy | all formats the container supports | MP4: only `mov_text` (text is converted automatically). PGS/VobSub cannot go into MP4: a validation error offers burn-in or MKV |
+| Copy | all formats the container supports | MP4: only `mov_text` (text is converted automatically) and VobSub (as HandBrake does). PGS cannot go into MP4: a validation error offers burn-in or MKV ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
 | Burn in | one track per job | Text uses the `subtitles` filter. Bitmap uses `overlay`. **Forced only** uses the PGS decoder option `forced_subs_only` |
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 

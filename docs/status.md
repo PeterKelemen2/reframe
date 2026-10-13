@@ -37,7 +37,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
 | C-4 Encoder capabilities | Not started | |
 | C-5 Dimensions maths | Not started | Models only (`DimensionSettings`, `Geometry`, `CropRect`) |
-| C-6 Definitions | **Partial** | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli` only:** the M2 contract (`VideoEncoderDef` for every video encoder with hardware setup and fallback chain, `AudioEncoderDef` identities, `load_definitions()`). **Not started:** encoder data, option schema and option sets, audio encoders, containers, filters, the definitions linter |
+| C-6 Definitions | **Partial** (M2 part done) | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli`:** `reframe.definitions` with every video encoder (rate control with ranges, args and the quality conversion table, presets, tunes, profiles, levels, 2-pass, the `EncoderOption` schema with the basic option sets for x264, x265, SVT-AV1, NVENC, QSV, AMF, VAAPI and the x264 / x265 per-preset default tables), audio encoders (bitrates per mixdown, fixed steps, sample rates, VBR quality, passthru codecs, mixdowns), containers (copy / encode codecs, flags, chapters, attachments, tags, `+faststart`), filters (implementations, HandBrake-mapped presets and tunes, help, fixed order), `convert_quality`, `supported_options`, `lint_definitions`. Checked against FFmpeg n9.0.2 (both builds) and AMF / VAAPI hardware ([0010](decisions/0010-definitions-filters-and-containers.md)). **Not started (M9):** the complete option sets of 03 §Advanced (analysis, colour, performance options, VP9 options). **Not verified:** NVENC and QSV on hardware; QSV levels are not offered |
 | C-7 Command builder | Not started | Models only (`EncodePlan`, `PlanStep`, `PlanFile`) |
 | C-8 Validation | Not started | Models only (`ValidationIssue`, `Fix`). `reframe.jsonpatch` (RFC 6902, for fixes) is done |
 | C-9 Presets and settings stores | Not started | Models only (`Preset`, `AppSettings`, migrations registry). The facade uses `AppSettings()` defaults |
@@ -97,7 +97,7 @@ the parity table) to what exists. No feature has a user interface yet.
 | Languages (search, codes, display) | **Partial** | Core module done. Missing: the language picker UI |
 | Non-blocking encoder detection with fallbacks | Not started | |
 | Presets (built-in, user, import/export) | Not started | |
-| Range, Dimensions, Filters, Video, advanced encoder options | Not started | |
+| Range, Dimensions, Filters, Video, advanced encoder options | **Partial** | Definitions (C-6): encoders with rate control, presets and the basic advanced options; filters with HandBrake presets and help. Missing: the command builder (C-7), validation (C-8), the UI |
 | Audio and subtitle output tracks, audio defaults, track rules | Not started | |
 | Track metadata editing, remux-only and metadata-edit jobs | Not started | |
 | Chapters, tags | Not started | Chapters are probed |

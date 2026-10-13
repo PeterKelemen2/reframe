@@ -21,6 +21,211 @@
 # Placeholders: {vaapi_device} (default /dev/dri/renderD128), {sw_pix_fmt} (pix_fmts below).
 #
 # Fallback chains (05 §C-4): the same codec on the other hardware families, then software.
+#
+# ---------------------------------------------------------------------- C-6 additions
+#
+# Loader rules (reframe/definitions/loader.py): `extends = "<base>"` merges a [base.<name>]
+# table under the encoder's keys; `option_sets = [...]` prepends the options of
+# options/*.toml.
+#
+# Sources (every value is checked against FFmpeg n9.0.2, see testdata/README.md
+# "Encoder definitions (C-6)" and tests/definitions/test_tools.py):
+# - Presets, tunes, profiles, levels and private options: `ffmpeg -h encoder=<id>`
+#   (testing/reframe_testing/fake_data/help_encoder/) and, for x264 / x265, the lists the
+#   libraries print for a bad value ("Possible presets: …").
+# - Rate control: HandBrake 1.11.2 libhb/common.c `hb_video_quality_get_limits` (range,
+#   step, direction), libhb/encavcodec.c (NVENC `-rc vbr -cq`, AMF `-rc cqp -qp_i/-qp_p/-qp_b`
+#   with HandBrake's P/B offsets, QSV ICQ `-global_quality`), checked with real encodes on
+#   AMF and VAAPI (AMD RX 7600); NVENC and QSV are not checked on hardware.
+# - Default quality values: HandBrake 1.11.2 preset/preset_builtin.json (1080p presets);
+#   recommended bands: HandBrake documentation, "Adjusting quality" (x264, x265, SVT-AV1).
+# - Quality conversion (`scale`): points (value, x264 RF equivalent). x265 = x264 and the
+#   SVT-AV1 points follow HandBrake's docs and presets (same bands, same preset values at the
+#   same resolution); NVENC / QSV / AMF H.265 follow HandBrake's hardware presets (NVENC 27 /
+#   30, QSV and VCN 25 / 28 against x264 22 / 24 at 1080p / 2160p). Encoders without a
+#   HandBrake preset (NVENC H.264 and AV1, AMF H.264, VAAPI) are ASSUMED to match their
+#   nearest relative; the result is approximate by design (03 §Missing encoder behaviour).
+
+# --------------------------------------------------------------------------- bases
+
+[base.x26x.presets]
+default = "medium"
+mapping = { kind = "private_opt", name = "preset" }
+help = "Speed against compression: a slower preset makes a smaller file at the same quality. The quality value stays comparable between presets."
+choices = [
+    { value = "ultrafast", label = "Ultrafast" },
+    { value = "superfast", label = "Superfast" },
+    { value = "veryfast", label = "Very fast" },
+    { value = "faster", label = "Faster" },
+    { value = "fast", label = "Fast" },
+    { value = "medium", label = "Medium" },
+    { value = "slow", label = "Slow" },
+    { value = "slower", label = "Slower" },
+    { value = "veryslow", label = "Very slow" },
+    { value = "placebo", label = "Placebo", help = "Much slower than Very slow for almost no gain." },
+]
+
+[base.x26x.rate_control.quality]
+kind = "crf"
+label = "RF"
+min = 0
+max = 51
+step = 0.1
+default = 22
+args = ["-crf", "{value}"]
+scale = [[0, 0], [51, 51]]
+help = "Constant rate factor: the same visual quality through the whole video; the file size follows the content. Lower is better quality and a bigger file; 0 is lossless (8-bit)."
+recommended = [
+    { max_height = 576, low = 18, high = 22 },
+    { max_height = 720, low = 19, high = 23 },
+    { max_height = 1080, low = 20, high = 24 },
+    { max_height = 2160, low = 22, high = 28 },
+]
+
+[base.x26x.rate_control.bitrate]
+args = ["-b:v", "{kbps}k"]
+help = "Average bitrate: a predictable file size. Use 2-pass for the best quality at that size."
+
+# ---- NVENC
+
+[base.nvenc]
+help = "NVIDIA's hardware encoder (GeForce, RTX, Quadro). Very fast; at the same quality the files are larger than with x264 / x265."
+
+[base.nvenc.presets]
+default = "p4"
+mapping = { kind = "private_opt", name = "preset" }
+help = "p1 is the fastest, p7 the slowest with the best compression."
+choices = [
+    { value = "p1", label = "P1 (fastest)" },
+    { value = "p2", label = "P2 (faster)" },
+    { value = "p3", label = "P3 (fast)" },
+    { value = "p4", label = "P4 (medium)" },
+    { value = "p5", label = "P5 (slow)" },
+    { value = "p6", label = "P6 (slower)" },
+    { value = "p7", label = "P7 (slowest)" },
+]
+
+[base.nvenc.tunes]
+default = "hq"
+mapping = { kind = "private_opt", name = "tune" }
+help = "Tuning info. High quality is right for file encodes; the low-latency tunes are for streaming."
+choices = [
+    { value = "hq", label = "High quality" },
+    { value = "ll", label = "Low latency" },
+    { value = "ull", label = "Ultra low latency" },
+    { value = "lossless", label = "Lossless" },
+]
+
+[base.nvenc.rate_control.quality]
+kind = "cq"
+label = "CQ"
+min = 1
+max = 51
+step = 0.1
+default = 27
+# HandBrake 1.11.2 encavcodec.c: rc=vbr, cq, init_qpP = q, init_qpB = q+2, init_qpI = q-2.
+args = ["-rc", "vbr", "-cq", "{value}", "-b:v", "0", "-init_qpI", "{qp_i}", "-init_qpP", "{qp_p}", "-init_qpB", "{qp_b}"]
+derived = { qp_i = { offset = -2, min = 0, integer = true }, qp_p = { integer = true }, qp_b = { offset = 2, max = 51, integer = true } }
+scale = [[1, 1], [27, 22], [30, 24], [51, 51]]
+help = "Constant quality in VBR mode (target quality, no bitrate limit). Lower is better quality and a bigger file."
+
+[base.nvenc.rate_control.bitrate]
+args = ["-rc", "vbr", "-b:v", "{kbps}k"]
+help = "Average bitrate (VBR)."
+
+[base.nvenc.rate_control.bitrate.two_pass]
+mode = "single_run"
+turbo_args = ["-multipass", "qres"]
+full_args = ["-multipass", "fullres"]
+
+# ---- QSV
+
+[base.qsv]
+help = "Intel Quick Sync Video (Intel integrated graphics and Arc). Not verified on Intel hardware yet."
+
+[base.qsv.presets]
+mapping = { kind = "private_opt", name = "preset" }
+help = "Target usage: speed against compression."
+choices = [
+    { value = "veryfast", label = "Very fast" },
+    { value = "faster", label = "Faster" },
+    { value = "fast", label = "Fast" },
+    { value = "medium", label = "Medium" },
+    { value = "slow", label = "Slow" },
+    { value = "slower", label = "Slower" },
+    { value = "veryslow", label = "Very slow" },
+]
+
+[base.qsv.rate_control.quality]
+kind = "icq"
+label = "ICQ"
+min = 1
+max = 51
+step = 1
+default = 25
+# FFmpeg qsvenc.c select_rc_mode: global_quality > 0 and no maxrate = ICQ (HandBrake does the same).
+args = ["-global_quality", "{value}"]
+scale = [[1, 1], [25, 22], [28, 24], [51, 51]]
+help = "Intelligent constant quality. Lower is better quality and a bigger file."
+
+[base.qsv.rate_control.bitrate]
+args = ["-b:v", "{kbps}k"]
+help = "Average bitrate (VBR)."
+
+# ---- AMF
+
+[base.amf]
+help = "AMD's hardware encoder (Radeon, Ryzen APUs). Fast; at the same quality the files are larger than with x264 / x265."
+
+[base.amf.presets]
+mapping = { kind = "private_opt", name = "quality" }
+help = "Speed against quality."
+choices = [
+    { value = "speed", label = "Speed" },
+    { value = "balanced", label = "Balanced" },
+    { value = "quality", label = "Quality" },
+    { value = "high_quality", label = "High quality" },
+]
+
+[base.amf.rate_control.quality]
+kind = "qp"
+label = "CQ"
+min = 0
+max = 51
+step = 1
+default = 25
+# HandBrake 1.11.2 encavcodec.c: rc=cqp, qp_i = q, qp_p = q + 2, qp_b = q + 4 (offsets
+# scaled down for q <= 8).
+args = ["-rc", "cqp", "-qp_i", "{value}", "-qp_p", "{qp_p}", "-qp_b", "{qp_b}"]
+derived = { qp_p = { offset = 2, ramp_below = 8, max = 51, integer = true }, qp_b = { offset = 4, ramp_below = 8, max = 51, integer = true } }
+scale = [[0, 0], [25, 22], [28, 24], [51, 51]]
+help = "Constant QP (I frames; P and B frames get a slightly higher QP, as in HandBrake). Lower is better quality and a bigger file."
+
+[base.amf.rate_control.bitrate]
+args = ["-rc", "vbr_peak", "-b:v", "{kbps}k"]
+help = "Peak-constrained VBR (as HandBrake)."
+
+# ---- VAAPI
+
+[base.vaapi]
+help = "VAAPI (Linux): Intel and AMD GPUs through Mesa or the Intel media driver."
+
+[base.vaapi.rate_control.quality]
+kind = "qp"
+label = "QP"
+min = 0
+max = 52
+step = 1
+default = 25
+# Real encodes (radeonsi): CQP, CBR, VBR, QVBR are supported, ICQ is not. `-global_quality`
+# sets the QP in CQP mode for h264, hevc and av1 (av1_vaapi has no `-qp` option).
+args = ["-rc_mode", "CQP", "-global_quality", "{value}"]
+scale = [[0, 0], [25, 22], [28, 24], [52, 51]]
+help = "Constant QP. Lower is better quality and a bigger file."
+
+[base.vaapi.rate_control.bitrate]
+args = ["-rc_mode", "VBR", "-b:v", "{kbps}k"]
+help = "Average bitrate (VBR)."
 
 # --------------------------------------------------------------------------- software
 
@@ -32,6 +237,69 @@ handbrake_key = "x264"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+# --- C-6
+extends = "x26x"
+option_sets = ["x264"]
+help = "The reference H.264 encoder: very good quality per bit, plays everywhere."
+params_arg = "-x264-params"
+fast_decode = { tune = "fastdecode", combines_with_tune = true }
+
+[encoder.libx264.tunes]
+mapping = { kind = "private_opt", name = "tune" }
+help = "Adjusts the settings to the content. Fast decode is a separate switch."
+choices = [
+    { value = "film", label = "Film", help = "Live action." },
+    { value = "animation", label = "Animation", help = "Cartoons, anime: more B-frames and references, stronger deblocking." },
+    { value = "grain", label = "Grain", help = "Keeps film grain." },
+    { value = "stillimage", label = "Still image", help = "Slide shows." },
+    { value = "psnr", label = "PSNR", help = "For measurements only: turns psycho-visual optimisations off." },
+    { value = "ssim", label = "SSIM", help = "For measurements only." },
+    { value = "zerolatency", label = "Zero latency", help = "Streaming: no B-frames, no look-ahead." },
+]
+
+[encoder.libx264.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "Limits the features for older players. Auto picks the lowest profile the settings need."
+choices = [
+    { value = "baseline", label = "Baseline", bit_depths = [8] },
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "high", label = "High", bit_depths = [8] },
+    { value = "high10", label = "High 10", bit_depths = [10] },
+]
+
+[encoder.libx264.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Limits bitrate, resolution and reference frames for a player class. Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0", ffmpeg_value = "1" },
+    { value = "1b", label = "1b" },
+    { value = "1.1", label = "1.1" },
+    { value = "1.2", label = "1.2" },
+    { value = "1.3", label = "1.3" },
+    { value = "2.0", label = "2.0", ffmpeg_value = "2" },
+    { value = "2.1", label = "2.1" },
+    { value = "2.2", label = "2.2" },
+    { value = "3.0", label = "3.0", ffmpeg_value = "3" },
+    { value = "3.1", label = "3.1" },
+    { value = "3.2", label = "3.2" },
+    { value = "4.0", label = "4.0", ffmpeg_value = "4" },
+    { value = "4.1", label = "4.1" },
+    { value = "4.2", label = "4.2" },
+    { value = "5.0", label = "5.0", ffmpeg_value = "5" },
+    { value = "5.1", label = "5.1" },
+    { value = "5.2", label = "5.2" },
+    { value = "6.0", label = "6.0", ffmpeg_value = "6" },
+    { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
+
+[encoder.libx264.rate_control.bitrate.two_pass]
+mode = "two_runs"
+args = ["-pass", "{pass}", "-passlogfile", "{passlog}"]
+# libx264's `fastfirstpass` is on by default (ffmpeg -h encoder=libx264), so a full first
+# pass must turn it off.
+turbo_args = ["-fastfirstpass", "1"]
+full_args = ["-fastfirstpass", "0"]
 
 [encoder.libx265]
 label = "x265"
@@ -41,6 +309,58 @@ handbrake_key = "x265"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+# --- C-6
+extends = "x26x"
+option_sets = ["x265"]
+help = "The reference H.265 encoder: about the size of x264 at a lower bitrate, but slower."
+params_arg = "-x265-params"
+fast_decode = { tune = "fastdecode", combines_with_tune = false }
+
+[encoder.libx265.tunes]
+mapping = { kind = "private_opt", name = "tune" }
+help = "Adjusts the settings to the content. x265 takes one tune only, so Fast decode cannot be combined with another tune."
+choices = [
+    { value = "grain", label = "Grain", help = "Keeps film grain: no AQ, no SAO, stronger psy-rd." },
+    { value = "animation", label = "Animation", help = "Cartoons, anime." },
+    { value = "psnr", label = "PSNR", help = "For measurements only." },
+    { value = "ssim", label = "SSIM", help = "For measurements only." },
+    { value = "zerolatency", label = "Zero latency", help = "Streaming: no B-frames, no look-ahead." },
+]
+
+[encoder.libx265.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+default_by_depth = { "8" = "main", "10" = "main10" }
+help = "Main for 8-bit, Main 10 for 10-bit 4:2:0."
+choices = [
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "main10", label = "Main 10", bit_depths = [10] },
+]
+
+[encoder.libx265.levels]
+mapping = { kind = "x26x_param", name = "level-idc" }
+help = "Limits bitrate and resolution for a player class. Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0" },
+    { value = "2.0", label = "2.0" },
+    { value = "2.1", label = "2.1" },
+    { value = "3.0", label = "3.0" },
+    { value = "3.1", label = "3.1" },
+    { value = "4.0", label = "4.0" },
+    { value = "4.1", label = "4.1" },
+    { value = "5.0", label = "5.0" },
+    { value = "5.1", label = "5.1" },
+    { value = "5.2", label = "5.2" },
+    { value = "6.0", label = "6.0" },
+    { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
+
+[encoder.libx265.rate_control.bitrate.two_pass]
+mode = "two_runs"
+params = { pass = "{pass}", stats = "{passlog}" }
+# HandBrake encx265.c: slow-firstpass = !turbo.
+turbo_params = { slow-firstpass = "0" }
+full_params = { slow-firstpass = "1" }
 
 [encoder.libsvtav1]
 label = "SVT-AV1"
@@ -50,6 +370,92 @@ handbrake_key = "svt_av1"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+# --- C-6
+option_sets = ["svtav1"]
+help = "AV1 encoder: the smallest files at a given quality; slower than x265 at the slow presets."
+params_arg = "-svtav1-params"
+fast_decode = { params = { fast-decode = "1" } }
+
+[encoder.libsvtav1.presets]
+# SVT-AV1 v4.2: presets 12 and 13 are mapped to 11 ("Preset M13 is mapped to M11"); the
+# library default is 8 (encoder log "preset / tune … : 8 / PSNR").
+default = "8"
+mapping = { kind = "private_opt", name = "preset" }
+help = "0 is the slowest and best, 11 the fastest. 4–6 is a good balance for archiving."
+choices = [
+    { value = "0", label = "0 (slowest)" },
+    { value = "1", label = "1" },
+    { value = "2", label = "2" },
+    { value = "3", label = "3" },
+    { value = "4", label = "4" },
+    { value = "5", label = "5" },
+    { value = "6", label = "6" },
+    { value = "7", label = "7" },
+    { value = "8", label = "8" },
+    { value = "9", label = "9" },
+    { value = "10", label = "10" },
+    { value = "11", label = "11 (fastest)" },
+]
+
+[encoder.libsvtav1.tunes]
+# SVT-AV1 v4.2: 0 VQ, 1 PSNR (library default), 2 SSIM, 4 MS-SSIM. Tune 3 (IQ) is for still
+# images: "Tune IQ only supports all-intra and low delay … prediction structures".
+default = "1"
+mapping = { kind = "x26x_param", name = "tune" }
+help = "What the encoder optimises for."
+choices = [
+    { value = "0", label = "Visual quality", help = "Sharper, subjectively better video." },
+    { value = "1", label = "PSNR", help = "The library default." },
+    { value = "2", label = "SSIM" },
+    { value = "4", label = "MS-SSIM" },
+]
+
+[encoder.libsvtav1.levels]
+mapping = { kind = "x26x_param", name = "level" }
+help = "Limits bitrate and resolution for a player class. Auto picks one."
+# SVT-AV1 rejects `level=4.1` ("Error parsing option level: 4.1.") and takes `level=41`.
+choices = [
+    { value = "2.0", label = "2.0", ffmpeg_value = "20" },
+    { value = "2.1", label = "2.1", ffmpeg_value = "21" },
+    { value = "3.0", label = "3.0", ffmpeg_value = "30" },
+    { value = "3.1", label = "3.1", ffmpeg_value = "31" },
+    { value = "4.0", label = "4.0", ffmpeg_value = "40" },
+    { value = "4.1", label = "4.1", ffmpeg_value = "41" },
+    { value = "5.0", label = "5.0", ffmpeg_value = "50" },
+    { value = "5.1", label = "5.1", ffmpeg_value = "51" },
+    { value = "5.2", label = "5.2", ffmpeg_value = "52" },
+    { value = "5.3", label = "5.3", ffmpeg_value = "53" },
+    { value = "6.0", label = "6.0", ffmpeg_value = "60" },
+    { value = "6.1", label = "6.1", ffmpeg_value = "61" },
+    { value = "6.2", label = "6.2", ffmpeg_value = "62" },
+    { value = "6.3", label = "6.3", ffmpeg_value = "63" },
+]
+
+[encoder.libsvtav1.rate_control.quality]
+kind = "crf"
+label = "RF"
+# FFmpeg's `-crf` is an int from 0 to 63 (HandBrake, which drives SVT directly, allows 70).
+min = 0
+max = 63
+step = 1
+default = 30
+args = ["-crf", "{value}"]
+scale = [[0, 0], [27, 20], [30, 22], [35, 24], [63, 51]]
+help = "Constant rate factor. Lower is better quality and a bigger file."
+recommended = [
+    { max_height = 576, low = 22, high = 32 },
+    { max_height = 720, low = 25, high = 35 },
+    { max_height = 1080, low = 25, high = 35 },
+    { max_height = 2160, low = 25, high = 40 },
+]
+
+[encoder.libsvtav1.rate_control.bitrate]
+args = ["-b:v", "{kbps}k"]
+help = "Average bitrate (VBR)."
+
+[encoder.libsvtav1.rate_control.bitrate.two_pass]
+mode = "two_runs"
+args = ["-pass", "{pass}", "-passlogfile", "{passlog}"]
 
 [encoder.libvpx-vp9]
 label = "VP9"
@@ -59,6 +465,62 @@ handbrake_key = "VP9"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
+# --- C-6
+help = "Google's VP9 (libvpx), for WebM. Slow; SVT-AV1 compresses better."
+# HandBrake encavcodec.c sets row-mt=1 and deadline=good with cpu-used per preset.
+extra_args = ["-deadline", "good", "-row-mt", "1"]
+
+[encoder.libvpx-vp9.presets]
+default = "medium"
+mapping = { kind = "private_opt", name = "cpu-used" }
+help = "libvpx `cpu-used` with `deadline=good`, as HandBrake maps its presets."
+choices = [
+    { value = "veryfast", label = "Very fast", ffmpeg_value = "5" },
+    { value = "faster", label = "Faster", ffmpeg_value = "4" },
+    { value = "fast", label = "Fast", ffmpeg_value = "3" },
+    { value = "medium", label = "Medium", ffmpeg_value = "2" },
+    { value = "slow", label = "Slow", ffmpeg_value = "1" },
+    { value = "slower", label = "Slower", ffmpeg_value = "0" },
+]
+
+[encoder.libvpx-vp9.tunes]
+mapping = { kind = "private_opt", name = "tune-content" }
+help = "Content type (HandBrake's VP9 tunes)."
+choices = [
+    { value = "default", label = "Default" },
+    { value = "screen", label = "Screen capture" },
+    { value = "film", label = "Film", help = "Keeps grain better." },
+]
+
+[encoder.libvpx-vp9.profiles]
+mapping = { kind = "ffmpeg_arg", arg = "-profile" }
+default_by_depth = { "8" = "0", "10" = "2" }
+help = "Profile 0 is 8-bit 4:2:0, profile 2 is 10-bit."
+choices = [
+    { value = "0", label = "Profile 0", bit_depths = [8] },
+    { value = "2", label = "Profile 2", bit_depths = [10] },
+]
+
+[encoder.libvpx-vp9.rate_control.quality]
+kind = "crf"
+label = "CQ"
+min = 0
+max = 63
+step = 1
+default = 30
+# FFmpeg n9.0.2: `-crf` alone already gives constant quality (the same file as with
+# `-b:v 0`); `-b:v 0` stays explicit, as the FFmpeg documentation writes it.
+args = ["-crf", "{value}", "-b:v", "0"]
+scale = [[0, 0], [30, 22], [63, 51]]
+help = "Constant quality. Lower is better quality and a bigger file."
+
+[encoder.libvpx-vp9.rate_control.bitrate]
+args = ["-b:v", "{kbps}k"]
+help = "Average bitrate (VBR)."
+
+[encoder.libvpx-vp9.rate_control.bitrate.two_pass]
+mode = "two_runs"
+args = ["-pass", "{pass}", "-passlogfile", "{passlog}"]
 
 # --------------------------------------------------------------------------- NVIDIA NVENC
 
@@ -73,6 +535,34 @@ vendor = "nvidia"
 # 10-bit H.264 needs a recent GPU: the 10-bit test encode (C-4) decides.
 pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["h264_qsv", "h264_amf", "h264_vaapi", "libx264"]
+# --- C-6
+extends = "nvenc"
+option_sets = ["nvenc"]
+
+[encoder.h264_nvenc.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+default = "high"
+default_by_depth = { "10" = "high10" }
+help = "Limits the features for older players."
+choices = [
+    { value = "baseline", label = "Baseline", bit_depths = [8] },
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "high", label = "High", bit_depths = [8] },
+    { value = "high10", label = "High 10", bit_depths = [10] },
+]
+
+[encoder.h264_nvenc.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0" }, { value = "1b", label = "1b" }, { value = "1.1", label = "1.1" },
+    { value = "1.2", label = "1.2" }, { value = "1.3", label = "1.3" }, { value = "2.0", label = "2.0" },
+    { value = "2.1", label = "2.1" }, { value = "2.2", label = "2.2" }, { value = "3.0", label = "3.0" },
+    { value = "3.1", label = "3.1" }, { value = "3.2", label = "3.2" }, { value = "4.0", label = "4.0" },
+    { value = "4.1", label = "4.1" }, { value = "4.2", label = "4.2" }, { value = "5.0", label = "5.0" },
+    { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" }, { value = "6.0", label = "6.0" },
+    { value = "6.1", label = "6.1" }, { value = "6.2", label = "6.2" },
+]
 
 [encoder.hevc_nvenc]
 label = "NVIDIA NVENC H.265"
@@ -84,6 +574,38 @@ hardware = true
 vendor = "nvidia"
 pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265"]
+# --- C-6
+extends = "nvenc"
+option_sets = ["nvenc"]
+
+[encoder.hevc_nvenc.tunes]
+choices = [
+    { value = "hq", label = "High quality" },
+    { value = "uhq", label = "Ultra high quality", help = "Slower; needs a recent GPU and driver." },
+    { value = "ll", label = "Low latency" },
+    { value = "ull", label = "Ultra low latency" },
+    { value = "lossless", label = "Lossless" },
+]
+
+[encoder.hevc_nvenc.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+default_by_depth = { "8" = "main", "10" = "main10" }
+help = "Main for 8-bit, Main 10 for 10-bit."
+choices = [
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "main10", label = "Main 10", bit_depths = [10] },
+]
+
+[encoder.hevc_nvenc.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0" }, { value = "2.0", label = "2.0" }, { value = "2.1", label = "2.1" },
+    { value = "3.0", label = "3.0" }, { value = "3.1", label = "3.1" }, { value = "4.0", label = "4.0" },
+    { value = "4.1", label = "4.1" }, { value = "5.0", label = "5.0" }, { value = "5.1", label = "5.1" },
+    { value = "5.2", label = "5.2" }, { value = "6.0", label = "6.0" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
 
 [encoder.av1_nvenc]
 label = "NVIDIA NVENC AV1"
@@ -95,6 +617,39 @@ hardware = true
 vendor = "nvidia"
 pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["av1_qsv", "av1_amf", "av1_vaapi", "libsvtav1"]
+# --- C-6
+extends = "nvenc"
+option_sets = ["nvenc"]
+
+[encoder.av1_nvenc.tunes]
+choices = [
+    { value = "hq", label = "High quality" },
+    { value = "uhq", label = "Ultra high quality", help = "Slower; needs a recent GPU and driver." },
+    { value = "ll", label = "Low latency" },
+    { value = "ull", label = "Ultra low latency" },
+    { value = "lossless", label = "Lossless" },
+]
+
+[encoder.av1_nvenc.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "2.0", label = "2.0" }, { value = "2.1", label = "2.1" }, { value = "2.2", label = "2.2" },
+    { value = "2.3", label = "2.3" }, { value = "3.0", label = "3.0" }, { value = "3.1", label = "3.1" },
+    { value = "3.2", label = "3.2" }, { value = "3.3", label = "3.3" }, { value = "4.0", label = "4.0" },
+    { value = "4.1", label = "4.1" }, { value = "4.2", label = "4.2" }, { value = "4.3", label = "4.3" },
+    { value = "5.0", label = "5.0" }, { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" },
+    { value = "5.3", label = "5.3" }, { value = "6.0", label = "6.0" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" }, { value = "6.3", label = "6.3" }, { value = "7.0", label = "7.0" },
+    { value = "7.1", label = "7.1" }, { value = "7.2", label = "7.2" }, { value = "7.3", label = "7.3" },
+]
+
+[encoder.av1_nvenc.rate_control.quality]
+max = 63
+derived = { qp_i = { offset = -2, min = 0, integer = true }, qp_p = { integer = true }, qp_b = { offset = 2, max = 255, integer = true } }
+# ASSUMED: HandBrake has no NVENC AV1 preset; the H.265 points scaled to the 1-63 range.
+default = 33
+scale = [[1, 1], [33, 22], [37, 24], [63, 51]]
 
 # --------------------------------------------------------------------------- Intel QSV
 
@@ -109,6 +664,18 @@ vendor = "intel"
 pix_fmts = { "8" = "nv12" }
 hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["h264_nvenc", "h264_amf", "h264_vaapi", "libx264"]
+# --- C-6
+extends = "qsv"
+option_sets = ["qsv", "qsv_h264"]
+
+[encoder.h264_qsv.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "Auto lets the driver pick."
+choices = [
+    { value = "baseline", label = "Baseline", bit_depths = [8] },
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "high", label = "High", bit_depths = [8] },
+]
 
 [encoder.hevc_qsv]
 label = "Intel QSV H.265"
@@ -121,6 +688,18 @@ vendor = "intel"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["hevc_nvenc", "hevc_amf", "hevc_vaapi", "libx265"]
+# --- C-6
+extends = "qsv"
+option_sets = ["qsv", "qsv_extbrc"]
+
+[encoder.hevc_qsv.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+default_by_depth = { "8" = "main", "10" = "main10" }
+help = "Main for 8-bit, Main 10 for 10-bit."
+choices = [
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "main10", label = "Main 10", bit_depths = [10] },
+]
 
 [encoder.av1_qsv]
 label = "Intel QSV AV1"
@@ -133,6 +712,19 @@ vendor = "intel"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["av1_nvenc", "av1_amf", "av1_vaapi", "libsvtav1"]
+# --- C-6
+extends = "qsv"
+option_sets = ["qsv", "qsv_extbrc"]
+
+[encoder.av1_qsv.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "AV1 Main covers 8 and 10-bit 4:2:0."
+choices = [{ value = "main", label = "Main" }]
+
+[encoder.av1_qsv.rate_control.quality]
+# HandBrake's "AV1 QSV 2160p 4K" uses 24 where x264 uses 24.
+default = 24
+scale = [[1, 1], [24, 24], [51, 51]]
 
 # --------------------------------------------------------------------------- AMD AMF
 
@@ -146,6 +738,32 @@ hardware = true
 vendor = "amd"
 pix_fmts = { "8" = "nv12" }
 fallback = ["h264_nvenc", "h264_qsv", "h264_vaapi", "libx264"]
+# --- C-6
+extends = "amf"
+option_sets = ["amf", "amf_vbaq", "amf_bframes"]
+
+[encoder.h264_amf.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "AMF picks Main when none is set."
+choices = [
+    { value = "constrained_baseline", label = "Constrained Baseline", bit_depths = [8] },
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "high", label = "High", bit_depths = [8] },
+    { value = "constrained_high", label = "Constrained High", bit_depths = [8] },
+]
+
+[encoder.h264_amf.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0" }, { value = "1.1", label = "1.1" }, { value = "1.2", label = "1.2" },
+    { value = "1.3", label = "1.3" }, { value = "2.0", label = "2.0" }, { value = "2.1", label = "2.1" },
+    { value = "2.2", label = "2.2" }, { value = "3.0", label = "3.0" }, { value = "3.1", label = "3.1" },
+    { value = "3.2", label = "3.2" }, { value = "4.0", label = "4.0" }, { value = "4.1", label = "4.1" },
+    { value = "4.2", label = "4.2" }, { value = "5.0", label = "5.0" }, { value = "5.1", label = "5.1" },
+    { value = "5.2", label = "5.2" }, { value = "6.0", label = "6.0" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
 
 [encoder.hevc_amf]
 label = "AMD AMF H.265"
@@ -157,6 +775,34 @@ hardware = true
 vendor = "amd"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 fallback = ["hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
+# --- C-6
+extends = "amf"
+option_sets = ["amf", "amf_vbaq"]
+
+[encoder.hevc_amf.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+default_by_depth = { "8" = "main", "10" = "main10" }
+help = "Main for 8-bit, Main 10 for 10-bit."
+choices = [
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "main10", label = "Main 10", bit_depths = [10] },
+]
+
+[encoder.hevc_amf.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0" }, { value = "2.0", label = "2.0" }, { value = "2.1", label = "2.1" },
+    { value = "3.0", label = "3.0" }, { value = "3.1", label = "3.1" }, { value = "4.0", label = "4.0" },
+    { value = "4.1", label = "4.1" }, { value = "5.0", label = "5.0" }, { value = "5.1", label = "5.1" },
+    { value = "5.2", label = "5.2" }, { value = "6.0", label = "6.0" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
+
+[encoder.hevc_amf.rate_control.quality]
+# hevc_amf has no `-qp_b` (HandBrake: "H.265 encoders do not support B frames").
+args = ["-rc", "cqp", "-qp_i", "{value}", "-qp_p", "{qp_p}"]
+derived = { qp_p = { offset = 2, ramp_below = 8, max = 51, integer = true } }
 
 [encoder.av1_amf]
 label = "AMD AMF AV1"
@@ -168,6 +814,36 @@ hardware = true
 vendor = "amd"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 fallback = ["av1_nvenc", "av1_qsv", "av1_vaapi", "libsvtav1"]
+# --- C-6
+extends = "amf"
+option_sets = ["amf", "amf_bframes", "amf_av1"]
+
+[encoder.av1_amf.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "AV1 Main covers 8 and 10-bit 4:2:0."
+choices = [{ value = "main", label = "Main" }]
+
+[encoder.av1_amf.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "2.0", label = "2.0" }, { value = "2.1", label = "2.1" }, { value = "2.2", label = "2.2" },
+    { value = "2.3", label = "2.3" }, { value = "3.0", label = "3.0" }, { value = "3.1", label = "3.1" },
+    { value = "3.2", label = "3.2" }, { value = "3.3", label = "3.3" }, { value = "4.0", label = "4.0" },
+    { value = "4.1", label = "4.1" }, { value = "4.2", label = "4.2" }, { value = "4.3", label = "4.3" },
+    { value = "5.0", label = "5.0" }, { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" },
+    { value = "5.3", label = "5.3" }, { value = "6.0", label = "6.0" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" }, { value = "6.3", label = "6.3" }, { value = "7.0", label = "7.0" },
+    { value = "7.1", label = "7.1" }, { value = "7.2", label = "7.2" }, { value = "7.3", label = "7.3" },
+]
+
+[encoder.av1_amf.rate_control.quality]
+# HandBrake: AV1 VCN QP 0-255, P/B offsets 8/16 (scaled down for q <= 32); "AV1 VCN 2160p 4K"
+# uses 120 where x264 uses 24.
+max = 255
+default = 110
+derived = { qp_p = { offset = 8, ramp_below = 32, max = 255, integer = true }, qp_b = { offset = 16, ramp_below = 32, max = 255, integer = true } }
+scale = [[0, 0], [120, 24], [255, 51]]
 
 # --------------------------------------------------------------------------- VAAPI (Linux)
 
@@ -182,6 +858,38 @@ platforms = ["linux"]
 pix_fmts = { "8" = "nv12" }
 hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
 fallback = ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]
+# --- C-6
+extends = "vaapi"
+option_sets = ["vaapi", "vaapi_h264"]
+
+[encoder.h264_vaapi.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "The driver picks High when none is set."
+choices = [
+    { value = "constrained_baseline", label = "Constrained Baseline", bit_depths = [8] },
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "high", label = "High", bit_depths = [8] },
+]
+
+[encoder.h264_vaapi.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0", ffmpeg_value = "1" }, { value = "1.1", label = "1.1" },
+    { value = "1.2", label = "1.2" }, { value = "1.3", label = "1.3" },
+    { value = "2.0", label = "2.0", ffmpeg_value = "2" }, { value = "2.1", label = "2.1" },
+    { value = "2.2", label = "2.2" }, { value = "3.0", label = "3.0", ffmpeg_value = "3" },
+    { value = "3.1", label = "3.1" }, { value = "3.2", label = "3.2" },
+    { value = "4.0", label = "4.0", ffmpeg_value = "4" }, { value = "4.1", label = "4.1" },
+    { value = "4.2", label = "4.2" }, { value = "5.0", label = "5.0", ffmpeg_value = "5" },
+    { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" },
+    { value = "6.0", label = "6.0", ffmpeg_value = "6" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
+
+[encoder.h264_vaapi.rate_control.quality]
+# Real encodes: with no quality option h264_vaapi uses QP 20 (the same file as -qp 20).
+default = 20
 
 [encoder.hevc_vaapi]
 label = "VAAPI H.265"
@@ -194,6 +902,31 @@ platforms = ["linux"]
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
 fallback = ["hevc_nvenc", "hevc_qsv", "hevc_amf", "libx265"]
+# --- C-6
+extends = "vaapi"
+option_sets = ["vaapi"]
+
+[encoder.hevc_vaapi.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+default_by_depth = { "8" = "main", "10" = "main10" }
+help = "Main for 8-bit, Main 10 for 10-bit."
+choices = [
+    { value = "main", label = "Main", bit_depths = [8] },
+    { value = "main10", label = "Main 10", bit_depths = [10] },
+]
+
+[encoder.hevc_vaapi.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "1.0", label = "1.0", ffmpeg_value = "1" }, { value = "2.0", label = "2.0", ffmpeg_value = "2" },
+    { value = "2.1", label = "2.1" }, { value = "3.0", label = "3.0", ffmpeg_value = "3" },
+    { value = "3.1", label = "3.1" }, { value = "4.0", label = "4.0", ffmpeg_value = "4" },
+    { value = "4.1", label = "4.1" }, { value = "5.0", label = "5.0", ffmpeg_value = "5" },
+    { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" },
+    { value = "6.0", label = "6.0", ffmpeg_value = "6" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" },
+]
 
 [encoder.av1_vaapi]
 label = "VAAPI AV1"
@@ -206,3 +939,28 @@ platforms = ["linux"]
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
 fallback = ["av1_nvenc", "av1_qsv", "av1_amf", "libsvtav1"]
+# --- C-6
+extends = "vaapi"
+option_sets = ["vaapi"]
+
+[encoder.av1_vaapi.profiles]
+mapping = { kind = "private_opt", name = "profile" }
+help = "AV1 Main covers 8 and 10-bit 4:2:0."
+choices = [{ value = "main", label = "Main" }]
+
+[encoder.av1_vaapi.levels]
+mapping = { kind = "private_opt", name = "level" }
+help = "Auto picks one from the settings."
+choices = [
+    { value = "2.0", label = "2.0" }, { value = "2.1", label = "2.1" }, { value = "3.0", label = "3.0" },
+    { value = "3.1", label = "3.1" }, { value = "4.0", label = "4.0" }, { value = "4.1", label = "4.1" },
+    { value = "5.0", label = "5.0" }, { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" },
+    { value = "5.3", label = "5.3" }, { value = "6.0", label = "6.0" }, { value = "6.1", label = "6.1" },
+    { value = "6.2", label = "6.2" }, { value = "6.3", label = "6.3" },
+]
+
+[encoder.av1_vaapi.rate_control.quality]
+# av1_vaapi: QP (q index) 0-255 through -global_quality; ASSUMED to match AMF AV1.
+max = 255
+default = 110
+scale = [[0, 0], [120, 24], [255, 51]]

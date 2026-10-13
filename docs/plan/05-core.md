@@ -329,7 +329,8 @@ functions in a registry, grouped by area.
       flags not writable.
 - [ ] Dimensions: invalid crop, upscaling (warning), odd sizes for 4:2:0.
 - [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix).
-- [ ] Subtitles: more than one burn-in, bitmap subtitle into MP4, forced-only on a format that
+- [ ] Subtitles: more than one burn-in, PGS subtitle into MP4 (VobSub is allowed,
+      [0010](../decisions/0010-definitions-filters-and-containers.md)), forced-only on a format that
       does not support it.
 - [ ] Output: path not writable, output = source, name collision, not enough free disk space
       (estimate in bitrate mode).
