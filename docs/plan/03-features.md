@@ -689,7 +689,7 @@ Same behaviour as HandBrake:
 - Categories (built-in, read-only): General, Web, Devices, Matroska, Hardware, Production.
   Contents are modelled on HandBrake's defaults and adapted to FFmpeg encoders (the list,
   the HandBrake 1.11.2 values and the differences: [decision 0015](../decisions/0015-presets-and-settings-stores.md)).
-  The default preset is HandBrake's default, *Fast 1080p30*.
+  The default preset is *H.265 MKV 1080p* ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
 - User presets: save new, update, rename, duplicate, delete, set as default. Preset names are
   unique (without case); a clash offers the next free name, *Name (2)*. An import with clashes
   can rename, replace or skip.

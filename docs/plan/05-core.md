@@ -343,7 +343,8 @@ class EncodePlan(BaseModel):
 - [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ar:a:N` (always), `-filter:a:N` (output layout and
       downmix with `aresample=[matrix_encoding=dplii:]out_chlayout=…`, gain, loudnorm with the
       measured values of the track's own analyse step); DRC is the AC-3 decoder's
-      `-drc_scale` (0013).
+      `-drc_scale` (0013). A bitrate, mixdown or sample rate the encoder cannot do is snapped
+      to the nearest allowed value; validation shows it as info ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
 - [ ] **Subtitles**: copy, convert, burn. For MKV, copy attachments (`-map 0:t?`) when ASS
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N
@@ -372,7 +373,8 @@ functions in a registry, grouped by area.
 - [ ] Dimensions: invalid crop, upscaling (warning). Odd sizes for 4:2:0 cannot happen: C-5
       rounds every size to the chroma grid, so a property test replaces the rule; C-5's notes
       give the other issues (crop not detected, crop snapped, outside the fit box)
-      ([0014](../decisions/0014-validation-rules-and-severities.md)).
+      ([0014](../decisions/0014-validation-rules-and-severities.md)). "Crop not detected" is
+      info until crop detection exists (M8, [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
 - [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix).
 - [ ] Subtitles: more than one burn-in, PGS subtitle into MP4 (VobSub is allowed,
       [0010](../decisions/0010-definitions-filters-and-containers.md)), forced-only on a format that

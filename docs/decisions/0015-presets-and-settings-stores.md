@@ -1,6 +1,6 @@
 # 0015 — Built-in presets from HandBrake 1.11.2, and how the stores handle files
 
-- Status: accepted
+- Status: accepted; the default preset is superseded by [0024](0024-m2-wave-2-product-decisions.md)
 - Date: 2026-10-13
 - Steps: C-9
 

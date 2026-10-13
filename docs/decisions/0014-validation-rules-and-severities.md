@@ -1,6 +1,6 @@
 # 0014 — Validation: odd sizes, forced-only subtitles, the rules beyond the plan's list, and provisional severities
 
-- Status: accepted (the severities in section 4 are provisional: open questions for the user)
+- Status: accepted (the severities in section 4 are provisional: open questions for the user); the severities of `dimensions.crop_not_detected` and of the audio range rules are superseded by [0024](0024-m2-wave-2-product-decisions.md)
 - Date: 2026-10-13
 - Steps: C-8 (affects C-11, C-15, F-x issue display)
 
