@@ -216,6 +216,7 @@ async def test_mp4_iso639_2t_mov_text_hvc1(
     # MP4 track titles read back as "name" (FFmpeg's mov demuxer), not "title".
     assert streams[4]["tags"].get("name") == "Magyar"
     out = await probe(prober, tmp_path / "out.m4v")
+    assert out.subtitles[0].title == "Magyar"  # the probe reads "name" as the title (C-3)
     assert [a.language for a in out.audio] == ["deu", "eng", "eng"]
     assert flags(out.audio[2]) >= {"comment"}
     # +faststart: the moov box comes before mdat.
