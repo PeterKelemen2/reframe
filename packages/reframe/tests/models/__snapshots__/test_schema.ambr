@@ -1874,7 +1874,10 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'Pixels removed from each edge of the (unrotated) source frame.',
+    'description': '''
+      Pixels removed from each edge of the source picture as FFmpeg decodes it: the display
+      matrix is applied, the job's rotate and flip are not (decision 0009).
+    ''',
     'properties': dict({
       'bottom': dict({
         'default': 0,
@@ -5887,7 +5890,7 @@
         'default': 2,
         'description': '''
           Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
-          4:2:0).
+          sources, decision 0009).
         ''',
         'minimum': 1,
         'title': 'Chroma Step Y',

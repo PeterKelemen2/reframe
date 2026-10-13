@@ -40,7 +40,8 @@ Scaler = Literal["lanczos", "bicubic", "spline", "bilinear"]
 
 
 class CropRect(DocumentModel):
-    """Pixels removed from each edge of the (unrotated) source frame."""
+    """Pixels removed from each edge of the source picture as FFmpeg decodes it: the display
+    matrix is applied, the job's rotate and flip are not (decision 0009)."""
 
     top: NonNegativeInt = 0
     bottom: NonNegativeInt = 0
@@ -125,7 +126,7 @@ class SourceGeometry(ReframeModel):
     """Horizontal crop step for the chroma grid (2 for 4:2:0 and 4:2:2, 1 for 4:4:4)."""
     chroma_step_y: PositiveInt = 2
     """Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
-    4:2:0)."""
+    sources, decision 0009)."""
     interlaced: bool = False
     chroma_assumed: bool = False
     """``True`` when the pixel format is unknown and the chroma steps are C-5's assumption
