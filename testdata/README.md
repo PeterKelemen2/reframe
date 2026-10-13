@@ -777,7 +777,24 @@ Nothing recorded yet.
 
 ### Validation (C-8)
 
-Nothing recorded yet.
+**Forced-only subtitles** (`subtitle.forced_only_unsupported`). `forced_subs_only` is a
+*decoder* option. Checked on 2026-10-13 with `/usr/bin/ffmpeg` n9.0.2 (Arch), the pinned
+build `n9.0.2-17-g2a571b6068-20260930` and the CI override build `n8.1.3-9-g29e619e767`;
+`packages/reframe/tests/validation/test_ffmpeg.py` repeats it.
+
+- Only two decoders have it: `ffmpeg -h decoder=pgssub` and `-h decoder=dvdsub` list
+  `-forced_subs_only <boolean> .D...S..... Only show forced subtitles (default false)`;
+  `dvbsub`, `subrip` and `ass` do not. So it works for PGS **and VobSub**, not only PGS as
+  03 §Subtitles said.
+- A stream copy does not decode, so the option changes nothing: `ffmpeg -forced_subs_only 1
+  -i vobsub.mkv -map 0:s:0 -c copy copy.mkv` keeps both events of the fixture (2 packets in,
+  2 out).
+- Decoded, it works: the same input with `-c:s dvdsub` (the fixture has no forced events)
+  writes nothing: `Output file is empty, nothing was encoded`. A burn-in decodes the track,
+  so forced-only works for a burned-in PGS or VobSub track.
+- On a text track FFmpeg warns `… it is a private option of some decoder which was not
+  actually used for any stream` and keeps every event (`text-subs.mkv`, SRT → ASS: 2 events
+  in, 2 out).
 
 ### Audio codec rules (C-12)
 
