@@ -770,3 +770,15 @@ Windows (`SetThreadExecutionState`) is not checked on a real machine: the values
 <https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate>
 (`ES_CONTINUOUS` 0x80000000, `ES_SYSTEM_REQUIRED` 0x00000001; "cannot be used to prevent the
 user from putting the computer to sleep").
+
+### Command builder (C-7)
+
+Nothing recorded yet.
+
+### Validation (C-8)
+
+Nothing recorded yet.
+
+### Audio codec rules (C-12)
+
+Nothing recorded yet.
