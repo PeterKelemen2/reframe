@@ -778,7 +778,170 @@ user from putting the computer to sleep").
 
 ### Command builder (C-7)
 
-Nothing recorded yet.
+Checked on 2026-10-13 with both n9.0.2 builds (Arch `/usr/bin/ffmpeg` and the pinned BtbN
+build) on the machine above (AMD RX 7600: VAAPI, AMF and libplacebo work). Decision
+[0013](../docs/decisions/0013-command-builder-details.md) is based on these.
+`packages/reframe/tests/command/test_integration.py` runs the builder's plans on the fixtures
+and probes the results again (both builds pass; the VAAPI / AMF cases are `needs_gpu`):
+
+```sh
+uv run pytest packages/reframe/tests/command/test_integration.py
+REFRAME_FFMPEG=$BIN/ffmpeg REFRAME_FFPROBE=$BIN/ffprobe uv run pytest packages/reframe/tests/command
+```
+
+**Stream tags and dispositions are copied from the source.** Without options, the source's
+stream tags (also mkvmerge statistics: the recorded `stale-stats` probe) and dispositions go
+into the output. `-map_metadata:s -1` drops the stream tags; then the attachments need their
+own map, or the Matroska muxer fails. An empty value removes a tag:
+
+```console
+$ ffmpeg -i multitrack.mkv -map 0:0 -map 0:1 -map 0:4 -c copy -metadata:s:a:0 title= t2.mkv
+stream|index=1|codec_name=ac3|disposition:default=1|…|tag:language=jpn|tag:ENCODER=Lavc63.1.102 ac3|tag:DURATION=…
+$ ffmpeg -i text-subs.mkv -map 0:v -map 0:s -map 0:t? -c copy -map_metadata:s -1 t4.mkv
+[matroska @ 0x…] Attachment stream 3 has no filename tag.
+[out#0/matroska @ 0x…] Could not write header (incorrect codec parameters ?): Invalid argument   (exit 234)
+$ ffmpeg … -map_metadata:s -1 -map_metadata:s:t:0 0:s:t:0 t5.mkv          # exit 0
+stream|index=3|codec_name=ttf|codec_type=attachment|tag:filename=ReframeBox.ttf|tag:mimetype=application/x-truetype-font
+```
+
+`-map_metadata -1` would also drop the chapter titles (they are "chapter metadata"), so the
+builder uses `-map_metadata:s -1` and `-map_metadata:g -1` separately.
+
+**MP4.** `deu` (ISO 639-2/T), `-tag:v hvc1`, `mov_text` and the six flags as in the C-6
+table. A track title is written as the `udta` name and **read back as `name`, not `title`**
+(C-3's probe reads only `title`):
+
+```console
+$ ffmpeg … -metadata:s:a:0 language=deu -metadata:s:a:0 "title=English Stereo" … -movflags +faststart -f mp4 m1.part.m4v
+stream|index=1|codec_name=aac|codec_tag_string=mp4a|disposition:default=1|…|tag:language=deu|tag:handler_name=SoundHandler|tag:name=English Stereo
+```
+
+Without `-f`, a `.m4v` name selects the `ipod` muxer: `[ipod @ 0x…] Could not find tag for
+codec opus in stream #1, codec not currently supported in container` (exit 234); with
+`-f mp4` the same command works. TrueHD in MP4 needs a plain `-strict -2`: with
+`-strict:a:0 -2` the muxer still says `truehd in MP4 support is experimental, add '-strict -2'
+if you want to use it.` (exit 88).
+
+**Chapters and the range.** With an input `-t`, copied chapters are shifted by the seek but
+not cut; an output `-t` cuts them (`test_time_range_cuts_the_copied_chapters`):
+
+```console
+$ ffmpeg -ss 1.2 -t 2 -i chapters.mkv -map 0:v -c:v libx264 -map_chapters 0 c1.mkv
+chapter|start_time=0.000000|end_time=1.300000|tag:title=Part One
+chapter|start_time=1.300000|end_time=2.800000|tag:title=Part Two
+chapter|start_time=2.800000|end_time=3.800000|tag:title=Credits
+format|duration=2.000000
+```
+
+An FFMETADATA input (`-f ffmetadata -i x.txt -map_chapters 1`) is not shifted by the source's
+`-ss`; `\=`, `\;`, `\#` escape those characters in titles (`title=First \= one\; \#x` reads
+back as `First = one; #x`).
+
+**Two-pass `loudnorm`.** Two `loudnorm` filters in one run (`-filter:a:0 …loudnorm=I=-23…`,
+`-filter:a:1 loudnorm=I=-16…`) print their blocks **in reverse output order** (the −16 block,
+`"output_i" : "-16.00"`, came first), and both are prefixed `[Parsed_loudnorm_0 @ 0x…]`
+(the index is local to each graph). So each normalised track gets its own analyse run. Other
+facts: the JSON keys are `input_i`, `input_tp`, `input_lra`, `input_thresh`, `output_*`,
+`normalization_type`, `target_offset`; `LRA` takes 1 to 50; a silent track measures
+`"input_i" : "-inf"` and `"target_offset" : "inf"`, and the second pass refuses that
+(`Value -inf for parameter 'measured_I' out of range [-99 - 0]`, exit 222); without `-ar` the
+`loudnorm` output (192 kHz) reaches the AAC encoder as 96 kHz. `aresample` in n9.0.2 has no
+`ocl` alias (`Error applying option 'ocl' to filter 'aresample': Option not found`): the
+option is `out_chlayout`.
+
+**Two-pass statistics files** (encoder library default names, killed half-way to see the
+temporary ones):
+
+| Encoder | Option | Files |
+|---------|--------|-------|
+| `libx264` | `-passlogfile P` | `P-0.log`, `P-0.log.mbtree` (not with `ultrafast`); while pass 1 runs `P-0.log.temp`, `P-0.log.mbtree.temp` |
+| `libx265` | `-x265-params stats=P` | `P`, `P.cutree`; while pass 1 runs `P.temp`, `P.cutree.temp` |
+| `libsvtav1`, `libvpx-vp9` | `-passlogfile P` | `P-0.log` |
+
+The `-0` is the output stream index, so the video is mapped first. The `stats=` value goes
+through FFmpeg's dictionary parser: `stats=/x/a\:b\'c d.passlog` writes `a:b'c d.passlog`.
+
+**`subtitles=` file names.** The documented form (option-parser escapes inside graph-level
+quotes, `subtitles=filename='…\:…'`) opens every awkward name: spaces, `:`, `'`, `,;[]`,
+`\`, `%`, `=`, `"`, `$`, `&`, non-ASCII, in a folder named `dir, ;'[x]`
+(`test_subtitles_filter_opens_awkward_file_names`). The filter reads its file from time 0
+while `-ss` starts the frames at 0, so a ranged burn-in shifts the frame times around it
+(`setpts=PTS+S/TB,subtitles=…,setpts=PTS-S/TB`); the ranged output's frames then equal the
+full burn-in's frames shifted by S (lossless x264, `test_burn_in_text_subtitles_with_a_range`).
+
+**External subtitle files and the range.** The source's `-ss` does not move another input:
+an `.srt` input without its own `-ss` keeps its times (`00:00:00,500` stays). With
+`-itsoffset X -ss S -i file.srt` an event at `t` lands at `t + X − S`.
+
+**Bitmap burn-in.** `-filter_complex "[0:0][0:1]overlay=eof_action=pass[v]"` burns the
+`vobsub` fixture's track in (36 of the first 50 frames differ from a plain encode);
+`-forced_subs_only:2 1` is accepted as an input option for the stream. `-map "[v]"` may come
+before `-filter_complex`.
+
+**DRC.** `-drc_scale:1 <n>` is accepted as an input option for stream 1. The AC-3 decoder's
+default is 1 (`-drc_scale <float> … (from 0 to 6) (default 1)`). FFmpeg's AC-3 encoder writes
+no dynamic range data, so the four decodes of the fixture (default, 0, 1, 4) are identical:
+the effect is not visible with generated media.
+
+**Global tags.** `title`, `artist`, `album_artist`, `date`, `comment`, `genre`,
+`description`, `synopsis` are written and read back by the Matroska, MP4 and WebM muxers (MKV
+upper-cases them: `ARTIST`, `ALBUM_ARTIST`, `SYNOPSIS`). MP4 drops `director`
+(`-metadata director=D` → no tag); Matroska writes `DIRECTOR`.
+
+**HDR.**
+
+- x265 10-bit from the `hdr10` fixture keeps the colour and the HDR10 metadata (stream and
+  frame side data) without any `-x265-params`, also after `scale`; the explicit params give
+  the same result. SVT-AV1 the same, with `-svtav1-params color-primaries=bt2020:
+  transfer-characteristics=smpte2084:matrix-coefficients=bt2020-ncl:mastering-display=
+  G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001):content-light=1000,400`
+  (no "Error parsing option" line). `hevc_vaapi` with `format=p010le,hwupload` and no
+  `-profile` writes Main 10 with the HDR10 side data; `av1_amf` 10-bit too.
+- **Tone mapping leaves the HDR10 metadata in.** After `zscale…tonemap…` or `libplacebo`
+  (colour tags `bt709` everywhere) the output still has the mastering display and content
+  light level, in the container and as SEI written by x264 / x265:
+
+  ```console
+  $ ffmpeg -i hdr10.mkv -vf "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p" -c:v libx264 t1.mkv
+  stream|pix_fmt=yuv420p|color_space=bt709|color_transfer=bt709|color_primaries=bt709|side_datum/content_light_level_metadata:…|side_datum/mastering_display_metadata:…
+  frame|color_space=bt709|color_transfer=bt709|…|side_datum/mastering_display_metadata:…|side_datum/content_light_level_metadata:…
+  $ ffmpeg … -vf "…,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,format=yuv420p" … r1.mkv
+  stream|color_space=bt709|color_transfer=bt709|color_primaries=bt709
+  ```
+
+  The `sidedata` filter's types include `DYNAMIC_HDR_PLUS`, `DOVI_RPU_BUFFER`,
+  `DOVI_METADATA` and `DYNAMIC_HDR_VIVID` too; the builder removes all six.
+
+**Frame rate** (the `vfr.mp4` fixture: 59 frames of 1/60 s, 30 of 1/30 s, 24 of 1/24 s):
+
+| Options | Result |
+|---------|--------|
+| `-fpsmax:v:0 30` | `r_frame_rate=30/1`, 92 frames, all 1/30 s: constant 30, not a capped VFR |
+| `-r:v:0 30 -fps_mode:v:0 cfr` | the same |
+| `-fps_mode:v:0 cfr` (no `-r`) | `120/1`, 360 frames (the source's `r_frame_rate`) |
+| `-fps_mode:v:0 vfr -fpsmax:v:0 30` or `… vfr -r:v:0 30` | refused: `One of -r/-fpsmax was specified together a non-CFR -vsync/-fps_mode. This is contradictory.` (exit 234) |
+
+**Audio layouts.** Encoding the 7.1 test source: `ac3` and `eac3` give `5.1(side)` by
+themselves, `libmp3lame` `stereo`, `aac` and `libopus` keep `7.1`; with `-ac:a:0 6` AAC and
+Opus give `5.1`. But libopus refuses the `5.1(side)` layout of the AC-3 fixture track:
+
+```console
+$ ffmpeg -i multitrack.mkv -map 0:1 -c:a libopus o.webm
+[libopus @ 0x…] Invalid channel layout 5.1(side) for specified mapping family -1.
+$ ffmpeg -i multitrack.mkv -map 0:1 -filter:a:0 aresample=out_chlayout=5.1 -c:a:0 libopus o.mkv    # exit 0, layout 5.1
+```
+
+`5.1` is `FL+FR+FC+LFE+BL+BR` and `5.1(side)` is `FL+FR+FC+LFE+SL+SR` (`ffmpeg -layouts`); the
+conversion is a relabel (the PCM of both decodes has the same MD5). A 5.0 source encodes to
+Opus and AC-3 unchanged. `aresample=matrix_encoding=dplii:out_chlayout=stereo` gives a stereo
+Dolby Pro Logic II downmix. libopus picks 48 kHz for a 44.1 kHz input when no `-ar` is given.
+
+**Ranges.** `-ss 0.4 … -t 2` on the 25 fps fixture gives exactly 50 frames, and the first one
+is source frame 10 (same MD5). With `-c copy` the cut starts at the keyframe before the seek
+(75 frames for `-ss 1.0 -t 2` on the fixture, whose only keyframe is at 0).
+
+**mkvpropedit** `--edit track:a2 --set language=pt-BR` on an FFmpeg-written MKV: `mkvmerge -J`
+then shows `language: por`, `language_ietf: pt-BR` for that track.
 
 ### Validation (C-8)
 
