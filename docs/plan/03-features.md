@@ -373,10 +373,10 @@ This is HandBrake's encoder list, per rule).
 
 | Source | Result |
 |--------|--------|
-| Lossless (TrueHD, DTS-HD MA, FLAC, PCM) with a bitrate above the max or unknown, or any bitrate above the max | Encode at the max bitrate |
-| The source **fits**: its codec is on the passthru list, the container can hold it, its channels are within the mixdown, its bitrate is at or below the max, and the rule changes nothing that needs a decode (gain, DRC, loudness, sample rate) | Passthru (or re-encode, if the rule says so) |
+| The source **fits**: its codec is on the passthru list, the container can hold it, its channels are within the mixdown, and the rule changes nothing that needs a decode (gain, DRC, loudness, sample rate). A **lossy** source fits at any bitrate (re-encoding it would only add a generation loss); a **lossless** source only when its bitrate is at or below the max ([0023](../decisions/0023-lossy-passthru-above-the-max.md)) | Passthru (or re-encode, if the rule says so) |
+| Lossless (TrueHD, DTS-HD MA, FLAC, PCM) with a bitrate above the max or unknown, or a source that does not fit with a bitrate above the max | Encode at the max bitrate |
 | Bitrate at or below the max, but the source does not fit (another codec, or too many channels) | Encode at the smallest allowed bitrate that is at or above the source bitrate |
-| Bitrate unknown | Treated as above the max. The preview says so and offers **Measure** |
+| Bitrate unknown, and the source is lossless or does not fit | Treated as above the max. The preview says so and offers **Measure** |
 
 A rule with no max bitrate on a lossy encoder (a passthru rule's fallback encoder, for
 example) uses the encoder's default bitrate for the layout as its max
@@ -389,12 +389,7 @@ With your setup (the codec in this example is AC-3; any encoder works):
 | hun · DTS-HD MA 5.1 · 2 104 kb/s | 1 | AC-3 5.1 · 320 kb/s | Lossless source → encode at the max |
 | hun · AC-3 5.1 · 224 kb/s | 1 | Passthru | AC-3, 5.1, 224 ≤ 320: passthru |
 | eng · TrueHD Atmos 7.1 | 2 | AC-3 5.1 · 384 kb/s | Downmix 7.1 → 5.1. Lossless source → encode at the max |
-| eng · AC-3 2.0 · 192 kb/s | 3 | AAC Stereo · 160 kb/s | Rule 2 needs 5.1 or more. Rule 3 matches. 192 > 160 → encode at the max |
-| eng · AC-3 2.0 · 128 kb/s | 3 | Passthru | Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits |
-
-The fourth row was "Passthru" until [0019](../decisions/0019-audio-codec-rule-details.md):
-192 kb/s is above rule 3's max, so the source does not fit. Rule 3 still passes AC-3 through
-(any codec of the passthru list), as the fifth row shows.
+| eng · AC-3 2.0 · 192 kb/s | 3 | Passthru | Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits (a lossy source is kept above the max: [0023](../decisions/0023-lossy-passthru-above-the-max.md)) |
 
 #### 3. Passthru and fallback (HandBrake parity)
 

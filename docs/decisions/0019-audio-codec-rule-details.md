@@ -1,7 +1,9 @@
 # 0019 — Audio codec rules: the corrected example, lossless sources, no upmix, what "fits" means
 
-- Status: accepted (items 2 to 7 are open questions for the user; each is one small function
-  in `reframe/batch/audio_rules.py` and easy to change)
+- Status: accepted. Item 1 (the example corrected to AAC 160) is superseded by
+  [0023](0023-lossy-passthru-above-the-max.md); item 2 was confirmed by the user; items 3 to 7
+  were accepted by the M2 lead without asking (each is one small function in
+  `reframe/batch/audio_rules.py` and easy to change)
 - Date: 2026-10-13
 - Steps: C-12 (codec-rule stage, M2, [0018](0018-m2-draft-tracks-and-multi-file-encode.md))
 
