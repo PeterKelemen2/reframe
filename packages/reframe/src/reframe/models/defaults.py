@@ -11,8 +11,15 @@ from typing import Literal, get_args
 
 from pydantic import Field, field_validator
 
-from reframe.models.base import DocumentModel, LanguageTag, NonNegativeFloat, PositiveInt
-from reframe.models.job import LoudnessTarget
+from reframe.models.base import (
+    DocumentModel,
+    LanguageTag,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveInt,
+    ReframeModel,
+)
+from reframe.models.job import AudioOutputTrack, LoudnessTarget, SubtitleOutputTrack
 
 __all__ = [
     "AudioCodecRule",
@@ -25,6 +32,8 @@ __all__ = [
     "RuleMixdown",
     "SourceChannels",
     "SubtitleDefaults",
+    "TrackDecision",
+    "TrackDraft",
     "TrackSelection",
     "check_catch_all",
     "default_codec_rules",
@@ -161,3 +170,43 @@ class SubtitleDefaults(DocumentModel):
     selection: TrackSelection = Field(default_factory=_subtitle_selection)
     foreign_audio_search: bool = False
     burn_in: BurnInBehaviour = "none"
+
+
+# --------------------------------------------------------------------------- results (C-12)
+
+
+class TrackDecision(ReframeModel):
+    """What the audio defaults did with one source audio track, and why: one row of the live
+    preview (03 §Audio defaults → Live preview) and of ``explain`` (C-12).
+
+    Built by ``reframe.batch.apply_codec_rules``. In M2 every source track is taken (no
+    selection stage, decision 0018), so a decision only describes the codec-rule stage.
+    """
+
+    source_stream: NonNegativeInt
+    """Absolute stream index of the source audio track."""
+    rule: PositiveInt | None = None
+    """The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched."""
+    outputs: list[AudioOutputTrack] = Field(default_factory=list)
+    """The output track(s): the rule's output, then its extra outputs. Empty when no rule
+    matched."""
+    reason: str
+    """Why, in one line: ``AC-3, 5.1, 224 ≤ 320: passthru``,
+    ``Lossless source → encode at the max``,
+    ``Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits``."""
+    notes: list[str] = Field(default_factory=list)
+    """Details that do not change the outcome: a snapped bitrate or sample rate, a downmix
+    forced by the encoder, the extra outputs."""
+    measure: bool = False
+    """The source bit rate is unknown and decided the outcome: the preview offers
+    **Measure** (a packet-size scan, C-10)."""
+
+
+class TrackDraft(ReframeModel):
+    """The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``;
+    decision 0018): every audio track through the codec rules, every subtitle copied."""
+
+    audio: list[AudioOutputTrack] = Field(default_factory=list)
+    subtitles: list[SubtitleOutputTrack] = Field(default_factory=list)
+    decisions: list[TrackDecision] = Field(default_factory=list)
+    """One per source audio track, in source order."""

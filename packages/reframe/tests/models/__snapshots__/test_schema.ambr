@@ -7933,6 +7933,133 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[TrackDecision]
+  dict({
+    '$defs': list([
+      'AudioOutputTrack',
+      'TrackMetadata',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      What the audio defaults did with one source audio track, and why: one row of the live
+      preview (03 §Audio defaults → Live preview) and of ``explain`` (C-12).
+      
+      Built by ``reframe.batch.apply_codec_rules``. In M2 every source track is taken (no
+      selection stage, decision 0018), so a decision only describes the codec-rule stage.
+    ''',
+    'properties': dict({
+      'measure': dict({
+        'default': False,
+        'description': '''
+          The source bit rate is unknown and decided the outcome: the preview offers
+          **Measure** (a packet-size scan, C-10).
+        ''',
+        'title': 'Measure',
+        'type': 'boolean',
+      }),
+      'notes': dict({
+        'description': '''
+          Details that do not change the outcome: a snapped bitrate or sample rate, a downmix
+          forced by the encoder, the extra outputs.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+      'outputs': dict({
+        'description': '''
+          The output track(s): the rule's output, then its extra outputs. Empty when no rule
+          matched.
+        ''',
+        'items': dict({
+          '$ref': '#/$defs/AudioOutputTrack',
+        }),
+        'title': 'Outputs',
+        'type': 'array',
+      }),
+      'reason': dict({
+        'description': '''
+          Why, in one line: ``AC-3, 5.1, 224 ≤ 320: passthru``,
+          ``Lossless source → encode at the max``,
+          ``Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits``.
+        ''',
+        'title': 'Reason',
+        'type': 'string',
+      }),
+      'rule': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched.',
+        'title': 'Rule',
+      }),
+      'source_stream': dict({
+        'description': 'Absolute stream index of the source audio track.',
+        'minimum': 0,
+        'title': 'Source Stream',
+        'type': 'integer',
+      }),
+    }),
+    'required': list([
+      'source_stream',
+      'reason',
+    ]),
+    'title': 'TrackDecision',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TrackDraft]
+  dict({
+    '$defs': list([
+      'AudioOutputTrack',
+      'ExternalSubtitle',
+      'SubtitleOutputTrack',
+      'TrackDecision',
+      'TrackFlags',
+      'TrackMetadata',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``;
+      decision 0018): every audio track through the codec rules, every subtitle copied.
+    ''',
+    'properties': dict({
+      'audio': dict({
+        'items': dict({
+          '$ref': '#/$defs/AudioOutputTrack',
+        }),
+        'title': 'Audio',
+        'type': 'array',
+      }),
+      'decisions': dict({
+        'description': 'One per source audio track, in source order.',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Decisions',
+        'type': 'array',
+      }),
+      'subtitles': dict({
+        'items': dict({
+          '$ref': '#/$defs/SubtitleOutputTrack',
+        }),
+        'title': 'Subtitles',
+        'type': 'array',
+      }),
+    }),
+    'title': 'TrackDraft',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[TrackFlags]
   dict({
     '$defs': list([

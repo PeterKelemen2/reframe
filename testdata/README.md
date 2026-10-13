@@ -781,4 +781,16 @@ Nothing recorded yet.
 
 ### Audio codec rules (C-12)
 
-Nothing recorded yet.
+The codec rules are pure; the encoder and container facts they use (bitrate steps, which
+codecs a container can copy, no 7.1 in AC-3 / E-AC-3 / MP3) are C-6's, above. Two more facts
+were checked with `/usr/bin/ffmpeg` n9.0.2 for decision
+[0019](../docs/decisions/0019-audio-codec-rule-details.md):
+
+- **FFmpeg's upmix adds silent channels.** A stereo AC-3 file (two sine tones) encoded with
+  `ffmpeg -i st.mka -ac 6 -c:a ac3 -b:a 448k up.mka` is `5.1(side)` at 448 kb/s; `-af
+  astats=measure_overall=none:measure_perchannel=RMS_level` reads −21.07 dB RMS on channels 1
+  and 2 and −118.6 dB, −inf, −118.6 dB, −118.6 dB on channels 3 to 6. So a codec rule never
+  upmixes: a source with fewer channels than the rule's mixdown keeps its layout.
+- **DTS core extraction exists but is not used.** `ffmpeg -bsfs` lists `dca_core` (it keeps
+  the DTS core of a DTS-HD stream). Reframe matches a DTS-HD source only to the `dtshd`
+  passthru codec, as the definitions do; passing only the core through is not in the plan.
