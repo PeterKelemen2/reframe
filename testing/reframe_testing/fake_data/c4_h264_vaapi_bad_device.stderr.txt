@@ -1,0 +1,4 @@
+[VAAPI @ 0x560895c8dc80] No VA display found for device /dev/dri/renderD999.
+Device creation failed: -22.
+Failed to set value 'vaapi=va:/dev/dri/renderD999' for option 'init_hw_device': Invalid argument
+Error parsing global options: Invalid argument

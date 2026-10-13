@@ -79,7 +79,8 @@ is upscaled. It turns red when a value is invalid.
 
 ### 2. Orientation
 
-Rotate (0 / 90 / 180 / 270) and Flip horizontal, in one compact row.
+Rotate (0 / 90 / 180 / 270) and Flip horizontal, in one compact row. The rotation is
+clockwise, and the flip mirrors the picture after the rotation.
 
 ### 3. Crop
 
@@ -129,7 +130,11 @@ One control replaces Resolution limit + Scaled size + Pixel aspect + Final dimen
 | Allow upscaling | on / off | off |
 
 "Fit within 1080p" means: the output fits inside 1920×1080, keeps its aspect ratio, and is
-never upscaled unless you turn upscaling on.
+never upscaled unless you turn upscaling on. Upscaling is measured against the source's
+display size: a 720×480 16:9 DVD made square becomes 854×480, which is not an upscale
+([decision 0009](../decisions/0009-dimension-maths-conventions.md)). For portrait output
+(taller than wide) the box turns: a 1080×1920 phone video fits inside 1080×1920
+([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 ### 5. Advanced (collapsed)
 
@@ -511,8 +516,12 @@ better one. This is the **name source**.
      the opened folder or media root). Generic folders are `Season 03`, `S03`, `Specials`,
      `Extras`, `Featurettes`, `Disc 1`, `CD1`, `BDMV`, `STREAM`, `VIDEO_TS`.
   2. If the folder holds several episode files (a season pack), the **file name** is the name
-     source, because only it has the episode number and title. The folder only fills fields
-     that the file name does not have (for example the year).
+     source, because only it has the episode number and title. The same holds when only the
+     file name has an episode number (a season folder such as `The.Sopranos.S03.1080p…`, or a
+     show folder such as `Breaking Bad (2008)`, when the other episodes are not there).
+     The folder only fills fields that the file name does not have (for example the year,
+     or the show name in front of a bare `S01E01.mkv`). Files in `BDMV`, `STREAM` and
+     `VIDEO_TS` are never episodes. ([0012](../decisions/0012-output-naming-rules.md))
   3. Otherwise, the candidate with the higher score wins. Score: +1 for each recognised field
      (title, year, resolution, source, video codec, audio codec, HDR, edition, release group),
      +2 if the title has word separators (`Hacksaw.Ridge`, not `hacksawridge`). On a tie, the
@@ -567,7 +576,7 @@ this: `{date:%d.%m.%Y}`.
 
 | Variable | Example |
 |----------|---------|
-| `{resolution}` | `2160p`, `1080p`, `720p`, `576p`, `480p`, or `W×H` for other sizes |
+| `{resolution}` | `2160p`, `1080p`, `720p`, `576p`, `480p`, or `WxH` (ASCII `x`: `640x360`) for other sizes |
 | `{hdr}` | `HDR10`, `HDR10+`, `DV`, `HLG`. Empty for SDR |
 | `{acodec}` · `{audio_channels}` | First output audio track: `AC-3` · `5.1` |
 | `{audio_langs}` · `{sub_langs}` | Output track languages: `HUN-ENG` |
@@ -623,10 +632,13 @@ Output to MKV at 1080p:
 ### Safe file names
 
 - Windows rules apply on **every** OS, because files move between systems: the characters
-  `< > : " / \ | ? *` and control characters are replaced, reserved names (`CON`, `NUL`, …)
-  are changed, and trailing dots and spaces are removed.
-- Each path part has a limit of 255 bytes. `{sub_title}` is shortened first, then
-  `{main_title}`. An empty result falls back to `{file_name}`.
+  `< > : " / \ | ? *` and control characters are replaced (`": "` → `" - "`; `:` `/` `\` `|`
+  → `-`; `"` → `'`; `< > ? *` and control characters are removed), reserved names (`CON`,
+  `NUL`, …) get a `_`, and trailing dots and spaces are removed.
+- Each path part has a limit of 255 bytes. The file name (with its extension) keeps room for
+  the `.part` of the partial file, so it has 250 bytes. `{sub_title}` is shortened first,
+  then `{main_title}`. An empty result falls back to `{file_name}`.
+  ([0012](../decisions/0012-output-naming-rules.md))
 - Collisions follow the collision setting ([Queue](#queue)). In a batch, duplicate names are
   errors ([04 §Output naming](04-batch-mode.md#output-naming)).
 
@@ -690,7 +702,9 @@ Same behaviour as HandBrake:
   auto-rename, or overwrite.
 - **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
 - **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux
-  `systemd-inhibit` / D-Bus).
+  `systemd-inhibit` / D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
+  power button and the lid always work, and the encode then pauses with the system and
+  continues after wake ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - Per-job **log**: the full command, FFmpeg output, timing, and a copy button for bug reports.
 
 ---
@@ -713,7 +727,7 @@ The Summary tab shows which job type you will get, and why.
 | Section | Contents |
 |---------|----------|
 | Tools | ffmpeg, ffprobe, mkvpropedit, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
-| Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off |
+| Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
 | Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |
 | Preview | Number of sample frames, cache size limit, clear cache |

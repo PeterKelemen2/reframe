@@ -1,8 +1,9 @@
 """The ``Reframe`` facade (C-15): the one object that UIs (CLI, server, desktop) talk to.
 
 02 §Cross-cutting rules 5: UIs use this object and ``reframe.models``, never the internal
-modules. M1 wires the services that exist now (tools, sources); the M2 steps add theirs
-(capabilities, presets, jobs, batch, queue, settings) as attributes of :class:`Reframe`.
+modules. M1 wired the services of that milestone (tools, sources); C-4 adds ``capabilities``;
+the other M2 steps add theirs (presets, jobs, batch, queue, settings) as attributes of
+:class:`Reframe`.
 
 Example::
 
@@ -35,6 +36,7 @@ from types import TracebackType
 from pydantic import JsonValue
 
 from reframe import paths
+from reframe.capabilities import CapabilityService
 from reframe.events import EventBus
 from reframe.models.events import ToolsChangedEvent
 from reframe.models.media import MediaSource
@@ -453,16 +455,19 @@ def _tool_error(path: Path, info: ToolInfo) -> ProbeError:
 class Reframe:
     """The Reframe core as one object (C-15). Create it with ``await Reframe.create()``.
 
-    Services that exist now (M1):
+    Services that exist now:
 
-    - :attr:`events` — the async event bus (``tools.changed``, ``task.progress``,
-      ``task.done``).
+    - :attr:`events` — the async event bus (``tools.changed``, ``capabilities.changed``,
+      ``task.progress``, ``task.done``).
     - :attr:`tools` — :class:`ToolsService`: tool status, versions, re-scan (C-1).
+    - :attr:`capabilities` — :class:`~reframe.capabilities.CapabilityService`: encoder
+      statuses (``snapshot`` never waits, ``wait``, ``rescan``, ``closest_available``),
+      detected in the background with a cache under ``<cache dir>/capabilities`` (C-4).
     - :attr:`sources` — :class:`SourceService`: ``probe``, ``probe_folder``, ``get`` (C-3).
     - :attr:`tasks` — the background task manager (``get``, ``list``, ``cancel``, ``wait``,
       ``value``) for the tasks that the services start.
 
-    The M2 steps add ``capabilities`` (C-4), ``presets`` (C-8), ``settings`` (C-9),
+    The other M2 steps add ``presets`` (C-8), ``settings`` (C-9),
     ``jobs`` (C-7, C-11), ``batch`` (C-12) and ``queue`` (C-11).
 
     **Settings.** Every service reads the settings through :meth:`settings_snapshot` (one
@@ -471,12 +476,14 @@ class Reframe:
     paths in the settings feed tool discovery.
 
     Use ``async with await Reframe.create() as app:`` or call :meth:`close` at the end:
-    it cancels running tasks and probes (killing their processes) and closes the event bus.
+    it cancels running tasks, probes and the encoder detection (killing their processes) and
+    closes the event bus.
     """
 
     events: EventBus
     tasks: TaskManager
     tools: ToolsService
+    capabilities: CapabilityService
     sources: SourceService
 
     def __init__(
@@ -497,6 +504,9 @@ class Reframe:
         self.tasks = TaskManager(self.events)
         roots = paths.bundled_tool_roots(environ={**os.environ, paths.DATA_DIR_ENV: str(data_dir)})
         self.tools = ToolsService(self.events, self.settings_snapshot, bundled_roots=roots)
+        self.capabilities = CapabilityService(
+            self.events, self.tools, self.settings_snapshot, cache_dir=cache_dir / "capabilities"
+        )
         self.sources = SourceService(
             self.tools,
             self.tasks,
@@ -512,7 +522,8 @@ class Reframe:
         *,
         cache_dir: Path | None = None,
     ) -> Reframe:
-        """Create the facade and start tool discovery in the background. Returns at once.
+        """Create the facade and start tool discovery and encoder detection in the
+        background. Returns at once.
 
         The folders default to :mod:`reframe.paths` (``REFRAME_CONFIG_DIR``,
         ``REFRAME_DATA_DIR``, ``REFRAME_CACHE_DIR`` or the platform folders). ``data_dir``
@@ -525,6 +536,7 @@ class Reframe:
         settings = cls._load_settings(config)
         app = cls(config_dir=config, data_dir=data, cache_dir=cache, settings=settings)
         app.tools.start()
+        app.capabilities.start()
         return app
 
     @staticmethod
@@ -542,13 +554,15 @@ class Reframe:
         return self._closed
 
     async def close(self) -> None:
-        """Stop everything: cancel tool discovery, running tasks and probes (their process
-        trees are killed), then close the event bus. Safe to call more than once."""
+        """Stop everything: cancel tool discovery, encoder detection, running tasks and
+        probes (their process trees are killed), then close the event bus. Safe to call more
+        than once."""
         if self._closed:
             return
         self._closed = True
         try:
             await self.tasks.close()  # first: a task may be waiting for tool discovery
+            await self.capabilities.close()  # kills test encodes; may wait for discovery too
             await self.tools.close()  # a probe() waiting for discovery returns "cancelled"
             await self.sources.close()
         finally:

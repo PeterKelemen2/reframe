@@ -47,6 +47,13 @@ class EncoderStatus(ReframeModel):
     """Private options this build supports (``ffmpeg -h encoder=<id>``)."""
     presets: list[str] = Field(default_factory=list)
     """Speed presets this build offers, if the encoder lists them."""
+    pix_fmts: list[str] = Field(default_factory=list)
+    """Pixel formats the encoder accepts in this build (``Supported pixel formats`` of
+    ``ffmpeg -h encoder=<id>``; only ``vaapi`` for VAAPI encoders, which take hardware frames).
+    Empty when not read."""
+    reason_10bit: str | None = None
+    """Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
+    supported by this encoder")."""
 
 
 class CapabilitySnapshot(ReframeModel):

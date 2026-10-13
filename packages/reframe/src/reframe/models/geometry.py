@@ -40,7 +40,8 @@ Scaler = Literal["lanczos", "bicubic", "spline", "bilinear"]
 
 
 class CropRect(DocumentModel):
-    """Pixels removed from each edge of the (unrotated) source frame."""
+    """Pixels removed from each edge of the source picture as FFmpeg decodes it: the display
+    matrix is applied, the job's rotate and flip are not (decision 0009)."""
 
     top: NonNegativeInt = 0
     bottom: NonNegativeInt = 0
@@ -125,8 +126,11 @@ class SourceGeometry(ReframeModel):
     """Horizontal crop step for the chroma grid (2 for 4:2:0 and 4:2:2, 1 for 4:4:4)."""
     chroma_step_y: PositiveInt = 2
     """Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
-    4:2:0)."""
+    sources, decision 0009)."""
     interlaced: bool = False
+    chroma_assumed: bool = False
+    """``True`` when the pixel format is unknown and the chroma steps are C-5's assumption
+    (4:2:0, steps of 2)."""
 
 
 class Geometry(ReframeModel):
@@ -148,3 +152,9 @@ class Geometry(ReframeModel):
     """Total rotation applied (source + job)."""
     upscaled: bool = False
     notes: list[str] = Field(default_factory=list)
+    filter_rotation: Rotation = 0
+    """Clockwise rotation that the filter graph applies after the crop: the job's ``rotate``.
+    FFmpeg's automatic rotation has already applied the source's display matrix before the
+    filter graph, so the crop is in that orientation (``reframe.dimensions``)."""
+    flip_horizontal: bool = False
+    """Mirror the picture left to right, after the rotation."""

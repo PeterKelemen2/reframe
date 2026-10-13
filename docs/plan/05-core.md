@@ -184,25 +184,39 @@ This step fixes the HandBrake freeze. Detection runs in the background, has stri
 and returns statuses, never exceptions.
 
 - [ ] Parse `ffmpeg -hide_banner -encoders` to list the encoders in this build.
+- [ ] Parse `ffmpeg -hide_banner -filters` into the snapshot's filter list: `C-7` chooses
+      `libplacebo` or `zscale,tonemap` with it
+      ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)).
 - [ ] Parse `ffmpeg -h encoder=<name>` for each known encoder to find its private options and
       presets. Options in the definitions that this build does not support are hidden.
 - [ ] **Hardware test encode** for each hardware encoder in the build: encode 3 frames of
       `lavfi color=size=640x360` to `-f null -`, with the encoder's hardware init arguments and
-      a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test where relevant.
-- [ ] **Reason mapping**: map known stderr patterns to plain-language reasons. Examples:
-      `Cannot load libcuda` → "NVIDIA driver not found";
-      `Driver does not support the required nvenc API version` → "NVIDIA driver too old";
-      `No VA display found` / `Failed to initialise VAAPI` → "No VAAPI device (/dev/dri)";
-      `MFX_ERR_UNSUPPORTED` → "Intel QSV not supported on this GPU". Unknown patterns keep the
-      last stderr line.
+      a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test when the
+      encoder's definition has a 10-bit pixel format (result: `supports_10bit`). VAAPI
+      encoders are tested on every render node (`/dev/dri/renderD*`); each uses the first node
+      that works, unless Settings → Encoders forces one ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
+- [ ] **Reason mapping** ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)):
+      map the texts that real FFmpeg prints (recorded in `testdata/README.md`) to
+      plain-language reasons. Examples: `Cannot load libcuda.so.1` → "NVIDIA driver not
+      found"; `Driver does not support the required nvenc API version` → "NVIDIA driver too
+      old"; `No VA display found for device X` → "No VAAPI device (X)";
+      `Failed to initialise VAAPI connection` → "VAAPI driver failed to start";
+      `Error creating a MFX session` or a failed `-init_hw_device qsv=hw` → "No Intel QSV
+      device"; `DLL libamfrt64.so.1 failed to open` → "AMD AMF runtime not found". A known
+      text gives `unavailable`. Any other failure gives `error` with the most informative
+      line: the first line that the encoder logs (`[hevc_nvenc @ …]`), else the first line of
+      a hardware device (`[VAAPI @ …]`), else the first line that is not fftools bookkeeping.
+      Never the last line: it is a generic `Conversion failed!`.
 - [ ] **Cache**: key = ffmpeg path + size + mtime + version, plus a GPU fingerprint (Linux:
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
-      result is used at once and checked again in the background. A change emits
-      `capabilities.changed`.
+      result is used at once and checked again in the background: the full detection runs, and
+      the cached statuses stay until their new results are in. A change emits
+      `capabilities.changed`. A new ffmpeg (`tools.changed`) starts a new detection.
 - [ ] States: `unknown → checking → available | unavailable(reason) | error(reason)`.
 - [ ] `closest_available(encoder_id) -> encoder_id | None` uses the fallback chain from the
-      definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.).
+      definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.), for
+      video and audio encoders (`libfdk_aac → aac`, [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 Done when: the app starts and serves the UI in < 1 s while detection runs. A fake-ffmpeg test
 double (a script that sleeps or prints driver errors) proves timeouts and reason mapping. A
@@ -217,6 +231,7 @@ A pure module with no I/O.
 def compute_geometry(src: SourceGeometry, settings: DimensionSettings) -> Geometry
 # Geometry: crop rect, scaled size, output SAR, display aspect, upscaled: bool, notes: list[str]
 def detect_crop_consensus(samples: list[CropRect], mode: Literal["auto", "conservative"]) -> CropRect
+def source_geometry(stream: VideoStream) -> SourceGeometry
 ```
 
 - [ ] Size modes: same as cropped source, fit within W×H, exact width, exact height.
@@ -226,11 +241,21 @@ def detect_crop_consensus(samples: list[CropRect], mode: Literal["auto", "conser
 - [ ] Modulus rounding keeps the aspect error as small as possible. Crop snaps to the chroma
       grid.
 - [ ] `notes` explain every snap or limit ("Crop left 141 → 140 for 4:2:0").
+- [ ] Conventions ([decision 0009](../decisions/0009-dimension-maths-conventions.md)): the crop
+      is measured on the picture as FFmpeg decodes it (display matrix applied, job rotation
+      not yet); the filter chain for `C-7` (automatic rotation on, then crop → transpose →
+      hflip → scale → setsar); upscaling is measured against the display size (DVD 16:9 →
+      854×480 is not an upscale); the rounding rule. The fit box turns for portrait output
+      ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 Done when: hypothesis tests prove these properties: the output is inside the fit box; no
 upscale unless allowed; the result is a multiple of the modulus; display aspect error
-< 0.5 % (or < 1 px); the crop is never negative and never removes the full frame. Table tests
-cover the classic cases (DVD NTSC 720×480 anamorphic 16:9, 1080p 2.40:1 letterbox, 4K → 1080p).
+< 0.5 % (or < 1 px); the crop is never negative and never removes the full frame. Corner
+cases are defined, not skipped ([0009](../decisions/0009-dimension-maths-conventions.md)): a
+fit box or a picture smaller than one modulus step gives one step on that axis, and when no
+size inside the limits meets the aspect tolerance, the closest one is used (the test proves
+that none exists). Table tests cover the classic cases (DVD NTSC 720×480 anamorphic 16:9,
+1080p 2.40:1 letterbox, 4K → 1080p).
 
 ## C-6 Definitions: encoders, options, filters, containers, languages
 
@@ -261,7 +286,8 @@ class EncoderOption(BaseModel):
       [03 §Advanced](03-features.md#advanced-encoder-options)). Include x264/x265 per-preset
       default tables.
 - [ ] **Audio encoders**: bitrate ranges per mixdown, **allowed bitrate values** (fixed steps
-      for AC-3 / E-AC-3, free ranges for AAC / Opus), sample rates, passthru codecs.
+      for AC-3 / E-AC-3, free ranges for AAC / Opus), sample rates, passthru codecs, fallback
+      chain (`libfdk_aac → aac`, [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - [ ] **Containers**: allowed video/audio/subtitle codecs, chapter and attachment support, the
       metadata flags each muxer can write.
 - [ ] **Filters**: id, FFmpeg implementation, presets/tunes with parameter values (HandBrake
@@ -404,7 +430,8 @@ overrides for `C-16`), and per-group resolution with a match report.
     behaviour, roles, order, default track.
   - Codec-rule stage: first match wins. Bitrate cap: never bigger than the source; passthru
     when the source fits; snap to the allowed encoder values; unknown bitrate counts as above
-    the max.
+    the max. Built in M2, before the selection stage: an M2 draft job takes every audio track
+    through the codec rules ([decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)).
   - `explain(defaults, source) -> list[TrackDecision]`, with a reason string for every
     selected or dropped track and every chosen rule. It feeds the live preview.
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
@@ -429,7 +456,12 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 
 - [ ] Sleep inhibit: Windows `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`.
       Linux: the logind `Inhibit` D-Bus call, or `systemd-inhibit` as a fallback. If neither
-      is available, emit a warning and continue.
+      is available, emit a warning and continue. Only automatic (idle) sleep is stopped: the
+      user's own Sleep is never blocked, so on Linux there is no logind `sleep` block lock,
+      only the idle lock and the desktop session's inhibit for automatic suspend
+      ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md), which supersedes the lock of
+      [0011](../decisions/0011-sleep-inhibit.md)). The D-Bus calls use a small stdlib client
+      (no D-Bus dependency); on Windows one dedicated thread sets and clears the state.
 - [ ] Power actions: shut down, sleep (Windows: `shutdown /s /t 60` and `SetSuspendState`.
       Linux: `systemctl poweroff|suspend`). Always after a cancellable 60 s countdown event.
 - [ ] Notification hook: emits an event only. The UI layer shows the notification.
@@ -457,7 +489,7 @@ class Reframe:
 - [ ] CLI (`reframe` entry point, `[cli]` extra):
       `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status|fetch` ·
       `reframe name PATH… [--template T]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
-      `reframe plan FILE --preset NAME` (prints the command) · `reframe encode FILE --preset NAME -o OUT` ·
+      `reframe plan FILE --preset NAME` (prints the command) · `reframe encode FILE|DIR… --preset NAME [-o OUT]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
       `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
 
 Done when: the CLI can encode a season folder end to end with no UI. This is the first point

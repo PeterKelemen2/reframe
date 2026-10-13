@@ -35,8 +35,8 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-1 Tool runner and discovery | **Done** | `reframe.tools`: `run` / `run_streaming` (timeout, cancel, output limit, process-tree kill), discovery env → Settings → bundled → `PATH`, version parsing (minimum FFmpeg 7.0), child safety (Linux `PR_SET_PDEATHSIG`; Windows Job Object, [0005](decisions/0005-tool-discovery-details.md)). Windows code is tested with mocks only. `LIBVA_DRIVERS_PATH` handling stays until D-7 decides |
 | C-2 Data models | **Done** | All public models with JSON Schema snapshots and round-trip property tests. Known gaps: no `FieldChange` model (C-9 adds it), no language-list model for `GET /api/languages` (S-2), `-show_programs` output is not modelled |
 | C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
-| C-4 Encoder capabilities | Not started | |
-| C-5 Dimensions maths | Not started | Models only (`DimensionSettings`, `Geometry`, `CropRect`) |
+| C-4 Encoder capabilities | **Done** (branch `m2-encode-cli`) | `reframe.capabilities`: `CapabilityService` (`Reframe.capabilities`: cached result at once, full detection in the background, `capabilities.changed`, re-scan, a new ffmpeg starts a new detection), `-encoders` / `-filters` / `-h encoder=` parsing, hardware test encodes (3 at a time, 10 s, 10-bit test), reason mapping of the real FFmpeg texts, cache keyed by binary + GPU fingerprint, `closest_available`, `encoder_issues` (`encoder.unknown` / `checking` / `untested` / `unavailable`) for C-8. Decision [0008](decisions/0008-encoder-detection-reasons-and-filters.md). Checked on one Linux machine (AMD: VAAPI and AMF work; NVENC and QSV only as failures); the Windows registry fingerprint is tested with mocks only |
+| C-5 Dimensions maths | **Done** (branch `m2-encode-cli`) | `reframe.dimensions`: `compute_geometry` (crop snapped to the chroma grid, rotation, the four size modes, square / keep / custom pixel aspect, modulus rounding within 0.5 % or 1 px, notes), `detect_crop_consensus` (auto, conservative), `source_geometry`, `rotate_crop`. Hypothesis properties of "Done when", table tests of the classic cases, and real-FFmpeg tests (crop grid of all 200 pixel formats, the filter chain for C-7 on the anamorphic, letterbox and rotated files). Conventions and corner cases: [0009](decisions/0009-dimension-maths-conventions.md) |
 | C-6 Definitions | **Partial** (M2 part done) | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli`:** `reframe.definitions` with every video encoder (rate control with ranges, args and the quality conversion table, presets, tunes, profiles, levels, 2-pass, the `EncoderOption` schema with the basic option sets for x264, x265, SVT-AV1, NVENC, QSV, AMF, VAAPI and the x264 / x265 per-preset default tables), audio encoders (bitrates per mixdown, fixed steps, sample rates, VBR quality, passthru codecs, mixdowns), containers (copy / encode codecs, flags, chapters, attachments, tags, `+faststart`), filters (implementations, HandBrake-mapped presets and tunes, help, fixed order), `convert_quality`, `supported_options`, `lint_definitions`. Checked against FFmpeg n9.0.2 (both builds) and AMF / VAAPI hardware ([0010](decisions/0010-definitions-filters-and-containers.md)). **Not started (M9):** the complete option sets of 03 §Advanced (analysis, colour, performance options, VP9 options). **Not verified:** NVENC and QSV on hardware; QSV levels are not offered |
 | C-7 Command builder | Not started | Models only (`EncodePlan`, `PlanStep`, `PlanFile`) |
 | C-8 Validation | Not started | Models only (`ValidationIssue`, `Fix`). `reframe.jsonpatch` (RFC 6902, for fixes) is done |
@@ -45,9 +45,9 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | C-11 Queue and job runner | Not started | Models only (`QueueJob`, `JobState`, `JobProgress`). The event bus `reframe.events` is done |
 | C-12 Batch engine | Not started | Models only (`TrackSelector`, `OutputTrackRule`, `AudioDefaults`, …) |
 | C-13 Metadata edit and remux | Not started | The language-tag behaviour of FFmpeg and mkvpropedit is verified and recorded (`testdata/README.md`) |
-| C-14 Platform services | Not started | Sleep inhibit, power actions and the notification hook are not built. (`reframe.platform` already has child-process safety from C-1 and `launch_detached` for user-facing programs) |
+| C-14 Platform services | **Partial** | **Branch `m2-encode-cli` only:** sleep inhibit, `reframe.platform.sleep` (counted `SleepInhibitor`; Linux logind `Inhibit` through a stdlib D-Bus client, then `systemd-inhibit`; Windows `SetThreadExecutionState` on one dedicated thread, mock-tested only; `sleep_inhibit.unavailable` warning), [0011](decisions/0011-sleep-inhibit.md). **Not started:** power actions, the notification hook. (`reframe.platform` also has child-process safety from C-1 and `launch_detached` for user-facing programs) |
 | C-15 Service facade and CLI | **Partial** | **Done:** `Reframe.create()` / `close()` with `tools`, `sources`, `tasks` and `events`; CLI `reframe probe FILE [--json]` and `reframe version`; `python -m reframe.tools` (tool status). **Not started:** the capabilities, presets, jobs, batch, queue and settings services; CLI `encoders`, `tools status\|fetch`, `name`, `presets`, `plan`, `encode`, `batch` |
-| C-16 Output naming | Not started | Model only (`NamingOptions`) |
+| C-16 Output naming | **Done** (branch `m2-encode-cli`) | `reframe.naming`: `resolve_output_name` (name source Auto / File / Folder with generic-folder skipping, season packs and scores; guessit parsing that keeps the original text and positions; templates with format specs, `<…>` groups, `/` subfolders, `{{ }}`; the 17 HandBrake variables and the Reframe ones; word separator and HandBrake clean-up; Windows-safe names on every OS; MP4/M4V rule; the job's manual name, template, name source and per-file `field_overrides`) and `check_template` (syntax, unknown variables with "did you mean" fixes, format specs). Models `NameResult`, `NameCandidate`, `ParsedName`, `NameSpan`, `NamingVariable`. Name corpus `testdata/names.toml`: 146 real-world cases. Decision [0012](decisions/0012-output-naming-rules.md). Collisions are C-8 / C-11; the `reframe name` command is C-15 |
 
 ### Server (`reframe-server`, 06-web-app.md Part A)
 
@@ -95,14 +95,14 @@ the parity table) to what exists. No feature has a user interface yet.
 | HDR information | **Partial** | Detection of HDR10, HDR10+, HLG and Dolby Vision profile, with mastering display and MaxCLL. Missing: tone mapping, HDR metadata in encodes |
 | Tool paths and bundled FFmpeg | **Partial** | Core discovery with overrides and fixes, the manifest and the fetch script. Missing: `reframe tools fetch`, Settings → Tools UI, packaging |
 | Languages (search, codes, display) | **Partial** | Core module done. Missing: the language picker UI |
-| Non-blocking encoder detection with fallbacks | Not started | |
+| Non-blocking encoder detection with fallbacks | **Partial** | Core: detection in the background with strict timeouts, plain-language reasons, cache, fallback chain and the `encoder.unavailable` fix. Missing: the C-8 rule registration, CLI `reframe encoders` (C-15), the encoder picker and Settings → Encoders UI |
 | Presets (built-in, user, import/export) | Not started | |
-| Range, Dimensions, Filters, Video, advanced encoder options | **Partial** | Definitions (C-6): encoders with rate control, presets and the basic advanced options; filters with HandBrake presets and help. Missing: the command builder (C-7), validation (C-8), the UI |
+| Range, Dimensions, Filters, Video, advanced encoder options | **Partial** | Core: the dimension maths (C-5) and the definitions (C-6: encoders with rate control, presets and the basic advanced options; filters with HandBrake presets and help), branch `m2-encode-cli`. Missing: the command builder (C-7), validation (C-8), range, crop detection (C-10), the UI |
 | Audio and subtitle output tracks, audio defaults, track rules | Not started | |
 | Track metadata editing, remux-only and metadata-edit jobs | Not started | |
 | Chapters, tags | Not started | Chapters are probed |
-| Output naming (variables, release-name parsing, templates) | Not started | |
-| Queue, logs, when done, sleep inhibit | Not started | The event bus and the task manager exist |
+| Output naming (variables, release-name parsing, templates) | **Partial** | Core done (C-16). Missing: `reframe name` and the default name of `reframe encode` (C-15), name collisions (C-8, C-11), `POST /api/naming/preview` and the variable list in `GET /api/definitions` (S-2), the naming editor (F-18) |
+| Queue, logs, when done, sleep inhibit | Not started | The event bus and the task manager exist. Sleep inhibit is built in the core (C-14, branch `m2-encode-cli`); the queue (C-11) does not use it yet |
 | Batch / season mode | Not started | |
 | Crop preview, filter preview, live preview clip | Not started | |
 | Web app | Not started | Frontend scaffold only |
@@ -126,13 +126,11 @@ cd frontend && npm run dev:web       # placeholder page only
   the `.exe`-only tool lookup, the `.cmd` test launchers, console encoding, and the Windows CI
   jobs.
 - **GitHub Actions**: no workflow has run, because nothing was pushed.
-- **GPU encoders**: not built yet (C-4).
+- **GPU encoders**: detection is checked on one Linux machine (AMD RX 7600: VAAPI and AMF
+  work); NVENC and QSV only as failures (no NVIDIA driver, no Intel GPU); Windows not at all.
 
 ## Open items for the next steps
 
-- **C-4**: the plan's pattern `MFX_ERR_UNSUPPORTED` does not appear in real FFmpeg output, and
-  the last stderr line of a failed encode is a generic `Conversion failed!`. The real texts are
-  recorded in `testdata/README.md`. C-4 needs a decision record that changes the plan.
 - **C-13**: ffprobe cannot read Matroska `LanguageIETF`. Reframe reads it through MediaInfo
   (`language_ietf`). Decide in C-13 how a metadata edit is checked after the re-probe.
 - **C-7**: FFmpeg writes language codes verbatim. The builder must pass ISO 639-2/B to

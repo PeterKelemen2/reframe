@@ -390,7 +390,70 @@ its own). The QSV setup is the plan's; it is not verified on an Intel GPU.
 
 ### Encoder detection (C-4)
 
-Nothing recorded yet.
+Checked on 2026-10-13 with the pinned build (and the Arch n9.0.2 package where noted) on the
+machine above (AMD RX 7600, no NVIDIA driver, no Intel GPU). Decision
+[0008](../docs/decisions/0008-encoder-detection-reasons-and-filters.md) is based on these.
+
+**The test encode** that C-4 runs is built from the hardware setup of the definitions
+(`reframe.capabilities.hardware_test_argv`):
+
+```sh
+# VAAPI (10-bit: format=p010le); QSV: -init_hw_device qsv=hw -filter_hw_device hw and
+# -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv
+ffmpeg -hide_banner -nostdin -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va \
+  -f lavfi -i color=size=640x360 -frames:v 3 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
+# NVENC and AMF take software frames (10-bit: -pix_fmt p010le)
+ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt nv12 \
+  -c:v hevc_amf -f null -
+```
+
+The `c4_*` captures in `fake_data/` are exactly these commands
+(`capture_fake_data.py --only c4_…`; `test_hwtest.py` fails when the definitions change the
+command and the captures were not made again):
+
+| Capture | Exit code | Key stderr line | C-4 reason (state) |
+|---------|-----------|-----------------|--------------------|
+| `c4_h264_vaapi_ok`, `c4_hevc_vaapi_10bit_ok`, `c4_hevc_amf_ok`, `c4_hevc_amf_10bit_ok` | 0 | — | available |
+| `c4_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
+| `c4_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `c4_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
+| `c4_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
+| `c4_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
+| `c4_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
+
+- **A missing AMF runtime can be provoked without root**: `LD_LIBRARY_PATH` pointing at a
+  folder with an empty `libamfrt64.so.1` makes `dlopen` fail (the capture records the folder
+  as a placeholder).
+- **`-h encoder=` pixel formats do not tell 10-bit support for hardware encoders**: `h264_amf`
+  lists `p010le` and still refuses 10-bit. Only the test encode decides. (For software
+  encoders the list is right: `libx265` lists `yuv420p10le`.)
+- **QSV at `-v verbose`** says why the device fails here (`[VAAPI @ …] Ignoring device 0 with
+  non-matching vendor id (0x8086).` … `Cannot open a VA display from DRM device (null).`); at
+  the default level, which C-4 uses, only the fftools lines above are printed.
+- **Presets in `-h encoder=`**: `libx264` / `libx265` have `-preset <string>`, so FFmpeg does
+  not list them; `libsvtav1` has `-preset <int> … (from -2 to 13)` without names; NVENC lists
+  `slow`, `medium`, `fast`, `p1` … `p7`; QSV `veryfast` … `veryslow`; AMF `quality`,
+  `balanced`, `speed`, `high_quality` (under `-preset` and `-quality`); VAAPI has no `-preset`
+  and lists only the pixel format `vaapi`.
+- **`-filters`**: FFmpeg 9 prints two flag columns (`T.`, `.S`), FFmpeg 7 printed three
+  (`TSC`). The pinned build has 562 filters, `libplacebo` and `zscale` among them.
+- **Timing**: `-encoders`, `-filters` and each `-h encoder=` take about 10 ms, a test encode
+  about 30 ms. A full detection (23 encoders of the definitions, 12 hardware tests plus the
+  10-bit tests): **0.20 – 0.26 s** with the pinned build, 0.40 s with the Arch package.
+
+Real result with the pinned build (`detect_capabilities`, hardware tests on):
+
+| Encoder | State | 10-bit | Reason |
+|---------|-------|--------|--------|
+| `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | |
+| `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | NVIDIA driver not found |
+| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `h264_amf` | available | no (no 10-bit format in the definition) | |
+| `hevc_amf`, `av1_amf` | available | yes | |
+| `h264_vaapi` | available | no (no 10-bit format in the definition) | |
+| `hevc_vaapi`, `av1_vaapi` | available | yes | |
+| `aac`, `ac3`, `eac3`, `libopus`, `flac`, `libmp3lame` | available | – | |
+| `libfdk_aac` | unavailable | – | Not in this FFmpeg build |
 
 ### Encoder definitions (C-6)
 
@@ -532,4 +595,123 @@ With no default track of a type, the MP4 muxer marks the first one default (`[1,
 
 ### Sleep inhibit (C-14)
 
-Nothing recorded yet.
+Checked on 2026-10-13 on Arch Linux, systemd 262, KDE Plasma (Wayland), dbus on
+`/run/dbus/system_bus_socket`. Decision record
+[0011](../docs/decisions/0011-sleep-inhibit.md). The lock test is
+`packages/reframe/tests/platform/test_sleep_real.py` (skipped without logind).
+
+The logind method (input `ssss`, output one fd):
+
+```console
+$ busctl introspect org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager | grep -i inhibit
+.Inhibit                          method   ssss                h                                                                            -
+.ListInhibitors                   method   -                   a(ssssuu)                                                                    -
+.BlockInhibited                   property s                   "handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch" emits-change
+.BlockWeakInhibited               property s                   ""                                                                           emits-change
+.DelayInhibited                   property s                   "shutdown:sleep"                                                             emits-change
+.InhibitDelayMaxUSec              property t                   5000000                                                                      const
+...
+$ busctl --verbose call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Inhibit ssss sleep:idle Reframe test block
+MESSAGE "h" {
+        UNIX_FD 5;
+};
+$ busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Inhibit ssss bogus Reframe x block
+Call failed: Invalid what specification bogus
+```
+
+Reframe's own client gets the error name too:
+`org.freedesktop.DBus.Error.InvalidArgs: Invalid what specification bogus`. Its message bytes
+for the Inhibit call are identical to jeepney 0.9.0's `new_method_call(…, 'Inhibit', 'ssss',
+…).serialise(serial=2)` (compared byte for byte; kept as `INHIBIT_CALL` in
+`tests/platform/test_sleep_dbus.py`).
+
+What a lock does (`CanSuspend` is what the desktop asks before it suspends):
+
+| Lock held | `CanSuspend` | `BlockInhibited` gets | KDE PolicyAgent `HasInhibition` 1 (suspend) / 4 (screen) |
+|-----------|--------------|-----------------------|----------------------------------------------------------|
+| none | `yes` | – | `false` / `false` |
+| `--what=sleep --mode=block` | `inhibited` | not checked | `false` / `false` |
+| `--what=idle --mode=block` | `yes` | `idle` | `false` / `false` |
+| `sleep:idle` block (Reframe, logind backend) | `inhibited` | `sleep:idle` | `false` / `false` |
+
+`BlockInhibited` before and after Reframe's lock is
+`handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch` (KDE's own lock),
+during it `sleep:idle:handle-power-key:…`.
+
+```console
+$ busctl --user call org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement/PolicyAgent org.kde.Solid.PowerManagement.PolicyAgent HasInhibition u 1
+b false
+```
+
+So KDE does not dim, lock or suspend on its own account because of a logind lock; logind
+refuses the suspend. polkit defaults (`/usr/share/polkit-1/actions/org.freedesktop.login1.policy`):
+
+| Action | allow_any | allow_inactive | allow_active |
+|--------|-----------|----------------|--------------|
+| `inhibit-block-sleep` | `auth_admin_keep` | `yes` | `yes` |
+| `inhibit-block-idle` | `yes` | `yes` | `yes` |
+| `inhibit-delay-sleep` | `yes` | `yes` | `yes` |
+| `suspend-ignore-inhibit` | `auth_admin_keep` | `auth_admin_keep` | `auth_admin_keep` |
+
+A `systemd-run --user` unit (no session) could also take the `sleep` block lock here.
+`man systemd-inhibit` (262): `--mode=` takes `block`, `delay` or `block-weak`; `block-weak`
+"is not enforced against operations initiated by privileged clients or those owned by the
+user that also owns the inhibitor lock"; `delay` is limited by `InhibitDelayMaxSec` (5 s).
+`man logind.conf`: `LidSwitchIgnoreInhibited=` defaults to `yes`.
+
+`systemd-inhibit` failures (exit 1, the command is not run):
+
+```console
+$ systemd-inhibit --what=idle --mode=delay --who=Reframe --why=x --no-ask-password sh -c 'echo ready'
+Failed to inhibit: Delay inhibitors only supported for shutdown and sleep
+$ systemd-inhibit --what=bogus --who=Reframe --why=x sh -c 'echo ready'
+Failed to inhibit: Invalid what specification bogus
+$ DBUS_SYSTEM_BUS_ADDRESS=unix:path=/nonexistent systemd-inhibit --what=sleep:idle --who=Reframe --why=x --no-ask-password sh -c 'echo ready'
+Failed to connect to system scope bus via local transport: No such file or directory
+```
+
+The lock before, during and after, from `test_sleep_real.py` (`uv run pytest -s`;
+`systemd-inhibit --list --no-legend --no-pager`, columns joined by one space). logind backend:
+
+```text
+--- before (7 inhibitors; ours: 0)
+NetworkManager 0 root 637 NetworkManager sleep NetworkManager needs to turn off networks delay
+Realtime Kit 0 root 865 rtkit-daemon sleep Demote realtime scheduling and stop canary. delay
+UPower 0 root 926 upowerd sleep Pause device polling delay
+PowerDevil 1000 peti 1766 org_kde_powerde handle-power-key:handle-suspend-key:handle-hibernate-key:handle-lid-switch KDE handles power events block
+code 1000 peti 24708 code shutdown Ensure a clean shutdown delay
+code 1000 peti 24708 code sleep Application cleanup before suspend delay
+compositor 1000 peti 1610 kwin_wayland sleep Ensuring that the screen gets locked before going to sleep delay
+--- during (8 inhibitors; ours: 1)
+...
+Reframe 1000 peti 91163 pytest sleep:idle Reframe test 3d6f1033 block
+...
+CanSuspend before: yes, during: inhibited
+--- after (7 inhibitors; ours: 0)
+(the same 7 lines as before)
+```
+
+systemd-inhibit backend (the helper is the process that logind lists):
+
+```text
+--- during (8 inhibitors; ours: 1)
+Reframe 1000 peti 91179 systemd-inhibit sleep:idle Reframe test fd470398 block
+--- after (7 inhibitors; ours: 0)
+```
+
+Without a bus (both backends pointed at a missing socket), the one warning event:
+
+```json
+{
+  "type": "app.warning",
+  "code": "sleep_inhibit.unavailable",
+  "message": "Sleep inhibit is not available: the computer may go to sleep while the queue runs.",
+  "detail": "logind: no system bus: FileNotFoundError: [Errno 2] No such file or directory; systemd-inhibit: systemd-inhibit exited with code 1: Failed to connect to system scope bus via local transport: No such file or directory"
+}
+```
+
+Windows (`SetThreadExecutionState`) is not checked on a real machine: the values and the
+"return value is NULL on failure" rule are from
+<https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate>
+(`ES_CONTINUOUS` 0x80000000, `ES_SYSTEM_REQUIRED` 0x00000001; "cannot be used to prevent the
+user from putting the computer to sleep").
