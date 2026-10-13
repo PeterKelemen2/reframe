@@ -24,6 +24,7 @@ from reframe.definitions.models import (
     Definitions,
     EncoderOption,
     FilterDef,
+    FilterImplementation,
     QualityMode,
     VideoCodec,
     VideoEncoderDef,
@@ -393,8 +394,33 @@ def _lint_audio(defs: Definitions) -> list[str]:
     return out
 
 
-def _lint_audio_encoder(w: str, enc: AudioEncoderDef, defs: Definitions) -> list[str]:
+def _lint_audio_fallback(
+    w: str, enc: AudioEncoderDef, encoders: dict[str, AudioEncoderDef]
+) -> list[str]:
+    """Audio chains like the video chains: known encoders, never the encoder itself, no
+    duplicates, and the last one is in every GPL build (decision 0020)."""
+    if not enc.fallback:
+        if not enc.in_gpl_builds:
+            return [f"{w}.fallback: an encoder that GPL builds lack needs a fallback chain"]
+        return []
     out: list[str] = []
+    if len(set(enc.fallback)) != len(enc.fallback):
+        out.append(f"{w}.fallback: duplicate entries")
+    if enc.id in enc.fallback:
+        out.append(f"{w}.fallback: contains the encoder itself")
+    for step in enc.fallback:
+        if step not in encoders:
+            out.append(f"{w}.fallback: unknown audio encoder {step!r}")
+    last = encoders.get(enc.fallback[-1])
+    if last is not None and not last.in_gpl_builds:
+        out.append(
+            f"{w}.fallback: the chain must end in an encoder of every GPL build, not {last.id}"
+        )
+    return out
+
+
+def _lint_audio_encoder(w: str, enc: AudioEncoderDef, defs: Definitions) -> list[str]:
+    out: list[str] = _lint_audio_fallback(w, enc, defs.audio_encoders)
     if not enc.label:
         out.append(f"{w}: needs a label")
     if not enc.mixdowns:
@@ -532,38 +558,44 @@ def _lint_filter(w: str, f: FilterDef) -> list[str]:
     for name in ("what", "use_when", "avoid_when", "settings"):
         if len(getattr(h, name).strip()) < 5:
             out.append(f"{w}.help: {name} is empty")
-    impls = {i.id: i for i in f.implementations}
-    if not impls or len(impls) != len(f.implementations):
+    ids = [i.id for i in f.implementations]
+    if not ids or len(set(ids)) != len(ids):
         out.append(f"{w}: needs implementations with unique ids")
-    preset_ids = [p.id for p in f.presets]
+    for impl in f.implementations:
+        out += _lint_implementation(f"{w}.{impl.id}", impl)
+    return out
+
+
+def _lint_implementation(w: str, impl: FilterImplementation) -> list[str]:
+    """One implementation's presets are complete: a default, every preset with a chain (and
+    one per tune when the implementation has tunes), chains that use only its filters."""
+    out: list[str] = []
+    if not impl.label:
+        out.append(f"{w}: needs a label")
+    preset_ids = [p.id for p in impl.presets]
     if len(set(preset_ids)) != len(preset_ids):
         out.append(f"{w}: duplicate preset ids")
-    if f.default_preset not in preset_ids:
-        out.append(f"{w}: default_preset {f.default_preset!r} is not a preset")
-    tune_ids = {t.id for t in f.tunes}
-    if len(tune_ids) != len(f.tunes):
+    if impl.default_preset not in preset_ids:
+        out.append(f"{w}: default_preset {impl.default_preset!r} is not a preset")
+    if impl.filters and all(p.custom for p in impl.presets):
+        out.append(f"{w}: needs at least one preset that is not custom")
+    tune_ids = {t.id for t in impl.tunes}
+    if len(tune_ids) != len(impl.tunes):
         out.append(f"{w}: duplicate tune ids")
-    for preset in f.presets:
+    for preset in impl.presets:
         pw = f"{w}.presets.{preset.id}"
         if not preset.label:
             out.append(f"{pw}: needs a label")
-        if not preset.chains and not preset.tune_chains:
+        if preset.chain is None:
             out.append(f"{pw}: has no chain")
         if set(preset.tune_chains) - tune_ids:
             out.append(f"{pw}: unknown tunes {sorted(set(preset.tune_chains) - tune_ids)}")
-        if preset.tune_chains and set(preset.tune_chains) != tune_ids:
-            out.append(f"{pw}: a tunable preset needs a chain for every tune")
-        chains = [(impl, chain) for impl, chain in preset.chains.items()] + [
-            (impl, chain)
-            for by_impl in preset.tune_chains.values()
-            for impl, chain in by_impl.items()
-        ]
+        if tune_ids and not preset.custom and set(preset.tune_chains) != tune_ids:
+            out.append(f"{pw}: needs a chain for every tune of {impl.id}")
+        chains = [preset.chain] if preset.chain is not None else []
+        chains += list(preset.tune_chains.values())
         uses_custom = False
-        for impl_id, chain in chains:
-            impl = impls.get(impl_id)
-            if impl is None:
-                out.append(f"{pw}: unknown implementation {impl_id!r}")
-                continue
+        for chain in chains:
             if not chain.strip():
                 out.append(f"{pw}: empty chain")
             placeholders = set(_PLACEHOLDER.findall(chain))
@@ -575,7 +607,7 @@ def _lint_filter(w: str, f: FilterDef) -> list[str]:
             used = set(_chain_filters(chain)) - _HELPER_FILTERS
             if not used <= set(impl.filters):
                 extra = sorted(used - set(impl.filters))
-                out.append(f"{pw}: chain uses {extra}, not in {impl_id}'s filters")
+                out.append(f"{pw}: chain uses {extra}, not in {impl.id}'s filters")
         if uses_custom != preset.custom:
             out.append(f"{pw}: custom must be true exactly when a chain uses {{custom}}")
     return out

@@ -1072,7 +1072,12 @@ _CUSTOM: dict[str, str] = {
     "sharpen": "la=0.5",
     "chroma_smooth": "ca=-1",
 }
-_CUSTOM_BY_IMPL = {"hqdn3d": "luma_spatial=3", "yadif": "mode=send_field", "cas": "strength=0.4"}
+_CUSTOM_BY_IMPL = {
+    "hqdn3d": "luma_spatial=3",
+    "yadif": "mode=send_field",
+    "cas": "strength=0.4",
+    "libplacebo": "colorspace=bt709",
+}
 _COLOUR_FILTERS = frozenset({"tonemap", "colorspace"})
 
 
@@ -1087,41 +1092,34 @@ def _filters_in_build() -> frozenset[str]:
 
 
 def _filter_jobs() -> list[tuple[str, str, str]]:
+    """(label, "filter/implementation", chain) for every preset and tune chain."""
     jobs: list[tuple[str, str, str]] = []
     for filter_id, f in DEFS.filters.items():
-        for preset in f.presets:
-            chains = [(f"{preset.id}/{impl}", impl, chain) for impl, chain in preset.chains.items()]
-            chains += [
-                (f"{preset.id}+{tune}/{impl}", impl, chain)
-                for tune, by_impl in preset.tune_chains.items()
-                for impl, chain in by_impl.items()
-            ]
-            for label, impl_id, chain in chains:
-                custom = _CUSTOM_BY_IMPL.get(impl_id, _CUSTOM.get(filter_id, ""))
-                text = chain.replace("{custom}", custom)
-                impl = next(i for i in f.implementations if i.id == impl_id)
-                if impl.combed_only:
-                    jobs.append(
-                        (
-                            f"{filter_id} {label} combed only",
-                            impl_id,
-                            f"idet,{text}:{impl.combed_only}",
-                        )
-                    )
-                jobs.append((f"{filter_id} {label}", impl_id, text))
+        for impl in f.implementations:
+            key = f"{filter_id}/{impl.id}"
+            for preset in impl.presets:
+                chains = [(preset.id, preset.chain)] if preset.chain is not None else []
+                chains += [(f"{preset.id}+{tune}", c) for tune, c in preset.tune_chains.items()]
+                for label, chain in chains:
+                    custom = _CUSTOM_BY_IMPL.get(impl.id, _CUSTOM.get(filter_id, ""))
+                    text = chain.replace("{custom}", custom)
+                    if impl.combed_only:
+                        combed = f"idet,{text}:{impl.combed_only}"
+                        jobs.append((f"{key} {label} combed only", key, combed))
+                    jobs.append((f"{key} {label}", key, text))
     return jobs
 
 
 def test_every_filter_chain_runs(fixture_media: Callable[[str], Path]) -> None:
     hdr = fixture_media("hdr10")
     available = _filters_in_build()
-    impls = {i.id: i for f in DEFS.filters.values() for i in f.implementations}
+    impls = {f"{f.id}/{i.id}": i for f in DEFS.filters.values() for i in f.implementations}
 
     def run(job: tuple[str, str, str]) -> str | None:
         label, impl_id, chain = job
         if not set(impls[impl_id].filters) <= available:
             return None
-        colour = label.split()[0] in _COLOUR_FILTERS
+        colour = impl_id.split("/")[0] in _COLOUR_FILTERS
         source = (
             ["-i", str(hdr)] if colour else ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"]
         )

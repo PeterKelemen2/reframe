@@ -48,6 +48,8 @@ codec = "aac"
 # --- C-6
 help = "Fraunhofer FDK AAC: better than FFmpeg's AAC at low bitrates. Not in GPL builds of FFmpeg (licence), so not in the bundled build."
 in_gpl_builds = false
+# Decision 0020: a preset that names libfdk_aac falls back to FFmpeg's AAC.
+fallback = ["aac"]
 max_channels = 8
 mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
 # Not verified against a real build (not in the GPL builds): from FFmpeg's libfdk-aacenc.c.

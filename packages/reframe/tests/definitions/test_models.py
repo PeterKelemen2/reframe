@@ -13,7 +13,7 @@ from reframe.definitions import (
     load_definitions,
 )
 from reframe.definitions.models import FILTER_IDS, FILTER_STAGES, interpolate
-from reframe.models.job import FilterSettings, OptionValue
+from reframe.models.job import FilterConfig, FilterSettings, OptionValue
 
 
 def test_derived_values_follow_handbrake_offsets() -> None:
@@ -131,35 +131,68 @@ def test_filter_order_is_the_plan_order() -> None:
 
 def test_filter_implementation_choice() -> None:
     tonemap = load_definitions().filters["tonemap"]
-    preset = tonemap.preset("default")
-    assert preset is not None
-    assert tonemap.preset("nope") is None
-    impl = tonemap.implementation_for(preset)
+    assert [i.id for i in tonemap.implementations] == ["libplacebo", "zscale"]
+    default = FilterConfig()
+    impl = tonemap.implementation_for(default)
     assert impl is not None
     assert impl.id == "libplacebo"
-    impl = tonemap.implementation_for(
-        preset, {"libplacebo": False, "zscale": True, "tonemap": True}
-    )
+    assert impl.needs_vulkan
+    no_vulkan = {"libplacebo": False, "zscale": True, "tonemap": True}
+    impl = tonemap.implementation_for(default, no_vulkan)
     assert impl is not None
     assert impl.id == "zscale"
     assert impl.requires_tagged_input
-    assert tonemap.implementation_for(preset, {"zscale": True}) is None
-    assert preset.chain("zscale", "mobius") is not None
-    assert "mobius" in (preset.chain("zscale", "mobius") or "")
-    assert preset.chain("libplacebo") == preset.chain("libplacebo", None)
-    denoise = load_definitions().filters["denoise"]
-    fast = denoise.preset("hqdn3d-light")
-    assert fast is not None
-    impl = denoise.implementation_for(fast)
+    assert tonemap.implementation_for(default, {"zscale": True}) is None
+    # An explicit choice is kept, or fails: it never falls back.
+    chosen = FilterConfig(implementation="libplacebo")
+    assert tonemap.implementation_for(chosen, no_vulkan) is None
+    assert tonemap.implementation_for(FilterConfig(implementation="nope")) is None
+    # With no choice, an implementation that lacks the preset is skipped.
+    static = FilterConfig(preset="static")
+    assert tonemap.implementation_for(static, no_vulkan) is None
+    impl = tonemap.implementation_for(static)
     assert impl is not None
-    assert impl.id == "hqdn3d"
-    light = denoise.preset("light")
+    assert impl.id == "libplacebo"
+    assert tonemap.implementation_for() is not None
+    assert tonemap.implementation("zscale") is not None
+    assert tonemap.implementation("nope") is None
+
+
+def test_filter_chain_for_a_config() -> None:
+    filters = load_definitions().filters
+    denoise = filters["denoise"]
+    light = denoise.chain_for(FilterConfig(preset="light"))
     assert light is not None
-    tuned_only = light.model_copy(update={"chains": {}})
-    impl = denoise.implementation_for(tuned_only)
-    assert impl is not None
-    assert impl.id == "nlmeans"
-    deinterlace = load_definitions().filters["deinterlace"]
+    assert light.startswith("nlmeans=")
+    film = denoise.chain_for(FilterConfig(preset="light", tune="film"))
+    assert film is not None
+    assert film.startswith("nlmeans=")
+    fast = denoise.chain_for(FilterConfig(preset="light", implementation="hqdn3d"))
+    assert fast == "hqdn3d=luma_spatial=2:chroma_spatial=1:luma_tmp=2:chroma_tmp=3"
+    custom = denoise.chain_for(FilterConfig(preset="custom", implementation="hqdn3d", custom="4"))
+    assert custom == "hqdn3d=4"
+    assert denoise.chain_for(FilterConfig(preset="nope")) is None
+    yadif = filters["deinterlace"].chain_for(
+        FilterConfig(preset="skip-spatial", implementation="yadif")
+    )
+    assert yadif == "yadif=mode=send_frame_nospatial:parity=auto"
+    # bwdif has no "skip-spatial": with no choice, the yadif implementation is used.
+    auto = filters["deinterlace"].chain_for(FilterConfig(preset="skip-spatial"))
+    assert auto == yadif
+    # A tune the implementation does not have falls back to the plain chain.
+    zscale = filters["tonemap"].chain_for(
+        FilterConfig(tune="bt2390"), {"libplacebo": False, "zscale": True, "tonemap": True}
+    )
+    assert zscale is not None
+    assert "tonemap=hable" in zscale
+    preset = filters["grayscale"].implementations[0].preset("default")
+    assert preset is not None
+    assert preset.chain_for("x") == "hue=s=0"
+    needs_tune = preset.model_copy(update={"chain": None})
+    impl = filters["grayscale"].implementations[0].model_copy(update={"presets": [needs_tune]})
+    grayscale = filters["grayscale"].model_copy(update={"implementations": [impl]})
+    assert grayscale.chain_for(FilterConfig()) is None
+    deinterlace = filters["deinterlace"]
     assert all(i.combed_only == "deint=interlaced" for i in deinterlace.implementations)
 
 

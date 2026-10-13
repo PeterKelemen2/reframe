@@ -164,16 +164,20 @@ Help panel template (the core stores this text with each filter definition):
 > **What it does** · **Use it when** · **Avoid when** · **Speed cost** (Low / Medium / High) ·
 > **Settings explained** (each preset and tune in one line)
 
-| Filter | FFmpeg implementation | Presets (HandBrake parity) |
+Where a filter has two implementations, the user picks one, as in HandBrake (Denoise: NLMeans
+or HQDN3D); each implementation has its own presets and tunes
+([0010](../decisions/0010-definitions-filters-and-containers.md)).
+
+| Filter | FFmpeg implementation (the first is the default) | Presets (HandBrake parity) |
 |--------|----------------------|----------------------------|
 | Detelecine | `fieldmatch,decimate` | Off / Default / Custom |
 | Interlace detection | `idet` (analysis) controls deinterlace on combed frames only | Off / Default / Less sensitive / Fast / Custom |
-| Deinterlace | `bwdif` (default) or `yadif` | Off / Default / Bob / Custom; yadif: Yadif default / Yadif skip spatial / Yadif bob / Yadif custom ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
-| Denoise | `nlmeans`, `hqdn3d` | Off / Ultralight / Light / Medium / Strong (NLMeans), Tune: Film / Grain / High motion / Animation / Tape / Sprite; Fast ultralight … Fast strong (hqdn3d) ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
+| Deinterlace | Bwdif (`bwdif`) or Yadif (`yadif`) | Bwdif: Off / Default / Bob / Custom. Yadif: Off / Default / Skip spatial check / Bob / Custom |
+| Denoise | NLMeans (`nlmeans`) or HQDN3D (`hqdn3d`) | NLMeans: Off / Ultralight / Light / Medium / Strong / Custom, Tune: Film / Grain / High motion / Animation / Tape / Sprite. HQDN3D: Off / Ultralight / Light / Medium / Strong / Custom |
 | Chroma smooth | `unsharp` (on chroma only) | Off / Ultralight … Very strong, Tune: Tiny … Very wide |
-| Sharpen | `unsharp`, `cas` | Off / Ultralight … Very strong, Tune (unsharp); CAS light / medium / strong ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
+| Sharpen | Unsharp (`unsharp`) or CAS (`cas`) | Unsharp: Off / Ultralight … Very strong / Custom, Tune: Ultrafine … Very coarse. CAS: Off / Light / Medium / Strong / Custom |
 | Deblock | `deblock` | Off / Ultralight … Strong |
-| **Colorspace** | `zscale` (or `libplacebo`) | Keep source / BT.709 / BT.2020 / BT.601 |
+| **Colorspace** | `zscale` or `libplacebo` | Keep source / BT.709 / BT.2020 / BT.601 |
 | **HDR → SDR tone mapping** (new) | `libplacebo` if available and Vulkan works, else `zscale,tonemap` | Off / On (algorithm: BT.2390 / Hable / Mobius / Reinhard, peak detect) |
 | Grayscale | `format=gray` / `hue=s=0` | Off / On |
 | Custom | Raw filter string, inserted before scaling | Validated with a dry run |

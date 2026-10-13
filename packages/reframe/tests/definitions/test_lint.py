@@ -358,44 +358,82 @@ def test_an_encoder_no_container_can_hold_is_reported() -> None:
 # --------------------------------------------------------------------------- filters
 
 
+def _impl(raw: dict[str, Any], filter_id: str, impl_id: str) -> dict[str, Any]:
+    impls: list[dict[str, Any]] = raw["filters"][filter_id]["implementations"]
+    return next(i for i in impls if i["id"] == impl_id)
+
+
 def test_filter_problems_are_reported() -> None:
     def mutate(raw: dict[str, Any]) -> None:
-        denoise = raw["filters"]["denoise"]
-        denoise["help"]["what"] = ""
-        denoise["default_preset"] = "nope"
-        denoise["presets"][0]["tune_chains"].pop("film")
-        denoise["presets"][1]["chains"] = {"bm3d": "bm3d"}
-        denoise["presets"][2]["chains"]["nlmeans"] = "nlmeans={strength}"
-        denoise["presets"][3]["chains"]["nlmeans"] = "hqdn3d=1"
-        denoise["presets"][4]["custom"] = True
-        denoise["presets"][5]["label"] = ""
-        denoise["presets"][6]["chains"] = {}
-        denoise["presets"][6]["tune_chains"] = {}
-        denoise["presets"].append(dict(denoise["presets"][0]))
-        denoise["tunes"].append({"id": "film", "label": "again"})
-        raw["filters"]["sharpen"]["implementations"] = []
+        raw["filters"]["denoise"]["help"]["what"] = ""
+        nlmeans = _impl(raw, "denoise", "nlmeans")
+        nlmeans["default_preset"] = "nope"
+        presets = nlmeans["presets"]
+        presets[0]["tune_chains"].pop("film")
+        presets[1]["chain"] = "nlmeans={strength}"
+        presets[2]["chain"] = "hqdn3d=1"
+        presets[3]["custom"] = True
+        presets[4]["label"] = ""
+        presets[4]["chain"] = None
+        presets.append(dict(presets[0]))
+        nlmeans["tunes"].append({"id": "film", "label": "again"})
+        hqdn3d = _impl(raw, "denoise", "hqdn3d")
+        hqdn3d["presets"][0]["tune_chains"] = {"tiny": "hqdn3d"}
+        hqdn3d["label"] = ""
+        cas = _impl(raw, "sharpen", "cas")
+        cas["presets"] = [p for p in cas["presets"] if p.get("custom")]
+        raw["filters"]["deinterlace"]["implementations"].append(
+            dict(_impl(raw, "deinterlace", "yadif"))
+        )
         del raw["filters"]["grayscale"]
         raw["filter_order"] = [*raw["filter_order"], "crop", "blur"]
-        raw["filters"]["deblock"]["presets"][0]["tune_chains"]["tiny"] = {"deblock": "deblock"}
-        raw["filters"]["deinterlace"]["presets"][0]["chains"]["bwdif"] = " "
+        _impl(raw, "deinterlace", "bwdif")["presets"][0]["chain"] = " "
 
     problems = _lint_mutated(mutate)
     for needle in (
         "filters.denoise.help: what",
-        "default_preset 'nope'",
-        "needs a chain for every tune",
-        "unknown implementation 'bm3d'",
+        "denoise.nlmeans: default_preset 'nope'",
+        "needs a chain for every tune of nlmeans",
         "unknown placeholders ['strength']",
-        "chain uses ['hqdn3d']",
+        "chain uses ['hqdn3d'], not in nlmeans",
         "custom must be true exactly",
         "needs a label",
         "has no chain",
-        "duplicate preset ids",
-        "duplicate tune ids",
-        "filters.sharpen: needs implementations",
+        "denoise.nlmeans: duplicate preset ids",
+        "denoise.nlmeans: duplicate tune ids",
+        "denoise.hqdn3d.presets.ultralight: unknown tunes ['tiny']",
+        "denoise.hqdn3d: needs a label",
+        "sharpen.cas: needs at least one preset that is not custom",
+        "filters.deinterlace: needs implementations with unique ids",
         "filters: grayscale is not defined",
         "filter_order",
-        "unknown tunes ['tiny']",
         "empty chain",
     ):
         assert _has(problems, needle), needle
+
+
+# --------------------------------------------------------------------------- audio fallback
+
+
+def test_the_audio_fallback_of_decision_0020() -> None:
+    audio = load_definitions().audio_encoders
+    assert audio["libfdk_aac"].fallback == ["aac"]
+    assert audio["aac"].in_gpl_builds
+    for encoder in audio.values():
+        if encoder.in_gpl_builds:
+            assert encoder.fallback == [], encoder.id
+
+
+def test_audio_fallback_problems_are_reported() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        audio = raw["audio_encoders"]
+        audio["libfdk_aac"]["fallback"] = ["libfdk_aac", "nope", "aac", "aac"]
+        audio["ac3"]["fallback"] = ["libfdk_aac"]
+        audio["eac3"]["in_gpl_builds"] = False
+
+    problems = _lint_mutated(mutate)
+    assert _has(problems, "libfdk_aac.fallback", "itself")
+    assert _has(problems, "libfdk_aac.fallback", "unknown audio encoder 'nope'")
+    assert _has(problems, "libfdk_aac.fallback", "duplicate")
+    assert _has(problems, "ac3.fallback", "must end in an encoder of every GPL build")
+    assert _has(problems, "eac3.fallback", "needs a fallback chain")

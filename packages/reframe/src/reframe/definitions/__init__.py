@@ -24,8 +24,11 @@ How the other steps use it:
   ``Definitions.track_flags`` (disposition and mkvpropedit names), ``codec_tags``,
   ``format_flags`` (``web_optimized``), ``language_format``, ``chapters``, ``attachments``.
 - **Filters (C-7)**: ``filters[id]`` (:class:`FilterDef`) in ``filter_order``;
-  :meth:`FilterDef.implementation_for` picks the implementation the build has,
-  :meth:`FilterPreset.chain` the chain (``{custom}`` = ``FilterConfig.custom``).
+  :meth:`FilterDef.implementation_for` resolves ``FilterConfig.implementation`` (``None``:
+  the first implementation the build runs that has the preset), and
+  :meth:`FilterDef.chain_for` gives the chain with ``{custom}`` = ``FilterConfig.custom``
+  filled in; each :class:`FilterImplementation` has its own presets and tunes.
+- **Audio fallback (C-4)**: ``AudioEncoderDef.fallback`` (``libfdk_aac → aac``).
 - :func:`convert_quality`, :func:`supported_options`, :func:`lint_definitions`.
 """
 

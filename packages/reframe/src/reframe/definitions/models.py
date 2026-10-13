@@ -36,7 +36,7 @@ from pydantic import Field, model_validator
 
 from reframe.models.base import ReframeModel
 from reframe.models.defaults import PassthruCodec
-from reframe.models.job import Container, Mixdown, OptionValue, SubtitleFormat
+from reframe.models.job import Container, FilterConfig, Mixdown, OptionValue, SubtitleFormat
 
 __all__ = [
     "BITRATE_PLACEHOLDER",
@@ -548,6 +548,10 @@ class AudioEncoderDef(ReframeModel):
     already fits"."""
     in_gpl_builds: bool = True
     """``libfdk_aac`` is not in GPL builds (the bundled FFmpeg)."""
+    fallback: list[str] = Field(default_factory=list)
+    """Audio encoder ids to try, in order, when this one is unavailable (decision 0020:
+    ``libfdk_aac → aac``). Ends with an encoder that every GPL build has (the linter checks
+    it); empty for encoders that are always there."""
 
 
 class MixdownDef(ReframeModel):
@@ -644,10 +648,41 @@ class FilterHelp(ReframeModel):
     """Each preset and tune in one line."""
 
 
-class FilterImplementation(ReframeModel):
-    """An FFmpeg implementation of a filter; the first one the build has is used."""
+class FilterTune(ReframeModel):
+    id: str
+    label: str
+    help: str = ""
+
+
+class FilterPreset(ReframeModel):
+    """A preset of one implementation (HandBrake's preset names where HandBrake has them)."""
 
     id: str
+    label: str
+    help: str = ""
+    chain: str | None = None
+    """The FFmpeg filter chain with no tune (``None``: the preset needs a tune)."""
+    tune_chains: dict[str, str] = Field(default_factory=dict)
+    """Tune id → chain."""
+    custom: bool = False
+    """The chain contains ``{custom}`` (``FilterConfig.custom``)."""
+    handbrake: str | None = None
+    """The HandBrake settings this preset maps from (documentation of the mapping)."""
+
+    def chain_for(self, tune: str | None = None) -> str | None:
+        """The chain for ``tune`` (``None`` or a tune without its own chain: the plain
+        chain)."""
+        if tune is not None and tune in self.tune_chains:
+            return self.tune_chains[tune]
+        return self.chain
+
+
+class FilterImplementation(ReframeModel):
+    """An FFmpeg implementation of a filter, with its own presets and tunes
+    (``FilterConfig.implementation``; HandBrake: NLMeans or HQDN3D, Yadif or Bwdif …)."""
+
+    id: str
+    label: str
     filters: list[str]
     """FFmpeg filters the build must have (``CapabilitySnapshot.has_filter``)."""
     note: str = ""
@@ -662,31 +697,16 @@ class FilterImplementation(ReframeModel):
     """The filter is in the build but fails without a working Vulkan driver (libplacebo:
     "Error initializing filters … Generic error in an external library"). Being listed by
     ``ffmpeg -filters`` is not enough: check it with a test run before choosing it."""
+    presets: list[FilterPreset]
+    tunes: list[FilterTune] = Field(default_factory=list)
+    default_preset: str
 
+    def preset(self, preset_id: str) -> FilterPreset | None:
+        return next((p for p in self.presets if p.id == preset_id), None)
 
-class FilterTune(ReframeModel):
-    id: str
-    label: str
-    help: str = ""
-
-
-class FilterPreset(ReframeModel):
-    id: str
-    label: str
-    help: str = ""
-    chains: dict[str, str] = Field(default_factory=dict)
-    """Implementation id → FFmpeg filter chain (no tune, or a filter without tunes)."""
-    tune_chains: dict[str, dict[str, str]] = Field(default_factory=dict)
-    """Tune id → implementation id → chain."""
-    custom: bool = False
-    """The chain contains ``{custom}`` (``FilterConfig.custom``)."""
-    handbrake: str | None = None
-    """The HandBrake settings this preset maps from (documentation of the mapping)."""
-
-    def chain(self, implementation: str, tune: str | None = None) -> str | None:
-        if tune is not None and tune in self.tune_chains:
-            return self.tune_chains[tune].get(implementation)
-        return self.chains.get(implementation)
+    def runs_with(self, available: Mapping[str, bool] | None) -> bool:
+        """All of ``filters`` are ``available`` (``None`` = assume they are)."""
+        return available is None or all(available.get(f, False) for f in self.filters)
 
 
 class FilterDef(ReframeModel):
@@ -699,28 +719,46 @@ class FilterDef(ReframeModel):
     analysis: bool = False
     """Interlace detection: it marks frames for deinterlace and changes no pixels."""
     implementations: list[FilterImplementation]
-    presets: list[FilterPreset]
-    tunes: list[FilterTune] = Field(default_factory=list)
-    default_preset: str
+    """In order of preference: the first is the default (``FilterConfig.implementation``
+    ``None``)."""
     help: FilterHelp
 
-    def preset(self, preset_id: str) -> FilterPreset | None:
-        return next((p for p in self.presets if p.id == preset_id), None)
+    def implementation(self, implementation_id: str) -> FilterImplementation | None:
+        return next((i for i in self.implementations if i.id == implementation_id), None)
 
     def implementation_for(
-        self, preset: FilterPreset, available: Mapping[str, bool] | None = None
+        self, config: FilterConfig | None = None, available: Mapping[str, bool] | None = None
     ) -> FilterImplementation | None:
-        """The first implementation that ``preset`` has a chain for and whose filters are
-        all ``available`` (``None`` = assume all)."""
+        """The implementation a filter config uses.
+
+        ``config.implementation`` set: that implementation, if it is known and its filters
+        are ``available`` (``None`` = assume all are). Not set: the first implementation that
+        runs and has ``config.preset``. ``None`` when nothing fits (the validation reports
+        it).
+        """
+        if config is not None and config.implementation is not None:
+            impl = self.implementation(config.implementation)
+            return impl if impl is not None and impl.runs_with(available) else None
         for impl in self.implementations:
-            has_chain = impl.id in preset.chains or any(
-                impl.id in chains for chains in preset.tune_chains.values()
-            )
-            if not has_chain:
+            if config is not None and impl.preset(config.preset) is None:
                 continue
-            if available is None or all(available.get(f, False) for f in impl.filters):
+            if impl.runs_with(available):
                 return impl
         return None
+
+    def chain_for(
+        self, config: FilterConfig, available: Mapping[str, bool] | None = None
+    ) -> str | None:
+        """The FFmpeg chain for ``config``, with ``{custom}`` filled in (``None`` when the
+        implementation, preset or tune does not resolve). ``combed_only`` is not added."""
+        impl = self.implementation_for(config, available)
+        preset = impl.preset(config.preset) if impl is not None else None
+        if preset is None:
+            return None
+        chain = preset.chain_for(config.tune)
+        if chain is None:
+            return None
+        return chain.replace("{custom}", config.custom or "") if preset.custom else chain
 
 
 # =========================================================================== everything
