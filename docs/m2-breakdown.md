@@ -62,7 +62,7 @@ record. Numbers that end up unused are noted at the end of the milestone.
 
 | 0008 | 0009 | 0010 | 0011 | 0012 | 0013 | 0014 | 0015 | 0016 | 0017 | 0018 | 0019 | 0020+ |
 |------|------|------|------|------|------|------|------|------|------|------|------|-------|
-| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead |
+| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead (0020 used) |
 
 ## Interfaces between the steps
 
@@ -189,6 +189,8 @@ tests can replace.
 
 ## Decided questions
 
+- Product questions of wave 1 (sleep inhibit, portrait fit, VAAPI device, audio fallback):
+  decision [0020](decisions/0020-m2-wave-1-product-decisions.md).
 - Which audio and subtitle tracks does an M2 draft job get, and how does the CLI encode a
   season? The user's answer is decision
   [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md).

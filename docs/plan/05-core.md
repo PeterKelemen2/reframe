@@ -192,7 +192,9 @@ and returns statuses, never exceptions.
 - [ ] **Hardware test encode** for each hardware encoder in the build: encode 3 frames of
       `lavfi color=size=640x360` to `-f null -`, with the encoder's hardware init arguments and
       a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test when the
-      encoder's definition has a 10-bit pixel format (result: `supports_10bit`).
+      encoder's definition has a 10-bit pixel format (result: `supports_10bit`). VAAPI
+      encoders are tested on every render node (`/dev/dri/renderD*`); each uses the first node
+      that works, unless Settings → Encoders forces one ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - [ ] **Reason mapping** ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)):
       map the texts that real FFmpeg prints (recorded in `testdata/README.md`) to
       plain-language reasons. Examples: `Cannot load libcuda.so.1` → "NVIDIA driver not
@@ -213,7 +215,8 @@ and returns statuses, never exceptions.
       `capabilities.changed`. A new ffmpeg (`tools.changed`) starts a new detection.
 - [ ] States: `unknown → checking → available | unavailable(reason) | error(reason)`.
 - [ ] `closest_available(encoder_id) -> encoder_id | None` uses the fallback chain from the
-      definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.).
+      definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.), for
+      video and audio encoders (`libfdk_aac → aac`, [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 Done when: the app starts and serves the UI in < 1 s while detection runs. A fake-ffmpeg test
 double (a script that sleeps or prints driver errors) proves timeouts and reason mapping. A
@@ -242,7 +245,8 @@ def source_geometry(stream: VideoStream) -> SourceGeometry
       is measured on the picture as FFmpeg decodes it (display matrix applied, job rotation
       not yet); the filter chain for `C-7` (automatic rotation on, then crop → transpose →
       hflip → scale → setsar); upscaling is measured against the display size (DVD 16:9 →
-      854×480 is not an upscale); the rounding rule.
+      854×480 is not an upscale); the rounding rule. The fit box turns for portrait output
+      ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 Done when: hypothesis tests prove these properties: the output is inside the fit box; no
 upscale unless allowed; the result is a multiple of the modulus; display aspect error
@@ -282,7 +286,8 @@ class EncoderOption(BaseModel):
       [03 §Advanced](03-features.md#advanced-encoder-options)). Include x264/x265 per-preset
       default tables.
 - [ ] **Audio encoders**: bitrate ranges per mixdown, **allowed bitrate values** (fixed steps
-      for AC-3 / E-AC-3, free ranges for AAC / Opus), sample rates, passthru codecs.
+      for AC-3 / E-AC-3, free ranges for AAC / Opus), sample rates, passthru codecs, fallback
+      chain (`libfdk_aac → aac`, [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - [ ] **Containers**: allowed video/audio/subtitle codecs, chapter and attachment support, the
       metadata flags each muxer can write.
 - [ ] **Filters**: id, FFmpeg implementation, presets/tunes with parameter values (HandBrake
@@ -450,10 +455,12 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 
 - [ ] Sleep inhibit: Windows `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`.
       Linux: the logind `Inhibit` D-Bus call, or `systemd-inhibit` as a fallback. If neither
-      is available, emit a warning and continue. The Linux lock is `what=sleep:idle`,
-      `mode=block`; the D-Bus call uses a small stdlib client (no D-Bus dependency); on
-      Windows one dedicated thread sets and clears the state
-      ([0011](../decisions/0011-sleep-inhibit.md)).
+      is available, emit a warning and continue. Only automatic (idle) sleep is stopped: the
+      user's own Sleep is never blocked, so on Linux there is no logind `sleep` block lock,
+      only the idle lock and the desktop session's inhibit for automatic suspend
+      ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md), which supersedes the lock of
+      [0011](../decisions/0011-sleep-inhibit.md)). The D-Bus calls use a small stdlib client
+      (no D-Bus dependency); on Windows one dedicated thread sets and clears the state.
 - [ ] Power actions: shut down, sleep (Windows: `shutdown /s /t 60` and `SetSuspendState`.
       Linux: `systemctl poweroff|suspend`). Always after a cancellable 60 s countdown event.
 - [ ] Notification hook: emits an event only. The UI layer shows the notification.

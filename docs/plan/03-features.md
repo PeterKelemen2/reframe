@@ -132,7 +132,9 @@ One control replaces Resolution limit + Scaled size + Pixel aspect + Final dimen
 "Fit within 1080p" means: the output fits inside 1920×1080, keeps its aspect ratio, and is
 never upscaled unless you turn upscaling on. Upscaling is measured against the source's
 display size: a 720×480 16:9 DVD made square becomes 854×480, which is not an upscale
-([decision 0009](../decisions/0009-dimension-maths-conventions.md)).
+([decision 0009](../decisions/0009-dimension-maths-conventions.md)). For portrait output
+(taller than wide) the box turns: a 1080×1920 phone video fits inside 1080×1920
+([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 ### 5. Advanced (collapsed)
 
@@ -700,7 +702,9 @@ Same behaviour as HandBrake:
   auto-rename, or overwrite.
 - **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
 - **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux
-  `systemd-inhibit` / D-Bus).
+  `systemd-inhibit` / D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
+  power button and the lid always work, and the encode then pauses with the system and
+  continues after wake ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - Per-job **log**: the full command, FFmpeg output, timing, and a copy button for bug reports.
 
 ---
@@ -723,7 +727,7 @@ The Summary tab shows which job type you will get, and why.
 | Section | Contents |
 |---------|----------|
 | Tools | ffmpeg, ffprobe, mkvpropedit, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
-| Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off |
+| Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
 | Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |
 | Preview | Number of sample frames, cache size limit, clear cache |

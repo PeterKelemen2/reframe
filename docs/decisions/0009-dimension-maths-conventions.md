@@ -1,6 +1,6 @@
 # 0009 — Dimension maths: crop orientation, filter chain, upscaling, rounding, corner cases
 
-- Status: accepted
+- Status: accepted; item 4 (the fit box is not turned) superseded by [0020](0020-m2-wave-1-product-decisions.md)
 - Date: 2026-10-13
 - Steps: C-5, C-7, C-8, C-10, F-7
 
