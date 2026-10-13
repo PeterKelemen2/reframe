@@ -683,8 +683,12 @@ It is in Settings → Output, in the preset editor, and on the Summary tab's Out
 Same behaviour as HandBrake:
 
 - Categories (built-in, read-only): General, Web, Devices, Matroska, Hardware, Production.
-  Contents are modelled on HandBrake's defaults and adapted to FFmpeg encoders.
-- User presets: save new, update, rename, duplicate, delete, set as default.
+  Contents are modelled on HandBrake's defaults and adapted to FFmpeg encoders (the list,
+  the HandBrake 1.11.2 values and the differences: [decision 0015](../decisions/0015-presets-and-settings-stores.md)).
+  The default preset is HandBrake's default, *Fast 1080p30*.
+- User presets: save new, update, rename, duplicate, delete, set as default. Preset names are
+  unique (without case); a clash offers the next free name, *Name (2)*. An import with clashes
+  can rename, replace or skip.
 - A **modified** marker appears when the current settings differ from the selected preset.
   Hover it to see what changed.
 - Import / export JSON (Reframe schema, versioned).

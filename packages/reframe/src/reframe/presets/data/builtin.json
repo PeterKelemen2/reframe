@@ -1,0 +1,1724 @@
+{
+  "schema_version": 1,
+  "presets": [
+    {
+      "id": "very-fast-1080p30",
+      "name": "Very Fast 1080p30",
+      "category": "General",
+      "description": "Small H.264 video (up to 1080p30) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "fast"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 24
+        },
+        "preset": "veryfast",
+        "profile": "main",
+        "level": "4.0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "fast-1080p30",
+      "name": "Fast 1080p30",
+      "category": "General",
+      "description": "H.264 video (up to 1080p30) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22
+        },
+        "preset": "fast",
+        "profile": "main",
+        "level": "4.0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "fast-720p30",
+      "name": "Fast 720p30",
+      "category": "General",
+      "description": "H.264 video (up to 720p30) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 21
+        },
+        "preset": "fast",
+        "profile": "main",
+        "level": "3.1",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "hq-1080p30-surround",
+      "name": "HQ 1080p30 Surround",
+      "category": "General",
+      "description": "High quality H.264 video (up to 1080p30), Dolby Digital (AC-3) surround audio and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 20
+        },
+        "preset": "slow",
+        "profile": "high",
+        "level": "4.0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "source_channels": "5.1_or_more",
+            "codec": "ac3",
+            "mixdown": "5.1",
+            "max_bitrate": 640,
+            "if_fits": "passthru",
+            "extras": {
+              "extra_outputs": [
+                {
+                  "codec": "aac",
+                  "mixdown": "stereo",
+                  "bitrate": 160
+                }
+              ]
+            }
+          },
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [
+            "ac3"
+          ],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "super-hq-1080p30-surround",
+      "name": "Super HQ 1080p30 Surround",
+      "category": "General",
+      "description": "Super high quality H.264 video (up to 1080p30), Dolby Digital (AC-3) surround audio and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 18
+        },
+        "preset": "veryslow",
+        "profile": "high",
+        "level": "4.0",
+        "custom_params": "ref=5:bframes=5",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "source_channels": "5.1_or_more",
+            "codec": "ac3",
+            "mixdown": "5.1",
+            "max_bitrate": 640,
+            "if_fits": "passthru",
+            "extras": {
+              "extra_outputs": [
+                {
+                  "codec": "aac",
+                  "mixdown": "stereo",
+                  "bitrate": 160
+                }
+              ]
+            }
+          },
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [
+            "ac3"
+          ],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "fast-2160p60-4k-hevc",
+      "name": "Fast 2160p60 4K HEVC",
+      "category": "General",
+      "description": "10-bit H.265 video (up to 2160p60) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 3840,
+          "height": 2160
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx265",
+        "rate_control": {
+          "mode": "quality",
+          "value": 24
+        },
+        "preset": "faster",
+        "profile": "main10",
+        "bit_depth": 10,
+        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 60,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "creator-1080p60",
+      "name": "Creator 1080p60",
+      "category": "Web",
+      "description": "High quality video for publishing on online services such as Vimeo and YouTube: H.264 video (up to 1080p60) and high bit rate AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "web_optimized": true,
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 20
+        },
+        "preset": "medium",
+        "profile": "high",
+        "level": "4.2",
+        "custom_params": "keyint=30:min-keyint=15:ref=1:bframes=2:b-pyramid=none",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 60,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 320,
+            "if_fits": "reencode",
+            "extras": {
+              "samplerate": 48000
+            }
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "social-25-mb-1-minute-720p60",
+      "name": "Social 25 MB 1 Minute 720p60",
+      "category": "Web",
+      "description": "Up to 1 minute of video in 25 MB or less, for social networks and e-mail: H.264 video (up to 720p60, 2-pass average bit rate) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4",
+        "web_optimized": true,
+        "align_av_start": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "bitrate",
+          "kbps": 3000,
+          "two_pass": true,
+          "turbo_first_pass": true
+        },
+        "preset": "medium",
+        "profile": "high",
+        "level": "3.2",
+        "custom_params": "qcomp=0.5:aq-mode=2:aq-strength=0.8:bframes=2:b-adapt=2:b-pyramid=0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 60,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "android-1080p30",
+      "name": "Android 1080p30",
+      "category": "Devices",
+      "description": "H.264 video (up to 1080p30) and AAC stereo audio, in an MP4 container. For Android devices.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22
+        },
+        "preset": "medium",
+        "profile": "main",
+        "level": "4.0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "apple-1080p30-surround",
+      "name": "Apple 1080p30 Surround",
+      "category": "Devices",
+      "description": "H.264 video (up to 1080p30), Dolby Digital (AC-3) surround audio and AAC stereo audio, in an MP4 container. For Apple iPhone, iPad and Apple TV.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22
+        },
+        "preset": "medium",
+        "profile": "high",
+        "level": "4.0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "source_channels": "5.1_or_more",
+            "codec": "ac3",
+            "mixdown": "5.1",
+            "max_bitrate": 640,
+            "if_fits": "passthru",
+            "extras": {
+              "extra_outputs": [
+                {
+                  "codec": "aac",
+                  "mixdown": "stereo",
+                  "bitrate": 160
+                }
+              ]
+            }
+          },
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [
+            "ac3"
+          ],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "chromecast-1080p30-surround",
+      "name": "Chromecast 1080p30 Surround",
+      "category": "Devices",
+      "description": "H.264 video (up to 1080p30), Dolby Digital (AC-3) surround audio and AAC stereo audio, in an MP4 container. For Google Chromecast.",
+      "output": {
+        "container": "mp4",
+        "web_optimized": true
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22
+        },
+        "preset": "medium",
+        "profile": "high",
+        "level": "4.0",
+        "framerate_mode": "peak",
+        "framerate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "source_channels": "5.1_or_more",
+            "codec": "ac3",
+            "mixdown": "5.1",
+            "max_bitrate": 640,
+            "if_fits": "passthru",
+            "extras": {
+              "extra_outputs": [
+                {
+                  "codec": "aac",
+                  "mixdown": "stereo",
+                  "bitrate": 160
+                }
+              ]
+            }
+          },
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [
+            "ac3"
+          ],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "h265-mkv-1080p",
+      "name": "H.265 MKV 1080p",
+      "category": "Matroska",
+      "description": "10-bit H.265 video (up to 1080p, source frame rate) and AAC stereo audio, in an MKV container.",
+      "output": {
+        "container": "mkv"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx265",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22
+        },
+        "preset": "slow",
+        "profile": "main10",
+        "bit_depth": 10,
+        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "h265-mkv-720p",
+      "name": "H.265 MKV 720p",
+      "category": "Matroska",
+      "description": "10-bit H.265 video (up to 720p, source frame rate) and AAC stereo audio, in an MKV container.",
+      "output": {
+        "container": "mkv"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1280,
+          "height": 720
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx265",
+        "rate_control": {
+          "mode": "quality",
+          "value": 21
+        },
+        "preset": "slow",
+        "profile": "main10",
+        "bit_depth": 10,
+        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "h265-mkv-2160p-4k",
+      "name": "H.265 MKV 2160p 4K",
+      "category": "Matroska",
+      "description": "10-bit H.265 video (up to 2160p, source frame rate) and AAC stereo audio, in an MKV container.",
+      "output": {
+        "container": "mkv"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 3840,
+          "height": 2160
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx265",
+        "rate_control": {
+          "mode": "quality",
+          "value": 24
+        },
+        "preset": "slow",
+        "profile": "main10",
+        "bit_depth": 10,
+        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "h264-mkv-1080p",
+      "name": "H.264 MKV 1080p",
+      "category": "Matroska",
+      "description": "H.264 video (up to 1080p, source frame rate) and AAC stereo audio, in an MKV container.",
+      "output": {
+        "container": "mkv"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22
+        },
+        "preset": "medium",
+        "profile": "main",
+        "level": "4.0",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "av1-mkv-2160p-4k",
+      "name": "AV1 MKV 2160p 4K",
+      "category": "Matroska",
+      "description": "10-bit AV1 video (up to 2160p, source frame rate) and Opus stereo audio, in an MKV container.",
+      "output": {
+        "container": "mkv"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 3840,
+          "height": 2160
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libsvtav1",
+        "rate_control": {
+          "mode": "quality",
+          "value": 35
+        },
+        "preset": "4",
+        "tune": "1",
+        "bit_depth": 10,
+        "custom_params": "enable-variance-boost=1:enable-qm=1:ac-bias=1:tf-strength=1:qp-scale-compress-strength=1:sharpness=1:keyint=10s",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "libopus",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "libopus"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "vp9-mkv-1080p",
+      "name": "VP9 MKV 1080p",
+      "category": "Matroska",
+      "description": "VP9 video (up to 1080p, source frame rate) and Opus stereo audio, in an MKV container.",
+      "output": {
+        "container": "mkv"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "auto"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {
+        "interlace_detection": {
+          "preset": "default"
+        },
+        "deinterlace": {
+          "preset": "default"
+        }
+      },
+      "video": {
+        "encoder": "libvpx-vp9",
+        "rate_control": {
+          "mode": "quality",
+          "value": 30
+        },
+        "preset": "medium",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "libopus",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "libopus"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "h265-nvenc-1080p",
+      "name": "H.265 NVENC 1080p",
+      "category": "Hardware",
+      "description": "NVIDIA NVENC hardware H.265 video (up to 1080p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "hevc_nvenc",
+        "rate_control": {
+          "mode": "quality",
+          "value": 27
+        },
+        "preset": "p4",
+        "advanced": {
+          "rc-lookahead": 10
+        },
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "h265-nvenc-2160p-4k",
+      "name": "H.265 NVENC 2160p 4K",
+      "category": "Hardware",
+      "description": "NVIDIA NVENC hardware H.265 video (up to 2160p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 3840,
+          "height": 2160
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "hevc_nvenc",
+        "rate_control": {
+          "mode": "quality",
+          "value": 30
+        },
+        "preset": "p4",
+        "advanced": {
+          "rc-lookahead": 10
+        },
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "h265-qsv-1080p",
+      "name": "H.265 QSV 1080p",
+      "category": "Hardware",
+      "description": "Intel Quick Sync Video hardware H.265 video (up to 1080p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "hevc_qsv",
+        "rate_control": {
+          "mode": "quality",
+          "value": 25
+        },
+        "preset": "veryfast",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "av1-qsv-2160p-4k",
+      "name": "AV1 QSV 2160p 4K",
+      "category": "Hardware",
+      "description": "Intel Quick Sync Video hardware 10-bit AV1 video (up to 2160p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 3840,
+          "height": 2160
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "av1_qsv",
+        "rate_control": {
+          "mode": "quality",
+          "value": 24
+        },
+        "preset": "veryfast",
+        "bit_depth": 10,
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "h265-vcn-1080p",
+      "name": "H.265 VCN 1080p",
+      "category": "Hardware",
+      "description": "AMD VCN (AMF) hardware H.265 video (up to 1080p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "hevc_amf",
+        "rate_control": {
+          "mode": "quality",
+          "value": 25
+        },
+        "preset": "balanced",
+        "profile": "main",
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "av1-vcn-2160p-4k",
+      "name": "AV1 VCN 2160p 4K",
+      "category": "Hardware",
+      "description": "AMD VCN (AMF) hardware 10-bit AV1 video (up to 2160p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 3840,
+          "height": 2160
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "av1_amf",
+        "rate_control": {
+          "mode": "quality",
+          "value": 120
+        },
+        "preset": "balanced",
+        "bit_depth": 10,
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "h265-vaapi-1080p",
+      "name": "H.265 VAAPI 1080p",
+      "category": "Hardware",
+      "description": "VAAPI hardware H.265 video (Linux; up to 1080p) and AAC stereo audio, in an MP4 container.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "hevc_vaapi",
+        "rate_control": {
+          "mode": "quality",
+          "value": 25
+        },
+        "framerate_mode": "variable"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "first"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "none"
+      }
+    },
+    {
+      "id": "production-standard",
+      "name": "Production Standard",
+      "category": "Production",
+      "description": "High bit rate, constant frame rate H.264 video and high bit rate AAC stereo audio, in an MP4 container. An intermediate format for video editing. Makes very large files.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "source"
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 10
+        },
+        "preset": "fast",
+        "profile": "high",
+        "custom_params": "keyint=12:min-keyint=1:ref=1:bframes=0:qcomp=0.8:aq-strength=0.5:dct-decimate=0:fast-pskip=0:deblock=-2,-2",
+        "framerate_mode": "constant"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "all",
+          "other_languages": "keep_all"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 320,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "foreign_audio"
+      }
+    },
+    {
+      "id": "production-proxy-1080p",
+      "name": "Production Proxy 1080p",
+      "category": "Production",
+      "description": "Intra-only, constant frame rate H.264 video (up to 1080p) and high bit rate AAC stereo audio, in an MP4 container. A low resolution proxy format for video editing.",
+      "output": {
+        "container": "mp4"
+      },
+      "dimensions": {
+        "crop": {
+          "mode": "none"
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "filters": {},
+      "video": {
+        "encoder": "libx264",
+        "rate_control": {
+          "mode": "quality",
+          "value": 18
+        },
+        "preset": "superfast",
+        "profile": "high",
+        "custom_params": "keyint=1:min-keyint=1:ref=1:bframes=0:qcomp=0.8:aq-strength=0.5",
+        "framerate_mode": "constant"
+      },
+      "audio_defaults": {
+        "selection": {
+          "tracks_per_language": "all",
+          "other_languages": "keep_all"
+        },
+        "codec_rules": [
+          {
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 320,
+            "if_fits": "reencode"
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "tracks_per_language": "none",
+          "no_match": "none",
+          "default_track": "none"
+        },
+        "foreign_audio_search": false,
+        "burn_in": "foreign_audio"
+      }
+    }
+  ]
+}

@@ -380,7 +380,9 @@ removes its issue.
 - [ ] CRUD, set default, import/export (single preset or all), name-conflict handling.
 - [ ] `diff(job_template, preset) -> list[FieldChange]` for the "modified" marker.
 - [ ] Settings in `<config>/settings.json`. Atomic writes (temp file + `os.replace`).
-- [ ] Migrations for both files. Unknown fields are kept.
+- [ ] Migrations for both files. Unknown fields are kept. A file newer than this Reframe, or
+      one that cannot be read, is never overwritten; a partly damaged presets file keeps its
+      valid presets ([decision 0015](../decisions/0015-presets-and-settings-stores.md)).
 
 Done when: an old-schema fixture loads after migration, export → import gives the same
 result, and a corrupt file is backed up and replaced with defaults plus a warning event.
