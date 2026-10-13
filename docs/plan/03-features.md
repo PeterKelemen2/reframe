@@ -439,7 +439,7 @@ rule does.
 | Action | Allowed for | Notes |
 |--------|-------------|-------|
 | Copy | all formats the container supports | MP4: only `mov_text` (text is converted automatically) and VobSub (as HandBrake does). PGS cannot go into MP4: a validation error offers burn-in or MKV ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
-| Burn in | one track per job | Text uses the `subtitles` filter. Bitmap uses `overlay`. **Forced only** uses the PGS decoder option `forced_subs_only` |
+| Burn in | one track per job | Text uses the `subtitles` filter. Bitmap uses `overlay`. **Forced only** uses the decoder option `forced_subs_only`, which only PGS and VobSub have; a copied track keeps every event ([0014](../decisions/0014-validation-rules-and-severities.md)) |
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 
 - **Foreign audio search** (HandBrake parity): Reframe suggests a forced-subtitle track from
@@ -752,7 +752,7 @@ Every job is validated live. The core returns a list of `ValidationIssue` object
 ```
 severity: error | warning | info
 code:     "encoder.unavailable" | "container.codec_unsupported" | "subtitle.burn_multiple" | …
-path:     "video.encoder" | "audio.tracks[2].encoder" | …
+path:     "video.encoder" | "audio[2].encoder" | …
 message:  human-readable text
 fixes:    [{label: "Use libx265", patch: {...}}]
 ```

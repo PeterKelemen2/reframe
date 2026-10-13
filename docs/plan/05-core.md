@@ -357,13 +357,17 @@ functions in a registry, grouped by area.
       supported, option not supported by this build.
 - [ ] Container: codec not allowed (with fixes: convert, switch container, drop the track),
       flags not writable.
-- [ ] Dimensions: invalid crop, upscaling (warning), odd sizes for 4:2:0.
+- [ ] Dimensions: invalid crop, upscaling (warning). Odd sizes for 4:2:0 cannot happen: C-5
+      rounds every size to the chroma grid, so a property test replaces the rule; C-5's notes
+      give the other issues (crop not detected, crop snapped, outside the fit box)
+      ([0014](../decisions/0014-validation-rules-and-severities.md)).
 - [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix).
 - [ ] Subtitles: more than one burn-in, PGS subtitle into MP4 (VobSub is allowed,
       [0010](../decisions/0010-definitions-filters-and-containers.md)), forced-only on a format that
-      does not support it.
+      does not support it (it works only for a burned-in PGS or VobSub track,
+      [0014](../decisions/0014-validation-rules-and-severities.md)).
 - [ ] Output: path not writable, output = source, name collision, not enough free disk space
-      (estimate in bitrate mode).
+      (estimate in bitrate mode and for video passthrough).
 - [ ] Range is outside the duration.
 
 Done when: every rule has a positive and a negative test, and every fix patch, when applied,
