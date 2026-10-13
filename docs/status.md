@@ -1,7 +1,8 @@
 # Implementation status
 
-Last updated: 2026-10-13. Milestone M2 is in progress on branch `m2-encode-cli`
-([task breakdown](m2-breakdown.md)).
+Last updated: 2026-10-13. Implementation is **paused** by the user in milestone M2, after
+wave 2 (branch `m2-encode-cli`, [task breakdown](m2-breakdown.md)). What is left for M2 is
+listed under [Paused: what is left in M2](#paused-what-is-left-in-m2).
 
 This file says which parts of the plan (`docs/plan/`) are built. Update it in the same commit
 as each step that lands.
@@ -22,7 +23,7 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 |-----------|--------|-------|
 | M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
 | M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
-| M2 Encode from the CLI | **In progress** | Branch `m2-encode-cli` ([m2-breakdown.md](m2-breakdown.md)). Wave 1 (C-4, C-5, C-6, C-14, C-16) is merged; wave 2 (C-7, C-8, C-9, C-12 codec rules) is next |
+| M2 Encode from the CLI | **In progress, paused** | Branch `m2-encode-cli` ([m2-breakdown.md](m2-breakdown.md)), not merged into `main`. Waves 1 (C-4, C-5, C-6, C-14, C-16) and 2 (C-7, C-8, C-9, C-12 codec rules) are merged and green. Not started: wave 3 (C-11, C-15; its contract is written), the milestone review and the demo. No M2 CLI command exists yet |
 | M3 – M10 | Not started | |
 
 ## Steps
@@ -32,21 +33,21 @@ Nothing has run on Windows or on GitHub Actions yet: the branches were never pus
 | Step | Status | Notes |
 |------|--------|-------|
 | C-0 Project skeleton | **Done** | uv workspace, strict mypy, ruff, pytest markers (`slow`, `needs_ffmpeg`, `needs_gpu`, `benchmark`) |
-| C-1 Tool runner and discovery | **Done** | `reframe.tools`: `run` / `run_streaming` (timeout, cancel, output limit, process-tree kill), discovery env → Settings → bundled → `PATH`, version parsing (minimum FFmpeg 7.0), child safety (Linux `PR_SET_PDEATHSIG`; Windows Job Object, [0005](decisions/0005-tool-discovery-details.md)). Windows code is tested with mocks only. `LIBVA_DRIVERS_PATH` handling stays until D-7 decides |
-| C-2 Data models | **Done** | All public models with JSON Schema snapshots and round-trip property tests. Known gaps: no `FieldChange` model (C-9 adds it), no language-list model for `GET /api/languages` (S-2), `-show_programs` output is not modelled |
-| C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available |
+| C-1 Tool runner and discovery | **Done** | `reframe.tools`: `run` / `run_streaming` (timeout, cancel, output limit, process-tree kill; M2 added `on_start`, the pid for the queue's pause / resume), discovery env → Settings → bundled → `PATH`, version parsing (minimum FFmpeg 7.0), child safety (Linux `PR_SET_PDEATHSIG`; Windows Job Object, [0005](decisions/0005-tool-discovery-details.md)). Windows code is tested with mocks only. `LIBVA_DRIVERS_PATH` handling stays until D-7 decides |
+| C-2 Data models | **Done** | All public models with JSON Schema snapshots and round-trip property tests. `FieldChange` (for C-9) and `CapabilitySnapshot` (for C-4) were added in M2. Known gaps: no language-list model for `GET /api/languages` (S-2), `-show_programs` output is not modelled |
+| C-3 Probe and track analysis | **Done** | `reframe.probe`: commercial codec names, bitrate chain with its source, role heuristics with evidence, HDR10 / HDR10+ / HLG / Dolby Vision, VFR, interlacing, `delay`, probe cache, folder probe as a task. Decisions [0006](decisions/0006-probe-recordings-and-roles.md) and [0007](decisions/0007-probe-mediainfo-library-and-delay.md). `language_ietf` is filled only when MediaInfo is available. M2: an MP4 track title is read from the `name` tag too (FFmpeg's MP4 demuxer reports it there) |
 | C-4 Encoder capabilities | **Done** (branch `m2-encode-cli`) | `reframe.capabilities`: `CapabilityService` (`Reframe.capabilities`: cached result at once, full detection in the background, `capabilities.changed`, re-scan, a new ffmpeg starts a new detection), `-encoders` / `-filters` / `-h encoder=` parsing, hardware test encodes (3 at a time, 10 s, 10-bit test), VAAPI on every render node with the node in `EncoderStatus.device` or the node forced by `encoders.vaapi_device` ([0020](decisions/0020-m2-wave-1-product-decisions.md)), the `libplacebo` run test (`CapabilitySnapshot.usable_filter`), reason mapping of the real FFmpeg texts, cache keyed by binary + GPU fingerprint + settings + render nodes, `closest_available` (video and audio chains: `libfdk_aac → aac`, 0020), `encoder_issues` (`encoder.unknown` / `checking` / `untested` / `unavailable`) for C-8. Decision [0008](decisions/0008-encoder-detection-reasons-and-filters.md). Checked on one Linux machine (AMD: VAAPI on its one render node, AMF and libplacebo work; NVENC and QSV only as failures; several render nodes only with the fake ffmpeg); the Windows registry fingerprint is tested with mocks only |
 | C-5 Dimensions maths | **Done** (branch `m2-encode-cli`) | `reframe.dimensions`: `compute_geometry` (crop snapped to the chroma grid, rotation, the four size modes, square / keep / custom pixel aspect, a fit box that turns for portrait output, modulus rounding within 0.5 % or 1 px, notes), `detect_crop_consensus` (auto, conservative), `source_geometry`, `rotate_crop`. Hypothesis properties of "Done when", table tests of the classic cases, and real-FFmpeg tests (crop grid of all 200 pixel formats, the filter chain for C-7 on the anamorphic, letterbox and rotated files). Conventions and corner cases: [0009](decisions/0009-dimension-maths-conventions.md); portrait fit: [0020](decisions/0020-m2-wave-1-product-decisions.md) |
 | C-6 Definitions | **Partial** (M2 part done) | **Done:** `reframe.languages` (search, normalisation, ISO 639-2/B for Matroska, ISO 639-2/T for MP4, display names). **Branch `m2-encode-cli`:** `reframe.definitions` with every video encoder (rate control with ranges, args and the quality conversion table, presets, tunes, profiles, levels, 2-pass, the `EncoderOption` schema with the basic option sets for x264, x265, SVT-AV1, NVENC, QSV, AMF, VAAPI and the x264 / x265 per-preset default tables), audio encoders (bitrates per mixdown, fixed steps, sample rates, VBR quality, passthru codecs, mixdowns, the fallback chain `libfdk_aac → aac` of [0020](decisions/0020-m2-wave-1-product-decisions.md)), containers (copy / encode codecs, flags, chapters, attachments, tags, `+faststart`), filters (implementations with their own HandBrake-mapped presets and tunes, chosen by the new `FilterConfig.implementation`; help, fixed order), `convert_quality`, `supported_options`, `lint_definitions`. Checked against FFmpeg n9.0.2 (both builds) and AMF / VAAPI hardware ([0010](decisions/0010-definitions-filters-and-containers.md)). **Not started (M9):** the complete option sets of 03 §Advanced (analysis, colour, performance options, VP9 options). **Not verified:** NVENC and QSV on hardware; QSV levels are not offered |
-| C-7 Command builder | **Done** (branch `m2-encode-cli`) | `reframe.command`: `build_plan` (pure; `PlanError` for jobs that skipped validation), `job_type` (`encode` / `remux` with the reason). Argument order of 05 with an output `-t`, decoder options, `-map_metadata:s -1` and `-f`; the fixed filter order with colour tagging, HDR metadata removed after tone mapping (`libplacebo` only when its run test passed, else `zscale,tonemap`), hardware init and upload tail (VAAPI render node from the status), text burn-in on the final picture (time-shifted for ranges) and bitmap `overlay` after the crop; every encoder's rate control, choices, advanced options, custom params, HDR10 params (x265, SVT-AV1), 2-pass (`EncodePlan.temp_files`), frame rate; audio passthru with fallback, output layout (`5.1(side)` → `5.1` for Opus), sample rate, default bitrates, DRC, gain, two-pass loudnorm (one analyse step per track); subtitles copy / convert / burn, external files; languages in the container's form plus an `mkvpropedit` step for BCP 47, all six flags; chapters (copy, FFMETADATA for renamed or generated), tags with naming variables; display for POSIX and Windows. 68 plan snapshots, 31 integration tests on real FFmpeg (both n9.0.2 builds; VAAPI and AMF as `needs_gpu`). Decision [0013](decisions/0013-command-builder-details.md). Not verified: NVENC, QSV (no hardware), Windows |
-| C-8 Validation | **Done** (branch `m2-encode-cli`) | `reframe.validation`: `validate(job, source, caps, tools, fs)` and `validate_template(template, caps)` (fixes target `template`), rules registered by area (tools, encoder, container, dimensions, filters, audio, subtitles, metadata, range, output, naming); C-4's `encoder_issues` with the closest-match fix that converts the quality and resets what the new encoder lacks; C-16's naming issues; `FileSystemView` / `LocalFileSystem` (all I/O, Windows paths tested with a fake file system); `next_free_path` and `estimate_output_bytes`. 75 issue codes (plus `validation.rule_failed`), each with a positive and a negative test; every fix is applied and re-validated. Odd 4:2:0 sizes are a property test (C-5 cannot make them); forced-only works only for a burned-in PGS or VobSub track (checked with FFmpeg). Decision [0014](decisions/0014-validation-rules-and-severities.md); its severities beyond the plan are provisional (open questions) |
+| C-7 Command builder | **Done** (branch `m2-encode-cli`) | `reframe.command`: `build_plan` (pure; `PlanError` for jobs that skipped validation), `job_type` (`encode` / `remux` with the reason). Argument order of 05 with an output `-t`, decoder options, `-map_metadata:s -1` and `-f`; the fixed filter order with colour tagging, HDR metadata removed after tone mapping (`libplacebo` only when its run test passed, else `zscale,tonemap`), hardware init and upload tail (VAAPI render node from the status), text burn-in on the final picture (time-shifted for ranges) and bitmap `overlay` after the crop; every encoder's rate control, choices, advanced options, custom params, HDR10 params (x265, SVT-AV1), 2-pass (`EncodePlan.temp_files`), frame rate; audio passthru with fallback, output layout (`5.1(side)` → `5.1` for Opus), sample rate, default bitrates, DRC, gain, two-pass loudnorm (one analyse step per track); subtitles copy / convert / burn, external files; languages in the container's form plus an `mkvpropedit` step for BCP 47, all six flags; chapters (copy, FFMETADATA for renamed or generated), tags with naming variables; display for POSIX and Windows. 68 plan snapshots, 31 integration tests on real FFmpeg (both n9.0.2 builds; VAAPI and AMF as `needs_gpu`). Decision [0013](decisions/0013-command-builder-details.md). Not verified: NVENC, QSV (no hardware), Windows. **Open (paused):** snap audio bitrate, mixdown and sample rate to what the encoder can do ([0024](decisions/0024-m2-wave-2-product-decisions.md) item 4); tag values are rendered through C-16 internals (`reframe.command.metadata.render_tag`), a public `render_value` in `reframe.naming` would be cleaner |
+| C-8 Validation | **Done** (branch `m2-encode-cli`) | `reframe.validation`: `validate(job, source, caps, tools, fs)` and `validate_template(template, caps)` (fixes target `template`), rules registered by area (tools, encoder, container, dimensions, filters, audio, subtitles, metadata, range, output, naming); C-4's `encoder_issues` with the closest-match fix that converts the quality and resets what the new encoder lacks; C-16's naming issues; `FileSystemView` / `LocalFileSystem` (all I/O, Windows paths tested with a fake file system); `next_free_path` and `estimate_output_bytes`. 75 issue codes (plus `validation.rule_failed`), each with a positive and a negative test; every fix is applied and re-validated. Odd 4:2:0 sizes are a property test (C-5 cannot make them); forced-only works only for a burned-in PGS or VobSub track (checked with FFmpeg). Decision [0014](decisions/0014-validation-rules-and-severities.md); its severities beyond the plan are provisional (open questions). **Open (paused):** [0024](decisions/0024-m2-wave-2-product-decisions.md) items 3 and 4 (`dimensions.crop_not_detected` and the audio range rules become info), a warning for an HDR source encoded to 8-bit without tone mapping, and a cross-check that everything C-7's `build_plan` refuses (`PlanError`, list in 0013) is a validation error |
 | C-9 Presets and settings stores | **Done** (branch `m2-encode-cli`) | `reframe.settings` (`SettingsStore`: `<config>/settings.json`, migrations, atomic writes with the Windows sharing-violation retry, corrupt file backed up and replaced with defaults plus `settings.corrupt`; a newer or unreadable file is never overwritten) and `reframe.presets` (26 built-ins from HandBrake 1.11.2 as package JSON, incl. *H.265 MKV 1080p* and *H.265 NVENC 1080p*; `PresetStore`: CRUD, duplicate, default, export / import with `rename` / `replace` / `skip` on conflicts, partly damaged files keep their valid presets; `diff` → `FieldChange`). Facade: `Reframe.settings` (`get`, `update` with JSON patches, start-up `problems`; tool-path changes re-run discovery, `encoders.hardware_tests` / `vaapi_device` re-run detection) and `Reframe.presets`. Decision [0015](decisions/0015-presets-and-settings-stores.md). The Windows retry is tested with mocks only |
 | C-10 Preview and analysis tasks | **Partial** | **Done:** the background task manager `reframe.tasks` (id, progress, cancel, limit per kind). **Not started:** frames, crop detection, preview clips, bitrate and subtitle scans, loudness measurement |
-| C-11 Queue and job runner | Not started | Models only (`QueueJob`, `JobState`, `JobProgress`). The event bus `reframe.events` is done |
+| C-11 Queue and job runner | Not started | Models only (`QueueJob`, `JobState`, `JobProgress`). The event bus `reframe.events` is done. The M2 contract of `QueueService` is in [m2-breakdown.md](m2-breakdown.md) (wave 3); what the runner must do with a plan is in [0013](decisions/0013-command-builder-details.md) |
 | C-12 Batch engine | **Partial** (M2 part, branch `m2-encode-cli`) | **Built (M2, [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)):** the codec-rule stage of the audio defaults, `reframe.batch.apply_codec_rules` (first match on language and source channels, passthru when the source fits under the `PassthruPolicy` and the container (a lossy source at any bitrate, a lossless one at or below the max: [0023](decisions/0023-lossy-passthru-above-the-max.md)), bitrate cap never above the source, snapping with notes, unknown bitrate as above the max with Measure, fallback encoder, mixdowns without upmix, sample rate, gain, DRC, loudness, name template, extra outputs, `first_track_of_language_only` as first in source order) with a reason per track (`TrackDecision`), and `draft_tracks` (every audio track through the rules, every subtitle copied, metadata from the source; `TrackDraft`). The example of 03 is reproduced row by row; details in [0019](decisions/0019-audio-codec-rule-details.md). **Not started:** the selection stage, `explain` and the defaults lint (M6); descriptors, fingerprints, grouping, rule derivation and resolution (M7) |
 | C-13 Metadata edit and remux | Not started | The language-tag behaviour of FFmpeg and mkvpropedit is verified and recorded (`testdata/README.md`) |
 | C-14 Platform services | **Partial** | **Branch `m2-encode-cli` only:** sleep inhibit for automatic sleep only, `reframe.platform.sleep` (counted `SleepInhibitor`; Linux: the desktop session's inhibit, `org.freedesktop.PowerManagement.Inhibit` or the XDG portal, plus a logind `idle` lock where needed, through a stdlib D-Bus client, checked on KDE; GNOME not tested; Windows `SetThreadExecutionState` on one dedicated thread, mock-tested only; `sleep_inhibit.unavailable` warning), [0011](decisions/0011-sleep-inhibit.md), [0020](decisions/0020-m2-wave-1-product-decisions.md). **Not started:** power actions, the notification hook. (`reframe.platform` also has child-process safety from C-1 and `launch_detached` for user-facing programs) |
-| C-15 Service facade and CLI | **Partial** | **Done:** `Reframe.create()` / `close()` with `tools`, `sources`, `tasks` and `events`; the `settings` and `presets` services (C-9); CLI `reframe probe FILE [--json]` and `reframe version`; `python -m reframe.tools` (tool status). **Not started:** the capabilities, jobs, batch and queue services; CLI `encoders`, `tools status\|fetch`, `name`, `presets`, `plan`, `encode`, `batch` |
+| C-15 Service facade and CLI | **Partial** | **Done:** `Reframe.create()` / `close()` with `tools`, `sources`, `tasks` and `events`; the `settings` and `presets` services (C-9); CLI `reframe probe FILE [--json]` and `reframe version`; `python -m reframe.tools` (tool status). `Reframe.capabilities` (C-4). **Not started:** the jobs, batch and queue services; CLI `encoders`, `tools status\|fetch`, `name`, `presets`, `plan`, `encode` (several files and folders, [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)), `batch`. The M2 contract of the jobs service and the CLI is in [m2-breakdown.md](m2-breakdown.md) (wave 3) |
 | C-16 Output naming | **Done** (branch `m2-encode-cli`) | `reframe.naming`: `resolve_output_name` (name source Auto / File / Folder with generic-folder skipping, season packs and scores; guessit parsing that keeps the original text and positions; templates with format specs, `<…>` groups, `/` subfolders, `{{ }}`; the 17 HandBrake variables and the Reframe ones; word separator and HandBrake clean-up; Windows-safe names on every OS; MP4/M4V rule; the job's manual name, template, name source and per-file `field_overrides`) and `check_template` (syntax, unknown variables with "did you mean" fixes, format specs). Models `NameResult`, `NameCandidate`, `ParsedName`, `NameSpan`, `NamingVariable`. Name corpus `testdata/names.toml`: 146 real-world cases. Decision [0012](decisions/0012-output-naming-rules.md). Collisions are C-8 / C-11; the `reframe name` command is C-15 |
 
 ### Server (`reframe-server`, 06-web-app.md Part A)
@@ -116,7 +117,7 @@ uv run reframe probe --json FILE     # the MediaSource model as JSON
 uv run python -m reframe.tools       # which ffmpeg / ffprobe / mkvpropedit / mediainfo is used, and why
 uv run python scripts/make-testdata.py
 uv run --no-project python scripts/fetch-tools.py
-uv run pytest                        # about 1 770 tests
+uv run pytest                        # about 3 700 tests (M2 branch; 18 more with -m needs_gpu)
 cd frontend && npm run dev:web       # placeholder page only
 ```
 
@@ -126,21 +127,59 @@ cd frontend && npm run dev:web       # placeholder page only
   the `.exe`-only tool lookup, the `.cmd` test launchers, console encoding, and the Windows CI
   jobs.
 - **GitHub Actions**: no workflow has run, because nothing was pushed.
-- **GPU encoders**: detection is checked on one Linux machine (AMD RX 7600: VAAPI and AMF
-  work); NVENC and QSV only as failures (no NVIDIA driver, no Intel GPU); Windows not at all.
+- **GPU encoders**: detection and real encodes are checked on one Linux machine (AMD RX 7600:
+  VAAPI and AMF work); NVENC and QSV only as detection failures and plan snapshots (no NVIDIA
+  driver, no Intel GPU); Windows not at all.
+- **Sleep inhibit**: checked on KDE Plasma 6 only (no real suspend was done); GNOME and other
+  desktops not tested; Windows mock-tested only.
 
 ## Open items for the next steps
 
 - **C-13**: ffprobe cannot read Matroska `LanguageIETF`. Reframe reads it through MediaInfo
   (`language_ietf`). Decide in C-13 how a metadata edit is checked after the re-probe.
 - **C-7** (done): languages are written in the container's form and every disposition is set
-  ([0013](decisions/0013-command-builder-details.md)). Left for others: C-3 reads an MP4
-  track title only from `title`, but FFmpeg's MP4 demuxer reports it as `name`; C-11 removes
+  ([0013](decisions/0013-command-builder-details.md)). Left for others: C-11 removes
   `EncodePlan.temp_files` and must clamp `-inf` loudnorm measurements; C-8 must report what
   the builder refuses (list in 0013, Consequences).
 - **D-7**: follow the bundled layout of [0005](decisions/0005-tool-discovery-details.md)
   (`tools/ffmpeg/`, `tools/mkvtoolnix/`, `tools/mediainfo/`), and decide on
   `LIBVA_DRIVERS_PATH`.
-- **M2**: wave 1 = C-4, C-5, C-6, C-16, C-14 (merged); wave 2 = C-7, C-8, C-9, C-12 (codec
-  rules, [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)); wave 3 = C-11, C-15
-  ([m2-breakdown.md](m2-breakdown.md)).
+- **M2**: see the next section.
+
+## Paused: what is left in M2
+
+The user paused M2 on 2026-10-13, after wave 2 was merged. The agents' git worktrees under
+`.claude/worktrees/` are kept, so the step agents can be resumed for their follow-ups.
+
+1. **Wave-2 follow-ups** (decided, not built):
+   - C-7: snap impossible audio values in the builder
+     ([0024](decisions/0024-m2-wave-2-product-decisions.md) item 4).
+   - C-8: `dimensions.crop_not_detected` and the audio range rules as info (0024 items 3, 4);
+     a warning for an HDR source encoded to 8-bit without tone mapping; a test that every
+     `PlanError` case of C-7 is a validation error and that C-7's snapshot jobs validate
+     without errors.
+   - C-7, C-8, C-12: use one shared audio snap (mixdown, sample rate, bitrate) from the
+     definitions, so the builder, validation and the codec rules agree.
+2. **Wave 3** (not started; contract in [m2-breakdown.md](m2-breakdown.md)): C-11 (queue and
+   job runner) and C-15 (`Reframe.jobs`, CLI `encoders`, `plan`, `encode`, `name`). The draft
+   job gives the video track the default flag (0024 item 5).
+3. **End of milestone**: a fresh review agent over the whole `m2-encode-cli` diff, its fixes,
+   the five M2 demo items run for real, this file updated, then the merge into `main`.
+4. **Questions for the user that are still open** (each is built with a default that is easy
+   to change):
+   - C-14: when the desktop inhibit fails but the logind lock works, only a log line is
+     written, no `app.warning` ([0022](decisions/0022-linux-sleep-inhibit-mechanism.md)).
+   - C-7 ([0013](decisions/0013-command-builder-details.md)): bitmap burn-in with a crop is
+     aligned to the bottom; loudnorm uses TP −1 and LRA 20; "Peak" frame rate makes a VFR
+     source constant at the peak rate; DRC 0 turns off FFmpeg's default AC-3 DRC; a passthru
+     track with no encoder falls back to AAC; a remux may convert text subtitles;
+     `align_av_start` is ignored (no FFmpeg mapping chosen).
+   - C-8 ([0014](decisions/0014-validation-rules-and-severities.md)): the other provisional
+     severities (range end beyond the source, lost flags, disk space, forced-only); a per-job
+     overwrite flag for the collision setting `ask`.
+   - C-16 ([0012](decisions/0012-output-naming-rules.md)): the `{hdr}` label order, `und`
+     tracks left out of `{audio_langs}`, Plex extras folders as generic folders, the folder's
+     show name in front of a bare `S01E01`.
+   - C-12 ([0019](decisions/0019-audio-codec-rule-details.md)): items 3 to 7 (no upmix,
+     "fits" needs no decode, no max = the encoder's default, extra outputs,
+     first-of-language) were accepted by the lead without asking.
