@@ -42,6 +42,11 @@ SOFTWARE = [enc.id for enc in DEFS.video_encoders.values() if not enc.hardware]
 AVAILABLE = EncoderState.AVAILABLE
 UNAVAILABLE = EncoderState.UNAVAILABLE
 ERROR = EncoderState.ERROR
+#: FFmpeg's warning when it replaces the ``-pix_fmt`` of a test encode (the text of FFmpeg
+#: n9.0.2; it then exits 0).
+AUTO_SELECTED = (
+    "Incompatible pixel format 'p010le' for codec 'hevc_amf', auto-selecting format 'nv12'\n"
+)
 
 
 async def until(condition: Callable[[], bool], limit: float = 10.0) -> None:
@@ -201,6 +206,47 @@ async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInf
         assert status.private_options  # the help was still read
     assert encode_calls(fake_tools) == []
     assert snap.status("libx265").state is AVAILABLE
+
+
+async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    """M2 review: the node that Settings → Encoders forces is the node the encode uses
+    (``EncoderStatus.device``) even when nothing was tested; else the builder's default."""
+    forced = linux(hardware_tests=False, vaapi_device=f" {OTHER_NODE} ")
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, forced)
+    for encoder in ("h264_vaapi", "hevc_vaapi", "av1_vaapi"):
+        status = snap.status(encoder)
+        assert (status.state, status.device) == (EncoderState.UNKNOWN, OTHER_NODE), status
+    assert snap.status("hevc_amf").device is None  # not a VAAPI encoder
+    assert snap.status("hevc_qsv").device is None
+    automatic = await detect_capabilities(fake_ffmpeg, DEFS, linux(hardware_tests=False))
+    assert automatic.status("hevc_vaapi").device is None  # no node is known without a test
+    assert encode_calls(fake_tools) == []
+
+
+async def test_a_10bit_test_with_another_pixel_format_fails(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    """M2 review: FFmpeg replaces a pixel format the encoder does not take and exits 0 (checked
+    with FFmpeg n9.0.2, see ``test_real``): the 10-bit test did not encode 10-bit."""
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    argv_has=["-c:v", "hevc_amf"],
+                    argv_contains=["p010le"],
+                    actions=[ft.stderr(AUTO_SELECTED)],
+                )
+            ]
+        )
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    status = snap.status("hevc_amf")
+    assert status.state is AVAILABLE  # the 8-bit test worked
+    assert status.supports_10bit is False
+    assert status.reason_10bit == "hevc_amf does not take p010le in this FFmpeg build (it got nv12)"
+    assert snap.status("av1_amf").supports_10bit is True
 
 
 async def test_platforms(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:

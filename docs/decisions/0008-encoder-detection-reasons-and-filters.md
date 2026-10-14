@@ -146,6 +146,50 @@ either. The queue (C-11) waits for `CapabilityService.wait()` before it starts a
 encoder is still being checked. `encoder.untested` is a new code: with the tests off the user
 chose not to test, so it must not block, but the encode can fail.
 
+## Follow-up (M2 review, 2026-10-14)
+
+The milestone review found these. Each one has a regression test that failed before the fix.
+
+1. **A stale cached `unavailable` blocked `plan` and `encode`.** The GPU fingerprint does not
+   change when a user-space driver changes (AMF runtime, Mesa / libva, oneVPL), so a cached
+   `unavailable` can be wrong. `encoder_issues` treated it as final and gave
+   `encoder.unavailable`. The command exited before the re-check ended, so the cache was never
+   corrected. Decision: while a cached result is checked again (`from_cache` and `detecting`),
+   a status that is not `available` gives `encoder.checking` (info). The message keeps the
+   cached result: "hevc_amf (AMD AMF H.265) is being checked again (last result:
+   unavailable, AMD AMF runtime not found (libamfrt64.so.1)). The job waits for the result
+   before it starts." Callers that wait for `encoder.checking` (C-15 `JobService.validate`,
+   C-11) get the new result, and `wait()` returns only after the new result is in the cache.
+   A cached `available` stays final, so a job does not wait for it. The snapshot itself is not
+   changed (03: the cached statuses stay until their new results are in). Test:
+   `test_recheck.py` (the CLI repro) and `test_issues.py::test_a_cached_result_is_checked_again`.
+2. **The 10-bit test took exit code 0 as proof.** Checked with FFmpeg n9.0.2: when an encoder
+   does not take the `-pix_fmt` it is given, FFmpeg logs "Incompatible pixel format 'p010le'
+   for codec 'libx264', auto-selecting format 'yuv420p10le'", encodes with the format it
+   picked and exits 0. Decision: the 10-bit test fails when FFmpeg replaced the 10-bit pixel
+   format of the definition. The reason is "<encoder> does not take p010le in this FFmpeg
+   build (it got nv12)" and the FFmpeg line is the detail. It fails even when the format that
+   FFmpeg picked is 10-bit: the builder passes the definition's format, and the definition
+   does not match this build. With the pinned build this cannot happen for the current
+   definitions: NVENC and AMF all list `p010le`, and VAAPI and QSV get the format through a
+   filter. It protects against another FFmpeg build (Settings → Tools). The 8-bit test still
+   takes exit code 0: the encoder works. Test: `test_real.py` (real FFmpeg), `test_hwtest.py`,
+   `test_detect.py`.
+3. **A forced VAAPI node was lost with hardware tests off.** The encode then used
+   `renderD128`. Now the node that Settings → Encoders forces is the `device` of the
+   `unknown` VAAPI statuses too. Without a forced node, the device stays empty: no node is
+   known without a test.
+4. **Filter results under another ffmpeg.** A detection without a cache hit kept the last
+   filter results until the new ones were in. Now it does so only for the same build (path
+   and version); for another ffmpeg the filters are not known (`None`) until they are read.
+5. **An exception from tool discovery** (not "closed") left `detecting` on for ever. It is now
+   a failed detection like any other bug: `error` statuses ("Encoder detection failed: …")
+   and a final `capabilities.changed` event.
+6. **`close()` did not wait for a detection that `rescan()` replaced**, which can still be
+   killing its test encodes. `close()` now waits for every detection that the service started.
+7. **The Windows registry reader** (`winreg`) is now unit-tested on Linux with a fake `winreg`
+   module; its `pragma: no cover` is removed.
+
 ## Consequences
 
 - Reasons are plain language for every failure that was provoked or confirmed in the build;

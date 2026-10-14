@@ -13,8 +13,8 @@ A cached detection result is reused only on the same GPUs and drivers:
 Reading never raises: a value that cannot be read is left out. The fingerprint is a stable
 text (sorted), so it can be compared and stored as it is.
 
-The Windows code is unit-tested on Linux with a fake registry (:class:`Registry`); it has not
-run on Windows yet.
+The Windows code is unit-tested on Linux with a fake registry (:class:`Registry`) and a fake
+``winreg`` module (the reader itself); it has not run on Windows yet.
 """
 
 from __future__ import annotations
@@ -101,8 +101,9 @@ def windows_fingerprint(registry: Registry) -> str:
     return "; ".join(sorted(adapters)) or "no display adapter"
 
 
-class _WinReg:  # pragma: no cover - Windows only
-    """:class:`Registry` with ``winreg``."""
+class _WinReg:
+    """:class:`Registry` with ``winreg`` (tested on Linux with a fake ``winreg`` module and
+    ``sys.platform`` set to ``win32``)."""
 
     def subkeys(self, path: str) -> list[str]:
         names: list[str] = []

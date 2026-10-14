@@ -20,6 +20,7 @@ from reframe.capabilities import (
     detect_capabilities,
     render_nodes,
     run_filter_test,
+    run_hardware_test,
 )
 from reframe.definitions import load_definitions
 from reframe.models import CapabilitySnapshot, EncoderState, ToolInfo, ToolStatus
@@ -60,6 +61,23 @@ async def test_real_detection_without_hardware_tests() -> None:
         if status.state is EncoderState.UNKNOWN:
             assert status.in_build is True
             assert status.private_options
+
+
+async def test_a_replaced_pixel_format_fails_the_10bit_test() -> None:
+    """M2 review: FFmpeg replaces a ``-pix_fmt`` that the encoder does not take ("Incompatible
+    pixel format 'p010le' for codec 'libx264', auto-selecting format 'yuv420p10le'") and exits
+    0. libx264 does not take p010le: the 10-bit test of a definition that asks for it fails."""
+    ffmpeg = await real_ffmpeg()
+    assert ffmpeg.path is not None
+    x264 = DEFS.video_encoders["libx264"].model_copy(
+        update={"pix_fmts": {"8": "yuv420p", "10": "p010le"}, "hardware_setup": None}
+    )
+    ten = await run_hardware_test(ffmpeg.path, x264, "10")
+    assert ten.failure is not None, "FFmpeg did not replace p010le"
+    assert ten.failure.reason == (
+        "libx264 does not take p010le in this FFmpeg build (it got yuv420p10le)"
+    )
+    assert (await run_hardware_test(ffmpeg.path, x264, "8")).ok
 
 
 # --------------------------------------------------------------------------- real GPUs

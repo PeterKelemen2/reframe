@@ -132,6 +132,36 @@ def test_checking_is_info() -> None:
         assert issue.fixes == []
 
 
+def test_a_cached_result_is_checked_again() -> None:
+    """M2 review: a cached status that is not ``available`` can be stale (the GPU fingerprint
+    does not see user-space drivers: AMF runtime, Mesa, oneVPL). While the detection checks it
+    again it is ``encoder.checking`` (info), so a caller waits for the new result instead of
+    failing on the old one."""
+    stale = caps(**NO_HEVC_HARDWARE).model_copy(update={"from_cache": True, "detecting": True})
+    stale.encoders["hevc_qsv"] = EncoderStatus(
+        id="hevc_qsv", state=EncoderState.UNKNOWN, reason="Not tested", in_build=True
+    )
+    (issue,) = encoder_issues("hevc_amf", stale, DEFS)
+    assert (issue.code, issue.severity, issue.fixes) == ("encoder.checking", Severity.INFO, [])
+    assert issue.message == (
+        "hevc_amf (AMD AMF H.265) is being checked again (last result: unavailable, AMD AMF "
+        "runtime not found (libamfrt64.so.1)). The job waits for the result before it starts."
+    )
+    for encoder_id in ("hevc_vaapi", "hevc_qsv"):  # error, untested
+        (other,) = encoder_issues(encoder_id, stale, DEFS)
+        assert other.code == "encoder.checking", other
+    (named,) = encoder_issues("hevc_amf", stale, DEFS, subject='Preset "VCN"')
+    assert named.message.startswith('Preset "VCN" uses hevc_amf, which is being checked again')
+    assert encoder_issues("libx265", stale, DEFS) == []
+    # a result of the running (or a finished) detection is final
+    for final in (
+        stale.model_copy(update={"from_cache": False}),
+        stale.model_copy(update={"detecting": False}),
+    ):
+        (unavailable,) = encoder_issues("hevc_amf", final, DEFS)
+        assert unavailable.code == "encoder.unavailable"
+
+
 def test_untested_is_a_warning() -> None:
     snapshot = caps(hevc_amf=(EncoderState.UNKNOWN, "Not tested: hardware test encodes are off"))
     snapshot.encoders["hevc_amf"].in_build = True

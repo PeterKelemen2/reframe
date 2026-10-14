@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from reframe.capabilities import (
+    Failure,
     filter_test_argv,
     hardware_test_argv,
     run_filter_test,
@@ -186,3 +187,35 @@ async def test_run_missing_binary(tmp_path: object) -> None:
     assert outcome.failure is not None
     assert outcome.failure.state is EncoderState.ERROR
     assert outcome.failure.reason.startswith("FFmpeg could not be started: ")
+
+
+#: FFmpeg's warning when an encoder does not take the ``-pix_fmt`` it is given (FFmpeg n9.0.2;
+#: it picks another format and exits 0: ``test_real.py``).
+AUTO_SELECTED = (
+    "Incompatible pixel format 'p010le' for codec 'hevc_amf', auto-selecting format '{}'\n"
+)
+
+
+@pytest.mark.parametrize("picked", ["nv12", "yuv420p10le"])
+async def test_run_10bit_with_another_pixel_format(fake_tools: ft.FakeTools, picked: str) -> None:
+    """M2 review: exit code 0 is not enough for the 10-bit test. When FFmpeg replaced the
+    10-bit pixel format, the encode did not run with it: the 10-bit test failed."""
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    argv_has=["-c:v", "hevc_amf"], actions=[ft.stderr(AUTO_SELECTED.format(picked))]
+                )
+            ]
+        )
+    )
+    ten = await run_hardware_test(fake_tools.ffmpeg, ENCODERS["hevc_amf"], "10")
+    assert not ten.ok
+    assert ten.failure == Failure(
+        EncoderState.UNAVAILABLE,
+        f"hevc_amf does not take p010le in this FFmpeg build (it got {picked})",
+        detail=AUTO_SELECTED.format(picked).strip(),
+    )
+    # the 8-bit test asks for nv12: a warning about another format does not matter there
+    eight = await run_hardware_test(fake_tools.ffmpeg, ENCODERS["hevc_amf"], "8")
+    assert eight.ok

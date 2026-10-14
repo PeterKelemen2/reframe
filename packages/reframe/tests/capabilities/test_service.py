@@ -615,6 +615,94 @@ async def test_tool_discovery_closed_under_the_detection(harness: Harness) -> No
     assert harness.fake.calls() == []
 
 
+# --------------------------------------------------------------------------- M2 review
+
+
+def running_detections() -> list[asyncio.Task[Any]]:
+    return [
+        t
+        for t in asyncio.all_tasks()
+        if t.get_name() == "reframe-encoder-detection" and not t.done()
+    ]
+
+
+async def test_close_waits_for_a_replaced_detection(
+    harness: Harness, fake_tools: ft.FakeTools
+) -> None:
+    """``rescan()`` replaces a detection whose test encodes are still being killed: ``close()``
+    returns only when every detection it started has ended, so no test encode is left."""
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
+    harness.service.start()
+    await until(lambda: len(encode_calls(fake_tools)) >= 3)
+    rescan = asyncio.ensure_future(harness.service.rescan())
+    await asyncio.sleep(0)  # rescan() cancels the running detection and starts a new one
+    await harness.service.close()
+    assert running_detections() == []
+    assert fake_tools.kill_leftovers() == []
+    with pytest.raises(ReframeClosedError):
+        await rescan
+
+
+async def test_a_new_ffmpeg_does_not_show_the_old_filter_results(
+    harness: Harness, fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    """A re-scan of the same ffmpeg keeps the last filter results until the new ones are in
+    (``test_libplacebo_result_is_in_the_snapshot``); another ffmpeg starts without them."""
+    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    assert capture.stderr is not None
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    argv_has=["-vf", "libplacebo"],
+                    actions=[ft.stderr_data(capture.stderr)],
+                    exit_code=capture.exit_code,
+                )
+            ]
+        )
+    )
+    harness.service.start()  # watches tools.changed
+    first = await harness.service.wait()
+    assert first.usable_filter("libplacebo") is False
+    other = ft.make_fake_tools(tmp_path / "other")
+    try:
+        other.set_scenario(ft.Scenario([ft.Rule(argv_has=["-encoders"], actions=[ft.hang()])]))
+        harness.tools.tools = tool_set(ffmpeg_info(other.ffmpeg))
+        harness.events.publish(ToolsChangedEvent(tools=harness.tools.tools))
+        await until(lambda: harness.service.snapshot.ffmpeg == other.ffmpeg)
+        snapshot = harness.service.snapshot
+        assert snapshot.detecting
+        assert snapshot.filters is None
+        assert snapshot.filter_failures == {}
+        assert snapshot.untested_filters == []
+        assert snapshot.usable_filter("libplacebo") is None  # not known for this build yet
+        await harness.service.close()
+    finally:
+        other.kill_leftovers()
+
+
+async def test_a_failing_tool_discovery_ends_the_detection(harness: Harness) -> None:
+    """An exception from tool discovery that is not "closed" is a failed detection (data):
+    every status is an error and ``detecting`` ends, so nothing waits for ever."""
+
+    async def broken() -> object:
+        raise RuntimeError("discovery bug")
+
+    harness.tools.status = broken  # type: ignore[method-assign,assignment]
+    harness.service.start()
+    final = await harness.service.wait()
+    assert not final.detecting
+    assert not harness.service.snapshot.detecting
+    assert {s.state for s in final.encoders.values()} == {EncoderState.ERROR}
+    assert final.status("libx265").reason == (
+        "Encoder detection failed: RuntimeError: discovery bug"
+    )
+    events = changed(drain(harness.subscription))
+    assert events, "no capabilities.changed event"
+    assert {s.id for s in events[-1].encoders} == set(final.encoders)
+    assert harness.fake.calls() == []
+
+
 # --------------------------------------------------------------------------- VAAPI, libplacebo
 
 

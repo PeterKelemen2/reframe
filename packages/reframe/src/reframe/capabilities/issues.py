@@ -22,6 +22,13 @@ Queueing waits until the encoder's status is known", and an error would block *A
 queue* (03 §Validation). It is not a warning either, because nothing is wrong yet. The queue
 (C-11) waits for ``CapabilityService.wait()`` before it starts a job whose encoder is still
 being checked.
+
+**A cached result that is checked again** (``from_cache`` and ``detecting``): a cached status
+that is not ``available`` is ``encoder.checking`` too, with the cached result in the message
+(decision 0008, follow-up). The cache can be stale: its GPU fingerprint does not see
+user-space drivers (AMF runtime, Mesa / libva, oneVPL), so a status that failed before can
+work now. A caller that waits for ``encoder.checking`` then gets the new result instead of
+failing on the old one. A cached ``available`` stays ``available``: the job does not wait.
 """
 
 from __future__ import annotations
@@ -120,6 +127,17 @@ def encoder_issues(
     who = _uses(subject, encoder_id, definitions)
     if state is EncoderState.AVAILABLE:
         return []
+    if caps.from_cache and caps.detecting and state is not EncoderState.CHECKING:
+        last = f"{state.value}, {status.reason}" if status.reason else state.value
+        message = (
+            f"{who} is being checked again (last result: {last}). The job waits for the "
+            "result before it starts."
+        )
+        return [
+            ValidationIssue(
+                severity=Severity.INFO, code="encoder.checking", path=path, message=message
+            )
+        ]
     if state is EncoderState.CHECKING or (state is EncoderState.UNKNOWN and not status.in_build):
         message = f"{who} is still being checked. The job waits for the result before it starts."
         return [

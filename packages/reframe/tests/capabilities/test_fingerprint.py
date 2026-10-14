@@ -4,10 +4,12 @@ the Windows code is not run on Windows here)."""
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 
 import pytest
 
+from reframe.capabilities import fingerprint as fingerprint_module
 from reframe.capabilities import gpu_fingerprint
 from reframe.capabilities.fingerprint import (
     DISPLAY_CLASS_KEY,
@@ -100,3 +102,94 @@ def test_gpu_fingerprint_dispatch() -> None:
     assert gpu_fingerprint(platform="darwin") == "darwin"
     if sys.platform.startswith("linux"):
         assert gpu_fingerprint().startswith("linux; drm ")
+
+
+class FakeKey:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.closed = False
+
+    def __enter__(self) -> FakeKey:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.closed = True
+
+
+class FakeWinreg(types.ModuleType):
+    """The part of ``winreg`` that the registry reader uses, over ``keys`` (path → values)."""
+
+    HKEY_LOCAL_MACHINE = 0x80000002
+
+    def __init__(self, keys: dict[str, dict[str, object]]) -> None:
+        super().__init__("winreg")
+        self.keys = keys
+        self.opened: list[FakeKey] = []
+
+    def OpenKey(self, root: int, path: str) -> FakeKey:
+        assert root == self.HKEY_LOCAL_MACHINE
+        if not any(k == path or k.startswith(path + "\\") for k in self.keys):
+            raise FileNotFoundError(2, "The system cannot find the file specified")
+        key = FakeKey(path)
+        self.opened.append(key)
+        return key
+
+    def EnumKey(self, key: FakeKey, index: int) -> str:
+        prefix = key.path + "\\"
+        names = sorted({k[len(prefix) :].split("\\")[0] for k in self.keys if k.startswith(prefix)})
+        if index >= len(names):
+            raise OSError(259, "No more data is available")
+        return names[index]
+
+    def QueryValueEx(self, key: FakeKey, name: str) -> tuple[object, int]:
+        values = self.keys.get(key.path, {})
+        if name not in values:
+            raise FileNotFoundError(2, "The system cannot find the file specified")
+        return values[name], 1  # REG_SZ
+
+
+def windows_gpu_fingerprint(monkeypatch: pytest.MonkeyPatch, fake: FakeWinreg) -> str:
+    """``gpu_fingerprint()`` as on Windows, with ``fake`` as ``winreg``."""
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    monkeypatch.setattr(sys, "platform", "win32")
+    try:
+        return gpu_fingerprint()
+    finally:
+        monkeypatch.undo()  # sys.platform back before anything else runs
+
+
+def test_the_windows_registry_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M2 review: the ``winreg`` reader itself (CLAUDE.md: Windows code paths are unit-tested
+    with mocks on Linux)."""
+    fake = FakeWinreg(
+        {
+            f"{DISPLAY_CLASS_KEY}\\0000": {
+                "DriverDesc": "AMD Radeon RX 7600",
+                "DriverVersion": "32.0.21025.1024",
+            },
+            f"{DISPLAY_CLASS_KEY}\\0001": {"DriverDesc": "Microsoft Basic Display Adapter"},
+            f"{DISPLAY_CLASS_KEY}\\0002": {"DriverVersion": "1.0"},
+            f"{DISPLAY_CLASS_KEY}\\Properties": {},
+        }
+    )
+    assert windows_gpu_fingerprint(monkeypatch, fake) == (
+        "windows; AMD Radeon RX 7600 32.0.21025.1024; Microsoft Basic Display Adapter unknown"
+    )
+    assert fake.opened
+    assert all(key.closed for key in fake.opened)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="reads the real registry on Windows")
+def test_the_windows_registry_reader_reads_nothing_on_another_os() -> None:
+    reader = fingerprint_module._WinReg()
+    assert reader.subkeys(DISPLAY_CLASS_KEY) == []
+    assert reader.value(f"{DISPLAY_CLASS_KEY}\\0000", "DriverDesc") is None
+    assert gpu_fingerprint(platform="win32") == "windows; no display adapter"
+
+
+def test_the_windows_registry_reader_without_the_class_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeWinreg({})
+    assert windows_gpu_fingerprint(monkeypatch, fake) == "windows; no display adapter"
+    assert fake.opened == []
