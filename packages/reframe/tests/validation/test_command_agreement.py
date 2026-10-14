@@ -465,11 +465,7 @@ def test_composite_parts_have_defaults(encoder: str, key: str, preset: str | Non
 
 #: Snapshot jobs that test the builder with a value validation refuses on purpose:
 #: job → the error codes it has.
-KNOWN_ERRORS: dict[str, set[str]] = {
-    # The builder skips an advanced option the encoder does not have; validation refuses it
-    # (``encoder.option_unknown``, decision 0014: an option is never dropped silently).
-    "x264_advanced_and_custom_params": {"encoder.option_unknown"},
-}
+KNOWN_ERRORS: dict[str, set[str]] = {}
 
 
 def test_snapshot_jobs_are_imported() -> None:

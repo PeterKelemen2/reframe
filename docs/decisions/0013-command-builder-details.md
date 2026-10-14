@@ -252,3 +252,41 @@ means one `direction` argument here and in C-8.
 ### Plan changes
 
 - `docs/plan/05-core.md` §C-7, the audio bullet: how each value is snapped.
+
+## Follow-up (M2 wave 2b), 2026-10-14: chapter range ends, chapters cut on a chapter edge
+
+### Context
+
+Decision [0026](0026-builder-and-validation-agree.md) makes the builder clamp the end of a
+chapter range to the last chapter (§1 "The range": a time or frame range was already clamped
+to the source). Re-probing such an encode showed a second problem that every chapter range
+has: with `-map_chapters 0`, FFmpeg (fftools `copy_chapters`, both n9.0.2 builds) skips a
+source chapter only when it ends *before* the seek point and stops only at one that starts
+*after* the range end. A chapter that ends exactly at the range start, or starts exactly at
+the range end, is written as an empty chapter (`-ss 2.5` on the `chapters` fixture gives
+`Part One 0.0–0.0` before `Part Two`; `-ss 1 -t 3` gives `Opening 0.0–0.0` and
+`Credits 3.0–3.0`; `testdata/README.md`). A chapter range always starts and ends on chapter
+edges, so players showed the chapter before the range as a first, empty chapter.
+
+### Decision
+
+- `chapter_range` clamps the end to the last chapter. A range that starts after the last
+  chapter, ends before it starts, or is used on a source without chapters stays a
+  `PlanError` (validation: `range.outside`, the empty-range error).
+- When the source's chapters are copied (no renamed chapters) and the range starts or ends
+  within 1 ms of a chapter edge, the builder writes the source's chapters cut to the range
+  as an FFMETADATA file instead of `-map_chapters 0` (the path of renamed chapters, with the
+  source titles). A chapter shorter than 1 ms after the cut is left out. Other ranges keep
+  `-map_chapters 0`.
+
+### Consequences
+
+- A chapter range encode has exactly the chapters of the range (chapters 3 to 9 of the
+  4-chapter fixture: `Part Two 0–1.5`, `Credits 1.5–2.5`). Chapter tags other than the title
+  are not kept in that case (FFMETADATA holds the title only).
+- The plan snapshot `burn_ass_with_fonts_and_range` (range from 1.5 s, the source's chapter
+  edge) now has an FFMETADATA file with `Part A` only, instead of `-map_chapters 0`.
+
+### Plan changes
+
+- `docs/plan/05-core.md` §C-7, the chapters bullet.

@@ -357,7 +357,10 @@ class EncodePlan(BaseModel):
       none). Flags the muxer cannot write, and Matroska `LanguageIETF`, go to an
       `mkvpropedit` step.
 - [ ] **Chapters**: `-map_chapters 0|-1`, or a generated FFMETADATA file for renamed or
-      generated chapters.
+      generated chapters, and for the source's chapters when the range starts or ends on a
+      chapter edge (FFmpeg's copy keeps an empty chapter there; 0013 "Follow-up (M2 wave
+      2b)"). The end of a chapter range is clamped to the last chapter
+      ([decision 0026](../decisions/0026-builder-and-validation-agree.md)).
 - [ ] Tags with `-metadata`. Passthru common metadata = `-map_metadata 0` before the overrides.
 
 Done when: syrupy snapshots of `EncodePlan` exist for ≥ 40 fixture jobs (every encoder family,

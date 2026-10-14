@@ -1029,9 +1029,22 @@
 # ---
 # name: test_plan_snapshot[burn_ass_with_fonts_and_range]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 1.5 -i /media/anime-ass-fonts.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:4 -map \'0:t?\' -t 1.5 -filter:v:0 \'scale=1920:1080:flags=lanczos,setsar=1/1,setpts=PTS+1.5/TB,subtitles=filename=\'"\'"\'/media/anime-ass-fonts.mkv\'"\'"\':si=0,setpts=PTS-1.5/TB,format=yuv420p\' -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:s:0 copy -map_metadata:s -1 -map_metadata:s:t:0 0:s:t:0 -map_metadata:s:t:1 0:s:t:1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 title=Japanese -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 title=English -disposition:a:1 0 -metadata:s:s:0 language=eng -metadata:s:s:0 \'title=Full Subtitles\' -disposition:s:0 default -map_chapters 0 -map_metadata 0 -f matroska /out/anime-ass-fonts.part.mkv && mv -f -- /out/anime-ass-fonts.part.mkv /out/anime-ass-fonts.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 1.5 -i /media/anime-ass-fonts.mkv -f ffmetadata -i /out/anime-ass-fonts.part.chapters.txt -map 0:0 -map 0:1 -map 0:2 -map 0:4 -map \'0:t?\' -t 1.5 -filter:v:0 \'scale=1920:1080:flags=lanczos,setsar=1/1,setpts=PTS+1.5/TB,subtitles=filename=\'"\'"\'/media/anime-ass-fonts.mkv\'"\'"\':si=0,setpts=PTS-1.5/TB,format=yuv420p\' -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:s:0 copy -map_metadata:s -1 -map_metadata:s:t:0 0:s:t:0 -map_metadata:s:t:1 0:s:t:1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 title=Japanese -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 title=English -disposition:a:1 0 -metadata:s:s:0 language=eng -metadata:s:s:0 \'title=Full Subtitles\' -disposition:s:0 default -map_chapters 1 -map_metadata 0 -f matroska /out/anime-ass-fonts.part.mkv && mv -f -- /out/anime-ass-fonts.part.mkv /out/anime-ass-fonts.mkv',
     'expected_duration': 1.5,
     'files': list([
+      dict({
+        'content': '''
+          ;FFMETADATA1
+          [CHAPTER]
+          TIMEBASE=1/1000
+          START=0
+          END=1500
+          title=Part A
+  
+        ''',
+        'description': 'FFMETADATA chapters',
+        'path': '/out/anime-ass-fonts.part.chapters.txt',
+      }),
     ]),
     'job_type': 'encode',
     'output_final': '/out/anime-ass-fonts.mkv',
@@ -1049,6 +1062,10 @@
           '1.5',
           '-i',
           '/media/anime-ass-fonts.mkv',
+          '-f',
+          'ffmetadata',
+          '-i',
+          '/out/anime-ass-fonts.part.chapters.txt',
           '-map',
           '0:0',
           '-map',
@@ -1110,7 +1127,7 @@
           '-disposition:s:0',
           'default',
           '-map_chapters',
-          '0',
+          '1',
           '-map_metadata',
           '0',
           '-f',

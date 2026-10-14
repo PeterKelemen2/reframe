@@ -18,7 +18,10 @@ writes it): ``--edit track:a2 --set language=pt-BR`` writes both elements.
 **Chapters.** ``-map_chapters 0`` copies the source's chapters (FFmpeg shifts them by the
 range start and cuts them at the output ``-t``); ``-map_chapters -1`` writes none. Renamed
 or generated chapters come from an FFMETADATA file (:class:`~reframe.models.PlanFile`) that is
-an input of its own.
+an input of its own. So do the source's chapters when the range starts or ends on a chapter
+boundary (every chapter range does): FFmpeg's copy keeps the chapter that ends at the range
+start and the one that starts at the range end, as empty chapters (decision 0013, follow-up
+of decision 0026).
 
 **Tags** (HandBrake's eight) map to the FFmpeg keys that Matroska, MP4 and WebM all write
 (``title``, ``artist``, ``album_artist``, ``date``, ``comment``, ``genre``, ``description``,
@@ -195,6 +198,21 @@ def ffmetadata(chapters: list[tuple[float, float, str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+#: Seconds: a chapter edge this close to the range start or end counts as on it.
+CHAPTER_EDGE = 0.001
+
+
+def _empty_when_copied(chapters: list[Chapter], start: float, duration: float | None) -> bool:
+    """Whether ``-map_chapters 0`` would write an empty chapter: FFmpeg's copy (fftools
+    ``copy_chapters``) skips a chapter only when it ends *before* the range start, and stops
+    only at one that starts *after* the range end (testdata/README.md)."""
+    if start > 0 and any(abs(ch.end - start) < CHAPTER_EDGE for ch in chapters):
+        return True
+    if duration is None:
+        return False
+    return any(abs(ch.start - (start + duration)) < CHAPTER_EDGE for ch in chapters)
+
+
 def _renamed(
     chapters: list[Chapter], names: list[str] | None, start: float, duration: float | None
 ) -> list[tuple[float, float, str]]:
@@ -203,7 +221,7 @@ def _renamed(
         s, e = ch.start - start, ch.end - start
         if duration is not None:
             e = min(e, duration)
-        if e <= 0 or (duration is not None and s >= duration):
+        if e < CHAPTER_EDGE or (duration is not None and s > duration - CHAPTER_EDGE):
             continue
         name = names[i] if names is not None and i < len(names) and names[i] else None
         out.append((max(0.0, s), e, name or ch.title or f"Chapter {i + 1}"))
@@ -245,7 +263,7 @@ def chapter_plan(
         return ChapterPlan(map_from=None)
     if source.chapters:
         names = settings.names
-        if names is None:
+        if names is None and not _empty_when_copied(source.chapters, start, duration):
             return ChapterPlan(map_from=0)
         chapters = _renamed(source.chapters, names, start, duration)
     elif settings.generate_every is not None and expected_duration > 0:
@@ -259,14 +277,20 @@ def chapter_plan(
 
 
 def chapter_range(source: MediaSource, job_range: ChapterRange) -> tuple[float, float]:
-    """``(start, end)`` seconds of a chapter range (1-based, inclusive)."""
+    """``(start, end)`` seconds of a chapter range (1-based, inclusive).
+
+    An end after the last chapter is clamped to the last chapter, as a time or frame range
+    is clamped to the source (decision 0026; validation warns ``range.end_beyond``). A range
+    that starts after the last chapter, or ends before it starts, cannot be planned.
+    """
     chapters = source.chapters
-    if not 1 <= job_range.start <= job_range.end <= len(chapters):
+    if not 1 <= job_range.start <= min(job_range.end, len(chapters)):
         raise PlanError(
             f"chapters {job_range.start} to {job_range.end} are not in the source "
             f"({len(chapters)} chapters; validation reports it)"
         )
-    return chapters[job_range.start - 1].start, chapters[job_range.end - 1].end
+    last = min(job_range.end, len(chapters))
+    return chapters[job_range.start - 1].start, chapters[last - 1].end
 
 
 # --------------------------------------------------------------------------- tags
