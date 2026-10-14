@@ -14,6 +14,7 @@ from reframe.batch import (
     render_track_name,
     requested_mixdown,
 )
+from reframe.command import planned_audio
 from reframe.definitions import channels_mixdown, load_definitions
 from reframe.models import (
     AudioCodecRule,
@@ -855,6 +856,62 @@ def test_the_output_agrees_with_the_shared_helpers(
         key = track.mixdown if track.mixdown is not None else channels_mixdown(channels)
         assert track.bitrate == enc.bitrate.snap(700, key, "down")
     assert (track.samplerate or 44100) == enc.snap_samplerate(None, 44100)
+
+
+#: (source channels, source layout, max, (mixdown, bitrate), reason, notes) for an Opus
+#: "keep" rule on a lossless source: libopus refuses some layouts, and the command builder
+#: (C-7's ``planned_audio``) downmixes them to one it takes, with the bitrate table of the
+#: written channels.
+OPUS_LAYOUTS = [
+    (
+        3, "2.1", 13, (None, 13),
+        "Downmix 2.1 → 2.0. Lossless source → encode at the max",
+        ["Opus cannot take 2.1: 2.0"],
+    ),
+    (
+        3, "3.0(back)", 13, (None, 13),
+        "Downmix 3.0 → 2.0. Lossless source → encode at the max",
+        ["Opus cannot take 3.0(back): 2.0"],
+    ),
+    (
+        8, "7.1(wide)", 37, (None, 37),
+        "Downmix 7.1 → 5.1. Lossless source → encode at the max",
+        ["Opus cannot take 7.1(wide): 5.1"],
+    ),
+    (
+        6, "6.0", 600, (None, 600),
+        "Downmix 6.0 → 5.0. Lossless source → encode at the max",
+        ["Opus cannot take 6.0: 5.0"],
+    ),
+    # A lossless relabel is no downmix: 5.1(side) is written as 5.1.
+    (
+        6, "5.1(side)", 600, (None, 600),
+        "Lossless source → encode at the max",
+        [],
+    ),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("channels", "layout", "max_bitrate", "expected", "reason", "notes"), OPUS_LAYOUTS
+)
+def test_the_bitrate_table_is_the_written_layout(
+    channels: int,
+    layout: str,
+    max_bitrate: int,
+    expected: tuple[str | None, int],
+    reason: str,
+    notes: list[str],
+) -> None:
+    rule = AudioCodecRule(codec="libopus", mixdown="keep", max_bitrate=max_bitrate)
+    rule = rule.model_copy(update={"if_fits": "reencode"})
+    source = stream("pcm_s16le", channels, None, lossless=True, channel_layout=layout)
+    track, decision = run(source, rules(rule))
+    assert (track.mixdown, track.bitrate) == expected
+    assert decision.reason == reason
+    assert decision.notes == notes
+    planned = planned_audio(track, source, "mkv")
+    assert (planned.bitrate, planned.mixdown) == (track.bitrate, track.mixdown)
 
 
 def test_an_encoder_without_a_small_enough_layout_keeps_the_source() -> None:

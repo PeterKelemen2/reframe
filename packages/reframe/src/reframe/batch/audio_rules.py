@@ -52,6 +52,8 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.metadata import effective_language, render_track_name, track_metadata
+from reframe.command import PlanError, planned_audio
+from reframe.command.audio import layout_channels
 from reframe.definitions import (
     AudioEncoderDef,
     ContainerDef,
@@ -366,6 +368,36 @@ def _samplerate(
     return snapped
 
 
+@dataclass(frozen=True, slots=True)
+class _Written:
+    """The layout the command builder writes for an encoded track (C-7's
+    :func:`~reframe.command.planned_audio`)."""
+
+    table: Mixdown
+    """The bitrate table: the mixdown, else :func:`channels_mixdown` of the written
+    channels."""
+    layout: str | None = None
+    """The ``out_chlayout`` when the source layout stays but is converted (a lossless
+    relabel ``5.1(side)`` → ``5.1``, or a layout libopus takes: ``2.1`` → ``stereo``)."""
+    channels: int = 0
+    """The channel count of :attr:`layout` (0 without one)."""
+
+
+def _written(ctx: _Context, encoder: AudioEncoderDef, mixdown: Mixdown | None) -> _Written:
+    """What C-7 writes for ``encoder`` and the snapped ``mixdown``, so that the codec rules
+    cap the bitrate with the same table as the builder and validation (decision 0024)."""
+    track = AudioOutputTrack(action="encode", encoder=encoder.id, mixdown=mixdown)
+    try:
+        planned = planned_audio(track, ctx.stream, ctx.container, definitions=ctx.defs)
+    except PlanError:  # the container cannot hold the encoder: a note says so
+        return _Written(mixdown or channels_mixdown(ctx.stream.channels))
+    assert planned.bitrate_mixdown is not None  # an encoded track always has a table
+    if mixdown is not None or planned.layout is None:
+        return _Written(planned.bitrate_mixdown)
+    written = layout_channels(planned.layout)
+    return _Written(planned.bitrate_mixdown, planned.layout, len(written or ()))
+
+
 def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: list[str]) -> _Outcome:
     stream, defs = ctx.stream, ctx.defs
     wants_passthru = request.codec == PASSTHRU or request.if_fits == "passthru"
@@ -392,9 +424,18 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
         notes.append(f"{ctx.container.label} cannot hold {encoder.label}")
 
     mixdown = _output_mixdown(ctx, request, encoder, notes)
+    written = _written(ctx, encoder, mixdown) if encoder is not None else None
     out_channels = defs.mixdowns[mixdown].channels if mixdown is not None else stream.channels
     if mixdown is not None and 0 < out_channels < stream.channels:
         sentences.append(f"Downmix {_source_layout(stream)} → {_mixdown_label(mixdown, defs)}")
+    channels_label = _layout_label(mixdown, defs) if mixdown is not None else _source_layout(stream)
+    if written is not None and written.layout is not None:
+        channels_label = audio_channels_label(written.channels, written.layout)
+        if written.channels < stream.channels:
+            # libopus refuses the source layout; C-7 writes one it takes (decision 0024).
+            assert encoder is not None
+            sentences.append(f"Downmix {_source_layout(stream)} → {channels_label}")
+            notes.append(f"{encoder.label} cannot take {stream.channel_layout}: {channels_label}")
 
     bitrate: int | None = None
     if encoder is None:
@@ -403,7 +444,8 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
     elif encoder.bitrate is None:
         sentences.append(_sentence(f"{why + ': ' if why else ''}encode to {label} (lossless)"))
     else:
-        key = mixdown if mixdown is not None else channels_mixdown(stream.channels)
+        assert written is not None
+        key = written.table
         limits = encoder.bitrate.by_mixdown.get(key)
         if limits is None:  # pragma: no cover - _output_mixdown picks a mixdown it has
             sentences.append(f"Encode to {label}")
@@ -459,14 +501,13 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
         loudness=extras.loudness,
         source_stream=stream.index,
     )
-    channels = _layout_label(mixdown, defs) if mixdown is not None else _source_layout(stream)
     return _Outcome(
         track=track,
         passthru=False,
         sentences=sentences,
         notes=notes,
         measure=measure,
-        name_values={"channels": channels, "codec": label, "bitrate": bitrate},
+        name_values={"channels": channels_label, "codec": label, "bitrate": bitrate},
     )
 
 
@@ -498,7 +539,7 @@ def _default_max(ctx: _Context, request: _Request) -> int | None:
     channels = ctx.stream.channels
     wanted = requested_mixdown(request.mixdown, channels, ctx.defs)
     mixdown = encoder.snap_mixdown(wanted, channels, ctx.defs.mixdowns)
-    limits = encoder.bitrate.by_mixdown.get(mixdown or channels_mixdown(channels))
+    limits = encoder.bitrate.by_mixdown.get(_written(ctx, encoder, mixdown).table)
     return limits.default if limits is not None else None
 
 

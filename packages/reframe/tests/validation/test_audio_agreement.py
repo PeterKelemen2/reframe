@@ -430,11 +430,7 @@ def check_codec_rules(
 #: output at the 5.1 minimum (13 kb/s → 36) or a 5.1 output at the 7.1 minimum (37 → 48).
 #: C-7 and C-8 are still checked on every track of these cases; only C-12's part is
 #: expected to fail, and the test fails once C-12 agrees (then delete the entry).
-DISAGREE: dict[tuple[str, str], str] = {
-    (layout, "libopus"): "C-12 caps the bitrate with the source layout's table, C-7 with "
-    "the written layout's"
-    for layout in ("2.1", "3.0(back)", "7.1(wide)")
-}
+DISAGREE: dict[tuple[str, str], str] = {}
 
 
 #: The source layouts with both source rates; the layouts libopus refuses (added for C-7's
