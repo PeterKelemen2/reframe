@@ -52,8 +52,8 @@ async def test_create_restores_and_close_interrupts(env: Path, fake_tools: ft.Fa
     try:
         assert isinstance(app.queue, QueueService)
         assert app.queue.list() == []
-        assert app.queue.store_path == env / "data" / "queue.sqlite3"
-        assert not app.queue.store_path.exists()  # nothing written before a job is added
+        assert app.queue._store.path == env / "data" / "queue.sqlite3"
+        assert not app.queue._store.path.exists()  # nothing written before a job is added
         source = recorded("multitrack.mkv", env / "media" / "Show.mkv")
         done = await app.queue.add(draft(source, env / "out" / "Done.mkv"))
         app.queue.start()

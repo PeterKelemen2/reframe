@@ -7,7 +7,6 @@ import asyncio
 import json
 import sqlite3
 import sys
-from pathlib import Path
 
 import psutil
 import pytest
@@ -278,7 +277,7 @@ async def test_stop_takes_no_new_jobs(harness: Harness) -> None:
     h.queue.start()
     await h.first_event(first.id, "job.state", state="running")
     await h.queue.stop()
-    assert not h.queue.processing
+    assert not h.queue._processing
     await h.queue.wait([first.id])
     await asyncio.sleep(0.1)
     assert h.queue.get(second.id).state is JobState.WAITING  # type: ignore[union-attr]
@@ -296,11 +295,11 @@ async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harne
     own = [(await h.queue.add(h.job(name))).id for name in ("New1", "New2")]
     with pytest.raises(UnknownJobError):
         h.queue.start(job_ids=["nope"])
-    assert not h.queue.processing
+    assert not h.queue._processing
     h.queue.start(job_ids=own)
     ended = await h.queue.wait(own)
     assert [j.state for j in ended] == [JobState.DONE, JobState.DONE]
-    await h.wait_for(lambda: not h.queue.processing)
+    await h.wait_for(lambda: not h.queue._processing)
     jobs = h.queue.list()
     assert [(j.id, j.state, j.position) for j in jobs[:2]] == [
         (foreign[0], JobState.WAITING, 0),
@@ -320,15 +319,15 @@ async def test_start_with_job_ids_never_narrows_a_running_start(harness: Harness
     h.queue.start(job_ids=[a])
     h.queue.start(job_ids=[b])  # added to the running start
     assert [j.state for j in await h.queue.wait([a, b])] == [JobState.DONE] * 2
-    await h.wait_for(lambda: not h.queue.processing)
+    await h.wait_for(lambda: not h.queue._processing)
     assert h.queue.get(c).state is JobState.WAITING  # type: ignore[union-attr]
     h.queue.start()
     h.queue.start(job_ids=[a])  # does not narrow "every job"
     assert (await h.queue.wait([c]))[0].state is JobState.DONE
-    assert h.queue.processing  # "every job" stays on, waiting for new jobs
+    assert h.queue._processing  # "every job" stays on, waiting for new jobs
     await h.queue.stop()
     h.queue.start(job_ids=[a])  # nothing of it is waiting: idle at once
-    assert not h.queue.processing
+    assert not h.queue._processing
 
 
 async def test_start_and_stop_are_not_saved(harness: Harness) -> None:
@@ -339,12 +338,12 @@ async def test_start_and_stop_are_not_saved(harness: Harness) -> None:
     h.queue.start()
     await h.queue.stop()
     await h.queue.add(h.job("Second"))
-    assert not h.queue.processing
+    assert not h.queue._processing
     await h.queue.close()
     again = queue_at(h)
     await again._restore()
     try:
-        assert not again.processing  # a restored queue is idle until start()
+        assert not again._processing  # a restored queue is idle until start()
         assert [j.state for j in again.list()] == [JobState.DONE, JobState.WAITING]
     finally:
         await again.close()
@@ -639,4 +638,4 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
     added = await h.queue.add(h.job())
     assert added.state is JobState.WAITING  # the queue goes on in memory
     assert [e.code for e in h.of_type("app.warning")] == ["queue.not_saved"]  # type: ignore[union-attr]
-    assert Path(h.queue.store_path).parent.is_file()
+    assert h.queue._store.path.parent.is_file()
