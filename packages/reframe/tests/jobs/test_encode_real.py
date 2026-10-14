@@ -161,6 +161,11 @@ def long_source(path: Path, seconds: int = 60) -> Path:
     return path
 
 
+def _default_sigint() -> None:
+    """In the child, before ``exec``: SIGINT back to its default disposition."""
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT; Windows: the mocked tests")
 def test_ctrl_c_cancels_only_its_own_jobs(dirs: dict[str, Path], tmp_path: Path) -> None:
     """M2 demo item 3: SIGINT once progress has started → exit 130, no ``.part`` file left,
@@ -180,6 +185,10 @@ def test_ctrl_c_cancels_only_its_own_jobs(dirs: dict[str, Path], tmp_path: Path)
         env=env,
         text=True,
         encoding="utf-8",
+        # A suite started as a background job of a non-interactive shell (``pytest … &``)
+        # inherits SIGINT as ignored, and Python keeps an inherited "ignore" (as ``nohup``
+        # users expect). The command under test gets the default, as in a terminal.
+        preexec_fn=_default_sigint,
     )
     lines: list[str] = []
     try:
