@@ -37,6 +37,7 @@ from reframe.models import (
     FilterConfig,
     FilterSettings,
     FullRange,
+    JobDraft,
     JobSettings,
     JobTemplate,
     LanguageTag,
@@ -45,6 +46,7 @@ from reframe.models import (
     MigrationError,
     MigrationRegistry,
     MoveOp,
+    NameResult,
     OutputTrackRule,
     PlanFile,
     PlanStep,
@@ -52,13 +54,16 @@ from reframe.models import (
     PresetFile,
     Range,
     Rational,
+    Severity,
     SourceRef,
     SubtitleDefaults,
     SubtitleOutputTrack,
     TimeRange,
     ToolPaths,
+    TrackDecision,
     TrackSelector,
     UnsupportedSchemaVersion,
+    ValidationIssue,
     ValueRef,
     VideoStream,
     current_version,
@@ -507,3 +512,25 @@ def test_field_change_round_trips_json_values() -> None:
         path="audio_defaults.codec_rules[1]", kind="removed", preset_value={"codec": "aac"}
     )
     assert removed.value is None
+
+
+def test_job_draft_round_trips_and_rejects_unknown_fields() -> None:
+    draft = JobDraft(
+        job=JobSettings(source=SourceRef(path=Path("/m/a.mkv")), preset_id="h265-mkv-1080p"),
+        decisions=[TrackDecision(source_stream=1, rule=1, reason="AC-3 5.1: passthru")],
+        naming=NameResult(
+            source="file",
+            reason="File name: 1 field recognised",
+            template="{main_title}",
+            template_kind="movie",
+            relative_path="a.mkv",
+            path=Path("/m/a (1).mkv"),
+            extension="mkv",
+        ),
+        issues=[ValidationIssue(severity=Severity.INFO, code="x.y", message="m")],
+        notes=["The name a.mkv is the source file itself: the output is saved as a (1).mkv."],
+    )
+    again = JobDraft.model_validate_json(draft.model_dump_json())
+    assert again == draft
+    with pytest.raises(ValidationError):
+        JobDraft.model_validate({**draft.model_dump(mode="json"), "extra": 1})

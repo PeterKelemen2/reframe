@@ -1,0 +1,236 @@
+"""Shared helpers of the jobs service and CLI tests (C-15).
+
+- :func:`recorded`: a ``MediaSource`` parsed from a recorded probe (``testdata/probes``) at a
+  path of the test's choice.
+- :func:`caps`: a capability snapshot with every encoder available except ``unavailable``.
+- :class:`Stubs`: the services ``JobService`` uses, without processes (probe results by path,
+  a capability snapshot, a detection that can be held).
+- ``cli_env``: the fake ffmpeg / ffprobe through ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` and
+  private config, data and cache folders (never the user's).
+- :func:`replay`: the fake ffprobe prints a recorded probe for every file, or per file.
+- :func:`invoke`: runs the CLI in-process (``CliRunner``).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import pytest
+from typer.testing import CliRunner, Result
+
+from reframe.cli import build_app
+from reframe.definitions import load_definitions
+from reframe.models import (
+    AppSettings,
+    CapabilitySnapshot,
+    EncoderState,
+    EncoderStatus,
+    MediaSource,
+    Preset,
+    SourceFingerprint,
+    ToolInfo,
+    ToolName,
+    ToolSet,
+    ToolStatus,
+)
+from reframe.presets import builtin_presets
+from reframe.probe import ProbeError, ProbeErrorKind, mediainfo, parse_ffprobe
+from reframe.tools import ENV_VARS
+from reframe_testing import fake_tools as ft
+
+ROOT = Path(__file__).resolve().parents[4]
+PROBES = ROOT / "testdata" / "probes"
+WIDTH = "200"
+
+
+def probe_json(name: str) -> Path:
+    """``testdata/probes/fixtures/<name>.mkv.json`` (a generated fixture: ``multitrack``,
+    ``chapters``…) or ``testdata/probes/<name>.json`` (a recorded file: ``pgs``…)."""
+    for path in (PROBES / "fixtures" / f"{name}.mkv.json", PROBES / f"{name}.json"):
+        if path.exists():
+            return path
+    raise FileNotFoundError(f"no recorded probe {name!r}")
+
+
+def recorded(name: str, path: Path) -> MediaSource:
+    """The recorded probe ``name`` as C-3 parses it, for the file ``path``."""
+    probe = probe_json(name)
+    frames = probe.with_name(probe.name.removesuffix(".json") + ".frames.json")
+    return parse_ffprobe(
+        json.loads(probe.read_text(encoding="utf-8")),
+        path,
+        frames=json.loads(frames.read_text(encoding="utf-8")) if frames.exists() else None,
+        fingerprint=SourceFingerprint(size=0, mtime=0.0),
+    )
+
+
+def caps(
+    *, unavailable: Mapping[str, str] | None = None, detecting: bool = False
+) -> CapabilitySnapshot:
+    """Every encoder of the definitions available (VAAPI on ``renderD128``), except
+    ``unavailable`` (id → reason); the build has every filter."""
+    defs = load_definitions()
+    down = dict(unavailable or {})
+    encoders = {}
+    for enc_id in [*defs.video_encoders, *defs.audio_encoders]:
+        encoders[enc_id] = EncoderStatus(
+            id=enc_id,
+            state=EncoderState.UNAVAILABLE if enc_id in down else EncoderState.AVAILABLE,
+            reason=down.get(enc_id),
+            device="/dev/dri/renderD128" if enc_id.endswith("_vaapi") else None,
+            in_build=True,
+            hardware=defs.video_encoders[enc_id].hardware
+            if enc_id in defs.video_encoders
+            else False,
+        )
+    names = sorted({n for f in defs.filters.values() for i in f.implementations for n in i.filters})
+    return CapabilitySnapshot(
+        encoders=encoders,
+        filters=names,
+        detecting=detecting,
+        checked_at=None if detecting else datetime(2026, 10, 14, tzinfo=UTC),
+    )
+
+
+def checking() -> CapabilitySnapshot:
+    """Detection running: every encoder ``checking``."""
+    snap = caps(detecting=True)
+    encoders = {
+        k: v.model_copy(update={"state": EncoderState.CHECKING}) for k, v in snap.encoders.items()
+    }
+    return snap.model_copy(update={"encoders": encoders})
+
+
+def toolset(*, mkvpropedit: bool = True) -> ToolSet:
+    def info(name: ToolName, found: bool = True) -> ToolInfo:
+        return ToolInfo(name=name, status=ToolStatus.FOUND if found else ToolStatus.MISSING)
+
+    return ToolSet(
+        ffmpeg=info("ffmpeg"),
+        ffprobe=info("ffprobe"),
+        mkvpropedit=info("mkvpropedit", mkvpropedit),
+        mediainfo=info("mediainfo", False),
+    )
+
+
+def preset(name_or_id: str) -> Preset:
+    for p in builtin_presets():
+        if p.id == name_or_id or p.name == name_or_id:
+            return p
+    raise KeyError(name_or_id)
+
+
+class Stubs:
+    """The services of ``JobService`` without processes."""
+
+    def __init__(self, sources: Mapping[Path, MediaSource] | None = None) -> None:
+        self.sources: dict[Path, MediaSource] = dict(sources or {})
+        self.presets = {p.id: p for p in builtin_presets()}
+        self.default_id = "h265-mkv-1080p"
+        self.tools = toolset()
+        self.snapshot = caps()
+        self.final: CapabilitySnapshot | None = None
+        """What ``wait()`` returns (it also becomes the snapshot); ``None`` = the snapshot."""
+        self.gate: asyncio.Event | None = None
+        """When set, ``wait()`` waits for it (a detection that does not end)."""
+        self.waits = 0
+        self.probes = 0
+        self.settings = AppSettings()
+
+    # sources
+    async def probe(self, path: Any) -> MediaSource | ProbeError:
+        self.probes += 1
+        found = self.sources.get(Path(path))
+        if found is None:
+            return ProbeError(Path(path), ProbeErrorKind.NOT_FOUND, "The file does not exist.")
+        return found
+
+    # presets
+    def get(self, preset_id: str) -> Preset | None:
+        return self.presets.get(preset_id)
+
+    def find(self, name_or_id: str) -> Preset | None:
+        for p in self.presets.values():
+            if p.id == name_or_id or p.name.casefold() == name_or_id.casefold():
+                return p
+        return None
+
+    def default(self) -> Preset:
+        return self.presets[self.default_id]
+
+    # tools
+    async def status(self) -> ToolSet:
+        return self.tools
+
+    # capabilities
+    async def wait(self) -> CapabilitySnapshot:
+        self.waits += 1
+        if self.gate is not None:
+            await self.gate.wait()
+        if self.final is not None:
+            self.snapshot = self.final
+        return self.snapshot
+
+
+# --------------------------------------------------------------------------- the CLI
+
+
+@pytest.fixture
+def cli_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
+) -> ft.FakeTools:
+    """The fake ffmpeg/ffprobe through ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, no
+    mkvpropedit, MediaInfo off, private config, data and cache folders."""
+    for var in ENV_VARS.values():
+        monkeypatch.delenv(var, raising=False)
+    for name in ("config", "data", "cache"):
+        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
+    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
+    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
+    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvpropedit"))
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
+    return fake_tools
+
+
+def probe_rule(probe: Path, file: Path | None = None) -> ft.Rule:
+    """The fake ffprobe prints ``probe`` (for ``file`` only, or for every file)."""
+    return ft.Rule(
+        tool="ffprobe",
+        argv_has=["-show_streams", *([str(file)] if file is not None else [])],
+        actions=[{"stdout_file": str(probe)}],
+    )
+
+
+def replay(
+    fake: ft.FakeTools,
+    probe: str,
+    *,
+    per_file: Mapping[Path, str] | None = None,
+    extra: tuple[ft.Rule, ...] = (),
+) -> None:
+    """Every file probes as the recorded ``probe``, except ``per_file`` (file → probe name);
+    ``extra`` rules come first (ffmpeg rules for encoder detection)."""
+    rules = [*extra]
+    for file, name in (per_file or {}).items():
+        rules.append(probe_rule(probe_json(name), file))
+    rules.append(probe_rule(probe_json(probe)))
+    fake.set_scenario(ft.Scenario(rules))
+
+
+def media_file(folder: Path, name: str) -> Path:
+    """A placeholder file (the fake ffprobe replays a recording for it)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
+    path.write_bytes(b"placeholder")
+    return path
+
+
+def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
+    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})

@@ -521,7 +521,7 @@ class Reframe:
     capabilities: CapabilityService
     sources: SourceService         # probe, probe_folder, get, frames, cropdetect, scans
     presets: PresetService
-    jobs: JobService               # draft_from_preset, validate, plan, preview_clip
+    jobs: JobService               # draft, validate, plan, name, media_files; preview_clip (C-10)
     batch: BatchService            # group, derive, resolve
     queue: QueueService            # add, list, reorder, start/pause/resume/cancel, logs
     settings: SettingsService
@@ -532,9 +532,11 @@ class Reframe:
       the background.
 - [ ] CLI (`reframe` entry point, `[cli]` extra):
       `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status|fetch` ·
-      `reframe name PATH… [--template T]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
-      `reframe plan FILE --preset NAME` (prints the command) · `reframe encode FILE|DIR… --preset NAME [-o OUT]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
+      `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
+      `reframe plan FILE [--preset NAME] [-o OUT]` (prints the issues, then the command) · `reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
       `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
+      No `--preset`: the default preset. Output formats, exit codes, the bounded wait for
+      encoder detection and the folder search: [decision 0017](../decisions/0017-jobs-service-and-cli.md).
 
 Done when: the CLI can encode a season folder end to end with no UI. This is the first point
 where you can use Reframe for real.

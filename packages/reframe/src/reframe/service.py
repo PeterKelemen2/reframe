@@ -38,6 +38,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from reframe import paths
 from reframe.capabilities import CapabilityService
 from reframe.events import EventBus
+from reframe.jobs import JobService
 from reframe.jsonpatch import JsonPatchError, apply_patch
 from reframe.models.events import AppWarningEvent, ToolsChangedEvent
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
@@ -70,6 +71,7 @@ from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
 __all__ = [
     "FolderProbeResult",
     "ImportResult",
+    "JobService",
     "PresetService",
     "ProbeError",
     "ProbeErrorKind",
@@ -669,8 +671,11 @@ class Reframe:
     - :attr:`settings` — :class:`SettingsService`: ``get``, ``update``, ``problems`` (C-9).
     - :attr:`presets` — :class:`PresetService`: built-in and user presets, the default,
       export / import, ``diff`` (C-9).
+    - :attr:`jobs` — :class:`~reframe.jobs.JobService`: ``draft`` a job from a source and a
+      preset, ``validate`` it (waiting a bounded time for encoder detection), ``plan`` it,
+      ``name`` a path, ``media_files`` of files and folders (C-15).
 
-    The other M2 steps add ``jobs`` (C-7, C-11), ``batch`` (C-12) and ``queue`` (C-11).
+    The other M2 steps add ``batch`` (C-12) and ``queue`` (C-11).
 
     **Settings.** ``<config>/settings.json`` is read in :meth:`create` (a damaged, newer or
     unreadable file gives an ``app.warning``, kept in ``settings.problems``). Every service
@@ -691,6 +696,7 @@ class Reframe:
     sources: SourceService
     settings: SettingsService
     presets: PresetService
+    jobs: JobService
 
     def __init__(
         self,
@@ -728,6 +734,13 @@ class Reframe:
             self.tasks,
             ProbeCache(cache_dir / "probe"),
             is_closed=lambda: self._closed,
+        )
+        self.jobs = JobService(
+            sources=self.sources,
+            presets=self.presets,
+            tools=self.tools,
+            capabilities=self.capabilities,
+            settings=self.settings_snapshot,
         )
 
     @classmethod
