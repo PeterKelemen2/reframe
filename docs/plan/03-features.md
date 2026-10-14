@@ -713,9 +713,11 @@ Same behaviour as HandBrake:
 - **Parallel jobs**: setting, default 1.
 - **Persistence**: the queue survives restarts. Running jobs become `Interrupted` and can be
   restarted.
-- Output safety: Reframe writes to `<name>.part.<ext>` and renames on success. A failed job
-  removes its partial file (configurable). File name collisions follow the setting: ask,
-  auto-rename, or overwrite.
+- Output safety: Reframe writes to `<name>.part.<ext>`, probes it again and checks its tracks
+  and languages, and renames it on success. A failed job removes its partial file
+  (configurable). File name collisions follow the setting: ask, auto-rename, or overwrite.
+  When the name is taken at the end and the setting is "ask", the job fails and the finished
+  `.part` file is kept ([decision 0016](../decisions/0016-queue-and-job-runner.md)).
 - **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
 - **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux the desktop
   session's inhibit and logind over D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the

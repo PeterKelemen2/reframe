@@ -851,3 +851,45 @@ def test_script_cli_entry_point(fake_tools: FakeTools) -> None:
         [sys.executable, str(ft.SCRIPT)], capture_output=True, timeout=30, check=False
     )
     assert bad.returncode == 2
+
+
+# --------------------------------------------------------------------------- exec (C-11)
+
+_PRINT_ARGS = (
+    "import sys; sys.stdout.write('out:' + ' '.join(sys.argv[1:])); "
+    "sys.stderr.write('err'); sys.exit(3)"
+)
+
+
+def test_exec_passes_the_call_to_another_program(fake_tools: FakeTools) -> None:
+    """A rule that fails one command first, then a catch-all ``exec`` (as the queue tests do
+    with a real ffmpeg): the program gets the same arguments and stdio, its exit code is
+    the fake's."""
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(argv_has=["broken"], exit_code=5, actions=[ft.stderr("fail\n")]),
+                ft.Rule(actions=[ft.exec_program(ft.PYTHON)]),
+            ]
+        )
+    )
+    r = run(fake_tools, "-I", "-c", _PRINT_ARGS, "a", "b c")
+    assert (r.returncode, r.stdout, r.stderr) == (3, b"out:a b c", b"err")
+    failed = run(fake_tools, "broken")
+    assert (failed.returncode, failed.stderr) == (5, b"fail\n")
+    assert [call[-1] for call in fake_tools.calls("ffmpeg")] == ["b c", "broken"]
+
+
+@posix_only
+def test_exec_reports_a_signal_like_a_shell(fake_tools: FakeTools) -> None:
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.exec_program(ft.PYTHON)])]))
+    r = run(fake_tools, "-I", "-c", "import os, signal; os.kill(os.getpid(), signal.SIGTERM)")
+    assert r.returncode == 128 + signal.SIGTERM
+
+
+def test_exec_of_a_missing_program(fake_tools: FakeTools, tmp_path: Path) -> None:
+    missing = tmp_path / "no-such-ffmpeg"
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.exec_program(missing)])]))
+    r = run(fake_tools, "-version")
+    assert r.returncode == 127
+    assert b"cannot run" in r.stderr
