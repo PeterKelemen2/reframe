@@ -196,3 +196,59 @@ The order of 05 §C-7 stays, with these additions (`reframe/command/builder.py`)
 - `docs/plan/03-features.md` §Filters: the filter order names the burn-in positions and the
   HDR metadata removal; §Video: peak frame rate; §Subtitles → Output tracks: where the
   burn-in happens.
+
+## Follow-up (M2 wave 2b), 2026-10-14: audio values snapped with the shared helpers
+
+### Context
+
+Decision [0024](0024-m2-wave-2-product-decisions.md) item 4 says the builder snaps an audio
+bitrate, mixdown or sample rate that the encoder cannot do, and C-6 added the helpers that
+C-7, C-8 and C-12 share (`AudioEncoderDef.snap_mixdown`, `AudioEncoderDef.snap_samplerate`,
+`AudioBitrateDef.snap`, `channels_mixdown`). C-7 had its own copies (`effective_mixdown`,
+`closest_samplerate`) that did not snap a chosen mixdown and wrote the track's bitrate as it
+was: an AC-3 7.1 track became `aresample=out_chlayout=7.1` with no `-b:a` (FFmpeg converted
+it to 5.1 by itself, at its default 448 kb/s), and a 5.1 mixdown on a stereo source was an
+upmix with silent channels, against [0019](0019-audio-codec-rule-details.md) item 3. AC-3 at
+96 kHz, Opus at 44.1 kHz and Opus stereo at 600 kb/s fail in FFmpeg (`testdata/README.md`,
+"Audio values the encoder cannot do").
+
+### Decision
+
+Every encoded audio track (a passthru fallback too; a copied track is never snapped) goes
+through one pure function, `reframe.command.planned_audio` (copy or encoder, the snapped
+mixdown, the bitrate table, the bitrate or VBR quality, the sample rate). The builder writes
+its values and nothing else, so C-8, C-12 and an agreement test can call it:
+
+- **Mixdown**: `snap_mixdown(track.mixdown, source channels)`: never an upmix (a 5.1 or 7.1
+  request on a stereo source keeps the stereo; Dolby Pro Logic II needs more than two
+  channels), otherwise the encoder's largest layout below (AC-3 and E-AC-3 make 5.1 of 7.1,
+  MP3 stereo of 5.1). §4 "Layout" applies to the snapped mixdown; when the source layout
+  stays, only the relabel of §4 is written (`5.1(side)` → `5.1`).
+- **Bitrate table**: the snapped mixdown, or `channels_mixdown(source channels)` when the
+  source layout stays.
+- **Bitrate**: `AudioBitrateDef.snap(track.bitrate, table)` with its default direction,
+  **down**: clamped to the table's range, then the largest allowed step at or below (the rule
+  C-6 documents as HandBrake's; C-8's fix and C-12's maximum use the same). With no bitrate
+  and no VBR quality, the table's default.
+- **Sample rate**: `snap_samplerate(track.samplerate, source rate)` (the nearest listed rate,
+  the higher one on a tie).
+
+0024 says "the nearest allowed value". For a bitrate between two steps the two differ: AC-3
+stereo at 150 kb/s → 128 (down) or 160 (nearest; FFmpeg's `ac3` itself writes 160). The
+builder writes 128, so that the builder, validation and the codec rules agree; changing it
+means one `direction` argument here and in C-8.
+
+### Consequences
+
+- AC-3 and E-AC-3 7.1 tracks are written as 5.1 with the 5.1 bitrate (defaults 640 and
+  1536 kb/s instead of FFmpeg's 448). A 5.1 mixdown on a stereo source keeps the stereo and
+  the stereo default (AAC 160 kb/s, not 384). Dolby Pro Logic II on a stereo source writes no
+  filter (the same PCM). AC-3 at 96 kHz, Opus at 44.1 kHz and Opus stereo at 600 kb/s encode.
+- No existing plan snapshot changed (none of the 68 jobs had a value the encoder cannot do);
+  two snapshots show the snapping.
+- A source with an unknown channel count (0) still gets the requested layout (snapped to the
+  encoder), which can be an upmix when the probe could not read the channels.
+
+### Plan changes
+
+- `docs/plan/05-core.md` §C-7, the audio bullet: how each value is snapped.

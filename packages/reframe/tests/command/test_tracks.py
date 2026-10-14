@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from reframe.command import PlanError, job_type
-from reframe.command.audio import (
-    LOUDNESS,
-    audio_output,
-    closest_samplerate,
-    effective_mixdown,
-)
+from reframe.command import PlanError, PlannedAudio, job_type, planned_audio
+from reframe.command.audio import LOUDNESS, audio_output
 from reframe.command.metadata import (
     OutputTrack,
     chapter_plan,
@@ -27,7 +23,7 @@ from reframe.command.metadata import (
     tag_args,
 )
 from reframe.command.subtitles import plan_subtitles
-from reframe.definitions import load_definitions
+from reframe.definitions import channels_mixdown, load_definitions
 from reframe.models import (
     ArgTemplate,
     AudioOutputTrack,
@@ -56,29 +52,199 @@ def audio(**kwargs: Any) -> AudioStream:
 # --------------------------------------------------------------------------- audio
 
 
-def test_effective_mixdown() -> None:
-    aac, ac3, mp3 = (DEFS.audio_encoders[e] for e in ("aac", "ac3", "libmp3lame"))
-    track = AudioOutputTrack()
-    assert effective_mixdown(track, audio(channels=8), aac) == "7.1"
-    assert effective_mixdown(track, audio(channels=8), ac3) == "5.1"
-    assert effective_mixdown(track, audio(channels=6), mp3) == "stereo"
-    assert effective_mixdown(track, audio(channels=3), aac) == "5.1"
-    assert effective_mixdown(track, audio(channels=1), aac) == "mono"
-    assert effective_mixdown(track, audio(channels=0), aac) == "stereo"
-    assert effective_mixdown(AudioOutputTrack(mixdown="dpl2"), audio(), aac) == "dpl2"
-    no_layouts = aac.model_copy(update={"mixdowns": []})
-    assert effective_mixdown(track, audio(channels=8), no_layouts) == "7.1"
-    mono_only = aac.model_copy(update={"mixdowns": ["mono"]})
-    assert effective_mixdown(track, audio(channels=2), mono_only) == "mono"
-    nothing = aac.model_copy(update={"mixdowns": ["dpl2"]})
-    assert effective_mixdown(track, audio(channels=2), nothing) == "stereo"
+def planned(encoder: str, stream: AudioStream, **track: Any) -> PlannedAudio:
+    output = AudioOutputTrack.model_validate({"encoder": encoder, **track})
+    return planned_audio(output, stream, "mkv", definitions=DEFS)
 
 
-def test_closest_samplerate() -> None:
-    assert closest_samplerate(44100, [8000, 12000, 16000, 24000, 48000]) == 48000
-    assert closest_samplerate(44100, [32000, 44100, 48000]) == 44100
-    assert closest_samplerate(20000, [16000, 24000]) == 24000
-    assert closest_samplerate(96000, []) == 96000
+@pytest.mark.parametrize(
+    ("encoder", "channels", "mixdown", "expected", "table"),
+    [
+        # A layout the encoder cannot make: its largest layout below (decision 0024 item 4).
+        ("ac3", 8, "7.1", "5.1", "5.1"),
+        ("eac3", 8, "7.1", "5.1", "5.1"),
+        ("libmp3lame", 6, "5.1", "stereo", "stereo"),
+        ("ac3", 8, None, "5.1", "5.1"),
+        ("libmp3lame", 8, None, "stereo", "stereo"),
+        # Never an upmix (decision 0019 item 3): the source layout stays.
+        ("ac3", 6, "7.1", None, "5.1"),
+        ("aac", 2, "5.1", None, "stereo"),
+        ("aac", 2, "7.1", None, "stereo"),
+        ("libopus", 1, "stereo", None, "mono"),
+        ("aac", 5, "5.1", None, "5.1"),
+        # Dolby Pro Logic II only from more than two channels.
+        ("aac", 2, "dpl2", None, "stereo"),
+        ("aac", 1, "dpl2", None, "mono"),
+        ("aac", 6, "dpl2", "dpl2", "dpl2"),
+        # A layout the encoder makes, from at least as many channels; keep.
+        ("aac", 8, "5.1", "5.1", "5.1"),
+        ("libopus", 8, "7.1", "7.1", "7.1"),
+        ("aac", 8, None, None, "7.1"),
+        ("aac", 3, None, None, "5.1"),
+        # Unknown channels: the request stands, snapped to the encoder; keep = stereo table.
+        ("ac3", 0, "7.1", "5.1", "5.1"),
+        ("aac", 0, None, None, "stereo"),
+    ],
+)  # fmt: skip
+def test_mixdown_is_snapped(
+    encoder: str, channels: int, mixdown: str | None, expected: str | None, table: str
+) -> None:
+    got = planned(encoder, audio(channels=channels), mixdown=mixdown)
+    assert (got.mixdown, got.bitrate_mixdown) == (expected, table)
+
+
+@pytest.mark.parametrize(
+    ("encoder", "channels", "settings", "expected"),
+    [
+        ("ac3", 6, {"bitrate": 700}, 640),  # above the max
+        ("ac3", 6, {"bitrate": 100}, 224),  # below the 5.1 minimum
+        ("ac3", 2, {"bitrate": 150}, 128),  # between two steps: down, as HandBrake
+        ("ac3", 8, {"mixdown": "7.1", "bitrate": 700}, 640),  # in the 5.1 table
+        ("eac3", 6, {"bitrate": 7000}, 6144),
+        ("libmp3lame", 6, {"bitrate": 330}, 320),
+        ("aac", 2, {"bitrate": 700}, 512),
+        ("aac", 2, {"mixdown": "5.1", "bitrate": 700}, 512),  # stereo table: no upmix
+        ("libopus", 2, {"bitrate": 600}, 512),  # libopus refuses 600 kb/s stereo
+        ("libopus", 6, {"bitrate": 20}, 36),
+        # No bitrate, no quality: the default of the effective mixdown.
+        ("aac", 2, {"mixdown": "5.1"}, 160),
+        ("ac3", 8, {"mixdown": "7.1"}, 640),
+        ("libopus", 6, {}, 320),
+        ("aac", 0, {}, 160),
+        # A VBR quality instead; an encoder without one gets its default bitrate.
+        ("libmp3lame", 2, {"quality": 4.5}, None),
+        ("ac3", 2, {"quality": 3}, 224),
+        ("flac", 6, {"bitrate": 700}, None),  # lossless: no bitrate
+    ],
+)  # fmt: skip
+def test_bitrate_is_snapped_for_the_effective_mixdown(
+    encoder: str, channels: int, settings: dict[str, Any], expected: int | None
+) -> None:
+    assert planned(encoder, audio(channels=channels), **settings).bitrate == expected
+
+
+@pytest.mark.parametrize(
+    ("encoder", "rate", "source_rate", "expected"),
+    [
+        ("ac3", 96000, 48000, 48000),  # ac3 refuses 96 kHz
+        ("libopus", 44100, 48000, 48000),  # libopus refuses 44.1 kHz
+        ("libopus", None, 44100, 48000),
+        ("ac3", None, 22050, 32000),
+        ("aac", None, 44100, 44100),
+        ("libopus", 20000, None, 24000),  # a tie: the higher rate
+        ("aac", None, None, None),
+    ],
+)  # fmt: skip
+def test_samplerate_is_snapped(
+    encoder: str, rate: int | None, source_rate: int | None, expected: int | None
+) -> None:
+    got = planned(encoder, audio(sample_rate=source_rate), samplerate=rate)
+    assert got.samplerate == expected
+
+
+def test_planned_audio_copies_and_containers() -> None:
+    passthru = AudioOutputTrack(action="passthru", bitrate=700, mixdown="7.1", samplerate=96000)
+    assert planned_audio(passthru, audio(), "mkv") == PlannedAudio(copy=True)  # never snapped
+    passthru.encoder = "libopus"
+    fallback = planned_audio(passthru, audio(sample_rate=44100), WEBM, definitions=DEFS)
+    assert fallback == PlannedAudio(
+        copy=False, encoder="libopus", fallback=True, mixdown=None, bitrate_mixdown="5.1",
+        bitrate=700, samplerate=48000,
+    )  # fmt: skip
+    assert planned_audio(passthru, audio(sample_rate=44100), "webm") == fallback
+    with pytest.raises(PlanError, match="unknown container"):
+        planned_audio(passthru, audio(), "avi")  # type: ignore[arg-type]
+
+
+def test_bitrate_without_a_table_for_the_layout() -> None:
+    """Not the case for any defined encoder (the linter checks it): the track's bitrate is
+    written as it is, and no default."""
+    aac = DEFS.audio_encoders["aac"]
+    assert aac.bitrate is not None
+    stereo_only = aac.model_copy(
+        update={
+            "mixdowns": ["stereo"],
+            "bitrate": aac.bitrate.model_copy(
+                update={"by_mixdown": {"stereo": aac.bitrate.by_mixdown["stereo"]}}
+            ),
+        }
+    )
+    defs = DEFS.model_copy(update={"audio_encoders": {**DEFS.audio_encoders, "aac": stereo_only}})
+    eight = audio(channels=8, channel_layout="7.1")
+    given = planned_audio(AudioOutputTrack(bitrate=900), eight, "mkv", definitions=defs)
+    assert given.bitrate == 900
+    assert planned_audio(AudioOutputTrack(), eight, "mkv", definitions=defs).bitrate is None
+
+
+_LAYOUTS = [(0, None), (1, "mono"), (2, "stereo"), (5, "5.0"), (6, "5.1(side)"), (8, "7.1")]
+_BITRATES = [None, 1, 150, 700, 10_000]
+_RATES = [None, 8000, 22050, 44100, 96000]
+
+
+def _argv_value(args: list[Any], option: str) -> str | None:
+    texts = [str(a) for a in args]
+    return texts[texts.index(option) + 1] if option in texts else None
+
+
+def _check_written(
+    track: AudioOutputTrack, stream: AudioStream, got: PlannedAudio, args: list[Any],
+    written_filter: Any,
+) -> None:  # fmt: skip
+    encoder = DEFS.audio_encoders[str(track.encoder)]
+    channels = stream.channels
+    # The arguments are the planned values.
+    assert _argv_value(args, "-b:a:0") == (f"{got.bitrate}k" if got.bitrate else None)
+    assert _argv_value(args, "-ar:a:0") == str(got.samplerate)
+    target = got.mixdown or got.bitrate_mixdown
+    assert target is not None
+    if written_filter is not None:
+        assert str(written_filter).endswith(f"out_chlayout={DEFS.mixdowns[target].layout}")
+    # The layout: one the encoder makes, never more channels than the source.
+    if got.mixdown is not None:
+        assert got.mixdown in encoder.mixdowns
+        assert channels == 0 or DEFS.mixdowns[got.mixdown].channels <= channels
+        assert got.mixdown != "dpl2" or channels == 0 or channels > 2
+    else:
+        assert channels <= encoder.max_channels
+        assert got.bitrate_mixdown == channels_mixdown(channels)
+    # The bitrate: in the table of the effective layout, on a step when there are steps.
+    if encoder.bitrate is not None and got.bitrate is not None:
+        limits = encoder.bitrate.by_mixdown[target]
+        assert limits.min <= got.bitrate <= limits.max
+        assert encoder.bitrate.allowed is None or got.bitrate in encoder.bitrate.allowed
+    # The sample rate: one the encoder lists.
+    assert got.samplerate in encoder.samplerates
+    # A value the encoder can do is written as it is.
+    if track.samplerate in encoder.samplerates:
+        assert got.samplerate == track.samplerate
+    if encoder.bitrate is not None and track.bitrate is not None:
+        limits = encoder.bitrate.by_mixdown[target]
+        steps = encoder.bitrate.allowed
+        if limits.min <= track.bitrate <= limits.max and (steps is None or track.bitrate in steps):
+            assert got.bitrate == track.bitrate
+    wanted = track.mixdown
+    if wanted in encoder.mixdowns and channels >= DEFS.mixdowns[wanted].channels:
+        assert got.mixdown == (None if wanted == "dpl2" and channels <= 2 else wanted)
+
+
+def test_every_written_value_is_one_the_encoder_can_do() -> None:
+    """Every encoder, source layout, requested mixdown, bitrate and sample rate: the
+    arguments say what :func:`planned_audio` says, and that is a layout, bitrate and sample
+    rate the encoder can do, never an upmix (decisions 0019 item 3, 0024 item 4)."""
+    combinations = itertools.product(
+        DEFS.audio_encoders.values(), _LAYOUTS, [None, *DEFS.mixdowns], _BITRATES, _RATES
+    )
+    checked = 0
+    for encoder, (channels, layout), mixdown, bitrate, rate in combinations:
+        stream = audio(channels=channels, channel_layout=layout, sample_rate=48000)
+        track = AudioOutputTrack.model_validate(
+            {"encoder": encoder.id, "mixdown": mixdown, "bitrate": bitrate, "samplerate": rate}
+        )
+        got = planned_audio(track, stream, MKV, definitions=DEFS)
+        out = audio_output(0, track, stream, MKV, DEFS)
+        _check_written(track, stream, got, out.args, out.filter)
+        checked += 1
+    assert checked == len(DEFS.audio_encoders) * len(_LAYOUTS) * 6 * 5 * 5
 
 
 def test_passthru_copies_or_falls_back() -> None:
@@ -124,9 +290,15 @@ def test_encode_arguments() -> None:
         ("aac", 5, "5.0", None, None),
         ("libopus", 3, "2.1", None, None),
         ("aac", 2, None, None, None),
-        ("aac", 2, "stereo", "dpl2", "aresample=matrix_encoding=dplii:out_chlayout=stereo"),
+        ("aac", 2, "stereo", "dpl2", None),  # nothing to matrix-encode: the same PCM
+        ("aac", 6, "5.1(side)", "dpl2", "aresample=matrix_encoding=dplii:out_chlayout=stereo"),
         ("aac", 6, None, "5.1", "aresample=out_chlayout=5.1"),
         ("aac", 6, "5.1(side)", "mono", "aresample=out_chlayout=mono"),
+        ("ac3", 8, "7.1", "7.1", "aresample=out_chlayout=5.1"),  # AC-3 has no 7.1
+        ("ac3", 6, "5.1(side)", "7.1", "aresample=out_chlayout=5.1"),  # no upmix: relabel
+        ("aac", 2, "stereo", "5.1", None),  # no upmix
+        ("libmp3lame", 6, "5.1(side)", "5.1", "aresample=out_chlayout=stereo"),
+        ("libopus", 6, "5.1", "5.1", None),
     ],
 )  # fmt: skip
 def test_output_layout(
