@@ -10,15 +10,16 @@ clamped to the target range and rounded to its step. The result is approximate
 from __future__ import annotations
 
 from reframe.definitions.loader import load_definitions
-from reframe.definitions.models import Definitions, QualityMode, interpolate
+from reframe.definitions.models import Definitions, QualityMode, interpolate, round_half_up
 
 __all__ = ["convert_quality", "round_to_step"]
 
 
 def round_to_step(value: float, mode: QualityMode) -> float:
-    """``value`` clamped to ``mode``'s range and rounded to its step."""
+    """``value`` clamped to ``mode``'s range and rounded to its step, a half step up (x264 RF
+    23 is 26.5 on the QSV, AMF and VAAPI scales: 27 for all three, whatever their minimum)."""
     clamped = min(max(value, mode.min), mode.max)
-    steps = round((clamped - mode.min) / mode.step)
+    steps = round_half_up((clamped - mode.min) / mode.step)
     result = mode.min + steps * mode.step
     return round(min(max(result, mode.min), mode.max), 6)
 

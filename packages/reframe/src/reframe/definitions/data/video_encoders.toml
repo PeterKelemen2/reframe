@@ -213,14 +213,17 @@ help = "VAAPI (Linux): Intel and AMD GPUs through Mesa or the Intel media driver
 [base.vaapi.rate_control.quality]
 kind = "qp"
 label = "QP"
-min = 0
-max = 52
+# Real encodes (radeonsi, M2 review): `-global_quality 0` means "not set", so the driver picks
+# the QP (h264 20, hevc 25, av1 25: the same file as no quality option); 52 gives the same
+# file as 51. So 1-51 (av1_vaapi 1-255: 256 gives the same file as 255).
+min = 1
+max = 51
 step = 1
 default = 25
 # Real encodes (radeonsi): CQP, CBR, VBR, QVBR are supported, ICQ is not. `-global_quality`
 # sets the QP in CQP mode for h264, hevc and av1 (av1_vaapi has no `-qp` option).
 args = ["-rc_mode", "CQP", "-global_quality", "{value}"]
-scale = [[0, 0], [25, 22], [28, 24], [52, 51]]
+scale = [[0, 0], [25, 22], [28, 24], [51, 51]]
 help = "Constant QP. Lower is better quality and a bigger file."
 
 [base.vaapi.rate_control.bitrate]
@@ -381,20 +384,21 @@ fast_decode = { params = { fast-decode = "1" } }
 # library default is 8 (encoder log "preset / tune … : 8 / PSNR").
 default = "8"
 mapping = { kind = "private_opt", name = "preset" }
-help = "0 is the slowest and best, 11 the fastest. 4–6 is a good balance for archiving."
+help = "11 is the fastest, 0 the slowest and best. 4–6 is a good balance for archiving."
+# Fastest first, as every preset list (VideoEncoderDef.presets: the slider order).
 choices = [
-    { value = "0", label = "0 (slowest)" },
-    { value = "1", label = "1" },
-    { value = "2", label = "2" },
-    { value = "3", label = "3" },
-    { value = "4", label = "4" },
-    { value = "5", label = "5" },
-    { value = "6", label = "6" },
-    { value = "7", label = "7" },
-    { value = "8", label = "8" },
-    { value = "9", label = "9" },
-    { value = "10", label = "10" },
     { value = "11", label = "11 (fastest)" },
+    { value = "10", label = "10" },
+    { value = "9", label = "9" },
+    { value = "8", label = "8" },
+    { value = "7", label = "7" },
+    { value = "6", label = "6" },
+    { value = "5", label = "5" },
+    { value = "4", label = "4" },
+    { value = "3", label = "3" },
+    { value = "2", label = "2" },
+    { value = "1", label = "1" },
+    { value = "0", label = "0 (slowest)" },
 ]
 
 [encoder.libsvtav1.tunes]
@@ -434,8 +438,10 @@ choices = [
 [encoder.libsvtav1.rate_control.quality]
 kind = "crf"
 label = "RF"
-# FFmpeg's `-crf` is an int from 0 to 63 (HandBrake, which drives SVT directly, allows 70).
-min = 0
+# FFmpeg's `-crf` is an int from 0 to 63 (HandBrake, which drives SVT directly, allows 70), but
+# 0 means "not set": SVT-AV1 v4.2 logs `CRF / 35.00` and writes the same file as no `-crf`
+# (both n9.0.2 builds and n8.1.3). So 1-63.
+min = 1
 max = 63
 step = 1
 default = 30
@@ -646,7 +652,11 @@ choices = [
 
 [encoder.av1_nvenc.rate_control.quality]
 max = 63
-derived = { qp_i = { offset = -2, min = 0, integer = true }, qp_p = { integer = true }, qp_b = { offset = 2, max = 255, integer = true } }
+# `ffmpeg -h encoder=av1_nvenc` (n8.1.3 and n9.0.2): `-cq` is 0-63, but `-init_qpI/P/B` are
+# 0-255 (the AV1 q index). The initial QPs are the CQ value on the 0-255 scale (x 255/63), with
+# the H.265 offsets (-2 / +2 of 51) scaled the same way (-8 / +8 of 255). Not checked on NVIDIA
+# hardware.
+derived = { qp_i = { factor = 4.047619047619048, offset = -8, min = 0, max = 255, integer = true }, qp_p = { factor = 4.047619047619048, max = 255, integer = true }, qp_b = { factor = 4.047619047619048, offset = 8, max = 255, integer = true } }
 # ASSUMED: HandBrake has no NVENC AV1 preset; the H.265 points scaled to the 1-63 range.
 default = 33
 scale = [[1, 1], [33, 22], [37, 24], [63, 51]]
@@ -722,8 +732,9 @@ help = "AV1 Main covers 8 and 10-bit 4:2:0."
 choices = [{ value = "main", label = "Main" }]
 
 [encoder.av1_qsv.rate_control.quality]
-# HandBrake's "AV1 QSV 2160p 4K" uses 24 where x264 uses 24.
-default = 24
+# HandBrake's "AV1 QSV 2160p 4K" uses 24 where x264 uses 24. The default is the 1080p value
+# of the other encoders (x264 22), as the scale gives it (M2 review: it was the 2160p 24).
+default = 22
 scale = [[1, 1], [24, 24], [51, 51]]
 
 # --------------------------------------------------------------------------- AMD AMF
@@ -839,7 +850,9 @@ choices = [
 
 [encoder.av1_amf.rate_control.quality]
 # HandBrake: AV1 VCN QP 0-255, P/B offsets 8/16 (scaled down for q <= 32); "AV1 VCN 2160p 4K"
-# uses 120 where x264 uses 24.
+# uses 120 where x264 uses 24. QP 0 is out of range for the driver (RX 7600: "AMF_OUT_OF_RANGE:
+# SetPropertyInternal() Av1QIndex_Intra failed", exit 0, the same file as no QP), so 1-255.
+min = 1
 max = 255
 default = 110
 derived = { qp_p = { offset = 8, ramp_below = 32, max = 255, integer = true }, qp_b = { offset = 16, ramp_below = 32, max = 255, integer = true } }
@@ -886,10 +899,6 @@ choices = [
     { value = "6.0", label = "6.0", ffmpeg_value = "6" }, { value = "6.1", label = "6.1" },
     { value = "6.2", label = "6.2" },
 ]
-
-[encoder.h264_vaapi.rate_control.quality]
-# Real encodes: with no quality option h264_vaapi uses QP 20 (the same file as -qp 20).
-default = 20
 
 [encoder.hevc_vaapi]
 label = "VAAPI H.265"

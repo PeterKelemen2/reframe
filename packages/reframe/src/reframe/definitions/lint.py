@@ -19,6 +19,7 @@ from reframe.definitions.models import (
     TRACK_FLAGS,
     AudioEncoderDef,
     ChoiceSetting,
+    CodecSupport,
     Condition,
     ContainerDef,
     Definitions,
@@ -38,6 +39,24 @@ _PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 _FILTER_NAME = re.compile(r"^([A-Za-z0-9_]+)")
 #: Filters a chain may use besides its implementation's (pixel format conversion).
 _HELPER_FILTERS = frozenset({"format"})
+#: Placeholders of ``HardwareSetup`` (filled in by the command builder).
+_HARDWARE_PLACEHOLDERS = frozenset({"vaapi_device", "sw_pix_fmt"})
+#: Preset names by speed, fastest first: x264 / x265 (QSV and VP9 use a part of it), AMF.
+_PRESET_SPEED_WORDS: tuple[tuple[str, ...], ...] = (
+    (
+        "ultrafast",
+        "superfast",
+        "veryfast",
+        "faster",
+        "fast",
+        "medium",
+        "slow",
+        "slower",
+        "veryslow",
+        "placebo",
+    ),
+    ("speed", "balanced", "quality", "high_quality"),
+)
 
 
 def lint_definitions(defs: Definitions) -> list[str]:
@@ -77,6 +96,9 @@ def _lint_video(defs: Definitions) -> list[str]:
             setting: ChoiceSetting | None = getattr(enc, name)
             if setting is not None:
                 out += _lint_choice_setting(f"{where}.{name}", enc, setting)
+        if enc.presets is not None:
+            out += _lint_preset_order(f"{where}.presets", enc.presets)
+        out += _lint_hardware_setup(where, enc)
         if enc.profiles is not None:
             for depth in enc.pix_fmts:
                 if not enc.profiles.values(int(depth)):
@@ -123,6 +145,48 @@ def _lint_fallback(
 
 def _placeholders(texts: list[str]) -> set[str]:
     return {name for text in texts for name in _PLACEHOLDER.findall(text)}
+
+
+def _lint_hardware_setup(where: str, enc: VideoEncoderDef) -> list[str]:
+    """Only the placeholders the command builder fills in (``models`` docstring)."""
+    setup = enc.hardware_setup
+    if setup is None:
+        return []
+    out: list[str] = []
+    if not enc.hardware:
+        out.append(f"{where}.hardware_setup: a software encoder needs no hardware setup")
+    unknown = _placeholders([*setup.init_args, *setup.filter_tail]) - _HARDWARE_PLACEHOLDERS
+    if unknown:
+        out.append(f"{where}.hardware_setup: unknown placeholders {sorted(unknown)}")
+    return out
+
+
+def _preset_speed_rank(value: str) -> float | None:
+    """Where a preset value sits on its encoder's speed scale: lower is faster. ``None`` for
+    a value the linter does not know (it then reports it, so a new encoder's presets get a
+    rank here)."""
+    for words in _PRESET_SPEED_WORDS:
+        if value in words:
+            return float(words.index(value))
+    if (match := re.fullmatch(r"p(\d+)", value)) is not None:  # NVENC: p1 fastest
+        return float(match.group(1))
+    if re.fullmatch(r"-?\d+", value):  # SVT-AV1 (and libvpx cpu-used): higher is faster
+        return -float(value)
+    return None
+
+
+def _lint_preset_order(w: str, presets: ChoiceSetting) -> list[str]:
+    """Speed presets are listed fastest first (``VideoEncoderDef.presets``: the slider
+    order)."""
+    ranks: list[float] = []
+    for choice in presets.choices:
+        rank = _preset_speed_rank(choice.value)
+        if rank is None:
+            return [f"{w}: the linter does not know the speed of preset {choice.value!r}"]
+        ranks.append(rank)
+    if any(b <= a for a, b in itertools.pairwise(ranks)):
+        return [f"{w}: presets must be listed fastest first"]
+    return []
 
 
 def _lint_rate_control(where: str, enc: VideoEncoderDef) -> list[str]:
@@ -184,6 +248,11 @@ def _lint_quality(w: str, enc: VideoEncoderDef, q: QualityMode) -> list[str]:
     unknown = used - {"value"} - set(q.derived)
     if unknown:
         out.append(f"{w}: unknown placeholders {sorted(unknown)}")
+    for name, derived in q.derived.items():
+        if derived.factor <= 0:
+            out.append(f"{w}.derived.{name}: factor must be positive")
+        if derived.min is not None and derived.max is not None and derived.min > derived.max:
+            out.append(f"{w}.derived.{name}: min must not be above max")
     if q.params and enc.params_arg is None:
         out.append(f"{w}: params need a params_arg")
     if len(q.scale) < 2:
@@ -507,12 +576,25 @@ def _lint_container(w: str, cont: ContainerDef, audio_codecs: set[str]) -> list[
     ):
         out.append(f"{w}: text_subtitle_target is not an encode target")
     for support_name in ("video", "audio", "subtitles"):
-        support = getattr(cont, support_name)
+        support: CodecSupport = getattr(cont, support_name)
         for codec in support.copy_args:
             if not support.can_copy(codec):
                 out.append(f"{w}.{support_name}.copy_args: {codec} is not copyable")
         if not support.copy_codecs and not support.encode:
             out.append(f"{w}.{support_name}: holds nothing")
+        denied = support.copy_except
+        if denied and "*" not in support.copy_codecs:
+            out.append(f"{w}.{support_name}.copy_except: only needed with copy = ['*']")
+        if len(set(denied)) != len(denied):
+            out.append(f"{w}.{support_name}.copy_except: duplicate entries")
+        both = sorted(set(denied) & set(support.copy_codecs))
+        if both:
+            out.append(f"{w}.{support_name}: {both} both copyable and denied")
+    for codec, tag in cont.codec_tags.items():
+        if codec not in cont.video.encode and not cont.video.can_copy(codec):
+            out.append(f"{w}.codec_tags: the container cannot hold {codec}")
+        if not tag:
+            out.append(f"{w}.codec_tags: empty tag for {codec}")
     if set(cont.flags) & set(cont.mkvpropedit_flags):
         out.append(f"{w}: a flag is both muxer-written and mkvpropedit-written")
     if "default" not in cont.flags:

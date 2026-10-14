@@ -271,7 +271,10 @@ type = "int"
 min = 0
 max = 11
 step = 1
-help = "Quality of the motion and mode decisions. 7–9 is a good balance; 10 and 11 are slow."
+# x264 core 165: subme 10 and 11 need trellis=2; with a lower trellis x264 writes subme=9
+# into the stream without a message (also for the veryslow and placebo presets with
+# trellis 0 or 1). A rule across two options: validation (C-8) checks it.
+help = "Quality of the motion and mode decisions. 7–9 is a good balance; 10 and 11 are slow and need Trellis set to Always (with a lower trellis x264 uses 9)."
 mapping = { kind = "x26x_param", name = "subme" }
 default = { kind = "preset", values = { ultrafast = 0, superfast = 1, veryfast = 2, faster = 4, fast = 6, medium = 7, slow = 8, slower = 9, veryslow = 10, placebo = 11 } }
 
@@ -298,7 +301,7 @@ choices = [
     { value = "1", label = "Final encode only" },
     { value = "2", label = "Always", help = "Slower, a little smaller." },
 ]
-help = "Rate-distortion optimised quantisation."
+help = "Rate-distortion optimised quantisation. Subpixel refinement 10 and 11 need Always: with a lower setting x264 uses subpixel refinement 9."
 mapping = { kind = "x26x_param", name = "trellis" }
 default = { kind = "preset", values = { ultrafast = "0", superfast = "0", veryfast = "0", faster = "1", fast = "1", medium = "1", slow = "2", slower = "2", veryslow = "2", placebo = "2" } }
 
