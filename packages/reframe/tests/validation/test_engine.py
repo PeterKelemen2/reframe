@@ -135,7 +135,7 @@ def test_source_without_video() -> None:
     s.source.container.duration = None
     s.job.dimensions = DimensionSettings(crop=CropSettings(mode="auto"))
     s.job.range = FrameRange(start=5)
-    assert sc.check(s) == []
+    assert [i.code for i in sc.check(s)] == ["source.no_video"]  # and no rule fails
     assert context(s).output_size is None
 
 

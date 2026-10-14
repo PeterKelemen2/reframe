@@ -7,8 +7,8 @@ These rules compare the settings with the geometry and turn the cases that matte
 - an invalid crop (it removes a whole axis, or leaves less than one chroma step): not applied
   on that axis;
 - the crop changed (snapped to the chroma grid);
-- crop detection has not run (automatic / conservative crop without a detected rect), or a
-  manual crop without values;
+- crop detection has not run (automatic / conservative crop without a detected rect: info
+  until crop detection exists, decision 0024 item 3), or a manual crop without values;
 - upscaling, and an output outside the fit box (a box smaller than one modulus step);
 - a custom pixel aspect without a valid value.
 
@@ -84,12 +84,12 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
                 no_crop,
             )
         else:
-            name = "Automatic" if settings.mode == "auto" else "Conservative"
-            yield warning(
+            # Info until crop detection exists (C-10, M8): decision 0024 item 3.
+            name = "automatic" if settings.mode == "auto" else "conservative"
+            yield info(
                 "dimensions.crop_not_detected",
                 "dimensions.crop",
-                f"{name} crop: crop detection has not run yet, so no crop is applied and black "
-                "bars stay in the picture.",
+                f"Crop detection is not available yet: {name} crop leaves the picture uncropped.",
                 no_crop,
             )
         return

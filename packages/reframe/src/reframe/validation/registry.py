@@ -32,6 +32,7 @@ __all__ = [
 
 Area = Literal[
     "tools",
+    "source",
     "encoder",
     "container",
     "dimensions",
@@ -46,6 +47,7 @@ Area = Literal[
 #: The order in which areas are checked (and issues are listed).
 AREAS: tuple[Area, ...] = (
     "tools",
+    "source",
     "encoder",
     "container",
     "dimensions",

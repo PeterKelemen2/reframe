@@ -23,7 +23,7 @@ from reframe.validation.context import JobContext
 from reframe.validation.fs import FileSystemView
 from reframe.validation.range import range_duration
 from reframe.validation.registry import job_rule
-from reframe.validation.tracks import effective_mixdown, passthru_copies, track_encoder
+from reframe.validation.tracks import encoded_audio, passthru_copies, track_encoder, track_stream
 
 __all__ = [
     "MUX_OVERHEAD",
@@ -230,19 +230,20 @@ def estimate_output_bytes(ctx: JobContext) -> int | None:
         return None
     audio_bps = 0
     for track in ctx.job.audio:
-        source = (
-            ctx.audio_streams.get(track.source_stream) if track.source_stream is not None else None
-        )
+        source = track_stream(ctx, track)
         source_bps = source.bitrate.value if source is not None else None
         encoder_id = track_encoder(ctx, track)
         encoder = ctx.definitions.audio_encoders.get(encoder_id) if encoder_id else None
-        mixdown = effective_mixdown(track, source)
         if passthru_copies(ctx, track) or encoder is None or encoder.bitrate is None:
             audio_bps += source_bps or 0
-        elif track.bitrate is not None:
-            audio_bps += track.bitrate * 1000
-        elif mixdown is not None and mixdown in encoder.bitrate.by_mixdown:
-            audio_bps += encoder.bitrate.by_mixdown[mixdown].default * 1000
+        elif source is not None:
+            # What the builder writes: the snapped bitrate, else the default for the layout.
+            planned = encoded_audio(track, source, encoder, ctx.definitions)
+            limits = encoder.bitrate.by_mixdown.get(planned.table)
+            if planned.bitrate is not None:
+                audio_bps += planned.bitrate * 1000
+            elif limits is not None:
+                audio_bps += limits.default * 1000
     return int((video_bps + audio_bps) * seconds / 8 * MUX_OVERHEAD)
 
 

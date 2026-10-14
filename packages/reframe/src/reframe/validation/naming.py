@@ -30,6 +30,8 @@ JOB_CODES = (
 
 @job_rule("naming", *JOB_CODES)
 def output_name(ctx: JobContext) -> list[ValidationIssue]:
+    if ctx.container is None:
+        return []  # the extension comes from the container: container.unknown
     return list(ctx.name.issues)
 
 

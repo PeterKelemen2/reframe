@@ -13,9 +13,10 @@
   removes its issue.
 
 The rules are small functions registered by area (:mod:`reframe.validation.registry`):
-``tools``, ``encoder``, ``container``, ``dimensions``, ``filters``, ``audio``, ``subtitles``,
-``metadata``, ``range``, ``output``, ``naming``. Each rule declares the codes it can give;
-``CASES`` in ``tests/validation/test_rules.py`` has a positive and a negative case for each.
+``tools``, ``source``, ``encoder``, ``container``, ``dimensions``, ``filters``, ``audio``,
+``subtitles``, ``metadata``, ``range``, ``output``, ``naming``. Each rule declares the codes it
+can give; ``CASES`` in ``tests/validation/test_rules.py`` has a positive and a negative case
+for each.
 
 A rule that fails with an exception (a bug) does not stop the others: it gives a
 ``validation.rule_failed`` error, so a job is never queued unchecked.
@@ -47,6 +48,7 @@ from reframe.validation import metadata as _metadata  # noqa: F401
 from reframe.validation import naming as _naming  # noqa: F401
 from reframe.validation import output as _output  # noqa: F401
 from reframe.validation import range as _range  # noqa: F401
+from reframe.validation import source as _source  # noqa: F401
 from reframe.validation import subtitles as _subtitles  # noqa: F401
 from reframe.validation import tools as _tools  # noqa: F401
 from reframe.validation.common import error

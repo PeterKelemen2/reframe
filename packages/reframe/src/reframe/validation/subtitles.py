@@ -11,7 +11,7 @@ PGS or VobSub track.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import (
@@ -24,14 +24,16 @@ from reframe.validation.common import (
 )
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
-from reframe.validation.tracks import FORCED_ONLY_CODECS, subtitle_input
+from reframe.validation.tracks import EXTERNAL_FORMATS, FORCED_ONLY_CODECS, subtitle_input
 
 
 def _drop(ctx: JobContext, index: int) -> Fix:
     return fix("Remove this subtitle track", remove(f"subtitles[{index}]"), target=ctx.target)
 
 
-@job_rule("subtitles", "subtitle.source_missing", "subtitle.external_missing")
+@job_rule(
+    "subtitles", "subtitle.source_missing", "subtitle.external_missing", "subtitle.external_unknown"
+)
 def sources(ctx: JobContext) -> Iterator[ValidationIssue]:
     for index, track in enumerate(ctx.job.subtitles):
         if isinstance(track.source, int):
@@ -48,6 +50,15 @@ def sources(ctx: JobContext) -> Iterator[ValidationIssue]:
                 "subtitle.external_missing",
                 f"subtitles[{index}].source.path",
                 f"The subtitle file {track.source.path} does not exist.",
+                _drop(ctx, index),
+            )
+        elif PurePath(track.source.path).suffix.lower() not in EXTERNAL_FORMATS:
+            known = ", ".join(EXTERNAL_FORMATS)
+            yield error(
+                "subtitle.external_unknown",
+                f"subtitles[{index}].source.path",
+                f"The subtitle file {PurePath(track.source.path).name} has a type Reframe "
+                f"cannot read: use a {known} file.",
                 _drop(ctx, index),
             )
 
