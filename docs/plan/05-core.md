@@ -564,6 +564,8 @@ Implements [03 §Output naming](03-features.md#output-naming).
       detect season packs, score candidates, and return a reason string.
 - [ ] `naming/parse.py`: run `guessit` in advanced mode to get each match **with its position**,
       so text fields are cut from the original string and keep their spelling and separators.
+      guessit reads no user config files (`no_user_config`,
+      [0012](../decisions/0012-output-naming-rules.md)).
       `{main_title}` = the text before the first release tag. For episodes, the show name,
       a year before the episode code, the episode code and the episode title stay. Merge
       folder fields into file fields for season packs.

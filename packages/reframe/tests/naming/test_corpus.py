@@ -49,8 +49,7 @@ def _resolve(case: dict[str, Any], fake_fs: Any, now: datetime) -> Any:
     return resolve_output_name(file, NamingOptions(), root=root, fs=fs, now=now)
 
 
-@pytest.mark.parametrize("case", CASES, ids=[_id(case) for case in CASES])
-def test_corpus_case(case: dict[str, Any], fake_fs: Any, now: datetime) -> None:
+def _check_case(case: dict[str, Any], fake_fs: Any, now: datetime) -> None:
     result = _resolve(case, fake_fs, now)
     context = f"{case['path']}\nreason: {result.reason}\nfields: {result.fields!r}"
     if "source" in case:
@@ -65,6 +64,20 @@ def test_corpus_case(case: dict[str, Any], fake_fs: Any, now: datetime) -> None:
     if "output" in case:
         assert result.relative_path == case["output"]
     assert not result.issues
+
+
+@pytest.mark.parametrize("case", CASES, ids=[_id(case) for case in CASES])
+def test_corpus_case(case: dict[str, Any], fake_fs: Any, now: datetime) -> None:
+    _check_case(case, fake_fs, now)
+
+
+def test_corpus_ignores_guessit_user_config(
+    guessit_user_config: str, fake_fs: Any, now: datetime
+) -> None:
+    """The whole corpus gives the same names with guessit config files in the working folder
+    and the home folder (``guessit_user_config``): naming never reads them."""
+    for case in CASES:
+        _check_case(case, fake_fs, now)
 
 
 def test_corpus_size_and_categories() -> None:

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from reframe.naming.sanitize import (
     MAX_PART_BYTES,
@@ -10,6 +14,7 @@ from reframe.naming.sanitize import (
     Piece,
     is_reserved,
     replace_forbidden,
+    replace_undecodable,
     sanitize_segments,
 )
 
@@ -91,6 +96,121 @@ def test_reserved_name_gets_an_underscore() -> None:
     )
     assert parts == ["aux_.backup", "x.mkv"]
     assert set(RESERVED_NAMES) >= {"CON", "COM1", "LPT3"}
+
+
+@pytest.mark.parametrize("extension", ["mkv", "m4v", ""])
+def test_a_long_reserved_name_stays_in_the_byte_limit(extension: str) -> None:
+    """The ``_`` of a reserved name comes after the cut to the byte limit: it must not take
+    the part one byte over it (``CON.xxx…`` cut to 255 bytes, then ``CON_.xxx…``)."""
+    long = "CON." + "x" * 300
+    folder, file = sanitize_segments(
+        [[Piece(long)], [Piece(long, "main_title")]], extension=extension, fallback="f"
+    )[0]
+    suffix = f".{extension}" if extension else ""
+    assert folder == "CON_." + "x" * (MAX_PART_BYTES - 5)
+    assert len(folder.encode()) == MAX_PART_BYTES
+    assert len(file.encode()) == MAX_PART_BYTES - len(".part")
+    assert file == "CON_." + "x" * (MAX_PART_BYTES - len(".part") - 5 - len(suffix)) + suffix
+    # The fallback (the source file name) too.
+    [part], _ = sanitize_segments([[Piece("")]], extension=extension, fallback=long)
+    assert part == file
+    # Never half a character: "CON.x" + 125 "é" is 255 bytes, "CON_.x" + 124 "é" is 254.
+    parts, _ = sanitize_segments(
+        [[Piece("CON.x" + "é" * 200)], [Piece("x")]], extension="", fallback="f"
+    )
+    assert parts == ["CON_.x" + "é" * 124, "x"]
+
+
+_DEVICES = ["CON", "nul", "COM1", "LPT¹", "AUX", "aux "]
+#: Text that exercises every rule: reserved names, dots, spaces, forbidden characters, bytes
+#: that are not UTF-8 (lone surrogates), multi-byte characters and long runs.
+_MIXED = st.lists(
+    st.one_of(
+        st.sampled_from(
+            [
+                *_DEVICES,
+                ".",
+                " ",
+                "..",
+                ": ",
+                "?",
+                "/",
+                "\\",
+                "\x00",
+                "\udcff",
+                "\ud800",
+                "é",
+                "日本語",
+                "😀",
+                "x" * 120,
+                "é" * 70,
+                "日本語" * 30,
+                "Show.S01E01",
+            ]
+        ),
+        st.text(max_size=10),
+    ),
+    max_size=10,
+).map("".join)
+#: A reserved name with a tail long enough to be cut (``CON.xxx…``).
+_LONG_RESERVED = st.builds(
+    lambda device, tail: f"{device}.{tail}",
+    st.sampled_from(_DEVICES),
+    st.text(alphabet="xé日😀. -\udcff", min_size=200, max_size=300),
+)
+_TEXT = st.one_of(_MIXED, _LONG_RESERVED)
+_PIECES = st.lists(
+    st.builds(Piece, _TEXT, st.sampled_from([None, "sub_title", "main_title", "name"])),
+    min_size=1,
+    max_size=4,
+)
+
+
+@given(
+    segments=st.lists(_PIECES, min_size=1, max_size=3),
+    extension=st.sampled_from(["mkv", "m4v", "webm", ""]),
+    fallback=_TEXT,
+)
+def test_every_part_is_safe_and_fits(
+    segments: list[list[Piece]], extension: str, fallback: str
+) -> None:
+    """After every rule (the ``_`` of a reserved name last), each folder part has at most 255
+    bytes and the file part room for ``.part``; no part is reserved, empty, ends with a dot
+    or a space, or holds a forbidden character or a byte that is not UTF-8."""
+    parts, _ = sanitize_segments(segments, extension=extension, fallback=fallback)
+    assert parts
+    suffix = f".{extension}" if extension else ""
+    *folders, file = parts
+    assert file.endswith(suffix)
+    stem = file[: len(file) - len(suffix)]
+    for part in [*folders, stem]:
+        assert part
+        assert not is_reserved(part), part
+        assert part == part.strip(" ")
+        assert not part.endswith(".")
+        assert not set(part) & set('<>:"/\\|?*')
+        assert all(ord(char) >= 32 and not 0xD800 <= ord(char) <= 0xDFFF for char in part)
+    for part in folders:
+        assert len(os.fsencode(part)) <= MAX_PART_BYTES
+    assert len(os.fsencode(file + ".part")) <= MAX_PART_BYTES
+
+
+def test_bytes_that_are_not_utf8_become_the_replacement_character() -> None:
+    name = os.fsdecode(b"bad\xffname") if os.name != "nt" else "bad\udcffname"
+    part, notes = _one(name)
+    assert part == "bad�name.mkv"
+    assert notes == [
+        "Replaced bytes that are not UTF-8 with '�' (such a name cannot be written on "
+        "Windows or in JSON)."
+    ]
+    assert replace_undecodable("a\udcff\ud800b") == "a��b"
+    # A run of them is one replacement character each, and each counts 3 bytes.
+    part, _ = _one("\udcff" * 100)
+    assert part == "�" * 82 + ".mkv"  # 246 bytes of 3-byte characters
+    # The fallback (the source file name) too.
+    part, notes = _one("", fallback=name)
+    assert part == "bad�name.mkv"
+    assert notes[0].startswith("Replaced bytes that are not UTF-8")
 
 
 def test_trailing_dots_and_spaces() -> None:

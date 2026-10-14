@@ -33,15 +33,19 @@ from __future__ import annotations
 
 import itertools
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
+from types import MappingProxyType
 
 from guessit import guessit
 from rebulk.match import Match as RebulkMatch
 
 from reframe.models.naming import NameSpan, ParsedName
+from reframe.naming.sanitize import replace_undecodable
 
 __all__ = [
+    "GUESSIT_OPTIONS",
     "SCORED_FIELDS",
     "NameParse",
     "clean_text",
@@ -104,6 +108,17 @@ _SPAN_FIELD = {
 }
 
 
+#: The options of every guessit call (a copy is passed: guessit wants a ``dict``).
+#: ``no_user_config``: guessit 4.4.0 otherwise reads ``guessit.options.(json|yml|yaml)`` in the
+#: working folder and ``options.*`` in ``~/.guessit`` and ``~/.config/guessit``. Such a file
+#: changes the parse (``{"type": "movie"}`` turns an episode title into ``alternative_title``)
+#: or, when it is malformed, makes every call fail; and naming reads the file system only
+#: through :class:`~reframe.naming.fs.NamingFs`.
+GUESSIT_OPTIONS: Mapping[str, object] = MappingProxyType(
+    {"advanced": True, "name_only": True, "no_user_config": True}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class GuessMatch:
     """One guessit match: property name, value and position in the parsed string."""
@@ -122,7 +137,7 @@ def guess_matches(text: str) -> tuple[GuessMatch, ...]:
     (``type``, ``mimetype``) are left out. guessit failing is not an error: no matches.
     """
     try:
-        result = guessit(text, {"advanced": True, "name_only": True})
+        result = guessit(text, dict(GUESSIT_OPTIONS))
     except Exception:  # guessit raises its own exception types on odd input
         return ()
     matches: list[GuessMatch] = []
@@ -286,7 +301,12 @@ def _joined(text: str, spans: list[tuple[int, int]], separator: str | None) -> s
 
 
 def parse_name(text: str) -> NameParse:
-    """Parse one name (a file name without its extension, or a folder name)."""
+    """Parse one name (a file name without its extension, or a folder name).
+
+    A byte that is not UTF-8 (a lone surrogate, ``\\udcff``) becomes ``�`` first, so every
+    field and :attr:`NameParse.text` can be written as JSON; positions do not move.
+    """
+    text = replace_undecodable(text)
     matches = list(guess_matches(text))
     separator = detect_separator(text)
 
@@ -373,7 +393,9 @@ def parse_name(text: str) -> NameParse:
         bare = text[code_start:code_end]
         if (
             seasons
-            and bare.isdigit()
+            # isdecimal, not isdigit: ``int`` takes every decimal digit (guessit reads
+            # Arabic-Indic and full-width digits as numbers too), but not ``²``.
+            and bare.isdecimal()
             and len(bare) >= 3
             and text[:code_start].rstrip(" ").endswith("-")
         ):

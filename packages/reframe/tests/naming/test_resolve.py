@@ -3,6 +3,9 @@ output folders and bad templates."""
 
 from __future__ import annotations
 
+import json
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +28,7 @@ from reframe.models import (
     SubtitleOutputTrack,
     SubtitleStream,
 )
-from reframe.naming import RealNamingFs, output_extension, resolve_output_name
+from reframe.naming import RealNamingFs, check_template, output_extension, resolve_output_name
 
 HACKSAW = Path(
     "/media/Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC."
@@ -206,6 +209,44 @@ def test_bad_field_overrides(empty_fs: Any) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "number",
+    [
+        # str.isdigit() is True, int() fails:
+        pytest.param("²", id="superscript-two"),
+        pytest.param("1²", id="one-superscript-two"),
+        # str.isdigit() is True, int() accepts them:
+        pytest.param("\u0663", id="arabic-indic-three"),
+        pytest.param("\u06f3", id="extended-arabic-indic-three"),
+        pytest.param("\uff13", id="full-width-three"),
+        pytest.param("1" * 10, id="10-digits"),
+        pytest.param("9" * 5000, id="5000-digits"),  # int() refuses more than 4300 digits
+        pytest.param("+3", id="plus"),
+        pytest.param("-3", id="minus"),
+        pytest.param("3.0", id="decimal"),
+        pytest.param(" 3 4", id="two-numbers"),
+    ],
+)
+@pytest.mark.parametrize("key", ["season", "episode", "year"])
+def test_number_overrides_take_only_ascii_digits(key: str, number: str, empty_fs: Any) -> None:
+    """A number override is 1 to 9 ASCII digits; anything else is a warning, never an
+    exception, and the parsed value stays."""
+    job = _job(field_overrides={key: number})
+    result = resolve_output_name(SOPRANOS, NamingOptions(), job=job, fs=empty_fs)
+    [issue] = result.issues
+    assert (issue.code, issue.severity) == ("naming.bad_override", Severity.WARNING)
+    assert issue.path == f"output.naming.field_overrides.{key}"
+    assert (result.fields.season, result.fields.episode, result.fields.year) == (3, 2, None)
+    assert result.relative_path == "The.Sopranos.S03E02.Proshai.Livushka.mkv"
+
+
+def test_number_overrides_strip_spaces_and_keep_leading_zeros(empty_fs: Any) -> None:
+    job = _job(field_overrides={"season": " 007 ", "episode": "123456789", "year": ""})
+    result = resolve_output_name(SOPRANOS, NamingOptions(), job=job, fs=empty_fs)
+    assert not result.issues
+    assert (result.fields.season, result.fields.episode, result.fields.year) == (7, 123456789, None)
+
+
 # --------------------------------------------------------------------------- bad templates
 
 
@@ -215,6 +256,17 @@ def test_bad_template_gives_issues_and_the_file_name(empty_fs: Any) -> None:
     assert result.relative_path == "hacksawridge.2160p.remux-henderson.mkv"
     assert {i.code for i in result.issues} == {"naming.template_syntax", "naming.unknown_variable"}
     assert "The naming template has errors: the source file name is used." in result.notes
+
+
+def test_huge_format_spec_gives_an_issue_and_the_file_name(empty_fs: Any) -> None:
+    """``reframe name --template "{season:999999999999}"`` printed a ``MemoryError``."""
+    result = resolve_output_name(
+        SOPRANOS, NamingOptions(), job=_job(template="{season:999999999999}"), fs=empty_fs
+    )
+    assert result.relative_path == (
+        "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm.mkv"
+    )
+    assert [i.code for i in result.issues] == ["naming.bad_format_spec"]
 
 
 def test_empty_template_falls_back_to_the_file_name(empty_fs: Any) -> None:
@@ -329,6 +381,70 @@ def test_real_file_system(tmp_path: Path) -> None:
     assert result.season_pack
     expected = datetime.fromtimestamp((folder / "S01E01.mkv").stat().st_mtime).strftime("%Y-%m-%d")
     assert result.relative_path == f"Breaking.Bad.S01E01 {expected}.mkv"
+
+
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows file names are UTF-16: no name holds the byte 0xFF"
+)
+
+
+@posix_only
+def test_a_file_name_that_is_not_utf8(tmp_path: Path) -> None:
+    """``reframe name DIR`` with a real file ``bad\\xffname.mkv``: the byte becomes ``�``
+    (0012 follow-up) in the output name and in every text of the result; only the real paths
+    keep it."""
+    media = tmp_path / "media"
+    media.mkdir()
+    file = media / os.fsdecode(b"bad\xffname.mkv")
+    file.write_bytes(b"placeholder")
+    assert file.name == "bad\udcffname.mkv"
+    result = resolve_output_name(file, NamingOptions(), root=media, fs=RealNamingFs())
+    assert result.source == "file"
+    assert result.relative_path == "bad�name.mkv"
+    assert result.path == media / "bad�name.mkv"
+    assert os.fsencode(result.path).endswith("bad�name.mkv".encode())
+    assert result.fields.main_title == "bad�name"
+    assert result.variables["file_name"] == "bad�name"
+    assert result.candidates[0].text == "bad�name"
+    assert result.candidates[0].path == file  # the real file
+    assert result.notes[0].startswith("Replaced bytes that are not UTF-8 with '�'")
+    assert not result.issues
+    result.fields.model_dump_json()  # no surrogates left in the parsed text
+    json.dumps(result.variables, ensure_ascii=False).encode("utf-8")
+    # A template of other variables, and the file name as the fallback.
+    job = _job(template="<{sub_title}>")
+    assert resolve_output_name(file, NamingOptions(), job=job, root=media).relative_path == (
+        "bad�name.mkv"
+    )
+
+
+@posix_only
+def test_a_folder_name_that_is_not_utf8(tmp_path: Path) -> None:
+    """The folder wins: its name gives the output name; the output stays in the real folder."""
+    folder = tmp_path / os.fsdecode(b"Movie.2016.1080p.BluRay.x264-GR\xffP")
+    folder.mkdir()
+    file = folder / "movie.mkv"
+    file.write_bytes(b"placeholder")
+    options = NamingOptions(movie_template="{main_title} [{release_group}] {folder_name}")
+    result = resolve_output_name(file, options, root=tmp_path, fs=RealNamingFs())
+    assert result.source == "folder"
+    assert result.relative_path == ("Movie [GR�P] Movie.2016.1080p.BluRay.x264-GR�P.mkv")
+    assert result.path is not None
+    assert result.path.parent == folder
+    assert b"\xff" in os.fsencode(result.path.parent)
+    assert result.notes[0].startswith("Replaced bytes that are not UTF-8")
+
+
+def test_check_template_and_names_with_surrogates() -> None:
+    """Lone surrogates in a template or a manual name (text from the API can hold them) are
+    never an exception, and never reach the output name."""
+    assert check_template("{name}\udcff<{date:%Y\ud800}>") == []
+    job = _job(template="{main_title}\udcff\ud800")
+    result = resolve_output_name(HACKSAW, NamingOptions(), job=job, fs=RealNamingFs())
+    assert result.relative_path == "Hacksaw.Ridge��.mkv"
+    job = _job(mode="manual", manual_name="My\udcffMovie")
+    result = resolve_output_name(HACKSAW, NamingOptions(), job=job, fs=RealNamingFs())
+    assert result.relative_path == "My�Movie.mkv"
 
 
 def test_real_file_system_errors(tmp_path: Path) -> None:
