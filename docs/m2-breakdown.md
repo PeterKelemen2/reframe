@@ -62,7 +62,7 @@ record. Numbers that end up unused are noted at the end of the milestone.
 
 | 0008 | 0009 | 0010 | 0011 | 0012 | 0013 | 0014 | 0015 | 0016 | 0017 | 0018 | 0019 | 0020+ |
 |------|------|------|------|------|------|------|------|------|------|------|------|-------|
-| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead (0020–0027 used; next 0028) |
+| C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead (0020–0028 used; next 0029) |
 
 ## Interfaces between the steps
 
@@ -240,7 +240,7 @@ def builtin_presets() -> list[Preset]      # JSON inside the package, read-only
 class PresetStore:                         # <config>/presets.json
     def __init__(self, config_dir: Path, events: EventBus | None = None) -> None: ...
     # list, get(id), find(name), save, delete, rename, duplicate, set_default, default,
-    # export(ids) -> PresetFile, import_(PresetFile, on_conflict) …
+    # export(ids) -> PresetExport (decision 0028), import_(PresetFile | PresetExport, on_conflict) …
 def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]
 ```
 
