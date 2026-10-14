@@ -12,13 +12,23 @@ preset store (``reframe.presets``) uses too.
   pause; then it fails, the temporary file is removed and the old file stays. On Linux a
   ``PermissionError`` is a real permission problem and is not retried.
 - Reading accepts a UTF-8 BOM (Windows editors write one).
+- **Symbolic links** (a ``settings.json`` that links into a dotfiles folder): the read, the
+  write and the backup go to the link's target (followed to the end, as
+  ``os.path.realpath`` gives it), so the link stays a link. The temporary file is made next
+  to the target (``os.replace`` needs one file system). A dangling link gets its target
+  written. Decision 0015, follow-up.
+- **Nesting**: a document nested more than :data:`MAX_DEPTH` levels deep (objects and
+  lists) is damaged. Deeper JSON made the parser, the migrations' ``deepcopy`` or Pydantic's
+  ``model_dump`` raise ``RecursionError`` / ``ValueError``. A document that deep is never
+  written either, so a saved file always loads again.
 
 **Loading** (:meth:`SettingsStore.load`; the preset store does the same):
 
 - No file: the defaults. Nothing is written until something is saved.
 - The file runs through the schema migrations (``reframe.models.migrations``), then the model
   validates it. Unknown fields are kept and written back (``DocumentModel``).
-- **Corrupt** (not JSON, not an object, a failed migration, or a value the model rejects): the
+- **Corrupt** (not JSON, not an object, nested too deeply, a failed migration, or a value the
+  model rejects): the
   file is renamed to ``settings.corrupt-<time>.json`` (the backup), the defaults are written in
   its place, and an ``app.warning`` event (``settings.corrupt``) says where the backup is.
 - **Newer** than this Reframe (``UnsupportedSchemaVersion``): the file is kept untouched and
@@ -26,6 +36,10 @@ preset store (``reframe.presets``) uses too.
   the newer file is never overwritten. Warning ``settings.newer_version``.
 - **Unreadable** (permission denied, a folder in its place …): the same as newer: defaults,
   nothing written, warning ``settings.unreadable``.
+
+**Saving** writes the current ``schema_version`` (the content is what this Reframe's model
+holds). ``Reframe.settings.update`` refuses a change of ``schema_version``
+(``settings.schema_version``).
 
 Expected failures are never exceptions: they are ``app.warning`` events, published on the
 event bus and kept in :attr:`SettingsStore.problems` (the events of the start-up load are
@@ -41,7 +55,7 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -55,21 +69,25 @@ from reframe.models.migrations import (
     MigrationError,
     MigrationRegistry,
     UnsupportedSchemaVersion,
+    current_version,
     migrate,
 )
 from reframe.models.preset import FieldChange
 from reframe.models.settings import AppSettings
 
 __all__ = [
+    "MAX_DEPTH",
     "REPLACE_ATTEMPTS",
     "SETTINGS_FILE",
     "DocumentRead",
     "JsonDocumentFile",
     "SettingsStore",
     "SettingsUpdate",
+    "document_version",
     "is_newer",
     "migrate_document",
     "replace_file",
+    "too_deep",
     "validation_detail",
 ]
 
@@ -82,6 +100,41 @@ REPLACE_ATTEMPTS = 6
 REPLACE_DELAY = 0.05
 #: ``True`` on Windows: a ``PermissionError`` of ``os.replace`` is retried (tests set it).
 WINDOWS = os.name == "nt"
+#: The deepest nesting (objects and lists, the document itself is level 1) a settings or
+#: presets document may have. Reframe's own documents need fewer than 10 levels; Pydantic's
+#: ``model_dump`` fails at about 250, and the migrations' ``deepcopy`` at about 500.
+MAX_DEPTH = 64
+#: The detail of a damaged document that is nested too deeply.
+TOO_DEEP = f"the JSON is nested more than {MAX_DEPTH} levels deep"
+
+
+def too_deep(value: object, limit: int = MAX_DEPTH) -> bool:
+    """``True`` when ``value`` (parsed JSON) has more than ``limit`` levels of objects and
+    lists. Iterative, so any depth is safe."""
+    stack: list[tuple[object, int]] = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, Mapping):
+            children: Iterable[object] = item.values()
+        elif isinstance(item, (list, tuple)):
+            children = item
+        else:
+            continue
+        if depth > limit:
+            return True
+        stack.extend((child, depth + 1) for child in children)
+    return False
+
+
+def _link_target(path: Path) -> Path:
+    """The file that a read or write of ``path`` really touches: ``path``, or the end of
+    the chain of symbolic links at it (one place, so tests can mock it)."""
+    try:
+        if not path.is_symlink():
+            return path
+    except OSError:
+        return path
+    return Path(os.path.realpath(path))
 
 
 def _replace(source: Path, target: Path) -> None:
@@ -116,7 +169,8 @@ class DocumentRead:
     """What :meth:`JsonDocumentFile.read` found.
 
     ``missing``: no file. ``unreadable``: it exists but cannot be read (``detail`` says why).
-    ``corrupt``: not UTF-8 JSON or not an object. ``ok``: ``data`` is the parsed object.
+    ``corrupt``: not UTF-8 JSON, not an object, or nested too deeply. ``ok``: ``data`` is the
+    parsed object.
     """
 
     status: Literal["missing", "unreadable", "corrupt", "ok"]
@@ -125,14 +179,24 @@ class DocumentRead:
 
 
 class JsonDocumentFile:
-    """One JSON document on disk: read, atomic write, backup."""
+    """One JSON document on disk: read, atomic write, backup. A symbolic link at ``path`` is
+    followed: its target is read, written and backed up, and the link stays."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, max_depth: int | None = MAX_DEPTH) -> None:
+        """``max_depth``: a deeper document is ``corrupt`` on read and never written. ``None``:
+        the caller checks the parts itself (the preset store, so that one deep preset does
+        not damage the whole file)."""
         self.path = path
+        self.max_depth = max_depth
+
+    @property
+    def target(self) -> Path:
+        """The file that is really read and written (``path``, or where a link there points)."""
+        return _link_target(self.path)
 
     def read(self) -> DocumentRead:
         try:
-            raw = self.path.read_bytes()
+            raw = self.target.read_bytes()
         except FileNotFoundError:
             return DocumentRead("missing")
         except OSError as exc:  # permission denied, a folder in its place, I/O error …
@@ -141,28 +205,36 @@ class JsonDocumentFile:
             data = json.loads(raw.decode("utf-8-sig"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             return DocumentRead("corrupt", detail=f"not valid JSON: {exc}")
+        except RecursionError:
+            return DocumentRead("corrupt", detail=TOO_DEEP)
         if not isinstance(data, dict):
             return DocumentRead("corrupt", detail="the file is not a JSON object")
+        if self.max_depth is not None and too_deep(data, self.max_depth):
+            return DocumentRead("corrupt", detail=TOO_DEEP)
         return DocumentRead("ok", data=data)
 
     def write(self, data: Mapping[str, Any]) -> str | None:
         """Write ``data`` atomically. Returns ``None``, or why it failed (the old file stays)."""
-        folder = self.path.parent
+        if too_deep(data, self.max_depth or MAX_DEPTH):
+            return f"not written: {TOO_DEEP}"
+        target = self.target
+        folder = target.parent
         tmp: Path | None = None
         try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             folder.mkdir(parents=True, exist_ok=True)
-            fd, name = tempfile.mkstemp(dir=folder, prefix=f".{self.path.name}.", suffix=".tmp")
+            fd, name = tempfile.mkstemp(dir=folder, prefix=f".{target.name}.", suffix=".tmp")
             tmp = Path(name)
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
                 f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())
-            replace_file(tmp, self.path)
+            replace_file(tmp, target)
             tmp = None
             _sync_folder(folder)
             return None
-        except (OSError, TypeError, ValueError) as exc:
+        except (OSError, TypeError, ValueError, RecursionError) as exc:
             return _os_error(exc) if isinstance(exc, OSError) else str(exc)
         finally:
             if tmp is not None:
@@ -170,16 +242,17 @@ class JsonDocumentFile:
                     tmp.unlink()
 
     def backup(self, label: str = "corrupt") -> Path:
-        """Rename the file to ``<stem>.<label>-<time>[-n]<suffix>`` next to it and return the
-        new path. Raises ``OSError`` when that fails."""
+        """Rename the file (a link's target) to ``<stem>.<label>-<time>[-n]<suffix>`` next to
+        it and return the new path. Raises ``OSError`` when that fails."""
+        source = self.target
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        stem, suffix = self.path.stem, self.path.suffix
-        target = self.path.with_name(f"{stem}.{label}-{stamp}{suffix}")
+        stem, suffix = source.stem, source.suffix
+        target = source.with_name(f"{stem}.{label}-{stamp}{suffix}")
         number = 1
         while target.exists():
             number += 1
-            target = self.path.with_name(f"{stem}.{label}-{stamp}-{number}{suffix}")
-        replace_file(self.path, target)
+            target = source.with_name(f"{stem}.{label}-{stamp}-{number}{suffix}")
+        replace_file(source, target)
         return target
 
 
@@ -205,6 +278,11 @@ def migrate_document(
     """``reframe.models.migrations.migrate`` (the real registry), or ``registry.migrate`` when
     one is given (tests). Raises ``UnsupportedSchemaVersion`` / ``MigrationError``."""
     return migrate(kind, data) if registry is None else registry.migrate(kind, data)
+
+
+def document_version(kind: str, registry: MigrationRegistry | None = None) -> int:
+    """The current schema version of ``kind`` (in ``registry`` when one is given: tests)."""
+    return current_version(kind) if registry is None else registry.current_version(kind)
 
 
 def is_newer(exc: UnsupportedSchemaVersion) -> bool:
@@ -312,6 +390,8 @@ class SettingsStore:
                     return AppSettings()
                 except ValidationError as exc:
                     detail = validation_detail(exc)
+                except RecursionError:
+                    detail = TOO_DEEP
                 except (MigrationError, LookupError, TypeError, ValueError) as exc:
                     detail = f"migration failed: {exc}"
             return self._replace_corrupt(detail)
@@ -321,14 +401,24 @@ class SettingsStore:
         self.write(settings)
 
     def write(self, settings: AppSettings) -> AppWarningEvent | None:
-        """Write ``settings``; returns the warning (also published) when it was not written."""
+        """Write ``settings``; returns the warning (also published) when it was not written.
+
+        The file gets the current ``schema_version`` whatever ``settings`` says: its content
+        is what this Reframe's model holds, and a newer number would make the next start
+        treat the file as newer (and use the defaults)."""
         with self._lock:
             if self._protected is not None:
                 return self._warn(
                     "settings.not_saved",
                     f"The settings were not saved: {self._protected}",
                 )
-            error = self._file.write(settings.model_dump(mode="json"))
+            try:
+                data = settings.model_dump(mode="json")
+            except (ValueError, TypeError, RecursionError) as exc:  # nested far too deeply
+                error: str | None = str(exc)
+            else:
+                data["schema_version"] = document_version("settings", self._registry)
+                error = self._file.write(data)
             if error is not None:
                 return self._warn(
                     "settings.write_failed",
@@ -351,7 +441,9 @@ class SettingsStore:
             )
             return AppSettings()
         settings = AppSettings()
-        error = self._file.write(settings.model_dump(mode="json"))
+        data = settings.model_dump(mode="json")
+        data["schema_version"] = document_version("settings", self._registry)
+        error = self._file.write(data)
         message = (
             f"The settings file was damaged. It was saved as {backup}, and the default settings "
             "are used."

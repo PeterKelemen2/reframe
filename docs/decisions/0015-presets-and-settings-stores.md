@@ -1,6 +1,7 @@
 # 0015 — Built-in presets from HandBrake 1.11.2, and how the stores handle files
 
-- Status: accepted; the default preset is superseded by [0024](0024-m2-wave-2-product-decisions.md)
+- Status: accepted; the default preset is superseded by [0024](0024-m2-wave-2-product-decisions.md);
+  follow-up (M2 review, 2026-10-14) at the end
 - Date: 2026-10-13
 - Steps: C-9
 
@@ -157,3 +158,80 @@ Differences from HandBrake, on purpose:
   conflict choices point here.
 - [05 §C-9](../plan/05-core.md#c-9-presets-and-settings-stores): corrupt, newer and
   unreadable files, and the conflict choices, point here.
+
+## Follow-up (M2 review), 2026-10-14: no newer preset lost, deep and linked files
+
+### Context
+
+The M2 review found five ways to lose data or to stop the app, all against the rules above
+("a newer or unreadable file is never overwritten"; "a single preset written by a newer
+Reframe is kept"):
+
+1. `settings.update` accepted a change of `/schema_version`. The file was saved with that
+   number, and the next start treated it as newer and used the defaults.
+2. `PresetStore.save()` and `import_(PresetFile)` stored a preset with a newer
+   `schema_version` (the models accept any positive number). After a restart the preset was
+   kept only as raw JSON and was gone from the list. `create()` copied the template's
+   `schema_version` (a `job_template` number) into the preset.
+3. Deeply nested JSON raised from `load()`. For `settings.json` that happens in
+   `Reframe.__init__`, so the app did not start. Measured on Python 3.14.7 with the locked
+   Pydantic: `json.loads` parses 3000 levels, but the migrations' `copy.deepcopy` raises
+   `RecursionError` at about 600 levels, and `model_dump` raises `ValueError` ("Circular
+   reference detected (depth exceeded)") at 400. A settings patch with a 1000-level value
+   is a Pydantic "Recursion error". A document of 100 000 levels fails in `json.loads`.
+4. A `settings.json` or `presets.json` that is a symbolic link (into a dotfiles folder) was
+   replaced by a regular file on save: `os.replace` replaces the link, not its target.
+5. "Export all" left out the presets of a newer Reframe without a word.
+
+### Decision
+
+1. **The settings schema version is Reframe's.** `Reframe.settings.update` refuses a change
+   of `schema_version` (error `settings.schema_version`, path `schema_version`; nothing
+   changes, nothing is written). `SettingsStore.write` always writes the current version
+   (the content is what this Reframe's model holds).
+2. **A preset of a newer Reframe is refused, never stored half-way.** `save`, `create` and
+   `import_` run a preset through the checks of the file (migrations, nesting) first.
+   `save` of a newer preset is the error `preset.newer_version` ("written by a newer
+   Reframe … It needs that Reframe or a later one"); `import_` skips it with a
+   `preset.newer_version` warning, for a `PresetFile` too (it is imported as its JSON).
+   `create` makes a preset of the current preset version. No preset may take the id of a
+   newer one in the file: `save` refuses it, `import_` gives the imported preset a new id.
+   The newer presets in `presets.json` stay as they are (decision §3).
+3. **Nesting limit: 64 levels** (`reframe.settings.MAX_DEPTH`; objects and lists, the
+   document is level 1; Reframe's documents need fewer than 10). A deeper `settings.json`,
+   or JSON too deep to parse, is **corrupt** (backed up, defaults, `settings.corrupt` /
+   `presets.corrupt`, detail "the JSON is nested more than 64 levels deep"). In
+   `presets.json` the limit applies to each preset: a deeper preset is a damaged preset (the
+   others are kept), a deeper rest of the file is a corrupt file. The check is iterative and
+   runs before the migrations. A deeper document is never written either (a save is a
+   `*.write_failed` warning, a settings change a `settings.invalid` issue, a preset a
+   `preset.invalid` issue), so a saved file always loads.
+4. **A symbolic link is written through.** Read, write and backup go to the link's target
+   (`os.path.realpath`, the whole chain); the temporary file is made next to the target
+   (`os.replace` needs one file system); the link stays. A corrupt file's backup is made
+   next to the target. A dangling link gets its target (and the target's folder) created. A
+   link loop cannot be read (`*.unreadable`), so it is never written. The code is the same
+   on Windows (`realpath` follows symbolic links there too); it is tested with a mock there,
+   and the real-link tests skip when Windows does not allow making a link. Hard links are
+   not kept (`os.replace` makes a new file); that is not changed.
+5. **Export keeps them.** `PresetStore.export` / `Reframe.presets.export` return a
+   `PresetExport`: `file` (a `PresetFile` with the presets this Reframe reads), `newer` (the
+   chosen presets of a newer Reframe, as their JSON, unchanged), `default_preset_id` (the
+   default when it is among all exported presets), `issues` (one `preset.newer_version`
+   warning per newer preset: it is exported unchanged and only that Reframe can import
+   it) and `document()`, the export file: all presets, the newer ones unchanged after the
+   others. `import_` takes a `PresetExport` as it is. Chosen ids may name a newer preset.
+
+### Consequences
+
+- The C-9 contract of `docs/m2-breakdown.md` (`export(ids) -> PresetFile`) changes:
+  `export(ids).file` is that `PresetFile`; the export file to write is `export(ids).document()`.
+  No code outside C-9 called it. C-15's `reframe presets export` and S-x's
+  `GET /api/presets/export` write `document()` and show `issues`.
+- The queue store and the probe cache read JSON too; they are not C-9 and are not changed
+  here.
+
+### Plan changes
+
+None: 05 §C-9 and 03 §Presets already say what this follow-up keeps (a newer file or preset
+is never lost; import / export of all presets).

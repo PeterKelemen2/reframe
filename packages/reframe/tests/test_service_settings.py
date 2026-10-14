@@ -177,6 +177,60 @@ async def test_an_invalid_change_is_an_issue_and_changes_nothing(
         assert (config / "settings.json").read_bytes() == before
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        [{"op": "replace", "path": "/schema_version", "value": 7}],
+        AppSettings.model_validate({"schema_version": 7, "queue": {"parallel_jobs": 2}}),
+    ],
+)
+async def test_schema_version_cannot_be_changed(config: Path, change: Any) -> None:
+    """A changed ``schema_version`` was saved; the next start then treated the file as newer
+    and used the defaults. The change is refused now and nothing is written."""
+    async with await Reframe.create() as app:
+        before = (config / "settings.json").read_bytes()
+        result = await app.settings.update(change)
+        [issue] = result.issues
+        assert issue.code == "settings.schema_version"
+        assert issue.path == "schema_version"
+        assert not result.saved
+        assert app.settings.get().schema_version == 1
+        assert app.settings.get().queue.parallel_jobs == 1
+        assert (config / "settings.json").read_bytes() == before
+        same = await app.settings.update([{"op": "replace", "path": "/schema_version", "value": 1}])
+        assert same.ok
+        assert same.changes == []
+    async with await Reframe.create() as again:
+        assert again.settings.problems == []
+
+
+@pytest.mark.parametrize("depth", [100, 1_000])
+async def test_a_too_deep_settings_value_is_an_issue(config: Path, depth: int) -> None:
+    value: list[Any] = []
+    for _ in range(depth):
+        value = [value]
+    async with await Reframe.create() as app:
+        before = (config / "settings.json").read_bytes()
+        result = await app.settings.update([{"op": "add", "path": "/x", "value": value}])
+        [issue] = result.issues
+        assert issue.code == "settings.invalid"
+        assert "nested" in issue.message
+        assert not result.saved
+        assert (config / "settings.json").read_bytes() == before
+
+
+async def test_a_deeply_nested_settings_file_does_not_stop_the_app(env: Path) -> None:
+    folder = env / "config"
+    folder.mkdir()
+    (folder / "settings.json").write_text(
+        '{"x": ' + "[" * 100_000 + "]" * 100_000 + "}", encoding="utf-8"
+    )
+    async with await Reframe.create() as app:
+        assert app.settings_snapshot() == AppSettings()
+        assert [p.code for p in app.settings.problems] == ["settings.corrupt"]
+        assert len(list(folder.glob("settings.corrupt-*.json"))) == 1
+
+
 async def test_tool_path_change_reruns_tool_discovery(
     config: Path, fake_tools: ft.FakeTools, env: Path
 ) -> None:
@@ -335,12 +389,13 @@ async def test_preset_service_round_trip(config: Path) -> None:
         assert (change.path, change.preset_value, change.value) == ("video.preset", "p4", "p7")
         assert presets.diff(changed, "nope") is None
         exported = presets.export()
-        assert [p.id for p in exported.presets] == [renamed.id, copy.id]
+        assert exported.issues == []
+        assert [p.id for p in exported.file.presets] == [renamed.id, copy.id]
         deleted = await presets.delete(copy.id)
         assert isinstance(deleted, Preset)
         builtin = await presets.delete("h265-mkv-1080p")
         assert isinstance(builtin, ValidationIssue)
-        result = await presets.import_(exported.model_dump(mode="json"), "skip")
+        result = await presets.import_(exported.document(), "skip")
         assert [p.name for p in result.imported] == [copy.name]
         assert result.skipped == [renamed.name]
     # A new facade on the same folder sees the same user presets and default.

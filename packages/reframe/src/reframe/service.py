@@ -50,7 +50,14 @@ from reframe.models.settings import AppSettings
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
-from reframe.presets import ConflictPolicy, ImportResult, PresetStore, diff, diff_documents
+from reframe.presets import (
+    ConflictPolicy,
+    ImportResult,
+    PresetExport,
+    PresetStore,
+    diff,
+    diff_documents,
+)
 from reframe.probe import (
     ProbeCache,
     ProbeError,
@@ -66,7 +73,7 @@ from reframe.probe.folder import (
     probe_folder,
 )
 from reframe.queue import QueueService
-from reframe.settings import SettingsStore, SettingsUpdate, validation_detail
+from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken, check_tool, locate_tools
 from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
@@ -525,14 +532,27 @@ class SettingsService:
         (RFC 6902, as the ``target="settings"`` fixes carry: ``[{"op": "replace", "path":
         "/queue/parallel_jobs", "value": 2}]``).
 
-        An invalid change is rejected (``issues``; nothing changes). A valid one takes effect
-        at once; when it cannot be saved, ``warnings`` says why (``saved`` is ``False``).
+        An invalid change is rejected (``issues``; nothing changes): a value the model rejects
+        or settings nested more than ``MAX_DEPTH`` levels deep (``settings.invalid``), or a
+        change of ``schema_version`` (``settings.schema_version``: Reframe sets it; a newer
+        number would make the next start treat the file as newer and use the defaults). A
+        valid one takes effect at once; when it cannot be saved, ``warnings`` says why
+        (``saved`` is ``False``).
         """
         async with self._lock:
             old = self._settings
             new = self._apply(old, change)
             if isinstance(new, ValidationIssue):
                 return SettingsUpdate(settings=old.model_copy(deep=True), issues=[new])
+            if new.schema_version != old.schema_version:
+                issue = ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="settings.schema_version",
+                    path="schema_version",
+                    message="The settings schema version is set by Reframe and cannot be "
+                    f"changed (it is {old.schema_version}).",
+                )
+                return SettingsUpdate(settings=old.model_copy(deep=True), issues=[issue])
             changes = diff_documents(old.model_dump(mode="json"), new.model_dump(mode="json"))
             if not changes:
                 return SettingsUpdate(settings=new.model_copy(deep=True), saved=False)
@@ -551,22 +571,29 @@ class SettingsService:
     def _apply(
         current: AppSettings, change: AppSettings | Sequence[JsonPatchOp | Mapping[str, object]]
     ) -> AppSettings | ValidationIssue:
-        if isinstance(change, AppSettings):
-            return change.model_copy(deep=True)
+        nested = f"the settings would be nested more than {MAX_DEPTH} levels deep"
+        message, path = nested, ""
         try:
-            patch = _PATCH_ADAPTER.validate_python(
-                [
+            if isinstance(change, AppSettings):
+                if not too_deep(change.model_dump(mode="json")):
+                    return change.model_copy(deep=True)
+            else:
+                ops = [
                     op.model_dump(by_alias=True) if not isinstance(op, Mapping) else op
                     for op in change
                 ]
-            )
-            data = apply_patch(current.model_dump(mode="json"), patch)
-            return AppSettings.model_validate(data)
+                if not too_deep(ops, MAX_DEPTH + 2):  # the list and the op add two levels
+                    patch = _PATCH_ADAPTER.validate_python(ops)
+                    data = apply_patch(current.model_dump(mode="json"), patch)
+                    if not too_deep(data):
+                        return AppSettings.model_validate(data)
         except ValidationError as exc:
             message = validation_detail(exc)
             path = ".".join(str(part) for part in exc.errors()[0]["loc"]) if exc.errors() else ""
         except JsonPatchError as exc:
             message, path = str(exc), ""
+        except (RecursionError, ValueError):  # Pydantic's dump of a value nested far too deep
+            pass
         return ValidationIssue(
             severity=Severity.ERROR,
             code="settings.invalid",
@@ -613,7 +640,9 @@ class PresetService:
     def default(self) -> Preset:
         return self._store.default()
 
-    def export(self, ids: Sequence[str] | None = None) -> PresetFile:
+    def export(self, ids: Sequence[str] | None = None) -> PresetExport:
+        """The presets (``None``: every user preset). ``document()`` is the export file;
+        presets of a newer Reframe are in it unchanged, each with a warning in ``issues``."""
         return self._store.export(ids)
 
     def diff(self, template: JobTemplate, preset: Preset | str) -> _FieldChanges | None:
@@ -649,7 +678,9 @@ class PresetService:
         return await asyncio.to_thread(self._store.set_default, preset_id)
 
     async def import_(
-        self, file: PresetFile | Mapping[str, object], on_conflict: ConflictPolicy = "rename"
+        self,
+        file: PresetFile | PresetExport | Mapping[str, object],
+        on_conflict: ConflictPolicy = "rename",
     ) -> ImportResult:
         return await asyncio.to_thread(self._store.import_, file, on_conflict)
 

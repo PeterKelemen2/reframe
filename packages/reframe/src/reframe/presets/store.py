@@ -23,10 +23,20 @@ built-ins (read-only) in one list.
 writes, unknown fields kept. A corrupt file is backed up (``presets.corrupt-<time>.json``) and
 replaced by an empty preset list, with an ``app.warning`` (``presets.corrupt``). When only some
 presets in it are damaged (or two share an id), the file is backed up, the damaged ones are
-left out and the others are kept. A preset written by a newer Reframe is kept verbatim and
-written back unchanged; a whole file that is newer (or unreadable) is not touched at all
+left out and the others are kept; a preset nested more than ``MAX_DEPTH`` levels deep is
+damaged. A whole file that is newer (or unreadable) is not touched at all
 (``presets.newer_version`` / ``presets.unreadable``: changes are refused with
-``presets.read_only``).
+``presets.read_only``). A symbolic link at ``presets.json`` stays a link (its target is
+written).
+
+**Presets of a newer Reframe** (a ``schema_version`` above ours) are never lost:
+
+- in ``presets.json`` they are kept verbatim and written back unchanged (they are not in
+  :meth:`PresetStore.list`, which holds :class:`Preset` models of this Reframe);
+- ``save``, ``create`` and ``import_`` refuse them (``preset.newer_version``: it needs a
+  newer Reframe), and never give another preset the id of one;
+- ``export`` puts them in the export file unchanged (:meth:`PresetExport.document`) and
+  says so (a ``preset.newer_version`` warning: only that newer Reframe can import them).
 
 Expected failures are values: every changing method returns the preset or a
 :class:`~reframe.models.ValidationIssue`. The file is read at the first use, not at start.
@@ -34,6 +44,7 @@ Expected failures are values: every changing method returns the preset or a
 
 from __future__ import annotations
 
+import copy
 import threading
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
@@ -51,9 +62,11 @@ from reframe.models.preset import Preset, PresetFile
 from reframe.models.template import JobTemplate
 from reframe.presets.builtin import DEFAULT_BUILTIN_ID, builtin_presets
 from reframe.settings import (
+    TOO_DEEP,
     JsonDocumentFile,
     is_newer,
     migrate_document,
+    too_deep,
     validation_detail,
 )
 
@@ -62,6 +75,7 @@ __all__ = [
     "PRESETS_FILE",
     "ConflictPolicy",
     "ImportResult",
+    "PresetExport",
     "PresetStore",
     "normalise_name",
 ]
@@ -108,6 +122,34 @@ class ImportResult:
         return not any(issue.severity is Severity.ERROR for issue in self.issues)
 
 
+@dataclass
+class PresetExport:
+    """What :meth:`PresetStore.export` gives.
+
+    ``file``: the presets this Reframe reads, as a :class:`PresetFile` (its
+    ``default_preset_id`` is set when the default is among them). ``newer``: the chosen
+    presets that a newer Reframe wrote, as their JSON, unchanged. ``default_preset_id``: the
+    default when it is among all exported presets (``newer`` too). ``issues``: one
+    ``preset.newer_version`` warning for each preset in ``newer``.
+
+    :meth:`document` is the export file: write it, or pass the export to
+    :meth:`PresetStore.import_` as it is.
+    """
+
+    file: PresetFile
+    newer: list[dict[str, Any]] = field(default_factory=list)
+    default_preset_id: str | None = None
+    issues: list[ValidationIssue] = field(default_factory=list)
+
+    def document(self) -> dict[str, Any]:
+        """The JSON object of the export file: every exported preset, the newer ones
+        unchanged after the others."""
+        data = self.file.model_dump(mode="json")
+        data["presets"].extend(copy.deepcopy(self.newer))
+        data["default_preset_id"] = self.default_preset_id
+        return data
+
+
 def _issue(
     code: str,
     message: str,
@@ -118,6 +160,19 @@ def _issue(
 ) -> ValidationIssue:
     return ValidationIssue(
         severity=severity, code=code, path=path, message=message, fixes=list(fixes)
+    )
+
+
+def _newer_issue(
+    label: str, exc: UnsupportedSchemaVersion, what: str, severity: Severity = Severity.WARNING
+) -> ValidationIssue:
+    """``preset.newer_version``: the preset needs a newer Reframe; ``what`` says what
+    happened to it."""
+    return _issue(
+        "preset.newer_version",
+        f"“{label}” was written by a newer Reframe (preset schema version {exc.found}; this "
+        f"Reframe reads up to {exc.current}). It needs that Reframe or a later one: {what}.",
+        severity=severity,
     )
 
 
@@ -133,7 +188,8 @@ class PresetStore:
         builtins: Sequence[Preset] | None = None,
     ) -> None:
         self.path = Path(config_dir) / PRESETS_FILE
-        self._file = JsonDocumentFile(self.path)
+        # The depth is checked per preset (one deep preset must not damage the whole file).
+        self._file = JsonDocumentFile(self.path, max_depth=None)
         self._events = events
         self._registry = registry
         source = builtin_presets() if builtins is None else builtins
@@ -239,10 +295,15 @@ class PresetStore:
         category: str = CUSTOM_CATEGORY,
         description: str = "",
     ) -> Preset | ValidationIssue:
-        """Save ``template`` as a new user preset."""
-        data = template.model_dump(
-            mode="json", exclude={"id", "name", "category", "description", "built_in"}
-        )
+        """Save ``template`` as a new user preset (of the current preset schema version: the
+        template's ``schema_version`` is that of a ``job_template``)."""
+        try:
+            data = template.model_dump(
+                mode="json",
+                exclude={"id", "name", "category", "description", "built_in", "schema_version"},
+            )
+        except (ValueError, TypeError, RecursionError):  # nested far too deeply
+            return _issue("preset.invalid", f"The preset is not valid: {TOO_DEEP}")
         data.update(
             id=str(uuid.uuid4()),
             name=_clean_name(name) or name,
@@ -257,11 +318,32 @@ class PresetStore:
         return self.save(preset)
 
     def save(self, preset: Preset) -> Preset | ValidationIssue:
-        """Add a new user preset, or update the user preset with the same id."""
+        """Add a new user preset, or update the user preset with the same id.
+
+        The preset goes through the file's checks first (migrations, nesting): one of a
+        newer Reframe (``preset.newer_version``) or one that a newer Reframe wrote with the
+        same id is refused, so the next load never hides or drops it."""
         with self._lock:
             self._ensure()
             if preset.id in self._builtin_ids:
                 return self._built_in_issue(preset.id, "changed")
+            try:
+                parsed = self._parse_entry(preset.model_dump(mode="json"))
+            except (ValueError, TypeError, RecursionError):  # nested far too deeply
+                parsed = TOO_DEEP
+            if isinstance(parsed, UnsupportedSchemaVersion):
+                return _newer_issue(
+                    preset.name, parsed, "this one cannot save it", severity=Severity.ERROR
+                )
+            if isinstance(parsed, str):
+                return _issue("preset.invalid", f"The preset is not valid: {parsed}")
+            if preset.id in self._newer_ids():
+                return _issue(
+                    "preset.newer_version",
+                    f"The preset with the id “{preset.id}” was written by a newer Reframe. It "
+                    "needs that Reframe or a later one: this one cannot change it.",
+                )
+            preset = parsed
             problem = self._check_name(preset.name, preset.id)
             if problem is not None:
                 return problem
@@ -324,30 +406,54 @@ class PresetStore:
 
     # ------------------------------------------------------------------ export / import
 
-    def export(self, ids: Sequence[str] | None = None) -> PresetFile:
-        """A :class:`PresetFile` with the given presets (``None``: every user preset). Unknown
-        ids are left out (resolve names with :meth:`find` first). ``default_preset_id`` is set
-        when the default is among them."""
+    def export(self, ids: Sequence[str] | None = None) -> PresetExport:
+        """The given presets (``None``: every user preset) as a :class:`PresetExport`. Unknown
+        ids are left out (resolve names with :meth:`find` first). Presets of a newer Reframe
+        are exported unchanged (``newer``), each with a warning."""
         with self._lock:
             self._ensure()
+            newer_entries = [e for e in self._entries or [] if isinstance(e, dict)]
             if ids is None:
                 chosen = self._user()
+                newer = newer_entries
             else:
-                chosen = [p for p in (self._by_id(i) for i in dict.fromkeys(ids)) if p is not None]
+                wanted = list(dict.fromkeys(ids))
+                chosen = [p for p in (self._by_id(i) for i in wanted) if p is not None]
+                newer = [e for e in newer_entries if e.get("id") in wanted]
             presets = [p.model_copy(deep=True) for p in chosen]
-            exported = {p.id for p in presets}
-            default = self._default_id if self._default_id in exported else None
-            return PresetFile(
-                schema_version=self._schema_version, presets=presets, default_preset_id=default
+            in_file = {p.id for p in presets}
+            everything = in_file | {e.get("id") for e in newer}
+            issues = []
+            for number, entry in enumerate(newer, start=1):
+                parsed = self._parse_entry(entry)
+                if isinstance(parsed, UnsupportedSchemaVersion):
+                    issues.append(
+                        _newer_issue(
+                            _entry_label(entry, number),
+                            parsed,
+                            "it is exported unchanged, and only that Reframe can import it",
+                        )
+                    )
+            return PresetExport(
+                file=PresetFile(
+                    schema_version=self._schema_version,
+                    presets=presets,
+                    default_preset_id=self._default_id if self._default_id in in_file else None,
+                ),
+                newer=copy.deepcopy(newer),
+                default_preset_id=self._default_id if self._default_id in everything else None,
+                issues=issues,
             )
 
     def import_(
         self,
-        file: PresetFile | Mapping[str, Any],
+        file: PresetFile | PresetExport | Mapping[str, Any],
         on_conflict: ConflictPolicy = "rename",
     ) -> ImportResult:
-        """Import presets (a :class:`PresetFile`, or the raw JSON object of an export file,
-        which is migrated first). See the module doc for ``on_conflict``."""
+        """Import presets (a :class:`PresetFile`, a :class:`PresetExport`, or the raw JSON
+        object of an export file). All three go through the checks of the file: migrations,
+        nesting, and presets of a newer Reframe, which are not imported
+        (``preset.newer_version``). See the module doc for ``on_conflict``."""
         result = ImportResult()
         incoming, default_id = self._incoming(file, result)
         with self._lock:
@@ -459,12 +565,30 @@ class PresetStore:
     # ------------------------------------------------------------------ internals: import
 
     def _incoming(
-        self, file: PresetFile | Mapping[str, Any], result: ImportResult
+        self, file: PresetFile | PresetExport | Mapping[str, Any], result: ImportResult
     ) -> tuple[_Presets, str | None]:
-        if isinstance(file, PresetFile):
-            return [p.model_copy(deep=True) for p in file.presets], file.default_preset_id
+        def invalid(detail: str) -> tuple[_Presets, str | None]:
+            result.issues.append(
+                _issue("presets.import_invalid", f"The file is not a Reframe preset file: {detail}")
+            )
+            return [], None
+
         try:
-            data = migrate_document("preset_file", dict(file), self._registry)
+            if isinstance(file, PresetExport):
+                raw_file = file.document()
+            elif isinstance(file, PresetFile):
+                # As JSON, so its presets get the checks of a file (a newer one is refused).
+                raw_file = file.model_dump(mode="json")
+            else:
+                raw_file = dict(file)
+        except (ValueError, TypeError, RecursionError):  # nested far too deeply
+            return invalid(TOO_DEEP)
+        prepared = _without_deep_presets(raw_file)
+        if isinstance(prepared, str):
+            return invalid(prepared)
+        raw_file, numbers, deep = prepared
+        try:
+            data = migrate_document("preset_file", raw_file, self._registry)
             header = PresetFile.model_validate({**data, "presets": []})
         except UnsupportedSchemaVersion as exc:
             if is_newer(exc):
@@ -495,23 +619,25 @@ class PresetStore:
                 )
             )
             return [], None
+        if len(numbers) != len(raw):  # a migration changed the list: count afresh
+            numbers = list(range(1, len(raw) + 1))
+        outcomes: list[tuple[int, object, Preset | UnsupportedSchemaVersion | str]] = [
+            (number, entry, TOO_DEEP) for number, entry in deep
+        ]
+        outcomes += [
+            (number, entry, self._parse_entry(entry))
+            for number, entry in zip(numbers, raw, strict=True)
+        ]
         presets: list[Preset] = []
-        for number, entry in enumerate(raw, start=1):
-            parsed = self._parse_entry(entry)
+        for number, entry, parsed in sorted(outcomes, key=lambda outcome: outcome[0]):
             label = _entry_label(entry, number)
             if isinstance(parsed, Preset):
                 presets.append(parsed)
-            elif parsed == "newer":
-                result.skipped.append(label)
-                result.issues.append(
-                    _issue(
-                        "preset.newer_version",
-                        f"“{label}” was written by a newer Reframe and was not imported.",
-                        severity=Severity.WARNING,
-                    )
-                )
+                continue
+            result.skipped.append(label)
+            if isinstance(parsed, UnsupportedSchemaVersion):
+                result.issues.append(_newer_issue(label, parsed, "it was not imported"))
             else:
-                result.skipped.append(label)
                 result.issues.append(
                     _issue(
                         "preset.invalid",
@@ -536,7 +662,11 @@ class PresetStore:
         same_id = next(
             (i for i, e in enumerate(entries) if isinstance(e, Preset) and e.id == preset.id), None
         )
-        id_taken = same_id is not None or preset.id in self._builtin_ids
+        id_taken = (
+            same_id is not None
+            or preset.id in self._builtin_ids
+            or preset.id in self._newer_ids(entries)  # never replaced: a new id
+        )
         owner = self._name_owner(preset.name, None, entries)
         if on_conflict == "skip" and (id_taken or owner is not None):
             result.skipped.append(preset.name)
@@ -574,16 +704,25 @@ class PresetStore:
 
     # ------------------------------------------------------------------ internals: file
 
-    def _parse_entry(self, entry: object) -> Preset | Literal["newer"] | str:
-        """A preset, ``"newer"``, or why the entry is damaged."""
+    def _newer_ids(self, entries: Sequence[_Entry] | None = None) -> set[object]:
+        """The ids of the presets of a newer Reframe (kept as raw JSON)."""
+        source = self._entries or [] if entries is None else entries
+        return {e.get("id") for e in source if isinstance(e, dict)}
+
+    def _parse_entry(self, entry: object) -> Preset | UnsupportedSchemaVersion | str:
+        """A preset, the error of a preset of a newer Reframe, or why the entry is damaged."""
         if not isinstance(entry, dict):
             return "not a JSON object"
+        if too_deep(entry):
+            return TOO_DEEP
         try:
             return Preset.model_validate(migrate_document("preset", entry, self._registry))
         except UnsupportedSchemaVersion as exc:
-            return "newer" if is_newer(exc) else str(exc)
+            return exc if is_newer(exc) else str(exc)
         except ValidationError as exc:
             return validation_detail(exc)
+        except RecursionError:
+            return TOO_DEEP
         except (MigrationError, LookupError, TypeError, ValueError) as exc:
             return f"migration failed: {exc}"
 
@@ -608,8 +747,13 @@ class PresetStore:
         if read.status == "corrupt" or read.data is None:
             self._replace_corrupt(read.detail, keep=[])
             return
+        prepared = _without_deep_presets(read.data)
+        if isinstance(prepared, str):
+            self._replace_corrupt(prepared, keep=[])
+            return
+        without_deep, numbers, deep = prepared
         try:
-            data = migrate_document("preset_file", read.data, self._registry)
+            data = migrate_document("preset_file", without_deep, self._registry)
             header = PresetFile.model_validate({**data, "presets": []})
             raw = data.get("presets", [])
             if not isinstance(raw, list):
@@ -633,24 +777,30 @@ class PresetStore:
         self._default_id = header.default_preset_id
         self._extra = {k: v for k, v in data.items() if k not in PresetFile.model_fields}
         entries: list[_Entry] = []
-        damaged: list[str] = []
+        damaged: list[tuple[int, str]] = [
+            (number, f"{_entry_label(entry, number)}: {TOO_DEEP}") for number, entry in deep
+        ]
         seen_ids: set[str] = set(self._builtin_ids)
-        for number, entry in enumerate(raw, start=1):
+        if len(numbers) != len(raw):  # a migration changed the list: count afresh
+            numbers = list(range(1, len(raw) + 1))
+        for number, entry in zip(numbers, raw, strict=True):
             parsed = self._parse_entry(entry)
-            if parsed == "newer":
+            if isinstance(parsed, UnsupportedSchemaVersion):
                 assert isinstance(entry, dict)
                 entries.append(entry)
                 continue
             if not isinstance(parsed, Preset):
-                damaged.append(f"{_entry_label(entry, number)}: {parsed}")
+                damaged.append((number, f"{_entry_label(entry, number)}: {parsed}"))
                 continue
             if parsed.id in seen_ids:
-                damaged.append(f"{_entry_label(entry, number)}: the id {parsed.id} is used twice")
+                damaged.append(
+                    (number, f"{_entry_label(entry, number)}: the id {parsed.id} is used twice")
+                )
                 continue
             seen_ids.add(parsed.id)
             entries.append(parsed.model_copy(update={"built_in": False}))
         if damaged:
-            self._replace_corrupt("; ".join(damaged), keep=entries)
+            self._replace_corrupt("; ".join(text for _, text in sorted(damaged)), keep=entries)
         else:
             self._entries = entries
 
@@ -667,8 +817,9 @@ class PresetStore:
             )
             return
         self._entries = keep
-        if not keep or (self._default_id is not None and self._by_id(self._default_id) is None):
-            self._default_id = None
+        default = self._default_id
+        if default is not None and self._by_id(default) is None:
+            self._default_id = default if default in self._newer_ids() else None
         error = self._file.write(self._document(keep, self._default_id))
         what = (
             "Some presets were damaged and left out" if keep else "It was replaced by an empty list"
@@ -715,6 +866,33 @@ class PresetStore:
 
 def _is(entry: _Entry, preset_id: str) -> bool:
     return isinstance(entry, Preset) and entry.id == preset_id
+
+
+def _without_deep_presets(
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], list[int], list[tuple[int, object]]] | str:
+    """Take the presets that are nested too deeply out of a preset file before it is
+    migrated (the migrations ``deepcopy`` it, which fails on very deep JSON).
+
+    Returns the file without them, the numbers (from 1) of the presets it keeps, and the
+    deep ones with their numbers; or :data:`TOO_DEEP` when the rest of the file is too deep.
+    """
+    presets = data.get("presets")
+    if not isinstance(presets, list):  # the migration or the caller reports it
+        return TOO_DEEP if too_deep(data) else (data, [], [])
+    header = {key: value for key, value in data.items() if key != "presets"}
+    if too_deep(header):
+        return TOO_DEEP
+    kept: list[object] = []
+    numbers: list[int] = []
+    deep: list[tuple[int, object]] = []
+    for number, entry in enumerate(presets, start=1):
+        if too_deep(entry):
+            deep.append((number, entry))
+        else:
+            kept.append(entry)
+            numbers.append(number)
+    return {**data, "presets": kept}, numbers, deep
 
 
 def _entry_label(entry: object, number: int) -> str:
