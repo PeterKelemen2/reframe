@@ -127,6 +127,9 @@ refuses is a validation error. 83 issue codes now (75 before).
    the default bitrate). A mixdown fix is never Dolby Pro Logic II and never an upmix. A
    "same as source" sample rate that the encoder does not list is resampled without a note
    (HandBrake does the same; Opus has no 44.1 kHz, so a note would be on most Opus jobs).
+   A bitrate or VBR quality on a lossless encoder (FLAC) is not written by the builder: the
+   same two codes say so, and the fix removes the value (found by the audio agreement test
+   of codec rules, builder and validation, `tests/validation/test_audio_agreement.py`).
 2. **HDR to 8-bit** (`filter.hdr_8bit`, warning, path `video.bit_depth`): an HDR source
    (HDR10, HDR10+, HLG, Dolby Vision), no tone mapping and no Colorspace filter, 8-bit
    output. Checked with FFmpeg (testdata/README.md "Validation (C-8)"): the plan only changes

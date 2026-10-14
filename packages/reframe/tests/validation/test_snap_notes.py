@@ -138,6 +138,17 @@ def test_crop_note_says_what_happens() -> None:
             "Use 160 kb/s",
         ),
         (
+            AudioOutputTrack(encoder="flac", bitrate=640), 2, "audio.bitrate_out_of_range",
+            "FLAC is lossless and has no bitrate: audio track 1 is written without one "
+            "(640 kb/s is not used).",
+            "Remove the bitrate",
+        ),
+        (
+            AudioOutputTrack(encoder="flac", quality=4), 2, "audio.quality_unsupported",
+            "FLAC is lossless and has no VBR quality: audio track 1 is written without one.",
+            "Remove the VBR quality",
+        ),
+        (
             AudioOutputTrack(encoder="ac3", bitrate=224, samplerate=96000), 2,
             "audio.samplerate_unsupported",
             "AC-3 has no 96000 Hz: audio track 1 is written at 48000 Hz.", "Use 48000 Hz",
@@ -258,12 +269,13 @@ def test_mixdown_issues_follow_the_helper(
 @pytest.mark.parametrize("channels", [1, 2, 6, 8])
 def test_bitrate_issues_follow_the_helper(encoder_id: str, kbps: int, channels: int) -> None:
     """The written bitrate is ``AudioBitrateDef.snap`` (down) for the written layout, or for
-    ``channels_mixdown`` of the kept source layout."""
+    ``channels_mixdown`` of the kept source layout. A lossless encoder writes none."""
     encoder = DEFS.audio_encoders[encoder_id]
     s = one_track(AudioOutputTrack(encoder=encoder_id, bitrate=kbps), channels=channels)
     found = [i for i in s.validate() if i.code == "audio.bitrate_out_of_range"]
     if encoder.bitrate is None:
-        assert found == []
+        [issue] = found
+        assert issue.message.endswith(f"is written without one ({kbps} kb/s is not used).")
         return
     layout = encoder.snap_mixdown(None, channels, DEFS.mixdowns) or channels_mixdown(channels)
     snapped = encoder.bitrate.snap(kbps, layout, "down")

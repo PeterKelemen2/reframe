@@ -167,9 +167,20 @@ def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("audio", "audio.bitrate_out_of_range")
 def bitrates(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A bitrate outside the encoder's range for the layout, or not one of its fixed steps
-    (AC-3, E-AC-3, MP3). The builder snaps it down, as HandBrake does (info)."""
+    (AC-3, E-AC-3, MP3): the builder snaps it down, as HandBrake does (decision 0025). A
+    bitrate on a lossless encoder (FLAC): the builder writes none. Both info."""
     for index, track, _, planned in _encoded_tracks(ctx):
         encoder, kbps, snapped = planned.encoder, track.bitrate, planned.bitrate
+        if kbps is not None and encoder.bitrate is None:
+            yield info(
+                "audio.bitrate_out_of_range",
+                f"audio[{index}].bitrate",
+                f"{encoder.label} is lossless and has no bitrate: audio track {index + 1} is "
+                f"written without one ({kbps} kb/s is not used).",
+                fix("Remove the bitrate", replace(f"audio[{index}].bitrate", None),
+                    target=ctx.target),
+            )  # fmt: skip
+            continue
         if kbps is None or snapped is None or snapped == kbps or encoder.bitrate is None:
             continue
         limits = encoder.bitrate.by_mixdown[planned.table]
@@ -191,15 +202,20 @@ def bitrates(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("audio", "audio.quality_unsupported")
 def qualities(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A VBR quality on an encoder without a VBR mode: the builder writes the encoder's
-    default bitrate for the layout instead (info)."""
+    default bitrate for the layout instead, or nothing for a lossless encoder (info)."""
     for index, track, _, planned in _encoded_tracks(ctx):
         encoder = planned.encoder
-        if (
-            track.quality is None
-            or track.bitrate is not None
-            or encoder.quality is not None
-            or encoder.bitrate is None
-        ):
+        if track.quality is None or track.bitrate is not None or encoder.quality is not None:
+            continue
+        if encoder.bitrate is None:
+            yield info(
+                "audio.quality_unsupported",
+                f"audio[{index}].quality",
+                f"{encoder.label} is lossless and has no VBR quality: audio track {index + 1} "
+                "is written without one.",
+                fix("Remove the VBR quality", replace(f"audio[{index}].quality", None),
+                    target=ctx.target),
+            )  # fmt: skip
             continue
         limits = encoder.bitrate.by_mixdown.get(planned.table)
         if limits is None:  # pragma: no cover - every encoder has a range for its layouts
