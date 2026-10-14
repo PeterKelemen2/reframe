@@ -178,12 +178,19 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
         app.queue.start()
 
         # Pause Alpha at its first block: its process tree is suspended.
+        def alpha_pids() -> list[int]:
+            return [
+                i.pid
+                for i in real.fake.invocations()
+                if any("Alpha.part.mkv" in arg for arg in i.argv)
+            ]
+
         await real.until(lambda: real.progressed(alpha.id))
+        await real.until(lambda: bool(alpha_pids()))  # the step's progress comes before it
         await app.queue.pause(alpha.id)
         assert app.queue.get(alpha.id).state is JobState.PAUSED  # type: ignore[union-attr]
-        alpha_pids = [i.pid for i in real.fake.invocations() if "Alpha.part.mkv" in i.argv]
         if sys.platform != "win32":
-            await real.until(lambda: all(stopped(pid) for pid in alpha_pids))
+            await real.until(lambda: all(stopped(pid) for pid in alpha_pids()))
 
         # Bravo fails from the fake encoder error; its slot goes to Charlie.
         await real.until(lambda: ("running", "failed") in real.states(bravo.id))

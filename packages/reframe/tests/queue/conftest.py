@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import psutil
 import pytest
 
 from reframe.command import build_plan
@@ -293,6 +294,20 @@ class Harness:
 
     async def wait_for(self, condition: Callable[[], bool], limit: float = 20.0) -> None:
         await poll(condition, limit)
+
+    async def running_process(self, job_id: str, limit: float = 20.0) -> psutil.Process:
+        """The process of the job's running step, once it exists. The job's first
+        ``job.progress`` (0 %, and the one of a step's start) comes before the step's process
+        is started, so a test that needs the process waits for it here."""
+
+        def current() -> psutil.Process | None:
+            active = self.queue._active.get(job_id)
+            return None if active is None else active.process
+
+        await poll(lambda: current() is not None, limit)
+        process = current()
+        assert process is not None
+        return process
 
     async def first_event(
         self, job_id: str, type_: str, *, state: str | None = None, limit: float = 20.0
