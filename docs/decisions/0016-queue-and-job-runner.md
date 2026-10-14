@@ -95,8 +95,8 @@ What we checked with the real tools (records in `testdata/README.md`, "Queue and
   the runner takes it. A job removed meanwhile is left out of the result.
 - A **paused job keeps its slot**: its process is suspended, not ended.
 - `Reframe.create()` loads the store through the private `QueueService._restore()` (the
-  contract allows no other public method). Read-only properties: `processing`,
-  `store_path`. The constructor takes the services as small protocols (`tools.status()`,
+  contract allows no other public member: whether the runner takes jobs and where the store
+  is are private). The constructor takes the services as small protocols (`tools.status()`,
   `capabilities.snapshot` / `wait()`, `sources.probe()`), a `naming` callable (the job's
   preset's naming options, else Settings → Output), the inhibitor, clocks, the file-system
   view and the limits below, so tests run every path with stand-ins.
@@ -223,7 +223,7 @@ What we checked with the real tools (records in `testdata/README.md`, "Queue and
 ## Consequences
 
 - C-15 and the server code against the contract plus `start(job_ids=…)`, the three
-  exception classes and the `processing` / `store_path` properties.
+  exception classes; `QueueService` has no other public member.
 - A UI shows a speed and an ETA that hold still while paused and after a wake; FFmpeg's own
   `speed` is never shown after a pause.
 - A truly hung FFmpeg is stopped after 10 active minutes; an encode that uses CPU is never

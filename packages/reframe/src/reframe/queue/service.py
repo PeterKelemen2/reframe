@@ -165,7 +165,7 @@ class QueueService:
     ) -> None:
         self._events = events
         self._settings = settings
-        self.data_dir = data_dir
+        self._data_dir = data_dir
         self._clock = clock or SystemClock()
         self._fs: FileSystemView = fs or LocalFileSystem()
         self._inhibitor = inhibitor if inhibitor is not None else create_sleep_inhibitor(events)
@@ -199,18 +199,6 @@ class QueueService:
         self._batch_done = 0
         self._batch_failed = 0
 
-    # ------------------------------------------------------------------ properties
-
-    @property
-    def store_path(self) -> Path:
-        """``<data dir>/queue.sqlite3``."""
-        return self._store.path
-
-    @property
-    def processing(self) -> bool:
-        """:meth:`start` was called (and not :meth:`stop`): waiting jobs are taken."""
-        return self._processing
-
     # ------------------------------------------------------------------ the contract
 
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob:
@@ -235,7 +223,7 @@ class QueueService:
             issues=issues,
             created_at=now,
             finished_at=now if errors else None,
-            log_path=log_file(self.data_dir, job_id),
+            log_path=log_file(self._data_dir, job_id),
             error=error,
         )
         async with self._lock:
@@ -273,7 +261,7 @@ class QueueService:
             changed = self._renumber(self._ordered())
             await self._call(lambda: self._store.delete(job_id))
             await self._save_many(changed)
-        log_path = job.log_path or log_file(self.data_dir, job_id)
+        log_path = job.log_path or log_file(self._data_dir, job_id)
         await asyncio.to_thread(files.remove_files, [log_path])
         self._publish_order()
         await self._notify()
@@ -423,7 +411,7 @@ class QueueService:
         job = self._jobs.get(job_id)
         if job is not None and job.log_path is not None:
             return job.log_path
-        return log_file(self.data_dir, job_id)
+        return log_file(self._data_dir, job_id)
 
     async def close(self) -> None:
         """No new jobs; running jobs are stopped (``interrupted``, ``.part`` removed), the
@@ -542,7 +530,7 @@ class QueueService:
 
     async def _run(self, job: QueueJob, active: ActiveJob) -> None:
         joblog = JobLog(
-            job.log_path or log_file(self.data_dir, job.id),
+            job.log_path or log_file(self._data_dir, job.id),
             job.id,
             self._events,
             interval=self._runner.log_interval,
