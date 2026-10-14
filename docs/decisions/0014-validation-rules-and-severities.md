@@ -147,14 +147,14 @@ refuses is a validation error. 83 issue codes now (75 before).
    `.ass`, `.ssa`, `.vtt` or `.sup`) and `encoder.fast_decode_tune_conflict` (x265: fast
    decode is a tune, and x265 takes one tune). Two `PlanError`s cannot come from a job (the
    pass number of a 2-pass run; a composite x26x parameter whose other part has no default:
-   every shipped part has one, tested). One case disagrees and is left to the M2 lead: a
-   chapter range that ends after the last chapter is `range.end_beyond` (warning: "the
-   encode stops at the last chapter"), but `build_plan` refuses it instead of clamping the
-   end as it does for time and frame ranges.
-4. **C-7's snapshot jobs validate without errors**, except `x264_advanced_and_custom_params`,
-   which sets an advanced option x264 does not have to show that the builder skips it.
-   `encoder.option_unknown` stays an error: an option the user typed is never dropped
-   silently.
+   every shipped part has one, tested). One case disagreed: a chapter range that ends after
+   the last chapter is `range.end_beyond` (warning: "the encode stops at the last chapter"),
+   but `build_plan` refused it. Decision [0026](0026-builder-and-validation-agree.md): C-7
+   clamps the end, as it does for time and frame ranges; a test checks the clamped plan and
+   the warning.
+4. **C-7's snapshot jobs validate without errors.** `encoder.option_unknown` stays an error
+   (an option the user typed is never dropped silently); C-7's snapshot job with an unknown
+   x264 option no longer has it (0026).
 
 ## Plan changes
 

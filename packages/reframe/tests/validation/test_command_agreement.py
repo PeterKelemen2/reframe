@@ -277,8 +277,6 @@ REFUSALS: list[Refusal] = [
     # ---- metadata.py
     Refusal("chapter range outside the source", "not in the source", "range.outside",
             on("chapters.mkv", setter(range=ChapterRange(start=5, end=6)))),
-    Refusal("chapter range that ends after the last chapter", "not in the source",
-            "range.end_beyond", on("chapters.mkv", setter(range=ChapterRange(start=4, end=5)))),
     # ---- audio.py
     Refusal("unknown audio encoder", "unknown audio encoder", "encoder.unknown",
             multitrack(setter(audio=[AudioOutputTrack(source_stream=1, encoder="vorbis")]))),
@@ -355,14 +353,10 @@ UNREACHABLE = {
 }
 
 
-#: Refusals where the builder and validation disagree; reported to the M2 lead, who decides
-#: which side changes. The cases fail (strict xfail) once the two agree.
-DISAGREE = {
-    # 0014 makes a range end after the source's end a warning ("the encode stops at the end
-    # of the source"), and the builder clamps a time or frame range, but refuses a chapter
-    # range that ends after the last chapter.
-    "chapter range that ends after the last chapter": "C-7 does not clamp the chapter end",
-}
+#: Refusals where the builder and validation disagree (refusal id → reason); reported to
+#: the M2 lead, who decides which side changes. The cases fail (strict xfail) once the two
+#: agree. Empty since decision 0026 (C-7 clamps a chapter range's end).
+DISAGREE: dict[str, str] = {}
 
 
 @pytest.mark.parametrize(
@@ -386,6 +380,21 @@ def test_plan_errors_are_validation_errors(refusal: Refusal) -> None:
         build_plan(job, source, caps, tools, **kwargs)
     found = errors(run_validation(job, source, caps, tools, **kwargs))
     assert refusal.code in {i.code for i in found}, [(i.code, i.path, i.message) for i in found]
+
+
+def test_a_chapter_range_end_after_the_last_chapter_is_clamped() -> None:
+    """Decision 0026: chapters 4 to 5 of a 4-chapter source plan up to the end of chapter 4,
+    and validation warns (``range.end_beyond``) without an error."""
+    job, source, kwargs = on("chapters.mkv", setter(range=ChapterRange(start=4, end=5)))()
+    assert len(source.chapters) == 4
+    caps = c7.caps(libplacebo=False)
+    tools = c7.tools()
+    build_plan(job, source, caps, tools, **kwargs)
+    issues = run_validation(job, source, caps, tools, **kwargs)
+    assert errors(issues) == []
+    assert [(i.code, i.severity) for i in issues if i.code.startswith("range.")] == [
+        ("range.end_beyond", Severity.WARNING)
+    ]
 
 
 def _plan_error_messages() -> list[str]:
