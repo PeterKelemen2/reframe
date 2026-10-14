@@ -161,10 +161,6 @@ def bad_file(folder: Path) -> Path:
 
 
 @posix_only
-@pytest.mark.xfail(
-    strict=True,
-    reason="needs a C-16 fix: naming/sanitize.py _size encodes the name as strict UTF-8",
-)
 def test_name_of_an_undecodable_file_name(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     bad_file(tmp_path / "media")
     result = invoke("name", str(tmp_path / "media"))
@@ -190,7 +186,6 @@ def _replay_bad(cli_env: ft.FakeTools, tmp_path: Path) -> Path:
 
 
 @posix_only
-@pytest.mark.xfail(strict=True, reason="needs the C-3 probe cache fix (probe/cache.py:217)")
 def test_plan_of_an_undecodable_file_name(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     path = _replay_bad(cli_env, tmp_path)
     result = invoke("plan", str(path))
@@ -199,7 +194,6 @@ def test_plan_of_an_undecodable_file_name(cli_env: ft.FakeTools, tmp_path: Path)
 
 
 @posix_only
-@pytest.mark.xfail(strict=True, reason="needs the C-3 probe cache fix (probe/cache.py:217)")
 def test_encode_of_an_undecodable_file_name(
     cli_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

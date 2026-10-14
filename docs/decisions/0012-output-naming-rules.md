@@ -113,7 +113,66 @@ Each one is a small function or constant in `reframe/naming/`, so it is easy to 
   works around, so a guessit upgrade that changes it fails there first.
 - A file name can be 5 bytes shorter than 255.
 
+## Follow-up (M2 review, 2026-10-14)
+
+The M2 review found five defects. Each one has a regression test that failed before the fix.
+
+1. **guessit reads no config files.** Without the option `no_user_config`, guessit 4.4.0
+   reads `guessit.options.json` in the working folder and `options.json` in `~/.guessit` and
+   `~/.config/guessit` (also `.yml` / `.yaml` when PyYAML is installed; not
+   `$XDG_CONFIG_HOME`; checked one location at a time, testdata/README.md "Output naming
+   (C-16)"). With `{"type": "movie"}` in the working folder, guessit reports the episode
+   title of `The.Sopranos.S03E02.Proshai.Livushka…` as `alternative_title`. With a malformed
+   file, every call fails, so `{main_title}` is the whole name: the M2 demo item 5 gave
+   `hacksawridge.2160p.remux-henderson`. Every guessit call now has `no_user_config`
+   (`reframe.naming.parse.GUESSIT_OPTIONS`), so naming reads the file system only through
+   `NamingFs`. Test: the fixture `guessit_user_config` puts config files in the working
+   folder, a fake home folder and `$XDG_CONFIG_HOME`; the parse tests and the whole corpus
+   pass with it. The fixture resets guessit's `default_api`, which keeps the config files
+   of the first call for the whole process.
+2. **A number override is 1 to 9 ASCII digits.** `field_overrides` of `season`, `episode`
+   and `year` (spaces stripped) must match `[0-9]{1,9}`; anything else is the warning
+   `naming.bad_override` and the parsed value stays. `str.isdigit` accepted `²`, which `int`
+   refuses (a `ValueError` out of `resolve_output_name`), and Arabic-Indic and full-width
+   digits. More than 9 digits is no season, episode or year, and `int` refuses more than
+   4300 digits. The absolute-episode rule of decision 2 uses `str.isdecimal`: guessit reads
+   Arabic-Indic and full-width digits as numbers (`Bleach - ٠٠١` is episode 1), and `int`
+   takes every decimal digit, but not `²`.
+3. **A width or precision in a format spec is at most 255.** `{season:999999999999}` made
+   `format` build a string of 1 TB: `reframe name --template` and `check_template` ended
+   with `MemoryError`. Every run of decimal digits in a number or text spec must be at most
+   255, the bytes of one path part, so a larger value can never be used. Digits of every
+   script count: `format` reads `٢٥٦` and `２５６` as 256. A larger value is the error
+   `naming.bad_format_spec`, and `format_value` raises `ValueError` before it calls `format`,
+   so rendering uses the default format (C-7's tag values render through the same
+   function). Date specs have no limit: `strftime` limits its own output (on glibc,
+   `%999999999999Y` gives an empty string). `{episode:c}` of a number that is no character
+   (`OverflowError`) is also a `ValueError`, so rendering never raises.
+4. **The byte limit holds after the `_` of a reserved name.** `CON.` and 300 characters was
+   cut to 255 bytes, and then the `_` made `CON_.…` 256 bytes. The part is cut again after
+   the `_`. The cut keeps `CON_`, so the part does not become reserved again. A property test
+   applies every rule together: each folder part is at most 255 bytes, each file part with
+   `.part` is at most 255 bytes, and no part is empty, reserved, or ends in a dot or a space.
+5. **A byte that is not UTF-8 becomes `�` (U+FFFD).** A POSIX file name is bytes. Python
+   holds a byte that is not UTF-8 as a lone surrogate (`bad\xffname.mkv` →
+   `bad\udcffname.mkv`), and UTF-8 cannot encode it, so `reframe name` failed when it
+   counted the bytes. Choice: the output name replaces each such byte with `�`, as a UTF-8
+   decoder (`errors="replace"`) and most file managers show it. The byte is not kept,
+   because that name cannot be written on Windows or exFAT (decision 3: Windows rules on
+   every OS), in JSON (the queue store, the API) or by most other tools. The replacement is
+   made before parsing (`parse_name`; positions do not move) and in `{file_name}` and
+   `{folder_name}`, so every text of a `NameResult` is valid Unicode. Only real paths keep
+   the byte (the source's folder in `NameResult.path`, `NameCandidate.path`). The note
+   "Replaced bytes that are not UTF-8 with '�' …" tells the user. The byte limit then counts
+   the UTF-8 bytes of the cleaned text, which is what `os.fsencode` writes on every
+   supported OS (UTF-8 file system encoding). A lone surrogate in a template, a manual name
+   or an override (JSON text from the API can hold one) is replaced in the same way. The
+   probe cache stores such a path as an ASCII JSON escape (C-3, `reframe/probe/cache.py`).
+
 ## Plan changes
 
 - `docs/plan/03-features.md` §Where the name comes from (step 2), §Variables (`{resolution}`),
   §Safe file names (replacement table, 250 bytes for the file name).
+- Follow-up (M2 review): `docs/plan/03-features.md` §Template syntax (width and precision at
+  most 255), §Safe file names (bytes that are not UTF-8, the limit after every rule);
+  `docs/plan/05-core.md` §C-16 (guessit reads no config files).

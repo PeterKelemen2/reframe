@@ -1236,3 +1236,34 @@ format versions, go from 1 to 2), so the store reads `PRAGMA user_version` on a 
 connection first and leaves a newer file untouched. A file that is not a database opens
 without an error; the first statement raises `sqlite3.DatabaseError: file is not a
 database`.
+
+### Output naming (C-16)
+
+Checked on 2026-10-14 with guessit 4.4.0 and CPython 3.14.7 on Linux (glibc), for the M2
+review follow-up of decision [0012](../docs/decisions/0012-output-naming-rules.md):
+
+- **guessit's user config files.** Without `no_user_config`, guessit reads
+  `guessit.options.json` in the working folder, `~/.guessit/options.json` and
+  `~/.config/guessit/options.json` (`.yml` / `.yaml` too when PyYAML is installed; it is
+  not). It does not read `$XDG_CONFIG_HOME/guessit`. A file `{"type": "movie"}` in any of the
+  three places turns the episode title of `The.Sopranos.S03E02.Proshai.Livushka…` into
+  `alternative_title`; with `no_user_config: True` none of them is read. guessit loads the
+  files on the first call and keeps them in `guessit.api.default_api` until the options
+  `config`, `no_user_config` or `no_default_config` change (tests call
+  `default_api.reset()`). Asserted in `tests/naming/test_parse.py`.
+- **guessit and other digits.** `Bleach - ٠٠١ - Title` (Arabic-Indic) and
+  `Bleach - ００１ - Title` (full-width) give season 0, episode 1, the same as `001`;
+  `Bleach - ²²³ - Title` gives no episode (`²²³` is an `alternative_title`).
+- **Python's format specs read every decimal digit.** `format(3, "٥")` and
+  `format(3, "５")` give `'    3'` (width 5); `format(3, "²")` raises `ValueError`. A width
+  of 999999999999 raises `MemoryError`; more than `sys.maxsize` raises `ValueError` ("Too
+  many decimal digits"). `format(123456789, "c")` raises `OverflowError`.
+- **`strftime` limits its own output.** `datetime.strftime("%1000Y")` gives 1000 characters
+  (glibc field widths), `"%100000Y"` and `"%999999999999Y"` give an empty string at once.
+- **A POSIX name that is not UTF-8.** `os.fsdecode(b"bad\xffname.mkv")` is
+  `'bad\udcffname.mkv'`; `str.encode("utf-8")` of it raises `UnicodeEncodeError`
+  ("surrogates not allowed"), and so do `print`, pydantic's `model_dump_json` and
+  `model_validate_json` (a `\udcff` escape in JSON is "lone leading surrogate"). Pydantic's
+  `model_dump(mode="json")` and `model_validate` (Python objects) keep the surrogate, and
+  `json.dumps(…, ensure_ascii=True)` / `json.loads` give it back exactly, which the probe cache
+  uses (C-3).

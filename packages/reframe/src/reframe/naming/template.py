@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -31,6 +32,7 @@ from reframe.naming.sanitize import Piece
 from reframe.naming.variables import DATE_FORMATS, VARIABLE_KINDS
 
 __all__ = [
+    "MAX_SPEC_NUMBER",
     "Group",
     "Slash",
     "Template",
@@ -50,6 +52,13 @@ Value = str | int | float | date | None
 
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _TEXT_SPECS = ("upper", "lower", "title")
+#: The largest width or precision of a number or text format spec (``{name:.20}``,
+#: ``{season:03}``). A path part has at most 255 bytes, so a wider value is never needed;
+#: and without a limit ``{season:999999999999}`` makes ``format`` build a 1 TB string.
+#: (``strftime`` limits its own output, so date specs need no limit.)
+MAX_SPEC_NUMBER = 255
+#: Decimal digits of any script: ``format`` reads them all (``\d`` of a ``str`` pattern).
+_SPEC_DIGITS = re.compile(r"\d+")
 #: Names people type for a variable that has another name here.
 _ALIASES = {
     "episode_title": "sub_title",
@@ -194,9 +203,27 @@ def template_variables(nodes: tuple[Node, ...]) -> Iterator[Var]:
             yield from template_variables(node.nodes)
 
 
+def _check_spec_size(spec: str) -> None:
+    """Raise ``ValueError`` when a number in ``spec`` (a width or precision) is more than
+    :data:`MAX_SPEC_NUMBER`, before ``format`` builds the string.
+
+    Every run of decimal digits counts, in any script: ``format`` reads Arabic-Indic and
+    full-width digits too (U+0662 U+0665 U+0666 is 256). A digit fill character (``0>3``) is
+    a run of one digit, so it never fails.
+    """
+    for match in _SPEC_DIGITS.finditer(spec):
+        digits = "".join(str(unicodedata.decimal(char)) for char in match.group()).lstrip("0")
+        if len(digits) > len(str(MAX_SPEC_NUMBER)) or int(digits or "0") > MAX_SPEC_NUMBER:
+            raise ValueError(
+                f"a width or precision of more than {MAX_SPEC_NUMBER} cannot be used "
+                f"(a file name has at most {MAX_SPEC_NUMBER} bytes)"
+            )
+
+
 def format_value(name: str, value: Value, spec: str | None) -> str:
     """Format a variable's value. ``""`` for an empty value. A bad spec raises
-    ``ValueError`` (:func:`check_template` reports it before rendering)."""
+    ``ValueError`` (:func:`check_template` reports it before rendering), and so does a width
+    or precision over :data:`MAX_SPEC_NUMBER`."""
     if value is None:
         return ""
     if isinstance(value, date):
@@ -206,7 +233,11 @@ def format_value(name: str, value: Value, spec: str | None) -> str:
         return value.strftime(fmt)
     if isinstance(value, int | float):
         if spec:
-            return format(value, spec)
+            _check_spec_size(spec)
+            try:
+                return format(value, spec)
+            except OverflowError as exc:  # ``{episode:c}`` of a number that is no character
+                raise ValueError(str(exc)) from exc
         if isinstance(value, float) and value.is_integer():
             return str(int(value))
         return str(value)
@@ -218,6 +249,7 @@ def format_value(name: str, value: Value, spec: str | None) -> str:
         return value.lower()
     if spec == "title":
         return title_case(value)
+    _check_spec_size(spec)
     return format(value, spec)
 
 

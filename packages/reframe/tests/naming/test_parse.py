@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from guessit import guessit
+from guessit.api import GuessitException
 
 from reframe.naming import parse as parse_module
 from reframe.naming.parse import (
+    GUESSIT_OPTIONS,
     SCORED_FIELDS,
+    GuessMatch,
     clean_tag,
     clean_text,
     detect_separator,
@@ -183,3 +187,73 @@ def test_editions_far_apart_are_joined_with_the_separator() -> None:
     assert parse_name("Gladiator.2000.Extended.Remastered.1080p").fields.edition == (
         "Extended.Remastered"
     )
+
+
+@pytest.mark.parametrize(
+    ("text", "season", "episodes"),
+    [
+        ("Bleach - 001 - Title", None, [1]),
+        ("Bleach - \u0660\u0660\u0661 - Title", None, [1]),  # Arabic-Indic: guessit reads them
+        ("Bleach - \uff10\uff10\uff11 - Title", None, [1]),  # full-width digits
+        ("Bleach - ²²³ - Title", None, []),  # guessit does not read superscripts
+    ],
+)
+def test_absolute_numbers_in_other_digits(
+    text: str, season: int | None, episodes: list[int]
+) -> None:
+    fields = parse_name(text).fields
+    assert (fields.season, fields.episodes) == (season, episodes)
+
+
+def test_a_bare_code_of_superscripts_is_no_absolute_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``²`` passes ``str.isdigit`` but ``int`` refuses it: the absolute-number rule must not
+    take it, even if guessit ever matched it."""
+    matches = (
+        GuessMatch("title", "Show", 0, 4),
+        GuessMatch("season", 2, 7, 8),
+        GuessMatch("episode", 23, 8, 10),
+    )
+    monkeypatch.setattr(parse_module, "guess_matches", lambda text: matches)
+    fields = parse_name("Show - ²²³").fields
+    assert (fields.season, fields.episodes, fields.episode_code) == (2, [23], "²²³")
+
+
+SOPRANOS = "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm"
+HACKSAW_FOLDER = (
+    "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson"
+)
+
+
+def test_guessit_reads_user_config_files_without_the_option(guessit_user_config: str) -> None:
+    """What the fixture's config files do to guessit when it may read them (guessit 4.4.0):
+    the episode title becomes ``alternative_title``, or every call fails. With
+    ``no_user_config`` they change nothing."""
+    plain = {"advanced": True, "name_only": True}
+    if guessit_user_config.startswith("{not"):
+        with pytest.raises(GuessitException):
+            guessit(SOPRANOS, plain)
+    else:
+        result = guessit(SOPRANOS, plain)
+        assert "episode_title" not in result
+        assert result["alternative_title"].value == "Proshai Livushka"
+    assert GUESSIT_OPTIONS["no_user_config"] is True
+    assert guessit(SOPRANOS, dict(GUESSIT_OPTIONS))["episode_title"].value == "Proshai Livushka"
+
+
+def test_naming_ignores_guessit_user_config(guessit_user_config: str) -> None:
+    """guessit's config files in the working folder and the home folder change nothing: every
+    file-system read of naming goes through ``NamingFs``."""
+    assert ("episode_title", "Proshai Livushka") in [
+        (m.prop, m.value) for m in guess_matches(SOPRANOS)
+    ]
+    episode = parse_name(SOPRANOS).fields
+    assert (episode.name, episode.sub_title, episode.episode_code) == (
+        "The.Sopranos",
+        "Proshai.Livushka",
+        "S03E02",
+    )
+    movie = parse_name(HACKSAW_FOLDER)
+    assert (movie.fields.name, movie.fields.release_group) == ("Hacksaw.Ridge", "HenDerson")
+    assert movie.score == 10

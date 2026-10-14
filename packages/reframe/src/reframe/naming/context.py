@@ -24,6 +24,7 @@ from reframe.models.media import AudioStream, HdrFormat, MediaSource, SubtitleSt
 from reframe.models.naming import NamingOptions, ParsedName
 from reframe.naming.clean import clean_name_text
 from reframe.naming.fs import NamingFs
+from reframe.naming.sanitize import replace_undecodable
 from reframe.naming.template import Value
 
 __all__ = [
@@ -171,8 +172,8 @@ def build_values(ctx: NameContext) -> dict[str, Value]:
         "edition": text(fields.edition),
         "source_type": text(fields.source_type),
         "release_group": fields.release_group,
-        "file_name": ctx.file_stem or None,
-        "folder_name": ctx.file.parent.name or None,
+        "file_name": replace_undecodable(ctx.file_stem) or None,
+        "folder_name": replace_undecodable(ctx.file.parent.name) or None,
         "container": CONTAINER_LABELS[ctx.container],
     }
     values.update(_times(ctx))

@@ -253,6 +253,99 @@ def test_bad_format_spec() -> None:
     assert issues[0].fixes[0].patch[0].value == "{season} {date:YYYY} {name:xyz}"  # type: ignore[union-attr]
 
 
+#: A value of each kind that ``format`` takes a width or precision for.
+_SPEC_VALUES: dict[str, int | float | str] = {
+    "season": 3,
+    "quality_bitrate": 22.5,
+    "name": "The Sopranos",
+}
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        pytest.param("999999999999", id="1e12"),  # MemoryError without the limit
+        pytest.param("0>999999999999", id="fill-1e12"),
+        pytest.param(".999999999999", id="precision-1e12"),
+        pytest.param("9" * 5000, id="5000-digits"),
+        pytest.param("256", id="256"),
+        pytest.param("0256", id="zero-256"),
+        pytest.param("_>256", id="fill-256"),
+        pytest.param("1>256", id="digit-fill-256"),
+        pytest.param(".256", id="precision-256"),
+        pytest.param("10.1000", id="width-and-precision"),
+        # format() reads every decimal digit, not only 0-9:
+        pytest.param("\u0669" * 12, id="arabic-indic-1e12"),
+        pytest.param("\uff12\uff15\uff16", id="full-width-256"),
+        pytest.param(".\u0662\u0665\u0666", id="arabic-indic-precision-256"),
+    ],
+)
+@pytest.mark.parametrize("variable", list(_SPEC_VALUES))
+def test_a_huge_width_or_precision_is_an_issue(variable: str, spec: str) -> None:
+    """``check_template`` reports a width or precision over 255 and rendering falls back to the
+    default format: no huge string is ever made (``reframe name --template
+    "{season:999999999999}"`` printed a ``MemoryError``)."""
+    template = "{" + variable + ":" + spec + "}"
+    [issue] = check_template(template)
+    assert (issue.code, issue.severity) == ("naming.bad_format_spec", Severity.ERROR)
+    assert "255" in issue.message
+    value = _SPEC_VALUES[variable]
+    with pytest.raises(ValueError, match="255"):
+        format_value(variable, value, spec)
+    assert _render(template, **{variable: value}) == [format_value(variable, value, None)]
+
+
+_SPEC_ALPHABET = "0123456789.<>^=+-_, #%cdfsxXeEgGnboz" + "YmdHM" + "\u0663\u0669\uff12²"
+_ANY_VALUES: dict[str, Any] = {
+    "season": 3,
+    "episode": 123456789,  # the largest number override
+    "quality_bitrate": 22.5,
+    "name": "The Sopranos",
+    "date": datetime(2026, 1, 2, 3, 4, 5),
+}
+
+
+@given(
+    variable=st.sampled_from(list(_ANY_VALUES)),
+    spec=st.text(alphabet=_SPEC_ALPHABET, max_size=16),
+)
+def test_any_format_spec_is_an_issue_or_renders_short(variable: str, spec: str) -> None:
+    """No format spec raises in ``check_template`` or ``render``; a spec without an issue
+    renders a short text (no width or precision over 255)."""
+    template = "{" + variable + ":" + spec + "}"
+    issues = check_template(template)
+    [segment] = _render(template, **{variable: _ANY_VALUES[variable]})
+    if variable != "date" and not issues:
+        assert len(segment) <= 600
+
+
+def test_a_number_too_large_for_the_c_type_is_not_an_exception() -> None:
+    """``{episode:c}`` passes the check (with 1); an episode override of 123456789 is no
+    character: ``format`` raises ``OverflowError``, rendering falls back to the number."""
+    assert check_template("{episode:c}") == []
+    with pytest.raises(ValueError, match="range"):
+        format_value("episode", 123456789, "c")
+    assert _render("{episode:c}", episode=123456789) == ["123456789"]
+
+
+def test_a_width_or_precision_of_255_is_allowed() -> None:
+    assert check_template("{season:0>255} {quality_bitrate:255.2f} {name:.255} {name:255}") == []
+    assert format_value("season", 3, "0255") == "0" * 254 + "3"
+    assert len(format_value("quality_bitrate", 2.5, ".255f")) == 257
+    assert format_value("name", "The Sopranos", "<255") == "The Sopranos".ljust(255)
+    # A digit as the fill character is not a width; leading zeros do not count.
+    assert format_value("season", 3, "9>4") == "9993"
+    assert format_value("season", 3, "0000000000000004") == "0003"
+    assert (
+        format_value(
+            "season",
+            3,
+            "\u0660\u0660\u0660\u0660\u0660\u0660\u0660\u0660\u0660\u0660\u0660\u0660\u0664",
+        )
+        == "   3"
+    )
+
+
 def test_syntax_issue() -> None:
     [issue] = check_template("{name")
     assert issue.code == "naming.template_syntax"

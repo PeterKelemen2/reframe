@@ -10,12 +10,13 @@ from typing import Any
 
 from guessit import guessit
 
-from reframe.naming.parse import parse_name
+from reframe.naming.parse import GUESSIT_OPTIONS, parse_name
 
 
 def _spans(name: str) -> list[tuple[str, Any, int, int]]:
-    """``(property, value, start, end)`` of every guessit match, advanced mode."""
-    result = guessit(name, {"advanced": True, "name_only": True})
+    """``(property, value, start, end)`` of every guessit match, with Reframe's options
+    (advanced mode, no user config files)."""
+    result = guessit(name, dict(GUESSIT_OPTIONS))
     out: list[tuple[str, Any, int, int]] = []
     for prop, found in result.items():
         for match in found if isinstance(found, list) else [found]:
@@ -146,7 +147,7 @@ def test_quirk_final_cut_is_an_episode_title_of_a_movie() -> None:
     """guessit: ``Apocalypse.Now.1979.Final.Cut`` → type episode with an episode title, but
     no season or episode. Without an episode code or air date it is a movie for us."""
     name = "Apocalypse.Now.1979.Final.Cut.1080p.BluRay.x264-SADPANDA"
-    result = guessit(name, {"name_only": True})
+    result = guessit(name, {"name_only": True, "no_user_config": True})
     assert result["type"] == "episode"
     assert "season" not in result
     assert "episode" not in result

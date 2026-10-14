@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +14,13 @@ from reframe.models.media import MediaSource
 from reframe.models.naming import NameResult, NamingOptions, ParsedName, TemplateKind
 from reframe.naming.context import NameContext, build_values
 from reframe.naming.fs import NamingFs, RealNamingFs
-from reframe.naming.sanitize import Piece, sanitize_segments
+from reframe.naming.sanitize import (
+    UNDECODABLE_NOTE,
+    UNDECODABLE_REPLACEMENT,
+    Piece,
+    replace_undecodable,
+    sanitize_segments,
+)
 from reframe.naming.source import choose_source, split_extension
 from reframe.naming.template import (
     check_template,
@@ -38,6 +45,16 @@ _NUMBER_OVERRIDES = ("season", "episode", "year")
 #: The parsed-name fields a job can override (``JobNaming.field_overrides``).
 OVERRIDE_FIELDS = _TEXT_OVERRIDES + _NUMBER_OVERRIDES
 _OVERRIDES_PATH = "output.naming.field_overrides"
+#: Most digits of a number override. ``str.isdigit`` is not the check: it accepts ``²``,
+#: which ``int`` refuses, and Arabic-Indic or full-width digits.
+MAX_NUMBER_DIGITS = 9
+_NUMBER = re.compile(rf"[0-9]{{1,{MAX_NUMBER_DIGITS}}}")
+#: Most characters of an override value quoted in an issue message.
+_SHOWN_CHARS = 40
+
+
+def _shown(value: str) -> str:
+    return value if len(value) <= _SHOWN_CHARS else value[: _SHOWN_CHARS - 1] + "…"
 
 
 def output_extension(
@@ -109,13 +126,16 @@ def apply_overrides(
             applied.append(key)
         elif key in _NUMBER_OVERRIDES:
             number = value.strip()
-            if number and not number.isdigit():
+            if number and not _NUMBER.fullmatch(number):
                 issues.append(
                     ValidationIssue(
                         severity=Severity.WARNING,
                         code="naming.bad_override",
                         path=path,
-                        message=f"The {key} override '{value}' is not a number; it is ignored.",
+                        message=(
+                            f"The {key} override '{_shown(value)}' is not a number of 1 to "
+                            f"{MAX_NUMBER_DIGITS} digits (0-9); it is ignored."
+                        ),
                         fixes=[remove],
                     )
                 )
@@ -238,6 +258,15 @@ def resolve_output_name(
     parts, sanitize_notes = sanitize_segments(segments, extension=extension, fallback=file_stem)
     notes.extend(sanitize_notes)
     relative = "/".join(parts)
+    # Bytes of the source names that are not UTF-8 were replaced before parsing (parse_name):
+    # say so when the output name shows them.
+    names = [file.name, *([choice.folder.name] if choice.folder is not None else [])]
+    if (
+        UNDECODABLE_REPLACEMENT in relative
+        and UNDECODABLE_NOTE not in notes
+        and any(replace_undecodable(name) != name for name in names)
+    ):
+        notes.insert(0, UNDECODABLE_NOTE)
 
     folder: Path | None = file.parent
     if options.output_folder_mode == "fixed":

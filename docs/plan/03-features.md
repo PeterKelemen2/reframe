@@ -604,7 +604,9 @@ this: `{date:%d.%m.%Y}`.
 | `/` | Creates subfolders under the output folder |
 | `{{` · `}}` | Literal braces |
 
-An unknown variable is a validation error with a "did you mean …" fix.
+An unknown variable is a validation error with a "did you mean …" fix. A width or precision
+of more than 255 in a format spec (`{season:999}`) is a validation error: a file name has at
+most 255 bytes ([0012](../decisions/0012-output-naming-rules.md)).
 
 ### Options
 
@@ -647,9 +649,12 @@ Output to MKV at 1080p:
   `< > : " / \ | ? *` and control characters are replaced (`": "` → `" - "`; `:` `/` `\` `|`
   → `-`; `"` → `'`; `< > ? *` and control characters are removed), reserved names (`CON`,
   `NUL`, …) get a `_`, and trailing dots and spaces are removed.
+- A byte of a source name that is not UTF-8 (a POSIX name such as `bad\xffname.mkv`) becomes
+  `�` (U+FFFD) in the output name: such a name cannot be written on Windows or in JSON.
 - Each path part has a limit of 255 bytes. The file name (with its extension) keeps room for
   the `.part` of the partial file, so it has 250 bytes. `{sub_title}` is shortened first,
-  then `{main_title}`. An empty result falls back to `{file_name}`.
+  then `{main_title}`. The limit holds after every rule (the `_` of a reserved name too). An
+  empty result falls back to `{file_name}`.
   ([0012](../decisions/0012-output-naming-rules.md))
 - Collisions follow the collision setting ([Queue](#queue)). In a batch, duplicate names are
   errors ([04 §Output naming](04-batch-mode.md#output-naming)).

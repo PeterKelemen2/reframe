@@ -5,12 +5,17 @@ Windows rules apply on every OS, because files move between systems:
 - The characters ``< > : " / \\ | ? *`` and control characters are replaced (table
   :data:`REPLACEMENTS`; ``": "`` becomes ``" - "``, so ``Mission: Impossible`` reads
   ``Mission - Impossible``).
+- A byte that is not UTF-8 (a POSIX file name such as ``bad\\xffname.mkv``, which Python
+  holds as the lone surrogate ``\\udcff``) becomes ``�`` (U+FFFD), as a UTF-8 decoder shows
+  it: such a name cannot be written on Windows, in JSON or on most other file systems.
 - Reserved device names (``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM0`` to ``COM9``,
   ``LPT0`` to ``LPT9``, also with an extension: ``CON.mkv``) get a ``_`` (``CON_.mkv``).
 - Trailing dots and spaces are removed (and leading spaces).
-- Each path part is at most 255 bytes (UTF-8). The file part keeps room for the ``.part``
-  that the queue inserts while it writes (``<name>.part.<ext>``, 03 §Queue). ``{sub_title}`` is
-  shortened first, then ``{main_title}``; then the part is cut.
+- Each path part is at most 255 bytes (UTF-8, which is what ``os.fsencode`` writes once the
+  text has no surrogates). The file part keeps room for the ``.part`` that the queue inserts
+  while it writes (``<name>.part.<ext>``, 03 §Queue). ``{sub_title}`` is shortened first, then
+  ``{main_title}``; then the part is cut. The limit holds after every change (the ``_`` of a
+  reserved name included).
 - An empty file part falls back to ``{file_name}``; an empty folder part is dropped.
 
 Pure: no file-system access.
@@ -18,6 +23,7 @@ Pure: no file-system access.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 __all__ = [
@@ -25,9 +31,12 @@ __all__ = [
     "PARTIAL_SUFFIX",
     "REPLACEMENTS",
     "RESERVED_NAMES",
+    "UNDECODABLE_NOTE",
+    "UNDECODABLE_REPLACEMENT",
     "Piece",
     "is_reserved",
     "replace_forbidden",
+    "replace_undecodable",
     "sanitize_segments",
 ]
 
@@ -52,6 +61,17 @@ RESERVED_NAMES = frozenset(
 )
 #: Template variables shortened (in this order) when a part is too long.
 SHORTEN_ORDER = ("sub_title", "main_title")
+#: What a byte that is not UTF-8 becomes (U+FFFD, the Unicode replacement character).
+UNDECODABLE_REPLACEMENT = "\ufffd"
+#: A lone surrogate: how Python holds a byte of a file name that is not UTF-8
+#: (``surrogateescape`` on POSIX: 0xFF → ``\udcff``; Windows: an unpaired UTF-16 surrogate).
+_SURROGATE = re.compile("[\ud800-\udfff]")
+_UNDECODABLE_CHANGE = f"bytes that are not UTF-8 → '{UNDECODABLE_REPLACEMENT}'"
+#: The note of a name in which bytes that are not UTF-8 were replaced.
+UNDECODABLE_NOTE = (
+    f"Replaced bytes that are not UTF-8 with '{UNDECODABLE_REPLACEMENT}' (such a name cannot "
+    "be written on Windows or in JSON)."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,10 +83,20 @@ class Piece:
     var: str | None = None
 
 
+def replace_undecodable(text: str) -> str:
+    """``text`` with every byte that is not UTF-8 (a lone surrogate) replaced with ``�``.
+    One code point becomes one code point, so positions in the text stay the same."""
+    return _SURROGATE.sub(UNDECODABLE_REPLACEMENT, text)
+
+
 def replace_forbidden(text: str) -> tuple[str, list[str]]:
-    """``text`` with the Windows-forbidden characters replaced, and what was replaced
-    (``"':' → '-'"``, in order of first appearance)."""
+    """``text`` with the Windows-forbidden characters and the bytes that are not UTF-8
+    replaced, and what was replaced (``"':' → '-'"``, in order of first appearance)."""
     changes: list[str] = []
+    cleaned = replace_undecodable(text)
+    if cleaned != text:
+        text = cleaned
+        changes.append(_UNDECODABLE_CHANGE)
     if ": " in text:
         text = text.replace(": ", " - ")
         changes.append("':' → '-'")
@@ -132,6 +162,14 @@ def _fit(text: str, limit: int) -> str:
     return _tidy(_cut(text, limit)) if _size(text) > limit else text
 
 
+def _unreserve(text: str, limit: int) -> str:
+    """A reserved name with a ``_`` after the device name (``CON.x`` → ``CON_.x``), cut to
+    ``limit`` bytes again: the ``_`` comes after the cut. The cut keeps ``CON_``, so the
+    result is never reserved."""
+    base, dot, rest = text.partition(".")
+    return _fit(f"{base.rstrip(' ')}_{dot}{rest}", limit)
+
+
 def sanitize_segments(
     segments: list[list[Piece]], *, extension: str, fallback: str
 ) -> tuple[list[str], list[str]]:
@@ -166,23 +204,26 @@ def sanitize_segments(
                 text = _fit(text, limit)
                 notes.append(f"Cut a path part to {limit} bytes: '{text}'.")
         if text and is_reserved(text):
-            base, dot, rest = text.partition(".")
-            fixed = f"{base.rstrip(' ')}_{dot}{rest}"
+            fixed = _unreserve(text, limit)
             notes.append(f"'{text}' is a reserved name on Windows: renamed to '{fixed}'.")
             text = fixed
         if not text:
             if not is_file:
                 notes.append("Dropped an empty folder level.")
                 continue
-            text = _fit(_tidy(replace_forbidden(fallback)[0]), limit)
+            text, changes = replace_forbidden(fallback)
+            replaced.extend(change for change in changes if change not in replaced)
+            text = _fit(_tidy(text), limit)
             if is_reserved(text):
-                base, dot, rest = text.partition(".")
-                text = f"{base.rstrip(' ')}_{dot}{rest}"
+                text = _unreserve(text, limit)
             text = text or "output"
             notes.append(f"The file name was empty: used the source file name '{text}'.")
         parts.append(text + suffix if is_file else text)
-    if replaced:
+    windows = [change for change in replaced if change != _UNDECODABLE_CHANGE]
+    if windows:
         notes.insert(
-            0, "Replaced characters that Windows does not allow: " + ", ".join(replaced) + "."
+            0, "Replaced characters that Windows does not allow: " + ", ".join(windows) + "."
         )
+    if _UNDECODABLE_CHANGE in replaced:
+        notes.insert(0, UNDECODABLE_NOTE)
     return parts, notes
