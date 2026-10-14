@@ -24,8 +24,10 @@ the rule's mixdown, and the rule changes nothing that needs a decode (gain, DRC,
 sample rate). A **lossy** source that fits is passed through at any bit rate, also an unknown
 one (re-encoding it would only add a generation loss, decision 0023); a **lossless** source
 fits only when its known bit rate is at or below the max. The max applies when the track is
-encoded. A rule whose codec is ``passthru`` encodes with the policy's fallback encoder when
-the source does not fit.
+encoded. A lossy rule without a max uses the encoder's default for the layout as its max
+(decision 0019 item 5), also for the lossless check; a ``passthru`` rule without a max passes
+anything that fits. A rule whose codec is ``passthru`` encodes with the policy's fallback
+encoder when the source does not fit.
 
 Interpretations of the plan (decision 0019): a mixdown never upmixes; a lossless source with
 a known bit rate at or below the max is treated like any other source.
@@ -290,7 +292,11 @@ def _blockers(ctx: _Context, request: _Request) -> list[str]:
     return found
 
 
-def _passthru(ctx: _Context, request: _Request, state: BitrateState) -> _Outcome:
+def _passthru(
+    ctx: _Context, request: _Request, state: BitrateState, maximum: int | None
+) -> _Outcome:
+    """``maximum``: the rule's max, or the encoder's default that a lossless source was
+    compared with when the rule has none."""
     stream = ctx.stream
     fallback = ctx.policy.fallback_encoder if request.codec == PASSTHRU else request.codec
     track = AudioOutputTrack(action="passthru", encoder=fallback, source_stream=stream.index)
@@ -302,9 +308,10 @@ def _passthru(ctx: _Context, request: _Request, state: BitrateState) -> _Outcome
     parts = [label, _source_layout(stream)]
     value = stream.bitrate.value
     if state == "within" and value is not None:
-        parts.append(f"{_kbps(value)} ≤ {request.max_bitrate}")
+        default = " (the default)" if request.max_bitrate is None else ""
+        parts.append(f"{_kbps(value)} ≤ {maximum}{default}")
     elif state == "above" and value is not None:
-        parts.append(f"{_kbps(value)} > {request.max_bitrate}")
+        parts.append(f"{_kbps(value)} > {maximum}")
     return _Outcome(
         track=track,
         passthru=True,
@@ -478,15 +485,38 @@ def _snap_note(
     return f"{why}: {wanted} → {got} kb/s"
 
 
+def _default_max(ctx: _Context, request: _Request) -> int | None:
+    """The max of a lossy rule without one (decision 0019 item 5): the encoder's default
+    bit rate for the layout it would encode (the same layout and table as :func:`_encode`).
+    ``None`` for a ``passthru`` rule (no max = anything that fits passes), a lossless or
+    unknown encoder."""
+    if request.max_bitrate is not None or request.codec == PASSTHRU:
+        return request.max_bitrate
+    encoder = ctx.defs.audio_encoders.get(request.codec)
+    if encoder is None or encoder.bitrate is None:
+        return None
+    channels = ctx.stream.channels
+    wanted = requested_mixdown(request.mixdown, channels, ctx.defs)
+    mixdown = encoder.snap_mixdown(wanted, channels, ctx.defs.mixdowns)
+    limits = encoder.bitrate.by_mixdown.get(mixdown or channels_mixdown(channels))
+    return limits.default if limits is not None else None
+
+
 def _resolve(ctx: _Context, request: _Request) -> _Outcome:
     blockers = _blockers(ctx, request)
     state = _bitrate_state(ctx.stream, request.max_bitrate)
+    maximum = request.max_bitrate
+    if state == "no_max" and ctx.stream.lossless:
+        # A lossless source is compared with the encoder's default when the rule has no
+        # max (decisions 0019 item 5 and 0023); a lossy one still fits at any bit rate.
+        maximum = _default_max(ctx, request)
+        state = _bitrate_state(ctx.stream, maximum)
     wants_passthru = request.codec == PASSTHRU or request.if_fits == "passthru"
     # Decision 0023: a lossy source fits at any bit rate; a lossless one only at or below
     # the max (``_bitrate_state`` calls a lossless source above the max or unknown
     # "lossless").
     if wants_passthru and not blockers and state != "lossless":
-        return _passthru(ctx, request, state)
+        return _passthru(ctx, request, state, maximum)
     return _encode(ctx, request, state, blockers)
 
 

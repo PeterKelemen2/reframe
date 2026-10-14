@@ -424,6 +424,80 @@ def test_no_max_uses_the_encoder_default() -> None:
     assert track.bitrate == 128
 
 
+#: (source, (action, encoder, mixdown, bitrate), reason, measure) for a lossy rule without a
+#: max: the encoder's default for the layout is the max (0019 item 5), and a lossless source
+#: fits only with a known bit rate at or below it (0023).
+NO_MAX_LOSSLESS = [
+    (
+        stream("flac", 2, 133.7, display_codec="FLAC", lossless=True),
+        ("passthru", "aac", None, None),
+        "FLAC, 2.0, 133.7 ≤ 160 (the default): passthru",
+        False,
+    ),
+    (
+        stream("flac", 2, 160, display_codec="FLAC", lossless=True),
+        ("passthru", "aac", None, None),
+        "FLAC, 2.0, 160 ≤ 160 (the default): passthru",
+        False,
+    ),
+    (
+        stream("flac", 2, 900, display_codec="FLAC", lossless=True),
+        ("encode", "aac", None, 160),
+        "Lossless source → encode at the default",
+        False,
+    ),
+    (
+        stream("flac", 2, None, display_codec="FLAC", lossless=True),
+        ("encode", "aac", None, 160),
+        "Lossless source → encode at the default",
+        True,
+    ),
+    (
+        stream("truehd", 6, 3912, display_codec="TrueHD", lossless=True),
+        ("encode", "aac", None, 384),
+        "Lossless source → encode at the default",
+        False,
+    ),
+    (
+        stream("truehd", 8, None, display_codec="TrueHD", lossless=True),
+        ("encode", "aac", "5.1", 384),
+        "Downmix 7.1 → 5.1. Lossless source → encode at the default",
+        True,
+    ),
+]
+
+
+@pytest.mark.parametrize(("source", "expected", "reason", "measure"), NO_MAX_LOSSLESS)
+def test_no_max_is_the_default_for_a_lossless_source(
+    source: AudioStream,
+    expected: tuple[str, str | None, str | None, int | None],
+    reason: str,
+    measure: bool,
+) -> None:
+    """A lossy rule without a max does not pass every lossless source through: the
+    encoder's default for the output layout is the max it is compared with."""
+    rule = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=None)
+    track, decision = run(source, rules(rule))
+    assert summary(track) == expected
+    assert decision.reason == reason
+    assert decision.measure is measure
+
+
+def test_no_max_keeps_a_lossy_source_and_a_passthru_rule_unlimited() -> None:
+    """Unchanged by the default: a lossy source fits at any bit rate (0023), and a
+    ``passthru`` rule without a max passes anything that fits (0019 consequences)."""
+    aac = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=None)
+    track, decision = run(stream("ac3", 6, 640, display_codec="AC-3"), rules(aac))
+    assert (track.action, decision.reason) == ("passthru", "AC-3, 5.1: passthru")
+    keep = AudioCodecRule(codec="passthru", mixdown="keep", max_bitrate=None)
+    truehd = stream("truehd", 8, 3912, display_codec="TrueHD", lossless=True)
+    track, decision = run(truehd, rules(keep))
+    assert (track.action, decision.reason) == ("passthru", "TrueHD, 7.1: passthru")
+    # A lossless rule encoder (FLAC) has no default bit rate: no max stays no max.
+    flac = AudioCodecRule(codec="flac", mixdown="keep", max_bitrate=None)
+    assert run(truehd, rules(flac))[0].action == "passthru"
+
+
 # --------------------------------------------------------------------------- passthru
 
 
