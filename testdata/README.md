@@ -640,8 +640,16 @@ Decisions [0011](../docs/decisions/0011-sleep-inhibit.md) (client, Windows threa
 Other programs hold inhibits too (here a playing Jellyfin client: KDE lists `"idle"
 "jellyfin-desktop" "playing"`, which sets both PolicyAgent flags; parallel test runs), so each
 real test finds only its own inhibit by a unique reason in logind `ListInhibitors` and KDE
-`ActiveInhibitions` (`busctl --json=short`), and checks a global flag only when it was false
-before.
+`ActiveInhibitions` (`busctl --json=short`). Global flags (`HasInhibit`, the PolicyAgent's
+`HasInhibition`) are only printed: "it was false before" did not prove that nothing else
+changed it (M2 review, 2026-10-14: `systemd-inhibit --what=idle sleep 45` started just before
+the session test sets KDE's "screen" flag about 5 s later, during the test). `CanSuspend` is
+asserted only while no other program holds a logind `sleep` block lock. Every lock and
+connection is freed in a `finally`, so a failing check leaks no socket into a later test
+(before, it failed `tests/probe/test_live.py` with `PytestUnraisableExceptionWarning …
+finalizing socket … /run/user/1000/bus`). Checked on 2026-10-14: the platform tests pass
+while `systemd-inhibit --what=idle sleep 120` runs, and a deliberately failing check in the
+session test fails only that test.
 
 **Timing on KDE.** PowerDevil makes every inhibition active about **5 s** after it is
 requested, also the ones it mirrors from logind (polled every second: `false` at 0–4 s,
@@ -773,6 +781,26 @@ gives the flags (1 logout, 2 user switch, 4 suspend, 8 idle) and ends an inhibit
 `Request.Close()`; it does not say what happens when the caller disconnects, which is why
 release calls `Close()` first. Whether GNOME's automatic suspend honours a suspend inhibit
 and still lets the user suspend from the menu is not verified.
+
+**Failures that are not D-Bus errors** (`test_sleep_failures.py`, checked 2026-10-14).
+Sleep inhibit never raises (0011 item 7): each one makes that backend unavailable, its
+socket is closed, and the queue goes on (one `sleep_inhibit.unavailable` warning when
+nothing holds). The `last_error` texts, with both bus addresses set to the same value:
+
+| `DBUS_*_BUS_ADDRESS` or peer | what the backend says |
+|------------------------------|-----------------------|
+| `unix:path=%zz`, `unix:abstract=%0` | `ValueError: malformed D-Bus address …: bad escape '%zz'` |
+| `unix:path=/tmp/%ff%fe` | `ValueError: malformed D-Bus address …: an escaped value is not UTF-8` |
+| `unix:path=/tmp/reframe%00bus` | `ValueError: malformed D-Bus address …: a path cannot contain NUL` |
+| `unix:path=` | `OSError: [Errno 22] Invalid argument` (skipped: no session bus) |
+| `unix:path=/xxx…` (300 characters) | `OSError: AF_UNIX path too long` |
+| a peer that closes at once / after `AUTH` / during `NEGOTIATE_UNIX_FD` | `ConnectionResetError` or `ConnectionError: the bus closed the connection` |
+| a peer that sends 20 000 bytes without `\r\n` | `authentication line too long` |
+| a reply whose `REPLY_SERIAL` or `UNIX_FDS` field is a string | `DBusProtocolError: header field 5 has type 's', not 'u'` |
+
+Before this, a malformed address raised `ValueError` out of `acquire()` (every queued job
+failed with "Internal error: ValueError"), and a garbage header field leaked the session
+socket.
 
 Windows (`SetThreadExecutionState`) is not checked on a real machine: the values and the
 "return value is NULL on failure" rule are from

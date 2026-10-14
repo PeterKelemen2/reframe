@@ -115,3 +115,35 @@ automatic would need a desktop-specific API (logind has no "idle suspend only" l
 
 - 05 §C-14: the sleep-inhibit bullet names the lock (`sleep:idle`, `block`), the stdlib
   D-Bus client and this record.
+
+## Follow-up (M2 review, 2026-10-14)
+
+The milestone review found that "never an exception" (item 7) held only for D-Bus errors, and
+that a cancelled `release()` could let a new take overlap a free. Choices made in the fix:
+
+1. **Every failure of a backend is data.** A backend that raises anything (a malformed bus
+   address, garbage from the bus, a bug) counts as failed, not skipped: its text is in
+   `last_error` (and in the warning when nothing holds), the traceback goes to the log, the
+   other backends are still tried, and a `free()` that raises does not stop the others. A
+   malformed `DBUS_SESSION_BUS_ADDRESS` is a failure, not "no session bus", because the
+   environment says there is a session.
+2. **The D-Bus client raises only documented errors** and closes its socket whenever it
+   raises: `parse_address` rejects a `%` without two hex digits, a value that is not UTF-8
+   and a NUL in a path (`ValueError`, "malformed D-Bus address"); a header field of the wrong
+   type is a `DBusProtocolError`.
+3. **Blocking calls are never abandoned with a socket open.** A worker thread that finishes
+   after its caller was cancelled hands its result to a clean-up (the session connection or
+   the logind fd is closed). On Windows, a cancelled hold queues `ES_CONTINUOUS` and ends
+   the thread; the clearing call of `free()` is shielded.
+4. **`acquire`, `release` and `close` each run in a task of their own** that holds the
+   inhibitor's lock from start to end, also when the caller is cancelled. So a take and a
+   free never overlap and the operating-system locks are freed exactly when the count
+   reaches zero. A cancelled `release()` / `close()` still completes.
+5. **A cancelled `acquire()` leaves no count** (item 5, unchanged for the caller): the
+   caller must not call `release()` for it. Cancelled while it waits for another call:
+   nothing is counted. Cancelled while the locks are being taken: the take finishes, then
+   the count is undone as by `release()`; until then `count` still shows it. So the queue
+   counts a hold only after `acquire()` returned.
+6. **The real tests assert only Reframe's own inhibit entries** (by the test's unique
+   reason); global flags are printed, and `CanSuspend` is asserted only while no other
+   program holds a `sleep` block lock. Every lock and connection is freed in a `finally`.
