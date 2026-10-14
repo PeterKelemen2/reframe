@@ -17,11 +17,21 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from pydantic import JsonValue
+
 from reframe.definitions import AudioEncoderDef, Definitions
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import AudioOutputTrack, Mixdown
 from reframe.models.media import AudioStream
-from reframe.validation.common import error, fix, info, remove, replace
+from reframe.validation.common import (
+    DEFAULT_AUDIO_ENCODER,
+    error,
+    fix,
+    info,
+    remove,
+    replace,
+    warning,
+)
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 from reframe.validation.tracks import (
@@ -72,6 +82,45 @@ def auto_passthru(ctx: JobContext) -> Iterator[ValidationIssue]:
             f"audio[{index}].action",
             f"{container.label} cannot hold {codec}: audio track {index + 1} is encoded with "
             f"the fallback encoder {encoder_id} instead of passed through.",
+        )
+
+
+@job_rule("audio", "audio.passthru_settings_ignored")
+def passthru_settings(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """Gain, DRC and loudness normalisation need a decode: a passthru track that is copied
+    ignores them (the command builder writes ``-c:a:N copy``). Warning; the fixes encode the
+    track (with its encoder, or AAC) or drop the settings."""
+    for index, track in enumerate(ctx.job.audio):
+        if not passthru_copies(ctx, track):
+            continue
+        # (label, field, the value that turns it off)
+        found: list[tuple[str, str, JsonValue]] = []
+        if track.gain != 0:
+            found.append(("gain", "gain", 0.0))
+        if track.drc != 0:
+            found.append(("DRC", "drc", 0.0))
+        if track.loudness != "off":
+            found.append(("loudness normalisation", "loudness", "off"))
+        if not found:
+            continue
+        names = [label for label, _, _ in found]
+        encoder = track.encoder or DEFAULT_AUDIO_ENCODER
+        what = " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
+        yield warning(
+            "audio.passthru_settings_ignored",
+            f"audio[{index}].action",
+            f"Audio track {index + 1} is passed through (copied), so its {what} cannot be applied.",
+            fix(
+                f"Encode the track ({encoder})",
+                replace(f"audio[{index}].action", "encode"),
+                *([] if track.encoder else [replace(f"audio[{index}].encoder", encoder)]),
+                target=ctx.target,
+            ),
+            fix(
+                f"Remove the {what}",
+                *(replace(f"audio[{index}].{field}", off) for _, field, off in found),
+                target=ctx.target,
+            ),
         )
 
 

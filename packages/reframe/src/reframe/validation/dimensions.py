@@ -21,10 +21,15 @@ from __future__ import annotations
 from collections.abc import Iterator
 from fractions import Fraction
 
-from reframe.dimensions import TIMES, compute_geometry, oriented_box, source_geometry
-from reframe.models.geometry import CropRect, DimensionSettings, FitWithin, Geometry
+from reframe.dimensions import TIMES, compute_geometry, oriented_box
+from reframe.models.geometry import (
+    CropRect,
+    DimensionSettings,
+    FitWithin,
+    Geometry,
+    SourceGeometry,
+)
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
-from reframe.models.media import VideoStream
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.registry import job_rule, template_rule
@@ -34,19 +39,18 @@ def _notes(geometry: Geometry, *starts: str) -> list[str]:
     return [note for note in geometry.notes if note.startswith(starts)]
 
 
-def _axes(stream: VideoStream) -> tuple[tuple[int, int], tuple[int, int]]:
+def _axes(src: SourceGeometry) -> tuple[tuple[int, int], tuple[int, int]]:
     """``((width, step x), (height, step y))`` of the picture the crop is measured on (the
     display matrix applied, decision 0009)."""
-    src = source_geometry(stream)
     steps = (src.chroma_step_x, src.chroma_step_y * (2 if src.interlaced else 1))
     if src.rotation in (90, 270):
         return ((src.height, steps[1]), (src.width, steps[0]))
     return ((src.width, steps[0]), (src.height, steps[1]))
 
 
-def _invalid_axes(rect: CropRect, geometry: Geometry, stream: VideoStream) -> list[str]:
+def _invalid_axes(rect: CropRect, geometry: Geometry, src: SourceGeometry) -> list[str]:
     """The crop axes C-5 did not apply although the rect asks for a crop on them."""
-    (width, step_x), (height, step_y) = _axes(stream)
+    (width, step_x), (height, step_y) = _axes(src)
     crop = geometry.crop
     invalid: list[str] = []
     for name, near, far, size, step, applied in (
@@ -67,8 +71,8 @@ def _invalid_axes(rect: CropRect, geometry: Geometry, stream: VideoStream) -> li
     "dimensions.crop_missing",
 )
 def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
-    geometry, stream = ctx.geometry, ctx.video_stream
-    if geometry is None or stream is None:
+    geometry, src = ctx.geometry, ctx.source_geometry
+    if geometry is None or src is None:
         return
     settings = ctx.job.dimensions.crop
     no_crop = fix("Do not crop", replace("dimensions.crop.mode", "none"), target=ctx.target)
@@ -93,7 +97,7 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
                 no_crop,
             )
         return
-    invalid = _invalid_axes(rect, geometry, stream)
+    invalid = _invalid_axes(rect, geometry, src)
     if invalid:
         reset: dict[str, int] = {}
         if "horizontal" in invalid:
@@ -133,11 +137,10 @@ def _with(settings: DimensionSettings, **changes: object) -> DimensionSettings:
 
 @job_rule("dimensions", "dimensions.upscaled", "dimensions.outside_box")
 def size(ctx: JobContext) -> Iterator[ValidationIssue]:
-    geometry, stream = ctx.geometry, ctx.video_stream
-    if geometry is None or stream is None:
+    geometry, src = ctx.geometry, ctx.source_geometry
+    if geometry is None or src is None:
         return
     dims = ctx.job.dimensions
-    src = source_geometry(stream)
     if geometry.upscaled:
         fixes: list[Fix] = []
         if (

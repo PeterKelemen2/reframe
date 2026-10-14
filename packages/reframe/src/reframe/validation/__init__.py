@@ -44,6 +44,7 @@ from reframe.validation import container as _container  # noqa: F401
 from reframe.validation import dimensions as _dimensions  # noqa: F401
 from reframe.validation import encoder as _encoder  # noqa: F401
 from reframe.validation import filters as _filters  # noqa: F401
+from reframe.validation import levels as _levels  # noqa: F401
 from reframe.validation import metadata as _metadata  # noqa: F401
 from reframe.validation import naming as _naming  # noqa: F401
 from reframe.validation import output as _output  # noqa: F401

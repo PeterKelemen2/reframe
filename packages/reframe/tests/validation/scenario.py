@@ -34,6 +34,8 @@ from reframe.models import (
     NamingOptions,
     OutputSettings,
     Rational,
+    RemoveOp,
+    Severity,
     SourceRef,
     SubtitleOutputTrack,
     SubtitleStream,
@@ -305,19 +307,43 @@ def found(issues: Iterable[ValidationIssue], code: str, path: str | None = None)
     return any(i.code == code and (path is None or i.path == path) for i in issues)
 
 
+def error_codes(issues: Iterable[ValidationIssue]) -> set[str]:
+    return {i.code for i in issues if i.severity is Severity.ERROR}
+
+
+def check_fix(
+    issue: ValidationIssue, fix: Fix, before: list[ValidationIssue], after: list[ValidationIssue]
+) -> None:
+    """The fix removed its issue (same code and path) and added no new error: by code and
+    path, or by code only when the fix removes something (a removed track renumbers the
+    paths of the others)."""
+    assert not found(after, issue.code, issue.path), (
+        f"fix {fix.label!r} of {issue.code} at {issue.path!r} did not remove it",
+        [i for i in after if i.code == issue.code],
+    )
+    if any(isinstance(op, RemoveOp) for op in fix.patch):
+        added = error_codes(after) - error_codes(before)
+    else:
+        old = {(i.code, i.path) for i in before if i.severity is Severity.ERROR}
+        added = {i.code for i in after if i.severity is Severity.ERROR} & {
+            i.code for i in after if (i.code, i.path) not in old and i.severity is Severity.ERROR
+        }
+    assert not added, (
+        f"fix {fix.label!r} of {issue.code} at {issue.path!r} added an error",
+        [i for i in after if i.code in added],
+    )
+    FIXES_CHECKED.append((issue.code, fix.label))
+
+
 def check(scenario: Scenario) -> list[ValidationIssue]:
     """Validate, then apply every fix of every issue and validate again: the issue (same code
-    and path) must be gone. The generic half of C-8's "Done when"."""
+    and path) must be gone, and no new error may appear. The generic half of C-8's "Done
+    when"."""
     issues = scenario.validate()
     assert not found(issues, "validation.rule_failed"), issues
     for issue in issues:
         for fix in issue.fixes:
-            after = scenario.apply(fix).validate()
-            assert not found(after, issue.code, issue.path), (
-                f"fix {fix.label!r} of {issue.code} at {issue.path!r} did not remove it",
-                [i for i in after if i.code == issue.code],
-            )
-            FIXES_CHECKED.append((issue.code, fix.label))
+            check_fix(issue, fix, issues, scenario.apply(fix).validate())
     return issues
 
 
@@ -351,12 +377,7 @@ def check_template(scenario: TemplateScenario) -> list[ValidationIssue]:
     assert not found(issues, "validation.rule_failed"), issues
     for issue in issues:
         for fix in issue.fixes:
-            after = scenario.apply(fix).validate()
-            assert not found(after, issue.code, issue.path), (
-                f"fix {fix.label!r} of {issue.code} at {issue.path!r} did not remove it",
-                [i for i in after if i.code == issue.code],
-            )
-            FIXES_CHECKED.append((issue.code, fix.label))
+            check_fix(issue, fix, issues, scenario.apply(fix).validate())
     return issues
 
 

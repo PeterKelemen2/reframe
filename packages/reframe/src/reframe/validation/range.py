@@ -168,6 +168,17 @@ def _chapters(ctx: JobContext, selected: ChapterRange) -> Iterator[ValidationIss
             f"The range starts at chapter {selected.start}; the source has {count} chapters.",
             _full(ctx),
         )
+    elif (
+        ctx.source.chapters[min(selected.end, count) - 1].end
+        <= ctx.source.chapters[selected.start - 1].start
+    ):
+        yield error(
+            "range.outside",
+            "range",
+            f"Chapters {selected.start} to {min(selected.end, count)} have no length: the "
+            "range is empty.",
+            _full(ctx),
+        )
     elif selected.end > count:
         yield warning(
             "range.end_beyond",

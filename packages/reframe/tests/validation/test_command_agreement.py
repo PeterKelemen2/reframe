@@ -205,6 +205,25 @@ def source_without_video() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
     return job, src.model_copy(update={"video": []}), {}
 
 
+def unknown_video_codec() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
+    """Video passthrough of a source whose video codec ffprobe could not name, into MP4."""
+    src = c7.recorded("multitrack.mkv")
+    src.video[0].codec = None
+    job = c7.draft(src, container="mp4", audio="passthru", subtitles=False)
+    job.video.passthrough = True
+    return job, src, {}
+
+
+def zero_length_chapters() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
+    """A chapter range made only of chapters without length."""
+    src = c7.recorded("chapters.mkv")
+    for chapter in src.chapters:
+        chapter.end = chapter.start = 1.0
+    job = c7.draft(src, video={"encoder": "libx264"})
+    job.range = ChapterRange(start=1, end=2)
+    return job, src, {}
+
+
 def custom_definitions(
     encoder: str, change: Callable[[Definitions], None], **video: Any
 ) -> Callable[[], tuple[JobSettings, MediaSource, dict[str, Any]]]:
@@ -260,6 +279,8 @@ REFUSALS: list[Refusal] = [
             "container.codec_unsupported",
             multitrack(both(setter(video__passthrough=True), subtitles()), container="webm",
                        audio="passthru")),
+    Refusal("passthrough of an unknown video codec", " video cannot be copied into MP4",
+            "container.codec_unsupported", unknown_video_codec),
     Refusal("unknown video encoder", "unknown video encoder", "encoder.unknown",
             multitrack(setter(video__encoder="libx266"))),
     Refusal("video codec the container cannot hold", "H.264 cannot be written into WebM",
@@ -274,6 +295,8 @@ REFUSALS: list[Refusal] = [
             no_frame_rate),
     Refusal("empty range", "range is empty", "range.outside",
             multitrack(setter(range=TimeRange(start=2.0, end=1.0)))),
+    Refusal("chapter range of zero-length chapters", "range is empty", "range.outside",
+            zero_length_chapters),
     # ---- metadata.py
     Refusal("chapter range outside the source", "not in the source", "range.outside",
             on("chapters.mkv", setter(range=ChapterRange(start=5, end=6)))),

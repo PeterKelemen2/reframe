@@ -13,7 +13,7 @@ from pathlib import Path
 from reframe.definitions import ContainerDef, Definitions
 from reframe.dimensions import compute_geometry, source_geometry
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.geometry import Geometry
+from reframe.models.geometry import Geometry, SourceGeometry
 from reframe.models.issues import FixTarget
 from reframe.models.job import JobSettings
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
@@ -65,9 +65,21 @@ class JobContext:
     def geometry(self) -> Geometry | None:
         """C-5's geometry of the encoded picture; ``None`` for video passthrough or a source
         without video."""
-        if self.job.video.passthrough or self.video_stream is None:
+        if self.job.video.passthrough or self.source_geometry is None:
             return None
-        return compute_geometry(source_geometry(self.video_stream), self.job.dimensions)
+        return compute_geometry(self.source_geometry, self.job.dimensions)
+
+    @cached_property
+    def source_geometry(self) -> SourceGeometry | None:
+        """C-5's view of the main video stream, as the command builder gives it: a job that
+        deinterlaces encodes progressive frames (``interlaced`` off, so the crop is on the
+        frame's chroma grid, not the field's)."""
+        if self.video_stream is None:
+            return None
+        src = source_geometry(self.video_stream)
+        if "deinterlace" in self.job.filters.root:
+            src = src.model_copy(update={"interlaced": False})
+        return src
 
     @cached_property
     def output_size(self) -> tuple[int, int] | None:

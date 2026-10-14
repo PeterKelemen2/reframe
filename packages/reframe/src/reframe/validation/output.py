@@ -11,13 +11,25 @@ video passthrough (03: "estimate in bitrate mode"). Constant quality has no esti
 
 from __future__ import annotations
 
+import ntpath
+import posixpath
 from collections.abc import Iterator
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PureWindowsPath
+from typing import cast
 
+from reframe.command import partial_path
+from reframe.command.video import pass_log_files
 from reframe.definitions import ContainerDef
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
 from reframe.models.job import AverageBitrate
 from reframe.models.settings import CollisionPolicy
+from reframe.naming.sanitize import (
+    MAX_PART_BYTES,
+    Piece,
+    is_reserved,
+    replace_forbidden,
+    sanitize_segments,
+)
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext
 from reframe.validation.fs import FileSystemView
@@ -29,8 +41,11 @@ __all__ = [
     "MUX_OVERHEAD",
     "estimate_output_bytes",
     "existing_ancestor",
+    "name_issues",
     "next_free_path",
     "output_path_issues",
+    "source_clash",
+    "written_paths",
 ]
 
 #: Container overhead added to the stream bitrates of the estimate.
@@ -45,6 +60,8 @@ CODES = (
     "output.extension_mismatch",
     "output.folder_missing",
     "output.not_writable",
+    "output.name_too_long",
+    "output.name_not_portable",
 )
 
 
@@ -69,6 +86,100 @@ def existing_ancestor(path: PurePath, fs: FileSystemView) -> PurePath | None:
         if parent == current:
             return None
         current = parent
+
+
+def written_paths[P: PurePath](path: P) -> list[P]:
+    """Every file a job with the output ``path`` writes, and the queue renames or removes:
+    the output, the partial file (``Movie.part.mkv``), the FFMETADATA chapters file, and the
+    2-pass statistics files of x264 and x265. Named by the command builder's own functions
+    (decision 0027 item 5)."""
+    final = cast(Path, path)
+    found = [final, partial_path(final), partial_path(final, ".chapters.txt")]
+    passlog = partial_path(final, ".passlog")
+    found += pass_log_files(passlog, stats_param=True)
+    found += pass_log_files(passlog, stats_param=False)
+    return cast(list[P], found)
+
+
+def _same_name(a: PurePath, b: PurePath) -> bool:
+    """The same path after ``.``/``..`` and separators are normalised; Windows paths also
+    ignore case. (A case-insensitive POSIX file system, APFS, is found by ``fs.same_file``:
+    a clashing name always exists, as it is the source.)"""
+    if isinstance(a, PureWindowsPath):
+        return ntpath.normcase(ntpath.normpath(str(a))) == ntpath.normcase(ntpath.normpath(str(b)))
+    return posixpath.normpath(str(a)) == posixpath.normpath(str(b))
+
+
+def source_clash(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath | None:
+    """The first file the job writes (:func:`written_paths`) that is the source: the same
+    file through a link or another spelling (``fs.same_file``), or the same normalised
+    name."""
+    for candidate in written_paths(path):
+        if _same_name(candidate, source) or fs.same_file(candidate, source):
+            return candidate
+    return None
+
+
+def _free_of_source(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath:
+    """``Name (1).mkv``, … : the first free name whose written files are not the source."""
+    candidate = path
+    for _ in range(100):
+        candidate = next_free_path(candidate, fs)
+        if source_clash(candidate, source, fs) is None:
+            return candidate
+    return candidate  # pragma: no cover - a source cannot clash with 100 names
+
+
+def _safe_name(path: PurePath) -> str:
+    """C-16's safe form of the file name (forbidden characters, reserved names, the 255-byte
+    limit with room for ``.part``)."""
+    extension = path.suffix.lstrip(".")
+    stem = path.name[: -len(path.suffix)] if path.suffix else path.name
+    parts, _ = sanitize_segments([[Piece(stem)]], extension=extension, fallback=stem)
+    return parts[-1]
+
+
+def name_issues(path: PurePath, *, target: FixTarget = "job") -> list[ValidationIssue]:
+    """A manual output path checked against C-16's file-name rules (``reframe.naming``):
+    a path part longer than 255 bytes (the file name with the ``.part`` the queue adds) is an
+    error on every OS; a reserved Windows name (``CON.mkv``) or a character Windows does not
+    allow is an error for a Windows path and a warning elsewhere (the file may move)."""
+    issues: list[ValidationIssue] = []
+    safe = _safe_name(path)
+    fixes = [
+        fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
+    ]
+    partial = partial_path(cast(Path, path)).name
+    too_long = [p for p in path.parent.parts if len(p.encode("utf-8")) > MAX_PART_BYTES]
+    if too_long or len(partial.encode("utf-8")) > MAX_PART_BYTES:
+        what = "a folder name" if too_long else f"the partial file name {partial}"
+        issues.append(
+            error(
+                "output.name_too_long",
+                "output.path",
+                f"The output path has {what} longer than {MAX_PART_BYTES} bytes: the file "
+                "cannot be created.",
+                *(fixes if not too_long else []),
+            )
+        )
+        return issues
+    forbidden = replace_forbidden(path.name)[0] != path.name
+    if is_reserved(path.name) or forbidden:
+        why = (
+            "a reserved device name on Windows"
+            if is_reserved(path.name)
+            else "characters that Windows does not allow"
+        )
+        make = error if isinstance(path, PureWindowsPath) else warning
+        issues.append(
+            make(
+                "output.name_not_portable",
+                "output.path",
+                f"The file name {path.name} has {why}.",
+                *fixes,
+            )
+        )
+    return issues
 
 
 def _size(value: float) -> str:
@@ -104,13 +215,17 @@ def output_path_issues(
                 save_as(path.with_suffix(default)),
             )
         )
-    if fs.same_file(path, source):
+    issues.extend(name_issues(path, target=target))
+    clash = source_clash(path, source, fs)
+    if clash is not None:
+        what = "output" if clash == path else "file written during the encode"
         issues.append(
             error(
                 "output.same_as_source",
                 "output.path",
-                f"The output {path} is the source file: it would be overwritten while it is read.",
-                save_as(next_free_path(path, fs)),
+                f"The {what} {clash} is the source file: it would be overwritten while it is "
+                "read, and the queue removes its temporary files.",
+                save_as(_free_of_source(path, source, fs)),
             )
         )
         return issues

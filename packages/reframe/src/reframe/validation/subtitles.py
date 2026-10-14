@@ -20,11 +20,15 @@ from reframe.validation.common import (
     fix,
     remove,
     replace,
-    switch_container_fixes,
 )
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
-from reframe.validation.tracks import EXTERNAL_FORMATS, FORCED_ONLY_CODECS, subtitle_input
+from reframe.validation.tracks import (
+    EXTERNAL_FORMATS,
+    FORCED_ONLY_CODECS,
+    subtitle_input,
+    switch_container,
+)
 
 
 def _drop(ctx: JobContext, index: int) -> Fix:
@@ -119,11 +123,8 @@ def bitmap_copy(ctx: JobContext) -> Iterator[ValidationIssue]:
                 fix("Burn it in", replace(f"subtitles[{index}].action", "burn"), target=ctx.target)
             )
         fixes.extend(
-            switch_container_fixes(
-                containers_for(ctx.definitions, "subtitles", source.codec, copy=True),
-                ctx.job.output.container,
-                ctx.definitions,
-                target=ctx.target,
+            switch_container(
+                ctx, containers_for(ctx.definitions, "subtitles", source.codec, copy=True)
             )
         )
         fixes.append(_drop(ctx, index))
@@ -156,7 +157,9 @@ def conversions(ctx: JobContext) -> Iterator[ValidationIssue]:
                         target=ctx.target,
                     )
                 )
-            if not ctx.job.video.passthrough:
+            if not ctx.job.video.passthrough and not any(
+                other.action == "burn" for other in ctx.job.subtitles
+            ):
                 fixes.append(
                     fix(
                         "Burn it in",
