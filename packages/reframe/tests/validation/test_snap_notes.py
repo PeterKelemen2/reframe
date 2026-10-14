@@ -154,6 +154,33 @@ def test_texts_say_what_is_written(
     assert found[0].severity is Severity.INFO
 
 
+@pytest.mark.parametrize(
+    ("mixdown", "channels", "kbps", "written"),
+    [("stereo", 6, 150, 128), ("5.1", 6, 700, 640), ("5.1", 6, 100, 224), (None, 2, 150, 128)],
+)
+def test_bitrates_snap_down_as_handbrake(
+    mixdown: Mixdown | None, channels: int, kbps: int, written: int
+) -> None:
+    """Decision 0025 (HandBrake 1.11.2, libhb/common.c): clamp to the range of the layout,
+    then the largest allowed step at or below. The fix sets that value."""
+    track = AudioOutputTrack(encoder="ac3", mixdown=mixdown, bitrate=kbps)
+    [issue] = [
+        i
+        for i in sc.check(one_track(track, channels=channels))
+        if i.code == "audio.bitrate_out_of_range"
+    ]
+    assert issue.message.endswith(f"is written at {written} kb/s.")
+    [op] = issue.fixes[0].patch
+    assert isinstance(op, ReplaceOp)
+    assert op.value == written
+
+
+def test_a_passthru_copy_is_never_snapped() -> None:
+    track = AudioOutputTrack(action="passthru", encoder="ac3", bitrate=700, samplerate=96000)
+    issues = one_track(track, channels=8).validate()
+    assert not [i for i in issues if i.code in AUDIO_CODES], issues
+
+
 def test_a_layout_without_a_name_is_shown_as_channels() -> None:
     s = one_track(AudioOutputTrack(encoder="libmp3lame"), channels=6)
     s.source.audio[0].channel_layout = None
