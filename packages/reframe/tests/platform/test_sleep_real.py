@@ -4,10 +4,16 @@ Other programs may hold inhibits at the same time (a media player, other test ru
 parallel), so every test looks only for **its own** inhibit: a unique reason per test, found
 in the lists that name the holder and the reason (logind ``ListInhibitors``, KDE PowerDevil's
 ``PolicyAgent.ActiveInhibitions``), present during the hold and gone after it. Global flags
-(``PowerManagement.HasInhibit``, the PolicyAgent's ``HasInhibition``) are checked only when
-they were false before the test; otherwise that one check is skipped with a message.
-``CanSuspend`` must stay ``yes`` during the hold (the user's own suspend is never blocked,
-decision 0020) unless it was not ``yes`` before.
+(``PowerManagement.HasInhibit``, the PolicyAgent's ``HasInhibition``) are only printed, never
+asserted: another program can change them at any moment (``systemd-inhibit --what=idle``
+started during a test sets KDE's "screen" flag about 5 s later). ``CanSuspend`` must stay
+``yes`` during the hold (the user's own suspend is never blocked, decision 0020), unless it
+was not ``yes`` before or another program holds a ``sleep`` block lock.
+
+Every lock and connection is freed in a ``finally`` (:func:`_closing`,
+:func:`_session_connection`), so a failing check never leaks a socket into a later test, and
+each test checks that no fd is left open and no unclosed socket is left to the garbage
+collector.
 
 Each test prints what it sees (``pytest -s`` shows it). Skipped where the bus or the
 service is missing (CI containers). Recorded output: testdata/README.md "Sleep inhibit
@@ -17,13 +23,16 @@ service is missing (CI containers). Recorded output: testdata/README.md "Sleep i
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import gc
 import json
 import os
 import shutil
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+import warnings
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import pytest
 
@@ -178,27 +187,51 @@ async def _can_suspend() -> str:
     return str(reply.body[0])
 
 
-def _check_can_suspend(before: str, during: str) -> None:
+async def _print_flags(label: str) -> None:
+    """Global flags, printed only: other programs change them at any time (a media player,
+    ``systemd-inhibit``, KDE mirroring someone else's logind lock), so no test asserts them."""
+    has = await _flag(PM, "HasInhibit")
+    suspend = await _flag(POLICY_AGENT, "HasInhibition", SUSPEND)
+    screen = await _flag(POLICY_AGENT, "HasInhibition", SCREEN)
+    print(f"{label}: HasInhibit={has} PolicyAgent suspend={suspend} screen={screen}")
+
+
+async def _foreign_sleep_blocks(why: str) -> list[list[object]]:
+    """logind's ``sleep`` block locks of other programs (they would change ``CanSuspend``)."""
+    data = await _busctl_json(
+        "call",
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+        "ListInhibitors",
+    )
+    assert isinstance(data, dict)
+    (inhibitors,) = data["data"]
+    return [
+        entry
+        for entry in inhibitors
+        if "sleep" in str(entry[0]).split(":") and entry[3] == "block" and entry[2] != why
+    ]
+
+
+async def _check_can_suspend(why: str, before: str) -> None:
+    """The user's own suspend is never blocked by Reframe (decision 0020).
+
+    ``CanSuspend`` is global: another program's ``sleep`` block lock turns it to
+    ``inhibited``. So a change is a failure only when no other program holds such a lock.
+    """
+    during = await _can_suspend()
     print(f"CanSuspend before={before} during={during}")
-    if before == "yes":
-        assert during == "yes"  # the user's own suspend is never blocked
-    else:  # pragma: no cover - depends on the machine
-        print(f"skipped the CanSuspend check: it was {before!r} before the test")
-
-
-async def _check_global_flag(
-    label: str, before: int | None, expected: int, read: Callable[[], Awaitable[int | None]]
-) -> None:
-    """Check a global flag only when it was false before the test."""
-    if before is None:
-        print(f"skipped {label}: not available")
+    if before != "yes":  # pragma: no cover - depends on the machine
+        print(f"not checked: CanSuspend was {before!r} before the test")
         return
-    if before:
-        print(f"skipped {label}: something else already held it before the test")
+    if during == "yes":
         return
-    now = await read()
-    print(f"{label}: before={before} now={now}")
-    assert now == expected
+    foreign = await _foreign_sleep_blocks(why)  # pragma: no cover - depends on the machine
+    if foreign:  # pragma: no cover - depends on the machine
+        print(f"not checked: other programs hold sleep block locks: {foreign}")
+        return
+    raise AssertionError(f"CanSuspend is {during!r} and only Reframe holds a lock")
 
 
 def _open_fds() -> set[int]:
@@ -215,6 +248,42 @@ def _new_fds(before: set[int]) -> dict[int, str]:
         except OSError:
             continue  # closed meanwhile
     return new
+
+
+def _assert_nothing_left(fds_before: set[int]) -> None:
+    """No fd left open, and no unclosed socket left to the garbage collector."""
+    assert not _new_fds(fds_before)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        gc.collect()
+    unclosed = [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
+    assert not unclosed
+
+
+@contextlib.asynccontextmanager
+async def _closing(inhibitor: SleepInhibitor) -> AsyncIterator[SleepInhibitor]:
+    """Close the inhibitor at the end whatever happens: a failing check never leaks a lock
+    or a socket into a later test."""
+    try:
+        yield inhibitor
+    finally:
+        await inhibitor.close()
+
+
+@contextlib.asynccontextmanager
+async def _session_connection() -> AsyncIterator[dbus.Connection]:
+    """A raw session bus connection, always closed at the end."""
+    address = dbus.session_bus_address()
+    if address is None:  # pragma: no cover - the fixtures skip first
+        pytest.skip("no session bus")
+    try:
+        connection = await asyncio.to_thread(dbus.Connection.open, address)
+    except OSError as exc:  # pragma: no cover - depends on the machine
+        pytest.skip(f"no session bus: {exc}")
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 
 # --------------------------------------------------------------------------- fixtures
@@ -249,24 +318,23 @@ async def test_logind_idle_lock_appears_and_disappears() -> None:
     can_before = await _can_suspend()
     assert await _logind_ours(why) == []
 
-    inhibitor = SleepInhibitor([LogindBackend()])
-    assert await inhibitor.acquire(why) is InhibitState.ACTIVE
-    during = await _logind_ours(why)
-    print(f"logind during: {during}")
-    (entry,) = during
-    what, who, _, mode, _, pid = entry
-    assert what == "idle"  # never "sleep" (decision 0020)
-    assert who == "Reframe"
-    assert mode == "block"
-    assert pid == os.getpid()  # logind records the caller: Reframe itself
-    _check_can_suspend(can_before, await _can_suspend())
+    async with _closing(SleepInhibitor([LogindBackend()])) as inhibitor:
+        assert await inhibitor.acquire(why) is InhibitState.ACTIVE
+        during = await _logind_ours(why)
+        print(f"logind during: {during}")
+        (entry,) = during
+        what, who, _, mode, _, pid = entry
+        assert what == "idle"  # never "sleep" (decision 0020)
+        assert who == "Reframe"
+        assert mode == "block"
+        assert pid == os.getpid()  # logind records the caller: Reframe itself
+        await _check_can_suspend(why, can_before)
 
-    await inhibitor.release()
-    after = await _logind_ours(why)
-    print(f"logind after: {after}")
-    assert after == []
-    await inhibitor.close()
-    assert not _new_fds(fds_before)  # no fd left open
+        await inhibitor.release()
+        after = await _logind_ours(why)
+        print(f"logind after: {after}")
+        assert after == []
+    _assert_nothing_left(fds_before)
 
 
 @pytest.mark.slow
@@ -274,32 +342,29 @@ async def test_logind_idle_lock_appears_and_disappears() -> None:
 async def test_session_inhibit_appears_and_disappears() -> None:
     why = _why("session")
     fds_before = _open_fds()
-    has_before = await _flag(PM, "HasInhibit")
-    screen_before = await _flag(POLICY_AGENT, "HasInhibition", SCREEN)
     can_before = await _can_suspend() if _logind_reachable() is None else None
     assert await _kde_ours(why) == []
+    await _print_flags("before")
 
     backend = SessionInhibitBackend()
-    inhibitor = SleepInhibitor([backend])
-    assert await inhibitor.acquire(why) is InhibitState.ACTIVE
-    assert backend.interface == "org.freedesktop.PowerManagement.Inhibit"
-    during = await _kde_appears(why)
-    print(f"KDE during: {during}")
-    (entry,) = during
-    assert entry[:2] == ["sleep", "Reframe"]  # automatic suspend only, not "idle"
-    await _check_global_flag("HasInhibit", has_before, 1, lambda: _flag(PM, "HasInhibit"))
-    await _check_global_flag(
-        "PolicyAgent screen", screen_before, 0, lambda: _flag(POLICY_AGENT, "HasInhibition", 4)
-    )
-    if can_before is not None:
-        _check_can_suspend(can_before, await _can_suspend())
+    async with _closing(SleepInhibitor([backend])) as inhibitor:
+        assert await inhibitor.acquire(why) is InhibitState.ACTIVE
+        assert backend.interface == "org.freedesktop.PowerManagement.Inhibit"
+        during = await _kde_appears(why)
+        print(f"KDE during: {during}")
+        # Our own inhibition is "sleep" (automatic suspend only), not "idle" (which would
+        # also keep the screen on).
+        (entry,) = during
+        assert entry[:2] == ["sleep", "Reframe"]
+        await _print_flags("during")
+        if can_before is not None:
+            await _check_can_suspend(why, can_before)
 
-    await inhibitor.release()
-    assert await _kde_gone(why)
-    print(f"KDE after: {await _kde_ours(why)}")
-    await _check_global_flag("HasInhibit after", has_before, 0, lambda: _flag(PM, "HasInhibit"))
-    await inhibitor.close()
-    assert not _new_fds(fds_before)  # the session connection is closed
+        await inhibitor.release()
+        assert await _kde_gone(why)
+        print(f"KDE after: {await _kde_ours(why)}")
+        await _print_flags("after")
+    _assert_nothing_left(fds_before)  # the session connection is closed
 
 
 @pytest.mark.slow
@@ -308,28 +373,30 @@ async def test_default_inhibitor_on_this_desktop() -> None:
     why = _why("default")
     bus = EventBus()
     sub = bus.subscribe()
+    fds_before = _open_fds()
     can_before = await _can_suspend()
     idle_action = await LogindBackend().idle_action()
-    inhibitor = create_sleep_inhibitor(bus)
-    assert await inhibitor.acquire(why) is InhibitState.ACTIVE
-    kde = await _kde_appears(why)
-    logind = await _logind_ours(why)
-    print(f"default: backends={inhibitor.backends} IdleAction={idle_action}")
-    print(f"default during: logind {logind}; KDE {kde}")
-    if idle_action == "ignore":
-        # The desktop handles idle; no logind lock (on KDE it would keep the screen on).
-        assert inhibitor.backends == ("session",)
-        assert logind == []
-        assert [e[0] for e in kde] == ["sleep"]
-    else:  # pragma: no cover - depends on the machine
-        assert inhibitor.backends == ("session", "logind")
-    _check_can_suspend(can_before, await _can_suspend())
-    assert inhibitor.not_stopped == ()
-    await inhibitor.close()
-    await inhibitor.close()
-    assert await _kde_gone(why)
-    assert await _logind_ours(why) == []
+    async with _closing(create_sleep_inhibitor(bus)) as inhibitor:
+        assert await inhibitor.acquire(why) is InhibitState.ACTIVE
+        kde = await _kde_appears(why)
+        logind = await _logind_ours(why)
+        print(f"default: backends={inhibitor.backends} IdleAction={idle_action}")
+        print(f"default during: logind {logind}; KDE {kde}")
+        if idle_action == "ignore":
+            # The desktop handles idle; no logind lock (on KDE it would keep the screen on).
+            assert inhibitor.backends == ("session",)
+            assert logind == []
+            assert [e[0] for e in kde] == ["sleep"]
+        else:  # pragma: no cover - depends on the machine
+            assert inhibitor.backends == ("session", "logind")
+        await _check_can_suspend(why, can_before)
+        assert inhibitor.not_stopped == ()
+        await inhibitor.close()
+        await inhibitor.close()
+        assert await _kde_gone(why)
+        assert await _logind_ours(why) == []
     assert sub.get_nowait() is None  # no warning
+    _assert_nothing_left(fds_before)
 
 
 @pytest.mark.usefixtures("logind")
@@ -339,16 +406,18 @@ async def test_without_a_desktop_session_the_logind_idle_lock_is_taken(
     monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     why = _why("headless")
-    inhibitor = create_sleep_inhibitor()
-    assert await inhibitor.acquire(why) is InhibitState.ACTIVE
-    during = await _logind_ours(why)
-    print(f"headless: backends={inhibitor.backends} during={during}")
-    assert inhibitor.backends == ("logind",)
-    assert inhibitor.not_stopped == ()  # no desktop: nothing else to stop
-    (entry,) = during
-    assert entry[0] == "idle"
-    await inhibitor.close()
-    assert await _logind_ours(why) == []
+    fds_before = _open_fds()
+    async with _closing(create_sleep_inhibitor()) as inhibitor:
+        assert await inhibitor.acquire(why) is InhibitState.ACTIVE
+        during = await _logind_ours(why)
+        print(f"headless: backends={inhibitor.backends} during={during}")
+        assert inhibitor.backends == ("logind",)
+        assert inhibitor.not_stopped == ()  # no desktop: nothing else to stop
+        (entry,) = during
+        assert entry[0] == "idle"
+        await inhibitor.close()
+        assert await _logind_ours(why) == []
+    _assert_nothing_left(fds_before)
 
 
 async def test_no_bus_at_all_gives_the_one_warning() -> None:
@@ -358,80 +427,105 @@ async def test_no_bus_at_all_gives_the_one_warning() -> None:
     inhibitor = SleepInhibitor(
         [SessionInhibitBackend(address=nowhere), LogindBackend(address=nowhere)], bus
     )
-    assert await inhibitor.acquire("job") is InhibitState.UNAVAILABLE
-    event = sub.get_nowait()
-    assert event is not None
-    assert event.type == "app.warning"
-    print(event.model_dump_json(indent=2))
-    assert sub.get_nowait() is None
-    await inhibitor.release()
-    await inhibitor.close()
+    async with _closing(inhibitor):
+        assert await inhibitor.acquire("job") is InhibitState.UNAVAILABLE
+        event = sub.get_nowait()
+        assert event is not None
+        assert event.type == "app.warning"
+        print(event.model_dump_json(indent=2))
+        assert sub.get_nowait() is None
+        await inhibitor.release()
+
+
+async def _fail_while_the_inhibitor_holds(inhibitor: SleepInhibitor, why: str) -> None:
+    async with _closing(inhibitor):
+        assert await inhibitor.acquire(why) is InhibitState.ACTIVE
+        assert inhibitor.backends == ("session", "logind")
+        assert inhibitor.count == 0, "deliberate"
+
+
+async def _fail_while_a_connection_holds(why: str) -> None:
+    async with _session_connection() as connection:
+        await asyncio.to_thread(sleep._pm_inhibit, connection, why, 5.0)
+        assert connection.closed, "deliberate"
+
+
+@pytest.mark.usefixtures("logind", "power_management")
+async def test_a_failing_check_inside_the_hold_frees_everything() -> None:
+    """The pattern of every test here: a check that fails while the locks are held still
+    frees them and closes every socket (a leaked socket would fail a later, unrelated test
+    with ``PytestUnraisableExceptionWarning``)."""
+    why = _why("failing")
+    fds_before = _open_fds()
+    inhibitor = SleepInhibitor([SessionInhibitBackend(), LogindBackend()])
+    with pytest.raises(AssertionError, match="deliberate"):
+        await _fail_while_the_inhibitor_holds(inhibitor, why)
+    assert inhibitor.backends == ()
+    assert await _logind_ours(why) == []
+    _assert_nothing_left(fds_before)
+
+    with pytest.raises(AssertionError, match="deliberate"):
+        await _fail_while_a_connection_holds(why)
+    _assert_nothing_left(fds_before)
 
 
 @pytest.mark.slow
 @pytest.mark.usefixtures("kde")
 async def test_portal_inhibit_with_this_client() -> None:
     """The portal fallback (GNOME and others), checked through KDE's portal backend."""
-    address = dbus.session_bus_address()
-    assert address is not None
     why = _why("portal")
-    try:
-        connection = await asyncio.to_thread(dbus.Connection.open, address)
-    except OSError as exc:  # pragma: no cover - depends on the machine
-        pytest.skip(f"no session bus: {exc}")
     fds_before = _open_fds()
-    try:
-        reply = await asyncio.to_thread(sleep._portal_inhibit, connection, why, 5.0)
-    except dbus.DBusError as exc:  # pragma: no cover - depends on the machine
-        connection.close()
-        pytest.skip(f"no XDG desktop portal: {exc}")
-    print(f"portal reply: {reply.signature} {reply.body}")
-    assert reply.signature == "o"
-    during = await _kde_appears(why)
-    print(f"portal during: {during}")
-    (entry,) = during
-    assert entry[0] == "sleep"  # flag 4: automatic suspend only, the screen may lock
-    # Request.Close() ends it while the connection is still open.
-    await asyncio.to_thread(sleep._portal_close, connection, str(reply.body[0]), 2.0)
-    assert await _kde_gone(why)
-    print(f"portal after Request.Close (connection open): {await _kde_ours(why)}")
-    connection.close()
+    async with _session_connection() as connection:
+        try:
+            reply = await asyncio.to_thread(sleep._portal_inhibit, connection, why, 5.0)
+        except dbus.DBusError as exc:  # pragma: no cover - depends on the machine
+            pytest.skip(f"no XDG desktop portal: {exc}")
+        print(f"portal reply: {reply.signature} {reply.body}")
+        assert reply.signature == "o"
+        during = await _kde_appears(why)
+        print(f"portal during: {during}")
+        (entry,) = during
+        assert entry[0] == "sleep"  # flag 4: automatic suspend only, the screen may lock
+        # Request.Close() ends it while the connection is still open.
+        await asyncio.to_thread(sleep._portal_close, connection, str(reply.body[0]), 2.0)
+        assert await _kde_gone(why)
+        print(f"portal after Request.Close (connection open): {await _kde_ours(why)}")
     assert connection.closed
-    assert not _new_fds(fds_before)
+    _assert_nothing_left(fds_before)
 
 
 @pytest.mark.slow
 @pytest.mark.usefixtures("power_management", "kde")
 async def test_closing_the_connection_alone_ends_the_power_management_inhibit() -> None:
-    address = dbus.session_bus_address()
-    assert address is not None
     why = _why("close")
-    connection = await asyncio.to_thread(dbus.Connection.open, address)
-    reply = await asyncio.to_thread(sleep._pm_inhibit, connection, why, 5.0)
-    print(f"PowerManagement cookie: {reply.signature} {reply.body}")
-    during = await _kde_appears(why)
-    print(f"PowerManagement during: {during}")
-    assert [e[:2] for e in during] == [["sleep", "Reframe"]]
-    connection.close()  # no UnInhibit: as if Reframe crashed
-    assert await _kde_gone(why)
-    print(f"PowerManagement after the connection closed: {await _kde_ours(why)}")
+    fds_before = _open_fds()
+    async with _session_connection() as connection:
+        reply = await asyncio.to_thread(sleep._pm_inhibit, connection, why, 5.0)
+        print(f"PowerManagement cookie: {reply.signature} {reply.body}")
+        during = await _kde_appears(why)
+        print(f"PowerManagement during: {during}")
+        assert [e[:2] for e in during] == [["sleep", "Reframe"]]
+        connection.close()  # no UnInhibit: as if Reframe crashed
+        assert await _kde_gone(why)
+        print(f"PowerManagement after the connection closed: {await _kde_ours(why)}")
+    _assert_nothing_left(fds_before)
 
 
 @pytest.mark.slow
 @pytest.mark.usefixtures("logind", "kde")
-async def test_kde_turns_a_logind_idle_lock_into_a_screen_inhibition() -> None:
+async def test_kde_turns_a_logind_idle_lock_into_an_idle_inhibition() -> None:
     """Why the logind idle lock is taken only where needed: KDE mirrors it (after ~5 s) as
     an "idle" inhibition, which also keeps the screen from dimming and locking."""
     why = _why("mirror")
-    screen_before = await _flag(POLICY_AGENT, "HasInhibition", SCREEN)
-    inhibitor = SleepInhibitor([LogindBackend()])
-    assert await inhibitor.acquire(why) is InhibitState.ACTIVE
-    during = await _kde_appears(why)
-    print(f"logind idle lock only, KDE during: {during}")
-    assert [e[:2] for e in during] == [["idle", "Reframe"]]
-    await _check_global_flag(
-        "PolicyAgent screen", screen_before, 1, lambda: _flag(POLICY_AGENT, "HasInhibition", 4)
-    )
-    await inhibitor.close()
-    assert await _kde_gone(why)
-    print(f"logind idle lock only, KDE after: {await _kde_ours(why)}")
+    fds_before = _open_fds()
+    async with _closing(SleepInhibitor([LogindBackend()])) as inhibitor:
+        assert await inhibitor.acquire(why) is InhibitState.ACTIVE
+        during = await _kde_appears(why)
+        print(f"logind idle lock only, KDE during: {during}")
+        # Our own entry: "idle" (the kind that keeps the screen on), not "sleep".
+        assert [e[:2] for e in during] == [["idle", "Reframe"]]
+        await _print_flags("logind idle lock only, during")
+        await inhibitor.close()
+        assert await _kde_gone(why)
+        print(f"logind idle lock only, KDE after: {await _kde_ours(why)}")
+    _assert_nothing_left(fds_before)

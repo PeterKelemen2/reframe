@@ -23,8 +23,12 @@ polkit ask the user for a password.
 
 Errors: :class:`DBusError` for an error reply of the remote side (``name`` is the D-Bus
 error name, for example ``org.freedesktop.DBus.Error.AccessDenied``); ``OSError`` (incl.
-``TimeoutError``) when the bus cannot be reached; :class:`DBusProtocolError` for anything
-the bus sends that this client does not understand. The callers turn all of them into data.
+``TimeoutError``) when the bus cannot be reached or closes the connection;
+:class:`DBusProtocolError` for anything the bus sends that this client does not understand
+(also garbage bytes and header fields of the wrong type); ``ValueError`` for a malformed bus
+address or an argument that cannot be sent (a string with a NUL). Nothing else, and the
+socket is closed whenever :meth:`Connection.open` or :func:`call` raises. The callers turn
+all of them into data.
 
 Linux only (the module imports on Windows, but connecting raises ``OSError`` there).
 """
@@ -146,7 +150,9 @@ def parse_address(address: str) -> list[str | bytes]:
     """The socket addresses of a D-Bus address list that this client can use.
 
     ``unix:path=/x`` gives ``"/x"``; ``unix:abstract=x`` gives ``b"\\0x"``. Other
-    transports (``tcp:``, ``unixexec:``, ``unix:runtime=``) are skipped.
+    transports (``tcp:``, ``unixexec:``, ``unix:runtime=``) are skipped. Raises
+    ``ValueError`` ("malformed D-Bus address") for a ``%`` that is not followed by two hex
+    digits, an escaped value that is not UTF-8, or a path with a NUL.
     """
     result: list[str | bytes] = []
     for entry in address.split(";"):
@@ -154,26 +160,41 @@ def parse_address(address: str) -> list[str | bytes]:
         if transport != "unix":
             continue
         values = dict(p.partition("=")[::2] for p in params.split(",") if p)
-        if "path" in values:
-            result.append(_unescape(values["path"]))
-        elif "abstract" in values:
-            result.append(b"\0" + _unescape(values["abstract"]).encode())
+        try:
+            if "path" in values:
+                path = _unescape(values["path"])
+                if "\0" in path:
+                    raise ValueError("a path cannot contain NUL")
+                result.append(path)
+            elif "abstract" in values:
+                result.append(b"\0" + _unescape(values["abstract"]).encode())
+        except ValueError as exc:
+            raise ValueError(f"malformed D-Bus address {address!r}: {exc}") from None
     return result
 
 
+_HEX = frozenset(b"0123456789abcdefABCDEF")
+
+
 def _unescape(value: str) -> str:
-    """Undo the ``%xx`` escaping of D-Bus address values."""
+    """Undo the ``%xx`` escaping of D-Bus address values (``ValueError`` if malformed)."""
     out = bytearray()
     i = 0
     raw = value.encode()
     while i < len(raw):
-        if raw[i] == 0x25 and i + 3 <= len(raw):  # '%xx'
-            out.append(int(raw[i + 1 : i + 3], 16))
+        if raw[i] == 0x25:  # '%xx'
+            digits = raw[i + 1 : i + 3]
+            if len(digits) != 2 or not _HEX.issuperset(digits):
+                raise ValueError(f"bad escape {raw[i : i + 3].decode(errors='replace')!r}")
+            out.append(int(digits, 16))
             i += 3
         else:
             out.append(raw[i])
             i += 1
-    return out.decode()
+    try:
+        return out.decode()
+    except UnicodeDecodeError:
+        raise ValueError("an escaped value is not UTF-8") from None
 
 
 # --------------------------------------------------------------------------- marshalling
@@ -396,8 +417,20 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
 
     Bodies are parsed only for simple signatures (``s``, ``o``, ``g``, ``u``, ``h``, ``i``,
     ``b``, ``y``, and ``v`` holding one of these); other bodies are left empty (this client
-    never needs them).
+    never needs them). Raises only :class:`DBusProtocolError` (and then closes the message's
+    descriptors), whatever the bytes are.
     """
+    try:
+        return _decode_message(data, fds)
+    except DBusProtocolError:
+        raise
+    except (ValueError, IndexError, struct.error) as exc:  # garbage that slipped through
+        raise DBusProtocolError(f"malformed message: {type(exc).__name__}: {exc}") from None
+
+
+def _decode_message(data: bytes, fds: list[int]) -> Message:
+    if len(data) < 16:
+        raise DBusProtocolError("message ends early")
     endian = _endian(data[0:1])
     msg_type, _flags, version = data[1], data[2], data[3]
     if version != 1:
@@ -413,7 +446,11 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
         reader.align(8)
         code = reader.byte()
         sig = reader.signature()
-        fields[code] = reader.value(sig)
+        value = reader.value(sig)
+        expected = _FIELD_TYPES.get(code)
+        if expected is not None and sig != expected:
+            raise DBusProtocolError(f"header field {code} has type {sig!r}, not {expected!r}")
+        fields[code] = value
     reader.pos = end
     reader.align(8)
     body_start = reader.pos
@@ -545,6 +582,9 @@ def _connect(addresses: Sequence[str | bytes], deadline: float) -> socket.socket
                 sock.close()
                 last = exc
                 continue
+            except BaseException:
+                sock.close()
+                raise
             return sock
         assert last is not None
         raise last

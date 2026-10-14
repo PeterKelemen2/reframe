@@ -50,8 +50,15 @@ Windows
 
 When no backend holds, the inhibitor publishes one ``app.warning`` event (code
 ``sleep_inhibit.unavailable``) and goes on: :attr:`~SleepInhibitor.state` is
-``unavailable`` and the queue runs anyway. Expected failures (no bus, no service, access
-denied) never raise. No call ever asks for a password.
+``unavailable`` and the queue runs anyway. Sleep inhibit never raises (decision 0011 item
+7): every failure of a backend, also an unexpected one (a malformed bus address, garbage
+from the bus, a bug), means "this backend is unavailable"; its socket is closed and the
+encode goes on. No call ever asks for a password.
+
+Cancellation: a blocking D-Bus call runs in a worker thread that is never abandoned with a
+socket or a file descriptor open (see :func:`_in_thread`); ``release`` and ``close`` always
+finish, also when their caller is cancelled; a cancelled ``acquire`` leaves no count behind
+(see :meth:`SleepInhibitor.acquire`).
 """
 
 from __future__ import annotations
@@ -65,9 +72,11 @@ import os
 import queue
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Sequence
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol, cast
+from functools import partial
+from typing import Any, Protocol, cast
 
 from reframe.events import EventBus
 from reframe.models.events import AppWarningEvent
@@ -121,8 +130,49 @@ module doc for why not idle)."""
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 
-#: The cleanup of a cancelled acquire runs as a task: keep a reference until it is done.
-_background: set[asyncio.Task[None]] = set()
+#: The inhibitor's work runs as tasks that outlive a cancelled caller: keep a reference to
+#: each until it is done.
+_background: set[asyncio.Task[Any]] = set()
+
+
+def _spawn[T](coro: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
+    task = asyncio.ensure_future(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return task
+
+
+async def _in_thread[T](work: Callable[[], T], discard: Callable[[T], None]) -> T:
+    """Run the blocking ``work`` in a worker thread and return its result.
+
+    If the caller is cancelled first, the thread still runs to its end (a blocking call
+    cannot be stopped) and its result goes to ``discard``, which closes what ``work``
+    opened: a cancelled hold never leaves a socket or a lock behind. ``work`` itself must
+    close what it opened when it fails.
+    """
+    lock = threading.Lock()
+    results: list[T] = []
+    abandoned = False
+
+    def run() -> None:
+        result = work()
+        with lock:
+            if not abandoned:
+                results.append(result)
+                return
+        discard(result)
+
+    try:
+        await asyncio.to_thread(run)
+    except asyncio.CancelledError:
+        with lock:
+            abandoned = True
+            left = results[:]
+            results.clear()
+        for result in left:
+            discard(result)
+        raise
+    return results[0]
 
 
 class InhibitState(StrEnum):
@@ -200,19 +250,24 @@ class LogindBackend:
         return self._fd
 
     async def idle_action(self) -> str | None:
-        """logind's ``IdleAction`` property (``ignore``, ``suspend``, …), ``None`` if unknown."""
+        """logind's ``IdleAction`` property (``ignore``, ``suspend``, …), ``None`` if unknown
+        (also when the bus fails in any way)."""
         try:
-            reply = await asyncio.to_thread(
-                self._call,
-                destination=LOGIND_DESTINATION,
-                path=LOGIND_PATH,
-                interface="org.freedesktop.DBus.Properties",
-                member="Get",
-                args=(LOGIND_INTERFACE, "IdleAction"),
-                address=self._address,
-                timeout=self._timeout,
+            reply = await _in_thread(
+                partial(
+                    self._call,
+                    destination=LOGIND_DESTINATION,
+                    path=LOGIND_PATH,
+                    interface="org.freedesktop.DBus.Properties",
+                    member="Get",
+                    args=(LOGIND_INTERFACE, "IdleAction"),
+                    address=self._address,
+                    timeout=self._timeout,
+                ),
+                _discard_reply,
             )
-        except (OSError, dbus.DBusError, dbus.DBusProtocolError):
+        except Exception as exc:  # whatever it is, IdleAction is unknown (never raises)
+            log.debug("logind IdleAction: %s: %s", type(exc).__name__, exc)
             return None
         _close_fds(reply.fds)
         value = reply.body[0] if reply.signature == "v" and reply.body else None
@@ -231,20 +286,25 @@ class LogindBackend:
         try:
             # The fd is not tied to a thread (unlike the Windows execution state), so a
             # worker thread is fine here.
-            reply = await asyncio.to_thread(
-                self._call,
-                destination=LOGIND_DESTINATION,
-                path=LOGIND_PATH,
-                interface=LOGIND_INTERFACE,
-                member="Inhibit",
-                args=(WHAT, WHO, why, MODE),
-                address=self._address,
-                timeout=self._timeout,
+            reply = await _in_thread(
+                partial(
+                    self._call,
+                    destination=LOGIND_DESTINATION,
+                    path=LOGIND_PATH,
+                    interface=LOGIND_INTERFACE,
+                    member="Inhibit",
+                    args=(WHAT, WHO, why, MODE),
+                    address=self._address,
+                    timeout=self._timeout,
+                ),
+                _discard_reply,
             )
         except dbus.DBusError as exc:
             return f"Inhibit failed: {exc}"
         except (OSError, dbus.DBusProtocolError) as exc:
             return f"no system bus: {type(exc).__name__}: {exc}"
+        except Exception as exc:  # a malformed address, a bug: unavailable, never raised
+            return f"system bus: {type(exc).__name__}: {exc}"
         index = reply.body[0] if reply.signature == "h" and reply.body else None
         if not isinstance(index, int) or not 0 <= index < len(reply.fds):
             _close_fds(reply.fds)
@@ -266,6 +326,10 @@ def _close_fds(fds: Sequence[int]) -> None:
     for fd in fds:
         with contextlib.suppress(OSError):
             os.close(fd)
+
+
+def _discard_reply(reply: dbus.Reply) -> None:
+    _close_fds(reply.fds)
 
 
 # --------------------------------------------------------------------------- desktop session
@@ -351,6 +415,27 @@ _INHIBIT: dict[str, tuple[_InhibitCall, Callable[[_BusConnection, str | int, flo
 }
 
 
+def _close_quietly(connection: _BusConnection) -> None:
+    try:
+        connection.close()
+    except Exception as exc:  # pragma: no cover - dbus.Connection.close never raises
+        log.debug("closing the session bus connection failed: %s", exc)
+
+
+@dataclass(slots=True)
+class _SessionHold:
+    """A held session inhibit: the open connection, the interface and its cookie/handle."""
+
+    connection: _BusConnection
+    interface: str
+    token: str | int | None
+
+
+def _discard_hold(result: _SessionHold | str) -> None:
+    if isinstance(result, _SessionHold):
+        _close_quietly(result.connection)  # closing the connection ends the inhibit
+
+
 class SessionInhibitBackend:
     """The desktop session's inhibit for automatic suspend, on a connection kept open.
 
@@ -396,29 +481,48 @@ class SessionInhibitBackend:
         address = self._address if self._address is not None else dbus.session_bus_address()
         if address is None:
             return Skipped("no session bus (DBUS_SESSION_BUS_ADDRESS is not set)")
+        result = await _in_thread(partial(self._open_and_inhibit, address, why), _discard_hold)
+        if isinstance(result, str):
+            return result
+        self._connection, self.interface, self._token = (
+            result.connection,
+            result.interface,
+            result.token,
+        )
+        return None
+
+    def _open_and_inhibit(self, address: str, why: str) -> _SessionHold | str:
+        """Blocking: connect and take the inhibit. A failure is the returned text (never
+        raised), and then the connection is closed."""
         try:
-            connection = await asyncio.to_thread(self._connect, address, self._timeout)
+            connection: _BusConnection | None = self._connect(address, self._timeout)
         except OSError as exc:
             return Skipped(f"no session bus: {type(exc).__name__}: {exc}")
         except dbus.DBusError as exc:
             return f"session bus refused the connection: {exc}"
         except dbus.DBusProtocolError as exc:
             return f"session bus: {exc}"
+        except Exception as exc:  # a malformed address, a bug: unavailable, never raised
+            return f"session bus: {type(exc).__name__}: {exc}"
         errors: list[str] = []
         try:
             for interface in self._interfaces:
                 inhibit, _ = _INHIBIT[interface]
+                assert connection is not None
                 try:
-                    reply = await asyncio.to_thread(inhibit, connection, why, self._timeout)
+                    reply = inhibit(connection, why, self._timeout)
                 except dbus.DBusError as exc:
                     errors.append(f"{interface}: {exc}")
                     continue
-                self._connection, self.interface = connection, interface
-                self._token = reply.body[0] if reply.body else None
-                return None
-        except (OSError, dbus.DBusProtocolError) as exc:
+                _close_fds(reply.fds)
+                held = _SessionHold(connection, interface, reply.body[0] if reply.body else None)
+                connection = None  # the hold owns it now
+                return held
+        except Exception as exc:  # the connection broke, garbage, a bug
             errors.append(f"session bus: {type(exc).__name__}: {exc}")
-        connection.close()
+        finally:
+            if connection is not None:
+                _close_quietly(connection)
         return "; ".join(errors)
 
     async def free(self) -> None:
@@ -427,15 +531,26 @@ class SessionInhibitBackend:
         token, self._token = self._token, None
         if connection is None:
             return
+        # In a thread that always runs to its end, so the connection is closed even when
+        # the caller is cancelled.
+        await _in_thread(partial(self._end, connection, interface, token), _ignore)
+
+    def _end(
+        self, connection: _BusConnection, interface: str | None, token: str | int | None
+    ) -> None:
         try:
             if interface is not None and token is not None:
                 _, end = _INHIBIT[interface]
-                await asyncio.to_thread(end, connection, token, min(self._timeout, 2.0))
-        except (OSError, dbus.DBusError, dbus.DBusProtocolError) as exc:
+                end(connection, token, min(self._timeout, 2.0))
+        except Exception as exc:
             # Closing the connection ends the inhibit anyway (checked on KDE).
             log.debug("ending the session inhibit (%s) failed: %s", interface, exc)
         finally:
-            connection.close()
+            _close_quietly(connection)
+
+
+def _ignore(_: object) -> None:
+    pass
 
 
 # --------------------------------------------------------------------------- Windows
@@ -530,7 +645,7 @@ class WindowsExecutionStateBackend:
             return None
         try:
             k32 = self._kernel32 if self._kernel32 is not None else _load_kernel32()
-        except (OSError, AttributeError) as exc:
+        except Exception as exc:  # OSError, AttributeError: a broken or missing kernel32
             return f"kernel32 not available: {exc}"
         self._kernel32 = k32
         thread = _StateThread(k32, self._last_error)
@@ -538,6 +653,12 @@ class WindowsExecutionStateBackend:
             previous, error = await asyncio.wrap_future(
                 thread.submit(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
             )
+        except asyncio.CancelledError:
+            # The thread may set the state after all: clear it, then end the thread (the
+            # commands run in order).
+            thread.submit(ES_CONTINUOUS)
+            thread.stop()
+            raise
         except Exception as exc:  # a broken binding (ctypes.ArgumentError, OSError)
             thread.stop()
             return f"SetThreadExecutionState failed: {type(exc).__name__}: {exc}"
@@ -552,7 +673,10 @@ class WindowsExecutionStateBackend:
         if state_thread is None:
             return
         try:
-            previous, error = await asyncio.wrap_future(state_thread.submit(ES_CONTINUOUS))
+            # Shielded: a cancelled caller must not cancel the clearing call itself.
+            previous, error = await asyncio.shield(
+                asyncio.wrap_future(state_thread.submit(ES_CONTINUOUS))
+            )
             if not previous:  # pragma: no cover - nothing to do but log it
                 log.warning("SetThreadExecutionState(ES_CONTINUOUS) failed (error %s)", error)
         finally:
@@ -562,12 +686,27 @@ class WindowsExecutionStateBackend:
 # --------------------------------------------------------------------------- the inhibitor
 
 
+class _Ticket:
+    """One :meth:`SleepInhibitor.acquire` call: whether its caller gave up, whether it
+    counted."""
+
+    __slots__ = ("abandoned", "counted")
+
+    def __init__(self) -> None:
+        self.abandoned = False
+        self.counted = False
+
+
 class SleepInhibitor:
     """A counted sleep lock over backends that are held together.
 
     ``acquire``/``release`` pairs nest. :meth:`close` frees the locks whatever the count;
     after it, :meth:`acquire` does nothing (the inhibitor is shut down). All methods are
-    for one event loop; they never raise for expected failures.
+    for one event loop and never raise (a cancelled caller gets ``CancelledError``).
+
+    Each call does its work in a task of its own that holds ``self._lock`` from start to
+    end, also when the caller is cancelled. So a take and a free never overlap, and the
+    operating-system locks are freed exactly when the count reaches zero, never before.
     """
 
     def __init__(
@@ -584,7 +723,6 @@ class SleepInhibitor:
         self._count = 0
         self._state = InhibitState.INACTIVE
         self._active: list[InhibitBackend] = []
-        self._pending: asyncio.Future[InhibitState] | None = None
         self._warned = False
         self._closed = False
         self.last_error: str | None = None
@@ -620,64 +758,72 @@ class SleepInhibitor:
         """Count one holder; the first takes the operating-system locks. Returns the state.
 
         ``reason`` is shown to the user by the system (``systemd-inhibit --list``, the
-        desktop's battery applet); only the first holder's reason is used. If the caller is
-        cancelled while the locks are being taken, the count is undone and the locks are
-        freed once they were taken (the caller must not call :meth:`release`).
+        desktop's battery applet); only the first holder's reason is used.
+
+        **A cancelled acquire leaves no count behind**, so the caller must not call
+        :meth:`release` for it: count only an acquire that returned. When the caller is
+        cancelled while it waits for another call, nothing is counted. When it is cancelled
+        while the locks are being taken for it, the taking goes on, and then the count is
+        undone as by :meth:`release` (the locks are freed unless another holder came
+        meanwhile); :attr:`count` shows that undo once it has run.
         """
-        async with self._lock:
-            if self._closed:
-                return self._state
-            await self._settle()
-            self._count += 1
-            if self._count > 1:
-                return self._state
-            take = asyncio.ensure_future(self._take(reason))
-            self._pending = take
-            try:
-                state = await asyncio.shield(take)
-            except asyncio.CancelledError:
-                self._count -= 1
-                cleanup = asyncio.ensure_future(self._settle_locked())
-                _background.add(cleanup)
-                cleanup.add_done_callback(_background.discard)
-                raise
-            self._pending = None
-            return state
+        ticket = _Ticket()
+        task = _spawn(self._acquire(reason, ticket))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            ticket.abandoned = True
+            task.add_done_callback(lambda _: self._undo(ticket))
+            raise
 
     async def release(self) -> None:
-        """Undo one :meth:`acquire`; the last one frees the locks. Extra calls do nothing."""
+        """Undo one :meth:`acquire`; the last one frees the locks. Extra calls do nothing.
+
+        It always finishes, also when the caller is cancelled (the count goes down and the
+        locks are freed in the background)."""
+        await asyncio.shield(_spawn(self._release()))
+
+    async def close(self) -> None:
+        """Free the locks whatever the count. Safe to call more than once. It always
+        finishes, also when the caller is cancelled."""
+        await asyncio.shield(_spawn(self._close()))
+
+    async def _acquire(self, reason: str, ticket: _Ticket) -> InhibitState:
         async with self._lock:
-            await self._settle()
+            if self._closed or ticket.abandoned:
+                return self._state
+            self._count += 1
+            ticket.counted = True
+            if self._count == 1:
+                try:
+                    await self._take(reason)
+                except asyncio.CancelledError:
+                    # Only when the event loop shuts down (the task itself is cancelled).
+                    # Locks already taken stay in ``_active`` until close().
+                    self._count -= 1
+                    ticket.counted = False
+                    raise
+            return self._state
+
+    def _undo(self, ticket: _Ticket) -> None:
+        """After the task of a cancelled :meth:`acquire`: release its count, if it had one."""
+        if ticket.counted:
+            ticket.counted = False
+            _spawn(self._release())
+
+    async def _release(self) -> None:
+        async with self._lock:
             if self._count == 0:
                 return
             self._count -= 1
             if self._count == 0:
-                await asyncio.shield(self._free())
+                await self._free()
 
-    async def close(self) -> None:
-        """Free the locks whatever the count. Safe to call more than once."""
+    async def _close(self) -> None:
         async with self._lock:
             self._closed = True
             self._count = 0
-            await self._settle()
-            await asyncio.shield(self._free())
-
-    async def _settle(self) -> None:
-        """Wait for the locks that a cancelled :meth:`acquire` was taking; free them if
-        unused. Called with ``self._lock`` held, so two takes never overlap."""
-        pending = self._pending
-        if pending is None:
-            return
-        await asyncio.wait({pending})  # never cancels ``pending``
-        self._pending = None
-        if not pending.cancelled() and pending.exception() is not None:
-            log.error("sleep inhibit failed", exc_info=pending.exception())
-        if self._count == 0:
-            await asyncio.shield(self._free())
-
-    async def _settle_locked(self) -> None:
-        async with self._lock:
-            await self._settle()
+            await self._free()
 
     async def _take(self, reason: str) -> InhibitState:
         failed: list[InhibitBackend] = []
@@ -686,7 +832,13 @@ class SleepInhibitor:
         if self._unsupported is not None:
             details.append(self._unsupported)
         for backend in self._backends:
-            result = await backend.hold(reason)
+            if backend in self._active:  # still held from a take that was cut short
+                continue
+            try:
+                result = await backend.hold(reason)
+            except Exception as exc:  # a bug in a backend: it is unavailable, never raised
+                log.exception("sleep inhibit: the %s backend failed", backend.name)
+                result = f"internal error: {type(exc).__name__}: {exc}"
             if result is None:
                 self._active.append(backend)
             elif isinstance(result, Skipped):
@@ -715,7 +867,10 @@ class SleepInhibitor:
     async def _free(self) -> None:
         active, self._active = self._active, []
         for backend in reversed(active):
-            await backend.free()
+            try:
+                await backend.free()
+            except Exception:  # a bug in a backend: log it and free the others
+                log.exception("sleep inhibit: freeing the %s backend failed", backend.name)
         if active:
             log.info("sleep inhibit released (%s)", "+".join(b.name for b in active))
         self.not_stopped = ()

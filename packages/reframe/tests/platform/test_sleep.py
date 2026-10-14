@@ -1,7 +1,8 @@
 """reframe.platform.sleep: the counted inhibitor, backends held together, the warning event.
 
 The backends are replaced with fakes here; the logind, session and Windows backends have
-their own tests (``test_sleep_backends.py``), the D-Bus client ``test_sleep_dbus.py``, and
+their own tests (``test_sleep_backends.py``), the D-Bus client ``test_sleep_dbus.py``,
+unexpected failures and cancellation ``test_sleep_failures.py``, and
 ``test_sleep_real.py`` checks the real locks on a machine with logind and a desktop.
 """
 
@@ -260,7 +261,6 @@ async def test_cancelled_acquire_frees_the_lock_once_it_was_taken() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert inhibitor.count == 0
     gate.set()  # the backend finishes taking the lock after the caller gave up
     for _ in range(50):
         if backend.calls[-1] == "free":
@@ -269,6 +269,9 @@ async def test_cancelled_acquire_frees_the_lock_once_it_was_taken() -> None:
     assert backend.calls == ["hold:job", "free"]
     assert not backend.is_held()
     assert _state(inhibitor) is InhibitState.INACTIVE
+    assert inhibitor.count == 0  # undone: the caller must not release it
+    await inhibitor.release()  # an extra release (a caller's mistake) does nothing
+    assert backend.calls == ["hold:job", "free"]
 
 
 async def test_cancelled_acquire_does_not_free_a_lock_that_a_later_acquire_holds() -> None:
