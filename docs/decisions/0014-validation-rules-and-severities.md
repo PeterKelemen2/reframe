@@ -213,6 +213,33 @@ The milestone review found these; each has a regression test
      does (C-5 gets `interlaced=False`): a 2-line crop of an interlaced 4:2:0 source is no
      longer reported as snapped.
 
+## Follow-up (M2 review, second round, 2026-10-14)
+
+From the other agents' review fixes (C-4, C-6, C-7). 90 issue codes now.
+
+1. **x265 `rc-lookahead` must be above `bframes`** (`encoder.lookahead_too_short`, error; 0
+   with 0 B-frames is allowed). The values the encoder uses come from the job's advanced
+   options, else C-6's per-preset tables; the `animation` tune adds 2 B-frames and
+   `zerolatency` sets both to 0, and options the job sets win over the tune (checked with
+   x265: `tests/validation/test_x26x_ffmpeg.py`). Fixes: a lookahead one above the
+   B-frames, or fewer B-frames.
+2. **x264 `subme` 10 or 11 needs `trellis` 2** (`encoder.subme_needs_trellis`, warning): x264
+   uses `subme` 9 otherwise, without a message (its settings SEI says `subme=9`), also for
+   the `veryslow` / `placebo` presets with trellis 0 or 1. Fixes: trellis 2, or subme 9.
+   `aq-mode` 0 does not lower it (checked).
+3. **A cached "no 10-bit" that detection checks again** (`from_cache` and `detecting`) is
+   not final: `encoder.checking` (info) at `video.bit_depth` instead of `encoder.no_10bit`,
+   as C-4 does for the encoder status; fixes do not act on it either.
+4. **C-7's written layout** (`PlannedAudio.layout`): validation now takes every written audio
+   value from `reframe.command.planned_audio`, so the bitrate table follows the written
+   channels. A layout libopus refuses that C-7 makes into another (`2.1` → stereo, `6.0` →
+   5.0) is `audio.mixdown_unsupported` (info): "Opus cannot keep 2.1: audio track 1 is
+   written as stereo.", with a fix only where a mixdown writes that layout (stereo, 5.1). A
+   kept layout the encoder cannot make reads "cannot keep" (was "cannot make").
+   **Open (C-12):** a codec rule caps the bitrate with the table of the source's channel
+   count, C-7 with the written layout's (Opus "keep" on `2.1`: C-12 36 kb/s, C-7 13 kb/s;
+   on `7.1(wide)`: 48 vs 37). The agreement test marks the three Opus cases (strict xfail).
+
 ## Plan changes
 
 - `docs/plan/05-core.md` §C-8: the odd-size item, forced-only (PGS or VobSub, burned in), the

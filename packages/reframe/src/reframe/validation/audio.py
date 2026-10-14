@@ -19,6 +19,7 @@ from collections.abc import Iterator
 
 from pydantic import JsonValue
 
+from reframe.command.audio import layout_channels
 from reframe.definitions import AudioEncoderDef, Definitions
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import AudioOutputTrack, Mixdown
@@ -168,6 +169,28 @@ def _mixdown_fix(ctx: JobContext, index: int, mixdown: Mixdown | None) -> Fix:
     return fix(label, replace(f"audio[{index}].mixdown", mixdown), target=ctx.target)
 
 
+def _layout_downmix(planned: EncodedAudio) -> bool:
+    """No mixdown, but the builder writes fewer channels than the source has: the encoder
+    refuses the source layout (libopus: ``2.1`` → ``stereo``, ``6.0`` → ``5.0``)."""
+    written = layout_channels(planned.layout)
+    return (
+        planned.mixdown is None and written is not None and len(written) < planned.source_channels
+    )
+
+
+def _layout_mixdown(definitions: Definitions, layout: str) -> Mixdown | None:
+    """The mixdown that writes ``layout`` (``stereo`` → ``stereo``); ``None`` for a layout
+    no mixdown makes (``5.0``, ``3.0``)."""
+    return next(
+        (
+            mixdown
+            for mixdown, definition in definitions.mixdowns.items()
+            if definition.layout == layout and definition.matrix_encoding is None
+        ),
+        None,
+    )
+
+
 def _dropped_as_upmix(
     encoder: AudioEncoderDef, requested: Mixdown, channels: int, definitions: Definitions
 ) -> bool:
@@ -180,16 +203,24 @@ def _dropped_as_upmix(
 @job_rule("audio", "audio.mixdown_unsupported", "audio.mixdown_upmix")
 def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
     """The layout the builder writes differs from the track's: the encoder cannot make it
-    (``audio.mixdown_unsupported``: AC-3 and E-AC-3 have no 7.1, MP3 no 5.1), or it would be
-    an upmix (``audio.mixdown_upmix``). Both are info: the builder writes the snapped layout."""
+    (``audio.mixdown_unsupported``: AC-3 and E-AC-3 have no 7.1, MP3 no 5.1, and libopus
+    refuses the source layouts ``2.1``, ``3.0(back)``, ``4.0``, ``6.0`` and ``7.1(wide)``:
+    the builder downmixes them, ``PlannedAudio.layout``), or it would be an upmix
+    (``audio.mixdown_upmix``). Both are info: the builder writes the snapped layout."""
     defs = ctx.definitions
     for index, track, stream, planned in _encoded_tracks(ctx):
         requested, written = track.mixdown, planned.mixdown
-        if requested == written:
+        downmixed = _layout_downmix(planned)
+        if requested == written and not downmixed:
             continue
         encoder = planned.encoder
         path = f"audio[{index}].mixdown"
         result = _written_as(defs, written, stream)
+        fixes = [_mixdown_fix(ctx, index, written)]
+        if downmixed and planned.layout is not None:
+            result = f"is written as {planned.layout}"
+            same = _layout_mixdown(defs, planned.layout)
+            fixes = [_mixdown_fix(ctx, index, same)] if same is not None else []
         if requested is not None and _dropped_as_upmix(
             encoder, requested, planned.source_channels, defs
         ):
@@ -202,14 +233,18 @@ def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"{planned.source_channels} channels ({source}), so the track {result} "
                 f"instead of {_label(defs, requested)}."
             )
-            yield info("audio.mixdown_upmix", path, message, _mixdown_fix(ctx, index, written))
+            yield info("audio.mixdown_upmix", path, message, *fixes)
             continue
-        wanted = _label(defs, requested) if requested is not None else _source_layout(stream)
+        what = (
+            f"make {_label(defs, requested)}"
+            if requested is not None
+            else f"keep {_source_layout(stream)}"
+        )
         yield info(
             "audio.mixdown_unsupported",
             path,
-            f"{encoder.label} cannot make {wanted}: audio track {index + 1} {result}.",
-            _mixdown_fix(ctx, index, written),
+            f"{encoder.label} cannot {what}: audio track {index + 1} {result}.",
+            *fixes,
         )
 
 

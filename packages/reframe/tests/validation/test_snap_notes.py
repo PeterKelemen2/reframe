@@ -45,7 +45,7 @@ AUDIO_CODES = (
     "audio.quality_unsupported",
     "audio.samplerate_unsupported",
 )
-LAYOUTS = {1: "mono", 2: "stereo", 3: "2.1", 6: "5.1(side)", 8: "7.1"}
+LAYOUTS = {1: "mono", 2: "stereo", 3: "3.0", 6: "5.1(side)", 8: "7.1"}
 
 
 def one_track(track: AudioOutputTrack, *, channels: int = 6, rate: int = 48000) -> Any:
@@ -87,11 +87,11 @@ def test_crop_note_says_what_happens() -> None:
         ),
         (
             AudioOutputTrack(encoder="ac3"), 8, "audio.mixdown_unsupported",
-            "AC-3 cannot make 7.1: audio track 1 is written as 5.1.", "Mix down to 5.1",
+            "AC-3 cannot keep 7.1: audio track 1 is written as 5.1.", "Mix down to 5.1",
         ),
         (
             AudioOutputTrack(encoder="libmp3lame"), 6, "audio.mixdown_unsupported",
-            "MP3 cannot make 5.1(side): audio track 1 is written as Stereo.",
+            "MP3 cannot keep 5.1(side): audio track 1 is written as Stereo.",
             "Mix down to Stereo",
         ),
         (
@@ -102,7 +102,7 @@ def test_crop_note_says_what_happens() -> None:
         ),
         (
             AudioOutputTrack(encoder="libmp3lame", mixdown="5.1"), 3, "audio.mixdown_upmix",
-            "No upmix: the source of audio track 1 has 3 channels (2.1), so the track is "
+            "No upmix: the source of audio track 1 has 3 channels (3.0), so the track is "
             "written as Stereo instead of 5.1.",
             "Mix down to Stereo",
         ),
@@ -192,11 +192,42 @@ def test_a_passthru_copy_is_never_snapped() -> None:
     assert not [i for i in issues if i.code in AUDIO_CODES], issues
 
 
+@pytest.mark.parametrize(
+    ("layout", "channels", "message", "fixes"),
+    [
+        ("2.1", 3, "Opus cannot keep 2.1: audio track 1 is written as stereo.",
+         ["Mix down to Stereo"]),
+        ("3.0(back)", 3, "Opus cannot keep 3.0(back): audio track 1 is written as stereo.",
+         ["Mix down to Stereo"]),
+        ("4.0", 4, "Opus cannot keep 4.0: audio track 1 is written as 3.0.", []),
+        ("6.0", 6, "Opus cannot keep 6.0: audio track 1 is written as 5.0.", []),
+        ("7.1(wide)", 8, "Opus cannot keep 7.1(wide): audio track 1 is written as 5.1.",
+         ["Mix down to 5.1"]),
+    ],
+)  # fmt: skip
+def test_opus_layout_downmix_is_a_note(
+    layout: str, channels: int, message: str, fixes: list[str]
+) -> None:
+    """C-7 makes a layout libopus refuses into one it takes (``PlannedAudio.layout``); the
+    note names it. A fix exists only where a mixdown writes that layout."""
+    s = one_track(AudioOutputTrack(encoder="libopus"), channels=channels)
+    s.source.audio[0].channel_layout = layout
+    [issue] = [i for i in sc.check(s) if i.code == "audio.mixdown_unsupported"]
+    assert (issue.message, issue.severity) == (message, Severity.INFO)
+    assert [f.label for f in issue.fixes] == fixes
+
+
+def test_opus_side_to_back_relabel_is_no_note() -> None:
+    """``5.1(side)`` → ``5.1`` is lossless (the same PCM): no note."""
+    s = one_track(AudioOutputTrack(encoder="libopus"), channels=6)
+    assert not sc.found(s.validate(), "audio.mixdown_unsupported")
+
+
 def test_a_layout_without_a_name_is_shown_as_channels() -> None:
     s = one_track(AudioOutputTrack(encoder="libmp3lame"), channels=6)
     s.source.audio[0].channel_layout = None
     assert messages(s, "audio.mixdown_unsupported") == [
-        "MP3 cannot make 6 channels: audio track 1 is written as Stereo."
+        "MP3 cannot keep 6 channels: audio track 1 is written as Stereo."
     ]
 
 

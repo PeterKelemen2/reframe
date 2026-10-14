@@ -14,6 +14,7 @@ from reframe.definitions import (
     ContainerDef,
     Definitions,
     EncoderOption,
+    PresetDefault,
     VideoEncoderDef,
     convert_quality,
     mapping_supported,
@@ -22,7 +23,15 @@ from reframe.definitions import (
 from reframe.definitions.quality import round_to_step
 from reframe.jsonpatch import format_pointer
 from reframe.models.capabilities import CapabilitySnapshot, EncoderStatus
-from reframe.models.issues import Fix, FixTarget, JsonPatchOp, RemoveOp, ReplaceOp, ValidationIssue
+from reframe.models.issues import (
+    AddOp,
+    Fix,
+    FixTarget,
+    JsonPatchOp,
+    RemoveOp,
+    ReplaceOp,
+    ValidationIssue,
+)
 from reframe.models.job import (
     AverageBitrate,
     ConstantQuality,
@@ -35,6 +44,7 @@ from reframe.validation.common import (
     containers_for,
     error,
     fix,
+    info,
     replace,
     switch_container_fixes,
     usable_encoder,
@@ -50,6 +60,7 @@ __all__ = [
     "video_container_issues",
     "video_option_issues",
     "video_rate_control_issues",
+    "video_x26x_rule_issues",
 ]
 
 _CHOICES: tuple[tuple[str, str, str], ...] = (
@@ -135,7 +146,7 @@ def switch_video_encoder(
         if value is not None and (setting is None or setting.get(value) is None):
             ops.append(replace(f"video.{field}", None))
     status = _status(caps, new_id) if caps is not None else None
-    if video.bit_depth == 10 and _no_10bit_reason(new, status) is not None:
+    if video.bit_depth == 10 and _no_10bit_reason(new, status, rechecking=_rechecking(caps)):
         # Also what detection found (a GPU without 10-bit), not only the definition.
         ops.append(replace("video.bit_depth", 8))
         profiles = new.profiles
@@ -202,11 +213,19 @@ def video_availability_issues(
 # --------------------------------------------------------------------------- 10-bit
 
 
-def _no_10bit_reason(encoder: VideoEncoderDef, status: EncoderStatus | None) -> str | None:
-    """Why the encoder cannot encode 10-bit here; ``None`` when it can (or may: not tested)."""
+def _rechecking(caps: CapabilitySnapshot | None) -> bool:
+    """A cached snapshot that detection is checking again (C-4): its results are not final."""
+    return caps is not None and caps.from_cache and caps.detecting
+
+
+def _no_10bit_reason(
+    encoder: VideoEncoderDef, status: EncoderStatus | None, *, rechecking: bool = False
+) -> str | None:
+    """Why the encoder cannot encode 10-bit here; ``None`` when it can (or may: not tested,
+    or a cached "no" that detection is checking again)."""
     if "10" not in encoder.pix_fmts:
         return "it has no 10-bit mode"
-    if status is not None and status.supports_10bit is False:
+    if status is not None and status.supports_10bit is False and not rechecking:
         return status.reason_10bit or "the 10-bit test encode failed"
     return None
 
@@ -227,7 +246,8 @@ def ten_bit_patch(
 ) -> list[JsonPatchOp] | None:
     """The patch that switches ``video`` to 10-bit; ``None`` when its encoder cannot do it."""
     encoder = definitions.video_encoders.get(video.encoder)
-    if encoder is None or _no_10bit_reason(encoder, _status(caps, video.encoder)) is not None:
+    status = _status(caps, video.encoder)
+    if encoder is None or _no_10bit_reason(encoder, status, rechecking=_rechecking(caps)):
         return None
     return _bit_depth_ops(video, encoder, 10)
 
@@ -239,12 +259,28 @@ def video_bit_depth_issues(
     *,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """``encoder.no_10bit``: 10-bit output with an encoder (or a GPU) that cannot do it."""
+    """``encoder.no_10bit``: 10-bit output with an encoder (or a GPU) that cannot do it.
+
+    A cached "no 10-bit" that detection is checking again (``from_cache`` and ``detecting``)
+    is not final: ``encoder.checking`` (info), as C-4 does for the encoder status, so a
+    caller waits for the new result before the job starts."""
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None or video.bit_depth != 10:
         return []
-    reason = _no_10bit_reason(encoder, _status(caps, video.encoder))
+    status = _status(caps, video.encoder)
+    rechecking = _rechecking(caps)
+    reason = _no_10bit_reason(encoder, status, rechecking=rechecking)
     if reason is None:
+        if rechecking and status is not None and status.supports_10bit is False:
+            last = status.reason_10bit or "the 10-bit test encode failed"
+            return [
+                info(
+                    "encoder.checking",
+                    "video.bit_depth",
+                    f"10-bit with {encoder.label} is being checked again (last result: "
+                    f"{last}). The job waits for the result before it starts.",
+                )
+            ]
         return []
     ops = _bit_depth_ops(video, encoder, 8)
     return [
@@ -492,6 +528,101 @@ def video_rate_control_issues(
                 ),
             )
         )
+    return issues
+
+
+def _option_value(
+    video: VideoSettings, encoder: VideoEncoderDef, key: str, *, tune_known: bool = False
+) -> tuple[OptionValue | None, bool]:
+    """The value x264 / x265 use for the advanced option ``key``, and whether the job sets
+    it: the job's value, else the speed preset's default (C-6's per-preset tables; the
+    encoder's default preset when none is set). ``None`` when the default depends on the
+    job's tune (the table does not say) or is not known; ``tune_known``: the caller applies
+    the tune itself and gets the preset's value."""
+    if key in video.advanced:
+        return video.advanced[key], True
+    option = encoder.option(key)
+    if option is None or option.default.kind != "preset":
+        return None, False
+    default = option.default
+    assert isinstance(default, PresetDefault)
+    if video.tune is not None and video.tune in default.tunes and not tune_known:
+        return None, False
+    preset = video.preset or (encoder.presets.default if encoder.presets else None)
+    return (default.values.get(preset) if preset is not None else None), False
+
+
+def _set_option(key: str, value: OptionValue, target: FixTarget, label: str) -> Fix:
+    return fix(
+        label, AddOp(path=format_pointer(["video", "advanced", key]), value=value), target=target
+    )
+
+
+def video_x26x_rule_issues(
+    video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
+) -> list[ValidationIssue]:
+    """Rules across two advanced options, checked with the real encoders
+    (testdata/README.md "Validation (C-8)"):
+
+    - ``encoder.lookahead_too_short`` (error): x265 stops with "Lookahead depth must be
+      greater than the max consecutive bframe count" when ``rc-lookahead`` is not above
+      ``bframes`` (0 works only with ``bframes`` 0). The ``animation`` tune adds 2 to the
+      preset's B-frames and ``zerolatency`` sets both to 0; options the job sets win over
+      the tune.
+    - ``encoder.subme_needs_trellis`` (warning): x264 uses ``subme`` 9 instead of 10 or 11
+      unless ``trellis`` is 2 (also the ``veryslow`` / ``placebo`` presets with trellis 0
+      or 1), without a message.
+    """
+    encoder = definitions.video_encoders.get(video.encoder)
+    if encoder is None:
+        return []
+    issues: list[ValidationIssue] = []
+    if encoder.id == "libx265":
+        bframes, bframes_set = _option_value(video, encoder, "bframes", tune_known=True)
+        lookahead, lookahead_set = _option_value(video, encoder, "rc-lookahead", tune_known=True)
+        if video.tune == "zerolatency":
+            bframes = bframes if bframes_set else 0
+            lookahead = lookahead if lookahead_set else 0
+        elif video.tune == "animation" and not bframes_set and isinstance(bframes, int):
+            bframes = min(bframes + 2, 16)
+        if (
+            isinstance(bframes, int)
+            and isinstance(lookahead, int)
+            and lookahead <= bframes
+            and not (lookahead == 0 and bframes == 0)
+        ):
+            fixes = [
+                _set_option("rc-lookahead", bframes + 1, target, f"Look ahead {bframes + 1} frames")
+            ]
+            if lookahead >= 1:
+                fixes.append(
+                    _set_option("bframes", lookahead - 1, target, f"Use {lookahead - 1} B-frames")
+                )
+            else:
+                fixes.append(_set_option("bframes", 0, target, "Use no B-frames"))
+            issues.append(
+                error(
+                    "encoder.lookahead_too_short",
+                    "video.advanced.rc-lookahead",
+                    f"x265 needs a lookahead longer than the B-frames: rc-lookahead {lookahead} "
+                    f"with {bframes} B-frames stops the encoder.",
+                    *fixes,
+                )
+            )
+    if encoder.id == "libx264":
+        subme, _ = _option_value(video, encoder, "subme")
+        trellis, _ = _option_value(video, encoder, "trellis")
+        if isinstance(subme, int) and subme >= 10 and trellis is not None and str(trellis) != "2":
+            issues.append(
+                warning(
+                    "encoder.subme_needs_trellis",
+                    "video.advanced.subme",
+                    f"x264 uses subme {subme} only with trellis 2: with trellis {trellis} it "
+                    "uses subme 9.",
+                    _set_option("trellis", "2", target, "Set trellis 2"),
+                    _set_option("subme", 9, target, "Use subme 9"),
+                )
+            )
     return issues
 
 

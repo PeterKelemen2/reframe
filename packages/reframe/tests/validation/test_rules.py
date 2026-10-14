@@ -288,6 +288,11 @@ def webm_video(s: Any) -> None:
 TALL = FitWithin(width=1920, height=1160)
 
 
+def rechecking(s: Any) -> None:
+    """A cached snapshot that detection checks again (C-4: from_cache and detecting)."""
+    s.caps = s.caps.model_copy(update={"from_cache": True, "detecting": True})
+
+
 def tall_source(s: Any) -> None:
     """1920x1160: within level 4 at 8-pixel padding, not at ultrafast's 16 (1168 lines)."""
     s.source.video[0].height = 1160
@@ -530,6 +535,69 @@ CASES: list[Case] = [
             caps({"hevc_nvenc": NVENC_NO_10BIT}),
         ),
         both(video(encoder="hevc_nvenc", bit_depth=8), caps({"hevc_nvenc": NVENC_NO_10BIT})),
+    ),
+    Case(
+        "cached 10-bit failure checked again",
+        "encoder.checking",
+        "video.bit_depth",
+        INFO,
+        both(
+            video(encoder="hevc_nvenc", bit_depth=10, profile="main10"),
+            caps({"hevc_nvenc": NVENC_NO_10BIT}),
+            rechecking,
+        ),
+        both(
+            video(encoder="hevc_nvenc", bit_depth=10, profile="main10"),
+            caps({"hevc_nvenc": NVENC_NO_10BIT}),
+        ),
+    ),
+    Case(
+        "x265 lookahead not above the B-frames",
+        "encoder.lookahead_too_short",
+        "video.advanced.rc-lookahead",
+        ERR,
+        video(encoder="libx265", advanced={"rc-lookahead": 4, "bframes": 4}),
+        video(encoder="libx265", advanced={"rc-lookahead": 5, "bframes": 4}),
+    ),
+    Case(
+        "x265 preset lookahead with more B-frames",
+        "encoder.lookahead_too_short",
+        "video.advanced.rc-lookahead",
+        ERR,
+        video(encoder="libx265", preset="ultrafast", advanced={"bframes": 5}),
+        video(encoder="libx265", preset="ultrafast", advanced={"bframes": 4}),
+    ),
+    Case(
+        "x265 no lookahead with B-frames",
+        "encoder.lookahead_too_short",
+        "video.advanced.rc-lookahead",
+        ERR,
+        video(encoder="libx265", tune="zerolatency", advanced={"bframes": 3}),
+        video(encoder="libx265", tune="zerolatency"),
+    ),
+    Case(
+        "x265 animation tune adds B-frames",
+        "encoder.lookahead_too_short",
+        "video.advanced.rc-lookahead",
+        ERR,
+        video(encoder="libx265", preset="slower", tune="animation", advanced={"rc-lookahead": 6}),
+        video(encoder="libx265", preset="slower", tune="animation", advanced={"rc-lookahead": 11}),
+    ),
+    Case(
+        "x264 subme 10 without trellis 2",
+        "encoder.subme_needs_trellis",
+        "video.advanced.subme",
+        WARN,
+        video(encoder="libx264", advanced={"subme": 10, "trellis": "1"}),
+        video(encoder="libx264", advanced={"subme": 10, "trellis": "2"}),
+    ),
+    Case(
+        "x264 veryslow with trellis 0",
+        "encoder.subme_needs_trellis",
+        "video.advanced.subme",
+        WARN,
+        video(encoder="libx264", preset="veryslow", advanced={"trellis": "0"}),
+        video(encoder="libx264", preset="veryslow"),
     ),
     Case(
         "unknown speed preset",
