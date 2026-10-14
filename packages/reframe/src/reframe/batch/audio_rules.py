@@ -30,6 +30,15 @@ the source does not fit.
 Interpretations of the plan (decision 0019): a mixdown never upmixes; a lossless source with
 a known bit rate at or below the max is treated like any other source.
 
+The encoder's limits are C-6's shared snapping helpers (decision 0024), so the command builder
+(C-7), validation (C-8) and the codec rules give the same answer for the same track:
+:meth:`AudioEncoderDef.snap_mixdown <reframe.definitions.AudioEncoderDef.snap_mixdown>` (the
+layout the encoder makes), :meth:`AudioEncoderDef.snap_samplerate
+<reframe.definitions.AudioEncoderDef.snap_samplerate>`, :meth:`AudioBitrateDef.snap
+<reframe.definitions.AudioBitrateDef.snap>` and :func:`~reframe.definitions.channels_mixdown`
+(the bit-rate table of a kept source layout). Only the rule's own mixdown
+(:func:`requested_mixdown`) is decided here.
+
 Pure: no I/O.
 """
 
@@ -41,7 +50,13 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.metadata import effective_language, render_track_name, track_metadata
-from reframe.definitions import AudioEncoderDef, ContainerDef, Definitions, load_definitions
+from reframe.definitions import (
+    AudioEncoderDef,
+    ContainerDef,
+    Definitions,
+    channels_mixdown,
+    load_definitions,
+)
 from reframe.models.defaults import (
     AudioDefaults,
     AudioRuleExtras,
@@ -138,6 +153,11 @@ def requested_mixdown(
     channels. A mixdown never upmixes (decision 0019): FFmpeg's upmix only adds silent
     channels, so a source with fewer channels keeps its layout. An unknown channel count
     (0) gets the rule's layout.
+
+    This is the rule's request; :meth:`AudioEncoderDef.snap_mixdown
+    <reframe.definitions.AudioEncoderDef.snap_mixdown>` (decision 0024) then gives the layout
+    the encoder really makes. It applies the same no-upmix rule, so the two cannot disagree;
+    only ``up_to_5.1`` keeping a 5.1 source's own layout is the rule's.
     """
     target = _target_mixdown(rule_mixdown)
     if target is None:
@@ -159,18 +179,6 @@ def _target_mixdown(rule_mixdown: RuleMixdown) -> Mixdown | None:
             return "5.1"
         case _:
             return rule_mixdown
-
-
-def _bitrate_key(channels: int) -> Mixdown:
-    """The bit-rate table of a kept source layout: 1 → mono, 2 → stereo, 3 to 6 → 5.1, more →
-    7.1 (unknown → stereo)."""
-    if channels == 1:
-        return "mono"
-    if channels <= 2:
-        return "stereo"
-    if channels <= 6:
-        return "5.1"
-    return "7.1"
 
 
 # --------------------------------------------------------------------------- formatting
@@ -322,33 +330,33 @@ def _output_mixdown(
         and 0 < stream.channels < defs.mixdowns[target].channels
     ):
         notes.append(f"{_source_layout(stream)} source: no upmix to {_mixdown_label(target, defs)}")
-    if encoder is None or not encoder.mixdowns:
+    if encoder is None:
         return mixdown
-    wanted = defs.mixdowns[mixdown].channels if mixdown is not None else stream.channels
-    if mixdown is not None and mixdown in encoder.mixdowns:
-        return mixdown
-    if mixdown is None and wanted <= encoder.max_channels:
-        return None
-    candidates = [
-        m for m in encoder.mixdowns if m != "dpl2" and defs.mixdowns[m].channels <= wanted
-    ]
-    best = (
-        max(candidates, key=lambda m: defs.mixdowns[m].channels)
-        if candidates
-        else encoder.mixdowns[0]
-    )
-    shown = _mixdown_label(mixdown, defs) if mixdown is not None else _source_layout(stream)
-    notes.append(f"{encoder.label} cannot make {shown}: {_mixdown_label(best, defs)}")
-    return best
+    snapped = encoder.snap_mixdown(mixdown, stream.channels, defs.mixdowns)
+    if snapped != mixdown:
+        shown = _mixdown_label(mixdown, defs) if mixdown is not None else _source_layout(stream)
+        got = _mixdown_label(snapped, defs) if snapped is not None else _source_layout(stream)
+        notes.append(f"{encoder.label} cannot make {shown}: {got}")
+    return snapped
 
 
-def _samplerate(request: _Request, encoder: AudioEncoderDef | None, notes: list[str]) -> int | None:
+def _samplerate(
+    ctx: _Context, request: _Request, encoder: AudioEncoderDef | None, notes: list[str]
+) -> int | None:
+    """The rule's sample rate (``None`` = the source's), snapped to the encoder (decision
+    0024). ``None`` stays when the encoder takes the source's own rate; a source rate the
+    encoder lacks becomes the snapped rate, as the command builder writes it."""
     rate = request.extras.samplerate
-    if rate is None or encoder is None or not encoder.samplerates or rate in encoder.samplerates:
+    if encoder is None:
         return rate
-    closest = min(encoder.samplerates, key=lambda r: (abs(r - rate), -r))
-    notes.append(f"{encoder.label} has no {rate} Hz: {closest} Hz")
-    return closest
+    source_rate = ctx.stream.sample_rate
+    snapped = encoder.snap_samplerate(rate, source_rate)
+    wanted = rate if rate is not None else source_rate
+    if snapped == wanted:
+        return rate
+    whose = "" if rate is not None else " (the source's rate)"
+    notes.append(f"{encoder.label} has no {wanted} Hz{whose}: {snapped} Hz")
+    return snapped
 
 
 def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: list[str]) -> _Outcome:
@@ -388,7 +396,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
     elif encoder.bitrate is None:
         sentences.append(_sentence(f"{why + ': ' if why else ''}encode to {label} (lossless)"))
     else:
-        key = mixdown if mixdown is not None else _bitrate_key(stream.channels)
+        key = mixdown if mixdown is not None else channels_mixdown(stream.channels)
         limits = encoder.bitrate.by_mixdown.get(key)
         if limits is None:  # pragma: no cover - _output_mixdown picks a mixdown it has
             sentences.append(f"Encode to {label}")
@@ -437,7 +445,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
         action="encode",
         encoder=encoder_id,
         mixdown=mixdown,
-        samplerate=_samplerate(request, encoder, notes),
+        samplerate=_samplerate(ctx, request, encoder, notes),
         bitrate=bitrate,
         gain=extras.gain,
         drc=extras.drc,

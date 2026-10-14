@@ -979,3 +979,14 @@ were checked with `/usr/bin/ffmpeg` n9.0.2 for decision
 - **DTS core extraction exists but is not used.** `ffmpeg -bsfs` lists `dca_core` (it keeps
   the DTS core of a DTS-HD stream). Reframe matches a DTS-HD source only to the `dtshd`
   passthru codec, as the definitions do; passing only the core through is not in the plan.
+- **A source sample rate the encoder lacks is snapped by Reframe, not left to FFmpeg**
+  (decision [0024](../docs/decisions/0024-m2-wave-2-product-decisions.md) item 4; both n9.0.2
+  builds, a `sine=sample_rate=N` source written to `.mka`). Without `-ar`, FFmpeg picks its
+  own rate, which is not always the nearest: `libopus` writes 48000 Hz from 44100, 22050 and
+  11025 Hz; `ac3` keeps 44100 and writes 32000 Hz from 22050 and 11025 Hz. With an explicit
+  rate the encoder lacks, the encode fails (`ac3 -ar 22050`: "Specified sample rate 22050 is
+  not supported by the ac3 encoder", exit code 234). So the codec rules put the snapped rate
+  of C-6's `snap_samplerate` into the track (Opus from 22050 Hz: 24000 Hz, with a note), which
+  is the rate the command builder writes with `-ar`. ffprobe reports 48000 Hz for every Opus
+  track in Matroska, whatever `-ar` was (the decoder's output rate), so a test cannot read
+  the Opus rate back from the file.
