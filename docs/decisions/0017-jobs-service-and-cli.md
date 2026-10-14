@@ -1,6 +1,6 @@
 # 0017 — Jobs service and the M2 CLI: drafts, bounded waits, output formats, exit codes
 
-- Status: accepted
+- Status: accepted; item 16 superseded in part by [0027](0027-one-process-owns-the-queue-store.md)
 - Date: 2026-10-14
 - Steps: C-15
 
@@ -130,6 +130,9 @@ the output `multitrack.mkv`, next to the source: the source file itself.
     `start(job_ids=<its ids>)` (C-11's keyword-only addition, decision 0016): only its own
     jobs run, `parallel_jobs` at a time, and other front ends' waiting jobs are neither
     started nor cancelled. Jobs stay in the queue after the command (as its history).
+    [0027](0027-one-process-owns-the-queue-store.md) changes the sharing: one Reframe process
+    owns the store; an `encode` that starts while another process owns it runs its jobs in a
+    private queue that is not kept, and prints the `queue.store_busy` warning (item 22).
 17. **Progress**: on a terminal one rich progress bar per running job (percent, fps, speed,
     ETA, size, step); otherwise plain lines: `[i/n] 42.0% · 87.3 fps · 3.64x · ETA 0:01:23 ·
     12.3 MiB`, at most one per 10 % of the job or every 30 s. State lines: `running`,
@@ -158,6 +161,23 @@ the output `multitrack.mkv`, next to the source: the source file itself.
     folder as the root that generic-folder skipping does not go above. `--preset` picks the
     naming options and container; `--template T` replaces the movie and episode templates; a
     template with errors is a usage error (exit 2).
+
+### Warnings and unexpected errors (M2 review)
+
+22. **Warnings of the core are printed**: every command that creates the facade prints each
+    `app.warning` as one `warning: <message> (<detail>)` line on stderr, once: the start-up
+    problems that the settings and presets services keep (`settings.problems`,
+    `presets.problems`; the settings are read before anything can subscribe), then every
+    event until Reframe is closed, also those published while it closes (`queue.store_busy`,
+    `queue.newer_version`, `queue.not_saved`, `settings.corrupt`, `presets.corrupt`,
+    `sleep_inhibit.unavailable`, `queue.when_done_unavailable`, …).
+23. **Never a traceback**: an unexpected exception (a bug) ends the command with one
+    `error: unexpected error (<type>: <message>). Please report this; REFRAME_TRACEBACK=1
+    shows the traceback.` line and exit code 1. `REFRAME_TRACEBACK=1` re-raises it.
+24. **File names that are not valid UTF-8** (POSIX bytes, kept by `os.fsdecode` as lone
+    surrogates) are shown with U+FFFD in the human output; `--json` writes them as `\udcXX`
+    escapes. The command preview shows them the same way, so a pasted command does not name
+    that file; the queue runs the argv, not the preview.
 
 ### Exit codes (all commands)
 

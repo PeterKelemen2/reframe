@@ -231,7 +231,12 @@ def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None
     stream = source.video[0]
     if job.video.passthrough:
         return (stream.width, stream.height)
-    geometry = compute_geometry(source_geometry(stream), job.dimensions)
+    src = source_geometry(stream)
+    if "deinterlace" in job.filters.root:
+        # Deinterlace runs before the crop: the crop is on the progressive grid, as the
+        # command builder (C-7) computes it.
+        src = src.model_copy(update={"interlaced": False})
+    geometry = compute_geometry(src, job.dimensions)
     return (geometry.scaled_width, geometry.scaled_height)
 
 
