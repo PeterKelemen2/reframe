@@ -1205,6 +1205,22 @@ level-idc=L -f null -` exits with 183 and one of:
 - Level 1 refuses even 320x180; with CRF and a level x265 only warns ("Specifying a decoder
   level with constant rate factor rate-control requires …").
 
+**x265 lookahead and x264 subme** (`encoder.lookahead_too_short`,
+`encoder.subme_needs_trellis`). Checked on 2026-10-14 with both builds;
+`packages/reframe/tests/validation/test_x26x_ffmpeg.py` repeats it.
+
+- x265 exits with 183 and `x265 [error]: Lookahead depth must be greater than the max
+  consecutive bframe count` when `rc-lookahead` ≤ `bframes`: `rc-lookahead=4:bframes=4`
+  and `rc-lookahead=0:bframes=4` stop, `5:4` and `0:0` run. The preset defaults count:
+  `ultrafast` (lookahead 5, 3 B-frames) stops with `bframes=5`, `medium` (20, 4) with
+  `rc-lookahead=4`. `-tune animation` adds 2 B-frames (`medium`: 5 stops, 7 runs;
+  `slower`: 6 stops, 11 runs), `-tune zerolatency` sets both to 0 (`bframes=3` stops);
+  `-x265-params` values win over the tune (`animation` with `rc-lookahead=5:bframes=4`
+  runs).
+- x264 writes the `subme` it uses into its settings SEI: `subme=10:trellis=1` → `subme=9`,
+  `subme=11:trellis=0` → 9, `subme=10:trellis=2` → 10; `veryslow` (10, trellis 2) with
+  `trellis=1` → 9, `placebo` with `trellis=0` → 9. No message. `aq-mode=0` leaves 10.
+
 ### Audio codec rules (C-12)
 
 The codec rules are pure; the encoder and container facts they use (bitrate steps, which

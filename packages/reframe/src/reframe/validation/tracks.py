@@ -6,7 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePath
 
-from reframe.definitions import AudioEncoderDef, ContainerDef, Definitions, channels_mixdown
+from reframe.command import planned_audio
+from reframe.definitions import AudioEncoderDef, ContainerDef, Definitions
 from reframe.models.issues import Fix, JsonPatchOp
 from reframe.models.job import AudioOutputTrack, Container, Mixdown, SubtitleOutputTrack
 from reframe.models.media import AudioStream, SubtitleKind
@@ -48,22 +49,27 @@ EXTERNAL_FORMATS: dict[str, tuple[str, SubtitleKind]] = {
 
 @dataclass(frozen=True, slots=True)
 class EncodedAudio:
-    """What the command builder writes for an encoded audio track. Decision 0024: the builder
-    snaps every value the encoder cannot do with C-6's helpers, and validation uses the same
-    helpers, so an issue text names the value that is really written."""
+    """What the command builder writes for an encoded audio track: C-7's
+    :func:`~reframe.command.planned_audio` (decision 0024: the builder snaps every value the
+    encoder cannot do with C-6's helpers), so an issue text names the value that is really
+    written."""
 
     encoder: AudioEncoderDef
     source_channels: int
     """The source track's channel count (0 = unknown)."""
     mixdown: Mixdown | None
-    """:meth:`AudioEncoderDef.snap_mixdown`: the layout written; ``None`` = the source
-    layout stays."""
+    """:meth:`AudioEncoderDef.snap_mixdown`: the mixdown written; ``None`` = the source
+    layout stays (see :attr:`layout`)."""
+    layout: str | None
+    """The ``out_chlayout`` written (``PlannedAudio.layout``): a mixdown's layout, a lossless
+    relabel, or the layout an encoder that refuses the source's makes of it (libopus:
+    ``2.1`` → ``stereo``); ``None`` = the source layout as it is."""
     table: Mixdown
-    """The mixdown whose bitrate range applies: :attr:`mixdown`, else
-    :func:`~reframe.definitions.channels_mixdown` of the source channels."""
+    """The mixdown whose bitrate range applies (``PlannedAudio.bitrate_mixdown``): the
+    written layout's."""
     bitrate: int | None
-    """The track's bitrate snapped down (:meth:`AudioBitrateDef.snap`); ``None`` when the
-    track sets none or the encoder has no bitrate for :attr:`table`."""
+    """The track's bitrate snapped down (decision 0025); ``None`` when the track sets none
+    or the encoder is lossless."""
     samplerate: int | None
     """:meth:`AudioEncoderDef.snap_samplerate` of the track's rate (or the source's)."""
 
@@ -74,22 +80,26 @@ def encoded_audio(
     encoder: AudioEncoderDef,
     definitions: Definitions,
 ) -> EncodedAudio:
-    """The values the builder writes for ``track`` encoded with ``encoder``."""
-    channels = max(stream.channels, 0)
-    mixdown = encoder.snap_mixdown(track.mixdown, channels, definitions.mixdowns)
-    table = mixdown if mixdown is not None else channels_mixdown(channels)
-    bitrate = (
-        encoder.bitrate.snap(track.bitrate, table, "down")
-        if track.bitrate is not None and encoder.bitrate is not None
-        else None
+    """The values the builder writes for ``track`` encoded with ``encoder``
+    (:func:`~reframe.command.planned_audio`). The snapped values do not depend on the
+    container, so a container that holds the encoder is used (a container that cannot is
+    ``container.codec_unsupported``)."""
+    container = next(
+        (c for c in definitions.containers.values() if encoder.codec in c.audio.encode), None
     )
+    encode = track.model_copy(update={"action": "encode", "encoder": encoder.id})
+    if container is None:  # pragma: no cover - the C-6 linter: every encoder has a container
+        raise ValueError(f"no container holds {encoder.id}")
+    planned = planned_audio(encode, stream, container, definitions=definitions)
+    assert planned.bitrate_mixdown is not None  # an encoded track always has a table
     return EncodedAudio(
         encoder=encoder,
-        source_channels=channels,
-        mixdown=mixdown,
-        table=table,
-        bitrate=bitrate,
-        samplerate=encoder.snap_samplerate(track.samplerate, stream.sample_rate),
+        source_channels=max(stream.channels, 0),
+        mixdown=planned.mixdown,
+        layout=planned.layout,
+        table=planned.bitrate_mixdown,
+        bitrate=planned.bitrate if track.bitrate is not None else None,
+        samplerate=planned.samplerate,
     )
 
 

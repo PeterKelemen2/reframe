@@ -22,6 +22,7 @@ from reframe.validation.video import (
     video_fast_decode_issues,
     video_option_issues,
     video_rate_control_issues,
+    video_x26x_rule_issues,
 )
 
 AVAILABILITY_CODES = (
@@ -32,6 +33,9 @@ AVAILABILITY_CODES = (
 )
 SETTING_CODES = (
     "encoder.no_10bit",
+    "encoder.checking",  # a cached "no 10-bit" that detection checks again
+    "encoder.lookahead_too_short",
+    "encoder.subme_needs_trellis",
     "encoder.preset_unsupported",
     "encoder.tune_unsupported",
     "encoder.profile_unsupported",
@@ -103,6 +107,7 @@ def video_encoder_settings(ctx: JobContext) -> Iterator[ValidationIssue]:
     yield from video_option_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
     yield from video_rate_control_issues(video, ctx.definitions, target=ctx.target)
     yield from video_fast_decode_issues(video, ctx.definitions, target=ctx.target)
+    yield from video_x26x_rule_issues(video, ctx.definitions, target=ctx.target)
 
 
 @job_rule("encoder", *AVAILABILITY_CODES)
@@ -147,6 +152,7 @@ def template_video_settings(ctx: TemplateContext) -> Iterator[ValidationIssue]:
     yield from video_option_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
     yield from video_rate_control_issues(video, ctx.definitions, target=ctx.target)
     yield from video_fast_decode_issues(video, ctx.definitions, target=ctx.target)
+    yield from video_x26x_rule_issues(video, ctx.definitions, target=ctx.target)
 
 
 def template_audio_encoder_ids(ctx: TemplateContext) -> Iterator[tuple[str, str]]:
