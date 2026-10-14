@@ -19,12 +19,14 @@ from typing import Any
 import pytest
 
 from reframe.command import build_plan, job_type
+from reframe.command.audio import ENCODER_LAYOUTS, LAYOUT_CHANNELS
 from reframe.definitions import load_definitions
 from reframe.models import (
     AudioOutputTrack,
     AverageBitrate,
     ChapterRange,
     ChapterSettings,
+    Container,
     CropRect,
     CropSettings,
     DimensionSettings,
@@ -123,6 +125,30 @@ def make_71_source(ffmpeg: str, path: Path) -> Path:
         [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:d=1", *tones,
          "-filter_complex", join, "-map", "0:v", "-map", "[a]", "-c:v", "libx264",
          "-preset", "ultrafast", "-c:a", "flac", str(path)],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    return path
+
+
+def make_layouts_source(ffmpeg: str, path: Path, layouts: list[str]) -> Path:
+    """A 1 s H.264 file with one FLAC track per channel layout (FLAC keeps every layout)."""
+    names = {line.split()[0]: line.split()[1] for line in subprocess.run(
+        [ffmpeg, "-hide_banner", "-layouts"], capture_output=True, text=True, check=True,
+    ).stdout.splitlines() if len(line.split()) == 2}  # fmt: skip
+    args = ["-f", "lavfi", "-i", "testsrc2=size=320x180:d=1"]
+    graph: list[str] = []
+    k = 1
+    for t, layout in enumerate(layouts):
+        n = len(names[layout].split("+"))
+        for i in range(n):
+            args += ["-f", "lavfi", "-i", f"sine=frequency={220 + 110 * i}:sample_rate=48000:d=1"]
+        inputs = "".join(f"[{k + i}:a]" for i in range(n))
+        graph.append(f"{inputs}join=inputs={n}:channel_layout={layout}[a{t}]")
+        k += n
+    maps = [arg for t in range(len(layouts)) for arg in ("-map", f"[a{t}]")]
+    subprocess.run(
+        [ffmpeg, "-v", "error", *args, "-filter_complex", ";".join(graph), "-map", "0:v",
+         *maps, "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "flac", str(path)],
         check=True, capture_output=True,
     )  # fmt: skip
     return path
@@ -336,6 +362,79 @@ async def test_impossible_audio_values_are_snapped(
     assert [a.bitrate.value for a in out.audio[:2]] == [640_000, 224_000]
 
 
+#: Source layout → the layout libopus gets (``reframe.command.audio``, M2 review finding M2).
+OPUS_LAYOUTS = {
+    "5.0(side)": ("5.0", 5),  # AC-3 3/2: side → back, a relabel
+    "quad(side)": ("quad", 4),
+    "5.1(side)": ("5.1", 6),
+    "3.0(back)": ("stereo", 2),  # no accepted 3-channel layout of these channels: downmix
+    "2.1": ("stereo", 2),
+    "4.0": ("3.0", 3),
+    "6.0": ("5.0", 5),
+    "7.1(wide)": ("5.1", 6),
+}
+
+
+async def test_opus_gets_a_layout_it_accepts(
+    prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """libopus refuses every layout but mono, stereo, 3.0, quad, 5.0, 5.1, 6.1 and 7.1, and
+    FFmpeg does not convert for it (exit 234: "Invalid channel layout 5.0(side) for specified
+    mapping family -1"). AAC takes 6.0 and 7.1(wide) as they are: no lossy remix."""
+    layouts = list(OPUS_LAYOUTS)
+    source = make_layouts_source(tool_paths["ffmpeg"], tmp_path / "layouts.mkv", layouts)
+    src = await probe(prober, source)
+    assert [a.channel_layout for a in src.audio] == layouts
+    job = draft(src, output=tmp_path / "opus.mkv", video=FAST_X264, audio_encoder="libopus")
+    for name in ("6.0", "7.1(wide)"):
+        stream = src.audio[layouts.index(name)]
+        job.audio.append(AudioOutputTrack(source_stream=stream.index, encoder="aac"))
+    plan = plan_for(job, src)
+    run_plan(plan, tool_paths)
+    out = await probe(prober, tmp_path / "opus.mkv")
+    opus = [(a.codec, a.channel_layout, a.channels) for a in out.audio[: len(layouts)]]
+    assert opus == [("opus", layout, n) for layout, n in OPUS_LAYOUTS.values()]
+    assert [(a.codec, a.channels) for a in out.audio[len(layouts) :]] == [("aac", 6), ("aac", 8)]
+    assert "-filter:a:8" not in plan.display
+    assert "-filter:a:9" not in plan.display
+
+
+def test_layout_tables_match_ffmpeg(tool_paths: dict[str, str], tmp_path: Path) -> None:
+    """``LAYOUT_CHANNELS`` is ``ffmpeg -layouts`` up to eight channels, and libopus takes
+    exactly the layouts of ``ENCODER_LAYOUTS`` among them."""
+    ffmpeg = tool_paths["ffmpeg"]
+    listed = subprocess.run(
+        [ffmpeg, "-hide_banner", "-layouts"], capture_output=True, text=True, check=True
+    ).stdout.split("Standard channel layouts:")[1]
+    named = {
+        parts[0]: tuple(parts[1].split("+"))
+        for parts in (line.split() for line in listed.splitlines())
+        if len(parts) == 2 and parts[0] != "NAME" and len(parts[1].split("+")) <= 8
+    }  # fmt: skip
+    assert named == LAYOUT_CHANNELS
+    takes: list[str] = []
+    for name, channels in named.items():
+        n = len(channels)
+        tones = [
+            arg
+            for i in range(n)
+            for arg in ("-f", "lavfi", "-i", f"sine=frequency={300 + 50 * i}:d=0.1")
+        ]
+        graph = "".join(f"[{i}:a]" for i in range(n)) + f"join=inputs={n}:channel_layout={name}"
+        if n == 1:
+            graph = "[0:a]aformat=channel_layouts=mono"
+        proc = subprocess.run(
+            [ffmpeg, "-v", "error", "-y", *tones, "-filter_complex", graph + "[a]", "-map", "[a]",
+             "-c:a", "libopus", str(tmp_path / "t.mka")],
+            capture_output=True, text=True, check=False,
+        )  # fmt: skip
+        if proc.returncode == 0:
+            takes.append(name)
+        else:
+            assert "for specified mapping family -1" in proc.stderr, (name, proc.stderr)
+    assert takes == list(ENCODER_LAYOUTS["libopus"])
+
+
 async def test_71_source_gets_the_layout_the_encoder_can_make(
     prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
@@ -518,6 +617,62 @@ async def test_burn_in_bitmap_subtitles(
     assert not out.subtitles
 
 
+def mux_video_and_subtitle(ffmpeg: str, video: Path, subtitle: Path, path: Path) -> Path:
+    """The video of one file and the first subtitle track of another, 2 s."""
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(video), "-i", str(subtitle), "-map", "0:v",
+         "-map", "1:s:0", "-c", "copy", "-t", "2", str(path)],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    return path
+
+
+def first_luma(ffmpeg: str, path: Path, width: int, height: int) -> list[int]:
+    """The 10-bit luma samples of the first frame."""
+    raw = subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(path), "-map", "0:v:0", "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    return list(memoryview(raw[: width * height * 2]).cast("H"))
+
+
+async def test_bitmap_burn_in_keeps_10_bits(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """``overlay`` works in 8-bit YUV unless told otherwise: a 10-bit encode with burned
+    bitmap subtitles had no luma sample with its two low bits set (M2 review, finding M3).
+    Lossless x265, so that the encoder adds no low bits of its own."""
+    combined = mux_video_and_subtitle(
+        tool_paths["ffmpeg"], fixture_media("hdr10"), fixture_media("vobsub"),
+        tmp_path / "hdr10-vobsub.mkv",
+    )  # fmt: skip
+    src = await probe(prober, combined)
+    lossless = {**FAST_X265, "bit_depth": 10, "custom_params": "lossless=1"}
+    job = draft(src, output=tmp_path / "burned.mkv", video=lossless, subtitles=False)
+    job.dimensions = DimensionSettings(size=SameAsSource())
+    job.subtitles = [SubtitleOutputTrack(source=src.subtitles[0].index, action="burn")]
+    plain = job.model_copy(deep=True)
+    plain.subtitles = []
+    plain.output.path = tmp_path / "plain.mkv"
+    for one in (job, plain):
+        run_plan(plan_for(one, src), tool_paths)
+    assert ":format=yuv420p10" in plan_for(job, src).display
+    video = src.video[0]
+    plain_y, burned_y = (
+        first_luma(tool_paths["ffmpeg"], tmp_path / name, video.width, video.height)
+        for name in ("plain.mkv", "burned.mkv")
+    )
+    samples = video.width * video.height
+    assert sum(1 for v in plain_y if v & 3) > samples // 4  # a real 10-bit picture
+    # Outside the subtitles the picture is untouched (8-bit: about 20 % of the samples were
+    # equal, and no sample had its two low bits set).
+    same = sum(1 for a, b in zip(plain_y, burned_y, strict=True) if a == b)
+    assert same > samples * 0.95, same
+    out = await probe(prober, tmp_path / "burned.mkv")
+    assert out.video[0].bit_depth == 10
+
+
 # --------------------------------------------------------------------------- HDR
 
 
@@ -620,6 +775,93 @@ async def test_external_subtitles_with_offset_and_charset(
     assert "Árvíztűrő tükörfúrógép" in text  # decoded from ISO-8859-2, written as UTF-8
 
 
+def timeline(ffprobe: str, path: Path) -> tuple[list[tuple[str, float]], list[tuple[float, float]]]:
+    """``(codec type, start time)`` of every audio and video stream, and the chapters."""
+    data = ffprobe_json(ffprobe, path, "-show_streams", "-show_chapters")
+    starts = [
+        (s["codec_type"], round(float(s.get("start_time", 0)), 2))
+        for s in data["streams"]
+        if s["codec_type"] in ("video", "audio")
+    ]
+    chapters = [(round(float(c["start_time"]), 2), round(float(c["end_time"]), 2))
+                for c in data.get("chapters", [])]  # fmt: skip
+    return starts, chapters
+
+
+def srt_cues(text: str) -> list[tuple[str, str]]:
+    """``(timing line, text)`` of each non-empty cue of SRT text."""
+    cues = []
+    for block in text.replace("\r\n", "\n").strip().split("\n\n"):
+        lines = block.split("\n")
+        if len(lines) >= 3 and lines[2].strip():
+            cues.append((lines[1], " ".join(lines[2:])))
+    return cues
+
+
+@pytest.mark.parametrize("container", ["mkv", "mp4"])
+async def test_external_subtitle_with_a_range_starts_at_zero(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path,
+    container: Container,
+) -> None:  # fmt: skip
+    """M2 review, finding M4: chapters.mkv + an external SRT, range 1.2 to 3.7 s. The SRT's
+    first event (0.5 to 1.8 s) is on screen at the range start: it reached the muxer at -0.7 s,
+    so the Matroska muxer moved the video and audio to 0.7 s (the chapters stayed), and the
+    MP4 ``mov_text`` events got wrong times. The event before the range start is dropped."""
+    src = await source_of(prober, fixture_media("chapters"))
+    output = tmp_path / f"range.{container}"
+    job = draft(src, output=output, container=container, video=FAST_X264, subtitles=False)
+    job.range = TimeRange(start=1.2, end=3.7)
+    srt = ExternalSubtitle(path=fixture_media("text-subs-srt"), language="en")
+    job.subtitles = [SubtitleOutputTrack(source=srt, metadata=TrackMetadata(language="en"))]
+    run_plan(plan_for(job, src), tool_paths)
+    starts, chapters = timeline(tool_paths["ffprobe"], output)
+    assert starts == [("video", 0.0), ("audio", 0.0)]
+    assert chapters == [(0.0, 1.3), (1.3, 2.5)]
+    cues = srt_cues(subtitle_text(tool_paths["ffmpeg"], output))
+    assert [c[0] for c in cues] == ["00:00:00,800 --> 00:00:02,400"]  # 2.0 to 3.6 s, -1.2 s
+
+
+@pytest.mark.parametrize("container", ["mkv", "mp4"])
+async def test_external_subtitle_with_a_negative_offset_starts_at_zero(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path,
+    container: Container,
+) -> None:  # fmt: skip
+    """An offset of -0.7 s moves the first event (0.5 to 1.8 s) to -0.2 s: it is dropped, and
+    the video and audio still start at 0."""
+    src = await source_of(prober, fixture_media("chapters"))
+    output = tmp_path / f"offset.{container}"
+    job = draft(src, output=output, container=container, video=FAST_X264, subtitles=False)
+    srt = ExternalSubtitle(path=fixture_media("text-subs-srt"), offset_ms=-700)
+    job.subtitles = [SubtitleOutputTrack(source=srt)]
+    run_plan(plan_for(job, src), tool_paths)
+    starts, chapters = timeline(tool_paths["ffprobe"], output)
+    assert starts == [("video", 0.0), ("audio", 0.0)]
+    assert chapters[0] == (0.0, 1.0)
+    cues = srt_cues(subtitle_text(tool_paths["ffmpeg"], output))
+    assert [c[0] for c in cues] == ["00:00:01,300 --> 00:00:02,900"]
+
+
+async def test_remux_with_a_negative_subtitle_offset_starts_at_zero(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """With the video copied, an output ``-ss`` would drop video packets; the copied external
+    track drops its events before 0 by itself (``-copypriorss``)."""
+    src = await source_of(prober, fixture_media("chapters"))
+    output = tmp_path / "remux.mkv"
+    job = draft(src, output=output, audio="passthru", subtitles=False)
+    job.video.passthrough = True
+    srt = ExternalSubtitle(path=fixture_media("text-subs-srt"), offset_ms=-700)
+    job.subtitles = [SubtitleOutputTrack(source=srt)]
+    plan = plan_for(job, src)
+    assert plan.job_type == "remux"
+    run_plan(plan, tool_paths)
+    starts, chapters = timeline(tool_paths["ffprobe"], output)
+    assert starts == [("video", 0.0), ("audio", 0.0)]
+    assert chapters[0] == (0.0, 1.0)
+    cues = srt_cues(subtitle_text(tool_paths["ffmpeg"], output))
+    assert [c[0] for c in cues] == ["00:00:01,300 --> 00:00:02,900"]
+
+
 # --------------------------------------------------------------------------- LanguageIETF
 
 
@@ -689,6 +931,26 @@ async def test_frame_rate_modes(
     assert cfr["streams"][0]["r_frame_rate"] == "38/1"
     capped = ffprobe_json(tool_paths["ffprobe"], tmp_path / "peak.mp4", "-show_streams")
     assert capped["streams"][0]["avg_frame_rate"] == "30/1"
+
+
+async def test_bob_with_a_constant_same_as_source_rate_keeps_every_field(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """The interlaced fixture: 60 frames (120 fields) at 30000/1001. Bob makes 120 frames;
+    the constant "same as source" rate must be 60000/1001, not the source's 30000/1001 (which
+    dropped every second frame; M2 review)."""
+    src = await source_of(prober, fixture_media("interlaced"))
+    job = draft(src, output=tmp_path / "bob.mp4", container="mp4",
+                video={**FAST_X264, "framerate_mode": "constant"})  # fmt: skip
+    job.filters = FilterSettings({"deinterlace": FilterConfig(preset="bob")})
+    plan = plan_for(job, src)
+    assert "-r:v:0 60000/1001 -fps_mode:v:0 cfr" in plan.display
+    run_plan(plan, tool_paths)
+    data = ffprobe_json(tool_paths["ffprobe"], tmp_path / "bob.mp4", "-count_frames",
+                        "-show_streams")  # fmt: skip
+    video = data["streams"][0]
+    assert video["avg_frame_rate"] == "60000/1001"  # MP4: exact time base (MKV has 1 ms)
+    assert int(video["nb_read_frames"]) == 2 * 60
 
 
 async def test_truehd_passthru_into_mp4(

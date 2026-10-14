@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from reframe.command import PlanError, PlannedAudio, job_type, planned_audio
-from reframe.command.audio import LOUDNESS, audio_output
+from reframe.command.audio import ENCODER_LAYOUTS, LOUDNESS, audio_output, layout_channels
 from reframe.command.metadata import (
     ChapterPlan,
     OutputTrack,
@@ -177,7 +177,10 @@ def test_bitrate_without_a_table_for_the_layout() -> None:
     assert planned_audio(AudioOutputTrack(), eight, "mkv", definitions=defs).bitrate is None
 
 
-_LAYOUTS = [(0, None), (1, "mono"), (2, "stereo"), (5, "5.0"), (6, "5.1(side)"), (8, "7.1")]
+_LAYOUTS = [
+    (0, None), (1, "mono"), (2, "stereo"), (3, "2.1"), (3, "3.0(back)"), (5, "5.0"),
+    (5, "5.0(side)"), (6, "5.1(side)"), (6, "6.0"), (8, "7.1"), (8, "7.1(wide)"),
+]  # fmt: skip
 _BITRATES = [None, 1, 150, 700, 10_000]
 _RATES = [None, 8000, 22050, 44100, 96000]
 
@@ -198,16 +201,28 @@ def _check_written(
     assert _argv_value(args, "-ar:a:0") == str(got.samplerate)
     target = got.mixdown or got.bitrate_mixdown
     assert target is not None
-    if written_filter is not None:
-        assert str(written_filter).endswith(f"out_chlayout={DEFS.mixdowns[target].layout}")
+    if got.layout is None:
+        assert written_filter is None
+    else:
+        assert str(written_filter).endswith(f"out_chlayout={got.layout}")
+    written = layout_channels(got.layout)
+    out_channels = len(written) if written is not None else channels
     # The layout: one the encoder makes, never more channels than the source.
     if got.mixdown is not None:
         assert got.mixdown in encoder.mixdowns
         assert channels == 0 or DEFS.mixdowns[got.mixdown].channels <= channels
         assert got.mixdown != "dpl2" or channels == 0 or channels > 2
+        assert got.layout in (None, DEFS.mixdowns[got.mixdown].layout)
     else:
         assert channels <= encoder.max_channels
-        assert got.bitrate_mixdown == channels_mixdown(channels)
+        assert out_channels <= channels
+        assert got.bitrate_mixdown == channels_mixdown(out_channels)
+        accepted = ENCODER_LAYOUTS.get(encoder.id)
+        if accepted is not None and stream.channel_layout is not None:
+            assert (got.layout or stream.channel_layout) in accepted
+        elif got.layout is not None:  # only a lossless relabel
+            assert sorted(layout_channels(stream.channel_layout) or ()) != sorted(written or ())
+            assert len(written or ()) == channels
     # The bitrate: in the table of the effective layout, on a step when there are steps.
     if encoder.bitrate is not None and got.bitrate is not None:
         limits = encoder.bitrate.by_mixdown[target]
@@ -289,7 +304,7 @@ def test_encode_arguments() -> None:
         ("ac3", 8, "7.1", None, "aresample=out_chlayout=5.1"),
         ("libmp3lame", 6, "5.1(side)", None, "aresample=out_chlayout=stereo"),
         ("aac", 5, "5.0", None, None),
-        ("libopus", 3, "2.1", None, None),
+        ("libopus", 3, "2.1", None, "aresample=out_chlayout=stereo"),  # libopus refuses 2.1
         ("aac", 2, None, None, None),
         ("aac", 2, "stereo", "dpl2", None),  # nothing to matrix-encode: the same PCM
         ("aac", 6, "5.1(side)", "dpl2", "aresample=matrix_encoding=dplii:out_chlayout=stereo"),
@@ -308,6 +323,78 @@ def test_output_layout(
     track = AudioOutputTrack.model_validate({"encoder": encoder, "mixdown": mixdown})
     stream = audio(channels=channels, channel_layout=layout)
     assert audio_output(0, track, stream, MKV, DEFS).filter == expected
+
+
+@pytest.mark.parametrize(
+    ("layout", "channels", "written", "table"),
+    [
+        # Accepted as they are (the Vorbis channel orders of mapping family -1).
+        *[(name, n, None, channels_mixdown(n)) for name, n in
+          (("mono", 1), ("stereo", 2), ("3.0", 3), ("quad", 4), ("5.0", 5), ("5.1", 6),
+           ("6.1", 7), ("7.1", 8))],
+        # Side → back: a lossless relabel to an accepted layout.
+        ("5.1(side)", 6, "5.1", "5.1"),
+        ("5.0(side)", 5, "5.0", "5.1"),
+        ("quad(side)", 4, "quad", "5.1"),
+        ("6 channels (FL+FR+FC+LFE+SL+SR)", 6, "5.1", "5.1"),
+        # Else the largest accepted layout made of the source's channels: a downmix.
+        ("2.1", 3, "stereo", "stereo"),
+        ("3.0(back)", 3, "stereo", "stereo"),
+        ("4.0", 4, "3.0", "5.1"),
+        ("3.1", 4, "3.0", "5.1"),
+        ("4.1", 5, "3.0", "5.1"),
+        ("6.0", 6, "5.0", "5.1"),
+        ("6.0(front)", 6, "quad", "5.1"),
+        ("hexagonal", 6, "5.0", "5.1"),
+        ("6.1(back)", 7, "5.1", "5.1"),
+        ("6.1(front)", 7, "quad", "5.1"),
+        ("7.0", 7, "5.0", "5.1"),
+        ("7.0(front)", 7, "5.0", "5.1"),
+        ("7.1(wide)", 8, "5.1", "5.1"),
+        ("7.1(wide-side)", 8, "5.1", "5.1"),
+        ("octagonal", 8, "5.0", "5.1"),
+        ("5.1.2", 8, "5.1", "5.1"),
+        # Not known: left to FFmpeg.
+        (None, 6, None, "5.1"),
+        ("downmix", 2, None, "stereo"),
+    ],
+)  # fmt: skip
+def test_opus_gets_a_layout_it_accepts(
+    layout: str | None, channels: int, written: str | None, table: str
+) -> None:
+    """libopus lists no layouts, so FFmpeg does not convert for it, and it refuses all but
+    the eight of :data:`ENCODER_LAYOUTS` ("Invalid channel layout 5.0(side) for specified
+    mapping family -1"; testdata/README.md)."""
+    stream = audio(channels=channels, channel_layout=layout)
+    got = planned("libopus", stream)
+    assert (got.mixdown, got.layout, got.bitrate_mixdown) == (None, written, table)
+    out = audio_output(0, AudioOutputTrack(encoder="libopus"), stream, MKV, DEFS)
+    assert out.filter == (f"aresample=out_chlayout={written}" if written else None)
+
+
+@pytest.mark.parametrize(
+    ("encoder", "layout", "channels", "written"),
+    [
+        ("aac", "5.1(side)", 6, "5.1"),  # a lossless relabel (the same PCM)
+        ("aac", "6.0", 6, None),  # not 5.1: a remix would lose the back centre
+        ("aac", "7.1(wide)", 8, None),  # not 7.1: a remix would lose the centre pair
+        ("flac", "7.1(wide-side)", 8, None),
+        ("flac", "6.1(back)", 7, None),
+        ("ac3", "6.0", 6, None),  # FFmpeg converts for ac3 itself (it lists its layouts)
+    ],
+)  # fmt: skip
+def test_other_encoders_keep_a_layout_or_relabel_losslessly(
+    encoder: str, layout: str, channels: int, written: str | None
+) -> None:
+    got = planned(encoder, audio(channels=channels, channel_layout=layout))
+    assert (got.mixdown, got.layout) == (None, written)
+
+
+def test_layout_channels() -> None:
+    assert layout_channels("5.1(side)") == ("FL", "FR", "FC", "LFE", "SL", "SR")
+    assert layout_channels("3 channels (FL+FR+LFE)") == ("FL", "FR", "LFE")
+    assert layout_channels("unknown") is None
+    assert layout_channels(None) is None
 
 
 def test_loudnorm_template() -> None:

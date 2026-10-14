@@ -353,6 +353,10 @@ def _snap_rate(rate: Fraction) -> Fraction:
     return rate.limit_denominator(1001)
 
 
+def _fraction(rate: Rational | Fraction) -> Fraction:
+    return rate if isinstance(rate, Fraction) else Fraction(rate.num, rate.den)
+
+
 def source_rate(stream: VideoStream) -> Rational | Fraction | None:
     """The source's average frame rate: ``avg_frame_rate``, else frames / duration, else
     ``r_frame_rate`` (FFmpeg's Matroska VFR files have no average)."""
@@ -365,13 +369,19 @@ def source_rate(stream: VideoStream) -> Rational | Fraction | None:
     return None
 
 
-def frame_rate_args(video: VideoSettings, stream: VideoStream) -> list[str]:
+def frame_rate_args(video: VideoSettings, stream: VideoStream, *, factor: int = 1) -> list[str]:
     """``Same as source`` + variable: nothing. Constant: ``-r R -fps_mode cfr`` (``R`` = the
-    chosen rate, or the source's average). Peak (or variable with a chosen rate):
-    ``-fpsmax R`` (decision 0013: FFmpeg has no peak mode; a faster source becomes CFR R)."""
+    chosen rate, or the source's average times ``factor``: 2 after a Bob deinterlacer, which
+    makes a frame of each field). Peak (or variable with a chosen rate): ``-fpsmax R``
+    (decision 0013: FFmpeg has no peak mode; a faster source becomes CFR R)."""
     rate = video.framerate
     if video.framerate_mode == "constant":
-        target = rate if rate is not None else source_rate(stream)
+        target: Rational | Fraction | None = rate
+        if target is None:
+            source = source_rate(stream)
+            if source is not None and factor != 1:
+                source = _fraction(source) * factor
+            target = source
         if target is None:
             return [spec("-fps_mode", V0), "cfr"]
         return [spec("-r", V0), _rate(target), spec("-fps_mode", V0), "cfr"]

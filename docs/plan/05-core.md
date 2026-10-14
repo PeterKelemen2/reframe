@@ -324,7 +324,9 @@ class EncodePlan(BaseModel):
       hardware init → input options (decoder options `-drc_scale` / `-forced_subs_only`,
       range seek `-ss`) → `-i source` → external subtitle inputs (`-itsoffset`, `-ss`,
       `-sub_charenc`) → chapter metadata input → `-map` with **absolute stream indexes**
-      (`0:3`) → range end (`-t`, an output option, so FFmpeg cuts the copied chapters) →
+      (`0:3`) → `-ss 0` when the video is encoded and a stream could start before 0 (a
+      range, a negative subtitle offset: nothing reaches the muxer before 0; 0013 "Follow-up
+      (M2 review)") → range end (`-t`, an output option, so FFmpeg cuts the copied chapters) →
       filter graph → per-stream codec args → per-stream metadata and dispositions (no source
       stream tags: `-map_metadata:s -1`) → chapters → global tags → container flags
       (`-movflags +faststart`, `-strict -2`) → `-f <muxer>` → output
@@ -332,14 +334,16 @@ class EncodePlan(BaseModel):
 - [ ] **Filter graph builder** (`command/filtergraph.py`): fixed filter order (see
       [03 §Filters](03-features.md#filters)), colour tagging (`setparams` for untagged
       sources), HDR metadata removed after tone mapping, hardware upload tail, burn-in (text
-      last, bitmap `overlay` after the crop; 0013). Correct escaping of filter arguments,
+      last, bitmap `overlay` after the crop, in 10 bits for a deeper source; 0013). Correct
+      escaping of filter arguments,
       including Windows paths in `subtitles=` (`C\:/…`). This is a known source of bugs, so it
       needs dedicated tests.
 - [ ] **Video**: rate control, preset/tune/profile/level, `-x264-params` / `-x265-params` /
       `-svtav1-params` assembled from advanced options + colour + HDR metadata. 2-pass for x264
       (`-pass`/`-passlogfile`) and x265 (`pass=`/`stats=` in params); the statistics files are
       listed in `EncodePlan.temp_files` for the runner to remove. Frame rate: constant
-      `-r -fps_mode cfr`, peak `-fpsmax` (0013).
+      `-r -fps_mode cfr` (twice the source's rate after a Bob deinterlacer), peak `-fpsmax`
+      (0013).
 - [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ar:a:N` (always), `-filter:a:N` (output layout and
       downmix with `aresample=[matrix_encoding=dplii:]out_chlayout=…`, gain, loudnorm with the
       measured values of the track's own analyse step); DRC is the AC-3 decoder's
@@ -349,7 +353,9 @@ class EncodePlan(BaseModel):
       bitrate is clamped to the range of the effective mixdown and goes down to the next
       allowed step (as HandBrake does); a sample rate goes to the nearest listed rate.
       Validation shows it as info ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md),
-      0013 "Follow-up (M2 wave 2b)").
+      0013 "Follow-up (M2 wave 2b)"). libopus gets a channel layout it accepts (side → back,
+      else the largest accepted layout of the source's channels); other encoders get the
+      source layout, relabelled only where that is lossless (0013 "Follow-up (M2 review)").
 - [ ] **Subtitles**: copy, convert, burn. For MKV, copy attachments (`-map 0:t?`) when ASS
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N
