@@ -26,8 +26,48 @@ _WITH_QUALITY = sorted(
 
 def test_same_scale_encoders_keep_the_value() -> None:
     assert convert_quality(22, "libx264", "libx265") == 22
-    assert convert_quality(22.25, "libx264", "libx264") == 22.2  # step 0.1 rounding
+    assert convert_quality(22.25, "libx264", "libx264") == 22.3  # a half step goes up
+    assert convert_quality(22.24, "libx264", "libx264") == 22.2
     assert convert_quality(99, "libx264", "libx264") == 51
+
+
+def test_a_half_step_rounds_up_on_every_scale() -> None:
+    """M2 review: x264 23 is 26.5 on the QSV, AMF and VAAPI scales. Banker's rounding gave
+    QSV (min 1) 27 but AMF and VAAPI (min 0) 26."""
+    assert {
+        e: convert_quality(23, "libx264", e)
+        for e in ("hevc_qsv", "hevc_amf", "h264_amf", "hevc_vaapi", "h264_vaapi")
+    } == dict.fromkeys(("hevc_qsv", "hevc_amf", "h264_amf", "hevc_vaapi", "h264_vaapi"), 27)
+
+
+@pytest.mark.parametrize(
+    "encoder", ["libsvtav1", "av1_amf", "h264_vaapi", "hevc_vaapi", "av1_vaapi"]
+)
+def test_quality_zero_is_not_offered_where_the_encoder_ignores_it(encoder: str) -> None:
+    """M2 review: SVT-AV1 `-crf 0`, VAAPI `-global_quality 0` and AMF AV1 QP 0 give the
+    encoder's default quality (test_tools.py `test_quality_range_ends_are_honoured`), so the
+    best end of the range is 1 and a converted 0 lands there."""
+    mode = load_definitions().video_encoders[encoder].rate_control.quality
+    assert mode is not None
+    assert mode.min == 1
+    assert convert_quality(0, "libx264", encoder) == 1
+
+
+def test_h264_and_hevc_vaapi_stop_at_51() -> None:
+    """`-global_quality 52` gives the same file as 51 (H.264 / H.265 QP is 0-51)."""
+    for encoder in ("h264_vaapi", "hevc_vaapi"):
+        mode = load_definitions().video_encoders[encoder].rate_control.quality
+        assert mode is not None
+        assert mode.max == 51
+
+
+@pytest.mark.parametrize("encoder", _WITH_QUALITY)
+def test_defaults_sit_on_the_conversion_scale(encoder: str) -> None:
+    """Every default is what x264 RF 22 (HandBrake's 1080p presets) converts to. The M2 review
+    found h264_vaapi at 20 (x264 17.6) and av1_qsv at 24 (x264 24, the 2160p value)."""
+    mode = load_definitions().video_encoders[encoder].rate_control.quality
+    assert mode is not None
+    assert mode.default == convert_quality(22, "libx264", encoder)
 
 
 def test_handbrake_preset_equivalents() -> None:

@@ -37,11 +37,14 @@ key = "ref"
 label = "Reference frames"
 category = "Frame types / GOP"
 type = "int"
+# x265 4.1: 9 and more stop the encoder when B-frames are on ("level 5 detected, but
+# NumPocTotalCurr (total references) is non-compliant", "Error while opening encoder"); they
+# work only with bframes=0 or a high explicit level. So 1-8.
 min = 1
-max = 16
+max = 8
 step = 1
 unit = "frames"
-help = "How many earlier frames a frame can reference. More helps compression and costs speed."
+help = "How many earlier frames a frame can reference (1–8). More helps compression and costs speed."
 mapping = { kind = "x26x_param", name = "ref" }
 default = { kind = "preset", values = { ultrafast = 1, superfast = 1, veryfast = 2, faster = 2, fast = 3, medium = 3, slow = 4, slower = 5, veryslow = 5, placebo = 5 } }
 
@@ -92,7 +95,10 @@ min = 0
 max = 250
 step = 1
 unit = "frames"
-help = "Frames analysed ahead for CU-tree and frame types. More is better and uses more memory."
+# x265 4.1: a value at or below the B-frames stops the encoder ("Lookahead depth must be
+# greater than the max consecutive bframe count"); 0 works only with bframes=0. A rule across
+# two options: validation (C-8) checks it.
+help = "Frames analysed ahead for CU-tree and frame types. More is better and uses more memory. Must be more than the B-frames (x265 stops otherwise)."
 mapping = { kind = "x26x_param", name = "rc-lookahead" }
 default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = 5, superfast = 10, veryfast = 15, faster = 15, fast = 15, medium = 20, slow = 25, slower = 40, veryslow = 40, placebo = 60 } }
 
@@ -218,8 +224,9 @@ key = "merange"
 label = "Motion search range"
 category = "Motion / analysis"
 type = "int"
+# x265 4.1: 32768 stops the encoder ("Search Range must be less than 32768").
 min = 0
-max = 32768
+max = 32767
 step = 1
 unit = "pixels"
 help = "How far the motion search looks."

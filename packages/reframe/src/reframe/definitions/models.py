@@ -90,6 +90,7 @@ __all__ = [
     "VideoEncoderDef",
     "X26xParam",
     "channels_mixdown",
+    "round_half_up",
 ]
 
 EncoderFamily = Literal["software", "nvenc", "qsv", "amf", "vaapi"]
@@ -303,10 +304,13 @@ class EncoderOption(ReframeModel):
 class DerivedValue(ReframeModel):
     """A value computed from the quality value (HandBrake's QP offsets for P/B frames).
 
-    ``value + offset``; when ``ramp_below`` is set and the value is at or below it, the offset
-    is scaled by ``value / ramp_below``. Clamped to ``min`` / ``max``; ``integer`` rounds.
+    ``value · factor + offset``; when ``ramp_below`` is set and the value is at or below it,
+    the offset is scaled by ``value / ramp_below``. Clamped to ``min`` / ``max``; ``integer``
+    rounds (half up). ``factor`` puts the value on another scale: ``av1_nvenc`` takes ``-cq``
+    from 0 to 63 but ``-init_qp*`` from 0 to 255 (``ffmpeg -h encoder=av1_nvenc``).
     """
 
+    factor: float = 1.0
     offset: float = 0.0
     ramp_below: float | None = None
     min: float | None = None
@@ -317,12 +321,12 @@ class DerivedValue(ReframeModel):
         offset = self.offset
         if self.ramp_below is not None and value <= self.ramp_below:
             offset = offset * value / self.ramp_below
-        result = value + offset
+        result = value * self.factor + offset
         if self.min is not None:
             result = max(self.min, result)
         if self.max is not None:
             result = min(self.max, result)
-        return float(round(result)) if self.integer else result
+        return float(round_half_up(result)) if self.integer else result
 
 
 class QualityBand(ReframeModel):
@@ -645,7 +649,11 @@ class CodecSupport(ReframeModel):
     """What a container holds for one track type."""
 
     copy_codecs: list[str] = Field(default_factory=list, alias="copy")
-    """ffprobe codec names that can be stream-copied in; ``["*"]`` = any."""
+    """ffprobe codec names that can be stream-copied in; ``["*"]`` = any but
+    :attr:`copy_except`."""
+    copy_except: list[str] = Field(default_factory=list)
+    """With ``copy = ["*"]``: codecs the muxer refuses (Matroska: ``pcm_bluray``, ``pcm_dvd``,
+    ``s302m`` … "No wav codec tag found"). They are encoded instead of copied."""
     encode: list[str] = Field(default_factory=list)
     """Video / audio codecs (``VideoCodec`` / ``AudioCodec``) or subtitle formats
     (``SubtitleFormat``) that can be encoded into it."""
@@ -653,6 +661,8 @@ class CodecSupport(ReframeModel):
     """Extra arguments to copy a codec (``truehd`` in MP4: ``-strict -2``)."""
 
     def can_copy(self, codec_name: str) -> bool:
+        if codec_name in self.copy_except:
+            return False
         return "*" in self.copy_codecs or codec_name in self.copy_codecs
 
 
@@ -863,6 +873,13 @@ def interpolate(points: list[tuple[float, float]], x: float) -> float:
                 return y0
             return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def round_half_up(value: float) -> int:
+    """``value`` rounded to the nearest integer, a half away from minus infinity (``26.5`` →
+    ``27``), not to the even neighbour as :func:`round` does. Float noise below 1e-9 is
+    ignored (``223.49999999999997`` counts as ``223.5``)."""
+    return math.floor(round(value, 9) + 0.5)
 
 
 def channels_mixdown(channels: int) -> Mixdown:

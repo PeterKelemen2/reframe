@@ -21,10 +21,11 @@ How the other steps use it:
   ``samplerates``, ``mixdowns``; ``Definitions.mixdowns`` (layout, ``matrix_encoding``);
   ``Definitions.passthru_codecs`` (source matching).
 - **Containers (C-7 / C-8)**: ``containers[id]`` (:class:`ContainerDef`):
-  ``video`` / ``audio`` / ``subtitles`` (:meth:`CodecSupport.can_copy`, ``encode``,
-  ``copy_args``), ``text_subtitle_target``, ``flags`` / ``mkvpropedit_flags`` with
-  ``Definitions.track_flags`` (disposition and mkvpropedit names), ``codec_tags``,
-  ``format_flags`` (``web_optimized``), ``language_format``, ``chapters``, ``attachments``.
+  ``video`` / ``audio`` / ``subtitles`` (:meth:`CodecSupport.can_copy`, which honours
+  ``copy_except``; ``encode``, ``copy_args``), ``text_subtitle_target``, ``flags`` /
+  ``mkvpropedit_flags`` with ``Definitions.track_flags`` (disposition and mkvpropedit
+  names), ``codec_tags``, ``format_flags`` (``web_optimized``), ``language_format``,
+  ``chapters``, ``attachments``.
 - **Filters (C-7)**: ``filters[id]`` (:class:`FilterDef`) in ``filter_order``;
   :meth:`FilterDef.implementation_for` resolves ``FilterConfig.implementation`` (``None``:
   the first implementation the build runs that has the preset), and

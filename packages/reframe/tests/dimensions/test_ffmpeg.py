@@ -381,10 +381,21 @@ async def test_portrait_fit_turns_the_box(tmp_path: Path, corner_source: Path) -
 
 
 def test_noautorotate_keeps_the_display_matrix(tmp_path: Path, corner_source: Path) -> None:
+    """FFmpeg n9.0 copies the display matrix to the output with ``-noautorotate``; n8.1.3
+    (the CI override build) drops it (rotation ``[]``). Either way ``-display_rotation 0``
+    leaves none, so a builder that rotates by itself and writes it is right on both."""
+    from reframe.tools.versions import parse_ffmpeg_version
+
+    version = parse_ffmpeg_version(run(tools()[0], "-hide_banner", "-version").stdout)
+    assert version is not None
+    assert version.series is not None
     source = with_display_matrix(corner_source, 90, tmp_path / "rotated.mkv")
     out = encode(source, tmp_path / "noauto.mkv", "transpose=clock", "-noautorotate")
     rotations = [d.get("rotation") for d in out.get("side_data_list", [])]
-    assert rotations == [-90]  # still there: a player would turn the picture again
+    if version.series >= (9, 0):
+        assert rotations == [-90]  # still there: a player would turn the picture again
+    else:
+        assert rotations == []  # n8.1.3: -noautorotate does not copy the display matrix
     out = encode(
         source, tmp_path / "noauto0.mkv", "transpose=clock",
         "-noautorotate", "-display_rotation:v:0", "0",

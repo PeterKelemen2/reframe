@@ -494,9 +494,11 @@ usable):
 ### Encoder definitions (C-6)
 
 Checked on 2026-10-13 with both n9.0.2 builds (Arch `/usr/bin/ffmpeg` and the pinned BtbN
-build; x264 core 165, x265 4.1, SVT-AV1 v4.2.0) and, for AMF and VAAPI, an AMD RX 7600.
-`packages/reframe/tests/definitions/test_tools.py` repeats every check (`needs_ffmpeg`; the
-AMF / VAAPI encodes are `needs_gpu`), so a different build shows up as a test failure:
+build; x264 core 165, x265 4.1, SVT-AV1 v4.2.0) and, for AMF and VAAPI, an AMD RX 7600. The
+M2 review fixes (2026-10-14) were checked with these and with the CI override build n8.1.3
+(BtbN `n8.1.3-9-g29e619e767`). `packages/reframe/tests/definitions/test_tools.py` repeats
+every check (`needs_ffmpeg`; the AMF / VAAPI encodes are `needs_gpu`); where n8.1.3 differs,
+the test asserts what each version does:
 
 ```sh
 uv run pytest packages/reframe/tests/definitions/test_tools.py           # the active build
@@ -551,12 +553,44 @@ parameters (C-8) must read the log, not only the exit code. Other library behavi
   encodes; `level=4.1` is rejected, `level=41` works.
 - libvpx-vp9: `-crf N` alone gives the same file as `-crf N -b:v 0`.
 
+**Range ends (M2 review, 2026-10-14, all three builds: both n9.0.2 and n8.1.3).** Each end of
+every quality range and every number option must have its own effect
+(`test_quality_range_ends_are_honoured`, `test_option_range_ends_encode`,
+`test_recorded_cross_option_rules`, and `test_hardware_quality_range_ends_are_honoured` on the
+RX 7600):
+
+| Encoder | What the tools do | Range in the definitions |
+|---------|-------------------|--------------------------|
+| `libsvtav1` | `-crf 0` is "not set": the log says `CRF / 35.00` and the file is the same as with no `-crf` | quality 1–63 |
+| `h264_vaapi`, `hevc_vaapi`, `av1_vaapi` | `-global_quality 0` is "not set": the driver's QP (h264 20, hevc 25, av1 25), the same file as no value. 52 gives the same file as 51 (av1: 256 as 255) | 1–51 (av1 1–255) |
+| `av1_amf` | QP 0: `AMF_OUT_OF_RANGE: SetPropertyInternal() Av1QIndex_Intra failed`, exit 0, the same file as no QP. 256: "Value 256 … out of range [-1 - 255]" | 1–255 |
+| `h264_amf`, `hevc_amf` | QP 0 works (a larger file than 1); 52: "out of range [-1 - 51]" | 0–51 |
+| `libx265` | `ref` 9 and more with B-frames: "NumPocTotalCurr (total references) is non-compliant", encoder not opened (works with `bframes=0`). `merange=32768`: "Search Range must be less than 32768". `rc-lookahead` at or below `bframes`: "Lookahead depth must be greater than the max consecutive bframe count" (0 works with `bframes=0`) | `ref` 1–8, `merange` 0–32767; the look-ahead rule is for validation (C-8) |
+| `libx264` | `subme` 10 and 11 need `trellis=2`: with 0 or 1 the stream says `subme=9`, no message | a note in the help; the rule is for validation (C-8) |
+| `libsvtav1` | `lookahead=-1`: "Error parsing option lookahead: -1.", exit 0. 121: "The lookahead distance must be [0 - 120]" | 0–120, default "encoder decides" |
+| `av1_nvenc` | `ffmpeg -h`: `-cq` 0–63, `-init_qpI/P/B` 0–255 (`hevc_nvenc`: both 0–51) | initial QPs = CQ × 255/63 ∓ 8 (not checked on NVIDIA hardware) |
+
+A quality value converted between encoders (`convert_quality`) is rounded half up: x264 RF 23
+is 26.5 on the QSV, AMF and VAAPI scales and becomes 27 on all three.
+
+**n8.1.3 against n9.0.2.** `h264_amf` and `hevc_amf` have no `high_quality` constant for
+`-quality` / `-preset` in n8.1.3 (only `speed`, `balanced`, `quality`); C-4 reads the build's
+presets, so `supported_presets` does not offer it there. Every other private option, constant
+and range that the definitions use is the same.
+
+**av1_amf pads the picture (RX 7600, VCN 4; all three builds).** 1920x1080 is written as
+1920x1082, 640x360 as 640x362 and 720x480 as 768x480 (ffprobe `width` / `height`; the width
+goes up to a multiple of 64, a height that is not a multiple of 16 gets 2 more lines). The
+extra lines repeat the picture's edge. 1280x720 and 3840x2160 stay as they are. `av1_vaapi` on
+the same GPU writes 1920x1080; `hevc_amf` keeps the display size and pads only the coded size
+(`coded_height` 1088). `test_av1_amf_pads_the_picture` records it.
+
 **Hardware rate control (AMF, VAAPI on radeonsi).** Every preset, profile, level, the quality
 mode at min / default / max, average bitrate and every option encode:
 
 | Encoder | Quality mode (as in the definitions) | Notes |
 |---------|------------------|-------|
-| `h264_amf`, `av1_amf` | `-rc cqp -qp_i Q -qp_p Q+2 -qp_b Q+4` (AV1: +8 / +16, range 0–255) | HandBrake's offsets. `hevc_amf` has no `-qp_b` |
+| `h264_amf`, `av1_amf` | `-rc cqp -qp_i Q -qp_p Q+2 -qp_b Q+4` (AV1: +8 / +16, range 1–255) | HandBrake's offsets. `hevc_amf` has no `-qp_b` |
 | `h264_vaapi`, `hevc_vaapi`, `av1_vaapi` | `-rc_mode CQP -global_quality Q` | ICQ fails: "Driver does not support ICQ RC mode (supported modes: CQP, CBR, VBR, QVBR)". `av1_vaapi` has no `-qp`. With no quality option h264 uses QP 20 and hevc QP 25 (same files as `-qp 20` / `-qp 25`) |
 
 `-bf 2` gives B-frames on `h264_amf` (ffprobe `has_b_frames=2`); `h264_vaapi` uses B-frames
@@ -595,6 +629,23 @@ behind the data:
 | dvd_subtitle (VobSub) | yes | **yes** (tag `mp4s`) | no |
 | hdmv_pgs_subtitle | yes (from libavformat/matroskaenc.c: FFmpeg has no PGS encoder to test) | no (no tag in libavformat/movenc.c `codec_mp4_tags`) | no |
 | ttf attachment | yes | no ("Could not find tag for codec ttf") | dropped without an error |
+
+**Matroska `copy_except` (M2 review, all three builds).** MKV takes `copy = ["*"]` for audio
+and video, but the muxer refuses some codecs. A stream of every audio encoder and every
+software video encoder in the build was `-c copy`-muxed into Matroska
+(`test_mkv_copy_except_matches_the_muxer` repeats it for the denied codecs and a set of
+allowed ones):
+
+| Result | Codecs |
+|--------|--------|
+| refused: "No wav codec tag found for codec …", exit 234 | pcm_bluray, pcm_dvd, s302m, pcm_s24daud, pcm_vidc, pcm_s8, pcm_s8_planar, pcm_s16le/s16be/s24le/s32le_planar, pcm_s64be, pcm_u16le/u16be/u24le/u24be/u32le/u32be, pcm_f32be, pcm_f64be, dsd_lsbf_planar and dsd_msbf_planar (from a hand-made DSF file), adpcm_adx, adpcm_argo, adpcm_g726le, adpcm_ima_alp/amv/apm/qt/ssi/ws, aptx, aptx_hd, comfortnoise, gsm, nellymoser, roq_dpcm, sbc |
+| refused: "Raw RGB is not supported Natively in Matroska" | rawvideo with an RGB pixel format (YUV rawvideo works) |
+| exit 0, but the file cannot be read back ("unknown codec", "Duplicate element") | dfpwm, dirac (vc2), gif, qtrle, rpza; svq1 in n9.0.2 only (n8.1.3 reads it back) |
+| copied and read back | pcm_s16le/s16be/s24le/s24be/s32le/s32be/s64le, pcm_u8, pcm_f32le, pcm_f64le, pcm_alaw, pcm_mulaw, adpcm_ms, adpcm_ima_wav, adpcm_g722, adpcm_g726, adpcm_swf, adpcm_yamaha, mp2, wavpack, alac, tta, mlp, truehd, ffv1, prores, png, mjpeg … |
+
+Not verified (FFmpeg has no encoder, and no hand-made source worked): pcm_f16le, pcm_f24le,
+pcm_lxf, pcm_sga, dsd_lsbf, dsd_msbf. They are denied too, so they are encoded instead of a
+mux that may fail. Decode-only game and telephony ADPCM variants are not in the list.
 
 Chapters: all three keep the 4 chapters of the `chapters` fixture.
 

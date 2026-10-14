@@ -277,6 +277,56 @@ def test_choice_setting_problems_are_reported() -> None:
     assert _has(problems, "libsvtav1.fast_decode", "needs a tune")
 
 
+@pytest.mark.parametrize(
+    ("encoder", "values"),
+    [
+        ("libsvtav1", ["0", "1", "2"]),  # the M2 review: SVT-AV1 listed slowest first
+        ("libx264", ["medium", "fast"]),
+        ("hevc_nvenc", ["p2", "p1"]),
+        ("h264_amf", ["quality", "speed"]),
+    ],
+)
+def test_presets_not_fastest_first_are_reported(encoder: str, values: list[str]) -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        presets = raw["video_encoders"][encoder]["presets"]
+        presets["choices"] = [{"value": v, "label": v} for v in values]
+        presets["default"] = values[0]
+
+    assert _has(_lint_mutated(mutate), f"{encoder}.presets", "fastest first")
+
+
+def test_a_preset_of_unknown_speed_is_reported() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        raw["video_encoders"]["libx265"]["presets"]["choices"].append(
+            {"value": "warp", "label": "Warp"}
+        )
+
+    assert _has(_lint_mutated(mutate), "libx265.presets", "speed of preset 'warp'")
+
+
+def test_hardware_setup_problems_are_reported() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        setup = raw["video_encoders"]["h264_vaapi"]["hardware_setup"]
+        setup["init_args"] = ["-init_hw_device", "vaapi=va:{device}"]
+        setup["filter_tail"] = ["format={pix_fmt}", "hwupload"]
+        raw["video_encoders"]["libx264"]["hardware_setup"] = {"init_args": ["-x"]}
+
+    problems = _lint_mutated(mutate)
+    assert _has(problems, "h264_vaapi.hardware_setup", "unknown placeholders ['device', 'pix_fmt']")
+    assert _has(problems, "libx264.hardware_setup", "software encoder")
+
+
+def test_derived_value_problems_are_reported() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        derived = raw["video_encoders"]["av1_nvenc"]["rate_control"]["quality"]["derived"]
+        derived["qp_p"]["factor"] = 0
+        derived["qp_b"].update(min=10, max=5)
+
+    problems = _lint_mutated(mutate)
+    assert _has(problems, "av1_nvenc.rate_control.quality.derived.qp_p", "factor")
+    assert _has(problems, "av1_nvenc.rate_control.quality.derived.qp_b", "min must not")
+
+
 # --------------------------------------------------------------------------- audio
 
 
@@ -327,6 +377,9 @@ def test_container_problems_are_reported() -> None:
         mp4["mkvpropedit_flags"] = ["default"]
         raw["containers"]["webm"]["flags"] = ["forced"]
         raw["containers"]["webm"]["subtitles"] = {"copy": [], "encode": []}
+        raw["containers"]["webm"]["audio"]["copy_except"] = ["aac"]
+        raw["containers"]["webm"]["video"]["copy_except"] = ["vp9", "vp9"]
+        raw["containers"]["webm"]["codec_tags"] = {"hevc": "hvc1", "vp9": ""}
         del raw["containers"]["mkv"]
         del raw["track_flags"]["original"]
 
@@ -341,6 +394,11 @@ def test_container_problems_are_reported() -> None:
         "both muxer-written and mkvpropedit-written",
         "webm: every muxer writes the default flag",
         "webm.subtitles: holds nothing",
+        "webm.audio.copy_except: only needed with copy = ['*']",
+        "webm.video.copy_except: duplicate entries",
+        "webm.video: ['vp9'] both copyable and denied",
+        "webm.codec_tags: the container cannot hold hevc",
+        "webm.codec_tags: empty tag for vp9",
         "containers: mkv is not defined",
         "track_flags: original",
     ):

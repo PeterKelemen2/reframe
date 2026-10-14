@@ -11,9 +11,11 @@ flags it writes; and every filter chain against a real run. testdata/README.md
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -23,16 +25,21 @@ from typing import Any, cast
 
 import pytest
 
+from reframe.capabilities.parse import parse_encoder_help
 from reframe.definitions import (
     ChoiceSetting,
     CodecSupport,
     ContainerDef,
     EncoderOption,
+    QualityMode,
     VideoEncoderDef,
     load_definitions,
+    supported_presets,
 )
 from reframe.definitions.models import TRACK_FLAGS, OptionMapping
+from reframe.models.capabilities import EncoderStatus
 from reframe.models.job import Container, OptionValue
+from reframe.tools.versions import parse_ffmpeg_version
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -128,11 +135,46 @@ def _encoders_in_build() -> frozenset[str]:
 
 
 @cache
+def _series() -> tuple[int, int]:
+    """``(major, minor)`` of the FFmpeg build under test (``(8, 1)`` for n8.1.3)."""
+    version = parse_ffmpeg_version(_ffmpeg(["-version"]).stdout)
+    assert version is not None
+    assert version.series is not None
+    return version.series
+
+
+#: Choices that older FFmpeg builds do not have: (encoder, setting, value) → the first
+#: ``(major, minor)`` with it. FFmpeg n8.1.3 has no ``high_quality`` constant for
+#: ``h264_amf`` / ``hevc_amf`` ``-quality`` (only speed, balanced, quality); n9.0.2 has it.
+_ADDED_IN: dict[tuple[str, str, str], tuple[int, int]] = {
+    ("h264_amf", "presets", "high_quality"): (9, 0),
+    ("hevc_amf", "presets", "high_quality"): (9, 0),
+}
+
+
+@cache
+def _help_text(encoder: str) -> str:
+    return _ffmpeg(["-h", f"encoder={encoder}"]).stdout
+
+
+@cache
+def _help_range(encoder: str, option: str) -> tuple[float, float]:
+    """``(from, to)`` of a private option in ``ffmpeg -h encoder=<id>``."""
+    match = re.search(
+        rf"^  -{re.escape(option)}\s+<[^>]+>.*\(from (-?[\d.]+) to (-?[\d.]+)\)",
+        _help_text(encoder),
+        re.MULTILINE,
+    )
+    assert match is not None, f"{encoder} -{option}"
+    return float(match.group(1)), float(match.group(2))
+
+
+@cache
 def _help(encoder: str) -> dict[str, set[str]]:
     """``ffmpeg -h encoder=<id>``: private option name → its named constants."""
     options: dict[str, set[str]] = {}
     current: set[str] | None = None
-    for line in _ffmpeg(["-h", f"encoder={encoder}"]).stdout.splitlines():
+    for line in _help_text(encoder).splitlines():
         opt = re.match(r"^  -(\S+)\s+<", line)
         if opt:
             current = options.setdefault(opt.group(1), set())
@@ -209,6 +251,7 @@ def test_private_options_and_choices_exist_in_the_build(encoder_id: str) -> None
         for name in ("presets", "tunes", "profiles", "levels")
         if (s := getattr(enc, name)) is not None
     ]
+    series = _series()
     for name, setting in settings:
         if setting.mapping.kind != "private_opt":
             continue
@@ -217,8 +260,24 @@ def test_private_options_and_choices_exist_in_the_build(encoder_id: str) -> None
             problems.append(f"{name}: -{opt}")
         elif known[opt]:  # named constants: every choice must be one
             missing = [c.written for c in setting.choices if c.written not in known[opt]]
-            if missing:
-                problems.append(f"{name}: {missing} not constants of -{opt}")
+            older = {
+                value
+                for (e, n, value), since in _ADDED_IN.items()
+                if (e, n) == (encoder_id, name) and series < since
+            }
+            if set(missing) != older:
+                problems.append(f"{name}: {missing} not constants of -{opt}, expected {older}")
+            if name == "presets" and older:
+                # The product hides them: C-4 reads the build's presets, supported_presets
+                # offers only those.
+                parsed = parse_encoder_help(_help_text(encoder_id))
+                assert parsed is not None
+                status = EncoderStatus(
+                    id=encoder_id, presets=parsed.presets, private_options=parsed.private_options
+                )
+                offered = {c.value for c in supported_presets(enc, status)}
+                if offered & older:
+                    problems.append(f"presets {sorted(offered & older)} offered by the build")
     for option in enc.options:
         if option.mapping.kind == "private_opt":
             if option.mapping.name not in known:
@@ -605,6 +664,87 @@ def test_svtav1_options_parse() -> None:
     assert re.search(r"film grain synth / denoising / level .*: 1 / 0 / 8", result.stderr)
 
 
+#: Other options to set with an option at the end of its range, where x265 has a rule across
+#: two options (recorded in ``test_recorded_cross_option_rules``; C-8 validates them).
+_RANGE_COMPANIONS: dict[tuple[str, str], dict[str, str]] = {
+    ("libx265", "rc-lookahead"): {"bframes": "0"},
+}
+
+
+@pytest.mark.parametrize("encoder_id", ["libx264", "libx265", "libsvtav1"])
+def test_option_range_ends_encode(encoder_id: str) -> None:
+    """Every number option at its minimum and at its maximum reaches the library without an
+    error. M2 review: x265 ``ref`` 9-16 and ``merange`` 32768 stopped the encoder, SVT-AV1
+    ``lookahead=-1`` was rejected ("Error parsing option lookahead: -1.")."""
+    enc = VIDEO[encoder_id]
+    jobs: list[tuple[str, list[str], dict[str, str]]] = []
+    for option in enc.options:
+        if option.type not in ("int", "float"):
+            continue
+        assert option.min is not None
+        assert option.max is not None
+        for value in (option.min, option.max):
+            args, params = _mapping_args(option.mapping, _written(value))
+            params = _RANGE_COMPANIONS.get((encoder_id, option.key), {}) | params
+            jobs.append((f"{option.key}={_written(value)}", args, params))
+
+    def run(job: tuple[str, list[str], dict[str, str]]) -> str | None:
+        label, args, params = job
+        result = _ffmpeg(
+            [*_encode_args(enc, args, params, frames=2, small=True), "-f", "null", "-"]
+        )
+        if result.returncode:
+            return f"{label}: {_fail_text(result)}"
+        error = _param_error(result)
+        return f"{label}: {error}" if error else None
+
+    assert _parallel(jobs, run) == []
+
+
+def test_recorded_cross_option_rules(tmp_path: Path) -> None:
+    """Rules across two options that a range cannot express (for C-8's validation):
+
+    - x265: ``rc-lookahead`` at or below ``bframes`` stops the encoder ("Lookahead depth must
+      be greater than the max consecutive bframe count"); ``ref`` 9 and more with B-frames
+      stops it too ("NumPocTotalCurr (total references) is non-compliant"), so the range ends
+      at 8.
+    - x264: ``subme`` 10 and 11 need ``trellis=2``; with a lower trellis x264 writes
+      ``subme=9`` without a message.
+    """
+    x265, x264 = VIDEO["libx265"], VIDEO["libx264"]
+
+    def x265_run(params: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        return _ffmpeg([*_encode_args(x265, [], params, frames=2, small=True), "-f", "null", "-"])
+
+    for bframes, lookahead, ok in (("4", "4", False), ("4", "5", True), ("0", "0", True)):
+        result = x265_run({"bframes": bframes, "rc-lookahead": lookahead})
+        assert (result.returncode == 0) is ok, (bframes, lookahead)
+        if not ok:
+            assert "Lookahead depth must be greater than" in result.stderr
+    result = x265_run({"ref": "9"})
+    assert result.returncode != 0
+    assert "NumPocTotalCurr" in result.stderr
+    assert x265_run({"ref": "9", "bframes": "0"}).returncode == 0
+    assert x265_run({"ref": "8"}).returncode == 0
+    for trellis, written in (("1", "9"), ("2", "10")):
+        out = tmp_path / f"t{trellis}.h264"
+        params = {"subme": "10", "trellis": trellis}
+        result = _ffmpeg([*_encode_args(x264, [], params, frames=2, small=True), str(out)])
+        assert result.returncode == 0, _fail_text(result)
+        assert _sei_options(out)["subme"] == written
+    svt = VIDEO["libsvtav1"]
+    result = _ffmpeg(
+        [*_encode_args(svt, ["-preset", "10"], {"lookahead": "-1"}, small=True), "-f", "null", "-"]
+    )
+    assert result.returncode == 0
+    assert "Error parsing option lookahead: -1." in result.stderr
+    result = _ffmpeg(
+        [*_encode_args(svt, ["-preset", "10"], {"lookahead": "121"}, small=True), "-f", "null", "-"]
+    )
+    assert result.returncode != 0
+    assert "The lookahead distance must be [0 - 120]" in result.stderr
+
+
 @pytest.mark.parametrize("encoder_id", SOFTWARE)
 def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
     """Constant quality at min / default / max, average bitrate, and 2-pass with a turbo and
@@ -657,6 +797,104 @@ def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
             assert result.returncode == 0, f"pass {number}: {_fail_text(result)}"
             assert _param_error(result) is None
         assert out.stat().st_size > 0
+
+
+def _quality_args(q: QualityMode, value: float | None) -> tuple[list[str], dict[str, str]]:
+    """The quality mode's arguments for ``value``; ``None`` = the arguments without any
+    placeholder pair (the mode with no quality value: what the encoder does when it is not
+    set)."""
+    if value is None:
+        args: list[str] = []
+        for flag, arg in zip(q.args[::2], q.args[1::2], strict=True):
+            if "{" not in arg:
+                args += [flag, arg]
+        return args, {k: v for k, v in q.params.items() if "{" not in v}
+
+    def fill(text: str) -> str:
+        text = text.replace("{value}", _written(value))
+        for name, derived in q.derived.items():
+            text = text.replace("{" + name + "}", _written(derived.compute(value)))
+        return text
+
+    return [fill(a) for a in q.args], {k: fill(v) for k, v in q.params.items()}
+
+
+def _quality_points(q: QualityMode) -> dict[str, float | None]:
+    """Each end of the range, its neighbour one unit in, the default and "not set"."""
+    unit = max(q.step, 1)
+    return {
+        "unset": None,
+        "min": q.min,
+        "min+1": q.min + unit,
+        "default": q.default,
+        "max-1": q.max - unit,
+        "max": q.max,
+    }
+
+
+def _check_quality_points(results: dict[str, tuple[int, str]]) -> list[str]:
+    """M2 review: an end of the range that the encoder ignores (SVT-AV1 ``-crf 0``, VAAPI
+    ``-global_quality 0`` and AMF AV1 QP 0 = the default quality; VAAPI 52 = 51) gives the
+    same file as another value."""
+    size = {k: v[0] for k, v in results.items()}
+    digest = {k: v[1] for k, v in results.items()}
+    problems = [
+        f"{a} gives the same file as {b}"
+        for a, b in (("min", "unset"), ("min", "min+1"), ("max", "max-1"))
+        if digest[a] == digest[b]
+    ]
+    if not size["min"] > size["default"] > size["max"]:
+        problems.append(f"sizes do not fall with the quality value: {size}")
+    return problems
+
+
+def _encode_digest(args: Sequence[str], out: Path, timeout: float = 120) -> tuple[int, str] | str:
+    """Encode to ``out`` (bit-exact Matroska): ``(size, md5)``, or the error text."""
+    result = _ffmpeg([*args, "-fflags", "+bitexact", "-f", "matroska", str(out)], timeout)
+    if result.returncode:
+        return _fail_text(result)
+    data = out.read_bytes()
+    return len(data), hashlib.md5(data).hexdigest()
+
+
+@pytest.mark.parametrize("encoder_id", SOFTWARE)
+def test_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
+    """Each end of the constant-quality range has its own effect: the best end is not "not
+    set" and the worst end is not clamped to the one before it."""
+    enc = VIDEO[encoder_id]
+    q = enc.rate_control.quality
+    assert q is not None
+    points = _quality_points(q)
+    results: dict[str, tuple[int, str]] = {}
+
+    def run(label: str) -> str | None:
+        args, params = _quality_args(q, points[label])
+        got = _encode_digest(_encode_args(enc, args, params, frames=5), tmp_path / f"{label}.mkv")
+        if isinstance(got, str):
+            return f"{label}: {got}"
+        results[label] = got
+        return None
+
+    assert _parallel(points, run) == []
+    assert _check_quality_points(results) == []
+
+
+@pytest.mark.parametrize("encoder_id", sorted(e for e, d in VIDEO.items() if d.family == "nvenc"))
+def test_nvenc_initial_qps_span_the_build_range(encoder_id: str) -> None:
+    """The initial QPs derived from the CQ value use the scale of ``-init_qp*``: the worst CQ
+    gives the worst initial QP. M2 review: av1_nvenc's ``-cq`` is 0-63 but ``-init_qp*`` is
+    0-255, and the QPs were written on the 0-63 scale (no NVIDIA hardware here: the ranges of
+    ``ffmpeg -h`` only)."""
+    _need_encoder(encoder_id)
+    q = VIDEO[encoder_id].rate_control.quality
+    assert q is not None
+    assert _help_range(encoder_id, "cq")[1] == q.max
+    for name, option in (("qp_i", "init_qpI"), ("qp_p", "init_qpP"), ("qp_b", "init_qpB")):
+        low, high = _help_range(encoder_id, option)
+        derived = q.derived[name]
+        assert low <= derived.compute(q.min)
+        assert derived.compute(q.max) <= high
+        assert derived.compute(q.max) >= 0.9 * high, (name, derived.compute(q.max))
 
 
 # =========================================================================== audio
@@ -925,6 +1163,199 @@ def test_truehd_in_mp4_needs_strict(stream_sources: dict[str, Path], tmp_path: P
     result = _copy_into(stream_sources["truehd"], "mp4", tmp_path / "t.mp4")
     assert result.returncode != 0
     assert "-strict -2" in result.stderr
+
+
+#: Streams for the Matroska ``copy_except`` check: codec → (encoder, source muxer, input).
+#: ``direct``: no muxer could hold the codec as a readable source, so it is encoded straight
+#: into Matroska (the muxer sees the same codec as with ``-c copy``). Audio input is
+#: ``rate/layout``; video input is a pixel format.
+_MKV_SOURCES: dict[str, tuple[str, str, str]] = {
+    # refused: "No wav codec tag found for codec …"
+    "pcm_bluray": ("pcm_bluray", "direct", "48000/stereo"),
+    "pcm_dvd": ("pcm_dvd", "vob", "48000/stereo"),
+    "s302m": ("s302m", "mpegts", "48000/stereo"),
+    "pcm_s24daud": ("pcm_s24daud", "direct", "48000/stereo"),
+    "pcm_vidc": ("pcm_vidc", "direct", "48000/stereo"),
+    **{
+        c: (c, "nut", "48000/stereo")
+        for c in (
+            "pcm_s8",
+            "pcm_s8_planar",
+            "pcm_s16le_planar",
+            "pcm_s16be_planar",
+            "pcm_s24le_planar",
+            "pcm_s32le_planar",
+            "pcm_s64be",
+            "pcm_u16le",
+            "pcm_u16be",
+            "pcm_u24le",
+            "pcm_u24be",
+            "pcm_u32le",
+            "pcm_u32be",
+            "pcm_f32be",
+            "pcm_f64be",
+        )
+    },
+    **{
+        c: (c, "direct", "48000/stereo")
+        for c in (
+            "adpcm_adx",
+            "adpcm_argo",
+            "adpcm_ima_alp",
+            "adpcm_ima_amv",
+            "adpcm_ima_apm",
+            "adpcm_ima_ssi",
+            "adpcm_ima_ws",
+            "aptx",
+            "aptx_hd",
+            "sbc",
+        )
+    },
+    "roq_dpcm": ("roq_dpcm", "direct", "22050/stereo"),
+    "adpcm_g726le": ("g726le", "direct", "8000/mono"),
+    "adpcm_ima_qt": ("adpcm_ima_qt", "mov", "48000/stereo"),
+    "gsm": ("libgsm", "mov", "8000/mono"),
+    "nellymoser": ("nellymoser", "mov", "44100/mono"),
+    "comfortnoise": ("comfortnoise", "nut", "8000/mono"),
+    # muxed with exit 0, but FFmpeg cannot read the file back
+    "dfpwm": ("dfpwm", "wav", "48000/stereo"),
+    "dirac": ("vc2", "nut", "yuv420p"),
+    "gif": ("gif", "nut", "rgb8"),
+    "qtrle": ("qtrle", "mov", "rgb24"),
+    "rpza": ("rpza", "nut", "rgb555le"),
+    "svq1": ("svq1", "nut", "yuv410p"),
+    # refused: "Raw RGB is not supported Natively in Matroska"
+    "rawvideo": ("rawvideo", "nut", "rgb24"),
+    # copied and read back
+    **{
+        c: (c, "nut", "48000/stereo")
+        for c in (
+            "pcm_s16le",
+            "pcm_s16be",
+            "pcm_s24le",
+            "pcm_s24be",
+            "pcm_s32le",
+            "pcm_s32be",
+            "pcm_s64le",
+            "pcm_u8",
+            "pcm_f32le",
+            "pcm_f64le",
+            "pcm_alaw",
+            "pcm_mulaw",
+            "adpcm_ima_wav",
+            "mp2",
+            "wavpack",
+        )
+    },
+    "adpcm_ms": ("adpcm_ms", "wav", "48000/stereo"),
+    "adpcm_g722": ("g722", "nut", "16000/mono"),
+    "alac": ("alac", "matroska", "48000/stereo"),
+    "tta": ("tta", "matroska", "48000/stereo"),
+    "ffv1": ("ffv1", "nut", "yuv420p"),
+    "prores": ("prores", "nut", "yuv422p10le"),
+    "png": ("png", "nut", "rgb24"),
+}
+#: Denied without a stream: FFmpeg has no encoder for them, and no hand-made source worked.
+_MKV_NOT_VERIFIED = frozenset(
+    {"pcm_f16le", "pcm_f24le", "pcm_lxf", "pcm_sga", "dsd_lsbf", "dsd_msbf"}
+)
+_MKV_UNREADABLE = frozenset({"dfpwm", "dirac", "gif", "qtrle", "rpza", "svq1"})
+#: Unreadable only from this FFmpeg ``(major, minor)`` on: n8.1.3 copies svq1 into Matroska
+#: and reads it back; both n9.0.2 builds cannot read the file. It stays denied (the bundled
+#: build is n9).
+_MKV_UNREADABLE_SINCE: dict[str, tuple[int, int]] = {"svq1": (9, 0)}
+
+
+def _dsf(path: Path, lsb_first: bool) -> Path:
+    """A minimal DSF file (two channels of DSD silence): FFmpeg reads it as
+    ``dsd_lsbf_planar`` (1 bit per sample) or ``dsd_msbf_planar`` (8)."""
+    channels, block, blocks = 2, 4096, 4
+    data = bytes([0x69]) * (block * channels * blocks)
+    bits = 1 if lsb_first else 8
+    fmt = b"fmt " + struct.pack(
+        "<QIIIIIIQII", 52, 1, 0, 2, channels, 2_822_400, bits, block * blocks * 8, block, 0
+    )
+    chunk = b"data" + struct.pack("<Q", 12 + len(data)) + data
+    head = b"DSD " + struct.pack("<QQQ", 28, 28 + len(fmt) + len(chunk), 0)
+    path.write_bytes(head + fmt + chunk)
+    return path
+
+
+def _codec_back(path: Path) -> str | None:
+    """The first stream's codec as ffprobe reads it back (``None``: unreadable)."""
+    _, ffprobe = _tools()
+    out = subprocess.run(
+        [ffprobe, "-v", "error", "-of", "json", "-show_streams", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    try:
+        streams = json.loads(out.stdout).get("streams", [])
+    except json.JSONDecodeError:
+        return None
+    codec = streams[0].get("codec_name") if streams else None
+    return codec if isinstance(codec, str) else None
+
+
+def test_mkv_copy_except_matches_the_muxer(tmp_path: Path) -> None:
+    """M2 review: Matroska took every audio codec (``copy = ["*"]``), so pcm_bluray was
+    planned as a copy that FFmpeg refused ("No wav codec tag found for codec pcm_bluray",
+    exit 234). Every denied codec really fails (or writes a file FFmpeg cannot read back), and
+    the PCM variants that are not denied copy and read back."""
+    mkv = _container("mkv")
+    denied = set(mkv.audio.copy_except) | set(mkv.video.copy_except)
+    assert denied <= set(_MKV_SOURCES) | _MKV_NOT_VERIFIED | {"dsd_lsbf_planar", "dsd_msbf_planar"}
+    in_build = _encoders_in_build()
+
+    def run(codec: str) -> str | None:
+        encoder, muxer, spec = _MKV_SOURCES[codec]
+        if encoder not in in_build:
+            return None  # libgsm is in the Arch build only
+        if "/" in spec:
+            rate, layout = spec.split("/")
+            source = f"sine=sample_rate={rate}:duration=0.4,aformat=channel_layouts={layout}"
+            make = ["-f", "lavfi", "-i", source, "-c:a", encoder]
+        else:
+            source = "testsrc2=size=176x144:rate=25"
+            make = ["-f", "lavfi", "-i", source, "-frames:v", "2", "-pix_fmt", spec]
+            make += ["-c:v", encoder]
+        make += ["-strict", "-2"]
+        allowed = (mkv.audio if "/" in spec else mkv.video).can_copy(codec)
+        out = tmp_path / f"{codec}.out.mkv"
+        if muxer == "direct":
+            result = _ffmpeg([*make, "-f", "matroska", str(out)])
+            refused = result.returncode != 0 and "No wav codec tag found" in result.stderr
+            return None if refused and not allowed else f"{codec}: {_fail_text(result)}"
+        src = tmp_path / f"{codec}.src"
+        result = _ffmpeg([*make, "-f", muxer, str(src)])
+        if result.returncode or _codec_back(src) != codec:
+            return f"{codec}: no source ({_fail_text(result)}, read as {_codec_back(src)})"
+        result = _copy_into(src, "mkv", out, ["-strict", "-2"])
+        back = _codec_back(out) if result.returncode == 0 else None
+        if allowed:
+            return None if back == codec else f"{codec}: allowed, but {_fail_text(result)}"
+        if codec in _MKV_UNREADABLE and _series() < _MKV_UNREADABLE_SINCE.get(codec, (0, 0)):
+            ok = result.returncode == 0 and back == codec
+        elif codec in _MKV_UNREADABLE:
+            ok = result.returncode == 0 and back is None
+        else:
+            ok = result.returncode != 0 and (
+                "No wav codec tag found" in result.stderr
+                or "Raw RGB is not supported" in result.stderr
+            )
+        return None if ok else f"{codec}: denied, but rc {result.returncode}, read as {back}"
+
+    problems = _parallel(sorted(_MKV_SOURCES), run)
+    for lsb_first, codec in ((True, "dsd_lsbf_planar"), (False, "dsd_msbf_planar")):
+        source = _dsf(tmp_path / f"{codec}.dsf", lsb_first)
+        assert _codec_back(source) == codec
+        assert not mkv.audio.can_copy(codec)
+        result = _copy_into(source, "mkv", tmp_path / f"{codec}.mkv")
+        if result.returncode == 0 or "No wav codec tag found" not in result.stderr:
+            problems.append(f"{codec}: denied, but rc {result.returncode}")
+    assert problems == []
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4", "webm"])
@@ -1260,3 +1691,50 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
         if problem:
             problems.append(problem)
     assert problems == []
+
+
+@pytest.mark.needs_gpu
+@pytest.mark.parametrize(
+    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
+)
+def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
+    """As ``test_quality_range_ends_are_honoured``, on the GPU (AMD RX 7600 when recorded).
+    M2 review: VAAPI ``-global_quality 0`` gave the driver's QP (h264 20, hevc 25), 52 the
+    same file as 51; AMF AV1 QP 0 logged ``AMF_OUT_OF_RANGE`` and gave the default."""
+    enc = VIDEO[encoder_id]
+    if not _hw_usable(enc):
+        pytest.skip(f"{encoder_id} does not work on this machine")
+    q = enc.rate_control.quality
+    assert q is not None
+    results: dict[str, tuple[int, str]] = {}
+    for label, value in _quality_points(q).items():  # one at a time: GPU sessions are limited
+        args, _ = _quality_args(q, value)
+        got = _encode_digest([*_hw_args(enc, 8), *args], tmp_path / f"{label}.mkv", timeout=60)
+        assert not isinstance(got, str), f"{label}: {got}"
+        results[label] = got
+    assert _check_quality_points(results) == []
+
+
+@pytest.mark.needs_gpu
+def test_av1_amf_pads_the_picture(tmp_path: Path) -> None:
+    """Recorded for C-7 / C-8: av1_amf on the RX 7600 (VCN 4) writes 1920x1080 as 1920x1082
+    and 720x480 as 768x480 (the width up to a multiple of 64; a height that is not a multiple
+    of 16 gets 2 more lines); the extra lines repeat the picture's edge. av1_vaapi on the same
+    GPU keeps 1920x1080; hevc_amf keeps the display size and pads only the coded size."""
+    enc = VIDEO["av1_amf"]
+    if not _hw_usable(enc):
+        pytest.skip("av1_amf does not work on this machine")
+    sizes: dict[str, tuple[int, int]] = {}
+    for size in ("1920x1080", "720x480", "1280x720", "640x360"):
+        out = tmp_path / f"{size}.mkv"
+        args = ["-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25", "-frames:v", "2"]
+        result = _ffmpeg([*args, "-pix_fmt", "nv12", "-c:v", "av1_amf", str(out)], timeout=60)
+        assert result.returncode == 0, _fail_text(result)
+        stream = _probe(out, "-show_streams")["streams"][0]
+        sizes[size] = (stream["width"], stream["height"])
+    assert sizes == {
+        "1920x1080": (1920, 1082),
+        "720x480": (768, 480),
+        "1280x720": (1280, 720),
+        "640x360": (640, 362),
+    }
