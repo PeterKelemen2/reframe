@@ -10,10 +10,11 @@ from collections.abc import Iterator
 from reframe.capabilities import encoder_issues
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, FixTarget, ReplaceOp, ValidationIssue
-from reframe.models.job import Mixdown
+from reframe.models.job import AudioOutputTrack
+from reframe.models.media import AudioStream
 from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.registry import job_rule, template_rule
-from reframe.validation.tracks import effective_mixdown, switch_audio_encoder, track_encoder
+from reframe.validation.tracks import switch_audio_encoder, track_encoder, track_stream
 from reframe.validation.video import (
     video_availability_issues,
     video_bit_depth_issues,
@@ -43,6 +44,7 @@ SETTING_CODES = (
     "encoder.bitrate_out_of_range",
     "encoder.two_pass_unsupported",
     "encoder.fast_decode_unsupported",
+    "encoder.fast_decode_tune_conflict",
 )
 
 
@@ -52,13 +54,12 @@ def audio_encoder_issues(
     caps: CapabilitySnapshot,
     ctx: JobContext | TemplateContext,
     *,
-    bitrate: int | None = None,
-    quality: float | None = None,
-    mixdown: Mixdown | None = None,
+    track: AudioOutputTrack | None = None,
+    stream: AudioStream | None = None,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """C-4's issues for an audio encoder at ``path``; the closest-match fix (``libfdk_aac →
-    aac``, decision 0020) also snaps the bitrate to the new encoder's values."""
+    aac``, decision 0020) also snaps the job track's bitrate to the new encoder's values."""
     result: list[ValidationIssue] = []
     for issue in encoder_issues(
         encoder_id, caps, ctx.definitions, path=path, target=target, subject=ctx.subject
@@ -74,7 +75,7 @@ def audio_encoder_issues(
             if new is None:  # pragma: no cover - C-4 makes only replace fixes
                 fixes.append(old)
                 continue
-            ops = switch_audio_encoder(path, bitrate, quality, mixdown, new)
+            ops = switch_audio_encoder(path, new, ctx.definitions, track=track, stream=stream)
             fixes.append(old.model_copy(update={"patch": ops}))
         result.append(issue.model_copy(update={"fixes": fixes}))
     return result
@@ -112,17 +113,13 @@ def audio_encoders(ctx: JobContext) -> Iterator[ValidationIssue]:
         encoder_id = track_encoder(ctx, track)
         if encoder_id is None:
             continue
-        stream = (
-            ctx.audio_streams.get(track.source_stream) if track.source_stream is not None else None
-        )
         yield from audio_encoder_issues(
             encoder_id,
             f"audio[{index}].encoder",
             ctx.caps,
             ctx,
-            bitrate=track.bitrate,
-            quality=track.quality,
-            mixdown=effective_mixdown(track, stream),
+            track=track,
+            stream=track_stream(ctx, track),
             target=ctx.target,
         )
 

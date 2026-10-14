@@ -375,7 +375,13 @@ functions in a registry, grouped by area.
       give the other issues (crop not detected, crop snapped, outside the fit box)
       ([0014](../decisions/0014-validation-rules-and-severities.md)). "Crop not detected" is
       info until crop detection exists (M8, [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
-- [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix).
+- [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix). An HDR source
+      encoded to 8-bit without tone mapping stays tagged HDR in 8 bits (warning, with fixes:
+      tone mapping, 10-bit; [0014](../decisions/0014-validation-rules-and-severities.md)
+      follow-up).
+- [ ] Audio: a mixdown, bitrate or sample rate the encoder cannot do, and an upmix, are info
+      notes that name the value the command builder writes (C-6's snap helpers,
+      [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
 - [ ] Subtitles: more than one burn-in, PGS subtitle into MP4 (VobSub is allowed,
       [0010](../decisions/0010-definitions-filters-and-containers.md)), forced-only on a format that
       does not support it (it works only for a burned-in PGS or VobSub track,
@@ -383,6 +389,8 @@ functions in a registry, grouped by area.
 - [ ] Output: path not writable, output = source, name collision, not enough free disk space
       (estimate in bitrate mode and for video passthrough).
 - [ ] Range is outside the duration.
+- [ ] Everything the command builder refuses (`PlanError`) is a validation error (a test
+      builds a job for each refusal, decision 0013).
 
 Done when: every rule has a positive and a negative test, and every fix patch, when applied,
 removes its issue.

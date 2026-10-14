@@ -15,7 +15,8 @@ from reframe.definitions import ContainerDef, Definitions
 from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
-from reframe.models.job import Container, Mixdown, TrackMetadata
+from reframe.models.job import AudioOutputTrack, Container, TrackMetadata
+from reframe.models.media import AudioStream
 from reframe.models.tools import ToolStatus
 from reframe.validation.common import (
     containers_for,
@@ -31,10 +32,10 @@ from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.encoder import template_audio_encoder_ids
 from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.tracks import (
-    effective_mixdown,
     subtitle_input,
     switch_audio_encoder,
     track_encoder,
+    track_stream,
 )
 from reframe.validation.video import video_container_issues
 
@@ -65,9 +66,8 @@ def _audio_codec_issue(
     ctx: JobContext | TemplateContext,
     *,
     drop: str | None,
-    bitrate: int | None = None,
-    quality: float | None = None,
-    mixdown: Mixdown | None = None,
+    track: AudioOutputTrack | None = None,
+    stream: AudioStream | None = None,
     target: FixTarget,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the audio encoder at ``path``."""
@@ -80,7 +80,7 @@ def _audio_codec_issue(
     convert = _audio_convert_encoder(container, ctx.caps, definitions)
     if convert is not None:
         ops = switch_audio_encoder(
-            path, bitrate, quality, mixdown, definitions.audio_encoders[convert]
+            path, definitions.audio_encoders[convert], definitions, track=track, stream=stream
         )
         fixes.append(fix(f"Use {convert}", *ops, target=target))
     fixes.extend(
@@ -106,6 +106,24 @@ def _audio_codec_issue(
 # --------------------------------------------------------------------------- job
 
 
+@job_rule("container", "container.unknown")
+def known_container(ctx: JobContext) -> list[ValidationIssue]:
+    """A container the definitions do not have (a hand-edited or newer job file)."""
+    if ctx.container is not None:
+        return []
+    current = ctx.job.output.container
+    return [
+        error(
+            "container.unknown",
+            "output.container",
+            f"Unknown container {current!r}.",
+            *switch_container_fixes(
+                list(ctx.definitions.containers), current, ctx.definitions, target=ctx.target
+            ),
+        )
+    ]
+
+
 @job_rule("container", UNSUPPORTED)
 def video_codec(ctx: JobContext) -> list[ValidationIssue]:
     stream = ctx.video_stream
@@ -125,18 +143,14 @@ def audio_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
         encoder_id = track_encoder(ctx, track)
         if encoder_id is None:
             continue
-        stream = (
-            ctx.audio_streams.get(track.source_stream) if track.source_stream is not None else None
-        )
         yield from _audio_codec_issue(
             f"audio[{index}].encoder",
             encoder_id,
             ctx.job.output.container,
             ctx,
             drop=f"audio[{index}]",
-            bitrate=track.bitrate,
-            quality=track.quality,
-            mixdown=effective_mixdown(track, stream),
+            track=track,
+            stream=track_stream(ctx, track),
             target=ctx.target,
         )
 

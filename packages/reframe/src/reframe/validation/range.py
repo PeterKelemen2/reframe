@@ -3,6 +3,8 @@
 - A range that starts at or after the end of the source, or that is empty (end ≤ start), or a
   chapter range on a source without chapters: ``range.outside`` (error). The fix encodes the
   whole source.
+- A frame range on a source without a known frame rate: ``range.no_frame_rate`` (error;
+  the command builder cannot convert frames to time).
 - A range that ends after the source ends: ``range.end_beyond`` (warning). The encode stops at
   the end of the source anyway; the fix sets the end to "the end".
 
@@ -14,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from reframe.models.issues import Fix, ValidationIssue
-from reframe.models.job import ChapterRange, FullRange, TimeRange
+from reframe.models.job import ChapterRange, FrameRange, FullRange, TimeRange
 from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
@@ -65,6 +67,18 @@ def range_duration(ctx: JobContext) -> float | None:
     return max(0, last - selected.start) * rate.den / rate.num
 
 
+def has_frame_rate(ctx: JobContext) -> bool:
+    """The command builder can turn frames into time: the main video stream has an average
+    frame rate, a frame count and a duration, or a frame rate (``source_rate`` of C-7)."""
+    stream = ctx.video_stream
+    if stream is None:
+        return False
+    rates = (stream.avg_frame_rate, stream.frame_rate)
+    return any(r is not None and r.num > 0 for r in rates) or bool(
+        stream.frame_count and stream.duration
+    )
+
+
 def _full(ctx: JobContext) -> Fix:
     return fix("Encode the whole source", replace("range", {"kind": "full"}), target=ctx.target)
 
@@ -73,10 +87,23 @@ def _seconds(value: float) -> str:
     return f"{value:g} s"
 
 
-@job_rule("range", "range.outside", "range.end_beyond")
+@job_rule("range", "range.outside", "range.end_beyond", "range.no_frame_rate")
 def source_range(ctx: JobContext) -> Iterator[ValidationIssue]:
     selected = ctx.job.range
     if isinstance(selected, FullRange):
+        return
+    if (
+        isinstance(selected, FrameRange)
+        and ctx.video_stream is not None
+        and not has_frame_rate(ctx)
+    ):
+        yield error(
+            "range.no_frame_rate",
+            "range",
+            "The source does not say its frame rate, so a range in frames cannot be found: use "
+            "a range in seconds or chapters.",
+            _full(ctx),
+        )
         return
     if isinstance(selected, ChapterRange):
         yield from _chapters(ctx, selected)

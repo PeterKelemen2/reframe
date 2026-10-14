@@ -35,6 +35,8 @@ from reframe.models import (
     FitWithin,
     Fix,
     FrameRange,
+    HdrFormat,
+    HdrInfo,
     NamingOptions,
     Rational,
     RemoveOp,
@@ -262,8 +264,26 @@ def hdr_source(s: Any) -> None:
     s.source.video[0].color = ColorInfo(primaries="bt2020", transfer="smpte2084", matrix="bt2020nc")
 
 
+def hdr10_source(s: Any) -> None:
+    """HDR10 as the probe reports it (C-3): the format list, not only the transfer."""
+    hdr_source(s)
+    s.source.video[0].hdr = HdrInfo(formats=[HdrFormat.HDR10])
+
+
+def hlg_source(s: Any) -> None:
+    s.source.video[0].color = ColorInfo(
+        primaries="bt2020", transfer="arib-std-b67", matrix="bt2020nc"
+    )
+    s.source.video[0].hdr = HdrInfo(formats=[HdrFormat.HLG])
+
+
 def nothing(s: Any) -> None:
     del s
+
+
+def no_frame_rate(s: Any) -> None:
+    s.source.video[0].frame_rate = None
+    s.source.video[0].avg_frame_rate = None
 
 
 # --------------------------------------------------------------------------- custom definitions
@@ -622,7 +642,32 @@ CASES: list[Case] = [
         video(encoder="hevc_nvenc", fast_decode=True),
         video(fast_decode=True),
     ),
+    Case(
+        "fast decode and a tune on x265",
+        "encoder.fast_decode_tune_conflict",
+        "video.fast_decode",
+        ERR,
+        video(encoder="libx265", tune="grain", fast_decode=True),
+        video(encoder="libx264", tune="film", fast_decode=True),
+    ),
+    # ---- source
+    Case(
+        "source without video",
+        "source.no_video",
+        "source",
+        ERR,
+        lambda s: setattr(s.source, "video", []),
+        nothing,
+    ),
     # ---- container
+    Case(
+        "unknown container",
+        "container.unknown",
+        "output.container",
+        ERR,
+        container("avi"),
+        container("mp4"),
+    ),
     Case(
         "video codec not in container",
         "container.codec_unsupported",
@@ -724,9 +769,17 @@ CASES: list[Case] = [
         "crop detection not run",
         "dimensions.crop_not_detected",
         "dimensions.crop",
-        WARN,
+        INFO,
         crop("auto"),
         crop("auto", CropRect(top=140, bottom=140)),
+    ),
+    Case(
+        "conservative crop detection not run",
+        "dimensions.crop_not_detected",
+        "dimensions.crop",
+        INFO,
+        crop("conservative"),
+        crop("conservative", CropRect(top=140, bottom=140)),
     ),
     Case(
         "manual crop without values",
@@ -860,6 +913,46 @@ CASES: list[Case] = [
         both(hdr_source, filters(colorspace=FilterConfig(preset="bt709"))),
         both(hdr_source, filters(colorspace=FilterConfig(preset="bt709"), tonemap=FilterConfig())),
     ),
+    Case(
+        "HDR to BT.2020 SDR without tone mapping",
+        "filter.hdr_without_tonemap",
+        "filters.colorspace",
+        WARN,
+        both(hdr_source, filters(colorspace=FilterConfig(preset="bt2020"))),
+        both(hdr_source, filters(colorspace=FilterConfig(preset="bt2020"), tonemap=FilterConfig())),
+    ),
+    Case(
+        "HDR source encoded to 8-bit",
+        "filter.hdr_8bit",
+        "video.bit_depth",
+        WARN,
+        both(hdr_source, video(bit_depth=8)),
+        both(hdr_source, video(bit_depth=10)),
+    ),
+    Case(
+        "HDR10 source encoded to 8-bit, tone mapped",
+        "filter.hdr_8bit",
+        "video.bit_depth",
+        WARN,
+        both(hdr10_source, video(encoder="libx264", bit_depth=8)),
+        both(hdr10_source, video(encoder="libx264", bit_depth=8), filters(tonemap=FilterConfig())),
+    ),
+    Case(
+        "HLG source encoded to 8-bit by an encoder without 10-bit",
+        "filter.hdr_8bit",
+        "video.bit_depth",
+        WARN,
+        both(hlg_source, video(encoder="h264_amf", bit_depth=8)),
+        video(encoder="h264_amf", bit_depth=8),
+    ),
+    Case(
+        "HDR source encoded to 8-bit, video passed through",
+        "filter.hdr_8bit",
+        "video.bit_depth",
+        WARN,
+        both(hdr10_source, video(bit_depth=8)),
+        both(hdr10_source, video(bit_depth=8, passthrough=True)),
+    ),
     # ---- audio
     Case(
         "audio source missing",
@@ -889,15 +982,21 @@ CASES: list[Case] = [
         "mixdown unsupported",
         "audio.mixdown_unsupported",
         "audio[0].mixdown",
-        ERR,
-        audio(0, encoder="ac3", mixdown="7.1", bitrate=640),
-        audio(0, encoder="ac3", mixdown="5.1", bitrate=640),
+        INFO,
+        both(
+            lambda s: setattr(s.source.audio[0], "channels", 8),
+            audio(0, encoder="ac3", mixdown="7.1", bitrate=640),
+        ),
+        both(
+            lambda s: setattr(s.source.audio[0], "channels", 8),
+            audio(0, encoder="ac3", mixdown="5.1", bitrate=640),
+        ),
     ),
     Case(
         "source layout unsupported",
         "audio.mixdown_unsupported",
         "audio[0].mixdown",
-        ERR,
+        INFO,
         both(
             lambda s: setattr(s.source.audio[0], "channels", 8),
             audio(0, encoder="ac3", mixdown=None, bitrate=None),
@@ -905,10 +1004,48 @@ CASES: list[Case] = [
         audio(0, encoder="ac3", mixdown=None, bitrate=None),
     ),
     Case(
+        "MP3 cannot keep 5.1",
+        "audio.mixdown_unsupported",
+        "audio[0].mixdown",
+        INFO,
+        audio(0, encoder="libmp3lame", mixdown=None, bitrate=None),
+        audio(0, encoder="libmp3lame", mixdown="dpl2", bitrate=None),
+    ),
+    Case(
+        "mixdown would upmix",
+        "audio.mixdown_upmix",
+        "audio[1].mixdown",
+        INFO,
+        audio(1, action="encode", mixdown="5.1"),
+        audio(1, action="encode", mixdown="stereo"),
+    ),
+    Case(
+        "Dolby Pro Logic II of a stereo source",
+        "audio.mixdown_upmix",
+        "audio[1].mixdown",
+        INFO,
+        audio(1, action="encode", mixdown="dpl2"),
+        audio(0, mixdown="dpl2"),
+    ),
+    Case(
+        "upmix to a layout MP3 cannot make",
+        "audio.mixdown_upmix",
+        "audio[0].mixdown",
+        INFO,
+        both(
+            lambda s: setattr(s.source.audio[0], "channels", 3),
+            audio(0, encoder="libmp3lame", mixdown="5.1", bitrate=None),
+        ),
+        both(
+            lambda s: setattr(s.source.audio[0], "channels", 3),
+            audio(0, encoder="libmp3lame", mixdown="stereo", bitrate=None),
+        ),
+    ),
+    Case(
         "bitrate above the range",
         "audio.bitrate_out_of_range",
         "audio[0].bitrate",
-        ERR,
+        INFO,
         audio(0, encoder="ac3", mixdown="5.1", bitrate=700),
         audio(0, encoder="ac3", mixdown="5.1", bitrate=640),
     ),
@@ -916,15 +1053,31 @@ CASES: list[Case] = [
         "bitrate not a fixed step",
         "audio.bitrate_out_of_range",
         "audio[0].bitrate",
-        ERR,
+        INFO,
         audio(0, encoder="ac3", bitrate=250),
         audio(0, encoder="ac3", bitrate=224),
+    ),
+    Case(
+        "bitrate below the range of the kept layout",
+        "audio.bitrate_out_of_range",
+        "audio[0].bitrate",
+        INFO,
+        audio(0, encoder="aac", mixdown=None, bitrate=160),
+        audio(0, encoder="aac", mixdown=None, bitrate=384),
+    ),
+    Case(
+        "VBR quality without a VBR mode",
+        "audio.quality_unsupported",
+        "audio[0].quality",
+        INFO,
+        audio(0, encoder="aac", bitrate=None, quality=4.0),
+        audio(0, encoder="libmp3lame", bitrate=None, quality=4.0),
     ),
     Case(
         "sample rate unsupported",
         "audio.samplerate_unsupported",
         "audio[0].samplerate",
-        ERR,
+        INFO,
         audio(0, encoder="ac3", bitrate=224, samplerate=96000),
         audio(0, encoder="ac3", bitrate=224, samplerate=48000),
     ),
@@ -936,6 +1089,24 @@ CASES: list[Case] = [
         ERR,
         sub(SRT, source=9),
         nothing,
+    ),
+    Case(
+        "external subtitle of an unknown type",
+        "subtitle.external_unknown",
+        "subtitles[2].source.path",
+        ERR,
+        both(
+            lambda s: s.job.subtitles.append(
+                SubtitleOutputTrack(source=ExternalSubtitle(path=EXTERNAL.with_suffix(".idx")))
+            ),
+            lambda s: s.fs.add_file(EXTERNAL.with_suffix(".idx")),
+        ),
+        both(
+            lambda s: s.job.subtitles.append(
+                SubtitleOutputTrack(source=ExternalSubtitle(path=EXTERNAL.with_suffix(".SUP")))
+            ),
+            lambda s: s.fs.add_file(EXTERNAL.with_suffix(".SUP")),
+        ),
     ),
     Case(
         "external subtitle missing",
@@ -1026,6 +1197,19 @@ CASES: list[Case] = [
         lambda s: setattr(s.job.audio[0].metadata, "language", "hu"),
     ),
     # ---- range
+    Case(
+        "frame range without a frame rate",
+        "range.no_frame_rate",
+        "range",
+        ERR,
+        both(job_range(FrameRange(start=1, end=5)), no_frame_rate),
+        both(
+            job_range(FrameRange(start=1, end=5)),
+            no_frame_rate,
+            lambda s: setattr(s.source.video[0], "frame_count", 14385),
+            lambda s: setattr(s.source.video[0], "duration", 600.0),
+        ),
+    ),
     Case(
         "range starts after the end",
         "range.outside",

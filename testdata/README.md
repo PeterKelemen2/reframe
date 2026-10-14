@@ -964,6 +964,33 @@ build `n9.0.2-17-g2a571b6068-20260930` and the CI override build `n8.1.3-9-g29e6
   actually used for any stream` and keeps every event (`text-subs.mkv`, SRT → ASS: 2 events
   in, 2 out).
 
+**HDR source encoded to 8-bit without tone mapping** (`filter.hdr_8bit`). Checked on
+2026-10-14 with `/usr/bin/ffmpeg` n9.0.2 (Arch) and the pinned build
+`n9.0.2-17-g2a571b6068`; `packages/reframe/tests/validation/test_hdr_ffmpeg.py` repeats it
+for x264.
+
+- Without tone mapping or a Colorspace conversion the command builder's plan only changes the
+  pixel format: `-filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0
+  libx264 -crf:v:0 22` on the `hdr10` fixture (HEVC 10-bit, BT.2020 PQ, mastering display
+  and content light level). No `setparams`, no `sidedata=mode=delete`, no HDR params
+  (`keeps_hdr` is false at 8 bits).
+- FFmpeg keeps the colour tags and the HDR10 side data. ffprobe of the outputs, the same with
+  both builds:
+
+  | Encoder (8-bit) | pix_fmt | primaries / transfer / matrix | Stream side data | First frame side data |
+  |-----------------|---------|-------------------------------|------------------|-----------------------|
+  | libx264 | yuv420p | bt2020 / smpte2084 / bt2020nc | CLL, mastering display | SEI, mastering display, CLL |
+  | libx265 (Main) | yuv420p | bt2020 / smpte2084 / bt2020nc | CLL, mastering display | SEI, mastering display, CLL |
+  | libsvtav1 | yuv420p | bt2020 / smpte2084 / bt2020nc | CLL, mastering display | mastering display, CLL |
+  | libvpx-vp9 (Profile 0) | yuv420p | bt2020 / smpte2084 / bt2020nc | CLL, mastering display | mastering display, CLL |
+
+  So the output is an 8-bit HDR10 file (C-3 probes it as HDR10 with the source's values):
+  not washed out, as an SDR-tagged conversion is (`filter.hdr_without_tonemap`), but HDR in
+  8 bits, which bands. With libx265 at 10 bits the same plan gives `yuv420p10le`, Main 10,
+  the same tags.
+- The warning's fixes: tone mapping (`zscale` + `tonemap`) gives 8-bit BT.709 with no HDR
+  metadata; 10-bit x264 gives `yuv420p10le` BT.2020 PQ, still HDR10.
+
 ### Audio codec rules (C-12)
 
 The codec rules are pure; the encoder and container facts they use (bitrate steps, which

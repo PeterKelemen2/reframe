@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import PurePath
 
-from reframe.definitions import AudioEncoderDef
+from reframe.definitions import AudioEncoderDef, Definitions, channels_mixdown
 from reframe.models.issues import JsonPatchOp
 from reframe.models.job import AudioOutputTrack, Mixdown, SubtitleOutputTrack
 from reframe.models.media import AudioStream, SubtitleKind
@@ -14,14 +14,16 @@ from reframe.validation.context import JobContext
 
 __all__ = [
     "BITMAP_CODECS",
+    "EXTERNAL_FORMATS",
     "FORCED_ONLY_CODECS",
+    "EncodedAudio",
     "SubtitleInput",
-    "channels_mixdown",
-    "effective_mixdown",
+    "encoded_audio",
     "passthru_copies",
     "subtitle_input",
     "switch_audio_encoder",
     "track_encoder",
+    "track_stream",
 ]
 
 #: ffprobe codec names of bitmap subtitles.
@@ -30,8 +32,9 @@ BITMAP_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", 
 #: decoder=pgssub``, ``decoder=dvdsub``; not ``dvbsub`` and no text decoder;
 #: testdata/README.md "Validation (C-8)").
 FORCED_ONLY_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
-#: External subtitle files by extension: (ffprobe codec name, kind).
-_EXTERNAL: dict[str, tuple[str, SubtitleKind]] = {
+#: External subtitle files by extension: (ffprobe codec name, kind). The command builder reads
+#: these (``reframe.command.subtitles.EXTERNAL_CODECS``); any other file is refused.
+EXTERNAL_FORMATS: dict[str, tuple[str, SubtitleKind]] = {
     ".srt": ("subrip", "text"),
     ".ass": ("ass", "text"),
     ".ssa": ("ass", "text"),
@@ -40,32 +43,65 @@ _EXTERNAL: dict[str, tuple[str, SubtitleKind]] = {
 }
 
 
-def channels_mixdown(channels: int) -> Mixdown:
-    """The mixdown that keeps a layout of ``channels`` channels (for bitrate ranges)."""
-    if channels <= 1:
-        return "mono"
-    if channels <= 2:
-        return "stereo"
-    if channels <= 6:
-        return "5.1"
-    return "7.1"
+@dataclass(frozen=True, slots=True)
+class EncodedAudio:
+    """What the command builder writes for an encoded audio track. Decision 0024: the builder
+    snaps every value the encoder cannot do with C-6's helpers, and validation uses the same
+    helpers, so an issue text names the value that is really written."""
+
+    encoder: AudioEncoderDef
+    source_channels: int
+    """The source track's channel count (0 = unknown)."""
+    mixdown: Mixdown | None
+    """:meth:`AudioEncoderDef.snap_mixdown`: the layout written; ``None`` = the source
+    layout stays."""
+    table: Mixdown
+    """The mixdown whose bitrate range applies: :attr:`mixdown`, else
+    :func:`~reframe.definitions.channels_mixdown` of the source channels."""
+    bitrate: int | None
+    """The track's bitrate snapped down (:meth:`AudioBitrateDef.snap`); ``None`` when the
+    track sets none or the encoder has no bitrate for :attr:`table`."""
+    samplerate: int | None
+    """:meth:`AudioEncoderDef.snap_samplerate` of the track's rate (or the source's)."""
 
 
-def effective_mixdown(track: AudioOutputTrack, stream: AudioStream | None) -> Mixdown | None:
-    """The track's mixdown; for "keep the source layout" the source's (``None`` when the
-    source stream is unknown)."""
-    if track.mixdown is not None:
-        return track.mixdown
-    if stream is None or stream.channels <= 0:
+def encoded_audio(
+    track: AudioOutputTrack,
+    stream: AudioStream,
+    encoder: AudioEncoderDef,
+    definitions: Definitions,
+) -> EncodedAudio:
+    """The values the builder writes for ``track`` encoded with ``encoder``."""
+    channels = max(stream.channels, 0)
+    mixdown = encoder.snap_mixdown(track.mixdown, channels, definitions.mixdowns)
+    table = mixdown if mixdown is not None else channels_mixdown(channels)
+    bitrate = (
+        encoder.bitrate.snap(track.bitrate, table, "down")
+        if track.bitrate is not None and encoder.bitrate is not None
+        else None
+    )
+    return EncodedAudio(
+        encoder=encoder,
+        source_channels=channels,
+        mixdown=mixdown,
+        table=table,
+        bitrate=bitrate,
+        samplerate=encoder.snap_samplerate(track.samplerate, stream.sample_rate),
+    )
+
+
+def track_stream(ctx: JobContext, track: AudioOutputTrack) -> AudioStream | None:
+    """The source stream an audio track reads (``None``: ``audio.source_missing``)."""
+    if track.source_stream is None:
         return None
-    return channels_mixdown(stream.channels)
+    return ctx.audio_streams.get(track.source_stream)
 
 
 def passthru_copies(ctx: JobContext, track: AudioOutputTrack) -> bool:
     """A passthru track whose source codec the container can hold (no encoder runs)."""
     if track.action != "passthru" or ctx.container is None:
         return False
-    stream = ctx.audio_streams.get(track.source_stream) if track.source_stream is not None else None
+    stream = track_stream(ctx, track)
     return (
         stream is not None
         and stream.codec is not None
@@ -84,20 +120,24 @@ def track_encoder(ctx: JobContext, track: AudioOutputTrack) -> str | None:
 
 def switch_audio_encoder(
     path: str,
-    bitrate: int | None,
-    quality: float | None,
-    mixdown: Mixdown | None,
     new: AudioEncoderDef,
+    definitions: Definitions,
+    *,
+    track: AudioOutputTrack | None = None,
+    stream: AudioStream | None = None,
 ) -> list[JsonPatchOp]:
-    """Switch the encoder at ``path`` (``audio[2].encoder``) to ``new``; snap the bitrate to
-    its allowed values and drop a VBR quality it does not have."""
+    """Switch the encoder at ``path`` (``audio[2].encoder``) to ``new``; snap the track's
+    bitrate to what ``new`` writes for it (:func:`encoded_audio`) and drop a VBR quality it
+    does not have. Without a track (a template) only the encoder changes."""
     prefix = path.rsplit(".", 1)[0]
     ops: list[JsonPatchOp] = [replace(path, new.id)]
-    if bitrate is not None and new.bitrate is not None and mixdown is not None:
-        snapped = new.bitrate.snap(bitrate, mixdown)
-        if snapped is not None and snapped != bitrate:
+    if track is None:
+        return ops
+    if track.bitrate is not None and stream is not None:
+        snapped = encoded_audio(track, stream, new, definitions).bitrate
+        if snapped is not None and snapped != track.bitrate:
             ops.append(replace(f"{prefix}.bitrate", snapped))
-    if quality is not None and new.quality is None:
+    if track.quality is not None and new.quality is None:
         ops.append(replace(f"{prefix}.quality", None))
     return ops
 
@@ -124,5 +164,5 @@ def subtitle_input(ctx: JobContext, track: SubtitleOutputTrack) -> SubtitleInput
     path = PurePath(track.source.path)
     codec: str | None
     kind: SubtitleKind
-    codec, kind = _EXTERNAL.get(path.suffix.lower(), (None, "text"))
+    codec, kind = EXTERNAL_FORMATS.get(path.suffix.lower(), (None, "text"))
     return SubtitleInput(codec, kind, f"file {path.name}")

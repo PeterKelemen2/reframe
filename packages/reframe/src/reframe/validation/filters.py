@@ -1,6 +1,7 @@
 """Filter rules (05 §C-8 "Filters", decision 0010): an unknown filter or implementation, a
-preset or tune the implementation does not have, an implementation this build cannot run, and
-HDR → SDR conversion without tone mapping (warning, with a fix).
+preset or tune the implementation does not have, an implementation this build cannot run,
+HDR → SDR conversion without tone mapping (warning, with a fix), and an HDR source encoded to
+8-bit without tone mapping (warning, with fixes).
 
 "Can run" follows the command builder: a filter is usable when
 ``CapabilitySnapshot.usable_filter`` is ``True`` (libplacebo also needs its Vulkan run test,
@@ -16,10 +17,11 @@ from reframe.definitions import Definitions, FilterDef, FilterImplementation
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
 from reframe.models.job import FilterConfig, FilterSettings
-from reframe.models.media import VideoStream
+from reframe.models.media import HdrFormat, VideoStream
 from reframe.validation.common import add, error, fix, remove, replace, warning
 from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.video import ten_bit_patch
 
 CODES = (
     "filter.unknown",
@@ -32,8 +34,14 @@ CODES = (
     "filter.tune_required",
     "filter.custom_missing",
 )
-#: Colorspace presets that convert to an SDR colour space.
-_SDR_PRESETS = frozenset({"bt709", "bt601-6-525", "bt601-6-625"})
+#: Colorspace presets that convert to an SDR transfer (BT.2020 uses ``bt2020-10``, SDR).
+_SDR_PRESETS = frozenset({"bt709", "bt2020", "bt601-6-525", "bt601-6-625"})
+_HDR_LABELS = {
+    HdrFormat.HDR10: "HDR10",
+    HdrFormat.HDR10_PLUS: "HDR10+",
+    HdrFormat.HLG: "HLG",
+    HdrFormat.DOLBY_VISION: "Dolby Vision",
+}
 #: Transfer characteristics of HDR video (ffprobe ``color_transfer``).
 _HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 
@@ -228,10 +236,28 @@ def is_hdr(stream: VideoStream) -> bool:
     return stream.color.transfer in _HDR_TRANSFERS
 
 
+def _hdr_label(stream: VideoStream) -> str:
+    """``HDR10``, ``HDR10, Dolby Vision``; ``HDR (PQ)`` when only the transfer says it."""
+    if stream.hdr is not None and stream.hdr.formats:
+        return ", ".join(_HDR_LABELS[f] for f in stream.hdr.formats)
+    return f"HDR ({_transfer(stream)})"
+
+
+def _transfer(stream: VideoStream) -> str:
+    hlg = stream.color.transfer == "arib-std-b67" or (
+        stream.hdr is not None and HdrFormat.HLG in stream.hdr.formats
+    )
+    return "HLG" if hlg else "PQ"
+
+
 @job_rule("filters", "filter.hdr_without_tonemap")
 def hdr_to_sdr(ctx: JobContext) -> Iterator[ValidationIssue]:
     """03 §Filters → Colorspace: "Converts BT.2020 PQ (HDR10) to BT.709 SDR. Without tone
-    mapping, the picture will look washed out → [Enable tone mapping]"."""
+    mapping, the picture will look washed out → [Enable tone mapping]".
+
+    Only with a Colorspace conversion to an SDR transfer (BT.709, BT.601 or BT.2020 with its
+    SDR transfer): the output is tagged SDR. Without a conversion the output stays tagged HDR:
+    that is ``filter.hdr_8bit`` when it is 8-bit, and HDR kept when it is 10-bit."""
     stream = ctx.video_stream
     if ctx.job.video.passthrough or stream is None or not is_hdr(stream):
         return
@@ -240,12 +266,53 @@ def hdr_to_sdr(ctx: JobContext) -> Iterator[ValidationIssue]:
         return
     if "tonemap" in ctx.job.filters.root:
         return
-    transfer = "HLG" if stream.color.transfer == "arib-std-b67" else "PQ"
     yield warning(
         "filter.hdr_without_tonemap",
         "filters.colorspace",
-        f"Converts HDR ({transfer}) to SDR without tone mapping: the picture will look washed out.",
+        f"Colorspace converts HDR ({_transfer(stream)}) to SDR without tone mapping: the "
+        "picture will look washed out.",
         fix(
             "Enable tone mapping", add("filters.tonemap", {"preset": "default"}), target=ctx.target
         ),
+    )
+
+
+@job_rule("filters", "filter.hdr_8bit")
+def hdr_to_8bit(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """An HDR source encoded to 8-bit with neither tone mapping nor a Colorspace conversion.
+
+    The command builder then changes only the pixel format (``format=yuv420p``): FFmpeg keeps
+    the source's colour tags and HDR10 side data, so the output is 8-bit BT.2020 PQ (or HLG)
+    with the source's mastering display and light levels (checked with FFmpeg n9.0.2 for
+    x264, x265, SVT-AV1 and VP9: testdata/README.md "Validation (C-8)",
+    ``tests/validation/test_hdr_ffmpeg.py``). HDR needs 10 bits: gradients band. Fixes: tone
+    mapping (SDR output), or 10-bit (the builder keeps HDR) when the encoder can do it."""
+    video = ctx.job.video
+    stream = ctx.video_stream
+    if video.passthrough or video.bit_depth == 10 or stream is None or not is_hdr(stream):
+        return
+    filters = ctx.job.filters.root
+    if "tonemap" in filters or "colorspace" in filters:
+        return  # tone mapped, or filter.hdr_without_tonemap
+    fixes: list[Fix] = []
+    tonemap = ctx.definitions.filters.get("tonemap")
+    available = _available(ctx.caps, ctx.definitions)
+    if tonemap is not None and tonemap.implementation_for(FilterConfig(), available) is not None:
+        fixes.append(
+            fix(
+                "Turn on tone mapping (SDR output)",
+                add("filters.tonemap", {"preset": "default"}),
+                target=ctx.target,
+            )
+        )
+    ten_bit = ten_bit_patch(video, ctx.caps, ctx.definitions)
+    if ten_bit is not None:
+        fixes.append(fix("Encode 10-bit (keep HDR)", *ten_bit, target=ctx.target))
+    yield warning(
+        "filter.hdr_8bit",
+        "video.bit_depth",
+        f"{_hdr_label(stream)} source encoded in 8 bits without tone mapping: the output "
+        f"stays HDR (BT.2020 {_transfer(stream)}), but 8 bits are too few for HDR and "
+        "gradients show banding. Tone map it to SDR, or encode 10-bit to keep HDR.",
+        *fixes,
     )

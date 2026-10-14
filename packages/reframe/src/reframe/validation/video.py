@@ -39,6 +39,7 @@ from reframe.validation.common import (
 
 __all__ = [
     "switch_video_encoder",
+    "ten_bit_patch",
     "video_availability_issues",
     "video_bit_depth_issues",
     "video_choice_issues",
@@ -183,6 +184,36 @@ def video_availability_issues(
 # --------------------------------------------------------------------------- 10-bit
 
 
+def _no_10bit_reason(encoder: VideoEncoderDef, status: EncoderStatus | None) -> str | None:
+    """Why the encoder cannot encode 10-bit here; ``None`` when it can (or may: not tested)."""
+    if "10" not in encoder.pix_fmts:
+        return "it has no 10-bit mode"
+    if status is not None and status.supports_10bit is False:
+        return status.reason_10bit or "the 10-bit test encode failed"
+    return None
+
+
+def _bit_depth_ops(video: VideoSettings, encoder: VideoEncoderDef, depth: int) -> list[JsonPatchOp]:
+    """Set the bit depth; reset a profile that does not allow it (x265 ``main``, …)."""
+    ops: list[JsonPatchOp] = [replace("video.bit_depth", depth)]
+    profiles = encoder.profiles
+    if video.profile is not None and profiles is not None:
+        choice = profiles.get(video.profile)
+        if choice is not None and choice.bit_depths is not None and depth not in choice.bit_depths:
+            ops.append(replace("video.profile", None))
+    return ops
+
+
+def ten_bit_patch(
+    video: VideoSettings, caps: CapabilitySnapshot, definitions: Definitions
+) -> list[JsonPatchOp] | None:
+    """The patch that switches ``video`` to 10-bit; ``None`` when its encoder cannot do it."""
+    encoder = definitions.video_encoders.get(video.encoder)
+    if encoder is None or _no_10bit_reason(encoder, _status(caps, video.encoder)) is not None:
+        return None
+    return _bit_depth_ops(video, encoder, 10)
+
+
 def video_bit_depth_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
@@ -194,19 +225,10 @@ def video_bit_depth_issues(
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None or video.bit_depth != 10:
         return []
-    status = _status(caps, video.encoder)
-    if "10" not in encoder.pix_fmts:
-        reason = "it has no 10-bit mode"
-    elif status is not None and status.supports_10bit is False:
-        reason = status.reason_10bit or "the 10-bit test encode failed"
-    else:
+    reason = _no_10bit_reason(encoder, _status(caps, video.encoder))
+    if reason is None:
         return []
-    ops: list[JsonPatchOp] = [replace("video.bit_depth", 8)]
-    profiles = encoder.profiles
-    if video.profile is not None and profiles is not None:
-        choice = profiles.get(video.profile)
-        if choice is not None and choice.bit_depths is not None and 8 not in choice.bit_depths:
-            ops.append(replace("video.profile", None))
+    ops = _bit_depth_ops(video, encoder, 8)
     return [
         error(
             "encoder.no_10bit",
@@ -458,10 +480,27 @@ def video_rate_control_issues(
 def video_fast_decode_issues(
     video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
 ) -> list[ValidationIssue]:
-    """``encoder.fast_decode_unsupported`` (warning): the setting would be ignored."""
+    """``encoder.fast_decode_unsupported`` (warning): the setting would be ignored.
+    ``encoder.fast_decode_tune_conflict`` (error): fast decode is a tune of an encoder that
+    takes one tune only (x265), and the job sets another tune; the command builder refuses
+    it (decision 0013)."""
     encoder = definitions.video_encoders.get(video.encoder)
-    if encoder is None or not video.fast_decode or encoder.fast_decode is not None:
+    if encoder is None or not video.fast_decode:
         return []
+    fast = encoder.fast_decode
+    if fast is not None:
+        if fast.tune is None or fast.combines_with_tune or video.tune is None:
+            return []
+        return [
+            error(
+                "encoder.fast_decode_tune_conflict",
+                "video.fast_decode",
+                f"{encoder.label} takes one tune: fast decode ({fast.tune}) cannot be combined "
+                f"with the tune {video.tune!r}.",
+                fix("Turn off fast decode", replace("video.fast_decode", False), target=target),
+                fix("Remove the tune", replace("video.tune", None), target=target),
+            )
+        ]
     return [
         warning(
             "encoder.fast_decode_unsupported",
