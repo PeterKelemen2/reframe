@@ -64,6 +64,10 @@ record. Numbers that end up unused are noted at the end of the milestone.
 |------|------|------|------|------|------|------|------|------|------|------|------|-------|
 | C-4 | C-5 | C-6 | C-14 | C-16 | C-7 | C-8 | C-9 | C-11 | C-15 | lead (used) | C-12 | lead (0020–0028 used; next 0029) |
 
+At the end of M2 (2026-10-14) every number from 0008 to 0028 is used; none is unused. The
+follow-ups and the review fixes of a step added dated sections to that step's own record.
+The next free number is 0029.
+
 ## Interfaces between the steps
 
 Signatures are binding. A step may add keyword-only parameters with defaults and extra
