@@ -215,8 +215,12 @@ and returns statuses, never exceptions.
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
       result is used at once and checked again in the background: the full detection runs, and
-      the cached statuses stay until their new results are in. A change emits
-      `capabilities.changed`. A new ffmpeg (`tools.changed`) starts a new detection.
+      the cached statuses stay until their new results are in. While that check runs, a
+      cached status that is not *available* is reported to validation as `encoder.checking`,
+      so a job waits for the new result instead of failing on a stale one (drivers can change
+      without changing the fingerprint; [0008](../decisions/0008-encoder-detection-reasons-and-filters.md),
+      follow-up of the M2 review). A change emits `capabilities.changed`. A new ffmpeg
+      (`tools.changed`) starts a new detection.
 - [ ] States: `unknown → checking → available | unavailable(reason) | error(reason)`.
 - [ ] `closest_available(encoder_id) -> encoder_id | None` uses the fallback chain from the
       definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.), for
