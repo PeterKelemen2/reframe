@@ -8,7 +8,12 @@
   replaces the result with it.
 - :attr:`~CapabilityService.snapshot` never waits. Before the first result every encoder is
   ``unknown`` (``detecting=True``); without a cached result, every encoder is ``checking``
-  while the detection runs.
+  while the detection runs (with the filter results of the last detection of the same
+  ffmpeg build, not of another one). While a cached result is checked again, its statuses
+  that are not ``available`` are ``encoder.checking`` issues
+  (:func:`~reframe.capabilities.encoder_issues`): the cache can be stale.
+- Every detection ends with statuses, never with ``detecting`` left on: a bug, also one in
+  tool discovery, gives ``error`` statuses ("Encoder detection failed: …").
 - ``capabilities.changed`` is published when statuses change: all encoders when the cached
   result or the ``checking`` statuses are put in place, each encoder whose status changes
   while the detection runs, and all encoders when a detection ends.
@@ -19,7 +24,9 @@
 - A new ffmpeg (a ``tools.changed`` event with another path, version or status, for example
   after a Settings → Tools change) starts a new detection (02 §Bundled FFmpeg).
 - :meth:`~CapabilityService.close` cancels the detection; the running test encodes are killed
-  (process tree). A cache write that has started is not cancelled: ``close()`` waits for it.
+  (process tree). It returns when every detection it started has ended, also one that
+  ``rescan()`` replaced. A cache write that has started is not cancelled: ``close()`` waits
+  for it.
 """
 
 from __future__ import annotations
@@ -79,6 +86,12 @@ def _closed_error() -> Exception:
     return ReframeClosedError()
 
 
+def _is_closed_error(exc: Exception) -> bool:
+    from reframe.service import ReframeClosedError
+
+    return isinstance(exc, ReframeClosedError)
+
+
 class CapabilityService:
     """Which encoders this FFmpeg build and this computer can use (C-4).
 
@@ -133,6 +146,8 @@ class CapabilityService:
         self._subscription: Subscription | None = None
         self._watcher: asyncio.Task[None] | None = None
         self._writes: set[asyncio.Task[None]] = set()
+        self._detections: set[asyncio.Task[CapabilitySnapshot]] = set()
+        """Every detection that has not ended (a replaced one may still kill its encodes)."""
         self._closed = False
 
     # ------------------------------------------------------------------ public API
@@ -190,8 +205,10 @@ class CapabilityService:
         return closest_available(encoder_id, self._snapshot, self._definitions)
 
     async def close(self) -> None:
-        """Cancel the detection (killing its test encodes) and stop watching tool changes. A
-        cache write that has started is finished first (the next start shows its result)."""
+        """Cancel the detection (killing its test encodes) and stop watching tool changes.
+        Returns when every detection it started has ended (one that ``rescan()`` replaced
+        may still be killing its test encodes). A cache write that has started is finished
+        first (the next start shows its result)."""
         self._closed = True
         if self._token is not None:
             self._token.cancel("shutting down")
@@ -199,9 +216,10 @@ class CapabilityService:
         if self._subscription is not None:
             self._subscription.close()
         for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.wait(tasks)
+            task.cancel()  # a replaced detection was cancelled when it was replaced
+        pending = {*tasks, *self._detections}
+        if pending:
+            await asyncio.wait(pending)
         if self._writes:
             await asyncio.wait(set(self._writes))
 
@@ -226,6 +244,8 @@ class CapabilityService:
             name="reframe-encoder-detection",
         )
         self._task = task
+        self._detections.add(task)
+        task.add_done_callback(self._detections.discard)
         return task
 
     async def _options(self) -> DetectionOptions:
@@ -257,9 +277,12 @@ class CapabilityService:
             await asyncio.wait(set(self._writes))  # an older result never overwrites this one
         try:
             tools = await self._tools.status()
-        except Exception as exc:  # ReframeClosedError: Reframe is shutting down
-            log.info("encoder detection stopped: %s", exc)
-            return self._snapshot
+        except Exception as exc:
+            if _is_closed_error(exc):  # Reframe is shutting down
+                log.info("encoder detection stopped: %s", exc)
+                return self._snapshot
+            log.exception("tool discovery failed: no encoder detection")
+            return self._fail(exc, token)  # data, never "detecting" for ever
         ffmpeg = tools.ffmpeg
         self._ffmpeg_identity = _identity(ffmpeg)
         try:
@@ -283,12 +306,16 @@ class CapabilityService:
         if cached is not None:
             first = cached.model_copy(update={"from_cache": True, "detecting": True})
         else:
+            # The filter results of the last detection of the same build stay until the new
+            # ones are in; another build's are not shown under this one.
+            last = self._snapshot
+            if (last.ffmpeg, last.ffmpeg_version) != (ffmpeg.path, ffmpeg.version):
+                last = CapabilitySnapshot()
             first = CapabilitySnapshot(
                 encoders=initial_statuses(definitions, EncoderState.CHECKING),
-                # the filter results of the last detection stay until the new ones are in
-                filters=self._snapshot.filters,
-                filter_failures=self._snapshot.filter_failures,
-                untested_filters=self._snapshot.untested_filters,
+                filters=last.filters,
+                filter_failures=last.filter_failures,
+                untested_filters=last.untested_filters,
                 ffmpeg=ffmpeg.path,
                 ffmpeg_version=ffmpeg.version,
                 detecting=True,

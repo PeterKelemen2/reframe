@@ -11,7 +11,11 @@ encoder definitions and §Encoder detection)::
   ``format={sw_pix_fmt},hwupload`` for VAAPI). Placeholders: ``{vaapi_device}`` (default
   ``/dev/dri/renderD128``) and ``{sw_pix_fmt}`` (the encoder's ``pix_fmts`` for the bit depth).
 - Without a filter tail (NVENC, AMF: software frames), ``-pix_fmt <sw_pix_fmt>``.
-- The 10-bit test is the same command with ``pix_fmts["10"]``.
+- The 10-bit test is the same command with ``pix_fmts["10"]``. Exit code 0 is not enough:
+  when the encoder does not take that format, FFmpeg warns "Incompatible pixel format
+  'p010le' for codec 'libx264', auto-selecting format 'yuv420p10le'", encodes with the format
+  it picked and exits 0 (checked with FFmpeg n9.0.2, ``test_real.py``). Such a 10-bit test
+  failed: the format the builder passes is not taken (decision 0008, follow-up).
 - VAAPI encoders (a hardware setup with ``{vaapi_device}``) are tested on every render node,
   or on the node that Settings → Encoders forces (decision 0020): see
   :mod:`reframe.capabilities.detect`.
@@ -30,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from reframe.capabilities.reasons import Failure, TestContext, explain_failure
+from reframe.capabilities.reasons import Failure, TestContext, explain_failure, normalise_line
 from reframe.definitions import VideoEncoderDef
 from reframe.models.capabilities import EncoderState
 from reframe.tools import CancelToken, run
@@ -64,6 +68,11 @@ TEST_MAX_OUTPUT = 2**20
 BitDepth = Literal["8", "10"]
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 _VAAPI_PLACEHOLDER = "{vaapi_device}"
+#: FFmpeg replaced a ``-pix_fmt`` that the encoder does not take (and then exits 0).
+_AUTO_SELECTED = re.compile(
+    r"Incompatible pixel format '(?P<asked>[^']+)' for codec '[^']+', "
+    r"auto-selecting format '(?P<picked>[^']+)'"
+)
 
 #: Filters that ``ffmpeg -filters`` lists but that need a run test, with the ``-vf`` value of
 #: the test: ``libplacebo`` needs a working Vulkan device.
@@ -165,6 +174,20 @@ def filter_test_argv(ffmpeg: str | Path, name: str) -> list[str]:
     ]
 
 
+def _replaced_pix_fmt(stderr: str, encoder_id: str) -> Failure | None:
+    """A failure when FFmpeg encoded with another pixel format than the ``-pix_fmt`` it was
+    given (FFmpeg names the canonical format: ``p010`` is ``p010le`` here)."""
+    for line in stderr.splitlines():
+        match = _AUTO_SELECTED.search(line)
+        if match is not None:
+            reason = (
+                f"{encoder_id} does not take {match['asked']} in this FFmpeg build "
+                f"(it got {match['picked']})"
+            )
+            return Failure(EncoderState.UNAVAILABLE, reason, detail=normalise_line(line))
+    return None
+
+
 async def _run_test(
     argv: list[str],
     ctx: TestContext,
@@ -173,7 +196,10 @@ async def _run_test(
     timeout: float,  # noqa: ASYNC109 - passed to run()
     cancel: CancelToken | None,
     extra_env: Mapping[str, str] | None,
+    exact_pix_fmt: bool = False,
 ) -> TestOutcome:
+    """Run one test. ``exact_pix_fmt``: the test also fails when FFmpeg replaced the pixel
+    format it was given."""
     result = await run(
         argv, timeout=timeout, cancel=cancel, max_output=TEST_MAX_OUTPUT, extra_env=extra_env
     )
@@ -190,7 +216,9 @@ async def _run_test(
         reason = f"{what} did not finish within {timeout:g} s"
         return outcome(Failure(EncoderState.ERROR, reason))
     if result.returncode == 0:
-        return outcome()
+        if not exact_pix_fmt:
+            return outcome()
+        return outcome(_replaced_pix_fmt(result.stderr_text, ctx.encoder))
     return outcome(explain_failure(result.stderr_text, ctx, returncode=result.returncode))
 
 
@@ -204,7 +232,8 @@ async def run_hardware_test(
     cancel: CancelToken | None = None,
     extra_env: Mapping[str, str] | None = None,
 ) -> TestOutcome:
-    """Run one test encode and explain a failure. Never raises for FFmpeg problems."""
+    """Run one test encode and explain a failure. Never raises for FFmpeg problems. The
+    10-bit test also fails when FFmpeg replaced the 10-bit pixel format (exit code 0)."""
     try:
         argv = hardware_test_argv(ffmpeg, encoder, bit_depth, vaapi_device=vaapi_device)
     except DefinitionError as exc:
@@ -217,7 +246,13 @@ async def run_hardware_test(
         device=vaapi_device if uses_vaapi_device(encoder) else None,
     )
     return await _run_test(
-        argv, ctx, what="The test encode", timeout=timeout, cancel=cancel, extra_env=extra_env
+        argv,
+        ctx,
+        what="The test encode",
+        timeout=timeout,
+        cancel=cancel,
+        extra_env=extra_env,
+        exact_pix_fmt=bit_depth == "10",
     )
 
 

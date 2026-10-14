@@ -13,9 +13,11 @@
    the 10-bit test when the encoder has a 10-bit pixel format. A VAAPI encoder is tested on
    every render node in order (``/dev/dri/renderD*``) and uses the first node where it works,
    or only on the node that Settings → Encoders forces (decision 0020); the node goes into
-   ``EncoderStatus.device``. In the same queue: the run test of ``libplacebo`` (one frame;
-   it needs a working Vulkan device), when the build lists it. With hardware tests off it
-   stays in ``untested_filters``.
+   ``EncoderStatus.device``. With hardware tests off, a forced node is still the ``device``
+   (the encode uses it). The 10-bit test fails when FFmpeg replaced the 10-bit pixel format
+   (:mod:`reframe.capabilities.hwtest`). In the same queue: the run test of ``libplacebo``
+   (one frame; it needs a working Vulkan device), when the build lists it. With hardware
+   tests off it stays in ``untested_filters``.
 
 ``on_update`` gets the statuses that changed, as soon as they change: once when every status
 that needs no test is known (after steps 2 and 3), then after each hardware test (with its
@@ -313,6 +315,9 @@ class _Detection:
                     "reason": "Not tested: hardware test encodes are off (Settings → Encoders)",
                     "checked_at": None,
                 }
+                forced = (self.options.vaapi_device or "").strip()
+                if forced and uses_vaapi_device(encoder):
+                    update["device"] = forced  # the encode uses it, tested or not
             else:
                 pending.append(encoder)
                 self.set(encoder.id, in_build=True)
