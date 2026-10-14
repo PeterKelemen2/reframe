@@ -341,7 +341,8 @@ def bad_bus(peer: Peer) -> Iterator[str]:
 @linux_only
 @pytest.mark.parametrize("peer", PEERS, ids=lambda p: p.__name__.removeprefix("peer_"))
 async def test_broken_bus_peer_is_unavailable_never_an_exception(peer: Peer) -> None:
-    with bad_bus(peer) as address, no_leaked_sockets():
+    # The leak check is outside: the fake bus's own sockets are closed when it ends.
+    with no_leaked_sockets(), bad_bus(peer) as address:
         inhibitor, state, events = await _acquire_on(address)
     assert state is InhibitState.UNAVAILABLE, inhibitor.last_error
     assert len(_warnings(events)) == 1
@@ -353,8 +354,8 @@ async def test_broken_bus_peer_is_unavailable_never_an_exception(peer: Peer) -> 
 def test_broken_bus_peer_raises_only_the_documented_errors(peer: Peer) -> None:
     """The client itself: OSError, DBusError or DBusProtocolError, and the socket is closed."""
     with (
-        bad_bus(peer) as address,
         no_leaked_sockets(),
+        bad_bus(peer) as address,
         pytest.raises((OSError, dbus.DBusError, dbus.DBusProtocolError)),
     ):
         dbus.call(
