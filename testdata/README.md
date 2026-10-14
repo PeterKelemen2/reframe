@@ -94,6 +94,10 @@ print captured driver errors or `-progress` blocks. The texts come from the pinn
   `-1073741819`; the unsigned value raises `OverflowError`).
 - The `fake_tools` fixture kills every logged process that still runs in its teardown
   (`FakeTools.kill_leftovers()`; a pid that the OS gave to a newer process is left alone).
+- The `exec` action (`fake_tools.exec_program(path)`, C-11) passes a call to a real program with
+  the same arguments, stdin, stdout and stderr, and exits with its exit code. A rule with no
+  conditions and this action, put last, makes the fake a real ffmpeg except for the calls that
+  the other rules catch (one failing job among real encodes).
 
 ## Verified tool behaviour
 
