@@ -11,6 +11,9 @@ One table, the columns of the plan::
   serialised on the event loop, so a later write always carries the later state.
 - **Atomic, crash-safe.** WAL journal, ``synchronous=FULL``; a change of several rows
   (positions) is one transaction. A crash loses nothing that was written.
+- **Exact values.** JSON columns are ASCII (``\\uXXXX`` escapes), and a path or error text
+  with lone surrogates (a file name that is not UTF-8) is a BLOB of its exact code units, so
+  such a name is stored and loaded back unchanged (M2 review, decision 0016 follow-up).
 - **Documents.** ``settings_json`` is a ``JobSettings`` document: it is migrated with
   ``load_document("job_settings", …)`` and keeps unknown fields (``DocumentModel``), which are
   written back unchanged. ``plan_json`` and ``issues_json`` are derived data: if they do not
@@ -19,7 +22,9 @@ One table, the columns of the plan::
 - **A row that does not load** (a newer ``JobSettings`` schema, a state this Reframe does not
   know) stays in the file untouched and is left out of the queue; one ``app.warning``
   (``queue.rows_skipped``) says how many.
-- **The file** (decision 0016): created at the first write, not at start-up. Its schema version
+- **The file** (decisions 0016, 0027): created at the first write, not at start-up. Only the
+  process that holds ``queue.lock`` uses it; another one keeps its jobs in a private
+  database in memory (:meth:`QueueStore.use_memory`). Its schema version
   is ``PRAGMA user_version``. A file of a newer Reframe is not read and never written
   (``queue.newer_version``: the queue starts empty for this session and is not saved). A
   corrupt file is renamed to ``queue.corrupt-<time>.sqlite3`` and a new one is started
@@ -92,49 +97,82 @@ _COLUMNS = (
 _ISSUES: TypeAdapter[list[ValidationIssue]] = TypeAdapter(list[ValidationIssue])
 
 #: One row as SQLite values, in :data:`_COLUMNS` order.
-Row = tuple[str, int, str, str, str | None, str, str, str | None, str | None, str | None,
-            str | None, str | None]  # fmt: skip
+Row = tuple[str, int, str, str, str | None, str, str, str | None, str | None,
+            str | bytes | None, str | bytes | None, str | bytes | None]  # fmt: skip
 
 
 def _time(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat()
 
 
-def _path(value: Path | None) -> str | None:
-    return None if value is None else str(value)
+def _json(data: Any) -> str:
+    """Compact JSON, ASCII only. A lone surrogate (a byte of a file name that is not UTF-8,
+    PEP 383's ``\\udcff``; an unpaired UTF-16 surrogate of a Windows name) is written as a
+    ``\\udcXX`` escape that ``json.loads`` restores exactly; SQLite gets valid UTF-8."""
+    return json.dumps(data, ensure_ascii=True, separators=(",", ":"))
+
+
+def _text(value: str | None) -> str | bytes | None:
+    """A text column: the string, or, when it holds lone surrogates (SQLite text must be
+    UTF-8), its exact code units as a BLOB (UTF-8 with ``surrogatepass``)."""
+    if value is None:
+        return None
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return value.encode("utf-8", "surrogatepass")
+    return value
+
+
+def _untext(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "surrogatepass")
+    return str(value)
+
+
+def _unpath(value: object) -> Path | None:
+    text = _untext(value)
+    return None if text is None else Path(text)
+
+
+def _path(value: Path | None) -> str | bytes | None:
+    return None if value is None else _text(str(value))
 
 
 def row_of(job: QueueJob) -> Row:
-    """The row of ``job`` (serialised on the caller's thread)."""
+    """The row of ``job`` (serialised on the caller's thread). Every value is kept exactly,
+    also a path that is not valid UTF-8 (see :func:`_json`, :func:`_text`)."""
     return (
         job.id,
         job.position,
         job.state.value,
-        job.settings.model_dump_json(),
-        None if job.plan is None else job.plan.model_dump_json(),
-        _ISSUES.dump_json(job.issues).decode("utf-8"),
+        _json(job.settings.model_dump(mode="json")),
+        None if job.plan is None else _json(job.plan.model_dump(mode="json")),
+        _json(_ISSUES.dump_python(job.issues, mode="json")),
         job.created_at.isoformat(),
         _time(job.started_at),
         _time(job.finished_at),
         _path(job.output_path),
         _path(job.log_path),
-        job.error,
+        _text(job.error),
     )
 
 
 def _job_of(values: Sequence[Any]) -> QueueJob:
     data = dict(zip(_COLUMNS, values, strict=True))
-    settings = load_document("job_settings", json.loads(data["settings_json"]))
+    settings = load_document("job_settings", json.loads(_untext(data["settings_json"]) or ""))
     assert isinstance(settings, JobSettings)
     plan: EncodePlan | None = None
     if data["plan_json"]:
         try:
-            plan = EncodePlan.model_validate_json(data["plan_json"])
-        except ValidationError:
+            plan = EncodePlan.model_validate(json.loads(_untext(data["plan_json"]) or ""))
+        except (ValidationError, ValueError):
             plan = None  # derived data of another version: planned again before a run
     try:
-        issues = _ISSUES.validate_json(data["issues_json"] or "[]")
-    except ValidationError:
+        issues = _ISSUES.validate_python(json.loads(_untext(data["issues_json"]) or "[]"))
+    except (ValidationError, ValueError):
         issues = []
     return QueueJob(
         id=data["id"],
@@ -146,9 +184,9 @@ def _job_of(values: Sequence[Any]) -> QueueJob:
         created_at=data["created_at"],
         started_at=data["started_at"],
         finished_at=data["finished_at"],
-        output_path=data["output_path"],
-        log_path=data["log_path"],
-        error=data["error"],
+        output_path=_unpath(data["output_path"]),
+        log_path=_unpath(data["log_path"]),
+        error=_untext(data["error"]),
     )
 
 
@@ -177,6 +215,8 @@ class QueueStore:
         self._db: sqlite3.Connection | None = None
         self.read_only = False
         """The file is newer than this Reframe or cannot be opened: nothing is written."""
+        self.memory = False
+        """A private store in memory (another process owns the file; decision 0027)."""
         self._failed = False
         self.warnings: list[AppWarningEvent] = []
         """Warnings of writes that failed (one per kind), to be published by the queue."""
@@ -185,6 +225,11 @@ class QueueStore:
 
     def submit[T](self, call: Callable[[], T]) -> concurrent.futures.Future[T]:
         return self._executor.submit(call)
+
+    def use_memory(self) -> None:
+        """Keep the jobs in a private SQLite database in memory, never the file (call it
+        before the first write)."""
+        self.memory = True
 
     def load(self) -> StoreLoad:
         """Read every job (runs on the store thread). Never raises for a bad file."""
@@ -276,6 +321,8 @@ class QueueStore:
     # ------------------------------------------------------------------ internals
 
     def _connect(self, *, configure: bool = True) -> sqlite3.Connection:
+        if self.memory:
+            return sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         try:

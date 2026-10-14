@@ -1,6 +1,8 @@
 # 0016 — Queue and job runner: store, run order, sleep-aware ETA, watchdog, finalize, close
 
-- Status: accepted
+- Status: accepted; restore in `Reframe.create()` and "two processes would both run the
+  store's jobs" are superseded by [0027](0027-one-process-owns-the-queue-store.md) (see
+  "Follow-up (M2 review)")
 - Date: 2026-10-14
 - Steps: C-11 (affects C-14, C-15, S-x, F-x queue views)
 
@@ -239,3 +241,86 @@ What we checked with the real tools (records in `testdata/README.md`, "Queue and
 - `docs/plan/05-core.md` §C-11: the success bullet (the output is checked before the rename;
   `ask` keeps the complete `.part` file), the store, timeout, close and ETA notes point here.
 - `docs/plan/03-features.md` §Queue: output safety names the `ask` case and the output check.
+
+## Follow-up (M2 review), 2026-10-14
+
+### Context
+
+The M2 review found two blockers and three smaller faults in the queue:
+
+1. **B1.** Every `Reframe.create()` restored the store, so any second Reframe process (even
+   `reframe name` or `probe`) marked the first process's running job `interrupted` and removed
+   its `.part` file; the first encode then ended "wrote no output". Reproduced by
+   `tests/queue/test_owner.py::test_a_second_process_leaves_a_running_encode_alone` (two real
+   processes): the saved row said `interrupted` while the job ran.
+2. **B2.** A source named `Foo.part.mkv` with the output `Foo.mkv`, or an output folder that is
+   a link to the source's folder: the `.part` file (or the final name) is the source. The job
+   wrote over the source and was reported done, or failed and its clean-up removed the
+   source. Reproduced by `test_faults.py::test_a_source_named_like_the_part_file` and
+   `test_an_output_folder_that_links_to_the_source_folder[final|part]`.
+3. `pause()` and `resume()` of one job at the same time: with a slow suspend the job stayed
+   `paused` with its process stopped, and `resume()` had done nothing
+   (`test_queue.py::test_pause_and_resume_at_the_same_time`).
+4. `holds_inhibit` was set before the awaited `acquire()`. When the caller of `resume()` was
+   cancelled during the acquire (the inhibitor undoes that count), the job later released a
+   count it did not hold and so freed another running job's lock
+   (`test_a_cancelled_resume_does_not_unbalance_the_sleep_inhibit`).
+5. A file name that is not UTF-8 (`bad\xffname.mkv`, Python's lone surrogate `\udcff`)
+   crashed `add`: `model_dump_json` refuses lone surrogates, and SQLite text must be UTF-8
+   (`test_lone_surrogates_round_trip_in_the_store`, `test_a_file_name_that_is_not_utf8`).
+
+Each test failed before its fix and passes after it.
+
+### Decision
+
+1. **Decision 0027 items 1–4.** `Reframe.create()` does not open the store. Any
+   `QueueService` method opens it at its first use (blocking once: the lock is taken without
+   waiting and the store is a small local file). The opener takes an exclusive lock on
+   `<data dir>/queue.lock` (`reframe.queue.lock`: POSIX `flock`; Windows `msvcrt.locking` on one
+   byte at 1 GiB, so the pid text at the start stays readable, mock-tested) and writes its pid
+   there; it holds the lock until `close()`. The lock descriptor is not inherited by FFmpeg.
+   Only the owner restores (running and paused rows become `interrupted`, leftover files are
+   removed) and runs the store's jobs. A process that cannot take the lock keeps its jobs in a
+   private SQLite database in memory and sends `app.warning` `queue.store_busy` ("Another
+   Reframe process (pid N) is using the saved queue. The jobs of this process run here and
+   are not kept after it ends."). A lock file that cannot be created (the data folder is not
+   writable) gives the same private queue with `queue.unreadable`. After `close()` the queue
+   does not open the store any more. Two `QueueService` objects in one process on one data
+   folder behave like two processes (an `flock` of another open file description conflicts).
+2. **Decision 0027 item 5 (the run-time guard; C-8 adds the same check to validation).**
+   Before the first step, the `.part` file, every plan file, every statistics file and the
+   final name are compared with the source: `os.path.samefile` when both exist (links, hard
+   links), else the paths after resolving links, compared without case (this errs on the safe
+   side on Linux). A clash fails the job with the error issue `queue.writes_source`
+   ("Foo.part.mkv is the source file itself (…): the job would write over or remove its
+   source, so nothing was written or removed."); nothing is written or removed. Every
+   clean-up (end of a run, restore) also skips a path that is the job's source.
+3. **One lock per job** (`ActiveJob.control`) orders `pause`, `resume`, the start-of-run
+   inhibitor acquire and the end-of-run release; a pause or resume of a job whose run ended
+   does nothing.
+4. **The job holds its inhibitor count only once `acquire()` returned**; the release gives
+   back only a count that the job holds.
+5. **File names that are not UTF-8.** The store writes JSON columns with `json.dumps(…,
+   ensure_ascii=True)` from `model_dump(mode="json")` (a lone surrogate becomes a `\udcXX`
+   escape that `json.loads` restores; the text stays UTF-8) and reads them with `json.loads`.
+   A path or error text with lone surrogates is a BLOB of its exact code units (UTF-8 with
+   `surrogatepass`); plain text stays TEXT, so older files read the same. Such a path is
+   stored and loaded back unchanged. Messages, `job.state` errors, `job.log` lines and the log
+   file show it as the escape `\udcff` (valid UTF-8, so a JSON encoder or a log never fails);
+   plan files are written with `surrogateescape`, so FFmpeg gets the original bytes.
+
+### Consequences
+
+- `reframe probe`, `plan`, `name` and `encoders` never touch the queue store, and a second
+  `reframe encode` runs on its own private queue next to the first.
+- A desktop or web app started while a CLI encode runs gets a private queue until it is
+  restarted (0027).
+- Not fixed here (other steps): C-16's naming rule fails on a name with a lone surrogate
+  (`reframe/naming/sanitize.py` `_size` encodes as strict UTF-8; validation then reports
+  `validation.rule_failed`), and a `QueueJob` or `JobSettings` with such a path still cannot
+  go through `model_dump_json()` (the server will need `model_dump(mode="json")` plus an ASCII
+  JSON encoder, as the store does).
+
+### Plan changes
+
+- None in this commit: 0027 changed 03 §Queue and 05 §C-11.

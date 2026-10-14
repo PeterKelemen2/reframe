@@ -182,9 +182,13 @@ class CountingBackend:
         self.holds: list[str] = []
         self.frees = 0
         self.held = False
+        self.delay = 0.0
+        """Seconds a hold takes (a slow D-Bus call)."""
 
     async def hold(self, why: str) -> str | None:
         self.holds.append(why)
+        if self.delay:
+            await asyncio.sleep(self.delay)
         self.held = True
         return None
 
@@ -342,7 +346,6 @@ async def harness(tmp_path: Path, fake_tools: ft.FakeTools) -> AsyncIterator[Har
             log_interval=0.02,
         ),
     )
-    await harness.queue._restore()
     try:
         yield harness
     finally:

@@ -1122,6 +1122,20 @@ fallback when the file system has no hard links (`EPERM`, `EXDEV`, `EMLINK`, `EN
 that another process has open raises `PermissionError` (Python documentation; mock-tested on
 Linux only, not run on Windows yet).
 
+**The owner lock** (decision 0027, `reframe.queue.lock`). On Linux an `fcntl.flock(LOCK_EX |
+LOCK_NB)` on `queue.lock` conflicts with a lock of another open file description, also in the
+same process (two `QueueService` objects on one data folder behave like two processes), and
+the kernel frees it when the owner is killed with `SIGKILL` (`tests/queue/test_owner.py`, real
+processes). The descriptor is not inherited by children (PEP 446), so an FFmpeg that outlives
+Reframe cannot keep it. Windows (`msvcrt.locking`, mandatory byte-range locks) is mock-tested
+only.
+
+**File names that are not UTF-8.** On Linux a name with the byte 0xFF is the Python string
+`bad\udcffname.mkv` (PEP 383). Pydantic's `model_dump_json()` refuses it ("surrogates not
+allowed"), and so does SQLite for a text value; `model_dump(mode="json")` keeps it, and
+`json.dumps(…, ensure_ascii=True)` writes `\udcff`, which `json.loads` restores. FFmpeg gets
+the original bytes through `subprocess` (`os.fsencode`).
+
 **SQLite.** `PRAGMA journal_mode = WAL` rewrites the file header (bytes 18 and 19, the file
 format versions, go from 1 to 2), so the store reads `PRAGMA user_version` on a plain
 connection first and leaves a newer file untouched. A file that is not a database opens

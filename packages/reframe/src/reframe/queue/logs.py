@@ -4,8 +4,10 @@ and the rate-limited ``job.log`` events.
 **The file** has everything: a header per run, then for each step its full command line (with
 the measured values filled in), every stderr line of the tool, and how it ended (exit code,
 seconds); at the end the outcome and the total time. A retried job appends a new run to the
-same file. Progress blocks (stdout) are not written. If the file cannot be written (the data
-folder is full or read-only), the job goes on without it (one log warning).
+same file. It is UTF-8: a file name that is not (a lone surrogate) is written as an escape
+(``\\udcff``), as in the events. Progress blocks (stdout) are not written. If the file cannot
+be written (the data folder is full or read-only), the job goes on without it (one log
+warning).
 
 **Events.** Lines are batched: at most one ``job.log`` event per :data:`EVENT_INTERVAL`
 seconds per job, with at most :data:`EVENT_LINES` lines. When more lines arrive in one
@@ -26,6 +28,7 @@ from typing import TextIO
 
 from reframe.events import EventBus
 from reframe.models.events import JobLogEvent
+from reframe.queue.errors import printable
 
 __all__ = ["EVENT_INTERVAL", "EVENT_LINES", "JobLog", "log_file"]
 
@@ -68,7 +71,9 @@ class JobLog:
         """Open the file for appending and write a run header."""
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._handle = open(self.path, "a", encoding="utf-8", newline="\n")  # noqa: SIM115
+            self._handle = open(  # noqa: SIM115
+                self.path, "a", encoding="utf-8", errors="backslashreplace", newline="\n"
+            )
         except OSError as exc:
             self._fail(exc)
         self.write(header)
@@ -125,7 +130,7 @@ class JobLog:
     def _to_event(self, line: str) -> None:
         if len(self._buffer) == self._buffer.maxlen:
             self._dropped += 1  # the deque drops the oldest line
-        self._buffer.append(line)
+        self._buffer.append(printable(line))
         if self._timer is None:
             loop = asyncio.get_running_loop()
             self._timer = loop.call_later(self._interval, self._timed_flush)

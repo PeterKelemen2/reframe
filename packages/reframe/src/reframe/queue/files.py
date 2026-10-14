@@ -31,6 +31,7 @@ __all__ = [
     "remove_files",
     "rename_no_replace",
     "replace_file",
+    "same_file",
     "write_plan_files",
 ]
 
@@ -64,14 +65,37 @@ def _retry[T](call: Callable[[], T]) -> T:
 def write_plan_files(files: Iterable[PlanFile]) -> None:
     """Write each file as UTF-8 with LF line ends (its folder must exist)."""
     for plan_file in files:
-        with open(plan_file.path, "w", encoding="utf-8", newline="\n") as handle:
+        # surrogateescape: a file-name byte that is not UTF-8 goes to FFmpeg unchanged.
+        with open(
+            plan_file.path, "w", encoding="utf-8", errors="surrogateescape", newline="\n"
+        ) as handle:
             handle.write(plan_file.content)
 
 
-def remove_files(paths: Iterable[Path]) -> list[str]:
-    """Remove each file that exists; returns a message for each one that could not be removed."""
+def same_file(a: Path, b: Path) -> bool:
+    """``a`` and ``b`` are the same file: ``os.path.samefile`` when both exist (also through
+    a link or a hard link), else the same path after resolving links, compared without case
+    (Windows and macOS file systems ignore case; on Linux this errs on the safe side)."""
+    try:
+        if os.path.samefile(a, b):
+            return True
+    except OSError:
+        pass
+    return _path_key(a) == _path_key(b)
+
+
+def _path_key(path: Path) -> str:
+    return os.path.normcase(os.path.realpath(path)).casefold()
+
+
+def remove_files(paths: Iterable[Path], *, keep: Path | None = None) -> list[str]:
+    """Remove each file that exists; returns a message for each one that could not be removed.
+    ``keep`` (a job's source) is never removed, whatever spelling of it is in ``paths``."""
     problems: list[str] = []
     for path in paths:
+        if keep is not None and same_file(path, keep):
+            problems.append(f"{path} is the source file, not removed")
+            continue
         try:
             _retry(partial(path.unlink, missing_ok=True))
         except IsADirectoryError:

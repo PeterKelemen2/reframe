@@ -628,3 +628,89 @@ def test_durations_in_messages() -> None:
     assert _duration(60) == "1 minute"
     assert _duration(1) == "1 second"
     assert _duration(None) == "0 seconds"
+
+
+# --------------------------------------------------------------------------- the source is safe
+
+
+def without_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The run-time guard is tested alone: validation (C-8) reports the same case on its own."""
+    from reframe.queue import runner
+
+    monkeypatch.setattr(runner, "validate", lambda *args, **kwargs: [])
+
+
+def assert_untouched(h: Harness, ended: object, source: Path, content: bytes) -> None:
+    from reframe.models import QueueJob
+
+    assert isinstance(ended, QueueJob)
+    assert ended.state is JobState.FAILED
+    assert "queue.writes_source" in [i.code for i in ended.issues]
+    assert ended.error is not None
+    assert "nothing was written or removed" in ended.error
+    assert source.read_bytes() == content
+    assert h.fake.calls("ffmpeg") == []
+
+
+async def test_a_source_named_like_the_part_file(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M2 review B2: ``reframe encode Foo.part.mkv -o Foo.mkv``. The ``.part`` file is the
+    source: FFmpeg refused it ("cannot edit existing files in-place") and the failure clean-up
+    removed the source."""
+    from .conftest import draft, recorded
+
+    h = harness
+    without_validation(monkeypatch)
+    source = h.tmp / "media" / "Foo.part.mkv"
+    source.write_bytes(b"the only copy")
+    h.sources.source = recorded("multitrack.mkv", source)
+    ended = await h.run_one(draft(h.sources.source, h.tmp / "media" / "Foo.mkv"))
+    assert_untouched(h, ended, source, b"the only copy")
+    assert ended.error == (
+        f"Foo.part.mkv is the source file itself ({source}): the job would write over or "
+        "remove its source, so nothing was written or removed."
+    )
+    assert sorted(p.name for p in source.parent.iterdir()) == ["Foo.part.mkv", "Movie.Source.mkv"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privileges on Windows")
+@pytest.mark.parametrize("which", ["final", "part"])
+async def test_an_output_folder_that_links_to_the_source_folder(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, which: str
+) -> None:
+    """M2 review B2: the output folder is a link to the source's folder, so the output (or
+    the ``.part`` file) is the source under another path."""
+    from .conftest import draft, recorded
+
+    h = harness
+    without_validation(monkeypatch)
+    h.settings.output.collision = "overwrite"
+    link = h.tmp / "link"
+    link.symlink_to(h.tmp / "media", target_is_directory=True)
+    name = "Movie.Source.mkv" if which == "final" else "Clip.part.mkv"
+    source = h.tmp / "media" / name
+    source.write_bytes(b"the only copy")
+    h.sources.source = recorded("multitrack.mkv", source)
+    output = link / ("Movie.Source.mkv" if which == "final" else "Clip.mkv")
+    ended = await h.run_one(draft(h.sources.source, output))
+    assert_untouched(h, ended, source, b"the only copy")
+
+
+def test_same_file_through_links_and_case(tmp_path: Path) -> None:
+    from reframe.queue.files import remove_files, same_file
+
+    real = tmp_path / "Real.mkv"
+    real.write_text("x")
+    assert same_file(real, tmp_path / "real.MKV")  # another spelling (case)
+    assert same_file(real, tmp_path / "sub" / ".." / "Real.mkv")
+    if sys.platform != "win32":
+        (tmp_path / "link").symlink_to(tmp_path, target_is_directory=True)
+        assert same_file(real, tmp_path / "link" / "Real.mkv")
+        os.link(real, tmp_path / "hard.mkv")
+        assert same_file(real, tmp_path / "hard.mkv")  # a hard link: the same file
+    assert not same_file(real, tmp_path / "Other.mkv")
+    assert remove_files([tmp_path / "REAL.mkv"], keep=real) == [
+        f"{tmp_path / 'REAL.mkv'} is the source file, not removed"
+    ]
+    assert real.exists()

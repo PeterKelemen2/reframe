@@ -40,11 +40,16 @@ the ``.part`` file is removed on cancel and on close, and on failure when
 ``settings.output.partial_file`` is ``delete`` (kept on ``keep``, and kept when the encode is
 complete but its name is taken under the ``ask`` policy).
 
-**Restart.** Jobs that were ``running`` or ``paused`` in the store become ``interrupted`` when
-the queue is restored, and their leftover files are cleaned up in the background (the
-``.part`` file by the partial-file policy, as for a failure). :meth:`~QueueService.close`
-stops running jobs as ``interrupted`` too (their ``.part`` file is removed, as on cancel).
-Every choice beyond the plan is in decision 0016.
+**One owner** (decision 0027). The store is opened at the queue's first use, not by
+``Reframe.create()``. The process that takes the lock ``<data dir>/queue.lock`` owns it;
+another process keeps its jobs in a private store in memory (``app.warning``
+``queue.store_busy``) and never touches the saved jobs or their files.
+
+**Restart.** When the owner opens the store, jobs that were ``running`` or ``paused`` become
+``interrupted``, and their leftover files are cleaned up in the background (the ``.part`` file
+by the partial-file policy, as for a failure; never the source). :meth:`~QueueService.close`
+stops running jobs as ``interrupted`` too (their ``.part`` file is removed, as on cancel) and
+frees the lock. Every choice beyond the plan is in decision 0016.
 """
 
 from __future__ import annotations
@@ -75,7 +80,8 @@ from reframe.models.settings import AppSettings
 from reframe.platform.sleep import SleepInhibitor, create_sleep_inhibitor
 from reframe.queue import files
 from reframe.queue.clock import Clock, SystemClock
-from reframe.queue.errors import JobStateError, UnknownJobError
+from reframe.queue.errors import JobStateError, UnknownJobError, printable
+from reframe.queue.lock import LOCK_FILE, LockBackend, StoreLock
 from reframe.queue.logs import EVENT_INTERVAL, JobLog, log_file
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.runner import (
@@ -142,6 +148,8 @@ class QueueService:
     :param step_time_limit: seconds a short step (``mkvpropedit``) may take.
     :param watchdog_tick: seconds between two watchdog checks.
     :param log_interval: seconds between two ``job.log`` events of a job.
+    :param lock_backend: the OS lock of ``queue.lock`` (default: ``flock`` or
+        ``msvcrt.locking``; tests replace it).
     """
 
     def __init__(
@@ -162,6 +170,7 @@ class QueueService:
         step_time_limit: float | None = STEP_TIME_LIMIT,
         watchdog_tick: float = TICK,
         log_interval: float = EVENT_INTERVAL,
+        lock_backend: LockBackend | None = None,
     ) -> None:
         self._events = events
         self._settings = settings
@@ -170,6 +179,7 @@ class QueueService:
         self._fs: FileSystemView = fs or LocalFileSystem()
         self._inhibitor = inhibitor if inhibitor is not None else create_sleep_inhibitor(events)
         self._store = QueueStore(data_dir / STORE_FILE, now=self._clock.now)
+        self._owner = StoreLock(data_dir / LOCK_FILE, lock_backend)
         self._runner = JobRunner(
             events=events,
             settings=settings,
@@ -192,7 +202,7 @@ class QueueService:
         self._only: set[str] | None = None
         """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
         self._closed = False
-        self._restored = False
+        self._opened = False
         self._lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._background: set[asyncio.Task[None]] = set()
@@ -205,6 +215,7 @@ class QueueService:
         """Add a job (validated at once). A job with errors is added in state ``failed``
         with its issues. ``position``: 0 = first; ``None`` = last."""
         self._check_open()
+        self._ensure_open()
         settings = job.model_copy(deep=True)
         issues = await self._runner.check(settings)
         self._check_open()
@@ -214,7 +225,7 @@ class QueueService:
         error = None
         if errors:
             more = f" (and {len(errors) - 1} more)" if len(errors) > 1 else ""
-            error = f"The job has errors: {errors[0].message}{more}"
+            error = printable(f"The job has errors: {errors[0].message}{more}")
         queued = QueueJob(
             id=job_id,
             position=0,
@@ -243,9 +254,11 @@ class QueueService:
 
     def list(self) -> _Jobs:
         """Every job, in queue order (copies)."""
+        self._ensure_open()
         return [job.model_copy(deep=True) for job in self._ordered()]
 
     def get(self, job_id: str) -> QueueJob | None:
+        self._ensure_open()
         job = self._jobs.get(job_id)
         return None if job is None else job.model_copy(deep=True)
 
@@ -253,6 +266,7 @@ class QueueService:
         """Remove a job that is not running or paused (``JobStateError`` otherwise); its log
         file is removed too."""
         self._check_open()
+        self._ensure_open()
         async with self._lock:
             job = self._job(job_id)
             if job.state in _ACTIVE or job_id in self._active:
@@ -270,6 +284,7 @@ class QueueService:
         """Put the given jobs in this order. They take the places the same jobs had (so the
         whole list, or any part of it, can be given); the other jobs do not move."""
         self._check_open()
+        self._ensure_open()
         ids = list(job_ids)
         if len(set(ids)) != len(ids):
             raise ValueError("reorder: a job id is given twice")
@@ -290,6 +305,7 @@ class QueueService:
         """``failed`` / ``cancelled`` / ``interrupted`` → ``waiting`` (a waiting job is
         returned as it is; ``JobStateError`` for a running, paused or done job)."""
         self._check_open()
+        self._ensure_open()
         job = self._job(job_id)
         if job.state is JobState.WAITING:
             return job.model_copy(deep=True)
@@ -313,6 +329,7 @@ class QueueService:
         Running state only: it is not saved, a restored queue is idle.
         """
         self._check_open()
+        self._ensure_open()
         if job_ids is not None:
             ids = builtins.list(job_ids)
             for job_id in ids:
@@ -328,41 +345,53 @@ class QueueService:
 
     async def stop(self) -> None:
         """Take no new jobs; the running ones go on (running state only, not saved)."""
+        self._ensure_open()
         self._processing = False
         self._only = None
 
     async def pause(self, job_id: str | None = None) -> None:
         """Pause a running job (``None``: every running job). Its process tree is suspended;
-        a job between two steps does not start the next one. Other states: nothing happens."""
+        a job between two steps does not start the next one. Other states: nothing happens.
+        Pause and resume of one job run one at a time (a per-job lock)."""
         self._check_open()
+        self._ensure_open()
         for active in self._targets(job_id):
-            job = self._jobs[active.job_id]
-            if active.paused or active.token.cancelled or job.state is not JobState.RUNNING:
-                continue
-            active.paused = True
-            active.resumed.clear()
-            if active.process is not None:
-                await asyncio.to_thread(suspend_tree, active.process)
-            if active.tracker is not None:
-                active.tracker.pause()
-            await self._set_state(job, JobState.PAUSED)
-            await self._release_inhibit(active)
+            async with active.control:
+                job = self._jobs.get(active.job_id)
+                if (
+                    job is None
+                    or active.ended
+                    or active.paused
+                    or active.token.cancelled
+                    or job.state is not JobState.RUNNING
+                ):
+                    continue
+                active.paused = True
+                active.resumed.clear()
+                if active.process is not None:
+                    await asyncio.to_thread(suspend_tree, active.process)
+                if active.tracker is not None:
+                    active.tracker.pause()
+                await self._set_state(job, JobState.PAUSED)
+                await self._release_inhibit(active)
 
     async def resume(self, job_id: str | None = None) -> None:
         """Resume a paused job (``None``: every paused job)."""
         self._check_open()
+        self._ensure_open()
         for active in self._targets(job_id):
-            job = self._jobs[active.job_id]
-            if not active.paused or active.token.cancelled:
-                continue
-            active.paused = False
-            if active.tracker is not None:
-                active.tracker.resume()
-            if active.process is not None:
-                await asyncio.to_thread(resume_tree, active.process)
-            active.resumed.set()
-            await self._set_state(job, JobState.RUNNING)
-            await self._hold_inhibit(active, job)
+            async with active.control:
+                job = self._jobs.get(active.job_id)
+                if job is None or active.ended or not active.paused or active.token.cancelled:
+                    continue
+                active.paused = False
+                if active.tracker is not None:
+                    active.tracker.resume()
+                if active.process is not None:
+                    await asyncio.to_thread(resume_tree, active.process)
+                active.resumed.set()
+                await self._set_state(job, JobState.RUNNING)
+                await self._hold_inhibit(active, job)
 
     async def cancel(self, job_id: str | None = None) -> None:
         """Cancel a job: a waiting one is marked ``cancelled``; a running or paused one has
@@ -370,6 +399,7 @@ class QueueService:
         ``None``: every job that has not ended (running, paused and waiting). Returns when
         the cancelled jobs have ended."""
         self._check_open()
+        self._ensure_open()
         if job_id is not None:
             jobs = [self._job(job_id)]
         else:
@@ -391,6 +421,7 @@ class QueueService:
         """Wait until the jobs have ended (``None``: every job in the queue now). A waiting
         job ends only while the queue runs (:meth:`start`). A job removed meanwhile is left
         out of the result."""
+        self._ensure_open()
         ids = [job.id for job in self._ordered()] if job_ids is None else list(job_ids)
         for job_id in ids:
             self._job(job_id)
@@ -408,6 +439,7 @@ class QueueService:
 
     def log_path(self, job_id: str) -> Path:
         """``<data dir>/logs/<job id>.log`` (it may not exist yet)."""
+        self._ensure_open()
         job = self._jobs.get(job_id)
         if job is not None and job.log_path is not None:
             return job.log_path
@@ -433,20 +465,53 @@ class QueueService:
         if background:
             await asyncio.wait(background)
         await self._inhibitor.close()
-        await asyncio.to_thread(self._store.close)
+        if self._opened:
+            await asyncio.to_thread(self._store.close)
+        self._owner.release()
         await self._notify()
 
     # ------------------------------------------------------------------ restore
 
-    async def _restore(self) -> None:
-        """Load the saved queue (``Reframe.create()`` calls it once; not a public method: the
-        M2 contract allows none beyond its list). ``running`` and ``paused`` jobs become
-        ``interrupted``; their leftover files are removed in the background."""
-        self._check_open()
-        if self._restored:
+    def _ensure_open(self) -> None:
+        """Open the store at the queue's first use (decision 0027). ``Reframe.create()`` does
+        not: a command that never uses the queue never touches it.
+
+        The process that takes the exclusive lock on ``<data dir>/queue.lock`` owns the saved
+        queue: it loads the store (``running`` and ``paused`` jobs become ``interrupted``;
+        their leftover files are removed in the background) and runs its jobs. A process
+        that cannot take the lock keeps its jobs in a private store in memory and sends one
+        ``app.warning`` (``queue.store_busy``). Blocking, once: the lock is taken without
+        waiting and the store is a small local file.
+        """
+        if self._opened or self._closed:
             return
-        self._restored = True
-        loaded = await asyncio.wrap_future(self._store.submit(self._store.load))
+        self._opened = True
+        try:
+            owner = self._owner.acquire()
+        except OSError as exc:
+            self._store.use_memory()
+            self._events.publish(
+                AppWarningEvent(
+                    code="queue.unreadable",
+                    message="The saved queue cannot be used. The jobs of this process run here "
+                    "and are not kept after it ends.",
+                    detail=printable(f"{self._owner.path}: {exc}"),
+                )
+            )
+            return
+        if not owner.owned:
+            self._store.use_memory()
+            who = f" (pid {owner.owner})" if owner.owner is not None else ""
+            self._events.publish(
+                AppWarningEvent(
+                    code="queue.store_busy",
+                    message=f"Another Reframe process{who} is using the saved queue. The jobs "
+                    "of this process run here and are not kept after it ends.",
+                    detail=printable(str(self._store.path)),
+                )
+            )
+            return
+        loaded = self._store.submit(self._store.load).result()
         for warning in loaded.warnings:
             self._events.publish(warning)
         now = self._clock.now()
@@ -461,31 +526,40 @@ class QueueService:
         changed = self._renumber(self._ordered())
         to_save = {job.id: job for job in changed}
         to_save.update((job.id, job) for job, _ in interrupted)
-        await self._save_many(to_save.values())
+        if to_save:
+            rows = [row_of(job) for job in to_save.values()]
+            self._store.submit(lambda: self._store.upsert(rows))  # in order, before any later write
         for job, previous in interrupted:
             self._events.publish(
                 JobStateEvent(job_id=job.id, state=job.state, previous=previous, error=job.error)
             )
         leftovers = [job for job, _ in interrupted if job.plan is not None]
-        if leftovers:
-            task = asyncio.get_running_loop().create_task(
-                self._clean_leftovers(leftovers), name="reframe-queue-leftovers"
-            )
-            self._background.add(task)
-            task.add_done_callback(self._background.discard)
+        if not leftovers:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # used outside a loop: clean up now
+            self._remove_leftovers(leftovers)
+            return
+        task = loop.create_task(self._clean_leftovers(leftovers), name="reframe-queue-leftovers")
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
 
     async def _clean_leftovers(self, jobs: Iterable[QueueJob]) -> None:
+        await asyncio.to_thread(self._remove_leftovers, jobs)
+
+    def _remove_leftovers(self, jobs: Iterable[QueueJob]) -> None:
+        """The plan files and temporary files of interrupted jobs, and their ``.part`` file
+        by the partial-file policy (as for a failure); never a job's source."""
         delete = self._settings().output.partial_file == "delete"
-        paths: builtins.list[Path] = []
         for job in jobs:
             plan = job.plan
             assert plan is not None
-            paths += [f.path for f in plan.files] + list(plan.temp_files)
+            paths = [f.path for f in plan.files] + list(plan.temp_files)
             if delete:
                 paths.append(plan.output_tmp)
-        problems = await asyncio.to_thread(files.remove_files, paths)
-        for problem in problems:
-            log.warning("queue restore: %s", problem)
+            for problem in files.remove_files(paths, keep=Path(job.settings.source.path)):
+                log.warning("queue restore: %s", problem)
 
     # ------------------------------------------------------------------ scheduling
 
@@ -551,7 +625,8 @@ class QueueService:
                 await self._set_state(job, JobState.RUNNING, error=None)
                 self._events.publish(JobProgressEvent(job_id=job.id, progress=job.progress))
                 joblog.open(self._header(job))
-                await self._hold_inhibit(active, job)
+                async with active.control:
+                    await self._hold_inhibit(active, job)
                 outcome = await self._runner.run(job, active, joblog)
         except Exception as exc:  # a bug: the job fails, the queue goes on
             log.exception("queue job %s failed with an internal error", job.id)
@@ -575,7 +650,7 @@ class QueueService:
         self, job: QueueJob, active: ActiveJob, joblog: JobLog, outcome: Outcome
     ) -> None:
         try:
-            await self._cleanup(outcome, joblog)
+            await self._cleanup(job, outcome, joblog)
             if outcome.issues is not None:
                 job.issues = outcome.issues
             if outcome.output_path is not None:
@@ -593,7 +668,9 @@ class QueueService:
             joblog.note(ending)
         finally:
             joblog.close()
-            await self._release_inhibit(active)
+            async with active.control:  # after a pause or resume that is under way
+                active.ended = True
+                await self._release_inhibit(active)
             job.finished_at = self._clock.now()
             await self._set_state(job, outcome.state, error=outcome.error)
             # No await from here on: the slot, the count and the when-done check change together.
@@ -603,7 +680,7 @@ class QueueService:
             self._when_done(outcome.state, drained=drained)
             await self._notify()
 
-    async def _cleanup(self, outcome: Outcome, joblog: JobLog) -> None:
+    async def _cleanup(self, job: QueueJob, outcome: Outcome, joblog: JobLog) -> None:
         plan = outcome.plan
         if plan is None:
             return
@@ -617,7 +694,9 @@ class QueueService:
             paths.append(plan.output_tmp)
         elif outcome.state is not JobState.DONE and await asyncio.to_thread(plan.output_tmp.exists):
             joblog.note(f"The partial output is kept: {plan.output_tmp}")
-        problems = await asyncio.to_thread(files.remove_files, paths)
+        problems = await asyncio.to_thread(
+            files.remove_files, paths, keep=Path(job.settings.source.path)
+        )
         for problem in problems:
             joblog.note(f"Clean-up: {problem}")
 
@@ -674,13 +753,17 @@ class QueueService:
     # ------------------------------------------------------------------ sleep inhibit
 
     async def _hold_inhibit(self, active: ActiveJob, job: QueueJob) -> None:
+        """Take one count for the job (called with ``active.control`` held). The job holds it
+        only once ``acquire`` returned: an ``acquire`` that is cancelled undoes its own count,
+        and the job must then not release one."""
         if active.holds_inhibit or not self._settings().queue.sleep_inhibit:
             return
-        active.holds_inhibit = True
         name = Path(job.settings.source.path).name
         await self._inhibitor.acquire(f"Reframe is encoding {name}")
+        active.holds_inhibit = True
 
     async def _release_inhibit(self, active: ActiveJob) -> None:
+        """Give the job's count back (called with ``active.control`` held)."""
         if not active.holds_inhibit:
             return
         active.holds_inhibit = False
@@ -727,7 +810,7 @@ class QueueService:
         previous = job.state
         job.state = state
         if error is not ...:
-            job.error = error if isinstance(error, str) else None
+            job.error = printable(error) if isinstance(error, str) else None
         await self._save(job)
         self._events.publish(
             JobStateEvent(job_id=job.id, state=state, previous=previous, error=job.error)
