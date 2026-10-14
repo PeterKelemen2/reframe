@@ -1,8 +1,9 @@
 """The ``Reframe`` facade (C-15): the one object that UIs (CLI, server, desktop) talk to.
 
 02 §Cross-cutting rules 5: UIs use this object and ``reframe.models``, never the internal
-modules. M1 wires the services that exist now (tools, sources); the M2 steps add theirs
-(capabilities, presets, jobs, batch, queue, settings) as attributes of :class:`Reframe`.
+modules. M1 wired the services of that milestone (tools, sources); C-4 adds ``capabilities``;
+C-11 adds ``queue``; the other M2 steps add theirs (presets, jobs, batch, settings) as
+attributes of :class:`Reframe`.
 
 Example::
 
@@ -27,20 +28,36 @@ import contextlib
 import logging
 import os
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from stat import S_ISREG
 from types import TracebackType
 
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from reframe import paths
+from reframe.capabilities import CapabilityService
 from reframe.events import EventBus
-from reframe.models.events import ToolsChangedEvent
+from reframe.jobs import JobService
+from reframe.jsonpatch import JsonPatchError, apply_patch
+from reframe.models.events import AppWarningEvent, ToolsChangedEvent
+from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
+from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
+from reframe.models.naming import NamingOptions
+from reframe.models.preset import FieldChange, Preset, PresetFile
 from reframe.models.settings import AppSettings
 from reframe.models.tasks import TaskInfo
+from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.presets import (
+    ConflictPolicy,
+    ImportResult,
+    PresetExport,
+    PresetStore,
+    diff,
+    diff_documents,
+)
 from reframe.probe import (
     ProbeCache,
     ProbeError,
@@ -55,17 +72,24 @@ from reframe.probe.folder import (
     FolderProbeResult,
     probe_folder,
 )
+from reframe.queue import QueueService
+from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken, check_tool, locate_tools
 from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
 
 __all__ = [
     "FolderProbeResult",
+    "ImportResult",
+    "JobService",
+    "PresetService",
     "ProbeError",
     "ProbeErrorKind",
     "Reframe",
     "ReframeClosedError",
     "SettingsGetter",
+    "SettingsService",
+    "SettingsUpdate",
     "SourceService",
     "ToolsService",
     "tool_usable",
@@ -447,37 +471,277 @@ def _tool_error(path: Path, info: ToolInfo) -> ProbeError:
     )
 
 
+# --------------------------------------------------------------------------- settings
+
+#: Called after a settings change took effect: ``(old, new)``.
+SettingsListener = Callable[[AppSettings, AppSettings], None]
+
+#: For annotations inside ``PresetService``, whose ``list`` method hides the builtin there.
+_FieldChanges = list[FieldChange]
+
+_PATCH_ADAPTER: TypeAdapter[list[JsonPatchOp]] = TypeAdapter(list[JsonPatchOp])
+
+
+class SettingsService:
+    """The application settings (C-9): ``<config>/settings.json`` through
+    :class:`~reframe.settings.SettingsStore`.
+
+    :meth:`get` is the one settings getter of every service (``Reframe.settings_snapshot``).
+    :meth:`update` applies a change, saves it and tells the facade, which re-runs tool
+    discovery when a tool path changed and encoder detection when ``encoders.hardware_tests``
+    or ``encoders.vaapi_device`` changed. :attr:`problems` keeps the ``app.warning`` events of
+    the start-up load (a damaged, newer or unreadable file), which were published before any
+    UI could subscribe.
+    """
+
+    def __init__(
+        self,
+        store: SettingsStore,
+        *,
+        initial: AppSettings | None = None,
+        on_change: SettingsListener | None = None,
+    ) -> None:
+        self._store = store
+        self._settings = initial.model_copy(deep=True) if initial is not None else store.load()
+        self._on_change = on_change
+        self._lock = asyncio.Lock()
+
+    @property
+    def path(self) -> Path:
+        """``<config>/settings.json``."""
+        return self._store.path
+
+    @property
+    def problems(self) -> list[AppWarningEvent]:
+        """Warnings of the start-up load and of failed saves (also published as events)."""
+        return self._store.problems
+
+    @property
+    def read_only(self) -> bool:
+        """The file is newer than this Reframe or unreadable: changes are not saved."""
+        return self._store.read_only
+
+    def get(self) -> AppSettings:
+        """The current settings (a copy)."""
+        return self._settings.model_copy(deep=True)
+
+    async def update(
+        self, change: AppSettings | Sequence[JsonPatchOp | Mapping[str, object]]
+    ) -> SettingsUpdate:
+        """Replace the settings (an :class:`AppSettings`) or change them with a JSON patch
+        (RFC 6902, as the ``target="settings"`` fixes carry: ``[{"op": "replace", "path":
+        "/queue/parallel_jobs", "value": 2}]``).
+
+        An invalid change is rejected (``issues``; nothing changes): a value the model rejects
+        or settings nested more than ``MAX_DEPTH`` levels deep (``settings.invalid``), or a
+        change of ``schema_version`` (``settings.schema_version``: Reframe sets it; a newer
+        number would make the next start treat the file as newer and use the defaults). A
+        valid one takes effect at once; when it cannot be saved, ``warnings`` says why
+        (``saved`` is ``False``).
+        """
+        async with self._lock:
+            old = self._settings
+            new = self._apply(old, change)
+            if isinstance(new, ValidationIssue):
+                return SettingsUpdate(settings=old.model_copy(deep=True), issues=[new])
+            if new.schema_version != old.schema_version:
+                issue = ValidationIssue(
+                    severity=Severity.ERROR,
+                    code="settings.schema_version",
+                    path="schema_version",
+                    message="The settings schema version is set by Reframe and cannot be "
+                    f"changed (it is {old.schema_version}).",
+                )
+                return SettingsUpdate(settings=old.model_copy(deep=True), issues=[issue])
+            changes = diff_documents(old.model_dump(mode="json"), new.model_dump(mode="json"))
+            if not changes:
+                return SettingsUpdate(settings=new.model_copy(deep=True), saved=False)
+            warning = await asyncio.to_thread(self._store.write, new)
+            self._settings = new
+            if self._on_change is not None:
+                self._on_change(old, new)
+            return SettingsUpdate(
+                settings=new.model_copy(deep=True),
+                changes=changes,
+                saved=warning is None,
+                warnings=[] if warning is None else [warning],
+            )
+
+    @staticmethod
+    def _apply(
+        current: AppSettings, change: AppSettings | Sequence[JsonPatchOp | Mapping[str, object]]
+    ) -> AppSettings | ValidationIssue:
+        nested = f"the settings would be nested more than {MAX_DEPTH} levels deep"
+        message, path = nested, ""
+        try:
+            if isinstance(change, AppSettings):
+                if not too_deep(change.model_dump(mode="json")):
+                    return change.model_copy(deep=True)
+            else:
+                ops = [
+                    op.model_dump(by_alias=True) if not isinstance(op, Mapping) else op
+                    for op in change
+                ]
+                if not too_deep(ops, MAX_DEPTH + 2):  # the list and the op add two levels
+                    patch = _PATCH_ADAPTER.validate_python(ops)
+                    data = apply_patch(current.model_dump(mode="json"), patch)
+                    if not too_deep(data):
+                        return AppSettings.model_validate(data)
+        except ValidationError as exc:
+            message = validation_detail(exc)
+            path = ".".join(str(part) for part in exc.errors()[0]["loc"]) if exc.errors() else ""
+        except JsonPatchError as exc:
+            message, path = str(exc), ""
+        except (RecursionError, ValueError):  # Pydantic's dump of a value nested far too deep
+            pass
+        return ValidationIssue(
+            severity=Severity.ERROR,
+            code="settings.invalid",
+            path=path,
+            message=f"The settings change is not valid: {message}",
+        )
+
+
+# --------------------------------------------------------------------------- presets
+
+
+class PresetService:
+    """Built-in and user presets (C-9) through :class:`~reframe.presets.PresetStore`.
+
+    Reading is synchronous (the file is read once, at the first use). Changes are async: the
+    file is written in a worker thread. Expected failures (a name clash, a built-in that
+    cannot change, a file that cannot be written) come back as a
+    :class:`~reframe.models.ValidationIssue`, never as an exception.
+    """
+
+    def __init__(self, store: PresetStore) -> None:
+        self._store = store
+
+    @property
+    def store(self) -> PresetStore:
+        return self._store
+
+    @property
+    def problems(self) -> list[AppWarningEvent]:
+        """Warnings of loading ``presets.json`` and of failed writes (also published)."""
+        return self._store.problems
+
+    def list(self) -> list[Preset]:
+        """Built-ins first (in their order), then the user presets."""
+        return self._store.list()
+
+    def get(self, preset_id: str) -> Preset | None:
+        return self._store.get(preset_id)
+
+    def find(self, name_or_id: str) -> Preset | None:
+        """By id, else by name without case (user presets first)."""
+        return self._store.find(name_or_id)
+
+    def default(self) -> Preset:
+        return self._store.default()
+
+    def export(self, ids: Sequence[str] | None = None) -> PresetExport:
+        """The presets (``None``: every user preset). ``document()`` is the export file;
+        presets of a newer Reframe are in it unchanged, each with a warning in ``issues``."""
+        return self._store.export(ids)
+
+    def diff(self, template: JobTemplate, preset: Preset | str) -> _FieldChanges | None:
+        """What ``template`` changes against ``preset`` (a preset or its id); ``None`` when
+        the id is unknown."""
+        if isinstance(preset, str):
+            found = self._store.get(preset)
+            if found is None:
+                return None
+            preset = found
+        return diff(template, preset)
+
+    async def create(
+        self, template: JobTemplate, name: str, *, category: str = "Custom", description: str = ""
+    ) -> Preset | ValidationIssue:
+        return await asyncio.to_thread(
+            self._store.create, template, name, category=category, description=description
+        )
+
+    async def save(self, preset: Preset) -> Preset | ValidationIssue:
+        return await asyncio.to_thread(self._store.save, preset)
+
+    async def rename(self, preset_id: str, name: str) -> Preset | ValidationIssue:
+        return await asyncio.to_thread(self._store.rename, preset_id, name)
+
+    async def delete(self, preset_id: str) -> Preset | ValidationIssue:
+        return await asyncio.to_thread(self._store.delete, preset_id)
+
+    async def duplicate(self, preset_id: str, name: str | None = None) -> Preset | ValidationIssue:
+        return await asyncio.to_thread(self._store.duplicate, preset_id, name)
+
+    async def set_default(self, preset_id: str | None) -> Preset | ValidationIssue:
+        return await asyncio.to_thread(self._store.set_default, preset_id)
+
+    async def import_(
+        self,
+        file: PresetFile | PresetExport | Mapping[str, object],
+        on_conflict: ConflictPolicy = "rename",
+    ) -> ImportResult:
+        return await asyncio.to_thread(self._store.import_, file, on_conflict)
+
+
 # --------------------------------------------------------------------------- facade
 
 
 class Reframe:
     """The Reframe core as one object (C-15). Create it with ``await Reframe.create()``.
 
-    Services that exist now (M1):
+    Services that exist now:
 
-    - :attr:`events` — the async event bus (``tools.changed``, ``task.progress``,
-      ``task.done``).
+    - :attr:`events` — the async event bus (``tools.changed``, ``capabilities.changed``,
+      ``task.progress``, ``task.done``).
     - :attr:`tools` — :class:`ToolsService`: tool status, versions, re-scan (C-1).
+    - :attr:`capabilities` — :class:`~reframe.capabilities.CapabilityService`: encoder
+      statuses (``snapshot`` never waits, ``wait``, ``rescan``, ``closest_available``),
+      detected in the background with a cache under ``<cache dir>/capabilities`` (C-4).
     - :attr:`sources` — :class:`SourceService`: ``probe``, ``probe_folder``, ``get`` (C-3).
     - :attr:`tasks` — the background task manager (``get``, ``list``, ``cancel``, ``wait``,
       ``value``) for the tasks that the services start.
+    - :attr:`settings` — :class:`SettingsService`: ``get``, ``update``, ``problems`` (C-9).
+    - :attr:`presets` — :class:`PresetService`: built-in and user presets, the default,
+      export / import, ``diff`` (C-9).
+    - :attr:`jobs` — :class:`~reframe.jobs.JobService`: ``draft`` a job from a source and a
+      preset, ``validate`` it (waiting a bounded time for encoder detection), ``plan`` it,
+      ``name`` a path, ``media_files`` of files and folders (C-15).
+    - :attr:`queue` — :class:`~reframe.queue.QueueService`: the encode queue (``add``,
+      ``list``, ``start``, ``pause``, ``resume``, ``cancel``, ``retry``, ``wait``, logs),
+      saved in ``<data dir>/queue.sqlite3`` (C-11).
 
-    The M2 steps add ``capabilities`` (C-4), ``presets`` (C-8), ``settings`` (C-9),
-    ``jobs`` (C-7, C-11), ``batch`` (C-12) and ``queue`` (C-11).
+    The other M2 steps add ``batch`` (C-12).
 
-    **Settings.** Every service reads the settings through :meth:`settings_snapshot` (one
-    :data:`SettingsGetter`). Until the settings store exists (C-9) these are the
-    ``AppSettings()`` defaults; C-9 replaces :meth:`_load_settings` and the getter. The tool
-    paths in the settings feed tool discovery.
+    **Settings.** ``<config>/settings.json`` is read in :meth:`create` (a damaged, newer or
+    unreadable file gives an ``app.warning``, kept in ``settings.problems``). Every service
+    reads the settings through :meth:`settings_snapshot` (one :data:`SettingsGetter`). A
+    change through ``settings.update`` takes effect at once; a changed tool path re-runs tool
+    discovery, and a changed ``encoders.hardware_tests`` or ``encoders.vaapi_device`` re-runs
+    encoder detection, both in the background.
+
+    **Queue.** The queue opens ``<data dir>/queue.sqlite3`` at its first use, not in
+    :meth:`create` (decision 0027): the process that takes the lock ``queue.lock`` owns the
+    saved queue and restores it (jobs that were running become ``interrupted``); another
+    process gets a private queue in memory and an ``app.warning``. The queue is not started
+    (``queue.start()``). :meth:`close` stops the running jobs first (they end
+    ``interrupted``, their ``.part`` files removed) and frees the lock.
 
     Use ``async with await Reframe.create() as app:`` or call :meth:`close` at the end:
-    it cancels running tasks and probes (killing their processes) and closes the event bus.
+    it stops the queue, cancels running tasks, probes and the encoder detection (killing their
+    processes) and closes the event bus.
     """
 
     events: EventBus
     tasks: TaskManager
     tools: ToolsService
+    capabilities: CapabilityService
     sources: SourceService
+    settings: SettingsService
+    presets: PresetService
+    jobs: JobService
+    queue: QueueService
 
     def __init__(
         self,
@@ -485,23 +749,60 @@ class Reframe:
         config_dir: Path,
         data_dir: Path,
         cache_dir: Path,
-        settings: AppSettings,
+        settings: AppSettings | None = None,
     ) -> None:
-        """Wire the services without starting anything. Use :meth:`create` instead."""
+        """Wire the services without starting anything. Use :meth:`create` instead.
+
+        ``settings``: the settings to start with instead of reading ``settings.json`` (they
+        are saved there at the first change).
+        """
         self.config_dir = config_dir
         self.data_dir = data_dir
         self.cache_dir = cache_dir
-        self._settings = settings
         self._closed = False
+        self._reactions: set[asyncio.Task[None]] = set()
         self.events = EventBus()
+        self.settings = SettingsService(
+            SettingsStore(config_dir, self.events),
+            initial=settings,
+            on_change=self._settings_changed,
+        )
+        self.presets = PresetService(PresetStore(config_dir, self.events))
         self.tasks = TaskManager(self.events)
         roots = paths.bundled_tool_roots(environ={**os.environ, paths.DATA_DIR_ENV: str(data_dir)})
         self.tools = ToolsService(self.events, self.settings_snapshot, bundled_roots=roots)
+        self.capabilities = CapabilityService(
+            self.events, self.tools, self.settings_snapshot, cache_dir=cache_dir / "capabilities"
+        )
         self.sources = SourceService(
             self.tools,
             self.tasks,
             ProbeCache(cache_dir / "probe"),
             is_closed=lambda: self._closed,
+        )
+        self.jobs = JobService(
+            sources=self.sources,
+            presets=self.presets,
+            tools=self.tools,
+            capabilities=self.capabilities,
+            settings=self.settings_snapshot,
+        )
+
+        presets = self.presets
+
+        def preset_naming(job: JobSettings) -> NamingOptions | None:
+            """The naming options of the job's preset (``None``: Settings → Output)."""
+            preset = presets.get(job.preset_id) if job.preset_id is not None else None
+            return preset.naming if preset is not None else None
+
+        self.queue = QueueService(
+            self.events,
+            self.settings_snapshot,
+            data_dir=data_dir,
+            tools=self.tools,
+            capabilities=self.capabilities,
+            sources=self.sources,
+            naming=preset_naming,
         )
 
     @classmethod
@@ -512,7 +813,9 @@ class Reframe:
         *,
         cache_dir: Path | None = None,
     ) -> Reframe:
-        """Create the facade and start tool discovery in the background. Returns at once.
+        """Create the facade and start tool discovery and encoder detection in the
+        background. Returns at once. The saved queue is not opened here: the queue opens it at
+        its first use (decision 0027).
 
         The folders default to :mod:`reframe.paths` (``REFRAME_CONFIG_DIR``,
         ``REFRAME_DATA_DIR``, ``REFRAME_CACHE_DIR`` or the platform folders). ``data_dir``
@@ -525,30 +828,67 @@ class Reframe:
         settings = cls._load_settings(config)
         app = cls(config_dir=config, data_dir=data, cache_dir=cache, settings=settings)
         app.tools.start()
+        app.capabilities.start()
         return app
 
     @staticmethod
-    def _load_settings(config_dir: Path) -> AppSettings:
-        """The settings at start. C-9 replaces this with its store (``settings.json``)."""
+    def _load_settings(config_dir: Path) -> AppSettings | None:
+        """Settings to start with instead of ``<config>/settings.json`` (a test hook).
+        ``None``, the default: the settings store reads the file."""
         del config_dir
-        return AppSettings()
+        return None
 
     def settings_snapshot(self) -> AppSettings:
         """The current settings (a copy). The one place where the services read them."""
-        return self._settings.model_copy(deep=True)
+        return self.settings.get()
+
+    def _settings_changed(self, old: AppSettings, new: AppSettings) -> None:
+        """React to a settings change: tool discovery for tool paths, encoder detection for
+        the hardware-test settings. Runs in the background; :meth:`close` cancels it."""
+        tools = old.tools.model_dump(mode="json") != new.tools.model_dump(mode="json")
+        encoders = (old.encoders.hardware_tests, old.encoders.vaapi_device) != (
+            new.encoders.hardware_tests,
+            new.encoders.vaapi_device,
+        )
+        if self._closed or not (tools or encoders):
+            return
+        task = asyncio.get_running_loop().create_task(
+            self._react(tools=tools, encoders=encoders), name="reframe-settings-changed"
+        )
+        self._reactions.add(task)
+        task.add_done_callback(self._reactions.discard)
+
+    async def _react(self, *, tools: bool, encoders: bool) -> None:
+        try:
+            if tools:
+                await self.tools.rescan()
+            if encoders:
+                await self.capabilities.rescan()
+        except ReframeClosedError:
+            pass
+        except Exception:  # pragma: no cover - a bug in a service; never kill the loop
+            log.exception("reacting to a settings change failed")
 
     @property
     def closed(self) -> bool:
         return self._closed
 
     async def close(self) -> None:
-        """Stop everything: cancel tool discovery, running tasks and probes (their process
+        """Stop everything: the queue (running jobs end ``interrupted``, the store is
+        flushed), tool discovery, encoder detection, running tasks and probes (their process
         trees are killed), then close the event bus. Safe to call more than once."""
         if self._closed:
             return
         self._closed = True
         try:
+            reactions = [task for task in self._reactions if not task.done()]
+            for task in reactions:
+                task.cancel()
+            if reactions:
+                await asyncio.wait(reactions)
+            await self.queue.close()  # first: its jobs use the tools, sources and capabilities
             await self.tasks.close()  # first: a task may be waiting for tool discovery
+            await self.capabilities.close()  # kills test encodes; may wait for discovery too
             await self.tools.close()  # a probe() waiting for discovery returns "cancelled"
             await self.sources.close()
         finally:

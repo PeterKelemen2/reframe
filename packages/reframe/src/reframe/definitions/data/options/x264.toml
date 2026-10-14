@@ -1,0 +1,321 @@
+# x264 advanced options (C-6, M2 basic set; M9 completes 03 §Advanced's coverage list).
+#
+# Every option goes into `-x264-params` (x26x_param). The per-preset defaults are what x264
+# itself writes into the stream (the "x264 - core … options:" SEI) for `-preset <p>` with no
+# tune, FFmpeg n9.0.2 / x264 core 165; `tunes` lists the tunes that change the value.
+# tests/definitions/test_tools.py encodes every preset again and compares.
+
+[[set.x264]]
+key = "bframes"
+label = "B-frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Maximum number of consecutive B-frames. More B-frames compress better; 3 is typical, 5–8 helps animation. Little speed cost."
+mapping = { kind = "x26x_param", name = "bframes" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { ultrafast = 0, superfast = 3, veryfast = 3, faster = 3, fast = 3, medium = 3, slow = 3, slower = 3, veryslow = 8, placebo = 16 } }
+
+[[set.x264]]
+key = "b-adapt"
+label = "Adaptive B-frames"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "0", label = "Off", help = "Always use the maximum number of B-frames." },
+    { value = "1", label = "Fast" },
+    { value = "2", label = "Optimal", help = "Slower, better with many B-frames." },
+]
+help = "How x264 decides where to place B-frames."
+mapping = { kind = "x26x_param", name = "b-adapt" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = "1", veryfast = "1", faster = "1", fast = "1", medium = "1", slow = "1", slower = "2", veryslow = "2", placebo = "2" } }
+
+[[set.x264]]
+key = "b-pyramid"
+label = "B-pyramid"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "strict", label = "Strict", help = "Blu-ray compatible." },
+    { value = "normal", label = "Normal" },
+]
+help = "Lets B-frames be used as references. Improves compression; Strict is required for Blu-ray."
+mapping = { kind = "x26x_param", name = "b-pyramid" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = "normal", veryfast = "normal", faster = "normal", fast = "normal", medium = "normal", slow = "normal", slower = "normal", veryslow = "normal", placebo = "normal" } }
+
+[[set.x264]]
+key = "ref"
+label = "Reference frames"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 16
+step = 1
+unit = "frames"
+help = "How many earlier frames a frame can reference. More helps animation and static scenes, costs speed; old players limit it (level)."
+mapping = { kind = "x26x_param", name = "ref" }
+default = { kind = "preset", tunes = ["animation"], values = { ultrafast = 1, superfast = 1, veryfast = 1, faster = 2, fast = 2, medium = 3, slow = 5, slower = 8, veryslow = 16, placebo = 16 } }
+
+[[set.x264]]
+key = "keyint"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps; smaller values help seeking and cost size."
+mapping = { kind = "x26x_param", name = "keyint" }
+default = { kind = "fixed", value = 250 }
+
+[[set.x264]]
+key = "min-keyint"
+label = "Minimum keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Minimum distance between keyframes at scene cuts. Auto is a tenth of the keyframe interval, at most the frame rate."
+mapping = { kind = "x26x_param", name = "min-keyint" }
+default = { kind = "encoder", note = "auto: keyint / 10, at most the frame rate" }
+
+[[set.x264]]
+key = "scenecut"
+label = "Scene cut threshold"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 100
+step = 1
+help = "How eagerly a keyframe is placed at a scene change. 0 turns scene-cut detection off."
+mapping = { kind = "x26x_param", name = "scenecut" }
+default = { kind = "preset", values = { ultrafast = 0, superfast = 40, veryfast = 40, faster = 40, fast = 40, medium = 40, slow = 40, slower = 40, veryslow = 40, placebo = 40 } }
+
+[[set.x264]]
+key = "rc-lookahead"
+label = "Rate-control look-ahead"
+category = "Rate control"
+type = "int"
+min = 0
+max = 250
+step = 1
+unit = "frames"
+help = "Frames analysed ahead for macroblock-tree and frame types. More is better and uses more memory; 40–60 is typical."
+mapping = { kind = "x26x_param", name = "rc-lookahead" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { veryfast = 10, faster = 20, fast = 30, medium = 40, slow = 50, slower = 60, veryslow = 60, placebo = 60 } }
+
+[[set.x264]]
+key = "weightp"
+label = "Weighted P-frames"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "Simple" },
+    { value = "2", label = "Smart", help = "Best for fades." },
+]
+help = "Weighted prediction for P-frames: improves fades. Off for some old hardware decoders."
+mapping = { kind = "x26x_param", name = "weightp" }
+default = { kind = "preset", tunes = ["fastdecode"], values = { ultrafast = "0", superfast = "1", veryfast = "1", faster = "1", fast = "1", medium = "2", slow = "2", slower = "2", veryslow = "2", placebo = "2" } }
+
+[[set.x264]]
+key = "aq-mode"
+label = "Adaptive quantisation"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "Variance" },
+    { value = "2", label = "Auto-variance" },
+    { value = "3", label = "Auto-variance, dark scenes", help = "Spends more bits on dark areas." },
+]
+help = "Moves bits from detailed areas to flat areas, where blocking would be visible."
+mapping = { kind = "x26x_param", name = "aq-mode" }
+default = { kind = "preset", tunes = ["psnr", "ssim"], values = { ultrafast = "0", superfast = "1", veryfast = "1", faster = "1", fast = "1", medium = "1", slow = "1", slower = "1", veryslow = "1", placebo = "1" } }
+
+[[set.x264]]
+key = "aq-strength"
+label = "AQ strength"
+category = "Rate control"
+type = "float"
+min = 0
+max = 3
+step = 0.05
+help = "How strongly adaptive quantisation acts. 0.5–1.3 is typical; lower keeps grain, higher fights blocking in flat areas."
+mapping = { kind = "x26x_param", name = "aq-strength" }
+requires = [{ field = "option:aq-mode", op = "ne", value = "0" }]
+default = { kind = "preset", tunes = ["animation", "grain", "psnr", "ssim", "stillimage"], values = { superfast = 1.0, veryfast = 1.0, faster = 1.0, fast = 1.0, medium = 1.0, slow = 1.0, slower = 1.0, veryslow = 1.0, placebo = 1.0 } }
+
+[[set.x264]]
+key = "mbtree"
+label = "Macroblock tree"
+category = "Rate control"
+type = "bool"
+help = "Gives more quality to parts of the picture that later frames reference. Better compression; can flatten grain."
+mapping = { kind = "x26x_param", name = "mbtree" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = false, superfast = false, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "qcomp"
+label = "Quantiser curve compression"
+category = "Rate control"
+type = "float"
+min = 0
+max = 1
+step = 0.05
+help = "0 is constant bitrate, 1 constant quantiser. Higher values keep more detail in complex scenes (grain tune: 0.8)."
+mapping = { kind = "x26x_param", name = "qcomp" }
+default = { kind = "fixed", value = 0.6 }
+
+[[set.x264]]
+key = "vbv-maxrate"
+label = "VBV maximum rate"
+category = "Rate control"
+type = "int"
+min = 0
+max = 300000
+step = 1
+unit = "kb/s"
+help = "Peak bitrate for players with a bitrate limit (set together with the VBV buffer). 0 = no limit."
+mapping = { kind = "x26x_param", name = "vbv-maxrate" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x264]]
+key = "vbv-bufsize"
+label = "VBV buffer size"
+category = "Rate control"
+type = "int"
+min = 0
+max = 300000
+step = 1
+unit = "kb"
+help = "Decoder buffer for the VBV maximum rate. 0 = no limit."
+mapping = { kind = "x26x_param", name = "vbv-bufsize" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x264]]
+key = "psy-rd"
+label = "Psy-RD strength"
+category = "Psycho-visual"
+type = "float"
+min = 0
+max = 2
+step = 0.05
+help = "Keeps detail and texture instead of a smooth, blurry picture. 1.0 is the default; 0.4 for animation."
+mapping = { kind = "x26x_param", name = "psy-rd", part = 0 }
+default = { kind = "preset", tunes = ["animation", "psnr", "ssim", "stillimage"], values = { ultrafast = 1.0, superfast = 1.0, veryfast = 1.0, faster = 1.0, fast = 1.0, medium = 1.0, slow = 1.0, slower = 1.0, veryslow = 1.0, placebo = 1.0 } }
+
+[[set.x264]]
+key = "psy-trellis"
+label = "Psy-trellis strength"
+category = "Psycho-visual"
+type = "float"
+min = 0
+max = 1
+step = 0.05
+help = "Keeps grain and fine noise (needs trellis). 0.15 for film, 0.25 for grain."
+mapping = { kind = "x26x_param", name = "psy-rd", part = 1 }
+default = { kind = "preset", tunes = ["film", "grain", "psnr", "ssim", "stillimage"], values = { ultrafast = 0.0, superfast = 0.0, veryfast = 0.0, faster = 0.0, fast = 0.0, medium = 0.0, slow = 0.0, slower = 0.0, veryslow = 0.0, placebo = 0.0 } }
+
+[[set.x264]]
+key = "deblock-alpha"
+label = "Deblock strength"
+category = "Loop filters"
+type = "int"
+min = -6
+max = 6
+step = 1
+help = "In-loop deblocking strength. Negative keeps more detail (film -1, grain -2), positive gives a smoother picture (animation +1)."
+mapping = { kind = "x26x_param", name = "deblock", part = 0 }
+default = { kind = "preset", tunes = ["animation", "film", "grain", "stillimage"], values = { ultrafast = 0, superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 0, veryslow = 0, placebo = 0 } }
+
+[[set.x264]]
+key = "deblock-beta"
+label = "Deblock threshold"
+category = "Loop filters"
+type = "int"
+min = -6
+max = 6
+step = 1
+help = "Which edges deblocking treats as block edges. Usually set to the same value as the strength."
+mapping = { kind = "x26x_param", name = "deblock", part = 1 }
+default = { kind = "preset", tunes = ["animation", "film", "grain", "stillimage"], values = { ultrafast = 0, superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 0, veryslow = 0, placebo = 0 } }
+
+[[set.x264]]
+key = "me"
+label = "Motion estimation"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "dia", label = "Diamond", help = "Fastest." },
+    { value = "hex", label = "Hexagon" },
+    { value = "umh", label = "Uneven multi-hexagon", help = "Good quality, moderate cost." },
+    { value = "esa", label = "Exhaustive", help = "Very slow." },
+    { value = "tesa", label = "Transformed exhaustive", help = "Slowest." },
+]
+help = "Motion search method."
+mapping = { kind = "x26x_param", name = "me" }
+default = { kind = "preset", values = { ultrafast = "dia", superfast = "dia", veryfast = "hex", faster = "hex", fast = "hex", medium = "hex", slow = "hex", slower = "umh", veryslow = "umh", placebo = "tesa" } }
+
+[[set.x264]]
+key = "subme"
+label = "Subpixel refinement"
+category = "Motion / analysis"
+type = "int"
+min = 0
+max = 11
+step = 1
+# x264 core 165: subme 10 and 11 need trellis=2; with a lower trellis x264 writes subme=9
+# into the stream without a message (also for the veryslow and placebo presets with
+# trellis 0 or 1). A rule across two options: validation (C-8) checks it.
+help = "Quality of the motion and mode decisions. 7–9 is a good balance; 10 and 11 are slow and need Trellis set to Always (with a lower trellis x264 uses 9)."
+mapping = { kind = "x26x_param", name = "subme" }
+default = { kind = "preset", values = { ultrafast = 0, superfast = 1, veryfast = 2, faster = 4, fast = 6, medium = 7, slow = 8, slower = 9, veryslow = 10, placebo = 11 } }
+
+[[set.x264]]
+key = "merange"
+label = "Motion search range"
+category = "Motion / analysis"
+type = "int"
+min = 4
+max = 64
+step = 1
+unit = "pixels"
+help = "How far the motion search looks. 16 is enough for most video; 24–32 for fast motion at high resolution."
+mapping = { kind = "x26x_param", name = "merange" }
+default = { kind = "preset", values = { ultrafast = 16, superfast = 16, veryfast = 16, faster = 16, fast = 16, medium = 16, slow = 16, slower = 16, veryslow = 24, placebo = 24 } }
+
+[[set.x264]]
+key = "trellis"
+label = "Trellis quantisation"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "Final encode only" },
+    { value = "2", label = "Always", help = "Slower, a little smaller." },
+]
+help = "Rate-distortion optimised quantisation. Subpixel refinement 10 and 11 need Always: with a lower setting x264 uses subpixel refinement 9."
+mapping = { kind = "x26x_param", name = "trellis" }
+default = { kind = "preset", values = { ultrafast = "0", superfast = "0", veryfast = "0", faster = "1", fast = "1", medium = "1", slow = "2", slower = "2", veryslow = "2", placebo = "2" } }
+
+[[set.x264]]
+key = "direct"
+label = "Direct prediction"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "none", label = "None" },
+    { value = "spatial", label = "Spatial" },
+    { value = "temporal", label = "Temporal" },
+    { value = "auto", label = "Auto" },
+]
+help = "How motion vectors of B-frames are predicted."
+mapping = { kind = "x26x_param", name = "direct" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = "spatial", veryfast = "spatial", faster = "spatial", fast = "spatial", medium = "spatial", slow = "auto", slower = "auto", veryslow = "auto", placebo = "auto" } }

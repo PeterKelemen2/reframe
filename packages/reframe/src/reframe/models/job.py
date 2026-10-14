@@ -151,14 +151,22 @@ class JobNaming(DocumentModel):
 
     ``mode="manual"`` uses ``manual_name`` (*Reset to template* sets ``mode`` back).
     ``template`` and ``name_source`` override the preset's naming options for this job only
-    (``None`` = use them). C-16 adds the parsed-name fields next to these.
+    (``None`` = use them). ``field_overrides`` holds the parsed-name fields that the user
+    corrected for this file (03 §Naming editor, 04 §Per-file overrides).
     """
 
     mode: Literal["template", "manual"] = "template"
     manual_name: str | None = None
     """File name without folder; the extension comes from the container."""
     template: str | None = None
+    """Used for movies and episodes alike (it replaces both templates of the options)."""
     name_source: NameSource | None = None
+    field_overrides: dict[str, str] = Field(default_factory=dict)
+    """Parsed-name fields corrected for this file, by variable name: ``name``,
+    ``main_title``, ``sub_title``, ``season``, ``episode``, ``episode_code``, ``year``,
+    ``edition``, ``source_type``, ``release_group``. They replace what the parser found;
+    ``""`` clears a field. Numbers are written as text (``"3"``). Unknown names and bad
+    numbers are naming issues, not load errors."""
 
 
 class OutputSettings(OutputOptions):
@@ -180,8 +188,15 @@ class FilterConfig(DocumentModel):
     :class:`FilterSettings` at all."""
 
     preset: str = "default"
+    """A preset of the chosen implementation (``FilterImplementation.presets`` in C-6)."""
     tune: str | None = None
     custom: str | None = None
+    implementation: str | None = None
+    """The FFmpeg implementation (C-6 ``FilterImplementation.id``): ``nlmeans`` or
+    ``hqdn3d`` for Denoise, ``bwdif`` or ``yadif`` for Deinterlace, ``unsharp`` or ``cas``
+    for Sharpen, ``zscale`` or ``libplacebo`` for Colorspace and Tone mapping. ``None`` = the
+    filter's default: the first implementation the FFmpeg build can run (HandBrake stores
+    this choice separately too, for example ``PictureDenoiseFilter``)."""
 
 
 class FilterSettings(RootModel[dict[str, FilterConfig]]):

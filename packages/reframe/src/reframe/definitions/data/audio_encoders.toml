@@ -1,0 +1,240 @@
+# Audio encoders (C-6). Table key = FFmpeg encoder name.
+#
+# M2 contract (docs/m2-breakdown.md): identity only, so that C-4 lists every audio encoder in
+# the capability snapshot. C-6 owns this file and adds bitrates per mixdown, allowed bitrate
+# values, sample rates and passthru data. libfdk_aac is not in the GPL builds; it is listed so
+# that a preset that names it gets "not in this build" instead of "unknown encoder".
+#
+# ---------------------------------------------------------------------- C-6 additions
+#
+# Bitrates (kb/s, for 44.1 / 48 kHz output) follow HandBrake 1.11.2 libhb/common.c:
+# - limits: `hb_audio_bitrate_get_limits` (per full-band channel and LFE), rounded up to the
+#   next allowed value for the fixed-step encoders;
+# - defaults: `hb_audio_bitrate_get_default` (AC-3 96/224/640, E-AC-3 384/768/1536, AAC and
+#   MP3 80 per channel, Opus 96 per coupled pair + 64 per single channel), snapped down to
+#   HandBrake's bitrate list as HandBrake does;
+# - AC-3, E-AC-3 and MP3 use fixed steps; AAC and Opus a free range (03 §Audio).
+# Real FFmpeg n9.0.2 behaviour (tests/definitions/test_tools.py, testdata/README.md):
+# - `ac3` accepts any `-b:a` and silently snaps to the AC-3 rates (150k → 160k, 700k → 640k);
+#   5.1 needs at least 40k. `eac3` accepts 24k–6144k (7000k fails).
+# - `libmp3lame` snaps to the MPEG-1 Layer III rates at 32–48 kHz (150k → 160k).
+# - `aac` clamps above 6144 bits per frame per channel ("Too many bits … clamping to max").
+# - `libopus` accepts 0.5k up to 256k per channel ("between 500 and 512000" for stereo).
+# - FFmpeg cannot encode 7.1 to AC-3, E-AC-3 or MP3: it negotiates 5.1(side) / stereo.
+# - Sample rates: `ffmpeg -h encoder=<id>` ("Supported sample rates"); a rate the encoder
+#   does not list fails ("Specified sample rate 44100 is not supported by the libopus
+#   encoder").
+
+[encoder.aac]
+label = "AAC"
+codec = "aac"
+# --- C-6
+help = "FFmpeg's native AAC encoder. Plays everywhere; fine at 128–160 kb/s stereo."
+max_channels = 8
+mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
+samplerates = [7350, 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000]
+passthru = "aac"
+
+[encoder.aac.bitrate.by_mixdown]
+mono = { min = 32, max = 256, default = 80 }
+stereo = { min = 64, max = 512, default = 160 }
+dpl2 = { min = 64, max = 512, default = 160 }
+"5.1" = { min = 192, max = 1536, default = 384 }
+"7.1" = { min = 256, max = 2048, default = 512 }
+
+[encoder.libfdk_aac]
+label = "AAC (FDK)"
+codec = "aac"
+# --- C-6
+help = "Fraunhofer FDK AAC: better than FFmpeg's AAC at low bitrates. Not in GPL builds of FFmpeg (licence), so not in the bundled build."
+in_gpl_builds = false
+# Decision 0020: a preset that names libfdk_aac falls back to FFmpeg's AAC.
+fallback = ["aac"]
+max_channels = 8
+mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
+# Not verified against a real build (not in the GPL builds): from FFmpeg's libfdk-aacenc.c.
+samplerates = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000]
+passthru = "aac"
+
+[encoder.libfdk_aac.bitrate.by_mixdown]
+mono = { min = 32, max = 288, default = 80 }
+stereo = { min = 64, max = 576, default = 160 }
+dpl2 = { min = 64, max = 576, default = 160 }
+"5.1" = { min = 160, max = 1440, default = 384 }
+"7.1" = { min = 224, max = 2016, default = 512 }
+
+[encoder.libfdk_aac.quality]
+arg = "-vbr"
+min = 1
+max = 5
+step = 1
+default = 3
+direction = "higher_is_better"
+help = "VBR mode 1 (smallest) to 5 (best); HandBrake's default is 3."
+
+[encoder.ac3]
+label = "AC-3"
+codec = "ac3"
+# --- C-6
+help = "Dolby Digital. For older home-cinema receivers; up to 5.1 and 640 kb/s."
+max_channels = 6
+mixdowns = ["mono", "stereo", "dpl2", "5.1"]
+samplerates = [32000, 44100, 48000]
+passthru = "ac3"
+
+[encoder.ac3.bitrate]
+allowed = [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 576, 640]
+
+[encoder.ac3.bitrate.by_mixdown]
+mono = { min = 48, max = 640, default = 96 }
+stereo = { min = 96, max = 640, default = 224 }
+dpl2 = { min = 96, max = 640, default = 224 }
+"5.1" = { min = 224, max = 640, default = 640 }
+
+[encoder.eac3]
+label = "E-AC-3"
+codec = "eac3"
+# --- C-6
+help = "Dolby Digital Plus. FFmpeg's encoder handles up to 5.1."
+max_channels = 6
+mixdowns = ["mono", "stereo", "dpl2", "5.1"]
+samplerates = [32000, 44100, 48000]
+passthru = "eac3"
+
+[encoder.eac3.bitrate]
+# HandBrake's bitrate list from 32 kb/s up (its AC-3 steps plus 768 … 6144).
+allowed = [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 576, 640, 768, 960, 1152, 1344, 1536, 2304, 3072, 4608, 6144]
+
+[encoder.eac3.bitrate.by_mixdown]
+mono = { min = 48, max = 6144, default = 384 }
+stereo = { min = 96, max = 6144, default = 768 }
+dpl2 = { min = 96, max = 6144, default = 768 }
+"5.1" = { min = 224, max = 6144, default = 1536 }
+
+[encoder.libopus]
+label = "Opus"
+codec = "opus"
+# --- C-6
+help = "The most efficient lossy codec: transparent at about 96 kb/s stereo. MKV, WebM and MP4."
+max_channels = 8
+mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
+samplerates = [8000, 12000, 16000, 24000, 48000]
+passthru = "opus"
+
+[encoder.libopus.bitrate.by_mixdown]
+mono = { min = 6, max = 256, default = 64 }
+stereo = { min = 12, max = 512, default = 96 }
+dpl2 = { min = 12, max = 512, default = 96 }
+"5.1" = { min = 36, max = 1536, default = 320 }
+"7.1" = { min = 48, max = 2048, default = 384 }
+
+[encoder.flac]
+label = "FLAC"
+codec = "flac"
+# --- C-6
+help = "Lossless. For archiving; the files are large."
+lossless = true
+max_channels = 8
+mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
+# The flac encoder lists no sample rates; these are the common ones (all encode).
+samplerates = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 88200, 96000, 176400, 192000]
+passthru = "flac"
+
+[encoder.libmp3lame]
+label = "MP3"
+codec = "mp3"
+# --- C-6
+help = "LAME MP3. Only for very old players; mono and stereo only."
+max_channels = 2
+mixdowns = ["mono", "stereo", "dpl2"]
+samplerates = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000]
+passthru = "mp3"
+
+[encoder.libmp3lame.bitrate]
+allowed = [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
+
+[encoder.libmp3lame.bitrate.by_mixdown]
+mono = { min = 32, max = 320, default = 80 }
+stereo = { min = 32, max = 320, default = 160 }
+dpl2 = { min = 32, max = 320, default = 160 }
+
+[encoder.libmp3lame.quality]
+arg = "-q:a"
+min = 0
+max = 9
+step = 0.5
+default = 2
+direction = "lower_is_better"
+help = "LAME VBR quality: 0 is the best (about 245 kb/s), 9 the smallest. HandBrake's default is 2."
+
+# --------------------------------------------------------------------------- mixdowns
+
+[mixdown.mono]
+label = "Mono"
+channels = 1
+layout = "mono"
+
+[mixdown.stereo]
+label = "Stereo"
+channels = 2
+layout = "stereo"
+
+[mixdown.dpl2]
+label = "Dolby Pro Logic II"
+channels = 2
+layout = "stereo"
+matrix_encoding = "dplii"
+
+[mixdown."5.1"]
+label = "5.1"
+channels = 6
+lfe = 1
+layout = "5.1"
+
+[mixdown."7.1"]
+label = "7.1"
+channels = 8
+lfe = 1
+layout = "7.1"
+
+# --------------------------------------------------------------------------- passthru
+# 03 §Audio defaults part 3; matched on the source track's ffprobe codec_name and profile
+# (the profile names are those of reframe.probe.names).
+
+[passthru.ac3]
+label = "AC-3"
+codec_name = "ac3"
+
+[passthru.eac3]
+label = "E-AC-3"
+codec_name = "eac3"
+
+[passthru.dts]
+label = "DTS"
+codec_name = "dts"
+exclude_profiles = ["DTS-HD HRA", "DTS-HD MA", "DTS-HD MA + DTS:X", "DTS-HD MA + DTS:X IMAX", "DTS Express"]
+
+[passthru.dtshd]
+label = "DTS-HD"
+codec_name = "dts"
+profiles = ["DTS-HD HRA", "DTS-HD MA", "DTS-HD MA + DTS:X", "DTS-HD MA + DTS:X IMAX"]
+
+[passthru.truehd]
+label = "TrueHD"
+codec_name = "truehd"
+
+[passthru.aac]
+label = "AAC"
+codec_name = "aac"
+
+[passthru.mp3]
+label = "MP3"
+codec_name = "mp3"
+
+[passthru.flac]
+label = "FLAC"
+codec_name = "flac"
+
+[passthru.opus]
+label = "Opus"
+codec_name = "opus"

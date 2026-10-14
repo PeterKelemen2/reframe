@@ -1,0 +1,4 @@
+[VAAPI @ 0x55e210a44c80] Failed to initialise VAAPI connection: -1 (unknown libva error).
+Device creation failed: -5.
+Failed to set value 'vaapi=va:/dev/dri/renderD128' for option 'init_hw_device': Input/output error
+Error parsing global options: Input/output error

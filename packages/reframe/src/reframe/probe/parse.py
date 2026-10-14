@@ -407,7 +407,8 @@ def _common(
         "codec_long": _text(stream.get("codec_long_name")),
         "profile": _text(stream.get("profile")),
         "language": _language(tags, warnings, index),
-        "title": _text(tag_value(tags, "title")),
+        # MP4/MOV track titles come from the mov demuxer as "name" (testdata/README.md, C-7).
+        "title": _text(tag_value(tags, "title")) or _text(tag_value(tags, "name")),
         "disposition": _disposition(stream.get("disposition")),
         "start_time": start,
         "delay": delay,

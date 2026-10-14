@@ -79,7 +79,8 @@ is upscaled. It turns red when a value is invalid.
 
 ### 2. Orientation
 
-Rotate (0 / 90 / 180 / 270) and Flip horizontal, in one compact row.
+Rotate (0 / 90 / 180 / 270) and Flip horizontal, in one compact row. The rotation is
+clockwise, and the flip mirrors the picture after the rotation.
 
 ### 3. Crop
 
@@ -129,7 +130,11 @@ One control replaces Resolution limit + Scaled size + Pixel aspect + Final dimen
 | Allow upscaling | on / off | off |
 
 "Fit within 1080p" means: the output fits inside 1920×1080, keeps its aspect ratio, and is
-never upscaled unless you turn upscaling on.
+never upscaled unless you turn upscaling on. Upscaling is measured against the source's
+display size: a 720×480 16:9 DVD made square becomes 854×480, which is not an upscale
+([decision 0009](../decisions/0009-dimension-maths-conventions.md)). For portrait output
+(taller than wide) the box turns: a 1080×1920 phone video fits inside 1080×1920
+([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 ### 5. Advanced (collapsed)
 
@@ -159,17 +164,21 @@ Help panel template (the core stores this text with each filter definition):
 > **What it does** · **Use it when** · **Avoid when** · **Speed cost** (Low / Medium / High) ·
 > **Settings explained** (each preset and tune in one line)
 
-| Filter | FFmpeg implementation | Presets (HandBrake parity) |
+Where a filter has two implementations, the user picks one, as in HandBrake (Denoise: NLMeans
+or HQDN3D); each implementation has its own presets and tunes
+([0010](../decisions/0010-definitions-filters-and-containers.md)).
+
+| Filter | FFmpeg implementation (the first is the default) | Presets (HandBrake parity) |
 |--------|----------------------|----------------------------|
 | Detelecine | `fieldmatch,decimate` | Off / Default / Custom |
 | Interlace detection | `idet` (analysis) controls deinterlace on combed frames only | Off / Default / Less sensitive / Fast / Custom |
-| Deinterlace | `bwdif` (default) or `yadif` | Off / Default / Bob / Custom |
-| Denoise | `hqdn3d`, `nlmeans` | Off / Ultralight / Light / Medium / Strong, Tune: Film / Grain / High motion / Animation / Tape / Sprite |
-| Chroma smooth | `unsharp` (on chroma only) | Off / Ultralight … Stronger |
-| Sharpen | `unsharp`, `cas` | Off / Ultralight … Strong, Tune |
+| Deinterlace | Bwdif (`bwdif`) or Yadif (`yadif`) | Bwdif: Off / Default / Bob / Custom. Yadif: Off / Default / Skip spatial check / Bob / Custom |
+| Denoise | NLMeans (`nlmeans`) or HQDN3D (`hqdn3d`) | NLMeans: Off / Ultralight / Light / Medium / Strong / Custom, Tune: Film / Grain / High motion / Animation / Tape / Sprite. HQDN3D: Off / Ultralight / Light / Medium / Strong / Custom |
+| Chroma smooth | `unsharp` (on chroma only) | Off / Ultralight … Very strong, Tune: Tiny … Very wide |
+| Sharpen | Unsharp (`unsharp`) or CAS (`cas`) | Unsharp: Off / Ultralight … Very strong / Custom, Tune: Ultrafine … Very coarse. CAS: Off / Light / Medium / Strong / Custom |
 | Deblock | `deblock` | Off / Ultralight … Strong |
-| **Colorspace** | `zscale` (or `libplacebo`) | Keep source / BT.709 / BT.2020 / BT.601 |
-| **HDR → SDR tone mapping** (new) | `libplacebo` if available, else `zscale,tonemap` | Off / On (algorithm: BT.2390 / Hable / Mobius / Reinhard, peak detect) |
+| **Colorspace** | `zscale` or `libplacebo` | Keep source / BT.709 / BT.2020 / BT.601 |
+| **HDR → SDR tone mapping** (new) | `libplacebo` if available and Vulkan works, else `zscale,tonemap` | Off / On (algorithm: BT.2390 / Hable / Mobius / Reinhard, peak detect) |
 | Grayscale | `format=gray` / `hue=s=0` | Off / On |
 | Custom | Raw filter string, inserted before scaling | Validated with a dry run |
 
@@ -184,7 +193,9 @@ Help panel template (the core stores this text with each filter definition):
   not have to guess.
 
 Filter order is fixed and documented: detelecine → deinterlace → denoise → deblock →
-crop → scale → tone map / colorspace → sharpen → chroma smooth → grayscale → format/upload.
+crop (→ burned-in bitmap subtitles) → rotate/flip → custom → scale → tone map / colorspace (→
+the source's HDR metadata removed) → sharpen → chroma smooth → grayscale → burned-in text
+subtitles → format/upload ([decision 0013](../decisions/0013-command-builder-details.md)).
 
 ---
 
@@ -198,7 +209,9 @@ Same as HandBrake, plus:
   not select them. Hover to read the reason.
 - **Video passthrough** (HandBrake does not have this): copy the video stream unchanged. All
   dimension and filter controls are then disabled, with a note.
-- Framerate: Same as source / fixed value. Mode: Variable / Constant / Peak.
+- Framerate: Same as source / fixed value. Mode: Variable / Constant / Peak. FFmpeg has no
+  variable-with-a-maximum mode: Peak keeps a slower source's rate and makes a faster or
+  variable source constant at the peak rate ([decision 0013](../decisions/0013-command-builder-details.md)).
 - Quality: **Constant quality** (CRF / CQ / QP, depending on the encoder). The slider uses the
   encoder's scale and shades a recommended band for the output resolution. **Average
   bitrate** also has 2-pass and turbo first pass options.
@@ -351,7 +364,7 @@ them.
 | Language | One language, several languages, or Any |
 | Source channels | Any · Mono · Stereo or less · 5.1 or more · 7.1 or more. This is a condition on the **source** track |
 | Codec | Any audio encoder, or Passthru |
-| Mixdown | Keep source · Up to 5.1 (only downmixes 7.1) · 5.1 · Stereo · Dolby Pro Logic II · Mono |
+| Mixdown | Keep source · Up to 5.1 (only downmixes 7.1) · 5.1 · Stereo · Dolby Pro Logic II · Mono. A mixdown never upmixes: a source with fewer channels keeps its layout, because FFmpeg's upmix only adds silent channels ([0019](../decisions/0019-audio-codec-rule-details.md)) |
 | Max bitrate | The target bitrate. It snaps to the encoder's allowed values (AC-3 and E-AC-3 use fixed steps). A note shows any snap |
 | If the source already fits | Passthru · Re-encode |
 
@@ -364,19 +377,23 @@ This is HandBrake's encoder list, per rule).
 
 | Source | Result |
 |--------|--------|
-| Lossless (TrueHD, DTS-HD MA, FLAC, PCM), or a bitrate above the max | Encode at the max bitrate |
-| The source **fits**: its codec is on the passthru list, the container can hold it, its channels are within the mixdown, and its bitrate is at or below the max | Passthru (or re-encode, if the rule says so) |
+| The source **fits**: its codec is on the passthru list, the container can hold it, its channels are within the mixdown, and the rule changes nothing that needs a decode (gain, DRC, loudness, sample rate). A **lossy** source fits at any bitrate (re-encoding it would only add a generation loss); a **lossless** source only when its bitrate is at or below the max ([0023](../decisions/0023-lossy-passthru-above-the-max.md)) | Passthru (or re-encode, if the rule says so) |
+| Lossless (TrueHD, DTS-HD MA, FLAC, PCM) with a bitrate above the max or unknown, or a source that does not fit with a bitrate above the max | Encode at the max bitrate |
 | Bitrate at or below the max, but the source does not fit (another codec, or too many channels) | Encode at the smallest allowed bitrate that is at or above the source bitrate |
-| Bitrate unknown | Treated as above the max. The preview says so and offers **Measure** |
+| Bitrate unknown, and the source is lossless or does not fit | Treated as above the max. The preview says so and offers **Measure** |
+
+A rule with no max bitrate on a lossy encoder (a passthru rule's fallback encoder, for
+example) uses the encoder's default bitrate for the layout as its max
+([0019](../decisions/0019-audio-codec-rule-details.md)).
 
 With your setup (the codec in this example is AC-3; any encoder works):
 
 | Source track | Rule | Output | Why |
 |--------------|------|--------|-----|
 | hun · DTS-HD MA 5.1 · 2 104 kb/s | 1 | AC-3 5.1 · 320 kb/s | Lossless source → encode at the max |
-| hun · AC-3 5.1 · 224 kb/s | 1 | Passthru | AC-3, 5.1, 224 ≤ 320 |
-| eng · TrueHD Atmos 7.1 | 2 | AC-3 5.1 · 384 kb/s | Downmix 7.1 → 5.1, encode at the max |
-| eng · AC-3 2.0 · 192 kb/s | 3 | Passthru | Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits |
+| hun · AC-3 5.1 · 224 kb/s | 1 | Passthru | AC-3, 5.1, 224 ≤ 320: passthru |
+| eng · TrueHD Atmos 7.1 | 2 | AC-3 5.1 · 384 kb/s | Downmix 7.1 → 5.1. Lossless source → encode at the max |
+| eng · AC-3 2.0 · 192 kb/s | 3 | Passthru | Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits (a lossy source is kept above the max) |
 
 #### 3. Passthru and fallback (HandBrake parity)
 
@@ -425,8 +442,8 @@ rule does.
 
 | Action | Allowed for | Notes |
 |--------|-------------|-------|
-| Copy | all formats the container supports | MP4: only `mov_text` (text is converted automatically). PGS/VobSub cannot go into MP4: a validation error offers burn-in or MKV |
-| Burn in | one track per job | Text uses the `subtitles` filter. Bitmap uses `overlay`. **Forced only** uses the PGS decoder option `forced_subs_only` |
+| Copy | all formats the container supports | MP4: only `mov_text` (text is converted automatically) and VobSub (as HandBrake does). PGS cannot go into MP4: a validation error offers burn-in or MKV ([0010](../decisions/0010-definitions-filters-and-containers.md)) |
+| Burn in | one track per job | Text uses the `subtitles` filter, on the final picture. Bitmap uses `overlay` after the crop; when the crop removes lines, the subtitle canvas is aligned with the bottom of the picture ([0013](../decisions/0013-command-builder-details.md)). **Forced only** uses the decoder option `forced_subs_only`, which only PGS and VobSub have; a copied track keeps every event ([0014](../decisions/0014-validation-rules-and-severities.md)) |
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 
 - **Foreign audio search** (HandBrake parity): Reframe suggests a forced-subtitle track from
@@ -511,8 +528,12 @@ better one. This is the **name source**.
      the opened folder or media root). Generic folders are `Season 03`, `S03`, `Specials`,
      `Extras`, `Featurettes`, `Disc 1`, `CD1`, `BDMV`, `STREAM`, `VIDEO_TS`.
   2. If the folder holds several episode files (a season pack), the **file name** is the name
-     source, because only it has the episode number and title. The folder only fills fields
-     that the file name does not have (for example the year).
+     source, because only it has the episode number and title. The same holds when only the
+     file name has an episode number (a season folder such as `The.Sopranos.S03.1080p…`, or a
+     show folder such as `Breaking Bad (2008)`, when the other episodes are not there).
+     The folder only fills fields that the file name does not have (for example the year,
+     or the show name in front of a bare `S01E01.mkv`). Files in `BDMV`, `STREAM` and
+     `VIDEO_TS` are never episodes. ([0012](../decisions/0012-output-naming-rules.md))
   3. Otherwise, the candidate with the higher score wins. Score: +1 for each recognised field
      (title, year, resolution, source, video codec, audio codec, HDR, edition, release group),
      +2 if the title has word separators (`Hacksaw.Ridge`, not `hacksawridge`). On a tie, the
@@ -567,7 +588,7 @@ this: `{date:%d.%m.%Y}`.
 
 | Variable | Example |
 |----------|---------|
-| `{resolution}` | `2160p`, `1080p`, `720p`, `576p`, `480p`, or `W×H` for other sizes |
+| `{resolution}` | `2160p`, `1080p`, `720p`, `576p`, `480p`, or `WxH` (ASCII `x`: `640x360`) for other sizes |
 | `{hdr}` | `HDR10`, `HDR10+`, `DV`, `HLG`. Empty for SDR |
 | `{acodec}` · `{audio_channels}` | First output audio track: `AC-3` · `5.1` |
 | `{audio_langs}` · `{sub_langs}` | Output track languages: `HUN-ENG` |
@@ -583,7 +604,9 @@ this: `{date:%d.%m.%Y}`.
 | `/` | Creates subfolders under the output folder |
 | `{{` · `}}` | Literal braces |
 
-An unknown variable is a validation error with a "did you mean …" fix.
+An unknown variable is a validation error with a "did you mean …" fix. A width or precision
+of more than 255 in a format spec (`{season:999}`) is a validation error: a file name has at
+most 255 bytes ([0012](../decisions/0012-output-naming-rules.md)).
 
 ### Options
 
@@ -623,10 +646,16 @@ Output to MKV at 1080p:
 ### Safe file names
 
 - Windows rules apply on **every** OS, because files move between systems: the characters
-  `< > : " / \ | ? *` and control characters are replaced, reserved names (`CON`, `NUL`, …)
-  are changed, and trailing dots and spaces are removed.
-- Each path part has a limit of 255 bytes. `{sub_title}` is shortened first, then
-  `{main_title}`. An empty result falls back to `{file_name}`.
+  `< > : " / \ | ? *` and control characters are replaced (`": "` → `" - "`; `:` `/` `\` `|`
+  → `-`; `"` → `'`; `< > ? *` and control characters are removed), reserved names (`CON`,
+  `NUL`, …) get a `_`, and trailing dots and spaces are removed.
+- A byte of a source name that is not UTF-8 (a POSIX name such as `bad\xffname.mkv`) becomes
+  `�` (U+FFFD) in the output name: such a name cannot be written on Windows or in JSON.
+- Each path part has a limit of 255 bytes. The file name (with its extension) keeps room for
+  the `.part` of the partial file, so it has 250 bytes. `{sub_title}` is shortened first,
+  then `{main_title}`. The limit holds after every rule (the `_` of a reserved name too). An
+  empty result falls back to `{file_name}`.
+  ([0012](../decisions/0012-output-naming-rules.md))
 - Collisions follow the collision setting ([Queue](#queue)). In a batch, duplicate names are
   errors ([04 §Output naming](04-batch-mode.md#output-naming)).
 
@@ -663,8 +692,12 @@ It is in Settings → Output, in the preset editor, and on the Summary tab's Out
 Same behaviour as HandBrake:
 
 - Categories (built-in, read-only): General, Web, Devices, Matroska, Hardware, Production.
-  Contents are modelled on HandBrake's defaults and adapted to FFmpeg encoders.
-- User presets: save new, update, rename, duplicate, delete, set as default.
+  Contents are modelled on HandBrake's defaults and adapted to FFmpeg encoders (the list,
+  the HandBrake 1.11.2 values and the differences: [decision 0015](../decisions/0015-presets-and-settings-stores.md)).
+  The default preset is *H.265 MKV 1080p* ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
+- User presets: save new, update, rename, duplicate, delete, set as default. Preset names are
+  unique (without case); a clash offers the next free name, *Name (2)*. An import with clashes
+  can rename, replace or skip.
 - A **modified** marker appears when the current settings differ from the selected preset.
   Hover it to see what changed.
 - Import / export JSON (Reframe schema, versioned).
@@ -684,13 +717,20 @@ Same behaviour as HandBrake:
 - **Pause** suspends the FFmpeg process (psutil suspend/resume, works on both OSes).
 - **Parallel jobs**: setting, default 1.
 - **Persistence**: the queue survives restarts. Running jobs become `Interrupted` and can be
-  restarted.
-- Output safety: Reframe writes to `<name>.part.<ext>` and renames on success. A failed job
-  removes its partial file (configurable). File name collisions follow the setting: ask,
-  auto-rename, or overwrite.
+  restarted. One Reframe process owns the saved queue at a time; another process (a second
+  CLI command, for example) runs its jobs in a private queue that is not kept
+  ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
+- Output safety: Reframe writes to `<name>.part.<ext>`, probes it again and checks its tracks
+  and languages, and renames it on success. A failed job removes its partial file
+  (configurable). File name collisions follow the setting: ask, auto-rename, or overwrite.
+  When the name is taken at the end and the setting is "ask", the job fails and the finished
+  `.part` file is kept ([decision 0016](../decisions/0016-queue-and-job-runner.md)).
 - **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
-- **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux
-  `systemd-inhibit` / D-Bus).
+- **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux the desktop
+  session's inhibit and logind over D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
+  power button and the lid always work, and the encode then pauses with the system and
+  continues after wake ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md),
+  Linux mechanism [0022](../decisions/0022-linux-sleep-inhibit-mechanism.md)).
 - Per-job **log**: the full command, FFmpeg output, timing, and a copy button for bug reports.
 
 ---
@@ -713,7 +753,7 @@ The Summary tab shows which job type you will get, and why.
 | Section | Contents |
 |---------|----------|
 | Tools | ffmpeg, ffprobe, mkvpropedit, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
-| Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off |
+| Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
 | Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |
 | Preview | Number of sample frames, cache size limit, clear cache |
@@ -729,7 +769,7 @@ Every job is validated live. The core returns a list of `ValidationIssue` object
 ```
 severity: error | warning | info
 code:     "encoder.unavailable" | "container.codec_unsupported" | "subtitle.burn_multiple" | …
-path:     "video.encoder" | "audio.tracks[2].encoder" | …
+path:     "video.encoder" | "audio[2].encoder" | …
 message:  human-readable text
 fixes:    [{label: "Use libx265", patch: {...}}]
 ```

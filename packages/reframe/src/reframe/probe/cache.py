@@ -8,6 +8,9 @@
   invalidates old entries without a manual bump), the probe options (the MediaInfo version in
   use, or ``False``) and the :class:`MediaSource`. An entry made by another ffprobe, another
   parser or other options is a miss (and is overwritten by the next :meth:`ProbeCache.put`).
+  The JSON is ASCII (``\\uXXXX`` escapes): a path with a byte that is not UTF-8 holds a lone
+  surrogate (``bad\\xffname.mkv`` → ``bad\\udcffname.mkv``), which UTF-8 cannot encode; an
+  escape reads back exactly. Older UTF-8 entries read the same.
 - **Pruning**: :meth:`ProbeCache.prune` removes entries older than ``max_age`` (default 180
   days, by file mtime), then the oldest beyond ``max_entries`` (default 10 000), and
   temporary files left by a crash. It runs on the first :meth:`~ProbeCache.put` of a process
@@ -203,7 +206,13 @@ class ProbeCache:
             "options": entry.options,
             "source": source.model_dump(mode="json"),
         }
-        text = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+        try:
+            # ASCII: a path with a byte that is not UTF-8 holds a lone surrogate (POSIX
+            # ``surrogateescape``: 0xFF → ``\udcff``; Windows: an unpaired UTF-16 surrogate),
+            # which UTF-8 cannot encode. As a ``\udcff`` escape it reads back exactly.
+            text = json.dumps(doc, ensure_ascii=True, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return False
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
             fd, tmp_name = tempfile.mkstemp(
@@ -213,10 +222,13 @@ class ProbeCache:
             return False
         tmp = Path(tmp_name)
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+            with os.fdopen(fd, "w", encoding="ascii") as f:
                 f.write(text)
             os.replace(tmp, self.entry_path(key))
-        except OSError:  # disk full, read-only, or (Windows) the target is open elsewhere
+        except (OSError, ValueError):
+            # Disk full, read-only, or (Windows) the target is open elsewhere. (A ValueError,
+            # that is a UnicodeError, cannot come from ASCII text; a cache error never fails a
+            # probe.)
             with contextlib.suppress(OSError):
                 tmp.unlink()
             return False

@@ -5,11 +5,11 @@ snapshot test covers them all). Persisted documents (``AppSettings``, ``PresetFi
 ``Preset``, ``JobTemplate``, ``JobSettings``, ``MediaSource``) have ``schema_version``, keep
 unknown fields, and are migrated with :func:`migrate`.
 
-Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), ``defaults``
-(audio/subtitle defaults), ``template`` (templates and track rules), ``preset``, ``naming``,
-``settings``, ``issues`` (validation issues and JSON patch operations), ``tools`` (C-1),
-``capabilities`` (C-4), ``plan`` (C-7), ``queue`` (C-11), ``tasks``, ``events``,
-``migrations``.
+Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), ``draft`` (a
+job drafted from a preset, C-15), ``defaults`` (audio/subtitle defaults), ``template``
+(templates and track rules), ``preset``, ``naming``, ``settings``, ``issues`` (validation
+issues and JSON patch operations), ``tools`` (C-1), ``capabilities`` (C-4), ``plan`` (C-7),
+``queue`` (C-11), ``tasks``, ``events``, ``migrations``.
 """
 
 from reframe.models.base import (
@@ -21,7 +21,7 @@ from reframe.models.base import (
     Rational,
     ReframeModel,
 )
-from reframe.models.capabilities import EncoderState, EncoderStatus
+from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.defaults import (
     AudioCodecRule,
     AudioDefaults,
@@ -33,8 +33,11 @@ from reframe.models.defaults import (
     RuleMixdown,
     SourceChannels,
     SubtitleDefaults,
+    TrackDecision,
+    TrackDraft,
     TrackSelection,
 )
+from reframe.models.draft import JobDraft
 from reframe.models.events import (
     EVENT_ADAPTER,
     EVENT_TYPES,
@@ -155,7 +158,22 @@ from reframe.models.migrations import (
     migrate,
     register_migration,
 )
-from reframe.models.naming import Mp4Extension, NamingOptions, OutputFolderMode, WordSeparator
+from reframe.models.naming import (
+    MediaKind,
+    Mp4Extension,
+    NameCandidate,
+    NameKind,
+    NameResult,
+    NameSpan,
+    NamingOptions,
+    NamingVariable,
+    OutputFolderMode,
+    ParsedName,
+    TemplateKind,
+    VariableGroup,
+    VariableKind,
+    WordSeparator,
+)
 from reframe.models.plan import (
     ArgTemplate,
     EncodePlan,
@@ -168,7 +186,7 @@ from reframe.models.plan import (
     ValueRef,
     resolve_argv,
 )
-from reframe.models.preset import BUILT_IN_CATEGORIES, Preset, PresetFile
+from reframe.models.preset import BUILT_IN_CATEGORIES, FieldChange, Preset, PresetFile
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import (
     AppearanceSettings,
@@ -224,6 +242,7 @@ __all__ = [
     "BitrateSource",
     "BurnInBehaviour",
     "CapabilitiesChangedEvent",
+    "CapabilitySnapshot",
     "Chapter",
     "ChapterNamePolicy",
     "ChapterOptions",
@@ -254,6 +273,7 @@ __all__ = [
     "ExactWidth",
     "ExternalSubtitle",
     "ExtraAudioOutput",
+    "FieldChange",
     "FieldOrder",
     "FilterConfig",
     "FilterSettings",
@@ -266,6 +286,7 @@ __all__ = [
     "Geometry",
     "HdrFormat",
     "HdrInfo",
+    "JobDraft",
     "JobLogEvent",
     "JobNaming",
     "JobProgress",
@@ -282,6 +303,7 @@ __all__ = [
     "LoudnessTarget",
     "MasteringDisplay",
     "Measurement",
+    "MediaKind",
     "MediaSource",
     "MigrationError",
     "MigrationRegistry",
@@ -289,8 +311,13 @@ __all__ = [
     "Modulus",
     "MoveOp",
     "Mp4Extension",
+    "NameCandidate",
+    "NameKind",
+    "NameResult",
     "NameSource",
+    "NameSpan",
     "NamingOptions",
+    "NamingVariable",
     "NonNegativeFloat",
     "NonNegativeInt",
     "NotificationEvent",
@@ -300,6 +327,7 @@ __all__ = [
     "OutputOptions",
     "OutputSettings",
     "OutputTrackRule",
+    "ParsedName",
     "PartialFilePolicy",
     "PassthruCodec",
     "PassthruPolicy",
@@ -348,6 +376,7 @@ __all__ = [
     "TaskInfo",
     "TaskProgressEvent",
     "TaskState",
+    "TemplateKind",
     "TestOp",
     "TimeRange",
     "ToolInfo",
@@ -357,6 +386,8 @@ __all__ = [
     "ToolSet",
     "ToolStatus",
     "ToolsChangedEvent",
+    "TrackDecision",
+    "TrackDraft",
     "TrackFlags",
     "TrackMetadata",
     "TrackMetadataTemplate",
@@ -368,6 +399,8 @@ __all__ = [
     "UnsupportedSchemaVersion",
     "ValidationIssue",
     "ValueRef",
+    "VariableGroup",
+    "VariableKind",
     "VideoSettings",
     "VideoStream",
     "WhenDone",

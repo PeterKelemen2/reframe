@@ -1,0 +1,379 @@
+# Hardware encoder advanced options (C-6, M2 basic set): NVENC, QSV, AMF, VAAPI.
+#
+# `ffmpeg_arg` options are generic FFmpeg codec options (`-bf`, `-refs`, `-g`) that every
+# encoder accepts; `private_opt` options come from `ffmpeg -h encoder=<id>` (FFmpeg n9.0.2,
+# testing/reframe_testing/fake_data/help_encoder/). AMF and VAAPI options were encoded on an
+# AMD RX 7600; NVENC and QSV are not checked on hardware. Whether the GPU honours a value
+# (B-frames on AMD H.265, for example) is up to the driver.
+
+# --------------------------------------------------------------------------- NVENC
+
+[[set.nvenc]]
+key = "bf"
+label = "B-frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 4
+step = 1
+unit = "frames"
+help = "Number of B-frames. 3 improves compression on Turing and newer GPUs."
+mapping = { kind = "ffmpeg_arg", arg = "-bf" }
+default = { kind = "encoder", note = "from the preset" }
+
+[[set.nvenc]]
+key = "b_ref_mode"
+label = "B-frames as references"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "disabled", label = "Off" },
+    { value = "each", label = "Each B-frame" },
+    { value = "middle", label = "Middle B-frame" },
+]
+help = "Lets B-frames be used as references (B-pyramid). Middle is widely supported."
+mapping = { kind = "private_opt", name = "b_ref_mode" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.nvenc]]
+key = "refs"
+label = "Reference frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Number of reference frames; 0 = the driver decides."
+mapping = { kind = "ffmpeg_arg", arg = "-refs" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.nvenc]]
+key = "g"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points)."
+mapping = { kind = "ffmpeg_arg", arg = "-g" }
+default = { kind = "encoder", note = "the encoder decides" }
+
+[[set.nvenc]]
+key = "spatial-aq"
+label = "Spatial AQ"
+category = "Psycho-visual"
+type = "bool"
+help = "Adaptive quantisation inside a frame: moves bits to flat areas. Usually better looking, lower PSNR."
+mapping = { kind = "private_opt", name = "spatial-aq" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc]]
+key = "aq-strength"
+label = "AQ strength"
+category = "Psycho-visual"
+type = "int"
+min = 1
+max = 15
+step = 1
+help = "Spatial AQ strength from 1 (low) to 15 (aggressive)."
+mapping = { kind = "private_opt", name = "aq-strength" }
+requires = [{ field = "option:spatial-aq", value = true }]
+default = { kind = "fixed", value = 8 }
+
+[[set.nvenc]]
+key = "temporal-aq"
+label = "Temporal AQ"
+category = "Psycho-visual"
+type = "bool"
+help = "Adaptive quantisation over time: more quality for static parts that later frames reference."
+mapping = { kind = "private_opt", name = "temporal-aq" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc]]
+key = "rc-lookahead"
+label = "Look-ahead"
+category = "Rate control"
+type = "int"
+min = 0
+max = 250
+step = 1
+unit = "frames"
+help = "Frames analysed ahead for rate control and frame types; 20–32 helps quality. 0 = off."
+mapping = { kind = "private_opt", name = "rc-lookahead" }
+default = { kind = "fixed", value = 0 }
+
+[[set.nvenc]]
+key = "multipass"
+label = "Multipass"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "disabled", label = "Off" },
+    { value = "qres", label = "Quarter resolution" },
+    { value = "fullres", label = "Full resolution", help = "Best, slowest." },
+]
+help = "Analyses each frame twice inside the encoder (not a 2-pass encode). For average bitrate use 2-pass instead."
+mapping = { kind = "private_opt", name = "multipass" }
+requires = [{ field = "rate_control", value = "quality" }]
+default = { kind = "fixed", value = "disabled" }
+
+# --------------------------------------------------------------------------- QSV
+
+[[set.qsv]]
+key = "bf"
+label = "B-frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Number of B-frames."
+mapping = { kind = "ffmpeg_arg", arg = "-bf" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv]]
+key = "refs"
+label = "Reference frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Number of reference frames; 0 = the driver decides."
+mapping = { kind = "ffmpeg_arg", arg = "-refs" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv]]
+key = "g"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points)."
+mapping = { kind = "ffmpeg_arg", arg = "-g" }
+default = { kind = "encoder", note = "the encoder decides" }
+
+[[set.qsv]]
+key = "adaptive_i"
+label = "Adaptive I-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Places I-frames at scene changes."
+mapping = { kind = "private_opt", name = "adaptive_i" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv]]
+key = "adaptive_b"
+label = "Adaptive B-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Chooses where to place B-frames."
+mapping = { kind = "private_opt", name = "adaptive_b" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv_h264]]
+key = "look_ahead"
+label = "Look-ahead"
+category = "Rate control"
+type = "bool"
+help = "VBR with look-ahead (H.264): better bit distribution, more latency and memory."
+mapping = { kind = "private_opt", name = "look_ahead" }
+default = { kind = "fixed", value = false }
+
+[[set.qsv_h264]]
+key = "look_ahead_depth"
+label = "Look-ahead depth"
+category = "Rate control"
+type = "int"
+min = 0
+max = 100
+step = 1
+unit = "frames"
+help = "Frames analysed ahead when look-ahead is on."
+mapping = { kind = "private_opt", name = "look_ahead_depth" }
+requires = [{ field = "option:look_ahead", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv_extbrc]]
+key = "extbrc"
+label = "Extended rate control"
+category = "Rate control"
+type = "bool"
+help = "Extended bitrate control; needed for look-ahead on H.265 and AV1."
+mapping = { kind = "private_opt", name = "extbrc" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv_extbrc]]
+key = "look_ahead_depth"
+label = "Look-ahead depth"
+category = "Rate control"
+type = "int"
+min = 0
+max = 100
+step = 1
+unit = "frames"
+help = "Frames analysed ahead (needs extended rate control)."
+mapping = { kind = "private_opt", name = "look_ahead_depth" }
+requires = [{ field = "option:extbrc", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+# --------------------------------------------------------------------------- AMF
+
+[[set.amf]]
+key = "refs"
+label = "Reference frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Maximum number of reference frames."
+mapping = { kind = "ffmpeg_arg", arg = "-refs" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "g"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points)."
+mapping = { kind = "ffmpeg_arg", arg = "-g" }
+default = { kind = "encoder", note = "the encoder decides" }
+
+[[set.amf_vbaq]]
+key = "vbaq"
+label = "Variance-based AQ"
+category = "Psycho-visual"
+type = "bool"
+help = "Adaptive quantisation by variance: moves bits to flat areas. Not used in constant-QP mode."
+mapping = { kind = "private_opt", name = "vbaq" }
+requires = [{ field = "rate_control", value = "bitrate" }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "preanalysis"
+label = "Pre-analysis"
+category = "Rate control"
+type = "bool"
+help = "Analyses frames before encoding (scene changes, activity). Needed for look-ahead."
+mapping = { kind = "private_opt", name = "preanalysis" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_lookahead_buffer_depth"
+label = "Look-ahead depth"
+category = "Rate control"
+type = "int"
+min = 0
+max = 41
+step = 1
+unit = "frames"
+help = "Frames analysed ahead by pre-analysis."
+mapping = { kind = "private_opt", name = "pa_lookahead_buffer_depth" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf_av1]]
+key = "aq_mode"
+label = "Adaptive quantisation"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "caq", label = "Content adaptive" },
+]
+help = "Content adaptive quantisation: moves bits to flat areas (AV1; H.264 and H.265 use VBAQ)."
+mapping = { kind = "private_opt", name = "aq_mode" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf_bframes]]
+key = "bf"
+label = "B-frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 3
+step = 1
+unit = "frames"
+help = "Number of B-frames (H.264 and AV1; AV1 B-frames need a GPU that supports them)."
+mapping = { kind = "ffmpeg_arg", arg = "-bf" }
+default = { kind = "encoder", note = "the driver decides" }
+
+# --------------------------------------------------------------------------- VAAPI
+
+[[set.vaapi]]
+key = "bf"
+label = "B-frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Number of B-frames, if the driver supports them for this codec."
+mapping = { kind = "ffmpeg_arg", arg = "-bf" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.vaapi]]
+key = "refs"
+label = "Reference frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Number of reference frames; 0 = the driver decides."
+mapping = { kind = "ffmpeg_arg", arg = "-refs" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.vaapi]]
+key = "g"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points)."
+mapping = { kind = "ffmpeg_arg", arg = "-g" }
+default = { kind = "encoder", note = "the encoder decides" }
+
+[[set.vaapi]]
+key = "compression_level"
+label = "Quality level"
+category = "Performance"
+type = "int"
+min = 0
+max = 7
+step = 1
+help = "Driver quality/speed level (VAAPI has no presets). Its meaning depends on the driver; usually lower is slower and better."
+mapping = { kind = "ffmpeg_arg", arg = "-compression_level" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.vaapi_h264]]
+key = "coder"
+label = "Entropy coder"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "cabac", label = "CABAC", help = "Smaller files." },
+    { value = "cavlc", label = "CAVLC", help = "Easier to decode." },
+]
+help = "H.264 entropy coding."
+mapping = { kind = "private_opt", name = "coder" }
+default = { kind = "fixed", value = "cabac" }

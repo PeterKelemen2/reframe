@@ -1,0 +1,359 @@
+# x265 advanced options (C-6, M2 basic set; M9 completes 03 §Advanced's coverage list).
+#
+# Every option goes into `-x265-params` (x26x_param); booleans are written `name=1` /
+# `name=0`. The per-preset defaults are what x265 writes into the stream (the "x265 … options:"
+# SEI) for `-preset <p>` with no tune, FFmpeg n9.0.2 / x265 4.1; `tunes` lists the tunes that
+# change the value. tests/definitions/test_tools.py encodes every preset again and compares.
+
+[[set.x265]]
+key = "bframes"
+label = "B-frames"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 16
+step = 1
+unit = "frames"
+help = "Maximum number of consecutive B-frames. 4 is typical; 8 helps animation and static content."
+mapping = { kind = "x26x_param", name = "bframes" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { ultrafast = 3, superfast = 3, veryfast = 4, faster = 4, fast = 4, medium = 4, slow = 4, slower = 8, veryslow = 8, placebo = 8 } }
+
+[[set.x265]]
+key = "b-adapt"
+label = "Adaptive B-frames"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "Fast" },
+    { value = "2", label = "Full", help = "Trellis; slower, better." },
+]
+help = "How x265 decides where to place B-frames."
+mapping = { kind = "x26x_param", name = "b-adapt" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = "0", superfast = "0", veryfast = "0", faster = "0", fast = "0", medium = "2", slow = "2", slower = "2", veryslow = "2", placebo = "2" } }
+
+[[set.x265]]
+key = "ref"
+label = "Reference frames"
+category = "Frame types / GOP"
+type = "int"
+# x265 4.1: 9 and more stop the encoder when B-frames are on ("level 5 detected, but
+# NumPocTotalCurr (total references) is non-compliant", "Error while opening encoder"); they
+# work only with bframes=0 or a high explicit level. So 1-8.
+min = 1
+max = 8
+step = 1
+unit = "frames"
+help = "How many earlier frames a frame can reference (1–8). More helps compression and costs speed."
+mapping = { kind = "x26x_param", name = "ref" }
+default = { kind = "preset", values = { ultrafast = 1, superfast = 1, veryfast = 2, faster = 2, fast = 3, medium = 3, slow = 4, slower = 5, veryslow = 5, placebo = 5 } }
+
+[[set.x265]]
+key = "keyint"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps."
+mapping = { kind = "x26x_param", name = "keyint" }
+default = { kind = "fixed", value = 250 }
+
+[[set.x265]]
+key = "min-keyint"
+label = "Minimum keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Minimum distance between keyframes at scene cuts. Auto follows the frame rate."
+mapping = { kind = "x26x_param", name = "min-keyint" }
+default = { kind = "encoder", note = "auto, from the frame rate" }
+
+[[set.x265]]
+key = "scenecut"
+label = "Scene cut threshold"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 100
+step = 1
+help = "How eagerly a keyframe is placed at a scene change. 0 turns scene-cut detection off."
+mapping = { kind = "x26x_param", name = "scenecut" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = 0, superfast = 40, veryfast = 40, faster = 40, fast = 40, medium = 40, slow = 40, slower = 40, veryslow = 40, placebo = 40 } }
+
+[[set.x265]]
+key = "rc-lookahead"
+label = "Rate-control look-ahead"
+category = "Rate control"
+type = "int"
+min = 0
+max = 250
+step = 1
+unit = "frames"
+# x265 4.1: a value at or below the B-frames stops the encoder ("Lookahead depth must be
+# greater than the max consecutive bframe count"); 0 works only with bframes=0. A rule across
+# two options: validation (C-8) checks it.
+help = "Frames analysed ahead for CU-tree and frame types. More is better and uses more memory. Must be more than the B-frames (x265 stops otherwise)."
+mapping = { kind = "x26x_param", name = "rc-lookahead" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = 5, superfast = 10, veryfast = 15, faster = 15, fast = 15, medium = 20, slow = 25, slower = 40, veryslow = 40, placebo = 60 } }
+
+[[set.x265]]
+key = "aq-mode"
+label = "Adaptive quantisation"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "Variance" },
+    { value = "2", label = "Auto-variance" },
+    { value = "3", label = "Auto-variance, dark scenes" },
+    { value = "4", label = "Auto-variance with edges" },
+]
+help = "Moves bits from detailed areas to flat areas, where blocking would be visible."
+mapping = { kind = "x26x_param", name = "aq-mode" }
+default = { kind = "preset", tunes = ["grain", "ssim", "zerolatency"], values = { ultrafast = "1", superfast = "1", veryfast = "2", faster = "2", fast = "2", medium = "2", slow = "2", slower = "2", veryslow = "2", placebo = "2" } }
+
+[[set.x265]]
+key = "aq-strength"
+label = "AQ strength"
+category = "Rate control"
+type = "float"
+min = 0
+max = 3
+step = 0.05
+help = "How strongly adaptive quantisation acts. 0.6–1.2 is typical."
+mapping = { kind = "x26x_param", name = "aq-strength" }
+requires = [{ field = "option:aq-mode", op = "ne", value = "0" }]
+default = { kind = "preset", tunes = ["animation", "grain", "psnr"], values = { ultrafast = 0.0, superfast = 0.0, veryfast = 1.0, faster = 1.0, fast = 1.0, medium = 1.0, slow = 1.0, slower = 1.0, veryslow = 1.0, placebo = 1.0 } }
+
+[[set.x265]]
+key = "cutree"
+label = "CU-tree"
+category = "Rate control"
+type = "bool"
+help = "Gives more quality to parts of the picture that later frames reference (x264's macroblock tree)."
+mapping = { kind = "x26x_param", name = "cutree" }
+default = { kind = "preset", tunes = ["grain", "zerolatency"], values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "psy-rd"
+label = "Psy-RD strength"
+category = "Psycho-visual"
+type = "float"
+min = 0
+max = 5
+step = 0.1
+help = "Keeps the energy (detail, sharpness) of the source. 2.0 is the default; lower for animation."
+mapping = { kind = "x26x_param", name = "psy-rd" }
+default = { kind = "preset", tunes = ["animation", "grain", "psnr", "ssim"], values = { ultrafast = 2.0, superfast = 2.0, veryfast = 2.0, faster = 2.0, fast = 2.0, medium = 2.0, slow = 2.0, slower = 2.0, veryslow = 2.0, placebo = 2.0 } }
+
+[[set.x265]]
+key = "psy-rdoq"
+label = "Psy-RDOQ strength"
+category = "Psycho-visual"
+type = "float"
+min = 0
+max = 50
+step = 0.1
+help = "Keeps grain and texture in the quantisation step (needs RDOQ level 1 or 2). 1.0 at slow presets; up to 10 for grain."
+mapping = { kind = "x26x_param", name = "psy-rdoq" }
+default = { kind = "preset", tunes = ["grain", "psnr", "ssim"], values = { ultrafast = 0.0, superfast = 0.0, veryfast = 0.0, faster = 0.0, fast = 0.0, medium = 0.0, slow = 1.0, slower = 1.0, veryslow = 1.0, placebo = 1.0 } }
+
+[[set.x265]]
+key = "rdoq-level"
+label = "RDOQ level"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "Level 1" },
+    { value = "2", label = "Level 2", help = "Best, slowest." },
+]
+help = "Rate-distortion optimised quantisation."
+mapping = { kind = "x26x_param", name = "rdoq-level" }
+default = { kind = "preset", values = { ultrafast = "0", superfast = "0", veryfast = "0", faster = "0", fast = "0", medium = "0", slow = "2", slower = "2", veryslow = "2", placebo = "2" } }
+
+[[set.x265]]
+key = "rd"
+label = "RD level"
+category = "Motion / analysis"
+type = "int"
+min = 1
+max = 6
+step = 1
+help = "Depth of the rate-distortion analysis of modes. Higher is slower and better."
+mapping = { kind = "x26x_param", name = "rd" }
+default = { kind = "preset", values = { ultrafast = 2, superfast = 2, veryfast = 2, faster = 2, fast = 2, medium = 3, slow = 4, slower = 6, veryslow = 6, placebo = 6 } }
+
+[[set.x265]]
+key = "me"
+label = "Motion estimation"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "0", label = "Diamond" },
+    { value = "1", label = "Hexagon" },
+    { value = "2", label = "Uneven multi-hexagon" },
+    { value = "3", label = "Star" },
+    { value = "4", label = "SEA" },
+    { value = "5", label = "Full", help = "Very slow." },
+]
+help = "Motion search method."
+mapping = { kind = "x26x_param", name = "me" }
+default = { kind = "preset", values = { ultrafast = "0", superfast = "1", veryfast = "1", faster = "1", fast = "1", medium = "1", slow = "3", slower = "3", veryslow = "3", placebo = "3" } }
+
+[[set.x265]]
+key = "subme"
+label = "Subpixel refinement"
+category = "Motion / analysis"
+type = "int"
+min = 0
+max = 7
+step = 1
+help = "Quality of the sub-pixel motion search."
+mapping = { kind = "x26x_param", name = "subme" }
+default = { kind = "preset", values = { ultrafast = 0, superfast = 1, veryfast = 1, faster = 2, fast = 2, medium = 2, slow = 3, slower = 4, veryslow = 4, placebo = 5 } }
+
+[[set.x265]]
+key = "merange"
+label = "Motion search range"
+category = "Motion / analysis"
+type = "int"
+# x265 4.1: 32768 stops the encoder ("Search Range must be less than 32768").
+min = 0
+max = 32767
+step = 1
+unit = "pixels"
+help = "How far the motion search looks."
+mapping = { kind = "x26x_param", name = "merange" }
+default = { kind = "preset", values = { ultrafast = 57, superfast = 57, veryfast = 57, faster = 57, fast = 57, medium = 57, slow = 57, slower = 57, veryslow = 57, placebo = 92 } }
+
+[[set.x265]]
+key = "ctu"
+label = "CTU size"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "16", label = "16×16" },
+    { value = "32", label = "32×32" },
+    { value = "64", label = "64×64", help = "Best for HD and 4K." },
+]
+help = "Largest coding unit. Smaller helps low resolutions and parallelism."
+mapping = { kind = "x26x_param", name = "ctu" }
+default = { kind = "preset", values = { ultrafast = "32", superfast = "32", veryfast = "64", faster = "64", fast = "64", medium = "64", slow = "64", slower = "64", veryslow = "64", placebo = "64" } }
+
+[[set.x265]]
+key = "deblock-tc"
+label = "Deblock strength"
+category = "Loop filters"
+type = "int"
+min = -6
+max = 6
+step = 1
+help = "In-loop deblocking tC offset. Negative keeps more detail, positive gives a smoother picture (animation +1)."
+mapping = { kind = "x26x_param", name = "deblock", part = 0 }
+default = { kind = "preset", tunes = ["animation", "fastdecode"], values = { ultrafast = 0, superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 0, veryslow = 0, placebo = 0 } }
+
+[[set.x265]]
+key = "deblock-beta"
+label = "Deblock threshold"
+category = "Loop filters"
+type = "int"
+min = -6
+max = 6
+step = 1
+help = "In-loop deblocking beta offset. Usually set to the same value as the strength."
+mapping = { kind = "x26x_param", name = "deblock", part = 1 }
+default = { kind = "preset", tunes = ["animation", "fastdecode"], values = { ultrafast = 0, superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 0, veryslow = 0, placebo = 0 } }
+
+[[set.x265]]
+key = "sao"
+label = "SAO"
+category = "Loop filters"
+type = "bool"
+help = "Sample adaptive offset: removes ringing and banding, but can smear fine detail and grain. Often turned off for high-quality film encodes."
+mapping = { kind = "x26x_param", name = "sao" }
+default = { kind = "preset", tunes = ["fastdecode", "grain"], values = { ultrafast = false, superfast = false, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "limit-sao"
+label = "Limit SAO"
+category = "Loop filters"
+type = "bool"
+help = "Faster SAO decisions; slightly lower quality."
+mapping = { kind = "x26x_param", name = "limit-sao" }
+requires = [{ field = "option:sao", op = "ne", value = false }]
+default = { kind = "preset", values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = false, veryslow = false, placebo = false } }
+
+[[set.x265]]
+key = "selective-sao"
+label = "Selective SAO"
+category = "Loop filters"
+type = "int"
+min = 0
+max = 4
+step = 1
+help = "Which slices use SAO: 0 none, 1 I, 2 I and P, 3 I, P and reference B, 4 all. A value above 0 turns SAO on again (x265 does this even with SAO off)."
+mapping = { kind = "x26x_param", name = "selective-sao" }
+requires = [{ field = "option:sao", op = "ne", value = false }]
+default = { kind = "preset", tunes = ["fastdecode", "grain"], values = { ultrafast = 0, superfast = 0, veryfast = 4, faster = 4, fast = 4, medium = 4, slow = 4, slower = 4, veryslow = 4, placebo = 4 } }
+
+[[set.x265]]
+key = "strong-intra-smoothing"
+label = "Strong intra smoothing"
+category = "Loop filters"
+type = "bool"
+help = "Smooths 32×32 intra blocks; helps gradients, can soften detail."
+mapping = { kind = "x26x_param", name = "strong-intra-smoothing" }
+default = { kind = "preset", values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "hdr10"
+label = "HDR10 signalling"
+category = "HDR / colour"
+type = "bool"
+help = "Writes HDR10 SEI (mastering display and content light level). Needed for HDR10 output together with the master display and MaxCLL values."
+mapping = { kind = "x26x_param", name = "hdr10" }
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "hdr10-opt"
+label = "HDR10 optimisation"
+category = "HDR / colour"
+type = "bool"
+help = "Block-level luma/chroma QP optimisation for HDR10 content. 10-bit only; x265 turns it off unless the output is tagged BT.2020 / PQ."
+mapping = { kind = "x26x_param", name = "hdr10-opt" }
+requires = [{ field = "bit_depth", value = 10 }]
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "master-display"
+label = "Mastering display"
+category = "HDR / colour"
+type = "string"
+help = "SMPTE ST 2086 mastering display, as G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) in 0.00002 / 0.0001 units. Copy HDR metadata from source fills it."
+mapping = { kind = "x26x_param", name = "master-display" }
+default = { kind = "encoder", note = "not written" }
+
+[[set.x265]]
+key = "max-cll"
+label = "MaxCLL, MaxFALL"
+category = "HDR / colour"
+type = "string"
+help = "Content light level as \"MaxCLL,MaxFALL\" in cd/m² (for example 1000,400)."
+mapping = { kind = "x26x_param", name = "max-cll" }
+default = { kind = "encoder", note = "not written" }
+
+[[set.x265]]
+key = "repeat-headers"
+label = "Repeat headers"
+category = "HDR / colour"
+type = "bool"
+help = "Writes the stream headers before every keyframe (needed for some streaming and HDR players)."
+mapping = { kind = "x26x_param", name = "repeat-headers" }
+default = { kind = "encoder", note = "FFmpeg's libx265 wrapper turns it on for formats without global headers" }

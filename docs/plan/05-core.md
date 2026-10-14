@@ -184,25 +184,47 @@ This step fixes the HandBrake freeze. Detection runs in the background, has stri
 and returns statuses, never exceptions.
 
 - [ ] Parse `ffmpeg -hide_banner -encoders` to list the encoders in this build.
+- [ ] Parse `ffmpeg -hide_banner -filters` into the snapshot's filter list
+      ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)).
+      `libplacebo` also needs a working Vulkan device, which the list cannot show: detection
+      runs one frame through it (same timeout, cancel and parallel limit as the test encodes;
+      not run when hardware tests are off). `C-7` chooses `libplacebo` only when
+      `CapabilitySnapshot.usable_filter("libplacebo")` is true, else `zscale,tonemap`
+      ([decision 0021](../decisions/0021-libplacebo-run-test.md)).
 - [ ] Parse `ffmpeg -h encoder=<name>` for each known encoder to find its private options and
       presets. Options in the definitions that this build does not support are hidden.
 - [ ] **Hardware test encode** for each hardware encoder in the build: encode 3 frames of
       `lavfi color=size=640x360` to `-f null -`, with the encoder's hardware init arguments and
-      a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test where relevant.
-- [ ] **Reason mapping**: map known stderr patterns to plain-language reasons. Examples:
-      `Cannot load libcuda` → "NVIDIA driver not found";
-      `Driver does not support the required nvenc API version` → "NVIDIA driver too old";
-      `No VA display found` / `Failed to initialise VAAPI` → "No VAAPI device (/dev/dri)";
-      `MFX_ERR_UNSUPPORTED` → "Intel QSV not supported on this GPU". Unknown patterns keep the
-      last stderr line.
+      a 10 s timeout. Run up to 3 tests in parallel. Run an extra 10-bit test when the
+      encoder's definition has a 10-bit pixel format (result: `supports_10bit`). VAAPI
+      encoders are tested on every render node (`/dev/dri/renderD*`); each uses the first node
+      that works, unless Settings → Encoders forces one ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
+- [ ] **Reason mapping** ([decision 0008](../decisions/0008-encoder-detection-reasons-and-filters.md)):
+      map the texts that real FFmpeg prints (recorded in `testdata/README.md`) to
+      plain-language reasons. Examples: `Cannot load libcuda.so.1` → "NVIDIA driver not
+      found"; `Driver does not support the required nvenc API version` → "NVIDIA driver too
+      old"; `No VA display found for device X` → "No VAAPI device (X)";
+      `Failed to initialise VAAPI connection` → "VAAPI driver failed to start";
+      `Error creating a MFX session` or a failed `-init_hw_device qsv=hw` → "No Intel QSV
+      device"; `DLL libamfrt64.so.1 failed to open` → "AMD AMF runtime not found". A known
+      text gives `unavailable`. Any other failure gives `error` with the most informative
+      line: the first line that the encoder logs (`[hevc_nvenc @ …]`), else the first line of
+      a hardware device (`[VAAPI @ …]`), else the first line that is not fftools bookkeeping.
+      Never the last line: it is a generic `Conversion failed!`.
 - [ ] **Cache**: key = ffmpeg path + size + mtime + version, plus a GPU fingerprint (Linux:
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
-      result is used at once and checked again in the background. A change emits
-      `capabilities.changed`.
+      result is used at once and checked again in the background: the full detection runs, and
+      the cached statuses stay until their new results are in. While that check runs, a
+      cached status that is not *available* is reported to validation as `encoder.checking`,
+      so a job waits for the new result instead of failing on a stale one (drivers can change
+      without changing the fingerprint; [0008](../decisions/0008-encoder-detection-reasons-and-filters.md),
+      follow-up of the M2 review). A change emits `capabilities.changed`. A new ffmpeg
+      (`tools.changed`) starts a new detection.
 - [ ] States: `unknown → checking → available | unavailable(reason) | error(reason)`.
 - [ ] `closest_available(encoder_id) -> encoder_id | None` uses the fallback chain from the
-      definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.).
+      definitions (`hevc_nvenc → hevc_qsv → hevc_amf → hevc_vaapi → libx265`, etc.), for
+      video and audio encoders (`libfdk_aac → aac`, [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 Done when: the app starts and serves the UI in < 1 s while detection runs. A fake-ffmpeg test
 double (a script that sleeps or prints driver errors) proves timeouts and reason mapping. A
@@ -217,6 +239,7 @@ A pure module with no I/O.
 def compute_geometry(src: SourceGeometry, settings: DimensionSettings) -> Geometry
 # Geometry: crop rect, scaled size, output SAR, display aspect, upscaled: bool, notes: list[str]
 def detect_crop_consensus(samples: list[CropRect], mode: Literal["auto", "conservative"]) -> CropRect
+def source_geometry(stream: VideoStream) -> SourceGeometry
 ```
 
 - [ ] Size modes: same as cropped source, fit within W×H, exact width, exact height.
@@ -226,11 +249,21 @@ def detect_crop_consensus(samples: list[CropRect], mode: Literal["auto", "conser
 - [ ] Modulus rounding keeps the aspect error as small as possible. Crop snaps to the chroma
       grid.
 - [ ] `notes` explain every snap or limit ("Crop left 141 → 140 for 4:2:0").
+- [ ] Conventions ([decision 0009](../decisions/0009-dimension-maths-conventions.md)): the crop
+      is measured on the picture as FFmpeg decodes it (display matrix applied, job rotation
+      not yet); the filter chain for `C-7` (automatic rotation on, then crop → transpose →
+      hflip → scale → setsar); upscaling is measured against the display size (DVD 16:9 →
+      854×480 is not an upscale); the rounding rule. The fit box turns for portrait output
+      ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 
 Done when: hypothesis tests prove these properties: the output is inside the fit box; no
 upscale unless allowed; the result is a multiple of the modulus; display aspect error
-< 0.5 % (or < 1 px); the crop is never negative and never removes the full frame. Table tests
-cover the classic cases (DVD NTSC 720×480 anamorphic 16:9, 1080p 2.40:1 letterbox, 4K → 1080p).
+< 0.5 % (or < 1 px); the crop is never negative and never removes the full frame. Corner
+cases are defined, not skipped ([0009](../decisions/0009-dimension-maths-conventions.md)): a
+fit box or a picture smaller than one modulus step gives one step on that axis, and when no
+size inside the limits meets the aspect tolerance, the closest one is used (the test proves
+that none exists). Table tests cover the classic cases (DVD NTSC 720×480 anamorphic 16:9,
+1080p 2.40:1 letterbox, 4K → 1080p).
 
 ## C-6 Definitions: encoders, options, filters, containers, languages
 
@@ -261,7 +294,8 @@ class EncoderOption(BaseModel):
       [03 §Advanced](03-features.md#advanced-encoder-options)). Include x264/x265 per-preset
       default tables.
 - [ ] **Audio encoders**: bitrate ranges per mixdown, **allowed bitrate values** (fixed steps
-      for AC-3 / E-AC-3, free ranges for AAC / Opus), sample rates, passthru codecs.
+      for AC-3 / E-AC-3, free ranges for AAC / Opus), sample rates, passthru codecs, fallback
+      chain (`libfdk_aac → aac`, [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)).
 - [ ] **Containers**: allowed video/audio/subtitle codecs, chapter and attachment support, the
       metadata flags each muxer can write.
 - [ ] **Filters**: id, FFmpeg implementation, presets/tunes with parameter values (HandBrake
@@ -286,30 +320,58 @@ class EncodePlan(BaseModel):
     output_final: Path
     expected_duration: float     # range-adjusted, for progress
     display: str                 # shell-quoted for the command preview (POSIX or Windows style)
+    files: list[PlanFile]        # written before the first step (FFMETADATA chapters)
+    temp_files: list[Path]       # removed when the job ends (2-pass statistics; 0013)
 ```
 
 - [ ] Argument order: global (`-hide_banner -nostdin -y -progress pipe:1 -nostats`) →
-      hardware init → input options (range seek) → `-i source` → external subtitle inputs
-      (`-itsoffset`, `-sub_charenc`) → chapter metadata input → `-map` with **absolute stream
-      indexes** (`0:3`) → filter graph → per-stream codec args → per-stream metadata and
-      dispositions → chapters → global tags → container flags (`-movflags +faststart`) → output.
+      hardware init → input options (decoder options `-drc_scale` / `-forced_subs_only`,
+      range seek `-ss`) → `-i source` → external subtitle inputs (`-itsoffset`, `-ss`,
+      `-sub_charenc`) → chapter metadata input → `-map` with **absolute stream indexes**
+      (`0:3`) → `-ss 0` when the video is encoded and a stream could start before 0 (a
+      range, a negative subtitle offset: nothing reaches the muxer before 0; 0013 "Follow-up
+      (M2 review)") → range end (`-t`, an output option, so FFmpeg cuts the copied chapters) →
+      filter graph → per-stream codec args → per-stream metadata and dispositions (no source
+      stream tags: `-map_metadata:s -1`) → chapters → global tags → container flags
+      (`-movflags +faststart`, `-strict -2`) → `-f <muxer>` → output
+      ([decision 0013](../decisions/0013-command-builder-details.md)).
 - [ ] **Filter graph builder** (`command/filtergraph.py`): fixed filter order (see
-      [03 §Filters](03-features.md#filters)), colour tagging, hardware upload tail, burn-in
-      overlay. Correct escaping of filter arguments, including Windows paths in `subtitles=`
-      (`C\:/…`). This is a known source of bugs, so it needs dedicated tests.
+      [03 §Filters](03-features.md#filters)), colour tagging (`setparams` for untagged
+      sources), HDR metadata removed after tone mapping, hardware upload tail, burn-in (text
+      last, bitmap `overlay` after the crop, in 10 bits for a deeper source; 0013). Correct
+      escaping of filter arguments,
+      including Windows paths in `subtitles=` (`C\:/…`). This is a known source of bugs, so it
+      needs dedicated tests.
 - [ ] **Video**: rate control, preset/tune/profile/level, `-x264-params` / `-x265-params` /
       `-svtav1-params` assembled from advanced options + colour + HDR metadata. 2-pass for x264
-      (`-pass`/`-passlogfile`) and x265 (`pass=`/`stats=` in params).
-- [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ac:a:N`, `-ar:a:N`, `-filter:a:N` (gain, DRC, downmix
-      with `aresample=matrix_encoding=dplii`, loudnorm with the measured values from the
-      analyse step).
+      (`-pass`/`-passlogfile`) and x265 (`pass=`/`stats=` in params); the statistics files are
+      listed in `EncodePlan.temp_files` for the runner to remove. Frame rate: constant
+      `-r -fps_mode cfr` ("same as source" = the rate after the filters: twice the
+      source's after a Bob deinterlacer, 4/5 of it after detelecine), peak `-fpsmax`
+      (0013).
+- [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ar:a:N` (always), `-filter:a:N` (output layout and
+      downmix with `aresample=[matrix_encoding=dplii:]out_chlayout=…`, gain, loudnorm with the
+      measured values of the track's own analyse step); DRC is the AC-3 decoder's
+      `-drc_scale` (0013). A bitrate, mixdown or sample rate the encoder cannot do is snapped
+      to an allowed value with C-6's helpers, which C-8 and C-12 share: a mixdown never
+      upmixes and otherwise becomes the encoder's largest layout below (AC-3 7.1 → 5.1); a
+      bitrate is clamped to the range of the effective mixdown and goes down to the next
+      allowed step (as HandBrake does); a sample rate goes to the nearest listed rate.
+      Validation shows it as info ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md),
+      0013 "Follow-up (M2 wave 2b)"). libopus gets a channel layout it accepts (side → back,
+      else the largest accepted layout of the source's channels); other encoders get the
+      source layout, relabelled only where that is lossless (0013 "Follow-up (M2 review)").
 - [ ] **Subtitles**: copy, convert, burn. For MKV, copy attachments (`-map 0:t?`) when ASS
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N
-      default+forced+comment+hearing_impaired+visual_impaired+original`. Flags the muxer cannot
-      write go to an `mkvpropedit` step.
+      default+forced+comment+hearing_impaired+visual_impaired+original` (every flag, `0` for
+      none). Flags the muxer cannot write, and Matroska `LanguageIETF`, go to an
+      `mkvpropedit` step.
 - [ ] **Chapters**: `-map_chapters 0|-1`, or a generated FFMETADATA file for renamed or
-      generated chapters.
+      generated chapters, and for the source's chapters when the range starts or ends on a
+      chapter edge (FFmpeg's copy keeps an empty chapter there; 0013 "Follow-up (M2 wave
+      2b)"). The end of a chapter range is clamped to the last chapter
+      ([decision 0026](../decisions/0026-builder-and-validation-agree.md)).
 - [ ] Tags with `-metadata`. Passthru common metadata = `-map_metadata 0` before the overrides.
 
 Done when: syrupy snapshots of `EncodePlan` exist for ≥ 40 fixture jobs (every encoder family,
@@ -327,13 +389,32 @@ functions in a registry, grouped by area.
       supported, option not supported by this build.
 - [ ] Container: codec not allowed (with fixes: convert, switch container, drop the track),
       flags not writable.
-- [ ] Dimensions: invalid crop, upscaling (warning), odd sizes for 4:2:0.
-- [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix).
-- [ ] Subtitles: more than one burn-in, bitmap subtitle into MP4, forced-only on a format that
-      does not support it.
-- [ ] Output: path not writable, output = source, name collision, not enough free disk space
-      (estimate in bitrate mode).
+- [ ] Dimensions: invalid crop, upscaling (warning). Odd sizes for 4:2:0 cannot happen: C-5
+      rounds every size to the chroma grid, so a property test replaces the rule; C-5's notes
+      give the other issues (crop not detected, crop snapped, outside the fit box)
+      ([0014](../decisions/0014-validation-rules-and-severities.md)). "Crop not detected" is
+      info until crop detection exists (M8, [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
+- [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix). An HDR source
+      encoded to 8-bit without tone mapping stays tagged HDR in 8 bits (warning, with fixes:
+      tone mapping, 10-bit; [0014](../decisions/0014-validation-rules-and-severities.md)
+      follow-up).
+- [ ] Audio: a mixdown, bitrate or sample rate the encoder cannot do, and an upmix, are info
+      notes that name the value the command builder writes (C-6's snap helpers,
+      [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
+- [ ] Subtitles: more than one burn-in, PGS subtitle into MP4 (VobSub is allowed,
+      [0010](../decisions/0010-definitions-filters-and-containers.md)), forced-only on a format that
+      does not support it (it works only for a burned-in PGS or VobSub track,
+      [0014](../decisions/0014-validation-rules-and-severities.md)).
+- [ ] Output: path not writable, output = source (also the `.part` file, the plan files and
+      the 2-pass statistics files, through links: decision 0027 item 5), name collision, not
+      enough free disk space (estimate in bitrate mode and for video passthrough), a manual
+      name that breaks C-16's file-name rules.
+- [ ] Silent losses: a BCP 47 language without mkvpropedit, gain / DRC / loudness on a copied
+      passthru track, an x265 level too small for the output
+      ([0014](../decisions/0014-validation-rules-and-severities.md) "Follow-up (M2 review)").
 - [ ] Range is outside the duration.
+- [ ] Everything the command builder refuses (`PlanError`) is a validation error (a test
+      builds a job for each refusal, decision 0013).
 
 Done when: every rule has a positive and a negative test, and every fix patch, when applied,
 removes its issue.
@@ -345,7 +426,9 @@ removes its issue.
 - [ ] CRUD, set default, import/export (single preset or all), name-conflict handling.
 - [ ] `diff(job_template, preset) -> list[FieldChange]` for the "modified" marker.
 - [ ] Settings in `<config>/settings.json`. Atomic writes (temp file + `os.replace`).
-- [ ] Migrations for both files. Unknown fields are kept.
+- [ ] Migrations for both files. Unknown fields are kept. A file newer than this Reframe, or
+      one that cannot be read, is never overwritten; a partly damaged presets file keeps its
+      valid presets ([decision 0015](../decisions/0015-presets-and-settings-stores.md)).
 
 Done when: an old-schema fixture loads after migration, export → import gives the same
 result, and a corrupt file is backed up and replaced with defaults plus a warning event.
@@ -374,18 +457,33 @@ cancelling a scan stops its FFmpeg process within 1 s.
 ## C-11 Queue and job runner
 
 - [ ] SQLite store: `jobs(id, position, state, settings_json, plan_json, issues_json,
-      created_at, started_at, finished_at, output_path, log_path, error)`.
+      created_at, started_at, finished_at, output_path, log_path, error)`. One writer thread,
+      whole-row writes; damaged, newer and unwritable files as in
+      [decision 0016](../decisions/0016-queue-and-job-runner.md).
 - [ ] Runner loop: when a slot is free (parallel limit), take the next `Waiting` job →
-      **validate again** (capabilities can change) → build the plan → run the steps.
+      **validate again** (capabilities can change; wait for encoder detection when an encoder
+      is still being checked) → build the plan → run the steps. Two jobs with the same output
+      path never run at once (0016).
 - [ ] **Progress parser** for `-progress` blocks (`out_time_us`, `fps`, `speed`, `total_size`,
-      `progress=end`). Weighted across steps (pass 1 = 40 %, …). ETA from a smoothed speed.
+      `progress=end`). Weighted across steps (pass 1 = 40 %, …). ETA from a smoothed rate over
+      active time: paused time and a system sleep do not count (FFmpeg's own `speed` and `fps`
+      do count them, so Reframe computes its own; 0016).
 - [ ] Logs: the full command line + stderr, to `<data>/logs/<job>.log`. Rate-limited
       `job.log` events.
 - [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree.
 - [ ] Cancel: kill the tree and remove the `.part` file.
-- [ ] Success: rename `.part` → final name (collision policy), run the post steps, re-probe the
-      output and check its layout (number of streams, languages).
-- [ ] Restart recovery: `Running` → `Interrupted`.
+- [ ] Time limits: none for an encode; a sleep-aware stall watchdog for FFmpeg steps (no
+      progress, no output and no CPU use for 10 minutes) and a 5-minute limit for short steps
+      (`mkvpropedit`) (0016).
+- [ ] Success: re-probe the `.part` output and check its layout (number and type of streams,
+      languages) **before** the rename, so a bad output never takes the final name; then rename
+      `.part` → final name (collision policy; with `ask` the job fails with the issue and the
+      complete `.part` file is kept) (0016).
+- [ ] Restart recovery: `Running` → `Interrupted`. `close()` stops running jobs as
+      `Interrupted` (0016). The store is opened on first use under an exclusive lock
+      (`<data>/queue.lock`): only the owner restores it and runs its jobs; another
+      process gets a private queue that is not kept. No file that a job writes or removes may
+      be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
@@ -403,7 +501,8 @@ overrides for `C-16`), and per-group resolution with a match report.
     behaviour, roles, order, default track.
   - Codec-rule stage: first match wins. Bitrate cap: never bigger than the source; passthru
     when the source fits; snap to the allowed encoder values; unknown bitrate counts as above
-    the max.
+    the max. Built in M2, before the selection stage: an M2 draft job takes every audio track
+    through the codec rules ([decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)).
   - `explain(defaults, source) -> list[TrackDecision]`, with a reason string for every
     selected or dropped track and every chosen rule. It feeds the live preview.
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
@@ -427,8 +526,17 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 ## C-14 Platform services
 
 - [ ] Sleep inhibit: Windows `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`.
-      Linux: the logind `Inhibit` D-Bus call, or `systemd-inhibit` as a fallback. If neither
-      is available, emit a warning and continue.
+      Linux: the desktop session's inhibit for automatic suspend
+      (`org.freedesktop.PowerManagement.Inhibit`, else the XDG portal `Inhibit` with the
+      suspend flag) and the logind `Inhibit` D-Bus call with `what=idle` where it is needed
+      (no session inhibit, or logind's `IdleAction` is not `ignore`: KDE turns a logind idle
+      lock into a screen inhibit). No `systemd-inhibit`. If none is available, emit a
+      warning and continue. Only automatic (idle) sleep is stopped: the user's own Sleep is
+      never blocked, so on Linux there is no logind `sleep` block lock
+      ([decision 0020](../decisions/0020-m2-wave-1-product-decisions.md); the Linux mechanism is
+      [0022](../decisions/0022-linux-sleep-inhibit-mechanism.md); both supersede the lock of
+      [0011](../decisions/0011-sleep-inhibit.md)). The D-Bus calls use a small stdlib client
+      (no D-Bus dependency); on Windows one dedicated thread sets and clears the state.
 - [ ] Power actions: shut down, sleep (Windows: `shutdown /s /t 60` and `SetSuspendState`.
       Linux: `systemctl poweroff|suspend`). Always after a cancellable 60 s countdown event.
 - [ ] Notification hook: emits an event only. The UI layer shows the notification.
@@ -444,7 +552,7 @@ class Reframe:
     capabilities: CapabilityService
     sources: SourceService         # probe, probe_folder, get, frames, cropdetect, scans
     presets: PresetService
-    jobs: JobService               # draft_from_preset, validate, plan, preview_clip
+    jobs: JobService               # draft, validate, plan, name, media_files; preview_clip (C-10)
     batch: BatchService            # group, derive, resolve
     queue: QueueService            # add, list, reorder, start/pause/resume/cancel, logs
     settings: SettingsService
@@ -455,9 +563,11 @@ class Reframe:
       the background.
 - [ ] CLI (`reframe` entry point, `[cli]` extra):
       `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status|fetch` ·
-      `reframe name PATH… [--template T]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
-      `reframe plan FILE --preset NAME` (prints the command) · `reframe encode FILE --preset NAME -o OUT` ·
+      `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
+      `reframe plan FILE [--preset NAME] [-o OUT]` (prints the issues, then the command) · `reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
       `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
+      No `--preset`: the default preset. Output formats, exit codes, the bounded wait for
+      encoder detection and the folder search: [decision 0017](../decisions/0017-jobs-service-and-cli.md).
 
 Done when: the CLI can encode a season folder end to end with no UI. This is the first point
 where you can use Reframe for real.
@@ -470,6 +580,8 @@ Implements [03 §Output naming](03-features.md#output-naming).
       detect season packs, score candidates, and return a reason string.
 - [ ] `naming/parse.py`: run `guessit` in advanced mode to get each match **with its position**,
       so text fields are cut from the original string and keep their spelling and separators.
+      guessit reads no user config files (`no_user_config`,
+      [0012](../decisions/0012-output-naming-rules.md)).
       `{main_title}` = the text before the first release tag. For episodes, the show name,
       a year before the episode code, the episode code and the episode title stay. Merge
       folder fields into file fields for season packs.

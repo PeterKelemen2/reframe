@@ -6,14 +6,14 @@ Built-in presets ship as JSON inside the package (read-only); user presets are s
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
-from reframe.models.base import DocumentModel, PositiveInt
+from reframe.models.base import DocumentModel, PositiveInt, ReframeModel
 from reframe.models.template import JobTemplate
 
-__all__ = ["BUILT_IN_CATEGORIES", "Preset", "PresetFile"]
+__all__ = ["BUILT_IN_CATEGORIES", "FieldChange", "Preset", "PresetFile"]
 
 #: Categories of the built-in presets (HandBrake's, adapted). User presets may use any.
 BUILT_IN_CATEGORIES = ("General", "Web", "Devices", "Matroska", "Hardware", "Production")
@@ -37,3 +37,20 @@ class PresetFile(DocumentModel):
     schema_version: PositiveInt = 1
     presets: list[Preset] = Field(default_factory=list)
     default_preset_id: str | None = None
+
+
+class FieldChange(ReframeModel):
+    """One difference between edited settings and the preset they started from: C-9's
+    ``diff(job_template, preset) -> list[FieldChange]`` for the *modified* marker (03
+    §Presets: "Hover it to see what changed")."""
+
+    path: str
+    """Dotted field path, as in ``ValidationIssue.path``: ``video.encoder``,
+    ``audio_defaults.codec_rules[0].max_bitrate``."""
+    kind: Literal["changed", "added", "removed"] = "changed"
+    """``added``: only the edited settings have the field (or list item); ``removed``: only
+    the preset has it."""
+    preset_value: JsonValue = None
+    """The preset's value (``None`` for ``added``)."""
+    value: JsonValue = None
+    """The edited value (``None`` for ``removed``)."""

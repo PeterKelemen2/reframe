@@ -1,0 +1,17 @@
+Input #0, lavfi, from 'color=size=640x360':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (h264_amf))
+radv: RADV_PERFTEST=video_decode is deprecated and will be removed in future Mesa releases. Please use RADV_EXPERIMENTAL=video_decode instead.
+[h264_amf @ 0x56280ace0a00] 10-bit input video is not supported by AMF H264 encoder
+[vost#0:0/h264_amf @ 0x56280ace00c0] [enc:h264_amf @ 0x56280ace05c0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0x56280ace0f80] Error sending frames to consumers: Invalid data found when processing input
+[vf#0:0 @ 0x56280ace0f80] Task finished with error code: -1094995529 (Invalid data found when processing input)
+[vf#0:0 @ 0x56280ace0f80] Terminating thread with return code -1094995529 (Invalid data found when processing input)
+[vost#0:0/h264_amf @ 0x56280ace00c0] [enc:h264_amf @ 0x56280ace05c0] Could not open encoder before EOF
+[vost#0:0/h264_amf @ 0x56280ace00c0] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/h264_amf @ 0x56280ace00c0] Terminating thread with return code -22 (Invalid argument)
+[out#0/null @ 0x56280acdfd40] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.02    
+Conversion failed!

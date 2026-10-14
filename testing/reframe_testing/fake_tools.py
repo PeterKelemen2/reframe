@@ -196,6 +196,13 @@ def exit_now(code: int) -> Action:
     return {"exit": code}
 
 
+def exec_program(program: str | os.PathLike[str]) -> Action:
+    """Run ``program`` (a real ffmpeg, for example) with the same arguments, stdin, stdout and
+    stderr, and exit with its exit code (128 + N when signal N ended it on POSIX). A rule
+    with no conditions and this action, put last, passes every other call to the real tool."""
+    return {"exec": os.fspath(program)}
+
+
 def _check_data(name: str) -> None:
     if not (DATA_DIR / name).is_file():
         raise FileNotFoundError(f"no captured fake data named {name!r} in {DATA_DIR}")

@@ -1,0 +1,10 @@
+Input #0, lavfi, from 'color=size=640x360':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+[libplacebo @ 0x559e2c9cb040] Failed creating instance: VK_ERROR_INCOMPATIBLE_DRIVER
+[libplacebo @ 0x559e2c9cb040] Failed initializing vulkan instance
+[libplacebo @ 0x559e2c9cb040] Failed initializing vulkan device
+[Parsed_libplacebo_0 @ 0x559e2c9caf40] Failed creating Vulkan device!
+[AVFilterGraph @ 0x559e2c9caec0] Error initializing filters
+Error opening output file -.
+Error opening output files: Generic error in an external library

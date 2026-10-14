@@ -1,0 +1,143 @@
+# SVT-AV1 advanced options (C-6, M2 basic set). Every option goes into `-svtav1-params`.
+#
+# libsvtav1 does not fail on an unknown or bad parameter: it logs "Error parsing option
+# <name>: <value>." and encodes on. tests/definitions/test_tools.py encodes with every option
+# set and checks that no such line appears (SVT-AV1 v4.2.0, FFmpeg n9.0.2).
+
+[[set.svtav1]]
+key = "film-grain"
+label = "Film grain synthesis"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 50
+step = 1
+help = "Removes the grain before encoding and lets the player add synthetic grain back: much smaller files for grainy sources. 4–10 for light grain, 10–20 for heavy grain; 0 = off. Slow at presets above 6."
+mapping = { kind = "x26x_param", name = "film-grain" }
+default = { kind = "fixed", value = 0 }
+
+[[set.svtav1]]
+key = "film-grain-denoise"
+label = "Denoise for film grain"
+category = "Psycho-visual"
+type = "bool"
+help = "Encode the denoised picture (on) or the original with grain parameters on top (off: keeps more detail)."
+mapping = { kind = "x26x_param", name = "film-grain-denoise" }
+requires = [{ field = "option:film-grain", op = "ne", value = 0 }]
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "keyint"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = -2
+max = 10000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes. -2 = about 5 seconds (the default), -1 = only the first frame."
+mapping = { kind = "x26x_param", name = "keyint" }
+default = { kind = "fixed", value = -2 }
+
+[[set.svtav1]]
+key = "scd"
+label = "Scene change detection"
+category = "Frame types / GOP"
+type = "bool"
+help = "Places a keyframe at scene changes. SVT-AV1 handles scene changes inside the GOP on its own, so this is rarely needed."
+mapping = { kind = "x26x_param", name = "scd" }
+default = { kind = "fixed", value = false }
+
+[[set.svtav1]]
+key = "lookahead"
+label = "Look-ahead"
+category = "Rate control"
+type = "int"
+# SVT-AV1 v4.2 (both n9.0.2 builds, n8.1.3): `lookahead=-1` logs "Error parsing option
+# lookahead: -1." and is ignored; 121 fails: "The lookahead distance must be [0 - 120]".
+min = 0
+max = 120
+step = 1
+unit = "frames"
+help = "Frames analysed ahead (0–120). Not set, the encoder picks it from the preset and the rate control."
+mapping = { kind = "x26x_param", name = "lookahead" }
+default = { kind = "encoder", note = "picked from the preset and the rate control" }
+
+[[set.svtav1]]
+key = "enable-overlays"
+label = "Overlay frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Adds overlay frames after alternative reference frames; can help static, high-quality content. Costs speed."
+mapping = { kind = "x26x_param", name = "enable-overlays" }
+default = { kind = "fixed", value = false }
+
+[[set.svtav1]]
+key = "enable-tf"
+label = "Temporal filtering"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "0", label = "Off", help = "Keeps more fine detail and grain." },
+    { value = "1", label = "On" },
+    { value = "2", label = "Adaptive" },
+]
+help = "Temporal filtering of alternative reference frames. Off can keep more detail in grainy sources."
+mapping = { kind = "x26x_param", name = "enable-tf" }
+default = { kind = "encoder", note = "the library default (on)" }
+
+[[set.svtav1]]
+key = "enable-qm"
+label = "Quantisation matrices"
+category = "Rate control"
+type = "bool"
+help = "Uses quantisation matrices: often better visual quality at the same size."
+mapping = { kind = "x26x_param", name = "enable-qm" }
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "qm-min"
+label = "Minimum QM level"
+category = "Rate control"
+type = "int"
+min = 0
+max = 15
+step = 1
+help = "Lowest quantisation matrix level (flatter matrices at higher levels)."
+mapping = { kind = "x26x_param", name = "qm-min" }
+requires = [{ field = "option:enable-qm", value = true }]
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "qm-max"
+label = "Maximum QM level"
+category = "Rate control"
+type = "int"
+min = 0
+max = 15
+step = 1
+help = "Highest quantisation matrix level."
+mapping = { kind = "x26x_param", name = "qm-max" }
+requires = [{ field = "option:enable-qm", value = true }]
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "enable-variance-boost"
+label = "Variance boost"
+category = "Psycho-visual"
+type = "bool"
+help = "Spends more bits on low-contrast areas (skies, walls) to avoid blocking."
+mapping = { kind = "x26x_param", name = "enable-variance-boost" }
+default = { kind = "fixed", value = false }
+
+[[set.svtav1]]
+key = "sharpness"
+label = "Sharpness"
+category = "Loop filters"
+type = "int"
+min = -7
+max = 7
+step = 1
+help = "Positive values reduce deblocking and keep sharper detail; negative values give a smoother picture."
+mapping = { kind = "x26x_param", name = "sharpness" }
+default = { kind = "fixed", value = 0 }

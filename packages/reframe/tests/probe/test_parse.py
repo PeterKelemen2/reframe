@@ -159,6 +159,15 @@ def test_stream_duration_falls_back_to_the_matroska_tag() -> None:
     assert source.audio[0].duration == pytest.approx(3723.5)
 
 
+def test_mp4_track_title_is_the_name_tag() -> None:
+    # FFmpeg n9.0.2's mov demuxer reports a track title written with
+    # `-metadata:s:a:0 title=…` as the stream tag "name" (checked with ffprobe, M2 C-7).
+    named = {"index": 1, "codec_type": "audio", "tags": {"name": "English Stereo"}}
+    both = {"index": 2, "codec_type": "audio", "tags": {"title": "Title", "name": "Name"}}
+    source = parse_ffprobe(doc(video(), named, both), FILE)
+    assert [a.title for a in source.audio] == ["English Stereo", "Title"]
+
+
 def test_bad_language_is_a_warning() -> None:
     audio = {"index": 1, "codec_type": "audio", "tags": {"language": "English (US)"}}
     source = parse_ffprobe(doc(audio), FILE)

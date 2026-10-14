@@ -23,16 +23,21 @@ from reframe.models import (
     AudioOutputTrack,
     BitrateInfo,
     BitrateSource,
+    CapabilitySnapshot,
     ChapterRange,
     Disposition,
     DocumentModel,
     EncodePlan,
+    EncoderState,
+    EncoderStatus,
     Event,
     ExternalSubtitle,
+    FieldChange,
     FieldOrder,
     FilterConfig,
     FilterSettings,
     FullRange,
+    JobDraft,
     JobSettings,
     JobTemplate,
     LanguageTag,
@@ -41,6 +46,7 @@ from reframe.models import (
     MigrationError,
     MigrationRegistry,
     MoveOp,
+    NameResult,
     OutputTrackRule,
     PlanFile,
     PlanStep,
@@ -48,13 +54,16 @@ from reframe.models import (
     PresetFile,
     Range,
     Rational,
+    Severity,
     SourceRef,
     SubtitleDefaults,
     SubtitleOutputTrack,
     TimeRange,
     ToolPaths,
+    TrackDecision,
     TrackSelector,
     UnsupportedSchemaVersion,
+    ValidationIssue,
     ValueRef,
     VideoStream,
     current_version,
@@ -481,3 +490,47 @@ def test_plan_files_for_generated_chapters() -> None:
     assert again.files == [chapters]
     assert again.files[0].content.startswith(";FFMETADATA1\n")
     assert EncodePlan.model_validate({**plan.model_dump(mode="json"), "files": []}).files == []
+
+
+def test_capability_snapshot_lookups() -> None:
+    snapshot = CapabilitySnapshot(
+        encoders={"libx265": EncoderStatus(id="libx265", state=EncoderState.AVAILABLE)},
+        filters=["zscale"],
+    )
+    assert snapshot.status("libx265").state is EncoderState.AVAILABLE
+    assert snapshot.status("hevc_nvenc") == EncoderStatus(id="hevc_nvenc")
+    assert snapshot.has_filter("zscale") is True
+    assert snapshot.has_filter("libplacebo") is False
+    assert CapabilitySnapshot().has_filter("zscale") is None
+
+
+def test_field_change_round_trips_json_values() -> None:
+    change = FieldChange(path="video.encoder", preset_value="libx265", value="hevc_nvenc")
+    assert change.kind == "changed"
+    assert FieldChange.model_validate_json(change.model_dump_json()) == change
+    removed = FieldChange(
+        path="audio_defaults.codec_rules[1]", kind="removed", preset_value={"codec": "aac"}
+    )
+    assert removed.value is None
+
+
+def test_job_draft_round_trips_and_rejects_unknown_fields() -> None:
+    draft = JobDraft(
+        job=JobSettings(source=SourceRef(path=Path("/m/a.mkv")), preset_id="h265-mkv-1080p"),
+        decisions=[TrackDecision(source_stream=1, rule=1, reason="AC-3 5.1: passthru")],
+        naming=NameResult(
+            source="file",
+            reason="File name: 1 field recognised",
+            template="{main_title}",
+            template_kind="movie",
+            relative_path="a.mkv",
+            path=Path("/m/a (1).mkv"),
+            extension="mkv",
+        ),
+        issues=[ValidationIssue(severity=Severity.INFO, code="x.y", message="m")],
+        notes=["The name a.mkv is the source file itself: the output is saved as a (1).mkv."],
+    )
+    again = JobDraft.model_validate_json(draft.model_dump_json())
+    assert again == draft
+    with pytest.raises(ValidationError):
+        JobDraft.model_validate({**draft.model_dump(mode="json"), "extra": 1})

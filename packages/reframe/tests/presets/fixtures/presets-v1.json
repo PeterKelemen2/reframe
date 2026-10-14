@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "written_by": "Reframe 0.0.1",
+  "default": "b6f1c0de-0000-4000-8000-000000000002",
+  "presets": [
+    {
+      "schema_version": 1,
+      "id": "b6f1c0de-0000-4000-8000-000000000001",
+      "name": "Anime 720p (old)",
+      "category": "Custom",
+      "output": {"container": "mkv"},
+      "dimensions": {"size": {"mode": "fit", "width": 1280, "height": 720}},
+      "video": {"encoder": "libx265", "quality": 19, "preset": "slow", "tune": "animation"}
+    },
+    {
+      "schema_version": 1,
+      "id": "b6f1c0de-0000-4000-8000-000000000002",
+      "name": "Archive x265 (old)",
+      "category": "Custom",
+      "user_note": "for the shelf",
+      "video": {"encoder": "libx265", "quality": 20, "bit_depth": 10, "profile": "main10"}
+    }
+  ]
+}

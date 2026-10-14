@@ -14,7 +14,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -1268,6 +1268,128 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[CapabilitySnapshot]
+  dict({
+    '$defs': list([
+      'EncoderState',
+      'EncoderStatus',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      Every known encoder's status at one moment (C-4), plus the filters of the build.
+      
+      The ``caps`` argument of ``build_plan`` (C-7) and ``validate`` (C-8). The capability
+      service returns one at once (from the cache, or all ``unknown``) and never blocks; a
+      finished detection replaces it and publishes ``capabilities.changed``.
+    ''',
+    'properties': dict({
+      'checked_at': dict({
+        'anyOf': list([
+          dict({
+            'format': 'date-time',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'When the last full detection ended.',
+        'title': 'Checked At',
+      }),
+      'detecting': dict({
+        'default': False,
+        'description': 'A detection is running; statuses may still change.',
+        'title': 'Detecting',
+        'type': 'boolean',
+      }),
+      'encoders': dict({
+        'additionalProperties': dict({
+          '$ref': '#/$defs/EncoderStatus',
+        }),
+        'description': 'By encoder id: every video and audio encoder of the definitions (C-6).',
+        'title': 'Encoders',
+        'type': 'object',
+      }),
+      'ffmpeg': dict({
+        'anyOf': list([
+          dict({
+            'format': 'path',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The ffmpeg binary these results belong to.',
+        'title': 'Ffmpeg',
+      }),
+      'ffmpeg_version': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Ffmpeg Version',
+      }),
+      'filter_failures': dict({
+        'additionalProperties': dict({
+          'type': 'string',
+        }),
+        'description': '''
+          Filters of the build whose run test failed, with the reason. ``libplacebo`` is listed
+          by ``ffmpeg -filters`` but needs a working Vulkan device, so detection runs one frame
+          through it ("No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)").
+        ''',
+        'title': 'Filter Failures',
+        'type': 'object',
+      }),
+      'filters': dict({
+        'anyOf': list([
+          dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Filters in this FFmpeg build (``ffmpeg -filters``: ``libplacebo``, ``zscale``, …);
+          ``None`` until the list was read.
+        ''',
+        'title': 'Filters',
+      }),
+      'from_cache': dict({
+        'default': False,
+        'description': 'The statuses come from the cache and have not been checked again yet.',
+        'title': 'From Cache',
+        'type': 'boolean',
+      }),
+      'untested_filters': dict({
+        'description': '''
+          Filters of the build that need a run test that has not passed or failed: while the
+          detection runs, or when hardware tests are off (Settings → Encoders).
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Untested Filters',
+        'type': 'array',
+      }),
+    }),
+    'title': 'CapabilitySnapshot',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ChapterNamePolicy]
   dict({
     '$defs': list([
@@ -1723,7 +1845,7 @@
     'description': 'RFC 6902 ``copy``. ``from_`` is ``"from"`` in JSON.',
     'properties': dict({
       'from': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'From',
         'type': 'string',
       }),
@@ -1734,7 +1856,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -1775,7 +1897,10 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'Pixels removed from each edge of the (unrotated) source frame.',
+    'description': '''
+      Pixels removed from each edge of the source picture as FFmpeg decodes it: the display
+      matrix is applied, the job's rotate and flip are not (decision 0009).
+    ''',
     'properties': dict({
       'bottom': dict({
         'default': 0,
@@ -2271,6 +2396,18 @@
         'title': 'Steps',
         'type': 'array',
       }),
+      'temp_files': dict({
+        'description': '''
+          Files that the steps create and that the runner removes when the job ends, whatever
+          the outcome (2-pass statistics). A file that does not exist is skipped.
+        ''',
+        'items': dict({
+          'format': 'path',
+          'type': 'string',
+        }),
+        'title': 'Temp Files',
+        'type': 'array',
+      }),
     }),
     'required': list([
       'job_type',
@@ -2294,6 +2431,23 @@
         'description': 'Run the hardware test encodes (C-4). Off: hardware encoders stay "unknown".',
         'title': 'Hardware Tests',
         'type': 'boolean',
+      }),
+      'vaapi_device': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The VAAPI render node to use (``/dev/dri/renderD129``). ``None`` or empty = automatic:
+          detection tests the VAAPI encoders on every ``/dev/dri/renderD*`` node and each encoder
+          uses the first node where it works (decision 0020).
+        ''',
+        'title': 'Vaapi Device',
       }),
     }),
     'title': 'EncoderSettings',
@@ -2349,6 +2503,24 @@
         'description': 'The FFmpeg line the reason was derived from (for the log and bug reports).',
         'title': 'Detail',
       }),
+      'device': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The device the encoder works on, for encoders that need one: the VAAPI render node
+          (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
+          Settings → Encoders forces (decision 0020). The command builder (C-7) uses it. ``None``
+          for encoders without a device choice and for encoders that are not available.
+        ''',
+        'title': 'Device',
+      }),
       'hardware': dict({
         'default': False,
         'title': 'Hardware',
@@ -2371,6 +2543,18 @@
         'default': None,
         'description': 'Listed by ``ffmpeg -encoders``; ``None`` before the list was read.',
         'title': 'In Build',
+      }),
+      'pix_fmts': dict({
+        'description': '''
+          Pixel formats the encoder accepts in this build (``Supported pixel formats`` of
+          ``ffmpeg -h encoder=<id>``; only ``vaapi`` for VAAPI encoders, which take hardware frames).
+          Empty when not read.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Pix Fmts',
+        'type': 'array',
       }),
       'presets': dict({
         'description': 'Speed presets this build offers, if the encoder lists them.',
@@ -2400,6 +2584,22 @@
         'default': None,
         'description': 'Plain-language reason for ``unavailable`` / ``error`` ("NVIDIA driver not found").',
         'title': 'Reason',
+      }),
+      'reason_10bit': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
+          supported by this encoder").
+        ''',
+        'title': 'Reason 10Bit',
       }),
       'state': dict({
         '$ref': '#/$defs/EncoderState',
@@ -2685,6 +2885,58 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[FieldChange]
+  dict({
+    '$defs': list([
+      'JsonValue',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      One difference between edited settings and the preset they started from: C-9's
+      ``diff(job_template, preset) -> list[FieldChange]`` for the *modified* marker (03
+      §Presets: "Hover it to see what changed").
+    ''',
+    'properties': dict({
+      'kind': dict({
+        'default': 'changed',
+        'description': '''
+          ``added``: only the edited settings have the field (or list item); ``removed``: only
+          the preset has it.
+        ''',
+        'enum': list([
+          'changed',
+          'added',
+          'removed',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': '''
+          Dotted field path, as in ``ValidationIssue.path``: ``video.encoder``,
+          ``audio_defaults.codec_rules[0].max_bitrate``.
+        ''',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'preset_value': dict({
+        '$ref': '#/$defs/JsonValue',
+        'default': None,
+        'description': "The preset's value (``None`` for ``added``).",
+      }),
+      'value': dict({
+        '$ref': '#/$defs/JsonValue',
+        'default': None,
+        'description': 'The edited value (``None`` for ``removed``).',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'FieldChange',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[FieldOrder]
   dict({
     '$defs': list([
@@ -2725,8 +2977,28 @@
         'default': None,
         'title': 'Custom',
       }),
+      'implementation': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The FFmpeg implementation (C-6 ``FilterImplementation.id``): ``nlmeans`` or
+          ``hqdn3d`` for Denoise, ``bwdif`` or ``yadif`` for Deinterlace, ``unsharp`` or ``cas``
+          for Sharpen, ``zscale`` or ``libplacebo`` for Colorspace and Tone mapping. ``None`` = the
+          filter's default: the first implementation the FFmpeg build can run (HandBrake stores
+          this choice separately too, for example ``PictureDenoiseFilter``).
+        ''',
+        'title': 'Implementation',
+      }),
       'preset': dict({
         'default': 'default',
+        'description': 'A preset of the chosen implementation (``FilterImplementation.presets`` in C-6).',
         'title': 'Preset',
         'type': 'string',
       }),
@@ -2980,6 +3252,28 @@
         'title': 'Display Aspect',
         'type': 'number',
       }),
+      'filter_rotation': dict({
+        'default': 0,
+        'description': '''
+          Clockwise rotation that the filter graph applies after the crop: the job's ``rotate``.
+          FFmpeg's automatic rotation has already applied the source's display matrix before the
+          filter graph, so the crop is in that orientation (``reframe.dimensions``).
+        ''',
+        'enum': list([
+          0,
+          90,
+          180,
+          270,
+        ]),
+        'title': 'Filter Rotation',
+        'type': 'integer',
+      }),
+      'flip_horizontal': dict({
+        'default': False,
+        'description': 'Mirror the picture left to right, after the rotation.',
+        'title': 'Flip Horizontal',
+        'type': 'boolean',
+      }),
       'notes': dict({
         'items': dict({
           'type': 'string',
@@ -3110,6 +3404,107 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[JobDraft]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'AudioOutputTrack',
+      'AverageBitrate',
+      'ChapterRange',
+      'ChapterSettings',
+      'ConstantQuality',
+      'CopyOp',
+      'CropRect',
+      'CropSettings',
+      'DimensionSettings',
+      'ExactHeight',
+      'ExactWidth',
+      'ExternalSubtitle',
+      'FilterConfig',
+      'FilterSettings',
+      'FitWithin',
+      'Fix',
+      'FrameRange',
+      'FullRange',
+      'JobNaming',
+      'JobSettings',
+      'JsonValue',
+      'MoveOp',
+      'NameCandidate',
+      'NameResult',
+      'NameSpan',
+      'OutputSettings',
+      'ParsedName',
+      'Rational',
+      'RemoveOp',
+      'ReplaceOp',
+      'SameAsSource',
+      'Severity',
+      'SourceFingerprint',
+      'SourceRef',
+      'SubtitleOutputTrack',
+      'TagSettings',
+      'TestOp',
+      'TimeRange',
+      'TrackDecision',
+      'TrackFlags',
+      'TrackMetadata',
+      'ValidationIssue',
+      'VideoSettings',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      ``JobService.draft(source, preset)``: the job, why its tracks and name are what they
+      are, and its issues.
+    ''',
+    'properties': dict({
+      'decisions': dict({
+        'description': 'One per source audio track, in source order (C-12 ``draft_tracks``; decision 0018).',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Decisions',
+        'type': 'array',
+      }),
+      'issues': dict({
+        'description': '``validate(job)`` of the drafted job; an ``error`` keeps it out of the queue.',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'job': dict({
+        '$ref': '#/$defs/JobSettings',
+        'description': '''
+          Filled from the preset (output options, dimensions, filters, video, chapters, tags),
+          the source (tracks, the video track's metadata) and the output name.
+        ''',
+      }),
+      'naming': dict({
+        '$ref': '#/$defs/NameResult',
+        'description': "C-16's output name of the source (the template, or the manual name of ``-o``).",
+      }),
+      'notes': dict({
+        'description': '''
+          What the draft changed or left out, in one line each: an output name that was the
+          source file itself, preset options that M2 does not apply yet.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'job',
+      'naming',
+    ]),
+    'title': 'JobDraft',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[JobLogEvent]
   dict({
     '$defs': list([
@@ -3159,9 +3554,24 @@
       
       ``mode="manual"`` uses ``manual_name`` (*Reset to template* sets ``mode`` back).
       ``template`` and ``name_source`` override the preset's naming options for this job only
-      (``None`` = use them). C-16 adds the parsed-name fields next to these.
+      (``None`` = use them). ``field_overrides`` holds the parsed-name fields that the user
+      corrected for this file (03 §Naming editor, 04 §Per-file overrides).
     ''',
     'properties': dict({
+      'field_overrides': dict({
+        'additionalProperties': dict({
+          'type': 'string',
+        }),
+        'description': '''
+          Parsed-name fields corrected for this file, by variable name: ``name``,
+          ``main_title``, ``sub_title``, ``season``, ``episode``, ``episode_code``, ``year``,
+          ``edition``, ``source_type``, ``release_group``. They replace what the parser found;
+          ``""`` clears a field. Numbers are written as text (``"3"``). Unknown names and bad
+          numbers are naming issues, not load errors.
+        ''',
+        'title': 'Field Overrides',
+        'type': 'object',
+      }),
       'manual_name': dict({
         'anyOf': list([
           dict({
@@ -3211,6 +3621,7 @@
           }),
         ]),
         'default': None,
+        'description': 'Used for movies and episodes alike (it replaces both templates of the options).',
         'title': 'Template',
       }),
     }),
@@ -3940,6 +4351,17 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[MediaKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'movie',
+      'episode',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[MediaSource]
   dict({
     '$defs': list([
@@ -4113,7 +4535,7 @@
     'description': 'RFC 6902 ``move``. ``from_`` is ``"from"`` in JSON.',
     'properties': dict({
       'from': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'From',
         'type': 'string',
       }),
@@ -4124,7 +4546,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -4149,6 +4571,234 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[NameCandidate]
+  dict({
+    '$defs': list([
+      'NameSpan',
+      'ParsedName',
+    ]),
+    'additionalProperties': False,
+    'description': 'The file name or the folder name, parsed and scored (03 §Where the name comes from).',
+    'properties': dict({
+      'fields': dict({
+        '$ref': '#/$defs/ParsedName',
+      }),
+      'kind': dict({
+        'enum': list([
+          'file',
+          'folder',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': 'The file, or the folder.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'recognised': dict({
+        'description': '''
+          The scored fields found: ``title``, ``year``, ``resolution``, ``source``,
+          ``video_codec``, ``audio_codec``, ``hdr``, ``edition``, ``release_group``.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Recognised',
+        'type': 'array',
+      }),
+      'score': dict({
+        'description': '+1 for each recognised field, +2 when the title has word separators.',
+        'title': 'Score',
+        'type': 'integer',
+      }),
+      'spans': dict({
+        'items': dict({
+          '$ref': '#/$defs/NameSpan',
+        }),
+        'title': 'Spans',
+        'type': 'array',
+      }),
+      'text': dict({
+        'description': 'What was parsed: the file name without its extension, or the folder name.',
+        'title': 'Text',
+        'type': 'string',
+      }),
+      'word_separators': dict({
+        'default': False,
+        'description': 'The title has word separators (``Hacksaw.Ridge``, not ``hacksawridge``).',
+        'title': 'Word Separators',
+        'type': 'boolean',
+      }),
+    }),
+    'required': list([
+      'kind',
+      'text',
+      'path',
+      'score',
+    ]),
+    'title': 'NameCandidate',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[NameKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'file',
+      'folder',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[NameResult]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'CopyOp',
+      'Fix',
+      'JsonValue',
+      'MoveOp',
+      'NameCandidate',
+      'NameSpan',
+      'ParsedName',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
+      'TestOp',
+      'ValidationIssue',
+    ]),
+    'additionalProperties': False,
+    'description': 'The output name of one source file (:func:`reframe.naming.resolve_output_name`).',
+    'properties': dict({
+      'candidates': dict({
+        'description': 'The file name first, then the folder name (when there is a usable folder).',
+        'items': dict({
+          '$ref': '#/$defs/NameCandidate',
+        }),
+        'title': 'Candidates',
+        'type': 'array',
+      }),
+      'extension': dict({
+        'description': 'Without the dot: ``mkv``, ``mp4``, ``m4v``, ``webm``.',
+        'title': 'Extension',
+        'type': 'string',
+      }),
+      'fields': dict({
+        '$ref': '#/$defs/ParsedName',
+        'description': '''
+          The fields used for the name: the chosen candidate's, plus folder fields for a season
+          pack, plus the job's per-file overrides.
+        ''',
+      }),
+      'issues': dict({
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'notes': dict({
+        'description': '''
+          What naming changed: skipped folders, merged fields, replaced characters, shortened
+          parts, fallbacks.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+      'path': dict({
+        'anyOf': list([
+          dict({
+            'format': 'path',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The full output path, when the output folder is known.',
+        'title': 'Path',
+      }),
+      'reason': dict({
+        'description': '''
+          Why, for example ``Folder name: 8 fields recognised, title with word separators
+          (10 points); file name: 3 fields recognised (3 points)``.
+        ''',
+        'title': 'Reason',
+        'type': 'string',
+      }),
+      'relative_path': dict({
+        'description': '''
+          The rendered name, relative to the output folder: subfolders separated by ``/``, and
+          the extension (``The.Sopranos/Season 03/The.Sopranos.S03E02.Proshai.Livushka.mkv``).
+        ''',
+        'title': 'Relative Path',
+        'type': 'string',
+      }),
+      'season_pack': dict({
+        'default': False,
+        'description': "The file's folder holds several episode files.",
+        'title': 'Season Pack',
+        'type': 'boolean',
+      }),
+      'skipped_folders': dict({
+        'description': 'Generic folders (``Season 03``, ``BDMV``…) skipped to find the folder name.',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Skipped Folders',
+        'type': 'array',
+      }),
+      'source': dict({
+        'description': 'The chosen name source.',
+        'enum': list([
+          'file',
+          'folder',
+        ]),
+        'title': 'Source',
+        'type': 'string',
+      }),
+      'template': dict({
+        'description': 'The template that made the name (or the manual name).',
+        'title': 'Template',
+        'type': 'string',
+      }),
+      'template_kind': dict({
+        'enum': list([
+          'movie',
+          'episode',
+          'manual',
+        ]),
+        'title': 'Template Kind',
+        'type': 'string',
+      }),
+      'variables': dict({
+        'additionalProperties': dict({
+          'type': 'string',
+        }),
+        'description': "Every variable's value for this file (default format), for the variable chips.",
+        'title': 'Variables',
+        'type': 'object',
+      }),
+    }),
+    'required': list([
+      'source',
+      'reason',
+      'template',
+      'template_kind',
+      'relative_path',
+      'extension',
+    ]),
+    'title': 'NameResult',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[NameSource]
   dict({
     '$defs': list([
@@ -4159,6 +4809,50 @@
       'folder',
     ]),
     'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[NameSpan]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      One recognised part of a name, with its position (for the coloured spans of the
+      naming editor). ``text`` is ``candidate.text[start:end]``.
+    ''',
+    'properties': dict({
+      'end': dict({
+        'minimum': 0,
+        'title': 'End',
+        'type': 'integer',
+      }),
+      'field': dict({
+        'description': '''
+          ``name``, ``year``, ``episode_code``, ``sub_title``, ``resolution``, ``source_type``,
+          ``edition``, ``release_group``, ``hdr``, ``date``, or a guessit property name for other
+          release tags (``video_codec``, ``audio_codec``, ``language``, ``other``…).
+        ''',
+        'title': 'Field',
+        'type': 'string',
+      }),
+      'start': dict({
+        'minimum': 0,
+        'title': 'Start',
+        'type': 'integer',
+      }),
+      'text': dict({
+        'title': 'Text',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'field',
+      'start',
+      'end',
+      'text',
+    ]),
+    'title': 'NameSpan',
+    'type': 'object',
   })
 # ---
 # name: test_json_schema_snapshot[NamingOptions]
@@ -4252,6 +4946,51 @@
       }),
     }),
     'title': 'NamingOptions',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[NamingVariable]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'One template variable, for the naming editor (autocomplete, chips) and the docs.',
+    'properties': dict({
+      'description': dict({
+        'title': 'Description',
+        'type': 'string',
+      }),
+      'group': dict({
+        'enum': list([
+          'handbrake',
+          'name',
+          'media',
+        ]),
+        'title': 'Group',
+        'type': 'string',
+      }),
+      'kind': dict({
+        'enum': list([
+          'text',
+          'number',
+          'date',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'name': dict({
+        'description': 'Without braces: ``main_title``, ``creation-date``.',
+        'title': 'Name',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'name',
+      'group',
+      'kind',
+      'description',
+    ]),
+    'title': 'NamingVariable',
     'type': 'object',
   })
 # ---
@@ -4569,6 +5308,197 @@
       'settings',
     ]),
     'title': 'OutputTrackRule',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ParsedName]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The name parts of 03 §Variables. Text keeps its original spelling and separators.
+      ``None``: not recognised.
+    ''',
+    'properties': dict({
+      'edition': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Edition',
+      }),
+      'episode': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The first episode number (an absolute number when there is no season).',
+        'title': 'Episode',
+      }),
+      'episode_code': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'As written in the name: ``S03E02``, ``S03E02E03``, ``1x01``, ``E1071``, ``001``.',
+        'title': 'Episode Code',
+      }),
+      'episodes': dict({
+        'description': 'Every episode number of a multi-episode code (``S03E02E03`` → ``[2, 3]``).',
+        'items': dict({
+          'minimum': 0,
+          'type': 'integer',
+        }),
+        'title': 'Episodes',
+        'type': 'array',
+      }),
+      'kind': dict({
+        'default': 'movie',
+        'enum': list([
+          'movie',
+          'episode',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'main_title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The leading part of the name, cut at the first release tag. For an episode, the
+          episode code and title stay (and a year between the show name and the code).
+        ''',
+        'title': 'Main Title',
+      }),
+      'name': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Movie title or show name only.',
+        'title': 'Name',
+      }),
+      'release_group': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Release Group',
+      }),
+      'resolution': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The resolution written in the name (``2160p``); not the output resolution.',
+        'title': 'Resolution',
+      }),
+      'season': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Season',
+      }),
+      'separator': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The word separator of the name (`` ``, ``.``, ``_`` or ``-``); ``None`` if none.',
+        'title': 'Separator',
+      }),
+      'source_type': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``BluRay``, ``UHD.BluRay``, ``WEB-DL``, ``WEBRip``… as written.',
+        'title': 'Source Type',
+      }),
+      'sub_title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Episode title.',
+        'title': 'Sub Title',
+      }),
+      'year': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Year',
+      }),
+    }),
+    'title': 'ParsedName',
     'type': 'object',
   })
 # ---
@@ -5478,7 +6408,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -5505,7 +6435,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -5746,6 +6676,15 @@
     'additionalProperties': False,
     'description': 'What C-5 needs to know about the source picture.',
     'properties': dict({
+      'chroma_assumed': dict({
+        'default': False,
+        'description': '''
+          ``True`` when the pixel format is unknown and the chroma steps are C-5's assumption
+          (4:2:0, steps of 2).
+        ''',
+        'title': 'Chroma Assumed',
+        'type': 'boolean',
+      }),
       'chroma_step_x': dict({
         'default': 2,
         'description': 'Horizontal crop step for the chroma grid (2 for 4:2:0 and 4:2:2, 1 for 4:4:4).',
@@ -5757,7 +6696,7 @@
         'default': 2,
         'description': '''
           Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
-          4:2:0).
+          sources, decision 0009).
         ''',
         'minimum': 1,
         'title': 'Chroma Step Y',
@@ -6652,6 +7591,18 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[TemplateKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'movie',
+      'episode',
+      'manual',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[TestOp]
   dict({
     '$defs': list([
@@ -6667,7 +7618,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -7092,6 +8043,133 @@
       'tools',
     ]),
     'title': 'ToolsChangedEvent',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TrackDecision]
+  dict({
+    '$defs': list([
+      'AudioOutputTrack',
+      'TrackMetadata',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      What the audio defaults did with one source audio track, and why: one row of the live
+      preview (03 §Audio defaults → Live preview) and of ``explain`` (C-12).
+      
+      Built by ``reframe.batch.apply_codec_rules``. In M2 every source track is taken (no
+      selection stage, decision 0018), so a decision only describes the codec-rule stage.
+    ''',
+    'properties': dict({
+      'measure': dict({
+        'default': False,
+        'description': '''
+          The source bit rate is unknown and decided the outcome: the preview offers
+          **Measure** (a packet-size scan, C-10).
+        ''',
+        'title': 'Measure',
+        'type': 'boolean',
+      }),
+      'notes': dict({
+        'description': '''
+          Details that do not change the outcome: a snapped bitrate or sample rate, a downmix
+          forced by the encoder, the extra outputs.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+      'outputs': dict({
+        'description': '''
+          The output track(s): the rule's output, then its extra outputs. Empty when no rule
+          matched.
+        ''',
+        'items': dict({
+          '$ref': '#/$defs/AudioOutputTrack',
+        }),
+        'title': 'Outputs',
+        'type': 'array',
+      }),
+      'reason': dict({
+        'description': '''
+          Why, in one line: ``AC-3, 5.1, 224 ≤ 320: passthru``,
+          ``Lossless source → encode at the max``,
+          ``Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits``.
+        ''',
+        'title': 'Reason',
+        'type': 'string',
+      }),
+      'rule': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched.',
+        'title': 'Rule',
+      }),
+      'source_stream': dict({
+        'description': 'Absolute stream index of the source audio track.',
+        'minimum': 0,
+        'title': 'Source Stream',
+        'type': 'integer',
+      }),
+    }),
+    'required': list([
+      'source_stream',
+      'reason',
+    ]),
+    'title': 'TrackDecision',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TrackDraft]
+  dict({
+    '$defs': list([
+      'AudioOutputTrack',
+      'ExternalSubtitle',
+      'SubtitleOutputTrack',
+      'TrackDecision',
+      'TrackFlags',
+      'TrackMetadata',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``;
+      decision 0018): every audio track through the codec rules, every subtitle copied.
+    ''',
+    'properties': dict({
+      'audio': dict({
+        'items': dict({
+          '$ref': '#/$defs/AudioOutputTrack',
+        }),
+        'title': 'Audio',
+        'type': 'array',
+      }),
+      'decisions': dict({
+        'description': 'One per source audio track, in source order.',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Decisions',
+        'type': 'array',
+      }),
+      'subtitles': dict({
+        'items': dict({
+          '$ref': '#/$defs/SubtitleOutputTrack',
+        }),
+        'title': 'Subtitles',
+        'type': 'array',
+      }),
+    }),
+    'title': 'TrackDraft',
     'type': 'object',
   })
 # ---
@@ -7751,6 +8829,30 @@
     ]),
     'title': 'ValueRef',
     'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[VariableGroup]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'handbrake',
+      'name',
+      'media',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[VariableKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'text',
+      'number',
+      'date',
+    ]),
+    'type': 'string',
   })
 # ---
 # name: test_json_schema_snapshot[VideoSettings]

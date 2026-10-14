@@ -28,6 +28,12 @@ are :class:`PlanFile` entries in :attr:`EncodePlan.files` (path and full text). 
 writes them (UTF-8) before the first step, next to ``output_tmp``
 (``<name>.part.chapters.txt``), and removes them when the job ends, also when it fails or is
 cancelled. The steps' argv refer to the same paths.
+
+**Temporary files.** Steps can leave files of their own behind: the 2-pass statistics
+(x264 ``<prefix>-0.log`` and ``.mbtree``, x265 ``<prefix>`` and ``.cutree``, plus the
+``.temp`` files the encoders write while a pass runs). They are listed in
+:attr:`EncodePlan.temp_files`; the runner removes the ones that exist when the job ends,
+also when it fails or is cancelled.
 """
 
 from __future__ import annotations
@@ -120,6 +126,9 @@ class EncodePlan(ReframeModel):
     """Shell-quoted command preview (POSIX or Windows style)."""
     files: list[PlanFile] = Field(default_factory=list)
     """Files to write before the first step and remove after the job."""
+    temp_files: list[Path] = Field(default_factory=list)
+    """Files that the steps create and that the runner removes when the job ends, whatever
+    the outcome (2-pass statistics). A file that does not exist is skipped."""
 
 
 def resolve_argv(argv: Sequence[PlanArg], values: Mapping[str, str]) -> list[str]:

@@ -2,6 +2,24 @@
   "build": "ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers",
   "method": "byte search for printable runs of >= 5 characters (like strings(1)) in bin/ffmpeg, lib/libav*.so.*.*.* and bin/av*.dll",
   "strings": {
+    "10 bit encode not supported": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "10 bit encode not supported\n"
+      }
+    ],
+    "10-bit encoder is not supported by AMD GPU drivers": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "10-bit encoder is not supported by AMD GPU drivers versions lower than 23.30.\n"
+      }
+    ],
+    "10-bit input video is not supported by AMF": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "10-bit input video is not supported by AMF H264 encoder\n"
+      }
+    ],
     "Cannot load %s": [
       {
         "file": "lib/libavcodec.so.63.1.102",
@@ -12,10 +30,26 @@
         "string": "Cannot load %s\n"
       }
     ],
+    "Codec not supported": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "Codec not supported\n"
+      },
+      {
+        "file": "lib/libavformat.so.63.1.102",
+        "string": "ERROR: Codec not supported.\n"
+      }
+    ],
     "Conversion failed!": [
       {
         "file": "bin/ffmpeg",
         "string": "Conversion failed!\n"
+      }
+    ],
+    "DLL %s failed to open": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "DLL %s failed to open\n"
       }
     ],
     "Device creation failed": [
@@ -62,6 +96,24 @@
         "string": "Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
       }
     ],
+    "Failed creating instance: %s": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed creating instance: %s"
+      }
+    ],
+    "Failed creating logical device": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed creating logical device!"
+      }
+    ],
+    "Failed initializing vulkan device": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Failed initializing vulkan device"
+      }
+    ],
     "Failed to create  hardware device context (AMF)": [
       {
         "file": "lib/libavcodec.so.63.1.102",
@@ -82,6 +134,18 @@
       {
         "file": "lib/libavutil.so.61.1.102",
         "string": "Failed to initialise VAAPI connection: %d (%s).\n"
+      }
+    ],
+    "Failed to set value '%s' for option '%s': %s": [
+      {
+        "file": "bin/ffmpeg",
+        "string": "Failed to set value '%s' for option '%s': %s\n"
+      }
+    ],
+    "Found no suitable device, giving up.": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Found no suitable device, giving up."
       }
     ],
     "MFX_ERR_UNSUPPORTED": [],
@@ -126,6 +190,18 @@
       {
         "file": "lib/libavcodec.so.63.1.102",
         "string": "The minimum required Nvidia driver for nvenc is %s or newer\n"
+      }
+    ],
+    "Vulkan device does not support all required features": [
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "Vulkan device does not support all required features!"
+      }
+    ],
+    "libamfrt64.so.1": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "libamfrt64.so.1"
       }
     ],
     "libcuda.so.1": [

@@ -29,8 +29,9 @@ __all__ = [
     "ValidationIssue",
 ]
 
-#: A JSON Pointer (RFC 6901): ``""`` (the whole document) or ``/a/b/0``.
-JsonPointer = Annotated[str, Field(pattern=r"^(/.*)?$")]
+#: A JSON Pointer (RFC 6901): ``""`` (the whole document) or ``/a/b/0``. A reference token
+#: may hold any character, a newline too (``[\s\S]``, not ``.``).
+JsonPointer = Annotated[str, Field(pattern=r"^(/[\s\S]*)?$")]
 
 
 class AddOp(ReframeModel):
