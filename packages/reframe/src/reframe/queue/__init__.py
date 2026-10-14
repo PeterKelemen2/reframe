@@ -2,13 +2,14 @@
 
 - :class:`QueueService`: add, list, get, remove, reorder, retry, start, stop, pause, resume,
   cancel, wait, log_path, close (the M2 contract in ``docs/m2-breakdown.md``; ``start`` has
-  the keyword-only ``job_ids``). ``Reframe.create()`` loads the saved queue with
-  ``_restore()``.
+  the keyword-only ``job_ids``). The store is opened at the queue's first use, by the one
+  process that holds ``<data dir>/queue.lock`` (decision 0027).
 - Modules: ``store`` (SQLite, ``<data dir>/queue.sqlite3``), ``runner`` (one job: prepare,
   steps, finalize), ``progress`` (``-progress`` parser, weighted percent, sleep-aware ETA),
   ``watchdog`` (stall check and step time limit), ``loudnorm`` (measurements and clamping),
   ``verify`` (the output check), ``logs`` (log file and ``job.log`` events), ``process``
-  (suspend / resume of a process tree), ``files`` (rename, clean-up), ``errors``.
+  (suspend / resume of a process tree), ``files`` (rename, clean-up), ``lock`` (the store's
+  owner lock), ``errors``.
 
 The choices the plan does not make are in decision 0016.
 """

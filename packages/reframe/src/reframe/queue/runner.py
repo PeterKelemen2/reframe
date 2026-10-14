@@ -12,10 +12,14 @@ still being checked (``encoder.checking``), wait for the detection (``capabiliti
 and validate again. Any ``error`` fails the job with the issues. Then build the plan
 (``build_plan(…, naming=…, now=…)``).
 
-**Steps**, in plan order: the output folder is created and ``EncodePlan.files`` are written
-(UTF-8, LF) first. Each tool step runs through ``reframe.tools.run_streaming`` (process-tree
-kill, child safety, ``CREATE_NO_WINDOW``) with the job's cancel token, the progress parser on
-stdout, the log on stderr, and the watchdog (:mod:`reframe.queue.watchdog`). An ``analyse``
+**Steps**, in plan order. First the source is checked against every path the plan writes,
+renames or removes (the ``.part`` file, the plan files, the statistics files, the final name;
+the same file through a link, a hard link or another spelling): a clash fails the job with
+``queue.writes_source`` and nothing is written or removed (decision 0027 item 5). Then the
+output folder is created and ``EncodePlan.files`` are written (UTF-8, LF). Each tool step
+runs through ``reframe.tools.run_streaming`` (process-tree kill, child safety,
+``CREATE_NO_WINDOW``) with the job's cancel token, the progress parser on stdout, the log on
+stderr, and the watchdog (:mod:`reframe.queue.watchdog`). An ``analyse``
 step's ``loudnorm`` block is stored as ``<id>.<key>`` (clamped, :mod:`reframe.queue.loudnorm`)
 and the next steps' templates are resolved with it (``resolve_argv``).
 
@@ -136,6 +140,11 @@ class ActiveJob:
     """The running step's process (the root of its tree)."""
     tracker: ProgressTracker | None = None
     holds_inhibit: bool = False
+    """This job holds one count of the sleep inhibitor (set once ``acquire`` returned)."""
+    control: asyncio.Lock = field(default_factory=asyncio.Lock)
+    """Orders pause, resume and the inhibitor calls of this job (one at a time)."""
+    ended: bool = False
+    """The run ended: pause and resume do nothing any more."""
     task: asyncio.Task[None] | None = None
 
     def __post_init__(self) -> None:
@@ -355,6 +364,16 @@ class JobRunner:
         self, job: QueueJob, active: ActiveJob, joblog: JobLog, prepared: _Prepared
     ) -> Outcome:
         plan = prepared.plan
+        source = Path(job.settings.source.path)
+        clash = await asyncio.to_thread(_writes_source, plan, source)
+        if clash is not None:  # decision 0027 item 5: nothing is written or removed
+            issue = _issue(
+                "queue.writes_source",
+                f"{clash.name} is the source file itself ({source}): the job would write over "
+                "or remove its source, so nothing was written or removed.",
+                "output.path",
+            )
+            return Outcome(JobState.FAILED, error=issue.message, issues=[*job.issues, issue])
         try:
             await asyncio.to_thread(_write_files, plan)
         except OSError as exc:
@@ -655,6 +674,15 @@ def _duration(seconds: float | None) -> str:
         minutes = value / 60
         return f"{minutes:g} minute" + ("" if minutes == 1 else "s")
     return f"{value:g} second" + ("" if value == 1 else "s")
+
+
+def _writes_source(plan: EncodePlan, source: Path) -> Path | None:
+    """The first path the plan writes, renames or removes that is the source (the ``.part``
+    file, a plan file, a statistics file, the final name), or ``None``."""
+    for path in (plan.output_tmp, *(f.path for f in plan.files), *plan.temp_files):
+        if files.same_file(path, source):
+            return path
+    return plan.output_final if files.same_file(plan.output_final, source) else None
 
 
 def _write_files(plan: EncodePlan) -> None:

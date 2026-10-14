@@ -721,9 +721,12 @@ class Reframe:
     discovery, and a changed ``encoders.hardware_tests`` or ``encoders.vaapi_device`` re-runs
     encoder detection, both in the background.
 
-    **Queue.** :meth:`create` restores the saved queue (jobs that were running become
-    ``interrupted``); it does not start it (``queue.start()``). :meth:`close` stops the
-    running jobs first (they end ``interrupted``, their ``.part`` files removed).
+    **Queue.** The queue opens ``<data dir>/queue.sqlite3`` at its first use, not in
+    :meth:`create` (decision 0027): the process that takes the lock ``queue.lock`` owns the
+    saved queue and restores it (jobs that were running become ``interrupted``); another
+    process gets a private queue in memory and an ``app.warning``. The queue is not started
+    (``queue.start()``). :meth:`close` stops the running jobs first (they end
+    ``interrupted``, their ``.part`` files removed) and frees the lock.
 
     Use ``async with await Reframe.create() as app:`` or call :meth:`close` at the end:
     it stops the queue, cancels running tasks, probes and the encoder detection (killing their
@@ -810,9 +813,9 @@ class Reframe:
         *,
         cache_dir: Path | None = None,
     ) -> Reframe:
-        """Create the facade, restore the saved queue (a quick read of
-        ``<data dir>/queue.sqlite3``) and start tool discovery and encoder detection in the
-        background. Returns at once.
+        """Create the facade and start tool discovery and encoder detection in the
+        background. Returns at once. The saved queue is not opened here: the queue opens it at
+        its first use (decision 0027).
 
         The folders default to :mod:`reframe.paths` (``REFRAME_CONFIG_DIR``,
         ``REFRAME_DATA_DIR``, ``REFRAME_CACHE_DIR`` or the platform folders). ``data_dir``
@@ -826,7 +829,6 @@ class Reframe:
         app = cls(config_dir=config, data_dir=data, cache_dir=cache, settings=settings)
         app.tools.start()
         app.capabilities.start()
-        await app.queue._restore()  # C-11: load the saved queue (not a public method)
         return app
 
     @staticmethod

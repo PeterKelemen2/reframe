@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 import sys
+import threading
 
 import psutil
 import pytest
@@ -160,6 +162,75 @@ async def test_pause_before_the_first_step(harness: Harness) -> None:
     await h.queue.resume()
     [ended] = await h.queue.wait([added.id])
     assert ended.state is JobState.DONE
+
+
+async def test_pause_and_resume_at_the_same_time(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M2 review: ``gather(pause, resume)`` with a slow suspend left the job ``paused`` with
+    its process stopped, and ``resume()`` did nothing. One lock per job orders them."""
+    from reframe.queue import process as tree
+
+    h = harness
+    real_suspend, real_resume = tree.suspend_tree, tree.resume_tree
+    resumed = threading.Event()
+
+    def slow_suspend(process: psutil.Process) -> int:
+        resumed.wait(0.5)  # a resume that does not wait for the pause comes in here
+        return real_suspend(process)
+
+    def traced_resume(process: psutil.Process) -> int:
+        resumed.set()
+        return real_resume(process)
+
+    monkeypatch.setattr("reframe.queue.service.suspend_tree", slow_suspend)
+    monkeypatch.setattr("reframe.queue.service.resume_tree", traced_resume)
+    h.scenario(LONG)
+    added = await h.queue.add(h.job())
+    h.queue.start()
+    await h.first_event(added.id, "job.progress", limit=20)
+    await asyncio.gather(h.queue.pause(added.id), h.queue.resume(added.id))
+    assert h.queue.get(added.id).state is JobState.RUNNING  # type: ignore[union-attr]
+    if sys.platform != "win32":  # a SIGSTOP is delivered a moment after suspend() returns
+        process = h.queue._active[added.id].process
+        assert process is not None
+        pid = process.pid
+        with pytest.raises(TimeoutError):
+            await h.wait_for(lambda: psutil.Process(pid).status() == psutil.STATUS_STOPPED, 0.5)
+    assert h.states(added.id)[-2:] == [("running", "paused"), ("paused", "running")]
+    assert h.inhibitor.count == 1
+    await h.queue.cancel(added.id)
+    assert h.inhibitor.count == 0
+
+
+async def test_a_cancelled_resume_does_not_unbalance_the_sleep_inhibit(harness: Harness) -> None:
+    """M2 review: ``holds_inhibit`` was set before the awaited ``acquire()``. When the caller
+    of ``resume()`` was cancelled during the acquire, the job later released a count it did
+    not hold, which freed the lock of another running job."""
+    h = harness
+    h.settings.queue.parallel_jobs = 2
+    h.scenario(LONG)
+    first = await h.queue.add(h.job("First"))
+    second = await h.queue.add(h.job("Second"))
+    h.queue.start(job_ids=[first.id])
+    await h.first_event(first.id, "job.progress", limit=20)
+    await h.queue.pause(first.id)
+    assert h.inhibitor.count == 0
+    h.backend.delay = 0.5
+    resuming = asyncio.ensure_future(h.queue.resume(first.id))
+    await h.wait_for(lambda: len(h.backend.holds) == 2)  # the slow hold has begun
+    resuming.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await resuming
+    h.backend.delay = 0.0
+    h.queue.start(job_ids=[second.id])
+    await h.wait_for(lambda: h.inhibitor.count == 1 and h.backend.held)  # the second job's
+    await h.queue.cancel(first.id)
+    assert h.inhibitor.count == 1  # the first job did not release the second job's count
+    assert h.backend.held
+    await h.queue.cancel(second.id)
+    assert h.inhibitor.count == 0
+    assert not h.backend.held
 
 
 async def test_pause_and_resume_of_other_states_do_nothing(harness: Harness) -> None:
@@ -341,7 +412,7 @@ async def test_start_and_stop_are_not_saved(harness: Harness) -> None:
     assert not h.queue._processing
     await h.queue.close()
     again = queue_at(h)
-    await again._restore()
+    again.list()  # the first use opens the store
     try:
         assert not again._processing  # a restored queue is idle until start()
         assert [j.state for j in again.list()] == [JobState.DONE, JobState.WAITING]
@@ -533,7 +604,7 @@ async def test_close_interrupts_running_jobs_and_restart_recovers(harness: Harne
     assert not h.backend.held  # the inhibitor is closed
     assert h.inhibitor.closed
     again = queue_at(h)
-    await again._restore()
+    again.list()  # the first use opens the store
     try:
         jobs = again.list()
         assert [(j.id, j.state) for j in jobs] == [
@@ -576,7 +647,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
         path.write_text("x")
     again = queue_at(h)
     count = len(h.events.published)
-    await again._restore()
+    again.list()  # the first use opens the store
     try:
         assert [j.state for j in again.list()] == [JobState.INTERRUPTED, JobState.INTERRUPTED]
         assert again.list()[0].error == "Reframe stopped while the job was running."
@@ -588,7 +659,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
         assert restored == [("running", "interrupted"), ("paused", "interrupted")]
         await asyncio.wait(again._background) if again._background else None
         assert not plan.output_tmp.exists()
-        await again._restore()  # once only
+        again.list()  # once only
     finally:
         await again.close()
     db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
@@ -606,7 +677,7 @@ async def test_the_store_keeps_unknown_fields_of_a_job(harness: Harness) -> None
     added = await h.queue.add(JobSettings.model_validate(data))
     await h.queue.close()
     again = queue_at(h)
-    await again._restore()
+    again.list()  # the first use opens the store
     try:
         [job] = again.list()
         assert job.id == added.id
@@ -624,7 +695,7 @@ async def test_a_newer_store_is_reported(harness: Harness) -> None:
     db.commit()
     db.close()
     again = queue_at(h)
-    await again._restore()
+    again.list()  # the first use opens the store
     try:
         assert again.list() == []
         assert "queue.newer_version" in [e.code for e in h.of_type("app.warning")]  # type: ignore[union-attr]
@@ -636,6 +707,74 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
     h = harness
     (h.tmp / "data").write_text("a file where the data folder should be")
     added = await h.queue.add(h.job())
-    assert added.state is JobState.WAITING  # the queue goes on in memory
-    assert [e.code for e in h.of_type("app.warning")] == ["queue.not_saved"]  # type: ignore[union-attr]
+    assert added.state is JobState.WAITING  # the queue goes on in a private store in memory
+    [warning] = h.of_type("app.warning")
+    assert warning.code == "queue.unreadable"  # type: ignore[union-attr]
+    assert h.queue._store.memory
     assert h.queue._store.path.parent.is_file()
+
+
+# --------------------------------------------------------------------------- file names
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="a file name that is not UTF-8 (Linux)")
+async def test_a_file_name_that_is_not_utf8(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M2 review: a source named ``bad\\xffname.mkv`` (byte 0xFF; Python's ``\\udcff``, PEP 383)
+    crashed ``add`` (``model_dump_json``: "surrogates not allowed"). The store keeps such a
+    path exactly; the log file and the events show it escaped; nothing raises. (Validation is
+    left out: its naming rule fails on such a name today, a C-16 / C-8 finding.)"""
+    from reframe.queue import runner
+
+    from .conftest import draft, recorded
+
+    monkeypatch.setattr(runner, "validate", lambda *args, **kwargs: [])
+    h = harness
+    source = h.tmp / "media" / "bad\udcffname.mkv"
+    source.write_bytes(b"not really matroska")
+    assert b"\xff" in os.fsencode(source)
+    h.sources.source = recorded("multitrack.mkv", source)
+    output = h.tmp / "out" / "bad\udcffname.mkv"
+    ended = await h.run_one(draft(h.sources.source, output))
+    assert ended.state is JobState.DONE, ended.error
+    assert ended.output_path == output
+    assert os.fsencode(ended.output_path).endswith(b"bad\xffname.mkv")
+    log = h.log_text(ended.id)  # valid UTF-8, the byte written as an escape
+    assert "bad\\udcffname.mkv" in log
+    for event in h.events_of(ended.id):
+        event.model_dump_json()  # every event can go to a WebSocket as it is
+    await h.queue.close()
+    again = queue_at(h)
+    try:
+        [stored] = again.list()
+        assert stored.settings.source.path == source
+        assert stored.settings.output.path == output
+        assert stored.output_path == output
+        assert stored.plan is not None
+        assert stored.plan.output_final == output
+    finally:
+        await again.close()
+
+
+async def test_lone_surrogates_round_trip_in_the_store(harness: Harness) -> None:
+    """Any lone surrogate (Windows file names may hold one) is kept: ``add`` → close →
+    reopen gives the same path."""
+    h = harness
+    job = h.job()
+    job.source.path = h.tmp / "media" / "x\ud800y.mkv"  # not probed: the job fails at add
+    job.output.path = h.tmp / "out" / "z\udcffw.mkv"
+    added = await h.queue.add(job)
+    assert added.state is JobState.FAILED
+    assert added.error is not None
+    for event in h.events_of(added.id):
+        event.model_dump_json()
+    await h.queue.close()
+    again = queue_at(h)
+    try:
+        [stored] = again.list()
+        assert stored.settings.source.path == job.source.path
+        assert stored.settings.output.path == job.output.path
+        assert [i.code for i in stored.issues] == [i.code for i in added.issues]
+    finally:
+        await again.close()

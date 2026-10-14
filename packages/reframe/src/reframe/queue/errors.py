@@ -18,6 +18,7 @@ __all__ = [
     "QueueError",
     "UnknownJobError",
     "exit_text",
+    "printable",
     "stderr_reason",
 ]
 
@@ -99,6 +100,17 @@ def stderr_reason(lines: Sequence[str], *, last_line: bool = True) -> str | None
         if text and not _GENERIC.match(text) and not line.startswith((" ", "\t")):
             return _shorten(text)
     return None
+
+
+def printable(text: str) -> str:
+    """``text`` as valid UTF-8 for messages, logs and events: a lone surrogate (a byte of a
+    file name that is not UTF-8, ``bad\\udcffname.mkv``) is written as the escape
+    ``\\udcff``, so a JSON encoder or a UTF-8 log never fails on it."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return text.encode("utf-8", "backslashreplace").decode("utf-8")
+    return text
 
 
 def _shorten(text: str) -> str:
