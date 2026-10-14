@@ -943,6 +943,28 @@ is source frame 10 (same MD5). With `-c copy` the cut starts at the keyframe bef
 **mkvpropedit** `--edit track:a2 --set language=pt-BR` on an FFmpeg-written MKV: `mkvmerge -J`
 then shows `language: por`, `language_ietf: pt-BR` for that track.
 
+**Audio values the encoder cannot do** (decision
+[0024](../docs/decisions/0024-m2-wave-2-product-decisions.md) item 4; checked on 2026-10-14
+with both n9.0.2 builds, same results). Sources: a FLAC 7.1 file (eight `sine` inputs joined
+with `join=inputs=8:channel_layout=7.1`) and a FLAC stereo file at 44.1 kHz. Unsnapped, FFmpeg
+refuses some values and silently changes others, so the builder snaps them itself
+(`test_impossible_audio_values_are_snapped`, `test_71_source_gets_the_layout_the_encoder_can_make`):
+
+| Arguments | Result |
+|-----------|--------|
+| `-c:a ac3 -ar:a:0 96000` | `Specified sample rate 96000 is not supported by the ac3 encoder` (exit 234) |
+| `-c:a libopus -ar:a:0 44100` | `Specified sample rate 44100 is not supported by the libopus encoder` (exit 234) |
+| `-c:a libopus -b:a:0 600k` (stereo) | `The bit rate 600000 bps is unsupported. Please choose a value between 500 and 512000.` (exit 234) |
+| `-c:a aac -b:a:0 700k` (stereo) | accepted (the encoder clamps by itself) |
+| `-c:a ac3 -b:a:0 700k` (5.1) | 640 kb/s |
+| 7.1 → `-c:a ac3 -ac:a:0 8` | `Specified channel layout '7.1' is not supported by the ac3 encoder` (exit 234) |
+| 7.1 → `-filter:a:0 aresample=out_chlayout=7.1 -c:a:0 ac3` | 6 channels at FFmpeg's default 448 kb/s: FFmpeg converts the filter's 7.1 to the encoder's layout by itself (what the builder wrote before the snap) |
+| 7.1 → `-filter:a:0 aresample=out_chlayout=5.1 -c:a:0 ac3 -b:a:0 640k` | 6 channels, 640 kb/s (`eac3` with the same filter: 6 channels); FFmpeg's AC-3 and E-AC-3 decoders always read the layout back as `5.1(side)` |
+| 7.1 → `aresample=out_chlayout=stereo -c:a libmp3lame` | 2 channels |
+| stereo → `aresample=matrix_encoding=dplii:out_chlayout=stereo` | the same PCM (MD5 of the decoded `s16le`) as without the filter: nothing to matrix-encode, so the builder keeps the source layout |
+
+E-AC-3 at 44.1 kHz with `-b:a 1536k` reads back as 1 535 231 b/s (whole frames).
+
 ### Validation (C-8)
 
 **Forced-only subtitles** (`subtitle.forced_only_unsupported`). `forced_subs_only` is a

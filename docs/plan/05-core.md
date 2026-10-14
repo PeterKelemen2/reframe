@@ -344,7 +344,12 @@ class EncodePlan(BaseModel):
       downmix with `aresample=[matrix_encoding=dplii:]out_chlayout=…`, gain, loudnorm with the
       measured values of the track's own analyse step); DRC is the AC-3 decoder's
       `-drc_scale` (0013). A bitrate, mixdown or sample rate the encoder cannot do is snapped
-      to the nearest allowed value; validation shows it as info ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
+      to an allowed value with C-6's helpers, which C-8 and C-12 share: a mixdown never
+      upmixes and otherwise becomes the encoder's largest layout below (AC-3 7.1 → 5.1); a
+      bitrate is clamped to the range of the effective mixdown and goes down to the next
+      allowed step (as HandBrake does); a sample rate goes to the nearest listed rate.
+      Validation shows it as info ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md),
+      0013 "Follow-up (M2 wave 2b)").
 - [ ] **Subtitles**: copy, convert, burn. For MKV, copy attachments (`-map 0:t?`) when ASS
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N

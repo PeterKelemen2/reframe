@@ -224,6 +224,48 @@ def mkv_dts_hd_passthru_and_mixdowns() -> Case:
 
 
 @case
+def audio_values_snapped_to_the_encoder() -> Case:
+    """Decision 0024 item 4: what the encoder cannot do is snapped with C-6's helpers."""
+    src = recorded("multitrack.mkv")  # AC-3 5.1(side), AAC stereo, AAC stereo commentary
+    job = draft(src, video={"encoder": "libx264"}, subtitles=False)
+    a0, a1, a2 = job.audio
+    # 5.1 source: no upmix to 7.1 (relabel to 5.1), 700 → 640 kb/s, 96 → 48 kHz.
+    a0.encoder, a0.mixdown, a0.bitrate, a0.samplerate = "ac3", "7.1", 700, 96000
+    # Stereo source: no upmix to 5.1, so the stereo default (160 kb/s), not the 5.1 one.
+    a1.encoder, a1.mixdown = "aac", "5.1"
+    # Stereo source: nothing to matrix-encode; 600 → 512 kb/s; 44.1 → 48 kHz.
+    a2.encoder, a2.mixdown, a2.bitrate, a2.samplerate = "libopus", "dpl2", 600, 44100
+    job.audio += [
+        # MP3 makes stereo of the 5.1 source; 330 → 320 kb/s.
+        AudioOutputTrack(source_stream=1, encoder="libmp3lame", bitrate=330),
+        # E-AC-3 has no 7.1 and the source is 5.1 anyway; 100 → the 5.1 minimum, 224 kb/s.
+        AudioOutputTrack(source_stream=1, encoder="eac3", mixdown="7.1", bitrate=100),
+    ]
+    return plain(job, src)
+
+
+@case
+def audio_71_source_snapped() -> Case:
+    """A 7.1 source (the TrueHD Atmos probe with eight channels): AC-3 and E-AC-3 make 5.1,
+    MP3 stereo, Opus keeps 7.1; the passthru track is copied, never snapped."""
+    src = recorded("truehd-atmos")
+    seven = src.audio[0].model_copy(update={"channels": 8, "channel_layout": "7.1"})
+    src = src.model_copy(update={"audio": [seven, *src.audio[1:]]})
+    job = draft(src, video={"encoder": "libx265"}, subtitles=False)
+    index = seven.index
+    job.audio = [
+        AudioOutputTrack(source_stream=index, encoder="ac3", mixdown="7.1"),
+        AudioOutputTrack(source_stream=index, encoder="eac3", bitrate=700),
+        AudioOutputTrack(source_stream=index, encoder="libmp3lame", mixdown="5.1",
+                         samplerate=96000),
+        AudioOutputTrack(source_stream=index, encoder="libopus", samplerate=44100),
+        AudioOutputTrack(source_stream=index, action="passthru", encoder="ac3", mixdown="5.1",
+                         bitrate=700),
+    ]  # fmt: skip
+    return plain(job, src)
+
+
+@case
 def audio_quality_flac_and_mp3() -> Case:
     src = recorded("ass-fonts")
     job = draft(src, video={"encoder": "libx264"})

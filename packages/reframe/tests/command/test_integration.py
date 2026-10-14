@@ -21,6 +21,7 @@ import pytest
 from reframe.command import build_plan, job_type
 from reframe.definitions import load_definitions
 from reframe.models import (
+    AudioOutputTrack,
     AverageBitrate,
     ChapterRange,
     ChapterSettings,
@@ -107,6 +108,21 @@ def make_truehd_source(ffmpeg: str, path: Path) -> Path:
         [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:d=1",
          "-f", "lavfi", "-i", "sine=d=1:r=48000", "-c:v", "libx264", "-preset", "ultrafast",
          "-c:a", "truehd", "-strict", "-2", "-ac", "2", str(path)],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    return path
+
+
+def make_71_source(ffmpeg: str, path: Path) -> Path:
+    """A 1 s H.264 + FLAC 7.1 file at 44.1 kHz (one tone per channel)."""
+    tones: list[str] = []
+    for i in range(8):
+        tones += ["-f", "lavfi", "-i", f"sine=frequency={220 + 110 * i}:sample_rate=44100:d=1"]
+    join = "".join(f"[{1 + i}:a]" for i in range(8)) + "join=inputs=8:channel_layout=7.1[a]"
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:d=1", *tones,
+         "-filter_complex", join, "-map", "0:v", "-map", "[a]", "-c:v", "libx264",
+         "-preset", "ultrafast", "-c:a", "flac", str(path)],
         check=True, capture_output=True,
     )  # fmt: skip
     return path
@@ -290,6 +306,74 @@ def measure_loudness(tool: str, path: Path, index: int) -> float:
         capture_output=True, text=True, check=True,
     )  # fmt: skip
     return float(proc.stderr.split('"input_i" : "')[1].split('"')[0])
+
+
+# --------------------------------------------------------------------------- audio snapping
+
+
+async def test_impossible_audio_values_are_snapped(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """Decision 0024 item 4 on the multi-track fixture (AC-3 5.1, two AAC stereo tracks, all
+    48 kHz). Unsnapped, FFmpeg refuses AC-3 at 96 kHz, Opus at 44.1 kHz and Opus stereo at
+    600 kb/s (testdata/README.md, "Command builder (C-7)")."""
+    src = await source_of(prober, fixture_media("multitrack"))
+    job = draft(src, output=tmp_path / "snap.mkv", video=FAST_X264, subtitles=False)
+    a0, a1, a2 = job.audio
+    a0.encoder, a0.mixdown, a0.bitrate, a0.samplerate = "ac3", "7.1", 700, 96000
+    a1.encoder, a1.mixdown = "ac3", "5.1"  # a stereo source: no upmix
+    a2.encoder, a2.mixdown, a2.bitrate, a2.samplerate = "libopus", "dpl2", 600, 44100
+    plan = plan_for(job, src)
+    for written in ("-b:a:0 640k -ar:a:0 48000", "-b:a:1 224k", "-b:a:2 512k -ar:a:2 48000"):
+        assert written in plan.display
+    run_plan(plan, tool_paths)
+    out = await probe(prober, tmp_path / "snap.mkv")
+    assert [(a.codec, a.channels, a.sample_rate) for a in out.audio] == [
+        ("ac3", 6, 48000),  # 7.1 asked of a 5.1 source: stays 5.1
+        ("ac3", 2, 48000),  # 5.1 asked of a stereo source: stays stereo
+        ("opus", 2, 48000),  # Dolby Pro Logic II of a stereo source: stays stereo
+    ]
+    assert [a.bitrate.value for a in out.audio[:2]] == [640_000, 224_000]
+
+
+async def test_71_source_gets_the_layout_the_encoder_can_make(
+    prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """AC-3 and E-AC-3 make 5.1 of 7.1, MP3 stereo; AAC keeps 7.1. The 44.1 kHz source rate
+    is kept where the encoder has it and becomes 48 kHz for Opus. The bit rates are those of
+    the 5.1 table: 700 → 640 kb/s, and E-AC-3's 5.1 default (FFmpeg's own is 448 kb/s)."""
+    src = await probe(prober, make_71_source(tool_paths["ffmpeg"], tmp_path / "s71.mkv"))
+    seven = src.audio[0]
+    assert (seven.channels, seven.channel_layout, seven.sample_rate) == (8, "7.1", 44100)
+    job = draft(src, output=tmp_path / "out71.mkv", video=FAST_X264, subtitles=False)
+    job.audio = [
+        AudioOutputTrack(source_stream=seven.index, encoder="ac3", mixdown="7.1", bitrate=700),
+        AudioOutputTrack(source_stream=seven.index, encoder="eac3", mixdown="7.1"),
+        AudioOutputTrack(source_stream=seven.index, encoder="libmp3lame"),
+        AudioOutputTrack(source_stream=seven.index, encoder="aac"),
+        AudioOutputTrack(source_stream=seven.index, encoder="libopus"),
+    ]
+    plan = plan_for(job, src)
+    for written in (
+        "-filter:a:0 aresample=out_chlayout=5.1 -filter:a:1 aresample=out_chlayout=5.1 "
+        "-filter:a:2 aresample=out_chlayout=stereo -c:v:0",
+        "-b:a:0 640k -ar:a:0 44100",
+        "-b:a:1 1536k -ar:a:1 44100",
+        "-ar:a:4 48000",
+    ):
+        assert written in plan.display
+    run_plan(plan, tool_paths)
+    out = await probe(prober, tmp_path / "out71.mkv")
+    assert [(a.codec, a.channels, a.sample_rate) for a in out.audio] == [
+        ("ac3", 6, 44100),
+        ("eac3", 6, 44100),
+        ("mp3", 2, 44100),
+        ("aac", 8, 44100),
+        ("opus", 8, 48000),
+    ]
+    # E-AC-3 at 44.1 kHz reads back as 1 535 231 b/s (whole frames of 44.1 kHz audio).
+    rates = [a.bitrate.value for a in out.audio[:2]]
+    assert rates == [pytest.approx(640_000, rel=0.001), pytest.approx(1_536_000, rel=0.001)]
 
 
 # --------------------------------------------------------------------------- ranges, chapters
