@@ -472,3 +472,28 @@ def test_partial_outputs() -> None:
 def test_default_capabilities_snapshot_has_every_encoder() -> None:
     snap = caps()
     assert all(s.state is EncoderState.AVAILABLE for s in snap.encoders.values())
+
+
+def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -> None:
+    """Review finding: deinterlace runs before the crop, so a deinterlacing job's crop is on
+    the progressive grid (as C-7 computes it): a 2-line manual crop stays 2 lines."""
+    from reframe.command import build_plan
+    from reframe.models import CropRect, CropSettings, FilterConfig, SameAsSource
+
+    from .conftest import toolset
+
+    source = recorded("interlaced", tmp_path / "interlaced.mkv")
+    stream = source.video[0]
+    job, _decisions, _notes = job_from_preset(source, preset("h265-mkv-1080p"))
+    job.dimensions.crop = CropSettings(mode="manual", rect=CropRect(top=2))
+    job.dimensions.size = SameAsSource()
+    job.filters.root["deinterlace"] = FilterConfig()
+    job.output.path = tmp_path / "out.mkv"
+    assert output_size(job, source) == (stream.width, stream.height - 2)
+    plan = build_plan(job, source, caps(), toolset())
+    assert f"scale={stream.width}:{stream.height - 2}" in plan.display or (
+        f"crop={stream.width}:{stream.height - 2}" in plan.display
+    )
+    # Without deinterlacing, the crop snaps to the field grid (4 lines for 4:2:0).
+    del job.filters.root["deinterlace"]
+    assert output_size(job, source) != (stream.width, stream.height - 2)

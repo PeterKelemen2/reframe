@@ -31,7 +31,10 @@ Exit codes:
 - ``130``: interrupted (Ctrl+C). ``encode`` first cancels its running and waiting jobs
   through the queue, which removes their partial files.
 
-Errors are one line on stderr, never a traceback. ``--json`` prints only JSON on stdout. The
+Errors are one line on stderr, never a traceback (an unexpected error is one ``error:`` line
+and exit code 1; ``REFRAME_TRACEBACK=1`` shows the traceback). The core's warnings
+(``app.warning``: a damaged settings file, a queue store used by another process, …) are
+``warning:`` lines on stderr. ``--json`` prints only JSON on stdout. The
 human output uses rich: no colour when stdout is not a terminal or ``NO_COLOR`` is set, ASCII
 table borders when stdout cannot encode box-drawing characters, and characters that stdout
 cannot encode are replaced (never a ``UnicodeEncodeError``).
@@ -46,7 +49,8 @@ import json
 import os
 import sys
 import time
-from collections.abc import Coroutine, Iterable, Sequence
+from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Protocol
 
@@ -58,6 +62,7 @@ from reframe.jobs import find_media_files, has_errors
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.draft import JobDraft
 from reframe.models.events import (
+    AppWarningEvent,
     CapabilitiesChangedEvent,
     JobProgressEvent,
     JobStateEvent,
@@ -146,6 +151,8 @@ EXIT_NO_FFPROBE = 4
 EXIT_NO_TOOL = 4
 #: 128 + SIGINT, what shells report for a Ctrl+C.
 EXIT_INTERRUPTED = 130
+#: Set to ``1`` to get the traceback of an unexpected error instead of one ``error:`` line.
+TRACEBACK_ENV = "REFRAME_TRACEBACK"
 
 _EXIT_HELP = (
     "Exit codes: 0 probed; 1 ffprobe could not read the file; 2 usage error; "
@@ -467,8 +474,23 @@ def origin_text(info: ToolInfo) -> str:
     return f"{where}: {info.path}" if info.path is not None else where
 
 
+def printable(text: str) -> str:
+    """``text`` with the bytes of a file name that is not valid UTF-8 (``os.fsdecode`` keeps
+    them as lone surrogates, U+DCFF) shown as U+FFFD: such a string cannot be
+    written to a UTF-8 stream."""
+    try:
+        return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+    except UnicodeEncodeError:  # other lone surrogates (a broken UTF-16 name on Windows)
+        return text.encode("utf-8", "replace").decode("utf-8")
+
+
+def display_path(path: Path | str) -> str:
+    """A path for the human output (:func:`printable`)."""
+    return printable(str(path))
+
+
 def _one_line(text: str) -> str:
-    return " ".join(text.split())
+    return " ".join(printable(text).split())
 
 
 def error_message(error: ProbeError, ffprobe: ToolInfo | None) -> str:
@@ -605,7 +627,7 @@ def _section(console: Console, title: str) -> None:
 def render_source(source: MediaSource, console: Console) -> None:
     """Print the human form of ``reframe probe``."""
     c = source.container
-    console.print(Text(source.ref.path.name, style="bold"))
+    console.print(Text(display_path(source.ref.path.name), style="bold"))
     container = c.display_name or c.format_name or NONE
     if c.format_long_name:
         container += f" ({c.format_long_name})"
@@ -723,7 +745,7 @@ def _write_json(source: MediaSource) -> None:
 
 async def run_probe(file: Path, *, as_json: bool) -> int:
     """``reframe probe``: probe ``file``, print it, return the exit code."""
-    async with await Reframe.create() as app:
+    async with open_reframe() as app:
         outcome = await app.sources.probe(file)
         if isinstance(outcome, ProbeError):
             ffprobe = None
@@ -774,6 +796,57 @@ def _error(message: str) -> None:
     print(_one_line(f"error: {message}"), file=sys.stderr)
 
 
+class WarningPrinter:
+    """Prints the core's ``app.warning`` events as ``warning: <message> (<detail>)`` lines on
+    stderr: the start-up problems that the settings and presets services keep (published
+    before anyone could subscribe), then every event until Reframe is closed. Each warning
+    is printed once."""
+
+    def __init__(self, app: Reframe) -> None:
+        self._seen: set[tuple[str, str, str | None]] = set()
+        self._subscription = app.events.subscribe(types={"app.warning"})
+        for problem in [*app.settings.problems, *app.presets.problems]:
+            self.show(problem)
+        self._task = asyncio.get_running_loop().create_task(self._consume())
+
+    def show(self, warning: AppWarningEvent) -> None:
+        key = (warning.code, warning.message, warning.detail)
+        if key in self._seen:
+            return
+        self._seen.add(key)
+        detail = f" ({warning.detail})" if warning.detail else ""
+        print(_one_line(f"warning: {warning.message}{detail}"), file=sys.stderr)
+
+    async def _consume(self) -> None:
+        async for event in self._subscription:
+            if isinstance(event, AppWarningEvent):
+                self.show(event)
+
+    async def finish(self) -> None:
+        """After ``Reframe.close()``: print what is still queued, then stop."""
+        try:
+            async with asyncio.timeout(5):
+                await asyncio.shield(self._task)
+        except TimeoutError:  # pragma: no cover - the bus was not closed
+            self._subscription.close()
+            self._task.cancel()
+
+
+@asynccontextmanager
+async def open_reframe() -> AsyncIterator[Reframe]:
+    """``Reframe.create()`` for a command, with its warnings printed (:class:`WarningPrinter`)
+    also those published while it closes."""
+    app = await Reframe.create()
+    printer = WarningPrinter(app)
+    try:
+        yield app
+    finally:
+        try:
+            await app.close()
+        finally:
+            await printer.finish()
+
+
 def _write_model_json(value: BaseModel | Sequence[BaseModel] | dict[str, BaseModel | None]) -> None:
     """Models as JSON on stdout (``\\uXXXX`` escapes when stdout is not UTF-8)."""
     if isinstance(value, BaseModel):
@@ -784,6 +857,10 @@ def _write_model_json(value: BaseModel | Sequence[BaseModel] | dict[str, BaseMod
         data = [item.model_dump(mode="json") for item in value]
     encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
     text = json.dumps(data, indent=2, ensure_ascii=encoding not in ("utf-8", "utf8"))
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:  # a file name that is not valid UTF-8: \udcff escapes
+        text = json.dumps(data, indent=2, ensure_ascii=True)
     sys.stdout.write(text + "\n")
     sys.stdout.flush()
 
@@ -850,11 +927,12 @@ def render_issues(
     lead = indent + 9
     for issue in shown:
         label = f"{'':{indent}}{issue.severity.value:<8} "
-        _labelled(console, label, _SEVERITY_STYLE[issue.severity], Text(issue.message), lead)
+        line = Text(printable(issue.message))
+        _labelled(console, label, _SEVERITY_STYLE[issue.severity], line, lead)
         where = issue.code + (f" · {issue.path}" if issue.path else "")
         _indented(console, Text(f"[{where}]", style="dim"), lead)
         for fix in issue.fixes:
-            _indented(console, Text(f"fix: {fix.label}", style="green"), lead)
+            _indented(console, Text(printable(f"fix: {fix.label}"), style="green"), lead)
 
 
 def _labelled(console: Console, label: str, style: str, line: Text, lead: int) -> None:
@@ -908,7 +986,7 @@ async def run_encoders(*, as_json: bool) -> int:
     """``reframe encoders``: the cached statuses at once, then the changes while detection
     runs, then a summary. Returns the exit code."""
     console = make_console()
-    async with await Reframe.create() as app:
+    async with open_reframe() as app:
         # Subscribed before the first await: the detection task has not run yet, so no event
         # is missed.
         subscription = app.events.subscribe(types={"capabilities.changed"})
@@ -1013,7 +1091,7 @@ async def _follow_encoders(
 
 def _draft_header(console: Console, draft: JobDraft, source_name: str) -> None:
     job = draft.job
-    console.print(Text(source_name, style="bold"), soft_wrap=True)
+    console.print(Text(display_path(source_name), style="bold"), soft_wrap=True)
     name = draft.naming
     if name.template_kind == "manual":
         how = f"the manual name {name.template}"
@@ -1021,7 +1099,7 @@ def _draft_header(console: Console, draft: JobDraft, source_name: str) -> None:
         how = f"template {name.template} on the {name.source} name ({name.reason})"
     rows: list[tuple[str, str]] = [
         ("Preset", job.preset_name or NONE),
-        ("Output", str(job.output.path) if job.output.path is not None else NONE),
+        ("Output", display_path(job.output.path) if job.output.path is not None else NONE),
         ("Name", how),
     ]
     rows += [("Note", note) for note in [*draft.notes, *name.notes]]
@@ -1030,7 +1108,7 @@ def _draft_header(console: Console, draft: JobDraft, source_name: str) -> None:
         for i, d in enumerate(draft.decisions)
     ]
     for key, value in rows:
-        _indented(console, Text(value), _INDENT + 9, first=f"{'':{_INDENT}}{key:<8} ")
+        _indented(console, Text(printable(value)), _INDENT + 9, first=f"{'':{_INDENT}}{key:<8} ")
 
 
 def render_plan(console: Console, draft: JobDraft, plan: EncodePlan | None, source: str) -> None:
@@ -1044,12 +1122,12 @@ def render_plan(console: Console, draft: JobDraft, plan: EncodePlan | None, sour
         return
     _section(console, f"Command ({plan.job_type}, {_plural(len(plan.steps), 'step')})")
     # One line, not wrapped, so that it can be copied into a terminal.
-    console.print(Text(plan.display), soft_wrap=True)
+    console.print(Text(printable(plan.display)), soft_wrap=True)
 
 
 async def run_plan(file: Path, *, preset: str | None, output: Path | None, as_json: bool) -> int:
     """``reframe plan``: draft, validate and plan one file. Returns the exit code."""
-    async with await Reframe.create() as app:
+    async with open_reframe() as app:
         chosen = find_preset(app, preset)
         if isinstance(chosen, str):
             _error(chosen)
@@ -1165,7 +1243,7 @@ class EncodeView:
 
     def line(self, text: str, style: str = "") -> None:
         target = self._progress.console if self._progress is not None else self.console
-        target.print(Text(text, style=style), soft_wrap=True)
+        target.print(Text(printable(text), style=style), soft_wrap=True)
 
     def state(
         self,
@@ -1257,14 +1335,14 @@ async def run_encode(
     """``reframe encode``: one job per media file, queued, run, followed. Returns the exit
     code; Ctrl+C (the task is cancelled) cancels the jobs and returns 130."""
     console = make_console()
-    async with await Reframe.create() as app:
+    async with open_reframe() as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
-            _error(f"{missing}: the file or folder does not exist.")
+            _error(f"{display_path(missing)}: the file or folder does not exist.")
         if found.missing:
             return EXIT_NOT_FOUND
         for folder in found.empty:
-            print(f"warning: {folder}: no media files in this folder.", file=sys.stderr)
+            print(_one_line(f"warning: {folder}: no media files in this folder."), file=sys.stderr)
         if not found.files:
             _error("no media files to encode.")
             return EXIT_NOT_FOUND
@@ -1306,19 +1384,22 @@ async def _encode(
             if isinstance(draft, ProbeError):
                 not_queued += 1
                 console.print(
-                    Text(f"{label} {file.name}: not queued", style="bold red"), soft_wrap=True
+                    Text(printable(f"{label} {file.name}: not queued"), style="bold red"),
+                    soft_wrap=True,
                 )
                 _indented(
-                    console, Text(draft.message + (f" ({draft.detail})" if draft.detail else "")), 9
+                    console,
+                    Text(printable(draft.message + (f" ({draft.detail})" if draft.detail else ""))),
+                    9,
                 )
                 continue
             target = draft.job.output.path
             console.print(
-                Text(f"{label} {file.name} → {target if target is not None else NONE}"),
+                Text(printable(f"{label} {file.name} → {target if target is not None else NONE}")),
                 soft_wrap=True,
             )
             for note in draft.notes:
-                _indented(console, Text(f"note: {note}", style="dim"), 9)
+                _indented(console, Text(printable(f"note: {note}"), style="dim"), 9)
             if has_errors(draft.issues):
                 not_queued += 1
                 console.print(
@@ -1499,7 +1580,7 @@ def output_name(result: NameResult) -> str:
 
 
 def render_name(console: Console, file: Path, result: NameResult, *, exists: bool) -> None:
-    console.print(Text(file.name, style="bold"), soft_wrap=True)
+    console.print(Text(display_path(file.name), style="bold"), soft_wrap=True)
     rows: list[tuple[str, str]] = [
         ("Source", f"{result.source} ({result.reason})"),
         ("Parsed", parsed_fields(result) or NONE),
@@ -1513,7 +1594,7 @@ def render_name(console: Console, file: Path, result: NameResult, *, exists: boo
     if not exists:
         rows.append(("Note", "The file does not exist: the name comes from the path alone."))
     for key, value in rows:
-        _indented(console, Text(value), _INDENT + 9, first=f"{'':{_INDENT}}{key:<8} ")
+        _indented(console, Text(printable(value)), _INDENT + 9, first=f"{'':{_INDENT}}{key:<8} ")
     render_issues(console, result.issues)
 
 
@@ -1527,7 +1608,9 @@ def name_targets(paths: Sequence[Path]) -> list[tuple[Path, Path | None, bool]]:
         if path.is_dir():
             found = find_media_files([path])
             if not found.files:
-                print(f"warning: {path}: no media files in this folder.", file=sys.stderr)
+                print(
+                    _one_line(f"warning: {path}: no media files in this folder."), file=sys.stderr
+                )
             targets += [(file, path, True) for file in found.files]
         else:
             targets.append((path, None, path.exists()))
@@ -1539,7 +1622,7 @@ async def run_name(
 ) -> int:
     """``reframe name``: the output name of each path (a folder: of its media files)."""
     console = make_console()
-    async with await Reframe.create() as app:
+    async with open_reframe() as app:
         chosen = find_preset(app, preset)
         if isinstance(chosen, str):
             _error(chosen)
@@ -1601,9 +1684,7 @@ def build_app() -> typer.Typer:
     ) -> None:
         """Print every track of FILE: codec, channels, bitrate and its source, language,
         title, role badges and flags."""
-        code = asyncio.run(run_probe(file, as_json=as_json))
-        if code:
-            raise typer.Exit(code)
+        _run(run_probe(file, as_json=as_json))
 
     @app.command(epilog=_EXIT_HELP_ENCODERS)
     def encoders(
@@ -1704,6 +1785,14 @@ def _run(work: Coroutine[object, object, int]) -> None:
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
         code = EXIT_INTERRUPTED
+    except Exception as exc:  # a bug: one line, never a traceback (unless asked for)
+        if os.environ.get(TRACEBACK_ENV, "").strip().lower() not in ("", "0", "false", "no"):
+            raise
+        _error(
+            f"unexpected error ({type(exc).__name__}: {exc}). Please report this; "
+            f"{TRACEBACK_ENV}=1 shows the traceback."
+        )
+        code = EXIT_FAILED
     if code:
         raise typer.Exit(code)
 
