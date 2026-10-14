@@ -12,10 +12,14 @@
 - ``capabilities.changed`` is published when statuses change: all encoders when the cached
   result or the ``checking`` statuses are put in place, each encoder whose status changes
   while the detection runs, and all encoders when a detection ends.
+- A finished detection is in the cache before anyone can see that it ended: before the last
+  ``capabilities.changed`` event and before :meth:`~CapabilityService.wait` /
+  :meth:`~CapabilityService.rescan` return. A caller that closes the service on that event
+  (a short CLI run) leaves the result for the next start.
 - A new ffmpeg (a ``tools.changed`` event with another path, version or status, for example
   after a Settings → Tools change) starts a new detection (02 §Bundled FFmpeg).
 - :meth:`~CapabilityService.close` cancels the detection; the running test encodes are killed
-  (process tree).
+  (process tree). A cache write that has started is not cancelled: ``close()`` waits for it.
 """
 
 from __future__ import annotations
@@ -128,6 +132,7 @@ class CapabilityService:
         self._ffmpeg_identity: _FfmpegIdentity | None = None
         self._subscription: Subscription | None = None
         self._watcher: asyncio.Task[None] | None = None
+        self._writes: set[asyncio.Task[None]] = set()
         self._closed = False
 
     # ------------------------------------------------------------------ public API
@@ -185,7 +190,8 @@ class CapabilityService:
         return closest_available(encoder_id, self._snapshot, self._definitions)
 
     async def close(self) -> None:
-        """Cancel the detection (killing its test encodes) and stop watching tool changes."""
+        """Cancel the detection (killing its test encodes) and stop watching tool changes. A
+        cache write that has started is finished first (the next start shows its result)."""
         self._closed = True
         if self._token is not None:
             self._token.cancel("shutting down")
@@ -196,6 +202,8 @@ class CapabilityService:
             task.cancel()
         if tasks:
             await asyncio.wait(tasks)
+        if self._writes:
+            await asyncio.wait(set(self._writes))
 
     # ------------------------------------------------------------------ internals
 
@@ -245,6 +253,8 @@ class CapabilityService:
     ) -> CapabilitySnapshot:
         if previous is not None:
             await asyncio.wait({previous})  # its test encodes are gone before new ones start
+        if self._writes:
+            await asyncio.wait(set(self._writes))  # an older result never overwrites this one
         try:
             tools = await self._tools.status()
         except Exception as exc:  # ReframeClosedError: Reframe is shutting down
@@ -293,10 +303,25 @@ class CapabilityService:
         )
         if token.cancelled:
             return self._snapshot
-        finished = self._finish(final, token)
         if key is not None:
-            await asyncio.to_thread(self._cache.put, key, finished)
-        return finished
+            await self._store(key, final)  # cached before anyone can see that it ended
+        return self._finish(final, token)
+
+    async def _store(self, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
+        """Write ``snapshot`` to the cache in a worker thread. Cancelling the detection does
+        not cancel a started write: :meth:`close` and the next detection wait for it."""
+        write = asyncio.get_running_loop().create_task(
+            asyncio.to_thread(self._put, key, snapshot), name="reframe-capability-cache-write"
+        )
+        self._writes.add(write)
+        write.add_done_callback(self._writes.discard)
+        await asyncio.shield(write)
+
+    def _put(self, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
+        try:
+            self._cache.put(key, snapshot)  # stores it with detecting and from_cache False
+        except Exception:  # a bug; cache errors never fail a detection
+            log.exception("capability cache: cannot store the detection result")
 
     async def _key(self, ffmpeg: ToolInfo, options: DetectionOptions) -> CacheKey | None:
         if self._gpu is None:
