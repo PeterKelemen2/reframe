@@ -1,6 +1,7 @@
 # 0024 — M2 wave 2: default preset, crop note until M8, audio values snapped, video default flag
 
-- Status: accepted
+- Status: accepted; the bitrate direction of item 4 ("nearest") is made exact by
+  [0025](0025-audio-bitrate-snaps-down.md): down to the next allowed step, as in HandBrake
 - Date: 2026-10-13
 - Steps: C-7, C-8, C-9, C-15
 - Supersedes in part: [0015](0015-presets-and-settings-stores.md) (the default preset),
