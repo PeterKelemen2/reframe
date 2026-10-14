@@ -297,7 +297,11 @@ Each test failed before its fix and passes after it.
    clean-up (end of a run, restore) also skips a path that is the job's source.
 3. **One lock per job** (`ActiveJob.control`) orders `pause`, `resume`, the start-of-run
    inhibitor acquire and the end-of-run release; a pause or resume of a job whose run ended
-   does nothing.
+   does nothing. A pause that takes the lock before the run's acquire (it comes while the run
+   saves its `running` state) leaves the job without an inhibit count until it is resumed
+   (`test_a_pause_before_the_run_takes_the_sleep_inhibit`). A pause before the step's
+   process exists is not a race: the step's `on_start` suspends a process that starts while
+   the job is paused, and a resume that comes first leaves it running.
 4. **The job holds its inhibitor count only once `acquire()` returned**; the release gives
    back only a count that the job holds.
 5. **File names that are not UTF-8.** The store writes JSON columns with `json.dumps(…,

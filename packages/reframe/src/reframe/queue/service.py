@@ -626,7 +626,8 @@ class QueueService:
                 self._events.publish(JobProgressEvent(job_id=job.id, progress=job.progress))
                 joblog.open(self._header(job))
                 async with active.control:
-                    await self._hold_inhibit(active, job)
+                    if not active.paused:  # a pause that came first released nothing yet
+                        await self._hold_inhibit(active, job)
                 outcome = await self._runner.run(job, active, joblog)
         except Exception as exc:  # a bug: the job fails, the queue goes on
             log.exception("queue job %s failed with an internal error", job.id)

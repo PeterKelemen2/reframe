@@ -18,6 +18,7 @@ from reframe.models import (
     JobState,
     NotificationEvent,
     QueueChangedEvent,
+    QueueJob,
 )
 from reframe.platform.sleep import SleepInhibitor
 from reframe.queue import JobStateError, QueueService, UnknownJobError
@@ -119,7 +120,7 @@ async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) ->
     )
     added = await h.queue.add(h.job())
     h.queue.start()
-    await h.first_event(added.id, "job.progress", limit=20)
+    await h.running_process(added.id)
     await h.wait_for(lambda: len(h.fake.pids()) >= 2)
     await h.queue.pause(added.id)
     assert h.queue.get(added.id).state is JobState.PAUSED  # type: ignore[union-attr]
@@ -188,12 +189,10 @@ async def test_pause_and_resume_at_the_same_time(
     h.scenario(LONG)
     added = await h.queue.add(h.job())
     h.queue.start()
-    await h.first_event(added.id, "job.progress", limit=20)
+    process = await h.running_process(added.id)  # the suspend must have a process to stop
     await asyncio.gather(h.queue.pause(added.id), h.queue.resume(added.id))
     assert h.queue.get(added.id).state is JobState.RUNNING  # type: ignore[union-attr]
     if sys.platform != "win32":  # a SIGSTOP is delivered a moment after suspend() returns
-        process = h.queue._active[added.id].process
-        assert process is not None
         pid = process.pid
         with pytest.raises(TimeoutError):
             await h.wait_for(lambda: psutil.Process(pid).status() == psutil.STATUS_STOPPED, 0.5)
@@ -213,7 +212,8 @@ async def test_a_cancelled_resume_does_not_unbalance_the_sleep_inhibit(harness: 
     first = await h.queue.add(h.job("First"))
     second = await h.queue.add(h.job("Second"))
     h.queue.start(job_ids=[first.id])
-    await h.first_event(first.id, "job.progress", limit=20)
+    await h.running_process(first.id)  # its run holds the inhibit by now
+    assert h.inhibitor.count == 1
     await h.queue.pause(first.id)
     assert h.inhibitor.count == 0
     h.backend.delay = 0.5
@@ -231,6 +231,36 @@ async def test_a_cancelled_resume_does_not_unbalance_the_sleep_inhibit(harness: 
     await h.queue.cancel(second.id)
     assert h.inhibitor.count == 0
     assert not h.backend.held
+
+
+async def test_a_pause_before_the_run_takes_the_sleep_inhibit(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pause that comes while the run saves its ``running`` state takes the job's lock
+    first; the run must then not acquire the sleep inhibit for a paused job (it did: the
+    count stayed 1 while the job was paused)."""
+    h = harness
+    h.scenario(LONG)
+    original = h.queue._save
+    pausing: list[asyncio.Future[None]] = []
+
+    async def save(job: QueueJob) -> None:
+        if job.state is JobState.RUNNING and not pausing:
+            pausing.append(asyncio.ensure_future(h.queue.pause(job.id)))
+        await original(job)
+
+    monkeypatch.setattr(h.queue, "_save", save)
+    added = await h.queue.add(h.job())
+    h.queue.start()
+    await h.wait_for(lambda: len(h.sources.calls) == 2)  # the run is past its inhibit step
+    await pausing[0]
+    assert h.queue.get(added.id).state is JobState.PAUSED  # type: ignore[union-attr]
+    assert h.inhibitor.count == 0
+    assert h.backend.holds == []
+    await h.queue.resume(added.id)
+    assert h.inhibitor.count == 1
+    await h.queue.cancel(added.id)
+    assert h.inhibitor.count == 0
 
 
 async def test_pause_and_resume_of_other_states_do_nothing(harness: Harness) -> None:
