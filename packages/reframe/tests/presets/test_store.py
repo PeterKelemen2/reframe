@@ -311,7 +311,7 @@ def test_export_import_gives_the_same_result(tmp_path: Path) -> None:
     first = created(source, "Anime x265", encoder="libx265", tune="animation")
     created(source, "Archive AV1", encoder="libsvtav1", preset="4")
     source.set_default(first.id)
-    exported = source.export()
+    exported = source.export().file
     assert exported.default_preset_id == first.id
     # Through the JSON text, as a file on disk would carry it.
     text = exported.model_dump_json()
@@ -323,7 +323,7 @@ def test_export_import_gives_the_same_result(tmp_path: Path) -> None:
     assert target.user_presets() == source.user_presets()
     assert target.default() == source.default()
     assert PresetStore(tmp_path / "b").user_presets() == source.user_presets()
-    assert target.export() == exported
+    assert target.export().file == exported
 
 
 @settings(
@@ -357,7 +357,7 @@ def test_export_import_round_trip_property(
     if made and 0 <= default < len(made):
         source.set_default(made[default].id)
     target = PresetStore(tmp_path_factory.mktemp("b"))
-    target.import_(PresetFile.model_validate_json(source.export().model_dump_json()))
+    target.import_(PresetFile.model_validate_json(source.export().file.model_dump_json()))
     assert target.user_presets() == source.user_presets()
     assert target.default().id == source.default().id
 
@@ -366,10 +366,10 @@ def test_export_selected_ids_and_builtins(store: PresetStore) -> None:
     mine = created(store, "Mine")
     created(store, "Other")
     store.set_default(mine.id)
-    file = store.export([mine.id, "h265-mkv-1080p", "unknown", mine.id])
+    file = store.export([mine.id, "h265-mkv-1080p", "unknown", mine.id]).file
     assert [p.id for p in file.presets] == [mine.id, "h265-mkv-1080p"]
     assert file.default_preset_id == mine.id
-    assert store.export(["h265-mkv-1080p"]).default_preset_id is None
+    assert store.export(["h265-mkv-1080p"]).file.default_preset_id is None
 
 
 def test_importing_a_builtin_export_makes_a_user_copy(store: PresetStore) -> None:
@@ -685,3 +685,218 @@ def test_user_preset_named_like_a_newer_builtin_wins_find(tmp_path: Path) -> Non
     found = store.find("fast 1080p30")
     assert found is not None
     assert found.id == "u"
+
+
+# --------------------------------------------------------------------------- M2 review fixes
+
+#: A preset that a newer Reframe wrote (its schema version is above ours).
+FUTURE: dict[str, Any] = {
+    "id": "f",
+    "name": "Future",
+    "schema_version": 5,
+    "video": {"encoder": "h266"},
+    "new_in_v5": {"keep": True},
+}
+
+
+def with_future(folder: Path, *, default: str | None = None) -> Preset:
+    """``presets.json`` with :data:`FUTURE` and one current preset (returned)."""
+    mine = Preset(id="m", name="Mine")
+    data = {
+        "schema_version": 1,
+        "presets": [FUTURE, mine.model_dump(mode="json")],
+        "default_preset_id": default,
+    }
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "presets.json").write_text(json.dumps(data), encoding="utf-8")
+    return mine
+
+
+def registry_v5() -> MigrationRegistry:
+    """A newer Reframe: ``preset`` at version 5 (empty migrations)."""
+    registry = MigrationRegistry()
+    registry.add_kind("preset_file", 1)
+    registry.add_kind("preset", 5)
+    for version in range(1, 5):
+        registry.register("preset", from_version=version)(lambda data: data)
+    return registry
+
+
+def nested(depth: int) -> list[Any]:
+    """A list nested ``depth`` levels deep (built without recursion)."""
+    value: list[Any] = []
+    for _ in range(depth - 1):
+        value = [value]
+    return value
+
+
+def test_save_refuses_a_preset_of_a_newer_reframe(tmp_path: Path) -> None:
+    """``save`` stored a preset with a newer schema version; after a restart it was hidden
+    (kept only as raw JSON). It is refused now, and the file is not changed."""
+    store = PresetStore(tmp_path)
+    mine = created(store, "Mine")
+    before = (tmp_path / "presets.json").read_bytes()
+    for preset in (
+        mine.model_copy(update={"schema_version": 5, "description": "changed"}),
+        Preset(id="n", name="New", schema_version=5),
+    ):
+        refused = store.save(preset)
+        assert isinstance(refused, ValidationIssue)
+        assert refused.code == "preset.newer_version"
+        assert "newer Reframe" in refused.message
+    assert (tmp_path / "presets.json").read_bytes() == before
+    assert store.user_presets() == [mine]
+    assert PresetStore(tmp_path).user_presets() == [mine]
+
+
+def test_create_from_a_template_makes_a_preset_of_the_current_version(tmp_path: Path) -> None:
+    """The template's ``schema_version`` (a ``job_template``) is not the preset's."""
+    store = PresetStore(tmp_path)
+    made = store.create(JobTemplate.model_validate({"schema_version": 5}), "From a template")
+    assert isinstance(made, Preset)
+    assert made.schema_version == 1
+    assert [p.name for p in PresetStore(tmp_path).user_presets()] == ["From a template"]
+
+
+def test_import_of_a_preset_file_refuses_newer_presets(tmp_path: Path) -> None:
+    """``import_(PresetFile)`` stored newer presets, which were hidden after a restart."""
+    store = PresetStore(tmp_path)
+    file = PresetFile(
+        presets=[Preset(id="a", name="A", schema_version=5), Preset(id="b", name="B")]
+    )
+    result = store.import_(file)
+    assert [p.name for p in result.imported] == ["B"]
+    assert result.skipped == ["A"]
+    [issue] = result.issues
+    assert issue.code == "preset.newer_version"
+    assert "newer Reframe" in issue.message
+    assert [p.name for p in store.user_presets()] == ["B"]
+    assert [p.name for p in PresetStore(tmp_path).user_presets()] == ["B"]
+
+
+def test_save_and_import_never_take_the_id_of_a_newer_preset(tmp_path: Path) -> None:
+    with_future(tmp_path)
+    store = PresetStore(tmp_path)
+    refused = store.save(Preset(id="f", name="Taken id"))
+    assert isinstance(refused, ValidationIssue)
+    assert refused.code == "preset.newer_version"
+    result = store.import_(PresetFile(presets=[Preset(id="f", name="Imported")]))
+    [imported] = result.imported
+    assert imported.id != "f"
+    saved = json.loads((tmp_path / "presets.json").read_text("utf-8"))
+    assert saved["presets"][0] == FUTURE
+    assert [p["id"] for p in saved["presets"]] == ["f", "m", imported.id]
+
+
+def test_export_all_keeps_newer_presets_unchanged(tmp_path: Path) -> None:
+    """ "Export all" left newer presets out without a word. They are in the export file now,
+    unchanged, with a warning that only that newer Reframe can import them."""
+    mine = with_future(tmp_path / "a", default="f")
+    store = PresetStore(tmp_path / "a")
+    exported = store.export()
+    assert exported.file.presets == [mine]
+    assert exported.file.default_preset_id is None  # the default is not in ``file``
+    assert exported.newer == [FUTURE]
+    [issue] = exported.issues
+    assert issue.code == "preset.newer_version"
+    assert "Future" in issue.message
+    assert issue.severity == "warning"
+    document = json.loads(json.dumps(exported.document()))
+    assert document["presets"] == [mine.model_dump(mode="json"), FUTURE]
+    assert document["default_preset_id"] == "f"
+    # Chosen ids may name a newer preset too.
+    only = store.export(["f"])
+    assert only.file.presets == []
+    assert only.newer == [FUTURE]
+    # This Reframe imports what it can read and says what it could not.
+    result = PresetStore(tmp_path / "b").import_(exported)
+    assert [p.name for p in result.imported] == ["Mine"]
+    assert result.skipped == ["Future"]
+    assert [i.code for i in result.issues] == ["preset.newer_version"]
+    # The newer Reframe imports both, the newer one unchanged.
+    newer = PresetStore(tmp_path / "c", registry=registry_v5())
+    result = newer.import_(document)
+    assert sorted(p.name for p in result.imported) == ["Future", "Mine"]
+    future = newer.find("Future")
+    assert future is not None
+    assert future.model_dump(mode="json")["new_in_v5"] == {"keep": True}
+    assert newer.default().id == "f"
+
+
+def test_a_deeply_nested_preset_is_damaged_and_the_others_are_kept(tmp_path: Path) -> None:
+    good = Preset(id="g", name="Good")
+    deep = '{"id": "d", "name": "Deep", "x": ' + "[" * 600 + "]" * 600 + "}"
+    text = f'{{"schema_version": 1, "presets": [{good.model_dump_json()}, {deep}]}}'
+    (tmp_path / "presets.json").write_text(text, encoding="utf-8")
+    store = PresetStore(tmp_path)
+    assert store.user_presets() == [good]
+    [problem] = store.problems
+    assert problem.code == "presets.corrupt"
+    assert problem.detail is not None
+    assert "Deep" in problem.detail
+    assert "nested" in problem.detail
+    [backup] = tmp_path.glob("presets.corrupt-*.json")
+    assert backup.read_text("utf-8") == text
+    rewritten = json.loads((tmp_path / "presets.json").read_text("utf-8"))
+    assert [p["name"] for p in rewritten["presets"]] == ["Good"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"schema_version": 1, "presets": [], "x": ' + "[" * 600 + "]" * 600 + "}",
+        '{"presets": ' + "[" * 100_000 + "]" * 100_000 + "}",
+    ],
+    ids=["deep-header", "too-deep-to-parse"],
+)
+def test_a_deeply_nested_presets_file_is_corrupt(tmp_path: Path, text: str) -> None:
+    (tmp_path / "presets.json").write_text(text, encoding="utf-8")
+    store = PresetStore(tmp_path)
+    assert store.user_presets() == []
+    [problem] = store.problems
+    assert problem.code == "presets.corrupt"
+    assert problem.detail is not None
+    assert "nested" in problem.detail
+    assert len(list(tmp_path.glob("presets.corrupt-*.json"))) == 1
+
+
+def test_import_of_a_deeply_nested_preset_skips_it(store: PresetStore) -> None:
+    raw = {
+        "schema_version": 1,
+        "presets": [{"id": "d", "name": "Deep", "x": nested(600)}, {"id": "ok", "name": "Fine"}],
+    }
+    result = store.import_(raw)
+    assert [p.name for p in result.imported] == ["Fine"]
+    assert result.skipped == ["Deep"]
+    assert [i.code for i in result.issues] == ["preset.invalid"]
+    deep = Preset.model_validate({"id": "d2", "name": "Deep 2", "x": nested(400)})
+    result = store.import_(PresetFile(presets=[deep]))
+    assert result.imported == []
+    assert [i.code for i in result.issues] == ["presets.import_invalid"]
+
+
+@pytest.mark.parametrize("depth", [100, 400])
+def test_saving_a_too_deep_preset_is_an_issue(store: PresetStore, depth: int) -> None:
+    deep = Preset.model_validate({"id": "d", "name": "Deep", "x": nested(depth)})
+    refused = store.save(deep)
+    assert isinstance(refused, ValidationIssue)
+    assert refused.code == "preset.invalid"
+    assert "nested" in refused.message
+    assert store.user_presets() == []
+
+
+def test_a_linked_presets_file_stays_a_link(tmp_path: Path) -> None:
+    real = tmp_path / "dotfiles" / "presets.json"
+    real.parent.mkdir()
+    real.write_text('{"schema_version": 1, "presets": []}', encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+    link = config / "presets.json"
+    try:
+        link.symlink_to(real)
+    except (OSError, NotImplementedError) as exc:  # Windows without the privilege
+        pytest.skip(f"cannot make a symbolic link: {exc}")
+    created(PresetStore(config), "Mine")
+    assert link.is_symlink()
+    assert [p["name"] for p in json.loads(real.read_text("utf-8"))["presets"]] == ["Mine"]
+    assert [p.name for p in PresetStore(config).user_presets()] == ["Mine"]

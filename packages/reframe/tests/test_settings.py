@@ -428,3 +428,187 @@ def test_backup_names_do_not_collide(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "presets.corrupt-20261013-120000-2.json",
         "presets.corrupt-20261013-120000-3.json",
     ]
+
+
+# --------------------------------------------------------------------------- M2 review fixes
+
+
+def nested(depth: int) -> list[Any]:
+    """A list nested ``depth`` levels deep (built without recursion)."""
+    value: list[Any] = []
+    for _ in range(depth - 1):
+        value = [value]
+    return value
+
+
+@pytest.mark.parametrize("depth", [100, 600, 100_000])
+def test_deeply_nested_file_is_corrupt_not_a_crash(tmp_path: Path, depth: int) -> None:
+    """A deeply nested settings.json raised ``RecursionError`` from ``load()`` (in
+    ``Reframe.__init__``, so the app did not start). It is a damaged file now."""
+    path = tmp_path / "settings.json"
+    text = '{"x": ' + "[" * depth + "]" * depth + "}"
+    path.write_text(text, encoding="utf-8")
+    store = SettingsStore(tmp_path)
+    assert store.load() == AppSettings()
+    [problem] = store.problems
+    assert problem.code == "settings.corrupt"
+    assert problem.detail is not None
+    assert "nested" in problem.detail
+    [backup] = tmp_path.glob("settings.corrupt-*.json")
+    assert backup.read_text("utf-8") == text
+    assert json.loads(path.read_text("utf-8")) == AppSettings().model_dump(mode="json")
+
+
+def test_nesting_up_to_the_limit_is_fine(tmp_path: Path) -> None:
+    value = nested(settings_module.MAX_DEPTH - 1)  # plus the settings object itself
+    store = SettingsStore(tmp_path)
+    assert store.write(AppSettings.model_validate({"x": value})) is None
+    assert store.load().model_dump(mode="json")["x"] == value
+    assert store.problems == []
+
+
+@pytest.mark.parametrize("depth", [100, 400])
+def test_too_deep_settings_are_not_saved_and_no_exception(tmp_path: Path, depth: int) -> None:
+    """A document the loader would reject as damaged is never written (400 levels also made
+    Pydantic's ``model_dump`` raise)."""
+    store = SettingsStore(tmp_path)
+    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    before = (tmp_path / "settings.json").read_bytes()
+    warning = store.write(AppSettings.model_validate({"x": nested(depth)}))
+    assert warning is not None
+    assert warning.code == "settings.write_failed"
+    assert (tmp_path / "settings.json").read_bytes() == before
+
+
+def test_too_deep_counts_levels_without_recursion() -> None:
+    assert not settings_module.too_deep({"a": [1, {"b": 2}]}, 3)
+    assert settings_module.too_deep({"a": [1, {"b": []}]}, 3)
+    assert not settings_module.too_deep("text", 0)
+    assert settings_module.too_deep(nested(1_000_000), 64)
+
+
+def test_the_store_writes_the_current_schema_version(tmp_path: Path) -> None:
+    """A settings object labelled with another version is written as the current version:
+    the content is what this Reframe's model holds, and a newer label would make the next
+    start treat the file as newer and use the defaults."""
+    store = SettingsStore(tmp_path)
+    assert store.write(AppSettings.model_validate({"schema_version": 7})) is None
+    saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+    assert saved["schema_version"] == 1
+    again = SettingsStore(tmp_path)
+    again.load()
+    assert again.problems == []
+    v2 = SettingsStore(tmp_path, registry=registry_v2())
+    assert v2.write(AppSettings()) is None
+    assert json.loads((tmp_path / "settings.json").read_text("utf-8"))["schema_version"] == 2
+
+
+def symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:  # Windows without the privilege
+        pytest.skip(f"cannot make a symbolic link: {exc}")
+
+
+def test_a_linked_settings_file_is_written_through_the_link(tmp_path: Path) -> None:
+    """``os.replace`` onto the link replaced the link with a regular file. The new content
+    goes to the link's target now, and the link stays."""
+    dotfiles = tmp_path / "dotfiles"
+    dotfiles.mkdir()
+    real = dotfiles / "reframe-settings.json"
+    write_json(real, {"queue": {"parallel_jobs": 2}})
+    config = tmp_path / "config"
+    config.mkdir()
+    link = config / "settings.json"
+    symlink_or_skip(link, real)
+    store = SettingsStore(config)
+    assert store.load().queue.parallel_jobs == 2
+    assert store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 3}})) is None
+    assert link.is_symlink()
+    assert json.loads(real.read_text("utf-8"))["queue"]["parallel_jobs"] == 3
+    assert sorted(p.name for p in config.iterdir()) == ["settings.json"]
+    assert sorted(p.name for p in dotfiles.iterdir()) == ["reframe-settings.json"]
+
+
+def test_a_damaged_linked_file_is_backed_up_next_to_its_target(tmp_path: Path) -> None:
+    dotfiles = tmp_path / "dotfiles"
+    dotfiles.mkdir()
+    real = dotfiles / "settings.json"
+    real.write_text("{", encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+    link = config / "settings.json"
+    symlink_or_skip(link, real)
+    store = SettingsStore(config)
+    assert store.load() == AppSettings()
+    [problem] = store.problems
+    assert problem.code == "settings.corrupt"
+    [backup] = dotfiles.glob("settings.corrupt-*.json")
+    assert backup.read_text("utf-8") == "{"
+    assert str(backup) in problem.message
+    assert link.is_symlink()
+    assert json.loads(real.read_text("utf-8")) == AppSettings().model_dump(mode="json")
+    assert sorted(p.name for p in config.iterdir()) == ["settings.json"]
+
+
+def test_a_dangling_link_gets_its_target_written(tmp_path: Path) -> None:
+    config = tmp_path / "config"
+    config.mkdir()
+    real = tmp_path / "elsewhere" / "settings.json"
+    link = config / "settings.json"
+    symlink_or_skip(link, real)
+    store = SettingsStore(config)
+    assert store.load() == AppSettings()
+    assert store.write(AppSettings()) is None
+    assert link.is_symlink()
+    assert json.loads(real.read_text("utf-8")) == AppSettings().model_dump(mode="json")
+
+
+def test_a_link_loop_is_unreadable_and_never_written(tmp_path: Path) -> None:
+    symlink_or_skip(tmp_path / "settings.json", tmp_path / "other.json")
+    symlink_or_skip(tmp_path / "other.json", tmp_path / "settings.json")
+    store = SettingsStore(tmp_path)
+    assert store.load() == AppSettings()
+    assert [p.code for p in store.problems] == ["settings.unreadable"]
+    warning = store.write(AppSettings())
+    assert warning is not None
+    assert warning.code == "settings.not_saved"
+    assert (tmp_path / "settings.json").is_symlink()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["other.json", "settings.json"]
+
+
+def test_windows_link_target_is_written_mock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Windows path, with mocks (no symbolic link needed): the read, the backup and the
+    write go to the link's target (as ``os.path.realpath`` gives it), never onto the link,
+    and the sharing-violation retry still works there."""
+    config = tmp_path / "config"
+    config.mkdir()
+    real = tmp_path / "OneDrive" / "settings.json"
+    real.parent.mkdir()
+    real.write_text("{", encoding="utf-8")
+    link = config / "settings.json"
+    monkeypatch.setattr(settings_module, "WINDOWS", True)
+    monkeypatch.setattr(
+        settings_module, "_link_target", lambda path: real if path == link else path
+    )
+    flaky = FlakyReplace(failures=1)
+    seen: list[tuple[Path, Path]] = []
+
+    def replace(source: Path, target: Path) -> None:
+        seen.append((source, target))
+        flaky(source, target)
+
+    monkeypatch.setattr(settings_module, "_replace", replace)
+    monkeypatch.setattr(settings_module, "_sleep", lambda seconds: None)
+    store = SettingsStore(config)
+    store.load()  # reads "{" through the "link": damaged
+    [problem] = store.problems
+    assert problem.code == "settings.corrupt"
+    assert seen
+    assert all(target.parent == real.parent for _, target in seen)
+    assert all(source.parent == real.parent for source, _ in seen)
+    assert json.loads(real.read_text("utf-8")) == AppSettings().model_dump(mode="json")
+    assert len(list(real.parent.glob("settings.corrupt-*.json"))) == 1
+    assert not link.exists()  # the mock "link" was never written

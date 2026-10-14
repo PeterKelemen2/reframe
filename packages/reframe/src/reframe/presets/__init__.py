@@ -3,8 +3,8 @@
 
 - :func:`builtin_presets` — HandBrake's built-in presets adapted to FFmpeg (decision 0015).
 - :class:`PresetStore` — list, get, find, create, save, rename, delete, duplicate,
-  set_default, default, export, import_ (name-conflict handling: ``rename`` / ``replace`` /
-  ``skip``).
+  set_default, default, export (a :class:`PresetExport`), import_ (name-conflict handling:
+  ``rename`` / ``replace`` / ``skip``).
 - :func:`diff` — ``diff(template, preset) -> list[FieldChange]``.
 
 The facade (``Reframe.presets``) wraps the store; UIs use that.
@@ -17,6 +17,7 @@ from reframe.presets.store import (
     PRESETS_FILE,
     ConflictPolicy,
     ImportResult,
+    PresetExport,
     PresetStore,
     normalise_name,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "PRESETS_FILE",
     "ConflictPolicy",
     "ImportResult",
+    "PresetExport",
     "PresetStore",
     "builtin_ids",
     "builtin_presets",
