@@ -14,7 +14,7 @@ from reframe.batch import (
     render_track_name,
     requested_mixdown,
 )
-from reframe.definitions import load_definitions
+from reframe.definitions import channels_mixdown, load_definitions
 from reframe.models import (
     AudioCodecRule,
     AudioDefaults,
@@ -26,6 +26,7 @@ from reframe.models import (
     Container,
     Disposition,
     ExtraAudioOutput,
+    Mixdown,
     PassthruPolicy,
     RuleMixdown,
     SourceChannels,
@@ -714,6 +715,89 @@ def test_sample_rate_snaps_to_the_encoder() -> None:
     track, decision = run(stream("flac", 2, None, lossless=True), rules(rule))
     assert track.samplerate == 48000
     assert decision.notes == ["Opus has no 44100 Hz: 48000 Hz"]
+
+
+@pytest.mark.parametrize(
+    ("encoder", "source_rate", "expected", "notes"),
+    [
+        # The source's own rate stays "same as source" when the encoder takes it …
+        ("aac", 44100, None, []),
+        ("libopus", 48000, None, []),
+        ("ac3", None, None, []),
+        # … and becomes the snapped rate (C-6's ``snap_samplerate``) when it does not: the
+        # rate the command builder writes with ``-ar`` (an AC-3 ``-ar 22050`` fails).
+        ("libopus", 44100, 48000, ["Opus has no 44100 Hz (the source's rate): 48000 Hz"]),
+        ("libopus", 22050, 24000, ["Opus has no 22050 Hz (the source's rate): 24000 Hz"]),
+        ("ac3", 22050, 32000, ["AC-3 has no 22050 Hz (the source's rate): 32000 Hz"]),
+    ],
+)
+def test_the_source_sample_rate_snaps_to_the_encoder(
+    encoder: str, source_rate: int | None, expected: int | None, notes: list[str]
+) -> None:
+    """Decision 0024: a source rate the encoder cannot write is snapped, with a note."""
+    rule = AudioCodecRule(codec=encoder, mixdown="stereo", max_bitrate=128)
+    source = stream("flac", 2, None, lossless=True, sample_rate=source_rate)
+    track, decision = run(source, rules(rule))
+    assert track.samplerate == expected
+    assert decision.notes == notes
+    # The rate written is the shared helper's answer.
+    enc = DEFS.audio_encoders[encoder]
+    assert (track.samplerate or source_rate) == enc.snap_samplerate(None, source_rate)
+
+
+# --------------------------------------------------------------------------- shared helpers
+
+_RULE_MIXDOWNS: list[RuleMixdown] = ["keep", "up_to_5.1", "5.1", "stereo", "dpl2", "mono"]
+
+
+@pytest.mark.parametrize("encoder", sorted(DEFS.audio_encoders))
+@pytest.mark.parametrize("channels", [0, 1, 2, 3, 6, 7, 8])
+@pytest.mark.parametrize("mixdown", _RULE_MIXDOWNS)
+def test_the_output_agrees_with_the_shared_helpers(
+    encoder: str, channels: int, mixdown: RuleMixdown
+) -> None:
+    """Decision 0024: the layout, bit rate and sample rate C-12 writes are C-6's
+    ``snap_mixdown``, ``channels_mixdown``, ``AudioBitrateDef.snap`` and ``snap_samplerate``,
+    the helpers that C-7 and C-8 use."""
+    enc = DEFS.audio_encoders[encoder]
+    rule = AudioCodecRule(codec=encoder, mixdown=mixdown, max_bitrate=700)
+    source = stream("pcm_s16le", channels, None, lossless=True, sample_rate=44100)
+    track, _ = run(source, rules(rule, passthru=PassthruPolicy(allowed=[])))
+    wanted = requested_mixdown(mixdown, channels, DEFS)
+    assert track.mixdown == enc.snap_mixdown(wanted, channels, DEFS.mixdowns)
+    # Never an upmix of a known source.
+    if track.mixdown is not None and channels > 0:
+        assert DEFS.mixdowns[track.mixdown].channels <= channels
+    # The rule's no-upmix rule is the helper's; only ``up_to_5.1`` keeps a 5.1 source's
+    # own layout (decision 0019 item 3).
+    target: Mixdown | None = (
+        None if mixdown == "keep" else "5.1" if mixdown == "up_to_5.1" else mixdown
+    )
+    if mixdown != "up_to_5.1" or channels != 6:
+        assert track.mixdown == enc.snap_mixdown(target, channels, DEFS.mixdowns)
+    if enc.bitrate is None:
+        assert track.bitrate is None
+    else:
+        key = track.mixdown if track.mixdown is not None else channels_mixdown(channels)
+        assert track.bitrate == enc.bitrate.snap(700, key, "down")
+    assert (track.samplerate or 44100) == enc.snap_samplerate(None, 44100)
+
+
+def test_an_encoder_without_a_small_enough_layout_keeps_the_source() -> None:
+    """``snap_mixdown`` never upmixes, also when the encoder has nothing that small (the
+    note names the kept source layout)."""
+    aac = DEFS.audio_encoders["aac"].model_copy(update={"mixdowns": ["stereo", "5.1"]})
+    defs = DEFS.model_copy(update={"audio_encoders": {**DEFS.audio_encoders, "aac": aac}})
+    rule = AudioCodecRule(codec="aac", mixdown="mono", max_bitrate=96)
+    mono = stream("pcm_s16le", 1, None, lossless=True)
+    track, decision = run(mono, rules(rule), definitions=defs)
+    assert (track.mixdown, track.bitrate) == (None, 96)
+    assert decision.notes == ["AAC cannot make Mono: 1.0"]
+    # An unknown channel count gets the encoder's smallest layout.
+    unknown = stream("pcm_s16le", 0, None, lossless=True)
+    track, decision = run(unknown, rules(rule), definitions=defs)
+    assert track.mixdown == "stereo"
+    assert decision.notes == ["AAC cannot make Mono: Stereo"]
 
 
 def test_name_template() -> None:
