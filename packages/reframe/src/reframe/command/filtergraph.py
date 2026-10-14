@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import PurePath, PureWindowsPath
 
 from reframe.command.errors import PlanError
@@ -232,8 +233,9 @@ class VideoGraph:
     """The graph removes the HDR metadata (tone mapping or a colour conversion of HDR)."""
     filters: list[str] = field(default_factory=list)
     """The filter ids used, in order (for descriptions and tests)."""
-    rate_factor: int = 1
-    """2 when the deinterlacer makes one frame of each field (Bob): the frame rate doubles."""
+    rate_factor: Fraction = Fraction(1)
+    """How the filters change the frame rate (:func:`frame_rate_factor`): 2 after a Bob
+    deinterlacer, 4/5 after detelecine's ``decimate``."""
 
     OUTPUT_LABEL = "[v]"
 
@@ -350,8 +352,7 @@ def build_video_graph(
                 target.append(setparams)
         target.append(chain)
         graph.filters.append(filter_id)
-        if filter_id == "deinterlace" and doubles_frame_rate(chain):
-            graph.rate_factor = 2
+        graph.rate_factor *= frame_rate_factor(chain)
 
     for stage in definitions.filter_order:
         if stage == "crop":
@@ -386,21 +387,35 @@ def build_video_graph(
 #: ``bwdif``: 1 ``send_field``, 3 ``send_field_nospatial``).
 _FIELD_DEINTERLACERS = frozenset({"bwdif", "yadif", "bwdif_cuda", "yadif_cuda", "bwdif_vulkan"})
 _FIELD_MODES = frozenset({"1", "3", "send_field", "send_field_nospatial"})
+_TRUE = frozenset({"1", "true", "y", "yes", "on"})
 
 
-def doubles_frame_rate(chain: str) -> bool:
-    """Whether a filter chain has a deinterlacer that makes a frame of each field (Bob):
-    ``bwdif=mode=send_field``, ``yadif=1``, ``yadif=mode=3:…``."""
+def _option(options: str, name: str, position: int) -> str | None:
+    """A filter option by name, or by its position when given without a name."""
+    values = options.split(":") if options else []
+    named = dict(v.split("=", 1) for v in values if "=" in v)
+    if name in named:
+        return named[name]
+    unnamed = [v for v in values if "=" not in v]
+    return unnamed[position] if position < len(unnamed) else None
+
+
+def frame_rate_factor(chain: str) -> Fraction:
+    """How a filter chain changes the frame rate. The filters of the definitions that do:
+    a deinterlacer that makes a frame of each field (Bob: ``bwdif=mode=send_field``,
+    ``yadif=1``) doubles it; detelecine's ``decimate`` drops one frame of each ``cycle``
+    (default 5: 30000/1001 → 24000/1001), unless ``mixed`` (then the output is variable).
+    Other filters (also a custom chain's ``fps``) are not followed."""
+    factor = Fraction(1)
     for part in chain.split(","):
         name, _, options = part.strip().partition("=")
-        if name not in _FIELD_DEINTERLACERS or not options:
-            continue
-        values = options.split(":")
-        named = dict(v.split("=", 1) for v in values if "=" in v)
-        mode = named.get("mode", values[0] if "=" not in values[0] else None)
-        if mode in _FIELD_MODES:
-            return True
-    return False
+        if name in _FIELD_DEINTERLACERS and _option(options, "mode", 0) in _FIELD_MODES:
+            factor *= 2
+        elif name == "decimate" and (_option(options, "mixed", 7) or "0") not in _TRUE:
+            cycle = _option(options, "cycle", 0) or "5"
+            if cycle.isdigit() and int(cycle) >= 2:  # FFmpeg refuses anything else
+                factor *= Fraction(int(cycle) - 1, int(cycle))
+    return factor
 
 
 def _past_crop(stage: str, definitions: Definitions) -> bool:

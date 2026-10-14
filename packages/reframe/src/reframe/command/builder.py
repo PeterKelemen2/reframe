@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from fractions import Fraction
 from pathlib import Path
 
 from reframe.command.audio import AudioOut, audio_output
@@ -271,7 +272,7 @@ def _codec_extra(
     settings: VideoSettings,
     video: VideoStream,
     container: ContainerDef,
-    rate_factor: int,
+    rate_factor: Fraction,
 ) -> list[str]:
     args = frame_rate_args(settings, video, factor=rate_factor)
     tag = container.codec_tags.get(encoder.codec)

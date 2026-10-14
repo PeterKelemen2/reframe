@@ -310,7 +310,11 @@ before the fix; `testdata/README.md` §Command builder has the commands and resu
    chapters did not move), and MP4 `mov_text` got wrong times. The same happened to copied
    streams of an encode with a range (a copied AC-3 track started 1.17 s before the video).
 4. **Bob with a constant "same as source" frame rate** wrote the source's rate after a
-   deinterlacer that doubles it, dropping every second frame.
+   deinterlacer that doubles it, dropping every second frame. Second review round: the same
+   for **detelecine**, whose `decimate` drops one frame in five. A 2:3 telecined clip (48
+   frames of 24000/1001 film made 60 frames of 30000/1001 by `telecine=pattern=23`) came out
+   with `-r 30000/1001` as 60 frames, 12 of them duplicates; with `-r 24000/1001` (or no
+   `-r`) as the 48 film frames, in MKV and MP4, with both builds.
 5. **The POSIX display** (`shlex.quote`) did not paste into fish for `'` and `\`, nor for a
    leading `%`; zsh expands a leading `=`. The Windows display claimed PowerShell.
 
@@ -339,8 +343,13 @@ before the fix; `testdata/README.md` §Command builder has the commands and resu
    before the range and every stream keeps its relative time); a copied external track of a
    remux without a range drops its own events before 0 with `-copypriorss:s:N 0`. Not
    solved: a converted external track (`mov_text`) of a remux with a negative offset.
-4. After a deinterlacer that sends fields (`bwdif` / `yadif` `mode=send_field`, `1`,
-   `send_field_nospatial`, `3`), a constant "same as source" rate is twice the source's.
+4. A constant "same as source" rate is the rate **after the filters**: the source's average
+   times the factor of the filter chains (`VideoGraph.rate_factor`, `frame_rate_factor`).
+   The filters of the definitions that change the rate: a deinterlacer that sends fields
+   (`bwdif` / `yadif` `mode=send_field`, `1`, `send_field_nospatial`, `3`: × 2) and
+   detelecine's `decimate` (× (cycle − 1) / cycle, 4/5 by default; not with `mixed=1`, whose
+   output is variable). A custom filter chain is read for the same filters; any other rate
+   change in it (`fps=`) is not followed.
 5. The POSIX display quotes for bash, zsh, fish and sh (tested with each): bare only for
    `[A-Za-z0-9_@%+=:,./-]` without a leading `=` or `%`, else single quotes with `'` as
    `"'"` and `\` as a backslash pair in double quotes. The Windows display is for `cmd.exe`
@@ -354,10 +363,12 @@ before the fix; `testdata/README.md` §Command builder has the commands and resu
   `7.1(wide)` → 5.1). C-8 could note the libopus downmix like any other mixdown change.
 - Seven plan snapshots with a range on an encoded video get `-ss 0`; nothing else in them
   changes.
-- Detelecine (`decimate`) lowers the rate by 1/5 and a constant "same as source" rate then
-  duplicates frames back; not changed (not in the review; open question).
+- Detelecine with a constant "same as source" rate writes the film rate (30000/1001 →
+  24000/1001). No plan snapshot changed for Bob or detelecine (the one job with both,
+  `interlaced_all_filters`, has a variable rate).
 
 ### Plan changes
 
 - `docs/plan/05-core.md` §C-7: the argument order (`-ss 0`), the filter graph (10-bit
-  overlay), the video bullet (Bob) and the audio bullet (libopus layouts).
+  overlay), the video bullet (the rate after Bob and detelecine) and the audio bullet
+  (libopus layouts).

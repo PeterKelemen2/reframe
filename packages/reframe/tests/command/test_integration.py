@@ -933,6 +933,39 @@ async def test_frame_rate_modes(
     assert capped["streams"][0]["avg_frame_rate"] == "30/1"
 
 
+def make_telecined_source(ffmpeg: str, path: Path) -> Path:
+    """2 s of 24000/1001 film (48 frames) telecined 2:3 to 30000/1001 (60 frames)."""
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24000/1001:d=2",
+         "-vf", "telecine=pattern=23", "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0",
+         str(path)],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    return path
+
+
+@pytest.mark.parametrize("container", ["mkv", "mp4"])
+async def test_detelecine_with_a_constant_same_as_source_rate_keeps_the_film_rate(
+    prober: Prober, tool_paths: dict[str, str], tmp_path: Path, container: Container
+) -> None:
+    """``decimate`` drops one frame in five (30000/1001 → 24000/1001); a constant "same as
+    source" rate of 30000/1001 made FFmpeg duplicate them back (M2 review, second round)."""
+    src = await probe(prober, make_telecined_source(tool_paths["ffmpeg"], tmp_path / "tc.mkv"))
+    assert (src.video[0].frame_count or 60, str(src.video[0].avg_frame_rate)) == (60, "30000/1001")
+    output = tmp_path / f"film.{container}"
+    job = draft(src, output=output, container=container,
+                video={**FAST_X264, "framerate_mode": "constant"})  # fmt: skip
+    job.filters = FilterSettings({"detelecine": FilterConfig()})
+    plan = plan_for(job, src)
+    assert "-r:v:0 24000/1001 -fps_mode:v:0 cfr" in plan.display
+    run_plan(plan, tool_paths)
+    data = ffprobe_json(tool_paths["ffprobe"], output, "-count_frames", "-show_streams")
+    video = data["streams"][0]
+    assert int(video["nb_read_frames"]) == 48
+    num, den = (int(x) for x in video["r_frame_rate"].split("/"))
+    assert num / den == pytest.approx(24000 / 1001, rel=0.001)  # MKV: 1 ms time base
+
+
 async def test_bob_with_a_constant_same_as_source_rate_keeps_every_field(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:

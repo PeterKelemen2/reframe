@@ -342,7 +342,8 @@ class EncodePlan(BaseModel):
       `-svtav1-params` assembled from advanced options + colour + HDR metadata. 2-pass for x264
       (`-pass`/`-passlogfile`) and x265 (`pass=`/`stats=` in params); the statistics files are
       listed in `EncodePlan.temp_files` for the runner to remove. Frame rate: constant
-      `-r -fps_mode cfr` (twice the source's rate after a Bob deinterlacer), peak `-fpsmax`
+      `-r -fps_mode cfr` ("same as source" = the rate after the filters: twice the
+      source's after a Bob deinterlacer, 4/5 of it after detelecine), peak `-fpsmax`
       (0013).
 - [ ] **Audio**: `-c:a:N`, `-b:a:N`, `-ar:a:N` (always), `-filter:a:N` (output layout and
       downmix with `aresample=[matrix_encoding=dplii:]out_chlayout=…`, gain, loudnorm with the
