@@ -2,8 +2,8 @@
 
 02 §Cross-cutting rules 5: UIs use this object and ``reframe.models``, never the internal
 modules. M1 wired the services of that milestone (tools, sources); C-4 adds ``capabilities``;
-the other M2 steps add theirs (presets, jobs, batch, queue, settings) as attributes of
-:class:`Reframe`.
+C-11 adds ``queue``; the other M2 steps add theirs (presets, jobs, batch, settings) as
+attributes of :class:`Reframe`.
 
 Example::
 
@@ -41,7 +41,9 @@ from reframe.events import EventBus
 from reframe.jsonpatch import JsonPatchError, apply_patch
 from reframe.models.events import AppWarningEvent, ToolsChangedEvent
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
+from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
+from reframe.models.naming import NamingOptions
 from reframe.models.preset import FieldChange, Preset, PresetFile
 from reframe.models.settings import AppSettings
 from reframe.models.tasks import TaskInfo
@@ -62,6 +64,7 @@ from reframe.probe.folder import (
     FolderProbeResult,
     probe_folder,
 )
+from reframe.queue import QueueService
 from reframe.settings import SettingsStore, SettingsUpdate, validation_detail
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken, check_tool, locate_tools
@@ -669,8 +672,11 @@ class Reframe:
     - :attr:`settings` — :class:`SettingsService`: ``get``, ``update``, ``problems`` (C-9).
     - :attr:`presets` — :class:`PresetService`: built-in and user presets, the default,
       export / import, ``diff`` (C-9).
+    - :attr:`queue` — :class:`~reframe.queue.QueueService`: the encode queue (``add``,
+      ``list``, ``start``, ``pause``, ``resume``, ``cancel``, ``retry``, ``wait``, logs),
+      saved in ``<data dir>/queue.sqlite3`` (C-11).
 
-    The other M2 steps add ``jobs`` (C-7, C-11), ``batch`` (C-12) and ``queue`` (C-11).
+    The other M2 steps add ``jobs`` (C-7, C-15) and ``batch`` (C-12).
 
     **Settings.** ``<config>/settings.json`` is read in :meth:`create` (a damaged, newer or
     unreadable file gives an ``app.warning``, kept in ``settings.problems``). Every service
@@ -679,9 +685,13 @@ class Reframe:
     discovery, and a changed ``encoders.hardware_tests`` or ``encoders.vaapi_device`` re-runs
     encoder detection, both in the background.
 
+    **Queue.** :meth:`create` restores the saved queue (jobs that were running become
+    ``interrupted``); it does not start it (``queue.start()``). :meth:`close` stops the
+    running jobs first (they end ``interrupted``, their ``.part`` files removed).
+
     Use ``async with await Reframe.create() as app:`` or call :meth:`close` at the end:
-    it cancels running tasks, probes and the encoder detection (killing their processes) and
-    closes the event bus.
+    it stops the queue, cancels running tasks, probes and the encoder detection (killing their
+    processes) and closes the event bus.
     """
 
     events: EventBus
@@ -691,6 +701,7 @@ class Reframe:
     sources: SourceService
     settings: SettingsService
     presets: PresetService
+    queue: QueueService
 
     def __init__(
         self,
@@ -729,6 +740,22 @@ class Reframe:
             ProbeCache(cache_dir / "probe"),
             is_closed=lambda: self._closed,
         )
+        presets = self.presets
+
+        def preset_naming(job: JobSettings) -> NamingOptions | None:
+            """The naming options of the job's preset (``None``: Settings → Output)."""
+            preset = presets.get(job.preset_id) if job.preset_id is not None else None
+            return preset.naming if preset is not None else None
+
+        self.queue = QueueService(
+            self.events,
+            self.settings_snapshot,
+            data_dir=data_dir,
+            tools=self.tools,
+            capabilities=self.capabilities,
+            sources=self.sources,
+            naming=preset_naming,
+        )
 
     @classmethod
     async def create(
@@ -738,7 +765,8 @@ class Reframe:
         *,
         cache_dir: Path | None = None,
     ) -> Reframe:
-        """Create the facade and start tool discovery and encoder detection in the
+        """Create the facade, restore the saved queue (a quick read of
+        ``<data dir>/queue.sqlite3``) and start tool discovery and encoder detection in the
         background. Returns at once.
 
         The folders default to :mod:`reframe.paths` (``REFRAME_CONFIG_DIR``,
@@ -753,6 +781,7 @@ class Reframe:
         app = cls(config_dir=config, data_dir=data, cache_dir=cache, settings=settings)
         app.tools.start()
         app.capabilities.start()
+        await app.queue._restore()  # C-11: load the saved queue (not a public method)
         return app
 
     @staticmethod
@@ -798,9 +827,9 @@ class Reframe:
         return self._closed
 
     async def close(self) -> None:
-        """Stop everything: cancel tool discovery, encoder detection, running tasks and
-        probes (their process trees are killed), then close the event bus. Safe to call more
-        than once."""
+        """Stop everything: the queue (running jobs end ``interrupted``, the store is
+        flushed), tool discovery, encoder detection, running tasks and probes (their process
+        trees are killed), then close the event bus. Safe to call more than once."""
         if self._closed:
             return
         self._closed = True
@@ -810,6 +839,7 @@ class Reframe:
                 task.cancel()
             if reactions:
                 await asyncio.wait(reactions)
+            await self.queue.close()  # first: its jobs use the tools, sources and capabilities
             await self.tasks.close()  # first: a task may be waiting for tool discovery
             await self.capabilities.close()  # kills test encodes; may wait for discovery too
             await self.tools.close()  # a probe() waiting for discovery returns "cancelled"
