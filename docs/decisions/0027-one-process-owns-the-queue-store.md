@@ -39,9 +39,12 @@ same store would overwrite each other's rows.
    with the code `queue.store_busy`: "Another Reframe process (pid N) is using the saved queue.
    The jobs of this process run here and are not kept after it ends." The `QueueService`
    contract does not change.
-5. **The clean-up removes only what this process's run created**: a `.part` file, plan file
-   or statistics file that existed before the job's first step started is never deleted (see
-   also the M2 review finding B2: a source named `Foo.part.mkv`).
+5. **The queue never writes or deletes the source.** Before the first step it checks that the
+   `.part` file, the plan files and the statistics files are not the source file (the same
+   file, also through a link or another spelling of the path); a job that fails the check
+   fails with the issue and nothing is written or removed. Validation (C-8) reports the same
+   case as an error (M2 review finding B2: a source named `Foo.part.mkv`, or an output folder
+   that is a link to the source's folder).
 
 ## Consequences
 

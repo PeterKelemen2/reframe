@@ -466,8 +466,8 @@ cancelling a scan stops its FFmpeg process within 1 s.
 - [ ] Restart recovery: `Running` → `Interrupted`. `close()` stops running jobs as
       `Interrupted` (0016). The store is opened on first use under an exclusive lock
       (`<data>/queue.lock`): only the owner restores it and runs its jobs; another
-      process gets a private queue that is not kept, and the clean-up never removes a file
-      that existed before the job started ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
+      process gets a private queue that is not kept. No file that a job writes or removes may
+      be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
