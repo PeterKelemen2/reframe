@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePath
 
-from reframe.definitions import AudioEncoderDef, Definitions, channels_mixdown
-from reframe.models.issues import JsonPatchOp
-from reframe.models.job import AudioOutputTrack, Mixdown, SubtitleOutputTrack
+from reframe.definitions import AudioEncoderDef, ContainerDef, Definitions, channels_mixdown
+from reframe.models.issues import Fix, JsonPatchOp
+from reframe.models.job import AudioOutputTrack, Container, Mixdown, SubtitleOutputTrack
 from reframe.models.media import AudioStream, SubtitleKind
-from reframe.validation.common import DEFAULT_AUDIO_ENCODER, replace
+from reframe.validation.common import DEFAULT_AUDIO_ENCODER, replace, switch_container_fixes
 from reframe.validation.context import JobContext
 
 __all__ = [
@@ -19,9 +20,11 @@ __all__ = [
     "EncodedAudio",
     "SubtitleInput",
     "encoded_audio",
+    "job_fits",
     "passthru_copies",
     "subtitle_input",
     "switch_audio_encoder",
+    "switch_container",
     "track_encoder",
     "track_stream",
 ]
@@ -166,3 +169,54 @@ def subtitle_input(ctx: JobContext, track: SubtitleOutputTrack) -> SubtitleInput
     kind: SubtitleKind
     codec, kind = EXTERNAL_FORMATS.get(path.suffix.lower(), (None, "text"))
     return SubtitleInput(codec, kind, f"file {path.name}")
+
+
+def job_fits(ctx: JobContext, container: ContainerDef) -> bool:
+    """``container`` can hold every track of the job as it is: the video (encoded, or the
+    source codec copied), every audio track (copied or encoded), every subtitle that is not
+    burned in (copied, converted, or a text track the container converts automatically).
+    Unknown encoders and missing streams count as fitting (other rules report them). For
+    "Switch container" fixes, which must not add an error."""
+    job = ctx.job
+    stream = ctx.video_stream
+    if job.video.passthrough:
+        if stream is not None and not container.video.can_copy(stream.codec or ""):
+            return False
+    else:
+        encoder = ctx.definitions.video_encoders.get(job.video.encoder)
+        if encoder is not None and encoder.codec not in container.video.encode:
+            return False
+    for track in job.audio:
+        source = track_stream(ctx, track)
+        if source is None:
+            continue
+        if track.action == "passthru" and container.audio.can_copy(source.codec or ""):
+            continue
+        audio = ctx.definitions.audio_encoders.get(track.encoder or DEFAULT_AUDIO_ENCODER)
+        if audio is not None and audio.codec not in container.audio.encode:
+            return False
+    return all(_subtitle_fits(ctx, track, container) for track in job.subtitles)
+
+
+def switch_container(ctx: JobContext, allowed: Sequence[Container]) -> list[Fix]:
+    """The "Switch to …" fixes of a job: only containers that hold every track
+    (:func:`job_fits`), and the output's extension changes with the container."""
+    return switch_container_fixes(
+        allowed,
+        ctx.job.output.container,
+        ctx.definitions,
+        target=ctx.target,
+        output=ctx.job.output.path,
+        holds=lambda container: job_fits(ctx, container),
+    )
+
+
+def _subtitle_fits(ctx: JobContext, track: SubtitleOutputTrack, container: ContainerDef) -> bool:
+    if track.action == "burn":
+        return True
+    if track.action == "convert":
+        return track.convert_to is None or track.convert_to in container.subtitles.encode
+    found = subtitle_input(ctx, track)
+    if found is None or found.codec is None or container.subtitles.can_copy(found.codec):
+        return True
+    return found.kind == "text" and container.text_subtitle_target is not None

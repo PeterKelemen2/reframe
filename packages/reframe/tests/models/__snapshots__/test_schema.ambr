@@ -14,7 +14,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -1845,7 +1845,7 @@
     'description': 'RFC 6902 ``copy``. ``from_`` is ``"from"`` in JSON.',
     'properties': dict({
       'from': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'From',
         'type': 'string',
       }),
@@ -1856,7 +1856,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -4535,7 +4535,7 @@
     'description': 'RFC 6902 ``move``. ``from_`` is ``"from"`` in JSON.',
     'properties': dict({
       'from': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'From',
         'type': 'string',
       }),
@@ -4546,7 +4546,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -6408,7 +6408,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -6435,7 +6435,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),
@@ -7618,7 +7618,7 @@
         'type': 'string',
       }),
       'path': dict({
-        'pattern': '^(/.*)?$',
+        'pattern': '^(/[\\s\\S]*)?$',
         'title': 'Path',
         'type': 'string',
       }),

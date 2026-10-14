@@ -32,7 +32,22 @@ JOB_CODES = (
 def output_name(ctx: JobContext) -> list[ValidationIssue]:
     if ctx.container is None:
         return []  # the extension comes from the container: container.unknown
-    return list(ctx.name.issues)
+    return [_job_path(issue) for issue in ctx.name.issues]
+
+
+def _job_path(issue: ValidationIssue) -> ValidationIssue:
+    """C-16 names the naming options' field (``naming.output_folder``), which a job does not
+    have: its naming options are Settings → Output (or the preset's). For a job the issue is
+    about the output path that cannot be made."""
+    if issue.code != "naming.no_output_folder":
+        return issue
+    return issue.model_copy(
+        update={
+            "path": "output.path",
+            "message": f"{issue.message} (Settings → Output, or the preset's naming.) The "
+            "output path cannot be made.",
+        }
+    )
 
 
 @template_rule("naming", *TEMPLATE_CODES, "naming.no_output_folder")

@@ -156,6 +156,63 @@ refuses is a validation error. 83 issue codes now (75 before).
    (an option the user typed is never dropped silently); C-7's snapshot job with an unknown
    x264 option no longer has it (0026).
 
+## Follow-up (M2 review, 2026-10-14)
+
+The milestone review found these; each has a regression test
+(`tests/validation/test_review_fixes.py`, new rule cases in `test_rules.py`, new refusals in
+`test_command_agreement.py`). 88 issue codes now.
+
+1. **A file the job writes is the source** (finding B2, decision
+   [0027](0027-one-process-owns-the-queue-store.md) item 5): `output.same_as_source` (error)
+   now checks every file of the plan, named by the command builder's own functions
+   (`partial_path`, `pass_log_files`): the output, `<name>.part.<ext>`, the FFMETADATA
+   chapters file and the x264 / x265 statistics files. Each is compared with
+   `fs.same_file` (through links) and by its normalised name. The fix ("Save as Name (1).mkv")
+   picks a name whose files do not clash either. **Deviation:** the name compare ignores
+   case only for Windows paths. On a case-sensitive file system `movie.mkv` next to
+   `Movie.mkv` is another file (an existing test says so); a case-insensitive POSIX file
+   system (APFS) is found by `fs.same_file`, because a clashing name is the source and
+   exists. `validation.output.source_clash` / `written_paths` can serve the queue's own
+   check before the first step.
+2. **Two refusals of the builder were not errors**: video passthrough of a source whose
+   codec ffprobe could not name (`container.codec_unsupported`, every container; a template
+   has no source and is not checked), and a chapter range made only of zero-length chapters
+   (`range.outside`).
+3. **No fix adds an error** (the generic fix check now asserts it): "Switch to …" changes the
+   output's extension with the container and is only offered for containers that hold every
+   track of the job; "Encode the video" also switches to an encoder the container holds;
+   the closest-match encoder fix turns 10-bit off when detection found that the new
+   encoder's 10-bit test failed; "Burn it in" is not offered when another track is burned
+   in.
+4. **Silent losses are issues**:
+   - `metadata.language_tag_lost` (warning): an MKV track whose language is a BCP 47 tag
+     that ISO 639-2 cannot say (`pt-BR`, `zh-Hant`), with mkvpropedit not found: only the
+     ISO 639-2 code is written. Fix: write that code on purpose.
+   - `audio.passthru_settings_ignored` (warning): gain, DRC or loudness normalisation on a
+     passthru track that is copied. Fixes: encode the track (its encoder, else AAC), or
+     drop the settings.
+   - `encoder.level_too_low` (error): an x265 level whose limits the output picture or
+     frame rate exceeds; x265 refuses to start. The limits are H.265 table A.8 on the
+     picture padded to x265's minimum coding unit (16 for `ultrafast`, 8 otherwise),
+     checked with the real x265 (testdata/README.md). Fixes: the smallest level that fits,
+     or let x265 choose. The frame rate is the chosen one, else the source's average.
+     Only x265 is checked (the finding; x264 and the hardware encoders are not).
+5. **Smaller points**:
+   - A manual output path is checked against C-16's file-name rules
+     (`reframe.naming.sanitize`): a path part longer than 255 bytes (the file name counted
+     with the `.part` the queue adds) is `output.name_too_long` (error, every OS); a
+     reserved Windows name (`CON.mkv`) or a character Windows does not allow is
+     `output.name_not_portable`, an error for a Windows path and a warning elsewhere (the
+     file may move). Fix: C-16's safe name.
+   - The JSON-pointer pattern of `reframe.models.issues` matches a newline too
+     (`^(/[\s\S]*)?$`), so an advanced-option key or a filter id with a newline gives its
+     issue instead of `validation.rule_failed` (the JSON-schema snapshot changed).
+   - `naming.no_output_folder` of a job points at `output.path` (a job has no
+     `naming.output_folder`; its folder setting is Settings → Output or the preset's).
+   - A job that deinterlaces measures the crop on the frame's chroma grid, as the builder
+     does (C-5 gets `interlaced=False`): a 2-line crop of an interlaced 4:2:0 source is no
+     longer reported as snapped.
+
 ## Plan changes
 
 - `docs/plan/05-core.md` §C-8: the odd-size item, forced-only (PGS or VobSub, burned in), the
@@ -164,3 +221,5 @@ refuses is a validation error. 83 issue codes now (75 before).
   display (the path example).
 - Follow-up (M2 wave 2b): `docs/plan/05-core.md` §C-8: the HDR-to-8-bit warning, the audio
   notes, and "what the command builder refuses is an error".
+- Follow-up (M2 review): `docs/plan/05-core.md` §C-8: the Output bullet (every file the job
+  writes, the file-name rules) and the silent losses.

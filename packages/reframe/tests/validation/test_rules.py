@@ -277,6 +277,31 @@ def hlg_source(s: Any) -> None:
     s.source.video[0].hdr = HdrInfo(formats=[HdrFormat.HLG])
 
 
+def webm_video(s: Any) -> None:
+    s.job.video.encoder = "libsvtav1"
+    s.job.output.path = Path("/out/Movie (2019).webm")
+    s.job.subtitles = []
+    s.job.audio = s.job.audio[1:]
+    s.job.audio[0].encoder = "libopus"
+
+
+TALL = FitWithin(width=1920, height=1160)
+
+
+def tall_source(s: Any) -> None:
+    """1920x1160: within level 4 at 8-pixel padding, not at ultrafast's 16 (1168 lines)."""
+    s.source.video[0].height = 1160
+
+
+def x265_level(level: str, **video_changes: Any) -> Mod:
+    def mod(s: Any) -> None:
+        s.job.video.level = level
+        for key, value in video_changes.items():
+            setattr(s.job.video, key, value)
+
+    return mod
+
+
 def nothing(s: Any) -> None:
     del s
 
@@ -635,6 +660,30 @@ CASES: list[Case] = [
         video(rate_control=AverageBitrate(two_pass=True)),
     ),
     Case(
+        "x265 level too low for 1080p",
+        "encoder.level_too_low",
+        "video.level",
+        ERR,
+        x265_level("3.1"),
+        x265_level("4.0"),
+    ),
+    Case(
+        "x265 level too low for the frame rate",
+        "encoder.level_too_low",
+        "video.level",
+        ERR,
+        x265_level("4.0", framerate=Rational(num=60, den=1), framerate_mode="constant"),
+        x265_level("4.1", framerate=Rational(num=60, den=1), framerate_mode="constant"),
+    ),
+    Case(
+        "x265 level too low after the ultrafast padding",
+        "encoder.level_too_low",
+        "video.level",
+        ERR,
+        both(x265_level("4.0", preset="ultrafast"), tall_source, dims(size=TALL)),
+        both(x265_level("4.0", preset="medium"), tall_source, dims(size=TALL)),
+    ),
+    Case(
         "fast decode unsupported",
         "encoder.fast_decode_unsupported",
         "video.fast_decode",
@@ -971,6 +1020,22 @@ CASES: list[Case] = [
         audio(0, source_stream=2),
     ),
     Case(
+        "gain on a copied passthru track",
+        "audio.passthru_settings_ignored",
+        "audio[1].action",
+        WARN,
+        audio(1, gain=3.0, loudness="ebu_r128", drc=1.0),
+        audio(1, gain=3.0, loudness="ebu_r128", drc=1.0, action="encode"),
+    ),
+    Case(
+        "loudness on a copied passthru track without an encoder",
+        "audio.passthru_settings_ignored",
+        "audio[1].action",
+        WARN,
+        audio(1, loudness="streaming", encoder=None),
+        both(audio(1, loudness="streaming", encoder=None), container("webm"), webm_video),
+    ),
+    Case(
         "auto passthru",
         "audio.passthru_fallback",
         "audio[1].action",
@@ -1189,6 +1254,34 @@ CASES: list[Case] = [
     ),
     # ---- metadata
     Case(
+        "BCP 47 tag without mkvpropedit",
+        "metadata.language_tag_lost",
+        "audio[0].metadata.language",
+        WARN,
+        both(
+            lambda s: setattr(s.job.audio[0].metadata, "language", "pt-BR"),
+            mkvpropedit(ToolStatus.MISSING),
+        ),
+        lambda s: setattr(s.job.audio[0].metadata, "language", "pt-BR"),
+    ),
+    Case(
+        "BCP 47 tag of the source without mkvpropedit",
+        "metadata.language_tag_lost",
+        "subtitles[0].metadata.language",
+        WARN,
+        both(
+            lambda s: setattr(s.source.subtitles[0], "language_ietf", "zh-Hant"),
+            mkvpropedit(ToolStatus.MISSING),
+        ),
+        both(
+            lambda s: setattr(s.source.subtitles[0], "language_ietf", "zh-Hant"),
+            mkvpropedit(ToolStatus.MISSING),
+            container("mp4"),
+            output_path(Path("/out/Movie (2019).mp4")),
+            subs(SubtitleOutputTrack(source=3, action="convert", convert_to="mov_text")),
+        ),
+    ),
+    Case(
         "unknown language",
         "metadata.language_invalid",
         "audio[0].metadata.language",
@@ -1315,6 +1408,38 @@ CASES: list[Case] = [
         ERR,
         both(output_exists, collision("ask")),
         collision("ask"),
+    ),
+    Case(
+        "output name too long",
+        "output.name_too_long",
+        "output.path",
+        ERR,
+        output_path(Path("/out") / ("x" * 250 + ".mkv")),
+        output_path(Path("/out") / ("x" * 246 + ".mkv")),
+    ),
+    Case(
+        "output folder name too long",
+        "output.name_too_long",
+        "output.path",
+        ERR,
+        output_path(Path("/out") / ("x" * 256) / "Movie.mkv"),
+        output_path(Path("/out") / ("x" * 255) / "Movie.mkv"),
+    ),
+    Case(
+        "reserved Windows name",
+        "output.name_not_portable",
+        "output.path",
+        WARN,
+        output_path(Path("/out/CON.mkv")),
+        output_path(Path("/out/CONTACT.mkv")),
+    ),
+    Case(
+        "character Windows does not allow",
+        "output.name_not_portable",
+        "output.path",
+        WARN,
+        output_path(Path("/out/Movie: The Sequel.mkv")),
+        output_path(Path("/out/Movie - The Sequel.mkv")),
     ),
     Case("collision, auto-rename", "output.renamed", "output.path", INFO, output_exists, nothing),
     Case(
@@ -1455,7 +1580,7 @@ CASES: list[Case] = [
     Case(
         "fixed folder not chosen",
         "naming.no_output_folder",
-        "naming.output_folder",
+        "output.path",
         WARN,
         settings_naming(output_folder_mode="fixed"),
         settings_naming(output_folder_mode="fixed", output_folder=Path("/out")),

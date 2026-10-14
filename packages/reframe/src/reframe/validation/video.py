@@ -6,9 +6,12 @@ helpers; ``encoder.py`` and ``container.py`` register them.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from reframe.capabilities import encoder_issues
 from reframe.definitions import (
     ChoiceSetting,
+    ContainerDef,
     Definitions,
     EncoderOption,
     VideoEncoderDef,
@@ -28,6 +31,7 @@ from reframe.models.job import (
     VideoSettings,
 )
 from reframe.validation.common import (
+    SwitchContainer,
     containers_for,
     error,
     fix,
@@ -75,7 +79,10 @@ def _num(value: float) -> str:
 
 
 def switch_video_encoder(
-    video: VideoSettings, new_id: str, definitions: Definitions
+    video: VideoSettings,
+    new_id: str,
+    definitions: Definitions,
+    caps: CapabilitySnapshot | None = None,
 ) -> tuple[list[JsonPatchOp], str | None]:
     """The patch that switches ``video`` to the encoder ``new_id``, and a note on the quality.
 
@@ -127,8 +134,16 @@ def switch_video_encoder(
         setting = _setting(new, def_field)
         if value is not None and (setting is None or setting.get(value) is None):
             ops.append(replace(f"video.{field}", None))
-    if video.bit_depth == 10 and "10" not in new.pix_fmts:
+    status = _status(caps, new_id) if caps is not None else None
+    if video.bit_depth == 10 and _no_10bit_reason(new, status) is not None:
+        # Also what detection found (a GPU without 10-bit), not only the definition.
         ops.append(replace("video.bit_depth", 8))
+        profiles = new.profiles
+        choice = profiles.get(video.profile) if video.profile and profiles else None
+        reset = replace("video.profile", None)
+        depths = choice.bit_depths if choice is not None else None
+        if depths is not None and 8 not in depths and reset not in ops:
+            ops.append(reset)
     if video.fast_decode and new.fast_decode is None:
         ops.append(replace("video.fast_decode", False))
     kept = {key: value for key, value in video.advanced.items() if new.option(key) is not None}
@@ -144,9 +159,10 @@ def _switch_fix(
     target: FixTarget,
     *,
     closest: bool = False,
+    caps: CapabilitySnapshot | None = None,
 ) -> Fix:
     """ "Use libx265 (closest match; quality CQ 27 → RF 23.6, approximate)"."""
-    ops, note = switch_video_encoder(video, new_id, definitions)
+    ops, note = switch_video_encoder(video, new_id, definitions, caps)
     details = [text for text in ("closest match" if closest else None, note) if text]
     label = f"Use {new_id}" + (f" ({'; '.join(details)})" if details else "")
     return fix(label, *ops, target=target)
@@ -174,7 +190,9 @@ def video_availability_issues(
         for old_fix in issue.fixes:
             first = old_fix.patch[0]
             if isinstance(first, ReplaceOp) and isinstance(first.value, str):
-                fixes.append(_switch_fix(video, first.value, definitions, target, closest=True))
+                fixes.append(
+                    _switch_fix(video, first.value, definitions, target, closest=True, caps=caps)
+                )
             else:  # pragma: no cover - C-4 makes only replace fixes
                 fixes.append(old_fix)
         result.append(issue.model_copy(update={"fixes": fixes}))
@@ -541,6 +559,25 @@ def _convert_candidates(
     return chosen
 
 
+def _encode_fix(
+    video: VideoSettings,
+    container: ContainerDef,
+    caps: CapabilitySnapshot,
+    definitions: Definitions,
+    target: FixTarget,
+) -> Fix:
+    """ "Encode the video": turn off passthrough, and switch to an encoder the container
+    holds when the job's encoder cannot go into it."""
+    ops: list[JsonPatchOp] = [replace("video.passthrough", False)]
+    encoder = definitions.video_encoders.get(video.encoder)
+    if encoder is not None and encoder.codec not in container.video.encode:
+        candidates = _convert_candidates(video, container.video.encode, caps, definitions)
+        if candidates:
+            ops += switch_video_encoder(video, candidates[0], definitions, caps)[0]
+            return fix(f"Encode the video with {candidates[0]}", *ops, target=target)
+    return fix("Encode the video", *ops, target=target)
+
+
 def video_container_issues(
     video: VideoSettings,
     container_id: Container,
@@ -549,28 +586,43 @@ def video_container_issues(
     *,
     source_codec: str | None = None,
     target: FixTarget = "job",
+    switch: SwitchContainer | None = None,
+    passthrough_known: bool = False,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the video track: the encoder's codec (or, for
     passthrough, the source codec) cannot go into the container. Fixes: another encoder,
-    another container, or (passthrough) encode the video."""
+    another container, or (passthrough) encode the video (with an encoder the container
+    holds).
+
+    ``passthrough_known``: a job (the source is known), where a source codec that ffprobe
+    could not name cannot be copied either (the command builder refuses it). A template has
+    no source and is not checked for passthrough."""
+
+    def switch_to(allowed: Sequence[Container]) -> list[Fix]:
+        if switch is not None:
+            return switch(allowed)
+        return switch_container_fixes(allowed, container_id, definitions, target=target)
+
     container = definitions.containers.get(container_id)
     if container is None:
         return []
     if video.passthrough:
-        if source_codec is None or container.video.can_copy(source_codec):
+        if source_codec is None and not passthrough_known:
             return []
-        fixes = switch_container_fixes(
-            containers_for(definitions, "video", source_codec, copy=True),
-            container_id,
-            definitions,
-            target=target,
+        if source_codec is not None and container.video.can_copy(source_codec):
+            return []
+        fixes = (
+            switch_to(containers_for(definitions, "video", source_codec, copy=True))
+            if source_codec is not None
+            else []
         )
-        fixes.append(fix("Encode the video", replace("video.passthrough", False), target=target))
+        fixes.append(_encode_fix(video, container, caps, definitions, target))
+        what = f"{source_codec} video" if source_codec is not None else "video of an unknown codec"
         return [
             error(
                 "container.codec_unsupported",
                 "video.passthrough",
-                f"{container.label} cannot hold {source_codec} video: it cannot be passed through.",
+                f"{container.label} cannot hold {what}: it cannot be passed through.",
                 *fixes,
             )
         ]
@@ -578,17 +630,10 @@ def video_container_issues(
     if encoder is None or encoder.codec in container.video.encode:
         return []
     fixes = [
-        _switch_fix(video, candidate, definitions, target)
+        _switch_fix(video, candidate, definitions, target, caps=caps)
         for candidate in _convert_candidates(video, container.video.encode, caps, definitions)
     ]
-    fixes.extend(
-        switch_container_fixes(
-            containers_for(definitions, "video", encoder.codec),
-            container_id,
-            definitions,
-            target=target,
-        )
-    )
+    fixes.extend(switch_to(containers_for(definitions, "video", encoder.codec)))
     return [
         error(
             "container.codec_unsupported",

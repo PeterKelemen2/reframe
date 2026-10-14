@@ -394,8 +394,13 @@ functions in a registry, grouped by area.
       [0010](../decisions/0010-definitions-filters-and-containers.md)), forced-only on a format that
       does not support it (it works only for a burned-in PGS or VobSub track,
       [0014](../decisions/0014-validation-rules-and-severities.md)).
-- [ ] Output: path not writable, output = source, name collision, not enough free disk space
-      (estimate in bitrate mode and for video passthrough).
+- [ ] Output: path not writable, output = source (also the `.part` file, the plan files and
+      the 2-pass statistics files, through links: decision 0027 item 5), name collision, not
+      enough free disk space (estimate in bitrate mode and for video passthrough), a manual
+      name that breaks C-16's file-name rules.
+- [ ] Silent losses: a BCP 47 language without mkvpropedit, gain / DRC / loudness on a copied
+      passthru track, an x265 level too small for the output
+      ([0014](../decisions/0014-validation-rules-and-severities.md) "Follow-up (M2 review)").
 - [ ] Range is outside the duration.
 - [ ] Everything the command builder refuses (`PlanError`) is a validation error (a test
       builds a job for each refusal, decision 0013).

@@ -1031,6 +1031,26 @@ for x264.
 - The warning's fixes: tone mapping (`zscale` + `tonemap`) gives 8-bit BT.709 with no HDR
   metadata; 10-bit x264 gives `yuv420p10le` BT.2020 PQ, still HDR10.
 
+**x265 level limits** (`encoder.level_too_low`). Checked on 2026-10-14 with both builds
+(`/usr/bin/ffmpeg` n9.0.2 and the pinned `n9.0.2-17-g2a571b6068`, the same results);
+`packages/reframe/tests/validation/test_levels_ffmpeg.py` repeats the boundaries.
+`ffmpeg -f lavfi -i testsrc2=size=WxH:rate=R -c:v libx265 -preset P -x265-params
+level-idc=L -f null -` exits with 183 and one of:
+
+- `x265 [error]: picture dimensions are out of range for specified level`: more luma
+  samples than the level's MaxLumaPs (H.265 table A.8), or a side longer than
+  `sqrt(8 × MaxLumaPs)`. 1920x1080 needs level 4 (fails at 3.1); 2560x1440 and 4K need 5;
+  8K needs 6. At level 3.1 the widest picture is 2800 (2808 fails), at level 4 4216 with
+  `medium` but 4208 with `ultrafast`.
+- `x265 [error]: frame rate is out of range for specified level`: samples × frame rate above
+  MaxLumaSr. 1080p at level 4: 32 fps passes, 33 fails; level 4.1: 60 passes, 65 fails; 4K
+  60 fps needs 5.1.
+- The size is the picture padded to the minimum coding unit: 16 for `ultrafast`, 8 for
+  `superfast` to `veryslow` (level 4: 1920x1160 passes with `medium`, `superfast`,
+  `veryfast`, `faster`, `veryslow` and fails with `ultrafast`, which counts 1920x1168).
+- Level 1 refuses even 320x180; with CRF and a level x265 only warns ("Specifying a decoder
+  level with constant rate factor rate-control requires …").
+
 ### Audio codec rules (C-12)
 
 The codec rules are pure; the encoder and container facts they use (bitrate steps, which

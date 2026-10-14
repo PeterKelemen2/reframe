@@ -19,6 +19,7 @@ from reframe.models.job import AudioOutputTrack, Container, TrackMetadata
 from reframe.models.media import AudioStream
 from reframe.models.tools import ToolStatus
 from reframe.validation.common import (
+    SwitchContainer,
     containers_for,
     error,
     fix,
@@ -34,6 +35,7 @@ from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.tracks import (
     subtitle_input,
     switch_audio_encoder,
+    switch_container,
     track_encoder,
     track_stream,
 )
@@ -69,6 +71,7 @@ def _audio_codec_issue(
     track: AudioOutputTrack | None = None,
     stream: AudioStream | None = None,
     target: FixTarget,
+    switch: SwitchContainer | None = None,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the audio encoder at ``path``."""
     definitions = ctx.definitions
@@ -83,13 +86,11 @@ def _audio_codec_issue(
             path, definitions.audio_encoders[convert], definitions, track=track, stream=stream
         )
         fixes.append(fix(f"Use {convert}", *ops, target=target))
+    allowed = containers_for(definitions, "audio", encoder.codec)
     fixes.extend(
-        switch_container_fixes(
-            containers_for(definitions, "audio", encoder.codec),
-            container_id,
-            definitions,
-            target=target,
-        )
+        switch(allowed)
+        if switch is not None
+        else switch_container_fixes(allowed, container_id, definitions, target=target)
     )
     if drop is not None:
         fixes.append(fix("Remove this audio track", remove(drop), target=target))
@@ -117,9 +118,7 @@ def known_container(ctx: JobContext) -> list[ValidationIssue]:
             "container.unknown",
             "output.container",
             f"Unknown container {current!r}.",
-            *switch_container_fixes(
-                list(ctx.definitions.containers), current, ctx.definitions, target=ctx.target
-            ),
+            *switch_container(ctx, list(ctx.definitions.containers)),
         )
     ]
 
@@ -134,6 +133,8 @@ def video_codec(ctx: JobContext) -> list[ValidationIssue]:
         ctx.definitions,
         source_codec=stream.codec if stream is not None else None,
         target=ctx.target,
+        switch=lambda allowed: switch_container(ctx, allowed),
+        passthrough_known=stream is not None,
     )
 
 
@@ -152,6 +153,7 @@ def audio_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
             track=track,
             stream=track_stream(ctx, track),
             target=ctx.target,
+            switch=lambda allowed: switch_container(ctx, allowed),
         )
 
 
@@ -162,7 +164,6 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
     container = ctx.container
     if container is None:
         return
-    container_id = ctx.job.output.container
     for index, track in enumerate(ctx.job.subtitles):
         drop = fix("Remove this subtitle track", remove(f"subtitles[{index}]"), target=ctx.target)
         if track.action == "convert" and track.convert_to is not None:
@@ -178,11 +179,8 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
                     )
                 )
             fixes.extend(
-                switch_container_fixes(
-                    containers_for(ctx.definitions, "subtitles", track.convert_to),
-                    container_id,
-                    ctx.definitions,
-                    target=ctx.target,
+                switch_container(
+                    ctx, containers_for(ctx.definitions, "subtitles", track.convert_to)
                 )
             )
             yield error(
@@ -206,11 +204,8 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
                 UNSUPPORTED,
                 f"subtitles[{index}].action",
                 f"{container.label} cannot hold the {source.codec} subtitles of {source.label}.",
-                *switch_container_fixes(
-                    containers_for(ctx.definitions, "subtitles", source.codec, copy=True),
-                    container_id,
-                    ctx.definitions,
-                    target=ctx.target,
+                *switch_container(
+                    ctx, containers_for(ctx.definitions, "subtitles", source.codec, copy=True)
                 ),
                 drop,
             )
@@ -261,9 +256,7 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
                 path,
                 f"{container.label} cannot store the {label} flag: it will be lost.",
                 clear,
-                *switch_container_fixes(
-                    others, ctx.job.output.container, ctx.definitions, target=ctx.target
-                ),
+                *switch_container(ctx, others),
             )
 
 

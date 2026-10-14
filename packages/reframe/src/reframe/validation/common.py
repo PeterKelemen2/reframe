@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from pathlib import PurePath
 from typing import Literal
 
 from pydantic import JsonValue
@@ -24,6 +25,7 @@ from reframe.models.job import Container
 
 __all__ = [
     "DEFAULT_AUDIO_ENCODER",
+    "SwitchContainer",
     "TrackKind",
     "add",
     "containers_for",
@@ -86,18 +88,26 @@ def switch_container_fixes(
     definitions: Definitions,
     *,
     target: FixTarget = "job",
+    output: PurePath | None = None,
+    holds: Callable[[ContainerDef], bool] | None = None,
 ) -> list[Fix]:
-    """ "Switch to MKV" fixes for the containers in ``allowed`` (other than ``current``)."""
+    """ "Switch to MKV" fixes for the containers in ``allowed`` (other than ``current``).
+
+    ``output``: the job's output path; its extension changes with the container (``.mkv``
+    → ``.mp4``), so the fix leaves no ``output.extension_mismatch`` behind. ``holds``: only
+    containers that can hold every other track of the job too (a job's
+    :func:`~reframe.validation.tracks.job_fits`), so the fix adds no new error.
+    """
     fixes: list[Fix] = []
     for container_id, container in definitions.containers.items():
-        if container_id != current and container_id in allowed:
-            fixes.append(
-                fix(
-                    f"Switch to {container.label}",
-                    replace("output.container", container_id),
-                    target=target,
-                )
-            )
+        if container_id == current or container_id not in allowed:
+            continue
+        if holds is not None and not holds(container):
+            continue
+        ops: list[JsonPatchOp] = [replace("output.container", container_id)]
+        if output is not None and output.suffix.lower() not in container.extensions:
+            ops.append(replace("output.path", str(output.with_suffix(container.extensions[0]))))
+        fixes.append(fix(f"Switch to {container.label}", *ops, target=target))
     return fixes
 
 
@@ -109,6 +119,9 @@ def usable_encoder(encoder_id: str, caps: CapabilitySnapshot) -> bool:
 
 
 TrackKind = Literal["video", "audio", "subtitles"]
+#: Makes the "Switch to …" fixes for the containers that may hold a track (a job's version
+#: keeps every other track valid and changes the extension: ``tracks.switch_container``).
+type SwitchContainer = Callable[[Sequence[Container]], list[Fix]]
 
 
 def support(container: ContainerDef, kind: TrackKind) -> CodecSupport:
