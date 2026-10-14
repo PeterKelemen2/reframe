@@ -8,7 +8,7 @@ Argument order of every FFmpeg step (05 §C-7, decision 0013 for the additions):
     -itsoffset … -ss S -sub_charenc … -i FILE                external subtitle inputs
     -f ffmetadata -i CHAPTERS                                chapter metadata input
     -map 0:0 -map 0:1 … -map 0:t?                            maps, absolute stream indexes
-    -t D                                                     range end (an output option)
+    -ss 0 -t D                                               nothing before 0, range end
     -filter:v:0 … | -filter_complex … ; -filter:a:N …        filter graphs
     -c:v:0 … -c:a:N … -c:s:N …                               per-stream codec arguments
     -map_metadata:s -1 -metadata:s:… -disposition:…          per-stream metadata and flags
@@ -18,7 +18,9 @@ Argument order of every FFmpeg step (05 §C-7, decision 0013 for the additions):
     -f matroska OUTPUT.part.mkv                              output
 
 The range end is an output ``-t`` (not an input option): only then does FFmpeg cut the
-copied chapters at the end of the range.
+copied chapters at the end of the range. An output ``-ss 0`` (video encoded, a range start or
+a negative subtitle offset) drops what copied streams and external subtitle files have before
+0, which the muxers would otherwise move every stream for (:func:`_drops_before_start`).
 
 Steps, run in order by the queue (C-11): one ``analyse`` per track with loudness
 normalisation (``loudnorm`` prints one JSON block; blocks from one run cannot be told apart,
@@ -68,6 +70,7 @@ from reframe.models import (
     CapabilitySnapshot,
     ChapterRange,
     EncodePlan,
+    ExternalSubtitle,
     FrameRange,
     Geometry,
     JobSettings,
@@ -244,7 +247,7 @@ def _video_plan(
         and two_pass is not None
         and two_pass.mode == "two_runs"
     )
-    extra = _codec_extra(encoder, settings, video, container)
+    extra = _codec_extra(encoder, settings, video, container, graph.rate_factor)
     runs: list[int | None] = [1, 2] if two_runs else [None]
     codec_args = {
         run: [
@@ -264,9 +267,13 @@ def _video_plan(
 
 
 def _codec_extra(
-    encoder: VideoEncoderDef, settings: VideoSettings, video: VideoStream, container: ContainerDef
+    encoder: VideoEncoderDef,
+    settings: VideoSettings,
+    video: VideoStream,
+    container: ContainerDef,
+    rate_factor: int,
 ) -> list[str]:
-    args = frame_rate_args(settings, video)
+    args = frame_rate_args(settings, video, factor=rate_factor)
     tag = container.codec_tags.get(encoder.codec)
     if tag is not None:
         args += [spec("-tag:v", V0), tag]
@@ -386,6 +393,7 @@ def build_plan(
         chapter_input = ["-f", "ffmetadata", "-i", str(chapters.file.path)]
         chapter_map = str(index)
     limit = ["-t", format_number(rng.duration)] if rng.duration is not None else []
+    trim = ["-ss", "0"] if _drops_before_start(job, rng) else []
 
     # ---- maps and filters
     graph = vplan.graph
@@ -443,7 +451,7 @@ def build_plan(
     def ffmpeg_argv(run: int | None) -> list[PlanArg]:
         return [
             *GLOBAL_ARGS, *vplan.hw_init, *source_input, *external, *chapter_input, *maps,
-            *limit, *video_filter, *audio_filters, *vplan.codec_args[run], *stream_codecs,
+            *trim, *limit, *video_filter, *audio_filters, *vplan.codec_args[run], *stream_codecs,
             *metadata, "-map_chapters", chapter_map, *tags, *flags, *output,
         ]  # fmt: skip
 
@@ -490,6 +498,27 @@ def build_plan(
         files=files,
         temp_files=temp_files,
     )
+
+
+def _drops_before_start(job: JobSettings, rng: _Range) -> bool:
+    """Whether the output gets ``-ss 0``: nothing reaches the muxer before time 0.
+
+    A copied stream or an external subtitle file can have packets before the range start
+    (the source's seek lands on the keyframe before it; an event on screen at the range
+    start, or moved before 0 by a negative offset, gets a negative time). The muxers then
+    moved every stream (Matroska: video and audio started at 0.7 s, the chapters did not
+    move) or wrote wrong ``mov_text`` times. The output ``-ss 0`` drops them (M2 review,
+    0013 "Follow-up (M2 review)"). Not with a copied video: its first packets, the keyframe
+    before the range start or a negative decoding time, would be dropped with them.
+    """
+    if job.video.passthrough:
+        return False
+    negative = any(
+        isinstance(t.source, ExternalSubtitle) and t.source.offset_ms < 0
+        for t in job.subtitles
+        if t.action != "burn"
+    )
+    return rng.start > 0 or negative
 
 
 def _pairs(args: list[str]) -> list[list[str]]:

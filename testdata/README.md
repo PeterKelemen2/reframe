@@ -887,14 +887,53 @@ while `-ss` starts the frames at 0, so a ranged burn-in shifts the frame times a
 (`setpts=PTS+S/TB,subtitles=…,setpts=PTS-S/TB`); the ranged output's frames then equal the
 full burn-in's frames shifted by S (lossless x264, `test_burn_in_text_subtitles_with_a_range`).
 
-**External subtitle files and the range.** The source's `-ss` does not move another input:
-an `.srt` input without its own `-ss` keeps its times (`00:00:00,500` stays). With
-`-itsoffset X -ss S -i file.srt` an event at `t` lands at `t + X − S`.
+**External subtitle files and the range** (corrected 2026-10-14, M2 review; both n9.0.2
+builds). The source's `-ss` does not move another input: an `.srt` input without its own
+`-ss` keeps its times (`00:00:00,500` stays). With `-itsoffset X -ss S -i file.srt` an event
+at `t` lands at `t + X − S`, **but an event that is on screen at S (or that a negative `X`
+moves before 0) comes out with a negative time**, and the muxers do not drop it. The
+`chapters` fixture with `text-subs.en.srt` (events 0.5–1.8 s and 2.0–3.6 s), `-ss 1.2 … -t
+2.5`, video encoded:
+
+| Output | Without an output `-ss` | With `-ss 0` as an output option |
+|--------|-------------------------|----------------------------------|
+| MKV, SRT copied | video and audio start at 0.7 s (the muxer moves every stream so that the −0.7 s event is at 0); the chapters do not move, so they are 0.7 s early | video and audio at 0; one event, 0.8–2.4 s (the event on screen at 1.2 s is dropped) |
+| MP4, `mov_text` | `mov_text` samples at −1.5 s and 0.0–2.3 s: wrong event times | an empty sample 0.0–0.8 s, then the event 0.8–2.4 s |
+| MKV, `-copypriorss:s:0 0` (no output `-ss`) | | the same as `-ss 0` for a copied track; no effect on a converted one (`mov_text`) |
+
+An output `-ss 0` also drops what a **copied** stream has before 0: the encode of the
+`multitrack` fixture with `-ss 1.2 -t 2.5` and the AC-3 track copied gave, without it, an
+MKV whose audio started 1.17 s before the video (115 AC-3 packets: the copy starts at the
+demuxer's seek point, the fixture's only keyframe at 0); with it, 78 packets and both
+streams at 0. But it drops the first packets of a **copied video** too (its keyframe before
+the seek point, or a packet with a negative decoding time: the `hdr10` copy became
+unreadable, the MP4 remux lost its video stream), and, even without a range, the first
+packet of each copied audio track of the `multitrack` fixture (AC-3 125 → 124 packets, AAC
+189 → 188: the AAC priming packet has a negative time). So the builder writes `-ss 0` only
+when the video is encoded (a copied audio track may then lose up to one frame at the start),
+and a remux keeps FFmpeg's behaviour (it starts at the keyframe before the range, every
+stream moved by the same amount). There is no FFmpeg option that cuts an event short:
+an event that is on screen at the range start is dropped, not shortened
+(`test_external_subtitle_with_a_range_starts_at_zero`,
+`test_external_subtitle_with_a_negative_offset_starts_at_zero`,
+`test_remux_with_a_negative_subtitle_offset_starts_at_zero`).
 
 **Bitmap burn-in.** `-filter_complex "[0:0][0:1]overlay=eof_action=pass[v]"` burns the
 `vobsub` fixture's track in (36 of the first 50 frames differ from a plain encode);
 `-forced_subs_only:2 1` is accepted as an input option for the stream. `-map "[v]"` may come
-before `-filter_complex`.
+before `-filter_complex`. `overlay` works in **8-bit 4:2:0** unless `format=` says otherwise
+(`-h filter=overlay`: `yuv420` default, `yuv420p10`, `yuv422`, `yuv422p10`, `yuv444`,
+`yuv444p10`, `rgb`, `gbrp`, `auto`). The `hdr10` fixture's video with the `vobsub` track
+(25 frames, luma compared with the plain decode, checked with both builds on 2026-10-14):
+
+| `overlay` format | Luma samples equal to the plain decode | Frame 0: samples with the two low bits set |
+|------------------|----------------------------------------|--------------------------------------------|
+| default | 289 551 of 1 440 000 | 0 |
+| `format=auto` | 42 585 (it negotiates `bgra`: 8-bit RGB for the whole picture) | 47 532 (rounding noise) |
+| `format=yuv420p10` | 1 427 776 (all but the subtitles) | 34 230 (= the plain decode) |
+
+So a source of more than 8 bits gets `format=yuv420p10` (`yuv422p10` / `yuv444p10` for those
+chroma formats; `test_bitmap_burn_in_keeps_10_bits`, a lossless x265 encode).
 
 **DRC.** `-drc_scale:1 <n>` is accepted as an input option for stream 1. The AC-3 decoder's
 default is 1 (`-drc_scale <float> … (from 0 to 6) (default 1)`). FFmpeg's AC-3 encoder writes
@@ -939,6 +978,22 @@ upper-cases them: `ARTIST`, `ALBUM_ARTIST`, `SYNOPSIS`). MP4 drops `director`
 | `-fps_mode:v:0 cfr` (no `-r`) | `120/1`, 360 frames (the source's `r_frame_rate`) |
 | `-fps_mode:v:0 vfr -fpsmax:v:0 30` or `… vfr -r:v:0 30` | refused: `One of -r/-fpsmax was specified together a non-CFR -vsync/-fps_mode. This is contradictory.` (exit 234) |
 
+Bob deinterlacing (`bwdif=mode=send_field`) of the `interlaced` fixture (60 frames at
+30000/1001) makes 120 frames; with `-r:v:0 30000/1001 -fps_mode:v:0 cfr` (constant, "same as
+source" before the M2 review) the output had 60 frames again, every second field dropped. The
+builder doubles the rate after a deinterlacer that sends fields (`mode=send_field`, `1`,
+`send_field_nospatial`, `3`): an MP4 output reads back `avg_frame_rate=60000/1001`, 120
+frames (`test_bob_with_a_constant_same_as_source_rate_keeps_every_field`; Matroska's 1 ms
+time base reads back as `19001/317`).
+
+**Command display** (`EncodePlan.display`, POSIX style). Pasted into `bash` 5, `zsh` and
+`fish` (`/usr/bin/fish` on the development machine) with every awkward character of
+`test_posix_display_pastes_into_bash_zsh_and_fish`: `shlex.quote` output fails in fish for
+`'`, `\` (inside single quotes fish reads `\\` and `\'` as escapes) and a leading `%`
+(`%self` is fish's process expansion), and in zsh for a leading `=` (`=ls` expands to
+`/usr/bin/ls`). The builder quotes these too. The Windows style is for `cmd.exe`; no
+PowerShell was available to check it.
+
 **Audio layouts.** Encoding the 7.1 test source: `ac3` and `eac3` give `5.1(side)` by
 themselves, `libmp3lame` `stereo`, `aac` and `libopus` keep `7.1`; with `-ac:a:0 6` AAC and
 Opus give `5.1`. But libopus refuses the `5.1(side)` layout of the AC-3 fixture track:
@@ -953,6 +1008,26 @@ $ ffmpeg -i multitrack.mkv -map 0:1 -filter:a:0 aresample=out_chlayout=5.1 -c:a:
 conversion is a relabel (the PCM of both decodes has the same MD5). A 5.0 source encodes to
 Opus and AC-3 unchanged. `aresample=matrix_encoding=dplii:out_chlayout=stereo` gives a stereo
 Dolby Pro Logic II downmix. libopus picks 48 kHz for a 44.1 kHz input when no `-ar` is given.
+
+**Which layouts each encoder takes** (M2 review; both builds, 2026-10-14; a PCM source of each
+named layout encoded with `-c:a <encoder>` and no filter, `test_layout_tables_match_ffmpeg`):
+
+- `ffmpeg -h encoder=…` lists layouts only for `ac3` / `eac3` (mono … `5.1(side)`, `5.1`) and
+  `libmp3lame` (mono, stereo); FFmpeg converts any other layout for them by itself (`6.0` →
+  `5.0(side)`, `7.1(wide)` → `5.1(side)`, everything → stereo for MP3).
+- `aac` and `flac` list none and take every layout as it is (`6.0`, `7.1(wide)`, `octagonal`).
+- `libopus` lists none and takes **only** `mono`, `stereo`, `3.0`, `quad`, `5.0`, `5.1`, `6.1`
+  and `7.1` (the Vorbis orders of mapping family -1). Every other layout fails with exit 234:
+  `Invalid channel layout 5.0(side) for specified mapping family -1` (also `2.1`,
+  `3.0(back)`, `4.0`, `quad(side)`, `3.1`, `4.1`, `5.1(side)`, `6.0`, `6.0(front)`,
+  `hexagonal`, `6.1(back)`, `6.1(front)`, `7.0`, `7.0(front)`, `7.1(wide)`,
+  `7.1(wide-side)`, `octagonal`). So the builder relabels side to back for libopus
+  (`5.0(side)` → `5.0`, `quad(side)` → `quad`) and otherwise downmixes to the largest layout
+  it takes that is made of the source's channels (`2.1` and `3.0(back)` → stereo, `4.0` →
+  `3.0`, `6.0` → `5.0`, `7.1(wide)` → `5.1`), and re-probing gives exactly these
+  (`test_opus_gets_a_layout_it_accepts`). For the other encoders a remix to the bitrate
+  table's layout (`6.0` → `5.1`) would lose channels, so only the lossless `5.1(side)` →
+  `5.1` relabel is written.
 
 **Ranges.** `-ss 0.4 … -t 2` on the 25 fps fixture gives exactly 50 frames, and the first one
 is source frame 10 (same MD5). With `-c copy` the cut starts at the keyframe before the seek

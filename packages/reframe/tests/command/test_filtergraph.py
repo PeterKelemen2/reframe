@@ -17,8 +17,10 @@ from reframe.command.filtergraph import (
     TextBurn,
     assumed_colour,
     build_video_graph,
+    doubles_frame_rate,
     filter_available,
     keeps_hdr,
+    overlay_format,
 )
 from reframe.definitions import load_definitions
 from reframe.dimensions import compute_geometry, source_geometry
@@ -204,6 +206,32 @@ def test_fixed_order_whatever_the_map_order() -> None:
     ]  # fmt: skip
 
 
+@pytest.mark.parametrize(
+    ("config", "factor"),
+    [
+        (FilterConfig(), 1),
+        (FilterConfig(preset="bob"), 2),
+        (FilterConfig(implementation="yadif", preset="bob"), 2),
+        (FilterConfig(implementation="yadif", preset="skip-spatial"), 1),
+        (FilterConfig(preset="custom", custom="mode=1:parity=tff"), 2),
+        (FilterConfig(implementation="yadif", preset="custom", custom="3"), 2),
+        (FilterConfig(implementation="yadif", preset="custom", custom="0:1"), 1),
+        (FilterConfig(preset="custom", custom="mode=send_frame"), 1),
+    ],
+)
+def test_a_deinterlacer_that_sends_fields_doubles_the_rate(
+    config: FilterConfig, factor: int
+) -> None:
+    g = build_video_graph(
+        video=stream(), filters={"deinterlace": config}, geometry=geometry_of(stream()),
+        scaler="lanczos", tail=["format=yuv420p"], definitions=DEFS,
+        available=filter_available(caps(), DEFS),
+    )  # fmt: skip
+    assert g.rate_factor == factor
+    assert doubles_frame_rate("scale=1:1,yadif=1")
+    assert not doubles_frame_rate("scale=1:1,yadif")
+
+
 def test_combed_only_is_added_with_interlace_detection() -> None:
     chain = graph(stream(), {"interlace_detection": FilterConfig(), "deinterlace": FilterConfig()})
     assert "idet,bwdif=mode=send_frame:parity=auto:deint=interlaced" in chain
@@ -308,3 +336,24 @@ def test_bitmap_overlay_is_bottom_aligned_in_the_cropped_picture() -> None:
         "[0:0][1:0]overlay=eof_action=pass,scale=1920:1080:flags=lanczos,setsar=1/1,"
         "format=yuv420p[v]"
     )
+
+
+@pytest.mark.parametrize(
+    ("bit_depth", "pix_fmt", "expected"),
+    [
+        (8, "yuv420p", None),  # overlay's default: 8-bit 4:2:0
+        (None, None, None),
+        (10, "yuv420p10le", "yuv420p10"),
+        (10, "p010le", "yuv420p10"),
+        (10, "yuv422p10le", "yuv422p10"),
+        (12, "yuv444p12le", "yuv444p10"),  # the deepest format overlay has
+    ],
+)
+def test_bitmap_overlay_keeps_more_than_8_bits(
+    bit_depth: int | None, pix_fmt: str | None, expected: str | None
+) -> None:
+    """M2 review, finding M3: ``overlay`` cut a 10-bit source to 8 bits."""
+    video = stream(bit_depth=bit_depth, pix_fmt=pix_fmt)
+    assert overlay_format(video) == expected
+    written = graph(video, {}, bitmap_burn=BitmapBurn(input_label="0:5", canvas=(1920, 1080)))
+    assert ("overlay=eof_action=pass:format=" in written) is (expected is not None)

@@ -232,6 +232,8 @@ class VideoGraph:
     """The graph removes the HDR metadata (tone mapping or a colour conversion of HDR)."""
     filters: list[str] = field(default_factory=list)
     """The filter ids used, in order (for descriptions and tests)."""
+    rate_factor: int = 1
+    """2 when the deinterlacer makes one frame of each field (Bob): the frame rate doubles."""
 
     OUTPUT_LABEL = "[v]"
 
@@ -348,6 +350,8 @@ def build_video_graph(
                 target.append(setparams)
         target.append(chain)
         graph.filters.append(filter_id)
+        if filter_id == "deinterlace" and doubles_frame_rate(chain):
+            graph.rate_factor = 2
 
     for stage in definitions.filter_order:
         if stage == "crop":
@@ -378,6 +382,27 @@ def build_video_graph(
     return graph
 
 
+#: Deinterlacers whose ``mode`` can send one frame per field, and those modes (``yadif`` /
+#: ``bwdif``: 1 ``send_field``, 3 ``send_field_nospatial``).
+_FIELD_DEINTERLACERS = frozenset({"bwdif", "yadif", "bwdif_cuda", "yadif_cuda", "bwdif_vulkan"})
+_FIELD_MODES = frozenset({"1", "3", "send_field", "send_field_nospatial"})
+
+
+def doubles_frame_rate(chain: str) -> bool:
+    """Whether a filter chain has a deinterlacer that makes a frame of each field (Bob):
+    ``bwdif=mode=send_field``, ``yadif=1``, ``yadif=mode=3:…``."""
+    for part in chain.split(","):
+        name, _, options = part.strip().partition("=")
+        if name not in _FIELD_DEINTERLACERS or not options:
+            continue
+        values = options.split(":")
+        named = dict(v.split("=", 1) for v in values if "=" in v)
+        mode = named.get("mode", values[0] if "=" not in values[0] else None)
+        if mode in _FIELD_MODES:
+            return True
+    return False
+
+
 def _past_crop(stage: str, definitions: Definitions) -> bool:
     order = definitions.filter_order
     return order.index(stage) > order.index("crop")
@@ -395,6 +420,21 @@ def _text_burn(burn: TextBurn) -> list[str]:
 def _seconds(value: float) -> str:
     text = f"{value:.6f}".rstrip("0").rstrip(".")
     return text or "0"
+
+
+def overlay_format(video: VideoStream) -> str | None:
+    """The ``overlay`` ``format`` for a source of more than 8 bits, or ``None`` (the default).
+
+    ``overlay`` works in 8-bit 4:2:0 by default: it cut a 10-bit source (and the HDR picture
+    that tone mapping reads after it) to 8 bits. ``auto`` is no answer: it picks BGRA, 8-bit
+    RGB for the whole picture. So a 10-bit format with the source's chroma subsampling
+    (testdata/README.md, "Bitmap burn-in").
+    """
+    if video.bit_depth is None or video.bit_depth <= 8:
+        return None
+    pix_fmt = video.pix_fmt or ""
+    chroma = "444" if "444" in pix_fmt else "422" if "422" in pix_fmt else "420"
+    return f"yuv{chroma}p10"
 
 
 def _overlay_graph(
@@ -419,6 +459,9 @@ def _overlay_graph(
         parts.append(f"{sub_in}scale={video.width}:{video.height}[subs]")
         sub_in = "[subs]"
     overlay = f"overlay=x={x}:y={y}:eof_action=pass" if (x or y) else "overlay=eof_action=pass"
+    fmt = overlay_format(video)
+    if fmt is not None:
+        overlay += f":format={fmt}"
     rest = "".join("," + f for f in after)
     parts.append(f"{base_in}{sub_in}{overlay}{rest}{VideoGraph.OUTPUT_LABEL}")
     return ";".join(parts)

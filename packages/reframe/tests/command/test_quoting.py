@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -112,6 +118,64 @@ def test_command_line_shows_measured_values() -> None:
         '"C:\\Program Files\\ffmpeg.exe" -filter:a:0 "loudnorm=measured_I=<a0.input_i>:x=1" '
         "-f null -"
     )
+
+
+#: Arguments that the shells read differently (fish: ``\\`` and ``\'`` inside single quotes;
+#: zsh: ``=word``; all: ``$``, globs, ``~``, ``{,}``, ``#``, ``;``, ``&``, newline).
+AWKWARD = [
+    "",
+    " ",
+    "plain",
+    "it's",
+    "C:\\",
+    "C:\\path\\",
+    "a\\\\b",
+    "a\\'b",
+    "\\",
+    "'",
+    "''",
+    '"',
+    "$HOME",
+    "${x}",
+    "*",
+    "?",
+    "[ab]",
+    "~",
+    "~user",
+    "{a,b}",
+    "%self",
+    "100%",
+    "=ls",
+    "a=b",
+    "#c",
+    ";",
+    "&",
+    "|",
+    "a b",
+    "line\nbreak",
+    "tab\there",
+    "`x`",
+    "(x)",
+    "!x",
+    "Árvíz ❤",
+    "subtitles=filename='C\\:/x.srt'",
+    "-",
+]
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish", "sh"])
+def test_posix_display_pastes_into_bash_zsh_and_fish(shell: str, tmp_path: Path) -> None:
+    """M2 review: a POSIX display with ``'`` or ``\\`` did not paste into fish (inside single
+    quotes fish reads ``\\\\`` and ``\\'`` as escapes)."""
+    program = shutil.which(shell)
+    if program is None:
+        pytest.skip(f"{shell} is not installed")
+    script = tmp_path / "argv.py"
+    script.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
+    line = command_line(sys.executable, [str(script), *AWKWARD], "posix")
+    proc = subprocess.run([program, "-c", line], capture_output=True, text=True, check=True,
+                          env={**os.environ, "HOME": "/home/x"}, timeout=30)  # fmt: skip
+    assert json.loads(proc.stdout) == AWKWARD
 
 
 def test_default_shell_follows_the_os(monkeypatch: pytest.MonkeyPatch) -> None:

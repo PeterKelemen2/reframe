@@ -4,12 +4,19 @@ The runner never uses a shell: it passes the argv list to the process. ``display
 for people (the command preview drawer, the job log, bug reports), so it must paste into a
 terminal and run:
 
-- ``posix``: :func:`shlex.quote` (bash, zsh, fish for these characters).
-- ``windows``: the quoting of the Microsoft C runtime (``CommandLineToArgvW``), which every
-  Windows program uses to split its command line, plus quotes around any argument with a
-  character that ``cmd.exe`` treats specially (``& | < > ^ ( ) % !``), so it pastes into
-  ``cmd.exe`` and PowerShell. ``%`` inside quotes still expands in ``cmd.exe``; no argument
-  the builder writes contains ``%name%``.
+- ``posix``: for bash, zsh, fish and ``sh`` (tested with each, every awkward character): an
+  argument of only ``[A-Za-z0-9_@%+=:,./-]`` stays bare (not with a leading ``=`` or ``%``:
+  zsh expands ``=ls``, fish ``%self``); anything else is single-quoted, with a quote written
+  ``"'"`` and a backslash written as a backslash pair in double quotes (inside single quotes
+  fish reads a backslash before a quote or a backslash as an escape, so
+  :func:`shlex.quote` output with ``'`` or a backslash did not paste into fish).
+- ``windows``: for ``cmd.exe``. The quoting of the Microsoft C runtime
+  (``CommandLineToArgvW``), which every Windows program uses to split its command line,
+  plus quotes around any argument with a character that ``cmd.exe`` treats specially
+  (``& | < > ^ ( ) % !``). ``%`` inside quotes still expands in ``cmd.exe``; no argument the
+  builder writes contains ``%name%``. **Not for PowerShell**: it reads ``,`` and ``;`` outside
+  quotes (filter chains have both), and ``$`` and backticks inside double quotes, its own way
+  (not checked here: no PowerShell on the development machine).
 
 A measured value (:class:`~reframe.models.ValueRef`) shows as ``<a0.input_i>``.
 """
@@ -17,7 +24,6 @@ A measured value (:class:`~reframe.models.ValueRef`) shows as ``<a0.input_i>``.
 from __future__ import annotations
 
 import os
-import shlex
 from collections.abc import Sequence
 from typing import Literal
 
@@ -51,8 +57,27 @@ def display_arg(arg: PlanArg) -> str:
     return "".join(part if isinstance(part, str) else f"<{part.ref}>" for part in arg.parts)
 
 
+#: Characters an argument may have and stay bare in bash, zsh and fish.
+_POSIX_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@%+=:,./-")
+
+
 def quote_posix(arg: str) -> str:
-    return shlex.quote(arg)
+    """Quote one argument for bash, zsh and fish (see the module doc)."""
+    if arg and arg[0] not in "=%" and all(c in _POSIX_SAFE for c in arg):
+        return arg
+    out: list[str] = []
+    run: list[str] = []
+    for char in arg:
+        if char in "'\\":
+            if run:
+                out.append("'" + "".join(run) + "'")
+                run = []
+            out.append('"\'"' if char == "'" else '"\\\\"')
+        else:
+            run.append(char)
+    if run or not out:
+        out.append("'" + "".join(run) + "'")
+    return "".join(out)
 
 
 def quote_windows(arg: str) -> str:

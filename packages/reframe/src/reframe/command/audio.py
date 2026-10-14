@@ -10,10 +10,11 @@ the sample rate (``-ar:a:N``, always when a rate is known: FFmpeg silently picks
 none is given, and ``loudnorm`` outputs 192 kHz), and one filter chain (``-filter:a:N``) in
 this order:
 
-1. the layout: ``aresample=[matrix_encoding=dplii:]out_chlayout=<layout>`` (the layout of
-   the mixdown definition). When the source layout stays, it is written only to relabel a
-   layout with the same channel count (``5.1(side)`` → ``5.1``: libopus refuses
-   ``5.1(side)``); see :func:`_layout_filter`;
+1. the layout: ``aresample=[matrix_encoding=dplii:]out_chlayout=<layout>``
+   (:attr:`PlannedAudio.layout`): the layout of the mixdown definition. When the source
+   layout stays, libopus gets a layout it accepts (:data:`ENCODER_LAYOUTS`: side → back, else
+   a downmix), and any other encoder the source layout, relabelled only where that is
+   lossless (``5.1(side)`` → ``5.1``); see :func:`_kept_layout`;
 2. the gain: ``volume=<gain>dB``;
 3. loudness normalisation: two-pass ``loudnorm`` with the values measured by the track's
    ``analyse`` step (:class:`~reframe.models.ArgTemplate`), ``linear=true``.
@@ -42,6 +43,7 @@ that the builder (C-7), validation (C-8) and the codec rules (C-12) give the sam
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from reframe.command.errors import PlanError
@@ -50,7 +52,6 @@ from reframe.definitions import (
     AudioEncoderDef,
     ContainerDef,
     Definitions,
-    MixdownDef,
     channels_mixdown,
     load_definitions,
 )
@@ -67,12 +68,15 @@ from reframe.models import (
 
 __all__ = [
     "DRC_CODECS",
+    "ENCODER_LAYOUTS",
     "FALLBACK_ENCODER",
+    "LAYOUT_CHANNELS",
     "LOUDNESS",
     "AudioOut",
     "LoudnessSpec",
     "PlannedAudio",
     "audio_output",
+    "layout_channels",
     "loudnorm_analyse_filter",
     "planned_audio",
 ]
@@ -114,6 +118,110 @@ _MEASURED = (
     ("offset", "target_offset"),
 )
 
+#: The channels of FFmpeg's named layouts up to eight channels (``ffmpeg -layouts``,
+#: n9.0.2; the most any encoder of the definitions takes). A layout without a name reads
+#: ``N channels (A+B+…)``: :func:`layout_channels`.
+LAYOUT_CHANNELS: dict[str, tuple[str, ...]] = {
+    "mono": ("FC",),
+    "stereo": ("FL", "FR"),
+    "2.1": ("FL", "FR", "LFE"),
+    "3.0": ("FL", "FR", "FC"),
+    "3.0(back)": ("FL", "FR", "BC"),
+    "4.0": ("FL", "FR", "FC", "BC"),
+    "quad": ("FL", "FR", "BL", "BR"),
+    "quad(side)": ("FL", "FR", "SL", "SR"),
+    "3.1": ("FL", "FR", "FC", "LFE"),
+    "5.0": ("FL", "FR", "FC", "BL", "BR"),
+    "5.0(side)": ("FL", "FR", "FC", "SL", "SR"),
+    "4.1": ("FL", "FR", "FC", "LFE", "BC"),
+    "5.1": ("FL", "FR", "FC", "LFE", "BL", "BR"),
+    "5.1(side)": ("FL", "FR", "FC", "LFE", "SL", "SR"),
+    "6.0": ("FL", "FR", "FC", "BC", "SL", "SR"),
+    "6.0(front)": ("FL", "FR", "FLC", "FRC", "SL", "SR"),
+    "3.1.2": ("FL", "FR", "FC", "LFE", "TFL", "TFR"),
+    "hexagonal": ("FL", "FR", "FC", "BL", "BR", "BC"),
+    "6.1": ("FL", "FR", "FC", "LFE", "BC", "SL", "SR"),
+    "6.1(back)": ("FL", "FR", "FC", "LFE", "BL", "BR", "BC"),
+    "6.1(front)": ("FL", "FR", "LFE", "FLC", "FRC", "SL", "SR"),
+    "7.0": ("FL", "FR", "FC", "BL", "BR", "SL", "SR"),
+    "7.0(front)": ("FL", "FR", "FC", "FLC", "FRC", "SL", "SR"),
+    "7.1": ("FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR"),
+    "7.1(wide)": ("FL", "FR", "FC", "LFE", "BL", "BR", "FLC", "FRC"),
+    "7.1(wide-side)": ("FL", "FR", "FC", "LFE", "FLC", "FRC", "SL", "SR"),
+    "5.1.2": ("FL", "FR", "FC", "LFE", "SL", "SR", "TFL", "TFR"),
+    "5.1.2(back)": ("FL", "FR", "FC", "LFE", "BL", "BR", "TFL", "TFR"),
+    "octagonal": ("FL", "FR", "FC", "BL", "BR", "BC", "SL", "SR"),
+    "cube": ("FL", "FR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"),
+    "binaural": ("BIL", "BIR"),
+    "downmix": ("DL", "DR"),
+}
+
+#: Encoders that refuse every layout but these, largest last. FFmpeg lists no layouts for
+#: them (``ffmpeg -h encoder=libopus``), so it does not convert a layout for them by itself:
+#: libopus takes only the Vorbis channel orders of mapping family -1 and fails on any other
+#: ("Invalid channel layout 5.0(side) for specified mapping family -1", exit 234). The other
+#: encoders take every layout (aac, flac), or FFmpeg converts it to one they list (ac3,
+#: eac3, libmp3lame). Checked with both n9.0.2 builds (testdata/README.md).
+ENCODER_LAYOUTS: dict[str, tuple[str, ...]] = {
+    "libopus": ("mono", "stereo", "3.0", "quad", "5.0", "5.1", "6.1", "7.1"),
+}
+
+_SIDE_TO_BACK = {"SL": "BL", "SR": "BR"}
+_UNNAMED_LAYOUT = re.compile(r"\d+ channels \(([A-Za-z0-9]+(?:\+[A-Za-z0-9]+)*)\)")
+
+
+def layout_channels(layout: str | None) -> tuple[str, ...] | None:
+    """The channels of an ffprobe ``channel_layout`` (``5.1(side)``, ``3 channels
+    (FL+FR+LFE)``); ``None`` when not known."""
+    if layout is None:
+        return None
+    named = LAYOUT_CHANNELS.get(layout)
+    if named is not None:
+        return named
+    unnamed = _UNNAMED_LAYOUT.fullmatch(layout)
+    return tuple(unnamed.group(1).split("+")) if unnamed is not None else None
+
+
+def _side_to_back(channels: tuple[str, ...]) -> frozenset[str] | None:
+    """The channels with the side pair renamed to the back pair (``5.1(side)`` → ``5.1``),
+    when the layout has a side pair and no back pair; else ``None``."""
+    have = set(channels)
+    if not {"SL", "SR"} <= have or have & {"BL", "BR"}:
+        return None
+    return frozenset(_SIDE_TO_BACK.get(c, c) for c in channels)
+
+
+def _kept_layout(
+    stream: AudioStream, encoder: AudioEncoderDef, table: Mixdown, defs: Definitions
+) -> str | None:
+    """The ``out_chlayout`` written when the source layout stays (no mixdown), or ``None``.
+
+    - An encoder of :data:`ENCODER_LAYOUTS` gets a layout it accepts: the source's, else the
+      side → back relabel of it (lossless: the same PCM), else the largest accepted layout
+      made of the source's channels (a downmix: ``2.1`` → ``stereo``, ``6.0`` → ``5.0``).
+    - Any other encoder gets the source layout. Only ``5.1(side)`` and the like are relabelled
+      to the layout of the bitrate table (``5.1``), which is lossless; ``6.0`` or
+      ``7.1(wide)`` are not remixed to ``5.1`` / ``7.1``.
+    """
+    channels = layout_channels(stream.channel_layout)
+    if channels is None:
+        return None  # not known: left to FFmpeg
+    renamed = _side_to_back(channels)
+    accepted = ENCODER_LAYOUTS.get(encoder.id)
+    if accepted is None:
+        target = defs.mixdowns[table].layout
+        relabel = renamed is not None and renamed == frozenset(LAYOUT_CHANNELS[target])
+        return target if relabel else None
+    if stream.channel_layout in accepted:
+        return None
+    if renamed is not None:
+        for name in accepted:
+            if frozenset(LAYOUT_CHANNELS[name]) == renamed:
+                return name
+    have = renamed if renamed is not None else frozenset(channels)
+    fits = [name for name in accepted if frozenset(LAYOUT_CHANNELS[name]) <= have]
+    return fits[-1] if fits else None
+
 
 # --------------------------------------------------------------------------- what is written
 
@@ -136,10 +244,17 @@ class PlannedAudio:
     """A passthru track that is encoded because the container cannot hold its codec."""
     mixdown: Mixdown | None = None
     """The snapped mixdown (:meth:`~reframe.definitions.AudioEncoderDef.snap_mixdown`);
-    ``None`` = the source layout stays (only relabelled: ``5.1(side)`` → ``5.1``)."""
+    ``None`` = the source layout stays (see :attr:`layout`)."""
+    layout: str | None = None
+    """The ``out_chlayout`` of the ``aresample`` in ``-filter:a:N`` (with
+    ``matrix_encoding=dplii`` for Dolby Pro Logic II); ``None`` = the encoder gets the source
+    layout. With a mixdown, its layout (unless the source has it already); without one, a
+    lossless relabel (``5.1(side)`` → ``5.1``) or, for libopus, the layout it accepts
+    (:data:`ENCODER_LAYOUTS`: ``2.1`` → ``stereo``)."""
     bitrate_mixdown: Mixdown | None = None
     """The bitrate table the track uses: ``mixdown``, else
-    :func:`~reframe.definitions.channels_mixdown` of the source channels."""
+    :func:`~reframe.definitions.channels_mixdown` of the output channels (the source's, or
+    those of :attr:`layout`)."""
     bitrate: int | None = None
     """kb/s: the track's bitrate snapped, else (no VBR quality) the table's default.
     ``None`` for a copy, a lossless encoder and a VBR quality."""
@@ -190,13 +305,23 @@ def _plan(
             f"{encoder.label} cannot be written into {container.label} (validation reports it)"
         )
     mixdown = encoder.snap_mixdown(track.mixdown, stream.channels, defs.mixdowns)
-    table = mixdown if mixdown is not None else channels_mixdown(stream.channels)
+    layout: str | None
+    if mixdown is not None:
+        target = defs.mixdowns[mixdown]
+        same = target.matrix_encoding is None and stream.channel_layout == target.layout
+        layout = None if same else target.layout
+        table = mixdown
+    else:
+        layout = _kept_layout(stream, encoder, channels_mixdown(stream.channels), defs)
+        written = layout_channels(layout)
+        table = channels_mixdown(len(written) if written is not None else stream.channels)
     bitrate, quality = _bitrate(track, encoder, table)
     planned = PlannedAudio(
         copy=False,
         encoder=encoder.id,
         fallback=track.action == "passthru",
         mixdown=mixdown,
+        layout=layout,
         bitrate_mixdown=table,
         bitrate=bitrate,
         quality=quality,
@@ -260,34 +385,14 @@ def _loudnorm_template(measurement: str, loudness: LoudnessSpec) -> list[str | V
     return parts
 
 
-def _aresample(target: MixdownDef) -> str:
-    matrix = f"matrix_encoding={target.matrix_encoding}:" if target.matrix_encoding else ""
-    return f"aresample={matrix}out_chlayout={target.layout}"
-
-
-def _layout_filter(
-    stream: AudioStream, planned: PlannedAudio, definitions: Definitions
-) -> str | None:
-    """The ``aresample`` that sets the output layout, or ``None`` when the source layout stays.
-
-    A snapped mixdown is written unless the source already has its layout (Dolby Pro Logic
-    II always: it is a matrix encoding). When the source layout stays (``mixdown`` is
-    ``None``), the layout of its bitrate table is written only as a relabel: the same channel
-    count with other labels. libopus refuses ``5.1(side)``, the layout of FFmpeg's AC-3, DTS
-    and TrueHD decoders ("Invalid channel layout 5.1(side) for specified mapping family -1"),
-    and side → back is a lossless relabel (the same PCM). A source with fewer channels than
-    the table's layout is never upmixed (5.0 stays 5.0).
-    """
-    if planned.mixdown is not None:
-        target = definitions.mixdowns[planned.mixdown]
-        if target.matrix_encoding is None and stream.channel_layout == target.layout:
-            return None
-        return _aresample(target)
-    assert planned.bitrate_mixdown is not None  # an encoded track always has a table
-    target = definitions.mixdowns[planned.bitrate_mixdown]
-    if stream.channel_layout is None or stream.channel_layout == target.layout:
+def _layout_filter(planned: PlannedAudio, definitions: Definitions) -> str | None:
+    """``aresample=[matrix_encoding=dplii:]out_chlayout=…`` for :attr:`PlannedAudio.layout`."""
+    if planned.layout is None:
         return None
-    return _aresample(target) if stream.channels >= target.channels else None
+    mixdown = definitions.mixdowns[planned.mixdown] if planned.mixdown is not None else None
+    matrix = mixdown.matrix_encoding if mixdown is not None else None
+    prefix = f"matrix_encoding={matrix}:" if matrix else ""
+    return f"aresample={prefix}out_chlayout={planned.layout}"
 
 
 def audio_output(
@@ -318,7 +423,7 @@ def audio_output(
     if (stream.codec or "") in DRC_CODECS:
         out.drc = track.drc
     pre: list[str] = []
-    layout_filter = _layout_filter(stream, planned, definitions)
+    layout_filter = _layout_filter(planned, definitions)
     if layout_filter is not None:
         pre.append(layout_filter)
     if track.gain:

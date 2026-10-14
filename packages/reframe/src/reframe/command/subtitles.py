@@ -10,7 +10,12 @@
   ``forced_subs_only`` (PGS and VobSub).
 - **External files** are inputs after the source: ``-itsoffset`` (the track's offset),
   ``-ss`` (the range start: the source's seek does not move other inputs, checked with FFmpeg
-  n9.0.2) and ``-sub_charenc``, then ``-i``.
+  n9.0.2) and ``-sub_charenc``, then ``-i``. An event on screen at the range start, or moved
+  before 0 by a negative offset, gets a negative time: the builder's output ``-ss 0`` drops
+  it (the video is encoded), or ``-copypriorss:s:N 0`` (the video is copied and the track
+  too, no range). A copied video with a range keeps them: the muxer moves every stream by
+  the same amount, as it does for the video's own packets before the range start
+  (decision 0013, "Follow-up (M2 review)").
 """
 
 from __future__ import annotations
@@ -83,9 +88,15 @@ class SubtitleOut:
     source_title: str | None
     ass: bool
     """The output is ASS (fonts are attachments of the source)."""
+    drop_before_start: bool = False
+    """``-copypriorss:s:N 0``: a copied external track drops its events before time 0 (a
+    negative offset) when the output cannot have ``-ss 0`` (a copied video)."""
 
     def args(self) -> list[str]:
-        return [spec("-c:s", f"s:{self.index}"), self.codec]
+        out = [spec("-c:s", f"s:{self.index}"), self.codec]
+        if self.drop_before_start:
+            out += [spec("-copypriorss", f"s:{self.index}"), "0"]
+        return out
 
 
 @dataclass(slots=True)
@@ -198,6 +209,8 @@ def plan_subtitles(
                     index=len(plan.outputs), map=label, codec=out_codec, track=track,
                     source_language=ext.language, source_title=ext.name,
                     ass=_is_ass(codec, out_codec),
+                    drop_before_start=(passthrough and not start and ext.offset_ms < 0
+                                       and out_codec == "copy"),
                 )
             )  # fmt: skip
             continue

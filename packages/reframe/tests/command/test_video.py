@@ -268,6 +268,20 @@ def test_frame_rate_modes() -> None:
     ]  # fmt: skip
 
 
+def test_bob_deinterlace_doubles_the_same_as_source_rate() -> None:
+    """M2 review: Bob makes one frame of each field; a constant "same as source" rate is the
+    doubled rate, not the source's (which dropped every second frame)."""
+    ntsc = video_stream(avg_frame_rate=Rational(num=30000, den=1001))
+    constant = VideoSettings(framerate_mode="constant")
+    assert frame_rate_args(constant, ntsc, factor=2) == [
+        "-r:v:0", "60000/1001", "-fps_mode:v:0", "cfr",
+    ]  # fmt: skip
+    chosen = VideoSettings(framerate_mode="constant", framerate=Rational(num=25, den=1))
+    assert frame_rate_args(chosen, ntsc, factor=2)[:2] == ["-r:v:0", "25"]  # the user's rate
+    counted = video_stream(frame_count=50, duration=2.0)  # 25 fps
+    assert frame_rate_args(constant, counted, factor=2)[:2] == ["-r:v:0", "50"]
+
+
 def test_source_rate_fallbacks() -> None:
     assert source_rate(video_stream(frame_count=96, duration=4.0)) == Fraction(24)
     assert source_rate(video_stream(frame_rate=Rational(num=25, den=1))) == Rational(num=25, den=1)

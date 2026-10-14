@@ -290,3 +290,74 @@ edges, so players showed the chapter before the range as a first, empty chapter.
 ### Plan changes
 
 - `docs/plan/05-core.md` §C-7, the chapters bullet.
+
+## Follow-up (M2 review), 2026-10-14: layouts for libopus, 10-bit burn-in, nothing before 0, Bob, display quoting
+
+### Context
+
+The M2 milestone review found these in the builder (each reproduced with both n9.0.2 builds
+before the fix; `testdata/README.md` §Command builder has the commands and results):
+
+1. **libopus refuses common layouts.** §4 relabelled only `5.1(side)`-like layouts with the
+   table's channel count. libopus takes only the eight Vorbis layouts (mono, stereo, 3.0,
+   quad, 5.0, 5.1, 6.1, 7.1) and FFmpeg does not convert for it (it lists no layouts), so an
+   AC-3 3/2 source (`5.0(side)`), `quad(side)`, `3.0(back)`, `2.1`, `4.0` … failed with exit
+   234. The same relabel was a lossy remix for `6.0` → `5.1` and `7.1(wide)` → `7.1`.
+2. **Bitmap burn-in cut 10-bit sources to 8 bits.** `overlay` defaults to 8-bit 4:2:0.
+3. **External subtitles reached the muxer with negative times.** §1 seeks each external
+   file with the range start, but an event on screen at the range start (or moved before 0 by
+   a negative offset) keeps a negative time; the Matroska muxer then moved every stream (the
+   chapters did not move), and MP4 `mov_text` got wrong times. The same happened to copied
+   streams of an encode with a range (a copied AC-3 track started 1.17 s before the video).
+4. **Bob with a constant "same as source" frame rate** wrote the source's rate after a
+   deinterlacer that doubles it, dropping every second frame.
+5. **The POSIX display** (`shlex.quote`) did not paste into fish for `'` and `\`, nor for a
+   leading `%`; zsh expands a leading `=`. The Windows display claimed PowerShell.
+
+### Decision
+
+1. `PlannedAudio` gets `layout` (the `aresample` `out_chlayout`, or `None`); the builder
+   writes exactly it. With a mixdown, as before. Without one (the source layout stays):
+   - for libopus (`ENCODER_LAYOUTS` in `reframe/command/audio.py`, checked against the real
+     encoder by `test_layout_tables_match_ffmpeg`): the source layout if accepted, else the
+     side → back relabel (`5.0(side)` → `5.0`, `quad(side)` → `quad`, `5.1(side)` → `5.1`),
+     else the largest accepted layout made of the source's channels (`2.1` → stereo,
+     `3.0(back)` → stereo, `4.0` → `3.0`, `6.0` → `5.0`, `7.1(wide)` → `5.1`);
+   - for any other encoder: only a lossless relabel to the bitrate table's layout
+     (`5.1(side)` → `5.1`); `6.0` and `7.1(wide)` reach the encoder as they are (AAC and FLAC
+     take them; FFmpeg converts for AC-3, E-AC-3 and MP3 itself).
+   The bitrate table is that of the **output** channels (`channels_mixdown`): a libopus
+   downmix of `2.1` uses the stereo table (default 96 kb/s, was the 5.1 table's 320).
+2. A source of more than 8 bits gets `overlay=…:format=yuv420p10` (`yuv422p10`,
+   `yuv444p10` by its chroma format). Not `auto`: it negotiates 8-bit RGB.
+3. When the video is encoded and something could start before 0 (a range start, a negative
+   offset of an external subtitle that is not burned in), the output gets `-ss 0`: FFmpeg
+   then drops every packet and subtitle event before 0. An event on screen at the range start
+   is **dropped**, not shortened (no FFmpeg option cuts an event). A copied audio track can
+   lose up to one frame at the start. With a copied video an output `-ss` would drop the
+   video's own first packets, so a remux keeps FFmpeg's behaviour (it starts at the keyframe
+   before the range and every stream keeps its relative time); a copied external track of a
+   remux without a range drops its own events before 0 with `-copypriorss:s:N 0`. Not
+   solved: a converted external track (`mov_text`) of a remux with a negative offset.
+4. After a deinterlacer that sends fields (`bwdif` / `yadif` `mode=send_field`, `1`,
+   `send_field_nospatial`, `3`), a constant "same as source" rate is twice the source's.
+5. The POSIX display quotes for bash, zsh, fish and sh (tested with each): bare only for
+   `[A-Za-z0-9_@%+=:,./-]` without a leading `=` or `%`, else single quotes with `'` as
+   `"'"` and `\` as a backslash pair in double quotes. The Windows display is for `cmd.exe`
+   only; PowerShell reads `,` and `;` outside quotes and `$` inside double quotes its own way
+   (not checked: no PowerShell on the development machine).
+
+### Consequences
+
+- C-8 and C-12 read the layout from `planned_audio` (`PlannedAudio.layout`); a libopus
+  downmix changes the bitrate table (`2.1`, `3.0(back)` → stereo; `6.1(back)`, `7.0`,
+  `7.1(wide)` → 5.1). C-8 could note the libopus downmix like any other mixdown change.
+- Seven plan snapshots with a range on an encoded video get `-ss 0`; nothing else in them
+  changes.
+- Detelecine (`decimate`) lowers the rate by 1/5 and a constant "same as source" rate then
+  duplicates frames back; not changed (not in the review; open question).
+
+### Plan changes
+
+- `docs/plan/05-core.md` §C-7: the argument order (`-ss 0`), the filter graph (10-bit
+  overlay), the video bullet (Bob) and the audio bullet (libopus layouts).

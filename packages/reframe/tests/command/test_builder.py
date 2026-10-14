@@ -38,6 +38,47 @@ def argv(step: PlanStep) -> list[str]:
     return [a for a in step.argv if isinstance(a, str)]
 
 
+def output_options(plan: EncodePlan) -> list[str]:
+    """The arguments between the last map and the codecs of the main step."""
+    [main] = [s for s in plan.steps if s.kind in ("encode", "pass2")]
+    args = argv(main)
+    last_map = max(i for i, a in enumerate(args) if a == "-map") + 2
+    return args[last_map : args.index("-c:v:0")]
+
+
+def test_nothing_reaches_the_muxer_before_zero() -> None:
+    """M2 review, finding M4: ``-ss 0`` as an output option when the video is encoded and a
+    range starts after 0 or an external subtitle has a negative offset; the copied external
+    track of a remux drops its own early events instead."""
+    src = recorded("multitrack.mkv")
+    ext = SubtitleOutputTrack(source=ExternalSubtitle(path=Path("/m/a.srt"), offset_ms=-700))
+    job = draft(src, subtitles=False)
+    assert "-ss" not in output_options(plan_of(job, src))
+    job.range = TimeRange(start=1.2, end=3.7)
+    assert output_options(plan_of(job, src))[:4] == ["-ss", "0", "-t", "2.5"]
+    job.range = TimeRange()
+    job.subtitles = [ext]
+    assert output_options(plan_of(job, src))[:2] == ["-ss", "0"]
+    job.subtitles = [ext.model_copy(update={"source": ExternalSubtitle(path=Path("/m/a.srt"))})]
+    assert "-ss" not in output_options(plan_of(job, src))
+    burn = ext.model_copy(update={"action": "burn"})  # filtered: the shift is in the filter
+    job.subtitles = [burn]
+    assert "-ss" not in output_options(plan_of(job, src))
+    remux = draft(src, audio="passthru", subtitles=False)
+    remux.video.passthrough = True
+    remux.subtitles = [ext]
+    plan = plan_of(remux, src)
+    assert "-ss" not in output_options(plan)
+    main = argv(plan.steps[0])
+    assert main[main.index("-c:s:0") : main.index("-c:s:0") + 4] == [
+        "-c:s:0", "copy", "-copypriorss:s:0", "0",
+    ]  # fmt: skip
+    remux.range = TimeRange(start=1.0)  # the copied video starts at the keyframe before 1 s
+    ranged = argv(plan_of(remux, src).steps[0])
+    assert "-copypriorss:s:0" not in ranged
+    assert ranged.count("-ss") == 2  # the source and the subtitle file: input options only
+
+
 def test_partial_path() -> None:
     assert partial_path(Path("/o/Movie.mkv")) == Path("/o/Movie.part.mkv")
     assert partial_path(Path("/o/Movie.mkv"), ".chapters.txt") == Path("/o/Movie.part.chapters.txt")
