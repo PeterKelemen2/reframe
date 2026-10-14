@@ -6,6 +6,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from collections.abc import Callable
+from fractions import Fraction
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
@@ -17,8 +18,8 @@ from reframe.command.filtergraph import (
     TextBurn,
     assumed_colour,
     build_video_graph,
-    doubles_frame_rate,
     filter_available,
+    frame_rate_factor,
     keeps_hdr,
     overlay_format,
 )
@@ -228,8 +229,35 @@ def test_a_deinterlacer_that_sends_fields_doubles_the_rate(
         available=filter_available(caps(), DEFS),
     )  # fmt: skip
     assert g.rate_factor == factor
-    assert doubles_frame_rate("scale=1:1,yadif=1")
-    assert not doubles_frame_rate("scale=1:1,yadif")
+
+
+@pytest.mark.parametrize(
+    ("filters", "factor"),
+    [
+        ({"detelecine": FilterConfig()}, Fraction(4, 5)),  # fieldmatch,decimate
+        ({"detelecine": FilterConfig(preset="custom", custom="order=tff")}, Fraction(4, 5)),
+        ({"custom": FilterConfig(custom="decimate=cycle=10")}, Fraction(9, 10)),
+        ({"custom": FilterConfig(custom="decimate=2")}, Fraction(1, 2)),
+        ({"custom": FilterConfig(custom="decimate=mixed=1")}, Fraction(1)),  # variable output
+        ({"custom": FilterConfig(custom="decimate=cycle=x")}, Fraction(1)),  # FFmpeg refuses it
+        ({"custom": FilterConfig(custom="fps=25")}, Fraction(1)),  # not followed
+        ({"detelecine": FilterConfig(), "deinterlace": FilterConfig(preset="bob")},
+         Fraction(8, 5)),
+    ],
+)  # fmt: skip
+def test_detelecine_lowers_the_rate(filters: dict[str, FilterConfig], factor: Fraction) -> None:
+    """M2 review, second round: ``decimate`` drops one frame in five."""
+    g = build_video_graph(
+        video=stream(), filters=filters, geometry=geometry_of(stream()), scaler="lanczos",
+        tail=["format=yuv420p"], definitions=DEFS, available=filter_available(caps(), DEFS),
+    )  # fmt: skip
+    assert g.rate_factor == factor
+
+
+def test_frame_rate_factor() -> None:
+    assert frame_rate_factor("scale=1:1,yadif=1") == 2
+    assert frame_rate_factor("scale=1:1,yadif") == 1
+    assert frame_rate_factor("fieldmatch,decimate,bwdif=mode=send_field") == Fraction(8, 5)
 
 
 def test_combed_only_is_added_with_interlace_detection() -> None:

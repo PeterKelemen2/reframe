@@ -1065,6 +1065,20 @@ builder doubles the rate after a deinterlacer that sends fields (`mode=send_fiel
 frames (`test_bob_with_a_constant_same_as_source_rate_keeps_every_field`; Matroska's 1 ms
 time base reads back as `19001/317`).
 
+Detelecine (`fieldmatch,decimate`; checked on 2026-10-14 with both builds) of a 2:3 telecined
+clip (`testsrc2` at 24000/1001, 48 frames, through `telecine=pattern=23`: 60 frames at
+30000/1001, lossless x264):
+
+| Rate options | MKV and MP4 read back |
+|--------------|-----------------------|
+| `-r:v:0 30000/1001 -fps_mode:v:0 cfr` (constant "same as source" before the second review round) | 60 frames at 30000/1001: the 12 frames `decimate` dropped are duplicated back |
+| `-r:v:0 24000/1001 -fps_mode:v:0 cfr` | 48 frames, `r_frame_rate` and `avg_frame_rate` 24000/1001 |
+| no `-r` | the same 48 frames at 24000/1001 |
+
+So the builder's constant "same as source" rate is the rate after the filters
+(`decimate`: × (cycle − 1) / cycle;
+`test_detelecine_with_a_constant_same_as_source_rate_keeps_the_film_rate[mkv|mp4]`).
+
 **Command display** (`EncodePlan.display`, POSIX style). Pasted into `bash` 5, `zsh` and
 `fish` (`/usr/bin/fish` on the development machine) with every awkward character of
 `test_posix_display_pastes_into_bash_zsh_and_fish`: `shlex.quote` output fails in fish for

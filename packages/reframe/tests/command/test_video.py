@@ -282,6 +282,17 @@ def test_bob_deinterlace_doubles_the_same_as_source_rate() -> None:
     assert frame_rate_args(constant, counted, factor=2)[:2] == ["-r:v:0", "50"]
 
 
+def test_detelecine_lowers_the_same_as_source_rate() -> None:
+    """M2 review, second round: after ``decimate`` (4/5) a constant "same as source" rate is
+    the film rate; the telecined rate made FFmpeg duplicate the dropped frames back."""
+    telecined = video_stream(avg_frame_rate=Rational(num=30000, den=1001))
+    constant = VideoSettings(framerate_mode="constant")
+    assert frame_rate_args(constant, telecined, factor=Fraction(4, 5)) == [
+        "-r:v:0", "24000/1001", "-fps_mode:v:0", "cfr",
+    ]  # fmt: skip
+    assert frame_rate_args(VideoSettings(), telecined, factor=Fraction(4, 5)) == []  # variable
+
+
 def test_source_rate_fallbacks() -> None:
     assert source_rate(video_stream(frame_count=96, duration=4.0)) == Fraction(24)
     assert source_rate(video_stream(frame_rate=Rational(num=25, den=1))) == Rational(num=25, den=1)

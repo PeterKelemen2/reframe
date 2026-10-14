@@ -369,11 +369,13 @@ def source_rate(stream: VideoStream) -> Rational | Fraction | None:
     return None
 
 
-def frame_rate_args(video: VideoSettings, stream: VideoStream, *, factor: int = 1) -> list[str]:
+def frame_rate_args(
+    video: VideoSettings, stream: VideoStream, *, factor: Fraction | int = 1
+) -> list[str]:
     """``Same as source`` + variable: nothing. Constant: ``-r R -fps_mode cfr`` (``R`` = the
-    chosen rate, or the source's average times ``factor``: 2 after a Bob deinterlacer, which
-    makes a frame of each field). Peak (or variable with a chosen rate): ``-fpsmax R``
-    (decision 0013: FFmpeg has no peak mode; a faster source becomes CFR R)."""
+    chosen rate, or the source's average times ``factor``, the rate after the filters: 2
+    after a Bob deinterlacer, 4/5 after detelecine). Peak (or variable with a chosen rate):
+    ``-fpsmax R`` (decision 0013: FFmpeg has no peak mode; a faster source becomes CFR R)."""
     rate = video.framerate
     if video.framerate_mode == "constant":
         target: Rational | Fraction | None = rate
