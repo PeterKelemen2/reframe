@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -11,12 +13,13 @@ from typing import Any
 
 import pytest
 
-from reframe.capabilities import CapabilityService
+from reframe.capabilities import CacheKey, CapabilityCache, CapabilityService
 from reframe.capabilities import service as service_module
 from reframe.events import EventBus, Subscription
 from reframe.models import (
     AppSettings,
     CapabilitiesChangedEvent,
+    CapabilitySnapshot,
     EncoderState,
     Event,
     ToolsChangedEvent,
@@ -433,6 +436,153 @@ async def test_a_failing_gpu_fingerprint_is_not_fatal(
         assert (await h.service.wait()).status("libx265").state is AVAILABLE
     finally:
         await h.close()
+
+
+# --------------------------------------------------------------------------- the cache write
+
+
+def cached_snapshot(folder: Path) -> Any:
+    """The snapshot of the only cache entry, as JSON."""
+    (path,) = cache_files(folder)
+    return json.loads(path.read_text(encoding="utf-8"))["snapshot"]
+
+
+async def test_closing_on_the_final_event_keeps_the_cache(
+    harness: Harness, fake_tools: ft.FakeTools
+) -> None:
+    """A short run (``reframe encoders``) closes the service when the final
+    ``capabilities.changed`` event comes: the result is in the cache by then, so the next start
+    shows it at once (M2 demo item 1)."""
+    service = harness.service
+    subscription = harness.events.subscribe(types={"capabilities.changed"})
+
+    async def close_on_the_final_event() -> CapabilitySnapshot:
+        async for _event in subscription:
+            if not service.snapshot.detecting:
+                await service.close()  # at once, like Reframe.close() at the end of a command
+                break
+        return service.snapshot
+
+    closer = asyncio.ensure_future(close_on_the_final_event())
+    service.start()
+    first = await closer
+    subscription.close()
+    assert not first.detecting
+    assert cache_files(harness.cache_dir), "the detection result was not cached"
+
+    fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-encoders"], actions=[ft.hang()])]))
+    drain(harness.subscription)
+    harness.service = harness.make()
+    harness.service.start()
+    event = await anext(harness.subscription)  # the first event of the next start
+    assert isinstance(event, CapabilitiesChangedEvent)
+    cached = harness.service.snapshot
+    assert cached.from_cache
+    assert cached.detecting  # checked again in the background (held by the hanging listing)
+    assert cached.encoders == first.encoders
+    assert {s.id: s for s in event.encoders} == first.encoders
+
+
+async def test_wait_and_rescan_return_after_the_cache_write(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The result is in the cache before the final ``capabilities.changed`` event and before
+    ``wait()`` / ``rescan()`` return."""
+    order: list[str] = []
+    put, publish = CapabilityCache.put, harness.events.publish
+
+    def recording_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
+        put(cache, key, snapshot)
+        order.append("cached")
+
+    def recording_publish(event: Event) -> None:
+        if isinstance(event, CapabilitiesChangedEvent) and not harness.service.snapshot.detecting:
+            order.append("final event")
+        publish(event)
+
+    monkeypatch.setattr(CapabilityCache, "put", recording_put)
+    monkeypatch.setattr(harness.events, "publish", recording_publish)
+
+    first = await harness.service.wait()
+    assert order == ["cached", "final event"]
+    assert cached_snapshot(harness.cache_dir) == first.model_dump(mode="json")
+
+    order.clear()
+    second = await harness.service.rescan()
+    assert order == ["cached", "final event"]
+    assert cached_snapshot(harness.cache_dir) == second.model_dump(mode="json")
+    assert second.checked_at != first.checked_at
+
+
+async def test_close_finishes_a_started_cache_write(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``close()`` cancels the detection but not a cache write that has started."""
+    started, release = threading.Event(), threading.Event()
+    put = CapabilityCache.put
+
+    def slow_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
+        started.set()
+        release.wait(15)
+        put(cache, key, snapshot)
+
+    monkeypatch.setattr(CapabilityCache, "put", slow_put)
+    harness.service.start()
+    try:
+        await until(started.is_set)
+        closing = asyncio.ensure_future(harness.service.close())
+        await until(lambda: not harness.service.detecting)  # the detection is cancelled ...
+        assert not closing.done()  # ... but close() waits for the write
+    finally:
+        release.set()
+    await closing
+    assert cache_files(harness.cache_dir)
+    assert not cached_snapshot(harness.cache_dir)["detecting"]
+
+
+async def test_a_new_detection_waits_for_the_last_cache_write(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-scan during a cache write starts after the write: an older result never
+    overwrites the newer one."""
+    started, release = threading.Event(), threading.Event()
+    put = CapabilityCache.put
+
+    def slow_first_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
+        if not started.is_set():
+            started.set()
+            release.wait(15)
+        put(cache, key, snapshot)
+
+    monkeypatch.setattr(CapabilityCache, "put", slow_first_put)
+    harness.service.start()
+    try:
+        await until(started.is_set)
+        first = harness.service._task
+        assert first is not None
+        rescan = asyncio.ensure_future(harness.service.rescan())
+        await until(first.done)  # cancelled during its cache write ...
+        await asyncio.sleep(0)
+        assert harness.tools.calls == 1  # ... and the re-scan waits for the write
+    finally:
+        release.set()
+    final = await rescan
+    assert harness.tools.calls == 2
+    assert cached_snapshot(harness.cache_dir) == final.model_dump(mode="json")
+
+
+async def test_a_failing_cache_write_is_not_fatal(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(CapabilityCache, "put", broken)
+    final = await harness.service.wait()
+    assert not final.detecting
+    assert final.status("libx265").state is AVAILABLE
+    assert final.status("hevc_amf").state is AVAILABLE
+    assert cache_files(harness.cache_dir) == []
 
 
 async def test_close_without_start(harness: Harness) -> None:
