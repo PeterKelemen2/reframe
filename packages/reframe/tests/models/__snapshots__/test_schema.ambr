@@ -3404,6 +3404,107 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[JobDraft]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'AudioOutputTrack',
+      'AverageBitrate',
+      'ChapterRange',
+      'ChapterSettings',
+      'ConstantQuality',
+      'CopyOp',
+      'CropRect',
+      'CropSettings',
+      'DimensionSettings',
+      'ExactHeight',
+      'ExactWidth',
+      'ExternalSubtitle',
+      'FilterConfig',
+      'FilterSettings',
+      'FitWithin',
+      'Fix',
+      'FrameRange',
+      'FullRange',
+      'JobNaming',
+      'JobSettings',
+      'JsonValue',
+      'MoveOp',
+      'NameCandidate',
+      'NameResult',
+      'NameSpan',
+      'OutputSettings',
+      'ParsedName',
+      'Rational',
+      'RemoveOp',
+      'ReplaceOp',
+      'SameAsSource',
+      'Severity',
+      'SourceFingerprint',
+      'SourceRef',
+      'SubtitleOutputTrack',
+      'TagSettings',
+      'TestOp',
+      'TimeRange',
+      'TrackDecision',
+      'TrackFlags',
+      'TrackMetadata',
+      'ValidationIssue',
+      'VideoSettings',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      ``JobService.draft(source, preset)``: the job, why its tracks and name are what they
+      are, and its issues.
+    ''',
+    'properties': dict({
+      'decisions': dict({
+        'description': 'One per source audio track, in source order (C-12 ``draft_tracks``; decision 0018).',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Decisions',
+        'type': 'array',
+      }),
+      'issues': dict({
+        'description': '``validate(job)`` of the drafted job; an ``error`` keeps it out of the queue.',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'job': dict({
+        '$ref': '#/$defs/JobSettings',
+        'description': '''
+          Filled from the preset (output options, dimensions, filters, video, chapters, tags),
+          the source (tracks, the video track's metadata) and the output name.
+        ''',
+      }),
+      'naming': dict({
+        '$ref': '#/$defs/NameResult',
+        'description': "C-16's output name of the source (the template, or the manual name of ``-o``).",
+      }),
+      'notes': dict({
+        'description': '''
+          What the draft changed or left out, in one line each: an output name that was the
+          source file itself, preset options that M2 does not apply yet.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'job',
+      'naming',
+    ]),
+    'title': 'JobDraft',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[JobLogEvent]
   dict({
     '$defs': list([

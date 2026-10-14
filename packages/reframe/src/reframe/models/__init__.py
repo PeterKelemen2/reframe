@@ -5,11 +5,11 @@ snapshot test covers them all). Persisted documents (``AppSettings``, ``PresetFi
 ``Preset``, ``JobTemplate``, ``JobSettings``, ``MediaSource``) have ``schema_version``, keep
 unknown fields, and are migrated with :func:`migrate`.
 
-Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), ``defaults``
-(audio/subtitle defaults), ``template`` (templates and track rules), ``preset``, ``naming``,
-``settings``, ``issues`` (validation issues and JSON patch operations), ``tools`` (C-1),
-``capabilities`` (C-4), ``plan`` (C-7), ``queue`` (C-11), ``tasks``, ``events``,
-``migrations``.
+Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), ``draft`` (a
+job drafted from a preset, C-15), ``defaults`` (audio/subtitle defaults), ``template``
+(templates and track rules), ``preset``, ``naming``, ``settings``, ``issues`` (validation
+issues and JSON patch operations), ``tools`` (C-1), ``capabilities`` (C-4), ``plan`` (C-7),
+``queue`` (C-11), ``tasks``, ``events``, ``migrations``.
 """
 
 from reframe.models.base import (
@@ -37,6 +37,7 @@ from reframe.models.defaults import (
     TrackDraft,
     TrackSelection,
 )
+from reframe.models.draft import JobDraft
 from reframe.models.events import (
     EVENT_ADAPTER,
     EVENT_TYPES,
@@ -285,6 +286,7 @@ __all__ = [
     "Geometry",
     "HdrFormat",
     "HdrInfo",
+    "JobDraft",
     "JobLogEvent",
     "JobNaming",
     "JobProgress",
