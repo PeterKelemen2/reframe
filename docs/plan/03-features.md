@@ -712,7 +712,9 @@ Same behaviour as HandBrake:
 - **Pause** suspends the FFmpeg process (psutil suspend/resume, works on both OSes).
 - **Parallel jobs**: setting, default 1.
 - **Persistence**: the queue survives restarts. Running jobs become `Interrupted` and can be
-  restarted.
+  restarted. One Reframe process owns the saved queue at a time; another process (a second
+  CLI command, for example) runs its jobs in a private queue that is not kept
+  ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
 - Output safety: Reframe writes to `<name>.part.<ext>`, probes it again and checks its tracks
   and languages, and renames it on success. A failed job removes its partial file
   (configurable). File name collisions follow the setting: ask, auto-rename, or overwrite.
