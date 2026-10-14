@@ -38,7 +38,9 @@ same maximum lifetime). ``progress``: ``{"blocks": N, "interval": s, "media_seco
 f, "bytes_per_second": n, "end": true, "na_fields": ["bitrate", ...], "na_blocks": N}``.
 ``write_output``: ``{"bytes": N}``, writes the last argv element. ``version``: ``{"version":
 "7.1", "configuration": "--enable-gpl ..."}``. ``on_sigterm``: ``"ignore"`` or ``{"exit_code":
-255}``. ``exit``: exit code now.
+255}``. ``exit``: exit code now. ``exec``: a program path; run it with the same arguments
+(stdin, stdout and stderr shared) and exit with its exit code (128 + N when signal N ended
+it), so a scenario can fail one command and pass every other one to a real FFmpeg.
 
 ``hang`` and the grandchild do not run forever: they exit when
 ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` seconds (default 120) have passed since the process
@@ -389,6 +391,18 @@ def _on_sigterm(spec: Any) -> None:
     signal.signal(signal.SIGTERM, handler)
 
 
+def _exec(program: str, argv: Sequence[str]) -> NoReturn:
+    """Run ``program`` with ``argv`` as a child (stdio shared) and exit with its exit code."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    try:
+        code = subprocess.call([program, *argv])
+    except OSError as exc:
+        _write("stderr", f"fake ffmpeg: cannot run {program}: {exc}\n".encode())
+        os._exit(127)
+    os._exit(exit_code_for_os(128 - code if code < 0 else code))
+
+
 def run_action(tool: str, argv: Sequence[str], action: dict[str, Any]) -> None:
     if len(action) != 1:
         raise ValueError(f"an action has exactly one key, got {sorted(action)}")
@@ -417,6 +431,8 @@ def run_action(tool: str, argv: Sequence[str], action: dict[str, Any]) -> None:
         _write("stdout", _version_text(tool, dict(value)))
     elif kind == "on_sigterm":
         _on_sigterm(value)
+    elif kind == "exec":
+        _exec(str(value), argv)
     elif kind == "exit":
         sys.stdout.flush()
         sys.stderr.flush()

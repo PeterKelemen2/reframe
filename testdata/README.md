@@ -94,6 +94,10 @@ print captured driver errors or `-progress` blocks. The texts come from the pinn
   `-1073741819`; the unsigned value raises `OverflowError`).
 - The `fake_tools` fixture kills every logged process that still runs in its teardown
   (`FakeTools.kill_leftovers()`; a pid that the OS gave to a newer process is left alone).
+- The `exec` action (`fake_tools.exec_program(path)`, C-11) passes a call to a real program with
+  the same arguments, stdin, stdout and stderr, and exits with its exit code. A rule with no
+  conditions and this action, put last, makes the fake a real ffmpeg except for the calls that
+  the other rules catch (one failing job among real encodes).
 
 ## Verified tool behaviour
 
@@ -1053,3 +1057,73 @@ were checked with `/usr/bin/ffmpeg` n9.0.2 for decision
   is the rate the command builder writes with `-ar`. ffprobe reports 48000 Hz for every Opus
   track in Matroska, whatever `-ar` was (the decoder's output rate), so a test cannot read
   the Opus rate back from the file.
+
+### Queue and job runner (C-11)
+
+Checked on 2026-10-14 with both n9.0.2 builds (`/usr/bin/ffmpeg` and the pinned BtbN build),
+psutil 7.2.2 and SQLite 3.53.4, for decision
+[0016](../docs/decisions/0016-queue-and-job-runner.md). The real-FFmpeg parts are repeated by
+`packages/reframe/tests/queue/test_integration.py` (run it with `REFRAME_FFMPEG` /
+`REFRAME_FFPROBE` set to either build).
+
+**`-progress` after a pause.** An x264 encode with `-readrate 1 -progress pipe:1 -nostats`,
+suspended with psutil `Process.suspend()` (`SIGSTOP`) after 2 s and resumed 3 s later
+(`SIGCONT`). No block is printed while it is stopped; the next one comes at once after the
+resume. FFmpeg's `speed` and `fps` are averages since the start on a clock that ran on:
+
+| Seconds | 0.5 | 1.0 | 1.5 | (stopped 2–5) | 5.0 | 5.5 | 6.0 | 8.2 (end) |
+|---------|-----|-----|-----|---------------|-----|-----|-----|-----------|
+| `speed` | 1.44x | 1.24x | 1.15x–1.17x | — | 0.444x–0.449x | 0.51x | 0.56x | 0.73x |
+| `fps` (pinned) | 0.00 | 31.00 | 29.33 | — | 11.22 | 12.93 | 14.02 | 18.22 |
+
+So the queue computes speed, fps and the ETA from the change between blocks over active time.
+Blocks also come before the first packet (`frame=0`, `out_time_us=N/A`, see "`-progress`
+output" above): a live FFmpeg is never silent for longer than `-stats_period`.
+`Process.status()` still says `running` right after `suspend()` returns and `stopped` a moment
+later (the signal is delivered asynchronously): tests poll for it.
+
+**loudnorm ranges** (`ffmpeg -h filter=loudnorm`, the same in both builds): `I` −70…−5, `LRA`
+1…50, `TP` −9…0, `measured_I` −99…0, `measured_LRA` 0…99, `measured_TP` −99…99,
+`measured_thresh` −99…0, `offset` −99…99.
+
+**Silent and near-silent tracks.** The analyse pass (`loudnorm=I=-23:TP=-1:LRA=20:print_format=json`)
+of digital silence (`anullsrc`) prints `"input_i" : "-inf"`, `"input_tp" : "-inf"`,
+`"input_lra" : "0.00"`, `"input_thresh" : "-70.00"`, `"target_offset" : "inf"`. Pink noise
+at −84 dBTP (`anoisesrc=c=pink:a=0.0001`, mean −90.3 dB) gives `"input_i" : "-inf"` and
+`"target_offset" : "inf"` with `"input_tp" : "-84.39"` (all of it is below the −70 LUFS
+gate). The second pass with `measured_I=-99:measured_TP=-84.39:measured_LRA=0:measured_thresh=-70`
+on that noise (4 s, dynamic mode):
+
+| `offset` | Output (volumedetect) | Output integrated |
+|----------|-----------------------|-------------------|
+| `99` | mean −12.4 dB, max 0.0 dB | −9.6 LUFS: full-scale noise |
+| `0` | mean −90.3 dB, max −84.3 dB | unchanged |
+| `-99` | mean −91.0 dB | lower |
+
+So a non-finite `target_offset` becomes 0, not the range end. Digital silence (5 s) passes
+the second pass with any offset and stays silent.
+
+**A silent input shorter than 3 s fails the second pass**, whatever the measured values:
+2 s of `anullsrc` with `measured_I=-99:measured_TP=-99:…:offset=0:linear=true` gives
+"Normalization Type: Linear", `[aac] Input contains (near) NaN/+-Inf` (flac: "invalid block
+size"), "Conversion failed!", exit code 234 (both builds). loudnorm's first-frame path (input
+shorter than 3 s) computes its own gain from the input's −inf loudness. A 2 s **output range**
+(`-t 2`) of a 5 s silent source works (exit 0): loudnorm reads 3 s of input first.
+
+**MP4 chapters are a data stream.** An x264 + AAC MP4 with `-map_chapters 0` lists
+`video`, `audio` and `data` (`bin_data`, the QuickTime chapter text track) in ffprobe. The
+output check compares video, audio and subtitle streams only.
+
+**File names.** POSIX `os.rename` replaces an existing target; `os.link(src, dst)` raises
+`FileExistsError` when `dst` exists (both checked by `tests/queue/test_units.py`), so the
+final rename that must not replace uses a hard link plus an unlink, with a check-then-rename
+fallback when the file system has no hard links (`EPERM`, `EXDEV`, `EMLINK`, `ENOSYS`,
+`EOPNOTSUPP`). On Windows `os.rename` refuses an existing target and `os.replace` onto a file
+that another process has open raises `PermissionError` (Python documentation; mock-tested on
+Linux only, not run on Windows yet).
+
+**SQLite.** `PRAGMA journal_mode = WAL` rewrites the file header (bytes 18 and 19, the file
+format versions, go from 1 to 2), so the store reads `PRAGMA user_version` on a plain
+connection first and leaves a newer file untouched. A file that is not a database opens
+without an error; the first statement raises `sqlite3.DatabaseError: file is not a
+database`.

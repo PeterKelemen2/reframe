@@ -441,18 +441,30 @@ cancelling a scan stops its FFmpeg process within 1 s.
 ## C-11 Queue and job runner
 
 - [ ] SQLite store: `jobs(id, position, state, settings_json, plan_json, issues_json,
-      created_at, started_at, finished_at, output_path, log_path, error)`.
+      created_at, started_at, finished_at, output_path, log_path, error)`. One writer thread,
+      whole-row writes; damaged, newer and unwritable files as in
+      [decision 0016](../decisions/0016-queue-and-job-runner.md).
 - [ ] Runner loop: when a slot is free (parallel limit), take the next `Waiting` job →
-      **validate again** (capabilities can change) → build the plan → run the steps.
+      **validate again** (capabilities can change; wait for encoder detection when an encoder
+      is still being checked) → build the plan → run the steps. Two jobs with the same output
+      path never run at once (0016).
 - [ ] **Progress parser** for `-progress` blocks (`out_time_us`, `fps`, `speed`, `total_size`,
-      `progress=end`). Weighted across steps (pass 1 = 40 %, …). ETA from a smoothed speed.
+      `progress=end`). Weighted across steps (pass 1 = 40 %, …). ETA from a smoothed rate over
+      active time: paused time and a system sleep do not count (FFmpeg's own `speed` and `fps`
+      do count them, so Reframe computes its own; 0016).
 - [ ] Logs: the full command line + stderr, to `<data>/logs/<job>.log`. Rate-limited
       `job.log` events.
 - [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree.
 - [ ] Cancel: kill the tree and remove the `.part` file.
-- [ ] Success: rename `.part` → final name (collision policy), run the post steps, re-probe the
-      output and check its layout (number of streams, languages).
-- [ ] Restart recovery: `Running` → `Interrupted`.
+- [ ] Time limits: none for an encode; a sleep-aware stall watchdog for FFmpeg steps (no
+      progress, no output and no CPU use for 10 minutes) and a 5-minute limit for short steps
+      (`mkvpropedit`) (0016).
+- [ ] Success: re-probe the `.part` output and check its layout (number and type of streams,
+      languages) **before** the rename, so a bad output never takes the final name; then rename
+      `.part` → final name (collision policy; with `ask` the job fails with the issue and the
+      complete `.part` file is kept) (0016).
+- [ ] Restart recovery: `Running` → `Interrupted`. `close()` stops running jobs as
+      `Interrupted` (0016).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,

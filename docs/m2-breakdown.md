@@ -312,7 +312,9 @@ class QueueService:
     async def remove(self, job_id: str) -> None           # not while running
     async def reorder(self, job_ids: Sequence[str]) -> None
     async def retry(self, job_id: str) -> QueueJob        # FAILED / CANCELLED / INTERRUPTED → WAITING
-    def start(self) -> None                               # start processing WAITING jobs (parallel_jobs at a time)
+    def start(self, *, job_ids: Sequence[str] | None = None) -> None
+        # start processing WAITING jobs (parallel_jobs at a time); job_ids: only these
+        # (keyword-only addition of C-11 for the CLI, decision 0016)
     async def stop(self) -> None                          # no new jobs; running ones go on
     async def pause(self, job_id: str | None = None) -> None   # None = every running job
     async def resume(self, job_id: str | None = None) -> None
