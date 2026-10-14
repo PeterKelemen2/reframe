@@ -72,6 +72,7 @@ class FakeQueue:
         self._changed = asyncio.Condition()
         self._next = 0
         self.started = False
+        self.only: set[str] | None = None
         self.calls: _Ids = []
         """Method calls, in order: ``add``, ``start``, ``stop``, ``cancel <id>``, …"""
 
@@ -129,8 +130,10 @@ class FakeQueue:
         self._kick.set()
         return self._jobs[job_id].model_copy(deep=True)
 
-    def start(self) -> None:
-        self.calls.append("start")
+    def start(self, *, job_ids: Sequence[str] | None = None) -> None:
+        """``job_ids``: take only these jobs (C-11's keyword-only addition)."""
+        self.calls.append("start" if job_ids is None else f"start {' '.join(job_ids)}")
+        self.only = None if job_ids is None else set(job_ids)
         self.started = True
         if self._loop is None or self._loop.done():
             self._loop = asyncio.get_running_loop().create_task(self._run_loop())
@@ -215,7 +218,12 @@ class FakeQueue:
             self._kick.clear()
             while self.started:
                 running = [t for t in self._tasks.values() if not t.done()]
-                waiting = [j for j in self._order if self._jobs[j].state is JobState.WAITING]
+                waiting = [
+                    j
+                    for j in self._order
+                    if self._jobs[j].state is JobState.WAITING
+                    and (self.only is None or j in self.only)
+                ]
                 if not waiting or len(running) >= self.parallel:
                     break
                 job_id = waiting[0]

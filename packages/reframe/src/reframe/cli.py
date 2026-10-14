@@ -48,7 +48,7 @@ import sys
 import time
 from collections.abc import Coroutine, Iterable, Sequence
 from pathlib import Path
-from typing import Annotated, Protocol, cast
+from typing import Annotated, Protocol
 
 from pydantic import BaseModel
 
@@ -1086,14 +1086,14 @@ async def _probe_failed(app: Reframe, error: ProbeError) -> int:
 
 
 class QueueLike(Protocol):
-    """The part of C-11's ``QueueService`` contract (``docs/m2-breakdown.md``) that
-    ``reframe encode`` uses."""
+    """The part of C-11's ``QueueService`` (``reframe.queue``, decision 0016) that
+    ``reframe encode`` uses; the tests give it a fake with the same contract."""
 
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob: ...
 
     def get(self, job_id: str) -> QueueJob | None: ...
 
-    def start(self) -> None: ...
+    def start(self, *, job_ids: Sequence[str] | None = None) -> None: ...
 
     async def stop(self) -> None: ...
 
@@ -1104,14 +1104,10 @@ class QueueLike(Protocol):
     def log_path(self, job_id: str) -> Path: ...
 
 
-def get_queue(app: Reframe) -> QueueLike | None:
-    """The queue of ``app``: the one place where the CLI gets it.
-
-    ``Reframe.queue`` (C-11) is built in parallel with this step; until it is merged the
-    facade has no queue and ``reframe encode`` says so. Tests replace this function with a
-    fake queue that follows the contract.
-    """
-    return cast("QueueLike | None", getattr(app, "queue", None))
+def get_queue(app: Reframe) -> QueueLike:
+    """The queue of ``app`` (``Reframe.queue``, C-11): the one place where the CLI gets it.
+    Tests of the CLI's own logic replace it with a fake that follows the same contract."""
+    return app.queue
 
 
 #: States after which a job does not change by itself.
@@ -1283,9 +1279,6 @@ async def run_encode(
             _error(chosen)
             return EXIT_USAGE
         queue = get_queue(app)
-        if queue is None:
-            _error("this Reframe build has no job queue yet (C-11), so it cannot encode.")
-            return EXIT_FAILED
         return await _encode(app, queue, found.files, chosen, output, console)
 
 
@@ -1362,7 +1355,9 @@ async def _encode(
             return EXIT_FAILED
         console.print(Text(f"Queued {_plural(len(ids), 'job')}."), soft_wrap=True)
         view = EncodeView(console, labels)
-        queue.start()
+        # Only our jobs: the store is shared, and other front ends' waiting jobs stay as
+        # they are (C-11 ``start(job_ids=…)``; the runner goes idle when ours have ended).
+        queue.start(job_ids=ids)
         await _follow_jobs(queue, ids, subscription, view)
     except asyncio.CancelledError:
         task = asyncio.current_task()
@@ -1389,9 +1384,7 @@ async def _encode(
 async def _follow_jobs(
     queue: QueueLike, ids: Sequence[str], subscription: Subscription, view: EncodeView
 ) -> None:
-    """Show the events of ``ids`` until every one of them has ended. When none of them is
-    waiting any more, the queue is stopped, so that it starts no other job (the queue is
-    shared with the other UIs and may hold their waiting jobs)."""
+    """Show the events of ``ids`` until every one of them has ended."""
     ours = set(ids)
     states: dict[str, JobState] = {}
 
@@ -1405,14 +1398,6 @@ async def _follow_jobs(
     for job_id in ids:
         if states.get(job_id) in FINAL_STATES:
             ours.discard(job_id)
-    stopped = False
-
-    async def stop_when_none_waits() -> None:
-        nonlocal stopped
-        if not stopped and all(states.get(j) is not JobState.WAITING for j in ids):
-            stopped = True
-            await queue.stop()
-
     if not ours:
         return
     async for event in subscription:
@@ -1434,7 +1419,6 @@ async def _follow_jobs(
         elif isinstance(event, ResyncEvent):
             refresh()
             ours = {j for j in ours if states.get(j) not in FINAL_STATES}
-        await stop_when_none_waits()
         if not ours:
             break
     # The subscription ended early (it fell too far behind): wait through the queue.
@@ -1442,8 +1426,10 @@ async def _follow_jobs(
 
 
 async def _cancel_jobs(queue: QueueLike, ids: Sequence[str]) -> None:
-    """Ctrl+C: stop the queue, cancel the waiting jobs, then the running ones (each cancel
-    kills the process tree and removes the partial file), and wait for them to end."""
+    """Ctrl+C: stop the queue, cancel our waiting jobs, then our running ones (each cancel
+    kills the process tree and removes the partial file), and wait for them to end. Only
+    ``cancel(job_id)`` for our own ids: ``cancel()`` without an id would also cancel other
+    front ends' jobs in the shared store."""
     await queue.stop()
     jobs = [job for job in (queue.get(j) for j in ids) if job is not None]
     waiting = [job.id for job in jobs if job.state is JobState.WAITING]

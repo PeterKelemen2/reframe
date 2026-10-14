@@ -126,11 +126,10 @@ the output `multitrack.mkv`, next to the source: the source file itself.
     show their warnings (info only in `reframe plan`). Each file gets a label `[i/n]` and
     one line `name → output path`.
 16. **The queue is shared** (the SQLite queue of C-11 may hold jobs of another UI). `encode`
-    adds its jobs **at the front** (`add(job, position=i)`), starts the queue, and calls
-    `stop()` as soon as none of its jobs is waiting, so the queue starts no other job. With
-    `parallel_jobs` above the number of its jobs, another waiting job can still start next
-    to them; it is cancelled when the command closes Reframe. Jobs stay in the queue after
-    the command (as its history).
+    adds its jobs **at the front** (`add(job, position=i)`) and starts the runner with
+    `start(job_ids=<its ids>)` (C-11's keyword-only addition, decision 0016): only its own
+    jobs run, `parallel_jobs` at a time, and other front ends' waiting jobs are neither
+    started nor cancelled. Jobs stay in the queue after the command (as its history).
 17. **Progress**: on a terminal one rich progress bar per running job (percent, fps, speed,
     ETA, size, step); otherwise plain lines: `[i/n] 42.0% · 87.3 fps · 3.64x · ETA 0:01:23 ·
     12.3 MiB`, at most one per 10 % of the job or every 30 s. State lines: `running`,
@@ -139,12 +138,15 @@ the output `multitrack.mkv`, next to the source: the source file itself.
     interrupted], N not queued.`
 18. **Ctrl+C**: `asyncio.run` cancels the command's task (on Linux and Windows alike; FFmpeg
     does not see the Ctrl+C, because C-1 starts it in its own session / without a console).
-    The command stops the queue, cancels its waiting jobs, then its running ones
-    (`QueueService.cancel(id)`: tree kill, `.part` removed), waits up to 30 s for them to end,
-    prints the summary and exits with 130. A second Ctrl+C stops at once.
-19. **The one place for the queue** is `reframe.cli.get_queue(app)`. Until C-11 is merged it
-    returns `None` and `encode` says that this build has no queue (exit 1); the tests replace
-    it with a fake queue that follows the contract.
+    The command stops the runner, cancels its own waiting jobs, then its own running ones,
+    each with `QueueService.cancel(job_id)` (tree kill, `.part` removed; never `cancel()`
+    without an id, which would cancel every unfinished job in the shared store), waits up to
+    30 s for them to end, prints the summary and exits with 130. A second Ctrl+C stops at
+    once. Checked with a real SIGINT to a `reframe encode` subprocess (POSIX); on Windows the
+    same path is the cancelled task, which a unit test drives.
+19. **The one place for the queue** is `reframe.cli.get_queue(app)`: `app.queue` (C-11). The
+    tests of the CLI's own logic replace it with a fake queue that follows the same contract;
+    the end-to-end tests use the real queue and real FFmpeg.
 
 ### `reframe name`
 
@@ -167,7 +169,6 @@ the output `multitrack.mkv`, next to the source: the source file itself.
 
 ## Consequences
 
-- `reframe encode` cannot run until C-11 is merged; the follow-up changes only `get_queue`.
 - The source-name collision rule (item 3) applies to every draft, also in the UI later. The
   lead or the user may prefer another default (for example a fixed output folder); it is one
   place in `JobService._compose`.

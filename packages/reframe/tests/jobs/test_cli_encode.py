@@ -111,11 +111,9 @@ def test_a_season_folder_and_a_file(season: Path, queues: Queues, tmp_path: Path
         "Show.S01E10.Title.10.mkv",
     ]
     assert (movie.parent / "Movie.mkv").exists()
-    # Our jobs go first in the queue; the queue is stopped once none of them waits.
+    # Our jobs go first in the queue, and the runner takes only them.
     calls = queues.queue.calls
-    assert calls[:4] == ["add"] * 4
-    assert calls[4] == "start"
-    assert "stop" in calls
+    assert calls == ["add"] * 4 + ["start job-1 job-2 job-3 job-4"]
     assert [job.position for job in queues.queue.list()] == [0, 1, 2, 3]
 
 
@@ -248,13 +246,6 @@ async def test_cancelling_the_command_cancels_the_jobs(
     assert await task == EXIT_INTERRUPTED
     assert not partial_files(season)
     assert {job.state for job in queues.queue.list()} == {JobState.CANCELLED}
-
-
-def test_no_queue_in_this_build(season: Path) -> None:
-    """Until C-11 is merged, ``Reframe`` has no ``queue``: encode says so."""
-    result = invoke("encode", str(season))
-    assert result.exit_code == EXIT_FAILED
-    assert "no job queue yet" in result.stderr
 
 
 def test_missing_path(cli_env: ft.FakeTools, queues: Queues, tmp_path: Path) -> None:
@@ -457,3 +448,31 @@ def test_summary_counts_interrupted_jobs(tmp_path: Path) -> None:
     assert buffer.getvalue().strip() == (
         "Summary: 0 done, 0 failed, 0 cancelled, 1 interrupted, 1 not finished, 0 not queued."
     )
+
+
+@pytest.mark.anyio
+async def test_ctrl_c_leaves_foreign_jobs_alone(tmp_path: Path) -> None:
+    """Only our ids are started and cancelled: a waiting job of another front end in the
+    shared store stays waiting (never ``cancel()`` without an id)."""
+    from reframe.events import EventBus
+    from reframe.models import OutputSettings, SourceRef
+
+    def settings(name: str) -> JobSettings:
+        return JobSettings(
+            source=SourceRef(path=tmp_path / f"{name}.src.mkv"),
+            output=OutputSettings(path=tmp_path / f"{name}.mkv"),
+        )
+
+    queue = FakeQueue(EventBus(), log_dir=tmp_path, behaviour=lambda _job: "hang")
+    foreign = await queue.add(settings("foreign"))
+    ours = [(await queue.add(settings(n), position=i)).id for i, n in enumerate("ab")]
+    queue.start(job_ids=ours)
+    await asyncio.sleep(0.05)
+    await cli._cancel_jobs(queue, ours)
+    assert [c for c in queue.calls if c.startswith("cancel")] == [
+        "cancel job-3",  # waiting first, then the running one
+        "cancel job-2",
+    ]
+    assert queue.get(foreign.id).state is JobState.WAITING  # type: ignore[union-attr]
+    assert {queue.get(j).state for j in ours} == {JobState.CANCELLED}  # type: ignore[union-attr]
+    await queue.close()
