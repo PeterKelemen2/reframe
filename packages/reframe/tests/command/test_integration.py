@@ -415,6 +415,26 @@ async def test_chapter_range_with_renamed_chapters(
     ]
 
 
+async def test_chapter_range_end_after_the_last_chapter_is_clamped(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """Chapters 3 to 9 of the 4-chapter fixture: the range ends with the last chapter
+    (decision 0026), so the output is chapters 3 and 4."""
+    src = await source_of(prober, fixture_media("chapters"))
+    assert len(src.chapters) == 4
+    job = draft(src, output=tmp_path / "clamped.mkv", video=FAST_X264)
+    job.range = ChapterRange(start=3, end=9)
+    plan = plan_for(job, src)
+    assert plan.expected_duration == pytest.approx(2.5)
+    run_plan(plan, tool_paths)
+    out = await probe(prober, tmp_path / "clamped.mkv")
+    assert out.container.duration == pytest.approx(2.5, abs=0.05)
+    assert [(c.title, round(c.start, 2), round(c.end, 2)) for c in out.chapters] == [
+        ("Part Two", 0.0, 1.5),
+        ("Credits", 1.5, 2.5),
+    ]
+
+
 async def test_generated_chapters_and_tags(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:

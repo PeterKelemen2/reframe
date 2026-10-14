@@ -12,6 +12,7 @@ import pytest
 from reframe.command import PlanError, PlannedAudio, job_type, planned_audio
 from reframe.command.audio import LOUDNESS, audio_output
 from reframe.command.metadata import (
+    ChapterPlan,
     OutputTrack,
     chapter_plan,
     chapter_range,
@@ -424,6 +425,17 @@ def test_chapter_plans() -> None:
                             file_path=path)  # fmt: skip
 
     assert plan().map_from == 0
+    assert plan(start=1.2, duration=2.0).map_from == 0  # no chapter edge on the range edges
+    # A range edge on a chapter edge: FFmpeg's copy would keep an empty chapter there, so
+    # the source's chapters are written, cut to the range, as FFMETADATA.
+    for start, duration in ((1.0, 3.0), (1.0, None), (0.0, 2.5), (1.0004, 2.9995)):
+        edges = plan(start=start, duration=duration)
+        assert edges.map_from == ChapterPlan.FROM_FILE
+        assert edges.file is not None
+        assert "Opening" not in edges.file.content or start == 0
+    cut = plan(start=1.0, duration=3.0).file
+    assert cut is not None
+    assert cut.content == ffmetadata([(0.0, 1.5, "Part One"), (1.5, 3.0, "Part Two")])
     job.chapters = ChapterSettings(enabled=False)
     assert plan().map_from is None
     job.chapters = ChapterSettings(names=["A", "B"])
@@ -451,10 +463,18 @@ def test_chapter_plans() -> None:
 
 
 def test_chapter_range_bounds() -> None:
-    chapters = recorded("chapters.mkv")
+    chapters = recorded("chapters.mkv")  # 4 chapters: 0-1, 1-2.5, 2.5-4, 4-5 s
     assert chapter_range(chapters, ChapterRange(start=2, end=3)) == (1.0, 4.0)
-    with pytest.raises(PlanError, match="not in the source"):
-        chapter_range(chapters, ChapterRange(start=4, end=5))
+    # An end after the last chapter is clamped to it (decision 0026).
+    assert chapter_range(chapters, ChapterRange(start=4, end=5)) == (4.0, 5.0)
+    assert chapter_range(chapters, ChapterRange(start=2, end=99)) == (1.0, 5.0)
+    # A start after the last chapter, an end before the start, no chapters: not plannable.
+    with pytest.raises(PlanError, match="chapters 5 to 6 are not in the source"):
+        chapter_range(chapters, ChapterRange(start=5, end=6))
+    with pytest.raises(PlanError, match="chapters 3 to 2 are not in the source"):
+        chapter_range(chapters, ChapterRange(start=3, end=2))
+    with pytest.raises(PlanError, match="0 chapters"):
+        chapter_range(recorded("multitrack.mkv"), ChapterRange(start=1, end=1))
     assert Chapter(index=0, start=0, end=1)  # the model accepts what chapter_range reads
 
 

@@ -160,6 +160,16 @@ def test_options_conditions_support_and_composites() -> None:
     assert nvenc[-2:] == ["-bf:v:0", "2"]
 
 
+def test_an_unknown_advanced_option_is_skipped() -> None:
+    """Validation refuses it (``encoder.option_unknown``, decision 0026); the builder still
+    never writes an option the encoder does not have: an unknown key, or another encoder's."""
+    advanced = {"psy-rd": 0.8, "bframes": 8}
+    known = args("libx264", advanced=advanced)
+    assert known[-1] == "bframes=8:psy-rd=0.8,0"
+    assert args("libx264", advanced={**advanced, "unknown-option": 3}) == known
+    assert args("libx264", advanced={**advanced, "sao": False, "spatial-aq": True}) == known
+
+
 def test_a_composite_part_without_a_default() -> None:
     base = DEFS.video_encoders["libx265"]
     a = EncoderOption(key="a", label="A", category="x", type="int", help="h",

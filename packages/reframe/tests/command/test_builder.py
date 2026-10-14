@@ -12,6 +12,7 @@ from reframe.command.builder import GLOBAL_ARGS, STEP_WEIGHTS
 from reframe.models import (
     AudioOutputTrack,
     AverageBitrate,
+    ChapterRange,
     EncodePlan,
     EncoderStatus,
     ExternalSubtitle,
@@ -201,6 +202,16 @@ def test_ranges() -> None:
     assert plan.expected_duration == 2.5
     job.range = FrameRange(start=25)
     assert plan_of(job, src).expected_duration == pytest.approx(3.021)
+    # A chapter range that ends after the last chapter ends with it (decision 0026).
+    chapters = recorded("chapters.mkv")  # 4 chapters; the last is 4.0 to 5.0 s, the file 5.021
+    clamped = draft(chapters)
+    clamped.range = ChapterRange(start=4, end=5)
+    plan = plan_of(clamped, chapters)
+    assert plan.expected_duration == 1.0
+    assert " -ss 4 -i " in plan.display
+    assert " -t 1 " in plan.display
+    clamped.range = ChapterRange(start=2, end=99)
+    assert plan_of(clamped, chapters).expected_duration == 4.0
     unknown = src.model_copy(deep=True)
     unknown.container.duration = None
     unknown.video[0].duration = None

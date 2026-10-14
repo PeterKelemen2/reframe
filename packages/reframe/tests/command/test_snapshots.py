@@ -692,7 +692,7 @@ def x264_advanced_and_custom_params() -> Case:
     return encoder_case(
         "libx264", preset="veryslow", tune="animation", fast_decode=True,
         advanced={"psy-rd": 0.8, "deblock-alpha": -1, "deblock-beta": -1, "bframes": 8,
-                  "aq-mode": "0", "aq-strength": 1.2, "unknown-option": 3},
+                  "aq-mode": "0", "aq-strength": 1.2},
         custom_params="no-dct-decimate=1:nr=100",
     )  # fmt: skip
 

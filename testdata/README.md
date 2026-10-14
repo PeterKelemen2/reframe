@@ -833,6 +833,20 @@ chapter|start_time=2.800000|end_time=3.800000|tag:title=Credits
 format|duration=2.000000
 ```
 
+A chapter edge exactly on the range start or end leaves an **empty chapter** (checked on
+2026-10-14 with both n9.0.2 builds; `-c:v libx264 -map_chapters 0` on the `chapters` fixture,
+whose chapters are 0–1, 1–2.5, 2.5–4 and 4–5 s): FFmpeg skips a chapter only when it ends
+before the seek point and stops only at one that starts after the range end. So the builder
+writes such chapters as FFMETADATA (decision 0013, chapter follow-up;
+`test_chapter_range_end_after_the_last_chapter_is_clamped`):
+
+| Options | Chapters read back |
+|---------|--------------------|
+| `-ss 2.5` | `Part One 0.0–0.0`, `Part Two 0.0–1.5`, `Credits 1.5–2.5` |
+| `-ss 1 … -t 3` | `Opening 0.0–0.0`, `Part One 0.0–1.5`, `Part Two 1.5–3.0`, `Credits 3.0–3.0` |
+| `-ss 4 … -t 1` | `Part Two 0.0–0.0`, `Credits 0.0–1.0` |
+| `-ss 1.2 … -t 2` | `Part One 0.0–1.3`, `Part Two 1.3–2.0` (no edge on the range: no empty chapter) |
+
 An FFMETADATA input (`-f ffmetadata -i x.txt -map_chapters 1`) is not shifted by the source's
 `-ss`; `\=`, `\;`, `\#` escape those characters in titles (`title=First \= one\; \#x` reads
 back as `First = one; #x`).
