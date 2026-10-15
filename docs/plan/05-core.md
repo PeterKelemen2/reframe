@@ -448,7 +448,10 @@ concurrency limit per kind.
       the cache).
 - [ ] **Bitrate scan**: packet sizes for one stream (`-show_entries packet=size`) → average
       bitrate. It streams progress and can be cancelled.
-- [ ] **Subtitle scans**: event counts. PGS forced-flag count (decode with `forced_subs_only`).
+- [ ] **Subtitle scans**: event counts. PGS forced-flag count (the forced flag of the
+      composition objects, read from a stream copy: a decode with `forced_subs_only` does
+      not drop PGS events); VobSub forced count (decode with `forced_subs_only`)
+      ([0032](../decisions/0032-analysis-scans-and-their-fixtures.md)).
 - [ ] **Loudness measure** (`loudnorm` print_format=json) for the analyse step and for preview.
 
 Done when: frames for a 4K HDR fixture come back in < 2 s each on a normal desktop, and

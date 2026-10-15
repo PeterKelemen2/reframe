@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe_testing import boxfont, media, vobsub
+from reframe_testing import boxfont, dts, media, pgs, vobsub
 from reframe_testing import fake_tools as ft
 from reframe_testing.fake_tools import FakeTools
 
@@ -38,8 +38,33 @@ def test_every_plan_fixture_has_a_recipe() -> None:
         "hdr10-4k",
         "chapters",
         "season",
+        "dts-hd-ma",
+        "pgs",
     }
     assert media.fixture_names()[-2:] == ["text-subs-srt", "text-subs-ass"]
+
+
+def test_the_bitmap_and_lossless_fixtures_are_written_in_python() -> None:
+    """FFmpeg has no PGS or DTS-HD MA encoder: the recipes write the streams
+    (reframe_testing.pgs, reframe_testing.dts) and FFmpeg only copies them into Matroska."""
+    recipes = media.build_recipes()
+    hd = recipes["dts-hd-ma"]
+    writes = {s.path: s.data for s in hd.steps if isinstance(s, media.WriteFile)}
+    assert writes == {"dts-hd-ma.dtshd": dts.dts_hd_ma(media.DTS_HD_MA_SECONDS)}
+    (mux,) = [s for s in hd.steps if isinstance(s, media.Ffmpeg)]
+    position = mux.args.index("dts-hd-ma.dtshd")
+    assert mux.args[position - 3 : position] == ("-f", "dts", "-i")
+    assert mux.args[mux.args.index("-c:a:0") + 1] == "copy"
+    subs = recipes["pgs"]
+    writes = {s.path: s.data for s in subs.steps if isinstance(s, media.WriteFile)}
+    assert writes == {
+        "eng.sup": pgs.sup(media.PGS_EVENTS["eng"]),
+        "eng-forced.sup": pgs.sup(media.PGS_EVENTS["eng-forced"]),
+    }
+    (mux,) = [s for s in subs.steps if isinstance(s, media.Ffmpeg)]
+    assert mux.args[0] == "-copyts"
+    assert mux.args[mux.args.index("-c:s") + 1] == "copy"
+    assert [e.forced for e in media.PGS_EVENTS["eng"]].count(True) == 2
 
 
 def test_fixture_paths() -> None:

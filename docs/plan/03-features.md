@@ -447,7 +447,8 @@ rule does.
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 
 - **Foreign audio search** (HandBrake parity): Reframe suggests a forced-subtitle track from
-  event counts and, for PGS, from forced flags found in a decode scan (background task).
+  event counts and, for PGS and VobSub, from forced flags found in a scan of the track
+  (background task; [0032](../decisions/0032-analysis-scans-and-their-fixtures.md)).
 - **External subtitles**: add `.srt`, `.ass`, `.ssa`, `.vtt` or `.sup` files. Settings:
   language, name, flags, time offset (ms), and character encoding (auto-detected, can be
   changed).
