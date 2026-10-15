@@ -69,6 +69,10 @@ def test_fixture_media_fixture_returns_paths(fixture_media: Callable[[str], Path
     assert fixture_media("text-subs-srt").read_text(encoding="utf-8").startswith("1\n")
 
 
+#: Fixtures that must be large: the 4K source of C-10's frame budget (decision 0030).
+LARGE = {"hdr10-4k.mkv": 10 * 2**20}
+
+
 def test_all_fixtures_are_small_and_short(all_media: Path, probe: Callable[..., Probe]) -> None:
     for recipe in media.build_recipes().values():
         for output in recipe.outputs:
@@ -76,7 +80,9 @@ def test_all_fixtures_are_small_and_short(all_media: Path, probe: Callable[..., 
                 continue
             p = probe(output)
             assert float(p["format"]["duration"]) <= 5.1, output
-            assert (all_media / output).stat().st_size < 2 * 2**20, output
+            assert (all_media / output).stat().st_size < LARGE.get(output, 2 * 2**20), output
+            if output in LARGE:
+                continue
             for v in streams(p, "video"):
                 assert v["width"] <= 720, output
                 assert v["height"] <= 480, output
@@ -345,6 +351,22 @@ def test_hdr10(probe: Callable[..., Probe]) -> None:
     )["frames"]
     frame_side = {d["side_data_type"] for d in frames[0]["side_data_list"]}
     assert {"Mastering display metadata", "Content light level metadata"} <= frame_side
+
+
+def test_hdr10_4k(probe: Callable[..., Probe]) -> None:
+    v = streams(probe("hdr10-4k.mkv"), "video")[0]
+    assert (v["codec_name"], v["profile"], v["pix_fmt"]) == ("hevc", "Main 10", "yuv420p10le")
+    assert (v["width"], v["height"], v["r_frame_rate"]) == (3840, 2160, "24000/1001")
+    assert v["color_transfer"] == "smpte2084"
+    frames = probe(
+        "hdr10-4k.mkv", "-show_frames", "-read_intervals", "%+#1", "-select_streams", "v:0"
+    )["frames"]
+    frame_side = {d["side_data_type"] for d in frames[0]["side_data_list"]}
+    assert {"Mastering display metadata", "Content light level metadata"} <= frame_side
+    keyframes = probe("hdr10-4k.mkv", "-show_entries", "packet=flags", "-select_streams", "v:0")[
+        "packets"
+    ]
+    assert sum("K" in packet["flags"] for packet in keyframes) >= 3  # keyint 48 over 5 s
 
 
 def test_chapters(probe: Callable[..., Probe]) -> None:

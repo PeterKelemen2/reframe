@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1654,6 +1654,15 @@ CASES: list[Case] = [
         settings_naming(output_folder_mode="fixed", output_folder=Path("/out")),
     ),
 ]
+
+
+#: Cases of later steps, each in its own file next to this one, so that parallel branches do
+#: not edit this table (docs/core-breakdown.md): each file has ``cases(h) -> list[Case]``,
+#: where ``h`` gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
+EXTRA_CASE_FILES = ("cases_inplace", "cases_options")
+_HELPERS = SimpleNamespace(**globals())
+for _name in EXTRA_CASE_FILES:
+    CASES.extend(_load(_name).cases(_HELPERS))
 
 
 @pytest.fixture(autouse=True)

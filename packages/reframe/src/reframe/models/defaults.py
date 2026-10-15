@@ -19,6 +19,7 @@ from reframe.models.base import (
     PositiveInt,
     ReframeModel,
 )
+from reframe.models.issues import ValidationIssue
 from reframe.models.job import AudioOutputTrack, LoudnessTarget, SubtitleOutputTrack
 
 __all__ = [
@@ -176,20 +177,31 @@ class SubtitleDefaults(DocumentModel):
 
 
 class TrackDecision(ReframeModel):
-    """What the audio defaults did with one source audio track, and why: one row of the live
-    preview (03 §Audio defaults → Live preview) and of ``explain`` (C-12).
+    """What the audio or subtitle defaults did with one source track, and why: one row of the
+    live preview (03 §Audio defaults → Live preview: ``source track → selected? (why) → rule #
+    → output → reason``) and of ``explain`` (C-12).
 
-    Built by ``reframe.batch.apply_codec_rules``. In M2 every source track is taken (no
-    selection stage, decision 0018), so a decision only describes the codec-rule stage.
+    The selection stage fills ``selected`` and ``selection``; for a selected audio track the
+    codec-rule stage (``reframe.batch.apply_codec_rules``) fills ``rule``, ``outputs`` and
+    ``reason``. A dropped track has no outputs, and ``reason`` repeats why it was dropped.
     """
 
     source_stream: NonNegativeInt
-    """Absolute stream index of the source audio track."""
+    """Absolute stream index of the source track."""
+    kind: Literal["audio", "subtitle"] = "audio"
+    selected: bool = True
+    """Taken by the selection stage (03 §Audio defaults, part 1)."""
+    selection: str | None = None
+    """Why it was taken or dropped, in one line: ``Hungarian: first matching track (best
+    quality)``, ``Commentary: dropped``, ``No listed language: the default-flagged track``.
+    ``None`` when no selection stage ran."""
     rule: PositiveInt | None = None
     """The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched."""
     outputs: list[AudioOutputTrack] = Field(default_factory=list)
-    """The output track(s): the rule's output, then its extra outputs. Empty when no rule
-    matched."""
+    """Audio: the output track(s), the rule's output, then its extra outputs. Empty when the
+    track was dropped or no rule matched."""
+    subtitle_outputs: list[SubtitleOutputTrack] = Field(default_factory=list)
+    """Subtitles: the output track of a selected subtitle track (copy or burn-in)."""
     reason: str
     """Why, in one line: ``AC-3, 5.1, 224 ≤ 320: passthru``,
     ``Lossless source → encode at the max``,
@@ -203,10 +215,16 @@ class TrackDecision(ReframeModel):
 
 
 class TrackDraft(ReframeModel):
-    """The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``;
-    decision 0018): every audio track through the codec rules, every subtitle copied."""
+    """The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``):
+    the selection stage, then the codec rules for audio (decision 0018 for M2, where every
+    track was taken), in the output order of the defaults."""
 
     audio: list[AudioOutputTrack] = Field(default_factory=list)
     subtitles: list[SubtitleOutputTrack] = Field(default_factory=list)
     decisions: list[TrackDecision] = Field(default_factory=list)
     """One per source audio track, in source order."""
+    subtitle_decisions: list[TrackDecision] = Field(default_factory=list)
+    """One per source subtitle track, in source order."""
+    issues: list[ValidationIssue] = Field(default_factory=list)
+    """Problems of the defaults with this source (no track for a required language, the
+    defaults lint). Paths point into the template (``audio_defaults.codec_rules[1]``)."""

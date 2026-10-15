@@ -35,11 +35,13 @@ from types import TracebackType
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from reframe import paths
+from reframe import analysis, paths, preview
 from reframe.capabilities import CapabilityService
+from reframe.definitions import load_definitions
 from reframe.events import EventBus
 from reframe.jobs import JobService
 from reframe.jsonpatch import JsonPatchError, apply_patch
+from reframe.mediatask import MediaTaskContext
 from reframe.models.events import AppWarningEvent, ToolsChangedEvent
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings
@@ -50,6 +52,7 @@ from reframe.models.settings import AppSettings
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
     ImportResult,
@@ -77,6 +80,7 @@ from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep,
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken, check_tool, locate_tools
 from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
+from reframe.tools.fetch import start_fetch
 
 __all__ = [
     "FolderProbeResult",
@@ -127,7 +131,9 @@ class ToolsService:
 
     Discovery runs in the background: :meth:`start` (called by :meth:`Reframe.create`) does
     not wait. :meth:`status` waits for the running discovery; :attr:`current` does not.
-    Every finished discovery publishes ``tools.changed`` on the event bus.
+    Every finished discovery publishes ``tools.changed`` on the event bus. :meth:`fetch`
+    downloads the pinned FFmpeg build into ``<data dir>/tools/ffmpeg`` (``reframe tools
+    fetch``).
     """
 
     def __init__(
@@ -137,11 +143,15 @@ class ToolsService:
         *,
         bundled_roots: Sequence[Path],
         timeout: float = VERSION_TIMEOUT,
+        tasks: TaskManager | None = None,
+        data_dir: Path | None = None,
     ) -> None:
         self._events = events
         self._settings = settings
         self._bundled_roots = list(bundled_roots)
         self._timeout = timeout
+        self._tasks = tasks
+        self._data_dir = data_dir
         self._task: asyncio.Task[ToolSet] | None = None
         self._current: ToolSet | None = None
         self._closed = False
@@ -197,6 +207,31 @@ class ToolsService:
         self._start()
         return await self.status()
 
+    def fetch(
+        self,
+        *,
+        build: str = "default",
+        platform: str | None = None,
+        manifest: Path | None = None,
+    ) -> TaskInfo:
+        """Download the pinned FFmpeg build of the manifest (``build``, for ``platform``;
+        ``None``: this one), check it, install it as the bundled build in
+        ``<data dir>/tools/ffmpeg`` and run discovery again (task ``tools_fetch``, result
+        :class:`~reframe.models.ToolFetchResult`). Returns at once. ``manifest``: another
+        manifest file (tests)."""
+        if self._closed:
+            raise ReframeClosedError
+        if self._tasks is None or self._data_dir is None:
+            raise RuntimeError("ToolsService.fetch needs the task manager and the data folder")
+        return start_fetch(
+            self._tasks,
+            data_dir=self._data_dir,
+            rescan=self.rescan,
+            build=build,
+            platform=platform,
+            manifest=manifest,
+        )
+
     async def close(self) -> None:
         """Cancel a running discovery (its version-check processes are killed)."""
         self._closed = True
@@ -234,11 +269,21 @@ class ToolsService:
 
 
 class SourceService:
-    """Probing source files (C-3): one file, a folder (as a task), and the known sources.
+    """Probing source files (C-3): one file, a folder (as a task), and the known sources; the
+    analysis and preview tasks of a source (C-10): bitrate and subtitle scans, loudness,
+    frames, crop detection.
 
     Results are cached in memory and on disk (``<cache dir>/probe``), keyed by path + size +
-    mtime and the ffprobe build, so probing an unchanged file again is cheap.
+    mtime and the ffprobe build, so probing an unchanged file again is cheap. Measured values
+    (a bitrate scan, subtitle event counts) are stored into the known source and the cache
+    (:meth:`store`).
+
+    The C-10 methods need :attr:`media` (the facade sets it); they start a background task and
+    return its :class:`~reframe.models.TaskInfo` at once.
     """
+
+    media: MediaTaskContext | None = None
+    """What the C-10 tasks need from the facade (set by :class:`Reframe`)."""
 
     def __init__(
         self,
@@ -386,6 +431,90 @@ class SourceService:
             self._remember(cached)
         return cached
 
+    async def store(self, source: MediaSource) -> None:
+        """Keep ``source`` (with measured values: a bitrate scan, subtitle event counts) as the
+        known source of its file, in memory and in the probe cache, so that :meth:`probe` and
+        :meth:`get` return it. Nothing is stored when the file changed since ``source`` was
+        probed (its fingerprint no longer matches)."""
+        self._check_open()
+        file = Path(source.ref.path)
+        try:
+            stat = await asyncio.to_thread(os.stat, file)
+        except OSError:
+            return
+        fingerprint = source.ref.fingerprint
+        if (
+            fingerprint is None
+            or fingerprint.size != stat.st_size
+            or fingerprint.mtime != stat.st_mtime
+        ):
+            return
+        self._remember(source)
+        prober = self._prober_now()
+        if prober is not None and prober.cache is not None:
+            await asyncio.to_thread(
+                prober.cache.put,
+                CacheKey.for_file(file, stat),
+                source,
+                tool=prober.tool.identity(),
+                options=prober.cache_options(),
+            )
+
+    # ------------------------------------------------------------------ C-10 tasks
+
+    def bitrate_scan(self, path: str | os.PathLike[str], stream_index: int) -> TaskInfo:
+        """Measure one stream's bit rate from its packet sizes (the **Measure** button;
+        task ``bitrate_scan``, result :class:`~reframe.models.BitrateScan`). When it is done,
+        the stream's bit rate is stored with the source ``measured`` (:meth:`store`)."""
+        return analysis.start_bitrate_scan(self._media(), _absolute(path), stream_index)
+
+    def subtitle_scan(
+        self, path: str | os.PathLike[str], stream_indexes: Sequence[int] | None = None
+    ) -> TaskInfo:
+        """Count the events of the subtitle tracks (all when ``stream_indexes`` is ``None``)
+        and the forced events of PGS / VobSub tracks (task ``subtitle_scan``, result
+        :class:`~reframe.models.SubtitleScan`); the counts are stored (:meth:`store`)."""
+        return analysis.start_subtitle_scan(self._media(), _absolute(path), stream_indexes)
+
+    def loudness_scan(
+        self,
+        path: str | os.PathLike[str],
+        stream_index: int,
+        *,
+        start: float | None = None,
+        duration: float | None = None,
+    ) -> TaskInfo:
+        """Measure an audio track's loudness (EBU R128, ``loudnorm``; task ``loudness``,
+        result :class:`~reframe.models.LoudnessMeasurement`): the whole track, or
+        ``duration`` seconds from ``start``."""
+        return analysis.start_loudness_scan(
+            self._media(), _absolute(path), stream_index, start=start, duration=duration
+        )
+
+    def frames(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        count: int | None = None,
+        timestamps: Sequence[float] | None = None,
+        job: JobSettings | None = None,
+    ) -> TaskInfo:
+        """PNG frames of the source (task ``frames``, result :class:`~reframe.models.FrameSet`):
+        at ``timestamps``, else ``count`` evenly spaced ones (``None``: Settings → Preview);
+        with ``job`` also the output frames (crop, scale, filters). Cached on disk."""
+        return preview.start_frames(
+            self._media(), _absolute(path), count=count, timestamps=timestamps, job=job
+        )
+
+    def frame(self, key: str) -> Path | None:
+        """The cached PNG of a :class:`~reframe.models.PreviewFrame` key, else ``None``."""
+        return preview.frame_path(self._media(), key)
+
+    def cropdetect(self, path: str | os.PathLike[str], *, count: int | None = None) -> TaskInfo:
+        """Crop detection on the sample frames (task ``cropdetect``, result
+        :class:`~reframe.models.CropDetection`: the automatic and the conservative crop)."""
+        return preview.start_cropdetect(self._media(), _absolute(path), count=count)
+
     async def close(self, timeout: float = CLOSE_TIMEOUT) -> None:  # noqa: ASYNC109
         """Cancel running probes (their processes are killed) and wait for them to end."""
         for token in list(self._tokens):
@@ -398,6 +527,12 @@ class SourceService:
     def _check_open(self) -> None:
         if self._is_closed():
             raise ReframeClosedError
+
+    def _media(self) -> MediaTaskContext:
+        self._check_open()
+        if self.media is None:
+            raise RuntimeError("SourceService.media is not set (the facade sets it)")
+        return self.media
 
     def _remember(self, source: MediaSource) -> None:
         self._known[source.ref.path] = source
@@ -699,7 +834,9 @@ class Reframe:
     - :attr:`capabilities` — :class:`~reframe.capabilities.CapabilityService`: encoder
       statuses (``snapshot`` never waits, ``wait``, ``rescan``, ``closest_available``),
       detected in the background with a cache under ``<cache dir>/capabilities`` (C-4).
-    - :attr:`sources` — :class:`SourceService`: ``probe``, ``probe_folder``, ``get`` (C-3).
+    - :attr:`sources` — :class:`SourceService`: ``probe``, ``probe_folder``, ``get`` (C-3);
+      ``bitrate_scan``, ``subtitle_scan``, ``loudness_scan``, ``frames``, ``frame``,
+      ``cropdetect`` (C-10 tasks), ``store`` (measured values).
     - :attr:`tasks` — the background task manager (``get``, ``list``, ``cancel``, ``wait``,
       ``value``) for the tasks that the services start.
     - :attr:`settings` — :class:`SettingsService`: ``get``, ``update``, ``problems`` (C-9).
@@ -711,8 +848,10 @@ class Reframe:
     - :attr:`queue` — :class:`~reframe.queue.QueueService`: the encode queue (``add``,
       ``list``, ``start``, ``pause``, ``resume``, ``cancel``, ``retry``, ``wait``, logs),
       saved in ``<data dir>/queue.sqlite3`` (C-11).
+    - :attr:`power` — :class:`~reframe.platform.power.PowerService`: the when-done power
+      actions with their 60 s countdown (``schedule``, ``cancel``, ``pending``; C-14).
 
-    The other M2 steps add ``batch`` (C-12).
+    ``batch`` (C-12, M7) comes with the batch engine.
 
     **Settings.** ``<config>/settings.json`` is read in :meth:`create` (a damaged, newer or
     unreadable file gives an ``app.warning``, kept in ``settings.problems``). Every service
@@ -742,6 +881,7 @@ class Reframe:
     presets: PresetService
     jobs: JobService
     queue: QueueService
+    power: PowerService
 
     def __init__(
         self,
@@ -770,7 +910,13 @@ class Reframe:
         self.presets = PresetService(PresetStore(config_dir, self.events))
         self.tasks = TaskManager(self.events)
         roots = paths.bundled_tool_roots(environ={**os.environ, paths.DATA_DIR_ENV: str(data_dir)})
-        self.tools = ToolsService(self.events, self.settings_snapshot, bundled_roots=roots)
+        self.tools = ToolsService(
+            self.events,
+            self.settings_snapshot,
+            bundled_roots=roots,
+            tasks=self.tasks,
+            data_dir=data_dir,
+        )
         self.capabilities = CapabilityService(
             self.events, self.tools, self.settings_snapshot, cache_dir=cache_dir / "capabilities"
         )
@@ -780,13 +926,26 @@ class Reframe:
             ProbeCache(cache_dir / "probe"),
             is_closed=lambda: self._closed,
         )
+        media = MediaTaskContext(
+            tasks=self.tasks,
+            tools=self.tools,
+            sources=self.sources,
+            capabilities=self.capabilities,
+            settings=self.settings_snapshot,
+            events=self.events,
+            cache_dir=cache_dir,
+            definitions=load_definitions,
+        )
+        self.sources.media = media
         self.jobs = JobService(
             sources=self.sources,
             presets=self.presets,
             tools=self.tools,
             capabilities=self.capabilities,
             settings=self.settings_snapshot,
+            media=media,
         )
+        self.power = create_power_service(self.events)
 
         presets = self.presets
 
@@ -803,6 +962,7 @@ class Reframe:
             capabilities=self.capabilities,
             sources=self.sources,
             naming=preset_naming,
+            power=self.power,
         )
 
     @classmethod
@@ -886,6 +1046,7 @@ class Reframe:
                 task.cancel()
             if reactions:
                 await asyncio.wait(reactions)
+            await self.power.close()  # a when-done countdown never fires after close
             await self.queue.close()  # first: its jobs use the tools, sources and capabilities
             await self.tasks.close()  # first: a task may be waiting for tool discovery
             await self.capabilities.close()  # kills test encodes; may wait for discovery too

@@ -35,6 +35,7 @@ def test_every_plan_fixture_has_a_recipe() -> None:
         "vfr",
         "vfr-mkv",
         "hdr10",
+        "hdr10-4k",
         "chapters",
         "season",
     }

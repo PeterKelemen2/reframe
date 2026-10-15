@@ -26,8 +26,9 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
   and whose hash did not change is skipped. Each fixture is built in a temporary folder
   (`media/.tmp-*`) and moved into place only on success.
 - Time on the reference machine (Arch Linux, 12 threads, FFmpeg n9.0.2): about 0.9 s for all
-  fixtures (cold, idle machine; 3.3 s under heavy load), 0.1 s when everything is up to date.
-  About 7 MB in total.
+  fixtures but `hdr10-4k` (cold, idle machine; 3.3 s under heavy load), plus about 4 s for
+  `hdr10-4k`; 0.1 s when everything is up to date. About 13 MB in total (6 MB of it is
+  `hdr10-4k`).
 - Tests get a fixture with the `fixture_media` pytest fixture (`fixture_media("multitrack")`),
   which generates it on demand and skips the test when there is no usable ffmpeg. The code is
   in `testing/reframe_testing/media.py`.
@@ -50,6 +51,7 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `vfr` | `vfr.mp4` | 1 s each at 24, 30 and 60 fps; `r_frame_rate=120/1`, `avg_frame_rate=38/1` |
 | `vfr-mkv` | `vfr.mkv` | The same clip in Matroska; `avg_frame_rate=0/0` (see below) |
 | `hdr10` | `hdr10.mkv` | HEVC Main 10, BT.2020 / PQ, mastering display (G 0.265,0.69 … L 0.0001–1000 cd/m²), MaxCLL 1000 / MaxFALL 400, as stream **and** frame side data |
+| `hdr10-4k` | `hdr10-4k.mkv` | 3840×2160 HEVC Main 10, BT.2020 / PQ, HDR10 metadata as SEI only (one libx265 pass), 5 s at 23.976 fps, keyint 48 (2 s). The 4K source of the C-10 frame budget (Q-3; the one fixture that is not low resolution, decision 0030); about 6 MB and 4 s to generate |
 | `chapters` | `chapters.mkv` | 5 s, 4 chapters (Opening, Part One, Part Two, Credits) and a title, from an FFMETADATA file |
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
 
@@ -1376,3 +1378,40 @@ review follow-up of decision [0012](../docs/decisions/0012-output-naming-rules.m
   `model_dump(mode="json")` and `model_validate` (Python objects) keep the surrogate, and
   `json.dumps(…, ensure_ascii=True)` / `json.loads` give it back exactly, which the probe cache
   uses (C-3).
+
+### Audio and subtitle defaults (C-12, selection stage)
+
+(core-complete wave 1a: what the selection stage relies on.)
+
+### Analysis scans (C-10: bitrate, subtitles, loudness)
+
+(core-complete wave 1b: packet sizes, event counts, `forced_subs_only`, `loudnorm`, the new
+fixtures.)
+
+### Preview frames, crop detection and clips (C-10)
+
+(core-complete wave 1c: fast seek, HDR frames for display, `cropdetect` limits, timing.)
+
+### Metadata edit (C-13)
+
+(core-complete wave 1d: mkvpropedit in place, what FFmpeg does not write, the re-probe.)
+
+### Advanced encoder options (C-6, complete option sets)
+
+(core-complete wave 1e: option names and ranges checked with the encoders, the dry run.)
+
+### Power actions (C-14)
+
+(core-complete wave 1f: the commands and what they do; checked without running them.)
+
+### When-done actions (C-11)
+
+(core-complete wave 1g.)
+
+### Tools fetch and the CLI (C-15)
+
+(core-complete wave 1h.)
+
+### Batch engine (C-12, M7)
+
+(core-complete wave 2: the season fixture of 04 §Example.)

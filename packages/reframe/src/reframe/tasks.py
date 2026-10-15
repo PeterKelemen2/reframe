@@ -62,7 +62,18 @@ log = logging.getLogger(__name__)
 #: Concurrency limit of a kind that has no entry in ``limits``.
 DEFAULT_LIMIT = 2
 #: Built-in limits per kind.
-DEFAULT_LIMITS: Mapping[str, int] = {"probe_folder": 2}
+DEFAULT_LIMITS: Mapping[str, int] = {
+    "probe_folder": 2,
+    # C-10 (reframe.mediatask): decodes compete for the CPU, encodes even more.
+    "bitrate_scan": 2,
+    "subtitle_scan": 2,
+    "loudness": 2,
+    "frames": 2,
+    "cropdetect": 1,
+    "preview_clip": 1,
+    # C-15: one download at a time.
+    "tools_fetch": 1,
+}
 FINISHED_STATES = frozenset({TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED})
 #: Finished tasks kept for :meth:`TaskManager.get` / :meth:`TaskManager.list`.
 DEFAULT_KEEP_FINISHED = 200

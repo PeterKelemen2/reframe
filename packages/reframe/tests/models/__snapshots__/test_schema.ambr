@@ -1208,6 +1208,69 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[BitrateScan]
+  dict({
+    '$defs': list([
+      'BitrateInfo',
+      'BitrateSource',
+    ]),
+    'additionalProperties': False,
+    'description': 'A packet-size scan of one stream (05 §C-10: ``-show_entries packet=size``).',
+    'properties': dict({
+      'bitrate': dict({
+        '$ref': '#/$defs/BitrateInfo',
+        'description': '``measured``; ``unknown`` when the stream has no packets with a size and a time.',
+      }),
+      'bytes': dict({
+        'description': 'Sum of their sizes.',
+        'minimum': 0,
+        'title': 'Bytes',
+        'type': 'integer',
+      }),
+      'duration': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0.0,
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Seconds the packets cover (``None`` when no packet had a time).',
+        'title': 'Duration',
+      }),
+      'packets': dict({
+        'description': 'Packets counted.',
+        'minimum': 0,
+        'title': 'Packets',
+        'type': 'integer',
+      }),
+      'path': dict({
+        'description': 'The source file.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'stream_index': dict({
+        'description': 'Absolute stream index.',
+        'minimum': 0,
+        'title': 'Stream Index',
+        'type': 'integer',
+      }),
+    }),
+    'required': list([
+      'path',
+      'stream_index',
+      'bitrate',
+      'packets',
+      'bytes',
+    ]),
+    'title': 'BitrateScan',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[BitrateSource]
   dict({
     '$defs': list([
@@ -1869,6 +1932,59 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[CropDetection]
+  dict({
+    '$defs': list([
+      'CropRect',
+      'CropSample',
+    ]),
+    'additionalProperties': False,
+    'description': 'Crop detection over the sample frames (03 §Dimensions → Crop).',
+    'properties': dict({
+      'auto': dict({
+        '$ref': '#/$defs/CropRect',
+        'description': 'The most common result (``detect_crop_consensus(…, "auto")``).',
+      }),
+      'auto_frames': dict({
+        'default': 0,
+        'description': 'Samples that gave the automatic result: ``Detected … on 9 of 10 frames``.',
+        'minimum': 0,
+        'title': 'Auto Frames',
+        'type': 'integer',
+      }),
+      'conservative': dict({
+        '$ref': '#/$defs/CropRect',
+        'description': 'Only what is black on every sample (``detect_crop_consensus(…, "conservative")``).',
+      }),
+      'notes': dict({
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+      'path': dict({
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'samples': dict({
+        'items': dict({
+          '$ref': '#/$defs/CropSample',
+        }),
+        'title': 'Samples',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'path',
+      'auto',
+      'conservative',
+    ]),
+    'title': 'CropDetection',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[CropMode]
   dict({
     '$defs': list([
@@ -1928,6 +2044,39 @@
       }),
     }),
     'title': 'CropRect',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[CropSample]
+  dict({
+    '$defs': list([
+      'CropRect',
+    ]),
+    'additionalProperties': False,
+    'description': '``cropdetect`` on one sample frame.',
+    'properties': dict({
+      'crop': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/CropRect',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``None``: no result for this frame (for example a black frame).',
+      }),
+      'timestamp': dict({
+        'minimum': 0.0,
+        'title': 'Timestamp',
+        'type': 'number',
+      }),
+    }),
+    'required': list([
+      'timestamp',
+    ]),
+    'title': 'CropSample',
     'type': 'object',
   })
 # ---
@@ -3154,6 +3303,17 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[FrameKind]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'source',
+      'output',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[FrameRange]
   dict({
     '$defs': list([
@@ -3187,6 +3347,49 @@
       }),
     }),
     'title': 'FrameRange',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[FrameSet]
+  dict({
+    '$defs': list([
+      'PreviewFrame',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      Frames of one source at the same timestamps: the source frames, then (with a job) the
+      output frames, each list in timestamp order.
+    ''',
+    'properties': dict({
+      'frames': dict({
+        'items': dict({
+          '$ref': '#/$defs/PreviewFrame',
+        }),
+        'title': 'Frames',
+        'type': 'array',
+      }),
+      'notes': dict({
+        'description': '''
+          How the frames were made, one line each (for example how an HDR picture was mapped
+          for display).
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
+      }),
+      'path': dict({
+        'description': 'The source file.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'FrameSet',
     'type': 'object',
   })
 # ---
@@ -4243,6 +4446,116 @@
     'maxLength': 64,
     'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
     'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[LoudnessMeasurement]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      EBU R128 values of one audio track (``loudnorm=print_format=json``, the ``input_*``
+      keys). ``None`` where FFmpeg prints ``-inf`` / ``inf`` (a silent track).
+    ''',
+    'properties': dict({
+      'duration': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0.0,
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Length of the measured part in seconds (``None`` = to the end).',
+        'title': 'Duration',
+      }),
+      'integrated': dict({
+        'anyOf': list([
+          dict({
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Integrated loudness, LUFS (``input_i``).',
+        'title': 'Integrated',
+      }),
+      'lra': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0.0,
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Loudness range, LU (``input_lra``).',
+        'title': 'Lra',
+      }),
+      'path': dict({
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'start': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0.0,
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Start of the measured part in seconds (``None`` = the whole track).',
+        'title': 'Start',
+      }),
+      'stream_index': dict({
+        'minimum': 0,
+        'title': 'Stream Index',
+        'type': 'integer',
+      }),
+      'threshold': dict({
+        'anyOf': list([
+          dict({
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Gating threshold, LUFS (``input_thresh``).',
+        'title': 'Threshold',
+      }),
+      'true_peak': dict({
+        'anyOf': list([
+          dict({
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'True peak, dBTP (``input_tp``).',
+        'title': 'True Peak',
+      }),
+    }),
+    'required': list([
+      'path',
+      'stream_index',
+    ]),
+    'title': 'LoudnessMeasurement',
+    'type': 'object',
   })
 # ---
 # name: test_json_schema_snapshot[LoudnessTarget]
@@ -6022,6 +6335,154 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[PreviewClip]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'An encoded preview clip in the cache (03 §Preview: live preview clip).',
+    'properties': dict({
+      'container': dict({
+        'enum': list([
+          'mkv',
+          'mp4',
+          'webm',
+        ]),
+        'title': 'Container',
+        'type': 'string',
+      }),
+      'duration': dict({
+        'description': "The clip's length in seconds.",
+        'minimum': 0.0,
+        'title': 'Duration',
+        'type': 'number',
+      }),
+      'id': dict({
+        'description': 'For ``Reframe.jobs.preview_clip_path(id)``.',
+        'title': 'Id',
+        'type': 'string',
+      }),
+      'job_type': dict({
+        'default': 'encode',
+        'enum': list([
+          'encode',
+          'remux',
+          'metadata_edit',
+        ]),
+        'title': 'Job Type',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': 'The clip file.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'size': dict({
+        'default': 0,
+        'description': 'Bytes.',
+        'minimum': 0,
+        'title': 'Size',
+        'type': 'integer',
+      }),
+      'source': dict({
+        'format': 'path',
+        'title': 'Source',
+        'type': 'string',
+      }),
+      'start': dict({
+        'description': 'Seconds from the start of the source.',
+        'minimum': 0.0,
+        'title': 'Start',
+        'type': 'number',
+      }),
+      'video_codec': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``h264``, ``hevc``, ``av1``, …: whether a webview can play it, or frames are compared.',
+        'title': 'Video Codec',
+      }),
+    }),
+    'required': list([
+      'id',
+      'path',
+      'source',
+      'start',
+      'duration',
+      'container',
+    ]),
+    'title': 'PreviewClip',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[PreviewFrame]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'One PNG frame in the frame cache.',
+    'properties': dict({
+      'cached': dict({
+        'default': False,
+        'description': 'It came from the cache (no FFmpeg run).',
+        'title': 'Cached',
+        'type': 'boolean',
+      }),
+      'height': dict({
+        'minimum': 1,
+        'title': 'Height',
+        'type': 'integer',
+      }),
+      'key': dict({
+        'description': 'Cache key (source fingerprint + timestamp + settings hash); also the file name.',
+        'title': 'Key',
+        'type': 'string',
+      }),
+      'kind': dict({
+        'enum': list([
+          'source',
+          'output',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'path': dict({
+        'description': 'The PNG file.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'timestamp': dict({
+        'description': 'Seconds from the start of the source.',
+        'minimum': 0.0,
+        'title': 'Timestamp',
+        'type': 'number',
+      }),
+      'width': dict({
+        'minimum': 1,
+        'title': 'Width',
+        'type': 'integer',
+      }),
+    }),
+    'required': list([
+      'key',
+      'kind',
+      'timestamp',
+      'path',
+      'width',
+      'height',
+    ]),
+    'title': 'PreviewFrame',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[PreviewSettings]
   dict({
     '$defs': list([
@@ -7021,6 +7482,92 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[SubtitleScanTrack]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The scan result of one subtitle track.',
+    'properties': dict({
+      'event_count': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Subtitle events (packets) in the track; ``None`` when it could not be counted.',
+        'title': 'Event Count',
+      }),
+      'forced_event_count': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Events with the forced flag (a decode with ``forced_subs_only``): PGS and VobSub only;
+          ``None`` for other formats or when the decode failed.
+        ''',
+        'title': 'Forced Event Count',
+      }),
+      'stream_index': dict({
+        'minimum': 0,
+        'title': 'Stream Index',
+        'type': 'integer',
+      }),
+    }),
+    'required': list([
+      'stream_index',
+    ]),
+    'title': 'SubtitleScanTrack',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[SubtitleScan]
+  dict({
+    '$defs': list([
+      'SubtitleScanTrack',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      Event counts of a source's subtitle tracks (03 §Subtitles: the *Events* column and the
+      forced-subtitle suggestion).
+    ''',
+    'properties': dict({
+      'path': dict({
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'tracks': dict({
+        'description': '''
+          In the order of the requested stream indexes (all subtitle tracks when none were
+          named).
+        ''',
+        'items': dict({
+          '$ref': '#/$defs/SubtitleScanTrack',
+        }),
+        'title': 'Tracks',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'SubtitleScan',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[SubtitleStream]
   dict({
     '$defs': list([
@@ -7670,6 +8217,67 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[ToolFetchResult]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      ``reframe tools fetch`` (C-15): the pinned FFmpeg build of the manifest, downloaded,
+      checked (size and SHA-256) and installed as the bundled build in ``<data dir>/tools/ffmpeg``,
+      where tool discovery finds it (02 §Bundled FFmpeg). The result of the ``tools_fetch`` task.
+    ''',
+    'properties': dict({
+      'build': dict({
+        'description': "The manifest's build name (``default``).",
+        'title': 'Build',
+        'type': 'string',
+      }),
+      'downloaded': dict({
+        'default': True,
+        'description': '``False``: the build was already installed and every file still had its hash.',
+        'title': 'Downloaded',
+        'type': 'boolean',
+      }),
+      'ffmpeg': dict({
+        'format': 'path',
+        'title': 'Ffmpeg',
+        'type': 'string',
+      }),
+      'ffprobe': dict({
+        'format': 'path',
+        'title': 'Ffprobe',
+        'type': 'string',
+      }),
+      'install_dir': dict({
+        'description': '``<data dir>/tools/ffmpeg``.',
+        'format': 'path',
+        'title': 'Install Dir',
+        'type': 'string',
+      }),
+      'platform': dict({
+        'description': '``linux-x64`` or ``windows-x64``.',
+        'title': 'Platform',
+        'type': 'string',
+      }),
+      'version': dict({
+        'description': 'The pinned FFmpeg version string.',
+        'title': 'Version',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'build',
+      'platform',
+      'version',
+      'install_dir',
+      'ffmpeg',
+      'ffprobe',
+    ]),
+    'title': 'ToolFetchResult',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ToolInfo]
   dict({
     '$defs': list([
@@ -8050,17 +8658,31 @@
   dict({
     '$defs': list([
       'AudioOutputTrack',
+      'ExternalSubtitle',
+      'SubtitleOutputTrack',
+      'TrackFlags',
       'TrackMetadata',
     ]),
     'additionalProperties': False,
     'description': '''
-      What the audio defaults did with one source audio track, and why: one row of the live
-      preview (03 §Audio defaults → Live preview) and of ``explain`` (C-12).
+      What the audio or subtitle defaults did with one source track, and why: one row of the
+      live preview (03 §Audio defaults → Live preview: ``source track → selected? (why) → rule #
+      → output → reason``) and of ``explain`` (C-12).
       
-      Built by ``reframe.batch.apply_codec_rules``. In M2 every source track is taken (no
-      selection stage, decision 0018), so a decision only describes the codec-rule stage.
+      The selection stage fills ``selected`` and ``selection``; for a selected audio track the
+      codec-rule stage (``reframe.batch.apply_codec_rules``) fills ``rule``, ``outputs`` and
+      ``reason``. A dropped track has no outputs, and ``reason`` repeats why it was dropped.
     ''',
     'properties': dict({
+      'kind': dict({
+        'default': 'audio',
+        'enum': list([
+          'audio',
+          'subtitle',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
       'measure': dict({
         'default': False,
         'description': '''
@@ -8083,8 +8705,8 @@
       }),
       'outputs': dict({
         'description': '''
-          The output track(s): the rule's output, then its extra outputs. Empty when no rule
-          matched.
+          Audio: the output track(s), the rule's output, then its extra outputs. Empty when the
+          track was dropped or no rule matched.
         ''',
         'items': dict({
           '$ref': '#/$defs/AudioOutputTrack',
@@ -8115,11 +8737,42 @@
         'description': 'The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched.',
         'title': 'Rule',
       }),
+      'selected': dict({
+        'default': True,
+        'description': 'Taken by the selection stage (03 §Audio defaults, part 1).',
+        'title': 'Selected',
+        'type': 'boolean',
+      }),
+      'selection': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Why it was taken or dropped, in one line: ``Hungarian: first matching track (best
+          quality)``, ``Commentary: dropped``, ``No listed language: the default-flagged track``.
+          ``None`` when no selection stage ran.
+        ''',
+        'title': 'Selection',
+      }),
       'source_stream': dict({
-        'description': 'Absolute stream index of the source audio track.',
+        'description': 'Absolute stream index of the source track.',
         'minimum': 0,
         'title': 'Source Stream',
         'type': 'integer',
+      }),
+      'subtitle_outputs': dict({
+        'description': 'Subtitles: the output track of a selected subtitle track (copy or burn-in).',
+        'items': dict({
+          '$ref': '#/$defs/SubtitleOutputTrack',
+        }),
+        'title': 'Subtitle Outputs',
+        'type': 'array',
       }),
     }),
     'required': list([
@@ -8133,17 +8786,28 @@
 # name: test_json_schema_snapshot[TrackDraft]
   dict({
     '$defs': list([
+      'AddOp',
       'AudioOutputTrack',
+      'CopyOp',
       'ExternalSubtitle',
+      'Fix',
+      'JsonValue',
+      'MoveOp',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
       'SubtitleOutputTrack',
+      'TestOp',
       'TrackDecision',
       'TrackFlags',
       'TrackMetadata',
+      'ValidationIssue',
     ]),
     'additionalProperties': False,
     'description': '''
-      The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``;
-      decision 0018): every audio track through the codec rules, every subtitle copied.
+      The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``):
+      the selection stage, then the codec rules for audio (decision 0018 for M2, where every
+      track was taken), in the output order of the defaults.
     ''',
     'properties': dict({
       'audio': dict({
@@ -8159,6 +8823,25 @@
           '$ref': '#/$defs/TrackDecision',
         }),
         'title': 'Decisions',
+        'type': 'array',
+      }),
+      'issues': dict({
+        'description': '''
+          Problems of the defaults with this source (no track for a required language, the
+          defaults lint). Paths point into the template (``audio_defaults.codec_rules[1]``).
+        ''',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'subtitle_decisions': dict({
+        'description': 'One per source subtitle track, in source order.',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Subtitle Decisions',
         'type': 'array',
       }),
       'subtitles': dict({

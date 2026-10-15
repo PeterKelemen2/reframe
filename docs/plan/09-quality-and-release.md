@@ -40,7 +40,9 @@
 ### Test media
 
 `scripts/make-testdata.py` generates small files (≤ 5 s, low resolution) with FFmpeg `lavfi`
-sources, so the repository holds no large binaries:
+sources, so the repository holds no large binaries. One fixture is 4K on purpose: the HDR10
+source of the C-10 frame budget (`hdr10-4k`, about 6 MB, generated and never committed;
+[decision 0030](../decisions/0030-core-complete-contract.md)):
 
 | Fixture | How |
 |---------|-----|

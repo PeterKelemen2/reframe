@@ -15,6 +15,7 @@ from reframe.batch.audio_rules import (
     requested_mixdown,
 )
 from reframe.batch.draft import draft_tracks, first_of_language
+from reframe.batch.lint import lint_defaults
 from reframe.batch.metadata import (
     NAME_TEMPLATE_VARIABLES,
     effective_language,
@@ -31,6 +32,7 @@ __all__ = [
     "effective_language",
     "first_of_language",
     "language_matches",
+    "lint_defaults",
     "passthru_codec",
     "render_track_name",
     "requested_mixdown",

@@ -21,6 +21,7 @@ from reframe.definitions import Definitions, load_definitions
 from reframe.models.defaults import TrackDecision, TrackDraft
 from reframe.models.job import AudioOutputTrack, SubtitleOutputTrack
 from reframe.models.media import AudioStream, MediaSource
+from reframe.models.settings import LanguageSettings
 from reframe.models.template import JobTemplate
 
 __all__ = ["draft_tracks", "first_of_language"]
@@ -42,14 +43,23 @@ def first_of_language(streams: list[AudioStream]) -> list[bool]:
 
 
 def draft_tracks(
-    source: MediaSource, template: JobTemplate, *, definitions: Definitions | None = None
+    source: MediaSource,
+    template: JobTemplate,
+    *,
+    definitions: Definitions | None = None,
+    languages: LanguageSettings | None = None,
 ) -> TrackDraft:
     """Every audio track through ``template.audio_defaults`` (container
     ``template.output.container``), every subtitle track copied (decision 0018).
 
     ``first_track_of_language_only`` rules take the first track of each language in source
     order (in M2 every track is selected, in source order).
+
+    ``languages``: Settings → Languages; its preferred audio and subtitle languages are used
+    when a selection's ``languages`` is ``None`` (``None`` = no preferred languages). Used by
+    the selection stage (core-complete wave 1a).
     """
+    del languages  # the selection stage (C-12, M6) uses it
     defs = definitions or load_definitions()
     container = template.output.container
     audio: list[AudioOutputTrack] = []

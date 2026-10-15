@@ -6,8 +6,8 @@
   not (03 §Validation and error display).
 - :func:`validate_template` checks what a preset alone can be checked for: encoder
   availability (with the closest-match fix, quality converted), container ↔ codecs of the
-  video encoder and the audio codec rules, filters, the naming templates (M2 demo item 4).
-  Its fixes target ``"template"``.
+  video encoder and the audio codec rules, filters, the naming templates (M2 demo item 4), and
+  C-12's defaults lint (``reframe.batch.lint_defaults``). Its fixes target ``"template"``.
 - Each fix is a JSON patch (``Fix.patch``) on the document ``Fix.target`` names (``job``,
   ``template``, or ``settings``); applied with :func:`reframe.jsonpatch.apply_patch`, it
   removes its issue.
@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
+from reframe.batch.lint import lint_defaults
 from reframe.definitions import Definitions, load_definitions
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import ValidationIssue
@@ -44,6 +45,7 @@ from reframe.validation import container as _container  # noqa: F401
 from reframe.validation import dimensions as _dimensions  # noqa: F401
 from reframe.validation import encoder as _encoder  # noqa: F401
 from reframe.validation import filters as _filters  # noqa: F401
+from reframe.validation import inplace as _inplace  # noqa: F401
 from reframe.validation import levels as _levels  # noqa: F401
 from reframe.validation import metadata as _metadata  # noqa: F401
 from reframe.validation import naming as _naming  # noqa: F401
@@ -145,10 +147,12 @@ def validate_template(
     """
     if subject is None and isinstance(template, Preset):
         subject = f'Preset "{template.name}"'
-    context = TemplateContext(
-        template=template,
-        caps=caps,
-        definitions=definitions if definitions is not None else load_definitions(),
-        subject=subject,
-    )
-    return _run(TEMPLATE_RULES if rules is None else rules, context)
+    defs = definitions if definitions is not None else load_definitions()
+    context = TemplateContext(template=template, caps=caps, definitions=defs, subject=subject)
+    issues = _run(TEMPLATE_RULES if rules is None else rules, context)
+    if rules is None:
+        # C-12's defaults lint (shadowed and unreachable codec rules, bitrates out of range).
+        issues += lint_defaults(
+            template.audio_defaults, container=template.output.container, definitions=defs
+        )
+    return issues

@@ -569,6 +569,35 @@ def _hdr10_recipe() -> Recipe:
     )
 
 
+def _hdr10_4k_recipe() -> Recipe:
+    """A 4K HDR10 source for the C-10 frame budget (09 §Q-3: a 4K source frame in < 2 s).
+
+    One libx265 pass: the HDR10 metadata is SEI in the bitstream only (C-3 reads it from the
+    first frame). ``keyint=48`` (2 s at 23.976 fps) is the GOP of a typical streaming encode;
+    a fast seek decodes at most one GOP.
+    """
+    args = (
+        *_video("3840x2160", "24000/1001", 5),
+        "-vf",
+        "format=yuv420p10le,setparams=range=tv:color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
+        "-c:v",
+        "libx265",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "30",
+        "-x265-params",
+        f"keyint=48:min-keyint=24:{_X265_HDR10}",
+    )
+    return _simple(
+        "hdr10-4k",
+        "3840x2160 10-bit HEVC (libx265), BT.2020/PQ, HDR10 metadata as SEI, 5 s at 23.976 fps, "
+        "keyint 48",
+        "hdr10-4k.mkv",
+        args,
+    )
+
+
 def _vfr_args(out: str) -> tuple[str, ...]:
     rates = ("24", "30", "60")
     args: list[str] = []
@@ -679,6 +708,7 @@ def build_recipes() -> dict[str, Recipe]:
             (Ffmpeg(_vfr_args("vfr.mkv")),),
         ),
         _hdr10_recipe(),
+        _hdr10_4k_recipe(),
         _chapters_recipe(),
         _season_recipe(),
     ]

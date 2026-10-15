@@ -9,9 +9,16 @@ Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), 
 job drafted from a preset, C-15), ``defaults`` (audio/subtitle defaults), ``template``
 (templates and track rules), ``preset``, ``naming``, ``settings``, ``issues`` (validation
 issues and JSON patch operations), ``tools`` (C-1), ``capabilities`` (C-4), ``plan`` (C-7),
-``queue`` (C-11), ``tasks``, ``events``, ``migrations``.
+``queue`` (C-11), ``tasks``, ``analysis`` (scan results, C-10), ``preview`` (frames, crop
+detection, preview clips, C-10), ``events``, ``migrations``.
 """
 
+from reframe.models.analysis import (
+    BitrateScan,
+    LoudnessMeasurement,
+    SubtitleScan,
+    SubtitleScanTrack,
+)
 from reframe.models.base import (
     DocumentModel,
     LanguageTag,
@@ -187,6 +194,14 @@ from reframe.models.plan import (
     resolve_argv,
 )
 from reframe.models.preset import BUILT_IN_CATEGORIES, FieldChange, Preset, PresetFile
+from reframe.models.preview import (
+    CropDetection,
+    CropSample,
+    FrameKind,
+    FrameSet,
+    PreviewClip,
+    PreviewFrame,
+)
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import (
     AppearanceSettings,
@@ -215,7 +230,14 @@ from reframe.models.template import (
     TrackRuleSettings,
     TrackSelector,
 )
-from reframe.models.tools import ToolInfo, ToolName, ToolOrigin, ToolSet, ToolStatus
+from reframe.models.tools import (
+    ToolFetchResult,
+    ToolInfo,
+    ToolName,
+    ToolOrigin,
+    ToolSet,
+    ToolStatus,
+)
 
 __all__ = [
     "BUILT_IN_CATEGORIES",
@@ -239,6 +261,7 @@ __all__ = [
     "AudioStream",
     "AverageBitrate",
     "BitrateInfo",
+    "BitrateScan",
     "BitrateSource",
     "BurnInBehaviour",
     "CapabilitiesChangedEvent",
@@ -255,9 +278,11 @@ __all__ = [
     "ContainerInfo",
     "ContentLightLevel",
     "CopyOp",
+    "CropDetection",
     "CropMode",
     "CropPolicy",
     "CropRect",
+    "CropSample",
     "CropSettings",
     "DataStream",
     "DimensionSettings",
@@ -280,7 +305,9 @@ __all__ = [
     "FitWithin",
     "Fix",
     "FixTarget",
+    "FrameKind",
     "FrameRange",
+    "FrameSet",
     "FramerateMode",
     "FullRange",
     "Geometry",
@@ -300,6 +327,7 @@ __all__ = [
     "JsonPatchOp",
     "LanguageSettings",
     "LanguageTag",
+    "LoudnessMeasurement",
     "LoudnessTarget",
     "MasteringDisplay",
     "Measurement",
@@ -340,6 +368,8 @@ __all__ = [
     "PowerCountdownEvent",
     "Preset",
     "PresetFile",
+    "PreviewClip",
+    "PreviewFrame",
     "PreviewSettings",
     "QueueChangedEvent",
     "QueueJob",
@@ -370,6 +400,8 @@ __all__ = [
     "SubtitleKind",
     "SubtitleOutputSettings",
     "SubtitleOutputTrack",
+    "SubtitleScan",
+    "SubtitleScanTrack",
     "SubtitleStream",
     "TagSettings",
     "TaskDoneEvent",
@@ -379,6 +411,7 @@ __all__ = [
     "TemplateKind",
     "TestOp",
     "TimeRange",
+    "ToolFetchResult",
     "ToolInfo",
     "ToolName",
     "ToolOrigin",

@@ -11,7 +11,15 @@ its plan.
 - :meth:`JobService.validate` runs C-8's ``validate``. When an encoder is still being checked
   (``encoder.checking``) it waits for encoder detection, but at most ``detection_wait``
   seconds (decision 0017), and validates again.
-- :meth:`JobService.plan` gives the issues when there is an error, else C-7's plan.
+- :meth:`JobService.plan` gives the issues when there is an error, else C-7's plan;
+  ``dry_run=True`` first encodes one frame (:meth:`JobService.dry_run`, C-6: custom parameters).
+- :meth:`JobService.explain` shows what the preset's audio and subtitle defaults do with a
+  source (C-12: selection, codec rules, the reason of each row; the live preview).
+- :meth:`JobService.draft_remux` drafts a remux-only job that copies every track (C-13: a
+  metadata change on an MKV becomes a ``metadata_edit`` job).
+- :meth:`JobService.preview_clip` encodes a preview clip as a task (C-10).
+- :meth:`JobService.search_options` and :meth:`JobService.hdr_metadata`: the advanced option
+  search and **Copy HDR metadata** (C-6).
 - :meth:`JobService.name` names one path without probing it (``reframe name``), and
   :func:`find_media_files` lists the media files of files and folders (``reframe encode``).
 
@@ -32,17 +40,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from reframe import languages
+from reframe import languages, metadata, preview
 from reframe.batch import draft_tracks
 from reframe.command import PlanError, build_plan
-from reframe.definitions import Definitions, load_definitions
+from reframe.definitions import Definitions, EncoderOption, load_definitions
+from reframe.definitions import hdr_options as _hdr_options
+from reframe.definitions import search_options as _search_options
 from reframe.dimensions import compute_geometry, source_geometry
+from reframe.jsonpatch import escape_token
+from reframe.mediatask import MediaTaskContext
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.defaults import TrackDecision
+from reframe.models.defaults import TrackDecision, TrackDraft
 from reframe.models.draft import JobDraft
-from reframe.models.issues import Severity, ValidationIssue
+from reframe.models.issues import AddOp, JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import (
     ChapterSettings,
+    Container,
     JobNaming,
     JobSettings,
     OutputSettings,
@@ -52,12 +65,15 @@ from reframe.models.media import MediaSource, VideoStream
 from reframe.models.naming import NameResult, NamingOptions
 from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
-from reframe.models.settings import AppSettings
+from reframe.models.settings import AppSettings, LanguageSettings
+from reframe.models.tasks import TaskInfo
+from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolSet
 from reframe.naming import resolve_output_name
 from reframe.probe import ProbeError
 from reframe.probe.folder import list_media_files
 from reframe.validation import FileSystemView, LocalFileSystem, next_free_path, validate
+from reframe.validation.dryrun import dry_run as _dry_run
 
 __all__ = [
     "DETECTION_WAIT",
@@ -241,12 +257,17 @@ def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None
 
 
 def job_from_preset(
-    source: MediaSource, preset: Preset, *, definitions: Definitions | None = None
+    source: MediaSource,
+    preset: Preset,
+    *,
+    definitions: Definitions | None = None,
+    languages: LanguageSettings | None = None,
 ) -> tuple[JobSettings, list[TrackDecision], list[str]]:
     """The job settings of ``source`` encoded with ``preset`` (without the output path), the
-    audio track decisions, and notes about how preset options were applied. Pure."""
+    audio track decisions, and notes about how preset options were applied. ``languages``:
+    Settings → Languages (the preferred languages of the track selection). Pure."""
     notes: list[str] = []
-    tracks = draft_tracks(source, preset, definitions=definitions)
+    tracks = draft_tracks(source, preset, definitions=definitions, languages=languages)
     video = preset.video.model_copy(deep=True)
     if source.video:
         video.metadata = video_metadata(source.video[0])
@@ -289,6 +310,8 @@ class JobService:
     :param detection_wait: seconds :meth:`validate` waits for a running encoder detection
         (default :data:`DETECTION_WAIT`, read when the service is made).
     :param clock: the time for the naming and tag date variables.
+    :param media: what the C-10 tasks need from the facade (preview clips); set by
+        :class:`~reframe.service.Reframe`.
     """
 
     def __init__(
@@ -303,6 +326,7 @@ class JobService:
         fs: FileSystemView | None = None,
         detection_wait: float | None = None,
         clock: Callable[[], datetime] | None = None,
+        media: MediaTaskContext | None = None,
     ) -> None:
         self._sources = sources
         self._presets = presets
@@ -313,6 +337,7 @@ class JobService:
         self._fs: FileSystemView = fs if fs is not None else LocalFileSystem()
         self._detection_wait = DETECTION_WAIT if detection_wait is None else detection_wait
         self._clock = clock or (lambda: datetime.now().astimezone())
+        self._media_context = media
 
     @property
     def definitions(self) -> Definitions:
@@ -390,7 +415,9 @@ class JobService:
         naming: NamingOptions,
         output: Path | None,
     ) -> tuple[JobSettings, list[TrackDecision], NameResult, list[str]]:
-        job, decisions, notes = job_from_preset(media, preset, definitions=self.definitions)
+        job, decisions, notes = job_from_preset(
+            media, preset, definitions=self.definitions, languages=self._settings().languages
+        )
         file = Path(media.ref.path)
         size = output_size(job, media)
         folder: Path | None = None
@@ -452,15 +479,18 @@ class JobService:
         return await self._validate(job, media, self._naming_options(self._job_preset(job)))
 
     async def plan(
-        self, job: JobSettings, source: MediaSource | None = None
+        self, job: JobSettings, source: MediaSource | None = None, *, dry_run: bool = False
     ) -> EncodePlan | list[ValidationIssue]:
         """C-7's plan of ``job``; when it has errors, every issue instead (at least one is an
-        ``error``)."""
+        ``error``). ``dry_run``: when validation finds no error, also encode one frame
+        (:meth:`dry_run`) and return its errors (custom parameters FFmpeg refuses)."""
         media = await self._media(job, source)
         if not isinstance(media, MediaSource):
             return media
         naming = self._naming_options(self._job_preset(job))
         issues = await self._validate(job, media, naming)
+        if not has_errors(issues) and dry_run:
+            issues = [*issues, *await self.dry_run(job, media)]
         if has_errors(issues):
             return issues
         tools = await self._tools.status()
@@ -536,6 +566,121 @@ class JobService:
                 ),
             ]
         return await asyncio.to_thread(check, caps)
+
+    async def dry_run(
+        self, job: JobSettings, source: MediaSource | None = None
+    ) -> list[ValidationIssue]:
+        """Encode one frame with the job's video settings (``-frames:v 1 -f null``) and give
+        what FFmpeg refuses as ``error`` issues (C-6: custom parameters are "validated by a dry
+        run"). Validate first: a job with errors gives wrong dry-run errors."""
+        media = await self._media(job, source)
+        if not isinstance(media, MediaSource):
+            return media
+        tools = await self._tools.status()
+        return await _dry_run(
+            job, media, self._capabilities.snapshot, tools, definitions=self.definitions
+        )
+
+    # ------------------------------------------------------------------ C-12 defaults, C-13
+
+    async def explain(
+        self,
+        source: str | os.PathLike[str] | MediaSource,
+        template: JobTemplate | str | None = None,
+        *,
+        container: Container | None = None,
+    ) -> TrackDraft | ProbeError:
+        """What the audio and subtitle defaults of ``template`` (a template, a preset id or
+        name; ``None``: the default preset) do with ``source``: the drafted tracks and one
+        decision per source track, with the reason (C-12 ``draft_tracks``; the live preview of
+        03 §Audio defaults). ``container`` replaces the template's container. An unknown
+        preset name is a ``preset.not_found`` issue in the result."""
+        media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
+        if isinstance(media, ProbeError):
+            return media
+        issues: list[ValidationIssue] = []
+        chosen: JobTemplate
+        if isinstance(template, JobTemplate):
+            chosen = template
+        else:
+            chosen, issues = self._resolve_preset(template)
+        if container is not None and container != chosen.output.container:
+            chosen = chosen.model_copy(deep=True)
+            chosen.output.container = container
+        languages = self._settings().languages
+        draft = await asyncio.to_thread(
+            draft_tracks, media, chosen, definitions=self.definitions, languages=languages
+        )
+        if issues:
+            draft.issues = [*issues, *draft.issues]
+        return draft
+
+    async def draft_remux(
+        self,
+        source: str | os.PathLike[str] | MediaSource,
+        preset: Preset | str | None = None,
+        *,
+        edit_in_place: bool = True,
+    ) -> JobDraft | ProbeError:
+        """A remux-only job of ``source`` (03 §Remux-only jobs, C-13): :meth:`draft` with
+        ``preset``, then video passthrough and every track copied in source order with its
+        metadata (``reframe.metadata.remux_job``), validated again. Change only metadata on
+        the result and an MKV with ``edit_in_place`` becomes a ``metadata_edit`` job."""
+        draft = await self.draft(source, preset)
+        if isinstance(draft, ProbeError):
+            return draft
+        media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
+        if isinstance(media, ProbeError):
+            return media
+        job = metadata.remux_job(
+            draft.job, media, edit_in_place=edit_in_place, definitions=self.definitions
+        )
+        naming = self._naming_options(self._job_preset(job))
+        issues = await self._validate(job, media, naming)
+        keep = [issue for issue in draft.issues if issue.code == "preset.not_found"]
+        return draft.model_copy(update={"job": job, "decisions": [], "issues": [*keep, *issues]})
+
+    # ------------------------------------------------------------------ C-6 options
+
+    def search_options(self, encoder_id: str, query: str) -> list[EncoderOption]:
+        """The advanced options of ``encoder_id`` that match ``query`` in their label, CLI
+        name or help text (03 §Advanced encoder options: *Search*); empty for an unknown
+        encoder."""
+        encoder = self.definitions.video_encoders.get(encoder_id)
+        if encoder is None:
+            return []
+        return _search_options(encoder.options, query)
+
+    def hdr_metadata(self, job: JobSettings, source: MediaSource) -> list[JsonPatchOp]:
+        """**Copy HDR metadata from source** (03 §Advanced encoder options): a JSON patch on
+        ``job`` that sets the encoder's HDR options (``/video/advanced/<key>``) from the
+        source's HDR10 metadata. Empty when the source has none or the encoder has no such
+        options."""
+        encoder = self.definitions.video_encoders.get(job.video.encoder)
+        if encoder is None or not source.video:
+            return []
+        values = _hdr_options(encoder, source.video[0])
+        return [
+            AddOp(path=f"/video/advanced/{escape_token(key)}", value=value)
+            for key, value in values.items()
+        ]
+
+    # ------------------------------------------------------------------ C-10 preview clips
+
+    def preview_clip(self, job: JobSettings, *, start: float, seconds: float) -> TaskInfo:
+        """Encode ``seconds`` from ``start`` with the job's full settings into the preview
+        cache (03 §Preview: live preview clip; task ``preview_clip``, result
+        :class:`~reframe.models.PreviewClip`). Returns at once."""
+        return preview.start_preview_clip(self._media_tasks(), job, start=start, seconds=seconds)
+
+    def preview_clip_path(self, clip_id: str) -> Path | None:
+        """The cached clip of a :class:`~reframe.models.PreviewClip` id, else ``None``."""
+        return preview.clip_path(self._media_tasks(), clip_id)
+
+    def _media_tasks(self) -> MediaTaskContext:
+        if self._media_context is None:
+            raise RuntimeError("JobService has no media task context (the facade sets it)")
+        return self._media_context
 
     # ------------------------------------------------------------------ naming
 

@@ -77,6 +77,7 @@ from reframe.models.job import JobSettings
 from reframe.models.naming import NamingOptions
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings
+from reframe.platform.power import PowerService
 from reframe.platform.sleep import SleepInhibitor, create_sleep_inhibitor
 from reframe.queue import files
 from reframe.queue.clock import Clock, SystemClock
@@ -141,6 +142,8 @@ class QueueService:
     :param naming: the effective naming options of a job (its preset's), or ``None`` for
         Settings → Output.
     :param inhibitor: the sleep inhibitor (default: :func:`create_sleep_inhibitor`).
+    :param power: the power actions of the when-done setting (``Reframe.power``, C-14);
+        ``None``: ``quit``, ``sleep`` and ``shutdown`` are reported as not available.
     :param clock: the clocks (tests replace them).
     :param fs: the file-system view of validation and of the collision rename.
     :param stall_after: seconds without progress, output or CPU use before an FFmpeg step is
@@ -163,6 +166,7 @@ class QueueService:
         sources: SourceProber,
         naming: Callable[[JobSettings], NamingOptions | None] | None = None,
         inhibitor: SleepInhibitor | None = None,
+        power: PowerService | None = None,
         definitions: Definitions | None = None,
         clock: Clock | None = None,
         fs: FileSystemView | None = None,
@@ -178,6 +182,7 @@ class QueueService:
         self._clock = clock or SystemClock()
         self._fs: FileSystemView = fs or LocalFileSystem()
         self._inhibitor = inhibitor if inhibitor is not None else create_sleep_inhibitor(events)
+        self._power = power
         self._store = QueueStore(data_dir / STORE_FILE, now=self._clock.now)
         self._owner = StoreLock(data_dir / LOCK_FILE, lock_backend)
         self._runner = JobRunner(

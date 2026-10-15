@@ -548,16 +548,23 @@ class Reframe:
     @classmethod
     async def create(cls, config_dir: Path | None = None, data_dir: Path | None = None) -> Reframe: ...
     events: EventBus
-    tools: ToolsService            # status, versions, re-scan
+    tools: ToolsService            # status, versions, re-scan; fetch (reframe tools fetch)
     capabilities: CapabilityService
-    sources: SourceService         # probe, probe_folder, get, frames, cropdetect, scans
+    sources: SourceService         # probe, probe_folder, get, store; C-10 tasks: bitrate_scan,
+                                   # subtitle_scan, loudness_scan, frames, frame, cropdetect
     presets: PresetService
-    jobs: JobService               # draft, validate, plan, name, media_files; preview_clip (C-10)
+    jobs: JobService               # draft, validate, plan (dry_run=), name, media_files; explain
+                                   # (C-12), draft_remux (C-13), search_options, hdr_metadata,
+                                   # dry_run (C-6); preview_clip, preview_clip_path (C-10)
     batch: BatchService            # group, derive, resolve
     queue: QueueService            # add, list, reorder, start/pause/resume/cancel, logs
     settings: SettingsService
+    power: PowerService            # when-done power actions with the 60 s countdown (C-14)
     async def close(self) -> None  # stop the runner, kill children, flush stores
 ```
+
+The method list beyond this sketch, and the task context of the C-10 methods:
+[decision 0030](../decisions/0030-core-complete-contract.md).
 
 - [ ] Wire every service. `create()` returns quickly. Detection and queue restore continue in
       the background.

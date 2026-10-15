@@ -32,9 +32,11 @@ How the other steps use it:
   :meth:`FilterDef.chain_for` gives the chain with ``{custom}`` = ``FilterConfig.custom``
   filled in; each :class:`FilterImplementation` has its own presets and tunes.
 - **Audio fallback (C-4)**: ``AudioEncoderDef.fallback`` (``libfdk_aac → aac``).
-- :func:`convert_quality`, :func:`supported_options`, :func:`lint_definitions`.
+- :func:`convert_quality`, :func:`supported_options`, :func:`lint_definitions`;
+  :func:`search_options` (the option search) and :func:`hdr_options` (**Copy HDR metadata**).
 """
 
+from reframe.definitions.hdr import hdr_options
 from reframe.definitions.lint import lint_definitions
 from reframe.definitions.loader import load_definitions
 from reframe.definitions.models import (
@@ -84,6 +86,7 @@ from reframe.definitions.models import (
     channels_mixdown,
 )
 from reframe.definitions.quality import convert_quality
+from reframe.definitions.search import search_options
 from reframe.definitions.support import mapping_supported, supported_options, supported_presets
 
 __all__ = [
@@ -132,9 +135,11 @@ __all__ = [
     "X26xParam",
     "channels_mixdown",
     "convert_quality",
+    "hdr_options",
     "lint_definitions",
     "load_definitions",
     "mapping_supported",
+    "search_options",
     "supported_options",
     "supported_presets",
 ]

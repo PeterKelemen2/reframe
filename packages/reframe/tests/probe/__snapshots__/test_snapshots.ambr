@@ -2739,6 +2739,151 @@
     ]),
   })
 # ---
+# name: test_media_source_snapshot[fixtures/hdr10-4k.mkv.json]
+  dict({
+    'attachments': list([
+    ]),
+    'audio': list([
+    ]),
+    'chapters': list([
+    ]),
+    'container': dict({
+      'bitrate': 9054652,
+      'creation_time': None,
+      'display_name': 'MKV',
+      'duration': 5.005,
+      'format_long_name': 'Matroska / WebM',
+      'format_name': 'matroska,webm',
+      'size': 5664817,
+      'start_time': 0.0,
+      'tags': dict({
+        'ENCODER': 'Lavf63.1.102',
+      }),
+      'title': None,
+    }),
+    'cover_art': list([
+    ]),
+    'data': list([
+    ]),
+    'probe_tool': None,
+    'probed_at': None,
+    'ref': dict({
+      'fingerprint': dict({
+        'mtime': 0.0,
+        'probe_hash': 'e4a103dc2b3edb97',
+        'size': 0,
+      }),
+      'path': 'hdr10-4k.mkv',
+    }),
+    'schema_version': 1,
+    'subtitles': list([
+    ]),
+    'video': list([
+      dict({
+        'avg_frame_rate': dict({
+          'den': 1001,
+          'num': 24000,
+        }),
+        'bit_depth': 10,
+        'bitrate': dict({
+          'source': 'unknown',
+          'value': None,
+        }),
+        'closed_captions': False,
+        'codec': 'hevc',
+        'codec_long': 'H.265 / HEVC (High Efficiency Video Coding)',
+        'color': dict({
+          'chroma_location': 'left',
+          'matrix': 'bt2020nc',
+          'primaries': 'bt2020',
+          'range': 'tv',
+          'transfer': 'smpte2084',
+        }),
+        'dar': dict({
+          'den': 9,
+          'num': 16,
+        }),
+        'delay': 0.0,
+        'display_codec': 'HEVC Main 10',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 5.005,
+        'field_order': 'progressive',
+        'frame_count': None,
+        'frame_rate': dict({
+          'den': 1001,
+          'num': 24000,
+        }),
+        'hdr': dict({
+          'content_light': dict({
+            'max_cll': 1000,
+            'max_fall': 400,
+          }),
+          'dolby_vision': None,
+          'formats': list([
+            'hdr10',
+          ]),
+          'mastering_display': dict({
+            'blue_x': 0.15,
+            'blue_y': 0.06,
+            'green_x': 0.265,
+            'green_y': 0.69,
+            'max_luminance': 1000.0,
+            'min_luminance': 0.0001,
+            'red_x': 0.68,
+            'red_y': 0.32,
+            'white_x': 0.3127,
+            'white_y': 0.329,
+          }),
+          'source': 'frame',
+        }),
+        'height': 2160,
+        'index': 0,
+        'kind': 'video',
+        'language': None,
+        'language_ietf': None,
+        'level': 150,
+        'pix_fmt': 'yuv420p10le',
+        'profile': 'Main 10',
+        'rotation': 0,
+        'sar': dict({
+          'den': 1,
+          'num': 1,
+        }),
+        'start_time': 0.0,
+        'tags': dict({
+          'DURATION': '00:00:05.005000000',
+          'ENCODER': 'Lavc63.1.102 libx265',
+        }),
+        'title': None,
+        'type_index': 0,
+        'vfr': False,
+        'width': 3840,
+      }),
+    ]),
+    'warnings': list([
+    ]),
+  })
+# ---
 # name: test_media_source_snapshot[fixtures/hdr10.mkv.json]
   dict({
     'attachments': list([

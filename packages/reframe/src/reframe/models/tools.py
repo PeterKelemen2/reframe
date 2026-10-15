@@ -15,7 +15,7 @@ from pydantic import Field
 from reframe.models.base import ReframeModel
 from reframe.models.issues import Fix
 
-__all__ = ["ToolInfo", "ToolName", "ToolOrigin", "ToolSet", "ToolStatus"]
+__all__ = ["ToolFetchResult", "ToolInfo", "ToolName", "ToolOrigin", "ToolSet", "ToolStatus"]
 
 #: The external tools Reframe uses. ``mkvpropedit`` and ``mediainfo`` are optional.
 ToolName = Literal["ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"]
@@ -98,3 +98,23 @@ class ToolSet(ReframeModel):
     def get(self, name: ToolName) -> ToolInfo:
         info: ToolInfo = getattr(self, name)
         return info
+
+
+class ToolFetchResult(ReframeModel):
+    """``reframe tools fetch`` (C-15): the pinned FFmpeg build of the manifest, downloaded,
+    checked (size and SHA-256) and installed as the bundled build in ``<data dir>/tools/ffmpeg``,
+    where tool discovery finds it (02 §Bundled FFmpeg). The result of the ``tools_fetch`` task.
+    """
+
+    build: str
+    """The manifest's build name (``default``)."""
+    platform: str
+    """``linux-x64`` or ``windows-x64``."""
+    version: str
+    """The pinned FFmpeg version string."""
+    install_dir: Path
+    """``<data dir>/tools/ffmpeg``."""
+    ffmpeg: Path
+    ffprobe: Path
+    downloaded: bool = True
+    """``False``: the build was already installed and every file still had its hash."""
