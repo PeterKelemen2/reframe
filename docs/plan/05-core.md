@@ -483,7 +483,9 @@ cancelling a scan stops its FFmpeg process within 1 s.
       `Interrupted` (0016). The store is opened on first use under an exclusive lock
       (`<data>/queue.lock`): only the owner restores it and runs its jobs; another
       process gets a private queue that is not kept. No file that a job writes or removes may
-      be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
+      be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)),
+      except the source of a `metadata_edit` job, which only mkvpropedit edits and nothing
+      removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
@@ -522,6 +524,11 @@ and a table test reproduces the example in
 
 Done when: changing only languages and flags on an MKV fixture runs as `metadata_edit`, takes
 < 1 s, and the re-probe shows the new values.
+
+What can change in place (track languages, names, flags, the container title), the exact
+exception to decision 0027, the fix-up (only `LanguageIETF`: FFmpeg writes all six flags), and
+how the BCP 47 value is read back without MediaInfo (Reframe's own Matroska track reader):
+[decision 0034](../decisions/0034-metadata-edit-in-place.md).
 
 ## C-14 Platform services
 

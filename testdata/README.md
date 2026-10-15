@@ -1394,7 +1394,98 @@ fixtures.)
 
 ### Metadata edit (C-13)
 
-(core-complete wave 1d: mkvpropedit in place, what FFmpeg does not write, the re-probe.)
+Checked on 2026-10-15 with MKVToolNix **101.0** (`mkvpropedit`, `mkvmerge`, `mkvinfo`), FFmpeg
+n9.0.2 (Arch) and n8.1.3 (BtbN), on copies of `multitrack.mkv`. Decision
+[0034](../docs/decisions/0034-metadata-edit-in-place.md) uses these; the real-tool tests are
+`packages/reframe/tests/metadata/test_metadata_edit_real.py` and
+`packages/reframe/tests/probe/test_matroska.py`.
+
+**Property names** (`mkvpropedit --list-property-names`): track headers `language`,
+`language-ietf`, `name`, `flag-default`, `flag-forced`, `flag-commentary`,
+`flag-hearing-impaired`, `flag-visual-impaired`, `flag-original` (also `flag-enabled`,
+`flag-text-descriptions`); segment information (`--edit info`) `title`.
+
+**An in-place edit takes about 25 ms** and writes both language elements:
+
+```
+$ time mkvpropedit e.mkv --edit track:a1 --set language=hun --set language-ietf=hu --set name="Magyar 5.1" \
+    --set flag-default=1 --set flag-original=1 --edit track:a2 --set language=por --set language-ietf=pt-BR \
+    --set flag-default=0 --edit track:a3 --set flag-commentary=1 --delete name --edit track:s2 \
+    --set flag-hearing-impaired=1 --set flag-visual-impaired=1 --edit track:v1 --delete name
+The file is being analyzed.
+The changes are written to the file.
+Done.
+… 0,026 total
+$ mkvmerge -J e.mkv     # track 1: language hun, language_ietf hu, track_name "Magyar 5.1", flag_original
+                        # track 2: language por, language_ietf pt-BR; track 3: no track_name
+```
+
+`--delete name` on a track without a name, and `--edit info --delete title`, exit 0.
+
+**Order of `language` and `language-ietf`.** `--set language=X` writes both elements
+(`ger` → `ger` + `de`, `und` → `und` + `und`, `yue` → `chi` + `yue`); a later `--set
+language=` overwrites an earlier `language-ietf`:
+
+```
+$ mkvpropedit f.mkv --edit track:a3 --set language-ietf=zh-Hant --set language=chi
+$ mkvmerge -J f.mkv     # language chi, language_ietf zh   (zh-Hant is gone)
+```
+
+So Reframe always writes `--set language=<ISO 639-2/B> --set language-ietf=<BCP 47>`, in
+that order (and its legacy code, which differs from MKVToolNix's for some tags: `test_languages.py`
+`MKVTOOLNIX_DIFFERENT_LEGACY`).
+
+**Track selectors.** `track:a2` is the second audio track in the order of the `TrackEntry`
+elements, whatever their `TrackNumber`; attachments (a cover JPEG, fonts) are not tracks;
+ffprobe lists the tracks in the same order and the attachments after them (a cover as a
+`video` stream with `attached_pic`):
+
+```
+$ mkvmerge -o r.mkv --track-order 0:2,0:4,0:0,0:1 --attachment-mime-type image/jpeg \
+    --attachment-name cover.jpg --attach-file cover.jpg m.mkv     # tracks: a, s, v, a, a, s, s
+$ mkvpropedit r.mkv --edit track:1 --set track-number=9            # first entry is now number 9
+$ mkvpropedit r.mkv --edit track:a1 --set name=FIRST-AUDIO --edit track:2 --set name=SECOND
+$ mkvmerge -J r.mkv     # entry 1 (number 9, audio): FIRST-AUDIO; entry 2 (subtitles): SECOND
+$ mkvpropedit r2.mkv --edit track:4 --set flag-original=1 --edit track:@5 --set flag-forced=1
+                        # track:4 = 4th entry; track:@5 = TrackNumber 5
+```
+
+**Errors leave the file unchanged** (exit code 2):
+
+```
+$ mkvpropedit n.mkv
+Error: Nothing to do.
+$ mkvpropedit n.mkv --edit track:a9 --set name=x
+Error: No track corresponding to the edit specification 'a9' was found. The file has not been modified.
+$ chmod a-w n.mkv; mkvpropedit n.mkv --edit track:a1 --set name=x
+Error: Updating the 'Tracks' element failed. Reason: The file could not be opened for writing. …
+```
+
+**A grown `Tracks` element moves to the end of the file.** FFmpeg leaves little room after
+`Tracks`; adding `LanguageIETF` to two tracks and changing their flags made the file 700 bytes
+larger (378787 → 379487): `mkvinfo -v -z` shows a `Void` where `Tracks` was and `Tracks` after
+the `Cues`, found through the `SeekHead`. Reframe's Matroska reader follows the `SeekHead`
+(`test_matroska.py` also checks it with 6000-character names).
+
+**FFmpeg writes all six flags into Matroska; only `LanguageIETF` needs the fix-up.** Both
+builds, the same output:
+
+```
+$ ffmpeg -v error -y -i m.mkv -map 0 -c copy -map_metadata:s -1 -metadata:s:a:0 language=hun \
+    -metadata:s:a:0 title=X -disposition:a:0 default+original+visual_impaired -disposition:a:1 0 \
+    -disposition:a:2 comment -disposition:s:0 forced+hearing_impaired -disposition:s:1 0 \
+    -disposition:s:2 0 -disposition:v:0 0 out.mkv
+$ mkvmerge -J out.mkv
+  video default_track False · audio 1 default, flag_original, flag_visual_impaired, hun, "X"
+  audio 2 default_track False · audio 3 flag_commentary · subtitles 1 forced, flag_hearing_impaired
+  (no language_ietf on any track)
+```
+
+**MediaInfo and the re-probe.** With MediaInfo (the `pymediainfo` 7.0.1 wheel, libmediainfo
+24.12) every track gets a BCP 47 `language` (`en` for `eng` without `LanguageIETF`), so the
+re-probe check compares canonical BCP 47 tags on both sides. Without MediaInfo, Reframe's
+reader gives `language_ietf` only where the element exists: after the M6 demo edit the probe
+shows `hun`/`hu`, `por`/`pt-BR`, `eng`/`None`.
 
 ### Advanced encoder options (C-6, complete option sets)
 

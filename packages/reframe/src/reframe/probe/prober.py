@@ -18,9 +18,14 @@ Steps of :meth:`Prober.probe`:
    raced against the cancel token): bit rates that are still unknown, ``language_ietf``, and
    ``FrameRate_Mode`` for Matroska streams whose VFR state ffprobe cannot tell. A failure is
    a warning.
-7. Streams whose VFR state is still undecided: sample packet timestamps
+7. A Matroska file's track headers (:mod:`reframe.probe.matroska`; worker thread, raced
+   against the cancel token): ``language_ietf`` of each stream whose track has a
+   ``LanguageIETF`` element, which ffprobe does not show (decision 0034). It wins over
+   MediaInfo's value. A file the reader cannot read is skipped (logged); tracks that do not
+   match the streams are a warning.
+8. Streams whose VFR state is still undecided: sample packet timestamps
    (:func:`reframe.probe.ffprobe.packets_argv`, :func:`reframe.probe.parse.vfr_from_timestamps`).
-8. Store in the cache.
+9. Store in the cache.
 
 Cancelling (the token or the calling task) stops the probe at once: ffprobe is killed by
 ``reframe.tools.run``, and a worker thread (``stat``, MediaInfo) is left to finish on its own
@@ -31,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -51,7 +57,7 @@ from reframe.models.media import (
     VideoStream,
 )
 from reframe.models.tools import ToolInfo
-from reframe.probe import mediainfo, roles
+from reframe.probe import matroska, mediainfo, roles
 from reframe.probe.cache import CacheKey, ProbeCache
 from reframe.probe.ffprobe import (
     FRAME_PACKETS,
@@ -75,10 +81,25 @@ from reframe.probe.parse import (
 )
 from reframe.tools import CancelToken
 
-__all__ = ["MEDIAINFO_TIMEOUT", "ProbeOutcome", "Prober", "probe_file"]
+log = logging.getLogger(__name__)
+
+__all__ = [
+    "MATROSKA_READER",
+    "MATROSKA_TIMEOUT",
+    "MEDIAINFO_TIMEOUT",
+    "ProbeOutcome",
+    "Prober",
+    "apply_matroska",
+    "probe_file",
+]
 
 #: Seconds to wait for MediaInfo (the thread cannot be killed; the probe stops waiting).
 MEDIAINFO_TIMEOUT = 30.0
+#: Seconds to wait for the Matroska track reader (a slow network share).
+MATROSKA_TIMEOUT = 30.0
+#: The version of what the Matroska reader adds to a probe (part of the cache entry's options:
+#: entries made before it lack ``language_ietf``).
+MATROSKA_READER = 1
 
 #: The result of probing one file.
 ProbeOutcome = MediaSource | ProbeError
@@ -155,7 +176,10 @@ class Prober:
     def cache_options(self) -> dict[str, Any]:
         """The options that change a probe result (part of the cache entry): the MediaInfo
         version in use, or ``False``."""
-        return {"mediainfo": mediainfo.mediainfo_version() if self._mediainfo_on() else False}
+        return {
+            "mediainfo": mediainfo.mediainfo_version() if self._mediainfo_on() else False,
+            "matroska": MATROSKA_READER,
+        }
 
     async def probe(
         self,
@@ -289,6 +313,12 @@ class Prober:
                 return _cancelled(file)
             if info is not None:
                 _apply_mediainfo(source, info, undecided)
+        if _is_matroska(source):
+            tracks = await _read_matroska(source, file, cancel)
+            if isinstance(tracks, _Cancelled):
+                return _cancelled(file)
+            if tracks is not None:
+                apply_matroska(source, tracks)
         for stream in source.video:
             if stream.index in undecided:
                 vfr = await self._vfr_from_packets(file, stream.index, cancel, source.warnings)
@@ -413,6 +443,49 @@ def _apply_mediainfo(
             video.vfr = mode == "VFR"
             undecided.discard(video.index)
     roles.assign_audio_roles(source.audio)  # the commentary heuristic uses bit rates
+
+
+def _is_matroska(source: MediaSource) -> bool:
+    return "matroska" in (source.container.format_name or "").split(",")
+
+
+async def _read_matroska(
+    source: MediaSource, file: Path, cancel: CancelToken
+) -> matroska.MatroskaFile | _Cancelled | None:
+    """The track headers, or ``None`` when they cannot be read. Not a warning: ffprobe read
+    the file, only ``language_ietf`` stays unknown (as without MediaInfo before 0034); an
+    in-place edit reads them again and refuses to run without them."""
+    try:
+        return await _race(
+            asyncio.to_thread(matroska.read_matroska, file), cancel, MATROSKA_TIMEOUT
+        )
+    except TimeoutError:
+        log.info("%s: the Matroska track headers were not read within %g s", file, MATROSKA_TIMEOUT)
+    except (matroska.MatroskaError, OSError) as exc:
+        log.info("%s: the Matroska track headers could not be read: %s", file, exc)
+    return None
+
+
+def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
+    """Set ``language_ietf`` from the tracks' ``LanguageIETF`` elements. The n-th video,
+    audio and subtitle track of the file is the n-th stream of that kind (cover art is an
+    attachment, not a track). When the counts differ nothing is set and a warning says so.
+    ``True`` when the tracks matched."""
+    kinds = matroska.tracks_by_kind(info)
+    streams: dict[matroska.TrackKind, list[VideoStream] | list[AudioStream] | list[SubtitleStream]]
+    streams = {"video": source.video, "audio": source.audio, "subtitle": source.subtitles}
+    for kind, found in streams.items():
+        if len(found) != len(kinds[kind]):
+            source.warnings.append(
+                f"The file has {len(kinds[kind])} {kind} tracks, ffprobe shows {len(found)}: "
+                "the BCP 47 languages (LanguageIETF) were not read."
+            )
+            return False
+    for kind, found in streams.items():
+        for stream, track in zip(found, kinds[kind], strict=True):
+            if track.language_ietf:
+                stream.language_ietf = track.language_ietf
+    return True
 
 
 async def probe_file(

@@ -24,11 +24,22 @@ step's ``loudnorm`` block is stored as ``<id>.<key>`` (clamped, :mod:`reframe.qu
 and the next steps' templates are resolved with it (``resolve_argv``).
 
 **Finalize** (decision 0016): the ``.part`` file is probed again and checked against the job
-(:mod:`reframe.queue.verify`) **before** it gets its final name, so that a bad output never
-takes the final name and is handled like any failed output. Then it is renamed with
+(:mod:`reframe.queue.verify`; with a post-mux ``mkvpropedit`` fix-up also the BCP 47
+languages, names and flags, 05 §C-13) **before** it gets its final name, so that a bad output
+never takes the final name and is handled like any failed output. Then it is renamed with
 ``settings.output.collision``: ``auto_rename`` → ``next_free_path`` (``Name (1).mkv``),
 ``overwrite`` → replaced, ``ask`` → the job fails with the ``output.exists`` issue (a queue
 cannot ask) and the complete ``.part`` file is kept.
+
+**Metadata edit in place** (``EncodePlan.job_type == "metadata_edit"``; decision 0034, the one
+exception to "a job never writes its source" of decision 0027): the plan's only steps are
+mkvpropedit on the source itself; no ``.part`` file, no plan files, no rename, never a
+removal. Before the first step the runner checks exactly that (anything else fails with
+``queue.writes_source``), that the source can be written, and that the file's Matroska tracks
+are the probe's streams (so ``track:a2`` is the track the job means); nothing is changed when
+a check fails. After the steps the source is probed again without the cache and every
+language, name and flag is compared with the job (:func:`reframe.queue.verify.check_output`).
+The outcome carries no plan, so the queue's clean-up has nothing to remove.
 """
 
 from __future__ import annotations
@@ -59,7 +70,7 @@ from reframe.models.plan import EncodePlan, PlanStep, resolve_argv
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings, CollisionPolicy
 from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
-from reframe.probe import ProbeError
+from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
 from reframe.queue.errors import exit_text, stderr_reason
@@ -255,6 +266,14 @@ class JobRunner:
 
     async def run(self, job: QueueJob, active: ActiveJob, joblog: JobLog) -> Outcome:
         """Run ``job`` (see the module doc). Never raises for an expected failure."""
+        outcome = await self._run(job, active, joblog)
+        if outcome.plan is not None and outcome.plan.job_type == "metadata_edit":
+            # The plan's output is the source: there is no .part file or plan file to clean up
+            # (decision 0034), so the queue gets no plan to clean up after.
+            outcome.plan = None
+        return outcome
+
+    async def _run(self, job: QueueJob, active: ActiveJob, joblog: JobLog) -> Outcome:
         closed = _closed_error()
         plan: EncodePlan | None = None
         try:
@@ -365,6 +384,8 @@ class JobRunner:
     ) -> Outcome:
         plan = prepared.plan
         source = Path(job.settings.source.path)
+        if plan.job_type == "metadata_edit":
+            return await self._edit_in_place(job, active, joblog, prepared)
         clash = await asyncio.to_thread(_writes_source, plan, source)
         if clash is not None:  # decision 0027 item 5: nothing is written or removed
             issue = _issue(
@@ -578,7 +599,7 @@ class JobRunner:
                 error=f"The output cannot be read: {output.message}{detail}",
                 plan=plan,
             )
-        problems = check_output(job.settings, prepared.source, output, self._defs)
+        problems = check_output(job.settings, prepared.source, output, self._defs, plan=plan)
         if problems:
             return Outcome(
                 JobState.FAILED,
@@ -642,6 +663,69 @@ class JobRunner:
         except OSError as exc:
             return exc
 
+    # ------------------------------------------------------------------ in place
+
+    async def _edit_in_place(
+        self, job: QueueJob, active: ActiveJob, joblog: JobLog, prepared: _Prepared
+    ) -> Outcome:
+        """Run a ``metadata_edit`` plan on the source (see the module doc)."""
+        plan = prepared.plan
+        source = Path(job.settings.source.path)
+        refusal = await asyncio.to_thread(_in_place_refusal, plan, source, prepared.source)
+        if refusal is not None:
+            code, message = refusal
+            issue = _issue(code, message, "output.edit_in_place")
+            return Outcome(JobState.FAILED, error=issue.message, issues=[*job.issues, issue])
+        tracker = ProgressTracker(plan.steps, plan.expected_duration)
+        active.tracker = tracker
+        count = len(plan.steps)
+        if not count:
+            joblog.note(f"{source.name} already has every value: nothing to change")
+        for index, step in enumerate(plan.steps):
+            await self._wait_resumed(active)
+            self._publish(job, tracker.start_step(index))
+            info = prepared.tools.get("mkvpropedit")
+            if not _usable(info):
+                reason = f": {info.reason}" if info.reason else ""
+                return Outcome(
+                    JobState.FAILED,
+                    error=f"Editing in place needs mkvpropedit, which is not available{reason}",
+                    plan=plan,
+                )
+            argv = resolve_argv(step.argv, {})
+            result, stderr = await self._run_step(
+                job, active, joblog, step, f"Step {index + 1}/{count}", info, argv
+            )
+            if active.stop_reason is not None:
+                raise _Stopped
+            if not result.ok:
+                return Outcome(JobState.FAILED, error=_failure(step, result, stderr), plan=plan)
+            self._publish(job, tracker.step_done())
+        joblog.note(f"Checking the edited source {source.name}")
+        output = await self._until_stopped(
+            self._sources.probe(source, use_cache=False, cancel=active.token), active
+        )
+        if active.token.cancelled:
+            raise _Stopped
+        if isinstance(output, ProbeError):
+            detail = f" ({output.detail})" if output.detail else ""
+            return Outcome(
+                JobState.FAILED,
+                error=f"The edited source cannot be read: {output.message}{detail}",
+                plan=plan,
+            )
+        problems = check_output(job.settings, prepared.source, output, self._defs, plan=plan)
+        if problems:
+            return Outcome(
+                JobState.FAILED,
+                error="The edited source does not have the values of the job: "
+                + "; ".join(problems)
+                + ".",
+                plan=plan,
+            )
+        joblog.note(f"Edited {source.name} in place")
+        return Outcome(JobState.DONE, plan=plan, output_path=source, progress=tracker.finish())
+
     # ------------------------------------------------------------------ stopped
 
     def _stopped(self, active: ActiveJob, plan: EncodePlan | None) -> Outcome:
@@ -683,6 +767,68 @@ def _writes_source(plan: EncodePlan, source: Path) -> Path | None:
         if files.same_file(path, source):
             return path
     return plan.output_final if files.same_file(plan.output_final, source) else None
+
+
+def _in_place_refusal(
+    plan: EncodePlan, source: Path, probed: MediaSource
+) -> tuple[str, str] | None:
+    """Why the runner refuses to run a ``metadata_edit`` plan (blocking): ``(code, message)``,
+    or ``None``. The exception of decision 0034 is exact: only mkvpropedit steps, only on the
+    source, no other file written and nothing removed."""
+    targets = [plan.output_tmp, plan.output_final]
+    steps_ok = all(
+        step.kind == "mkvpropedit"
+        and step.tool == "mkvpropedit"
+        and bool(step.argv)
+        and isinstance(step.argv[0], str)
+        and files.same_file(Path(step.argv[0]), source)
+        for step in plan.steps
+    )
+    if (
+        plan.files
+        or plan.temp_files
+        or not steps_ok
+        or not all(files.same_file(path, source) for path in targets)
+    ):
+        return (
+            "queue.writes_source",
+            f"The in-place edit of {source.name} would write other files or use another tool "
+            "than mkvpropedit on the source, so nothing was written or removed.",
+        )
+    if not plan.steps:
+        return None
+    if not files.writable_file(source):
+        return (
+            "inplace.source_not_writable",
+            f"{source.name} cannot be written (read-only, or no permission), so its metadata "
+            "cannot be edited in place. Nothing was changed.",
+        )
+    try:
+        info = matroska.read_matroska(source)
+    except (matroska.MatroskaError, OSError) as exc:
+        return (
+            "inplace.tracks_mismatch",
+            f"The Matroska track headers of {source.name} cannot be read ({exc}), so the "
+            "tracks to edit cannot be checked. Nothing was changed.",
+        )
+    kinds = matroska.tracks_by_kind(info)
+    counts = {
+        "video": len(probed.video),
+        "audio": len(probed.audio),
+        "subtitle": len(probed.subtitles),
+    }
+    have = {kind: len(kinds[kind]) for kind in ("video", "audio", "subtitle")}
+    if have != counts:
+
+        def text(numbers: dict[str, int]) -> str:
+            return ", ".join(f"{n} {kind}" for kind, n in numbers.items())
+
+        return (
+            "inplace.tracks_mismatch",
+            f"{source.name} has {text(have)} tracks, but its probe shows {text(counts)} "
+            "streams: the tracks to edit cannot be told apart. Nothing was changed.",
+        )
+    return None
 
 
 def _write_files(plan: EncodePlan) -> None:
