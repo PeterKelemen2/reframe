@@ -29,6 +29,8 @@ WARNING_CODES = [
     "queue.corrupt",
     "queue.rows_skipped",
     "queue.when_done_unavailable",
+    "queue.when_done_failed",
+    "power.failed",
     "settings.corrupt",
     "presets.corrupt",
     "sleep_inhibit.unavailable",

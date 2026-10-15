@@ -1431,8 +1431,8 @@ async def _encode(
     # Subscribed before the queue starts: the when-done countdown begins as the last job ends.
     countdown = app.events.subscribe(types={"power.countdown"})
     try:
-        code = await _encode_jobs(app, queue, files, preset, output, console)
-        if code == EXIT_INTERRUPTED:
+        code, queued = await _encode_jobs(app, queue, files, preset, output, console)
+        if code == EXIT_INTERRUPTED or not queued:
             return code
         stopped = await follow_countdown(app, countdown, console)
         return code if stopped is None else stopped
@@ -1447,7 +1447,7 @@ async def _encode_jobs(
     preset: Preset,
     output: Path | None,
     console: Console,
-) -> int:
+) -> tuple[int, bool]:
     subscription = app.events.subscribe(types={"job.state", "job.progress"})
     total = len(files)
     width = len(str(total))
@@ -1513,7 +1513,7 @@ async def _encode_jobs(
                 )
         if not ids:
             console.print(Text("Nothing to encode.", style="bold red"), soft_wrap=True)
-            return EXIT_FAILED
+            return EXIT_FAILED, False
         console.print(Text(f"Queued {_plural(len(ids), 'job')}."), soft_wrap=True)
         view = EncodeView(console, labels)
         # Only our jobs: the store is shared, and other front ends' waiting jobs stay as
@@ -1534,14 +1534,14 @@ async def _encode_jobs(
         )
         await _cancel_jobs(queue, ids)
         _summary(console, queue, ids, not_queued)
-        return EXIT_INTERRUPTED
+        return EXIT_INTERRUPTED, True
     finally:
         subscription.close()
         if view is not None:
             view.close()
     finals = _summary(console, queue, ids, not_queued)
     all_done = all(job.state is JobState.DONE for job in finals)
-    return EXIT_OK if all_done and not not_queued else EXIT_FAILED
+    return (EXIT_OK if all_done and not not_queued else EXIT_FAILED), True
 
 
 async def _follow_jobs(
@@ -2073,8 +2073,11 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             view.close()
             print("Interrupted: stopping the download…", file=sys.stderr)
             app.tasks.cancel(info.id, "interrupted")
-            await app.tasks.wait(info.id)
-            print("Nothing was installed.", file=sys.stderr)
+            ended = await app.tasks.wait(info.id)
+            if ended.state is TaskState.DONE:  # it ended just before the interrupt
+                print("The build was installed before the interrupt.", file=sys.stderr)
+            else:
+                print("Nothing was installed.", file=sys.stderr)
             return EXIT_INTERRUPTED
         finally:
             subscription.close()

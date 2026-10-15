@@ -356,3 +356,19 @@ def test_countdown_view_live() -> None:
     view.show(_event("cancelled", 59))
     view.close()
     assert "Cancelled: the computer will not shut down." in out.getvalue()
+
+
+def test_no_wait_when_nothing_was_queued(
+    season: Path, setup: Setup, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job with errors is not queued; with no job the queue never ends one, so nothing
+    waits for a countdown."""
+    monkeypatch.setattr(cli, "COUNTDOWN_START_WAIT", 60.0)
+    when_done(tmp_path, "shutdown")
+    setup.action = None
+    episode = season / EPISODES[0]
+    started = time.monotonic()
+    result = invoke("encode", str(episode), "-o", str(episode))
+    assert result.exit_code == EXIT_FAILED
+    assert "Nothing to encode." in result.stdout
+    assert time.monotonic() - started < 30
