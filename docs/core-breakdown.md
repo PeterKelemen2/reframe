@@ -417,3 +417,5 @@ CLI where the plan has a command, otherwise a short script against the `Reframe`
 | 2026-10-15 | `core-complete` made from `main`; decision 0029 + roadmap note committed |
 | 2026-10-15 | Contract commit: models, `reframe.mediatask`, facade methods, stubs, `hdr10-4k` fixture, decision 0030 |
 | 2026-10-15 | Wave 1 started from `core-complete` 56f1abd: nine agents (1a–1i), one worktree each |
+| 2026-10-15 | Merged 1i (C-3, C-11 small fixes: ASCII stream orders, the 64-level guard for the queue store and the probe cache; follow-ups in 0007 and 0016, 0039 unused). Checks green: 5646 passed, 2 skipped; `needs_gpu` 25 passed |
+| 2026-10-15 | Merged 1f (C-14 power actions, decision 0036; the C-14 row is **Done**). Checks green: 5706 passed, 2 skipped; `needs_gpu` 25 passed. Open questions in 0036: Windows `shutdown /t 60` after Reframe's countdown, no password prompt, `suspend`, no elogind fallback |
