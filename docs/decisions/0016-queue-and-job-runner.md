@@ -328,3 +328,58 @@ Each test failed before its fix and passes after it.
 ### Plan changes
 
 - None in this commit: 0027 changed 03 §Queue and 05 §C-11.
+
+## Follow-up (core-complete, task 1i), 2026-10-15: JSON nested more than 64 levels
+
+### Context
+
+Decision 0015 §3 (C-9) made a settings or presets document nested more than 64 levels a
+damaged file, never a crash, and never written. The queue store had no such guard (the M2
+review's "Known limits"). Checked on CPython 3.14.7 and Pydantic 2 (recorded in
+`tests/queue/test_store_nesting.py::test_python_facts_behind_the_rule`):
+
+- `json.loads` has no recursion limit of 1000: it raises `RecursionError` only at its C-stack
+  check (about 52 000 levels on an 8 MB stack). `RecursionError` is a `RuntimeError`, so the
+  store's `ValueError` handling did not catch it: such a row crashed the start.
+- The migrations' `copy.deepcopy` raises `RecursionError` at about 500 levels (a crash at
+  start). Pydantic validates any depth, but `model_dump` raises `ValueError` ("Circular
+  reference detected (depth exceeded)") past 255 levels: a row of 256 to 500 levels loaded,
+  then the start-up save of an interrupted job (`row_of`) crashed; a job added that deep
+  crashed `add`.
+- A `settings_json` that is JSON but not an object raised `AttributeError` in the migrations
+  (a crash at start). Found on the way; it is now a damaged row too.
+
+### Decision
+
+1. **Loading.** Each of `settings_json`, `plan_json` and `issues_json` is parsed and checked
+   with `reframe.settings.too_deep` (`MAX_DEPTH` = 64, the column's document is level 1)
+   before anything is migrated or validated. One that is deeper (or too deep to parse) makes
+   the row damaged: it stays in the file untouched and is left out of the queue, with the
+   same `queue.rows_skipped` warning as the other rows that do not load (detail
+   `<id>: <column>: the JSON is nested more than 64 levels deep`). A deep plan or issues
+   list is damage, not derived data of another version (that is still dropped): no Reframe
+   writes one.
+2. **Writing.** A document nested more than 64 levels (or one that Pydantic cannot dump) is
+   never written. `row_of` keeps its signature and never raises: the column holds a marker (a
+   private `str` subclass whose text is the reason), and `QueueStore.upsert` leaves that row
+   out of the transaction; the other rows of the call are written. The file keeps the job's
+   earlier row, if it had one (as a failed write keeps the old file in C-9). The job stays in
+   the queue in memory, as after `queue.not_saved`. One `app.warning` per job:
+   `queue.job_not_saved` ("The queue job <id> could not be saved: its data is nested too
+   deeply. It stays in the queue until Reframe closes.", detail `<column>: <why>`). A store
+   that saves nothing (a private store in memory, a newer or unreadable file) gives no such
+   warning: its warning at start already says that nothing is saved.
+
+### Consequences
+
+- A file this Reframe writes always loads again; a damaged row never stops the queue.
+- A job whose data becomes too deep after it was saved keeps its earlier row in the file:
+  after a restart that earlier version comes back. Only a hand-made or API-made document can
+  be that deep (Reframe's own documents need fewer than 10 levels).
+- Not changed here (not this step's files): other code that dumps a very deep `JobSettings`
+  (validation, events) has no guard of its own. A job of 65 levels goes through
+  `QueueService.add` (tested end to end).
+
+### Plan changes
+
+None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue.store` does.
