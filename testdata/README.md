@@ -1402,7 +1402,55 @@ fixtures.)
 
 ### Power actions (C-14)
 
-(core-complete wave 1f: the commands and what they do; checked without running them.)
+Checked on 2026-10-15 on Arch Linux (CachyOS kernel 7.2.8), systemd 262 (`262-1-arch`), polkit
+127, KDE Plasma 6 (Wayland). **Read-only checks only: no power action was ever run, also not
+`--dry-run`.** Decision [0036](../docs/decisions/0036-power-actions.md). Code:
+`reframe/platform/power.py`. Tests: `packages/reframe/tests/platform/test_power*.py` (fake
+executors, a fake command runner, mocked Windows DLLs; the shared pytest plugin makes the real
+functions fail every test that reaches them).
+
+- `systemctl --help` lists `poweroff`, `suspend`, `--no-ask-password` ("Do not prompt for
+  password"), `--check-inhibitors=MODE` and `--dry-run` (which also covers `poweroff` and
+  `suspend`; not used and not run).
+- `man systemctl` (262): `poweroff` "is asynchronous; it will return after the power-off
+  operation is enqueued, without waiting for it to complete"; `suspend` "will return after the
+  suspend operation is successfully enqueued. It will not wait for the suspend/resume cycle to
+  complete." `--check-inhibitors` defaults to `auto`: "logind will perform the check and
+  respect active inhibitor locks, but systemctl will only do a client-side check for
+  interactive invocations (i.e. from a TTY)". So Reframe (no TTY) gets logind's answer.
+- `man org.freedesktop.login1` (262): `PowerOff(in b interactive)`, `Suspend(in b
+  interactive)`; "The interactive boolean parameters can be used to control whether polkit
+  should interactively ask the user for authentication credentials if required."
+- `busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager
+  CanPowerOff` → `s "yes"`; `… CanSuspend` → `s "yes"`; `… CanHibernate` → `s "yes"`.
+- `pkaction --action-id … --verbose` (implicit any / inactive / active):
+  `org.freedesktop.login1.power-off` `auth_admin_keep / auth_admin_keep / yes`;
+  `power-off-multiple-sessions` the same; `suspend` the same;
+  `power-off-ignore-inhibit` `auth_admin_keep` for all three. So the active desktop session
+  may shut down and suspend without a password; a service outside the active session, another
+  logged-in user or a `block` lock of someone else needs an administrator password, which
+  `--no-ask-password` turns into an error (`power.failed`) instead of a dialog.
+- `systemd-inhibit --list` on this desktop: only `delay` locks for `sleep` / `shutdown`
+  (NetworkManager, UPower, rtkit, kwin, VS Code, Discord) and PowerDevil's `block` lock on the
+  power / suspend / hibernate keys and the lid; nothing would refuse `poweroff` or `suspend`.
+
+Windows (documentation only, nothing run; the code is mock-tested on Linux):
+
+- `shutdown` (learn.microsoft.com, windows-commands/shutdown, updated 2025-12-01): `/s` "Shuts
+  down the computer"; `/t <xxx>` "Sets the time-out period before shutdown to xxx seconds. The
+  valid range is 0-315360000 (10 years), with a default of 30. If the timeout period is
+  greater than 0, the /f parameter is implied."; `/f` "Forces running applications to close
+  without warning users. Caution: Using the /f option might result in loss of unsaved data.";
+  `/a` "Aborts a pending system shutdown … during the time-out period"; `/c <comment>` "a custom
+  reason … You can use a maximum of 512 characters."
+- `SetSuspendState` (learn.microsoft.com, powrprof.h, updated 2024-02-22): `BOOLEAN
+  SetSuspendState(BOOLEAN bHibernate, BOOLEAN bForce, BOOLEAN bWakeupEventsDisabled)`;
+  `bHibernate` FALSE: "the system is suspended"; `bForce` "This parameter has no effect";
+  `bWakeupEventsDisabled` FALSE: "any system wake events remain enabled"; zero on failure
+  (`GetLastError`); "The calling process must have the SE_SHUTDOWN_NAME privilege. To enable
+  the SE_SHUTDOWN_NAME privilege, use the AdjustTokenPrivileges function." The page says
+  nothing about Modern Standby (S0ix) machines or about the call returning only after resume:
+  both are not verified.
 
 ### When-done actions (C-11)
 
