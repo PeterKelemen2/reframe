@@ -1,4 +1,4 @@
-# x265 advanced options (C-6, M2 basic set; M9 completes 03 §Advanced's coverage list).
+# x265 advanced options (C-6: 03 §Advanced's coverage list, completed in M9).
 #
 # Every option goes into `-x265-params` (x26x_param); booleans are written `name=1` /
 # `name=0`. The per-preset defaults are what x265 writes into the stream (the "x265 … options:"
@@ -357,3 +357,646 @@ type = "bool"
 help = "Writes the stream headers before every keyframe (needed for some streaming and HDR players)."
 mapping = { kind = "x26x_param", name = "repeat-headers" }
 default = { kind = "encoder", note = "FFmpeg's libx265 wrapper turns it on for formats without global headers" }
+
+# --------------------------------------------------------------------------- M9 additions
+#
+# Per-preset tables as above (the stream's settings SEI for every preset and every tune;
+# x265 writes the colour options there as code points: colorprim=9 is bt2020).
+
+[[set.x265]]
+key = "b-pyramid"
+label = "B-pyramid"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets B-frames be used as references. Better compression; turn off only for very old decoders."
+mapping = { kind = "x26x_param", name = "b-pyramid" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "bframe-bias"
+label = "B-frame bias"
+category = "Frame types / GOP"
+type = "int"
+min = -90
+max = 100
+step = 1
+help = "Makes B-frames more (positive) or less (negative) likely to be chosen. 0 is right for almost everything."
+mapping = { kind = "x26x_param", name = "bframe-bias" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "b-intra"
+label = "Intra modes in B-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Also tries intra modes in B-frames. Helps scene changes and fast motion, costs speed."
+mapping = { kind = "x26x_param", name = "b-intra" }
+default = { kind = "preset", tunes = ["fastdecode"], values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = true, slow = false, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "weightp"
+label = "Weighted P-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Weighted prediction for P-frames: improves fades."
+mapping = { kind = "x26x_param", name = "weightp" }
+default = { kind = "preset", tunes = ["fastdecode"], values = { ultrafast = false, superfast = false, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "weightb"
+label = "Weighted B-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Weighted prediction for B-frames: better cross-fades, a little slower."
+mapping = { kind = "x26x_param", name = "weightb" }
+default = { kind = "preset", tunes = ["fastdecode"], values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "open-gop"
+label = "Open GOP"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets frames before a keyframe reference the GOP before it: slightly better compression. Off (closed GOPs) for exact cutting, segmenting and Blu-ray."
+mapping = { kind = "x26x_param", name = "open-gop" }
+default = { kind = "fixed", value = true }
+
+[[set.x265]]
+key = "vbv-maxrate"
+label = "VBV maximum rate"
+category = "Rate control"
+type = "int"
+min = 0
+max = 300000
+step = 1
+unit = "kb/s"
+help = "Peak bitrate for players with a bitrate limit (set together with the VBV buffer). 0 = no limit."
+mapping = { kind = "x26x_param", name = "vbv-maxrate" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "vbv-bufsize"
+label = "VBV buffer size"
+category = "Rate control"
+type = "int"
+min = 0
+max = 300000
+step = 1
+unit = "kb"
+help = "Decoder buffer for the VBV maximum rate. 0 = no limit."
+mapping = { kind = "x26x_param", name = "vbv-bufsize" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "hrd"
+label = "HRD signalling"
+category = "Rate control"
+type = "bool"
+# x265 4.1: without the VBV values it logs "NAL HRD parameters require VBV parameters,
+# ignored".
+help = "Writes hypothetical reference decoder information (broadcast, Blu-ray). Needs the VBV maximum rate and buffer size; x265 ignores it without them."
+mapping = { kind = "x26x_param", name = "hrd" }
+requires = [{ field = "option:vbv-maxrate", op = "ne", value = 0 }, { field = "option:vbv-bufsize", op = "ne", value = 0 }]
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "qcomp"
+label = "Quantiser curve compression"
+category = "Rate control"
+type = "float"
+min = 0.5
+max = 1
+step = 0.05
+help = "0.5 is closer to constant bitrate, 1 to constant quantiser. Higher values keep more detail in complex scenes."
+mapping = { kind = "x26x_param", name = "qcomp" }
+default = { kind = "fixed", value = 0.6 }
+
+[[set.x265]]
+key = "ipratio"
+label = "I/P quantiser ratio"
+category = "Rate control"
+type = "float"
+min = 1
+max = 2
+step = 0.05
+help = "How much better keyframes are quantised than P-frames (1.4 by default; the grain tune uses 1.1)."
+mapping = { kind = "x26x_param", name = "ipratio" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = 1.4, superfast = 1.4, veryfast = 1.4, faster = 1.4, fast = 1.4, medium = 1.4, slow = 1.4, slower = 1.4, veryslow = 1.4, placebo = 1.4 } }
+
+[[set.x265]]
+key = "pbratio"
+label = "P/B quantiser ratio"
+category = "Rate control"
+type = "float"
+min = 1
+max = 2
+step = 0.05
+help = "How much worse B-frames are quantised than P-frames (1.3 by default; the grain tune uses 1.0)."
+mapping = { kind = "x26x_param", name = "pbratio" }
+default = { kind = "preset", tunes = ["grain", "zerolatency"], values = { ultrafast = 1.3, superfast = 1.3, veryfast = 1.3, faster = 1.3, fast = 1.3, medium = 1.3, slow = 1.3, slower = 1.3, veryslow = 1.3, placebo = 1.3 } }
+
+[[set.x265]]
+key = "qpmin"
+label = "Minimum quantiser"
+category = "Rate control"
+type = "int"
+min = 0
+max = 69
+step = 1
+help = "The lowest QP x265 may use; 0 = no limit."
+mapping = { kind = "x26x_param", name = "qpmin" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "qpmax"
+label = "Maximum quantiser"
+category = "Rate control"
+type = "int"
+# x265 4.1: qpmax=70 stops the encoder.
+min = 0
+max = 69
+step = 1
+help = "The highest QP x265 may use; 69 = no limit."
+mapping = { kind = "x26x_param", name = "qpmax" }
+default = { kind = "fixed", value = 69 }
+
+[[set.x265]]
+key = "aq-motion"
+label = "AQ by motion"
+category = "Rate control"
+type = "bool"
+help = "Adjusts the quantiser by the amount of motion: fewer bits where fast motion hides detail."
+mapping = { kind = "x26x_param", name = "aq-motion" }
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "qg-size"
+label = "Quantisation group size"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "64", label = "64×64" },
+    { value = "32", label = "32×32" },
+    { value = "16", label = "16×16", help = "Finer AQ; the grain tune uses 8." },
+    { value = "8", label = "8×8" },
+]
+# x265 4.1: a size above the CTU size logs "QGSize should be less than or equal to
+# maxCUSize, setting QGSize = …"; validation (C-8) warns.
+help = "The smallest block size whose quantiser adaptive quantisation can change. Smaller is finer and slightly slower; not above the CTU size."
+mapping = { kind = "x26x_param", name = "qg-size" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = "32", superfast = "32", veryfast = "32", faster = "32", fast = "32", medium = "32", slow = "32", slower = "32", veryslow = "32", placebo = "32" } }
+
+[[set.x265]]
+key = "rc-grain"
+label = "Grain-friendly rate control"
+category = "Rate control"
+type = "bool"
+help = "Avoids quantiser jumps between frames that make grain pulse (the grain tune turns it on)."
+mapping = { kind = "x26x_param", name = "rc-grain" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = false, veryslow = false, placebo = false } }
+
+[[set.x265]]
+key = "cbqpoffs"
+label = "Cb QP offset"
+category = "Rate control"
+type = "int"
+min = -12
+max = 12
+step = 1
+help = "Quantiser offset of the blue-difference plane. Negative values spend more bits on colour (for example -2 against colour banding)."
+mapping = { kind = "x26x_param", name = "cbqpoffs" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "crqpoffs"
+label = "Cr QP offset"
+category = "Rate control"
+type = "int"
+min = -12
+max = 12
+step = 1
+help = "Quantiser offset of the red-difference plane. Usually set together with the Cb offset."
+mapping = { kind = "x26x_param", name = "crqpoffs" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "limit-refs"
+label = "Limit references"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "0", label = "Off", help = "Search every reference: slowest." },
+    { value = "1", label = "By depth", help = "Use the references the split CUs chose." },
+    { value = "2", label = "By CU", help = "Use the references of the best merge candidates." },
+    { value = "3", label = "Both" },
+]
+help = "Limits the reference frames searched per CU from earlier decisions. Faster at a small quality cost."
+mapping = { kind = "x26x_param", name = "limit-refs" }
+default = { kind = "preset", values = { ultrafast = "0", superfast = "0", veryfast = "3", faster = "3", fast = "3", medium = "1", slow = "3", slower = "1", veryslow = "0", placebo = "0" } }
+
+[[set.x265]]
+key = "limit-modes"
+label = "Limit modes"
+category = "Motion / analysis"
+type = "bool"
+help = "Skips rectangular and asymmetric partitions that are unlikely to win. Faster, almost no quality loss."
+mapping = { kind = "x26x_param", name = "limit-modes" }
+default = { kind = "preset", values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = true, slower = true, veryslow = false, placebo = false } }
+
+[[set.x265]]
+key = "rect"
+label = "Rectangular partitions"
+category = "Motion / analysis"
+type = "bool"
+help = "Analyses rectangular motion partitions (2N×N, N×2N). Better compression, slower."
+mapping = { kind = "x26x_param", name = "rect" }
+default = { kind = "preset", values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "amp"
+label = "Asymmetric partitions"
+category = "Motion / analysis"
+type = "bool"
+# x265 4.1: amp=1 with rect=0 gives amp=0 in the stream, without a message.
+help = "Analyses asymmetric motion partitions (2N×nU …). Needs rectangular partitions; slower."
+mapping = { kind = "x26x_param", name = "amp" }
+requires = [{ field = "option:rect", op = "eq", value = true }]
+default = { kind = "preset", values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "min-cu-size"
+label = "Minimum CU size"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "8", label = "8×8" },
+    { value = "16", label = "16×16", help = "Faster, for high resolutions." },
+    { value = "32", label = "32×32" },
+]
+# x265 4.1: a minimum above the CTU size stops the encoder ("min CU size must be less than or
+# equal to max CU size"); validation (C-8) reports it.
+help = "The smallest coding unit. Larger is faster and loses fine detail; not above the CTU size."
+mapping = { kind = "x26x_param", name = "min-cu-size" }
+default = { kind = "preset", values = { ultrafast = "16", superfast = "8", veryfast = "8", faster = "8", fast = "8", medium = "8", slow = "8", slower = "8", veryslow = "8", placebo = "8" } }
+
+[[set.x265]]
+key = "max-tu-size"
+label = "Maximum TU size"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "4", label = "4×4" },
+    { value = "8", label = "8×8" },
+    { value = "16", label = "16×16" },
+    { value = "32", label = "32×32" },
+]
+# x265 4.1: a size above the CTU size logs "Max TU size should be less than or equal to max
+# CU size, setting max TU size = …"; validation (C-8) warns.
+help = "The largest transform unit. Smaller can help detail and costs compression in flat areas; not above the CTU size."
+mapping = { kind = "x26x_param", name = "max-tu-size" }
+default = { kind = "fixed", value = "32" }
+
+[[set.x265]]
+key = "tu-intra-depth"
+label = "TU intra depth"
+category = "Motion / analysis"
+type = "int"
+min = 1
+max = 4
+step = 1
+help = "How deep the transform tree of intra blocks is searched. Higher is slower and slightly better."
+mapping = { kind = "x26x_param", name = "tu-intra-depth" }
+default = { kind = "preset", values = { ultrafast = 1, superfast = 1, veryfast = 1, faster = 1, fast = 1, medium = 1, slow = 1, slower = 3, veryslow = 3, placebo = 4 } }
+
+[[set.x265]]
+key = "tu-inter-depth"
+label = "TU inter depth"
+category = "Motion / analysis"
+type = "int"
+min = 1
+max = 4
+step = 1
+help = "How deep the transform tree of inter blocks is searched. Higher is slower and slightly better."
+mapping = { kind = "x26x_param", name = "tu-inter-depth" }
+default = { kind = "preset", values = { ultrafast = 1, superfast = 1, veryfast = 1, faster = 1, fast = 1, medium = 1, slow = 1, slower = 3, veryslow = 3, placebo = 4 } }
+
+[[set.x265]]
+key = "limit-tu"
+label = "Limit TU recursion"
+category = "Motion / analysis"
+type = "int"
+min = 0
+max = 4
+step = 1
+# x265 4.1: with tu-inter-depth 1 it logs "limit-tu disabled, requires tu-inter-depth > 1".
+help = "Early exits in the inter transform tree (1–4, faster at a small cost). Needs a TU inter depth above 1."
+mapping = { kind = "x26x_param", name = "limit-tu" }
+requires = [{ field = "option:tu-inter-depth", op = "in", value = [2, 3, 4] }]
+default = { kind = "preset", values = { ultrafast = 0, superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 4, veryslow = 0, placebo = 0 } }
+
+[[set.x265]]
+key = "early-skip"
+label = "Early skip"
+category = "Motion / analysis"
+type = "bool"
+help = "Checks the skip mode first and stops there when it fits. Faster; off can help dark, flat scenes."
+mapping = { kind = "x26x_param", name = "early-skip" }
+default = { kind = "preset", values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = false, medium = true, slow = false, slower = false, veryslow = false, placebo = false } }
+
+[[set.x265]]
+key = "rskip"
+label = "Recursion skip"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "By RD cost", help = "Faster at all presets but placebo." },
+    { value = "2", label = "By edge density", help = "Keeps more detail in textured areas than 1." },
+]
+# x265 4.1 writes rskip=2 into its settings SEI as "rskip=1 rskip-edge-threshold=0.050000".
+help = "Skips deeper CU splits when the current one looks good enough. The grain tune turns it off."
+mapping = { kind = "x26x_param", name = "rskip" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = "1", superfast = "1", veryfast = "1", faster = "1", fast = "1", medium = "1", slow = "1", slower = "1", veryslow = "1", placebo = "0" } }
+
+[[set.x265]]
+key = "fast-intra"
+label = "Fast intra"
+category = "Motion / analysis"
+type = "bool"
+help = "Checks only a subset of the intra angles. Faster, slightly lower quality."
+mapping = { kind = "x26x_param", name = "fast-intra" }
+default = { kind = "preset", values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = false, slow = false, slower = false, veryslow = false, placebo = false } }
+
+[[set.x265]]
+key = "tskip"
+label = "Transform skip"
+category = "Motion / analysis"
+type = "bool"
+help = "Allows 4×4 blocks without a transform: helps text, screen content and sharp graphics. Slower."
+mapping = { kind = "x26x_param", name = "tskip" }
+default = { kind = "preset", values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = false, veryslow = false, placebo = true } }
+
+[[set.x265]]
+key = "max-merge"
+label = "Merge candidates"
+category = "Motion / analysis"
+type = "int"
+min = 1
+max = 5
+step = 1
+help = "How many merge candidates are checked. More is slower and slightly better."
+mapping = { kind = "x26x_param", name = "max-merge" }
+default = { kind = "preset", values = { ultrafast = 2, superfast = 2, veryfast = 2, faster = 2, fast = 2, medium = 3, slow = 3, slower = 4, veryslow = 5, placebo = 5 } }
+
+[[set.x265]]
+key = "temporal-mvp"
+label = "Temporal MV prediction"
+category = "Motion / analysis"
+type = "bool"
+help = "Uses motion vectors of the reference frames as candidates. Better compression; off only for streams that must be cut at any frame."
+mapping = { kind = "x26x_param", name = "temporal-mvp" }
+default = { kind = "fixed", value = true }
+
+[[set.x265]]
+key = "signhide"
+label = "Sign hiding"
+category = "Motion / analysis"
+type = "bool"
+help = "Hides one sign bit per block in the parity of the coefficients. Saves bits, no visible cost."
+mapping = { kind = "x26x_param", name = "signhide" }
+default = { kind = "preset", values = { ultrafast = false, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x265]]
+key = "rd-refine"
+label = "RD refine"
+category = "Motion / analysis"
+type = "bool"
+# x265 4.1: with rd below 5 it logs "--rd-refine disabled, requires RD level > 4 and adaptive
+# quant".
+help = "Refines the quantiser and the intra direction of the best mode. Slower; needs RD level 5 or 6 and adaptive quantisation."
+mapping = { kind = "x26x_param", name = "rd-refine" }
+requires = [{ field = "option:rd", op = "in", value = [5, 6] }, { field = "option:aq-mode", op = "ne", value = "0" }]
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "dynamic-rd"
+label = "Dynamic RD"
+category = "Motion / analysis"
+type = "float"
+min = 0
+max = 4
+step = 0.5
+# x265 4.1: otherwise "Dynamic-rd disabled, requires RD <= 4, VBV and aq-mode enabled".
+help = "Raises the RD level in parts of the picture where VBV would otherwise lower the quality (0 = off, up to 4). Needs VBV, adaptive quantisation and an RD level of 4 or less."
+mapping = { kind = "x26x_param", name = "dynamic-rd" }
+requires = [{ field = "option:rd", op = "in", value = [1, 2, 3, 4] }, { field = "option:vbv-maxrate", op = "ne", value = 0 }, { field = "option:vbv-bufsize", op = "ne", value = 0 }, { field = "option:aq-mode", op = "ne", value = "0" }]
+default = { kind = "fixed", value = 0.0 }
+
+[[set.x265]]
+key = "nr-intra"
+label = "Intra noise reduction"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 2000
+step = 10
+help = "DCT-domain noise reduction of intra blocks (0 = off; 100–1000 for noisy sources). Also smooths detail."
+mapping = { kind = "x26x_param", name = "nr-intra" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "nr-inter"
+label = "Inter noise reduction"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 2000
+step = 10
+help = "DCT-domain noise reduction of inter blocks (0 = off; 100–1000 for noisy sources)."
+mapping = { kind = "x26x_param", name = "nr-inter" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x265]]
+key = "sao-non-deblock"
+label = "SAO on non-deblocked pixels"
+category = "Loop filters"
+type = "bool"
+help = "Lets SAO use pixels deblocking has not reached yet (the bottom and right edges of a CTU). Slightly better SAO decisions."
+mapping = { kind = "x26x_param", name = "sao-non-deblock" }
+requires = [{ field = "option:sao", op = "ne", value = false }]
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "colorprim"
+label = "Colour primaries"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709", help = "HD." },
+    { value = "bt470m", label = "BT.470 M" },
+    { value = "bt470bg", label = "BT.470 BG", help = "PAL SD." },
+    { value = "smpte170m", label = "SMPTE 170M", help = "NTSC SD." },
+    { value = "smpte240m", label = "SMPTE 240M" },
+    { value = "film", label = "Film" },
+    { value = "bt2020", label = "BT.2020", help = "UHD and HDR." },
+    { value = "smpte428", label = "SMPTE 428 (XYZ)" },
+    { value = "smpte431", label = "DCI-P3" },
+    { value = "smpte432", label = "Display P3" },
+]
+help = "The colour primaries written into the stream (VUI). Only a tag: the picture is not converted. For an HDR source the probe's value is written when this is not set."
+mapping = { kind = "x26x_param", name = "colorprim" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.x265]]
+key = "transfer"
+label = "Transfer characteristics"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709" },
+    { value = "bt470m", label = "BT.470 M" },
+    { value = "bt470bg", label = "BT.470 BG" },
+    { value = "smpte170m", label = "SMPTE 170M" },
+    { value = "smpte240m", label = "SMPTE 240M" },
+    { value = "linear", label = "Linear" },
+    { value = "log100", label = "Log 100:1" },
+    { value = "log316", label = "Log 316:1" },
+    { value = "iec61966-2-4", label = "IEC 61966-2-4 (xvYCC)" },
+    { value = "bt1361e", label = "BT.1361 extended" },
+    { value = "iec61966-2-1", label = "sRGB" },
+    { value = "bt2020-10", label = "BT.2020 10-bit" },
+    { value = "bt2020-12", label = "BT.2020 12-bit" },
+    { value = "smpte2084", label = "PQ (SMPTE 2084)", help = "HDR10." },
+    { value = "smpte428", label = "SMPTE 428" },
+    { value = "arib-std-b67", label = "HLG (ARIB STD-B67)" },
+]
+help = "The transfer function written into the stream (VUI). Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "transfer" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.x265]]
+key = "colormatrix"
+label = "Colour matrix"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709" },
+    { value = "fcc", label = "FCC" },
+    { value = "bt470bg", label = "BT.470 BG" },
+    { value = "smpte170m", label = "SMPTE 170M" },
+    { value = "smpte240m", label = "SMPTE 240M" },
+    { value = "gbr", label = "GBR" },
+    { value = "ycgco", label = "YCgCo" },
+    { value = "bt2020nc", label = "BT.2020 non-constant" },
+    { value = "bt2020c", label = "BT.2020 constant" },
+    { value = "smpte2085", label = "SMPTE 2085" },
+    { value = "chroma-derived-nc", label = "Chroma-derived non-constant" },
+    { value = "chroma-derived-c", label = "Chroma-derived constant" },
+    { value = "ictcp", label = "ICtCp" },
+]
+help = "The YUV matrix written into the stream (VUI). Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "colormatrix" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.x265]]
+key = "range"
+label = "Colour range"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "limited", label = "Limited (TV)" },
+    { value = "full", label = "Full (PC)" },
+]
+help = "The range tag written into the stream (VUI). Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "range" }
+default = { kind = "encoder", note = "the source's range" }
+
+[[set.x265]]
+key = "chromaloc"
+label = "Chroma sample location"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "0", label = "Left", help = "MPEG-2, most video." },
+    { value = "1", label = "Centre" },
+    { value = "2", label = "Top left", help = "BT.2020 / UHD." },
+    { value = "3", label = "Top" },
+    { value = "4", label = "Bottom left" },
+    { value = "5", label = "Bottom" },
+]
+help = "Where the chroma samples sit relative to the luma samples (VUI tag)."
+mapping = { kind = "x26x_param", name = "chromaloc" }
+default = { kind = "encoder", note = "the source's chroma location" }
+
+[[set.x265]]
+key = "aud"
+label = "Access unit delimiters"
+category = "Frame types / GOP"
+type = "bool"
+help = "Writes an access unit delimiter before each frame (some broadcast and Blu-ray tools need them)."
+mapping = { kind = "x26x_param", name = "aud" }
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "pools"
+label = "Thread pools"
+category = "Performance"
+type = "string"
+# x265 4.1 log: pools=2 → "Thread pool created using 2 threads".
+help = "Worker threads per NUMA node: a number (\"8\"), \"+\" for all CPUs of a node, \"-\" for none, comma-separated per node (\"+,-\"). Not set, x265 uses every CPU."
+mapping = { kind = "x26x_param", name = "pools" }
+default = { kind = "encoder", note = "every CPU thread" }
+
+[[set.x265]]
+key = "frame-threads"
+label = "Frame threads"
+category = "Performance"
+type = "int"
+min = 0
+max = 16
+step = 1
+help = "Frames encoded in parallel; 0 = automatic (from the CPU count). More is faster and costs a little quality; 1 is slowest and best."
+mapping = { kind = "x26x_param", name = "frame-threads" }
+default = { kind = "encoder", note = "automatic, from the CPU count" }
+
+[[set.x265]]
+key = "wpp"
+label = "Wavefront parallel processing"
+category = "Performance"
+type = "bool"
+help = "Encodes CTU rows in parallel. Much faster on many cores at a tiny cost in compression."
+mapping = { kind = "x26x_param", name = "wpp" }
+default = { kind = "fixed", value = true }
+
+[[set.x265]]
+key = "pmode"
+label = "Parallel mode analysis"
+category = "Performance"
+type = "bool"
+# x265 4.1: "Limit reference options 2 and 3 are not supported with pmode. Disabling limit
+# reference"; validation (C-8) warns about a limit-refs 2 or 3 the job sets.
+help = "Analyses the modes of a CU in parallel. Helps only on many cores with few frames in flight; usually slower. Turns limit references 2 and 3 off."
+mapping = { kind = "x26x_param", name = "pmode" }
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "pme"
+label = "Parallel motion estimation"
+category = "Performance"
+type = "bool"
+help = "Runs the motion searches of a CU in parallel. Helps only on many cores with slow presets; usually slower."
+mapping = { kind = "x26x_param", name = "pme" }
+default = { kind = "fixed", value = false }
+
+[[set.x265]]
+key = "lookahead-slices"
+label = "Look-ahead slices"
+category = "Performance"
+type = "int"
+min = 0
+max = 16
+step = 1
+# x265 4.1 turns it off below 720 lines: "Source height < 720p; disabling lookahead-slices"
+# (the table is read from a 1280x720 encode).
+help = "Splits look-ahead frames into slices for more parallelism (0 = off). Speeds up high resolutions; x265 turns it off below 720 lines."
+mapping = { kind = "x26x_param", name = "lookahead-slices" }
+default = { kind = "preset", values = { ultrafast = 4, superfast = 4, veryfast = 4, faster = 4, fast = 4, medium = 4, slow = 4, slower = 0, veryslow = 0, placebo = 0 } }

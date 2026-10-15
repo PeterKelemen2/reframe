@@ -16,6 +16,7 @@ from reframe.definitions.models import (
     CONDITION_FIELDS,
     FILTER_IDS,
     FILTER_STAGES,
+    OPTION_CATEGORIES,
     TRACK_FLAGS,
     AudioEncoderDef,
     ChoiceSetting,
@@ -338,6 +339,8 @@ def _lint_options(where: str, enc: VideoEncoderDef) -> list[str]:
         seen.add(opt.key)
         if not opt.label or not opt.category:
             out.append(f"{w}: needs a label and a category")
+        elif opt.category not in OPTION_CATEGORIES:
+            out.append(f"{w}: unknown category {opt.category!r}")
         if len(opt.help.strip()) < 10:
             out.append(f"{w}: needs help text")
         out += _lint_mapping(w, enc, opt.mapping.kind, opt.mapping)
@@ -353,6 +356,88 @@ def _lint_options(where: str, enc: VideoEncoderDef) -> list[str]:
         numbered = sorted(i for i in indexes if i is not None)
         if None in indexes or numbered != list(range(len(indexes))):
             out.append(f"{where}.options: parts of {name!r} must be 0..{len(indexes) - 1}")
+    out += _lint_option_targets(where, enc)
+    return out
+
+
+def _option_target(opt: EncoderOption) -> str | None:
+    """What an option writes, comparable across mapping kinds: ``-bf`` for ``ffmpeg_arg`` and
+    ``private_opt``, ``params:psy-rd`` for an ``x26x_param`` (``None`` for a composite part)."""
+    mapping = opt.mapping
+    if mapping.kind == "x26x_param":
+        return None if mapping.part is not None else f"params:{mapping.name}"
+    if mapping.kind == "private_opt":
+        return f"-{mapping.name}"
+    return mapping.arg.split(":", 1)[0]
+
+
+def _setting_targets(enc: VideoEncoderDef) -> dict[str, tuple[str, str | None]]:
+    """Arguments and params the encoder's other settings write (rate control, 2-pass,
+    preset / tune / profile / level, fast decode, ``extra_args``): target → (setting, the
+    rate-control mode it belongs to or ``None``)."""
+    found: dict[str, tuple[str, str | None]] = {}
+
+    def args(what: str, values: list[str], mode: str | None = None) -> None:
+        for arg in values:
+            if arg.startswith("-") and not arg.lstrip("-").replace(".", "").isdigit():
+                found.setdefault(arg.split(":", 1)[0], (what, mode))
+
+    def params(what: str, values: dict[str, str], mode: str | None = None) -> None:
+        for name in values:
+            found.setdefault(f"params:{name}", (what, mode))
+
+    for name in ("presets", "tunes", "profiles", "levels"):
+        setting: ChoiceSetting | None = getattr(enc, name)
+        if setting is None:
+            continue
+        mapping = setting.mapping
+        if mapping.kind == "x26x_param":
+            found.setdefault(f"params:{mapping.name}", (name, None))
+        elif mapping.kind == "private_opt":
+            found.setdefault(f"-{mapping.name}", (name, None))
+        else:
+            found.setdefault(mapping.arg.split(":", 1)[0], (name, None))
+    quality, bitrate = enc.rate_control.quality, enc.rate_control.bitrate
+    if quality is not None:
+        args("rate control", quality.args, "quality")
+        params("rate control", quality.params, "quality")
+    if bitrate is not None:
+        args("rate control", bitrate.args, "bitrate")
+        params("rate control", bitrate.params, "bitrate")
+        if bitrate.two_pass is not None:
+            two = bitrate.two_pass
+            args("2-pass", [*two.args, *two.turbo_args, *two.full_args], "bitrate")
+            params("2-pass", {**two.params, **two.turbo_params, **two.full_params}, "bitrate")
+    if enc.fast_decode is not None:
+        args("fast decode", enc.fast_decode.args)
+        params("fast decode", enc.fast_decode.params)
+    args("extra_args", enc.extra_args)
+    return found
+
+
+def _lint_option_targets(where: str, enc: VideoEncoderDef) -> list[str]:
+    """Two options, or an option and another setting, that write the same argument or
+    parameter: the command would carry it twice and the last one would win. An option that
+    ``requires`` one rate-control mode may share an argument with the other mode (NVENC
+    ``-multipass``: the option for constant quality, 2-pass for average bitrate)."""
+    out: list[str] = []
+    settings = _setting_targets(enc)
+    owners: dict[str, str] = {}
+    for opt in enc.options:
+        target = _option_target(opt)
+        if target is None:
+            continue
+        w = f"{where}.options.{opt.key}"
+        if target in owners:
+            out.append(f"{w}: writes {target} like option {owners[target]!r}")
+        else:
+            owners[target] = opt.key
+        if target not in settings:
+            continue
+        what, mode = settings[target]
+        modes = {str(c.value) for c in opt.requires if c.field == "rate_control" and c.op == "eq"}
+        if mode is None or not modes or mode in modes:
+            out.append(f"{w}: writes {target}, which {what} already writes")
     return out
 
 

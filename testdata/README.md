@@ -1398,7 +1398,79 @@ fixtures.)
 
 ### Advanced encoder options (C-6, complete option sets)
 
-(core-complete wave 1e: option names and ranges checked with the encoders, the dry run.)
+Checked on 2026-10-15 with FFmpeg n9.0.2 (Arch `/usr/bin/ffmpeg`: x264 core 165, x265 4.3,
+SVT-AV1 v4.2.0, libvpx 1.17.0), the pinned BtbN n9.0.2 build (x265 4.3+49, SVT-AV1
+v4.2.0-151) and the BtbN n8.1.3 override build, and for AMF / VAAPI on an AMD RX 7600 (Mesa
+26.2.4 radeonsi, amf-amdgpu-pro 25.10). Decision
+[0035](../docs/decisions/0035-advanced-option-sets-and-dry-run.md). The tests repeat every
+check (`needs_ffmpeg`; AMF / VAAPI `needs_gpu`):
+
+```sh
+uv run pytest packages/reframe/tests/definitions/test_tools.py packages/reframe/tests/definitions/test_options_values.py
+uv run pytest packages/reframe/tests/validation/test_options_ffmpeg.py packages/reframe/tests/validation/test_options_facade.py
+uv run pytest -m needs_gpu packages/reframe/tests/definitions   # every AMF / VAAPI option on the GPU
+```
+
+All three builds pass the non-GPU tests (`REFRAME_FFMPEG=…`). NVENC and QSV options come from
+`ffmpeg -h encoder=<id>` only (named constants included): **not verified** on hardware. The
+n8.1.3 help has every private option the sets use (it differs only in preset ranges and
+NVENC's old `-cbr` / `-2pass` / `-spatial_aq` aliases).
+
+**How each option was checked.** x264 / x265: a non-default value of every option reaches the
+library's settings SEI (`test_every_x26x_option_reaches_the_library`); x264's colour tags are
+not in its SEI and are read from the stream's VUI with ffprobe, as are x265's `range` and
+`chromaloc` (its SEI has only flags for them); x265 `pools` from the log ("Thread pool created
+using 2 threads"). The per-preset tables are the SEI of every preset and every tune
+(`test_per_preset_defaults_match_the_library`); `lookahead-slices` from a 1280x720 encode.
+SVT-AV1: the `SVT [config]` log lines and ffprobe (`test_svtav1_options_parse`,
+`test_svtav1_option_defaults_in_the_log`). Every number option encodes at both range ends
+(`test_option_range_ends_encode`, now with VP9) and every enum and bool value of the software
+encoders encodes (`test_every_enum_and_bool_value_encodes`).
+
+**Encoder facts behind the data:**
+
+| Encoder | What the tool does | In the definitions |
+|---------|-------------------|--------------------|
+| x264 | `range=pc` / `tv` is overwritten by the input's range (FFmpeg's wrapper); `colorprim` / `transfer` / `colormatrix` / `chromaloc` win over the input's tags | `range` not offered |
+| x264 | 8-bit `qpmax=81` → `qpmax=69`; 10-bit default 81 | 0–69, default "no limit" |
+| x264 | `cqm=jvt` raises `qpmin` (a 10-bit encode with `qpmin=2` writes 9) | tested apart |
+| x264 | `bluray-compat=1` with `bframes=5:weightp=2:b-pyramid=normal` writes 3 / 1 / strict, no message | `encoder.option_ignored` |
+| x264 | `nal-hrd=vbr` without both VBV values: "NAL HRD parameters require VBV parameters", left out | `requires` → `encoder.option_inactive` |
+| x264 | `pb_ratio` is in the SEI only with `mbtree=0` | fixed 1.3 |
+| x265 | `qpmax=70`: the encoder does not open | 0–69 |
+| x265 | `amp=1` with `rect=0` writes `amp=0`, no message | `requires` rect |
+| x265 | `rd-refine` below RD 5: "--rd-refine disabled, requires RD level > 4 and adaptive quant"; `limit-tu` with `tu-inter-depth=1`: "limit-tu disabled, requires tu-inter-depth > 1"; `dynamic-rd` without VBV: "Dynamic-rd disabled, requires RD <= 4, VBV and aq-mode enabled"; `hrd` without VBV: "NAL HRD parameters require VBV parameters, ignored" | `requires` → `encoder.option_inactive` |
+| x265 | `ctu=16:max-tu-size=32`: "Max TU size should be less than or equal to max CU size, setting max TU size = 16"; `qg-size` above the CTU likewise; `pmode=1` with `limit-refs=2`: "Limit reference options 2 and 3 are not supported with pmode. Disabling limit reference" | `encoder.option_ignored` |
+| x265 | `ctu=16:min-cu-size=32`: "min CU size must be less than or equal to max CU size", exit 183 | `encoder.option_conflict` |
+| x265 | `hdr10-opt=1` without BT.2020 tags: "Recommended Settings for HDR10-opt: colour primaries should be BT.2020, Disabling hdr10-opt." (exit 0) | help text |
+| x265 | `rskip=2` is written to the SEI as `rskip=1 rskip-edge-threshold=0.050000`; `chromaloc` as a flag | tests read it so |
+| x265 | below 720 lines: "Source height < 720p; disabling lookahead-slices"; at 720p the presets use 4 (ultrafast … slow) or 0 | per-preset table |
+| SVT-AV1 | Ranges from its own errors: `aq-mode` 0–2, variance boost strength 1–4, octile 1–8, curve 0–2, `tf-strength` 0–4, `luminance-qp-bias` 0–100, `qp-scale-compress-strength` 0–3 (an integer: `1.5` is "Error parsing option"), `ac-bias` 0–8, `irefresh-type` 1–2, `hierarchical-levels` 0–5, `enable-dlf` 0–2, `min-qp` / `max-qp` 0–63, `tile-rows` 0–6, `tile-columns` 0–4 (5–6: "MaxTiles is 128 and MaxTileCols is 16"), `lp` 0–6 (7: "Setting maximum parallelism level") | ranges |
+| SVT-AV1 | Defaults in the log: AQ mode 2, variance boost strength / octile / curve 2 / 5 / 0, sharpness 0, luminance QP bias 0, QP scale compress 0, "key frame" (irefresh-type 2), mini-GOP 32 at presets 0–8 and 16 at 10–11 | fixed / "from the preset" |
+| SVT-AV1 | `aq-mode=0` turns CRF into constant QP (log "CQP") | help text |
+| SVT-AV1 | `irefresh-type=1` with `hierarchical-levels=3`: "Fwd key frame is only supported for hierarchical levels 4 at this point. Hierarchical levels are set to 4" | `encoder.option_ignored` |
+| SVT-AV1 | `min-qp` above `max-qp`: "MinQpAllowed must be smaller than or equal to MaxQpAllowed"; `qm-min` above `qm-max`: "Min quant matrix level must not greater than max quant matrix level" (exit 234) | `encoder.option_conflict` |
+| SVT-AV1 | `matrix-coefficients=identity`: "Identity matrix … may be used only with 4:4:4" | not offered |
+| SVT-AV1 | `mastering-display=G(0.265,0.69)…L(1000,0.0001)`, `content-light=1000,400` and the colour options win over the input's tags; ffprobe shows the side data in AV1 units (`44564/65536`, `256000/256`, `2/16384`) | Copy HDR metadata |
+| libvpx-vp9 | No settings in the stream. 26 for `lag-in-frames` and 101 for `overshoot-pct`: "Failed to initialize encoder: Invalid parameter"; `arnr-maxframes=16` / `arnr-strength=7`: "Failed to set VP8E_SET_ARNR_… codec control" ("out of range [0..15]" / "[..6]"); `auto-alt-ref=7`, `sharpness=8`: "Error setting option … to value …" | ranges |
+| libvpx-vp9 | Without a rate control FFmpeg uses CRF 32; a CQ value outside `qmin`…`qmax` fails ("CQ level 30 must be between minimum and maximum quantizer value (0-29)"), as does `qmin` above `qmax` | `encoder.option_conflict` |
+| libvpx-vp9 | `qmin 0` / `qmax 63` and `sharpness 0` give the same file as no value (libvpx's defaults); undershoot / overshoot 0 or 100 give the same CQ file | fixed defaults; `requires` average bitrate |
+| AMF (RX 7600) | Every pre-analysis option, `enforce_hrd`, `filler_data`, `preencode`, `async_depth`, `high_motion_quality_boost_enable`, `coder`, `me_half_pel` / `me_quarter_pel` (H.264), `me_quarter_pel` (H.265) encode | offered |
+| AMF (RX 7600) | h264_amf with B-frames logs "AMF_INVALID_ARG: SetPropertyInternal() - BPicturesDeltaQP failed" (also for `bf_delta_qp` / `bf_ref_delta_qp`); hevc_amf `me_half_pel=0`: "Invalid settings: motionEstimationHalfPixel=0 and motionEstimationQuarterPixel=0", encoder not opened; av1_amf `-align 64x16` at 640x360: "Resolution incorrect for alignment mode", **exit code 0** and an empty output; `-align 1080p` / `none` keep 1920x1082 | not offered |
+| VAAPI (radeonsi) | `idr_interval`, `async_depth`, `aud`, `tier` (H.265, AV1) encode; `low_power=1`: "Function not implemented"; h264 `b_depth=2`: "B-frame as L1 reference not supported"; `blbrc`: "Driver does not support BLBRC" | not offered |
+
+**The dry run** (`-frames:v 1 -f null -`, video only): a refused custom parameter is in the
+log, not the exit code, for three encoders:
+
+| Encoder | `bogus=1` | Bad value | Exit code |
+|---------|-----------|-----------|-----------|
+| x264 | `Error parsing option 'bogus = 1'.` | `Error parsing option 'me = foo'.` (`bframes=99` is clamped silently) | 0 |
+| x265 | `Unknown option: bogus.` | `Invalid value for me: foo.` | 0 |
+| SVT-AV1 | `Error parsing option bogus: 1.` | `film-grain=99`: `Svt[error]: Film grain denoise strength is only supported for values between [0,50]` | 0 / 234 |
+| libvpx-vp9 (own options) | `Unrecognized option 'bogus:v:0'.` | `Error setting option lag-in-frames to value abc.` | 8 / 234 |
+
+x265 and SVT-AV1 print their own messages (`x265 [warning]: …`, `Svt[warn]: …`) whatever
+FFmpeg's log level is.
 
 ### Power actions (C-14)
 

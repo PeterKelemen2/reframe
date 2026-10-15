@@ -1,5 +1,9 @@
-"""x265 level limits (M2 review): a level too small for the output size or frame rate
-validates clean, then x265 refuses to start.
+"""Encoder rules of C-6's options: x265 level limits (M2 review) and the advanced-option rules
+(M9, :func:`reframe.validation.video.video_option_rule_issues`, registered here for jobs; a
+template rule needs a case in ``tests/validation/test_template.py``, which another task owns).
+
+x265 levels: a level too small for the output size or frame rate validates clean, then x265
+refuses to start.
 
 Checked with x265 in FFmpeg n9.0.2 (both builds; testdata/README.md "Validation (C-8)",
 ``tests/validation/test_levels_ffmpeg.py``): with ``-x265-params level-idc=L`` x265 exits
@@ -21,6 +25,7 @@ from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import error, fix, replace
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
+from reframe.validation.video import OPTION_RULE_CODES, video_option_rule_issues
 
 __all__ = ["X265_LEVELS", "x265_level_fits"]
 
@@ -117,3 +122,11 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
         "would refuse to encode.",
         *fixes,
     )
+
+
+# --------------------------------------------------------------------------- option rules (M9)
+
+
+@job_rule("encoder", *OPTION_RULE_CODES)
+def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
+    return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
