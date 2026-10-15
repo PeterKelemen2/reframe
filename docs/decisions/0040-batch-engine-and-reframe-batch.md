@@ -219,7 +219,11 @@ no resolution in the names (the video is 320×180). `anime-s02` has three episod
 layout. The demo preset (E01's setup applied to the group, with 04's naming template
 `{name} - S{season:02}E{episode:02}< - {sub_title}>`, separator space) is
 `packages/reframe/tests/batch/data/anime-season.preset.json`, checked against the derivation by
-a test.
+a test. **It has the fix that E11's ✗ offers applied (A2 optional)**: 08 §M7's demo wants
+"✓ for every file, with the right warnings for E05 and E11 → queue 12 jobs", and the CLI has
+no per-file overrides; so E11 shows "A2 – skipped" and "S1 ≈ #2 (title)" (⚠), and all 12 files
+are queued. The derivation itself keeps `required: true` (04's default), which gives 04's
+matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub required).
 
 ## Consequences
 
@@ -231,6 +235,10 @@ a test.
   is meant for per-file overrides only (the UI must not save it into a template).
 - Revisit with the UI (F-13): the near threshold, the Output section of *Apply to group*, the
   crop detection per file, ambiguity of derived rules on identical tracks.
+- `reframe batch DIR` searches the folder as `reframe encode DIR` does (0017): outputs written
+  next to the sources by an earlier run are media files too, and form a group of their own on
+  the next run (their names then get ` (1)`); the episodes themselves are protected by
+  `batch.output_exists`. A fixed output folder in the naming options avoids it.
 
 ## Open product questions (defaults chosen, easy to change)
 

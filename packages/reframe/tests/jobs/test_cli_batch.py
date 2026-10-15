@@ -104,6 +104,22 @@ def import_demo_preset() -> None:
     assert result.exit_code == EXIT_OK, result.output
 
 
+STRICT = "Anime Season (dub required)"
+
+
+def import_strict_preset(tmp_path: Path) -> None:
+    """The demo preset with the dub required again (as *Apply to group* derives it): E11,
+    which has no dub, is an error (04's matrix: "A2 ✗ none")."""
+    data = json.loads(A.PRESET_FILE.read_text(encoding="utf-8"))
+    (preset,) = data["presets"]
+    preset.update(id="strict-dub", name=STRICT)
+    preset["audio_rules"][1]["required"] = True
+    file = tmp_path / "strict.json"
+    file.write_text(json.dumps(data), encoding="utf-8")
+    result = invoke("presets", "import", str(file))
+    assert result.exit_code == EXIT_OK, result.output
+
+
 # --------------------------------------------------------------------------- dry run
 
 
@@ -133,10 +149,12 @@ def test_dry_run_with_the_default_preset(s01: Path) -> None:
 
 
 def test_dry_run_with_the_group_preset(s01: Path) -> None:
-    """M7 demo 5: one group, ✓ for every file, the right warnings for E05 and E11."""
+    """M7 demo 5: one group, ✓ for every file (no errors), the right warnings for E05 (an
+    extra track) and E11 (no dub: the optional A2 is skipped; the signs track has another
+    title)."""
     import_demo_preset()
     result = invoke("batch", str(s01), "--preset", A.PRESET_NAME, "--dry-run")
-    assert result.exit_code == EXIT_FAILED, result.output  # E11: no dub, A2 is required
+    assert result.exit_code == EXIT_OK, result.output
     out = result.stdout.splitlines()
     assert out[0] == f"Preset: {A.PRESET_NAME}"
     assert [line for line in out if line.startswith(("  A", "  S"))][-4:] == [
@@ -145,22 +163,44 @@ def test_dry_run_with_the_group_preset(s01: Path) -> None:
         "  S1  eng Signs & Songs",
         "  S2  eng Full",
     ]
-    header = out.index("File    V           A1     A2       S1             S2     Output name")
+    header = out.index("File    V           A1     A2          S1             S2     Output name")
     rows = out[header + 2 : header + 14]
     assert rows[0] == (
-        "E01 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E01 - Pilot.mkv"
+        "E01 ✓   ✓ 320x180   ✓ #1   ✓ #2        ✓ #3           ✓ #4   "
+        "Anime Show - S01E01 - Pilot.mkv"
     )
     assert rows[4] == (
-        "E05 ⚠   ✓ 320x180   ✓ #1   ✓ #2     ✓ #4           ✓ #5   Anime Show - S01E05 - Echoes.mkv"
+        "E05 ⚠   ✓ 320x180   ✓ #1   ✓ #2        ✓ #4           ✓ #5   "
+        "Anime Show - S01E05 - Echoes.mkv"
     )
     assert rows[10] == (
-        "E11 ✗   ✓ 320x180   ✓ #1   ✗ none   ≈ #2 (title)   ✓ #3   Anime Show - S01E11 - Static.mkv"
+        "E11 ⚠   ✓ 320x180   ✓ #1   \N{EN DASH} skipped   ≈ #2 (title)   ✓ #3   "
+        "Anime Show - S01E11 - Static.mkv"
     )
+    assert sum(r.split()[1] == "✓" for r in rows) == 10
     problems = out[out.index("Problems") :]
     assert "  E05: 1 warning" in problems
+    assert "  E11: 2 warnings" in problems
+    assert any("[batch.near_match · source]" in line for line in problems)
+    assert any("[batch.track_relaxed · subtitle_rules[0]]" in line for line in problems)
+    assert out[-1] == "Dry run: 12 of 12 files can be queued."
+
+
+def test_dry_run_with_the_dub_required(s01: Path, tmp_path: Path) -> None:
+    """04's matrix: with A2 required, E11 is "✗ none" (an error, with the fix that the demo
+    preset applied)."""
+    import_strict_preset(tmp_path)
+    result = invoke("batch", str(s01), "--preset", STRICT, "--dry-run")
+    assert result.exit_code == EXIT_FAILED, result.output
+    out = result.stdout.splitlines()
+    assert (
+        "E11 ✗   ✓ 320x180   ✓ #1   ✗ none   ≈ #2 (title)   ✓ #3   Anime Show - S01E11 - Static.mkv"
+        in out
+    )
+    problems = out[out.index("Problems") :]
     assert "  E11: 1 error, 2 warnings" in problems
     assert any("[batch.track_missing · audio_rules[1]]" in line for line in problems)
-    assert any("[batch.track_relaxed · subtitle_rules[0]]" in line for line in problems)
+    assert any("fix: Make the rule optional" in line for line in problems)
     assert out[-1] == "Dry run: 11 of 12 files can be queued; 1 cannot (errors)."
 
 
@@ -237,13 +277,31 @@ def test_a_file_that_cannot_be_read(cli_env: ft.FakeTools, tmp_path: Path) -> No
 # --------------------------------------------------------------------------- encode
 
 
-def test_the_valid_files_are_queued_in_episode_order(s01: Path, queues: Queues) -> None:
+def test_the_season_is_queued_in_episode_order(s01: Path, queues: Queues) -> None:
+    """M7 demo: queue 12 jobs with templated names."""
     import_demo_preset()
     result = invoke("batch", str(s01), "--preset", A.PRESET_NAME)
-    assert result.exit_code == EXIT_FAILED, result.output  # E11 is not queued
+    assert result.exit_code == EXIT_OK, result.output
     out = result.stdout.splitlines()
     first = s01 / "Anime Show - S01E01 - Pilot.mkv"
     assert f"[ 1/12] {media.anime_file_name(1, 1)} → {first}" in out
+    assert "Queued 12 jobs." in out
+    assert out[-1] == "Summary: 12 done, 0 failed, 0 cancelled, 0 not queued."
+    (queue,) = queues.made
+    jobs = queue.list()
+    assert [job.position for job in jobs] == list(range(12))
+    names = [job.settings.output.path.name for job in jobs if job.settings.output.path]
+    assert names[:2] == ["Anime Show - S01E01 - Pilot.mkv", "Anime Show - S01E02 - Departure.mkv"]
+    assert names[10] == "Anime Show - S01E11 - Static.mkv"
+    assert [len(job.settings.audio) for job in jobs][10] == 1  # E11: no dub
+    assert queue.calls[-1] == "start " + " ".join(f"job-{n}" for n in range(1, 13))
+
+
+def test_a_file_with_errors_is_not_queued(s01: Path, queues: Queues, tmp_path: Path) -> None:
+    import_strict_preset(tmp_path)
+    result = invoke("batch", str(s01), "--preset", STRICT)
+    assert result.exit_code == EXIT_FAILED, result.output  # E11 is not queued
+    out = result.stdout.splitlines()
     eleven = out.index(
         f"[11/12] {media.anime_file_name(1, 11)} → {s01 / 'Anime Show - S01E11 - Static.mkv'}"
     )
@@ -251,12 +309,7 @@ def test_the_valid_files_are_queued_in_episode_order(s01: Path, queues: Queues) 
     assert "Queued 11 jobs." in out
     assert out[-1] == "Summary: 11 done, 0 failed, 0 cancelled, 1 not queued."
     (queue,) = queues.made
-    jobs = queue.list()
-    assert [job.position for job in jobs] == list(range(11))
-    names = [job.settings.output.path.name for job in jobs if job.settings.output.path]
-    assert names[:2] == ["Anime Show - S01E01 - Pilot.mkv", "Anime Show - S01E02 - Departure.mkv"]
-    assert names[-1] == "Anime Show - S01E12 - Homecoming.mkv"
-    assert queue.calls[-1] == "start " + " ".join(f"job-{n}" for n in range(1, 12))
+    assert [job.position for job in queue.list()] == list(range(11))
 
 
 def test_cancelling_the_batch_cancels_its_jobs(s01: Path, queues: Queues) -> None:

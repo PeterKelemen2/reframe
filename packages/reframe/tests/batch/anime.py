@@ -15,8 +15,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reframe.batch import derive_template
+from reframe.batch import derive_template, resolve
 from reframe.jobs import draft_from_preset
+from reframe.jsonpatch import apply_patch
 from reframe.models import (
     JobSettings,
     JobTemplate,
@@ -120,16 +121,29 @@ def example_template(e01: MediaSource | None = None) -> JobTemplate:
 PRESET_ID = "5f0c1d3e-04e0-4a7e-9b1a-0000000000c7"
 
 
+def demo_template() -> JobTemplate:
+    """The group template the M7 demo saves: :func:`example_template` with the fix that E11's
+    ✗ offers ("Make the rule optional": E11 has no dub), so every episode can be queued."""
+    template = example_template()
+    e11 = resolve(template, recorded(1, 11))
+    (missing,) = [issue for issue in e11.issues if issue.code == "batch.track_missing"]
+    (fix,) = missing.fixes
+    patched: JobTemplate = JobTemplate.model_validate(
+        apply_patch(template.model_dump(mode="json"), fix.patch)
+    )
+    return patched
+
+
 def preset_document() -> dict[str, object]:
-    """:data:`PRESET_FILE`: :func:`example_template` saved as the user preset
+    """:data:`PRESET_FILE`: :func:`demo_template` saved as the user preset
     :data:`PRESET_NAME`, as ``reframe presets export`` writes it."""
-    data = example_template().model_dump(mode="json", exclude={"schema_version"})
+    data = demo_template().model_dump(mode="json", exclude={"schema_version"})
     data.update(
         id=PRESET_ID,
         name=PRESET_NAME,
         category="Custom",
-        description="04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1, "
-        "Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
+        description="04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: "
+        "E11 has no dub), Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
         built_in=False,
     )
     preset = Preset.model_validate(data)

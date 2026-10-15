@@ -214,7 +214,7 @@
             "visual_impaired": false,
             "original": false
           },
-          "required": true
+          "required": false
         }
       ],
       "subtitle_rules": [
@@ -328,7 +328,7 @@
       "id": "5f0c1d3e-04e0-4a7e-9b1a-0000000000c7",
       "name": "Anime Season (04 example)",
       "category": "Custom",
-      "description": "04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1, Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
+      "description": "04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: E11 has no dub), Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
       "built_in": false
     }
   ],

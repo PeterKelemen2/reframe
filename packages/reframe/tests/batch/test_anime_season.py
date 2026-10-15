@@ -265,11 +265,19 @@ def test_the_saved_template_resolves_season_2_exactly() -> None:
 
 def test_the_demo_preset_file_is_the_derived_template() -> None:
     """``tests/batch/data/anime-season.preset.json`` (the M7 demo's ``reframe presets
-    import`` file) is E01's derived template; rewrite it with
+    import`` file) is E01's derived template with the fix that E11's ✗ offers (the dub is
+    optional); rewrite it with
     ``PYTHONPATH=testing uv run python packages/reframe/tests/batch/anime.py``."""
     saved = json.loads(A.PRESET_FILE.read_text(encoding="utf-8"))
     assert saved == A.preset_document()
     (preset,) = PresetFile.model_validate(saved).presets
     assert isinstance(preset, Preset)
     assert preset.name == A.PRESET_NAME
-    assert len(preset.audio_rules) == 2
+    assert [rule.required for rule in preset.audio_rules] == [True, False]
+    derived = A.example_template()
+    assert preset.subtitle_rules == derived.subtitle_rules
+    assert preset.audio_rules[0] == derived.audio_rules[0]
+    # With the dub optional, E11 resolves without an error: every episode can be queued.
+    rows = matrix(preset, A.season(1)).rows
+    assert [r.status for r in rows] == ["ok"] * 10 + ["warning", "ok"]
+    assert [(m.status, m.streams) for m in rows[10].matches][1] == ("skipped", [])
