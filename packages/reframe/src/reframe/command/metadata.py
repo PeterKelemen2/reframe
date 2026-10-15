@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -51,11 +51,7 @@ from reframe.models import (
     TagSettings,
     TrackMetadata,
 )
-from reframe.naming.context import NameContext, build_values
-from reframe.naming.fs import FileTimes
-from reframe.naming.resolve import apply_overrides
-from reframe.naming.source import choose_source, split_extension
-from reframe.naming.template import parse_template, render, template_variables
+from reframe.naming import render_value
 
 __all__ = [
     "TAG_KEYS",
@@ -296,19 +292,6 @@ def chapter_range(source: MediaSource, job_range: ChapterRange) -> tuple[float, 
 # --------------------------------------------------------------------------- tags
 
 
-class _NoFiles:
-    """The naming file-system view of a pure builder: nothing can be read."""
-
-    def list_files(self, folder: Path) -> list[str] | None:
-        return None
-
-    def file_times(self, file: Path) -> FileTimes | None:
-        return None
-
-
-_PLACEHOLDER_NOW = datetime(2000, 1, 1, tzinfo=UTC)
-
-
 def render_tag(
     template: str,
     job: JobSettings,
@@ -319,40 +302,14 @@ def render_tag(
     now: datetime | None,
     definitions: Definitions,
 ) -> str:
-    """A tag value with the naming variables filled in (C-16's template code, no file-system
-    reads). Without ``now``, ``{date}`` and ``{time}`` are empty; ``{modification-date}`` is
-    always empty (it needs the file system). A template with errors is written as typed."""
-    parsed = parse_template(template)
-    if parsed.errors:
-        return template
-    if not any(True for _ in template_variables(parsed.nodes)):
-        return "/".join("".join(p.text for p in seg) for seg in render(parsed, {}))
-    fs = _NoFiles()
-    naming = job.output.naming
-    mode = naming.name_source or options.name_source
-    choice = choose_source(job.source.path, mode, root=None, fs=fs)
-    fields, _, _ = apply_overrides(choice.fields, naming.field_overrides)
-    stem, _ = split_extension(job.source.path.name)
-    values = build_values(
-        NameContext(
-            fields=fields,
-            source_text=choice.text,
-            source_separator=choice.separator,
-            file=job.source.path,
-            file_stem=stem,
-            options=options,
-            container=job.output.container,
-            now=now if now is not None else _PLACEHOLDER_NOW,
-            fs=fs,
-            definitions=definitions,
-            job=job,
-            source=source,
-            output_size=output_size,
-        )
-    )
-    if now is None:
-        values["date"] = values["time"] = None
-    return "/".join("".join(p.text for p in seg) for seg in render(parsed, values))
+    """A tag value with the naming variables filled in: C-16's public
+    :func:`reframe.naming.render_value` with no file-system reads. Without ``now``,
+    ``{date}`` and ``{time}`` are empty; ``{modification-date}`` is always empty (it needs the
+    file system). A template with errors is written as typed."""
+    return render_value(
+        template, job, source, options=options, output_size=output_size, now=now,
+        definitions=definitions,
+    )  # fmt: skip
 
 
 def tag_args(tags: TagSettings, *, passthru: bool, render_value: Callable[[str], str]) -> list[str]:

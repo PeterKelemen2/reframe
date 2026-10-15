@@ -48,10 +48,17 @@ from reframe.command.metadata import (
     OutputTrack,
     chapter_plan,
     chapter_range,
-    ietf_edits,
     render_tag,
     stream_metadata_args,
     tag_args,
+)
+from reframe.command.mkvpropedit import (
+    FixupTrack,
+    InfoEdit,
+    TrackEdit,
+    edit_args,
+    fixup_edits,
+    in_place_edits,
 )
 from reframe.command.quoting import Shell, command_line, default_shell, quote_posix, quote_windows
 from reframe.command.subtitles import SubtitlePlan, plan_subtitles
@@ -355,17 +362,20 @@ def build_plan(
     naming variables (``{date}`` is empty without ``now``).
     """
     defs = definitions if definitions is not None else load_definitions()
-    final = job.output.path
-    if final is None:
-        raise PlanError("the output path is not set (naming resolves it before planning)")
     container = defs.containers.get(job.output.container)
     if container is None:
         raise PlanError(f"unknown container {job.output.container!r}")
     if not source.video:
         raise PlanError("the source has no video stream")
     video = source.video[0]
-    tmp = partial_path(final)
     kind, _ = job_type(job, source, definitions=defs)
+    options = naming if naming is not None else NamingOptions()
+    if kind == "metadata_edit":
+        return _in_place_plan(job, source, tools, defs, options, now, shell or default_shell())
+    final = job.output.path
+    if final is None:
+        raise PlanError("the output path is not set (naming resolves it before planning)")
+    tmp = partial_path(final)
     rng = _resolve_range(job, source, video)
     passlog = partial_path(final, ".passlog")
 
@@ -431,7 +441,6 @@ def build_plan(
         if vplan.geometry is not None
         else (video.width, video.height)
     )
-    options = naming if naming is not None else NamingOptions()
 
     def render_value(value: str) -> str:
         return render_tag(
@@ -474,15 +483,9 @@ def build_plan(
     else:
         what = "Remux (copy the streams)" if kind == "remux" else f"Encode ({vplan.label})"
         steps.append(_step("encode", ffmpeg_argv(None), what))
-    edits = ietf_edits(tracks) if container.language_format == "iso639_2b" else []
-    if container.id == "mkv" and edits and tools.mkvpropedit.status is ToolStatus.FOUND:
-        steps.append(
-            PlanStep(
-                kind="mkvpropedit", tool="mkvpropedit", argv=[str(tmp), *edits],
-                progress_weight=STEP_WEIGHTS["mkvpropedit"],
-                description="Write the BCP 47 languages (Matroska LanguageIETF)",
-            )
-        )  # fmt: skip
+    fixup = _fixup_step(tracks, container, defs, tools, tmp)
+    if fixup is not None:
+        steps.append(fixup)
     steps.append(
         PlanStep(
             kind="finalize", tool=None, progress_weight=STEP_WEIGHTS["finalize"],
@@ -498,6 +501,90 @@ def build_plan(
         display=_display(steps, tools, tmp, final, shell or default_shell()),
         files=files,
         temp_files=temp_files,
+    )
+
+
+def _fixup_step(
+    tracks: list[OutputTrack],
+    container: ContainerDef,
+    defs: Definitions,
+    tools: ToolSet,
+    tmp: Path,
+) -> PlanStep | None:
+    """The post-mux fix-up (05 §C-13): mkvpropedit on the ``.part`` file for what FFmpeg's
+    Matroska muxer does not write (``LanguageIETF``; flags of ``mkvpropedit_flags``). Only
+    for MKV and when mkvpropedit was found (validation warns about what is lost without it)."""
+    if container.id != "mkv" or tools.mkvpropedit.status is not ToolStatus.FOUND:
+        return None
+    edits = fixup_edits(
+        [FixupTrack(t.type, t.index + 1, t.language, t.metadata) for t in tracks],
+        container,
+        defs,
+    )
+    if not edits:
+        return None
+    what = []
+    if any(e.language is not None for e in edits):
+        what.append("the BCP 47 languages (Matroska LanguageIETF)")
+    if any(e.flags for e in edits):
+        what.append("the track flags FFmpeg cannot write")
+    return PlanStep(
+        kind="mkvpropedit", tool="mkvpropedit", argv=[str(tmp), *edit_args(edits)],
+        progress_weight=STEP_WEIGHTS["mkvpropedit"], description="Write " + " and ".join(what),
+    )  # fmt: skip
+
+
+def _describe_edits(edits: list[TrackEdit | InfoEdit]) -> str:
+    tracks = sum(1 for e in edits if isinstance(e, TrackEdit))
+    parts = []
+    if tracks:
+        parts.append(f"the metadata of {tracks} track" + ("" if tracks == 1 else "s"))
+    if any(isinstance(e, InfoEdit) for e in edits):
+        parts.append("the title")
+    return " and ".join(parts)
+
+
+def _in_place_plan(
+    job: JobSettings,
+    source: MediaSource,
+    tools: ToolSet,
+    defs: Definitions,
+    options: NamingOptions,
+    now: datetime | None,
+    shell: Shell,
+) -> EncodePlan:
+    """The plan of a ``metadata_edit`` job: one mkvpropedit step on the source itself (no
+    ``.part`` file, no rename; decision 0034). ``output_tmp`` and ``output_final`` are the
+    source. No step when the source already has every value."""
+    target = Path(job.source.path)
+    video = source.video[0]
+
+    def render_title(value: str) -> str:
+        return render_tag(
+            value, job, source, options=options, output_size=(video.width, video.height),
+            now=now, definitions=defs,
+        )  # fmt: skip
+
+    edits = in_place_edits(job, source, defs, render_title=render_title)
+    steps: list[PlanStep] = []
+    if edits:
+        steps.append(
+            PlanStep(
+                kind="mkvpropedit", tool="mkvpropedit", argv=[str(target), *edit_args(edits)],
+                progress_weight=STEP_WEIGHTS["mkvpropedit"],
+                description=f"Edit {_describe_edits(edits)} of {target.name} "
+                "in place",
+            )
+        )  # fmt: skip
+    return EncodePlan(
+        job_type="metadata_edit",
+        steps=steps,
+        output_tmp=target,
+        output_final=target,
+        expected_duration=0.0,
+        display=_display(steps, tools, target, target, shell),
+        files=[],
+        temp_files=[],
     )
 
 

@@ -32,6 +32,7 @@ __all__ = [
     "rename_no_replace",
     "replace_file",
     "same_file",
+    "writable_file",
     "write_plan_files",
 ]
 
@@ -82,6 +83,13 @@ def same_file(a: Path, b: Path) -> bool:
     except OSError:
         pass
     return _path_key(a) == _path_key(b)
+
+
+def writable_file(path: Path) -> bool:
+    """The existing file ``path`` can be opened for writing by this process (``os.access``:
+    the permissions on POSIX, the read-only attribute on Windows). An in-place metadata edit
+    checks it before mkvpropedit runs (decision 0034)."""
+    return os.path.isfile(path) and os.access(path, os.W_OK)
 
 
 def _path_key(path: Path) -> str:

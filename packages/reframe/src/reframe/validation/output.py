@@ -7,6 +7,10 @@ goes through the :class:`~reframe.validation.fs.FileSystemView`.
 
 Free disk space is estimated only when the size is known in advance: average bitrate, and
 video passthrough (03: "estimate in bitrate mode"). Constant quality has no estimate.
+
+A metadata edit in place (job type ``metadata_edit``, C-13) writes no new file: its output is
+the source by design, so the path and disk-space rules do not apply to it
+(:func:`is_metadata_edit`; its own rules are in :mod:`reframe.validation.inplace`).
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePath, PureWindowsPath
 from typing import cast
 
-from reframe.command import partial_path
+from reframe.command import job_type, partial_path
 from reframe.command.video import pass_log_files
 from reframe.definitions import ContainerDef
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
@@ -41,6 +45,8 @@ __all__ = [
     "MUX_OVERHEAD",
     "estimate_output_bytes",
     "existing_ancestor",
+    "free_of_source",
+    "is_metadata_edit",
     "name_issues",
     "next_free_path",
     "output_path_issues",
@@ -120,7 +126,7 @@ def source_clash(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePa
     return None
 
 
-def _free_of_source(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath:
+def free_of_source(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath:
     """``Name (1).mkv``, … : the first free name whose written files are not the source."""
     candidate = path
     for _ in range(100):
@@ -225,7 +231,7 @@ def output_path_issues(
                 "output.path",
                 f"The {what} {clash} is the source file: it would be overwritten while it is "
                 "read, and the queue removes its temporary files.",
-                save_as(_free_of_source(path, source, fs)),
+                save_as(free_of_source(path, source, fs)),
             )
         )
         return issues
@@ -362,8 +368,17 @@ def estimate_output_bytes(ctx: JobContext) -> int | None:
     return int((video_bps + audio_bps) * seconds / 8 * MUX_OVERHEAD)
 
 
+def is_metadata_edit(ctx: JobContext) -> bool:
+    """The job edits its source in place (job type ``metadata_edit``, C-13)."""
+    if not ctx.job.output.edit_in_place:
+        return False
+    return job_type(ctx.job, ctx.source, definitions=ctx.definitions)[0] == "metadata_edit"
+
+
 @job_rule("output", *CODES)
 def output_path(ctx: JobContext) -> Iterator[ValidationIssue]:
+    if is_metadata_edit(ctx):
+        return  # the source is edited: no new file (reframe.validation.inplace)
     path = ctx.job.output.path
     if path is None:
         name = ctx.name.path
@@ -389,7 +404,7 @@ def output_path(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("output", "output.disk_space")
 def disk_space(ctx: JobContext) -> Iterator[ValidationIssue]:
     path = ctx.job.output.path
-    if path is None:
+    if path is None or is_metadata_edit(ctx):
         return
     folder = existing_ancestor(path.parent, ctx.fs)
     estimate = estimate_output_bytes(ctx)
