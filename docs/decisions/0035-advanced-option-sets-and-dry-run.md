@@ -141,3 +141,16 @@ metadata from the frames, x264 and VP9 cannot carry it: no options, an empty pat
   custom parameters of encoders without a params argument, what the dry run reports, which
   encoders Copy HDR metadata fills, inactive / ignored / refused options; the coverage table
   without x264 `range`, QSV without levels, and a VP9 row.
+
+## Follow-up, 2026-10-15
+
+- The three option-rule codes need only the video settings, so they are now a template rule as
+  well (`validation/levels.py`): a preset with `amp` but no `rect`, or SVT-AV1 `min-qp` above
+  `max-qp`, is reported when it is saved or checked, with fixes on the template
+  (`tests/validation/test_template.py` has a positive and a negative case for each code).
+- `test_hardware_choices_rate_control_and_options_encode` asserts what each FFmpeg version
+  does with a choice it lacks (`_ADDED_IN`: `high_quality` of `h264_amf` / `hevc_amf` must fail
+  on n8.1.3 and work on n9.0.2), as the help-output test already did. The definitions do not
+  change: `supported_presets` hides the preset where the build lacks it.
+- The x265 in every build here is 4.3 (Arch) or 4.3+49 (both BtbN builds), not 4.1 as the M2
+  notes said; the comments and `testdata/README.md` say so.

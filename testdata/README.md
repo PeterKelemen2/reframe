@@ -512,7 +512,11 @@ usable):
 ### Encoder definitions (C-6)
 
 Checked on 2026-10-13 with both n9.0.2 builds (Arch `/usr/bin/ffmpeg` and the pinned BtbN
-build; x264 core 165, x265 4.1, SVT-AV1 v4.2.0) and, for AMF and VAAPI, an AMD RX 7600. The
+build; x264 core 165, x265 4.3, SVT-AV1 v4.2.0, libvpx 1.17.0) and, for AMF and VAAPI, an
+AMD RX 7600. Checked again on 2026-10-15 (the HEVC encoder's own log line "HEVC encoder
+version"): Arch n9.0.2 has x265 4.3, x264 core 165 r3222, SVT-AV1 v4.2.0; both BtbN builds
+(n9.0.2 and n8.1.3) have x265 4.3+49-020d7054, x264 core 165, SVT-AV1 v4.2.0-151-g5ed9ffbcb;
+all three libvpx v1.17.0. (This section said x265 4.1 before: no build here has it.) The
 M2 review fixes (2026-10-14) were checked with these and with the CI override build n8.1.3
 (BtbN `n8.1.3-9-g29e619e767`). `packages/reframe/tests/definitions/test_tools.py` repeats
 every check (`needs_ffmpeg`; the AMF / VAAPI encodes are `needs_gpu`); where n8.1.3 differs,

@@ -1,5 +1,5 @@
 """The dry run without FFmpeg: the custom-parameter split, the reduced job and command, and the
-reading of FFmpeg's log (recorded texts of FFmpeg n9.0.2: x264 core 165, x265 4.1, SVT-AV1
+reading of FFmpeg's log (recorded texts of FFmpeg n9.0.2: x264 core 165, x265 4.3, SVT-AV1
 v4.2.0, libvpx 1.17; ``test_dryrun_ffmpeg.py`` runs them for real)."""
 
 from __future__ import annotations

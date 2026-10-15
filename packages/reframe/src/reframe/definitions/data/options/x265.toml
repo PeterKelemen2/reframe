@@ -2,7 +2,7 @@
 #
 # Every option goes into `-x265-params` (x26x_param); booleans are written `name=1` /
 # `name=0`. The per-preset defaults are what x265 writes into the stream (the "x265 … options:"
-# SEI) for `-preset <p>` with no tune, FFmpeg n9.0.2 / x265 4.1; `tunes` lists the tunes that
+# SEI) for `-preset <p>` with no tune, FFmpeg n9.0.2 / x265 4.3; `tunes` lists the tunes that
 # change the value. tests/definitions/test_tools.py encodes every preset again and compares.
 
 [[set.x265]]
@@ -37,7 +37,7 @@ key = "ref"
 label = "Reference frames"
 category = "Frame types / GOP"
 type = "int"
-# x265 4.1: 9 and more stop the encoder when B-frames are on ("level 5 detected, but
+# x265 4.3: 9 and more stop the encoder when B-frames are on ("level 5 detected, but
 # NumPocTotalCurr (total references) is non-compliant", "Error while opening encoder"); they
 # work only with bframes=0 or a high explicit level. So 1-8.
 min = 1
@@ -95,7 +95,7 @@ min = 0
 max = 250
 step = 1
 unit = "frames"
-# x265 4.1: a value at or below the B-frames stops the encoder ("Lookahead depth must be
+# x265 4.3: a value at or below the B-frames stops the encoder ("Lookahead depth must be
 # greater than the max consecutive bframe count"); 0 works only with bframes=0. A rule across
 # two options: validation (C-8) checks it.
 help = "Frames analysed ahead for CU-tree and frame types. More is better and uses more memory. Must be more than the B-frames (x265 stops otherwise)."
@@ -224,7 +224,7 @@ key = "merange"
 label = "Motion search range"
 category = "Motion / analysis"
 type = "int"
-# x265 4.1: 32768 stops the encoder ("Search Range must be less than 32768").
+# x265 4.3: 32768 stops the encoder ("Search Range must be less than 32768").
 min = 0
 max = 32767
 step = 1
@@ -451,7 +451,7 @@ key = "hrd"
 label = "HRD signalling"
 category = "Rate control"
 type = "bool"
-# x265 4.1: without the VBV values it logs "NAL HRD parameters require VBV parameters,
+# x265 4.3: without the VBV values it logs "NAL HRD parameters require VBV parameters,
 # ignored".
 help = "Writes hypothetical reference decoder information (broadcast, Blu-ray). Needs the VBV maximum rate and buffer size; x265 ignores it without them."
 mapping = { kind = "x26x_param", name = "hrd" }
@@ -511,7 +511,7 @@ key = "qpmax"
 label = "Maximum quantiser"
 category = "Rate control"
 type = "int"
-# x265 4.1: qpmax=70 stops the encoder.
+# x265 4.3: qpmax=70 stops the encoder.
 min = 0
 max = 69
 step = 1
@@ -539,7 +539,7 @@ choices = [
     { value = "16", label = "16×16", help = "Finer AQ; the grain tune uses 8." },
     { value = "8", label = "8×8" },
 ]
-# x265 4.1: a size above the CTU size logs "QGSize should be less than or equal to
+# x265 4.3: a size above the CTU size logs "QGSize should be less than or equal to
 # maxCUSize, setting QGSize = …"; validation (C-8) warns.
 help = "The smallest block size whose quantiser adaptive quantisation can change. Smaller is finer and slightly slower; not above the CTU size."
 mapping = { kind = "x26x_param", name = "qg-size" }
@@ -616,7 +616,7 @@ key = "amp"
 label = "Asymmetric partitions"
 category = "Motion / analysis"
 type = "bool"
-# x265 4.1: amp=1 with rect=0 gives amp=0 in the stream, without a message.
+# x265 4.3: amp=1 with rect=0 gives amp=0 in the stream, without a message.
 help = "Analyses asymmetric motion partitions (2N×nU …). Needs rectangular partitions; slower."
 mapping = { kind = "x26x_param", name = "amp" }
 requires = [{ field = "option:rect", op = "eq", value = true }]
@@ -632,7 +632,7 @@ choices = [
     { value = "16", label = "16×16", help = "Faster, for high resolutions." },
     { value = "32", label = "32×32" },
 ]
-# x265 4.1: a minimum above the CTU size stops the encoder ("min CU size must be less than or
+# x265 4.3: a minimum above the CTU size stops the encoder ("min CU size must be less than or
 # equal to max CU size"); validation (C-8) reports it.
 help = "The smallest coding unit. Larger is faster and loses fine detail; not above the CTU size."
 mapping = { kind = "x26x_param", name = "min-cu-size" }
@@ -649,7 +649,7 @@ choices = [
     { value = "16", label = "16×16" },
     { value = "32", label = "32×32" },
 ]
-# x265 4.1: a size above the CTU size logs "Max TU size should be less than or equal to max
+# x265 4.3: a size above the CTU size logs "Max TU size should be less than or equal to max
 # CU size, setting max TU size = …"; validation (C-8) warns.
 help = "The largest transform unit. Smaller can help detail and costs compression in flat areas; not above the CTU size."
 mapping = { kind = "x26x_param", name = "max-tu-size" }
@@ -687,7 +687,7 @@ type = "int"
 min = 0
 max = 4
 step = 1
-# x265 4.1: with tu-inter-depth 1 it logs "limit-tu disabled, requires tu-inter-depth > 1".
+# x265 4.3: with tu-inter-depth 1 it logs "limit-tu disabled, requires tu-inter-depth > 1".
 help = "Early exits in the inter transform tree (1–4, faster at a small cost). Needs a TU inter depth above 1."
 mapping = { kind = "x26x_param", name = "limit-tu" }
 requires = [{ field = "option:tu-inter-depth", op = "in", value = [2, 3, 4] }]
@@ -712,7 +712,7 @@ choices = [
     { value = "1", label = "By RD cost", help = "Faster at all presets but placebo." },
     { value = "2", label = "By edge density", help = "Keeps more detail in textured areas than 1." },
 ]
-# x265 4.1 writes rskip=2 into its settings SEI as "rskip=1 rskip-edge-threshold=0.050000".
+# x265 4.3 writes rskip=2 into its settings SEI as "rskip=1 rskip-edge-threshold=0.050000".
 help = "Skips deeper CU splits when the current one looks good enough. The grain tune turns it off."
 mapping = { kind = "x26x_param", name = "rskip" }
 default = { kind = "preset", tunes = ["grain"], values = { ultrafast = "1", superfast = "1", veryfast = "1", faster = "1", fast = "1", medium = "1", slow = "1", slower = "1", veryslow = "1", placebo = "0" } }
@@ -770,7 +770,7 @@ key = "rd-refine"
 label = "RD refine"
 category = "Motion / analysis"
 type = "bool"
-# x265 4.1: with rd below 5 it logs "--rd-refine disabled, requires RD level > 4 and adaptive
+# x265 4.3: with rd below 5 it logs "--rd-refine disabled, requires RD level > 4 and adaptive
 # quant".
 help = "Refines the quantiser and the intra direction of the best mode. Slower; needs RD level 5 or 6 and adaptive quantisation."
 mapping = { kind = "x26x_param", name = "rd-refine" }
@@ -785,7 +785,7 @@ type = "float"
 min = 0
 max = 4
 step = 0.5
-# x265 4.1: otherwise "Dynamic-rd disabled, requires RD <= 4, VBV and aq-mode enabled".
+# x265 4.3: otherwise "Dynamic-rd disabled, requires RD <= 4, VBV and aq-mode enabled".
 help = "Raises the RD level in parts of the picture where VBV would otherwise lower the quality (0 = off, up to 4). Needs VBV, adaptive quantisation and an RD level of 4 or less."
 mapping = { kind = "x26x_param", name = "dynamic-rd" }
 requires = [{ field = "option:rd", op = "in", value = [1, 2, 3, 4] }, { field = "option:vbv-maxrate", op = "ne", value = 0 }, { field = "option:vbv-bufsize", op = "ne", value = 0 }, { field = "option:aq-mode", op = "ne", value = "0" }]
@@ -941,7 +941,7 @@ key = "pools"
 label = "Thread pools"
 category = "Performance"
 type = "string"
-# x265 4.1 log: pools=2 → "Thread pool created using 2 threads".
+# x265 4.3 log: pools=2 → "Thread pool created using 2 threads".
 help = "Worker threads per NUMA node: a number (\"8\"), \"+\" for all CPUs of a node, \"-\" for none, comma-separated per node (\"+,-\"). Not set, x265 uses every CPU."
 mapping = { kind = "x26x_param", name = "pools" }
 default = { kind = "encoder", note = "every CPU thread" }
@@ -972,7 +972,7 @@ key = "pmode"
 label = "Parallel mode analysis"
 category = "Performance"
 type = "bool"
-# x265 4.1: "Limit reference options 2 and 3 are not supported with pmode. Disabling limit
+# x265 4.3: "Limit reference options 2 and 3 are not supported with pmode. Disabling limit
 # reference"; validation (C-8) warns about a limit-refs 2 or 3 the job sets.
 help = "Analyses the modes of a CU in parallel. Helps only on many cores with few frames in flight; usually slower. Turns limit references 2 and 3 off."
 mapping = { kind = "x26x_param", name = "pmode" }
@@ -995,7 +995,7 @@ type = "int"
 min = 0
 max = 16
 step = 1
-# x265 4.1 turns it off below 720 lines: "Source height < 720p; disabling lookahead-slices"
+# x265 4.3 turns it off below 720 lines: "Source height < 720p; disabling lookahead-slices"
 # (the table is read from a 1280x720 encode).
 help = "Splits look-ahead frames into slices for more parallelism (0 = off). Speeds up high resolutions; x265 turns it off below 720 lines."
 mapping = { kind = "x26x_param", name = "lookahead-slices" }

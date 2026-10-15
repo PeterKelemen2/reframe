@@ -1,6 +1,6 @@
 """Encoder rules of C-6's options: x265 level limits (M2 review) and the advanced-option rules
-(M9, :func:`reframe.validation.video.video_option_rule_issues`, registered here for jobs; a
-template rule needs a case in ``tests/validation/test_template.py``, which another task owns).
+(M9, :func:`reframe.validation.video.video_option_rule_issues`, registered here for jobs and
+for templates: the three codes need only the video settings, no source).
 
 x265 levels: a level too small for the output size or frame rate validates clean, then x265
 refuses to start.
@@ -23,8 +23,8 @@ from fractions import Fraction
 
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import error, fix, replace
-from reframe.validation.context import JobContext
-from reframe.validation.registry import job_rule
+from reframe.validation.context import JobContext, TemplateContext
+from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.video import OPTION_RULE_CODES, video_option_rule_issues
 
 __all__ = ["X265_LEVELS", "x265_level_fits"]
@@ -130,3 +130,11 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("encoder", *OPTION_RULE_CODES)
 def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
     return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
+
+
+@template_rule("encoder", *OPTION_RULE_CODES)
+def template_advanced_option_rules(ctx: TemplateContext) -> list[ValidationIssue]:
+    """A preset's video settings: the same rules, fixes on the template."""
+    return video_option_rule_issues(
+        ctx.template.video, ctx.caps, ctx.definitions, target=ctx.target
+    )
