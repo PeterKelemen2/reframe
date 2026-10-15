@@ -5,6 +5,11 @@ and [09](09-quality-and-release.md) in order. Each milestone ends with something
 **use or demo**. A milestone is done only when its demo works and CI is green on Linux and
 Windows. The current state of each milestone and step is in [../status.md](../status.md).
 
+**Changed order ([decision 0029](../decisions/0029-core-before-the-ui-milestones.md)).** After
+M2, the core parts of M6–M9 (C-6, C-10, C-12, C-13, and the rest of C-11, C-14 and C-15) are
+built first, on one branch `core-complete`, before M3. M6–M9 stay open until their UI parts
+are built and their full demos pass.
+
 ## Dependency graph
 
 ```
