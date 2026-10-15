@@ -1410,7 +1410,41 @@ fixtures.)
 
 ### Tools fetch and the CLI (C-15)
 
-(core-complete wave 1h.)
+Checked on 2026-10-15 (Arch Linux, Python 3.14, the pinned BtbN n9.0.2 build of
+`tools/ffmpeg.toml`). Tests: `packages/reframe/tests/tools/test_fetch*.py`,
+`packages/reframe/tests/jobs/test_cli_{presets,when_done,plan_dry_run}.py`.
+
+- **The version check.** The first line of `-version` of the pinned build is exactly
+  `ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers`
+  and `ffprobe version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2007-2026 the FFmpeg
+  developers`: the third word is the manifest's `version`. The fake tools of
+  `reframe_testing` print the same captured text, so a fake build in a test archive passes
+  the check (and a scenario with `ft.version("n8.0")` fails it).
+- **The real build through `reframe tools fetch`.** The extracted BtbN folder (234 MB:
+  `bin/`, `lib/` with the `.so` links, `include/`, `doc/`, `man/`, `presets/`,
+  `LICENSE.txt`), packed again as `tar.xz` (xz preset 0) and served by `http.server` on
+  127.0.0.1 with a manifest of that archive's SHA-256 and size: downloaded, checked,
+  extracted with the `data` filter (the `lib/*.so` symbolic links stay inside the folder and
+  pass), `ffmpeg -version` / `ffprobe -version` of the extracted binaries print the pinned
+  version (they load `lib/` through their RPATH from the temporary folder too), installed
+  into `<data dir>/tools/ffmpeg` in 5.6 s, and tool discovery then reports both as `found ·
+  bundled`, also over `/usr/bin/ffmpeg` on `PATH`. A second run hashes the files (about 1 s)
+  and downloads nothing. The real download from GitHub was not run (no network in tests).
+- **The marker** `.fetch-tools.json` has the format of `scripts/fetch-tools.py` with
+  `layout: "bundled"` and the files relative to the install folder, so an install of
+  `scripts/fetch-tools.py --install-dir <data dir>/tools/ffmpeg` (CI) counts as installed
+  for `reframe tools fetch` and the other way round (test
+  `test_the_script_and_the_core_recognise_each_others_install`).
+- **Python 3.14 `asyncio.shield`.** When the outer future is cancelled and the shielded
+  task then ends with an exception, asyncio calls the loop's exception handler ("exception
+  in shielded future"; the anyio test runner turns it into a test error). The worker thread
+  of a cancelled fetch ends with exactly such an exception, so the fetch waits with
+  `asyncio.wait({future})` (a cancel of the wait leaves the future alone) instead of
+  `shield`.
+- **Progress events coalesce.** `task.progress` events of one task replace each other in a
+  subscription's queue (`reframe.events`); a CLI that is busy for a moment shows only the
+  latest step. The plain-line output of `tools fetch` therefore never relies on seeing every
+  step, and the tests read the events while the task runs.
 
 ### Batch engine (C-12, M7)
 

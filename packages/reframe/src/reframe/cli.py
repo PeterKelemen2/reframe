@@ -12,7 +12,17 @@ Commands:
   (decision 0018), queued and run with progress and ETA. Ctrl+C cancels the jobs.
 - ``reframe name PATH… [--template T] [--preset NAME] [--json]``: the name source and why,
   the parsed fields and the output name of each path.
+- ``reframe tools status [--json]``: which ffmpeg / ffprobe / mkvpropedit / mediainfo is used
+  (the lines of ``python -m reframe.tools``) and the fetched build.
+- ``reframe tools fetch [--build NAME] [--platform P]``: the pinned FFmpeg build of the
+  manifest, checked and installed as the bundled build in ``<data dir>/tools/ffmpeg``.
+- ``reframe presets list [--json]``, ``reframe presets export [NAME…] [-o FILE]``,
+  ``reframe presets import FILE [--on-conflict rename|replace|skip]``.
 - ``reframe version``.
+
+``plan`` runs the one-frame dry run when the job has custom encoder parameters; ``encode``
+shows the when-done countdown (sleep, shut down) that the queue starts after its jobs, and
+Ctrl+C cancels it. Decision 0038.
 
 No ``--preset``: the default preset (Settings, else *H.265 MKV 1080p*, decision 0024). Output
 formats, exit codes and the other CLI choices: decision 0017.
@@ -27,9 +37,17 @@ Exit codes:
   than one file, a template with errors (``name --template``).
 - ``3``: a file or folder does not exist, is not a file, or cannot be read; no media files
   in the given folders (``encode``).
-- ``4``: no usable ffprobe (``probe``, ``plan``) or ffmpeg (``encoders``).
+- ``4``: no usable ffprobe (``probe``, ``plan``) or ffmpeg (``encoders``); ffmpeg or ffprobe
+  cannot be used (``tools status``).
 - ``130``: interrupted (Ctrl+C). ``encode`` first cancels its running and waiting jobs
-  through the queue, which removes their partial files.
+  through the queue, which removes their partial files, or the when-done countdown;
+  ``tools fetch`` stops the download and installs nothing.
+
+``tools fetch``: ``1`` the download, the checksum, the archive or the version check failed;
+``2`` an unknown build or a platform the build has no archive for. ``presets export``: ``1``
+FILE cannot be written; ``2`` an unknown preset. ``presets import``: ``1`` the file is not a
+preset file or a preset was not imported (an ``error`` issue); ``3`` FILE does not exist or
+cannot be read.
 
 Errors are one line on stderr, never a traceback (an unexpected error is one ``error:`` line
 and exit code 1; ``REFRAME_TRACEBACK=1`` shows the traceback). The core's warnings
@@ -46,19 +64,23 @@ import asyncio
 import difflib
 import io
 import json
+import logging
 import os
 import sys
+import tempfile
 import time
 from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
+from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Protocol
+from typing import Annotated, Any, Protocol
 
 from pydantic import BaseModel
 
 from reframe import __version__, languages
 from reframe.events import Subscription
 from reframe.jobs import find_media_files, has_errors
+from reframe.mediatask import TaskFailed
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.draft import JobDraft
 from reframe.models.events import (
@@ -66,7 +88,10 @@ from reframe.models.events import (
     CapabilitiesChangedEvent,
     JobProgressEvent,
     JobStateEvent,
+    PowerCountdownEvent,
     ResyncEvent,
+    TaskDoneEvent,
+    TaskProgressEvent,
 )
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
@@ -89,13 +114,25 @@ from reframe.models.naming import NameResult
 from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
 from reframe.models.queue import JobProgress, JobState, QueueJob
-from reframe.models.tools import ToolInfo, ToolOrigin
+from reframe.models.tasks import TaskInfo, TaskState
+from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
+from reframe.presets import ConflictPolicy, ImportResult
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
+from reframe.tools.__main__ import status_lines
+from reframe.tools.fetch import (
+    PLATFORMS,
+    FetchError,
+    host_platform,
+    install_dir_for,
+    installed_build,
+    load_manifest,
+)
 
 try:  # the [cli] extra; main() says so when it is missing
     import typer
     from rich import box
     from rich.console import Console
+    from rich.live import Live
     from rich.progress import BarColumn, Progress, TaskID, TextColumn
     from rich.table import Table
     from rich.text import Text
@@ -1125,6 +1162,26 @@ def render_plan(console: Console, draft: JobDraft, plan: EncodePlan | None, sour
     console.print(Text(printable(plan.display)), soft_wrap=True)
 
 
+#: The note of ``reframe plan`` when the dry run found nothing wrong.
+DRY_RUN_NOTE = "The custom encoder parameters were checked by encoding one frame (dry run)."
+
+
+def needs_dry_run(job: JobSettings, preset: Preset | None = None) -> bool:
+    """``reframe plan`` runs the one-frame dry run (C-6) when the job has custom encoder
+    parameters that are used (not with video passthrough): validation cannot check them.
+
+    Not for the unchanged parameters of a built-in preset (decision 0038): Reframe's own
+    tests check those against the pinned FFmpeg build, and most built-in x265 / SVT-AV1
+    presets have some, so every ``reframe plan`` would encode a frame."""
+    video = job.video
+    if video.passthrough or not video.custom_params.strip():
+        return False
+    if preset is not None and preset.built_in:
+        unchanged = (preset.video.encoder, preset.video.custom_params)
+        return unchanged != (video.encoder, video.custom_params)
+    return True
+
+
 async def run_plan(file: Path, *, preset: str | None, output: Path | None, as_json: bool) -> int:
     """``reframe plan``: draft, validate and plan one file. Returns the exit code."""
     async with open_reframe() as app:
@@ -1140,10 +1197,13 @@ async def run_plan(file: Path, *, preset: str | None, output: Path | None, as_js
             return await _probe_failed(app, draft)
         plan: EncodePlan | None = None
         if not has_errors(draft.issues):
-            planned = await app.jobs.plan(draft.job, source)
+            dry_run = needs_dry_run(draft.job, chosen)
+            planned = await app.jobs.plan(draft.job, source, dry_run=dry_run)
             if isinstance(planned, EncodePlan):
                 plan = planned
-            else:  # validation agreed before; keep what the plan step found
+                if dry_run:
+                    draft = draft.model_copy(update={"notes": [*draft.notes, DRY_RUN_NOTE]})
+            else:  # validation agreed before: these are the dry run's errors (or a bug's)
                 draft = draft.model_copy(update={"issues": planned})
     if as_json:
         _write_model_json({"draft": draft, "plan": plan})
@@ -1368,6 +1428,26 @@ async def _encode(
     output: Path | None,
     console: Console,
 ) -> int:
+    # Subscribed before the queue starts: the when-done countdown begins as the last job ends.
+    countdown = app.events.subscribe(types={"power.countdown"})
+    try:
+        code = await _encode_jobs(app, queue, files, preset, output, console)
+        if code == EXIT_INTERRUPTED:
+            return code
+        stopped = await follow_countdown(app, countdown, console)
+        return code if stopped is None else stopped
+    finally:
+        countdown.close()
+
+
+async def _encode_jobs(
+    app: Reframe,
+    queue: QueueLike,
+    files: Sequence[Path],
+    preset: Preset,
+    output: Path | None,
+    console: Console,
+) -> int:
     subscription = app.events.subscribe(types={"job.state", "job.progress"})
     total = len(files)
     width = len(str(total))
@@ -1440,6 +1520,8 @@ async def _encode(
         # they are (C-11 ``start(job_ids=…)``; the runner goes idle when ours have ended).
         queue.start(job_ids=ids)
         await _follow_jobs(queue, ids, subscription, view)
+        # The queue decides on its when-done action before wait() returns for the last job.
+        await queue.wait(ids)
     except asyncio.CancelledError:
         task = asyncio.current_task()
         if task is not None:
@@ -1539,6 +1621,169 @@ def _summary(
     parts.append(f"{not_queued} not queued")
     console.print(Text("Summary: " + ", ".join(parts) + ".", style="bold"), soft_wrap=True)
     return finals
+
+
+# --------------------------------------------------------------------------- when done
+
+
+class PowerLike(Protocol):
+    """The part of C-14's ``PowerService`` (``Reframe.power``) that ``reframe encode`` uses."""
+
+    @property
+    def pending(self) -> PowerCountdownEvent | None: ...
+
+    def cancel(self, countdown_id: str | None = None) -> bool: ...
+
+
+#: Seconds ``reframe encode`` waits for the when-done countdown to start after its last job
+#: (the queue starts it as the job ends; this only covers a power service that needs a few
+#: loop turns). Only when Settings → Queue → When done is ``sleep`` or ``shutdown``.
+COUNTDOWN_START_WAIT = 2.0
+#: Seconds to wait, after ``executing``, for the power service to finish the action.
+COUNTDOWN_EXECUTE_WAIT = 30.0
+#: Lines mode: a countdown line every this many seconds.
+COUNTDOWN_LINE_STEP = 10
+#: The when-done actions that ``reframe encode`` waits for. ``quit`` is not one: the command
+#: ends by itself when its jobs end (decision 0038), and closing Reframe cancels it.
+WAITED_ACTIONS = frozenset({"sleep", "shutdown"})
+
+_COUNTDOWN_VERB = {"shutdown": "Shutting down", "sleep": "Going to sleep"}
+_COUNTDOWN_KEPT = {"shutdown": "will not shut down", "sleep": "will not go to sleep"}
+_FINAL_PHASES = frozenset({"executing", "cancelled"})
+
+
+def countdown_text(event: PowerCountdownEvent) -> str:
+    """``Shutting down in 60 s — press Ctrl+C to cancel``, ``Shutting down now.``, …"""
+    verb = _COUNTDOWN_VERB.get(event.action, event.action)
+    if event.phase == "executing":
+        return f"{verb} now."
+    if event.phase == "cancelled":
+        return f"Cancelled: the computer {_COUNTDOWN_KEPT.get(event.action, 'stays on')}."
+    return f"{verb} in {event.seconds_left} s — press Ctrl+C to cancel"
+
+
+class CountdownView:
+    """The countdown on a terminal: one line that counts down in place. Otherwise: the first
+    line, then a line at every multiple of :data:`COUNTDOWN_LINE_STEP` seconds, and the end."""
+
+    def __init__(self, console: Console, *, live: bool | None = None) -> None:
+        self.console = console
+        self._live: Live | None = None
+        self._last: int | None = None
+        if console.is_terminal if live is None else live:
+            self._live = Live(Text(""), console=console, auto_refresh=False, transient=True)
+            self._live.start()
+
+    def show(self, event: PowerCountdownEvent) -> None:
+        text = Text(printable(countdown_text(event)), style="bold yellow")
+        if event.phase in _FINAL_PHASES:
+            self.close()
+            self.console.print(text, soft_wrap=True)
+            return
+        if self._live is not None:
+            self._live.update(text, refresh=True)
+            return
+        left = event.seconds_left
+        if self._last is None or (0 < left < self._last and left % COUNTDOWN_LINE_STEP == 0):
+            self._last = left
+            self.console.print(text, soft_wrap=True)
+
+    def close(self) -> None:
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+
+
+async def follow_countdown(
+    app: Reframe,
+    subscription: Subscription,
+    console: Console,
+    *,
+    power: PowerLike | None = None,
+    start_wait: float | None = None,
+) -> int | None:
+    """After ``reframe encode``'s jobs: when the queue started a sleep or shutdown countdown
+    (Settings → Queue → When done), show it until it ends. Ctrl+C cancels it
+    (``power.cancel``) and gives :data:`EXIT_INTERRUPTED`; else ``None`` (the jobs' exit code
+    stands). Nothing is waited for when the setting is another action."""
+    if app.settings_snapshot().queue.when_done not in WAITED_ACTIONS:
+        return None
+    power = power if power is not None else app.power
+    view: CountdownView | None = None
+    current: PowerCountdownEvent | None = None
+    try:
+        wait = COUNTDOWN_START_WAIT if start_wait is None else start_wait
+        event = power.pending or await _countdown_start(subscription, wait)
+        if event is None or event.action not in WAITED_ACTIONS:
+            return None
+        current = event
+        view = CountdownView(console)
+        view.show(event)
+        while event.phase not in _FINAL_PHASES:
+            received = await _next_event(subscription)
+            if received is None:  # the bus closed
+                return None
+            if isinstance(received, ResyncEvent):  # events were lost: read the state
+                latest = power.pending
+                if latest is None or latest.countdown_id != current.countdown_id:
+                    return None
+                received = latest
+            if (
+                not isinstance(received, PowerCountdownEvent)
+                or received.countdown_id != current.countdown_id
+            ):
+                continue
+            event = received
+            view.show(event)
+        if event.phase == "executing":
+            await _executed(power, current.countdown_id)
+        return None
+    except asyncio.CancelledError:
+        task = asyncio.current_task()
+        if task is not None:
+            task.uncancel()
+        if view is not None:
+            view.close()
+        target = current if current is not None else power.pending
+        if target is not None and power.cancel(target.countdown_id):
+            kept = _COUNTDOWN_KEPT.get(target.action, "stays on")
+            print(f"Interrupted: the countdown is cancelled, the computer {kept}.", file=sys.stderr)
+        else:
+            print("Interrupted.", file=sys.stderr)
+        return EXIT_INTERRUPTED
+    finally:
+        if view is not None:
+            view.close()
+
+
+async def _next_event(subscription: Subscription) -> object | None:
+    try:
+        return await subscription.__anext__()
+    except StopAsyncIteration:
+        return None
+
+
+async def _countdown_start(subscription: Subscription, wait: float) -> PowerCountdownEvent | None:
+    """The first ``started`` / ``tick`` event within ``wait`` seconds, else ``None``."""
+    try:
+        async with asyncio.timeout(wait):
+            async for event in subscription:
+                if isinstance(event, PowerCountdownEvent) and event.phase in ("started", "tick"):
+                    return event
+    except TimeoutError:
+        pass
+    return None
+
+
+async def _executed(power: PowerLike, countdown_id: str) -> None:
+    """Give the power service a bounded time to run the action before Reframe closes (its
+    ``close`` cancels a countdown that still runs)."""
+    deadline = time.monotonic() + COUNTDOWN_EXECUTE_WAIT
+    while time.monotonic() < deadline:
+        pending = power.pending
+        if pending is None or pending.countdown_id != countdown_id:
+            return
+        await asyncio.sleep(0.1)
 
 
 # --------------------------------------------------------------------------- name
@@ -1650,6 +1895,468 @@ async def run_name(
             render_name(console, file, result, exists=exists)
     has_error = any(has_errors(result.issues) for _, result, _ in named)
     return EXIT_FAILED if has_error or not named else EXIT_OK
+
+
+# --------------------------------------------------------------------------- tools
+
+_EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one of them cannot."
+_EXIT_HELP_TOOLS_FETCH = (
+    "Exit codes: 0 installed, or already installed with every file intact; 1 the download, "
+    "the size or SHA-256 check, the archive or the version check failed; 2 usage error or "
+    "unknown build; 130 interrupted (Ctrl+C: nothing is installed)."
+)
+#: The tools without which Reframe cannot probe or encode.
+REQUIRED_TOOLS: tuple[ToolName, ...] = ("ffmpeg", "ffprobe")
+
+
+def tool_problem(info: ToolInfo) -> str:
+    """``ffmpeg is not usable (missing, not found anywhere): …`` and, when an override does
+    not decide the path, how to get the pinned build."""
+    text = (
+        f"{info.name} is not usable ({info.status.value}, {origin_text(info)}): "
+        f"{info.reason or 'no reason given'}"
+    )
+    if info.origin not in (ToolOrigin.ENV, ToolOrigin.SETTINGS):
+        text += ' "reframe tools fetch" installs the pinned FFmpeg build.'
+    return text
+
+
+def fetched_text(data_dir: Path) -> str:
+    """The line about the build that ``reframe tools fetch`` installed (from its marker)."""
+    host = host_platform()
+    if host is None:
+        return "Fetched build: no FFmpeg build is pinned for this computer."
+    install_dir = install_dir_for(data_dir, host, host)
+    marker = installed_build(install_dir)
+    if marker is None:
+        return f'Fetched build: none ("reframe tools fetch" installs it into {install_dir}).'
+    return (
+        f"Fetched build: {marker.get('version')} ({marker.get('build')}, "
+        f"{marker.get('platform')}) in {install_dir}."
+    )
+
+
+def _print_tool_lines(console: Console, tools: ToolSet) -> None:
+    for line in status_lines(tools):
+        console.print(Text(printable(line)), soft_wrap=True)
+
+
+async def run_tools_status(*, as_json: bool) -> int:
+    """``reframe tools status``: the discovery result. Returns the exit code."""
+    async with open_reframe() as app:
+        tools = await app.tools.status()
+        data_dir = app.data_dir
+    if as_json:
+        _write_model_json(tools)
+    else:
+        console = make_console()
+        _print_tool_lines(console, tools)
+        console.print(Text(printable(fetched_text(data_dir)), style="dim"), soft_wrap=True)
+    problems = [tools.get(name) for name in REQUIRED_TOOLS if not tool_usable(tools.get(name))]
+    for info in problems:
+        _error(tool_problem(info))
+    return EXIT_NO_TOOL if problems else EXIT_OK
+
+
+#: Lines mode: a progress line every this many percent of the fetch.
+FETCH_PROGRESS_STEP = 10.0
+
+
+class FetchView:
+    """The progress of ``reframe tools fetch``: a bar with the step on a terminal; otherwise
+    one line per step and a line every :data:`FETCH_PROGRESS_STEP` percent."""
+
+    def __init__(self, console: Console, *, live: bool | None = None) -> None:
+        self.console = console
+        self._message: str | None = None
+        self._percent = -FETCH_PROGRESS_STEP
+        self._progress: Progress | None = None
+        self._task: TaskID | None = None
+        if console.is_terminal if live is None else live:
+            self._progress = Progress(
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TextColumn("{task.percentage:>5.1f}%"),
+                console=console,
+                transient=True,
+            )
+            self._progress.start()
+            self._task = self._progress.add_task("Fetching", total=100.0)
+
+    def update(self, task: TaskInfo) -> None:
+        message = task.message or "Fetching"
+        if self._progress is not None and self._task is not None:
+            self._progress.update(
+                self._task, description=printable(message), completed=task.progress or 0.0
+            )
+            return
+        percent = task.progress
+        if message != self._message:
+            self._message = message
+            if percent is not None:
+                self._percent = percent
+            suffix = f" ({percent:.0f}%)" if percent else ""
+            self.console.print(Text(printable(message + suffix)), soft_wrap=True)
+        elif percent is not None and percent - self._percent >= FETCH_PROGRESS_STEP:
+            self._percent = percent - percent % FETCH_PROGRESS_STEP
+            self.console.print(Text(f"  {percent:.0f}%", style="dim"), soft_wrap=True)
+
+    def close(self) -> None:
+        if self._progress is not None:
+            self._progress.stop()
+            self._progress = None
+
+
+def task_error(task: TaskInfo) -> str:
+    """The reason of a failed task, without the ``TaskFailed:`` prefix of an expected
+    failure."""
+    error = task.error or "no reason given"
+    return error.removeprefix(f"{TaskFailed.__name__}: ")
+
+
+async def _follow_task(
+    app: Reframe, subscription: Subscription, task_id: str, view: FetchView
+) -> TaskInfo:
+    """Show the progress of ``task_id`` until it ends; its final info."""
+    async for event in subscription:
+        if isinstance(event, (TaskProgressEvent, TaskDoneEvent)) and event.task.id == task_id:
+            view.update(event.task)
+            if isinstance(event, TaskDoneEvent):
+                break
+        elif isinstance(event, ResyncEvent):
+            info = app.tasks.get(task_id)
+            if info is not None:
+                view.update(info)
+    return await app.tasks.wait(task_id)
+
+
+async def run_tools_fetch(*, build: str, platform: str | None) -> int:
+    """``reframe tools fetch``: the pinned build through the ``tools_fetch`` task (progress,
+    then the tool lines). Returns the exit code; Ctrl+C stops the download (exit 130)."""
+    try:
+        builds = load_manifest()
+    except FetchError as exc:  # pragma: no cover - the manifest ships with the package
+        _error(f"the pinned-build manifest cannot be read: {exc}")
+        return EXIT_FAILED
+    chosen = builds.get(build)
+    if chosen is None:
+        names = ", ".join(f'"{name}"' for name in sorted(builds))
+        _error(f'there is no build "{build}" in the manifest. Builds: {names}.')
+        return EXIT_USAGE
+    host = host_platform()
+    target = platform or host
+    if target is None:
+        _error(
+            "no FFmpeg build is pinned for this computer: --platform downloads one for "
+            f"another computer ({', '.join(PLATFORMS)})."
+        )
+        return EXIT_FAILED
+    archive = chosen.platforms.get(target)
+    if archive is None:
+        _error(f'the build "{build}" has no archive for {target}.')
+        return EXIT_USAGE
+    console = make_console()
+    console.print(
+        Text(printable(f"FFmpeg {chosen.version} ({chosen.name}, {target}): {archive.url}")),
+        soft_wrap=True,
+    )
+    async with open_reframe() as app:
+        subscription = app.events.subscribe(types={"task.progress", "task.done"})
+        info = app.tools.fetch(build=build, platform=target)
+        view = FetchView(console)
+        try:
+            final = await _follow_task(app, subscription, info.id, view)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None:
+                current.uncancel()
+            view.close()
+            print("Interrupted: stopping the download…", file=sys.stderr)
+            app.tasks.cancel(info.id, "interrupted")
+            await app.tasks.wait(info.id)
+            print("Nothing was installed.", file=sys.stderr)
+            return EXIT_INTERRUPTED
+        finally:
+            subscription.close()
+            view.close()
+        if final.state is not TaskState.DONE:
+            reason = task_error(final) if final.state is TaskState.FAILED else "it was cancelled"
+            _error(f"the fetch failed: {reason}")
+            return EXIT_FAILED
+        result = app.tasks.value(info.id)
+        assert isinstance(result, ToolFetchResult)
+        tools = app.tools.current if target == host else None
+    _fetch_report(console, result, tools)
+    return EXIT_OK
+
+
+def _fetch_report(console: Console, result: ToolFetchResult, tools: ToolSet | None) -> None:
+    if result.downloaded:
+        line = f"Installed FFmpeg {result.version} into {result.install_dir}."
+    else:
+        line = (
+            f"FFmpeg {result.version} is already installed in {result.install_dir} and every "
+            "file is intact: nothing was downloaded."
+        )
+    console.print(Text(printable(line), style="bold green"), soft_wrap=True)
+    if tools is None:
+        console.print(
+            Text(
+                printable(
+                    f"This build is for {result.platform}: tool discovery on this computer "
+                    f"does not use it. Copy {result.install_dir} to <data dir>/tools/ffmpeg "
+                    "on that computer."
+                )
+            ),
+            soft_wrap=True,
+        )
+        return
+    _print_tool_lines(console, tools)
+    for name in REQUIRED_TOOLS:
+        info = tools.get(name)
+        installed = result.ffmpeg if name == "ffmpeg" else result.ffprobe
+        if info.path is not None and Path(info.path) == installed:
+            continue
+        print(
+            _one_line(
+                f"warning: {name} is not the fetched build: {origin_text(info)}. An "
+                "environment variable or Settings > Tools takes precedence over the "
+                "bundled build."
+            ),
+            file=sys.stderr,
+        )
+
+
+# --------------------------------------------------------------------------- presets
+
+_EXIT_HELP_PRESETS_LIST = "Exit codes: 0 listed."
+_EXIT_HELP_PRESETS_EXPORT = (
+    "Exit codes: 0 exported; 1 FILE cannot be written; 2 usage error, an unknown preset, or "
+    "FILE is a folder."
+)
+_EXIT_HELP_PRESETS_IMPORT = (
+    "Exit codes: 0 imported (also when every preset was skipped); 1 the file is not a Reframe "
+    "preset file, a preset was not imported, or presets.json cannot be written; 2 usage "
+    "error; 3 FILE does not exist or cannot be read."
+)
+
+
+class ConflictChoice(StrEnum):
+    """``--on-conflict`` of ``reframe presets import`` (C-9's ``ConflictPolicy``)."""
+
+    RENAME = "rename"
+    REPLACE = "replace"
+    SKIP = "skip"
+
+
+class PlatformChoice(StrEnum):
+    """``--platform`` of ``reframe tools fetch`` (the manifest's platforms)."""
+
+    LINUX_X64 = "linux-x64"
+    WINDOWS_X64 = "windows-x64"
+
+
+def preset_rows(presets: Sequence[Preset], default_id: str) -> list[str]:
+    """The lines of ``reframe presets list``: a ``*`` for the default, then name, category,
+    id and kind in columns, and a legend."""
+    header = ("", "Name", "Category", "Id", "Kind")
+    rows = [
+        (
+            "*" if p.id == default_id else "",
+            printable(p.name),
+            printable(p.category),
+            printable(p.id),
+            "built-in" if p.built_in else "user",
+        )
+        for p in presets
+    ]
+    widths = [max(len(row[i]) for row in [header, *rows]) for i in range(len(header))]
+    lines = [
+        "  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip()
+        for row in [header, *rows]
+    ]
+    users = sum(1 for p in presets if not p.built_in)
+    lines.append("")
+    lines.append(
+        f"* default preset · {len(presets) - users} built-in, {_plural(users, 'user preset')}"
+    )
+    return lines
+
+
+async def run_presets_list(*, as_json: bool) -> int:
+    """``reframe presets list``: built-in, then user presets."""
+    async with open_reframe() as app:
+        presets = app.presets.list()
+        default = app.presets.default()
+    if as_json:
+        _write_json_value(
+            {
+                "default_preset_id": default.id,
+                "presets": [
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "category": p.category,
+                        "description": p.description,
+                        "built_in": p.built_in,
+                        "default": p.id == default.id,
+                    }
+                    for p in presets
+                ],
+            }
+        )
+        return EXIT_OK
+    console = make_console()
+    for line in preset_rows(presets, default.id):
+        console.print(Text(line), soft_wrap=True)
+    return EXIT_OK
+
+
+def _write_json_value(data: object) -> None:
+    """JSON on stdout (``\\uXXXX`` escapes when stdout is not UTF-8)."""
+    encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
+    text = json.dumps(data, indent=2, ensure_ascii=encoding not in ("utf-8", "utf8"))
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:  # a lone surrogate (a name from a non-UTF-8 file name)
+        text = json.dumps(data, indent=2, ensure_ascii=True)
+    sys.stdout.write(text + "\n")
+    sys.stdout.flush()
+
+
+def write_text_file(path: Path, text: str) -> None:
+    """Write ``text`` (UTF-8) through a temporary file in the same folder and a rename, so a
+    failed write never leaves half a file. :raises OSError:"""
+    folder = path.parent if str(path.parent) else Path()
+    fd, temp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        os.replace(temp, path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
+
+
+async def run_presets_export(names: Sequence[str], *, output: Path | None) -> int:
+    """``reframe presets export``: the named presets (none named: every user preset) as the
+    export file (decision 0028: presets of a newer Reframe are kept), on stdout or in FILE."""
+    to_stdout = output is None or str(output) == "-"
+    if output is not None and not to_stdout and await asyncio.to_thread(output.is_dir):
+        _error(f"{display_path(output)} is a folder: -o needs a file name.")
+        return EXIT_USAGE
+    async with open_reframe() as app:
+        ids: list[str] | None = None
+        if names:
+            ids = []
+            for name in names:
+                found = find_preset(app, name)
+                if isinstance(found, str):
+                    _error(found)
+                    return EXIT_USAGE
+                ids.append(found.id)
+        export = app.presets.export(ids)
+    document = export.document()
+    for issue in export.issues:
+        print(_one_line(f"warning: {issue.message}"), file=sys.stderr)
+    count = len(document.get("presets") or [])
+    if not count:
+        print(
+            "warning: there are no user presets to export (name presets to export them, "
+            "built-in ones too).",
+            file=sys.stderr,
+        )
+    if to_stdout:
+        _write_json_value(document)
+        return EXIT_OK
+    assert output is not None
+    text = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    try:
+        await asyncio.to_thread(write_text_file, output, text)
+    except UnicodeEncodeError:  # a lone surrogate: write it escaped
+        text = json.dumps(document, indent=2, ensure_ascii=True) + "\n"
+        await asyncio.to_thread(write_text_file, output, text)
+    except OSError as exc:
+        _error(f"{display_path(output)} cannot be written: {exc.strerror or exc}.")
+        return EXIT_FAILED
+    make_console().print(
+        Text(printable(f"Exported {_plural(count, 'preset')} to {output}.")), soft_wrap=True
+    )
+    return EXIT_OK
+
+
+def read_preset_file(path: Path) -> dict[str, Any] | tuple[int, str]:
+    """The JSON object of an export file (``-``: stdin), else ``(exit code, message)``."""
+    name = "stdin" if str(path) == "-" else display_path(path)
+    try:
+        raw = sys.stdin.buffer.read() if str(path) == "-" else path.read_bytes()
+    except FileNotFoundError:
+        return EXIT_NOT_FOUND, f"{name}: the file does not exist."
+    except IsADirectoryError:
+        return EXIT_NOT_FOUND, f"{name} is a folder, not a preset file."
+    except OSError as exc:
+        return EXIT_NOT_FOUND, f"{name} cannot be read: {exc.strerror or exc}."
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except UnicodeDecodeError:
+        return EXIT_FAILED, f"{name} is not a Reframe preset file: it is not UTF-8 text."
+    except RecursionError:
+        return EXIT_FAILED, f"{name} is not a Reframe preset file: it is nested too deeply."
+    except ValueError as exc:
+        return EXIT_FAILED, f"{name} is not a Reframe preset file: it is not JSON ({exc})."
+    if not isinstance(data, dict):
+        return EXIT_FAILED, f"{name} is not a Reframe preset file: it is not a JSON object."
+    return data
+
+
+def render_import(console: Console, result: ImportResult, source: str, policy: str) -> None:
+    """``Imported 2 presets from FILE (on a conflict: rename):``, then each preset, the
+    replaced and skipped ones, and the issues."""
+    if result.imported:
+        console.print(
+            Text(
+                printable(
+                    f"Imported {_plural(len(result.imported), 'preset')} from {source} "
+                    f"(on a conflict: {policy}):"
+                ),
+                style="bold",
+            ),
+            soft_wrap=True,
+        )
+    else:
+        console.print(
+            Text(printable(f"Nothing was imported from {source}."), style="bold"), soft_wrap=True
+        )
+    renamed = {new: old for old, new in result.renamed}
+    for preset in result.imported:
+        line = f"{preset.name}  ({preset.id})"
+        if preset.name in renamed:
+            line += f", renamed from “{renamed[preset.name]}”"
+        _indented(console, Text(printable(line)))
+    if result.replaced:
+        _indented(console, Text(printable("Replaced: " + ", ".join(result.replaced))))
+    if result.skipped:
+        _indented(console, Text(printable("Skipped: " + ", ".join(result.skipped))))
+    if result.issues:
+        _section(console, f"Issues ({issue_counts(result.issues)})")
+        render_issues(console, result.issues)
+
+
+async def run_presets_import(file: Path, *, on_conflict: ConflictPolicy) -> int:
+    """``reframe presets import``: the presets of an export file, with the conflict policy."""
+    data = await asyncio.to_thread(read_preset_file, file)
+    if isinstance(data, tuple):
+        code, message = data
+        _error(message)
+        return code
+    async with open_reframe() as app:
+        result = await app.presets.import_(data, on_conflict)
+    source = "stdin" if str(file) == "-" else display_path(file)
+    render_import(make_console(), result, source, on_conflict)
+    # Every warning or error of an import is a preset (or the whole file) left out: a failure
+    # for a script. A preset skipped by ``--on-conflict skip`` has no issue.
+    left_out = any(issue.severity is not Severity.INFO for issue in result.issues)
+    return EXIT_FAILED if left_out else EXIT_OK
 
 
 def build_app() -> typer.Typer:
@@ -1774,12 +2481,137 @@ def build_app() -> typer.Typer:
         {resolution}, are empty here; "reframe plan" shows the full name."""
         _run(run_name(paths, template=template, preset=preset, as_json=as_json))
 
+    tools_app = typer.Typer(
+        no_args_is_help=True,
+        help="Which FFmpeg, ffprobe, mkvpropedit and MediaInfo Reframe uses; fetch the pinned "
+        "FFmpeg build.",
+    )
+    app.add_typer(tools_app, name="tools")
+
+    @tools_app.command("status", epilog=_EXIT_HELP_TOOLS_STATUS)
+    def tools_status(
+        as_json: Annotated[
+            bool, typer.Option("--json", help="Print the ToolSet model as JSON.")
+        ] = False,
+    ) -> None:
+        """Show each tool: status, origin (env, settings, bundled, path), path, version and
+        the reason when it cannot be used, then the build that "reframe tools fetch"
+        installed.
+
+        The order of the search: the REFRAME_FFMPEG / REFRAME_FFPROBE / REFRAME_MKVPROPEDIT /
+        REFRAME_MEDIAINFO variables, Settings > Tools, the bundled build (also the fetched
+        one in <data dir>/tools/ffmpeg), then PATH (only without a bundled build)."""
+        _run(run_tools_status(as_json=as_json))
+
+    @tools_app.command("fetch", epilog=_EXIT_HELP_TOOLS_FETCH)
+    def tools_fetch(
+        build: Annotated[
+            str,
+            typer.Option(
+                "--build", metavar="NAME", help="The build of the manifest: default, override-test."
+            ),
+        ] = "default",
+        target: Annotated[
+            PlatformChoice | None,
+            typer.Option(
+                "--platform",
+                help="Another computer's platform: the build goes to <data dir>/tools/"
+                "ffmpeg-<platform>, which this computer does not use. Default: this computer.",
+            ),
+        ] = None,
+    ) -> None:
+        """Download the pinned FFmpeg build and install it as the bundled build in
+        <data dir>/tools/ffmpeg, where tool discovery finds it.
+
+        The size and SHA-256 of the archive are checked before anything is extracted;
+        ffmpeg -version and ffprobe -version must print the pinned version before the build
+        replaces the one installed before. A build that is installed and intact is not
+        downloaded again."""
+        _run(run_tools_fetch(build=build, platform=target.value if target else None))
+
+    presets_app = typer.Typer(
+        no_args_is_help=True, help="List, export and import presets (built-in and user)."
+    )
+    app.add_typer(presets_app, name="presets")
+
+    @presets_app.command("list", epilog=_EXIT_HELP_PRESETS_LIST)
+    def presets_list(
+        as_json: Annotated[
+            bool,
+            typer.Option(
+                "--json", help="Print id, name, category, description, built-in and default."
+            ),
+        ] = False,
+    ) -> None:
+        """List the presets: the built-in ones in their order, then the user presets, with
+        their category and id; * marks the default preset."""
+        _run(run_presets_list(as_json=as_json))
+
+    @presets_app.command("export", epilog=_EXIT_HELP_PRESETS_EXPORT)
+    def presets_export(
+        names: Annotated[
+            list[str] | None,
+            typer.Argument(
+                help="Presets by name (without case) or id. Default: every user preset.",
+                metavar="[NAME_OR_ID…]",
+                show_default=False,
+            ),
+        ] = None,
+        output: Annotated[
+            Path | None,
+            typer.Option("--output", "-o", metavar="FILE", help="Write to FILE instead of stdout."),
+        ] = None,
+    ) -> None:
+        """Export presets as a Reframe preset file (JSON, versioned). Presets that a newer
+        Reframe wrote are exported unchanged, with a warning."""
+        _run(run_presets_export(names or [], output=output))
+
+    @presets_app.command("import", epilog=_EXIT_HELP_PRESETS_IMPORT)
+    def presets_import(
+        file: Annotated[
+            Path,
+            typer.Argument(
+                help="A Reframe preset file (from export); - reads stdin.",
+                metavar="FILE",
+                readable=False,
+            ),
+        ],
+        on_conflict: Annotated[
+            ConflictChoice,
+            typer.Option(
+                "--on-conflict",
+                help="When a preset has the name or id of an existing one: rename (a new id "
+                "and the next free name, 'Name (2)'), replace (overwrite the user preset; a "
+                "built-in is never replaced, the import is renamed) or skip.",
+            ),
+        ] = ConflictChoice.RENAME,
+    ) -> None:
+        """Import the presets of a Reframe preset file as user presets."""
+        _run(run_presets_import(file, on_conflict=on_conflict.value))
+
     return app
+
+
+class _ExpectedTaskFailure(logging.Filter):
+    """Drops the task manager's log record (with a traceback) of a task that ended with
+    :class:`~reframe.mediatask.TaskFailed`: an expected failure that the command reports as
+    one ``error:`` line (decision 0017 item 23)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        error = record.exc_info[1] if record.exc_info else None
+        return not isinstance(error, TaskFailed)
+
+
+def _quiet_expected_failures() -> None:
+    logger = logging.getLogger("reframe.tasks")
+    if not any(isinstance(f, _ExpectedTaskFailure) for f in logger.filters):
+        logger.addFilter(_ExpectedTaskFailure())
 
 
 def _run(work: Coroutine[object, object, int]) -> None:
     """Run a command's coroutine; a non-zero code exits with it. Ctrl+C exits with 130 (the
     commands that start jobs cancel them first)."""
+    _quiet_expected_failures()
     try:
         code = asyncio.run(work)
     except KeyboardInterrupt:

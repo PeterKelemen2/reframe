@@ -569,12 +569,14 @@ The method list beyond this sketch, and the task context of the C-10 methods:
 - [ ] Wire every service. `create()` returns quickly. Detection and queue restore continue in
       the background.
 - [ ] CLI (`reframe` entry point, `[cli]` extra):
-      `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status|fetch` ·
-      `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
+      `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status` · `reframe tools fetch [--build NAME] [--platform P]` ·
+      `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list` · `reframe presets export [NAME…] [-o FILE]` · `reframe presets import FILE [--on-conflict rename|replace|skip]` ·
       `reframe plan FILE [--preset NAME] [-o OUT]` (prints the issues, then the command) · `reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
       `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
       No `--preset`: the default preset. Output formats, exit codes, the bounded wait for
       encoder detection and the folder search: [decision 0017](../decisions/0017-jobs-service-and-cli.md).
+      The fetch, the preset commands, the dry run of `plan` and the when-done countdown of
+      `encode`: [decision 0038](../decisions/0038-cli-tools-presets-and-when-done.md).
 
 Done when: the CLI can encode a season folder end to end with no UI. This is the first point
 where you can use Reframe for real.
