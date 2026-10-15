@@ -416,3 +416,4 @@ CLI where the plan has a command, otherwise a short script against the `Reframe`
 | 2026-10-15 | Baseline on `main` (108b5f1): 5549 passed, 2 skipped (25 `needs_gpu` deselected; they pass: 25). ruff, format, mypy (both platforms) green |
 | 2026-10-15 | `core-complete` made from `main`; decision 0029 + roadmap note committed |
 | 2026-10-15 | Contract commit: models, `reframe.mediatask`, facade methods, stubs, `hdr10-4k` fixture, decision 0030 |
+| 2026-10-15 | Wave 1 started from `core-complete` 56f1abd: nine agents (1a–1i), one worktree each |
