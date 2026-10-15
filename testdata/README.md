@@ -1454,7 +1454,9 @@ Windows (documentation only, nothing run; the code is mock-tested on Linux):
 
 ### When-done actions (C-11)
 
-(core-complete wave 1g.)
+Nothing to record: the queue's when-done actions run no tool. They call C-14's power service
+(its OS calls are under "Power actions (C-14)") and the notification hook
+([decision 0037](../docs/decisions/0037-when-done-power-actions-and-job-notifications.md)).
 
 ### Tools fetch and the CLI (C-15)
 

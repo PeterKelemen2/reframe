@@ -1,13 +1,16 @@
 """``Reframe.queue`` (C-11 wiring in ``reframe.service``): built in ``__init__``, restored in
-``create()``, closed first in ``close()``; with the fake tools behind the real services."""
+``create()``, closed first in ``close()``, given ``Reframe.power`` for when done; with the
+fake tools behind the real services."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from reframe.events import EventBus
 from reframe.models import JobState, NamingOptions
 from reframe.probe import mediainfo
 from reframe.queue import QueueService
@@ -16,6 +19,7 @@ from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 
 from .conftest import draft, encode_rule, recorded
+from .test_when_done import FakePower
 
 pytestmark = pytest.mark.anyio
 
@@ -107,3 +111,37 @@ async def test_naming_options_come_from_the_jobs_preset(env: Path) -> None:
         assert naming(job) is None
     finally:
         await app.close()
+
+
+async def test_the_when_done_action_goes_to_reframe_power(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``Reframe`` gives the queue its power service (here a fake that only records: no real
+    power call is possible); ``close()`` cancels the countdown and never runs it."""
+    made: list[FakePower] = []
+
+    def create(events: EventBus) -> FakePower:
+        made.append(FakePower(events))
+        return made[-1]
+
+    monkeypatch.setattr("reframe.service.create_power_service", create)
+    app = await Reframe.create()
+    try:
+        [power] = made
+        assert app.queue._power is app.power
+        assert app.power is cast(object, power)
+        await app.settings.update(
+            [{"op": "replace", "path": "/queue/when_done", "value": "shutdown"}]
+        )
+        source = recorded("multitrack.mkv", env / "media" / "Show.mkv")
+        added = await app.queue.add(draft(source, env / "out" / "Show.mkv"))
+        app.queue.start(job_ids=[added.id])  # as `reframe encode` does
+        [ended] = await app.queue.wait([added.id])
+        assert ended.state is JobState.DONE, ended.error
+        assert power.scheduled == [("countdown-1", "shutdown", "1 job done")]
+        assert power.pending is not None  # a front end can show it as soon as wait() returns
+    finally:
+        await app.close()
+    assert power.closed
+    assert power.cancelled == ["countdown-1"]
+    assert power.executed == []

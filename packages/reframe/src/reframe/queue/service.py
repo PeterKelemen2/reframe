@@ -32,8 +32,14 @@ dropped by a slow subscriber, the others never):
   end state and ``error``. The ``.part`` file, the plan files and the temporary files are
   already handled when the end state is published.
 - ``remove`` and ``reorder``: ``queue.changed``. ``retry``: ``job.state`` (→ ``waiting``).
-- When the queue empties after jobs ran: the when-done action (a ``notification`` event, or
-  an ``app.warning`` for the power actions that M2 does not have).
+- A job that ended on its own (``done``, ``failed``), when ``settings.queue.notifications``
+  is on: a ``notification`` with its ``job_id``, after its files are handled and before its
+  last ``job.log`` batch (the end ``job.state`` stays the last event of a run).
+- When the queue empties after jobs ran: the when-done action (``settings.queue.when_done``):
+  a ``notification`` "Queue finished", or the power service's 60 s countdown
+  (``power.countdown``) for ``quit``, ``sleep`` and ``shutdown``. New work cancels the
+  countdown that the queue started, and so does :meth:`~QueueService.close`
+  (:mod:`reframe.queue.whendone`).
 
 **Clean-up** when a run ends: ``EncodePlan.files`` and ``temp_files`` are always removed;
 the ``.part`` file is removed on cancel and on close, and on failure when
@@ -69,7 +75,6 @@ from reframe.models.events import (
     AppWarningEvent,
     JobProgressEvent,
     JobStateEvent,
-    NotificationEvent,
     QueueChangedEvent,
 )
 from reframe.models.issues import Severity
@@ -95,6 +100,7 @@ from reframe.queue.runner import (
 )
 from reframe.queue.store import STORE_FILE, QueueStore, row_of
 from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
+from reframe.queue.whendone import WhenDoneActions
 from reframe.validation import FileSystemView, LocalFileSystem
 
 __all__ = ["ENDED", "QueueService"]
@@ -105,7 +111,6 @@ log = logging.getLogger(__name__)
 ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 _ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _RETRY = frozenset({JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
-_POWER_LABELS = {"quit": "Quit Reframe", "sleep": "Sleep", "shutdown": "Shut down"}
 
 
 #: ``list[...]`` for annotations inside ``QueueService``, whose ``list`` method hides the builtin.
@@ -142,8 +147,10 @@ class QueueService:
     :param naming: the effective naming options of a job (its preset's), or ``None`` for
         Settings → Output.
     :param inhibitor: the sleep inhibitor (default: :func:`create_sleep_inhibitor`).
-    :param power: the power actions of the when-done setting (``Reframe.power``, C-14);
-        ``None``: ``quit``, ``sleep`` and ``shutdown`` are reported as not available.
+    :param power: the power actions of the when-done setting (``Reframe.power``, C-14): the
+        queue schedules ``quit``, ``sleep`` and ``shutdown`` there, and cancels its own
+        countdown when new work starts and at :meth:`close`. ``None``: they are reported as
+        not available (``queue.when_done_unavailable``).
     :param clock: the clocks (tests replace them).
     :param fs: the file-system view of validation and of the collision rename.
     :param stall_after: seconds without progress, output or CPU use before an FFmpeg step is
@@ -211,8 +218,8 @@ class QueueService:
         self._lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._background: set[asyncio.Task[None]] = set()
-        self._batch_done = 0
-        self._batch_failed = 0
+        self._when = WhenDoneActions(events, power)
+        """The batch counts, the job notifications and the when-done action."""
 
     # ------------------------------------------------------------------ the contract
 
@@ -451,12 +458,14 @@ class QueueService:
         return log_file(self._data_dir, job_id)
 
     async def close(self) -> None:
-        """No new jobs; running jobs are stopped (``interrupted``, ``.part`` removed), the
-        sleep inhibit is freed and the store is flushed. Safe to call more than once."""
+        """No new jobs; a when-done countdown that the queue started is cancelled (its action
+        never runs); running jobs are stopped (``interrupted``, ``.part`` removed), the sleep
+        inhibit is freed and the store is flushed. Safe to call more than once."""
         if self._closed:
             return
         self._closed = True
         self._processing = False
+        self._when.close()  # before any await: no when-done action runs after this
         tasks: _Tasks = []
         for active in builtins.list(self._active.values()):
             active.stop("close")
@@ -600,6 +609,7 @@ class QueueService:
                 continue  # the same output is being written by another job
             active = ActiveJob(job_id=job.id, output_key=key)
             self._active[job.id] = active
+            self._when.work_started()  # new work: the queue's when-done countdown stops
             if key is not None:
                 busy.add(key)
             active.task = asyncio.get_running_loop().create_task(
@@ -673,18 +683,23 @@ class QueueService:
                 ending += f": {outcome.error}"
             joblog.note(ending)
         finally:
+            # Before the last log batch: the end state stays the last event of the run.
+            self._job_notification(job, outcome)
             joblog.close()
             async with active.control:  # after a pause or resume that is under way
                 active.ended = True
                 await self._release_inhibit(active)
             job.finished_at = self._clock.now()
             await self._set_state(job, outcome.state, error=outcome.error)
-            # No await from here on: the slot, the count and the when-done check change together.
+            # No await from here on: the slot, the count and the when-done check change
+            # together, so the when-done action is taken before a wait() for the job returns.
             self._active.pop(job.id, None)
-            self._count(outcome.state)
-            drained = self._schedule()
-            self._when_done(outcome.state, drained=drained)
-            await self._notify()
+            self._when.count(outcome.state)
+            try:
+                drained = self._schedule()
+                self._when_done(outcome.state, drained=drained)
+            finally:
+                await self._notify()  # never skipped: wait() must see the job end
 
     async def _cleanup(self, job: QueueJob, outcome: Outcome, joblog: JobLog) -> None:
         plan = outcome.plan
@@ -708,15 +723,24 @@ class QueueService:
 
     # ------------------------------------------------------------------ when done
 
-    def _count(self, state: JobState) -> None:
-        if state is JobState.DONE:
-            self._batch_done += 1
-        elif state is JobState.FAILED:
-            self._batch_failed += 1
+    def _job_notification(self, job: QueueJob, outcome: Outcome) -> None:
+        """The notification of a run that ended on its own (``settings.queue.notifications``);
+        never raises (it is called while the run ends)."""
+        try:
+            self._when.job_ended(
+                job,
+                outcome.state,
+                error=outcome.error,
+                output=outcome.output_path,
+                notifications=self._settings().queue.notifications,
+            )
+        except Exception:  # a bug: the run still ends
+            log.exception("queue job %s: the notification failed", job.id)
 
     def _when_done(self, last: JobState, *, drained: bool = False) -> None:
-        """The queue emptied after a job ended on its own (done or failed; not when the user
-        cancelled the last job or Reframe closed): run the when-done action once.
+        """When the queue emptied, run the when-done action once for the jobs that ended
+        since it last emptied, if the last one ended on its own (done or failed; not when the
+        user cancelled the last job or Reframe closed). See :mod:`reframe.queue.whendone`.
 
         "Emptied": nothing runs, and nothing is left that the runner would take: no waiting
         job at all, or (``drained``) none of the jobs of ``start(job_ids=…)``."""
@@ -727,34 +751,7 @@ class QueueService:
                 return
         elif not drained and any(job.state is JobState.WAITING for job in self._jobs.values()):
             return  # stopped with jobs left: the queue did not empty
-        if last not in (JobState.DONE, JobState.FAILED):
-            return
-        done, failed = self._batch_done, self._batch_failed
-        self._batch_done = self._batch_failed = 0
-        action = self._settings().queue.when_done
-        if action == "nothing":
-            return
-        summary = f"{done} job{'s' if done != 1 else ''} done"
-        if failed:
-            summary += f", {failed} failed"
-        if action == "notify":
-            self._events.publish(
-                NotificationEvent(
-                    title="Queue finished",
-                    message=summary + ".",
-                    level="warning" if failed else "success",
-                )
-            )
-            return
-        label = _POWER_LABELS.get(action, action)
-        self._events.publish(
-            AppWarningEvent(
-                code="queue.when_done_unavailable",
-                message=f"The queue is finished ({summary}). When done: “{label}” is not "
-                "available yet, so nothing was done.",
-                detail=f"when_done={action}: power actions come with C-14 (later milestone)",
-            )
-        )
+        self._when.emptied(last, self._settings().queue.when_done)
 
     # ------------------------------------------------------------------ sleep inhibit
 
