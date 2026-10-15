@@ -2,12 +2,13 @@
 its plan.
 
 - :meth:`JobService.draft` turns a source and a preset into a :class:`~reframe.models.JobDraft`:
-  the preset's output options, dimensions, filters, video, chapter and tag settings; every
-  audio track through the preset's codec rules and every subtitle copied (C-12
-  ``draft_tracks``, decision 0018); the video track's metadata from the source with the
-  default flag (decision 0024 item 5); and the output path: ``output`` as a manual name, else
-  the naming template (C-16) with the preset's naming options (or Settings → Output) and the
-  scaled size (C-5).
+  C-12's one rule engine (``reframe.batch.resolve``, decision 0040) makes the job: the
+  preset's output options, dimensions, filters, video, chapter and tag settings; the tracks of
+  its track rules, else of its audio and subtitle defaults (decisions 0018, 0031); the video
+  track's metadata from the source with the default flag (decision 0024 item 5). Then the
+  output path: ``output`` as a manual name, else the naming template (C-16) with the preset's
+  naming options (or Settings → Output) and the scaled size (C-5).
+- :meth:`JobService.name_job` names a job made elsewhere (a batch row) the same way.
 - :meth:`JobService.validate` runs C-8's ``validate``. When an encoder is still being checked
   (``encoder.checking``) it waits for encoder detection, but at most ``detection_wait``
   seconds (decision 0017), and validates again.
@@ -40,28 +41,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from reframe import languages, metadata, preview
-from reframe.batch import draft_tracks
+from reframe import metadata, preview
+from reframe.batch import draft_tracks, output_size, video_metadata
+from reframe.batch.resolve import resolve_with_tracks
 from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, EncoderOption, load_definitions
 from reframe.definitions import hdr_options as _hdr_options
 from reframe.definitions import search_options as _search_options
-from reframe.dimensions import compute_geometry, source_geometry
 from reframe.jsonpatch import escape_token
 from reframe.mediatask import MediaTaskContext
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.defaults import TrackDecision, TrackDraft
 from reframe.models.draft import JobDraft
 from reframe.models.issues import AddOp, JsonPatchOp, Severity, ValidationIssue
-from reframe.models.job import (
-    ChapterSettings,
-    Container,
-    JobNaming,
-    JobSettings,
-    OutputSettings,
-    TrackMetadata,
-)
-from reframe.models.media import MediaSource, VideoStream
+from reframe.models.job import Container, JobNaming, JobSettings
+from reframe.models.media import MediaSource
 from reframe.models.naming import NameResult, NamingOptions
 from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
@@ -222,41 +216,6 @@ def _probe_issue(error: ProbeError) -> ValidationIssue:
     )
 
 
-def video_metadata(stream: VideoStream) -> TrackMetadata:
-    """The source video track's language, title and flags, with the default flag set
-    (decision 0024 item 5: what mkvmerge writes; FFmpeg-written sources often have no
-    default flag on their only video stream)."""
-    value = stream.language_ietf or stream.language
-    language = (languages.normalize(value) or value) if value else None
-    d = stream.disposition
-    return TrackMetadata(
-        language=language,
-        name=stream.title,
-        default=True,
-        forced=d.forced,
-        commentary=d.comment,
-        hearing_impaired=d.hearing_impaired,
-        visual_impaired=d.visual_impaired,
-        original=d.original,
-    )
-
-
-def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None:
-    """C-5's scaled size of the encoded picture (the source size for video passthrough)."""
-    if not source.video:
-        return None
-    stream = source.video[0]
-    if job.video.passthrough:
-        return (stream.width, stream.height)
-    src = source_geometry(stream)
-    if "deinterlace" in job.filters.root:
-        # Deinterlace runs before the crop: the crop is on the progressive grid, as the
-        # command builder (C-7) computes it.
-        src = src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(src, job.dimensions)
-    return (geometry.scaled_width, geometry.scaled_height)
-
-
 def job_from_preset(
     source: MediaSource,
     preset: Preset,
@@ -281,34 +240,13 @@ def draft_from_preset(
     languages: LanguageSettings | None = None,
 ) -> tuple[JobSettings, TrackDraft, list[str]]:
     """:func:`job_from_preset` with the whole :class:`~reframe.models.TrackDraft` (audio and
-    subtitle decisions, the issues of the track stage). Pure."""
-    notes: list[str] = []
-    tracks = draft_tracks(source, preset, definitions=definitions, languages=languages)
-    video = preset.video.model_copy(deep=True)
-    if source.video:
-        video.metadata = video_metadata(source.video[0])
-    names: list[str] | None = None
-    if preset.chapter_name_policy == "generated" and source.chapters:
-        names = [f"Chapter {i}" for i in range(1, len(source.chapters) + 1)]
-        notes.append("Chapter names: generated (Chapter 1, Chapter 2, …), as the preset says.")
-    job = JobSettings(
-        source=source.ref.model_copy(deep=True),
-        preset_id=preset.id,
-        preset_name=preset.name,
-        output=OutputSettings.model_validate(preset.output.model_dump()),
-        dimensions=preset.dimensions.model_copy(deep=True),
-        filters=preset.filters.model_copy(deep=True),
-        video=video,
-        audio=tracks.audio,
-        subtitles=tracks.subtitles,
-        chapters=ChapterSettings(
-            enabled=preset.chapters.enabled,
-            names=names,
-            generate_every=preset.chapters.generate_every,
-        ),
-        tags=preset.tags.model_copy(deep=True),
+    subtitle decisions, the issues of the track stage): C-12's ``resolve`` of the preset in
+    ``source`` (the one rule engine of presets and batch mode, decision 0040). Pure."""
+    resolution, tracks = resolve_with_tracks(
+        preset, source, definitions=definitions, languages=languages
     )
-    return job, tracks, notes
+    assert resolution.job is not None  # resolve always makes a job
+    return resolution.job, tracks.draft, resolution.notes
 
 
 # --------------------------------------------------------------------------- the service
@@ -438,6 +376,19 @@ class JobService:
         job, tracks, notes = draft_from_preset(
             media, preset, definitions=self.definitions, languages=self._settings().languages
         )
+        job, name, more = self._name(job, media, naming, output)
+        return job, tracks, name, [*notes, *more]
+
+    def _name(
+        self,
+        job: JobSettings,
+        media: MediaSource,
+        naming: NamingOptions,
+        output: Path | None,
+    ) -> tuple[JobSettings, NameResult, list[str]]:
+        """Set ``job``'s output path (it is changed): ``output``, else the naming template;
+        the name, and notes on what naming changed."""
+        notes: list[str] = []
         file = Path(media.ref.path)
         size = output_size(job, media)
         folder: Path | None = None
@@ -478,15 +429,36 @@ class JobService:
                 )
                 path = free
         job.output.path = path
-        return job, tracks, name, notes
+        return job, name, notes
+
+    async def name_job(
+        self,
+        job: JobSettings,
+        source: MediaSource,
+        *,
+        naming: NamingOptions | None = None,
+        output: Path | None = None,
+    ) -> tuple[JobSettings, NameResult, list[str]]:
+        """Name ``job`` (made elsewhere: a batch row) as :meth:`draft` names a draft: a copy
+        with the output path, C-16's name and notes. ``naming``: the naming options (``None``:
+        the job's preset's, else Settings → Output); ``output``: a manual name or folder."""
+        options = naming if naming is not None else self._naming_options(self._job_preset(job))
+        return await asyncio.to_thread(
+            self._name, job.model_copy(deep=True), source, options, output
+        )
 
     # ------------------------------------------------------------------ validate, plan
 
     async def validate(
-        self, job: JobSettings, source: MediaSource | None = None
+        self,
+        job: JobSettings,
+        source: MediaSource | None = None,
+        *,
+        naming: NamingOptions | None = None,
     ) -> list[ValidationIssue]:
         """Every issue of ``job`` (C-8). ``source`` ``None``: the job's source is probed (the
-        probe cache makes this cheap).
+        probe cache makes this cheap). ``naming``: the naming options the job was named with
+        (``None``: its preset's, else Settings → Output).
 
         When an encoder or filter is still being checked, encoder detection is awaited for at
         most ``detection_wait`` seconds and the job is validated again; after that time the
@@ -496,7 +468,8 @@ class JobService:
         media = await self._media(job, source)
         if not isinstance(media, MediaSource):
             return media
-        return await self._validate(job, media, self._naming_options(self._job_preset(job)))
+        options = naming if naming is not None else self._naming_options(self._job_preset(job))
+        return await self._validate(job, media, options)
 
     async def plan(
         self, job: JobSettings, source: MediaSource | None = None, *, dry_run: bool = False

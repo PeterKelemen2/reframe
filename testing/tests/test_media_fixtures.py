@@ -401,6 +401,74 @@ def test_season_set(all_media: Path, probe: Callable[..., Probe]) -> None:
             assert got == MULTITRACK_LAYOUT
 
 
+#: The 04 §Example layout: (kind, language, title, flags) per stream.
+ANIME_LAYOUT = [
+    ("video", None, None, frozenset({"default"})),
+    ("audio", "jpn", "Japanese", frozenset({"default"})),
+    ("audio", "eng", "English Dub", frozenset()),
+    ("subtitle", "eng", "Signs & Songs", frozenset({"forced"})),
+    ("subtitle", "eng", "Full", frozenset({"default"})),
+]
+ANIME_COMMENTARY = ("audio", "eng", "Commentary", frozenset({"comment"}))
+
+
+def test_anime_seasons(all_media: Path, probe: Callable[..., Probe]) -> None:
+    """The batch-mode fixtures (C-12 M7, 04 §Example): one layout, E05 with an extra
+    commentary, E11 without the dub and with another signs title; season 2 like E01."""
+    for season, count in ((1, 12), (2, 3)):
+        folder = media.anime_folder(season)
+        names = sorted(p.name for p in (all_media / folder).glob("*.mkv"))
+        assert names == sorted(media.anime_file_name(season, n) for n in range(1, count + 1))
+        for n in range(1, count + 1):
+            p = probe(f"{folder}/{media.anime_file_name(season, n)}")
+            title = media.ANIME_TITLES[season][n - 1]
+            assert p["format"]["tags"]["title"] == f"Anime Show - S{season:02d}E{n:02d} - {title}"
+            assert float(p["format"]["duration"]) <= media.ANIME_SECONDS + 0.1
+            got = layout(p)
+            if (season, n) == (1, media.ANIME_COMMENTARY_EPISODE):
+                assert got == [*ANIME_LAYOUT[:3], ANIME_COMMENTARY, *ANIME_LAYOUT[3:]]
+                commentary = streams(p, "audio")[2]
+                assert (commentary["codec_name"], commentary["channels"]) == ("ac3", 2)
+            elif (season, n) == (1, media.ANIME_NO_DUB_EPISODE):
+                signs = ("subtitle", "eng", media.ANIME_OTHER_SIGNS_TITLE, frozenset({"forced"}))
+                assert got == [*ANIME_LAYOUT[:2], signs, ANIME_LAYOUT[4]]
+            else:
+                assert got == ANIME_LAYOUT
+            audio = streams(p, "audio")
+            # Verified: FFmpeg's TrueHD encoder writes 5.1(side), no profile, no bit rate.
+            assert (audio[0]["codec_name"], audio[0]["channel_layout"]) == ("truehd", "5.1(side)")
+            assert "bit_rate" not in audio[0]
+            if (season, n) != (1, media.ANIME_NO_DUB_EPISODE):
+                assert (audio[1]["codec_name"], audio[1]["profile"]) == ("dts", "DTS-HD MA")
+                assert "bit_rate" not in audio[1]
+            assert {s["codec_name"] for s in streams(p, "subtitle")} == {"ass"}
+
+
+def test_truehd_encoder_has_no_7_1(tmp_path: Path) -> None:
+    """Why the 04 §Example's "TrueHD Atmos 7.1" is TrueHD 5.1 here: FFmpeg's ``truehd``
+    encoder (experimental, ``-strict -2``) takes at most 5.1(side) and refuses 7.1."""
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg
+    base = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-f", "lavfi", "-i"]
+    source = "sine=frequency=440:sample_rate=48000:duration=0.2"
+    encode = ["-c:a", "truehd", "-strict", "-2"]
+    six = subprocess.run(
+        [*base, source, "-ac", "6", *encode, str(tmp_path / "6.mka")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert six.returncode == 0, six.stderr
+    eight = subprocess.run(
+        [*base, source, "-ac", "8", *encode, str(tmp_path / "8.mka")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert eight.returncode != 0
+    assert "'7.1' is not supported by the truehd encoder" in eight.stderr
+
+
 def test_dts_hd_ma(all_media: Path, probe: Callable[..., Probe]) -> None:
     """A real DTS-HD MA track (written by reframe_testing.dts) with no bit rate in the file."""
     p = probe("dts-hd-ma.mkv")

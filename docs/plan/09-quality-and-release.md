@@ -57,6 +57,7 @@ source of the C-10 frame budget (`hdr10-4k`, about 6 MB, generated and never com
 | HDR10 | 10-bit x265 with `master-display` / `max-cll` |
 | Chapters | FFMETADATA input |
 | Season set | 12 copies of the multi-track MKV. One has an extra commentary track. One is missing the second audio track. Names follow `Show.S01E01.Title.mkv` |
+| Batch example seasons | 04 §Example: 12 episodes with `jpn` TrueHD 5.1 (FFmpeg makes no 7.1 and no Atmos), `eng` DTS-HD MA 5.1, ASS "Signs & Songs" (forced) and "Full"; E05 with an extra commentary, E11 without the dub and with another signs title; a second season of 3 episodes ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)) |
 
 ## Q-3 Performance budgets
 

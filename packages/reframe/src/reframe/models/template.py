@@ -77,6 +77,14 @@ class TrackSelector(DocumentModel):
     nth: NonNegativeInt = 0
     """The nth candidate after filtering and sorting."""
     sort: Literal["source_order", "most_channels", "highest_bitrate"] = "source_order"
+    """``highest_bitrate`` is decision 0031's best-quality order: lossless first, then the
+    highest known bit rate (an unknown one after every known one), then more channels;
+    for subtitles ``most_channels`` and ``highest_bitrate`` put full subtitles before SDH
+    before forced and Signs & Songs (decision 0040)."""
+    stream: NonNegativeInt | None = None
+    """A per-file override (04 §Resolution matrix: a candidate picked by hand in a cell): the
+    absolute index of the source track this rule takes in that one file; the other fields
+    are not checked. Not for a preset: a stream index does not carry over to other files."""
 
 
 class AudioOutputSettings(_AudioEncoding):

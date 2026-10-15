@@ -1,0 +1,258 @@
+# 0040 — The batch engine: one rule engine, selectors and relaxation, grouping, overrides, `reframe batch`
+
+- Status: accepted. The points marked **(open)** are product questions answered with a default
+  that is easy to change (each is one constant or small function, named below).
+- Date: 2026-10-15
+- Steps: C-12 (M7 part; core-complete wave 2a), C-15 (`Reframe.batch`, `reframe batch`)
+
+## Context
+
+[04-batch-mode.md](../plan/04-batch-mode.md) describes descriptors, fingerprints, grouping,
+track rules with relaxation, rule derivation, per-file overrides as JSON patches and the
+resolution matrix, and its core API; [05 §C-12](../plan/05-core.md#c-12-batch-engine) adds
+"parsed-name overrides for C-16" and [05 §C-15](../plan/05-core.md#c-15-service-facade-and-cli)
+the CLI `reframe batch DIR --preset NAME [--dry-run]`. 04 also says "The preset's audio
+defaults compile into `OutputTrackRule`s … **There is one rule engine for presets and batch
+mode**", while 1a's selection stage (decision [0031](0031-audio-and-subtitle-selection-stage.md))
+has settings that a `TrackSelector` cannot express. Building it showed where the plan is silent
+or cannot be followed literally. The fixtures were checked with FFmpeg n9.0.2
+(testdata/README.md "Batch engine (C-12, M7)").
+
+## Decision
+
+### 1. One rule engine, two ways in
+
+`reframe.batch.resolve(template, source, override)` is the one way a job is made from a
+template: `Reframe.jobs.draft` (`reframe.jobs.draft_from_preset`) and `Reframe.batch.resolve`
+both call it, so a preset and a batch group make the same job for the same file. Its track stage
+(`reframe.batch.rules.resolve_tracks`; `draft_tracks` is now a thin wrapper) works per kind:
+
+- **Explicit rules** (`audio_rules` / `subtitle_rules`, made by *Apply to group*): each rule's
+  selector finds its track(s) with relaxation (section 2); fixed settings are copied, and
+  `AudioCodecRules` settings run C-12's codec rules (`apply_codec_rules`) on the track that was
+  found. Explicit rules replace the defaults **of their kind**; the subtitle defaults' foreign
+  audio search hears the explicit audio.
+- **No explicit rules**: the defaults are compiled into rules (`compile_defaults`: one per
+  listed language with `AudioCodecRules` settings, as 04 says, plus a rule for each other part
+  of the selection that takes tracks: the no-match track, other languages, commentary and
+  descriptions, the foreign audio search; with no language at all one "every track" rule), and
+  the tracks come from 1a's selection stage, unchanged. Each selected track is attributed to
+  its compiled rule, so the matrix has one column per compiled rule with ✓ / "– skipped".
+  What a `TrackSelector` cannot say (the default-flagged track, "not a listed language",
+  `und` counted as the first language, source output order, the default-track policy, burn-in)
+  stays the selection stage's; the compiled rules name the columns. A test checks that every
+  built-in preset on every recorded probe gives exactly the tracks, decisions and issues of the
+  selection stage, with and without preferred languages; the M2 / M6 draft tests are unchanged.
+
+### 2. Selectors, relaxation and the result cells
+
+- **Matching** (`reframe.batch.selectors`): every list is "one of" (languages, codecs,
+  profiles, roles); `profiles` match the commercial name or ffprobe's profile, any case; roles
+  are C-3's (flag, title and heuristic evidence) plus what the disposition flags give a source
+  without the prober (`stream_roles`), `main` when none; `languages` is an order of
+  preference, then `sort`. **`sort: highest_bitrate` is 0031's best quality** (lossless first,
+  an unknown bit rate after every known one, then channels); for subtitles `most_channels` and
+  `highest_bitrate` put full before SDH before forced. A title pattern that is not a regular
+  expression, and a selector of the other kind, are errors (`batch.bad_title_pattern`,
+  `batch.rule_kind`); the rule takes nothing.
+- **Relaxation**: exactly 04's order (title, profiles, channels, codecs; never language or
+  role), only the fields the selector sets. **Several rules (open):** every rule is matched with
+  its full selector first; a relaxed rule never takes a track that another rule matches exactly,
+  nor one an earlier relaxed rule took; exact matches may share a track (a passthru and an AAC
+  copy of one source track are a choice).
+- **Cells**: `exact` ✓; `relaxed` ≈ "matched without title, profile" (warning
+  `batch.track_relaxed`); `ambiguous` ≈ "2 candidates, picked #3 (source order)" when a
+  single-track rule finds **more than `nth + 1`** candidates (warning `batch.track_ambiguous`;
+  a rule derived from one of two identical tracks therefore warns in every file, which is
+  true: it can only go by order); `missing` ✗ (error `batch.track_missing`, fix "make the rule
+  optional", target template); `skipped` – (info `batch.track_skipped`).
+- **A hand pick in a matrix cell** is the new optional field `TrackSelector.stream` (the
+  absolute stream index, for a per-file override; the other fields are then not checked). It
+  is a new optional field of a persisted model: no `schema_version` change (older Reframes keep
+  it as an unknown field).
+- **`languages: []` takes no track.** *Apply to group* of a job without audio (or subtitles)
+  gives one optional rule with `languages: []`, because an empty rule list means "the
+  template's defaults"; its cell is "skipped" without an issue, its column "A1 no track".
+- **Metadata** (`TrackMetadataTemplate`; `None` = from the source track): a rule's explicit
+  `default: true` wins over source default flags; without one, the first output whose source
+  track is default keeps the flag (at most one per kind, as 0031); a burned-in subtitle and a
+  codec rule's extra output are never the default. Name templates have the variables of
+  0019 (audio) and `lang`, `lang_name`, `lang_native`, `codec`, `title`, `source_codec`
+  (subtitles).
+
+### 3. Descriptors, fingerprints, grouping
+
+- **No level compares bit rates (open)**: 04's descriptor table has no bit rate, and the bit
+  rate of a lossless or VBR track differs per episode of one release, so a strict level that
+  compared it would never group a season. Strict compares kind, codec, profile, channels,
+  language, title, roles and the six flags, in order; standard kind, codec, channels, language,
+  roles, in order; loose kind, codec family, language, roles, in any order (a multiset).
+  Codec families (`reframe.batch.descriptors`): DTS and DTS-HD; AC-3 and E-AC-3; TrueHD and MLP;
+  AAC; MPEG audio; every PCM; subtitles `text` (SRT, ASS, WebVTT, mov_text) and `bitmap` (PGS,
+  VobSub, DVB). Only the codec decides the family, so the levels nest (a property test).
+  Video: strict and standard compare the size, loose the resolution class (`1080p`, C-16's
+  `resolution_label`; a cropped 1920×800 is 1080p); every level compares the HDR type.
+- **Near members (open)**: a file within **2** differences (`NEAR_MAX_DIFFERENCES`: an extra,
+  a missing or a changed track, a different video size or HDR type, each 1) of a group with at
+  least as many files joins it as a near member, with one line per difference ("1 extra track
+  (eng AC-3 2.0 "Commentary")", "1 track missing (eng DTS-HD MA 5.1 "English Dub")", "1 track
+  differs (eng ASS "Signs & Songs" → eng ASS "Signs")"). Files with one fingerprint are grouped
+  first; the largest groups (then the one first in episode order) take the near files. The
+  resolution of a near member gets the warning `batch.near_match` (04's "E05 ⚠").
+- **Episode order**: season, episode (C-16's parser on the file name, the folder for what the
+  file name lacks), then the natural order; files without an episode after. **Group name**: the
+  show name and season most members share (`Anime Show S01`). **Representative**: the first
+  exact member in episode order; its fingerprint is the group's.
+
+### 4. Deriving and merging (*Apply to group…*)
+
+- The **most specific selector** (04): language (`und` for none), codec, commercial name and
+  channels (audio), roles, `^title$` (an untitled track gets no title pattern), and the `nth`
+  that picks it in its own file. Titles are escaped only for the characters a regular
+  expression reads (`^Signs & Songs$`, not `re.escape`'s `^Signs\ \&\ Songs$`).
+- Settings become fixed settings; the language and the six flags are written as they are; the
+  **name only when it is not the source title (open)**: an unchanged name stays "from the
+  source" in every file (E11 keeps its own "Signs"), an edited one ("Japanese 5.1") is the
+  same everywhere. A literal name's braces are doubled; `<` and `>` are naming-template groups
+  and cannot be written.
+- Sections: dimensions (a manual crop → policy `fixed`; an automatic one → `detect_per_file`
+  without this file's rectangle), filters, video (the video track's metadata is per file),
+  audio (`audio_rules` + `audio_defaults`), subtitles (external subtitle files are per file and
+  left out), chapters (generated names stay `generated`, edited names are per file), tags,
+  naming (the job's own template and name source on the base's options; manual names and
+  parsed-name corrections are per file). **Output options (container, web optimized, …) are in
+  no section (open)**: they stay the base's; 04's dialog has no Output section.
+- `derive(job, source, sections, base=None)` uses the job's preset as the base, else the
+  default preset. The result is always a plain `JobTemplate`.
+
+### 5. Per-file overrides as JSON patches
+
+- **The patch is against a per-file document: the template, plus one member `job` that holds
+  the job resolved for that file.** Template paths (`/audio_rules/1/settings/bitrate`,
+  `/subtitle_rules/0/selector/stream`) are applied **before** the resolution, so a later change
+  of the template reaches every field the patch does not touch, the rules are resolved again
+  with the patched selectors, and a hand-picked track gets its own codec rules. `/job/…` paths
+  are applied **after** it: the fields that are per file by nature (range, chapter names, a crop
+  of this file) and **C-16's parsed-name overrides**, `add
+  /job/output/naming/field_overrides/episode "5"` (the service then names the job with them).
+  Not chosen: a patch on the resolved job only (the index of an output track moves when the
+  template's rules change; a cell pick could not re-run the codec rules) or on the template only
+  (it has no place for range, chapter names or `field_overrides`).
+- **Stale overrides are issues** (`batch.override_stale`, warning): an operation whose path
+  vanished is skipped and the rest applied; a failed `test` skips the rest of the override (it
+  was made for another template); a `move` / `copy` between the template and the job, or a
+  result that is not a valid template or job, is the error `batch.override_invalid` and that
+  part is not applied. `Resolution.override` keeps the patch as given.
+- `Reframe.batch.resolve(…, overrides=…)` finds a file's patch by its path whatever the
+  spelling (absolute, normalised, case-folded where the OS does).
+
+### 6. Per-file policies, naming, validation, collisions (the service)
+
+- **Crop `detect_per_file` (open)**: the job has the template's mode (automatic or
+  conservative) **without a rectangle**, as a single draft has; the batch service does not run
+  C-10's crop detection for every file (the UI's crop detection fills it per file; `reframe
+  batch`, like `reframe encode`, encodes without a crop and validation says so). `fixed`: the
+  template's rectangle as a manual crop. A manual crop stays as it is. Chapter names: the
+  source's or generated; tags and output names are templates rendered per file; the range is
+  always the whole file. A change for M2 drafts: a user preset with an automatic crop and a
+  saved rectangle no longer applies that rectangle to every file.
+- **Naming**: the template's naming options, else Settings → Output, through the new
+  `Reframe.jobs.name_job` (the code `draft` already used, so a name that is the source itself
+  becomes `Name (1).ext`); `Reframe.jobs.validate(…, naming=…)` validates with the same
+  options.
+- **Collisions** (04: "Name collisions within the batch, or with existing files, are
+  errors"): `batch.name_collision` (two files of the batch, on each row and once for the
+  batch), `batch.output_is_source` (an output that is another file of the batch);
+  `batch.output_exists` when the output exists and the collision setting would rename it
+  (C-8's info `output.renamed`) **(open)**: with *ask*, C-8's `output.exists` error says it
+  already; with *overwrite* the user chose to replace it, and C-8's warning stays. A re-run of a
+  half-encoded season so queues only the episodes not done yet.
+- Probes run 4 at a time (`PROBE_CONCURRENCY`); a file given twice is probed once; an
+  unreadable file is a `source.probe_failed` issue of the grouping and an error row of the
+  matrix. An unknown preset name is `preset.not_found` (the default preset's settings, every
+  row an error).
+
+### 7. `reframe batch`
+
+`reframe batch DIR… [--preset NAME] [--level strict|standard|loose] [--dry-run] [-r] [--json]`
+groups the media files (C-15's folder search), resolves the preset in every group and prints,
+per group, the members (near members with their differences), the column legend (`A1  jpn
+TrueHD→Opus 5.1`), the matrix as plain text (`reframe.batch.report.matrix_lines`: no wrapping,
+no trailing spaces; ASCII marks when stdout is not UTF-8) and each file's errors and warnings.
+**Cells name tracks by their absolute stream index**, as `reframe probe` and `reframe plan`
+do (04's matrix numbers audio and subtitle tracks separately: "S1 ✓ #1" is "✓ #3" here).
+
+- `--dry-run`: the last line is `Dry run: N of M files can be queued[; K cannot (errors)].`;
+  exit 0 when every file can be queued, else 1. `--json` (only with `--dry-run`, else exit 2):
+  `{"grouping": BatchGrouping, "resolutions": [BatchResolution]}`.
+- Without `--dry-run` **(open)**: the files without errors are queued in episode order (group
+  by group) and encoded as `reframe encode` does (the same code: progress, Ctrl+C, the
+  when-done countdown, the summary); a file with errors is listed as "not queued" (04's
+  *Queue the valid files, skip the others*; a CLI cannot ask), and the exit code is 1 as for
+  `encode` with a file not queued.
+- Exit codes as 0017: 2 an unknown preset or a bad option, 3 a path that does not exist or no
+  media files, 130 Ctrl+C.
+- `reframe plan` now prints a `selected:` line under each selected audio and subtitle track
+  (`TrackDecision.selection`: the selection stage's reason or the track rule that took it), and
+  the subtitle tracks (`Subtitle #4  Copy`).
+
+### 8. The core API
+
+04's `resolve_group(group, template, overrides)` has no sources: the pure function needs the
+probed files, so it is `resolve_group(group, template, sources, overrides, *, definitions,
+languages)` (`sources`: a mapping by path or a list). `resolve(template, source, override, *,
+definitions, languages)`; `describe_tracks`, `fingerprint`, `group_sources`, `derive_template(…,
+*, base)`, `merge_template` as 04 says. New optional fields of runtime models
+(`reframe.models.batch`): `GroupMember.season` / `episode`, `TrackMatch.defaults` /
+`MatrixColumn.defaults` (a compiled column), `Resolution.decisions` / `subtitle_decisions` /
+`notes`.
+
+### 9. The fixtures
+
+`anime-s01` is 04's example as FFmpeg can make it: `jpn` **TrueHD 5.1** (FFmpeg's `truehd`
+encoder refuses 7.1 and writes no Atmos), `eng` DTS-HD MA 5.1 "English Dub" (1b's
+`reframe_testing.dts`), `eng` ASS "Signs & Songs" (forced) and "Full" (default), 2 s per file;
+E05 adds `eng` AC-3 2.0 "Commentary" (comment), E11 has no dub and a signs track titled
+"Signs" (04's matrix: "A2 ✗ none", "S1 ≈ (title)"). Names `Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv`
+in `Anime.Show.S01.BluRay.x264-GRP/` (C-16 gives `Anime Show`, season 1, the episode title),
+no resolution in the names (the video is 320×180). `anime-s02` has three episodes with E01's
+layout. The demo preset (E01's setup applied to the group, with 04's naming template
+`{name} - S{season:02}E{episode:02}< - {sub_title}>`, separator space) is
+`packages/reframe/tests/batch/data/anime-season.preset.json`, checked against the derivation by
+a test.
+
+## Consequences
+
+- `reframe encode --preset "<a group preset>"` uses the group's track rules: a preset saved
+  from a season works on single files too, and E11's missing dub is an error there as well.
+- The matrix of a preset without rules shows compiled columns ("A1 every track (defaults)"),
+  so `reframe batch` is useful before any group editing.
+- A hand-picked stream index in a saved preset would pin every file to that index: the field
+  is meant for per-file overrides only (the UI must not save it into a template).
+- Revisit with the UI (F-13): the near threshold, the Output section of *Apply to group*, the
+  crop detection per file, ambiguity of derived rules on identical tracks.
+
+## Open product questions (defaults chosen, easy to change)
+
+1. Strict compares no bit rate (`descriptors.track_key`).
+2. Near members within 2 differences (`grouping.NEAR_MAX_DIFFERENCES`).
+3. A relaxed rule does not take another rule's exact match (`selectors.match_rules`).
+4. An unchanged track name stays "from the source"; an edited one is the same in every file
+   (`derive._metadata`).
+5. Output options are in no *Apply to group* section (`derive.SECTION_FIELDS`).
+6. `detect_per_file` leaves the rectangle empty; the batch does not run crop detection
+   (`resolve._dimensions`).
+7. An existing output is a batch error only with the setting *auto-rename*
+   (`service._collisions`).
+8. `reframe batch` queues the valid files and lists the others, exit 1 (`cli.run_batch`).
+
+## Plan changes
+
+- [04-batch-mode.md](../plan/04-batch-mode.md): §Grouping (bit rates, near members),
+  §Track rules (the `stream` field, the matching rules, `highest_bitrate`), §Resolution matrix
+  (absolute stream indexes in the CLI), §Per-file overrides (the per-file document), §Core API
+  (`resolve_group` takes the sources), §Example (TrueHD 5.1 in the fixture).
+- [05-core.md](../plan/05-core.md): §C-12 (a note on this record), §C-15 (the `reframe batch`
+  line).
+- [09-quality-and-release.md](../plan/09-quality-and-release.md) §Test media: the batch example
+  seasons.
