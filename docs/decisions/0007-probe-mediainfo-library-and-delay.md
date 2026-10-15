@@ -72,3 +72,40 @@ The M1 review found these gaps in C-3:
 
 - `docs/plan/05-core.md` C-3: the parse bullet (delay, VFR in Matroska), the bitrate bullet
   (pymediainfo library, plausibility checks), and the event-count bullet.
+
+## Follow-up (core-complete, task 1i), 2026-10-15: ASCII stream orders, a nesting limit for the probe cache
+
+### Context
+
+Two "Known limits" of the M2 review in C-3:
+
+1. `track_data` matched a MediaInfo `StreamOrder` with `str.isdigit()`. That accepts
+   superscripts (`²`, which `int()` rejects: a `ValueError` in the probe) and the decimal
+   digits of other scripts (Arabic-Indic `٣`, full-width `３`, which `int()` reads as 3).
+   The first number of a bit rate used `re`'s `\d`, which also matches `٣` and `３` (not
+   `²`). Checked on CPython 3.14.7 and recorded in `tests/probe/test_mediainfo.py`.
+2. The probe cache had no nesting limit (decision 0015 §3 for C-9's stores). `json.loads`
+   raises `RecursionError` (not the `ValueError` that the cache caught) for very deep JSON
+   (about 52 000 levels on an 8 MB stack), and Pydantic's `model_dump` raises `ValueError`
+   past 255 levels; `put` did not catch it, so the probe failed. Only a source with deep
+   unknown fields (`MediaSource` is a `DocumentModel`) or deep options can be that deep.
+
+### Decision
+
+1. A `StreamOrder` matches only when the whole value is ASCII digits (`[0-9]+`); anything
+   else is not matched, as `0-1` (MPEG-TS) was before. The first number of a bit rate is
+   ASCII digits too.
+2. A cache entry nested more than 64 levels (`reframe.settings.too_deep`; the entry object is
+   level 1), or too deep to parse, is corrupt: a miss, and the next probe rewrites it. A
+   source whose entry would be that deep (or that Pydantic cannot dump) is not cached at all,
+   not in the memory layer either: `ProbeCache.put` returns `False` and an earlier entry
+   stays. Tests: `tests/probe/test_cache_nesting.py`.
+
+### Consequences
+
+- The change to `mediainfo.py` changes the parser fingerprint, so older cache entries are
+  misses once (as for any parser change).
+
+### Plan changes
+
+None.

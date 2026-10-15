@@ -20,8 +20,17 @@ One table, the columns of the plan::
   load (written by a newer Reframe), they are dropped from memory; the runner plans and
   validates again before a job runs.
 - **A row that does not load** (a newer ``JobSettings`` schema, a state this Reframe does not
-  know) stays in the file untouched and is left out of the queue; one ``app.warning``
-  (``queue.rows_skipped``) says how many.
+  know, or a ``settings_json``, ``plan_json`` or ``issues_json`` nested more than
+  :data:`~reframe.settings.MAX_DEPTH` levels deep) stays in the file untouched and is left out
+  of the queue; one ``app.warning`` (``queue.rows_skipped``) says how many.
+- **Nesting** (as C-9's stores, decision 0015): a JSON document nested more than
+  :data:`~reframe.settings.MAX_DEPTH` (64) levels is damage, never a crash. Deeper JSON made
+  ``json.loads`` (CPython 3.14: a C-stack check, tens of thousands of levels), the
+  migrations' ``deepcopy`` (about 500) or Pydantic's ``model_dump`` (``ValueError`` past 255)
+  fail. Such a document is never written either: :func:`row_of` marks the row, and
+  :meth:`QueueStore.upsert` leaves it out (the file keeps the row as it was, if it had one) and
+  gives one ``app.warning`` per job (``queue.job_not_saved``); the job stays in the queue
+  until Reframe closes (decision 0016, follow-up).
 - **The file** (decisions 0016, 0027): created at the first write, not at start-up. Only the
   process that holds ``queue.lock`` uses it; another one keeps its jobs in a private
   database in memory (:meth:`QueueStore.use_memory`). Its schema version
@@ -37,6 +46,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -55,6 +65,7 @@ from reframe.models.job import JobSettings
 from reframe.models.migrations import MigrationError, load_document
 from reframe.models.plan import EncodePlan
 from reframe.models.queue import JobState, QueueJob
+from reframe.settings import TOO_DEEP, too_deep
 
 __all__ = ["SCHEMA_VERSION", "STORE_FILE", "QueueStore", "Row", "StoreLoad", "row_of"]
 
@@ -105,6 +116,17 @@ def _time(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat()
 
 
+class _Refused(str):
+    """The value of a JSON column that is not written (see :func:`row_of`): the text is why.
+    A ``str``, so a :data:`Row` keeps its type; :meth:`QueueStore.upsert` leaves the row out."""
+
+    __slots__ = ()
+
+
+class _TooDeep(ValueError):
+    """A JSON column of a row nested more than ``MAX_DEPTH`` levels deep (a damaged row)."""
+
+
 def _json(data: Any) -> str:
     """Compact JSON, ASCII only. A lone surrogate (a byte of a file name that is not UTF-8,
     PEP 383's ``\\udcff``; an unpaired UTF-16 surrogate of a Windows name) is written as a
@@ -141,16 +163,35 @@ def _path(value: Path | None) -> str | bytes | None:
     return None if value is None else _text(str(value))
 
 
+def _document(column: str, dump: Callable[[], Any]) -> str:
+    """The JSON text of one document column, or a :class:`_Refused` value when the document
+    is nested more than ``MAX_DEPTH`` levels deep (never an exception)."""
+    try:
+        data = dump()
+    except (ValueError, TypeError, RecursionError) as exc:  # Pydantic: past 255 levels
+        return _Refused(f"{column}: {exc}")
+    if too_deep(data):
+        return _Refused(f"{column}: {TOO_DEEP}")
+    return _json(data)
+
+
 def row_of(job: QueueJob) -> Row:
     """The row of ``job`` (serialised on the caller's thread). Every value is kept exactly,
-    also a path that is not valid UTF-8 (see :func:`_json`, :func:`_text`)."""
+    also a path that is not valid UTF-8 (see :func:`_json`, :func:`_text`).
+
+    A settings, plan or issues document nested more than ``MAX_DEPTH`` levels deep is not
+    serialised: its column holds a marker, and :meth:`QueueStore.upsert` does not write the
+    row (never an exception here)."""
+    plan = job.plan
     return (
         job.id,
         job.position,
         job.state.value,
-        _json(job.settings.model_dump(mode="json")),
-        None if job.plan is None else _json(job.plan.model_dump(mode="json")),
-        _json(_ISSUES.dump_python(job.issues, mode="json")),
+        _document("settings_json", functools.partial(job.settings.model_dump, mode="json")),
+        None
+        if plan is None
+        else _document("plan_json", functools.partial(plan.model_dump, mode="json")),
+        _document("issues_json", functools.partial(_ISSUES.dump_python, job.issues, mode="json")),
         job.created_at.isoformat(),
         _time(job.started_at),
         _time(job.finished_at),
@@ -160,20 +201,58 @@ def row_of(job: QueueJob) -> Row:
     )
 
 
+def _refused(row: Sequence[object]) -> str | None:
+    """Why ``row`` (of :func:`row_of`) is not written, or ``None``."""
+    reasons = [value for value in row if isinstance(value, _Refused)]
+    return "; ".join(reasons) if reasons else None
+
+
+def _parse(column: str, value: object, default: str) -> Any:
+    """``json.loads`` of a JSON column. Raises :class:`_TooDeep` for a document nested more
+    than ``MAX_DEPTH`` levels (whatever depth the parser itself would manage) and
+    ``ValueError`` for text that is not JSON."""
+    try:
+        data = json.loads(_untext(value) or default)
+    except RecursionError:  # CPython's C-stack check, far beyond MAX_DEPTH
+        raise _TooDeep(f"{column}: {TOO_DEEP}") from None
+    if too_deep(data):
+        raise _TooDeep(f"{column}: {TOO_DEEP}")
+    return data
+
+
+def _derived(column: str, value: object, default: str) -> tuple[bool, Any]:
+    """``(True, parsed)`` for a derived column (plan, issues), ``(False, None)`` when it is
+    not JSON (dropped: planned and validated again before a run). Too deep: ``_TooDeep``."""
+    try:
+        return True, _parse(column, value, default)
+    except _TooDeep:
+        raise
+    except ValueError:
+        return False, None
+
+
 def _job_of(values: Sequence[Any]) -> QueueJob:
     data = dict(zip(_COLUMNS, values, strict=True))
-    settings = load_document("job_settings", json.loads(_untext(data["settings_json"]) or ""))
+    # Every document is checked before any is loaded: one nested too deeply damages the row.
+    settings_data = _parse("settings_json", data["settings_json"], "")
+    plan_ok, plan_data = _derived("plan_json", data["plan_json"], "")  # NULL: not JSON
+    issues_ok, issues_data = _derived("issues_json", data["issues_json"], "[]")
+    if not isinstance(settings_data, dict):
+        raise ValueError("settings_json: not a JSON object")
+    settings = load_document("job_settings", settings_data)
     assert isinstance(settings, JobSettings)
     plan: EncodePlan | None = None
-    if data["plan_json"]:
+    if plan_ok:
         try:
-            plan = EncodePlan.model_validate(json.loads(_untext(data["plan_json"]) or ""))
-        except (ValidationError, ValueError):
+            plan = EncodePlan.model_validate(plan_data)
+        except ValidationError:
             plan = None  # derived data of another version: planned again before a run
-    try:
-        issues = _ISSUES.validate_python(json.loads(_untext(data["issues_json"]) or "[]"))
-    except (ValidationError, ValueError):
-        issues = []
+    issues: list[ValidationIssue] = []
+    if issues_ok:
+        try:
+            issues = _ISSUES.validate_python(issues_data)
+        except ValidationError:
+            issues = []
     return QueueJob(
         id=data["id"],
         position=data["position"],
@@ -218,6 +297,8 @@ class QueueStore:
         self.memory = False
         """A private store in memory (another process owns the file; decision 0027)."""
         self._failed = False
+        self._refused: set[str] = set()
+        """Jobs whose ``queue.job_not_saved`` warning was given."""
         self.warnings: list[AppWarningEvent] = []
         """Warnings of writes that failed (one per kind), to be published by the queue."""
 
@@ -282,7 +363,7 @@ class QueueStore:
         for values in rows:
             try:
                 result.jobs.append(_job_of(values))
-            except (ValueError, ValidationError, MigrationError, TypeError) as exc:
+            except (ValueError, ValidationError, MigrationError, TypeError, RecursionError) as exc:
                 skipped.append(f"{values[0]}: {exc}")
         if skipped:
             log.warning("queue rows skipped: %s", "; ".join(skipped))
@@ -299,7 +380,31 @@ class QueueStore:
         return result
 
     def upsert(self, rows: Sequence[Row]) -> None:
-        """Write whole rows in one transaction (store thread)."""
+        """Write whole rows in one transaction (store thread).
+
+        A row that :func:`row_of` marked (a document nested more than ``MAX_DEPTH`` levels
+        deep) is left out: the file keeps that job's row as it was, if it had one. One
+        ``queue.job_not_saved`` warning per job (none for a store that saves nothing)."""
+        kept: list[Row] = []
+        for row in rows:
+            reason = _refused(row)
+            if reason is None:
+                kept.append(row)
+                continue
+            log.error("queue job %s not saved: %s", row[0], reason)
+            if row[0] not in self._refused and not self.read_only and not self.memory:
+                self._refused.add(row[0])
+                self.warnings.append(
+                    AppWarningEvent(
+                        code="queue.job_not_saved",
+                        message=f"The queue job {row[0]} could not be saved: its data is "
+                        "nested too deeply. It stays in the queue until Reframe closes.",
+                        detail=reason,
+                    )
+                )
+        if not kept:
+            return
+        rows = kept
         self._write(
             f"INSERT OR REPLACE INTO jobs ({', '.join(_COLUMNS)}) "
             f"VALUES ({', '.join('?' * len(_COLUMNS))})",
