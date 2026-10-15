@@ -30,7 +30,7 @@ _REFUSED = re.compile(
 )
 #: Values that need another value to be accepted (they are tested together).
 _COMPANIONS: dict[tuple[str, str, str], dict[str, str]] = {
-    # "Recommended Settings for HDR10-opt: colour primaries should be BT.2020" (x265 4.1).
+    # "Recommended Settings for HDR10-opt: colour primaries should be BT.2020" (x265 4.3).
     ("libx265", "hdr10-opt", "1"): {
         "colorprim": "bt2020",
         "transfer": "smpte2084",

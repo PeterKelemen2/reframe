@@ -354,7 +354,7 @@ def _sei_options(path: Path) -> dict[str, str]:
         else:
             out[token] = "1"
     if out.get("rskip") == "1" and "rskip-edge-threshold" in out:
-        # x265 4.1 writes rskip=2 as "rskip=1 rskip-edge-threshold=0.050000".
+        # x265 4.3 writes rskip=2 as "rskip=1 rskip-edge-threshold=0.050000".
         out["rskip"] = "2"
     return out
 
@@ -1998,15 +1998,27 @@ def _option_test_value(option: EncoderOption) -> str:
 )
 def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> None:
     """AMF and VAAPI on a real GPU (AMD RX 7600 when recorded): every preset, profile and
-    level, constant quality at min / default / max, average bitrate, and every option."""
+    level, constant quality at min / default / max, average bitrate, and every option.
+
+    Choices an older build lacks (``_ADDED_IN``: n8.1.3 has no ``high_quality`` for
+    ``h264_amf`` / ``hevc_amf``, so ``supported_presets`` does not offer it there) must fail
+    on that build and work on the newer ones: the test asserts what each version does."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
+    series = _series()
+    missing = {
+        f"{name}={value}"
+        for (e, name, value), since in _ADDED_IN.items()
+        if e == encoder_id and series < since
+    }
     jobs: list[tuple[str, list[str], int]] = []
+    absent: list[tuple[str, list[str], int]] = []
     for label, args, _params, depth in _choice_jobs(enc):
         if enc.family == "amf" and enc.codec == "h264" and depth == 10:
             continue
-        jobs.append((label, args, depth))
+        (absent if label.split("@", 1)[0] in missing else jobs).append((label, args, depth))
+    assert len({label.split("@", 1)[0] for label, _a, _d in absent}) == len(missing)
     q, b = enc.rate_control.quality, enc.rate_control.bitrate
     assert q is not None
     assert b is not None
@@ -2033,6 +2045,9 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
         problem = run(job)
         if problem:
             problems.append(problem)
+    for job in absent:  # the older build refuses the value
+        if run(job) is None:
+            problems.append(f"{job[0]}: works on {series}, expected to fail")
     assert problems == []
 
 

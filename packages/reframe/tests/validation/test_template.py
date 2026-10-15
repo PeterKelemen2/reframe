@@ -348,6 +348,31 @@ CASES: list[Case] = [
         rule(codec="ac3", mixdown="5.1", max_bitrate=700),
         rule(codec="ac3", mixdown="5.1", max_bitrate=640),
     ),
+    # C-6's advanced-option rules (decision 0035): they need only the video settings.
+    Case(
+        "x265 amp without rectangular partitions",
+        "encoder.option_inactive",
+        "video.advanced.amp",
+        WARN,
+        video(preset="medium", advanced={"amp": True}),
+        video(preset="medium", advanced={"amp": True, "rect": True}),
+    ),
+    Case(
+        "x265 TU size above the CTU",
+        "encoder.option_ignored",
+        "video.advanced.max-tu-size",
+        WARN,
+        video(advanced={"ctu": "16", "max-tu-size": "32"}),
+        video(advanced={"ctu": "16", "max-tu-size": "16"}),
+    ),
+    Case(
+        "SVT-AV1 minimum QP above the maximum",
+        "encoder.option_conflict",
+        "video.advanced.min-qp",
+        ERR,
+        video(encoder="libsvtav1", advanced={"min-qp": 40, "max-qp": 20}),
+        video(encoder="libsvtav1", advanced={"min-qp": 20, "max-qp": 40}),
+    ),
 ]
 
 

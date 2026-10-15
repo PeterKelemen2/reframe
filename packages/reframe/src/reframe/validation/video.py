@@ -812,7 +812,7 @@ def _x264_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
 
 
 def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
-    """x265 4.1: a minimum CU above the CTU stops the encoder; a TU size or quantisation
+    """x265 4.3: a minimum CU above the CTU stops the encoder; a TU size or quantisation
     group above the CTU is lowered to the CTU size with a warning; pmode turns limit-refs 2
     and 3 off with a warning."""
     ctu = _int(opts.effective("ctu"))
