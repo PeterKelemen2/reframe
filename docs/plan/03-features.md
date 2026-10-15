@@ -345,6 +345,14 @@ same dialog shows a live preview of the result.
 | Output order | Language list order · Source order | Language list order |
 | Default track | First output track · First track in the first language · None | First output track |
 
+When no language is set at all (the preset has none and Settings has no preferred languages),
+every track is kept in source order with its source flags (at most one default track), and
+the other settings wait until a language is set. A listed language takes the tracks of that
+language: `ger` = `de`; `pt` takes `pt-BR` and `por`, `pt-BR` takes only `pt-BR`. The default
+track setting changes only the default flag; the other flags come from the source track.
+Details (unknown bit rates in the tie-break, `und` tracks, music-only tracks, the order):
+[0031](../decisions/0031-audio-and-subtitle-selection-stage.md).
+
 #### 2. Codec rules: how each selected track is encoded
 
 Reframe checks the rules from top to bottom for each selected track. **The first matching rule
@@ -446,8 +454,12 @@ rule does.
 | Burn in | one track per job | Text uses the `subtitles` filter, on the final picture. Bitmap uses `overlay` after the crop; when the crop removes lines, the subtitle canvas is aligned with the bottom of the picture ([0013](../decisions/0013-command-builder-details.md)). **Forced only** uses the decoder option `forced_subs_only`, which only PGS and VobSub have; a copied track keeps every event ([0014](../decisions/0014-validation-rules-and-severities.md)) |
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 
-- **Foreign audio search** (HandBrake parity): Reframe suggests a forced-subtitle track from
-  event counts and, for PGS, from forced flags found in a decode scan (background task).
+- **Foreign audio search** (HandBrake parity): when the audio is in the first subtitle language
+  (the viewer's language), Reframe takes the forced-subtitle track of that language: from the
+  forced flag or title, from event counts and, for PGS, from forced flags found in a decode
+  scan (background task). The track goes first and gets the forced flag. Burn-in "foreign
+  audio" burns it, or, when the audio is in another language, the first subtitle in the
+  viewer's language ([0031](../decisions/0031-audio-and-subtitle-selection-stage.md)).
 - **External subtitles**: add `.srt`, `.ass`, `.ssa`, `.vtt` or `.sup` files. Settings:
   language, name, flags, time offset (ms), and character encoding (auto-detected, can be
   changed).

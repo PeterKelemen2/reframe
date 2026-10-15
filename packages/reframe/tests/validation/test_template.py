@@ -125,6 +125,20 @@ def rule(**changes: Any) -> Mod:
     return mod
 
 
+def rules(*items: AudioCodecRule) -> Mod:
+    def mod(s: Any) -> None:
+        s.template.audio_defaults.codec_rules = list(items)
+
+    return mod
+
+
+HU_ANY = AudioCodecRule(languages=["hu"], codec="aac", max_bitrate=160)
+HU_51 = AudioCodecRule(
+    languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=448
+)
+CATCH_ALL = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256)
+
+
 def nothing(s: Any) -> None:
     del s
 
@@ -308,6 +322,39 @@ CASES: list[Case] = [
         ERR,
         lambda s: setattr(s.template.dimensions, "pixel_aspect", "custom"),
         nothing,
+    ),
+    # C-12's defaults lint (reframe.batch.lint_defaults, wired in by validate_template).
+    Case(
+        "codec rule shadowed",
+        "defaults.rule_shadowed",
+        "audio_defaults.codec_rules[1]",
+        WARN,
+        rules(HU_ANY, HU_51, CATCH_ALL),
+        rules(HU_51, HU_ANY, CATCH_ALL),
+    ),
+    Case(
+        "codec rule unreachable",
+        "defaults.rule_unreachable",
+        "audio_defaults.codec_rules[0]",
+        WARN,
+        rules(HU_51.model_copy(update={"languages": []}), CATCH_ALL),
+        rules(HU_51, CATCH_ALL),
+    ),
+    Case(
+        "codec rule max bitrate snapped",
+        "defaults.bitrate_snapped",
+        "audio_defaults.codec_rules[0].max_bitrate",
+        INFO,
+        rule(codec="ac3", mixdown="5.1", max_bitrate=700),
+        rule(codec="ac3", mixdown="5.1", max_bitrate=640),
+    ),
+    Case(
+        "codec rule codec not in container (defaults lint)",
+        "defaults.codec_not_in_container",
+        "audio_defaults.codec_rules[0].codec",
+        ERR,
+        webm_video,
+        both(webm_video, rule(codec="libopus")),
     ),
 ]
 
