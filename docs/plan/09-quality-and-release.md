@@ -48,7 +48,8 @@ source of the C-10 frame budget (`hdr10-4k`, about 6 MB, generated and never com
 |---------|-----|
 | Multi-track MKV | `testsrc2` + several `sine` tracks (a different tone per track) with languages, titles and dispositions (`default`, `comment`, `hearing_impaired`) |
 | Text subtitles | SRT/ASS generated from text templates. ASS with an attached open-licence font |
-| Bitmap subtitles | VobSub (`dvdsub` encoder). PGS comes from recorded probe JSON only (FFmpeg has no PGS encoder) |
+| Bitmap subtitles | VobSub (`dvdsub` encoder). PGS written as `.sup` by `reframe_testing/pgs.py` (FFmpeg has no PGS encoder), with forced and non-forced events ([0032](../decisions/0032-analysis-scans-and-their-fixtures.md)) |
+| Lossless audio without a bit rate | DTS-HD MA 5.1 (XLL, no core) written by `reframe_testing/dts.py` (FFmpeg's `dca` encoder writes a DTS core only), copied into Matroska, which has no statistics tags (M6 demo 1; [0032](../decisions/0032-analysis-scans-and-their-fixtures.md)) |
 | Letterbox / changing aspect | `testsrc2` padded with black bars. A second segment with different bars, concatenated |
 | Anamorphic | 720×480 with SAR 32:27 |
 | Interlaced | `interlace` filter + `setfield=tff` |

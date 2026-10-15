@@ -456,10 +456,11 @@ rule does.
 
 - **Foreign audio search** (HandBrake parity): when the audio is in the first subtitle language
   (the viewer's language), Reframe takes the forced-subtitle track of that language: from the
-  forced flag or title, from event counts and, for PGS, from forced flags found in a decode
-  scan (background task). The track goes first and gets the forced flag. Burn-in "foreign
-  audio" burns it, or, when the audio is in another language, the first subtitle in the
-  viewer's language ([0031](../decisions/0031-audio-and-subtitle-selection-stage.md)).
+  forced flag or title, from event counts and, for PGS and VobSub, from forced flags found in a
+  scan of the track (background task; [0032](../decisions/0032-analysis-scans-and-their-fixtures.md)).
+  The track goes first and gets the forced flag. Burn-in "foreign audio" burns it, or, when the
+  audio is in another language, the first subtitle in the viewer's language
+  ([0031](../decisions/0031-audio-and-subtitle-selection-stage.md)).
 - **External subtitles**: add `.srt`, `.ass`, `.ssa`, `.vtt` or `.sup` files. Settings:
   language, name, flags, time offset (ms), and character encoding (auto-detected, can be
   changed).

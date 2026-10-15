@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from reframe_testing import boxfont, media
+from reframe_testing import boxfont, dts, media
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -401,6 +401,79 @@ def test_season_set(all_media: Path, probe: Callable[..., Probe]) -> None:
             assert got == MULTITRACK_LAYOUT
 
 
+def test_dts_hd_ma(all_media: Path, probe: Callable[..., Probe]) -> None:
+    """A real DTS-HD MA track (written by reframe_testing.dts) with no bit rate in the file."""
+    p = probe("dts-hd-ma.mkv")
+    assert layout(p) == [
+        ("video", None, None, frozenset({"default"})),
+        ("audio", "hun", "DTS-HD MA 5.1", frozenset({"default"})),
+        ("audio", "eng", "English AC-3 5.1", frozenset()),
+        ("audio", "eng", "English Stereo", frozenset()),
+    ]
+    hd, ac3, stereo = streams(p, "audio")
+    assert (hd["codec_name"], hd["profile"], hd["sample_fmt"], hd["bits_per_raw_sample"]) == (
+        "dts",
+        "DTS-HD MA",
+        "s32p",
+        "24",
+    )
+    assert (hd["channels"], hd["channel_layout"], hd["sample_rate"]) == (6, "5.1(side)", "48000")
+    # The point of the fixture: the decoder sets bit_rate 0 for XLL and Matroska written by
+    # FFmpeg has no statistics tags, so nothing in the file says the bit rate.
+    assert "bit_rate" not in hd
+    assert set(tags(hd)) == {"language", "title", "DURATION"}
+    assert (ac3["bit_rate"], ac3["channels"]) == ("224000", 6)
+    assert (stereo["bit_rate"], stereo["channels"]) == ("192000", 2)
+    packets = probe("dts-hd-ma.mkv", "-count_packets", "-select_streams", "a:0")["streams"][0]
+    assert int(packets["nb_read_packets"]) == dts.frame_count(media.DTS_HD_MA_SECONDS)
+
+
+def _decode_s32(path: Path, stream: str, seconds: float) -> list[int]:
+    """Decoded samples (interleaved, 32-bit) of ``stream``; CRC checks on, errors fatal."""
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg
+    raw = subprocess.run(
+        [ffmpeg, "-v", "error", "-err_detect", "crccheck+explode", "-i", str(path), "-map",
+         stream, "-t", f"{seconds:g}", "-f", "s32le", "-c:a", "pcm_s32le", "-"],
+        capture_output=True, check=True, timeout=60,
+    ).stdout  # fmt: skip
+    return list(memoryview(raw).cast("i"))
+
+
+def test_dts_hd_ma_decodes_losslessly(all_media: Path) -> None:
+    """FFmpeg's decoder accepts every CRC and gives back exactly the samples written."""
+    samples = _decode_s32(all_media / "dts-hd-ma.mkv", "0:a:0", 1.0)
+    assert len(samples) == 6 * dts.SAMPLE_RATE
+    frames = len(samples) // (6 * dts.FRAME_SAMPLES)  # 93 whole frames of 512 samples
+    # FFmpeg's 5.1(side) order: FL FR FC LFE SL SR
+    position = {"L": 0, "R": 1, "C": 2, "LFE": 3, "Ls": 4, "Rs": 5}
+    for frame in range(frames):
+        want = dts.expected_samples(frame)
+        for channel, tone in enumerate(dts.TONES_5_1):
+            got = [
+                samples[(frame * dts.FRAME_SAMPLES + n) * 6 + position[tone.speaker]] >> 8
+                for n in range(dts.FRAME_SAMPLES)
+            ]
+            assert got == want[channel], (frame, tone.speaker)
+
+
+def test_pgs(probe: Callable[..., Probe]) -> None:
+    p = probe("pgs.mkv", "-count_packets")
+    assert layout(p) == [
+        ("video", None, None, frozenset({"default"})),
+        ("subtitle", "eng", "English", frozenset({"default"})),
+        ("subtitle", "eng", "English (forced)", frozenset({"forced"})),
+    ]
+    subs = streams(p, "subtitle")
+    assert all(s["codec_name"] == "hdmv_pgs_subtitle" for s in subs)
+    assert all((s["width"], s["height"]) == (720, 480) for s in subs)
+    # One Matroska block per display set (the muxer's pgs_frame_merge), two per event.
+    assert [int(s["nb_read_packets"]) for s in subs] == [
+        2 * len(events) for events in media.PGS_EVENTS.values()
+    ]
+    assert [s["start_time"] for s in subs] == ["0.200000", "0.200000"]  # -copyts
+
+
 # -------------------------------------------------------------------- verified tool behaviour
 
 
@@ -499,3 +572,26 @@ def test_single_streams_get_no_default_flag(tmp_path: Path) -> None:
         timeout=60,
     )
     assert [flags(s) for s in media.probe(tmp_path / "t.mkv")["streams"]] == [set(), set()]
+
+
+def _subtitle_frames(path: Path, stream: int, *extra: str) -> list[tuple[str, str]]:
+    ffprobe = media.find_ffprobe()
+    assert ffprobe
+    out = subprocess.run(
+        [ffprobe, "-v", "error", *extra, "-select_streams", str(stream), "-show_entries",
+         "subtitle=pts_time,num_rects", "-of", "csv=p=0", "-i", str(path)],
+        capture_output=True, text=True, check=True, timeout=60,
+    ).stdout  # fmt: skip
+    return [tuple(line.split(",")) for line in out.split()]  # type: ignore[misc]
+
+
+def test_forced_subs_only_does_not_drop_pgs_display_sets(all_media: Path) -> None:
+    """pgssubdec with ``forced_subs_only`` still returns every display set (it leaves the
+    palette of a non-forced object empty), so a decode cannot count the forced events of a
+    PGS track; C-10 reads the forced flag of the composition objects instead (decision
+    0032). dvdsubdec drops the non-forced subpictures (``test_analysis_ffmpeg.py``)."""
+    path = all_media / "pgs.mkv"
+    plain = _subtitle_frames(path, 1)
+    assert len(plain) == 12
+    assert [rects for _, rects in plain] == ["1", "0"] * 6  # show, clear
+    assert _subtitle_frames(path, 1, "-forced_subs_only", "1") == plain

@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from reframe_testing import boxfont, vobsub
+from reframe_testing import boxfont, dts, pgs, vobsub
 
 #: Bump when the generator changes in a way that the recipe text does not show.
 #: 2: the ASS fixture always attaches the generated ReframeBox font (no system font search).
@@ -505,6 +505,141 @@ def _vobsub_recipe() -> Recipe:
     )
 
 
+#: Length of the DTS-HD MA fixture (375 DTS frames of 512 samples at 48 kHz).
+DTS_HD_MA_SECONDS = 4.0
+
+
+def _dts_hd_ma_recipe() -> Recipe:
+    """A lossless track whose file states no bit rate (03 §Audio "Measure", M6 demo 1).
+
+    ``reframe_testing.dts`` writes a real DTS-HD MA stream (XLL, 5.1, 24-bit, 48 kHz);
+    FFmpeg copies it into Matroska, which writes no statistics tags. Next to it, two AC-3
+    tracks with a bit rate in their headers (the M6 audio-defaults demo: a 224 kb/s 5.1 track
+    and a stereo track)."""
+    d = DTS_HD_MA_SECONDS
+    args = (
+        *_video("320x180", "25", d),
+        "-f",
+        "dts",
+        "-i",
+        "dts-hd-ma.dtshd",
+        *_sine(330, d),
+        *_sine(550, d),
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-map",
+        "2:a",
+        "-map",
+        "3:a",
+        *_X264,
+        "-c:a:0",
+        "copy",
+        "-c:a:1",
+        "ac3",
+        "-b:a:1",
+        "224k",
+        "-ac:a:1",
+        "6",
+        "-c:a:2",
+        "ac3",
+        "-b:a:2",
+        "192k",
+        "-ac:a:2",
+        "2",
+        "-metadata:s:a:0",
+        "language=hun",
+        "-metadata:s:a:0",
+        "title=DTS-HD MA 5.1",
+        "-metadata:s:a:1",
+        "language=eng",
+        "-metadata:s:a:1",
+        "title=English AC-3 5.1",
+        "-metadata:s:a:2",
+        "language=eng",
+        "-metadata:s:a:2",
+        "title=English Stereo",
+        "-disposition:v:0",
+        "default",
+        "-disposition:a:0",
+        "default",
+        "dts-hd-ma.mkv",
+    )
+    return Recipe(
+        "dts-hd-ma",
+        "H.264 + hun DTS-HD MA 5.1 (lossless XLL, written by reframe_testing.dts; no bit rate "
+        "in the file) + eng AC-3 5.1 224k + eng AC-3 stereo 192k",
+        ("dts-hd-ma.mkv",),
+        (WriteFile("dts-hd-ma.dtshd", dts.dts_hd_ma(d)), Ffmpeg(args)),
+    )
+
+
+#: PGS tracks: a full English track with two forced events among six, and a forced-only one.
+PGS_EVENTS = {
+    "eng": [
+        pgs.Event(200, 800, 300, forced=True),
+        pgs.Event(900, 1400, 420),
+        pgs.Event(1500, 2000, 360),
+        pgs.Event(2100, 2600, 250, forced=True),
+        pgs.Event(2700, 3200, 480),
+        pgs.Event(3300, 3800, 390),
+    ],
+    "eng-forced": [
+        pgs.Event(200, 800, 300, forced=True),
+        pgs.Event(2100, 2600, 250, forced=True),
+    ],
+}
+
+
+def _pgs_recipe() -> Recipe:
+    """PGS subtitles written by ``reframe_testing.pgs`` (FFmpeg has no PGS encoder).
+    ``-copyts`` keeps the event times (the ``sup`` demuxer starts at the first event)."""
+    args = (
+        "-copyts",
+        *_video("720x480", "25", 4),
+        "-i",
+        "eng.sup",
+        "-i",
+        "eng-forced.sup",
+        "-map",
+        "0:v",
+        "-map",
+        "1:s",
+        "-map",
+        "2:s",
+        *_X264,
+        "-c:s",
+        "copy",
+        "-metadata:s:s:0",
+        "language=eng",
+        "-metadata:s:s:0",
+        "title=English",
+        "-metadata:s:s:1",
+        "language=eng",
+        "-metadata:s:s:1",
+        "title=English (forced)",
+        "-disposition:v:0",
+        "default",
+        "-disposition:s:0",
+        "default",
+        "-disposition:s:1",
+        "forced",
+        "pgs.mkv",
+    )
+    return Recipe(
+        "pgs",
+        "720x480 H.264 + two PGS tracks written by reframe_testing.pgs: eng (6 events, 2 "
+        "with the forced flag) and eng forced (2 forced events)",
+        ("pgs.mkv",),
+        (
+            WriteFile("eng.sup", pgs.sup(PGS_EVENTS["eng"])),
+            WriteFile("eng-forced.sup", pgs.sup(PGS_EVENTS["eng-forced"])),
+            Ffmpeg(args),
+        ),
+    )
+
+
 LETTERBOX_SEGMENTS = (
     # (content size, pad position) inside 320x180: 2.39:1 letterbox, then 4:3 pillarbox
     ("320x134", "0:23"),
@@ -711,6 +846,8 @@ def build_recipes() -> dict[str, Recipe]:
         _hdr10_4k_recipe(),
         _chapters_recipe(),
         _season_recipe(),
+        _dts_hd_ma_recipe(),
+        _pgs_recipe(),
     ]
     return {r.name: r for r in recipes}
 

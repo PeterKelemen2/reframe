@@ -27,7 +27,7 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
   (`media/.tmp-*`) and moved into place only on success.
 - Time on the reference machine (Arch Linux, 12 threads, FFmpeg n9.0.2): about 0.9 s for all
   fixtures but `hdr10-4k` (cold, idle machine; 3.3 s under heavy load), plus about 4 s for
-  `hdr10-4k`; 0.1 s when everything is up to date. About 13 MB in total (6 MB of it is
+  `hdr10-4k`; 0.1 s when everything is up to date. About 15 MB in total (6 MB of it is
   `hdr10-4k`).
 - Tests get a fixture with the `fixture_media` pytest fixture (`fixture_media("multitrack")`),
   which generates it on demand and skips the test when there is no usable ffmpeg. The code is
@@ -54,6 +54,8 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `hdr10-4k` | `hdr10-4k.mkv` | 3840×2160 HEVC Main 10, BT.2020 / PQ, HDR10 metadata as SEI only (one libx265 pass), 5 s at 23.976 fps, keyint 48 (2 s). The 4K source of the C-10 frame budget (Q-3; the one fixture that is not low resolution, decision 0030); about 6 MB and 4 s to generate |
 | `chapters` | `chapters.mkv` | 5 s, 4 chapters (Opening, Part One, Part Two, Credits) and a title, from an FFMETADATA file |
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
+| `dts-hd-ma` | `dts-hd-ma.mkv` | H.264 320×180, 4 s. Audio: `hun` **DTS-HD MA** 5.1(side) 24-bit 48 kHz "DTS-HD MA 5.1" **default**, a real lossless (XLL) stream written by `reframe_testing/dts.py` with **no bit rate in the file** (ffprobe: `profile` `DTS-HD MA`, no `bit_rate`; 375 frames, 1 069 764 bytes = 2 139 528 b/s); `eng` AC-3 5.1 224 kb/s "English AC-3 5.1"; `eng` AC-3 stereo 192 kb/s "English Stereo". M6 demo 1 (Measure) and the audio-defaults demo |
+| `pgs` | `pgs.mkv` | H.264 720×480, 4 s. Two PGS (`hdmv_pgs_subtitle`) tracks written by `reframe_testing/pgs.py`: `eng` "English" **default**, 6 events (2 with the forced flag, at 0.2 s and 2.1 s), 12 display sets; `eng` "English (forced)" **forced**, 2 forced events, 4 display sets |
 
 `testing/tests/test_media_fixtures.py` checks every row with ffprobe.
 
@@ -75,6 +77,20 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
   `mimetype=application/x-truetype-font`. A test renders the ASS text with libass and checks
   that the glyphs are solid boxes (a fallback font fills about 30 % of the text's bounding box,
   Reframe Box about 83 %), so libass really uses the attached font.
+- **DTS-HD MA.** FFmpeg's `dca` encoder writes a DTS core only (`-strict -2`), so
+  `reframe_testing/dts.py` writes the DTS-HD MA stream in Python: extension substream (EXSS)
+  frames with one asset whose only component is an XLL (lossless) frame: 5.1, 48 kHz,
+  24-bit, 512 samples per frame, fixed prediction with Rice codes, every CRC-16 correct
+  (references: ETSI TS 102 114 and FFmpeg's `dca_exss.c` / `dca_xll.c` / `dcadec.c`).
+  There is **no DTS core** (decision 0032). Each channel is a steady tone whose frequency is
+  a whole number of periods per frame (93.75 Hz steps), so the frames of one second are the
+  same; the level changes every second (0, -6, -12, -3 dB), so the frame size varies. FFmpeg
+  copies the `.dtshd` file (`-f dts`) into Matroska. A test decodes it with
+  `-err_detect crccheck+explode` and compares every sample with what was written (lossless).
+- **PGS.** FFmpeg has no PGS encoder either. `reframe_testing/pgs.py` writes `.sup` files
+  (PCS, WDS, PDS, ODS with run-length coded bitmaps, END): one show and one clear display
+  set per event, the bars of the VobSub fixture as bitmaps, the forced flag (`0x40`) on the
+  composition object of a forced event. FFmpeg copies them into Matroska with `-copyts`.
 
 ## Fake FFmpeg (fault injection)
 
@@ -1413,8 +1429,93 @@ stream|index=7|codec_name=subrip|codec_type=subtitle|disposition:default=1|dispo
 
 ### Analysis scans (C-10: bitrate, subtitles, loudness)
 
-(core-complete wave 1b: packet sizes, event counts, `forced_subs_only`, `loudnorm`, the new
-fixtures.)
+Checked on 2026-10-15 with FFmpeg n9.0.2 (Arch package and the pinned BtbN build
+`n9.0.2-17-g2a571b6068-20260930`; the DTS-HD MA rows also with the n8.1.3 override build).
+Decision [0032](../docs/decisions/0032-analysis-scans-and-their-fixtures.md) uses these.
+
+**Packet listing** (the bitrate scan; `-of compact=p=0`, one line per packet, keys in the
+order ffprobe prints them, not the order of `-show_entries`):
+
+```
+$ ffprobe -v error -select_streams 1 -show_entries packet=pts_time,dts_time,duration_time,size \
+      -of compact=p=0 -i dts-hd-ma.mkv
+pts_time=0.000000|dts_time=0.000000|duration_time=0.010000|size=3140
+pts_time=0.011000|dts_time=0.011000|duration_time=0.010000|size=3140
+…
+pts_time=3.989000|dts_time=3.989000|duration_time=0.010000|size=2964
+```
+
+- Matroska stores times in whole milliseconds: a 512-sample DTS frame (10.667 ms) has
+  `duration_time=0.010000`, so the 375 durations add up to 3.75 s for a 4 s track. The scan
+  uses the first packet time to the last packet end (3.999 s): 2 140 063 b/s measured, 2 139 528
+  b/s exact (0.03 %).
+- An ffprobe packet listing of 225 000 AC-3 packets (2 hours) takes about 2.3 s through the
+  scan's line reader (load average about 7).
+
+**Subtitle packets** of all subtitle streams in one pass:
+`ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time -of compact=p=0`
+prints `stream_index=1|pts_time=0.200000`. One SRT cue, one ASS `Dialogue` line or one VobSub
+subpicture is one packet (`multitrack`: 2, 3, 1; `text-subs`: 2, 3; `vobsub`: 2, 1).
+
+**PGS in Matroska.** The `sup` demuxer returns one packet per *segment*; the Matroska muxer
+merges the segments of a display set into one block (`pgs_frame_merge`, added by
+`matroskaenc`), so `pgs.mkv` has 12 and 4 packets for 6 and 2 events (show + clear each).
+Without `-copyts` ffmpeg moves the first event of a `.sup` input to 0 s (the demuxer's start
+time is the first event); with it the tracks start at `0.200000`. `ffmpeg -i pgs.mkv -map 0:1
+-c copy -f sup out.sup` writes the segments again (8 388 bytes, the size of the written file;
+only the PTS differ).
+
+**`forced_subs_only`** (decoder option; ffprobe passes it to the decoder when it is given
+before the input; `-show_entries subtitle=…` alone shows the decoded subtitles):
+
+```
+$ ffprobe -v error -select_streams 1 -show_entries subtitle=pts_time,num_rects -of csv=p=0 pgs.mkv
+0.200000,1
+0.800000,0
+…                                   (12 lines: show 1 rect, clear 0 rects)
+$ ffprobe -v error -forced_subs_only 1 -select_streams 1 \
+      -show_entries subtitle=pts_time,num_rects -of csv=p=0 pgs.mkv
+(the same 12 lines)
+```
+
+- **PGS**: `pgssubdec` returns every display set and leaves the palette of a non-forced object
+  empty; the event count does not change. `rect->flags` (`AV_SUBTITLE_FLAG_FORCED`) is not in
+  ffprobe's output. So the scan reads the forced flag (`0x40` of the composition object in the
+  PCS) from a `.sup` copy.
+- **VobSub**: `dvdsubdec` drops every subpicture that does not start with the forced start
+  command `0x00`: a track with 3 subpictures, 2 of them forced, gives 3 lines without the
+  option and 2 with it. The `vobsub` fixture has no forced subpictures (its `fre` track only has
+  the forced *disposition*): 0 lines with the option.
+
+**`loudnorm`** prints its JSON block at log level `info` (nothing with `-v error`):
+
+| Input | `input_i` | `input_tp` | `input_lra` | `input_thresh` | exit |
+|-------|-----------|------------|-------------|----------------|------|
+| `multitrack` stream 2 (AAC stereo, 660 Hz sine, mono at -18 dBFS upmixed) | -21.66 | -20.63 | 0.00 | -31.66 | 0 |
+| `multitrack` stream 1 (AC-3 5.1, 440 Hz) | -21.75 | -18.06 | 0.00 | -31.75 | 0 |
+| 2 s of `anullsrc` (digital silence) | `-inf` | `-inf` | 0.00 | -70.00 | 0 |
+| `-ss 100` on the 4 s `multitrack` (nothing decoded) | `-inf` | `-inf` | 0.00 | -70.00 | 0, plus "Output file is empty, nothing was encoded" and one `-progress` block with `out_time_us=N/A` |
+
+**DTS-HD MA without a core** (`dts-hd-ma.mkv`, all three builds):
+
+```
+$ ffprobe -v error -of compact=p=0 -show_entries stream=index,codec_name,profile,sample_fmt,bit_rate \
+      -select_streams a:0 dts-hd-ma.mkv
+index=1|codec_name=dts|profile=DTS-HD MA|sample_fmt=s32p|bit_rate=N/A
+```
+
+In `-of json` the stream has no `bit_rate` key, `bits_per_raw_sample` is `"24"`, the layout
+`5.1(side)`, and the only tags are `language`, `title` and `DURATION`. `reframe probe` shows
+`DTS-HD MA` · `lossless` · `5.1(side), 6 ch` · `48 kHz / 24-bit` · `— (unknown)`. The raw stream
+is recognised without `-f dts` too (the `dts` probe counts EXSS headers whose size is a
+multiple of 4 and whose CRC is right). `-err_detect crccheck+explode` decodes every frame.
+
+**Cancel** (C-10 "Done when"): on a 2-hour file with an event every 25 ms (the file of
+`tests/analysis/test_analysis_cancel.py`), cancelled 0.3 s after the process started, every
+process was gone 6 to 25 ms after `TaskManager.cancel` (bitrate 12–18 ms, subtitle packet count
+16–25 ms, PGS copy 6–9 ms, loudness 7–10 ms; load average about 7). Uncancelled, the passes take
+2.3 s (bitrate), 3.4 s (subtitle packet count, 288 000 packets) and 3.0 s (PGS copy and read,
+576 000 display sets, 7 200 forced).
 
 ### Preview frames, crop detection and clips (C-10)
 
