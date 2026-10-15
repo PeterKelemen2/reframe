@@ -1175,6 +1175,209 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[BatchGroup]
+  dict({
+    '$defs': list([
+      'Fingerprint',
+      'GroupMember',
+      'HdrFormat',
+      'TrackDescriptor',
+      'TrackFlags',
+      'TrackRole',
+    ]),
+    'additionalProperties': False,
+    'description': 'Files that share a fingerprint at ``level`` (04 §Grouping).',
+    'properties': dict({
+      'fingerprint': dict({
+        '$ref': '#/$defs/Fingerprint',
+        'description': "The group's fingerprint (the representative's).",
+      }),
+      'id': dict({
+        'title': 'Id',
+        'type': 'string',
+      }),
+      'level': dict({
+        'enum': list([
+          'strict',
+          'standard',
+          'loose',
+        ]),
+        'title': 'Level',
+        'type': 'string',
+      }),
+      'members': dict({
+        'description': 'In episode order.',
+        'items': dict({
+          '$ref': '#/$defs/GroupMember',
+        }),
+        'title': 'Members',
+        'type': 'array',
+      }),
+      'name': dict({
+        'description': '``Show S01`` (from the parsed file names).',
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'representative': dict({
+        'description': 'The file the editor shows (the first one by default).',
+        'format': 'path',
+        'title': 'Representative',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'id',
+      'name',
+      'level',
+      'representative',
+      'fingerprint',
+    ]),
+    'title': 'BatchGroup',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[BatchGrouping]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'BatchGroup',
+      'CopyOp',
+      'Fingerprint',
+      'Fix',
+      'GroupMember',
+      'HdrFormat',
+      'JsonValue',
+      'MoveOp',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
+      'TestOp',
+      'TrackDescriptor',
+      'TrackFlags',
+      'TrackRole',
+      'ValidationIssue',
+    ]),
+    'additionalProperties': False,
+    'description': '``Reframe.batch.group(...)``: the groups, and the files that could not be read.',
+    'properties': dict({
+      'groups': dict({
+        'items': dict({
+          '$ref': '#/$defs/BatchGroup',
+        }),
+        'title': 'Groups',
+        'type': 'array',
+      }),
+      'issues': dict({
+        'description': 'A file that could not be probed (``source.probe_failed``) is not in any group.',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+    }),
+    'title': 'BatchGrouping',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[BatchResolution]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'AudioOutputTrack',
+      'AverageBitrate',
+      'BatchGroup',
+      'ChapterRange',
+      'ChapterSettings',
+      'ConstantQuality',
+      'CopyOp',
+      'CropRect',
+      'CropSettings',
+      'DimensionSettings',
+      'ExactHeight',
+      'ExactWidth',
+      'ExternalSubtitle',
+      'FilterConfig',
+      'FilterSettings',
+      'Fingerprint',
+      'FitWithin',
+      'Fix',
+      'FrameRange',
+      'FullRange',
+      'GroupMember',
+      'HdrFormat',
+      'JobNaming',
+      'JobSettings',
+      'JsonValue',
+      'MatrixColumn',
+      'MoveOp',
+      'NameCandidate',
+      'NameResult',
+      'NameSpan',
+      'OutputSettings',
+      'ParsedName',
+      'Rational',
+      'RemoveOp',
+      'ReplaceOp',
+      'Resolution',
+      'SameAsSource',
+      'Severity',
+      'SourceFingerprint',
+      'SourceRef',
+      'SubtitleOutputTrack',
+      'TagSettings',
+      'TestOp',
+      'TimeRange',
+      'TrackDescriptor',
+      'TrackFlags',
+      'TrackMatch',
+      'TrackMetadata',
+      'TrackRole',
+      'ValidationIssue',
+      'VideoSettings',
+    ]),
+    'additionalProperties': False,
+    'description': '``Reframe.batch.resolve(...)``: the resolution matrix.',
+    'properties': dict({
+      'columns': dict({
+        'items': dict({
+          '$ref': '#/$defs/MatrixColumn',
+        }),
+        'title': 'Columns',
+        'type': 'array',
+      }),
+      'group': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/BatchGroup',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+      'issues': dict({
+        'description': 'Batch-level problems: output name collisions within the batch (04 §Output naming).',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'rows': dict({
+        'description': 'In episode order.',
+        'items': dict({
+          '$ref': '#/$defs/Resolution',
+        }),
+        'title': 'Rows',
+        'type': 'array',
+      }),
+    }),
+    'title': 'BatchResolution',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[BitrateInfo]
   dict({
     '$defs': list([
@@ -3188,6 +3391,86 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[Fingerprint]
+  dict({
+    '$defs': list([
+      'HdrFormat',
+      'TrackDescriptor',
+      'TrackFlags',
+      'TrackRole',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The ordered track descriptors of a file plus the video resolution and HDR type, at one
+      strictness level (04 §Concepts); ``digest`` is the hash two files compare.
+    ''',
+    'properties': dict({
+      'digest': dict({
+        'title': 'Digest',
+        'type': 'string',
+      }),
+      'hdr': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/HdrFormat',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+      'height': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Height',
+      }),
+      'level': dict({
+        'enum': list([
+          'strict',
+          'standard',
+          'loose',
+        ]),
+        'title': 'Level',
+        'type': 'string',
+      }),
+      'tracks': dict({
+        'items': dict({
+          '$ref': '#/$defs/TrackDescriptor',
+        }),
+        'title': 'Tracks',
+        'type': 'array',
+      }),
+      'width': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Width',
+      }),
+    }),
+    'required': list([
+      'level',
+      'digest',
+    ]),
+    'title': 'Fingerprint',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[FitWithin]
   dict({
     '$defs': list([
@@ -3525,6 +3808,43 @@
       'display_aspect',
     ]),
     'title': 'Geometry',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[GroupMember]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'One file of a group. ``near``: it differs from the group (04: "E05 ⚠ 1 extra track").',
+    'properties': dict({
+      'differences': dict({
+        'description': 'One line per difference: ``1 extra track (eng AC-3 2.0 "Commentary")``.',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Differences',
+        'type': 'array',
+      }),
+      'match': dict({
+        'default': 'exact',
+        'enum': list([
+          'exact',
+          'near',
+        ]),
+        'title': 'Match',
+        'type': 'string',
+      }),
+      'path': dict({
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'GroupMember',
     'type': 'object',
   })
 # ---
@@ -4646,6 +4966,77 @@
       'max_luminance',
     ]),
     'title': 'MasteringDisplay',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[MatchLevel]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'strict',
+      'standard',
+      'loose',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[MatchStatus]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'exact',
+      'relaxed',
+      'ambiguous',
+      'missing',
+      'skipped',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[MatrixColumn]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'A column of the resolution matrix (04 §Resolution matrix).',
+    'properties': dict({
+      'kind': dict({
+        'enum': list([
+          'video',
+          'audio',
+          'subtitle',
+          'name',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'label': dict({
+        'description': '``A1 jpn TrueHD→Opus 5.1``, ``S2 eng Full``, ``Output name``.',
+        'title': 'Label',
+        'type': 'string',
+      }),
+      'rule': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The rule of an audio / subtitle column.',
+        'title': 'Rule',
+      }),
+    }),
+    'required': list([
+      'kind',
+      'label',
+    ]),
+    'title': 'MatrixColumn',
     'type': 'object',
   })
 # ---
@@ -6926,6 +7317,159 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[Resolution]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'AudioOutputTrack',
+      'AverageBitrate',
+      'ChapterRange',
+      'ChapterSettings',
+      'ConstantQuality',
+      'CopyOp',
+      'CropRect',
+      'CropSettings',
+      'DimensionSettings',
+      'ExactHeight',
+      'ExactWidth',
+      'ExternalSubtitle',
+      'FilterConfig',
+      'FilterSettings',
+      'FitWithin',
+      'Fix',
+      'FrameRange',
+      'FullRange',
+      'JobNaming',
+      'JobSettings',
+      'JsonValue',
+      'MoveOp',
+      'NameCandidate',
+      'NameResult',
+      'NameSpan',
+      'OutputSettings',
+      'ParsedName',
+      'Rational',
+      'RemoveOp',
+      'ReplaceOp',
+      'SameAsSource',
+      'Severity',
+      'SourceFingerprint',
+      'SourceRef',
+      'SubtitleOutputTrack',
+      'TagSettings',
+      'TestOp',
+      'TimeRange',
+      'TrackFlags',
+      'TrackMatch',
+      'TrackMetadata',
+      'ValidationIssue',
+      'VideoSettings',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      A template applied to one file: the concrete job, the match report and the issues
+      (04 §Concepts).
+    ''',
+    'properties': dict({
+      'issues': dict({
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'job': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/JobSettings',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``None`` when the file could not be resolved (it could not be probed).',
+      }),
+      'matches': dict({
+        'items': dict({
+          '$ref': '#/$defs/TrackMatch',
+        }),
+        'title': 'Matches',
+        'type': 'array',
+      }),
+      'naming': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/NameResult',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+      'override': dict({
+        'description': 'The per-file override that was applied (04 §Per-file overrides).',
+        'items': dict({
+          'discriminator': dict({
+            'mapping': dict({
+              'add': '#/$defs/AddOp',
+              'copy': '#/$defs/CopyOp',
+              'move': '#/$defs/MoveOp',
+              'remove': '#/$defs/RemoveOp',
+              'replace': '#/$defs/ReplaceOp',
+              'test': '#/$defs/TestOp',
+            }),
+            'propertyName': 'op',
+          }),
+          'oneOf': list([
+            dict({
+              '$ref': '#/$defs/AddOp',
+            }),
+            dict({
+              '$ref': '#/$defs/RemoveOp',
+            }),
+            dict({
+              '$ref': '#/$defs/ReplaceOp',
+            }),
+            dict({
+              '$ref': '#/$defs/MoveOp',
+            }),
+            dict({
+              '$ref': '#/$defs/CopyOp',
+            }),
+            dict({
+              '$ref': '#/$defs/TestOp',
+            }),
+          ]),
+        }),
+        'title': 'Override',
+        'type': 'array',
+      }),
+      'path': dict({
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'status': dict({
+        'default': 'ok',
+        'description': "The row's mark: ✓ / ⚠ / ✗ (the worst match or issue).",
+        'enum': list([
+          'ok',
+          'warning',
+          'error',
+        ]),
+        'title': 'Status',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'Resolution',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ResyncEvent]
   dict({
     '$defs': list([
@@ -8164,6 +8708,23 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[TemplateSection]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'dimensions',
+      'filters',
+      'video',
+      'audio',
+      'subtitles',
+      'chapters',
+      'tags',
+      'naming',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[TestOp]
   dict({
     '$defs': list([
@@ -8797,6 +9358,156 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[TrackDescriptor]
+  dict({
+    '$defs': list([
+      'TrackFlags',
+      'TrackRole',
+    ]),
+    'additionalProperties': False,
+    'description': 'The normalised summary of one stream (04 §Concepts).',
+    'properties': dict({
+      'bitrate': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Bits per second, when known.',
+        'title': 'Bitrate',
+      }),
+      'channels': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Channels',
+      }),
+      'codec': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'ffprobe codec name (``truehd``, ``dts``, ``ass``).',
+        'title': 'Codec',
+      }),
+      'codec_family': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          What the loose level compares (``dts`` for DTS and DTS-HD, ``ac3`` for AC-3 and
+          E-AC-3, …).
+        ''',
+        'title': 'Codec Family',
+      }),
+      'flags': dict({
+        '$ref': '#/$defs/TrackFlags',
+      }),
+      'index': dict({
+        'description': 'Absolute stream index.',
+        'minimum': 0,
+        'title': 'Index',
+        'type': 'integer',
+      }),
+      'kind': dict({
+        'enum': list([
+          'video',
+          'audio',
+          'subtitle',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'label': dict({
+        'default': '',
+        'description': 'For messages: ``eng AC-3 2.0 "Commentary"``.',
+        'title': 'Label',
+        'type': 'string',
+      }),
+      'language': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The effective language (BCP 47, normalised).',
+        'title': 'Language',
+      }),
+      'position': dict({
+        'description': 'Position among the streams of its kind (0-based).',
+        'minimum': 0,
+        'title': 'Position',
+        'type': 'integer',
+      }),
+      'profile': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The commercial name (``DTS-HD MA``, ``TrueHD Atmos``).',
+        'title': 'Profile',
+      }),
+      'roles': dict({
+        'items': dict({
+          '$ref': '#/$defs/TrackRole',
+        }),
+        'title': 'Roles',
+        'type': 'array',
+      }),
+      'title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'title': 'Title',
+      }),
+    }),
+    'required': list([
+      'kind',
+      'index',
+      'position',
+    ]),
+    'title': 'TrackDescriptor',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[TrackDraft]
   dict({
     '$defs': list([
@@ -8908,6 +9619,102 @@
       }),
     }),
     'title': 'TrackFlags',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TrackMatch]
+  dict({
+    '$defs': list([
+      'Severity',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      One cell of the resolution matrix: how one track rule matched in one file
+      (04 §Resolving rules in another file).
+    ''',
+    'properties': dict({
+      'candidates': dict({
+        'description': 'Every stream that matched after the relaxing steps.',
+        'items': dict({
+          'minimum': 0,
+          'type': 'integer',
+        }),
+        'title': 'Candidates',
+        'type': 'array',
+      }),
+      'kind': dict({
+        'enum': list([
+          'audio',
+          'subtitle',
+        ]),
+        'title': 'Kind',
+        'type': 'string',
+      }),
+      'message': dict({
+        'default': '',
+        'description': '``matched without title, profile``, ``2 candidates, picked #3 (source order)``.',
+        'title': 'Message',
+        'type': 'string',
+      }),
+      'relaxed': dict({
+        'description': '''
+          The selector fields that were dropped, in order (``title_pattern``, ``profiles``,
+          ``channels``, ``codecs``).
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Relaxed',
+        'type': 'array',
+      }),
+      'rule': dict({
+        'description': 'Index of the rule in ``JobTemplate.audio_rules`` / ``subtitle_rules``.',
+        'minimum': 0,
+        'title': 'Rule',
+        'type': 'integer',
+      }),
+      'severity': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/Severity',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          ``None`` for an exact match; warning (relaxed, ambiguous), error (missing, required),
+          info (skipped).
+        ''',
+      }),
+      'status': dict({
+        'enum': list([
+          'exact',
+          'relaxed',
+          'ambiguous',
+          'missing',
+          'skipped',
+        ]),
+        'title': 'Status',
+        'type': 'string',
+      }),
+      'streams': dict({
+        'description': 'The source stream(s) the rule took (several for a ``multiple`` rule).',
+        'items': dict({
+          'minimum': 0,
+          'type': 'integer',
+        }),
+        'title': 'Streams',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'kind',
+      'rule',
+      'status',
+    ]),
+    'title': 'TrackMatch',
     'type': 'object',
   })
 # ---

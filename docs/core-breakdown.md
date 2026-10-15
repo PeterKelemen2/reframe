@@ -312,33 +312,58 @@ output style as decision 0017.
 the queue store and the probe cache refuse JSON nested more than 64 levels (C-9's
 `reframe.settings.too_deep` / `MAX_DEPTH`) as a damaged row / entry, never a crash.
 
-### Wave 2 contract (draft; the lead builds the models and the stub before wave 2)
+### Wave 2 contract (built by the lead after wave 1, commit "wave-2 contract")
 
-`reframe/models/batch.py` (runtime models; a template is a `JobTemplate`, already persisted
-as a preset, so no new persisted document):
+What wave 1 delivered for it (read the code; use these names):
+
+- 1a `reframe.batch`: `select_tracks(streams, selection, *, preferred_languages, kind) ->
+  Selection` (one `Pick` per track; helpers `effective_languages`, `language_slot`,
+  `sort_key`, `extra_role`, `is_forced`, `subtitle_rank`, `is_undetermined`), `audio_stage`,
+  `subtitle_stage`, `explain`, `explain_subtitles`, `foreign_audio_search`, `draft_tracks(…,
+  languages=…)`, `lint_defaults(…, container_codecs=…)`, `apply_codec_rules`. Decision 0031.
+- 1d `reframe.metadata.remux_job`, `job_type` with `metadata_edit` (0034); 1b the
+  `dts-hd-ma` fixture generator `reframe_testing.dts` (0032); C-16 `resolve_output_name`.
+- Lead: `JobDraft.subtitle_decisions`; the draft's issues include the track stage's errors;
+  `reframe.jobs.draft_from_preset(source, preset, *, definitions, languages) -> (job,
+  TrackDraft, notes)`.
+
+`reframe/models/batch.py` (runtime models; a group template is a `JobTemplate`, saved as a
+preset, so **no new persisted document and no `schema_version` change**): `MatchLevel`,
+`TemplateSection`, `MatchStatus`, `TrackDescriptor`, `Fingerprint`, `GroupMember`,
+`BatchGroup`, `BatchGrouping` (groups + the issues of files that could not be probed),
+`TrackMatch` (one matrix cell), `MatrixColumn`, `Resolution` (path, job, matches, naming,
+issues, status ✓/⚠/✗, the override applied), `BatchResolution` (group, columns, rows,
+batch-level issues). 2a may add optional fields.
+
+`reframe/batch/service.py` (`Reframe.batch: BatchService`; the one I/O part of the batch
+package, never imported by `reframe.batch` itself):
 
 ```python
-MatchLevel = Literal["strict", "standard", "loose"]
-TemplateSection = Literal["dimensions", "filters", "video", "audio", "subtitles", "chapters", "tags", "naming"]
-class TrackDescriptor:   kind, index, position, codec, codec_family, profile, channels, language, title,
-                         roles, flags, bitrate, label            # 04 §Concepts
-class Fingerprint:       level, tracks, width, height, hdr, digest
-class GroupMember:       path, match: "exact" | "near", differences: list[str]
-class BatchGroup:        id, name, level, representative, fingerprint, members
-MatchStatus = Literal["exact", "relaxed", "ambiguous", "missing", "skipped"]
-class TrackMatch:        kind, rule, status, streams, candidates, relaxed, severity, message   # one matrix cell
-class Resolution:        path, job: JobSettings | None, matches, naming: NameResult | None, issues,
-                         status: "ok" | "warning" | "error", override: list[JsonPatchOp]
-class MatrixColumn:      kind, rule, label
-class BatchResolution:   group, columns, rows, issues           # the matrix (collisions in the batch)
+async def group(sources: Sequence[path | MediaSource], *, level: MatchLevel = "standard") -> BatchGrouping
+def derive(job: JobSettings, source: MediaSource, sections: Collection[TemplateSection], *,
+           base: JobTemplate | None = None) -> JobTemplate
+def merge(base: JobTemplate, incoming: JobTemplate, sections: Collection[TemplateSection]) -> JobTemplate
+async def resolve(template: JobTemplate | str | None, sources: Sequence[path | MediaSource], *,
+                  overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,   # keyed by str(path)
+                  group: BatchGroup | None = None) -> BatchResolution
+async def save_preset(template: JobTemplate, name: str, *, category="Custom", description="") -> Preset | ValidationIssue
 ```
 
-`reframe.batch`: the 04 §Core API functions (`describe_tracks`, `fingerprint`,
-`group_sources`, `derive_template`, `merge_template`, `resolve`, `resolve_group`) with these
-models; `Reframe.batch: BatchService` (`group`, `derive`, `merge`, `resolve`, `save_preset`);
-CLI `reframe batch DIR --preset NAME [--dry-run]` prints the resolution matrix. One rule
-engine: the preset's audio / subtitle defaults compile into `OutputTrackRule`s, and
-`JobService.draft` goes through `resolve`.
+The pure engine in `reframe.batch` (04 §Core API; 2a chooses the modules): `describe_tracks(source)
+-> list[TrackDescriptor]`, `fingerprint(source, level) -> Fingerprint`,
+`group_sources(sources, level) -> list[BatchGroup]`, `derive_template(job, source, sections)
+-> JobTemplate`, `merge_template(base, incoming, sections) -> JobTemplate`,
+`resolve(template, source, override) -> Resolution`, `resolve_group(group, template, …,
+overrides) -> list[Resolution]` (04's `resolve_group` has no sources; the pure function needs
+them: an extra parameter, recorded in 0040). Naming, validation and name collisions within
+the batch are the service's (they read the file system).
+
+**One rule engine**: the preset's audio / subtitle defaults compile into `OutputTrackRule`s
+(04 §Track rules), and `JobService.draft` goes through the same resolution (2a owns
+`jobs.py`): the drafts of M2 / M6 stay what they are (the `tests/jobs/` and CLI tests stay
+green), or a change is recorded. CLI `reframe batch DIR --preset NAME [--dry-run]`
+(05 §C-15): prints the resolution matrix; without `--dry-run` it queues the valid files and
+encodes them like `reframe encode` (0017's output and exit codes).
 
 ## Seams (where two tasks meet)
 

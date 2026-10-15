@@ -9,8 +9,8 @@ Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), 
 job drafted from a preset, C-15), ``defaults`` (audio/subtitle defaults), ``template``
 (templates and track rules), ``preset``, ``naming``, ``settings``, ``issues`` (validation
 issues and JSON patch operations), ``tools`` (C-1), ``capabilities`` (C-4), ``plan`` (C-7),
-``queue`` (C-11), ``tasks``, ``analysis`` (scan results, C-10), ``preview`` (frames, crop
-detection, preview clips, C-10), ``events``, ``migrations``.
+``queue`` (C-11), ``tasks``, ``batch`` (season mode, C-12), ``analysis`` (scan results,
+C-10), ``preview`` (frames, crop detection, preview clips, C-10), ``events``, ``migrations``.
 """
 
 from reframe.models.analysis import (
@@ -27,6 +27,20 @@ from reframe.models.base import (
     PositiveInt,
     Rational,
     ReframeModel,
+)
+from reframe.models.batch import (
+    BatchGroup,
+    BatchGrouping,
+    BatchResolution,
+    Fingerprint,
+    GroupMember,
+    MatchLevel,
+    MatchStatus,
+    MatrixColumn,
+    Resolution,
+    TemplateSection,
+    TrackDescriptor,
+    TrackMatch,
 )
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.defaults import (
@@ -260,6 +274,9 @@ __all__ = [
     "AudioRuleExtras",
     "AudioStream",
     "AverageBitrate",
+    "BatchGroup",
+    "BatchGrouping",
+    "BatchResolution",
     "BitrateInfo",
     "BitrateScan",
     "BitrateSource",
@@ -302,6 +319,7 @@ __all__ = [
     "FieldOrder",
     "FilterConfig",
     "FilterSettings",
+    "Fingerprint",
     "FitWithin",
     "Fix",
     "FixTarget",
@@ -311,6 +329,7 @@ __all__ = [
     "FramerateMode",
     "FullRange",
     "Geometry",
+    "GroupMember",
     "HdrFormat",
     "HdrInfo",
     "JobDraft",
@@ -330,6 +349,9 @@ __all__ = [
     "LoudnessMeasurement",
     "LoudnessTarget",
     "MasteringDisplay",
+    "MatchLevel",
+    "MatchStatus",
+    "MatrixColumn",
     "Measurement",
     "MediaKind",
     "MediaSource",
@@ -380,6 +402,7 @@ __all__ = [
     "ReframeModel",
     "RemoveOp",
     "ReplaceOp",
+    "Resolution",
     "ResyncEvent",
     "RoleEvidence",
     "Rotation",
@@ -409,6 +432,7 @@ __all__ = [
     "TaskProgressEvent",
     "TaskState",
     "TemplateKind",
+    "TemplateSection",
     "TestOp",
     "TimeRange",
     "ToolFetchResult",
@@ -420,8 +444,10 @@ __all__ = [
     "ToolStatus",
     "ToolsChangedEvent",
     "TrackDecision",
+    "TrackDescriptor",
     "TrackDraft",
     "TrackFlags",
+    "TrackMatch",
     "TrackMetadata",
     "TrackMetadataTemplate",
     "TrackRole",

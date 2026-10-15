@@ -36,6 +36,7 @@ from types import TracebackType
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from reframe import analysis, paths, preview
+from reframe.batch.service import BatchService
 from reframe.capabilities import CapabilityService
 from reframe.definitions import load_definitions
 from reframe.events import EventBus
@@ -861,7 +862,8 @@ class Reframe:
     - :attr:`power` — :class:`~reframe.platform.power.PowerService`: the when-done power
       actions with their 60 s countdown (``schedule``, ``cancel``, ``pending``; C-14).
 
-    ``batch`` (C-12, M7) comes with the batch engine.
+    - :attr:`batch` — :class:`~reframe.batch.service.BatchService`: season mode (``group``,
+      ``derive``, ``merge``, ``resolve``, ``save_preset``; C-12).
 
     **Settings.** ``<config>/settings.json`` is read in :meth:`create` (a damaged, newer or
     unreadable file gives an ``app.warning``, kept in ``settings.problems``). Every service
@@ -892,6 +894,7 @@ class Reframe:
     jobs: JobService
     queue: QueueService
     power: PowerService
+    batch: BatchService
 
     def __init__(
         self,
@@ -956,6 +959,12 @@ class Reframe:
             media=media,
         )
         self.power = create_power_service(self.events)
+        self.batch = BatchService(
+            sources=self.sources,
+            presets=self.presets,
+            jobs=self.jobs,
+            settings=self.settings_snapshot,
+        )
 
         presets = self.presets
 

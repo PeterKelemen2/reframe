@@ -110,11 +110,14 @@ def test_alias_round_trip(name: str, alias: Any) -> None:
     check()
 
 
-def test_strategies_cover_every_model() -> None:
+@pytest.mark.parametrize("model", public_models(), ids=lambda m: m.__name__)
+def test_strategies_cover_every_model(model: type[BaseModel]) -> None:
+    """One example per model: drawing every model in one example no longer fits Hypothesis's
+    data budget since the batch models (a whole job per resolution row) exist."""
+
     @settings(max_examples=1, deadline=None, suppress_health_check=list(HealthCheck))
     @given(data=st.data())
     def check(data: st.DataObject) -> None:
-        for model in public_models():
-            assert isinstance(data.draw(strategies.model_strategy(model)), model)
+        assert isinstance(data.draw(strategies.model_strategy(model)), model)
 
     check()
