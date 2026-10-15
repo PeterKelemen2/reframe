@@ -1488,6 +1488,12 @@ $ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=
   `round` is doubled and `round=1` means 16 (300x150 picture at 9,13 in 320x181:
   `round=2` → `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`).
 
+**The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
+frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of
+two cold runs): load average 3.4–4.2 on 12 threads: cold 678, 729, 726, 770, 678, 749, 787,
+844, 688, 695, 820 ms (budget 2 s); cached mean 1.4 ms, max 3.8 ms (budget 50 ms);
+`frame(key)` 38 µs. At load average 12–13: cold 699–920 ms; at load 19: up to 2.4 s.
+
 **Cancel** (`test_cancel.py`, real FFmpeg; the time from `TaskManager.cancel` until the process
 is gone, busy machine): a 4K output frame through `nlmeans=s=10:p=15:r=31` 15 ms; crop
 detection on 60 samples of `hdr10-4k` 11 ms (no next sample starts); a 5 s 4K x265 `slow`

@@ -58,9 +58,10 @@ def start_frames(
     job's filter graph). Cached on disk (LRU, ``preview.cache_size_mb``) by source fingerprint
     + timestamp + settings hash (:class:`~reframe.models.FrameSet`)."""
     wanted = list(timestamps) if timestamps is not None else None
+    snapshot = job.model_copy(deep=True) if job is not None else None
     return ctx.tasks.start(
         "frames",
-        lambda tctx: make_frames(tctx, ctx, path, count=count, timestamps=wanted, job=job),
+        lambda tctx: make_frames(tctx, ctx, path, count=count, timestamps=wanted, job=snapshot),
         message=f"Frames of {path.name}",
     )
 

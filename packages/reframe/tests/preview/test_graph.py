@@ -12,6 +12,7 @@ from reframe.command import PlanError, build_plan
 from reframe.models import (
     ColorInfo,
     CropRect,
+    DolbyVisionInfo,
     HdrFormat,
     HdrInfo,
     JobSettings,
@@ -103,6 +104,25 @@ def test_an_untagged_hlg_source() -> None:
     assert recipe.prefix == [setparams]
     assert recipe.chain[0] == setparams  # zscale's own tagging, as in C-7's graph
     assert "HLG, Dolby Vision" in recipe.notes[0]
+
+
+def test_dolby_vision_profile_5_needs_libplacebo() -> None:
+    dovi = HdrInfo(formats=[HdrFormat.DOLBY_VISION], dolby_vision=DolbyVisionInfo(profile=5))
+    video = stream(hdr=dovi)
+    cpu = source_recipe(video, caps(libplacebo=False), DEFS)
+    assert cpu.notes[0].endswith(
+        "with zscale + tonemap (Dolby Vision profile 5: the colours are only right with "
+        "libplacebo)."
+    )
+    gpu = source_recipe(video, caps(libplacebo=True), DEFS)
+    assert gpu.notes[0].endswith("with libplacebo.")
+    eight = stream(
+        hdr=HdrInfo(
+            formats=[HdrFormat.HDR10, HdrFormat.DOLBY_VISION],
+            dolby_vision=DolbyVisionInfo(profile=8),
+        )
+    )
+    assert source_recipe(eight, caps(), DEFS).notes[0].endswith("with zscale + tonemap.")
 
 
 def test_no_tone_mapper_in_the_build() -> None:

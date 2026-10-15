@@ -10,7 +10,18 @@ from pathlib import Path
 
 import pytest
 
-from reframe.models import AppSettings, CropDetection, CropRect, PreviewSettings, TaskState
+from reframe.dimensions import compute_geometry, source_geometry
+from reframe.models import (
+    AppSettings,
+    CropDetection,
+    CropRect,
+    CropSettings,
+    DimensionSettings,
+    MediaSource,
+    PreviewSettings,
+    SameAsSource,
+    TaskState,
+)
 from reframe.preview import start_cropdetect, start_frames
 from reframe.preview.crop import CROPDETECT
 from reframe_testing import fake_tools as ft
@@ -119,8 +130,45 @@ async def test_black_frames_do_not_vote(tmp_path: Path, fade_in: Path) -> None:
     assert crops[2:] == [LETTERBOX, LETTERBOX]
     assert (result.auto, result.auto_frames, result.conservative) == (LETTERBOX, 2, LETTERBOX)
     assert result.notes == ["2 of 4 frames are black: they do not count."]
-    black = await detect(tmp_path / "cache", fade_in, count=1)  # the middle: still black?
-    assert black.samples[0].timestamp == 1.0
+
+
+async def test_an_anamorphic_crop_is_in_stored_pixels(tmp_path: Path) -> None:
+    """Decision 0009 / C-5: the rect counts the stored pixels of an anamorphic picture (720x480
+    at 32:27), and C-5's geometry takes it as it is."""
+    src = tmp_path / "anamorphic-letterbox.mkv"
+    run_ffmpeg(
+        "-f", "lavfi", "-i", "testsrc2=size=720x360:rate=25:duration=1",
+        "-vf", "pad=720:480:0:60:black,setsar=32/27,format=yuv420p",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", str(src),
+    )  # fmt: skip
+    result = await detect(tmp_path / "cache", src, count=2)
+    assert result.auto == CropRect(top=60, bottom=60)
+    env = make_env(tmp_path / "x")
+    probed = await env.sources.probe(src)
+    assert isinstance(probed, MediaSource)
+    settings = DimensionSettings(
+        crop=CropSettings(mode="auto", rect=result.auto),
+        size=SameAsSource(),
+        pixel_aspect="keep",
+    )
+    geometry = compute_geometry(source_geometry(probed.video[0]), settings)
+    assert geometry.crop == result.auto
+    assert (geometry.cropped_width, geometry.cropped_height) == (720, 360)
+
+
+async def test_all_black(tmp_path: Path) -> None:
+    black = tmp_path / "black.mkv"
+    run_ffmpeg(
+        "-f", "lavfi", "-i", "color=black:size=320x180:rate=25:duration=1",
+        "-vf", "format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast", str(black),
+    )  # fmt: skip
+    result = await detect(tmp_path / "cache", black, count=3)
+    assert [s.crop for s in result.samples] == [None, None, None]
+    assert (result.auto, result.auto_frames, result.conservative) == (CropRect(), 0, CropRect())
+    assert result.notes == [
+        "3 of 3 frames are black: they do not count.",
+        "No frame has a picture to measure: no crop.",
+    ]
 
 
 async def test_a_display_matrix_is_applied(tmp_path: Path, fixture_media: Media) -> None:

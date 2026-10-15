@@ -107,7 +107,12 @@ def _hdr_display(
             "shown without tone mapping (pale): this FFmpeg build has neither zscale nor a "
             "working libplacebo"
         )
-    return filters, f"tone mapped to SDR for display with {impl.label}"
+    how = f"tone mapped to SDR for display with {impl.label}"
+    dovi = video.hdr.dolby_vision if video.hdr is not None else None
+    if dovi is not None and dovi.profile == 5 and impl.id != "libplacebo":
+        # Profile 5 has no HDR10 base layer (IPTPQc2): only libplacebo applies the RPU.
+        how += " (Dolby Vision profile 5: the colours are only right with libplacebo)"
+    return filters, how
 
 
 def _hdr_name(video: VideoStream) -> str:

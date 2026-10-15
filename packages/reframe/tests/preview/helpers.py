@@ -124,8 +124,12 @@ class Sources:
 
 
 class Caps:
+    """``Reframe.capabilities``: a fixed snapshot; ``detected`` (when set) is the result of a
+    detection that :meth:`wait` waits for."""
+
     def __init__(self, snapshot: CapabilitySnapshot) -> None:
         self._snapshot = snapshot
+        self.detected: CapabilitySnapshot | None = None
         self.waits = 0
 
     @property
@@ -134,6 +138,8 @@ class Caps:
 
     async def wait(self) -> CapabilitySnapshot:
         self.waits += 1
+        if self.detected is not None:
+            self._snapshot = self.detected
         return self._snapshot
 
 

@@ -450,3 +450,28 @@ async def test_one_run_for_both_kinds_gives_the_pixels_of_two_runs(
         assert not made[kind].cached
         assert made["output" if kind == "source" else "source"].cached
         assert rgb_pixels(made[kind].path) == first[kind], kind
+
+
+async def test_a_frame_made_meanwhile_by_another_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses to replace a PNG that a reader has open: when another task has just made
+    the same frame, its file counts."""
+    from reframe.preview.frames import _place
+
+    from .test_common import png
+
+    temp = tmp_path / ".tmp-1-a.png"
+    final = tmp_path / "a.png"
+    temp.write_bytes(png(4, 4))
+
+    def refuse(src: object, dst: object) -> None:
+        raise PermissionError(dst)
+
+    monkeypatch.setattr("reframe.preview.frames.os.replace", refuse)
+    assert not await _place(temp, final)
+    final.write_bytes(png(4, 4))
+    assert await _place(temp, final)
+    monkeypatch.undo()
+    assert await _place(temp, final)
+    assert not temp.exists()

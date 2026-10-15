@@ -218,11 +218,21 @@ async def _render(
             raise asyncio.CancelledError
         complete = 0
         for item, temp in zip(missing, temps, strict=True):
-            if result.ok and png_size(temp) is not None:
-                await asyncio.to_thread(os.replace, temp, item.path)
+            if result.ok and png_size(temp) is not None and await _place(temp, item.path):
                 complete += 1
         return None if complete == len(missing) else failure_text(result)
     finally:
         for temp in temps:
             with contextlib.suppress(OSError):
                 temp.unlink(missing_ok=True)
+
+
+async def _place(temp: Path, final: Path) -> bool:
+    """Rename a complete PNG to its key's name. When that fails because another task has just
+    made the same frame (Windows refuses to replace a file that a reader has open), its file
+    is as good as ours."""
+    try:
+        await asyncio.to_thread(os.replace, temp, final)
+    except OSError:
+        return png_size(final) is not None
+    return True

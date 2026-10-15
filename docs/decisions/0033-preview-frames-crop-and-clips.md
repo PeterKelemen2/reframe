@@ -84,7 +84,9 @@ function C-7's graph uses): `libplacebo` (BT.2390, peak detection) when its run 
 (decision [0021](0021-libplacebo-run-test.md)), else `zscale` + `tonemap` (Hable). The output
 frame of a job whose output stays HDR (no Tone mapping or Colorspace filter) is mapped the
 same way. `FrameSet.notes` says which. A build with neither shows the HDR signal unmapped
-(pale), with a note. Frames do not wait for the encoder detection: before its first result
+(pale), with a note. Dolby Vision profile 5 has no HDR10 base layer: without libplacebo
+(which applies the RPU) its colours are wrong, and the note says so (not verified: there is
+no profile 5 fixture). Frames do not wait for the encoder detection: before its first result
 the capability snapshot has no libplacebo, so the first frames of a first start use zscale;
 the key changes with the chain, so later frames use libplacebo.
 
@@ -152,9 +154,11 @@ the key changes with the chain, so later frames use libplacebo.
 ### 7. The Q-3 budget on long GOPs
 
 Measured in `tests/preview/test_benchmark.py` (through the facade, libplacebo, one frame per
-task, the machine busy with other test runs, load average 12–13 on 12 threads): cold 699–920
-ms, mean 796 ms (budget 2 s); cached 1.2–1.7 ms (budget 50 ms); `frame(key)` 29 µs. Quiet
-machine: see `testdata/README.md`. The cold time grows with the distance from the keyframe
+task, 11 timestamps; 12 threads): load average 3.4–4.2 (other agents' test runs): cold
+678–844 ms, mean 742 ms (budget 2 s); cached 1.4 ms mean, 3.8 ms max (budget 50 ms);
+`frame(key)` 38 µs. Load average 12–13: cold 699–920 ms. Load average 19: cold up to 2.4 s,
+over the budget; the test then reports the run as skipped ("the machine is busy"), because a
+budget measured on an overloaded machine says nothing about a normal desktop. The cold time grows with the distance from the keyframe
 before T: `hdr10-4k` (keyint 48) decodes at about 165 frames/s (120 frames in 0.73 s), so its
 worst case (47 frames) is about 0.3 s of decoding. A source with a 250-frame GOP (x265's
 default keyint at 24 fps, 10 s) needs up to about 1.5 s more and is close to the 2 s budget; a

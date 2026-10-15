@@ -16,6 +16,8 @@ from reframe.models import (
     AverageBitrate,
     ConstantQuality,
     CropRect,
+    EncoderState,
+    EncoderStatus,
     FrameSet,
     JobSettings,
     PreviewClip,
@@ -28,7 +30,7 @@ from reframe.tools import RunResult, run_streaming
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .helpers import Env, job_for, make_env, real_tools, rgb_pixels, tool
+from .helpers import Env, caps, ffmpeg, job_for, make_env, real_tools, rgb_pixels, run_ffmpeg, tool
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
@@ -281,6 +283,57 @@ async def test_an_encode_that_fails(
     assert done.error is not None
     assert done.error.endswith(
         "Encode (x264) failed: FFmpeg failed (exit code 1): Error while opening encoder."
+    )
+    assert len(fake_tools.calls("ffmpeg")) == 1
+    assert list((tmp_path / "cache" / "clips").iterdir()) == []
+
+
+async def test_validation_waits_for_an_encoder_being_checked(
+    tmp_path: Path, fixture_media: Media
+) -> None:
+    """Like the queue: an ``encoder.checking`` issue waits for the detection, then validates
+    again with its result."""
+    checking = caps()
+    checking.encoders["libx264"] = EncoderStatus(id="libx264", state=EncoderState.CHECKING)
+    env = make_env(tmp_path / "cache", snapshot=checking)
+    env.caps.detected = caps()
+    result = await clip(env, job_for(fixture_media("letterbox")), start=0.0, seconds=0.5)
+    assert result.path.is_file()
+    assert env.caps.waits == 1
+
+
+async def test_a_clip_needs_a_video_stream(tmp_path: Path) -> None:
+    audio = tmp_path / "tone.mka"
+    run_ffmpeg("-f", "lavfi", "-i", "sine=duration=1", "-c:a", "flac", str(audio))
+    env = make_env(tmp_path / "cache")
+    done, _ = await env.finish(start_preview_clip(env.ctx, job_for(audio), start=0.0, seconds=1.0))
+    assert done.state is TaskState.FAILED
+    assert done.error is not None
+    assert done.error.endswith("tone.mka has no video stream.")
+
+
+async def test_a_loudness_measurement_that_fails(
+    tmp_path: Path, fixture_media: Media, fake_tools: ft.FakeTools
+) -> None:
+    """The analyse step prints no ``loudnorm`` block: the task fails before the encode."""
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(argv_contains=["loudnorm"], actions=[ft.stderr("nothing measured\n")]),
+                ft.Rule(actions=[ft.exec_program(ffmpeg())]),
+            ]
+        )
+    )
+    toolset = real_tools().model_copy(update={"ffmpeg": tool("ffmpeg", str(fake_tools.ffmpeg))})
+    env = make_env(tmp_path / "cache", tools=toolset)
+    job = job_for(fixture_media("multitrack"))
+    job.audio = [AudioOutputTrack(source_stream=2, encoder="aac", loudness="ebu_r128")]
+    done, _ = await env.finish(start_preview_clip(env.ctx, job, start=0.0, seconds=1.0))
+    assert done.state is TaskState.FAILED
+    assert done.error is not None
+    assert done.error.endswith(
+        "Measure the loudness of audio track 1 (English Stereo) printed 0 loudnorm result(s), "
+        "1 expected."
     )
     assert len(fake_tools.calls("ffmpeg")) == 1
     assert list((tmp_path / "cache" / "clips").iterdir()) == []
