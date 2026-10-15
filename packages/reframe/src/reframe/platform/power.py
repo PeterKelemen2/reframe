@@ -9,6 +9,11 @@ cancellable 60 s countdown (decision 0036).
 not an operating-system action: the UI layer quits when it sees ``executing``. A failure is
 data: one ``app.warning`` (code ``power.failed``) with the detail, never an exception.
 
+Once ``executing`` is published, the action runs to its end: ``cancel`` returns ``False``,
+:attr:`~PowerService.pending` stays the ``executing`` event until the executor returns, and
+:meth:`~PowerService.close` waits for it (bounded) instead of cancelling it. Cancelling
+``systemctl`` or ``shutdown.exe`` half-way would kill the process that is asking the system.
+
 The countdown counts ticks, not wall-clock time: each tick is a sleep of one second, so a
 system sleep or a blocked event loop in the middle never makes the action fire early (after
 a wake the countdown goes on where it was). ``deadline`` is the wall-clock estimate made at
@@ -62,6 +67,7 @@ __all__ = [
     "COMMAND_TIMEOUT",
     "COUNTDOWN_SECONDS",
     "DRY_RUN_ENV",
+    "EXECUTE_WAIT",
     "SYSTEMCTL_VERBS",
     "WARNING_CODE",
     "WINDOWS_SHUTDOWN_COMMENT",
@@ -109,6 +115,10 @@ WINDOWS_SHUTDOWN_DELAY = 60
 
 #: The ``/c`` comment Windows shows in its shutdown warning (at most 512 characters).
 WINDOWS_SHUTDOWN_COMMENT = "Reframe: the queue is done. Run 'shutdown /a' to cancel."
+
+#: Seconds :meth:`PowerService.close` waits for an action that is ``executing`` (it is never
+#: cancelled): the command time-out plus a margin.
+EXECUTE_WAIT = COMMAND_TIMEOUT + 5.0
 
 _FAILED_MESSAGE: dict[OsAction, str] = {
     "shutdown": "Reframe could not shut down the computer.",
@@ -433,6 +443,7 @@ class _Countdown:
     deadline: datetime
     last: PowerCountdownEvent | None = None
     task: asyncio.Task[None] | None = None
+    """The countdown (cancelled by ``cancel`` and ``close``)."""
     over: bool = field(default=False)
     """Cancelled, or ``executing`` was published."""
 
@@ -440,8 +451,12 @@ class _Countdown:
 class PowerService:
     """The when-done power actions with their countdown (``power.countdown`` events).
 
+    Once ``executing`` is published the action runs to its end: nothing cancels it, and
+    :attr:`pending` stays that ``executing`` event until the executor returns.
+
     Call it from the thread of its event loop. ``sleep`` (keyword-only, for tests) is the
-    one-second wait between ticks; ``now`` gives the wall clock of ``deadline``.
+    one-second wait between ticks; ``now`` gives the wall clock of ``deadline``;
+    ``execute_wait`` bounds how long :meth:`close` waits for an executing action.
     """
 
     def __init__(
@@ -452,6 +467,7 @@ class PowerService:
         countdown: float = COUNTDOWN_SECONDS,
         sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
         now: Callable[[], datetime] = _utcnow,
+        execute_wait: float = EXECUTE_WAIT,
     ) -> None:
         if not math.isfinite(countdown) or countdown < 0:
             raise ValueError(f"countdown must be a finite number >= 0, not {countdown!r}")
@@ -460,8 +476,12 @@ class PowerService:
         self._countdown = countdown
         self._sleep = sleep
         self._now = now
+        self._execute_wait = execute_wait
         self._current: _Countdown | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        """Countdown tasks (never one that runs an action)."""
+        self._actions: dict[asyncio.Task[None], _Countdown] = {}
+        """Actions that run through the executor (``executing``), in start order."""
         self._closed = False
 
     @property
@@ -482,7 +502,9 @@ class PowerService:
         """Start the countdown for ``action`` and return its id at once. Events
         (:class:`~reframe.models.PowerCountdownEvent`): ``started``, a ``tick`` every second,
         then ``cancelled`` or ``executing``; ``shutdown`` and ``sleep`` then run through the
-        executor (a failure is an ``app.warning``). A running countdown is cancelled first.
+        executor (a failure is an ``app.warning``). A running countdown is cancelled first;
+        an action that is already executing is not touched (it runs to its end) and the new
+        countdown starts beside it (decision 0036, follow-up).
 
         Needs a running event loop (``RuntimeError`` otherwise: a programming error). After
         :meth:`close` nothing starts: the id gets one ``cancelled`` event.
@@ -535,20 +557,42 @@ class PowerService:
 
     @property
     def pending(self) -> PowerCountdownEvent | None:
-        """The last event of the running countdown, ``None`` when none runs."""
+        """The last event of the running countdown; else the ``executing`` event of an
+        action that the executor still runs (the latest one); ``None`` when neither runs.
+        ``pending.phase == "executing"``: the action is running and can no longer be
+        cancelled."""
         countdown = self._current
-        return countdown.last if countdown is not None else None
+        if countdown is not None:
+            return countdown.last
+        for task, executing in reversed(self._actions.items()):
+            if not task.done():
+                return executing.last
+        return None
 
     async def close(self) -> None:
-        """Cancel a running countdown (its action never runs) and stop an action that is
-        being started. Safe to call more than once."""
+        """Cancel a running countdown (its action never runs). An action that is already
+        executing is never cancelled: ``close`` waits for it, at most ``execute_wait``
+        seconds (then it logs and returns; the action goes on). Safe to call more than
+        once."""
         self._closed = True
         self.cancel()
-        tasks = list(self._tasks)
-        for task in tasks:
+        countdowns = list(self._tasks)
+        for task in countdowns:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if countdowns:
+            await asyncio.gather(*countdowns, return_exceptions=True)
+        actions = [task for task in self._actions if not task.done()]
+        if not actions:
+            return
+        log.info("power: waiting for %d running action(s) before closing", len(actions))
+        # asyncio.wait never cancels what it waits for, also when close() is cancelled.
+        _, running = await asyncio.wait(actions, timeout=self._execute_wait)
+        if running:
+            log.warning(
+                "power: %d action(s) still running after %g s; not cancelled",
+                len(running),
+                self._execute_wait,
+            )
 
     # ------------------------------------------------------------------ internals
 
@@ -585,11 +629,24 @@ class PowerService:
             return
         self._current = None
         countdown.over = True
-        self._publish(countdown, "executing", 0)
         action = countdown.action
         if action == "quit":
+            self._publish(countdown, "executing", 0)
             log.info("power action quit: the UI layer quits (countdown %s)", countdown.id)
             return
+        # The action runs in its own task, which close() never cancels; registered in the
+        # same step as `executing`, so `pending` never shows a gap.
+        task = asyncio.get_running_loop().create_task(
+            self._execute(countdown, action), name=f"reframe-power-action-{countdown.id}"
+        )
+        self._actions[task] = countdown
+        task.add_done_callback(self._action_done)
+        self._publish(countdown, "executing", 0)
+
+    def _action_done(self, task: asyncio.Task[None]) -> None:
+        self._actions.pop(task, None)
+
+    async def _execute(self, countdown: _Countdown, action: OsAction) -> None:
         log.info("power action %s: running (countdown %s)", action, countdown.id)
         try:
             detail = await self.executor.execute(action)
