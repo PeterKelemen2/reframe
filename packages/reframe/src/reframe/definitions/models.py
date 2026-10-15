@@ -42,6 +42,7 @@ __all__ = [
     "BITRATE_PLACEHOLDER",
     "FILTER_IDS",
     "FILTER_STAGES",
+    "OPTION_CATEGORIES",
     "TRACK_FLAGS",
     "AudioBitrateDef",
     "AudioCodec",
@@ -104,6 +105,18 @@ _ALL_PLATFORMS: list[OperatingSystem] = ["linux", "windows"]
 BitDepth = Literal["8", "10"]
 """Bit depth as a TOML key (``VideoSettings.bit_depth`` as a string)."""
 OptionType = Literal["int", "float", "bool", "enum", "string"]
+OPTION_CATEGORIES: tuple[str, ...] = (
+    "Basic",
+    "Rate control",
+    "Frame types / GOP",
+    "Motion / analysis",
+    "Psycho-visual",
+    "Loop filters",
+    "HDR / colour",
+    "Performance",
+)
+"""The categories of the advanced panel (03 §Advanced encoder options), in panel order.
+``Custom parameters`` is the free-form field (``VideoSettings.custom_params``), not an option."""
 SpeedCost = Literal["low", "medium", "high"]
 TrackFlag = Literal[
     "default", "forced", "commentary", "hearing_impaired", "visual_impaired", "original"
@@ -282,8 +295,9 @@ class EncoderOption(ReframeModel):
     """The key in ``VideoSettings.advanced`` (``bframes``)."""
     label: str
     category: str
-    """``Rate control``, ``Frame types / GOP``, ``Motion / analysis``, ``Psycho-visual``,
-    ``Loop filters``, ``HDR / colour``, ``Performance``."""
+    """One of :data:`OPTION_CATEGORIES` (``Rate control``, ``Frame types / GOP``, ``Motion /
+    analysis``, ``Psycho-visual``, ``Loop filters``, ``HDR / colour``, ``Performance``, or
+    ``Basic`` for a tier); the linter checks it."""
     type: OptionType
     min: float | None = None
     max: float | None = None
@@ -462,7 +476,7 @@ class VideoEncoderDef(ReframeModel):
     extra_args: list[str] = Field(default_factory=list)
     """Always written after the codec (``-row-mt 1`` for VP9)."""
     options: list[EncoderOption] = Field(default_factory=list)
-    """Advanced options (05 §C-6). M2 has the basic set; M9 completes it."""
+    """Advanced options (05 §C-6): the complete sets of 03 §Advanced (M9)."""
 
     def option(self, key: str) -> EncoderOption | None:
         return next((o for o in self.options if o.key == key), None)

@@ -1,0 +1,226 @@
+# VP9 (libvpx-vp9) advanced options (C-6, M9).
+#
+# Private options from `ffmpeg -h encoder=libvpx-vp9` (FFmpeg n9.0.2 and n8.1.3, libvpx in
+# both builds); generic ones (`-g`, `-keyint_min`, `-qmin`, `-qmax`, `-threads`) are FFmpeg codec
+# options. libvpx writes no settings into the stream, so each value is checked by an encode:
+# a value outside libvpx's range fails ("Failed to initialize encoder: Invalid parameter",
+# exit 234) or is refused with a message ("Failed to set VP8E_SET_ARNR_STRENGTH codec
+# control: Invalid parameter", "arnr_strength out of range [..6]"); testdata/README.md
+# "Advanced encoder options (C-6, complete option sets)". The libvpx defaults are not printed,
+# so most defaults are "encoder decides".
+
+[[set.vp9]]
+key = "g"
+label = "Keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 1
+max = 1000
+step = 1
+unit = "frames"
+help = "Maximum distance between keyframes (seek points). 240 is about 10 s at 24 fps; not set, libvpx places keyframes far apart."
+mapping = { kind = "ffmpeg_arg", arg = "-g" }
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "keyint_min"
+label = "Minimum keyframe interval"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 1000
+step = 1
+unit = "frames"
+help = "Minimum distance between keyframes."
+mapping = { kind = "ffmpeg_arg", arg = "-keyint_min" }
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "lag-in-frames"
+label = "Look-ahead"
+category = "Frame types / GOP"
+type = "int"
+# libvpx: 26 fails ("Failed to initialize encoder: Invalid parameter").
+min = 0
+max = 25
+step = 1
+unit = "frames"
+help = "Frames analysed ahead for alternate reference frames (0–25). More is better quality; 0 turns alternate references off."
+mapping = { kind = "private_opt", name = "lag-in-frames" }
+default = { kind = "encoder", note = "the libvpx default (25)" }
+
+[[set.vp9]]
+key = "auto-alt-ref"
+label = "Alternate reference frames"
+category = "Frame types / GOP"
+type = "int"
+# FFmpeg refuses 7 ("Error setting option auto-alt-ref to value 7").
+min = 0
+max = 6
+step = 1
+help = "Invisible alternate reference frames: 0 off, 1 on, 2–6 several layers. A big quality gain; needs look-ahead."
+mapping = { kind = "private_opt", name = "auto-alt-ref" }
+default = { kind = "encoder", note = "on (the libvpx default)" }
+
+[[set.vp9]]
+key = "arnr-maxframes"
+label = "Alt-ref noise reduction frames"
+category = "Psycho-visual"
+type = "int"
+# libvpx: 16 → "arnr_max_frames out of range [0..15]".
+min = 0
+max = 15
+step = 1
+help = "Frames used to filter the alternate reference frames (0–15). More smooths noise and grain in the references."
+mapping = { kind = "private_opt", name = "arnr-maxframes" }
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "arnr-strength"
+label = "Alt-ref noise reduction strength"
+category = "Psycho-visual"
+type = "int"
+# libvpx: 7 → "arnr_strength out of range [..6]".
+min = 0
+max = 6
+step = 1
+help = "Strength of the alternate reference filtering (0–6). Lower keeps grain; higher gives smaller files of noisy sources."
+mapping = { kind = "private_opt", name = "arnr-strength" }
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "aq-mode"
+label = "Adaptive quantisation"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "variance", label = "Variance" },
+    { value = "complexity", label = "Complexity" },
+    { value = "cyclic", label = "Cyclic refresh", help = "For real-time encoding." },
+]
+help = "Moves bits between blocks inside a frame."
+mapping = { kind = "private_opt", name = "aq-mode" }
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "sharpness"
+label = "Sharpness"
+category = "Loop filters"
+type = "int"
+# FFmpeg refuses 8 ("Error setting option sharpness to value 8").
+min = 0
+max = 7
+step = 1
+help = "Lowers the loop filter for a sharper picture (0–7) at a lower PSNR."
+mapping = { kind = "private_opt", name = "sharpness" }
+default = { kind = "fixed", value = 0 }
+
+[[set.vp9]]
+key = "qmin"
+label = "Minimum quantiser"
+category = "Rate control"
+type = "int"
+min = 0
+max = 63
+step = 1
+# libvpx: the CQ value must lie between qmin and qmax ("CQ level 30 must be between minimum
+# and maximum quantizer value (0-29)"); validation (C-8) reports it.
+help = "The lowest quantiser libvpx may use (0–63). The constant-quality value must not be below it."
+mapping = { kind = "ffmpeg_arg", arg = "-qmin" }
+default = { kind = "fixed", value = 0 }
+
+[[set.vp9]]
+key = "qmax"
+label = "Maximum quantiser"
+category = "Rate control"
+type = "int"
+min = 0
+max = 63
+step = 1
+help = "The highest quantiser libvpx may use (0–63): avoids very blocky frames. The constant-quality value must not be above it."
+mapping = { kind = "ffmpeg_arg", arg = "-qmax" }
+default = { kind = "fixed", value = 63 }
+
+[[set.vp9]]
+key = "undershoot-pct"
+label = "Undershoot"
+category = "Rate control"
+type = "int"
+min = 0
+max = 100
+step = 1
+unit = "%"
+help = "How far below the target bitrate a section may go (average bitrate only)."
+mapping = { kind = "private_opt", name = "undershoot-pct" }
+requires = [{ field = "rate_control", value = "bitrate" }]
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "overshoot-pct"
+label = "Overshoot"
+category = "Rate control"
+type = "int"
+# libvpx: 101 fails ("Failed to initialize encoder: Invalid parameter").
+min = 0
+max = 100
+step = 1
+unit = "%"
+help = "How far above the target bitrate a section may go (average bitrate only)."
+mapping = { kind = "private_opt", name = "overshoot-pct" }
+requires = [{ field = "rate_control", value = "bitrate" }]
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "enable-tpl"
+label = "Temporal dependency model"
+category = "Rate control"
+type = "bool"
+help = "Gives more bits to blocks that later frames reference (like x264's macroblock tree). Better quality; off is a little faster."
+mapping = { kind = "private_opt", name = "enable-tpl" }
+default = { kind = "encoder", note = "on (the libvpx default)" }
+
+[[set.vp9]]
+key = "tile-columns"
+label = "Tile columns"
+category = "Performance"
+type = "int"
+min = 0
+max = 6
+step = 1
+help = "Tile columns as a power of two (0–6; libvpx uses at most what the width allows). More tiles encode and decode faster with several threads."
+mapping = { kind = "private_opt", name = "tile-columns" }
+default = { kind = "encoder", note = "as many as the width allows" }
+
+[[set.vp9]]
+key = "tile-rows"
+label = "Tile rows"
+category = "Performance"
+type = "int"
+min = 0
+max = 2
+step = 1
+help = "Tile rows as a power of two (0–2)."
+mapping = { kind = "private_opt", name = "tile-rows" }
+default = { kind = "fixed", value = 0 }
+
+[[set.vp9]]
+key = "frame-parallel"
+label = "Frame parallel decoding"
+category = "Performance"
+type = "bool"
+help = "Makes frames decodable in parallel (no backward adaptation of probabilities). Faster decoding, slightly larger files."
+mapping = { kind = "private_opt", name = "frame-parallel" }
+default = { kind = "encoder", note = "the libvpx default" }
+
+[[set.vp9]]
+key = "threads"
+label = "Threads"
+category = "Performance"
+type = "int"
+min = 0
+max = 64
+step = 1
+help = "Encoding threads; 0 = automatic. Row multi-threading is always on."
+mapping = { kind = "ffmpeg_arg", arg = "-threads" }
+default = { kind = "encoder", note = "automatic" }

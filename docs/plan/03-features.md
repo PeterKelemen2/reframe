@@ -265,18 +265,27 @@ Modelled on StaxRip: every parameter that matters is a typed, documented control
 - **ⓘ** opens help: what the option does, its typical range, and the quality/speed effect.
 - **Search** covers labels, CLI names and help text across all categories.
 - **Custom parameters**: a free-form `key=value:…` field, appended last and validated by a
-  dry run (`-frames:v 1 -f null`).
-- **Copy HDR metadata from source** fills master-display and MaxCLL/MaxFALL from the probe.
+  dry run (`-frames:v 1 -f null`). Encoders without a params argument (NVENC, QSV, AMF, VAAPI,
+  VP9) get each entry as their own option (`rc-lookahead=20` → `-rc-lookahead 20`). A
+  parameter the encoder refuses, or only logs and skips (x264, x265 and SVT-AV1 do that), is a
+  validation error from the dry run ([0035](../decisions/0035-advanced-option-sets-and-dry-run.md)).
+- **Copy HDR metadata from source** fills master-display and MaxCLL/MaxFALL from the probe
+  (x265 `master-display` / `max-cll`, SVT-AV1 `mastering-display` / `content-light`; the
+  hardware encoders take it from the frames).
+- An option whose condition does not hold (x265 `amp` without `rect`) is not written and shows a
+  warning; a combination the encoder silently changes is a warning, one it refuses an error
+  ([0035](../decisions/0035-advanced-option-sets-and-dry-run.md)).
 
 Option coverage for v1:
 
 | Encoder | Categories and examples |
 |---------|------------------------|
-| x264 | rate control (crf, vbv-maxrate/bufsize, qcomp, aq-mode/strength, mbtree), frames (bframes, b-adapt, b-pyramid, ref, keyint, min-keyint, scenecut, rc-lookahead, weightp), analysis (me, subme, merange, trellis, partitions, direct), psy (psy-rd, psy-trellis), deblock, colour (colorprim, transfer, colormatrix, range), threads |
+| x264 | rate control (crf, vbv-maxrate/bufsize, qcomp, aq-mode/strength, mbtree), frames (bframes, b-adapt, b-pyramid, ref, keyint, min-keyint, scenecut, rc-lookahead, weightp), analysis (me, subme, merange, trellis, partitions, direct), psy (psy-rd, psy-trellis), deblock, colour (colorprim, transfer, colormatrix; not range: FFmpeg's libx264 wrapper overrides it with the input's range), threads |
 | x265 | all x264 equivalents, plus ctu, rd, rdoq-level, psy-rdoq, limit-refs, limit-modes, rect, amp, tu-intra/inter-depth, sao / limit-sao / selective-sao, strong-intra-smoothing, hdr10, hdr10-opt, master-display, max-cll, repeat-headers, pools, frame-threads, wpp |
 | SVT-AV1 | preset, crf, tune, film-grain, film-grain-denoise, keyint, scd, lookahead, enable-overlays, enable-qm, qm-min/max, variance-boost, sharpness, enable-tf |
 | NVENC | preset p1–p7, tune (hq/uhq/ll), rc (vbr/constqp), cq, multipass, bf, b_ref_mode, refs, spatial/temporal AQ, aq-strength, rc-lookahead |
-| QSV / AMF / VAAPI | preset/quality, rc mode, bf, refs, lookahead (when supported), profile/level |
+| QSV / AMF / VAAPI | preset/quality, rc mode, bf, refs, lookahead (when supported), profile/level (QSV: no levels, not verifiable without Intel hardware) |
+| VP9 (libvpx) | keyframes (g, keyint_min), lag-in-frames, auto-alt-ref, alt-ref noise reduction, aq-mode, sharpness, qmin/qmax, under/overshoot, enable-tpl, tiles, frame-parallel, threads |
 
 ---
 

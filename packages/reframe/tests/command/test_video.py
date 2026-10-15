@@ -16,6 +16,7 @@ from reframe.command.video import (
     pass_log_files,
     source_rate,
     spec,
+    split_params,
     video_encoder_args,
 )
 from reframe.definitions import (
@@ -196,7 +197,24 @@ def test_a_composite_part_without_a_default() -> None:
 def test_custom_params_go_last_raw() -> None:
     assert args("libx264", custom_params="nr=100:ref=4")[-1] == "nr=100:ref=4"
     assert "-x264-params:v:0" not in args("libx264", custom_params="  ")
-    assert "nr=1" not in " ".join(args("h264_amf", custom_params="nr=1"))
+
+
+def test_custom_params_of_an_encoder_without_a_params_argument() -> None:
+    """NVENC, QSV, AMF, VAAPI and VP9 have no params argument: each ``key=value`` becomes the
+    encoder's own option, last (decision 0035); ``\\:`` keeps a colon, a bare key is a switch."""
+    out = args("hevc_nvenc", custom_params="rc-lookahead=20:spatial-aq", advanced={"bf": 2})
+    assert out[-6:] == ["-bf:v:0", "2", "-rc-lookahead:v:0", "20", "-spatial-aq:v:0", "1"]
+    vp9 = args("libvpx-vp9", custom_params=" lag-in-frames=16 : :-arnr-strength=3 ")
+    assert vp9[-4:] == ["-lag-in-frames:v:0", "16", "-arnr-strength:v:0", "3"]
+    assert args("h264_vaapi", custom_params="x=a\\:b")[-2:] == ["-x:v:0", "a:b"]
+    assert args("h264_amf", custom_params="") == args("h264_amf")
+
+
+def test_split_params() -> None:
+    assert split_params("a=1:b=2") == [("a", "1"), ("b", "2")]
+    assert split_params("  a = 1 :: -b ") == [("a", "1"), ("b", "1")]
+    assert split_params("path=C\\:/x:y=2") == [("path", "C:/x"), ("y", "2")]
+    assert split_params("") == []
 
 
 HDR_STREAM = video_stream(

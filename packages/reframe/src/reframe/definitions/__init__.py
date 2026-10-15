@@ -34,12 +34,17 @@ How the other steps use it:
 - **Audio fallback (C-4)**: ``AudioEncoderDef.fallback`` (``libfdk_aac → aac``).
 - :func:`convert_quality`, :func:`supported_options`, :func:`lint_definitions`;
   :func:`search_options` (the option search) and :func:`hdr_options` (**Copy HDR metadata**).
+- **Option resolution (C-7 / C-8)**: :func:`option_context` (the values ``requires``
+  conditions read: the job's options, else their defaults), :func:`option_default`,
+  :func:`effective_option`, :func:`unmet_conditions` (an option the builder leaves out) and
+  :func:`describe_condition`; the categories of the panel are :data:`OPTION_CATEGORIES`.
 """
 
 from reframe.definitions.hdr import hdr_options
 from reframe.definitions.lint import lint_definitions
 from reframe.definitions.loader import load_definitions
 from reframe.definitions.models import (
+    OPTION_CATEGORIES,
     AudioBitrateDef,
     AudioCodec,
     AudioEncoderDef,
@@ -85,11 +90,19 @@ from reframe.definitions.models import (
     X26xParam,
     channels_mixdown,
 )
+from reframe.definitions.options import (
+    describe_condition,
+    effective_option,
+    option_context,
+    option_default,
+    unmet_conditions,
+)
 from reframe.definitions.quality import convert_quality
 from reframe.definitions.search import search_options
 from reframe.definitions.support import mapping_supported, supported_options, supported_presets
 
 __all__ = [
+    "OPTION_CATEGORIES",
     "AudioBitrateDef",
     "AudioCodec",
     "AudioEncoderDef",
@@ -135,11 +148,16 @@ __all__ = [
     "X26xParam",
     "channels_mixdown",
     "convert_quality",
+    "describe_condition",
+    "effective_option",
     "hdr_options",
     "lint_definitions",
     "load_definitions",
     "mapping_supported",
+    "option_context",
+    "option_default",
     "search_options",
     "supported_options",
     "supported_presets",
+    "unmet_conditions",
 ]

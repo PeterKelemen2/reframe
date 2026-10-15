@@ -8,7 +8,8 @@ Everything comes from the encoder's definition (C-6): rate control (``{value}``,
 ``x26x_param`` values go into the one params argument (``-x265-params a=1:b=2``), joined with
 ``:`` in this order: rate control, 2-pass, choices, fast decode, colour and HDR metadata,
 advanced options, then the job's custom parameters as typed. Values are escaped for FFmpeg's
-dictionary parser (a path with ``:`` in ``stats=``).
+dictionary parser (a path with ``:`` in ``stats=``). An encoder without a params argument gets
+the custom parameters as its own options, last (:func:`split_params`).
 
 When the output stays HDR (an HDR source, no tone mapping or colour conversion, 10-bit),
 the colour and the HDR10 metadata of the probe are written into the params of x265
@@ -33,12 +34,13 @@ from reframe.definitions import (
     OptionMapping,
     VideoEncoderDef,
     mapping_supported,
+    option_context,
+    option_default,
 )
+from reframe.definitions.hdr import content_light_text, svt_mastering_display, x265_master_display
 from reframe.models import (
-    AverageBitrate,
     ConstantQuality,
     EncoderStatus,
-    MasteringDisplay,
     OptionValue,
     Rational,
     VideoSettings,
@@ -53,6 +55,7 @@ __all__ = [
     "hdr_params",
     "pass_log_files",
     "spec",
+    "split_params",
     "video_encoder_args",
 ]
 
@@ -81,6 +84,35 @@ def _option_text(value: OptionValue) -> str:
     if isinstance(value, int | float):
         return format_number(value)
     return value
+
+
+def split_params(text: str) -> list[tuple[str, str]]:
+    """The ``key=value`` entries of a custom parameter string, split at ``:`` (a ``\\:``
+    stays in the value, unescaped); an entry without ``=`` is ``key=1`` (a switch). Empty
+    entries are dropped."""
+    entries: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in text.strip():
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            entries.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    entries.append("".join(current))
+    result: list[tuple[str, str]] = []
+    for raw in entries:
+        entry = raw.strip()
+        if not entry:
+            continue
+        name, sep, value = entry.partition("=")
+        result.append((name.strip().lstrip("-"), value.strip() if sep else "1"))
+    return result
 
 
 def _fill(template: str, values: Mapping[str, str]) -> str:
@@ -117,9 +149,16 @@ class VideoArgs:
             self.args += [spec(mapping.arg, V0), value]
 
     def render(self, encoder: VideoEncoderDef) -> list[str]:
-        """The arguments with the params argument at the end."""
+        """The arguments with the params argument at the end. An encoder without a params
+        argument (NVENC, QSV, AMF, VAAPI, VP9) gets the custom parameters as its own options
+        (``rc-lookahead=20:spatial-aq=1`` → ``-rc-lookahead:v:0 20 -spatial-aq:v:0 1``)."""
         if encoder.params_arg is None:
-            return list(self.args)
+            custom = [
+                arg
+                for name, value in split_params(self.params_raw)
+                for arg in (spec(f"-{name}", V0), value)
+            ]
+            return [*self.args, *custom]
         items = [f"{k}={escape_value(v)}" for k, v in self.params.items()]
         if self.params_raw.strip():
             items.append(self.params_raw.strip().strip(":"))
@@ -165,32 +204,19 @@ def _tune(encoder: VideoEncoderDef, video: VideoSettings, out: VideoArgs) -> Non
 # --------------------------------------------------------------------------- options
 
 
-def _default(option: EncoderOption, preset: str | None) -> OptionValue | None:
-    default = option.default
-    if default.kind == "fixed":
-        return default.value
-    if default.kind == "preset":
-        return default.values.get(preset) if preset is not None else None
-    return None
-
-
 def _options(
     encoder: VideoEncoderDef,
     video: VideoSettings,
     status: EncoderStatus | None,
-    context: dict[str, OptionValue | None],
     out: VideoArgs,
 ) -> None:
     """The advanced options of the job. Options of another encoder or that this build does not
     support are skipped (validation reports them); so are options whose ``requires`` does not
-    hold. Parts of a composite value (``deblock=-1,-1``) are filled with their defaults."""
+    hold (C-6 :func:`~reframe.definitions.option_context`, which validation uses too).
+    Parts of a composite value (``deblock=-1,-1``) are filled with their defaults."""
+    context = option_context(encoder, video)
     preset = context.get("preset")
     preset_name = preset if isinstance(preset, str) else None
-    for key in encoder_option_keys(encoder):
-        option = encoder.option(key)
-        assert option is not None
-        value = video.advanced.get(key)
-        context[f"option:{key}"] = value if value is not None else _default(option, preset_name)
     composite: dict[str, dict[int, str]] = {}
     for key, value in video.advanced.items():
         option = encoder.option(key)
@@ -216,7 +242,7 @@ def _options(
             if part in parts:
                 values.append(parts[part])
                 continue
-            default = _default(sibling, preset_name)
+            default = option_default(sibling, preset_name)
             if default is None:
                 raise PlanError(
                     f"option {sibling.key!r} has no default to complete {name}= (set it as well)"
@@ -238,31 +264,6 @@ def _choice_value(option: EncoderOption, value: OptionValue) -> str:
 
 
 # --------------------------------------------------------------------------- HDR
-
-
-def _x265_display(md: MasteringDisplay) -> str:
-    def c(v: float) -> int:
-        return round(v * 50000)
-
-    def lum(v: float) -> int:
-        return round(v * 10000)
-
-    return (
-        f"G({c(md.green_x)},{c(md.green_y)})B({c(md.blue_x)},{c(md.blue_y)})"
-        f"R({c(md.red_x)},{c(md.red_y)})WP({c(md.white_x)},{c(md.white_y)})"
-        f"L({lum(md.max_luminance)},{lum(md.min_luminance)})"
-    )
-
-
-def _svt_display(md: MasteringDisplay) -> str:
-    def f(v: float) -> str:
-        return format_number(round(v, 6))
-
-    return (
-        f"G({f(md.green_x)},{f(md.green_y)})B({f(md.blue_x)},{f(md.blue_y)})"
-        f"R({f(md.red_x)},{f(md.red_y)})WP({f(md.white_x)},{f(md.white_y)})"
-        f"L({f(md.max_luminance)},{f(md.min_luminance)})"
-    )
 
 
 #: SVT-AV1 colour names that differ from FFmpeg's (``svt-av1/Docs/Parameters.md``).
@@ -289,9 +290,9 @@ def hdr_params(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, str]:
                 params[name] = value
         if encoder.params_arg == "-x265-params":
             if md is not None:
-                params["master-display"] = _x265_display(md)
+                params["master-display"] = x265_master_display(md)
             if cll is not None:
-                params["max-cll"] = f"{cll.max_cll},{cll.max_fall}"
+                params["max-cll"] = content_light_text(cll)
     elif encoder.params_arg == "-svtav1-params":
         names = ("color-primaries", "transfer-characteristics", "matrix-coefficients")
         tables = (_SVT_PRIMARIES, _SVT_TRANSFER, _SVT_MATRIX)
@@ -299,9 +300,9 @@ def hdr_params(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, str]:
             if value is not None:
                 params[name] = table.get(value, value)
         if md is not None:
-            params["mastering-display"] = _svt_display(md)
+            params["mastering-display"] = svt_mastering_display(md)
         if cll is not None:
-            params["content-light"] = f"{cll.max_cll},{cll.max_fall}"
+            params["content-light"] = content_light_text(cll)
     return params
 
 
@@ -409,14 +410,6 @@ def video_encoder_args(
     encode, ``None`` otherwise)."""
     out = VideoArgs(args=[spec("-c:v", V0), encoder.id])
     rc = video.rate_control
-    preset = video.preset or (encoder.presets.default if encoder.presets else None)
-    context: dict[str, OptionValue | None] = {
-        "rate_control": rc.mode,
-        "two_pass": isinstance(rc, AverageBitrate) and rc.two_pass,
-        "bit_depth": video.bit_depth,
-        "preset": preset,
-        "tune": video.tune,
-    }
     if isinstance(rc, ConstantQuality):
         mode = encoder.rate_control.quality
         if mode is None:
@@ -458,7 +451,7 @@ def video_encoder_args(
     if hdr:
         for name, value in hdr_params(encoder, stream).items():
             out.params.setdefault(name, value)
-    _options(encoder, video, status, context, out)
+    _options(encoder, video, status, out)
     out.add(encoder.extra_args, {})
     out.params_raw = video.custom_params
     return out.render(encoder)

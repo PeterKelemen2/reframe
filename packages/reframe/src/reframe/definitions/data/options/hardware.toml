@@ -1,4 +1,4 @@
-# Hardware encoder advanced options (C-6, M2 basic set): NVENC, QSV, AMF, VAAPI.
+# Hardware encoder advanced options (C-6: the M2 set, completed in M9): NVENC, QSV, AMF, VAAPI.
 #
 # `ffmpeg_arg` options are generic FFmpeg codec options (`-bf`, `-refs`, `-g`) that every
 # encoder accepts; `private_opt` options come from `ffmpeg -h encoder=<id>` (FFmpeg n9.0.2,
@@ -377,3 +377,738 @@ choices = [
 help = "H.264 entropy coding."
 mapping = { kind = "private_opt", name = "coder" }
 default = { kind = "fixed", value = "cabac" }
+
+# =========================================================================== M9 additions
+#
+# Every private option and named constant below is in `ffmpeg -h encoder=<id>` of FFmpeg
+# n9.0.2 and n8.1.3 (tests/definitions/test_tools.py). AMF and VAAPI options were encoded on
+# the RX 7600 (Mesa radeonsi, AMF); options the driver refuses there are not offered:
+# h264_amf `bf_delta_qp` / `bf_ref_delta_qp` ("AMF_INVALID_ARG: SetPropertyInternal() -
+# BPicturesDeltaQP failed"), hevc_amf `me_half_pel=0` ("Invalid settings:
+# motionEstimationHalfPixel=0 and motionEstimationQuarterPixel=0", encoder not opened), av1_amf
+# `align` (64x16 fails for 640x360, no mode avoids the padding), VAAPI `low_power` ("Function not
+# implemented"), `b_depth` above 1 (h264: "B-frame as L1 reference not supported") and `blbrc`
+# ("Driver does not support BLBRC"). NVENC and QSV options come from the help only (no
+# hardware here): NOT verified on a GPU.
+
+# --------------------------------------------------------------------------- NVENC
+
+[[set.nvenc]]
+key = "no-scenecut"
+label = "No scene-cut keyframes"
+category = "Frame types / GOP"
+type = "bool"
+help = "Turns off the keyframes the look-ahead places at scene cuts (for a fixed GOP). Only with look-ahead."
+mapping = { kind = "private_opt", name = "no-scenecut" }
+requires = [{ field = "option:rc-lookahead", op = "ne", value = 0 }]
+default = { kind = "fixed", value = false }
+
+[[set.nvenc]]
+key = "b_adapt"
+label = "Adaptive B-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets the look-ahead choose where B-frames go. Only with look-ahead."
+mapping = { kind = "private_opt", name = "b_adapt" }
+requires = [{ field = "option:rc-lookahead", op = "ne", value = 0 }]
+default = { kind = "fixed", value = true }
+
+[[set.nvenc]]
+key = "weighted_pred"
+label = "Weighted prediction"
+category = "Frame types / GOP"
+type = "bool"
+help = "Weighted prediction: better fades. Some GPUs and drivers do not allow it together with B-frames."
+mapping = { kind = "private_opt", name = "weighted_pred" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc]]
+key = "nonref_p"
+label = "Non-reference P-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets the encoder insert P-frames that nothing references. Saves bits on static content."
+mapping = { kind = "private_opt", name = "nonref_p" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc]]
+key = "strict_gop"
+label = "Strict GOP"
+category = "Rate control"
+type = "bool"
+help = "Keeps the bitrate within each GOP close to the target (less fluctuation, lower quality in hard scenes)."
+mapping = { kind = "private_opt", name = "strict_gop" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc]]
+key = "lookahead_level"
+label = "Look-ahead level"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "auto", label = "Automatic" },
+    { value = "0", label = "0" },
+    { value = "1", label = "1" },
+    { value = "2", label = "2" },
+    { value = "3", label = "3", help = "Best, slowest." },
+]
+help = "How much analysis the look-ahead does (needs a recent GPU and driver). Only with look-ahead."
+mapping = { kind = "private_opt", name = "lookahead_level" }
+requires = [{ field = "option:rc-lookahead", op = "ne", value = 0 }]
+default = { kind = "encoder", note = "automatic" }
+
+[[set.nvenc]]
+key = "tf_level"
+label = "Temporal filter"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "4", label = "On (level 4)" },
+]
+help = "Temporal noise filtering of the source before encoding (needs a recent GPU and driver, and B-frames)."
+mapping = { kind = "private_opt", name = "tf_level" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.nvenc]]
+key = "qp_cb_offset"
+label = "Cb QP offset"
+category = "Rate control"
+type = "int"
+min = -12
+max = 12
+step = 1
+help = "Quantiser offset of the blue-difference plane. Negative values spend more bits on colour."
+mapping = { kind = "private_opt", name = "qp_cb_offset" }
+default = { kind = "fixed", value = 0 }
+
+[[set.nvenc]]
+key = "qp_cr_offset"
+label = "Cr QP offset"
+category = "Rate control"
+type = "int"
+min = -12
+max = 12
+step = 1
+help = "Quantiser offset of the red-difference plane."
+mapping = { kind = "private_opt", name = "qp_cr_offset" }
+default = { kind = "fixed", value = 0 }
+
+[[set.nvenc]]
+key = "gpu"
+label = "GPU"
+category = "Performance"
+type = "int"
+min = 0
+max = 15
+step = 1
+help = "Which NVIDIA GPU encodes (0 = the first). Not set, the driver picks any free GPU."
+mapping = { kind = "private_opt", name = "gpu" }
+default = { kind = "encoder", note = "any GPU" }
+
+[[set.nvenc_qp51]]
+key = "qmin"
+label = "Minimum QP"
+category = "Rate control"
+type = "int"
+min = 0
+max = 51
+step = 1
+help = "The lowest QP the rate control may use."
+mapping = { kind = "private_opt", name = "qmin" }
+default = { kind = "encoder", note = "no limit" }
+
+[[set.nvenc_qp51]]
+key = "qmax"
+label = "Maximum QP"
+category = "Rate control"
+type = "int"
+min = 0
+max = 51
+step = 1
+help = "The highest QP the rate control may use: avoids very blocky frames at low bitrates."
+mapping = { kind = "private_opt", name = "qmax" }
+default = { kind = "encoder", note = "no limit" }
+
+[[set.nvenc_av1]]
+key = "qmin"
+label = "Minimum QP"
+category = "Rate control"
+type = "int"
+min = 0
+max = 255
+step = 1
+help = "The lowest quantiser index (0–255) the rate control may use."
+mapping = { kind = "private_opt", name = "qmin" }
+default = { kind = "encoder", note = "no limit" }
+
+[[set.nvenc_av1]]
+key = "qmax"
+label = "Maximum QP"
+category = "Rate control"
+type = "int"
+min = 0
+max = 255
+step = 1
+help = "The highest quantiser index (0–255) the rate control may use."
+mapping = { kind = "private_opt", name = "qmax" }
+default = { kind = "encoder", note = "no limit" }
+
+[[set.nvenc_av1]]
+key = "tile-rows"
+label = "Tile rows"
+category = "Performance"
+type = "int"
+min = 1
+max = 64
+step = 1
+help = "Number of tile rows. Not set, the driver picks it from the resolution."
+mapping = { kind = "private_opt", name = "tile-rows" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.nvenc_av1]]
+key = "tile-columns"
+label = "Tile columns"
+category = "Performance"
+type = "int"
+min = 1
+max = 64
+step = 1
+help = "Number of tile columns. Not set, the driver picks it from the resolution."
+mapping = { kind = "private_opt", name = "tile-columns" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.nvenc_h264]]
+key = "coder"
+label = "Entropy coder"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "cabac", label = "CABAC", help = "Smaller files." },
+    { value = "cavlc", label = "CAVLC", help = "Easier to decode." },
+]
+help = "H.264 entropy coding."
+mapping = { kind = "private_opt", name = "coder" }
+default = { kind = "encoder", note = "CABAC except for Baseline" }
+
+[[set.nvenc_bluray]]
+key = "bluray-compat"
+label = "Blu-ray compatibility"
+category = "Frame types / GOP"
+type = "bool"
+help = "Applies the Blu-ray limits (references, B-frames, GOP)."
+mapping = { kind = "private_opt", name = "bluray-compat" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc_bluray]]
+key = "aud"
+label = "Access unit delimiters"
+category = "Frame types / GOP"
+type = "bool"
+help = "Writes an access unit delimiter before each frame (some broadcast and Blu-ray tools need them)."
+mapping = { kind = "private_opt", name = "aud" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc_hevc]]
+key = "tier"
+label = "Tier"
+category = "Basic"
+type = "enum"
+choices = [
+    { value = "main", label = "Main" },
+    { value = "high", label = "High", help = "Higher bitrates at the same level (level 4 and up)." },
+]
+help = "H.265 tier: High allows higher bitrates at a level."
+mapping = { kind = "private_opt", name = "tier" }
+default = { kind = "fixed", value = "main" }
+
+[[set.nvenc_hevc]]
+key = "unidir_b"
+label = "Unidirectional B-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "B-frames that reference only earlier frames (lower latency, recent GPUs)."
+mapping = { kind = "private_opt", name = "unidir_b" }
+default = { kind = "fixed", value = false }
+
+[[set.nvenc_split]]
+key = "split_encode_mode"
+label = "Split-frame encoding"
+category = "Performance"
+type = "enum"
+choices = [
+    { value = "auto", label = "Automatic" },
+    { value = "disabled", label = "Off" },
+    { value = "forced", label = "On", help = "The driver picks the number of strips." },
+    { value = "2", label = "2 strips" },
+    { value = "3", label = "3 strips" },
+    { value = "4", label = "4 strips" },
+]
+help = "Splits each frame across several NVENC engines of one GPU (Ada and newer): faster high-resolution encodes, slightly lower quality."
+mapping = { kind = "private_opt", name = "split_encode_mode" }
+default = { kind = "encoder", note = "automatic: from the preset and tune" }
+
+# --------------------------------------------------------------------------- QSV
+
+[[set.qsv]]
+key = "b_strategy"
+label = "B-frame strategy"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets the encoder decide between I, P and B frames by content."
+mapping = { kind = "private_opt", name = "b_strategy" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv]]
+key = "low_power"
+label = "Low-power mode"
+category = "Performance"
+type = "bool"
+help = "Uses the fixed-function (VDENC) encoder: faster and more efficient, with fewer features on some GPUs."
+mapping = { kind = "private_opt", name = "low_power" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv]]
+key = "async_depth"
+label = "Async depth"
+category = "Performance"
+type = "int"
+min = 1
+max = 64
+step = 1
+help = "Frames in flight in the encoder. More can be faster and uses more GPU memory."
+mapping = { kind = "private_opt", name = "async_depth" }
+default = { kind = "fixed", value = 4 }
+
+[[set.qsv_avc_hevc]]
+key = "mbbrc"
+label = "Macroblock rate control"
+category = "Rate control"
+type = "bool"
+help = "Varies the quantiser per block (adaptive quantisation)."
+mapping = { kind = "private_opt", name = "mbbrc" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv_avc_hevc]]
+key = "p_strategy"
+label = "P-pyramid"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "0", label = "Default" },
+    { value = "1", label = "Simple" },
+    { value = "2", label = "Pyramid", help = "Needs B-frames set to 0." },
+]
+help = "The structure of P-frame references."
+mapping = { kind = "private_opt", name = "p_strategy" }
+default = { kind = "fixed", value = "0" }
+
+[[set.qsv_avc_hevc]]
+key = "idr_interval"
+label = "IDR interval"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 1000
+step = 1
+help = "Distance between IDR frames, counted in I-frames (0 = every I-frame is an IDR frame)."
+mapping = { kind = "private_opt", name = "idr_interval" }
+default = { kind = "fixed", value = 0 }
+
+[[set.qsv_avc_hevc]]
+key = "rdo"
+label = "Rate-distortion optimisation"
+category = "Motion / analysis"
+type = "bool"
+help = "Rate-distortion optimised mode decisions: better quality, slower."
+mapping = { kind = "private_opt", name = "rdo" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv_avc_hevc]]
+key = "dblk_idc"
+label = "Deblocking"
+category = "Loop filters"
+type = "enum"
+choices = [
+    { value = "0", label = "On" },
+    { value = "1", label = "Off" },
+    { value = "2", label = "Off at slice edges" },
+]
+help = "The in-loop deblocking filter."
+mapping = { kind = "private_opt", name = "dblk_idc" }
+default = { kind = "fixed", value = "0" }
+
+[[set.qsv_h264]]
+key = "look_ahead_downsampling"
+label = "Look-ahead downsampling"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "auto", label = "Automatic" },
+    { value = "off", label = "Off", help = "Best, slowest." },
+    { value = "2x", label = "2×" },
+    { value = "4x", label = "4×", help = "Fastest." },
+]
+help = "Scales the frames down for the look-ahead analysis."
+mapping = { kind = "private_opt", name = "look_ahead_downsampling" }
+requires = [{ field = "option:look_ahead", op = "eq", value = true }]
+default = { kind = "encoder", note = "automatic" }
+
+[[set.qsv_h264]]
+key = "cavlc"
+label = "CAVLC"
+category = "Motion / analysis"
+type = "bool"
+help = "CAVLC entropy coding instead of CABAC: larger files, easier to decode."
+mapping = { kind = "private_opt", name = "cavlc" }
+default = { kind = "fixed", value = false }
+
+[[set.qsv_hevc]]
+key = "gpb"
+label = "Generalised P/B frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Encodes P-frames as generalised B-frames (better compression); off writes regular P-frames for players that need them."
+mapping = { kind = "private_opt", name = "gpb" }
+default = { kind = "fixed", value = true }
+
+[[set.qsv_hevc]]
+key = "transform_skip"
+label = "Transform skip"
+category = "Motion / analysis"
+type = "bool"
+help = "Allows blocks without a transform: helps text and screen content."
+mapping = { kind = "private_opt", name = "transform_skip" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.qsv_tiles]]
+key = "tile_cols"
+label = "Tile columns"
+category = "Performance"
+type = "int"
+min = 0
+max = 64
+step = 1
+help = "Number of tile columns (0 = the driver decides)."
+mapping = { kind = "private_opt", name = "tile_cols" }
+default = { kind = "fixed", value = 0 }
+
+[[set.qsv_tiles]]
+key = "tile_rows"
+label = "Tile rows"
+category = "Performance"
+type = "int"
+min = 0
+max = 64
+step = 1
+help = "Number of tile rows (0 = the driver decides)."
+mapping = { kind = "private_opt", name = "tile_rows" }
+default = { kind = "fixed", value = 0 }
+
+# --------------------------------------------------------------------------- AMF
+
+[[set.amf]]
+key = "enforce_hrd"
+label = "Enforce HRD"
+category = "Rate control"
+type = "bool"
+help = "Keeps the stream within the hypothetical reference decoder's buffer (for players with strict bitrate limits)."
+mapping = { kind = "private_opt", name = "enforce_hrd" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "filler_data"
+label = "Filler data"
+category = "Rate control"
+type = "bool"
+help = "Pads the stream up to the target bitrate (constant bitrate for broadcast). Only with average bitrate."
+mapping = { kind = "private_opt", name = "filler_data" }
+requires = [{ field = "rate_control", value = "bitrate" }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "preencode"
+label = "Pre-encode"
+category = "Rate control"
+type = "bool"
+help = "A fast pre-encode of each frame helps the rate control hit the bitrate. A little slower."
+mapping = { kind = "private_opt", name = "preencode" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "high_motion_quality_boost_enable"
+label = "High-motion quality boost"
+category = "Motion / analysis"
+type = "bool"
+help = "Spends more effort on scenes with fast motion."
+mapping = { kind = "private_opt", name = "high_motion_quality_boost_enable" }
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "async_depth"
+label = "Async depth"
+category = "Performance"
+type = "int"
+min = 1
+max = 42
+step = 1
+help = "Frames in flight in the encoder. More can be faster and adds latency."
+mapping = { kind = "private_opt", name = "async_depth" }
+default = { kind = "fixed", value = 16 }
+
+[[set.amf]]
+key = "pa_activity_type"
+label = "Pre-analysis activity"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "y", label = "Luma" },
+    { value = "yuv", label = "Luma and chroma" },
+]
+help = "Which planes the pre-analysis measures for adaptive quantisation. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_activity_type" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_caq_strength"
+label = "Content adaptive QP strength"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "low", label = "Low" },
+    { value = "medium", label = "Medium" },
+    { value = "high", label = "High" },
+]
+help = "Strength of the content adaptive quantisation of the pre-analysis. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_caq_strength" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_paq_mode"
+label = "Perceptual AQ"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "caq", label = "Content adaptive" },
+]
+help = "Perceptual adaptive quantisation of the pre-analysis. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_paq_mode" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_taq_mode"
+label = "Temporal AQ"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "1", label = "Mode 1" },
+    { value = "2", label = "Mode 2" },
+]
+help = "Temporal adaptive quantisation of the pre-analysis: more quality for parts that later frames reference. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_taq_mode" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_high_motion_quality_boost_mode"
+label = "Pre-analysis motion boost"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "auto", label = "Automatic" },
+]
+help = "High-motion quality boost decided by the pre-analysis. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_high_motion_quality_boost_mode" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_scene_change_detection_enable"
+label = "Scene change detection"
+category = "Frame types / GOP"
+type = "bool"
+help = "Places a keyframe at scene changes. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_scene_change_detection_enable" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_scene_change_detection_sensitivity"
+label = "Scene change sensitivity"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "low", label = "Low" },
+    { value = "medium", label = "Medium" },
+    { value = "high", label = "High" },
+]
+help = "How eagerly scene changes are detected. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_scene_change_detection_sensitivity" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_static_scene_detection_enable"
+label = "Static scene detection"
+category = "Frame types / GOP"
+type = "bool"
+help = "Detects static scenes and skips frames that do not change. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_static_scene_detection_enable" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_static_scene_detection_sensitivity"
+label = "Static scene sensitivity"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "low", label = "Low" },
+    { value = "medium", label = "Medium" },
+    { value = "high", label = "High" },
+]
+help = "How eagerly static scenes are detected. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_static_scene_detection_sensitivity" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_initial_qp_after_scene_change"
+label = "QP after a scene change"
+category = "Rate control"
+type = "int"
+min = 0
+max = 51
+step = 1
+help = "The QP used right after a detected scene change. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_initial_qp_after_scene_change" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_max_qp_before_force_skip"
+label = "QP before forced skip"
+category = "Rate control"
+type = "int"
+min = 0
+max = 51
+step = 1
+help = "Above this QP the encoder may skip a frame. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_max_qp_before_force_skip" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_frame_sad_enable"
+label = "Frame SAD"
+category = "Motion / analysis"
+type = "bool"
+help = "Frame difference (SAD) analysis of the pre-analysis. Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_frame_sad_enable" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf]]
+key = "pa_ltr_enable"
+label = "Long-term references"
+category = "Frame types / GOP"
+type = "bool"
+help = "Long-term reference frames managed by the pre-analysis (helps content that returns to an earlier scene). Needs pre-analysis."
+mapping = { kind = "private_opt", name = "pa_ltr_enable" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf_minigop]]
+key = "pa_adaptive_mini_gop"
+label = "Adaptive mini-GOP"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets the pre-analysis choose the number of B-frames per mini-GOP. Needs pre-analysis and B-frames."
+mapping = { kind = "private_opt", name = "pa_adaptive_mini_gop" }
+requires = [{ field = "option:preanalysis", value = true }]
+default = { kind = "encoder", note = "the driver decides" }
+
+[[set.amf_h264]]
+key = "coder"
+label = "Entropy coder"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "cabac", label = "CABAC", help = "Smaller files." },
+    { value = "cavlc", label = "CAVLC", help = "Easier to decode." },
+]
+help = "H.264 entropy coding."
+mapping = { kind = "private_opt", name = "coder" }
+default = { kind = "encoder", note = "automatic" }
+
+[[set.amf_h264]]
+key = "me_half_pel"
+label = "Half-pixel motion search"
+category = "Motion / analysis"
+type = "bool"
+help = "Motion search at half-pixel precision. Off is faster and less precise."
+mapping = { kind = "private_opt", name = "me_half_pel" }
+default = { kind = "encoder", note = "on" }
+
+[[set.amf_quarter_pel]]
+key = "me_quarter_pel"
+label = "Quarter-pixel motion search"
+category = "Motion / analysis"
+type = "bool"
+help = "Motion search at quarter-pixel precision. Off is faster and less precise."
+mapping = { kind = "private_opt", name = "me_quarter_pel" }
+default = { kind = "encoder", note = "on" }
+
+# --------------------------------------------------------------------------- VAAPI
+
+[[set.vaapi]]
+key = "idr_interval"
+label = "IDR interval"
+category = "Frame types / GOP"
+type = "int"
+min = 0
+max = 1000
+step = 1
+help = "Distance between IDR frames, counted in I-frames (0 = every keyframe is an IDR frame)."
+mapping = { kind = "private_opt", name = "idr_interval" }
+default = { kind = "fixed", value = 0 }
+
+[[set.vaapi]]
+key = "async_depth"
+label = "Async depth"
+category = "Performance"
+type = "int"
+min = 1
+max = 64
+step = 1
+help = "Frames in flight in the driver. More can be faster and uses more GPU memory."
+mapping = { kind = "private_opt", name = "async_depth" }
+default = { kind = "fixed", value = 2 }
+
+[[set.vaapi_aud]]
+key = "aud"
+label = "Access unit delimiters"
+category = "Frame types / GOP"
+type = "bool"
+help = "Writes an access unit delimiter before each frame (some broadcast and Blu-ray tools need them)."
+mapping = { kind = "private_opt", name = "aud" }
+default = { kind = "fixed", value = false }
+
+[[set.vaapi_tier]]
+key = "tier"
+label = "Tier"
+category = "Basic"
+type = "enum"
+choices = [
+    { value = "main", label = "Main" },
+    { value = "high", label = "High", help = "Higher bitrates at the same level." },
+]
+help = "The tier: High allows higher bitrates at a level."
+mapping = { kind = "private_opt", name = "tier" }
+default = { kind = "fixed", value = "main" }

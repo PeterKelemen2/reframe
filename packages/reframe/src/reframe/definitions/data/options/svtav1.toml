@@ -1,4 +1,5 @@
-# SVT-AV1 advanced options (C-6, M2 basic set). Every option goes into `-svtav1-params`.
+# SVT-AV1 advanced options (C-6: the M2 set, completed in M9). Every option goes into
+# `-svtav1-params`.
 #
 # libsvtav1 does not fail on an unknown or bad parameter: it logs "Error parsing option
 # <name>: <value>." and encodes on. tests/definitions/test_tools.py encodes with every option
@@ -140,4 +141,378 @@ max = 7
 step = 1
 help = "Positive values reduce deblocking and keep sharper detail; negative values give a smoother picture."
 mapping = { kind = "x26x_param", name = "sharpness" }
+default = { kind = "fixed", value = 0 }
+
+# --------------------------------------------------------------------------- M9 additions
+#
+# Ranges and defaults from SVT-AV1 v4.2.0 itself: a value outside the range fails with an
+# `Svt[error]` line (for example "Variance Boost strength must be between 1 and 4"), and the
+# `SVT [config]` log lines show the defaults (AQ mode 2, Variance Boost strength / octile /
+# curve 2 / 5 / 0, luminance-based QP bias 0, QP scale compress strength 0, mini-GOP 32 at
+# presets 0-8 and 16 at 10-11, key frame type "key frame" = irefresh-type 2). Defaults the log
+# does not show are "encoder decides".
+
+[[set.svtav1]]
+key = "aq-mode"
+label = "Adaptive quantisation"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "0", label = "Off", help = "SVT-AV1 then encodes with constant QP instead of CRF (log: \"CQP\")." },
+    { value = "1", label = "Segments", help = "Experimental in SVT-AV1 (its log says so)." },
+    { value = "2", label = "Delta QP", help = "The default." },
+]
+help = "How the quantiser varies inside a frame. Keep the default; Off also turns the CRF rate control into constant QP."
+mapping = { kind = "x26x_param", name = "aq-mode" }
+default = { kind = "fixed", value = "2" }
+
+[[set.svtav1]]
+key = "qp-scale-compress-strength"
+label = "QP scale compression"
+category = "Rate control"
+type = "int"
+min = 0
+max = 3
+step = 1
+help = "Narrows the quantiser difference between frame types (0–3): more consistent quality between keyframes and other frames, slightly larger files."
+mapping = { kind = "x26x_param", name = "qp-scale-compress-strength" }
+default = { kind = "fixed", value = 0 }
+
+[[set.svtav1]]
+key = "min-qp"
+label = "Minimum quantiser"
+category = "Rate control"
+type = "int"
+min = 1
+max = 63
+step = 1
+# SVT-AV1 v4.2: min-qp above max-qp fails ("MinQpAllowed must be smaller than or equal to
+# MaxQpAllowed"); validation (C-8) reports it.
+help = "The lowest quantiser SVT-AV1 may use. Not set, there is no limit."
+mapping = { kind = "x26x_param", name = "min-qp" }
+default = { kind = "encoder", note = "no limit" }
+
+[[set.svtav1]]
+key = "max-qp"
+label = "Maximum quantiser"
+category = "Rate control"
+type = "int"
+min = 1
+max = 63
+step = 1
+help = "The highest quantiser SVT-AV1 may use: avoids very blocky frames in bitrate-limited encodes. Not set, there is no limit."
+mapping = { kind = "x26x_param", name = "max-qp" }
+default = { kind = "encoder", note = "no limit" }
+
+[[set.svtav1]]
+key = "irefresh-type"
+label = "Keyframe type"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "1", label = "Open GOP (forward keyframes)", help = "Slightly smaller; seeking and cutting may need the previous GOP." },
+    { value = "2", label = "Closed GOP (keyframes)", help = "The default." },
+]
+# SVT-AV1 v4.2: "Fwd key frame is only supported for hierarchical levels 4 at this point.
+# Hierarchical levels are set to 4"; validation (C-8) warns about another level the job sets.
+help = "Whether the keyframe interval places closed keyframes or forward keyframes (open GOP). Forward keyframes need hierarchical levels 4 (SVT-AV1 sets it)."
+mapping = { kind = "x26x_param", name = "irefresh-type" }
+default = { kind = "fixed", value = "2" }
+
+[[set.svtav1]]
+key = "hierarchical-levels"
+label = "Hierarchical levels"
+category = "Frame types / GOP"
+type = "enum"
+choices = [
+    { value = "0", label = "1 frame" },
+    { value = "1", label = "2 frames" },
+    { value = "2", label = "4 frames" },
+    { value = "3", label = "8 frames" },
+    { value = "4", label = "16 frames" },
+    { value = "5", label = "32 frames" },
+]
+help = "The mini-GOP size (frames between anchor frames). Larger compresses better and uses more memory; SVT-AV1 picks 32 at presets 0–8 and 16 at the fastest presets."
+mapping = { kind = "x26x_param", name = "hierarchical-levels" }
+default = { kind = "encoder", note = "from the preset: 32 frames at presets 0–8, 16 at 10 and 11" }
+
+[[set.svtav1]]
+key = "variance-boost-strength"
+label = "Variance boost strength"
+category = "Psycho-visual"
+type = "int"
+min = 1
+max = 4
+step = 1
+help = "How much variance boost raises the quality of low-contrast areas (1–4; 2 is the default, 3–4 only for special cases)."
+mapping = { kind = "x26x_param", name = "variance-boost-strength" }
+requires = [{ field = "option:enable-variance-boost", op = "eq", value = true }]
+default = { kind = "fixed", value = 2 }
+
+[[set.svtav1]]
+key = "variance-octile"
+label = "Variance octile"
+category = "Psycho-visual"
+type = "int"
+min = 1
+max = 8
+step = 1
+help = "Which part of a block's variance decides the boost (1–8): lower boosts blocks with only a little flat area, higher only mostly flat blocks. 5 is the default."
+mapping = { kind = "x26x_param", name = "variance-octile" }
+requires = [{ field = "option:enable-variance-boost", op = "eq", value = true }]
+default = { kind = "fixed", value = 5 }
+
+[[set.svtav1]]
+key = "variance-boost-curve"
+label = "Variance boost curve"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "0", label = "Default" },
+    { value = "1", label = "Low-medium contrast boost" },
+    { value = "2", label = "Still picture" },
+]
+help = "The curve that turns variance into a quality boost."
+mapping = { kind = "x26x_param", name = "variance-boost-curve" }
+requires = [{ field = "option:enable-variance-boost", op = "eq", value = true }]
+default = { kind = "fixed", value = "0" }
+
+[[set.svtav1]]
+key = "luminance-qp-bias"
+label = "Luminance QP bias"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 100
+step = 1
+help = "Spends more bits on dark frames and blocks (0–100; 0 = off). Helps banding and blocking in dark scenes."
+mapping = { kind = "x26x_param", name = "luminance-qp-bias" }
+default = { kind = "fixed", value = 0 }
+
+[[set.svtav1]]
+key = "ac-bias"
+label = "AC bias"
+category = "Psycho-visual"
+type = "float"
+min = 0
+max = 8
+step = 0.1
+help = "Keeps high-frequency energy (detail, grain) in the rate-distortion decisions, like psy-RD in x264 / x265 (0–8; 1–2 is typical)."
+mapping = { kind = "x26x_param", name = "ac-bias" }
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "tf-strength"
+label = "Temporal filter strength"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 4
+step = 1
+help = "Strength of the temporal filtering of alternative reference frames (0–4). Lower keeps more detail and grain."
+mapping = { kind = "x26x_param", name = "tf-strength" }
+requires = [{ field = "option:enable-tf", op = "ne", value = "0" }]
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "adaptive-film-grain"
+label = "Adaptive film grain"
+category = "Psycho-visual"
+type = "bool"
+help = "Estimates the grain per scene instead of once. Better grain synthesis on mixed content."
+mapping = { kind = "x26x_param", name = "adaptive-film-grain" }
+requires = [{ field = "option:film-grain", op = "ne", value = 0 }]
+default = { kind = "encoder", note = "the library default" }
+
+[[set.svtav1]]
+key = "enable-dlf"
+label = "Deblocking"
+category = "Loop filters"
+type = "enum"
+choices = [
+    { value = "0", label = "Off" },
+    { value = "1", label = "On" },
+    { value = "2", label = "More accurate", help = "Slower." },
+]
+help = "The in-loop deblocking filter."
+mapping = { kind = "x26x_param", name = "enable-dlf" }
+default = { kind = "encoder", note = "on" }
+
+[[set.svtav1]]
+key = "enable-cdef"
+label = "CDEF"
+category = "Loop filters"
+type = "bool"
+help = "Constrained directional enhancement filter: removes ringing around edges. Off keeps a little more texture."
+mapping = { kind = "x26x_param", name = "enable-cdef" }
+default = { kind = "encoder", note = "on" }
+
+[[set.svtav1]]
+key = "enable-restoration"
+label = "Loop restoration"
+category = "Loop filters"
+type = "bool"
+help = "Wiener and self-guided restoration filters. Better compression, can smooth fine detail; slower to decode."
+mapping = { kind = "x26x_param", name = "enable-restoration" }
+default = { kind = "encoder", note = "from the preset" }
+
+[[set.svtav1]]
+key = "color-primaries"
+label = "Colour primaries"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709", help = "HD." },
+    { value = "bt470m", label = "BT.470 M" },
+    { value = "bt470bg", label = "BT.470 BG", help = "PAL SD." },
+    { value = "bt601", label = "BT.601", help = "NTSC SD." },
+    { value = "smpte240", label = "SMPTE 240M" },
+    { value = "film", label = "Film" },
+    { value = "bt2020", label = "BT.2020", help = "UHD and HDR." },
+    { value = "xyz", label = "XYZ (SMPTE 428)" },
+    { value = "smpte431", label = "DCI-P3" },
+    { value = "smpte432", label = "Display P3" },
+    { value = "ebu3213", label = "EBU Tech 3213" },
+]
+help = "The colour primaries written into the sequence header. Only a tag: the picture is not converted. For an HDR source the probe's value is written when this is not set."
+mapping = { kind = "x26x_param", name = "color-primaries" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.svtav1]]
+key = "transfer-characteristics"
+label = "Transfer characteristics"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709" },
+    { value = "bt470m", label = "BT.470 M" },
+    { value = "bt470bg", label = "BT.470 BG" },
+    { value = "bt601", label = "BT.601" },
+    { value = "smpte240", label = "SMPTE 240M" },
+    { value = "linear", label = "Linear" },
+    { value = "log100", label = "Log 100:1" },
+    { value = "log100-sqrt10", label = "Log 316:1" },
+    { value = "iec61966", label = "IEC 61966-2-4 (xvYCC)" },
+    { value = "bt1361", label = "BT.1361 extended" },
+    { value = "srgb", label = "sRGB" },
+    { value = "bt2020-10", label = "BT.2020 10-bit" },
+    { value = "bt2020-12", label = "BT.2020 12-bit" },
+    { value = "smpte2084", label = "PQ (SMPTE 2084)", help = "HDR10." },
+    { value = "smpte428", label = "SMPTE 428" },
+    { value = "hlg", label = "HLG" },
+]
+help = "The transfer function written into the sequence header. Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "transfer-characteristics" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.svtav1]]
+key = "matrix-coefficients"
+label = "Colour matrix"
+category = "HDR / colour"
+type = "enum"
+# SVT-AV1 v4.2: "identity" fails for 4:2:0 ("Identity matrix (matrix_coefficient = 0) may be
+# used only with 4:4:4 color format"), so it is not offered.
+choices = [
+    { value = "bt709", label = "BT.709" },
+    { value = "fcc", label = "FCC" },
+    { value = "bt470bg", label = "BT.470 BG" },
+    { value = "bt601", label = "BT.601" },
+    { value = "smpte240", label = "SMPTE 240M" },
+    { value = "ycgco", label = "YCgCo" },
+    { value = "bt2020-ncl", label = "BT.2020 non-constant" },
+    { value = "bt2020-cl", label = "BT.2020 constant" },
+    { value = "smpte2085", label = "SMPTE 2085" },
+    { value = "chroma-ncl", label = "Chroma-derived non-constant" },
+    { value = "chroma-cl", label = "Chroma-derived constant" },
+    { value = "ictcp", label = "ICtCp" },
+]
+help = "The YUV matrix written into the sequence header. Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "matrix-coefficients" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.svtav1]]
+key = "color-range"
+label = "Colour range"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "studio", label = "Limited (TV)" },
+    { value = "full", label = "Full (PC)" },
+]
+help = "The range tag written into the sequence header. Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "color-range" }
+default = { kind = "encoder", note = "the source's range" }
+
+[[set.svtav1]]
+key = "chroma-sample-position"
+label = "Chroma sample position"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "unknown", label = "Unknown" },
+    { value = "left", label = "Left (vertical)", help = "Most video." },
+    { value = "topleft", label = "Top left (colocated)", help = "BT.2020 / UHD." },
+]
+help = "Where the chroma samples sit relative to the luma samples (sequence header tag)."
+mapping = { kind = "x26x_param", name = "chroma-sample-position" }
+default = { kind = "encoder", note = "the source's chroma location" }
+
+[[set.svtav1]]
+key = "mastering-display"
+label = "Mastering display"
+category = "HDR / colour"
+type = "string"
+# SVT-AV1 v4.2 takes plain chromaticities and cd/m²; ffprobe reads them back as AV1 metadata
+# OBUs (side data "Mastering display metadata").
+help = "SMPTE ST 2086 mastering display as G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min): chromaticities as plain numbers (0.265) and luminance in cd/m² (1000, 0.0001). Copy HDR metadata from source fills it."
+mapping = { kind = "x26x_param", name = "mastering-display" }
+default = { kind = "encoder", note = "not written" }
+
+[[set.svtav1]]
+key = "content-light"
+label = "MaxCLL, MaxFALL"
+category = "HDR / colour"
+type = "string"
+help = "Content light level as \"MaxCLL,MaxFALL\" in cd/m² (for example 1000,400). Copy HDR metadata from source fills it."
+mapping = { kind = "x26x_param", name = "content-light" }
+default = { kind = "encoder", note = "not written" }
+
+[[set.svtav1]]
+key = "lp"
+label = "Level of parallelism"
+category = "Performance"
+type = "int"
+min = 0
+max = 6
+step = 1
+# SVT-AV1 v4.2: lp=7 → "Level of parallelism supports levels [0-6]. Setting maximum
+# parallelism level."
+help = "How much SVT-AV1 works in parallel (0 = automatic, 1 = least, 6 = most). It is not a thread count; lower values leave the machine responsive."
+mapping = { kind = "x26x_param", name = "lp" }
+default = { kind = "encoder", note = "automatic" }
+
+[[set.svtav1]]
+key = "tile-rows"
+label = "Tile rows"
+category = "Performance"
+type = "int"
+min = 0
+max = 6
+step = 1
+help = "Tile rows as a power of two (0 = one row, 2 = four rows). Tiles help decoders that use several threads and cost a little compression."
+mapping = { kind = "x26x_param", name = "tile-rows" }
+default = { kind = "fixed", value = 0 }
+
+[[set.svtav1]]
+key = "tile-columns"
+label = "Tile columns"
+category = "Performance"
+type = "int"
+# AV1 allows at most 16 tile columns (Annex A.3): 5 and 6 fail ("MaxTiles is 128 and
+# MaxTileCols is 16").
+min = 0
+max = 4
+step = 1
+help = "Tile columns as a power of two (0 = one column, 2 = four columns, at most 16). Tiles help multi-threaded decoders and cost a little compression."
+mapping = { kind = "x26x_param", name = "tile-columns" }
 default = { kind = "fixed", value = 0 }
