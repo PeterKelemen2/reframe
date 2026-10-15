@@ -74,6 +74,25 @@ with `testing/`, `testdata/`, `scripts/`, `docs/` or `.github/`.
 | **1i** small fixes | `probe/mediainfo.py`, `probe/cache.py`, `queue/store.py`, new test files for them (`tests/probe/test_*`, `tests/queue/test_store_*`) | `settings.py` and `presets/store.py` (they already have the guard: reuse `reframe.settings.too_deep` / `MAX_DEPTH`), everything else |
 | **2a** C-12 batch | `batch/` (all), `models/batch.py` (new optional fields only; the lead writes it before wave 2), `jobs.py` (`job_from_preset` through the batch engine), the `Reframe.batch` stub (`batch/service.py`), `cli.py` (`reframe batch`), `testing/reframe_testing/media.py` (the 04 §Example season), `tests/batch/`, `tests/test_cli*.py` (new tests) | written in the wave-2 contract |
 
+**Existing test files** (new test files are always fine; give them a name of your task, for
+example `test_metadata_edit_*.py`, `test_options_*.py`, `test_when_done*.py`):
+
+| Task | May edit these existing test files |
+|------|-------------------------------------|
+| 1a | `tests/batch/*`, `tests/validation/test_audio_agreement.py`, `tests/validation/test_template.py` |
+| 1b | `testing/tests/test_media_fixtures.py`, `testing/tests/test_media_generator.py`, `tests/probe/__snapshots__/test_snapshots.ambr` (new entries) |
+| 1c | `tests/command/test_filtergraph.py` |
+| 1d | `tests/command/test_builder.py`, `test_snapshots.py` and `__snapshots__/`, `test_tracks.py`, `test_integration.py`; `tests/queue/test_faults.py`, `test_integration.py`, `test_units.py`; `tests/validation/test_command_agreement.py`, `test_paths.py`; `tests/probe/test_prober.py`; `tests/naming/*` (for `render_value`) |
+| 1e | `tests/definitions/*`, `tests/command/test_video.py`, `tests/validation/test_x26x_ffmpeg.py`, `test_levels_ffmpeg.py`, `test_hdr_ffmpeg.py` |
+| 1f | none (new files only) |
+| 1g | `tests/queue/test_queue.py`, `tests/queue/test_facade.py` |
+| 1h | `tests/test_cli.py`, `tests/__snapshots__/test_cli.ambr`, `tests/jobs/test_cli_*.py`, `tests/tools/*` |
+| 1i | `tests/queue/test_store.py`, `tests/probe/test_cache.py`, `tests/probe/test_cache_file_names.py` |
+
+Nobody edits `tests/validation/test_rules.py`, `tests/validation/scenario.py`, the
+`conftest.py` files, `tests/test_service.py`, `tests/jobs/test_service.py` or
+`tests/test_mediatask.py` in wave 1: a needed change there goes to the lead.
+
 **Shared files** (more than one task writes them; the lead resolves merge conflicts):
 
 - `docs/status.md`: each task updates only its own step row and the feature rows its step
