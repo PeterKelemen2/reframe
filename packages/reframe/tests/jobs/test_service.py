@@ -133,6 +133,23 @@ async def test_unknown_preset_is_an_error_issue(movie: tuple[Stubs, Path]) -> No
     assert draft.job.preset_id == "h265-mkv-1080p"
 
 
+async def test_a_required_language_without_a_track_keeps_the_draft_out_of_the_queue(
+    movie: tuple[Stubs, Path],
+) -> None:
+    """C-12's track-stage error ("no listed language: take none") is a draft error (0031);
+    the subtitle decisions come with the draft too."""
+    stubs, file = movie
+    chosen = preset("h265-mkv-1080p").model_copy(deep=True)
+    chosen.audio_defaults.selection.languages = ["fre"]
+    chosen.audio_defaults.selection.no_match = "none"
+    draft = await service(stubs).draft(file, chosen)
+    assert isinstance(draft, JobDraft)
+    assert "defaults.no_listed_language" in errors(draft.issues)
+    assert draft.job.audio == []
+    source = stubs.sources[file]
+    assert len(draft.subtitle_decisions) == len(source.subtitles)
+
+
 async def test_a_user_default_preset_is_used(movie: tuple[Stubs, Path]) -> None:
     stubs, file = movie
     stubs.default_id = "h264-mkv-1080p"

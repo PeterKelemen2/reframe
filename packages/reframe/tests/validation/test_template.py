@@ -348,15 +348,16 @@ CASES: list[Case] = [
         rule(codec="ac3", mixdown="5.1", max_bitrate=700),
         rule(codec="ac3", mixdown="5.1", max_bitrate=640),
     ),
-    Case(
-        "codec rule codec not in container (defaults lint)",
-        "defaults.codec_not_in_container",
-        "audio_defaults.codec_rules[0].codec",
-        ERR,
-        webm_video,
-        both(webm_video, rule(codec="libopus")),
-    ),
 ]
+
+
+def test_a_codec_the_container_cannot_hold_is_reported_once() -> None:
+    """C-8's container rule reports it; ``validate_template`` runs C-12's lint without its
+    container check (``container_codecs=False``), so the same path never gets two errors."""
+    issues = sc.check_template(build(webm_video))
+    on_path = [i for i in issues if i.path == "audio_defaults.codec_rules[0].codec"]
+    assert [i.code for i in on_path] == ["container.codec_unsupported"]
+    assert not [i for i in issues if i.code == "defaults.codec_not_in_container"]
 
 
 def test_clean_template_has_no_issues() -> None:

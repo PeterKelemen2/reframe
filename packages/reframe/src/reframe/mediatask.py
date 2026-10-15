@@ -35,6 +35,7 @@ from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.media import MediaSource
 from reframe.models.settings import AppSettings
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.tasks import TaskFailed
 from reframe.tools import CancelToken
 
 if TYPE_CHECKING:
@@ -55,11 +56,6 @@ __all__ = [
 #: Share of the duration left out at each end when sampling frames (05 §C-10: "skip the first
 #: and last 5 %").
 SAMPLE_MARGIN = 0.05
-
-
-class TaskFailed(Exception):
-    """An expected failure inside a task (missing file, unusable tool, a stream that does not
-    exist). The task ends ``failed``; ``TaskInfo.error`` is ``str(exc)``, written for the user."""
 
 
 class ToolsLookup(Protocol):

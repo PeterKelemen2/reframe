@@ -510,6 +510,15 @@ class SourceService:
         """The cached PNG of a :class:`~reframe.models.PreviewFrame` key, else ``None``."""
         return preview.frame_path(self._media(), key)
 
+    async def preview_cache_size(self) -> int:
+        """Bytes of cached preview frames and clips (Settings → Preview)."""
+        return await asyncio.to_thread(preview.cache_size, self._media())
+
+    async def clear_preview_cache(self) -> int:
+        """Remove every cached preview frame and clip (Settings → Preview → *Clear cache*);
+        the bytes freed. Temporary files of running tasks stay."""
+        return await asyncio.to_thread(preview.clear_cache, self._media())
+
     def cropdetect(self, path: str | os.PathLike[str], *, count: int | None = None) -> TaskInfo:
         """Crop detection on the sample frames (task ``cropdetect``, result
         :class:`~reframe.models.CropDetection`: the automatic and the conservative crop)."""
@@ -836,7 +845,8 @@ class Reframe:
       detected in the background with a cache under ``<cache dir>/capabilities`` (C-4).
     - :attr:`sources` — :class:`SourceService`: ``probe``, ``probe_folder``, ``get`` (C-3);
       ``bitrate_scan``, ``subtitle_scan``, ``loudness_scan``, ``frames``, ``frame``,
-      ``cropdetect`` (C-10 tasks), ``store`` (measured values).
+      ``cropdetect`` (C-10 tasks), ``preview_cache_size``, ``clear_preview_cache``, ``store``
+      (measured values).
     - :attr:`tasks` — the background task manager (``get``, ``list``, ``cancel``, ``wait``,
       ``value``) for the tasks that the services start.
     - :attr:`settings` — :class:`SettingsService`: ``get``, ``update``, ``problems`` (C-9).

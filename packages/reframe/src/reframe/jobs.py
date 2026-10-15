@@ -84,6 +84,7 @@ __all__ = [
     "PresetLookup",
     "SourceProber",
     "ToolDiscovery",
+    "draft_from_preset",
     "find_media_files",
     "has_errors",
     "is_partial_output",
@@ -266,6 +267,21 @@ def job_from_preset(
     """The job settings of ``source`` encoded with ``preset`` (without the output path), the
     audio track decisions, and notes about how preset options were applied. ``languages``:
     Settings → Languages (the preferred languages of the track selection). Pure."""
+    job, tracks, notes = draft_from_preset(
+        source, preset, definitions=definitions, languages=languages
+    )
+    return job, tracks.decisions, notes
+
+
+def draft_from_preset(
+    source: MediaSource,
+    preset: Preset,
+    *,
+    definitions: Definitions | None = None,
+    languages: LanguageSettings | None = None,
+) -> tuple[JobSettings, TrackDraft, list[str]]:
+    """:func:`job_from_preset` with the whole :class:`~reframe.models.TrackDraft` (audio and
+    subtitle decisions, the issues of the track stage). Pure."""
     notes: list[str] = []
     tracks = draft_tracks(source, preset, definitions=definitions, languages=languages)
     video = preset.video.model_copy(deep=True)
@@ -292,7 +308,7 @@ def job_from_preset(
         ),
         tags=preset.tags.model_copy(deep=True),
     )
-    return job, tracks.decisions, notes
+    return job, tracks, notes
 
 
 # --------------------------------------------------------------------------- the service
@@ -372,13 +388,17 @@ class JobService:
             return media
         chosen, issues = self._resolve_preset(preset)
         naming = self._naming_options(chosen)
-        job, decisions, name, notes = await asyncio.to_thread(
+        job, tracks, name, notes = await asyncio.to_thread(
             self._compose, media, chosen, naming, output
         )
-        issues = [*issues, *await self._validate(job, media, naming)]
+        # The errors of the track stage (no track for a required language) keep the draft out
+        # of the queue; its warnings and notes (the defaults lint) are in explain().
+        track_errors = [i for i in tracks.issues if i.severity is Severity.ERROR]
+        issues = [*issues, *track_errors, *await self._validate(job, media, naming)]
         return JobDraft(
             job=job,
-            decisions=decisions,
+            decisions=tracks.decisions,
+            subtitle_decisions=tracks.subtitle_decisions,
             naming=name,
             issues=issues,
             notes=notes,
@@ -414,8 +434,8 @@ class JobService:
         preset: Preset,
         naming: NamingOptions,
         output: Path | None,
-    ) -> tuple[JobSettings, list[TrackDecision], NameResult, list[str]]:
-        job, decisions, notes = job_from_preset(
+    ) -> tuple[JobSettings, TrackDraft, NameResult, list[str]]:
+        job, tracks, notes = draft_from_preset(
             media, preset, definitions=self.definitions, languages=self._settings().languages
         )
         file = Path(media.ref.path)
@@ -458,7 +478,7 @@ class JobService:
                 )
                 path = free
         job.output.path = path
-        return job, decisions, name, notes
+        return job, tracks, name, notes
 
     # ------------------------------------------------------------------ validate, plan
 
@@ -638,7 +658,14 @@ class JobService:
         naming = self._naming_options(self._job_preset(job))
         issues = await self._validate(job, media, naming)
         keep = [issue for issue in draft.issues if issue.code == "preset.not_found"]
-        return draft.model_copy(update={"job": job, "decisions": [], "issues": [*keep, *issues]})
+        return draft.model_copy(
+            update={
+                "job": job,
+                "decisions": [],
+                "subtitle_decisions": [],
+                "issues": [*keep, *issues],
+            }
+        )
 
     # ------------------------------------------------------------------ C-6 options
 

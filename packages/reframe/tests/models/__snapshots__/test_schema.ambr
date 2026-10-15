@@ -3662,7 +3662,10 @@
     ''',
     'properties': dict({
       'decisions': dict({
-        'description': 'One per source audio track, in source order (C-12 ``draft_tracks``; decision 0018).',
+        'description': '''
+          One per source audio track, in source order (C-12 ``draft_tracks``; decisions 0018,
+          0031).
+        ''',
         'items': dict({
           '$ref': '#/$defs/TrackDecision',
         }),
@@ -3670,7 +3673,10 @@
         'type': 'array',
       }),
       'issues': dict({
-        'description': '``validate(job)`` of the drafted job; an ``error`` keeps it out of the queue.',
+        'description': '''
+          ``validate(job)`` of the drafted job, and the errors of the track stage (no track for a
+          required language: a template path); an ``error`` keeps it out of the queue.
+        ''',
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
         }),
@@ -3697,6 +3703,14 @@
           'type': 'string',
         }),
         'title': 'Notes',
+        'type': 'array',
+      }),
+      'subtitle_decisions': dict({
+        'description': "One per source subtitle track, in source order (C-12's subtitle selection).",
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Subtitle Decisions',
         'type': 'array',
       }),
     }),

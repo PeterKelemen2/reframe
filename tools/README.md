@@ -53,7 +53,10 @@ builds. The `latest` release floats. So:
    the `-YYYYMMDD` suffix), `release_version`, `release_tag`, `release_url`, `checksums_url`,
    `source_commit` (the full FFmpeg commit from the `-g<hash>` part of the version) and
    `build_scripts_commit` (the BtbN commit that the release tag points to).
-5. Run `uv run python scripts/fetch-tools.py` for both builds, and `uv run pytest`.
+5. Copy the file to `packages/reframe/src/reframe/tools/ffmpeg.toml`: the installed package
+   reads that copy for `reframe tools fetch` (decision 0038), and a test fails while the two
+   differ.
+6. Run `uv run python scripts/fetch-tools.py` for both builds, and `uv run pytest`.
    The CI caches of `.tools/` and `testdata/media/` are keyed on this file, so they refresh.
 
 ## Licence

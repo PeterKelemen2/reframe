@@ -152,7 +152,11 @@ def validate_template(
     issues = _run(TEMPLATE_RULES if rules is None else rules, context)
     if rules is None:
         # C-12's defaults lint (shadowed and unreachable codec rules, bitrates out of range).
+        # C-8's container rule already reports a codec the container cannot hold.
         issues += lint_defaults(
-            template.audio_defaults, container=template.output.container, definitions=defs
+            template.audio_defaults,
+            container=template.output.container,
+            definitions=defs,
+            container_codecs=False,
         )
     return issues

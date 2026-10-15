@@ -177,6 +177,21 @@ async def test_facade_wiring(app: Reframe, tmp_path: Path) -> None:
 
 
 @pytest.mark.needs_ffmpeg
+async def test_preview_cache_size_and_clear(app: Reframe, fixture_media: object) -> None:
+    try:
+        assert await app.sources.preview_cache_size() == 0
+        info = app.sources.frames(fixture_media("multitrack"), count=2)  # type: ignore[operator]
+        done = await app.tasks.wait(info.id)
+        assert done.state.value == "done", done.error
+        size = await app.sources.preview_cache_size()
+        assert size > 0
+        assert await app.sources.clear_preview_cache() == size
+        assert await app.sources.preview_cache_size() == 0
+    finally:
+        await app.close()
+
+
+@pytest.mark.needs_ffmpeg
 async def test_store_keeps_a_measured_bitrate(
     app: Reframe, tmp_path: Path, fixture_media: object
 ) -> None:
