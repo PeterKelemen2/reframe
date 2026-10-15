@@ -294,25 +294,167 @@ async def test_schedule_after_close_starts_nothing() -> None:
     assert executor.actions == []
 
 
-async def test_close_while_the_executor_runs_stops_it() -> None:
-    started = asyncio.Event()
+class BlockingExecutor(FakeExecutor):
+    """``execute`` waits until the test releases it; records whether it was cancelled."""
 
-    class SlowExecutor(FakeExecutor):
-        async def execute(self, action: OsAction) -> str | None:
-            self.actions.append(action)
-            started.set()
-            await asyncio.Event().wait()  # never returns by itself
-            return None  # pragma: no cover
+    def __init__(self, result: str | None = None) -> None:
+        super().__init__(result)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cancelled = False
+        self.finished = False
 
-    executor = SlowExecutor()
+    async def execute(self, action: OsAction) -> str | None:
+        self.actions.append(action)
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        self.finished = True
+        return self.result
+
+    def is_finished(self) -> bool:  # a call: mypy does not narrow it between awaits
+        return self.finished
+
+
+async def test_pending_stays_executing_until_the_action_returns() -> None:
+    executor = BlockingExecutor()
+    ticker = Ticker()
+    service, subscription, _ = make(executor, countdown=1, ticker=ticker)
+    countdown_id = service.schedule("shutdown")
+    await ticker.step()
+    await executor.started.wait()
+    pending = service.pending
+    assert pending is not None
+    assert (pending.countdown_id, pending.phase, pending.seconds_left) == (
+        countdown_id,
+        "executing",
+        0,
+    )
+    assert service.cancel() is False  # executing: too late to cancel
+    assert service.cancel(countdown_id) is False
+    executor.release.set()
+    await settle()
+    assert executor.finished
+    assert service.pending is None
+    assert phases(countdown_events(subscription)) == [("started", 1), ("executing", 0)]
+
+
+async def test_pending_is_executing_right_after_the_event() -> None:
+    """No gap: ``pending`` is the ``executing`` event as soon as it is published, before
+    the executor has even started."""
+    executor = BlockingExecutor()
+    events = EventBus()
+    seen: list[PowerCountdownEvent | None] = []
+    service = PowerService(events, executor=executor, countdown=0)
+    subscription = events.subscribe()
+    service.schedule("sleep")
+    async with asyncio.timeout(5):
+        async for event in subscription:
+            if isinstance(event, PowerCountdownEvent) and event.phase == "executing":
+                seen.append(service.pending)
+                break
+    assert seen[0] is not None
+    assert seen[0].phase == "executing"
+    executor.release.set()
+    await service.close()
+
+
+async def test_close_during_execute_waits_and_never_cancels_it() -> None:
+    executor = BlockingExecutor()
     service, subscription, _ = make(executor, countdown=0, ticker=Ticker())
     service.schedule("shutdown")
-    await started.wait()
-    assert service.cancel() is False  # already executing: too late to cancel
-    await asyncio.wait_for(service.close(), 5)
-    assert executor.actions == ["shutdown"]
+    await executor.started.wait()
+    closing = asyncio.create_task(service.close())
+    await settle()
+    assert not closing.done()  # close() waits for the action
+    assert not executor.cancelled
+    executor.release.set()
+    await asyncio.wait_for(closing, 5)
+    assert executor.finished
+    assert not executor.cancelled
+    assert service.pending is None
     assert phases(countdown_events(subscription)) == [("started", 0), ("executing", 0)]
-    assert [e for e in drain(subscription) if isinstance(e, AppWarningEvent)] == []
+
+
+async def test_close_waits_at_most_execute_wait_and_still_does_not_cancel() -> None:
+    executor = BlockingExecutor(result="systemctl poweroff failed (exit code 1): late")
+    events = EventBus()
+    subscription = events.subscribe()
+    service = PowerService(events, executor=executor, countdown=0, execute_wait=0.05)
+    service.schedule("shutdown")
+    await executor.started.wait()
+    await asyncio.wait_for(service.close(), 5)  # returns after execute_wait
+    assert not executor.cancelled
+    assert not executor.is_finished()
+    pending = service.pending
+    assert pending is not None
+    assert pending.phase == "executing"  # the action still runs
+    executor.release.set()
+    await settle()
+    assert executor.finished
+    assert service.pending is None
+    warnings = [e for e in drain(subscription) if isinstance(e, AppWarningEvent)]
+    assert [w.detail for w in warnings] == ["systemctl poweroff failed (exit code 1): late"]
+
+
+async def test_a_cancelled_close_does_not_cancel_the_action() -> None:
+    executor = BlockingExecutor()
+    service, _, _ = make(executor, countdown=0, ticker=Ticker())
+    service.schedule("sleep")
+    await executor.started.wait()
+    closing = asyncio.create_task(service.close())
+    await settle()
+    closing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await closing
+    await settle()
+    assert not executor.cancelled
+    executor.release.set()
+    await settle()
+    assert executor.finished
+
+
+async def test_schedule_while_an_action_executes_starts_a_new_countdown_beside_it() -> None:
+    executor = BlockingExecutor()
+    ticker = Ticker()
+    service, subscription, _ = make(executor, countdown=0, ticker=ticker)
+    first = service.schedule("sleep")
+    await executor.started.wait()
+    service._countdown = 2.0
+    second = service.schedule("shutdown")
+    events = countdown_events(subscription)
+    # the executing action is not cancelled: no `cancelled` event for it
+    assert [(e.countdown_id, e.phase) for e in events] == [
+        (first, "started"),
+        (first, "executing"),
+        (second, "started"),
+    ]
+    new = service.pending
+    assert new is not None
+    assert (new.countdown_id, new.phase) == (second, "started")  # the countdown comes first
+    assert service.cancel() is True  # cancels the new countdown only
+    still = service.pending
+    assert still is not None
+    assert (still.countdown_id, still.phase) == (first, "executing")
+    assert not executor.cancelled
+    executor.release.set()
+    await settle()
+    assert executor.actions == ["sleep"]
+    assert executor.finished
+    assert service.pending is None
+
+
+async def test_quit_has_nothing_to_wait_for() -> None:
+    executor = BlockingExecutor()
+    service, _, _ = make(executor, countdown=0, ticker=Ticker())
+    service.schedule("quit")
+    await settle()
+    assert service.pending is None
+    await asyncio.wait_for(service.close(), 5)
+    assert executor.actions == []
 
 
 async def test_a_failing_executor_is_one_app_warning() -> None:

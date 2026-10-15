@@ -129,12 +129,15 @@ async def test_a_whole_countdown_into_the_real_executor_is_stopped(
     service._sleep = sleep
     service._countdown = 1.0
     service.schedule("shutdown")
-    running = service._current
-    assert running is not None
-    assert running.task is not None
     release.set()
+    executing = events.subscribe(types={"power.countdown"})
+    async with asyncio.timeout(5):
+        async for received in executing:
+            if isinstance(received, PowerCountdownEvent) and received.phase == "executing":
+                break
+    (action,) = service._actions  # registered in the same step as `executing`
     with pytest.raises(FAILED):
-        await running.task
+        await action
     assert len(power_guard.take_calls()) == 1
     seen = []
     while (event := subscription.get_nowait()) is not None:

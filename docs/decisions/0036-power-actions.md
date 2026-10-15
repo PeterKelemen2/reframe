@@ -36,9 +36,9 @@ behind this record (read-only; nothing was ever run) are in
 - `cancel()` (by id or the running one), a new `schedule()` and `close()` publish
   `cancelled` with the seconds left. `cancel()` wins also when the last second is over but the
   countdown task has not run yet. Once `executing` is published the countdown is over:
-  `cancel()` returns `False` and `pending` is `None`.
-- `close()` cancels the countdown and also stops an action that is being started (it cancels
-  the task that awaits the executor). It never starts one. `schedule()` after `close()` starts
+  `cancel()` returns `False` (`pending`: see the follow-up below).
+- `close()` cancels the countdown and never starts an action. (The first version also
+  cancelled an action that was being started; the follow-up below replaces that.) `schedule()` after `close()` starts
   nothing: its id gets one `cancelled` event, so a late when-done never fires.
 - `schedule()` needs a running event loop and the loop's thread (`RuntimeError` otherwise: a
   programming error, not an expected failure).
@@ -148,3 +148,42 @@ behind this record (read-only; nothing was ever run) are in
 
 None: the plan's commands are kept (`systemctl poweroff|suspend` gains `--no-ask-password`,
 `shutdown /s /t 60` gains `/c`).
+
+## Follow-up (2026-10-15): an executing action runs to its end
+
+Found by the lead when 1h's CLI was merged: at `executing` the service cleared `pending`, and
+`close()` cancelled every task, also the one awaiting the executor. `reframe encode` waits
+after `executing` until `pending` clears, then closes Reframe, so `Reframe.close()` →
+`power.close()` could cancel `systemctl poweroff`, `shutdown.exe` or the `SetSuspendState`
+await half-way (a cancelled `reframe.tools.run` kills the process tree of the command that is
+asking the system).
+
+Decision:
+
+- Once `executing` is published, the action runs to its end in its own task, which nothing
+  in the service cancels. `cancel()` returns `False` for it.
+- **`pending` stays the `executing` event until the executor returns** (chosen over a new
+  property: the contract keeps its shape, and the CLI's wait already reads `pending`, so it
+  now waits for the action and needs no change). `pending.phase == "executing"` means "the
+  action runs, it can no longer be cancelled". `quit` has no executor: `pending` is `None` right
+  after its `executing`.
+- `close()` cancels a countdown that has not reached `executing`, then waits for running
+  actions with `asyncio.wait` (which never cancels them, also when `close()` itself is
+  cancelled), at most `execute_wait` seconds (new keyword-only parameter, default
+  `EXECUTE_WAIT` = the 30 s command time-out + 5 s). After that it logs and returns; the action
+  goes on (a blocking `SetSuspendState` thread cannot be stopped anyway, and a process
+  started by `reframe.tools.run` keeps its own time-out). At interpreter exit `asyncio.run`
+  still cancels leftover tasks: that only happens after this bounded wait.
+- **`schedule()` while an action executes** starts a new countdown beside it (for example the
+  machine woke from a when-done sleep and a new queue finished). The executing action is not
+  touched and gets no `cancelled` event. `pending` shows the new countdown while it runs (a
+  countdown comes first), and the executing action again when the countdown is cancelled.
+  Refusing the new countdown was the alternative; it would lose a when-done action that the
+  user asked for, without telling them.
+
+Tests (`tests/platform/test_power.py`, a fake executor that blocks until released): `pending`
+is the `executing` event from the moment it is published until the executor returns;
+`cancel()` after `executing` returns `False`; `close()` during `execute` waits and does not
+cancel it; `close()` returns after `execute_wait` and the action still finishes (and its
+failure is still an `app.warning`); a cancelled `close()` does not cancel the action;
+`schedule()` during `execute` as above; `quit` leaves nothing to wait for.
