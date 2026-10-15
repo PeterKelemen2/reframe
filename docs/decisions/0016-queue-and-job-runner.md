@@ -2,7 +2,8 @@
 
 - Status: accepted; restore in `Reframe.create()` and "two processes would both run the
   store's jobs" are superseded by [0027](0027-one-process-owns-the-queue-store.md) (see
-  "Follow-up (M2 review)")
+  "Follow-up (M2 review)"); the power-action part of §9 (when done) is superseded by
+  [0037](0037-when-done-power-actions-and-job-notifications.md)
 - Date: 2026-10-14
 - Steps: C-11 (affects C-14, C-15, S-x, F-x queue views)
 

@@ -201,12 +201,21 @@ Each is built with a default that is easy to change. M2 did not stop for them.
   slot; `cancel()` with no id also cancels waiting jobs; the stall watchdog fires after
   10 minutes with no progress, no output and under 5 % CPU, and `mkvpropedit` has 5 minutes; a
   silent track shorter than 3 s fails a loudness-normalised encode (FFmpeg refuses it).
+  Core-complete ([0037](decisions/0037-when-done-power-actions-and-job-notifications.md)): the
+  when-done action also runs when every job failed; the countdown is cancelled when new work
+  starts and at close, not when the when-done setting changes; a batch whose last job the user
+  cancelled runs no action; job notifications (setting `notifications`) and the `notify`
+  action are independent, done and failed jobs get one, cancelled jobs none.
 - **C-12** ([0019](decisions/0019-audio-codec-rule-details.md)): items 3 to 7 (no upmix,
   "fits" needs no decode, no max = the encoder's default, extra outputs, first-of-language)
   were accepted by the lead without asking.
 - **C-14** ([0022](decisions/0022-linux-sleep-inhibit-mechanism.md)): when the desktop inhibit
   fails but the logind lock works, only a log line is written, no `app.warning`; a malformed
-  `DBUS_SESSION_BUS_ADDRESS` counts as a failed session backend.
+  `DBUS_SESSION_BUS_ADDRESS` counts as a failed session backend. Core-complete
+  ([0036](decisions/0036-power-actions.md)): Windows shuts down with `shutdown /s /t 60` after
+  Reframe's own 60 s countdown (a second timer; it closes open apps without asking); polkit is
+  never asked for a password; Linux sleep is `systemctl suspend`; no fallback for systems with
+  elogind and no `systemctl`.
 - **C-15** ([0017](decisions/0017-jobs-service-and-cli.md)): when the template name is the
   source file itself, the output becomes `Name (1).ext`; `-o DIR` is refused with several
   files ([0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)); `encode` hides info

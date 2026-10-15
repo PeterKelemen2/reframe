@@ -9,9 +9,10 @@
   ``watchdog`` (stall check and step time limit), ``loudnorm`` (measurements and clamping),
   ``verify`` (the output check), ``logs`` (log file and ``job.log`` events), ``process``
   (suspend / resume of a process tree), ``files`` (rename, clean-up), ``lock`` (the store's
-  owner lock), ``errors``.
+  owner lock), ``whendone`` (the when-done action through C-14's power service, the job
+  notifications), ``errors``.
 
-The choices the plan does not make are in decision 0016.
+The choices the plan does not make are in decisions 0016 and 0037 (when done).
 """
 
 from reframe.queue.errors import JobStateError, QueueError, UnknownJobError
