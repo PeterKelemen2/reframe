@@ -6,7 +6,7 @@ Options:
 - ``--require ffmpeg,ffprobe``: exit with 1 unless these tools have the status ``found``.
 - ``--expect-origin bundled``: exit with 1 unless every required tool has this origin.
 
-The ``reframe tools status`` CLI command (C-15) will show the same information.
+``reframe tools status`` (C-15) prints the same lines (:func:`status_lines`).
 """
 
 from __future__ import annotations
@@ -15,8 +15,26 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from reframe.models.tools import ToolOrigin, ToolStatus
+from reframe.models.tools import ToolInfo, ToolOrigin, ToolSet, ToolStatus
 from reframe.tools.discovery import TOOL_NAMES, discover_tools_sync
+
+__all__ = ["main", "status_line", "status_lines"]
+
+
+def status_line(info: ToolInfo) -> str:
+    """``ffmpeg       found    bundled  /path/bin/ffmpeg  n9.0.2-…  (reason)``."""
+    origin = info.origin.value if info.origin else "-"
+    line = f"{info.name:12} {info.status.value:8} {origin:8} {info.path or '-'}"
+    if info.version:
+        line += f"  {info.version}"
+    if info.reason:
+        line += f"  ({info.reason})"
+    return line
+
+
+def status_lines(tools: ToolSet) -> list[str]:
+    """One :func:`status_line` per tool, in discovery order."""
+    return [status_line(tools.get(name)) for name in TOOL_NAMES]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -39,14 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         print(tools.model_dump_json(indent=2))
     else:
-        for name in TOOL_NAMES:
-            info = tools.get(name)
-            origin = info.origin.value if info.origin else "-"
-            line = f"{name:12} {info.status.value:8} {origin:8} {info.path or '-'}"
-            if info.version:
-                line += f"  {info.version}"
-            if info.reason:
-                line += f"  ({info.reason})"
+        for line in status_lines(tools):
             print(line)
 
     failed = False
