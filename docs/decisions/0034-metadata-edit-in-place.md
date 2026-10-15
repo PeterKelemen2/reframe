@@ -147,3 +147,27 @@ order unchanged, only metadata changed, *Edit in place* chosen". Several things 
   writes or removes may be the source" names the one exception (this record).
 - [05-core.md §C-13](../plan/05-core.md#c-13-metadata-edit-and-remux): a note with the
   decisions above.
+
+## Follow-up (2026-10-15, after the wave-1 merge)
+
+The four changes this record reported to the lead, made by the C-13 task:
+
+1. **Same-output rule** (`reframe.queue.service`): a job with `output.edit_in_place` is keyed on
+   its source (it writes it). A job does not start while another running job writes its
+   output, edits its source in place, or (for an in-place edit) reads or writes the source it
+   would edit. So an encode never reads a file that is being edited in place, and two edits of
+   one file run one after the other. `ActiveJob` gained `source_key` and `in_place`.
+2. **Restore**: `_remove_leftovers` skips the plans of `metadata_edit` jobs (no `.part`, plan or
+   temporary file; no "is the source file, not removed" warning).
+3. **`tool.mkvpropedit_missing`** (in-place case): its fix "Write a new file" is
+   `inplace.write_new_file_fix`: edit in place off and, when the output path is missing or is
+   the source, a new path (`inplace.new_output_path`), so applying it gives no
+   `output.same_as_source`. The C-8 table of `test_rules.py` is unchanged (its case has a path
+   that is not the source); a new case in `cases_inplace.py` covers the in-place job.
+4. **`writable_file(path)`** is on `LocalFileSystem` (POSIX `os.access`; on Windows the file is
+   opened for update, since `os.access` sees only the read-only attribute). It is a separate
+   runtime-checkable protocol, `reframe.validation.fs.WritableFiles`, not a member of
+   `FileSystemView`: the fake view of `tests/validation/scenario.py` (which this task may not
+   edit) does not have it, and mypy then rejects it as a `FileSystemView`.
+   `inplace.source_writable` asks a view that has it, else answers yes. Moving the method into
+   `FileSystemView` needs `writable_file` on that fake view first.
