@@ -1519,7 +1519,114 @@ process was gone 6 to 25 ms after `TaskManager.cancel` (bitrate 12–18 ms, subt
 
 ### Preview frames, crop detection and clips (C-10)
 
-(core-complete wave 1c: fast seek, HDR frames for display, `cropdetect` limits, timing.)
+Checked on 2026-10-15 with the Arch `/usr/bin/ffmpeg` n9.0.2 (the `cropdetect` defaults also
+with the n8.1.3 override-test build), on the machine above (12 threads, AMD RX 7600:
+libplacebo works). Decision [0033](../docs/decisions/0033-preview-frames-crop-and-clips.md) is
+based on these. `packages/reframe/tests/preview/` asserts them (`test_frames.py`,
+`test_cropdetect.py`, `test_clip.py`, `test_cancel.py`, the `benchmark` test).
+
+**Fast seek gives the frame of a slow seek.** `-ss T` before `-i` decodes from the keyframe
+before T and outputs the first frame at or after T: on `letterbox.mkv` at 0.2, 1.52, 2.0 and
+3.96 s the PNG is pixel-identical to `-i … -ss T` (which decodes everything before T).
+
+**Past the last frame FFmpeg writes nothing and exits 0**, with nothing on stderr at
+`-loglevel error`:
+
+```console
+$ ffmpeg -v error -ss 3.99 -i letterbox.mkv -frames:v 1 -vf format=rgb24 -c:v png -f image2 -update 1 end.png
+$ echo $?; ls end.png        # last frame at 3.96 s
+0
+ls: cannot access 'end.png': No such file or directory
+```
+
+**One PNG needs `-update 1`**, else the image2 muxer warns: `The specified filename '…/f.png'
+does not contain an image sequence pattern … use the -update option (with -frames:v 1 if
+needed) to write a single image.`
+
+**RGB conversion and colour tags.** An untagged frame is converted to RGB with BT.601; after an
+input seek, FFmpeg converts **before** a `setparams` that comes first in the chain (the
+format negotiation puts the conversion at the decoder's link), so the tag has no effect. An
+explicit `scale` after the tag converts with it. 1280x720 untagged H.264 of the colour
+`0x3080C0`, first pixel of the PNG:
+
+| Chain | without `-ss` | with `-ss 0.5` before `-i` |
+|-------|---------------|---------------------------|
+| `format=rgb24` | 47, 127, 191 (BT.601) | 47, 127, 191 |
+| `setparams=…colorspace=bt709,format=rgb24` | 39, 123, 195 (BT.709) | **47, 127, 191** |
+| `setparams=…colorspace=bt709,scale,format=rgb24` | 39, 123, 195 | 39, 123, 195 |
+| `scale=in_color_matrix=bt709,format=rgb24` | 39, 123, 195 | 39, 123, 195 |
+
+**`split` makes the source and the output frame from one decode**, but the pixel formats are
+negotiated across the split: with `[0:0]split=2[x][y];[x]format=rgb24[src];[y]crop=…,scale=…,
+format=yuv420p,format=rgb24[out]`, FFmpeg converted the decoded frame to RGB **before** the
+split, so the output branch's crop and scale ran on RGB and its picture differed from a run
+that makes only the output frame (also with `decimate`, `tmix`, `bwdif` Bob). The source frame
+was the same. When each branch converts with its own `scale` (`…,scale=…,format=rgb24`), both
+pictures are pixel-identical to one-kind runs (`test_one_run_for_both_kinds_…`: crop +
+hqdn3d + sharpen, Bob, HDR kept with zscale display mapping, a tone-mapping job). 4K HDR,
+zscale on both, crop + scale on one: 0.65–0.75 s in one run, 1.17–1.28 s in two.
+
+**4K HDR frame times** (`hdr10-4k.mkv`, one frame per run, idle machine, load average 1.3):
+decoding all 120 frames takes 0.73 s (about 165 frames/s). One PNG at 0.25 / 1.9 / 2.5 /
+4.75 s (1.9 s is 45 frames after a keyframe), PNG compression level 1:
+
+| Chain | times (s) | PNG size |
+|-------|-----------|----------|
+| `format=rgb24` (no tone mapping) | 0.34, 0.66, 0.38, 0.40 | 2.2 MB |
+| zscale + tonemap (Hable) | 0.43, 0.57, 0.48, 0.43 | 1.6 MB |
+| libplacebo (BT.2390, peak detection) | 0.56, 0.71, 0.60, 0.60 | 5.6 MB |
+| decode only (`-f null`) | 0.26, 0.39, 0.31, 0.28 | |
+
+Ten frames: zscale 5.0 s one at a time, 4.0 s two at a time, 3.7 s three at a time;
+libplacebo 7.5 / 4.9 / 4.7 s. PNG compression of a grainy 4K picture (testsrc2 + noise,
+`-pred` default `paeth`): level 1 0.34 s 13.9 MB, level 3 0.45 s 8.9 MB, level 6 0.94 s 8.5 MB.
+An explicit `scale=flags=bicubic+accurate_rnd+full_chroma_int` before `format=rgb24` costs
+nothing measurable at 4K.
+
+**Display matrix and pixel aspect.** `ffmpeg -display_rotation:v:0 90 -i letterbox.mkv -c copy
+rotated.mp4`: ffprobe shows `rotation=90`; the PNG of a frame is 180x320 and `cropdetect` says
+`x1:22 x2:155 … w:134 h:320 x:22 y:0 crop=134:320:22:0` (the picture as decoded, decision
+0009). `anamorphic.mkv` (720x480, SAR 32:27) gives a 720x480 PNG with
+`sample_aspect_ratio=32:27`.
+
+**`cropdetect`** (both builds):
+
+```console
+$ ffmpeg -h filter=cropdetect
+   limit  <float>  Threshold below which the pixel is considered black (from 0 to 65535) (default 0.0941176)
+   round  <int>    Value by which the width/height should be divisible (from 0 to INT_MAX) (default 16)
+   skip   <int>    Number of initial frames to skip (from 0 to INT_MAX) (default 2)
+$ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=2 -f null -
+(no cropdetect line: the first 2 frames are skipped)
+$ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=2:skip=0 -f null -
+[Parsed_cropdetect_0 @ 0x…] x1:0 x2:319 y1:22 y2:155 w:320 h:134 x:0 y:22 pts:0 t:0.000000 limit:0.094118 crop=320:134:0:22
+[Parsed_cropdetect_0 @ 0x…] x1:0 x2:319 y1:22 y2:155 w:320 h:134 x:0 y:22 pts:40 t:0.040000 limit:0.094118 crop=320:134:0:22
+```
+
+- `-frames:v 1` lets two frames through the filter; the first line is the sample frame.
+- A limit below 1 is a fraction of the full range, scaled by the bit depth (24 at 8-bit, 96.3
+  at 10-bit). On a 10-bit PQ letterbox (640x268 picture, 46-line bars, x265):
+  `limit=0.094118` → `crop=640:268:0:46`; `limit=96` → the same; `limit=65` → `crop=640:270:0:44`
+  (ringing); `limit=64` → `crop=640:280:0:38`; **`limit=24` → `crop=640:360:0:0`** (no bars: 24
+  is below 10-bit black).
+- Black levels (`signalstats`, YMIN / YLOW / YAVG / YMAX): SDR letterbox bar 14 / 16 / 16.1 / 18
+  (8-bit); PQ letterbox bar 40 / 63 / 63.9 / 91 (10-bit; the extremes are x265 ringing next to
+  the picture).
+- A black frame: `x1:319 x2:0 y1:179 y2:0 w:-318 h:-178 x:320 y:180 … crop=-318:-178:320:180`.
+- Rounding: x and y are rounded up to even, the size down to a multiple of `round`; an odd
+  `round` is doubled and `round=1` means 16 (300x150 picture at 9,13 in 320x181:
+  `round=2` → `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`).
+
+**The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
+frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of
+two cold runs): load average 3.4–4.2 on 12 threads: cold 678, 729, 726, 770, 678, 749, 787,
+844, 688, 695, 820 ms (budget 2 s); cached mean 1.4 ms, max 3.8 ms (budget 50 ms);
+`frame(key)` 38 µs. At load average 12–13: cold 699–920 ms; at load 19: up to 2.4 s.
+
+**Cancel** (`test_cancel.py`, real FFmpeg; the time from `TaskManager.cancel` until the process
+is gone, busy machine): a 4K output frame through `nlmeans=s=10:p=15:r=31` 15 ms; crop
+detection on 60 samples of `hdr10-4k` 11 ms (no next sample starts); a 5 s 4K x265 `slow`
+preview clip 25 ms (the partial clip is removed).
 
 ### Metadata edit (C-13)
 

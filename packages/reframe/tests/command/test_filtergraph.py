@@ -18,10 +18,13 @@ from reframe.command.filtergraph import (
     TextBurn,
     assumed_colour,
     build_video_graph,
+    colour_params,
     filter_available,
     frame_rate_factor,
+    is_hdr,
     keeps_hdr,
     overlay_format,
+    tonemap_filters,
 )
 from reframe.definitions import load_definitions
 from reframe.dimensions import compute_geometry, source_geometry
@@ -385,3 +388,47 @@ def test_bitmap_overlay_keeps_more_than_8_bits(
     assert overlay_format(video) == expected
     written = graph(video, {}, bitmap_burn=BitmapBurn(input_label="0:5", canvas=(1920, 1080)))
     assert ("overlay=eof_action=pass:format=" in written) is (expected is not None)
+
+
+# --------------------------------------------------------------------------- helpers for C-10
+
+
+def test_is_hdr() -> None:
+    assert is_hdr(stream(hdr=HdrInfo(formats=[HdrFormat.HDR10])))
+    assert is_hdr(stream(hdr=HdrInfo(formats=[HdrFormat.DOLBY_VISION])))
+    assert not is_hdr(stream(hdr=HdrInfo(formats=[])))
+    assert not is_hdr(stream())
+
+
+def test_colour_params_is_the_graphs_setparams() -> None:
+    setparams = colour_params(stream())
+    assert setparams == "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+    tagged = stream(color=ColorInfo(primaries="bt709", transfer="bt709", matrix="bt709"))
+    assert colour_params(tagged) is None
+    untagged = graph(stream(), {"colorspace": FilterConfig(preset="bt2020")})
+    assert f",{setparams},zscale=" in untagged
+
+
+@pytest.mark.parametrize("libplacebo", [True, False])
+@pytest.mark.parametrize("tagged", [True, False])
+def test_tonemap_filters_are_the_graphs(libplacebo: bool, tagged: bool) -> None:
+    """C-10 maps HDR frames for display with the same filters as the Tone mapping filter."""
+    colour = ColorInfo(primaries="bt2020", transfer="smpte2084", matrix="bt2020nc")
+    video = stream(hdr=HdrInfo(formats=[HdrFormat.HDR10]), color=colour if tagged else ColorInfo())
+    available = filter_available(caps(libplacebo=libplacebo), DEFS)
+    filters, impl = tonemap_filters(video, DEFS, available)
+    assert impl.id == ("libplacebo" if libplacebo else "zscale")
+    written = graph(video, {"tonemap": FilterConfig()}, libplacebo=libplacebo)
+    assert ",".join(filters) in written
+    needs_tags = not libplacebo and not tagged
+    assert filters[0].startswith("setparams=") is needs_tags
+    assert len(filters) == (2 if needs_tags else 1)
+    hable, _ = tonemap_filters(video, DEFS, available, FilterConfig(tune="hable"))
+    assert "hable" in hable[-1]
+
+
+def test_tonemap_filters_without_a_tone_mapper() -> None:
+    video = stream(hdr=HdrInfo(formats=[HdrFormat.HDR10]))
+    nothing = dict.fromkeys(filter_available(caps(), DEFS), False)
+    with pytest.raises(PlanError, match="'tonemap'"):
+        tonemap_filters(video, DEFS, nothing)

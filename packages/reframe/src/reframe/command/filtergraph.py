@@ -54,12 +54,15 @@ __all__ = [
     "VideoGraph",
     "assumed_colour",
     "build_video_graph",
+    "colour_params",
     "escape_value",
     "filter_available",
     "filter_path",
+    "is_hdr",
     "keeps_hdr",
     "quote_value",
     "subtitles_filter",
+    "tonemap_filters",
 ]
 
 #: Frame side data that describes HDR and must not reach an SDR output (``sidedata`` types).
@@ -179,6 +182,45 @@ def _setparams(video: VideoStream) -> str | None:
         return None
     primaries, transfer, matrix = assumed_colour(video)
     return f"setparams=color_primaries={primaries}:color_trc={transfer}:colorspace={matrix}"
+
+
+def is_hdr(video: VideoStream) -> bool:
+    """The source is HDR (PQ, HLG, HDR10+ or Dolby Vision: the probe found an HDR format): the
+    graph tone maps it only with the Tone mapping filter, and HDR side data is removed after a
+    tone mapping or a colour conversion."""
+    return _is_hdr(video)
+
+
+def colour_params(video: VideoStream) -> str | None:
+    """The ``setparams`` filter that the graph puts before an implementation that needs tagged
+    input (``zscale``) when the source does not say its colour (:func:`assumed_colour`);
+    ``None`` when the source says all three values. C-10's preview frames put it first, so
+    that the RGB conversion of a PNG uses the same colour as the graph."""
+    return _setparams(video)
+
+
+def tonemap_filters(
+    video: VideoStream,
+    definitions: Definitions,
+    available: Mapping[str, bool],
+    config: FilterConfig | None = None,
+) -> tuple[list[str], FilterImplementation]:
+    """The filters that the graph writes for the Tone mapping filter with ``config`` (default:
+    ``FilterConfig()``, the default preset of the default implementation), and that
+    implementation: ``libplacebo`` when it is ``available`` (its run test passed, decision
+    0021), else ``zscale`` + ``tonemap`` after the ``setparams`` of :func:`colour_params`.
+
+    C-10's preview frames map an HDR picture to SDR for display with these, so a source frame
+    looks like the output of a job that tone maps. Raises :class:`PlanError` when no
+    implementation can run."""
+    fdef = definitions.filters["tonemap"]
+    impl, chain = _chain(fdef, config if config is not None else FilterConfig(), available)
+    filters: list[str] = []
+    setparams = _setparams(video) if impl.requires_tagged_input else None
+    if setparams is not None:
+        filters.append(setparams)
+    filters.append(chain)
+    return filters, impl
 
 
 def keeps_hdr(video: VideoStream, filters: Mapping[str, FilterConfig], bit_depth: int) -> bool:
