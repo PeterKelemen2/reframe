@@ -76,18 +76,22 @@ from reframe.naming.context import audio_channels_label
 from reframe.naming.template import Value
 
 __all__ = [
+    "CHANNEL_CONDITIONS",
     "PASSTHRU",
     "apply_codec_rules",
+    "bitrate_table",
     "channels_match",
     "language_matches",
     "passthru_codec",
     "requested_mixdown",
+    "snap_note",
 ]
 
 #: ``AudioCodecRule.codec`` / ``ExtraAudioOutput.codec`` value for "Passthru".
 PASSTHRU = "passthru"
 
-_CHANNEL_CONDITIONS: dict[SourceChannels, str] = {
+#: The words for a rule's source-channels condition (``Rule 2 needs 5.1 or more``).
+CHANNEL_CONDITIONS: dict[SourceChannels, str] = {
     "any": "any channels",
     "mono": "mono",
     "stereo_or_less": "stereo or less",
@@ -511,6 +515,38 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
     )
 
 
+def bitrate_table(
+    encoder: AudioEncoderDef,
+    rule_mixdown: RuleMixdown,
+    stream: AudioStream,
+    container: Container,
+    definitions: Definitions,
+) -> Mixdown:
+    """The bit-rate table (a mixdown of ``encoder.bitrate.by_mixdown``) that a rule with
+    ``rule_mixdown`` and ``encoder`` uses for ``stream``: the layout the command builder
+    writes (C-7's ``planned_audio``), the same table :func:`apply_codec_rules` caps with. The
+    defaults lint (``reframe.batch.lint``) checks a rule's max against it."""
+    ctx = _Context(
+        stream=stream,
+        policy=PassthruPolicy(),
+        container=definitions.containers[container],
+        defs=definitions,
+        source_key=None,
+        source_label="",
+    )
+    wanted = requested_mixdown(rule_mixdown, stream.channels, definitions)
+    mixdown = encoder.snap_mixdown(wanted, stream.channels, definitions.mixdowns)
+    return _written(ctx, encoder, mixdown).table
+
+
+def snap_note(
+    wanted: int, got: int, encoder: AudioEncoderDef, key: Mixdown, definitions: Definitions
+) -> str:
+    """``AC-3 5.1 goes up to 640 kb/s: 700 → 640 kb/s``: why a bit rate snapped, and to
+    what."""
+    return _snap_note(wanted, got, encoder, key, definitions)
+
+
 def _snap_note(
     wanted: int, got: int, encoder: AudioEncoderDef, key: Mixdown, defs: Definitions
 ) -> str:
@@ -613,9 +649,10 @@ def apply_codec_rules(
     reason. The first matching codec rule wins; its extra outputs follow its output.
 
     ``first_of_language``: whether this track is the first selected track of its language,
-    for rules with ``first_track_of_language_only`` (in M2, where every track is selected,
-    :func:`~reframe.batch.draft_tracks` passes "first in source order"). A rule limited to
-    the first track does not match the others; the next rule is checked.
+    for rules with ``first_track_of_language_only``: the selection stage passes "first in the
+    output order" (:func:`reframe.batch.explain.audio_stage`; when no language is set and
+    every track is kept, that is the source order, as in M2). A rule limited to the first
+    track does not match the others; the next rule is checked.
 
     No rule matching (only possible when the catch-all is limited to the first track) is
     data: no output, and the decision says why.
@@ -635,7 +672,7 @@ def apply_codec_rules(
         if not language_matches(rule.languages, stream):
             continue
         if not channels_match(rule.source_channels, stream.channels):
-            skipped.append(f"Rule {number} needs {_CHANNEL_CONDITIONS[rule.source_channels]}")
+            skipped.append(f"Rule {number} needs {CHANNEL_CONDITIONS[rule.source_channels]}")
             continue
         if rule.extras.first_track_of_language_only and not first_of_language:
             skipped.append(f"Rule {number} is only for the first track of a language")

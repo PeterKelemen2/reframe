@@ -1381,7 +1381,35 @@ review follow-up of decision [0012](../docs/decisions/0012-output-naming-rules.m
 
 ### Audio and subtitle defaults (C-12, selection stage)
 
-(core-complete wave 1a: what the selection stage relies on.)
+Checked on 2026-10-15 with MKVToolNix 101.0 (`/usr/bin/mkvmerge`) and ffprobe n9.0.2
+(`/usr/bin/ffprobe`), for decision
+[0031](../docs/decisions/0031-audio-and-subtitle-selection-stage.md). The selection itself is
+pure; it relies on what the probe reads from an mkvmerge-made file: the forced flag and the
+event count of a subtitle track (the foreign audio search), and the default flags (at most one
+default track per kind is kept). `tests/batch/test_explain_media.py` repeats this on the
+`multitrack` fixture (`needs_ffmpeg`; skipped without mkvmerge).
+
+```
+$ printf '1\n00:00:01,000 --> 00:00:02,000\nElvish: Hello\n' > forced.srt
+$ mkvmerge -q -o fas.mkv multitrack.mkv --language 0:eng --track-name 0:Forced \
+    --forced-display-flag 0:1 forced.srt
+$ ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_disposition=default,forced,comment:stream_tags=language,title,NUMBER_OF_FRAMES -of compact fas.mkv
+...
+stream|index=4|codec_name=subrip|codec_type=subtitle|disposition:default=1|disposition:comment=0|disposition:forced=0|tag:language=eng|tag:title=English|tag:NUMBER_OF_FRAMES=2
+stream|index=5|codec_name=subrip|codec_type=subtitle|disposition:default=0|disposition:comment=0|disposition:forced=0|tag:language=eng|tag:title=English SDH|tag:NUMBER_OF_FRAMES=3
+stream|index=6|codec_name=subrip|codec_type=subtitle|disposition:default=0|disposition:comment=0|disposition:forced=1|tag:language=eng|tag:title=Signs & Songs|tag:NUMBER_OF_FRAMES=1
+stream|index=7|codec_name=subrip|codec_type=subtitle|disposition:default=1|disposition:comment=0|disposition:forced=1|tag:language=eng|tag:title=Forced|tag:NUMBER_OF_FRAMES=1
+```
+
+- `--forced-display-flag` is ffprobe's `disposition:forced=1`; mkvmerge's statistics tag
+  `NUMBER_OF_FRAMES` is the event count of a subtitle track (C-3 reads it as
+  `event_count`, source `stats_tag`).
+- **mkvmerge marks an added track default** (`FlagDefault=1`) unless it is told otherwise
+  (`--default-track-flag 0:0`): the file above has two default subtitle tracks (4 and 7). So a
+  draft that keeps every track (no language set) keeps the default flag only on the first of
+  them (03 §Track metadata: one default track per type).
+- HandBrake's subtitle defaults were read in its source, not run: see decision 0031
+  ("Context").
 
 ### Analysis scans (C-10: bitrate, subtitles, loudness)
 
