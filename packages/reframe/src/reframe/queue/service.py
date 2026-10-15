@@ -20,7 +20,10 @@ jobs, ``settings.queue.parallel_jobs`` at a time (read again each time a slot fr
   its issues (it can be retried after its cause is fixed, for example a missing encoder).
 - A paused job keeps its slot (its process is suspended, not ended).
 - Two jobs with the same output path never run at the same time (both would write the same
-  ``.part`` file): the second waits and the next job in the queue runs instead.
+  ``.part`` file): the second waits and the next job in the queue runs instead. A job that
+  edits its source in place (``output.edit_in_place``, decision 0034) writes that source: it
+  never runs while another job reads or writes that file, and no job that reads it starts
+  while it runs.
 
 **Events**, in this order (02 §Events; ``job.progress`` and ``job.log`` may be coalesced or
 dropped by a slow subscriber, the others never):
@@ -125,11 +128,38 @@ def _closed_error() -> Exception:
     return ReframeClosedError()
 
 
+def _path_key(path: str | os.PathLike[str]) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _source_key(job: QueueJob) -> str:
+    return _path_key(job.settings.source.path)
+
+
 def _output_key(job: QueueJob) -> str | None:
+    """The file the job writes: its output path, or its source for an in-place edit."""
+    if job.settings.output.edit_in_place:
+        return _source_key(job)
     path = job.settings.output.path
     if path is None:
         return None
-    return os.path.normcase(os.path.abspath(path))
+    return _path_key(path)
+
+
+def _conflicts(job: QueueJob, active: Iterable[ActiveJob]) -> bool:
+    """``job`` must wait: another running job writes its output, edits its source in place,
+    or (for an in-place edit) reads or writes the source it would edit."""
+    output = _output_key(job)
+    source = _source_key(job)
+    in_place = job.settings.output.edit_in_place
+    for other in active:
+        if output is not None and output == other.output_key:
+            return True  # the same output is being written by another job
+        if other.in_place and source == other.source_key:
+            return True  # its source is being edited in place
+        if in_place and source in (other.source_key, other.output_key):
+            return True  # the source to edit is being read or written
+    return False
 
 
 class QueueService:
@@ -569,6 +599,8 @@ class QueueService:
         for job in jobs:
             plan = job.plan
             assert plan is not None
+            if plan.job_type == "metadata_edit":
+                continue  # it edits its source: no .part, plan or temporary file (0034)
             paths = [f.path for f in plan.files] + list(plan.temp_files)
             if delete:
                 paths.append(plan.output_tmp)
@@ -598,20 +630,21 @@ class QueueService:
             self._only = None
             return True
         limit = self._settings().queue.parallel_jobs
-        busy = {active.output_key for active in self._active.values() if active.output_key}
         for job in self._ordered():
             if len(self._active) >= limit:
                 break
             if not self._eligible(job):
                 continue
-            key = _output_key(job)
-            if key is not None and key in busy:
-                continue  # the same output is being written by another job
-            active = ActiveJob(job_id=job.id, output_key=key)
+            if _conflicts(job, self._active.values()):
+                continue  # see _conflicts; the next job in the queue may run instead
+            active = ActiveJob(
+                job_id=job.id,
+                output_key=_output_key(job),
+                source_key=_source_key(job),
+                in_place=job.settings.output.edit_in_place,
+            )
             self._active[job.id] = active
             self._when.work_started()  # new work: the queue's when-done countdown stops
-            if key is not None:
-                busy.add(key)
             active.task = asyncio.get_running_loop().create_task(
                 self._run(job, active), name=f"reframe-queue-job-{job.id}"
             )

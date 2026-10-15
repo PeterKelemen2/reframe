@@ -19,7 +19,6 @@ The output rules skip the path checks of a metadata edit: its output is the sour
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from pathlib import Path, PurePath
 
@@ -27,22 +26,18 @@ from reframe.command.jobtype import in_place_blockers
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.context import JobContext
-from reframe.validation.fs import FileSystemView, LocalFileSystem
+from reframe.validation.fs import FileSystemView, WritableFiles
 from reframe.validation.output import free_of_source, is_metadata_edit, source_clash
 from reframe.validation.registry import job_rule
 
-__all__ = ["is_metadata_edit", "new_output_path", "source_writable"]
+__all__ = ["is_metadata_edit", "new_output_path", "source_writable", "write_new_file_fix"]
 
 
 def source_writable(fs: FileSystemView, path: PurePath) -> bool:
-    """The existing file ``path`` can be written. A file-system view may answer it with a
-    ``writable_file(path)`` method; the real file system asks ``os.access``; any other view
-    says yes (it cannot tell)."""
-    check = getattr(fs, "writable_file", None)
-    if callable(check):
-        return bool(check(path))
-    if isinstance(fs, LocalFileSystem):
-        return os.path.isfile(path) and os.access(path, os.W_OK)
+    """The existing file ``path`` can be written: asked from the view when it can tell
+    (:class:`~reframe.validation.fs.WritableFiles`, the real file system does), else yes."""
+    if isinstance(fs, WritableFiles):
+        return fs.writable_file(path)
     return True
 
 
@@ -64,7 +59,9 @@ def new_output_path(ctx: JobContext) -> PurePath:
     return candidate
 
 
-def _write_new_file(ctx: JobContext) -> Fix:
+def write_new_file_fix(ctx: JobContext) -> Fix:
+    """ "Write a new file": edit in place off and, when the output path is missing or is the
+    source, :func:`new_output_path` (so the fix never leaves ``output.same_as_source``)."""
     ops = [replace("output.edit_in_place", False)]
     path = ctx.job.output.path
     source = Path(ctx.job.source.path)
@@ -90,7 +87,7 @@ def not_possible(ctx: JobContext) -> Iterator[ValidationIssue]:
         "output.edit_in_place",
         f"The source cannot be edited in place: {blockers[0]}{more}. Only languages, names, "
         "flags and the title of an MKV can be changed in place.",
-        _write_new_file(ctx),
+        write_new_file_fix(ctx),
     )
 
 
@@ -105,7 +102,7 @@ def in_place_source(ctx: JobContext) -> Iterator[ValidationIssue]:
             "output.edit_in_place",
             f"{source.name} cannot be written (read-only, or no permission): its metadata "
             "cannot be edited in place.",
-            _write_new_file(ctx),
+            write_new_file_fix(ctx),
         )
     path = ctx.job.output.path
     if path is not None and not _same(path, source, ctx.fs):

@@ -141,7 +141,12 @@ class ActiveJob:
 
     job_id: str
     output_key: str | None = None
-    """The normalised output path: two jobs with the same output never run at once."""
+    """The normalised output path: two jobs with the same output never run at once (for an
+    in-place metadata edit, its source)."""
+    source_key: str | None = None
+    """The normalised source path: no job reads a source while it is edited in place."""
+    in_place: bool = False
+    """The job edits its source in place (``output.edit_in_place``; decision 0034)."""
     token: CancelToken = field(default_factory=CancelToken)
     stop_reason: StopReason | None = None
     paused: bool = False

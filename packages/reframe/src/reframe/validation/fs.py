@@ -20,11 +20,11 @@ import shutil
 import sys
 import tempfile
 from pathlib import PurePath
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from reframe.naming import NamingFs, RealNamingFs
 
-__all__ = ["FileSystemView", "LocalFileSystem"]
+__all__ = ["FileSystemView", "LocalFileSystem", "WritableFiles"]
 
 
 class FileSystemView(NamingFs, Protocol):
@@ -53,6 +53,28 @@ class FileSystemView(NamingFs, Protocol):
         ...
 
 
+@runtime_checkable
+class WritableFiles(Protocol):
+    """A file-system view that can also say whether an existing file can be written (an
+    in-place metadata edit writes its source, C-13). :class:`LocalFileSystem` has it.
+
+    Kept apart from :class:`FileSystemView` so that a view without it still validates every
+    other job; ``reframe.validation.inplace.source_writable`` asks it when it is there."""
+
+    def writable_file(self, path: PurePath) -> bool:
+        """The existing file ``path`` can be opened for writing. ``False`` when it does not
+        exist."""
+        ...
+
+
+def _can_open_for_update(file: PurePath) -> bool:
+    try:
+        with open(file, "r+b"):
+            return True
+    except OSError:
+        return False
+
+
 def _can_create_file(folder: PurePath) -> bool:
     try:
         with tempfile.TemporaryFile(dir=folder):
@@ -79,6 +101,17 @@ class LocalFileSystem(RealNamingFs):
             return _can_create_file(path)
         else:
             return os.access(path, os.W_OK | os.X_OK)
+
+    def writable_file(self, path: PurePath) -> bool:
+        if not os.path.isfile(path):
+            return False
+        if sys.platform == "win32":
+            # os.access only reads the read-only attribute on Windows, not the ACL or a file
+            # that another process opened without write sharing. Opening it for update (not
+            # truncated, nothing written) is the reliable test.
+            return _can_open_for_update(path)
+        else:
+            return os.access(path, os.W_OK)
 
     def free_bytes(self, path: PurePath) -> int | None:
         try:
