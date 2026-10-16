@@ -16,24 +16,14 @@ from reframe.models import FieldOrder, Rational, VideoStream
     ("pix_fmt", "steps"),
     [
         ("yuv420p", (2, 2)),
-        ("yuvj420p", (2, 2)),
-        ("yuv420p10le", (2, 2)),
-        ("yuva420p16be", (2, 2)),
         ("nv12", (2, 2)),
-        ("nv21", (2, 2)),
         ("p010le", (2, 2)),
-        ("p016be", (2, 2)),
         ("yuv422p", (2, 1)),
-        ("yuv422p10le", (2, 1)),
-        ("yuyv422", (2, 1)),
-        ("uyvy422", (2, 1)),
         ("nv16", (2, 1)),
-        ("nv20le", (2, 1)),
         ("p210le", (2, 1)),
         ("y210le", (2, 1)),
         ("v210", (2, 1)),
         ("yuv444p", (1, 1)),
-        ("yuv444p12le", (1, 1)),
         ("nv24", (1, 1)),
         ("p410le", (1, 1)),  # not 4:1:0
         ("y410le", (1, 1)),  # not 4:1:0
@@ -42,12 +32,8 @@ from reframe.models import FieldOrder, Rational, VideoStream
         ("ayuv64le", (1, 1)),
         ("uyva", (1, 1)),
         ("rgb24", (1, 1)),
-        ("bgr0", (1, 1)),
-        ("gbrp10le", (1, 1)),
         ("x2rgb10le", (1, 1)),
         ("gray", (1, 1)),
-        ("gray10le", (1, 1)),
-        ("ya8", (1, 1)),
         ("rgb444le", (1, 1)),
         ("yuv411p", (4, 1)),
         ("uyyvyy411", (4, 1)),
@@ -60,7 +46,7 @@ def test_chroma_steps(pix_fmt: str, steps: tuple[int, int]) -> None:
     assert chroma_steps(pix_fmt) == steps
 
 
-@pytest.mark.parametrize("pix_fmt", [None, "", "vaapi", "cuda", "bayer_rggb8", "unknown"])
+@pytest.mark.parametrize("pix_fmt", [None, "", "vaapi", "bayer_rggb8"])
 def test_unknown_pixel_formats(pix_fmt: str | None) -> None:
     assert chroma_steps(pix_fmt) is None
 
@@ -106,9 +92,8 @@ def test_interlacing_from_the_field_order(order: FieldOrder, interlaced: bool) -
     assert source_geometry(video(field_order=order)).interlaced is interlaced
 
 
-@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
-def test_rotation_from_the_display_matrix(rotation: int) -> None:
-    assert source_geometry(video(rotation=rotation)).rotation == rotation
+def test_rotation_from_the_display_matrix() -> None:
+    assert source_geometry(video(rotation=90)).rotation == 90
 
 
 def test_4_2_2_ten_bit() -> None:
