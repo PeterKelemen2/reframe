@@ -184,3 +184,101 @@ mkvpropedit (`reframe.queue.files.writable_file`) is now the same test as
 writing, or that another process holds without write sharing, passed the runner's check).
 Tests: `tests/validation/test_inplace_fs.py` (`test_every_view_answers_writable_file`,
 `test_runner_check_is_the_local_view`, mocked Windows).
+
+The review's findings R4-1 … R4-6 and the kill paths (C-13 fix task; each test failed before
+its fix and passes after it):
+
+- **R4-1 (major): one file through a link had other queue keys.** The keys were
+  `normcase(abspath(path))`: an encode that read the source through a symbolic or hard link
+  ran while the source was edited in place, and two in-place edits of one file ran at once
+  (the reviewer measured two real mkvpropedit edits of one file through two spellings: 20 of
+  100 runs ended with one edit lost). Now a key is `normcase(realpath(path))` (for an output
+  that does not exist yet, the existing part of its folder is resolved), and `_conflicts`
+  compares two keys as files: equal, equal without case, or `os.path.samefile` (a hard link;
+  on Windows `os.stat` gives the volume serial number and the file index), the rule of
+  `files.same_file`. These are a few `stat` calls per running job in the event loop, each
+  time the queue looks for a job to start. Tests: `tests/queue/test_job_keys_review_fixes.py`
+  (symbolic link, hard link, linked output folder, case, a mocked `os.stat` identity, and the
+  real queue with the fake tools: two edits through a link, and an encode of a hard link,
+  run one after the other). Also in 0016.
+- **R4-2 (major): a `SeekPosition` of 2^63 or more** made `handle.seek` raise `ValueError`,
+  which the prober and the runner did not catch: `Reframe.sources.probe` raised and `reframe
+  probe` printed "unexpected error". ffprobe and `mkvmerge -J` list all seven tracks of that
+  file. Now a `SeekHead` entry whose position is at or past the end of the file is skipped and
+  the next entry of that ID is used (FFmpeg also goes on with the next entry), any
+  `ValueError` / `OverflowError` of the reader is a `MatroskaError`, and the element at a
+  `SeekHead` position must be the element the entry names (before, an `Info` there was read as
+  an empty track list). The runner's catch (`MatroskaError`, `OSError`) needed no change: an
+  in-place edit of such a file now reaches mkvpropedit, which refuses the file itself ("no
+  corresponding level 1 element was found", exit code 2, the file unchanged), and the job
+  fails with that message. Tests: `tests/probe/test_matroska_review_fixes.py` (in-memory
+  files; the reviewer's `make_hostile.py` file built from the fixture with the real ffprobe),
+  `tests/metadata/test_metadata_review_fixes.py` (the in-place edit through the queue).
+- **R4-3 (major): with MediaInfo on, `language_ietf` was MediaInfo's `Language`**, which
+  MediaInfo derives from the legacy element when there is no `LanguageIETF` (`jpn` → `ja`,
+  `eng` → `en`; pymediainfo 7.0.1, libmediainfo 24.12), and `apply_matroska` overwrote it only
+  when the track had the element. So the probe showed a BCP 47 tag that the file does not hold
+  (`mkvmerge -J`: none). Now, for a Matroska file whose tracks the reader matched, every
+  stream's `language_ietf` is the track's element or `None`; MediaInfo's value stays only for
+  other containers and when the reader could not read or match the tracks. The re-probe check
+  was not fooled (it compares canonical tags). The cache option becomes `"matroska": 2`, so
+  older entries are misses. Tests: `test_matched_tracks_get_the_files_value_or_none`,
+  `test_probe_with_mediainfo_on_keeps_only_the_files_bcp47_tags` (MediaInfo faked, MP4 keeps
+  its value), `test_real_mediainfo_derives_a_bcp47_tag_from_the_legacy_language`, and the M6
+  demo 3 with the real MediaInfo
+  (`test_demo_3_with_mediainfo_on_shows_only_the_files_bcp47_tags`). Also in 0007.
+- **R4-4 (major): an invalid `LanguageIETF` was stored unchecked** (`stream.language_ietf =
+  …` does not validate): `en_US` or `j\na;x` made `remux_job` / `draft` fail with a
+  `ValidationError` ("unexpected error" in `reframe plan`). ffprobe reads such a file (legacy
+  `jpn`), `mkvmerge -J` shows no `language_ietf` for that track, MediaInfo shows the raw value.
+  Now only a value that is a valid `LanguageTag` (pattern and at most 64 characters) is used;
+  another value gives `None` and the probe warning "Stream 1: the BCP 47 language
+  (LanguageIETF) 'en_US' is not a language tag; not used." (`''` means no element, no
+  warning). MediaInfo's languages get the same length check. Tests:
+  `test_a_value_that_is_not_a_language_tag_is_not_used`,
+  `test_probe_of_an_invalid_language_ietf[en_US|j\na;x]` (the fixture copy with the bytes
+  patched), `test_a_file_with_an_invalid_language_ietf_can_be_drafted_and_planned`.
+- **R4-5 (minor): the reader's work was not bounded by entries.** `SeekHead` entries piled up
+  without limit (the reviewer's 67 MB file of four 16 MB SeekHeads: 17.7 s, 663 MB), and the
+  same held for any element's children: a 16 MB `Tracks` element of 8 million empty
+  `TrackEntry` elements took 14.8 s and 1.75 GB (measured on this machine). Neither the
+  prober's 30 s timeout (it stops waiting, the worker thread goes on) nor the runner's check
+  before mkvpropedit (no limit) stopped that. Now: only the first `SeekHead` and the one it
+  links to are read (before, every `SeekHead` before the first `Cluster` was read, and none
+  after it), each at most `MAX_SEEK_HEAD` = 1 MiB (a larger one is skipped), with at most
+  `MAX_CHILDREN` = 4096 entries looked at and only the `Tracks`, `Info` and `SeekHead` ones
+  kept; any other element with more than 4096 children is a `MatroskaError`; one read parses
+  at most `MAX_ELEMENTS` = 65 536 element headers and reads at most `MAX_READ` = 36 MiB.
+  Measured after the fix: the reviewer's 67 MB file 0.000 s; a 67 MB file of 64 SeekHeads of
+  just under 1 MiB, each linking to the next, 0.035 s and no memory beyond the interpreter's;
+  the 16 MB `Tracks` element 0.011 s (`MatroskaError`). The tests count the headers parsed
+  and the bytes read (no wall clock): `test_many_seek_heads_full_of_entries_are_bounded`
+  (before: 240 019 headers), `test_linked_seek_heads_full_of_entries_are_bounded`,
+  `test_one_linked_seek_head_is_followed_and_no_more`,
+  `test_a_tracks_element_with_too_many_children_is_a_matroska_error`,
+  `test_all_element_headers_are_bounded`, `test_all_bytes_read_are_bounded`,
+  `test_a_seek_head_over_its_limit_is_skipped`. Item 5 of the decision ("16 MB per element,
+  4096 top-level elements") is extended by these limits.
+- **R4-6 (minor): the M6 demo-3 test** did not check the job type or the 1 s limit. It now
+  asserts `metadata_edit` and `seconds(ended) < 1`
+  (`test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all`). A test gap only:
+  the new assertions pass on the code before the fixes too.
+- **Killing mkvpropedit (doc only; lead's decision: no behaviour change in this task).**
+  Reframe's own cancel, `close()` and the 5-minute step limit end a running mkvpropedit like
+  any step: `queue/runner.py` runs it through `run_streaming(cancel=…)`, which kills the
+  process tree. Reframe keeps no backup; what keeps the file readable is mkvpropedit's own
+  write order. Measured with MKVToolNix 101.0 on copies of `multitrack.mkv`, with an edit that
+  grows `Tracks` so that mkvpropedit moves it behind the clusters (language pair and a
+  200-character name on six tracks; about 27 ms per edit): SIGKILL at a random moment of the
+  run, 150 times: 146 kills landed while it ran, none damaged the file (all 146 before the
+  write: the file was unchanged; the reviewer's own 150 runs: nothing damaged). SIGKILL late
+  in the run (60 % to 120 % of its time), 900 times in two series: **3 files were damaged**
+  (1 of 300, 2 of 600). In the two that were kept, mkvpropedit had already overwritten the old
+  `Tracks` with a `Void` and was killed before the `SeekHead` named the new `Tracks` at the end
+  of the file, or before the new `Tracks` was written at all. Such a file has no reachable track headers: ffprobe shows no streams, `mkvmerge
+  -J` no tracks, and the reader `MatroskaError` ("no Tracks element found"). The window is the
+  last few milliseconds of an edit that moves `Tracks`, so a user's cancel or a `close()`
+  rarely lands in it, but when it does the source loses its tracks. Reported to the lead: the
+  safe change is in `queue/runner.py` (let a running in-place mkvpropedit step finish instead
+  of killing it on cancel and `close()`; it takes tens of milliseconds), not in this task's
+  files. testdata/README.md "Metadata edit (C-13)" records the measurement.

@@ -1724,10 +1724,45 @@ $ mkvmerge -J out.mkv
 ```
 
 **MediaInfo and the re-probe.** With MediaInfo (the `pymediainfo` 7.0.1 wheel, libmediainfo
-24.12) every track gets a BCP 47 `language` (`en` for `eng` without `LanguageIETF`), so the
-re-probe check compares canonical BCP 47 tags on both sides. Without MediaInfo, Reframe's
-reader gives `language_ietf` only where the element exists: after the M6 demo edit the probe
-shows `hun`/`hu`, `por`/`pt-BR`, `eng`/`None`.
+24.12) every track gets a BCP 47 `language`, derived from the legacy element when the track
+has no `LanguageIETF` (`multitrack.mkv`: `ja` for `jpn`, `en` for `eng`, none for the `und`
+video; `mkvmerge -J` shows no `language_ietf` on any track). The re-probe check compares
+canonical BCP 47 tags on both sides, so it is not fooled. Since the core-complete review
+(R4-3) the probe of a Matroska file takes `language_ietf` from Reframe's reader only, with
+MediaInfo on or off: after the M6 demo edit the probe shows `hun`/`hu`, `por`/`pt-BR`,
+`eng`/`None` (`test_metadata_review_fixes.py`, `test_matroska_review_fixes.py`).
+
+**An invalid `LanguageIETF`** (R4-4; mkvpropedit writes `language-ietf=en-US` on a1, then the
+five bytes are replaced in the file): ffprobe reads the file (a1 `language=jpn`), `mkvmerge -J`
+shows a1 as `jpn` with no `language_ietf`, MediaInfo shows the raw value (`en_US`, and
+`j / a;x` for `j\na;x`). Reframe drops it with a probe warning.
+
+**A `SeekHead` entry past the end of the file** (R4-2; the reviewer's `make_hostile.py`: long
+names make mkvpropedit move `Tracks` behind the clusters, then a `Seek` `Tracks → 2^64 - 1` is
+put in front of the real entry, in the `Void` after the `SeekHead`): ffprobe lists all seven
+streams, `mkvmerge -J` all seven tracks; mkvpropedit refuses to edit the file:
+
+```
+$ mkvpropedit h.mkv --edit track:a2 --set language=por --set language-ietf=pt-BR
+Error: Modification of properties in the section 'Track headers' was requested, but no
+corresponding level 1 element was found in the file. The file has not been modified.   (exit 2)
+```
+
+In Python, `seek(2**63)` on a file raises `ValueError` ("cannot fit 'int' into an
+offset-sized integer", CPython 3.14.7).
+
+**Killing mkvpropedit during an edit** (doc item of the core-complete review; MKVToolNix 101.0,
+copies of `multitrack.mkv`, an edit that grows `Tracks` so that it moves behind the clusters:
+the language pair and a 200-character name on a1–a3 and s1–s3, about 27 ms). SIGKILL at a
+random moment of the run: 150 runs, 146 killed while running, none damaged (the kill came
+before the write; the file was unchanged). SIGKILL late in the run (60–120 % of its time):
+900 runs, 3 damaged. mkvpropedit first overwrites the old `Tracks` with a `Void`, then writes
+the new `Tracks` at the end of the file and points the `SeekHead` at it; a kill in between
+leaves no reachable `Tracks` (`mkvinfo -v -z`: the `Void` of 685 bytes where `Tracks` was, and
+either a `Tracks` after the `Cues` that the `SeekHead` does not name, or no `Tracks` at all).
+ffprobe then shows no streams, `mkvmerge -J` recognises the file with 0 tracks, Reframe's
+reader says "no Tracks element found". Reframe's cancel, `close()` and the 5-min step limit
+kill a running mkvpropedit (decision 0034, follow-up).
 
 ### Advanced encoder options (C-6, complete option sets)
 

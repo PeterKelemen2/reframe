@@ -19,10 +19,12 @@ Steps of :meth:`Prober.probe`:
    ``FrameRate_Mode`` for Matroska streams whose VFR state ffprobe cannot tell. A failure is
    a warning.
 7. A Matroska file's track headers (:mod:`reframe.probe.matroska`; worker thread, raced
-   against the cancel token): ``language_ietf`` of each stream whose track has a
-   ``LanguageIETF`` element, which ffprobe does not show (decision 0034). It wins over
-   MediaInfo's value. A file the reader cannot read is skipped (logged); tracks that do not
-   match the streams are a warning.
+   against the cancel token): ``language_ietf`` of each stream is its track's
+   ``LanguageIETF`` element, which ffprobe does not show, or ``None`` when the track has none
+   (decision 0034). It replaces MediaInfo's value, which MediaInfo derives from the legacy
+   ``Language`` element when there is no ``LanguageIETF`` (``jpn`` → ``ja``). A value that is
+   not a language tag (``en_US``) is not used (a warning). A file the reader cannot read keeps
+   MediaInfo's values (logged); tracks that do not match the streams are a warning.
 8. Streams whose VFR state is still undecided: sample packet timestamps
    (:func:`reframe.probe.ffprobe.packets_argv`, :func:`reframe.probe.parse.vfr_from_timestamps`).
 9. Store in the cache.
@@ -45,8 +47,9 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
+from reframe.models.base import LanguageTag
 from reframe.models.media import (
     AudioStream,
     BitrateInfo,
@@ -98,8 +101,13 @@ MEDIAINFO_TIMEOUT = 30.0
 #: Seconds to wait for the Matroska track reader (a slow network share).
 MATROSKA_TIMEOUT = 30.0
 #: The version of what the Matroska reader adds to a probe (part of the cache entry's options:
-#: entries made before it lack ``language_ietf``).
-MATROSKA_READER = 1
+#: entries made before it lack ``language_ietf``). 2: a Matroska stream's ``language_ietf`` is
+#: the file's (``None`` without the element, never MediaInfo's derived tag), and only a
+#: language tag is kept (the core-complete review, R4-3 and R4-4).
+MATROSKA_READER = 2
+
+#: The shape of a ``language_ietf`` value (the model's own type; assignment does not check it).
+_LANGUAGE_TAG: TypeAdapter[str] = TypeAdapter(LanguageTag)
 
 #: The result of probing one file.
 ProbeOutcome = MediaSource | ProbeError
@@ -415,7 +423,9 @@ def _apply_mediainfo(
     source: MediaSource, info: mediainfo.MediaInfoData, undecided: set[int]
 ) -> None:
     """Fill unknown bit rates, ``language_ietf`` and undecided VFR states (``undecided`` loses
-    the streams that MediaInfo decides).
+    the streams that MediaInfo decides). A language that is not a valid ``LanguageTag`` (more
+    than 64 characters) is not used. For a Matroska file whose tracks the reader matches,
+    :func:`apply_matroska` then replaces every ``language_ietf``.
 
     MediaInfo reads the Matroska statistics tags too, so it repeats stale ones: a MediaInfo
     bit rate above the container's bit rate (+5 %) is not used either.
@@ -435,7 +445,7 @@ def _apply_mediainfo(
     tracks: list[VideoStream | AudioStream | SubtitleStream] = [*rated, *source.subtitles]
     for track in tracks:
         language = info.languages.get((track.kind, track.index))
-        if language is not None:
+        if language is not None and _is_language_tag(language):
             track.language_ietf = language
     for video in source.video:
         mode = info.frame_rate_modes.get(("video", video.index))
@@ -466,11 +476,28 @@ async def _read_matroska(
     return None
 
 
+def _is_language_tag(value: str) -> bool:
+    """``value`` is a valid :data:`~reframe.models.LanguageTag` (shape and length)."""
+    try:
+        _LANGUAGE_TAG.validate_python(value)
+    except ValidationError:
+        return False
+    return True
+
+
+def _shown(value: str, limit: int = 40) -> str:
+    return repr(value if len(value) <= limit else value[:limit] + "…")
+
+
 def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
-    """Set ``language_ietf`` from the tracks' ``LanguageIETF`` elements. The n-th video,
-    audio and subtitle track of the file is the n-th stream of that kind (cover art is an
-    attachment, not a track). When the counts differ nothing is set and a warning says so.
-    ``True`` when the tracks matched."""
+    """Set ``language_ietf`` of every stream to its track's ``LanguageIETF`` element, or to
+    ``None`` when the track has none: the file's value, never a tag that MediaInfo derived from
+    the legacy ``Language`` element (``jpn`` → ``ja``; R4-3 of the core-complete review). A
+    value that is not a language tag (``en_US``, a control character, more than 64
+    characters) is not used: ``None`` and a warning (R4-4). The n-th video, audio and subtitle
+    track of the file is the n-th stream of that kind (cover art is an attachment, not a
+    track). When the counts differ nothing is set (MediaInfo's values stay) and a warning says
+    so. ``True`` when the tracks matched."""
     kinds = matroska.tracks_by_kind(info)
     streams: dict[matroska.TrackKind, list[VideoStream] | list[AudioStream] | list[SubtitleStream]]
     streams = {"video": source.video, "audio": source.audio, "subtitle": source.subtitles}
@@ -483,8 +510,14 @@ def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
             return False
     for kind, found in streams.items():
         for stream, track in zip(found, kinds[kind], strict=True):
-            if track.language_ietf:
-                stream.language_ietf = track.language_ietf
+            value = track.language_ietf or None
+            if value is not None and not _is_language_tag(value):
+                source.warnings.append(
+                    f"Stream {stream.index}: the BCP 47 language (LanguageIETF) "
+                    f"{_shown(value)} is not a language tag; not used."
+                )
+                value = None
+            stream.language_ietf = value
     return True
 
 
