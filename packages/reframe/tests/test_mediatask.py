@@ -7,6 +7,7 @@ from __future__ import annotations
 import itertools
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -90,6 +91,11 @@ class _Sources:
 
     async def store(self, source: MediaSource) -> None:
         self.stored.append(source)
+
+    async def update(
+        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
+    ) -> None:
+        self.stored.append(change(source))
 
 
 class _Caps:

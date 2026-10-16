@@ -1459,9 +1459,37 @@ pts_time=3.989000|dts_time=3.989000|duration_time=0.010000|size=2964
   scan's line reader (load average about 7).
 
 **Subtitle packets** of all subtitle streams in one pass:
-`ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time -of compact=p=0`
-prints `stream_index=1|pts_time=0.200000`. One SRT cue, one ASS `Dialogue` line or one VobSub
-subpicture is one packet (`multitrack`: 2, 3, 1; `text-subs`: 2, 3; `vobsub`: 2, 1).
+`ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,size -of compact=p=0`
+prints `stream_index=1|pts_time=0.200000|size=12`. One SRT cue, one ASS `Dialogue` line or one
+VobSub subpicture is one packet (`multitrack`: 2, 3, 1; `text-subs`: 2, 3; `vobsub`: 2, 1).
+
+**MP4 / MOV text (`mov_text`)** (checked 2026-10-16 with the pinned n9.0.2 and the n8.1.3
+override build, the same results; core-complete review R3-2). A sample is a 16-bit text
+length, the text, then style boxes. The MP4 and MOV muxers fill the time before the first cue
+and every gap between two cues with an **empty sample**, `00 00` (2 bytes). 3 SRT cues
+(1–2 s, 3–4 s, 5–6.5 s) with `-c:s mov_text` (MP4: codec tag `tx3g`; MOV: `text`):
+
+```
+$ ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,duration_time,size \
+      -of compact=p=0 three.mp4
+stream_index=1|pts_time=0.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=1.000000|duration_time=1.000000|size=7
+stream_index=1|pts_time=2.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=3.000000|duration_time=1.000000|size=7
+stream_index=1|pts_time=4.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=5.000000|duration_time=1.500000|size=9
+```
+
+- Back-to-back cues (0–1, 1–2, 2–3 s, one letter each) give 3 samples of 3 bytes, no empty
+  sample.
+- An ASS file with `Hello` (1–2 s), an empty `Dialogue` (2–3 s), one with override tags only
+  (`{\b1}{\b0}`, 3–4 s) and `{\i1}Styled{\i0}` (5–6 s) gives 4 samples: 2 bytes at 0 s, 7
+  at 1 s, **2 bytes at 2 s lasting 3 s** (the two cues without text get no sample of their
+  own), 30 bytes at 5 s (`0006 "Styled"` and a 22-byte `styl` box). In Matroska (`-c:s ass`)
+  the same file has 4 packets: the ASS decoder keeps the empty events, the `mov_text` encoder
+  drops them.
+- So the subtitle scan does not count a `mov_text` packet of 2 bytes or less: 3 events, not 6,
+  for the 3 cues (`tests/analysis/test_analysis_review_fixes.py`).
 
 **PGS in Matroska.** The `sup` demuxer returns one packet per *segment*; the Matroska muxer
 merges the segments of a display set into one block (`pgs_frame_merge`, added by
@@ -1619,9 +1647,17 @@ $ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=
   (8-bit); PQ letterbox bar 40 / 63 / 63.9 / 91 (10-bit; the extremes are x265 ringing next to
   the picture).
 - A black frame: `x1:319 x2:0 y1:179 y2:0 w:-318 h:-178 x:320 y:180 … crop=-318:-178:320:180`.
-- Rounding: x and y are rounded up to even, the size down to a multiple of `round`; an odd
-  `round` is doubled and `round=1` means 16 (300x150 picture at 9,13 in 320x181:
-  `round=2` → `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`).
+- Rounding (checked 2026-10-16 with the pinned n9.0.2 and n8.1.3, the same results): x and y
+  are rounded up to even, the size is recomputed to keep the right and bottom edges
+  (`w = x2 − x + 1`), then cut down to a multiple of `round` (an odd `round` is doubled, and
+  `round` 0 or 1 means 16), and x / y move by half the cut, rounded to even
+  (`x += (cut / 2 + 1) & ~1`). A white 300x150 picture at 9,13 in a black 320x181 frame
+  (`drawbox=x=9:y=13:w=300:h=150:color=white:t=fill`, 4:2:0): `x1:9 x2:308 y1:13 y2:162`,
+  `round=2` → `crop=298:148:10:14`, `round=1` → `crop=288:144:16:16`. Made with
+  `pad=320:181:9:13` instead, the picture is at **8,12** (`pad` puts it on the 4:2:0 chroma
+  grid; at 9,13 only with a 4:4:4 input): `x1:8 x2:307 y1:12 y2:161`, `round=2` →
+  `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`
+  (`tests/preview/test_preview_review_fixes.py::test_cropdetect_rounding_example`).
 
 **The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
 frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of

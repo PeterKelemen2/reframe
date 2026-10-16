@@ -80,6 +80,16 @@ class SourceAccess(Protocol):
         and in the probe cache, while the file is unchanged."""
         ...
 
+    async def update(
+        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
+    ) -> None:
+        """Keep ``change(latest)`` like :meth:`store`, where ``latest`` is the known source of
+        ``source``'s file at this moment (else ``source``). ``source`` is the version the
+        values were measured on: when the file has changed since, nothing is stored. The
+        stores and updates of one file run one at a time, so two scans of one file that run
+        at the same time keep both their values (each applies only its own)."""
+        ...
+
 
 class CapabilitiesLookup(Protocol):
     """``Reframe.capabilities``."""

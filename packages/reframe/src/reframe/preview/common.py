@@ -9,6 +9,7 @@ from pathlib import Path
 
 from reframe.mediatask import TaskFailed, sample_timestamps
 from reframe.models import MediaSource, ToolInfo, VideoStream
+from reframe.preview.cache import MAX_TIMESTAMP_MS
 from reframe.queue.errors import exit_text, stderr_reason
 from reframe.tools import RunResult
 
@@ -48,15 +49,14 @@ def sample_times(
     """The timestamps of a task: ``timestamps`` (sorted, rounded to milliseconds, without
     duplicates), else ``count`` evenly spaced ones (:func:`~reframe.mediatask.
     sample_timestamps`, the same for frames and crop detection). :class:`TaskFailed` for
-    times that are not a time in the source, a count out of range, or an unknown duration."""
+    times that are not a time in the source (also a time later than a frame key can hold,
+    :data:`~reframe.preview.cache.MAX_TIMESTAMP_MS`), a count out of range, or an unknown
+    duration."""
     name = source.ref.path.name
     if timestamps is not None:
         values = list(timestamps)
         if not values:
             raise TaskFailed("No timestamps were given.")
-        for value in values:
-            if not math.isfinite(value) or value < 0:
-                raise TaskFailed(f"{value} is not a time in {name} (seconds from 0).")
     else:
         if not 1 <= count <= MAX_FRAMES:
             raise TaskFailed(f"The number of frames must be 1 to {MAX_FRAMES}, not {count}.")
@@ -64,6 +64,15 @@ def sample_times(
         if not values:
             raise TaskFailed(
                 f"The duration of {name} is not known: give the timestamps of the frames."
+            )
+    for value in values:
+        if not math.isfinite(value) or value < 0:
+            raise TaskFailed(f"{value} is not a time in {name} (seconds from 0).")
+        # Compared before rounding: round(1e308 * 1000) would overflow.
+        if value * 1000 >= MAX_TIMESTAMP_MS + 0.5:
+            raise TaskFailed(
+                f"{value:g} is not a time in {name} (frames can be taken up to "
+                f"{MAX_TIMESTAMP_MS / 1000:.3f} s)."
             )
     if len(values) > MAX_FRAMES:
         raise TaskFailed(f"At most {MAX_FRAMES} frames can be made at once, not {len(values)}.")

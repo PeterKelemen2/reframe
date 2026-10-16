@@ -8,8 +8,10 @@ task's cancel token, so a cancel kills it at once.
 
 **A timestamp without a picture** (after the last frame, a decoding error) is left out with a
 note; the task fails only when no source frame at all could be made (decision 0033). Output
-frames that cannot be made (the job cannot be planned) are left out with a note, the source
-frames are still made.
+frames that cannot be made are left out with a note, the source frames are still made: when
+the job cannot be planned, only the source frames are rendered; when the job's chain fails in
+FFmpeg (a custom filter that the plan accepts and FFmpeg refuses) and takes the source frame
+of the same run with it, the source frame is made again alone.
 """
 
 from __future__ import annotations
@@ -138,7 +140,14 @@ async def make_frames(
                 made[item.recipe.kind, timestamp] = _frame(item, timestamp, size, cached=True)
         if missing:
             async with gate:
-                error = await _render(tctx, ffmpeg, path, video.index, timestamp, missing)
+                error, failed = await _render(tctx, ffmpeg, path, video.index, timestamp, missing)
+                own = [i for i in missing if i.recipe.kind == "source"]
+                if failed and own and len(missing) > 1 and png_size(own[0].path) is None:
+                    # FFmpeg refused the run (the output chain, most likely): the source frame
+                    # alone, so that only the output frame is lost (0033 §2, §4).
+                    alone, _ = await _render(tctx, ffmpeg, path, video.index, timestamp, own)
+                    if alone is not None:
+                        error = alone
             for item in missing:
                 size = png_size(item.path)
                 if size is not None:
@@ -194,9 +203,11 @@ async def _render(
     video_index: int,
     timestamp: float,
     missing: list[_Wanted],
-) -> str | None:
-    """Make the missing frames of one timestamp; ``None`` when every one was made, else why
-    not. A complete PNG is renamed to its key's name; nothing else is left behind."""
+) -> tuple[str | None, bool]:
+    """Make the missing frames of one timestamp: ``None`` when every one was made, else why
+    not; and whether FFmpeg failed (it did not start, end in time or exit 0) rather than just
+    gave no picture. A complete PNG is renamed to its key's name; nothing else is left
+    behind."""
     assert ffmpeg.path is not None
     temps = [PreviewCache.temporary(item.path) for item in missing]
     argv = frame_argv(
@@ -220,7 +231,9 @@ async def _render(
         for item, temp in zip(missing, temps, strict=True):
             if result.ok and png_size(temp) is not None and await _place(temp, item.path):
                 complete += 1
-        return None if complete == len(missing) else failure_text(result)
+        if complete == len(missing):
+            return None, False
+        return failure_text(result), not result.ok
     finally:
         for temp in temps:
             with contextlib.suppress(OSError):
