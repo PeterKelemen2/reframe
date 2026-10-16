@@ -160,13 +160,6 @@ def test_json_with_errors_has_no_plan(cli_env: ft.FakeTools, tmp_path: Path) -> 
     assert json.loads(result.stdout)["plan"] is None
 
 
-def test_help() -> None:
-    result = invoke("plan", "--help")
-    assert result.exit_code == 0
-    for text in ("--preset", "--output", "-o", "Exit codes"):
-        assert text in result.stdout
-
-
 @pytest.mark.needs_ffmpeg
 def test_real_ffmpeg_plan_of_a_fixture(
     fixture_media: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

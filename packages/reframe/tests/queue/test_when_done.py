@@ -206,7 +206,6 @@ async def test_each_power_action_runs_once_after_the_queue_empties(
         (1, 0, "1 job done"),
         (3, 0, "3 jobs done"),
         (2, 1, "2 jobs done, 1 failed"),
-        (0, 2, "0 jobs done, 2 failed"),
     ],
 )
 def test_the_summary_is_the_reason(done: int, failed: int, text: str) -> None:

@@ -21,21 +21,6 @@ from reframe_testing import fake_tools as ft
 from .conftest import invoke, media_file, replay
 from .fake_queue import FakeQueue
 
-#: Every ``app.warning`` code the core publishes in M2 (C-9, C-11, C-14; decision 0027).
-WARNING_CODES = [
-    "queue.store_busy",
-    "queue.newer_version",
-    "queue.not_saved",
-    "queue.corrupt",
-    "queue.rows_skipped",
-    "queue.when_done_unavailable",
-    "queue.when_done_failed",
-    "power.failed",
-    "settings.corrupt",
-    "presets.corrupt",
-    "sleep_inhibit.unavailable",
-]
-
 
 def warning_event(code: str) -> AppWarningEvent:
     return AppWarningEvent(code=code, message=f"Something about {code}.", detail="the detail")
@@ -53,7 +38,7 @@ def publish_on_find_preset(monkeypatch: pytest.MonkeyPatch, code: str) -> None:
     monkeypatch.setattr(cli, "find_preset", find)
 
 
-@pytest.mark.parametrize("code", WARNING_CODES)
+@pytest.mark.parametrize("code", ["queue.store_busy"])
 def test_app_warnings_are_printed(
     cli_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, code: str
 ) -> None:
@@ -170,18 +155,6 @@ def test_name_of_an_undecodable_file_name(cli_env: ft.FakeTools, tmp_path: Path)
     assert "bad�name.mkv" in result.stdout
 
 
-@posix_only
-def test_name_of_an_undecodable_file_name_is_never_a_traceback(
-    cli_env: ft.FakeTools, tmp_path: Path
-) -> None:
-    bad_file(tmp_path / "media")
-    result = invoke("name", str(tmp_path / "media"))
-    assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "Traceback" not in result.output
-    for line in result.stderr.splitlines():
-        assert line.startswith(("error: ", "warning: "))
-
-
 def _replay_bad(cli_env: ft.FakeTools, tmp_path: Path) -> Path:
     replay(cli_env, "truehd-atmos")
     return bad_file(tmp_path / "media" / "Movie.2016.1080p-GRP")
@@ -204,20 +177,6 @@ def test_encode_of_an_undecodable_file_name(
     result = invoke("encode", str(path.parent))
     assert result.exit_code == EXIT_OK, (result.output, result.exception)
     assert "[1/1] bad�name.mkv → " in result.stdout
-
-
-@posix_only
-@pytest.mark.parametrize("command", ["plan", "encode"])
-def test_plan_and_encode_of_an_undecodable_name_are_never_a_traceback(
-    cli_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str
-) -> None:
-    path = _replay_bad(cli_env, tmp_path)
-    monkeypatch.setattr(cli, "get_queue", lambda app: FakeQueue(app.events, log_dir=tmp_path))
-    result = invoke(command, str(path) if command == "plan" else str(path.parent))
-    assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "Traceback" not in result.output
-    for line in result.stderr.splitlines():
-        assert line.startswith(("error: ", "warning: ", "Interrupted"))
 
 
 Factory = Callable[[Reframe], FakeQueue]

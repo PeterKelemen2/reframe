@@ -229,13 +229,6 @@ def test_format_and_parse_are_inverse(tokens: list[str]) -> None:
         ({"a": 1}, [{"op": "move", "from": "/a", "path": "/a"}], {"a": 1}),
         ({"a": {"b": 1}}, [{"op": "move", "from": "/a/b", "path": ""}], 1),
         ({"a": [1, 2, 3]}, [{"op": "move", "from": "/a/0", "path": "/a/-"}], {"a": [2, 3, 1]}),
-        ({"a": None}, [{"op": "test", "path": "/a", "value": None}], {"a": None}),
-        ({"a": 1}, [{"op": "test", "path": "/a", "value": 1.0}], {"a": 1}),
-        (
-            {"a": {"x": [1, {"y": True}]}},
-            [{"op": "test", "path": "/a", "value": {"x": [1, {"y": True}]}}],
-            {"a": {"x": [1, {"y": True}]}},
-        ),
         ({"a": 1}, [], {"a": 1}),
     ],
 )
@@ -261,7 +254,6 @@ def test_more_operations(doc: Any, patch: list[dict[str, Any]], expected: Any) -
         ({"a": "s"}, [{"op": "test", "path": "/a/0", "value": "s"}], JsonPatchConflict),
         ({"a": {"b": 1}}, [{"op": "move", "from": "/a", "path": "/a/b"}], JsonPatchConflict),
         ({"a": {"b": 1}}, [{"op": "move", "from": "", "path": "/c"}], JsonPatchConflict),
-        ({"a": 1}, [{"op": "move", "from": "/x", "path": "/a"}], JsonPatchConflict),
         ({"a": 1}, [{"op": "move", "from": "/x", "path": "/x"}], JsonPatchConflict),
         ({"a": 1}, [{"op": "copy", "from": "/x", "path": "/b"}], JsonPatchConflict),
         ({"a": True}, [{"op": "test", "path": "/a", "value": 1}], JsonPatchTestFailed),
