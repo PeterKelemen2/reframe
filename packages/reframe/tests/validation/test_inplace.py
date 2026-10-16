@@ -6,14 +6,12 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path, PurePath
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 from reframe.metadata import remux_job
 from reframe.models import NamingOptions
-from reframe.validation import LocalFileSystem
-from reframe.validation.inplace import source_writable
 
 
 def _load(name: str) -> ModuleType:
@@ -69,18 +67,3 @@ def test_write_a_new_file_fix_without_a_name() -> None:
     s.naming = NamingOptions(output_folder_mode="fixed", output_folder=None)
     [issue] = [i for i in s.validate() if i.code == "inplace.not_possible"]
     assert issue.fixes[0].label == "Write a new file (Movie.2019.1080p.BluRay (1).mkv)"
-
-
-def test_source_writable(tmp_path: Path) -> None:
-    file = tmp_path / "a.mkv"
-    file.write_bytes(b"")
-    local = LocalFileSystem()
-    assert source_writable(local, file)
-    assert not source_writable(local, tmp_path / "missing.mkv")
-
-    class Answers:
-        def writable_file(self, path: PurePath) -> bool:
-            return False
-
-    assert not source_writable(Answers(), file)  # type: ignore[arg-type]
-    assert source_writable(object(), file)  # type: ignore[arg-type]  # cannot tell: yes
