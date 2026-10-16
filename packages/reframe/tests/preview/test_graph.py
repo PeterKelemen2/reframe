@@ -183,8 +183,13 @@ AGREEMENT: list[tuple[str, dict[str, Any]]] = [
 ]
 
 
-@pytest.mark.parametrize(("name", "fields"), AGREEMENT)
-@pytest.mark.parametrize("libplacebo", [False, True])
+#: libplacebo only changes the Tone mapping filter, so the "usable" case runs on the HDR jobs.
+AGREEMENT_CASES = [(name, fields, False) for name, fields in AGREEMENT] + [
+    (name, fields, True) for name, fields in AGREEMENT if name == "hdr10.mkv"
+]
+
+
+@pytest.mark.parametrize(("name", "fields", "libplacebo"), AGREEMENT_CASES)
 def test_the_output_graph_is_the_builders(
     name: str, fields: dict[str, Any], libplacebo: bool
 ) -> None:

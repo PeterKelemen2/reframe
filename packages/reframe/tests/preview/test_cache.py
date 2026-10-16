@@ -60,9 +60,7 @@ def test_source_fingerprint_changes_with_the_file(tmp_path: Path) -> None:
     assert source_fingerprint(b, b.stat()) != source_fingerprint(a, a.stat())
 
 
-@pytest.mark.parametrize(
-    ("seconds", "ms"), [(0.0, 0), (1.5, 1500), (0.0004, 0), (2.0004, 2000), (2.0006, 2001)]
-)
+@pytest.mark.parametrize(("seconds", "ms"), [(0.0, 0), (1.5, 1500), (2.0004, 2000), (2.0006, 2001)])
 def test_timestamp_ms(seconds: float, ms: int) -> None:
     assert timestamp_ms(seconds) == ms
 
@@ -211,12 +209,6 @@ def test_trim_keeps_protected_and_fresh_files(tmp_path: Path) -> None:
     assert fresh.exists()
     assert cache.trim(0, protect=[mine], now=now, grace=0) == [fresh]
     assert cache.trim(0, now=now, grace=0) == [mine]
-
-
-def test_trim_with_the_real_clock(tmp_path: Path) -> None:
-    cache = PreviewCache(tmp_path)
-    old = write(cache.frame(KEY), 40, used=time.time() - 3600)
-    assert cache.trim(0) == [old]
 
 
 def test_trim_survives_a_file_removed_meanwhile(

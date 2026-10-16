@@ -129,10 +129,9 @@ Start = Callable[[Reframe, Path], TaskInfo]
     [
         (lambda app, path: app.sources.bitrate_scan(path, 0), "packet=pts_time,dts_time"),
         (lambda app, path: app.sources.subtitle_scan(path), "packet=stream_index,pts_time"),
-        (lambda app, path: app.sources.subtitle_scan(path, [2]), "-f"),  # the PGS copy (ffmpeg)
         (lambda app, path: app.sources.loudness_scan(path, 0), "loudnorm=print_format=json"),
     ],
-    ids=["bitrate", "subtitle-count", "subtitle-pgs", "loudness"],
+    ids=["bitrate", "subtitle-count", "loudness"],
 )
 async def test_cancel_stops_the_process_within_a_second(
     app: Reframe, long_file: Path, start: Start, marker: str

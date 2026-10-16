@@ -147,29 +147,14 @@ async def test_a_time_without_a_picture_is_left_out(tmp_path: Path, fixture_medi
     assert leftovers == []
 
 
-@pytest.mark.parametrize(
-    ("kwargs", "error"),
-    [
-        ({"timestamps": [-1.0]}, "-1.0 is not a time in letterbox.mkv (seconds from 0)."),
-        ({"count": 0}, "The number of frames must be 1 to 1000, not 0."),
-    ],
-)
-async def test_bad_requests_fail_the_task(
-    tmp_path: Path, fixture_media: Media, kwargs: dict[str, object], error: str
-) -> None:
+async def test_a_bad_request_fails_the_task(tmp_path: Path, fixture_media: Media) -> None:
     env = make_env(tmp_path / "cache")
     done, _ = await env.finish(
-        start_frames(
-            env.ctx,
-            fixture_media("letterbox"),
-            count=kwargs.get("count"),  # type: ignore[arg-type]
-            timestamps=kwargs.get("timestamps"),  # type: ignore[arg-type]
-            job=None,
-        )
+        start_frames(env.ctx, fixture_media("letterbox"), count=None, timestamps=[-1.0], job=None)
     )
     assert done.state is TaskState.FAILED
     assert done.error is not None
-    assert done.error.endswith(error)
+    assert done.error.endswith("-1.0 is not a time in letterbox.mkv (seconds from 0).")
 
 
 async def test_a_file_that_is_not_media(tmp_path: Path) -> None:

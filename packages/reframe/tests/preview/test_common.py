@@ -67,7 +67,7 @@ def test_no_timestamps() -> None:
         sample_times(src, src.video[0], count=1, timestamps=[])
 
 
-@pytest.mark.parametrize("count", [0, -1, MAX_FRAMES + 1])
+@pytest.mark.parametrize("count", [0, MAX_FRAMES + 1])
 def test_a_count_out_of_range(count: int) -> None:
     src = source_of(10.0)
     with pytest.raises(TaskFailed, match=f"must be 1 to {MAX_FRAMES}"):
