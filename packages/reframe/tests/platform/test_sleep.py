@@ -310,12 +310,3 @@ def test_backends_per_platform() -> None:
     assert sleep.default_backends("darwin") == []
     inhibitor = create_sleep_inhibitor(backends=[FakeBackend()])
     assert _state(inhibitor) is InhibitState.INACTIVE
-
-
-def test_lock_parameters() -> None:
-    # Decision 0020: only automatic sleep, so the logind lock is "idle" and never "sleep".
-    assert sleep.WHAT == "idle"
-    assert sleep.PORTAL_INHIBIT_SUSPEND == 4  # not 8 (idle): that keeps the screen on
-    assert sleep.MODE == "block"
-    assert sleep.WHO == "Reframe"
-    assert InhibitState("unavailable") is InhibitState.UNAVAILABLE

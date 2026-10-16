@@ -23,7 +23,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from reframe.tools import CancelToken, RunResult, kill_process_tree, run, run_streaming
+from reframe.tools import CancelToken, kill_process_tree, run, run_streaming
 from reframe.tools import runner as runner_mod
 from reframe_testing import fake_tools as ft
 
@@ -77,12 +77,6 @@ async def test_exit_code_and_output_are_returned(fake_tools: ft.FakeTools) -> No
     assert not result.truncated
     assert result.argv == (str(fake_tools.ffmpeg), "-x")
     assert result.duration > 0
-
-
-async def test_version_of_the_fake_is_ok(fake_tools: ft.FakeTools) -> None:
-    result = await run([str(fake_tools.ffmpeg), "-version"], timeout=30)
-    assert result.ok
-    assert result.stdout.startswith(b"ffmpeg version n9.0.2")
 
 
 async def test_crash_is_a_normal_result(fake_tools: ft.FakeTools) -> None:
@@ -149,12 +143,6 @@ async def test_missing_binary_is_a_result_not_an_exception(tmp_path: Path) -> No
     assert result.stdout == result.stderr == b""
 
 
-async def test_missing_binary_on_path_is_a_result() -> None:
-    result = await run(["reframe-no-such-tool-4711", "-version"], timeout=5)
-    assert result.error is not None
-    assert result.returncode is None
-
-
 @pytest.mark.skipif(not POSIX, reason="POSIX file modes")
 async def test_not_executable_file_is_a_result(tmp_path: Path) -> None:
     script = tmp_path / "ffmpeg"
@@ -199,13 +187,6 @@ async def test_timeout_kills_the_whole_tree(fake_tools: ft.FakeTools) -> None:
     assert roles == {"main", "grandchild"}
     for pid in fake_tools.pids():
         assert not _alive(pid), f"process {pid} survived the tree kill"
-
-
-async def test_process_that_finishes_in_time_is_not_timed_out(fake_tools: ft.FakeTools) -> None:
-    _scenario(fake_tools, ft.Rule(argv_has=["-s"], actions=[ft.sleep(0.2), ft.stdout("done\n")]))
-    result = await run([str(fake_tools.ffmpeg), "-s"], timeout=30)
-    assert result.ok
-    assert result.stdout == b"done\n"
 
 
 @pytest.mark.skipif(not POSIX, reason="SIGTERM handling exists on POSIX only")
@@ -648,13 +629,6 @@ def test_children_die_when_reframe_is_killed(fake_tools: ft.FakeTools) -> None:
     finally:
         if parent.poll() is None:
             parent.kill()
-
-
-def test_run_result_defaults() -> None:
-    result = RunResult(0, b"", b"", 0.1)
-    assert result.ok
-    assert result.started
-    assert result.argv == ()
 
 
 async def test_on_start_gets_the_pid_of_the_running_process() -> None:

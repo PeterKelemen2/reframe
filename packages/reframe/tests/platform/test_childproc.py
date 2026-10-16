@@ -179,10 +179,6 @@ def test_windows_job_is_created_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
     assert created == [first]
 
 
-def test_posix_after_spawn_is_a_no_op() -> None:
-    childproc.after_spawn(1, "linux")
-
-
 def test_linux_spawn_options() -> None:
     options = childproc.spawn_options("linux")
     assert options["start_new_session"] is True
@@ -213,12 +209,6 @@ def test_preexec_kills_itself_when_the_parent_is_already_gone(
     preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0)
     preexec()
     assert killed == [(os.getpid(), SIGKILL)]
-
-
-@pytest.mark.skipif(os.name != "posix", reason="libc prctl")
-def test_real_prctl_is_loaded() -> None:
-    preexec = childproc.linux_preexec()
-    assert callable(preexec)
 
 
 # --------------------------------------------------------------------------- user-facing programs

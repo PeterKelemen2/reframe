@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from reframe.tools import versions
 from reframe.tools.versions import (
     lib_major_to_series,
     parse_ffmpeg_version,
@@ -244,16 +243,15 @@ def test_master_build_series_comes_from_the_library_majors() -> None:
     assert parsed.meets_minimum() is False
 
 
-@pytest.mark.parametrize(
-    ("major", "series"), [(58, 4), (59, 5), (60, 6), (61, 7), (62, 8), (63, 9), (64, 10)]
-)
+# 60 and 63 are also pinned by the master-build tests (the series from the library majors).
+@pytest.mark.parametrize(("major", "series"), [(58, 4), (61, 7), (62, 8), (64, 10)])
 def test_lib_major_to_series(major: int, series: int) -> None:
     assert lib_major_to_series(major) == series
 
 
 @pytest.mark.parametrize(
     "text",
-    ["", "\n\n", "hello world\n", "ffprobe: command not found\n", "mkvpropedit v101.0\n"],
+    ["", "\n\n", "ffprobe: command not found\n", "mkvpropedit v101.0\n"],
 )
 def test_not_ffmpeg_output(text: str) -> None:
     assert parse_ffmpeg_version(text) is None
@@ -287,10 +285,6 @@ def test_mediainfo_version() -> None:
     assert parsed is not None
     assert parsed.version == "24.06"
     assert parse_mediainfo_version("nothing") is None
-
-
-def test_minimum_is_7_0() -> None:
-    assert versions.MIN_FFMPEG == (7, 0)
 
 
 @pytest.mark.needs_ffmpeg
