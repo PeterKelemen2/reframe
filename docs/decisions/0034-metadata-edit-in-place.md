@@ -263,22 +263,72 @@ its fix and passes after it):
   asserts `metadata_edit` and `seconds(ended) < 1`
   (`test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all`). A test gap only:
   the new assertions pass on the code before the fixes too.
-- **Killing mkvpropedit (doc only; lead's decision: no behaviour change in this task).**
-  Reframe's own cancel, `close()` and the 5-minute step limit end a running mkvpropedit like
-  any step: `queue/runner.py` runs it through `run_streaming(cancel=…)`, which kills the
-  process tree. Reframe keeps no backup; what keeps the file readable is mkvpropedit's own
-  write order. Measured with MKVToolNix 101.0 on copies of `multitrack.mkv`, with an edit that
+- **R4-7 (blocker, found as the review's doc item): Reframe killed mkvpropedit while it wrote
+  the source.** Reframe's cancel, `close()` and the 5-minute step limit ended a running
+  in-place mkvpropedit like any step (`queue/runner.py` ran it through
+  `run_streaming(cancel=<the job's token>)`, which kills the process tree), and Reframe keeps
+  no backup. Measured with MKVToolNix 101.0 on copies of `multitrack.mkv`, with an edit that
   grows `Tracks` so that mkvpropedit moves it behind the clusters (language pair and a
   200-character name on six tracks; about 27 ms per edit): SIGKILL at a random moment of the
-  run, 150 times: 146 kills landed while it ran, none damaged the file (all 146 before the
-  write: the file was unchanged; the reviewer's own 150 runs: nothing damaged). SIGKILL late
-  in the run (60 % to 120 % of its time), 900 times in two series: **3 files were damaged**
-  (1 of 300, 2 of 600). In the two that were kept, mkvpropedit had already overwritten the old
-  `Tracks` with a `Void` and was killed before the `SeekHead` named the new `Tracks` at the end
-  of the file, or before the new `Tracks` was written at all. Such a file has no reachable track headers: ffprobe shows no streams, `mkvmerge
-  -J` no tracks, and the reader `MatroskaError` ("no Tracks element found"). The window is the
-  last few milliseconds of an edit that moves `Tracks`, so a user's cancel or a `close()`
-  rarely lands in it, but when it does the source loses its tracks. Reported to the lead: the
-  safe change is in `queue/runner.py` (let a running in-place mkvpropedit step finish instead
-  of killing it on cancel and `close()`; it takes tens of milliseconds), not in this task's
-  files. testdata/README.md "Metadata edit (C-13)" records the measurement.
+  run, 150 times: 146 kills landed while it ran, none damaged the file (all before the write;
+  the reviewer's own 150 runs: nothing damaged). SIGKILL late in the run (60 % to 120 % of its
+  time), 900 times in two series: **3 files were damaged** (1 of 300, 2 of 600). In the two
+  that were kept, mkvpropedit had already overwritten the old `Tracks` with a `Void` and was
+  killed before the `SeekHead` named the new `Tracks` at the end of the file, or before the
+  new `Tracks` was written at all. Such a file has no reachable track headers: ffprobe shows no
+  streams, `mkvmerge -J` no tracks, and the reader `MatroskaError` ("no Tracks element
+  found"). Through the queue (the real `Reframe`, a cancel at a random moment up to 30 ms after
+  mkvpropedit started, 300 runs): 2 damaged files, and 50 jobs that ended `cancelled` with no
+  word about the file although the edit was in it.
+
+  **There is no gentler signal.** mkvpropedit installs no signal handler (`SigCgt` and `SigIgn`
+  in `/proc/<pid>/status` are empty while it runs), so SIGTERM and SIGINT end it at once, as
+  SIGKILL does: SIGTERM late in the run, 600 times: exit status -15 and 4 damaged files.
+
+  **Decision.** A running in-place mkvpropedit step is never killed by a cancel or by `close()`:
+  1. The step runs with a cancel token of its own (`JobRunner._run_step(…, in_place=source)`);
+     only its time limit fires it. A stop of the job does not reach the process.
+  2. A cancel or `close()` that comes while the step runs is written to the job log ("The job
+     is cancelled while mkvpropedit is writing Show.mkv: it is let finish (stopping it could
+     damage the file)"), resumes the step if the job was paused (a suspended step would never
+     end), and waits for the step to end: tens of milliseconds, at most the step's time limit.
+     `queue.cancel()` returns when the job has ended, as before. The queue's `close()` has no
+     time limit of its own (it waits for every run to end), so nothing cuts the wait short; the
+     10 s `CLOSE_TIMEOUT` of `Reframe.close()` bounds only the probes of `Reframe.sources`.
+     A cancellation of the run's own asyncio task (the queue never does that; an event loop
+     that shuts down does) also waits for the step, then goes on.
+  3. A stop before the first step starts changes nothing: the job ends `cancelled` (or
+     `interrupted`) as before, and mkvpropedit is never started after a stop.
+  4. **Once an edit step has written the source, a stop ends the job `cancelled`** (`close()`:
+     `interrupted`) with the error "The edit was already written to Show.mkv when the job was
+     cancelled: mkvpropedit is never stopped while it writes the source (that can damage the
+     file). The check of the edited file did not run." and the source as the job's output
+     path. Not `done`: in the queue `done` means the result was checked (the re-probe check
+     does not run after a stop, and running it would make a cancel wait for a probe), and the
+     when-done action and the job notifications follow the user's action, as for any cancel
+     (a cancel of the last job never starts a shutdown countdown). A retry of such a job finds
+     nothing to change and ends `done` after the check. A mkvpropedit that failed (exit code 2:
+     "The file has not been modified") counts as not written.
+  5. **The time limit stays** (5 minutes of active time, `STEP_TIME_LIMIT`): a hung
+     mkvpropedit (a network share that does not answer) must end, and there is no safer way
+     to stop it (above). This one path can still damage the file, so its error says so:
+     "mkvpropedit did not finish within 5 minutes and was stopped while it was editing Show.mkv
+     in place: the file may be damaged." It also ends a step that a cancel is waiting for.
+  6. Other steps (encodes, the post-mux fix-up on the `.part` file) keep their cancel: the
+     process tree is killed at once.
+
+  After the fix the same 300 queue runs gave no damaged file, and every job's end matched its
+  file (all 300 ended `cancelled` with "The edit was already written", and every file had the
+  edit). Tests (each failed before the fix): `tests/queue/test_in_place_stop.py`
+  (`test_a_cancel_lets_the_running_edit_finish`, `test_close_lets_the_running_edit_finish`,
+  `test_a_cancel_of_a_paused_edit_resumes_it_and_lets_it_finish`,
+  `test_the_time_limit_still_stops_a_hung_edit`,
+  `test_a_cancelled_edit_that_hangs_is_stopped_by_the_time_limit`,
+  `test_a_cancelled_run_task_lets_the_edit_finish`; a stand-in mkvpropedit that waits at a
+  gate the test opens, so no assertion depends on timing; and two guards that passed before
+  too: `test_a_cancel_before_the_edit_starts_changes_nothing`,
+  `test_an_encode_is_still_killed_at_once`), and with the real mkvpropedit behind a gate
+  `tests/metadata/test_metadata_edit_real.py::test_cancelling_an_in_place_edit_lets_mkvpropedit_finish`
+  (it replaces `test_cancelling_an_in_place_edit_keeps_the_source`, whose 30 s fake
+  mkvpropedit the cancel now waits for). testdata/README.md "Metadata edit (C-13)" records
+  the measurements.

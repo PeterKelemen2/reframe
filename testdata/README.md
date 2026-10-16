@@ -1787,7 +1787,7 @@ corresponding level 1 element was found in the file. The file has not been modif
 In Python, `seek(2**63)` on a file raises `ValueError` ("cannot fit 'int' into an
 offset-sized integer", CPython 3.14.7).
 
-**Killing mkvpropedit during an edit** (doc item of the core-complete review; MKVToolNix 101.0,
+**Killing mkvpropedit during an edit** (R4-7 of the core-complete review; MKVToolNix 101.0,
 copies of `multitrack.mkv`, an edit that grows `Tracks` so that it moves behind the clusters:
 the language pair and a 200-character name on a1–a3 and s1–s3, about 27 ms). SIGKILL at a
 random moment of the run: 150 runs, 146 killed while running, none damaged (the kill came
@@ -1797,8 +1797,19 @@ the new `Tracks` at the end of the file and points the `SeekHead` at it; a kill 
 leaves no reachable `Tracks` (`mkvinfo -v -z`: the `Void` of 685 bytes where `Tracks` was, and
 either a `Tracks` after the `Cues` that the `SeekHead` does not name, or no `Tracks` at all).
 ffprobe then shows no streams, `mkvmerge -J` recognises the file with 0 tracks, Reframe's
-reader says "no Tracks element found". Reframe's cancel, `close()` and the 5-min step limit
-kill a running mkvpropedit (decision 0034, follow-up).
+reader says "no Tracks element found".
+
+mkvpropedit installs no signal handler: `SigCgt` and `SigIgn` in `/proc/<pid>/status`, read in
+a tight loop during 20 such edits, are empty. So SIGTERM (and SIGINT) end it at once, as
+SIGKILL does: SIGTERM late in the run, 600 runs, exit status -15 where it landed, 4 files
+damaged in the same ways.
+
+Through Reframe's queue (the real `Reframe` and mkvpropedit, the same edit, `queue.cancel()` at
+a random moment up to 30 ms after mkvpropedit started, 300 runs): before R4-7, 2 damaged files
+and 50 jobs that ended `cancelled` with no error although the file had the edit; with R4-7
+(a cancel or `close()` lets a running in-place mkvpropedit finish; decision 0034, follow-up),
+no damaged file, and all 300 ended `cancelled` with "The edit was already written …" and had
+the edit. Only the step's 5-minute limit still kills a hung mkvpropedit.
 
 ### Advanced encoder options (C-6, complete option sets)
 
