@@ -12,10 +12,19 @@ else Settings → Output) and validation (C-8, ``Reframe.jobs.validate``). Batch
 (04 §Output naming: "Name collisions within the batch, or with existing files, are errors"):
 
 - ``batch.name_collision`` (error): two files of the batch get the same output path;
-- ``batch.output_is_source`` (error): a file's output is another file of the batch;
+- ``batch.output_is_source`` (error): a file's output is another file of the batch (a file
+  of the batch is never overwritten, whatever the collision setting: with *overwrite*, C-8's
+  ``output.overwrite`` warning is left out of that row);
 - ``batch.output_exists`` (error): the output exists and the collision setting would rename it
   (C-8's ``output.renamed``). With the setting *ask*, C-8's ``output.exists`` error says it
   already; with *overwrite* the user chose to replace it, and C-8's warning stays.
+
+:meth:`BatchService.resolve_batch` is a whole batch (``reframe batch``): every file is
+resolved, then a file that is the planned output of another file of the batch is **left out**
+(``batch.already_encoded``, info: the output of an earlier run is not encoded again), the
+others are grouped and each group gets its matrix; the batch-level checks run over the files of
+**every** group, so a job never writes a file or the output of another group (decision 0040,
+follow-up R2-1, R2-7).
 
 A near member of the group (``resolve(…, group=…)``) gets the warning ``batch.near_match`` with
 its differences (04: "E05 ⚠ 1 extra track"). Decision 0040.
@@ -30,7 +39,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from reframe.batch.derive import derive_template, merge_template
-from reframe.batch.grouping import episode_key, episode_label, group_sources
+from reframe.batch.grouping import episode_key, episode_labels, group_sources
 from reframe.batch.resolve import matrix_columns, resolve, row_status
 from reframe.definitions import Definitions, load_definitions
 from reframe.models.batch import (
@@ -106,6 +115,29 @@ def _near_issue(differences: Sequence[str]) -> ValidationIssue:
         code="batch.near_match",
         path="source",
         message=f"Near match of the group: {'; '.join(differences)}.",
+    )
+
+
+def _already_encoded(file: Path, owner: Path) -> ValidationIssue:
+    """A file of the batch that is the planned output of ``owner``: left out (R2-7)."""
+    return ValidationIssue(
+        severity=Severity.INFO,
+        code="batch.already_encoded",
+        path="source",
+        message=(
+            f"{file.name} is the planned output of {owner.name} with this preset: it is left out "
+            "of the batch (an earlier output is not encoded again)."
+        ),
+    )
+
+
+def _ordered(
+    probed: list[tuple[Path, MediaSource | ProbeError]], rank: Mapping[str, int]
+) -> list[tuple[Path, MediaSource | ProbeError]]:
+    """``probed`` in the group's order, else in episode order (C-16's parser: guessit takes
+    milliseconds per name, so this runs in a worker thread)."""
+    return sorted(
+        probed, key=lambda item: (rank.get(_key(item[0]), len(rank)), episode_key(item[0]))
     )
 
 
@@ -266,7 +298,7 @@ class BatchService:
         members = group.members if group is not None else []
         rank = {_key(m.path): n for n, m in enumerate(members)}
         near = {_key(m.path): m.differences for m in members if m.match == "near"}
-        probed.sort(key=lambda item: (rank.get(_key(item[0]), len(rank)), episode_key(item[0])))
+        probed = await asyncio.to_thread(_ordered, probed, rank)
         rows: list[Resolution] = []
         for path, found in probed:
             if isinstance(found, ProbeError):
@@ -277,7 +309,7 @@ class BatchService:
             if _key(path) in near:
                 first.append(_near_issue(near[_key(path)]))
             rows.append(await self._row(chosen, found, patches.get(_key(path)), naming, first))
-        rows, batch_issues = _collisions(rows)
+        rows, batch_issues = await asyncio.to_thread(_collisions, rows)
         columns = await asyncio.to_thread(
             matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
         )
@@ -285,8 +317,96 @@ class BatchService:
             group=group,
             columns=columns,
             rows=rows,
-            issues=[*template_issues, *batch_issues],
+            issues=[*template_issues, *(issue for _, issue in batch_issues)],
         )
+
+    async def resolve_batch(
+        self,
+        template: JobTemplate | str | None,
+        sources: Sequence[str | os.PathLike[str] | MediaSource],
+        *,
+        level: MatchLevel = "standard",
+        overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
+    ) -> tuple[BatchGrouping, list[BatchResolution]]:
+        """A whole batch (``reframe batch``): every file resolved with ``template`` (as
+        :meth:`resolve`), the files grouped at ``level`` (as :meth:`group`) and one
+        resolution matrix per group, in the grouping's order.
+
+        - A file that is the planned output of another file of the batch is left out (an
+          earlier run's output: it is not grouped, resolved or queued) and is an info
+          ``batch.already_encoded`` of the grouping, next to the files that cannot be read.
+        - The batch-level name checks run over the files of every group: an output that is
+          another file of the batch (also a left-out or unreadable one) is
+          ``batch.output_is_source`` on its row, two rows with one output are
+          ``batch.name_collision`` on both, and the batch issue of a shared name is in the
+          resolution of the first group concerned.
+        """
+        chosen, template_issues = self._template(template)
+        settings = self._settings()
+        naming = chosen.naming if chosen.naming is not None else settings.output.naming
+        patches = {_key(path): ops for path, ops in (overrides or {}).items()}
+        probed = await self._probe_all(sources)
+        files = {_key(path): path for path, _ in probed}
+        rows: dict[str, Resolution] = {}
+        for path, found in probed:
+            if isinstance(found, MediaSource):
+                key = _key(path)
+                rows[key] = await self._row(
+                    chosen, found, patches.get(key), naming, template_issues
+                )
+        # An earlier run's outputs (R2-7): the planned output of another file of the batch.
+        owners: dict[str, Path] = {}
+        for key, row in rows.items():
+            output = row.job.output.path if row.job is not None else None
+            if output is not None and _key(output) in rows and _key(output) != key:
+                owners.setdefault(_key(output), row.path)
+        kept = [
+            found
+            for path, found in probed
+            if isinstance(found, MediaSource) and _key(path) not in owners
+        ]
+        groups = await asyncio.to_thread(group_sources, kept, level)
+        issues = [_probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
+        issues += [_already_encoded(files[key], owner) for key, owner in owners.items()]
+        grouped: list[list[Resolution]] = []
+        for group in groups:
+            members: list[Resolution] = []
+            for member in group.members:
+                row = rows[_key(member.path)]
+                if member.match == "near":
+                    at = len(template_issues)
+                    near = _near_issue(member.differences)
+                    all_issues = [*row.issues[:at], near, *row.issues[at:]]
+                    row = row.model_copy(
+                        update={
+                            "issues": all_issues,
+                            "status": row_status(row.matches, all_issues),
+                        }
+                    )
+                members.append(row)
+            grouped.append(members)
+        flat = [row for members in grouped for row in members]
+        checked, batch_issues = await asyncio.to_thread(
+            _collisions, flat, files=files, left_out=owners
+        )
+        columns = await asyncio.to_thread(
+            matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
+        )
+        resolutions: list[BatchResolution] = []
+        start = 0
+        for group, members in zip(groups, grouped, strict=True):
+            end = start + len(members)
+            own = [issue for n, issue in batch_issues if start <= n < end]
+            resolutions.append(
+                BatchResolution(
+                    group=group,
+                    columns=columns,
+                    rows=checked[start:end],
+                    issues=[*template_issues, *own],
+                )
+            )
+            start = end
+        return BatchGrouping(groups=groups, issues=issues), resolutions
 
     async def _row(
         self,
@@ -304,6 +424,7 @@ class BatchService:
             override,
             definitions=self.definitions,
             languages=self._settings().languages,
+            container_codecs=False,  # C-8's validation below reports them (0031 §6)
         )
         assert resolution.job is not None  # resolve always makes a job
         job, name, notes = await self._jobs.name_job(resolution.job, source, naming=naming)
@@ -335,85 +456,102 @@ class BatchService:
         )
 
 
-def _collisions(rows: list[Resolution]) -> tuple[list[Resolution], list[ValidationIssue]]:
+def _collisions(
+    rows: list[Resolution],
+    *,
+    files: Mapping[str, Path] | None = None,
+    left_out: Mapping[str, Path] | None = None,
+) -> tuple[list[Resolution], list[tuple[int, ValidationIssue]]]:
     """The batch-level name checks (see the module doc): an issue on each row concerned, and
-    one batch issue per shared output path."""
+    one batch issue per shared output path, with the number of the first row concerned.
+    ``files``: every file of the batch by its :func:`_key` (default: the rows' files);
+    ``left_out``: the files left out as an earlier run's outputs, each with the file whose
+    planned output it is."""
     added: dict[int, list[ValidationIssue]] = {}
-    batch: list[ValidationIssue] = []
+    batch: list[tuple[int, ValidationIssue]] = []
     sources = {_key(row.path): n for n, row in enumerate(rows)}
+    every = dict(files) if files is not None else {k: rows[n].path for k, n in sources.items()}
+    earlier = left_out or {}
     outputs: dict[str, list[int]] = {}
     for n, row in enumerate(rows):
         if row.job is not None and row.job.output.path is not None:
             outputs.setdefault(_key(row.job.output.path), []).append(n)
+    labels = episode_labels([row.path for row in rows], season=True)
+    is_source: set[int] = set()
 
-    def label(n: int) -> str:
-        return episode_label(rows[n].path, season=True)
+    def add(n: int, code: str, message: str) -> None:
+        issue = ValidationIssue(
+            severity=Severity.ERROR, code=code, path="output.path", message=message
+        )
+        added.setdefault(n, []).append(issue)
 
     for key, numbers in outputs.items():
         path = rows[numbers[0]].job.output.path  # type: ignore[union-attr]
         assert path is not None
         if len(numbers) > 1:
-            names = ", ".join(label(n) for n in numbers)
+            names = ", ".join(labels[n] for n in numbers)
             batch.append(
-                ValidationIssue(
-                    severity=Severity.ERROR,
-                    code="batch.name_collision",
-                    path="output.path",
-                    message=f"{len(numbers)} files get the output name {path.name}: {names}.",
-                )
-            )
-            for n in numbers:
-                others = ", ".join(label(m) for m in numbers if m != n)
-                added.setdefault(n, []).append(
+                (
+                    numbers[0],
                     ValidationIssue(
                         severity=Severity.ERROR,
                         code="batch.name_collision",
                         path="output.path",
-                        message=(
-                            f"{path.name} is also the output name of {others} in this batch. "
-                            "Use a naming template with the episode ({episode_code} or "
-                            "{episode}) or another name for this file."
-                        ),
-                    )
-                )
-        owner = sources.get(key)
-        if owner is not None:
-            for n in numbers:
-                if n == owner:
-                    continue  # C-8's output.same_as_source says it
-                added.setdefault(n, []).append(
-                    ValidationIssue(
-                        severity=Severity.ERROR,
-                        code="batch.output_is_source",
-                        path="output.path",
-                        message=(
-                            f"The output {path.name} is the source file of {label(owner)} in "
-                            "this batch."
-                        ),
-                    )
-                )
-    for n, row in enumerate(rows):
-        if row.job is None or row.job.output.path is None:
-            continue
-        if any(issue.code == "output.renamed" for issue in row.issues):
-            added.setdefault(n, []).append(
-                ValidationIssue(
-                    severity=Severity.ERROR,
-                    code="batch.output_exists",
-                    path="output.path",
-                    message=(
-                        f"{row.job.output.path.name} already exists. In a batch an existing "
-                        "output is an error (04 §Output naming): remove it, or set the "
-                        "collision setting to overwrite."
+                        message=f"{len(numbers)} files get the output name {path.name}: {names}.",
                     ),
                 )
+            )
+            for n in numbers:
+                others = ", ".join(labels[m] for m in numbers if m != n)
+                add(
+                    n,
+                    "batch.name_collision",
+                    f"{path.name} is also the output name of {others} in this batch. Use a "
+                    "naming template with the episode ({episode_code} or {episode}) or another "
+                    "name for this file.",
+                )
+        if key not in every:
+            continue
+        owner = sources.get(key)
+        for n in numbers:
+            if n == owner:
+                continue  # C-8's output.same_as_source says it
+            is_source.add(n)
+            if owner is not None:
+                message = (
+                    f"The output {path.name} is the source file of {labels[owner]} in this batch."
+                )
+            elif key in earlier:
+                message = (
+                    f"The output {path.name} is a file of this batch, left out as already "
+                    "encoded: a file of the batch is never overwritten. Remove it (or move it out "
+                    f"of the folder) to encode {labels[n]} again."
+                )
+            else:
+                message = (
+                    f"The output {path.name} is a file of this batch: a file of the batch is "
+                    "never overwritten."
+                )
+            add(n, "batch.output_is_source", message)
+    for n, row in enumerate(rows):
+        if row.job is None or row.job.output.path is None or n in is_source:
+            continue
+        if any(issue.code == "output.renamed" for issue in row.issues):
+            add(
+                n,
+                "batch.output_exists",
+                f"{row.job.output.path.name} already exists. In a batch an existing output is an "
+                "error (04 §Output naming): remove it, or set the collision setting to overwrite.",
             )
     if not added:
         return rows, batch
     fixed = list(rows)
     for n, issues in added.items():
         row = fixed[n]
-        all_issues = [*row.issues, *issues]
+        # A file of the batch is not replaced: C-8's "will be replaced" warning would say
+        # the opposite of the error.
+        kept = [i for i in row.issues if n not in is_source or i.code != "output.overwrite"]
+        all_issues = [*kept, *issues]
         fixed[n] = row.model_copy(
             update={"issues": all_issues, "status": row_status(row.matches, all_issues)}
         )

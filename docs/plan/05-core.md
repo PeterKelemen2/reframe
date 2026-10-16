@@ -570,7 +570,7 @@ class Reframe:
     jobs: JobService               # draft, validate, plan (dry_run=), name, media_files; explain
                                    # (C-12), draft_remux (C-13), search_options, hdr_metadata,
                                    # dry_run (C-6); preview_clip, preview_clip_path (C-10)
-    batch: BatchService            # group, derive, resolve
+    batch: BatchService            # group, derive, resolve, resolve_batch (a whole run)
     queue: QueueService            # add, list, reorder, start/pause/resume/cancel, logs
     settings: SettingsService
     power: PowerService            # when-done power actions with the 60 s countdown (C-14)
@@ -588,7 +588,8 @@ The method list beyond this sketch, and the task context of the C-10 methods:
       `reframe plan FILE [--preset NAME] [-o OUT]` (prints the issues, then the command) · `reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
       `reframe batch DIR… [--preset NAME] [--level strict|standard|loose] [--dry-run] [-r] [--json]`
       (prints the groups and the resolution matrix; without `--dry-run` it encodes the files
-      without errors, [decision 0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
+      without errors; the name checks cover every group, and an earlier run's outputs are left
+      out, [decision 0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
       No `--preset`: the default preset. Output formats, exit codes, the bounded wait for
       encoder detection and the folder search: [decision 0017](../decisions/0017-jobs-service-and-cli.md).
       The fetch, the preset commands, the dry run of `plan` and the when-done countdown of

@@ -180,7 +180,10 @@ def test_the_loose_level_ignores_the_order() -> None:
     assert compare(fingerprint(a, "loose"), fingerprint(b, "loose")).count == 0
     c = media("/c.mkv", video(1920, 1080), audio(1, "jpn"), audio(2, "hun"))
     found = compare(fingerprint(a, "loose"), fingerprint(c, "loose"))
-    assert found.lines == ["1 extra track (hun AC-3 5.1)", "1 track missing (eng AC-3 2.0)"]
+    # A track in the place of a missing one of its kind differs: one difference, as at the
+    # standard level (0040 §3; review R2-4).
+    assert found.lines == ["1 track differs (eng AC-3 2.0 → hun AC-3 5.1)"]
+    assert found.count == 1
     assert (
         "video"
         in compare(

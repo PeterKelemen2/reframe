@@ -113,7 +113,9 @@ def test_row_status() -> None:
 
 def test_resolve_one_file() -> None:
     e11 = A.recorded(1, 11)
-    stale = OPS.validate_python([{"op": "remove", "path": "/audio_rules/9"}])
+    stale = OPS.validate_python(
+        [{"op": "replace", "path": "/audio_rules/9/required", "value": False}]
+    )
     resolution = resolve(A.example_template(), e11, stale)
     assert resolution.path == e11.ref.path
     assert resolution.status == "error"

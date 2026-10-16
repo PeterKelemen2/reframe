@@ -27,9 +27,10 @@ a time in a fixed order: ``title_pattern``, ``profiles``, ``channels``, ``codecs
 and roles are never dropped. Each dropped field is recorded.
 
 **Several rules** (:func:`match_rules`): every rule is first matched with its full selector;
-a relaxed rule then never takes a track that another rule matches exactly, nor one an
-earlier relaxed rule took (decision 0040). Exact matches may share a track (one source track
-in two outputs is a choice, for example a passthru and a stereo AAC copy).
+a relaxed rule then never takes a track that another rule matches exactly (a track picked by
+hand, ``stream``, is such a match), nor one an earlier relaxed rule took (decision 0040).
+Exact matches may share a track (one source track in two outputs is a choice, for example a
+passthru and a stereo AAC copy).
 
 Pure: no I/O.
 """
@@ -274,12 +275,15 @@ def match_rules(
         candidates(rule.selector, tracks, title=patterns[n]) if usable[n] else []
         for n, rule in enumerate(rules)
     ]
+    # The exact matches, which relaxed rules leave alone; a hand pick is one.
     claimed: dict[int, set[int]] = {}
     for n, rule in enumerate(rules):
         if rule.selector.stream is not None:
-            continue
-        found = exact[n]
-        taken = found if rule.multiple else found[rule.selector.nth : rule.selector.nth + 1]
+            pinned = [t for t in tracks if t.descriptor.index == rule.selector.stream]
+            taken = pinned if usable[n] else []
+        else:
+            found = exact[n]
+            taken = found if rule.multiple else found[rule.selector.nth : rule.selector.nth + 1]
         for track in taken:
             claimed.setdefault(track.descriptor.index, set()).add(n)
 

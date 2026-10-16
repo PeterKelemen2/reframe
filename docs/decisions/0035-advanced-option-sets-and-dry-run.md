@@ -154,3 +154,14 @@ metadata from the frames, x264 and VP9 cannot carry it: no options, an empty pat
   change: `supported_presets` hides the preset where the build lacks it.
 - The x265 in every build here is 4.3 (Arch) or 4.3+49 (both BtbN builds), not 4.1 as the M2
   notes said; the comments and `testdata/README.md` say so.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+**R5-2.** The warnings of §5 (`encoder.dry_run_warning`, `encoder.dry_run_skipped`) did not
+reach the user: `JobService.plan(…, dry_run=True)` returns only the plan when the dry run has
+no error (a plan carries no issues), and `reframe plan` used it. The dry run itself is
+unchanged; `reframe plan` now calls `JobService.dry_run` and shows all of its issues with the
+draft's, and says the parameters were checked only when the test encode ran (decision 0038,
+follow-up). `JobService.plan`'s docstring says that its plan carries no warnings.
+Tests: `tests/jobs/test_cli_review_fixes.py` (`test_plan_shows_a_skipped_dry_run`,
+`test_plan_shows_the_dry_runs_warnings`).

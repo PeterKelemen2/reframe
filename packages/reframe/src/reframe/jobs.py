@@ -22,7 +22,8 @@ its plan.
 - :meth:`JobService.search_options` and :meth:`JobService.hdr_metadata`: the advanced option
   search and **Copy HDR metadata** (C-6).
 - :meth:`JobService.name` names one path without probing it (``reframe name``), and
-  :func:`find_media_files` lists the media files of files and folders (``reframe encode``).
+  :func:`find_media_files` lists the media files of files and folders (``reframe encode``);
+  :class:`OutputClaims` keeps the jobs of one command from writing each other's files.
 
 Expected failures are values: a source that cannot be probed is a
 :class:`~reframe.probe.ProbeError` (``draft``) or a ``source.probe_failed`` error
@@ -35,7 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -75,6 +76,7 @@ __all__ = [
     "Capabilities",
     "JobService",
     "MediaFiles",
+    "OutputClaims",
     "PresetLookup",
     "SourceProber",
     "ToolDiscovery",
@@ -195,6 +197,59 @@ def find_media_files(
     return MediaFiles(files=files, missing=missing, empty=empty)
 
 
+def _path_key(path: str | os.PathLike[str]) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+class OutputClaims:
+    """The outputs of the jobs that one command queues (``reframe encode`` of several files):
+    no job writes another file of the command (it would replace a source, perhaps before its
+    own job reads it) or the output of an earlier job of the command (the earlier output would
+    be lost, or the later one renamed at run time). ``Reframe.batch.resolve_batch`` checks a
+    batch the same way, for all its files at once (decision 0040, follow-up R2-1).
+
+    :param files: every file of the command, with its label in messages (``[2/3] E02.mkv``).
+    """
+
+    def __init__(self, files: Mapping[Path, str]) -> None:
+        self._files = {_path_key(path): label for path, label in files.items()}
+        self._outputs: dict[str, str] = {}
+
+    def check(self, job: JobSettings, label: str) -> list[ValidationIssue]:
+        """The errors of ``job``'s output (``label``: the job in messages). Without one, the
+        output is claimed for ``job``: call it only for a job that is queued."""
+        path = job.output.path
+        if path is None or job.output.edit_in_place:
+            return []
+        key = _path_key(path)
+        source = _path_key(job.source.path)
+        if key != source and key in self._files:
+            return [
+                _issue(
+                    Severity.ERROR,
+                    "batch.output_is_source",
+                    "output.path",
+                    f"The output {path.name} is a source file of this command "
+                    f"({self._files[key]}): it is never overwritten. Choose another name or "
+                    "output folder for this file.",
+                )
+            ]
+        earlier = self._outputs.get(key)
+        if earlier is not None:
+            return [
+                _issue(
+                    Severity.ERROR,
+                    "batch.name_collision",
+                    "output.path",
+                    f"{path.name} is also the output of {earlier} in this command: this file is "
+                    "not queued, so that it does not replace that output. Use a naming template "
+                    "with the episode ({episode_code} or {episode}) or another name.",
+                )
+            ]
+        self._outputs[key] = label
+        return []
+
+
 # --------------------------------------------------------------------------- helpers
 
 
@@ -238,12 +293,19 @@ def draft_from_preset(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
+    container_codecs: bool = True,
 ) -> tuple[JobSettings, TrackDraft, list[str]]:
     """:func:`job_from_preset` with the whole :class:`~reframe.models.TrackDraft` (audio and
     subtitle decisions, the issues of the track stage): C-12's ``resolve`` of the preset in
-    ``source`` (the one rule engine of presets and batch mode, decision 0040). Pure."""
+    ``source`` (the one rule engine of presets and batch mode, decision 0040). Pure.
+    ``container_codecs=False``: without the defaults lint's ``defaults.codec_not_in_container``
+    (a caller that validates the job gets C-8's ``container.codec_unsupported`` instead)."""
     resolution, tracks = resolve_with_tracks(
-        preset, source, definitions=definitions, languages=languages
+        preset,
+        source,
+        definitions=definitions,
+        languages=languages,
+        container_codecs=container_codecs,
     )
     assert resolution.job is not None  # resolve always makes a job
     return resolution.job, tracks.draft, resolution.notes
@@ -329,10 +391,15 @@ class JobService:
         job, tracks, name, notes = await asyncio.to_thread(
             self._compose, media, chosen, naming, output
         )
-        # The errors of the track stage (no track for a required language) keep the draft out
-        # of the queue; its warnings and notes (the defaults lint) are in explain().
-        track_errors = [i for i in tracks.issues if i.severity is Severity.ERROR]
-        issues = [*issues, *track_errors, *await self._validate(job, media, naming)]
+        # The errors of the track stage (no track for a required language, a required track
+        # rule without a match) keep the draft out of the queue, and the track rules' cells
+        # that are not exact (``batch.track_relaxed``, ``batch.track_ambiguous``,
+        # ``batch.track_skipped``) are shown with it, as ``reframe batch`` shows them; the
+        # defaults lint's warnings and notes are in explain().
+        track_issues = [
+            i for i in tracks.issues if i.severity is Severity.ERROR or i.code.startswith("batch.")
+        ]
+        issues = [*issues, *track_issues, *await self._validate(job, media, naming)]
         return JobDraft(
             job=job,
             decisions=tracks.decisions,
@@ -373,8 +440,14 @@ class JobService:
         naming: NamingOptions,
         output: Path | None,
     ) -> tuple[JobSettings, TrackDraft, NameResult, list[str]]:
+        # C-8 validates the job: its container rule reports a codec the container cannot
+        # hold, so the defaults lint does not say it again (one issue per problem, 0031 §6).
         job, tracks, notes = draft_from_preset(
-            media, preset, definitions=self.definitions, languages=self._settings().languages
+            media,
+            preset,
+            definitions=self.definitions,
+            languages=self._settings().languages,
+            container_codecs=False,
         )
         job, name, more = self._name(job, media, naming, output)
         return job, tracks, name, [*notes, *more]
@@ -476,7 +549,10 @@ class JobService:
     ) -> EncodePlan | list[ValidationIssue]:
         """C-7's plan of ``job``; when it has errors, every issue instead (at least one is an
         ``error``). ``dry_run``: when validation finds no error, also encode one frame
-        (:meth:`dry_run`) and return its errors (custom parameters FFmpeg refuses)."""
+        (:meth:`dry_run`) and return its errors (custom parameters FFmpeg refuses). A plan
+        carries no issues, so the dry run's warnings (``encoder.dry_run_warning``,
+        ``encoder.dry_run_skipped``) are not returned with it: a caller that shows them calls
+        :meth:`dry_run` itself, as ``reframe plan`` does (decision 0038)."""
         media = await self._media(job, source)
         if not isinstance(media, MediaSource):
             return media
