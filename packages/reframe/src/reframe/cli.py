@@ -53,8 +53,8 @@ Exit codes:
 ``tools fetch``: ``1`` the download, the checksum, the archive or the version check failed;
 ``2`` an unknown build or a platform the build has no archive for. ``presets export``: ``1``
 FILE cannot be written; ``2`` an unknown preset. ``presets import``: ``1`` the file is not a
-preset file or a preset was not imported (an ``error`` issue); ``3`` FILE does not exist or
-cannot be read.
+preset file (also one larger than 16 MiB) or a preset was not imported (an ``error`` issue);
+``3`` FILE does not exist, cannot be read or is not a regular file (a device, a FIFO).
 
 Errors are one line on stderr, never a traceback (an unexpected error is one ``error:`` line
 and exit code 1; ``REFRAME_TRACEBACK=1`` shows the traceback). The core's warnings
@@ -74,6 +74,7 @@ import io
 import json
 import logging
 import os
+import stat
 import sys
 import tempfile
 import time
@@ -131,6 +132,7 @@ from reframe.presets import ConflictPolicy, ImportResult
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import (
+    MARKER_NAME,
     PLATFORMS,
     FetchError,
     host_platform,
@@ -528,14 +530,22 @@ def origin_text(info: ToolInfo) -> str:
     return f"{where}: {info.path}" if info.path is not None else where
 
 
+#: C0 and C1 control characters and DEL, each shown as U+FFFD by :func:`printable`.
+_CONTROLS = dict.fromkeys([*range(0x20), *range(0x7F, 0xA0)], "\ufffd")
+
+
 def printable(text: str) -> str:
-    """``text`` with the bytes of a file name that is not valid UTF-8 (``os.fsdecode`` keeps
-    them as lone surrogates, U+DCFF) shown as U+FFFD: such a string cannot be
-    written to a UTF-8 stream."""
+    """``text`` for the terminal: the bytes of a file name that is not valid UTF-8
+    (``os.fsdecode`` keeps them as lone surrogates, U+DCFF) and every control character (C0
+    with the line break and the tab, DEL, C1) shown as U+FFFD. A UTF-8 stream cannot take a
+    lone surrogate, and a control character from a file or a name (``ESC [31m``, ``ESC ]0;``,
+    a line break in a preset name) would change the terminal or the layout (core-complete
+    review R5-9). Text with line breaks of its own is printed line by line."""
     try:
-        return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+        text = text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
     except UnicodeEncodeError:  # other lone surrogates (a broken UTF-16 name on Windows)
-        return text.encode("utf-8", "replace").decode("utf-8")
+        text = text.encode("utf-8", "replace").decode("utf-8")
+    return text.translate(_CONTROLS)
 
 
 def display_path(path: Path | str) -> str:
@@ -544,7 +554,9 @@ def display_path(path: Path | str) -> str:
 
 
 def _one_line(text: str) -> str:
-    return " ".join(printable(text).split())
+    """``text`` as one line: runs of white space (line breaks, tabs) become one space, then
+    :func:`printable`."""
+    return printable(" ".join(text.split()))
 
 
 def error_message(error: ProbeError, ffprobe: ToolInfo | None) -> str:
@@ -2310,6 +2322,8 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
         soft_wrap=True,
     )
     async with open_reframe() as app:
+        install_dir = install_dir_for(app.data_dir, target, host)
+        before = _marker_identity(install_dir)
         subscription = app.events.subscribe(types={"task.progress", "task.done"})
         info = app.tools.fetch(build=build, platform=target)
         view = FetchView(console)
@@ -2323,8 +2337,20 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             print("Interrupted: stopping the download…", file=sys.stderr)
             app.tasks.cancel(info.id, "interrupted")
             ended = await app.tasks.wait(info.id)
-            if ended.state is TaskState.DONE:  # it ended just before the interrupt
-                print("The build was installed before the interrupt.", file=sys.stderr)
+            marker = installed_build(install_dir)
+            replaced = _marker_identity(install_dir) != before
+            if ended.state is TaskState.DONE or (
+                # The interrupt came after the swap (tool discovery, the clean-up): the new
+                # build is in place (core-complete review R5-5).
+                replaced and marker is not None and marker.get("sha256") == archive.sha256
+            ):
+                print(
+                    printable(
+                        f"FFmpeg {chosen.version} was installed into {install_dir} before the "
+                        "interrupt."
+                    ),
+                    file=sys.stderr,
+                )
             else:
                 print("Nothing was installed.", file=sys.stderr)
             return EXIT_INTERRUPTED
@@ -2340,6 +2366,16 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
         tools = app.tools.current if target == host else None
     _fetch_report(console, result, tools)
     return EXIT_OK
+
+
+def _marker_identity(install_dir: Path) -> tuple[int, int, int] | None:
+    """The install marker's file (device, inode, modification time): a fetch writes a new
+    one, so a change says that the build was replaced."""
+    try:
+        info = (install_dir / MARKER_NAME).stat()
+    except OSError:
+        return None
+    return info.st_dev, info.st_ino, info.st_mtime_ns
 
 
 def _fetch_report(console: Console, result: ToolFetchResult, tools: ToolSet | None) -> None:
@@ -2545,17 +2581,49 @@ async def run_presets_export(names: Sequence[str], *, output: Path | None) -> in
     return EXIT_OK
 
 
+#: The largest preset file ``reframe presets import`` reads (an export of every preset is a
+#: few hundred KiB at most).
+MAX_PRESET_FILE = 16 << 20
+
+
+def _read_regular_file(path: Path, limit: int) -> bytes | str:
+    """At most ``limit + 1`` bytes of the regular file ``path``, else why it is not read. The
+    file is opened without blocking (a FIFO would wait for a writer) and checked after it is
+    opened (``/dev/zero`` never ends)."""
+    if path.is_dir():
+        return "is a folder, not a preset file."
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as f:
+        info = os.fstat(f.fileno())
+        if stat.S_ISDIR(info.st_mode):
+            return "is a folder, not a preset file."
+        if not stat.S_ISREG(info.st_mode):
+            return "is not a regular file (a device, a pipe or a socket): it is not read."
+        return f.read(limit + 1)
+
+
 def read_preset_file(path: Path) -> dict[str, Any] | tuple[int, str]:
-    """The JSON object of an export file (``-``: stdin), else ``(exit code, message)``."""
+    """The JSON object of an export file (``-``: stdin), else ``(exit code, message)``. At most
+    :data:`MAX_PRESET_FILE` bytes are read; a device or a FIFO is never read."""
     name = "stdin" if str(path) == "-" else display_path(path)
     try:
-        raw = sys.stdin.buffer.read() if str(path) == "-" else path.read_bytes()
+        if str(path) == "-":
+            raw: bytes | str = sys.stdin.buffer.read(MAX_PRESET_FILE + 1)
+        else:
+            raw = _read_regular_file(path, MAX_PRESET_FILE)
     except FileNotFoundError:
         return EXIT_NOT_FOUND, f"{name}: the file does not exist."
     except IsADirectoryError:
         return EXIT_NOT_FOUND, f"{name} is a folder, not a preset file."
     except OSError as exc:
         return EXIT_NOT_FOUND, f"{name} cannot be read: {exc.strerror or exc}."
+    if isinstance(raw, str):
+        return EXIT_NOT_FOUND, f"{name} {raw}"
+    if len(raw) > MAX_PRESET_FILE:
+        return (
+            EXIT_FAILED,
+            f"{name} is not a Reframe preset file: it is larger than {MAX_PRESET_FILE} bytes.",
+        )
     try:
         data = json.loads(raw.decode("utf-8-sig"))
     except UnicodeDecodeError:

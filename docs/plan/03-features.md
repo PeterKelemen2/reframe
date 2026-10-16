@@ -267,8 +267,14 @@ Modelled on StaxRip: every parameter that matters is a typed, documented control
 - **Custom parameters**: a free-form `key=value:…` field, appended last and validated by a
   dry run (`-frames:v 1 -f null`). Encoders without a params argument (NVENC, QSV, AMF, VAAPI,
   VP9) get each entry as their own option (`rc-lookahead=20` → `-rc-lookahead 20`). A
-  parameter the encoder refuses, or only logs and skips (x264, x265 and SVT-AV1 do that), is a
-  validation error from the dry run ([0035](../decisions/0035-advanced-option-sets-and-dry-run.md)).
+  parameter the encoder refuses, or only logs and skips (x264, x265, SVT-AV1 and libvpx's codec
+  controls do that), is a validation error from the dry run
+  ([0035](../decisions/0035-advanced-option-sets-and-dry-run.md)). A parameter that makes the
+  encoder or FFmpeg read or write a file (x265 `csv` / `analysis-save`, x264 `dump-yuv` /
+  `stats`, `pass`, FFmpeg's `vstats_file` …) is a validation error, and so is an own option of
+  an encoder without a params argument that is neither its private option nor a generic encoder
+  option (an allow-list: FFmpeg would read any other name as one of its own options). The dry
+  run never runs with such a parameter, and runs FFmpeg in a temporary working folder.
 - **Copy HDR metadata from source** fills master-display and MaxCLL/MaxFALL from the probe
   (x265 `master-display` / `max-cll`, SVT-AV1 `mastering-display` / `content-light`; the
   hardware encoders take it from the frames).

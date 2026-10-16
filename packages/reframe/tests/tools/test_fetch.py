@@ -17,7 +17,7 @@ import shutil
 import sys
 import tarfile
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -25,7 +25,8 @@ from typing import Any
 import pytest
 
 from reframe import Reframe
-from reframe.models import TaskInfo, TaskState, ToolInfo, ToolOrigin, ToolSet, ToolStatus
+from reframe.events import EventBus
+from reframe.models import Event, TaskInfo, TaskState, ToolInfo, ToolOrigin, ToolSet, ToolStatus
 from reframe.models.events import TaskProgressEvent
 from reframe.probe import mediainfo
 from reframe.tasks import TaskManager
@@ -101,24 +102,22 @@ class Fetch:
         self.rescans += 1
         return _toolset()
 
+    def _record(self, event: Event) -> None:
+        if not isinstance(event, TaskProgressEvent):
+            return
+        if event.task.message and event.task.message not in self.messages:
+            self.messages.append(event.task.message)
+        if event.task.progress is not None:
+            self.percents.append(event.task.progress)
+
     async def __call__(
         self, manifest: Path, *, platform: str | None = None, build: str = "default"
     ) -> tuple[TaskInfo, Any]:
-        from reframe.events import EventBus
-
-        events = EventBus()
-        subscription = events.subscribe(types={"task.progress"})
-
-        async def consume() -> None:
-            # Progress events of one task coalesce in a queue: read them as they come.
-            async for event in subscription:
-                assert isinstance(event, TaskProgressEvent)
-                if event.task.message and event.task.message not in self.messages:
-                    self.messages.append(event.task.message)
-                if event.task.progress is not None:
-                    self.percents.append(event.task.progress)
-
-        consumer = asyncio.create_task(consume())
+        # Every progress event as it is published: a subscription keeps only the newest
+        # ``task.progress`` of a task in its queue (testdata/README.md "Progress events
+        # coalesce"), so under load a step's message could be replaced before it was read
+        # (core-complete review R5-6).
+        events = _RecordingBus(self._record)
         tasks = TaskManager(events)
         info = start_fetch(
             tasks,
@@ -130,10 +129,21 @@ class Fetch:
         )
         assert info.kind == "tools_fetch"
         final = await asyncio.wait_for(tasks.wait(info.id), 120)
-        await asyncio.sleep(0)
         events.close()
-        await consumer
         return final, tasks.value(info.id)
+
+
+class _RecordingBus(EventBus):
+    """An event bus that hands every published event to ``record`` at once (no queue, so no
+    coalescing)."""
+
+    def __init__(self, record: Callable[[Event], None]) -> None:
+        super().__init__()
+        self._record = record
+
+    def publish(self, event: Event) -> None:
+        self._record(event)
+        super().publish(event)
 
 
 @pytest.fixture
@@ -302,6 +312,29 @@ def test_safe_member_names() -> None:
 
 
 # --------------------------------------------------------------------------- install
+
+
+@pytest.mark.anyio
+async def test_the_fetch_helper_sees_every_step_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Core-complete review R5-6: a subscription keeps only the newest progress event of a task,
+    so two steps reported without an await between them left only the second, and the install
+    test below failed under load. The helper records every event as it is published."""
+
+    def two_steps(tasks: TaskManager, **kwargs: object) -> TaskInfo:
+        async def fn(ctx: Any) -> None:
+            ctx.progress(10.0, "first step")
+            ctx.progress(20.0, "second step")
+
+        return tasks.start("tools_fetch", fn, message="Fetching")
+
+    monkeypatch.setattr(sys.modules[__name__], "start_fetch", two_steps)
+    fetch = Fetch(tmp_path / "data")
+    final, _ = await fetch(tmp_path / "unused.toml")
+    assert final.state is TaskState.DONE
+    assert fetch.messages[-2:] == ["first step", "second step"]
+    assert fetch.percents == [10.0, 20.0]
 
 
 @POSIX_ONLY

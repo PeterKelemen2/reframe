@@ -166,6 +166,65 @@ real FFmpeg n9.0.2 and a user preset with `limit-tu=2`: `Issues (0 errors, 1 war
 note and the command. Tests: `tests/jobs/test_cli_review_fixes.py`
 (`test_plan_shows_a_skipped_dry_run`, `test_plan_shows_the_dry_runs_warnings`).
 
+**R5-9 (control characters of preset names).** `reframe presets import` and `presets list`
+printed a preset's name, category and id as the file gave them: a shared preset named
+`Evil\x1b[31mRED…` coloured the terminal (`od -c` of the output: `033 [ 3 1 m`), and `ESC ]0;`
+set the window title. The CLI's `printable` (every human line goes through it) now shows each
+C0 control character (the line break and the tab too), DEL and each C1 control character as
+U+FFFD; `_one_line` (the `error:` / `warning:` lines) first joins white space into one space.
+`--json` keeps the names unchanged (JSON escapes them). Text with line breaks of its own is
+printed line by line, so nothing that the CLI writes on purpose changes. Tests:
+`tests/jobs/test_cli_presets_review_fixes.py` (`test_r5_9_*`).
+
+**The size of `presets import`** (suspected in the review, real). The file was read whole:
+`reframe presets import /dev/zero` read until memory ran out, and a FIFO blocked the command.
+Now at most 16 MiB (`MAX_PRESET_FILE`) are read, from a file or from stdin; a larger one is
+"not a Reframe preset file" (exit 1), and the file is opened without blocking and must be a
+regular file (else exit 3, "is not a regular file"). Tests:
+`test_import_refuses_a_file_larger_than_the_cap`, `test_import_never_reads_a_device_or_a_fifo`
+(with `/dev/null`: the unfixed code reads `/dev/zero` without end),
+`test_import_from_stdin_is_capped`.
+
+**R5-5 (a cancel after the swap).** A cancel during tool discovery (or during the clean-up
+after the swap) ended the task `cancelled` with the new build in place and discovery cut off,
+and `reframe tools fetch` said "Nothing was installed." Now, once the new build is in place
+(`_Job.swapped`), a cancel stops nothing more: the work folder is removed and tool discovery
+runs to its end; the task still ends `cancelled` (the task manager sees the token) with the
+message "Installed FFmpeg <version> into <folder> before the cancel". The CLI compares the
+install marker before and after (a new marker file with the build's SHA-256) and says "FFmpeg
+<version> was installed into <folder> before the interrupt." A cancel before the swap installs
+nothing, as before. Tests: `tests/tools/test_fetch_review_fixes.py` (`test_r5_5_*`).
+
+**R5-6 (the test's step messages).** `test_fetch_installs_the_build_and_skips_an_intact_install`
+read the step messages from an event subscription, which keeps only the newest
+`task.progress` event of a task (testdata/README.md "Progress events coalesce"): under load a
+message was replaced before it was read (the failure seen at the 2a merge). The test helper
+now records every event as it is published (`_RecordingBus`); a test of the helper shows two
+messages reported without an `await` between them.
+
+**Suspected items of the review (all real, all fixed):**
+
+- *A slow download outlasted the cancel wait.* The worker thread checked the cancel once per
+  1 MiB `read`: at 160 KB/s a cancel waited for the rest of the MiB, and below about 35 KB/s
+  longer than the 30 s that the task waits for its thread (the work folder was then removed
+  while the thread still wrote into it). It now reads what has arrived (`read1`). Test:
+  `test_a_cancel_stops_a_slow_download_at_once` (under 2.5 s, no work folder left).
+- *The lexical tar link check.* Each link was checked by its own text: `s/t -> ..` and
+  `s/u -> t/..` are each inside the build folder, but `u` points above it (Python's `data`
+  filter resolves on the disk, inside the extraction folder, so it lets this through; after
+  the install the link points into `<data dir>/tools`). Now the links are resolved through each
+  other before anything is written (`_check_links`): a path that leaves the folder on the way
+  (also to come back by the folder's name, which changes at the install), a chain of more
+  than 40 links (a loop) and a member stored inside a linked folder are refused. The links
+  of the shared BtbN build (`lib/libavcodec.so -> libavcodec.so.62…`) pass. Tests:
+  `test_a_link_chain_that_leaves_the_build_folder_is_refused`,
+  `test_a_member_inside_a_linked_folder_is_refused`, `test_links_inside_the_build_folder_are_kept`.
+- *Work folders after a crash.* A killed fetch (SIGKILL, power loss) left
+  `<data dir>/tools/.fetch-*` with the archive and the extracted build. A fetch now removes
+  such a folder when nothing in it was written for six hours (`STALE_WORK_AGE`); a running
+  fetch writes into its folder all the time, so a fresh one (another fetch) is never removed.
+  Test: `test_a_killed_fetchs_work_folder_is_removed_by_the_next_fetch`.
+
 ## Plan changes
 
 - [05-core.md §C-15](../plan/05-core.md#c-15-service-facade-and-cli): the CLI line shows the

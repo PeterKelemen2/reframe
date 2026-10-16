@@ -1887,6 +1887,81 @@ log, not the exit code, for three encoders:
 x265 and SVT-AV1 print their own messages (`x265 [warning]: …`, `Svt[warn]: …`) whatever
 FFmpeg's log level is.
 
+#### Core-complete review (2026-10-16)
+
+Checked with the same three builds (Arch n9.0.2, BtbN n9.0.2 and n8.1.3; the results are the
+same in all three), each encode with the target in a temporary folder and a temporary working
+folder. Tests: `tests/validation/test_custom_params_ffmpeg.py`, `test_dryrun_review_fixes.py`,
+`test_option_formats_ffmpeg.py`, `test_levels_ffmpeg.py`.
+
+**Custom parameters that read or write files** (R5-1; the list is
+`reframe/definitions/data/custom_params.toml`). Through the params argument the library reads
+every key; keys are read with `_` as `-`, a leading `--`, and a `no` / `no-` prefix (which turns
+the value into `true`):
+
+| Encoder | Key | What happens (exit code 0 in every case) |
+|---------|-----|-------------------------------------------|
+| x265 | `csv=F`, `--csv=F` | F written (321 bytes for 5 frames) |
+| x265 | `analysis-save=F`, `analysis_save=F` | F written (666 KB for 5 frames at 320x240; 5984 bytes for the reviewer's one frame) |
+| x265 | `stats=F:pass=1`; `analysis-reuse-file=F:multi-pass-opt-analysis=1:pass=1` | F written |
+| x265 | `pass=1` | `x265_2pass.log` and `x265_2pass.log.cutree` in the working folder |
+| x265 | `no-csv=F` | "Invalid value for no-csv", and a file named `true` in the working folder |
+| x265 | `analysis-load`, `scaling-list`, `lambda-file`, `dhdr10-info`, `nalu-file`, `film-grain`, `aom-film-grain`, `fovea-gaze-file` | read: "Error reading analysis data", "can't read matrix from F", "lambda file is incomplete", "Error reading (Aom) FilmGrain characteristics"; `nalu-file` and `film-grain` with a bad file crash FFmpeg (exit -11), Arch's `dhdr10-info` aborts (-6); BtbN: "--dhdr10-info disabled. Enable HDR10_PLUS in cmake" |
+| x265 | `qpfile`, `zonefile`, `recon`, `recon-y4m-exec`, `dolby-vision-rpu`, `scenecut-qp-config`, `abr-ladder`, `input`, `output` | "Unknown option" (options of the x265 program only) |
+| x264 | `dump-yuv=F`, `dump_yuv=F` | F written (576000 bytes for 5 frames) |
+| x264 | `stats=F:pass=1` | F written; `pass=1` alone writes `x264_2pass.log` (+ `.mbtree`) in the working folder; `nostats=F:pass=1` writes `true` and `true.mbtree` there |
+| x264 | `cqmfile=F` | read ("can't open file 'F'" when it is missing) |
+| x264 | `opencl-clbin=F:opencl=1` | taken ("OpenCL: Unable to query installed platforms" here) |
+| x264 | `qpfile`, `tcfile-in`, `tcfile-out`, `index`, `input`, `output` | "Error parsing option" |
+| SVT-AV1 | `stat-file`, `fgs-table`, `recon`, `errlog`, `config`, `stats`, `qpfile`, `roi-map-file`, `input`, `output` | "Error parsing option" (options of SvtAv1EncApp); `pass=1` is taken and writes nothing |
+| libvpx-vp9, as `-<name>:v:0` | `vstats_file`, `progress`, `stats_enc_pre` / `_post`, `stats_mux_pre`, `print_graphs_file` | F written: FFmpeg's own options take a stream specifier too |
+| libvpx-vp9, as `-<name>:v:0` | `pass=1`; `report=1` | `ffmpeg2pass-0.log`; `ffmpeg-<date>.log` in the working folder |
+| libvpx-vp9, as `-<name>:v:0` | `/filter=F`; `attach=F`; `fpre=F` | F read (FFmpeg reads an option's value from F when its name starts with `/`); `fpre` with a bad file crashes FFmpeg (-11) |
+
+FFmpeg splits a params argument like `av_dict_parse_string`: `'csv'=F` and `c\sv=F` are the key
+`csv`; `a=1:novalue:csv=F` is the keys `a` and `novalue:csv` ("Unknown option: novalue:csv.").
+The private options of VP9, NVENC, QSV, AMF and VAAPI (`ffmpeg -h encoder=<id>`, the three
+builds) and the 70 AVCodecContext options with the flags `E..V` (`ffmpeg -h full`, the same in
+n8.1.3 and n9.0.2) name no file; `aspect`, `b` and `profile` are also FFmpeg's own options of
+the same meaning.
+
+**libvpx codec controls** (R5-3): a value out of a control's range is logged and dropped with
+**exit code 0**: `arnr-maxframes=16` → "Failed to set VP8E_SET_ARNR_MAXFRAMES codec control:
+Invalid parameter" and "Additional information: arnr_max_frames out of range [0..15]";
+`arnr-strength=7` → `VP8E_SET_ARNR_STRENGTH` ("[..6]"); `min-gf-interval=40` →
+`VP9E_SET_MIN_GF_INTERVAL` ("[0..(MAX_LAG_BUFFERS - 1)]"). Values out of an AVOption's range
+(`tune-content=3`, `sharpness=8`, `cpu-used=12` …) stop FFmpeg instead ("Error setting option",
+exit 222).
+
+**x265 levels and `min-cu-size`** (R5-4): x265 pads the picture to the minimum CU before it
+checks the level. 1920x1160 at level 4: `medium` exit 0; `medium` + `min-cu-size=16` or `32`
+exit 183 ("picture dimensions are out of range for specified level"); `ultrafast` exit 183;
+`ultrafast` + `min-cu-size=8` exit 0.
+
+**VBV** (R5-7), x264 core 165 and x265 4.3:
+
+| Parameters | CRF | Average bitrate |
+|------------|-----|-----------------|
+| `vbv-maxrate` only | dropped: x264 "VBV maxrate specified, but no bufsize, ignored" (the SEI says `rc=crf`, no VBV), x265 the same | dropped, the same message |
+| `vbv-bufsize` only | dropped: "VBV bufsize set but maxrate unspecified, ignored" | used: "VBV maxrate unspecified, assuming CBR" (maximum = the bitrate; SEI `rc=cbr`) |
+| both | used | used |
+
+**HDR texts** (R5-8):
+
+| Text | x265 `master-display` / `max-cll` | SVT-AV1 `mastering-display` / `content-light` |
+|------|----------------------------------|-----------------------------------------------|
+| `garbage` | "unable to parse mastering display color volume info", no mastering display; `max-cll`: "Invalid value", no light level | no mastering display, no message; `content-light`: "Invalid cll provided" |
+| without `L(…)` | not parsed (as above) | no mastering display, no message |
+| tags in another order | not parsed | taken |
+| spaces before a number | taken | taken |
+| text after the tags | ignored | **FFmpeg never ends** (killed after 15 s; also text before the tags) |
+| a chromaticity above 65535 (x265) / 1 (SVT-AV1) | wraps: 70000 → 4464 | "Invalid mastering display info will be clipped to 0.0 to 1.0" |
+| x265's whole numbers in SVT-AV1 | — | clipped, and `L(10000000,1)` overflows (maximum luminance −1734967296/256) |
+| plain numbers in x265 | not parsed | — |
+| `1000` (one light level) | "Invalid value for max-cll", but MaxCLL 1000, MaxFALL 0 written | "Invalid cll provided", nothing written |
+| `1000,400,5` | taken (the rest ignored) | "Invalid cll provided" |
+| `70000,400` | wraps to 4464 | clipped to 65535 |
+
 ### Power actions (C-14)
 
 Checked on 2026-10-15 on Arch Linux (CachyOS kernel 7.2.8), systemd 262 (`262-1-arch`), polkit

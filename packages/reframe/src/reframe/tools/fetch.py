@@ -27,7 +27,10 @@ left, and a build that was installed before stays as it was):
    print the pinned version (through ``reframe.tools.run``), still in the temporary folder.
 6. The marker (``.fetch-tools.json``, the format of ``scripts/fetch-tools.py``, so each
    recognises the other's install) is written, the old build is moved aside, the new one moved
-   into place, the old one removed. Then tool discovery runs again (``rescan``).
+   into place, the old one removed. Then tool discovery runs again (``rescan``). Once the new
+   build is in place, a cancel no longer stops anything: the work folder is removed, tool
+   discovery runs to its end, and the task (still ``cancelled``) says that the build was
+   installed.
 
 A build for another platform (``--platform windows-x64`` on Linux) goes to
 ``<data dir>/tools/ffmpeg-<platform>``: tool discovery never looks there, so it cannot replace
@@ -35,7 +38,9 @@ the build this computer uses; copy that folder to the other computer's
 ``<data dir>/tools/ffmpeg``.
 
 The download and extraction run in a worker thread that stops at the task's cancel token
-(within one 1 MiB block, or the socket timeout when the server stalls).
+(as soon as the next data arrives, or at the socket timeout when the server stalls). A work
+folder ``.fetch-*`` that a killed fetch left behind is removed by the next fetch once nothing
+has been written in it for :data:`STALE_WORK_AGE` seconds.
 """
 
 from __future__ import annotations
@@ -110,6 +115,10 @@ VERSION_TIMEOUT = 60.0
 #: Seconds a cancelled task waits for its worker thread to stop and clean up.
 STOP_WAIT = SOCKET_TIMEOUT + 10.0
 CHUNK = 1 << 20
+#: Seconds without a write after which a ``.fetch-*`` work folder is a killed fetch's.
+STALE_WORK_AGE = 6 * 3600
+#: Links followed in a row inside an archive before the chain counts as a loop.
+MAX_LINK_DEPTH = 40
 
 #: Progress ranges of the steps (percent of the task).
 _DOWNLOAD = (0.0, 85.0)
@@ -365,7 +374,9 @@ def download(
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as f:
                 written = 0
-                while chunk := response.read(CHUNK):
+                # read1: what has arrived (at most CHUNK), so that a slow server never keeps a
+                # cancel waiting for a whole block (core-complete review).
+                while chunk := response.read1(CHUNK):
                     _check_cancel(cancel)
                     written += len(chunk)
                     if written > size:
@@ -440,25 +451,71 @@ def member_path(name: str, root: str) -> PurePosixPath:
 
 
 def _check_link_target(member: PurePosixPath, link: str, root: str) -> None:
-    if not link or link.startswith("/") or "\\" in link or _DRIVE_RE.match(link):
+    """The text of a link: relative, without a drive letter or a backslash. Where it points
+    is checked by :func:`_check_links`."""
+    if not link or link.startswith("/") or "\\" in link or "\x00" in link or _DRIVE_RE.match(link):
         raise FetchError(f"the link {member} -> {link!r} is absolute")
-    target = posixpath.normpath(posixpath.join(str(member.parent), link))
-    parts = target.split("/")
-    if ".." in parts or parts[0] != root:
-        raise FetchError(f"the link {member} -> {link!r} points outside {root!r}")
+
+
+def _check_links(paths: list[PurePosixPath], links: Mapping[PurePosixPath, str], root: str) -> None:
+    """Every link resolves inside ``root``, following the archive's other links as the file
+    system will (core-complete review: ``s/t -> ..`` and ``s/u -> t/..`` are each inside the
+    folder by their text, but ``u`` points above it). A path that leaves ``root`` on the way,
+    even to come back by the folder's name (the folder is renamed when it is installed), a
+    chain of more than :data:`MAX_LINK_DEPTH` links (a loop), and a member inside a linked
+    folder (it would be written where the link points, not where its name says) are refused.
+    :raises FetchError:"""
+    by_text = {member.as_posix(): text for member, text in links.items()}
+    for path in paths:
+        for parent in path.parents:
+            if parent in links:
+                raise FetchError(f"the archive member {path} is inside the link {parent}")
+
+    def resolve(parent: list[str], text: str, depth: int) -> list[str] | None:
+        if depth > MAX_LINK_DEPTH:
+            return None
+        parts = list(parent)
+        for name in text.split("/"):
+            if name in ("", "."):
+                continue
+            if name == "..":
+                parts.pop()
+                if not parts:  # above the root folder
+                    return None
+                continue
+            parts.append(name)
+            target = by_text.get("/".join(parts))
+            if target is not None:
+                resolved = resolve(parts[:-1], target, depth + 1)
+                if resolved is None:
+                    return None
+                parts = resolved
+                if not parts:
+                    return None
+        return parts
+
+    for member, text in links.items():
+        resolved = resolve(list(member.parent.parts), text, 0)
+        if not resolved or resolved[0] != root:
+            raise FetchError(f"the link {member} -> {text!r} points outside {root!r} (or loops)")
 
 
 def _extract_tar(archive: Path, root: str, dest: Path, cancel: CancelToken) -> None:
     with tarfile.open(archive, "r:xz") as tf:
         members = tf.getmembers()
+        links: dict[PurePosixPath, str] = {}
+        paths = []
         for m in members:
             path = member_path(m.name, root)
+            paths.append(path)
             if m.issym():
                 _check_link_target(path, m.linkname, root)
+                links[path] = m.linkname
             elif m.islnk():
                 member_path(m.linkname, root)
             elif not (m.isfile() or m.isdir()):
                 raise FetchError(f"unsupported archive member type: {m.name!r}")
+        _check_links(paths, links, root)
         # The "data" filter repeats the checks above and drops setuid / setgid and group /
         # other write bits; it keeps the executable bits.
         for m in members:
@@ -611,6 +668,8 @@ class _Job:
     native: bool
     ctx: TaskContext
     loop: asyncio.AbstractEventLoop
+    #: The new build is in place (set by the worker thread right after the swap).
+    swapped: bool = False
 
     def report(self, percent: float | None, message: str) -> None:
         """Progress from the worker thread (thread-safe)."""
@@ -652,6 +711,42 @@ class _Job:
         _write_marker(root, self.build, self.pbuild, self.ctx.cancel)
         _check_cancel(self.ctx.cancel)
         _swap_into_place(root, self.install_dir, work / "previous")
+        self.swapped = True
+
+
+def _newest_write(folder: Path) -> float:
+    """The newest modification time of ``folder`` and of everything in it (links not
+    followed)."""
+    newest = folder.lstat().st_mtime
+    for dirpath, dirnames, filenames in os.walk(folder):
+        for name in (*dirnames, *filenames):
+            with contextlib.suppress(OSError):
+                newest = max(newest, os.lstat(os.path.join(dirpath, name)).st_mtime)
+    return newest
+
+
+def remove_stale_work(tools_dir: Path, *, now: float | None = None) -> list[Path]:
+    """Remove the ``.fetch-*`` work folders in ``tools_dir`` that a killed fetch left behind:
+    those in which nothing was written for :data:`STALE_WORK_AGE` seconds (a running fetch
+    writes into its folder all the time, so a fresh folder is never removed). Never fails;
+    returns the folders removed."""
+    now = time.time() if now is None else now
+    removed: list[Path] = []
+    try:
+        entries = list(tools_dir.glob(".fetch-*"))
+    except OSError:
+        return removed
+    for entry in entries:
+        try:
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            if now - _newest_write(entry) < STALE_WORK_AGE:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        removed.append(entry)
+    return removed
 
 
 async def _in_thread[T](cancel: CancelToken, fn: Callable[..., T], *args: object) -> T:
@@ -672,6 +767,27 @@ async def _in_thread[T](cancel: CancelToken, fn: Callable[..., T], *args: object
         return future.result()
     except _Stopped:
         raise asyncio.CancelledError from None
+
+
+async def _to_the_end[T](aw: Awaitable[T], cancel: CancelToken) -> tuple[T, bool]:
+    """Await ``aw`` to its end even when the task is cancelled meanwhile (the step after the
+    swap: the new build is in place). Returns its value and whether a cancel came; a cancel
+    also sets ``cancel``, so that the task still ends ``cancelled``."""
+    inner = asyncio.ensure_future(aw)
+    cancelled = False
+    while True:
+        try:
+            value = await asyncio.shield(inner)
+        except asyncio.CancelledError:
+            if inner.cancelled():
+                raise  # ``aw`` itself was cancelled
+            cancelled = True
+            cancel.cancel("cancelled")
+            current = asyncio.current_task()
+            if current is not None:
+                current.uncancel()
+            continue
+        return value, cancelled
 
 
 async def _check_version(executable: Path, tool: str, version: str, cancel: CancelToken) -> None:
@@ -770,6 +886,7 @@ async def _fetch_steps(
         return result(downloaded=False)
     check_replaceable(install_dir)
     install_dir.parent.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(remove_stale_work, install_dir.parent)
     work = Path(tempfile.mkdtemp(prefix=".fetch-", dir=install_dir.parent))
     try:
         root = await _in_thread(cancel, job.download_and_extract, work)
@@ -777,12 +894,28 @@ async def _fetch_steps(
             ctx.progress(_CHECK, "Checking ffmpeg -version and ffprobe -version")
             await _check_version(root / pbuild.ffmpeg, "ffmpeg", chosen.version, cancel)
             await _check_version(root / pbuild.ffprobe, "ffprobe", chosen.version, cancel)
-        await _in_thread(cancel, job.install, root, work)
+        try:
+            await _in_thread(cancel, job.install, root, work)
+        except asyncio.CancelledError:
+            if not job.swapped:
+                raise
+            # The cancel came after the swap: the new build is installed (core-complete
+            # review R5-5); finish the steps after it.
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                current.uncancel()
     finally:
-        await _in_thread(cancel, shutil.rmtree, work, True)
+        # Removing the work folder is never cut off by a cancel (it is quick, local).
+        await _to_the_end(asyncio.to_thread(shutil.rmtree, work, True), cancel)
     if native:
         ctx.progress(_CHECK + 2, "Running tool discovery")
-        await rescan()
+        await _to_the_end(rescan(), cancel)
+    if cancel.cancelled:
+        # The task ends ``cancelled`` (the task manager sees the token), with this message.
+        ctx.progress(
+            100.0,
+            f"Installed FFmpeg {chosen.version} into {install_dir} before the cancel",
+        )
     return result(downloaded=True)
 
 
