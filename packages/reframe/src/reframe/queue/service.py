@@ -23,7 +23,8 @@ jobs, ``settings.queue.parallel_jobs`` at a time (read again each time a slot fr
   ``.part`` file): the second waits and the next job in the queue runs instead. A job that
   edits its source in place (``output.edit_in_place``, decision 0034) writes that source: it
   never runs while another job reads or writes that file, and no job that reads it starts
-  while it runs.
+  while it runs. Paths are compared as files: a symbolic link, a hard link or a linked folder
+  is the file it leads to (:func:`_same_file`).
 
 **Events**, in this order (02 §Events; ``job.progress`` and ``job.log`` may be coalesced or
 dropped by a slow subscriber, the others never):
@@ -129,7 +130,10 @@ def _closed_error() -> Exception:
 
 
 def _path_key(path: str | os.PathLike[str]) -> str:
-    return os.path.normcase(os.path.abspath(path))
+    """The path with its links resolved (``realpath``; for a file that does not exist yet,
+    the existing part of its folder), in the OS's case (``normcase``). Still a usable path:
+    :func:`_same_file` stats it for hard links."""
+    return os.path.normcase(os.path.realpath(path))
 
 
 def _source_key(job: QueueJob) -> str:
@@ -146,18 +150,32 @@ def _output_key(job: QueueJob) -> str | None:
     return _path_key(path)
 
 
+def _same_file(key: str, other: str | None) -> bool:
+    """Two keys name one file: the same resolved path (links), the same path without case
+    (``files.same_file``: Windows and macOS ignore case, on Linux it errs on the safe side),
+    or the same ``(st_dev, st_ino)`` (a hard link; on Windows the volume serial number and the
+    file index)."""
+    if other is None:
+        return False
+    return key == other or files.same_file(Path(key), Path(other))
+
+
 def _conflicts(job: QueueJob, active: Iterable[ActiveJob]) -> bool:
     """``job`` must wait: another running job writes its output, edits its source in place,
-    or (for an in-place edit) reads or writes the source it would edit."""
+    or (for an in-place edit) reads or writes the source it would edit. Paths are compared as
+    files (:func:`_same_file`), so a link or a hard link to a file is that file (R4-1 of the
+    core-complete review). A few ``stat`` calls per running job, in the event loop."""
     output = _output_key(job)
     source = _source_key(job)
     in_place = job.settings.output.edit_in_place
     for other in active:
-        if output is not None and output == other.output_key:
+        if output is not None and _same_file(output, other.output_key):
             return True  # the same output is being written by another job
-        if other.in_place and source == other.source_key:
+        if other.in_place and _same_file(source, other.source_key):
             return True  # its source is being edited in place
-        if in_place and source in (other.source_key, other.output_key):
+        if in_place and (
+            _same_file(source, other.source_key) or _same_file(source, other.output_key)
+        ):
             return True  # the source to edit is being read or written
     return False
 
