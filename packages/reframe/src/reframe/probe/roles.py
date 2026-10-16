@@ -21,7 +21,8 @@ Evidence, strongest first; a role is given once, by the strongest evidence that 
      (``English Stereo (compatibility)``, ``Original Mono Mix``).
    - Subtitles: a track whose event count is ≤ 25 % of the largest event count of another
      track in the same language → possible forced track (03: "a low count relative to other
-     tracks in the same language suggests a forced track").
+     tracks in the same language suggests a forced track"). A track with 0 events is empty,
+     not forced.
 
 Every audio or subtitle track without any of those roles gets ``main`` (a regular track; C-12
 selectors use ``roles=[main]``): evidence ``flag`` when it has the ``default`` disposition,
@@ -277,7 +278,7 @@ def assign_subtitle_roles(streams: Sequence[SubtitleStream]) -> None:
     for stream in streams:
         count = stream.event_count
         lang = _language(stream.language)
-        if count is None or lang is None:
+        if not count or lang is None:  # unknown, or an empty track (0 events): not forced
             continue
         if any(r.role in (TrackRole.FORCED, TrackRole.SIGNS) for r in stream.roles):
             continue

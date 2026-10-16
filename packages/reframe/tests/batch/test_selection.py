@@ -360,12 +360,14 @@ def test_no_listed_language_with_other_languages_kept() -> None:
     assert not found.no_listed_language
 
 
-def test_a_listed_commentary_counts_as_found() -> None:
-    """Only a track in a listed language counts: here the Hungarian commentary."""
+def test_a_listed_commentary_does_not_count_as_found() -> None:
+    """Only a **main** track in a listed language counts (0031 §3, core-complete review R1-1):
+    the Hungarian commentary does not, so the no-match rule takes the Japanese track."""
     streams = [audio(1, "jpn"), audio(2, "hun", comment=True)]
     selection = run(streams, languages=["hu"], no_match="first_track")
-    assert not selection.no_listed_language
-    assert taken(selection) == []
+    assert selection.no_listed_language
+    assert taken(selection) == [1]
+    assert why(selection, 1) == "No listed language found (Hungarian): the first track"
 
 
 # =========================================================================== commentary

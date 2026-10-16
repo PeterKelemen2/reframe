@@ -69,3 +69,15 @@ file here (no such files), and C-3 lists MediaInfo only in the bitrate chain.
   allowed until real ones exist.
 - `docs/plan/05-core.md` C-3: the HDR bullet (first frame also for HDR10+), the role bullet
   (`main`, acronyms).
+
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R1-6: an empty subtitle track was a possible forced track.** The subtitle heuristic
+  (`probe.roles.assign_subtitle_roles`) gave a track with **0 events** the `forced` role
+  ("0 events, 0 % of the 4 events of track #1"): 0 is at most 25 % of any count. The real
+  tools make such tracks: FFmpeg muxes an SRT whose only event is after `-t` as a track without
+  packets, and `mkvpropedit --add-track-statistics-tags` writes `NUMBER_OF_FRAMES=0` for it,
+  which the probe reads as `event_count=0`. A track with 0 events is now empty, not forced: the
+  heuristic needs at least one event, and the track gets `main`. C-12's foreign audio search has
+  the same rule (decision 0031 follow-up). Tests: `tests/probe/test_roles_review_fixes.py`
+  (real FFmpeg and mkvpropedit), the new case of `test_roles.py::test_no_forced_heuristic`.

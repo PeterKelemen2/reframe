@@ -31,11 +31,17 @@ NAME_TEMPLATE_VARIABLES: dict[str, str] = {
 
 def effective_language(stream: AudioStream | SubtitleStream) -> str | None:
     """The language that rules match and that is written: ``language_ietf`` if set, else
-    ``language`` (05 §C-2); canonical BCP 47 (``jpn`` → ``ja``) when it is valid."""
-    value = stream.language_ietf or stream.language
-    if value is None:
-        return None
-    return languages.normalize(value) or value
+    ``language`` (05 §C-2); canonical BCP 47 (``jpn`` → ``ja``) when it is valid.
+
+    A ``language_ietf`` that is not a valid tag (a broken Matroska ``LanguageIETF``) is passed
+    over for a valid ``language``, so the track is not undetermined. When neither is valid,
+    the raw tag is kept (``language_ietf`` first)."""
+    raw = [value for value in (stream.language_ietf, stream.language) if value]
+    for value in raw:
+        canonical = languages.normalize(value)
+        if canonical is not None:
+            return canonical
+    return raw[0] if raw else None
 
 
 def track_metadata(
