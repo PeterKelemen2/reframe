@@ -171,3 +171,16 @@ The four changes this record reported to the lead, made by the C-13 task:
    edit) does not have it, and mypy then rejects it as a `FileSystemView`.
    `inplace.source_writable` asks a view that has it, else answers yes. Moving the method into
    `FileSystemView` needs `writable_file` on that fake view first.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+`writable_file(path)` is now a member of `FileSystemView` (the lead's follow-up of item 4):
+the test scenario's `FakeFs` answers it from its files and its read-only set, so the separate
+`WritableFiles` protocol is gone and `inplace.source_writable` always asks the view (it no
+longer answers "yes" for a view that cannot tell). The queue's run-time check before
+mkvpropedit (`reframe.queue.files.writable_file`) is now the same test as
+`LocalFileSystem.writable_file`: on Windows it opens the file for update instead of trusting
+`os.access`, which sees only the read-only attribute (before, a file whose ACL denies
+writing, or that another process holds without write sharing, passed the runner's check).
+Tests: `tests/validation/test_inplace_fs.py` (`test_every_view_answers_writable_file`,
+`test_runner_check_is_the_local_view`, mocked Windows).

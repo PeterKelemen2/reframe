@@ -56,6 +56,8 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
 | `dts-hd-ma` | `dts-hd-ma.mkv` | H.264 320×180, 4 s. Audio: `hun` **DTS-HD MA** 5.1(side) 24-bit 48 kHz "DTS-HD MA 5.1" **default**, a real lossless (XLL) stream written by `reframe_testing/dts.py` with **no bit rate in the file** (ffprobe: `profile` `DTS-HD MA`, no `bit_rate`; 375 frames, 1 069 764 bytes = 2 139 528 b/s); `eng` AC-3 5.1 224 kb/s "English AC-3 5.1"; `eng` AC-3 stereo 192 kb/s "English Stereo". M6 demo 1 (Measure) and the audio-defaults demo |
 | `pgs` | `pgs.mkv` | H.264 720×480, 4 s. Two PGS (`hdmv_pgs_subtitle`) tracks written by `reframe_testing/pgs.py`: `eng` "English" **default**, 6 events (2 with the forced flag, at 0.2 s and 2.1 s), 12 display sets; `eng` "English (forced)" **forced**, 2 forced events, 4 display sets |
+| `anime-s01` | `Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv` … `E12` | The 04 §Example season (batch mode, C-12 M7; decision 0040): H.264 320×180, 2 s. Audio: `jpn` **TrueHD** 5.1(side) 24-bit "Japanese" **default** (FFmpeg's experimental `truehd` encoder; no bit rate in the file), `eng` **DTS-HD MA** 5.1 "English Dub" (`reframe_testing/dts.py`, no bit rate). Subtitles (ASS): `eng` "Signs & Songs" **forced**, `eng` "Full" **default**. **E05** also has `eng` AC-3 2.0 96 kb/s "Commentary" (**comment**) after the dub; **E11** has no dub, and its signs track is titled "Signs". Each episode is a stream copy of one master, with the container title `Anime Show - S01Enn - Title`; about 770 KB each |
+| `anime-s02` | `Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv` … `E03` | Season 2 of the same release: three episodes with E01's layout (the M7 demo applies season 1's group preset to it) |
 
 `testing/tests/test_media_fixtures.py` checks every row with ffprobe.
 
@@ -1901,4 +1903,28 @@ Checked on 2026-10-15 (Arch Linux, Python 3.14, the pinned BtbN n9.0.2 build of
 
 ### Batch engine (C-12, M7)
 
-(core-complete wave 2: the season fixture of 04 §Example.)
+Checked on 2026-10-15 with FFmpeg n9.0.2 (the Arch package; the fixture probes recorded with
+the pinned BtbN build) and MKVToolNix 101.0.
+
+- **FFmpeg's TrueHD encoder makes 5.1 at most.** `truehd` (`mlpenc`) is experimental
+  (`-strict -2`) and lists the layouts mono … `5.1(side)`; `-ac 8` fails with "Specified
+  channel layout '7.1' is not supported by the truehd encoder" (exit 234). `-ac 6` gives
+  `5.1(side)`, 24-bit (`s32`, `bits_per_raw_sample` 24). ffprobe shows no `profile` (no Atmos)
+  and, in Matroska, no `bit_rate`: Reframe's probe calls it "TrueHD", lossless, bit rate
+  unknown. So the 04 §Example's "jpn TrueHD Atmos 7.1" is "jpn TrueHD 5.1" in `anime-s01`
+  (decision 0040). Test: `testing/tests/test_media_fixtures.py::test_truehd_encoder_has_no_7_1`.
+- **A stream copy keeps everything the batch engine reads.** `ffmpeg -i master.mkv -map 0
+  -map -0:a:2 -c copy -metadata title=…` keeps each stream's language, title and
+  dispositions (`default`, `forced`, `comment`) and the codec parameters; ffprobe of the
+  copies shows the master's tracks minus the dropped ones, renumbered (E05: the commentary is
+  #3 and the subtitles #4, #5; E11: the subtitles #2, #3). `-metadata:s:s:0 title=Signs` after
+  `-map -0:a:1` titles the output's first subtitle stream (the signs track). Test:
+  `test_media_fixtures.py::test_anime_seasons`.
+- **The ASS tracks are `ass` with no statistics:** FFmpeg's Matroska muxer writes no
+  `NUMBER_OF_FRAMES` tag, so `event_count` is unknown and C-3's "few events" heuristic does
+  not run; the signs track's roles come from its flag (`forced`) and its title ("Signs").
+- **The real encode of `reframe batch`** (`tests/jobs/test_cli_batch.py`, season 2 with the
+  demo preset): TrueHD 5.1 → `libopus` 5.1 448 kb/s and DTS-HD MA 5.1 → `ac3` 5.1 640 kb/s;
+  the re-probe shows `opus` 6 channels "Japanese 5.1" (default) and `ac3` 6 channels at
+  640 000 b/s "English 5.1"; the ASS tracks are copied with `forced` on "Signs & Songs" and
+  `default` on "Full".

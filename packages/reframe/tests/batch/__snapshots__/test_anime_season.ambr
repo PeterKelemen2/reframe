@@ -1,0 +1,33 @@
+# serializer version: 1
+# name: test_the_season_groups_and_resolves_as_the_matrix_of_04
+  '''
+  Anime Show S01 · 12 files · standard match
+  E01 exact
+  E02 exact
+  E03 exact
+  E04 exact
+  E05 near 1 extra track (eng AC-3 2.0 "Commentary")
+  E06 exact
+  E07 exact
+  E08 exact
+  E09 exact
+  E10 exact
+  E11 near 1 track missing (eng DTS-HD MA 5.1 "English Dub")
+  E12 exact
+  
+  File    V           A1     A2       S1             S2     Output name
+  ─────────────────────────────────────────────────────────────────────
+  E01 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E01 - Pilot.mkv
+  E02 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E02 - Departure.mkv
+  E03 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E03 - Storm.mkv
+  E04 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E04 - Signal.mkv
+  E05 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #4           ✓ #5   Anime Show - S01E05 - Echoes.mkv
+  E06 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E06 - Harbor.mkv
+  E07 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E07 - Embers.mkv
+  E08 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E08 - Drift.mkv
+  E09 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E09 - Lantern.mkv
+  E10 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E10 - Tides.mkv
+  E11 ✗   ✓ 320x180   ✓ #1   ✗ none   ≈ #2 (title)   ✓ #3   Anime Show - S01E11 - Static.mkv
+  E12 ✓   ✓ 320x180   ✓ #1   ✓ #2     ✓ #3           ✓ #4   Anime Show - S01E12 - Homecoming.mkv
+  '''
+# ---

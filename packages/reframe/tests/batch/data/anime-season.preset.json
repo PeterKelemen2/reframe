@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "presets": [
+    {
+      "schema_version": 1,
+      "output": {
+        "container": "mkv",
+        "web_optimized": false,
+        "align_av_start": false,
+        "passthru_metadata": true
+      },
+      "dimensions": {
+        "rotate": 0,
+        "flip_horizontal": false,
+        "crop": {
+          "mode": "auto",
+          "rect": null
+        },
+        "size": {
+          "mode": "fit",
+          "width": 1920,
+          "height": 1080
+        },
+        "allow_upscaling": false,
+        "pixel_aspect": "square",
+        "custom_par": null,
+        "modulus": 2,
+        "scaler": "lanczos"
+      },
+      "crop_policy": "detect_per_file",
+      "filters": {
+        "interlace_detection": {
+          "preset": "default",
+          "tune": null,
+          "custom": null,
+          "implementation": null
+        },
+        "deinterlace": {
+          "preset": "default",
+          "tune": null,
+          "custom": null,
+          "implementation": null
+        }
+      },
+      "video": {
+        "passthrough": false,
+        "encoder": "libx265",
+        "framerate": null,
+        "framerate_mode": "variable",
+        "rate_control": {
+          "mode": "quality",
+          "value": 22.0
+        },
+        "preset": "slow",
+        "tune": null,
+        "profile": "main10",
+        "level": null,
+        "bit_depth": 10,
+        "fast_decode": false,
+        "advanced": {},
+        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "metadata": {
+          "default": false,
+          "forced": false,
+          "commentary": false,
+          "hearing_impaired": false,
+          "visual_impaired": false,
+          "original": false,
+          "language": null,
+          "name": null
+        }
+      },
+      "audio_defaults": {
+        "selection": {
+          "languages": null,
+          "tracks_per_language": "first",
+          "tie_break": "best_quality",
+          "undetermined": "other",
+          "other_languages": "drop",
+          "no_match": "default_flagged",
+          "commentary": "drop",
+          "order": "language_list",
+          "default_track": "first_output"
+        },
+        "codec_rules": [
+          {
+            "languages": null,
+            "source_channels": "any",
+            "codec": "aac",
+            "mixdown": "stereo",
+            "max_bitrate": 160,
+            "if_fits": "reencode",
+            "extras": {
+              "samplerate": null,
+              "gain": 0.0,
+              "drc": 0.0,
+              "loudness": "off",
+              "name_template": null,
+              "first_track_of_language_only": false,
+              "extra_outputs": []
+            }
+          }
+        ],
+        "passthru": {
+          "allowed": [],
+          "fallback_encoder": "aac"
+        }
+      },
+      "subtitle_defaults": {
+        "selection": {
+          "languages": null,
+          "tracks_per_language": "none",
+          "tie_break": "best_quality",
+          "undetermined": "other",
+          "other_languages": "drop",
+          "no_match": "none",
+          "commentary": "drop",
+          "order": "language_list",
+          "default_track": "none"
+        },
+        "foreign_audio_search": true,
+        "burn_in": "foreign_audio"
+      },
+      "audio_rules": [
+        {
+          "selector": {
+            "kind": "audio",
+            "languages": [
+              "ja"
+            ],
+            "codecs": [
+              "truehd"
+            ],
+            "profiles": [
+              "TrueHD"
+            ],
+            "roles": [
+              "main"
+            ],
+            "exclude_roles": null,
+            "channels": 6,
+            "title_pattern": "^Japanese$",
+            "nth": 0,
+            "sort": "source_order",
+            "stream": null
+          },
+          "multiple": false,
+          "settings": {
+            "action": "encode",
+            "encoder": "libopus",
+            "mixdown": "5.1",
+            "samplerate": null,
+            "bitrate": 448,
+            "quality": null,
+            "gain": 0.0,
+            "drc": 0.0,
+            "loudness": "off",
+            "kind": "audio"
+          },
+          "metadata": {
+            "language": "ja",
+            "name_template": "Japanese 5.1",
+            "default": true,
+            "forced": false,
+            "commentary": false,
+            "hearing_impaired": false,
+            "visual_impaired": false,
+            "original": false
+          },
+          "required": true
+        },
+        {
+          "selector": {
+            "kind": "audio",
+            "languages": [
+              "en"
+            ],
+            "codecs": [
+              "dts"
+            ],
+            "profiles": [
+              "DTS-HD MA"
+            ],
+            "roles": [
+              "main"
+            ],
+            "exclude_roles": null,
+            "channels": 6,
+            "title_pattern": "^English Dub$",
+            "nth": 0,
+            "sort": "source_order",
+            "stream": null
+          },
+          "multiple": false,
+          "settings": {
+            "action": "encode",
+            "encoder": "ac3",
+            "mixdown": "5.1",
+            "samplerate": null,
+            "bitrate": 640,
+            "quality": null,
+            "gain": 0.0,
+            "drc": 0.0,
+            "loudness": "off",
+            "kind": "audio"
+          },
+          "metadata": {
+            "language": "en",
+            "name_template": "English 5.1",
+            "default": false,
+            "forced": false,
+            "commentary": false,
+            "hearing_impaired": false,
+            "visual_impaired": false,
+            "original": false
+          },
+          "required": false
+        }
+      ],
+      "subtitle_rules": [
+        {
+          "selector": {
+            "kind": "subtitle",
+            "languages": [
+              "en"
+            ],
+            "codecs": [
+              "ass"
+            ],
+            "profiles": null,
+            "roles": [
+              "forced",
+              "signs"
+            ],
+            "exclude_roles": null,
+            "channels": null,
+            "title_pattern": "^Signs & Songs$",
+            "nth": 0,
+            "sort": "source_order",
+            "stream": null
+          },
+          "multiple": false,
+          "settings": {
+            "action": "copy",
+            "convert_to": null,
+            "forced_only": false,
+            "kind": "subtitle"
+          },
+          "metadata": {
+            "language": "en",
+            "name_template": null,
+            "default": false,
+            "forced": true,
+            "commentary": false,
+            "hearing_impaired": false,
+            "visual_impaired": false,
+            "original": false
+          },
+          "required": true
+        },
+        {
+          "selector": {
+            "kind": "subtitle",
+            "languages": [
+              "en"
+            ],
+            "codecs": [
+              "ass"
+            ],
+            "profiles": null,
+            "roles": [
+              "main"
+            ],
+            "exclude_roles": null,
+            "channels": null,
+            "title_pattern": "^Full$",
+            "nth": 0,
+            "sort": "source_order",
+            "stream": null
+          },
+          "multiple": false,
+          "settings": {
+            "action": "copy",
+            "convert_to": null,
+            "forced_only": false,
+            "kind": "subtitle"
+          },
+          "metadata": {
+            "language": "en",
+            "name_template": null,
+            "default": true,
+            "forced": false,
+            "commentary": false,
+            "hearing_impaired": false,
+            "visual_impaired": false,
+            "original": false
+          },
+          "required": true
+        }
+      ],
+      "chapters": {
+        "enabled": true,
+        "generate_every": null
+      },
+      "chapter_name_policy": "source",
+      "tags": {
+        "title": null,
+        "actors": null,
+        "director": null,
+        "release_date": null,
+        "comment": null,
+        "genre": null,
+        "description": null,
+        "plot": null
+      },
+      "naming": {
+        "movie_template": "{name}",
+        "episode_template": "{name} - S{season:02}E{episode:02}< - {sub_title}>",
+        "name_source": "auto",
+        "word_separator": "space",
+        "title_case": false,
+        "replace_underscores": false,
+        "remove_punctuation": false,
+        "mp4_extension": "mp4",
+        "output_folder_mode": "same_as_source",
+        "output_folder": null
+      },
+      "id": "5f0c1d3e-04e0-4a7e-9b1a-0000000000c7",
+      "name": "Anime Season (04 example)",
+      "category": "Custom",
+      "description": "04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: E11 has no dub), Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
+      "built_in": false
+    }
+  ],
+  "default_preset_id": null
+}

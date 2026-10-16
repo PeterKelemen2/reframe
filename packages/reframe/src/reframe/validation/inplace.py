@@ -26,7 +26,7 @@ from reframe.command.jobtype import in_place_blockers
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.context import JobContext
-from reframe.validation.fs import FileSystemView, WritableFiles
+from reframe.validation.fs import FileSystemView
 from reframe.validation.output import free_of_source, is_metadata_edit, source_clash
 from reframe.validation.registry import job_rule
 
@@ -34,11 +34,9 @@ __all__ = ["is_metadata_edit", "new_output_path", "source_writable", "write_new_
 
 
 def source_writable(fs: FileSystemView, path: PurePath) -> bool:
-    """The existing file ``path`` can be written: asked from the view when it can tell
-    (:class:`~reframe.validation.fs.WritableFiles`, the real file system does), else yes."""
-    if isinstance(fs, WritableFiles):
-        return fs.writable_file(path)
-    return True
+    """The existing file ``path`` can be written (the view's
+    :meth:`~reframe.validation.fs.FileSystemView.writable_file`)."""
+    return fs.writable_file(path)
 
 
 def _same(a: PurePath, b: PurePath, fs: FileSystemView) -> bool:

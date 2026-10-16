@@ -1,0 +1,288 @@
+"""``Reframe.batch`` (C-15; 04-batch-mode.md) through the facade, on the generated 04 §Example
+seasons and the real ffprobe: grouping, derive / merge, the resolution matrix with names and
+validation, the batch-level name checks, saving the group template as a preset, and the core
+part of 08 §M7's demo.
+
+Each test has its own config, data and cache folders; the seasons are copied into the test's
+folder, so the queue and the name checks see only the test's files.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import shutil
+import sys
+from collections.abc import AsyncIterator, Callable
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+from pydantic import TypeAdapter
+
+from reframe.models import (
+    JobDraft,
+    JobState,
+    JobTemplate,
+    JsonPatchOp,
+    MediaSource,
+    NamingOptions,
+    Preset,
+)
+from reframe.probe import mediainfo
+from reframe.service import Reframe
+from reframe_testing import media
+
+pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
+
+Media = Callable[[str], Path]
+OPS = TypeAdapter(list[JsonPatchOp])
+
+
+def _load(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+A = _load("anime")
+
+
+@pytest.fixture
+async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Reframe]:
+    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
+    async with await Reframe.create(
+        tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
+    ) as reframe:
+        yield reframe
+
+
+def season(fixture_media: Media, tmp_path: Path, number: int, *episodes: int) -> list[Path]:
+    """A copy of the season's folder (only ``episodes``, default all) under ``tmp_path``."""
+    source = fixture_media(f"anime-s{number:02d}")
+    folder = tmp_path / "media" / source.name
+    folder.mkdir(parents=True, exist_ok=True)
+    count = len(media.ANIME_TITLES[number])
+    files = []
+    for n in episodes or range(1, count + 1):
+        name = media.anime_file_name(number, n)
+        shutil.copy2(source / name, folder / name)
+        files.append(folder / name)
+    return files
+
+
+async def example_template(app: Reframe, e01: Path) -> tuple[JobTemplate, MediaSource]:
+    """*Edit group* as 04 §Example step 2, through the facade: E01's draft edited by hand,
+    applied to the group (audio and subtitles), with 04's naming template."""
+    source = await app.sources.probe(e01)
+    assert isinstance(source, MediaSource)
+    draft = await app.jobs.draft(source)
+    assert isinstance(draft, JobDraft)
+    job = A.example_job(source)  # the same edit, on the same preset's draft
+    assert [t.source_stream for t in job.audio] == [t.source_stream for t in draft.job.audio]
+    template = app.batch.derive(
+        draft.job.model_copy(update={"audio": job.audio, "subtitles": job.subtitles}),
+        source,
+        {"audio", "subtitles"},
+    )
+    template = app.batch.merge(template, JobTemplate(naming=A.EXAMPLE_NAMING), {"naming"})
+    return template, source
+
+
+async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -> None:
+    """08 §M7 (core part): open a season folder → one group → edit audio and subtitles once →
+    the matrix shows ✓ for every file, with the right warnings for E05 and E11 → queue 12 jobs
+    with templated names → save the group as a preset → apply it to season 2 in one click."""
+    files = season(fixture_media, tmp_path, 1)
+    grouping = await app.batch.group(list(reversed(files)))
+    assert grouping.issues == []
+    (group,) = grouping.groups
+    assert (group.name, group.level, len(group.members)) == ("Anime Show S01", "standard", 12)
+    assert group.representative == files[0]
+
+    template, _e01 = await example_template(app, group.representative)
+    resolution = await app.batch.resolve(template, [m.path for m in group.members], group=group)
+    assert [c.label for c in resolution.columns] == [
+        "V",
+        "A1 jpn TrueHD→Opus 5.1",
+        "A2 eng DTS-HD MA→AC-3 5.1",
+        "S1 eng Signs & Songs",
+        "S2 eng Full",
+        "Output name",
+    ]
+    statuses = [row.status for row in resolution.rows]
+    assert statuses == ["ok"] * 4 + ["warning"] + ["ok"] * 5 + ["error", "ok"]
+    e05, e11 = resolution.rows[4], resolution.rows[10]
+    assert [i.code for i in e05.issues if i.severity.value == "warning"] == ["batch.near_match"]
+    assert e05.issues[0].message == (
+        'Near match of the group: 1 extra track (eng AC-3 2.0 "Commentary").'
+    )
+    assert [(m.status, m.streams) for m in e11.matches] == [
+        ("exact", [1]),
+        ("missing", []),
+        ("relaxed", [2]),
+        ("exact", [3]),
+    ]
+    assert all(m.status == "exact" for r in resolution.rows if r is not e11 for m in r.matches)
+    names = [r.job.output.path for r in resolution.rows if r.job is not None]
+    assert [p.name for p in names if p is not None][:2] == [
+        "Anime Show - S01E01 - Pilot.mkv",
+        "Anime Show - S01E02 - Departure.mkv",
+    ]
+    assert all(r.naming is not None and r.naming.source == "file" for r in resolution.rows)
+    assert resolution.issues == []
+
+    # E11: the dub is optional for this file (a per-file override) → every file can be queued.
+    skip = {
+        str(files[10]): OPS.validate_python(
+            [{"op": "replace", "path": "/audio_rules/1/required", "value": False}]
+        )
+    }
+    resolution = await app.batch.resolve(
+        template, [m.path for m in group.members], group=group, overrides=skip
+    )
+    assert [row.status for row in resolution.rows].count("error") == 0
+    queued = []
+    for row in resolution.rows:
+        assert row.job is not None
+        job = await app.queue.add(row.job)
+        assert job.state is JobState.WAITING, job.issues
+        queued.append(job)
+    assert len(queued) == 12
+    assert [j.settings.output.path.name for j in queued if j.settings.output.path][10] == (
+        "Anime Show - S01E11 - Static.mkv"
+    )
+
+    # Save the group as a preset; season 2 with it, by name.
+    saved = await app.batch.save_preset(template, "Anime Show", description="04 example")
+    assert isinstance(saved, Preset)
+    assert (saved.category, saved.audio_rules) == ("Custom", template.audio_rules)
+    s02 = season(fixture_media, tmp_path, 2)
+    second = await app.batch.group(s02)
+    (group2,) = second.groups
+    applied = await app.batch.resolve("anime show", s02, group=group2)
+    assert [row.status for row in applied.rows] == ["ok"] * 3
+    assert all(m.status == "exact" for row in applied.rows for m in row.matches)
+    assert [r.job.output.path.name for r in applied.rows if r.job and r.job.output.path] == [
+        "Anime Show - S02E01 - Return.mkv",
+        "Anime Show - S02E02 - Ashes.mkv",
+        "Anime Show - S02E03 - Northbound.mkv",
+    ]
+    assert all(r.job is not None and r.job.preset_id == saved.id for r in applied.rows)
+
+
+async def test_files_that_cannot_be_read(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    files = season(fixture_media, tmp_path, 2, 1, 2)
+    broken = files[0].with_name("broken.mkv")
+    broken.write_bytes(b"not a video")
+    grouping = await app.batch.group([*files, broken, files[0]])
+    (group,) = grouping.groups
+    assert len(group.members) == 2  # files[0] given twice: once
+    (issue,) = grouping.issues
+    assert (issue.code, issue.severity.value) == ("source.probe_failed", "error")
+    assert issue.message.startswith("broken.mkv cannot be read")
+    resolution = await app.batch.resolve(None, [broken, *files])
+    assert [r.path.name for r in resolution.rows] == [f.name for f in files] + ["broken.mkv"]
+    assert resolution.rows[-1].status == "error"
+    assert resolution.rows[-1].job is None
+
+
+async def test_the_default_preset_and_an_unknown_preset(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    files = season(fixture_media, tmp_path, 2, 1)
+    default = await app.batch.resolve(None, files)
+    assert [c.label for c in default.columns] == [
+        "V",
+        "A1 every track (defaults)",
+        "S1 every track (defaults)",
+        "Output name",
+    ]
+    (row,) = default.rows
+    assert row.status == "ok"
+    assert row.job is not None
+    assert row.job.preset_id == "h265-mkv-1080p"
+    assert [m.streams for m in row.matches] == [[1, 2], [3, 4]]
+    unknown = await app.batch.resolve("No Such Preset", files)
+    assert [i.code for i in unknown.issues] == ["preset.not_found"]
+    assert unknown.rows[0].status == "error"
+    assert unknown.rows[0].issues[0].code == "preset.not_found"
+
+
+async def test_name_collisions(app: Reframe, fixture_media: Media, tmp_path: Path) -> None:
+    """04 §Output naming: "Name collisions within the batch, or with existing files, are
+    errors"."""
+    files = season(fixture_media, tmp_path, 2)
+    template, _ = await example_template(app, files[0])
+    same = template.model_copy(
+        update={"naming": NamingOptions(movie_template="{name}", episode_template="{name}")}
+    )
+    resolution = await app.batch.resolve(same, files)
+    assert [r.status for r in resolution.rows] == ["error"] * 3
+    (batch_issue,) = resolution.issues
+    assert batch_issue.code == "batch.name_collision"
+    assert (
+        batch_issue.message == "3 files get the output name Anime.Show.mkv: S02E01, S02E02, S02E03."
+    )
+    first = [i for i in resolution.rows[0].issues if i.code == "batch.name_collision"]
+    assert first[0].message.startswith("Anime.Show.mkv is also the output name of S02E02, S02E03")
+
+    # An output that exists already (Settings: auto-rename) is an error in a batch.
+    (files[0].parent / "Anime Show - S02E01 - Return.mkv").write_bytes(b"done before")
+    resolution = await app.batch.resolve(template, files)
+    assert [r.status for r in resolution.rows] == ["error", "ok", "ok"]
+    codes = [i.code for i in resolution.rows[0].issues]
+    assert "output.renamed" in codes
+    assert "batch.output_exists" in codes
+
+
+async def test_an_output_that_is_another_source(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    files = season(fixture_media, tmp_path, 2)
+    template, _ = await example_template(app, files[0])
+    stem = files[1].stem  # every output gets E02's own name
+    fixed = template.model_copy(
+        update={"naming": NamingOptions(movie_template=stem, episode_template=stem)}
+    )
+    resolution = await app.batch.resolve(fixed, files)
+    e01, e02, e03 = resolution.rows
+    assert e02.job is not None
+    assert e02.job.output.path is not None
+    assert e02.job.output.path.name == f"{stem} (1).mkv"  # its own source: the next free name
+    assert "batch.output_is_source" in [i.code for i in e01.issues]
+    assert "batch.output_is_source" in [i.code for i in e03.issues]
+    assert "batch.output_is_source" not in [i.code for i in e02.issues]
+
+
+async def test_derive_merge_and_overrides_by_path_text(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    files = season(fixture_media, tmp_path, 2)
+    source = await app.sources.probe(files[0])
+    assert isinstance(source, MediaSource)
+    draft = await app.jobs.draft(source, "H.264 MKV 1080p")
+    assert isinstance(draft, JobDraft)
+    derived = app.batch.derive(draft.job, source, {"video"})
+    assert derived.video.encoder == "libx264"  # the job's preset is the base
+    assert derived.audio_rules == []
+    orphan = draft.job.model_copy(update={"preset_id": None})
+    assert app.batch.derive(orphan, source, {"audio"}).video.encoder == "libx265"  # default preset
+    merged = app.batch.merge(JobTemplate(), derived, {"video"})
+    assert merged.video == derived.video
+    # Overrides are found by the file's path, however it is written.
+    key = str(files[1].parent / ".." / files[1].parent.name / files[1].name)
+    patch = {
+        key: OPS.validate_python([{"op": "replace", "path": "/video/preset", "value": "veryslow"}])
+    }
+    resolution = await app.batch.resolve(derived, files, overrides=patch)
+    presets = [r.job.video.preset for r in resolution.rows if r.job is not None]
+    assert presets[1] == "veryslow"
+    assert presets[0] != "veryslow"

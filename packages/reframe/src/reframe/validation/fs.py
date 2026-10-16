@@ -20,11 +20,11 @@ import shutil
 import sys
 import tempfile
 from pathlib import PurePath
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from reframe.naming import NamingFs, RealNamingFs
 
-__all__ = ["FileSystemView", "LocalFileSystem", "WritableFiles"]
+__all__ = ["FileSystemView", "LocalFileSystem"]
 
 
 class FileSystemView(NamingFs, Protocol):
@@ -42,6 +42,11 @@ class FileSystemView(NamingFs, Protocol):
         """New files can be created in the existing folder ``path``."""
         ...
 
+    def writable_file(self, path: PurePath) -> bool:
+        """The existing file ``path`` can be opened for writing (an in-place metadata edit
+        writes its source, C-13). ``False`` when it does not exist or is a folder."""
+        ...
+
     def free_bytes(self, path: PurePath) -> int | None:
         """Free space for the current user on the volume of the existing ``path``; ``None``
         when it cannot be read."""
@@ -50,20 +55,6 @@ class FileSystemView(NamingFs, Protocol):
     def same_file(self, a: PurePath, b: PurePath) -> bool:
         """``a`` and ``b`` name the same existing file (also through another spelling: case on
         a case-insensitive file system, ``..``, a link). ``False`` when either does not exist."""
-        ...
-
-
-@runtime_checkable
-class WritableFiles(Protocol):
-    """A file-system view that can also say whether an existing file can be written (an
-    in-place metadata edit writes its source, C-13). :class:`LocalFileSystem` has it.
-
-    Kept apart from :class:`FileSystemView` so that a view without it still validates every
-    other job; ``reframe.validation.inplace.source_writable`` asks it when it is there."""
-
-    def writable_file(self, path: PurePath) -> bool:
-        """The existing file ``path`` can be opened for writing. ``False`` when it does not
-        exist."""
         ...
 
 

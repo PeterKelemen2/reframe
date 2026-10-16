@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import Field
 
 from reframe.models.base import NonNegativeInt, PositiveInt, ReframeModel
+from reframe.models.defaults import TrackDecision
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings, TrackFlags
 from reframe.models.media import HdrFormat, TrackRole
@@ -90,6 +91,10 @@ class GroupMember(ReframeModel):
     match: Literal["exact", "near"] = "exact"
     differences: list[str] = Field(default_factory=list)
     """One line per difference: ``1 extra track (eng AC-3 2.0 "Commentary")``."""
+    season: NonNegativeInt | None = None
+    """The season number in the file name (C-16's parser), when there is one."""
+    episode: NonNegativeInt | None = None
+    """The episode number in the file name, when there is one (``E05`` in the matrix)."""
 
 
 class BatchGroup(ReframeModel):
@@ -135,6 +140,10 @@ class TrackMatch(ReframeModel):
     info (skipped)."""
     message: str = ""
     """``matched without title, profile``, ``2 candidates, picked #3 (source order)``."""
+    defaults: bool = False
+    """``True``: a rule compiled from the template's audio / subtitle defaults (the template
+    has no explicit rules of this kind); ``rule`` is then the index in the compiled rules
+    (``reframe.batch.compile_defaults``)."""
 
 
 class MatrixColumn(ReframeModel):
@@ -145,6 +154,9 @@ class MatrixColumn(ReframeModel):
     """The rule of an audio / subtitle column."""
     label: str
     """``A1 jpn TrueHD→Opus 5.1``, ``S2 eng Full``, ``Output name``."""
+    defaults: bool = False
+    """``True``: the column of a rule compiled from the template's defaults (see
+    :attr:`TrackMatch.defaults`)."""
 
 
 class Resolution(ReframeModel):
@@ -161,6 +173,14 @@ class Resolution(ReframeModel):
     """The row's mark: ✓ / ⚠ / ✗ (the worst match or issue)."""
     override: list[JsonPatchOp] = Field(default_factory=list)
     """The per-file override that was applied (04 §Per-file overrides)."""
+    decisions: list[TrackDecision] = Field(default_factory=list)
+    """One per source audio track, in source order: taken by which rule and why, the output
+    and the reason (as ``JobDraft.decisions``)."""
+    subtitle_decisions: list[TrackDecision] = Field(default_factory=list)
+    """One per source subtitle track, in source order."""
+    notes: list[str] = Field(default_factory=list)
+    """What the resolution changed or left out, in one line each (generated chapter names,
+    a crop that is detected per file, an output name that was the source itself)."""
 
 
 class BatchResolution(ReframeModel):

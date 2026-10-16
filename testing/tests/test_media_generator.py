@@ -40,6 +40,8 @@ def test_every_plan_fixture_has_a_recipe() -> None:
         "season",
         "dts-hd-ma",
         "pgs",
+        "anime-s01",
+        "anime-s02",
     }
     assert media.fixture_names()[-2:] == ["text-subs-srt", "text-subs-ass"]
 
@@ -74,6 +76,32 @@ def test_fixture_paths() -> None:
     assert media.DEFAULT_MEDIA_DIR == REPO / "testdata" / "media"
     with pytest.raises(KeyError, match="unknown fixture"):
         media.fixture_path("nope")
+
+
+def test_anime_seasons() -> None:
+    """The 04 §Example season and a second season of the same release (C-12, M7)."""
+    recipes = media.build_recipes()
+    s01, s02 = recipes["anime-s01"], recipes["anime-s02"]
+    folder = "Anime.Show.S01.BluRay.x264-GRP"
+    assert media.fixture_path("anime-s01") == media.DEFAULT_MEDIA_DIR / folder
+    assert s01.outputs[0] == f"{folder}/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv"
+    assert len(s01.outputs) == 12
+    assert [o.split("/")[1] for o in s02.outputs] == [
+        media.anime_file_name(2, n) for n in (1, 2, 3)
+    ]
+    writes = {s.path for s in s01.steps if isinstance(s, media.WriteFile)}
+    assert writes == {"dub.dtshd", "signs.ass", "full.ass"}
+    master, *episodes = [s for s in s01.steps if isinstance(s, media.Ffmpeg)]
+    # FFmpeg's TrueHD encoder is experimental and makes 5.1 at most (testdata/README.md).
+    assert master.args[master.args.index("-c:a:0") + 1] == "truehd"
+    assert master.args[master.args.index("-strict") + 1] == "-2"
+    assert master.args[master.args.index("-ac:a:0") + 1] == "6"
+    assert len(episodes) == 12
+    e05, e11 = episodes[4].args, episodes[10].args
+    assert "-0:a:2" not in e05  # keeps the commentary
+    assert "-0:a:1" in e11  # drops the dub
+    assert f"title={media.ANIME_OTHER_SIGNS_TITLE}" in e11
+    assert all("-0:a:1" not in e.args for n, e in enumerate(episodes, 1) if n != 11)
 
 
 def test_season_names_and_variants() -> None:

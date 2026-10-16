@@ -640,6 +640,154 @@ def _pgs_recipe() -> Recipe:
     )
 
 
+#: The 04 §Example season (batch mode, C-12 M7): one show, two seasons of the same release.
+ANIME_SECONDS = 2.0
+ANIME_TITLES: dict[int, tuple[str, ...]] = {
+    1: (
+        "Pilot",
+        "Departure",
+        "Storm",
+        "Signal",
+        "Echoes",
+        "Harbor",
+        "Embers",
+        "Drift",
+        "Lantern",
+        "Tides",
+        "Static",
+        "Homecoming",
+    ),
+    2: ("Return", "Ashes", "Northbound"),
+}
+#: S01E05 also has an English AC-3 2.0 commentary track (comment flag), after the dub.
+ANIME_COMMENTARY_EPISODE = 5
+#: S01E11 has no English DTS-HD MA dub, and its signs track has another title.
+ANIME_NO_DUB_EPISODE = 11
+ANIME_SIGNS_TITLE = "Signs & Songs"
+ANIME_OTHER_SIGNS_TITLE = "Signs"
+#: Output stream layout of the master (``-map`` order): video, then these tracks.
+ANIME_TRACKS = (
+    # (spec, language, title, disposition)
+    ("a:0", "jpn", "Japanese", "default"),
+    ("a:1", "eng", "English Dub", "0"),
+    ("a:2", "eng", "Commentary", "comment"),
+    ("s:0", "eng", ANIME_SIGNS_TITLE, "forced"),
+    ("s:1", "eng", "Full", "default"),
+)
+_ANIME_SIGNS = [(0.2, 1.0, "Sign", "{\\pos(160,20)}A SIGN"), (1.2, 1.8, "Sign", "A SONG")]
+_ANIME_FULL = [
+    (0.3, 0.9, "Default", "The full subtitle track."),
+    (1.0, 1.9, "Default", "Second line."),
+]
+
+
+def anime_folder(season: int) -> str:
+    """``Anime.Show.S01.BluRay.x264-GRP``: the season folder (a season pack)."""
+    return f"Anime.Show.S{season:02d}.BluRay.x264-GRP"
+
+
+def anime_file_name(season: int, episode: int) -> str:
+    """``Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv``."""
+    title = ANIME_TITLES[season][episode - 1]
+    return f"Anime.Show.S{season:02d}E{episode:02d}.{title}.BluRay.x264-GRP.mkv"
+
+
+def _anime_recipe(season: int) -> Recipe:
+    """The anime season of 04 §Example (C-12 M7, the batch mode demo).
+
+    Every episode: H.264 320x180, ``jpn`` TrueHD 5.1 (FFmpeg's experimental ``truehd``
+    encoder: 5.1 at most, so not 04's "TrueHD Atmos 7.1"), ``eng`` DTS-HD MA 5.1 "English Dub"
+    (``reframe_testing.dts``), and two ``eng`` ASS subtitles, "Signs & Songs" (forced) and
+    "Full" (default). Season 1: E05 also has ``eng`` AC-3 2.0 "Commentary" (comment flag)
+    after the dub; E11 has no dub, and its signs track is titled "Signs". Season 2 (three
+    episodes) has E01's layout. Each episode is a stream copy of one master file, with its
+    own container title."""
+    d = ANIME_SECONDS
+    master = f"anime-s{season:02d}-master.mkv"
+    args: list[str] = [
+        *_video("320x180", "25", d),
+        *_sine(330, d),
+        "-f",
+        "dts",
+        "-i",
+        "dub.dtshd",
+        *_sine(550, d),
+        "-i",
+        "signs.ass",
+        "-i",
+        "full.ass",
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-map",
+        "2:a",
+        "-map",
+        "3:a",
+        "-map",
+        "4:s",
+        "-map",
+        "5:s",
+        *_X264,
+        "-c:a:0",
+        "truehd",
+        "-strict",
+        "-2",
+        "-ac:a:0",
+        "6",
+        "-c:a:1",
+        "copy",
+        "-c:a:2",
+        "ac3",
+        "-b:a:2",
+        "96k",
+        "-ac:a:2",
+        "2",
+        "-c:s",
+        "ass",
+        "-disposition:v:0",
+        "default",
+    ]
+    for spec, lang, title, disposition in ANIME_TRACKS:
+        args += [f"-metadata:s:{spec}", f"language={lang}", f"-metadata:s:{spec}", f"title={title}"]
+        args += [f"-disposition:{spec}", disposition]
+    args.append(master)
+    font = boxfont.FAMILY
+    steps: list[Step] = [
+        WriteFile("dub.dtshd", dts.dts_hd_ma(d)),
+        _text("signs.ass", ass(font, _ANIME_SIGNS)),
+        _text("full.ass", ass(font, _ANIME_FULL)),
+        Ffmpeg(tuple(args)),
+    ]
+    outputs: list[str] = []
+    for episode, title in enumerate(ANIME_TITLES[season], start=1):
+        out = f"{anime_folder(season)}/{anime_file_name(season, episode)}"
+        maps = ["-map", "0"]
+        meta = ["-metadata", f"title=Anime Show - S{season:02d}E{episode:02d} - {title}"]
+        if season != 1 or episode != ANIME_COMMENTARY_EPISODE:
+            maps += ["-map", "-0:a:2"]  # the commentary track
+        if season == 1 and episode == ANIME_NO_DUB_EPISODE:
+            maps += ["-map", "-0:a:1"]  # the English dub
+            meta += ["-metadata:s:s:0", f"title={ANIME_OTHER_SIGNS_TITLE}"]
+        steps.append(Ffmpeg(("-i", master, *maps, "-c", "copy", *meta, out)))
+        outputs.append(out)
+    count = len(ANIME_TITLES[season])
+    special = (
+        f"; E{ANIME_COMMENTARY_EPISODE:02d} has an extra eng AC-3 2.0 commentary, "
+        f"E{ANIME_NO_DUB_EPISODE:02d} has no dub and a signs track titled "
+        f'"{ANIME_OTHER_SIGNS_TITLE}"'
+        if season == 1
+        else ""
+    )
+    return Recipe(
+        f"anime-s{season:02d}",
+        f"04 §Example season {season}: {count} episodes of H.264 + jpn TrueHD 5.1 + eng DTS-HD "
+        f'MA 5.1 + eng ASS "{ANIME_SIGNS_TITLE}" (forced) + eng ASS "Full" (default){special}',
+        tuple(outputs),
+        tuple(steps),
+    )
+
+
 LETTERBOX_SEGMENTS = (
     # (content size, pad position) inside 320x180: 2.39:1 letterbox, then 4:3 pillarbox
     ("320x134", "0:23"),
@@ -848,6 +996,8 @@ def build_recipes() -> dict[str, Recipe]:
         _season_recipe(),
         _dts_hd_ma_recipe(),
         _pgs_recipe(),
+        _anime_recipe(1),
+        _anime_recipe(2),
     ]
     return {r.name: r for r in recipes}
 

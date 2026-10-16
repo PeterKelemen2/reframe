@@ -104,6 +104,10 @@ class FakeFs:
     def writable_dir(self, path: PurePath) -> bool:
         return self.is_dir(path) and self._key(path) not in self.readonly
 
+    def writable_file(self, path: PurePath) -> bool:
+        key = self._key(path)
+        return key in self.files and key not in self.readonly
+
     def free_bytes(self, path: PurePath) -> int | None:
         return self.free if self.exists(path) else None
 
