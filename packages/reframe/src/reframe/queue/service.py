@@ -455,7 +455,9 @@ class QueueService:
 
     async def cancel(self, job_id: str | None = None) -> None:
         """Cancel a job: a waiting one is marked ``cancelled``; a running or paused one has
-        its process tree killed and ends ``cancelled`` with its ``.part`` file removed.
+        its process tree killed and ends ``cancelled`` with its ``.part`` file removed — except a
+        running in-place mkvpropedit edit, which is let finish (stopping it could damage the
+        source; decision 0034, review fix R4-7) before the job ends ``cancelled``.
         ``None``: every job that has not ended (running, paused and waiting). Returns when
         the cancelled jobs have ended."""
         self._check_open()
@@ -507,8 +509,9 @@ class QueueService:
 
     async def close(self) -> None:
         """No new jobs; a when-done countdown that the queue started is cancelled (its action
-        never runs); running jobs are stopped (``interrupted``, ``.part`` removed), the sleep
-        inhibit is freed and the store is flushed. Safe to call more than once."""
+        never runs); running jobs are stopped (``interrupted``, ``.part`` removed; a running
+        in-place mkvpropedit edit is let finish first, as in :meth:`cancel`), the sleep inhibit
+        is freed and the store is flushed. Safe to call more than once."""
         if self._closed:
             return
         self._closed = True
