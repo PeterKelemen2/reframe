@@ -132,6 +132,7 @@ from reframe.presets import ConflictPolicy, ImportResult
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import (
+    MARKER_NAME,
     PLATFORMS,
     FetchError,
     host_platform,
@@ -2321,6 +2322,8 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
         soft_wrap=True,
     )
     async with open_reframe() as app:
+        install_dir = install_dir_for(app.data_dir, target, host)
+        before = _marker_identity(install_dir)
         subscription = app.events.subscribe(types={"task.progress", "task.done"})
         info = app.tools.fetch(build=build, platform=target)
         view = FetchView(console)
@@ -2334,8 +2337,20 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             print("Interrupted: stopping the download…", file=sys.stderr)
             app.tasks.cancel(info.id, "interrupted")
             ended = await app.tasks.wait(info.id)
-            if ended.state is TaskState.DONE:  # it ended just before the interrupt
-                print("The build was installed before the interrupt.", file=sys.stderr)
+            marker = installed_build(install_dir)
+            replaced = _marker_identity(install_dir) != before
+            if ended.state is TaskState.DONE or (
+                # The interrupt came after the swap (tool discovery, the clean-up): the new
+                # build is in place (core-complete review R5-5).
+                replaced and marker is not None and marker.get("sha256") == archive.sha256
+            ):
+                print(
+                    printable(
+                        f"FFmpeg {chosen.version} was installed into {install_dir} before the "
+                        "interrupt."
+                    ),
+                    file=sys.stderr,
+                )
             else:
                 print("Nothing was installed.", file=sys.stderr)
             return EXIT_INTERRUPTED
@@ -2351,6 +2366,16 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
         tools = app.tools.current if target == host else None
     _fetch_report(console, result, tools)
     return EXIT_OK
+
+
+def _marker_identity(install_dir: Path) -> tuple[int, int, int] | None:
+    """The install marker's file (device, inode, modification time): a fetch writes a new
+    one, so a change says that the build was replaced."""
+    try:
+        info = (install_dir / MARKER_NAME).stat()
+    except OSError:
+        return None
+    return info.st_dev, info.st_ino, info.st_mtime_ns
 
 
 def _fetch_report(console: Console, result: ToolFetchResult, tools: ToolSet | None) -> None:

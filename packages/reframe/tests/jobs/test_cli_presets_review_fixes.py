@@ -77,13 +77,18 @@ def test_r5_9_names_from_an_imported_file_reach_the_terminal_without_escapes(
 # --------------------------------------------------------------------------- the size cap
 
 
+def _refused(result: dict[str, Any] | tuple[int, str]) -> tuple[int, str]:
+    assert isinstance(result, tuple), result
+    return result
+
+
 def test_import_refuses_a_file_larger_than_the_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cli, "MAX_PRESET_FILE", 1000)
     big = tmp_path / "big.json"
     big.write_text(json.dumps({"schema_version": 1, "presets": [], "pad": "x" * 2000}))
-    code, message = read_preset_file(big)  # type: ignore[misc]
+    code, message = _refused(read_preset_file(big))
     assert code == EXIT_FAILED
     assert "larger than" in message
 
@@ -94,23 +99,24 @@ def test_import_never_reads_a_device_or_a_fifo(tmp_path: Path) -> None:
 
     ``/dev/null`` stands in for ``/dev/zero``: the unfixed code ate all memory on the latter.
     """
-    code, message = read_preset_file(Path("/dev/null"))  # type: ignore[misc]
+    code, message = _refused(read_preset_file(Path("/dev/null")))
     assert code == EXIT_NOT_FOUND
     assert "not a regular file" in message
-    fifo = tmp_path / "fifo"
-    os.mkfifo(fifo)
-    result: list[object] = []
-    reader = threading.Thread(target=lambda: result.append(read_preset_file(fifo)), daemon=True)
-    reader.start()
-    reader.join(5)
-    if reader.is_alive():  # unblock the read of the unfixed code, then fail
-        with fifo.open("wb") as writer:
-            writer.write(b"{}")
+    if sys.platform != "win32":  # mypy --platform win32 has no os.mkfifo (skipped there)
+        fifo = tmp_path / "fifo"
+        os.mkfifo(fifo)
+        result: list[dict[str, Any] | tuple[int, str]] = []
+        reader = threading.Thread(target=lambda: result.append(read_preset_file(fifo)), daemon=True)
+        reader.start()
         reader.join(5)
-        pytest.fail("reading the FIFO blocked")
-    ((code, message),) = result  # type: ignore[misc]
-    assert code == EXIT_NOT_FOUND
-    assert "not a regular file" in message
+        if reader.is_alive():  # unblock the read of the unfixed code, then fail
+            with fifo.open("wb") as writer:
+                writer.write(b"{}")
+            reader.join(5)
+            pytest.fail("reading the FIFO blocked")
+        code, message = _refused(result[0])
+        assert code == EXIT_NOT_FOUND
+        assert "not a regular file" in message
 
 
 def test_import_from_stdin_is_capped(
