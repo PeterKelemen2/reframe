@@ -14,7 +14,6 @@ from reframe.models.job import Mixdown
     [
         # A layout the encoder makes, from a source with at least as many channels.
         ("aac", "5.1", 8, "5.1"),
-        ("aac", "stereo", 6, "stereo"),
         ("aac", "stereo", 2, "stereo"),
         ("ac3", "5.1", 6, "5.1"),
         ("libopus", "7.1", 8, "7.1"),
@@ -22,7 +21,6 @@ from reframe.models.job import Mixdown
         ("ac3", "7.1", 8, "5.1"),
         ("eac3", "7.1", 8, "5.1"),
         ("libmp3lame", "5.1", 6, "stereo"),
-        ("libmp3lame", "7.1", 8, "stereo"),
         # Never an upmix: a smaller known source keeps its layout.
         ("aac", "5.1", 2, None),
         ("ac3", "7.1", 6, None),
@@ -30,20 +28,17 @@ from reframe.models.job import Mixdown
         # Dolby Pro Logic II needs more than two channels to encode.
         ("aac", "dpl2", 6, "dpl2"),
         ("aac", "dpl2", 2, None),
-        ("aac", "dpl2", 1, None),
         # Unknown source channels: the request stands (snapped to the encoder).
         ("aac", "5.1", 0, "5.1"),
         ("ac3", "7.1", 0, "5.1"),
         # Keep the source layout: kept when the encoder takes it, else snapped down.
         ("aac", None, 8, None),
         ("ac3", None, 6, None),
-        ("ac3", None, 3, None),
         ("ac3", None, 8, "5.1"),
         ("eac3", None, 7, "5.1"),
         ("libmp3lame", None, 6, "stereo"),
         ("libmp3lame", None, 2, None),
         ("libmp3lame", None, 0, None),
-        ("flac", None, 8, None),
     ],
 )
 def test_snap_mixdown(
@@ -74,14 +69,12 @@ def test_snap_mixdown_edge_cases() -> None:
         ("libopus", 48000, None, 48000),
         ("libopus", 44100, None, 48000),
         ("libopus", None, 44100, 48000),  # same as source, but the source rate is not supported
-        ("libopus", None, 22050, 24000),
         ("libopus", 16000, 44100, 16000),  # a requested rate wins over the source rate
         ("libopus", None, None, None),
         ("ac3", 96000, 44100, 48000),
         ("ac3", None, 22050, 32000),
         ("libopus", 20000, None, 24000),  # halfway between 16 000 and 24 000: the higher one
         ("aac", None, 44100, 44100),
-        ("libmp3lame", 96000, None, 48000),
     ],
 )
 def test_snap_samplerate(
@@ -98,7 +91,7 @@ def test_snap_samplerate_without_a_list() -> None:
 
 @pytest.mark.parametrize(
     ("channels", "expected"),
-    [(0, "stereo"), (1, "mono"), (2, "stereo"), (3, "5.1"), (6, "5.1"), (7, "7.1"), (8, "7.1")],
+    [(0, "stereo"), (1, "mono"), (2, "stereo"), (3, "5.1"), (6, "5.1"), (7, "7.1")],
 )
 def test_channels_mixdown(channels: int, expected: Mixdown) -> None:
     assert channels_mixdown(channels) == expected

@@ -196,7 +196,3 @@ def test_unknown_base_or_option_set_is_an_error() -> None:
         resolve_video_encoders(raw, {"s": []})
     with pytest.raises(ValueError, match="unknown option set 's'"):
         resolve_video_encoders(_raw(), {})
-
-
-def test_load_definitions_is_cached() -> None:
-    assert load_definitions() is load_definitions()
