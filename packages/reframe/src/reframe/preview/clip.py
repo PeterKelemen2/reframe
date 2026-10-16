@@ -15,8 +15,16 @@ edit. Then, like the queue (C-11):
 3. The plan files, the 2-pass statistics and a partial output are removed, also after a
    failure or a cancel.
 
-**The id** is a hash of the source file version, the plan's steps and the tool builds: the
-same request gives the cached clip at once (``PreviewClip`` with the same id). The clip's
+**Each run has its own files.** The plan of a run writes to a temporary name of its own
+(``.tmp-<random>-<id>.<ext>``, so ``….part.<ext>``, ``….part.passlog…`` and
+``….part.chapters.txt`` too), and the finished clip is renamed to ``<id>.<ext>``: two runs of
+the same clip at once (a raised ``preview_clip`` limit, two processes on one cache folder)
+never write the same file. When the rename fails because the other run's clip is already
+there (Windows refuses to replace a file that a reader has open), that clip is used.
+
+**The id** is a hash of the source file version, the plan's steps and files (the FFMETADATA
+chapter file holds the chapter names) and the tool builds: the same request gives the cached
+clip at once (``PreviewClip`` with the same id). The clip's
 timeline starts at 0: its frame at ``t`` is the source frame at ``start + t`` (03 §Preview,
 encoded frame compare: ``Reframe.sources.frames(clip.path, timestamps=[t])``).
 """
@@ -166,6 +174,7 @@ async def make_clip(
         "clip",
         source_fingerprint(path, stat),
         [step.model_dump(mode="json") for step in plan.steps],
+        [file.model_dump(mode="json") for file in plan.files],
         sorted(identities.items()),
     )[:32]
     encoder = defs.video_encoders.get(job.video.encoder)
@@ -193,13 +202,18 @@ async def make_clip(
         return result(cached, cached.stat().st_size)
 
     final = cache.clip(clip_id, extension)
-    plan = _plan(_clip_job(job, start=start, end=end, output=final), source, caps, tools, defs)
+    own = PreviewCache.temporary(final)  # this run's files (see the module doc)
+    plan = _plan(_clip_job(job, start=start, end=end, output=own), source, caps, tools, defs)
     if plan.job_type == "metadata_edit" or plan.output_tmp.parent != cache.clips:
         # Never reached: the clip job does not edit in place. A preview must never write
         # anywhere but the cache (and never the source).
         raise TaskFailed("A preview clip of this job would not be written into the cache.")
-    await _run_plan(tctx, plan, tools)
-    size = final.stat().st_size
+    try:
+        await _run_plan(tctx, plan, tools)
+        size = await _place(plan.output_final, final)
+    finally:
+        with contextlib.suppress(OSError):
+            plan.output_final.unlink(missing_ok=True)
     limit = megabytes(ctx.settings().preview.cache_size_mb)
     await asyncio.to_thread(cache.trim, limit, protect=[final])
     return result(final, size)
@@ -255,6 +269,20 @@ async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None
         for leftover in leftovers:
             with contextlib.suppress(OSError):
                 leftover.unlink(missing_ok=True)
+
+
+async def _place(own: Path, final: Path) -> int:
+    """Rename this run's finished clip to the clip's name; its size. When that fails because
+    another run has just made the same clip (Windows refuses to replace a file that a reader
+    has open), that clip is used."""
+    try:
+        await asyncio.to_thread(os.replace, own, final)
+    except OSError as exc:
+        try:
+            return (await asyncio.to_thread(os.stat, final)).st_size
+        except OSError:
+            raise TaskFailed(f"The clip cannot be saved: {exc}.") from exc
+    return (await asyncio.to_thread(os.stat, final)).st_size
 
 
 async def _file_call[*A](what: str, fn: Callable[[*A], object], *args: *A) -> None:

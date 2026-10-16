@@ -384,3 +384,22 @@ review's "Known limits"). Checked on CPython 3.14.7 and Pydantic 2 (recorded in
 ### Plan changes
 
 None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue.store` does.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R4-1 (major): "Two jobs with the same output path never run at the same time" (§3) did not
+  hold through links.** The queue keyed a job's output and source on
+  `normcase(abspath(path))`, so two jobs whose output folders were spelled through a symbolic
+  link wrote the same `.part` file at once, and (decision 0034's follow-up) an encode read a
+  source through a link or a hard link while it was edited in place. Now a key is
+  `normcase(realpath(path))` (links resolved; for an output that does not exist yet, the
+  existing part of its folder), and two keys are the same file when they are equal, equal
+  without case, or `os.path.samefile` (hard links; on Windows `os.stat` gives the volume
+  serial number and the file index): the rule of `reframe.queue.files.same_file`, which the
+  run-time guard of the M2 follow-up already uses. On Linux, two outputs that differ only in
+  case (`Movie.mkv`, `movie.mkv`) now wait for each other too (safe side, as that guard). The
+  check costs a few `stat` calls per running job in the event loop each time the queue looks
+  for a job to start (a share that does not answer blocks it as long). Tests:
+  `tests/queue/test_job_keys_review_fixes.py`, among them
+  `test_the_same_output_through_a_linked_folder` (also a folder below the link that does not
+  exist yet) and `test_file_identity_is_what_os_stat_reports` (mocked, the Windows path).

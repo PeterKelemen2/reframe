@@ -109,3 +109,37 @@ Two "Known limits" of the M2 review in C-3:
 ### Plan changes
 
 None.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+Decision item 2 said `language_ietf` is "the BCP 47 tag that MediaInfo reports (the Matroska
+`LanguageIETF` element when present)". Since C-13 (decision 0034 item 5) Reframe reads that
+element itself, and the review found two faults in how the values met:
+
+- **R4-3 (major).** MediaInfo reports a BCP 47 `Language` for every Matroska track: when the
+  track has no `LanguageIETF`, it derives one from the legacy `Language` element (checked
+  with pymediainfo 7.0.1, libmediainfo 24.12 on `multitrack.mkv`, which has no `LanguageIETF`:
+  `ja` for `jpn`, `en` for `eng`; `mkvmerge -J`: no `language_ietf`). The prober kept that
+  derived tag, because the reader's value replaced it only when the track had the element. Now,
+  for a Matroska file whose tracks the reader matched, `language_ietf` is the track's element
+  or `None`; MediaInfo's value is kept for other containers (MP4) and when the reader cannot
+  read or match the tracks. Item 2 now reads: `language_ietf` is the file's BCP 47 tag
+  (Matroska: Reframe's track reader; other containers: MediaInfo), `None` when the file has
+  none. Tests: `tests/probe/test_matroska_review_fixes.py`
+  (`test_probe_with_mediainfo_on_keeps_only_the_files_bcp47_tags`,
+  `test_real_mediainfo_derives_a_bcp47_tag_from_the_legacy_language`).
+- **R4-4 (major).** Values were assigned without validation (`MediaSource` does not validate
+  assignment), so a `LanguageIETF` such as `en_US` reached `TrackMetadata` and made `draft`
+  and `plan` fail with a `ValidationError`. Now only a valid `LanguageTag` (pattern and at
+  most 64 characters) is used: from the reader, another value gives `None` and a probe warning;
+  from MediaInfo (whose module already keeps only values of the tag's pattern) a value longer
+  than 64 characters is dropped. Tests: `test_a_value_that_is_not_a_language_tag_is_not_used`,
+  `test_mediainfo_languages_that_are_too_long_are_not_used`,
+  `test_probe_of_an_invalid_language_ietf`.
+
+The probe cache's option `"matroska"` becomes 2, so entries made with the old rule are probed
+again.
+
+Not changed (not this task's files): the docstring of `language_ietf` in
+`reframe/models/media.py` ("as MediaInfo reports it … `None` when MediaInfo is not
+available") and 05 §C-3 ("MediaInfo also gives `language_ietf`") describe the M1 rule.

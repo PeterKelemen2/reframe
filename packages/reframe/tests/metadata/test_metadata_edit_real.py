@@ -31,6 +31,7 @@ import pytest
 
 from reframe.models import JobDraft, JobSettings, JobState, MediaSource, QueueJob
 from reframe.probe import mediainfo
+from reframe.probe.matroska import read_matroska
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import media
@@ -168,8 +169,11 @@ async def test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all(en
         sdh.metadata.name = "Magyar SDH"
         sdh.metadata.hearing_impaired = True
         job.tags.title = "{name} S{season:02}E{episode:02}"
+        kind, reason = await job_type(app, job)
+        assert kind == "metadata_edit", reason
         ended = await run(app, job)
         assert ended.state is JobState.DONE, ended.error
+        assert seconds(ended) < LIMIT, seconds(ended)
         out = await reprobe(app, env.source)
         assert out.container.title == "Show S01E01"
         rows = [
@@ -347,28 +351,53 @@ async def test_a_read_only_source_is_a_validation_error(env: Env) -> None:
 
 
 @posix_only
-async def test_cancelling_an_in_place_edit_keeps_the_source(
+async def test_cancelling_an_in_place_edit_lets_mkvpropedit_finish(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(fake_mkvpropedit(env.tmp / "bin", "sleep 30")))
+    """A cancel that comes while mkvpropedit edits the source does not kill it (R4-7 of the
+    core-complete review: a kill in its write phase can destroy the track headers). The
+    mkvpropedit here waits at a gate, then runs the real mkvpropedit with its arguments, so the
+    cancel comes while the step runs every time. The job ends ``cancelled`` and says that the
+    edit is written; the file has the edit and is sound."""
+    real = shutil.which("mkvpropedit")
+    assert real is not None
+    gate, started = env.tmp / "gate", env.tmp / "started"
+    body = f'touch "{started}"\nwhile [ ! -e "{gate}" ]; do sleep 0.01; done\nexec "{real}" "$@"'
+    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(fake_mkvpropedit(env.tmp / "bin", body)))
     _settings(env.tmp / "config", partial_file="delete")
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)
-        job.audio[0].metadata.name = "X"
+        job.audio[0].metadata.name = "Renamed"
         queued = await app.queue.add(job)
         app.queue.start(job_ids=[queued.id])
+        cancel: asyncio.Task[None] | None = None
+        try:
+            await poll(started.exists)
+            cancel = asyncio.create_task(app.queue.cancel(queued.id))
 
-        def running() -> bool:
-            active = app.queue._active.get(queued.id)
-            return active is not None and active.process is not None
+            def stop_requested() -> bool:
+                active = app.queue._active.get(queued.id)
+                return active is None or active.token.cancelled
 
-        await poll(running)
-        await app.queue.cancel(queued.id)
+            await poll(stop_requested)
+        finally:
+            gate.touch()
+        assert cancel is not None
+        await cancel
         [ended] = await app.queue.wait([queued.id])
         assert ended.state is JobState.CANCELLED
-        assert env.source.exists()
-        assert "Clean-up" not in app.queue.log_path(ended.id).read_text(encoding="utf-8")
+        assert ended.error == (
+            "The edit was already written to Show.S01E01.mkv when the job was cancelled: "
+            "mkvpropedit is never stopped while it writes the source (that can damage the "
+            "file). The check of the edited file did not run."
+        )
+        out = await reprobe(app, env.source)
+        assert out.audio[0].title == "Renamed"  # the real mkvpropedit wrote it
+        assert len(read_matroska(env.source).tracks) == 7
+        log = app.queue.log_path(ended.id).read_text(encoding="utf-8")
+        assert "it is let finish" in log
+        assert "Clean-up" not in log
     finally:
         await app.close()
 

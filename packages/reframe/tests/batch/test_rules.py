@@ -393,7 +393,7 @@ def test_every_selected_track_is_in_its_compiled_column() -> None:
     assert english.severity is not None
     assert english.message == "no English track"
     assert english.defaults
-    assert result.matches[2].message == "a listed language was found"
+    assert result.matches[2].message == "a main track of a listed language was found"
     assert [c.label for c in result.columns if c.kind == "audio"] == [
         "A1 hun (defaults)",
         "A2 eng (defaults)",
@@ -412,7 +412,7 @@ def test_no_match_column() -> None:
     found = resolve_tracks(preset, T.source([T.audio(1, "fre")]), definitions=DEFS)
     assert [m.message for m in found.matches if m.kind == "audio"][
         1
-    ] == "a listed language was found"
+    ] == "a main track of a listed language was found"
 
 
 # --------------------------------------------------------------------------- one engine

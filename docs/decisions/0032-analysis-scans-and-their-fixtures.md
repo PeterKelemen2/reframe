@@ -49,9 +49,12 @@ So the subtitle scan:
 ### 2. What an event is
 
 - Every track but PGS: one **packet** is one event, counted for all requested tracks by one
-  ffprobe (`-select_streams s -show_entries packet=stream_index,pts_time`). That is what
+  ffprobe (`-select_streams s -show_entries packet=stream_index,pts_time,size`). That is what
   mkvmerge's `NUMBER_OF_FRAMES` counts, so a measured count and a statistics-tag count of the
   same track agree.
+- MP4 / MOV text (`mov_text`): a sample of 2 bytes or less is an **empty sample** (text length
+  0), the filler that the muxer writes before the first cue and between two cues, not an event
+  (follow-up R3-2 below).
 - PGS: one **display set** is one event. In Matroska that is one block (FFmpeg's muxer merges
   the segments with `pgs_frame_merge`), the same as the packet count and `NUMBER_OF_FRAMES`; in
   M2TS every segment is a packet, so a packet count would count each event about four times.
@@ -78,9 +81,11 @@ document. Video streams can be measured too; any other stream type fails the tas
 
 ### 4. Measured values and roles
 
-When a bitrate or subtitle scan is done, a copy of the source gets the values
-(`BitrateSource.MEASURED`; `event_count_source="measured"` and `forced_event_count`) and goes
-to `ctx.sources.store`. C-3's role heuristics are worked out again on that copy
+When a bitrate or subtitle scan is done, the source as it is known at that moment gets the
+values (`BitrateSource.MEASURED`; `event_count_source="measured"` and `forced_event_count`)
+through `ctx.sources.update(source, change)`: one file's updates run one at a time, and each
+scan applies only its own values, so two scans of one file keep both (follow-up R3-1 below).
+C-3's role heuristics are worked out again on the updated source
 (`reframe.probe.roles.assign_audio_roles` / `assign_subtitle_roles`, as the MediaInfo step of
 the prober already does for bit rates), because they use these values: a measured 128 kb/s
 untitled stereo track after a 5.1 track becomes a commentary candidate, a track with ≤ 25 % of
@@ -168,3 +173,39 @@ disposition and 2 forced events. ffprobe reads both as `hdmv_pgs_subtitle`, 12 a
   found in a scan of the stream (not a decode).
 - [09 §Test media](../plan/09-quality-and-release.md#test-media): the PGS fixture is generated;
   a new row for the DTS-HD MA track.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R3-1: two scans of one file lost a value.** Each scan stored a modified copy of the source
+  it probed when it started (`ctx.sources.store`). Two scans of one file at the same time (both
+  kinds allow 2) each started from a copy without the other's value, so the second store
+  dropped the first one's: `bitrate_scan(dts-hd-ma.mkv, 1)` with `bitrate_scan(…, 2)` left
+  stream 1 `unknown`; a subtitle scan with a bitrate scan lost the event counts. Now the
+  `SourceAccess` protocol has `update(source, change)`: `SourceService.update` takes a lock of
+  the file (`store` takes it too), reads the known source (`get`: memory, else the probe
+  cache), applies the scan's change function and stores the result. The scans pass a function
+  that sets only their own values and works the roles out again on the source it gets. When
+  the known source is another version of the file (it changed after the scan probed it), or the
+  file has changed, nothing is stored. Tests:
+  `tests/analysis/test_analysis_review_fixes.py::test_two_bitrate_scans_keep_both_measurements`,
+  `::test_subtitle_scan_and_bitrate_scan_keep_both`, `::test_concurrent_updates_are_serialised`,
+  `::test_update_after_the_file_changed_stores_nothing`.
+- **R3-2: MP4 / MOV text tracks counted about twice.** FFmpeg's MP4 and MOV muxers fill the
+  time before the first cue and every gap between two cues with an empty `mov_text` sample (a
+  text length of 0: 2 bytes): 3 SRT cues with gaps give 6 samples of 2, 7, 2, 7, 2, 9 bytes
+  (pinned n9.0.2 and n8.1.3; back-to-back cues give no empty sample). A cue without text (an
+  empty ASS `Dialogue` or one with override tags only) gets no sample of its own: its time is in
+  an empty sample. The packet count now also reads `size` and does not count a `mov_text`
+  packet of 2 bytes or less (`subtitles.EMPTY_TEXT_SAMPLE`). A sample with text length 0 and
+  style boxes (more than 2 bytes) would still count; FFmpeg does not write one. Facts in
+  `testdata/README.md` ("Analysis scans"). Tests: `test_analysis_review_fixes.py::
+  test_mov_text_event_count[mp4|mov]` (3, not 6) and
+  `::test_mov_text_cues_without_text_are_not_events` (2 of 4 cues).
+- **The tool environment** (suspected in the review): the scans ran ffprobe / ffmpeg without
+  `ToolInfo.env` (for example `LIBVA_DRIVERS_PATH` of the bundled FFmpeg), while the probe, the
+  preview tasks and the queue pass it. Every scan process now gets `extra_env=tool.env`. Test:
+  `tests/analysis/test_analysis_tasks.py::test_the_scans_run_their_tools_with_the_tool_environment`
+  (all 5 processes of the scans).
+
+No plan text changes: [05 §C-10](../plan/05-core.md#c-10-preview-and-analysis-tasks) does not
+say how a measured value is stored or what an MP4 text event is.

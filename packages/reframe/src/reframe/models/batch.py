@@ -113,11 +113,13 @@ class BatchGroup(ReframeModel):
 
 
 class BatchGrouping(ReframeModel):
-    """``Reframe.batch.group(...)``: the groups, and the files that could not be read."""
+    """``Reframe.batch.group(...)``: the groups, and the files left out of them."""
 
     groups: list[BatchGroup] = Field(default_factory=list)
     issues: list[ValidationIssue] = Field(default_factory=list)
-    """A file that could not be probed (``source.probe_failed``) is not in any group."""
+    """The files that are in no group: one that could not be probed (``source.probe_failed``),
+    and (``Reframe.batch.resolve_batch``) one that is the planned output of another file of
+    the batch (``batch.already_encoded``, info; decision 0040)."""
 
 
 class TrackMatch(ReframeModel):

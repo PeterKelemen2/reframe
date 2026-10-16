@@ -5,8 +5,9 @@ roles that depend on measured values are worked out again."""
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -39,7 +40,7 @@ from reframe.models import (
 )
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.tasks import TaskContext, TaskManager
-from reframe.tools import CancelToken
+from reframe.tools import CancelToken, RunResult, run_streaming
 from reframe_testing import fake_tools as ft
 from reframe_testing.fake_tools import FakeTools
 
@@ -73,6 +74,11 @@ class _Sources:
     async def store(self, source: MediaSource) -> None:
         self.stored.append(source)
 
+    async def update(
+        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
+    ) -> None:
+        self.stored.append(change(self.stored[-1] if self.stored else source))
+
 
 class _Caps:
     @property
@@ -83,10 +89,10 @@ class _Caps:
         return CapabilitySnapshot()
 
 
-def _info(name: str, path: Path | None) -> ToolInfo:
+def _info(name: str, path: Path | None, env: dict[str, str] | None = None) -> ToolInfo:
     if path is None:
         return ToolInfo(name=name, status=ToolStatus.MISSING, reason="not found")  # type: ignore[arg-type]
-    return ToolInfo(name=name, status=ToolStatus.FOUND, path=path)  # type: ignore[arg-type]
+    return ToolInfo(name=name, status=ToolStatus.FOUND, path=path, env=env or {})  # type: ignore[arg-type]
 
 
 def _context(
@@ -95,11 +101,12 @@ def _context(
     *,
     ffmpeg: Path | None = None,
     ffprobe: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> MediaTaskContext:
     events = EventBus()
     tools = ToolSet(
-        ffmpeg=_info("ffmpeg", ffmpeg),
-        ffprobe=_info("ffprobe", ffprobe),
+        ffmpeg=_info("ffmpeg", ffmpeg, env),
+        ffprobe=_info("ffprobe", ffprobe, env),
         mkvpropedit=_info("mkvpropedit", None),
         mediainfo=_info("mediainfo", None),
     )
@@ -360,7 +367,7 @@ async def test_subtitle_scan_counts_and_stores(tmp_path: Path, fake_tools: FakeT
         ft.Scenario([
             ft.Rule(tool="ffprobe", argv_has=["-forced_subs_only"],
                     actions=[ft.stdout("pts_time=3.000000\n")]),
-            ft.Rule(tool="ffprobe", argv_has=["packet=stream_index,pts_time"],
+            ft.Rule(tool="ffprobe", argv_has=["packet=stream_index,pts_time,size"],
                     actions=[ft.stdout(packets)]),
         ])
     )  # fmt: skip
@@ -458,3 +465,44 @@ async def test_loudness_without_a_measurement_fails(
     ctx = _context(tmp_path, _Sources(_source(tmp_path)), ffmpeg=fake_tools.ffmpeg)
     info = analysis.start_loudness_scan(ctx, tmp_path / FILE, 1, start=None, duration=None)
     _failed_with(await _finish(ctx, info), message)
+
+
+# --------------------------------------------------------------------------- the tool environment
+
+
+async def test_the_scans_run_their_tools_with_the_tool_environment(
+    tmp_path: Path, fake_tools: FakeTools, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every process of a scan gets ``ToolInfo.env`` (the bundled FFmpeg's environment, for
+    example ``LIBVA_DRIVERS_PATH``), as the probe, the preview tasks and the queue do."""
+    seen: list[tuple[str, Mapping[str, str] | None]] = []
+
+    async def spy(argv: Sequence[str], **kwargs: Any) -> RunResult:
+        extra_env = kwargs.get("extra_env")
+        seen.append((" ".join(argv[1:]), extra_env))
+        return await run_streaming(argv, **kwargs)
+
+    for module in ("bitrate", "subtitles", "loudness"):
+        monkeypatch.setattr(f"reframe.analysis.{module}.run_streaming", spy)
+    fake_tools.set_scenario(
+        ft.Scenario([ft.Rule(tool="ffprobe", actions=[ft.stdout(PACKETS)]),
+                     ft.Rule(tool="ffmpeg", exit_code=1)])
+    )  # fmt: skip
+    source = _source(tmp_path)
+    source.subtitles.append(
+        SubtitleStream(index=6, type_index=3, codec="hdmv_pgs_subtitle", language="eng")
+    )
+    env = {"REFRAME_C10_TEST": "bundled"}
+    ctx = _context(
+        tmp_path, _Sources(source), ffmpeg=fake_tools.ffmpeg, ffprobe=fake_tools.ffprobe, env=env
+    )
+    path = tmp_path / FILE
+    for info in (
+        analysis.start_bitrate_scan(ctx, path, 1),  # ffprobe packet listing
+        analysis.start_subtitle_scan(ctx, path, [4]),  # ffprobe packet count, VobSub decode
+        analysis.start_subtitle_scan(ctx, path, [6]),  # ffmpeg PGS copy (fails here)
+        analysis.start_loudness_scan(ctx, path, 1, start=None, duration=None),  # ffmpeg
+    ):
+        await _finish(ctx, info)
+    assert len(seen) == 5, seen
+    assert [extra for _, extra in seen] == [env] * 5, seen

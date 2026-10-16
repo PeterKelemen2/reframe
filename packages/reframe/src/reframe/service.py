@@ -28,7 +28,7 @@ import contextlib
 import logging
 import os
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from pathlib import Path
 from stat import S_ISREG
 from types import TracebackType
@@ -277,7 +277,7 @@ class SourceService:
     Results are cached in memory and on disk (``<cache dir>/probe``), keyed by path + size +
     mtime and the ffprobe build, so probing an unchanged file again is cheap. Measured values
     (a bitrate scan, subtitle event counts) are stored into the known source and the cache
-    (:meth:`store`).
+    (:meth:`update`, :meth:`store`; one file at a time).
 
     The C-10 methods need :attr:`media` (the facade sets it); they start a background task and
     return its :class:`~reframe.models.TaskInfo` at once.
@@ -300,6 +300,8 @@ class SourceService:
         self._is_closed = is_closed
         self._prober: Prober | None = None
         self._known: OrderedDict[Path, MediaSource] = OrderedDict()
+        self._locks: dict[Path, tuple[asyncio.Lock, list[int]]] = {}
+        """Per file: the lock of :meth:`store` / :meth:`update` and how many wait for it."""
         self._tokens: set[CancelToken] = set()
         self._active = 0
         self._idle = asyncio.Event()
@@ -436,8 +438,54 @@ class SourceService:
         """Keep ``source`` (with measured values: a bitrate scan, subtitle event counts) as the
         known source of its file, in memory and in the probe cache, so that :meth:`probe` and
         :meth:`get` return it. Nothing is stored when the file changed since ``source`` was
-        probed (its fingerprint no longer matches)."""
+        probed (its fingerprint no longer matches). Waits for an :meth:`update` of the same
+        file that is running."""
         self._check_open()
+        async with self._file_lock(Path(source.ref.path)):
+            await self._store(source)
+
+    async def update(
+        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
+    ) -> None:
+        """Keep ``change(latest)`` like :meth:`store`: ``latest`` is the known source of
+        ``source``'s file now (:meth:`get`; ``source`` itself when none is known). This is
+        how a scan stores what it measured: it applies only its own values to what other
+        scans have stored meanwhile (two scans of one file run at the same time, and each
+        probed the file when it started).
+
+        ``source`` is the version the values were measured on: when the known source is a
+        newer version of the file, or the file has changed, nothing is stored. The stores and
+        updates of one file run one at a time."""
+        self._check_open()
+        file = Path(source.ref.path)
+        async with self._file_lock(file):
+            latest = await self.get(file)
+            if latest is None:
+                base = source
+            elif _same_version(latest, source):
+                base = latest
+            else:
+                return  # the file has changed since the values were measured
+            await self._store(change(base))
+
+    @contextlib.asynccontextmanager
+    async def _file_lock(self, file: Path) -> AsyncIterator[None]:
+        """One :meth:`store` / :meth:`update` of ``file`` at a time; the lock is dropped when
+        nobody holds or waits for it."""
+        entry = self._locks.get(file)
+        if entry is None:
+            entry = self._locks[file] = (asyncio.Lock(), [0])
+        lock, users = entry
+        users[0] += 1
+        try:
+            async with lock:
+                yield
+        finally:
+            users[0] -= 1
+            if users[0] == 0:
+                del self._locks[file]
+
+    async def _store(self, source: MediaSource) -> None:
         file = Path(source.ref.path)
         try:
             stat = await asyncio.to_thread(os.stat, file)
@@ -585,6 +633,12 @@ class SourceService:
 def _absolute(path: str | os.PathLike[str]) -> Path:
     """The absolute path, as :class:`Prober` stores it in ``MediaSource.ref.path``."""
     return Path(os.path.abspath(path))
+
+
+def _same_version(a: MediaSource, b: MediaSource) -> bool:
+    """Both sources were probed from the same version of the file (size and mtime)."""
+    fa, fb = a.ref.fingerprint, b.ref.fingerprint
+    return fa is not None and fb is not None and (fa.size, fa.mtime) == (fb.size, fb.mtime)
 
 
 def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:

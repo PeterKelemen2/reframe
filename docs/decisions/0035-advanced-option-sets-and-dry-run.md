@@ -244,6 +244,15 @@ section "Core-complete review".
   `test_a_warning_goes_to_the_key_it_names_not_to_a_short_key_in_its_text` and the real x265
   run after it.
 
+**R5-2.** The warnings of §5 (`encoder.dry_run_warning`, `encoder.dry_run_skipped`) did not
+reach the user: `JobService.plan(…, dry_run=True)` returns only the plan when the dry run has
+no error (a plan carries no issues), and `reframe plan` used it. The dry run itself is
+unchanged; `reframe plan` now calls `JobService.dry_run` and shows all of its issues with the
+draft's, and says the parameters were checked only when the test encode ran (decision 0038,
+follow-up). `JobService.plan`'s docstring says that its plan carries no warnings.
+Tests: `tests/jobs/test_cli_review_fixes.py` (`test_plan_shows_a_skipped_dry_run`,
+`test_plan_shows_the_dry_runs_warnings`).
+
 Plan change: [03-features.md §Advanced encoder options](../plan/03-features.md#advanced-encoder-options),
 the custom-parameters bullet (parameters that name files are refused, the allow-list of own
 options, the dry run never runs with them).

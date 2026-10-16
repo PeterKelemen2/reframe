@@ -1034,9 +1034,11 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
-          ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
-          language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+          The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
+          ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For Matroska it is the track's
+          ``LanguageIETF`` element as Reframe's own reader finds it, ``None`` when the track has no
+          such element or its value is not a language tag (decisions 0034, 0041); for other
+          containers MediaInfo's value when MediaInfo is available, else ``None``.
           
           The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
           ``language``.
@@ -1258,7 +1260,7 @@
       'ValidationIssue',
     ]),
     'additionalProperties': False,
-    'description': '``Reframe.batch.group(...)``: the groups, and the files that could not be read.',
+    'description': '``Reframe.batch.group(...)``: the groups, and the files left out of them.',
     'properties': dict({
       'groups': dict({
         'items': dict({
@@ -1268,7 +1270,11 @@
         'type': 'array',
       }),
       'issues': dict({
-        'description': 'A file that could not be probed (``source.probe_failed``) is not in any group.',
+        'description': '''
+          The files that are in no group: one that could not be probed (``source.probe_failed``),
+          and (``Reframe.batch.resolve_batch``) one that is the planned output of another file of
+          the batch (``batch.already_encoded``, info; decision 0040).
+        ''',
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
         }),
@@ -8389,9 +8395,11 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
-          ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
-          language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+          The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
+          ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For Matroska it is the track's
+          ``LanguageIETF`` element as Reframe's own reader finds it, ``None`` when the track has no
+          such element or its value is not a language tag (decisions 0034, 0041); for other
+          containers MediaInfo's value when MediaInfo is available, else ``None``.
           
           The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
           ``language``.
@@ -10851,9 +10859,11 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag as MediaInfo reports it (``pt-BR``, ``zh-Hant``): for Matroska the
-          ``LanguageIETF`` element, which ffprobe does not show (after ``mkvpropedit --set
-          language=pt-BR`` ffprobe says ``por``). ``None`` when MediaInfo is not available.
+          The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
+          ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For Matroska it is the track's
+          ``LanguageIETF`` element as Reframe's own reader finds it, ``None`` when the track has no
+          such element or its value is not a language tag (decisions 0034, 0041); for other
+          containers MediaInfo's value when MediaInfo is available, else ``None``.
           
           The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
           ``language``.

@@ -1459,9 +1459,37 @@ pts_time=3.989000|dts_time=3.989000|duration_time=0.010000|size=2964
   scan's line reader (load average about 7).
 
 **Subtitle packets** of all subtitle streams in one pass:
-`ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time -of compact=p=0`
-prints `stream_index=1|pts_time=0.200000`. One SRT cue, one ASS `Dialogue` line or one VobSub
-subpicture is one packet (`multitrack`: 2, 3, 1; `text-subs`: 2, 3; `vobsub`: 2, 1).
+`ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,size -of compact=p=0`
+prints `stream_index=1|pts_time=0.200000|size=12`. One SRT cue, one ASS `Dialogue` line or one
+VobSub subpicture is one packet (`multitrack`: 2, 3, 1; `text-subs`: 2, 3; `vobsub`: 2, 1).
+
+**MP4 / MOV text (`mov_text`)** (checked 2026-10-16 with the pinned n9.0.2 and the n8.1.3
+override build, the same results; core-complete review R3-2). A sample is a 16-bit text
+length, the text, then style boxes. The MP4 and MOV muxers fill the time before the first cue
+and every gap between two cues with an **empty sample**, `00 00` (2 bytes). 3 SRT cues
+(1–2 s, 3–4 s, 5–6.5 s) with `-c:s mov_text` (MP4: codec tag `tx3g`; MOV: `text`):
+
+```
+$ ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,duration_time,size \
+      -of compact=p=0 three.mp4
+stream_index=1|pts_time=0.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=1.000000|duration_time=1.000000|size=7
+stream_index=1|pts_time=2.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=3.000000|duration_time=1.000000|size=7
+stream_index=1|pts_time=4.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=5.000000|duration_time=1.500000|size=9
+```
+
+- Back-to-back cues (0–1, 1–2, 2–3 s, one letter each) give 3 samples of 3 bytes, no empty
+  sample.
+- An ASS file with `Hello` (1–2 s), an empty `Dialogue` (2–3 s), one with override tags only
+  (`{\b1}{\b0}`, 3–4 s) and `{\i1}Styled{\i0}` (5–6 s) gives 4 samples: 2 bytes at 0 s, 7
+  at 1 s, **2 bytes at 2 s lasting 3 s** (the two cues without text get no sample of their
+  own), 30 bytes at 5 s (`0006 "Styled"` and a 22-byte `styl` box). In Matroska (`-c:s ass`)
+  the same file has 4 packets: the ASS decoder keeps the empty events, the `mov_text` encoder
+  drops them.
+- So the subtitle scan does not count a `mov_text` packet of 2 bytes or less: 3 events, not 6,
+  for the 3 cues (`tests/analysis/test_analysis_review_fixes.py`).
 
 **PGS in Matroska.** The `sup` demuxer returns one packet per *segment*; the Matroska muxer
 merges the segments of a display set into one block (`pgs_frame_merge`, added by
@@ -1619,9 +1647,17 @@ $ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=
   (8-bit); PQ letterbox bar 40 / 63 / 63.9 / 91 (10-bit; the extremes are x265 ringing next to
   the picture).
 - A black frame: `x1:319 x2:0 y1:179 y2:0 w:-318 h:-178 x:320 y:180 … crop=-318:-178:320:180`.
-- Rounding: x and y are rounded up to even, the size down to a multiple of `round`; an odd
-  `round` is doubled and `round=1` means 16 (300x150 picture at 9,13 in 320x181:
-  `round=2` → `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`).
+- Rounding (checked 2026-10-16 with the pinned n9.0.2 and n8.1.3, the same results): x and y
+  are rounded up to even, the size is recomputed to keep the right and bottom edges
+  (`w = x2 − x + 1`), then cut down to a multiple of `round` (an odd `round` is doubled, and
+  `round` 0 or 1 means 16), and x / y move by half the cut, rounded to even
+  (`x += (cut / 2 + 1) & ~1`). A white 300x150 picture at 9,13 in a black 320x181 frame
+  (`drawbox=x=9:y=13:w=300:h=150:color=white:t=fill`, 4:2:0): `x1:9 x2:308 y1:13 y2:162`,
+  `round=2` → `crop=298:148:10:14`, `round=1` → `crop=288:144:16:16`. Made with
+  `pad=320:181:9:13` instead, the picture is at **8,12** (`pad` puts it on the 4:2:0 chroma
+  grid; at 9,13 only with a 4:4:4 input): `x1:8 x2:307 y1:12 y2:161`, `round=2` →
+  `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`
+  (`tests/preview/test_preview_review_fixes.py::test_cropdetect_rounding_example`).
 
 **The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
 frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of
@@ -1724,10 +1760,56 @@ $ mkvmerge -J out.mkv
 ```
 
 **MediaInfo and the re-probe.** With MediaInfo (the `pymediainfo` 7.0.1 wheel, libmediainfo
-24.12) every track gets a BCP 47 `language` (`en` for `eng` without `LanguageIETF`), so the
-re-probe check compares canonical BCP 47 tags on both sides. Without MediaInfo, Reframe's
-reader gives `language_ietf` only where the element exists: after the M6 demo edit the probe
-shows `hun`/`hu`, `por`/`pt-BR`, `eng`/`None`.
+24.12) every track gets a BCP 47 `language`, derived from the legacy element when the track
+has no `LanguageIETF` (`multitrack.mkv`: `ja` for `jpn`, `en` for `eng`, none for the `und`
+video; `mkvmerge -J` shows no `language_ietf` on any track). The re-probe check compares
+canonical BCP 47 tags on both sides, so it is not fooled. Since the core-complete review
+(R4-3) the probe of a Matroska file takes `language_ietf` from Reframe's reader only, with
+MediaInfo on or off: after the M6 demo edit the probe shows `hun`/`hu`, `por`/`pt-BR`,
+`eng`/`None` (`test_metadata_review_fixes.py`, `test_matroska_review_fixes.py`).
+
+**An invalid `LanguageIETF`** (R4-4; mkvpropedit writes `language-ietf=en-US` on a1, then the
+five bytes are replaced in the file): ffprobe reads the file (a1 `language=jpn`), `mkvmerge -J`
+shows a1 as `jpn` with no `language_ietf`, MediaInfo shows the raw value (`en_US`, and
+`j / a;x` for `j\na;x`). Reframe drops it with a probe warning.
+
+**A `SeekHead` entry past the end of the file** (R4-2; the reviewer's `make_hostile.py`: long
+names make mkvpropedit move `Tracks` behind the clusters, then a `Seek` `Tracks → 2^64 - 1` is
+put in front of the real entry, in the `Void` after the `SeekHead`): ffprobe lists all seven
+streams, `mkvmerge -J` all seven tracks; mkvpropedit refuses to edit the file:
+
+```
+$ mkvpropedit h.mkv --edit track:a2 --set language=por --set language-ietf=pt-BR
+Error: Modification of properties in the section 'Track headers' was requested, but no
+corresponding level 1 element was found in the file. The file has not been modified.   (exit 2)
+```
+
+In Python, `seek(2**63)` on a file raises `ValueError` ("cannot fit 'int' into an
+offset-sized integer", CPython 3.14.7).
+
+**Killing mkvpropedit during an edit** (R4-7 of the core-complete review; MKVToolNix 101.0,
+copies of `multitrack.mkv`, an edit that grows `Tracks` so that it moves behind the clusters:
+the language pair and a 200-character name on a1–a3 and s1–s3, about 27 ms). SIGKILL at a
+random moment of the run: 150 runs, 146 killed while running, none damaged (the kill came
+before the write; the file was unchanged). SIGKILL late in the run (60–120 % of its time):
+900 runs, 3 damaged. mkvpropedit first overwrites the old `Tracks` with a `Void`, then writes
+the new `Tracks` at the end of the file and points the `SeekHead` at it; a kill in between
+leaves no reachable `Tracks` (`mkvinfo -v -z`: the `Void` of 685 bytes where `Tracks` was, and
+either a `Tracks` after the `Cues` that the `SeekHead` does not name, or no `Tracks` at all).
+ffprobe then shows no streams, `mkvmerge -J` recognises the file with 0 tracks, Reframe's
+reader says "no Tracks element found".
+
+mkvpropedit installs no signal handler: `SigCgt` and `SigIgn` in `/proc/<pid>/status`, read in
+a tight loop during 20 such edits, are empty. So SIGTERM (and SIGINT) end it at once, as
+SIGKILL does: SIGTERM late in the run, 600 runs, exit status -15 where it landed, 4 files
+damaged in the same ways.
+
+Through Reframe's queue (the real `Reframe` and mkvpropedit, the same edit, `queue.cancel()` at
+a random moment up to 30 ms after mkvpropedit started, 300 runs): before R4-7, 2 damaged files
+and 50 jobs that ended `cancelled` with no error although the file had the edit; with R4-7
+(a cancel or `close()` lets a running in-place mkvpropedit finish; decision 0034, follow-up),
+no damaged file, and all 300 ended `cancelled` with "The edit was already written …" and had
+the edit. Only the step's 5-minute limit still kills a hung mkvpropedit.
 
 ### Advanced encoder options (C-6, complete option sets)
 

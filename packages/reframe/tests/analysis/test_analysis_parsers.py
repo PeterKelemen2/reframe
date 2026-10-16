@@ -259,7 +259,7 @@ def test_subtitle_argv() -> None:
         "-select_streams",
         "s",
         "-show_entries",
-        "packet=stream_index,pts_time",
+        "packet=stream_index,pts_time,size",
         "-of",
         "compact=p=0",
         "-i",

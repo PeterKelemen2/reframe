@@ -175,13 +175,21 @@ def resolve(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
+    container_codecs: bool = True,
 ) -> Resolution:
     """``template`` applied to ``source`` with its per-file ``override`` (04 §Concepts):
     the job (no output path yet), the match report, one decision per source track and the
     issues of the track stage and of the override. ``languages``: Settings → Languages (the
-    preferred languages of the defaults)."""
+    preferred languages of the defaults). ``container_codecs=False``: without the defaults
+    lint's ``defaults.codec_not_in_container``, for a caller that validates the job (C-8
+    reports the same codecs; :func:`~reframe.batch.rules.resolve_tracks`)."""
     resolution, _ = resolve_with_tracks(
-        template, source, override, definitions=definitions, languages=languages
+        template,
+        source,
+        override,
+        definitions=definitions,
+        languages=languages,
+        container_codecs=container_codecs,
     )
     return resolution
 
@@ -193,6 +201,7 @@ def resolve_with_tracks(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
+    container_codecs: bool = True,
 ) -> tuple[Resolution, TrackResolution]:
     """:func:`resolve`, with the :class:`~reframe.batch.rules.TrackResolution` (the matrix
     columns of the patched template and the track draft)."""
@@ -200,7 +209,13 @@ def resolve_with_tracks(
     template_ops, job_ops, issues = split_override(override)
     patched, found = apply_template_override(template, template_ops)
     issues += found
-    tracks = resolve_tracks(patched, source, definitions=defs, languages=languages)
+    tracks = resolve_tracks(
+        patched,
+        source,
+        definitions=defs,
+        languages=languages,
+        container_codecs=container_codecs,
+    )
     job, notes = build_job(patched, source, tracks.draft)
     job, found = apply_job_override(job, job_ops)
     issues = [*tracks.draft.issues, *issues, *found]

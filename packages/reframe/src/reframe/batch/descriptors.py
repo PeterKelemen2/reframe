@@ -17,9 +17,12 @@ loose      the tracks in any order with kind, codec family, language and roles (
 =========  ==================================================================================
 
 No level compares bit rates: the bit rate of a lossless or VBR track differs from episode to
-episode of the same release (decision 0040). The roles are C-3's (flag, title and heuristic
-evidence), plus the extra roles that the disposition flags give a source built without the
-prober (:func:`stream_roles`); a track without any role is ``main``.
+episode of the same release (decision 0040). For the same reason the roles are C-3's roles with
+**flag or title evidence** only, plus the roles that the disposition flags give a source built
+without the prober (:func:`stream_roles`); a track without any such role is ``main``. A role
+that C-3 infers from statistics (a forced track by its share of events, an untitled
+low-bitrate 2.0 commentary) varies per episode of one release: it stays on the stream, for
+the selection stage and the UI, but is no descriptor role (decision 0040, follow-up R2-2).
 
 Pure: no I/O.
 """
@@ -33,13 +36,14 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.metadata import effective_language
-from reframe.batch.selection import extra_role, is_forced, is_undetermined
+from reframe.batch.selection import _EXTRA_ROLES, is_undetermined
 from reframe.models.batch import Fingerprint, MatchLevel, TrackDescriptor
 from reframe.models.job import TrackFlags
 from reframe.models.media import (
     AudioStream,
     HdrFormat,
     MediaSource,
+    RoleEvidence,
     SubtitleStream,
     TrackRole,
     VideoStream,
@@ -148,18 +152,37 @@ def codec_label(stream: Stream) -> str:
     return CODEC_LABELS.get(stream.codec, stream.codec)
 
 
+def _flag_extra_role(stream: AudioStream | SubtitleStream) -> TrackRole | None:
+    """The extra role of the disposition flags alone (as the selection stage's
+    ``extra_role`` reads a source built without the prober)."""
+    d = stream.disposition
+    audio = isinstance(stream, AudioStream)
+    if d.comment:
+        return TrackRole.COMMENTARY
+    if (audio and d.visual_impaired) or d.descriptions:
+        return TrackRole.DESCRIPTION
+    if audio and d.clean_effects:
+        return TrackRole.MUSIC
+    return None
+
+
 def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
-    """The track's roles, in C-3's order: every role of the prober (flag, title, heuristic),
-    plus the roles that the disposition flags give a source built without the prober
-    (commentary, description, music, forced, SDH); ``[main]`` when there is none."""
-    found: list[TrackRole] = [info.role for info in stream.roles]
-    extra = extra_role(stream)
-    if extra is not None and extra[0] not in found:
-        found.append(extra[0])
+    """The track's roles, in C-3's order: the roles of the prober with flag or title evidence
+    (not the heuristic ones: they vary per episode), plus the roles that the disposition
+    flags give a source built without the prober (commentary, description, music, forced,
+    SDH); ``[main]`` when there is none."""
+    found: list[TrackRole] = [
+        info.role for info in stream.roles if info.evidence is not RoleEvidence.HEURISTIC
+    ]
+    extras = _EXTRA_ROLES["audio" if isinstance(stream, AudioStream) else "subtitle"]
+    if not any(role in extras for role in found):
+        extra = _flag_extra_role(stream)
+        if extra is not None:
+            found.append(extra)
     if isinstance(stream, SubtitleStream):
-        if is_forced(stream) and TrackRole.FORCED not in found:
-            found.append(TrackRole.FORCED)
         d = stream.disposition
+        if d.forced and TrackRole.FORCED not in found:
+            found.append(TrackRole.FORCED)
         if (d.hearing_impaired or d.captions) and TrackRole.SDH not in found:
             found.append(TrackRole.SDH)
     if len(found) > 1 and TrackRole.MAIN in found:

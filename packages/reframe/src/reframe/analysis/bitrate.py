@@ -193,6 +193,7 @@ async def scan(
         on_stdout_line=on_line,
         on_stderr_line=None,
         cancel=task.cancel,
+        extra_env=ffprobe.env or None,
     )
     check_run(result, "ffprobe", path)
     value = stats.bitrate(duration)
@@ -202,7 +203,11 @@ async def scan(
         else BitrateInfo()
     )
     if value is not None:
-        await ctx.sources.store(_with_bitrate(source, stream_index, bitrate))
+        # Onto the source as it is known now: another scan of the file may have stored its
+        # values since this one probed it.
+        await ctx.sources.update(
+            source, lambda latest: _with_bitrate(latest, stream_index, bitrate)
+        )
     return BitrateScan(
         path=path,
         stream_index=stream_index,

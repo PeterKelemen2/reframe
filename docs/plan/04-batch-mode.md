@@ -38,7 +38,8 @@ Strictness levels:
 | Loose | Type, codec family, language, role. Ignores order and channel count | Mixed sources (different releases in one season) |
 
 No level compares bit rates: the bit rate of a lossless or VBR track differs from episode to
-episode of one release. Every level compares the video size (loose: the resolution class) and
+episode of one release. For the same reason the roles compared are those with flag or title
+evidence, not those inferred from statistics (event counts, bit rates). Every level compares the video size (loose: the resolution class) and
 the HDR type ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 The sources panel shows a group like this:
@@ -171,7 +172,8 @@ E11         │ ✓ 1080p    │ ✓ #1                   │ ✗ none          
   reach the fields that a file did not override. The patched document is the template plus a
   member `job` with the file's resolved job: `/job/…` patches what is per file by nature
   (range, chapter names, the parsed-name corrections `/job/output/naming/field_overrides/…`);
-  an operation whose path vanished is an issue, not an error
+  an operation whose path vanished is an issue, not an error. An override changes the fields
+  of the track rules, not their number or order (the matrix columns are the template's rules)
   ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ## Output naming
@@ -183,7 +185,9 @@ Batch mode uses the templates, variables and name-source rules from
   (`{name}`, `{season}`, `{episode}`, `{sub_title}`, `{year}`). An edit there is a per-file
   override.
 - A preview table shows every output name before you queue. Name collisions within the batch,
-  or with existing files, are errors.
+  or with existing files, are errors. A file of the batch is never overwritten; a file that is
+  the planned output of another file of the batch (an earlier run's output) is left out
+  ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ## Queueing a group
 

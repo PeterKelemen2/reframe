@@ -86,10 +86,10 @@ from typing import Annotated, Any, Protocol
 from pydantic import BaseModel
 
 from reframe import __version__, languages
-from reframe.batch.grouping import episode_label
+from reframe.batch.grouping import episode_labels
 from reframe.batch.report import ROW_ASCII, ROW_MARKS, matrix_lines
 from reframe.events import Subscription
-from reframe.jobs import find_media_files, has_errors
+from reframe.jobs import OutputClaims, find_media_files, has_errors
 from reframe.mediatask import TaskFailed
 from reframe.models.batch import BatchGroup, BatchResolution, MatchLevel
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
@@ -1182,8 +1182,11 @@ def render_plan(console: Console, draft: JobDraft, plan: EncodePlan | None, sour
     console.print(Text(printable(plan.display)), soft_wrap=True)
 
 
-#: The note of ``reframe plan`` when the dry run found nothing wrong.
+#: The note of ``reframe plan`` when the dry run ran and found no error (its warnings are
+#: issues).
 DRY_RUN_NOTE = "The custom encoder parameters were checked by encoding one frame (dry run)."
+#: The dry run's warning when the test encode did not run (no FFmpeg, a timeout): no note.
+DRY_RUN_SKIPPED = "encoder.dry_run_skipped"
 
 
 def needs_dry_run(job: JobSettings, preset: Preset | None = None) -> bool:
@@ -1217,14 +1220,23 @@ async def run_plan(file: Path, *, preset: str | None, output: Path | None, as_js
             return await _probe_failed(app, draft)
         plan: EncodePlan | None = None
         if not has_errors(draft.issues):
+            # The dry run (C-6) is run here, not by plan(dry_run=True): plan() returns only
+            # the plan when the dry run has no error, and its warnings (a setting the encoder
+            # changed, a test encode that did not run) belong with the other issues.
             dry_run = needs_dry_run(draft.job, chosen)
-            planned = await app.jobs.plan(draft.job, source, dry_run=dry_run)
+            checked = await app.jobs.dry_run(draft.job, source) if dry_run else []
+            if checked:
+                draft = draft.model_copy(update={"issues": [*draft.issues, *checked]})
+            planned = None if has_errors(checked) else await app.jobs.plan(draft.job, source)
             if isinstance(planned, EncodePlan):
                 plan = planned
-                if dry_run:
+                # The note only when the test encode ran (not "did not run": no FFmpeg, a
+                # timeout).
+                if dry_run and not any(issue.code == DRY_RUN_SKIPPED for issue in checked):
                     draft = draft.model_copy(update={"notes": [*draft.notes, DRY_RUN_NOTE]})
-            else:  # validation agreed before: these are the dry run's errors (or a bug's)
-                draft = draft.model_copy(update={"issues": planned})
+            elif planned is not None:  # validation agreed before: a bug's (or a race's) issues
+                new = [issue for issue in planned if issue not in draft.issues]
+                draft = draft.model_copy(update={"issues": [*draft.issues, *new]})
     if as_json:
         _write_model_json({"draft": draft, "plan": plan})
     else:
@@ -1492,12 +1504,17 @@ async def _draft_files(
     console: Console,
     prepared: Prepared,
 ) -> None:
-    """``reframe encode``: draft every file; the files with errors are listed, not queued."""
+    """``reframe encode``: draft every file; the files with errors are listed, not queued.
+    No job writes another file of the command or the output of an earlier job
+    (:class:`~reframe.jobs.OutputClaims`): such a file is not queued either."""
     total = len(files)
     width = len(str(total))
     console.print(Text(f"Preset: {preset.name}"), soft_wrap=True)
-    for number, file in enumerate(files, start=1):
-        label = f"[{number:>{width}}/{total}]"
+    labels = [f"[{number:>{width}}/{total}]" for number in range(1, total + 1)]
+    claims = OutputClaims(
+        {file: f"{label} {file.name}" for file, label in zip(files, labels, strict=True)}
+    )
+    for label, file in zip(labels, files, strict=True):
         draft = await app.jobs.draft(file, preset, output=output)
         if isinstance(draft, ProbeError):
             prepared.not_queued += 1
@@ -1518,6 +1535,10 @@ async def _draft_files(
         )
         for note in draft.notes:
             _indented(console, Text(printable(f"note: {note}"), style="dim"), 9)
+        if not has_errors(draft.issues):
+            conflicts = claims.check(draft.job, f"{label} {file.name}")
+            if conflicts:
+                draft = draft.model_copy(update={"issues": [*draft.issues, *conflicts]})
         if has_errors(draft.issues):
             prepared.not_queued += 1
             console.print(
@@ -1698,7 +1719,7 @@ def render_group(console: Console, group: BatchGroup, number: int, total: int) -
     head = f"Group {number} of {total}: {group.name} · {files} · {group.level} match"
     console.print(Text(printable(head), style="bold"), soft_wrap=True)
     warn = ROW_MARKS["warning"] if _unicode(console) else ROW_ASCII["warning"]
-    labels = [episode_label(member.path) for member in group.members]
+    labels = episode_labels([member.path for member in group.members])
     width = max(len(label) for label in labels)
     for label, member in zip(labels, group.members, strict=True):
         line = Text(printable(member.path.name))
@@ -1723,14 +1744,18 @@ def render_matrix(console: Console, resolution: BatchResolution) -> None:
     console.print()
     for line in matrix_lines(resolution, unicode=unicode):
         console.print(Text(line), soft_wrap=True, crop=False)
+    # The matrix's row labels (with the season when the rows span seasons).
+    labels = episode_labels([row.path for row in resolution.rows])
     problems = [
-        r for r in resolution.rows if any(i.severity is not Severity.INFO for i in r.issues)
+        (label, row)
+        for label, row in zip(labels, resolution.rows, strict=True)
+        if any(i.severity is not Severity.INFO for i in row.issues)
     ]
     if problems or resolution.issues:
         _section(console, "Problems")
-    for row in problems:
+    for label, row in problems:
         shown = [i for i in row.issues if i.severity is not Severity.INFO]
-        head = f"{'':{_INDENT}}{episode_label(row.path)}: {_counts(shown)}"
+        head = f"{'':{_INDENT}}{label}: {_counts(shown)}"
         console.print(Text(printable(head), style="bold"), soft_wrap=True)
         render_issues(console, shown, severities=(Severity.ERROR, Severity.WARNING), indent=4)
     render_issues(console, resolution.issues)
@@ -1741,6 +1766,17 @@ def _batch_summary(resolutions: Sequence[BatchResolution], unreadable: int) -> t
     rows = [row for resolution in resolutions for row in resolution.rows]
     good = sum(1 for row in rows if row.status != "error" and row.job is not None)
     return good, len(rows) - good + unreadable
+
+
+def _dry_run_line(good: int, bad: int, left_out: int) -> str:
+    """``Dry run: 10 of 12 files can be queued; 2 cannot (errors); 2 left out (already
+    encoded).``"""
+    line = f"Dry run: {good} of {_plural(good + bad, 'file')} can be queued"
+    if bad:
+        line += f"; {bad} cannot (errors)"
+    if left_out:
+        line += f"; {left_out} left out (already encoded)"
+    return line + "."
 
 
 async def run_batch(
@@ -1755,7 +1791,9 @@ async def run_batch(
     """``reframe batch``: group the media files, resolve the preset in every file of every
     group and print the groups and the resolution matrix; without ``--dry-run``, queue the
     files without errors in episode order and encode them as ``reframe encode`` does.
-    Returns the exit code."""
+    The batch is resolved as a whole (``Reframe.batch.resolve_batch``): the name checks
+    cover every group, and the outputs of an earlier run are left out. Returns the exit
+    code."""
     if as_json and not dry_run:
         _error("--json needs --dry-run: the encode prints progress, not JSON.")
         return EXIT_USAGE
@@ -1775,12 +1813,10 @@ async def run_batch(
         if isinstance(chosen, str):
             _error(chosen)
             return EXIT_USAGE
-        grouping = await app.batch.group(found.files, level=level)
-        resolutions = [
-            await app.batch.resolve(chosen, [m.path for m in group.members], group=group)
-            for group in grouping.groups
-        ]
-        good, bad = _batch_summary(resolutions, len(grouping.issues))
+        grouping, resolutions = await app.batch.resolve_batch(chosen, found.files, level=level)
+        unreadable = [i for i in grouping.issues if i.severity is Severity.ERROR]
+        left_out = [i for i in grouping.issues if i.severity is not Severity.ERROR]
+        good, bad = _batch_summary(resolutions, len(unreadable))
         if as_json:
             _write_json_value(
                 {
@@ -1790,9 +1826,12 @@ async def run_batch(
             )
             return EXIT_OK if not bad else EXIT_FAILED
         console.print(Text(f"Preset: {chosen.name}"), soft_wrap=True)
-        if grouping.issues:
+        if unreadable:
             _section(console, "Files that cannot be read")
-            render_issues(console, grouping.issues)
+            render_issues(console, unreadable)
+        if left_out:
+            _section(console, "Already encoded (left out of the batch)")
+            render_issues(console, left_out)
         for number, (group, resolution) in enumerate(
             zip(grouping.groups, resolutions, strict=True), start=1
         ):
@@ -1801,14 +1840,13 @@ async def run_batch(
             render_matrix(console, resolution)
         console.print()
         if dry_run:
-            line = f"Dry run: {good} of {good + bad} files can be queued"
-            line += f"; {bad} cannot (errors)." if bad else "."
+            line = _dry_run_line(good, bad, len(left_out))
             console.print(Text(line, style="bold"), soft_wrap=True)
             return EXIT_OK if not bad else EXIT_FAILED
         queue = get_queue(app)
 
         async def prepare(prepared: Prepared) -> None:
-            prepared.not_queued += len(grouping.issues)
+            prepared.not_queued += len(unreadable)
             rows = [row for resolution in resolutions for row in resolution.rows]
             width = len(str(len(rows)))
             for number, row in enumerate(rows, start=1):
@@ -2668,8 +2706,9 @@ def build_app() -> typer.Typer:
 
         Each job is drafted from the preset and validated; a file whose job has errors is
         reported and not queued, the others are encoded. Outputs are named by the naming
-        template (-o only with a single file). Ctrl+C cancels the running and waiting jobs
-        and removes their partial files."""
+        template (-o only with a single file); a job never writes another file of the command
+        or an earlier job's output (that file is not queued). Ctrl+C cancels the running and
+        waiting jobs and removes their partial files."""
         _run(run_encode(paths, preset=preset, output=output, recursive=recursive))
 
     @app.command(epilog=_EXIT_HELP_NAME)
@@ -2745,8 +2784,10 @@ def build_app() -> typer.Typer:
         differs) and its resolution matrix: one row per file in episode order, one column
         per track rule (✓ exact, ≈ matched after relaxing or one of several candidates,
         ✗ no match for a required rule, a dash: skipped), the output name, then each file's
-        errors and warnings. Without --dry-run, the files without errors are queued in
-        episode order and encoded as "reframe encode" does; the others are listed."""
+        errors and warnings. A file of the batch is never overwritten, and a file that is
+        the planned output of another file (an earlier run's output) is left out. Without
+        --dry-run, the files without errors are queued in episode order and encoded as
+        "reframe encode" does; the others are listed."""
         _run(
             run_batch(
                 paths,

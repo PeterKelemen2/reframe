@@ -354,6 +354,14 @@ def test_no_listed_language_take_none_is_an_error_with_fixes() -> None:
         assert not [i for i in again.issues if i.code == "defaults.no_listed_language"]
     # A source without audio is not an error.
     assert draft_tracks(source(), template).issues == []
+    # Other languages kept: the selection takes a track, so there is nothing to fix
+    # (core-complete review R1-2).
+    for other, expected in (("keep_first", [1]), ("keep_all", [1, 2])):
+        selection = defaults.selection.model_copy(update={"other_languages": other})
+        kept = JobTemplate(audio_defaults=defaults.model_copy(update={"selection": selection}))
+        draft = draft_tracks(media, kept)
+        assert [t.source_stream for t in draft.audio] == expected
+        assert not [i for i in draft.issues if i.code == "defaults.no_listed_language"]
 
 
 def test_the_draft_has_the_lint_for_this_source() -> None:
