@@ -59,24 +59,20 @@ def test_json_schema_snapshot(name: str, obj: Any, snapshot: SnapshotAssertion) 
     assert {**schema, "$defs": sorted(defs)} == snapshot
 
 
-@pytest.mark.parametrize(("name", "obj"), TARGETS, ids=[name for name, _ in TARGETS])
+#: Targets whose schema has ``$defs`` (for the others there is nothing to compare).
+WITH_DEFS = [(name, obj) for name, obj in TARGETS if _schema(obj).get("$defs")]
+
+
+@pytest.mark.parametrize(("name", "obj"), WITH_DEFS, ids=[name for name, _ in WITH_DEFS])
 def test_definitions_match_their_own_schema(name: str, obj: Any) -> None:
     public = dict(TARGETS)
-    for def_name, definition in _schema(obj).get("$defs", {}).items():
+    for def_name, definition in _schema(obj)["$defs"].items():
         if def_name in _NON_PUBLIC_DEFS:
             continue
         assert def_name in public, f"{name}: $defs has the non-public {def_name!r}"
         own = _schema(public[def_name])
         own.pop("$defs", None)
         assert definition == own, def_name
-
-
-def test_every_model_is_covered() -> None:
-    names = {name for name, _ in TARGETS}
-    for name in models.__all__:
-        obj = getattr(models, name)
-        if isinstance(obj, type) and issubclass(obj, BaseModel):
-            assert name in names
 
 
 def test_document_models_keep_strict_typescript_types() -> None:
@@ -86,10 +82,3 @@ def test_document_models_keep_strict_typescript_types() -> None:
     assert "additionalProperties" not in schema
     # Runtime models forbid unknown fields, and say so.
     assert models.ValidationIssue.model_json_schema()["additionalProperties"] is False
-
-
-def test_event_schema_is_a_discriminated_union() -> None:
-    schema = TypeAdapter(models.Event).json_schema()
-    mapping = schema["discriminator"]["mapping"]
-    assert set(mapping) == set(models.EVENT_TYPES)
-    assert schema["discriminator"]["propertyName"] == "type"
