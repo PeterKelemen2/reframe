@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 from types import ModuleType
 from typing import Any
 
 from reframe.metadata import remux_job
 from reframe.models import NamingOptions
+from reframe.validation import LocalFileSystem
+from reframe.validation.inplace import source_writable
 
 
 def _load(name: str) -> ModuleType:
