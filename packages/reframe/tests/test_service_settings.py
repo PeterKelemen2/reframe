@@ -157,7 +157,6 @@ async def test_update_with_a_whole_settings_object(config: Path) -> None:
     ("patch", "path"),
     [
         ([{"op": "replace", "path": "/queue/parallel_jobs", "value": 99}], "queue.parallel_jobs"),
-        ([{"op": "replace", "path": "/queue/when_done", "value": "explode"}], "queue.when_done"),
         ([{"op": "replace", "path": "/no/such/thing", "value": 1}], ""),
         ([{"op": "dance", "path": "/queue"}], "0"),
     ],

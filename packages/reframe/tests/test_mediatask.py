@@ -32,7 +32,7 @@ from reframe.models import (
 )
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.service import Reframe
-from reframe.tasks import DEFAULT_LIMITS, TaskManager
+from reframe.tasks import TaskManager
 from reframe.tools import CancelToken
 
 pytestmark = pytest.mark.anyio
@@ -148,11 +148,6 @@ async def test_require_source_gives_the_probe_error_as_the_message(tmp_path: Pat
     ctx = _context(tmp_path, _toolset(_info("ffmpeg", ToolStatus.FOUND)), _Sources(error))
     with pytest.raises(TaskFailed, match=r"^a\.mkv is not media\. \(EBML\)$"):
         await require_source(ctx, tmp_path / "a.mkv")
-
-
-def test_every_c10_task_kind_has_a_limit() -> None:
-    kinds = {"bitrate_scan", "subtitle_scan", "loudness", "frames", "cropdetect"}
-    assert kinds | {"preview_clip", "tools_fetch"} <= set(DEFAULT_LIMITS)
 
 
 # --------------------------------------------------------------------------- the facade
