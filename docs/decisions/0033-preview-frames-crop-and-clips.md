@@ -27,7 +27,8 @@ detection and clips (C-10)") and in the tests of `packages/reframe/tests/preview
 - **Frame key** = `<source>-<milliseconds>-<settings>` (also the file name,
   `<cache dir>/frames/<key>.png`): `source` = 16 hex digits of a hash of the absolute path,
   the size and the modification time in nanoseconds; the timestamp in whole milliseconds (the
-  frame is taken at exactly that time); `settings` = 16 hex digits of a hash of the **frame
+  frame is taken at exactly that time; at most 12 digits, so a time from 10^9 s on fails the
+  task with a message); `settings` = 16 hex digits of a hash of the **frame
   recipe** (kind, the colour tagging, the whole filter chain, the PNG options) and the
   **FFmpeg build** (path, version, library versions), plus a key format number. Hashing the
   chain instead of job fields covers everything that changes the picture (crop, size, pixel
@@ -45,7 +46,8 @@ detection and clips (C-10)") and in the tests of `packages/reframe/tests/preview
   `cache_size_mb = 0` keeps only the latest results. Temporary files are removed after an
   hour (a crash left them).
 - `reframe.preview.clear_cache(ctx)` and `cache_size(ctx)` are for Settings → Preview
-  ("clear cache"); the facade does not expose them yet (reported to the lead).
+  ("clear cache"); the facade has them as `Reframe.sources.clear_preview_cache()` and
+  `Reframe.sources.preview_cache_size()`.
 
 ### 2. How a frame is made
 
@@ -74,7 +76,9 @@ detection and clips (C-10)") and in the tests of `packages/reframe/tests/preview
   picture: 0.45 s and 8.9 MB; level 6: 0.94 s and 8.5 MB; level 1: 0.34 s and 13.9 MB).
 - **A timestamp without a picture** (after the last frame: FFmpeg exits 0 and writes nothing;
   a decoding error) is left out with a note (`No frame at 99.000 s: …`). The task fails only
-  when no source frame at all could be made.
+  when no source frame at all could be made. When the run of both kinds fails (FFmpeg does not
+  exit 0) without the source frame, the source frame is made again in a run of its own: an
+  output chain that FFmpeg refuses (§4) does not take the source frame with it.
 
 ### 3. HDR for display
 
@@ -86,9 +90,15 @@ frame of a job whose output stays HDR (no Tone mapping or Colorspace filter) is 
 same way. `FrameSet.notes` says which. A build with neither shows the HDR signal unmapped
 (pale), with a note. Dolby Vision profile 5 has no HDR10 base layer: without libplacebo
 (which applies the RPU) its colours are wrong, and the note says so (not verified: there is
-no profile 5 fixture). Frames do not wait for the encoder detection: before its first result
-the capability snapshot has no libplacebo, so the first frames of a first start use zscale;
-the key changes with the chain, so later frames use libplacebo.
+no profile 5 fixture). Frames do not wait for the encoder detection (that would delay the
+first frames). On **every** start, until the capability snapshot has a libplacebo result,
+libplacebo counts as not usable and frames are mapped with zscale + tonemap (the note says
+so): with a cached detection result of the same FFmpeg build, until tool discovery has run
+and the cached result is read; without one (the first start, another FFmpeg build), until the
+detection's libplacebo run test has passed. The settings hash covers the chain, so these
+frames have keys of their own: the first request for the same timestamp after that is a cold
+render with libplacebo under a new key. The zscale frames stay valid under their keys until
+the LRU removes them.
 
 ### 4. Output frames
 
@@ -106,7 +116,10 @@ the key changes with the chain, so later frames use libplacebo.
   preview clip shows them (it runs the full plan).
 - A copied video (passthrough): the output frames are the source frames (same key, a note).
 - A job that cannot be planned (an unknown encoder, a filter this build cannot run): the source
-  frames are made, the output frames are left out with a note. A job for another file fails
+  frames are made, the output frames are left out with a note. The same for a chain that the
+  plan accepts and FFmpeg refuses when it runs (a custom filter `eq=gamma=nonsense`): the note
+  is `No output frame at 1.000 s: FFmpeg failed (exit code 234): Error when parsing the
+  expression 'nonsense' for gamma; Error initializing filters.` A job for another file fails
   the task.
 
 ### 5. Crop detection
@@ -146,10 +159,16 @@ the key changes with the chain, so later frames use libplacebo.
   control; a 1-pass ABR clip would spend bits differently), mkvpropedit, the rename. Progress
   is the queue's weighted `ProgressTracker`. Plan files, statistics files and the partial
   output are removed afterwards, also after a failure or a cancel.
-- **The id** is 32 hex digits of a hash of the source file version, the plan steps (with a
-  placeholder output name) and the tool builds: the same request returns the cached clip at
-  once. The clip's timeline starts at 0: its frame at `t` is the source frame at `start + t`
-  (the encoded frame compare: `Reframe.sources.frames(clip.path, timestamps=[t])`).
+- **The id** is 32 hex digits of a hash of the source file version, the plan steps and the
+  plan files (with a placeholder output name; the FFMETADATA chapter file holds the chapter
+  names) and the tool builds: the same request returns the cached clip at once. The clip's
+  timeline starts at 0: its frame at `t` is the source frame at `start + t` (the encoded
+  frame compare: `Reframe.sources.frames(clip.path, timestamps=[t])`).
+- **Each run has its own files**: the plan of a run writes to `.tmp-<random>-<id>.<ext>`
+  (and its `.part.<ext>`, `.part.passlog…` and `.part.chapters.txt`); the finished clip is
+  renamed to `<id>.<ext>`. Two runs of one clip at once (a raised `preview_clip` limit, two
+  processes on one cache folder) never write the same file; when the rename fails because the
+  other run's clip is already there (Windows: a reader has it open), that clip is used.
 
 ### 7. The Q-3 budget on long GOPs
 
@@ -181,3 +200,43 @@ disc and streaming sources (GOPs of 1–10 s at 24 fps), not for every file.
 ## Plan changes
 
 None: the plan's bullets are built as written; this record settles what they leave open.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R3-3: renamed chapters gave the stale clip.** The clip id hashed the plan steps but not
+  the plan files, and the chapter names are in the FFMETADATA file (the steps only name it).
+  The id now covers the files too (path with the placeholder name, and content) (§6). Test:
+  `tests/preview/test_preview_review_fixes.py::test_renamed_chapters_give_a_new_clip`.
+- **R3-4: an output chain that FFmpeg refuses lost the source frames.** Source and output frame
+  come from one FFmpeg run; with a custom filter that the plan accepts and FFmpeg refuses
+  (`eq=gamma=nonsense`), the run failed, no source frame was made and the task failed, against
+  §2 and §4. Now a run that fails without the source frame is followed by a run of the source
+  frame alone; the output failure is a note (§2, §4). Test:
+  `::test_a_bad_custom_filter_keeps_the_source_frames`.
+- **R3-5: the tone mapping before the detection** (wording only). §3 said that only "the first
+  frames of a first start" use zscale. It happens on every start until the snapshot has a
+  libplacebo result (short with a cached result, until the run test without one), and the
+  first request for a timestamp after that is a cold render under a new key. §3 now says so.
+  No behaviour change (waiting for the detection would delay the first frames).
+- **R3-6: a timestamp of 10^9 s or more crashed the task.** It passed the checks of
+  `sample_times`, but its key has more than 12 digits of milliseconds, which the key pattern
+  refuses, so the task failed with an `ExceptionGroup` traceback. `sample_times` now refuses a
+  time whose key cannot hold it (`reframe.preview.cache.MAX_TIMESTAMP_MS`; checked before the
+  rounding, so `1e308` does not overflow) with a message: `1e+10 is not a time in
+  letterbox.mkv (frames can be taken up to 999999999.999 s).` Tests:
+  `::test_a_time_a_frame_key_cannot_hold`, `::test_the_last_time_a_frame_key_holds`,
+  `::test_a_time_far_after_the_end`.
+- **R3-7: two runs of one clip wrote the same file.** The temporary file had a fixed name
+  (`<id>.part.<ext>`), so two runs of the same clip at once wrote the same file and one failed
+  at the rename. Each run now has its own names, and an existing clip is used when the rename
+  is refused (§6). Tests: `::test_two_identical_clips_at_once` (a 4K x265 clip twice with the
+  limit at 2), `::test_a_clip_made_meanwhile_by_another_run`.
+- **R3-8: documentation.** The `cropdetect` rounding example in `testdata/README.md` said the
+  300x150 picture was at 9,13, but it was made with `pad`, which puts it at 8,12 on a 4:2:0
+  picture (the chroma grid). With the picture really at 9,13 (`drawbox`) the results are
+  `crop=298:148:10:14` (`round=2`) and `crop=288:144:16:16` (`round=1`); the README now has
+  both and the exact rounding steps (pinned n9.0.2 and n8.1.3). §1 said that the facade does
+  not expose the cache size and clear functions; it does. Test (tool behaviour):
+  `::test_cropdetect_rounding_example`.
+
+No plan text changes: 05 §C-10 and 03 §Preview do not cover these details.

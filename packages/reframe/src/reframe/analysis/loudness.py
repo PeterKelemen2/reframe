@@ -133,6 +133,7 @@ async def scan(
         on_stdout_line=on_progress,
         on_stderr_line=None,
         cancel=task.cancel,
+        extra_env=ffmpeg.env or None,
     )
     check_run(result, "ffmpeg", path)
     if measured <= 0:

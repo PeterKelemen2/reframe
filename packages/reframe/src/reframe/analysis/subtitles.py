@@ -5,11 +5,18 @@ Up to three kinds of passes over the file, each one process (decision 0032):
 
 1. **Packet count** of the requested tracks that are not PGS: one ffprobe for all of them::
 
-       ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time \\
+       ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,size \\
            -of compact=p=0 -i <file>
 
    One packet is one event (an SRT / ASS line, a VobSub subpicture), as mkvmerge's
-   ``NUMBER_OF_FRAMES`` statistics tag counts them.
+   ``NUMBER_OF_FRAMES`` statistics tag counts them. **MP4 / MOV text** (``mov_text``, the
+   ``tx3g`` / ``text`` samples) is different: a sample is a 16-bit text length, the text and
+   style boxes, and a text track has no gaps, so a muxer fills the time before the first cue
+   and between two cues with an **empty sample** (length 0: 2 bytes). FFmpeg's MP4 / MOV
+   muxer writes one for every gap (3 SRT cues with gaps: 6 samples of 2, 7, 2, 7, 2, 9 bytes);
+   a cue without text (empty, or ASS override tags only) gets no sample of its own. So a
+   ``mov_text`` packet of :data:`EMPTY_TEXT_SAMPLE` bytes or less is not an event (decision
+   0032 §2; ``testdata/README.md``).
 2. **PGS**: one ffmpeg copies every requested PGS track to a ``.sup`` file in a temporary
    folder under ``<cache dir>/scans`` (``-map 0:<index> -c copy -f sup``), and
    :func:`read_display_sets` reads the segment headers. The event count is the number of
@@ -56,13 +63,16 @@ from reframe.analysis.common import (
 from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, require_tool
 from reframe.models.analysis import SubtitleScan, SubtitleScanTrack
 from reframe.models.media import MediaSource, SubtitleStream
+from reframe.models.tools import ToolInfo
 from reframe.probe import roles
 from reframe.queue.progress import ProgressParser
 from reframe.tasks import TaskContext
 from reframe.tools import CancelToken, run_streaming
 
 __all__ = [
+    "EMPTY_TEXT_SAMPLE",
     "FORCED_FLAG",
+    "MOV_TEXT",
     "PGS",
     "VOBSUB",
     "DisplaySets",
@@ -76,6 +86,10 @@ __all__ = [
 
 PGS = "hdmv_pgs_subtitle"
 VOBSUB = "dvd_subtitle"
+MOV_TEXT = "mov_text"
+#: The size of an empty ``mov_text`` sample (the 16-bit text length 0, nothing else): the
+#: filler that a muxer writes between two cues, not an event.
+EMPTY_TEXT_SAMPLE = 2
 #: Composition object flag of a forced object (``composition_flag & 0x40``).
 FORCED_FLAG = 0x40
 _SEGMENT_HEADER = 13
@@ -152,7 +166,7 @@ def count_argv(ffprobe: str, path: Path) -> list[str]:
         "-select_streams",
         "s",
         "-show_entries",
-        "packet=stream_index,pts_time",
+        "packet=stream_index,pts_time,size",
         "-of",
         "compact=p=0",
         "-i",
@@ -245,10 +259,24 @@ class _Progress:
         self._reporter.update(100.0 * (self.done + share) / self._passes, message)
 
 
+def _is_event(values: dict[str, str], *, text_samples: bool) -> bool:
+    """A packet line of :func:`count_argv` is an event; for a ``mov_text`` track
+    (``text_samples``) not when it is an empty sample (see the module doc)."""
+    if not text_samples:
+        return True
+    size = number(values.get("size"))
+    return size is None or size > EMPTY_TEXT_SAMPLE
+
+
 async def _count_packets(
-    ffprobe: str, path: Path, indexes: Sequence[int], task: TaskContext, progress: _Progress
+    ffprobe: ToolInfo,
+    path: Path,
+    tracks: Sequence[SubtitleStream],
+    task: TaskContext,
+    progress: _Progress,
 ) -> dict[int, int]:
-    counts = dict.fromkeys(indexes, 0)
+    counts = dict.fromkeys((t.index for t in tracks), 0)
+    text_samples = {t.index for t in tracks if t.codec == MOV_TEXT}
     message = "Counting subtitle events"
     progress.begin(message)
 
@@ -257,12 +285,14 @@ async def _count_packets(
         index = number(values.get("stream_index"))
         if index is None or int(index) not in counts:
             return
-        counts[int(index)] += 1
+        if _is_event(values, text_samples=int(index) in text_samples):
+            counts[int(index)] += 1
         progress.update(number(values.get("pts_time")), message)
 
+    assert ffprobe.path is not None
     result = await run_streaming(
-        count_argv(ffprobe, path), on_stdout_line=on_packet, on_stderr_line=None,
-        cancel=task.cancel,
+        count_argv(str(ffprobe.path), path), on_stdout_line=on_packet, on_stderr_line=None,
+        cancel=task.cancel, extra_env=ffprobe.env or None,
     )  # fmt: skip
     check_run(result, "ffprobe", path)
     return counts
@@ -282,7 +312,7 @@ async def _read_in_thread(out: Path, cancel: CancelToken) -> DisplaySets:
 
 async def _read_pgs(
     ctx: MediaTaskContext,
-    ffmpeg: str,
+    ffmpeg: ToolInfo,
     path: Path,
     indexes: Sequence[int],
     task: TaskContext,
@@ -303,9 +333,10 @@ async def _read_pgs(
             if block is not None:
                 progress.update(block.out_time, message)
 
+        assert ffmpeg.path is not None
         result = await run_streaming(
-            extract_argv(ffmpeg, path, outputs), on_stdout_line=on_progress,
-            on_stderr_line=None, cancel=task.cancel,
+            extract_argv(str(ffmpeg.path), path, outputs), on_stdout_line=on_progress,
+            on_stderr_line=None, cancel=task.cancel, extra_env=ffmpeg.env or None,
         )  # fmt: skip
         check_run(result, "ffmpeg", path)
         for index, out in outputs.items():
@@ -319,7 +350,7 @@ async def _read_pgs(
 
 
 async def _count_forced(
-    ffprobe: str, path: Path, index: int, task: TaskContext, progress: _Progress
+    ffprobe: ToolInfo, path: Path, index: int, task: TaskContext, progress: _Progress
 ) -> int:
     message = f"Looking for forced subtitles in track {index}"
     progress.begin(message)
@@ -333,9 +364,10 @@ async def _count_forced(
         forced += 1
         progress.update(number(values.get("pts_time")), message)
 
+    assert ffprobe.path is not None
     result = await run_streaming(
-        forced_argv(ffprobe, path, index), on_stdout_line=on_subtitle, on_stderr_line=None,
-        cancel=task.cancel,
+        forced_argv(str(ffprobe.path), path, index), on_stdout_line=on_subtitle,
+        on_stderr_line=None, cancel=task.cancel, extra_env=ffprobe.env or None,
     )  # fmt: skip
     check_run(result, "ffprobe", path)
     return forced
@@ -352,26 +384,24 @@ async def scan(
     if not tracks:
         return SubtitleScan(path=path)
     pgs = [t.index for t in tracks if t.codec == PGS]
-    others = [t.index for t in tracks if t.codec != PGS]
+    others = [t for t in tracks if t.codec != PGS]
     vobsub = [t.index for t in tracks if t.codec == VOBSUB]
     ffmpeg = await require_tool(ctx, "ffmpeg") if pgs else None
     progress = _Progress(
         task, bool(others) + bool(pgs) + len(vobsub), stream_duration(source, None)
     )
-    assert ffprobe.path is not None
     counts: dict[int, int] = {}
     sets: dict[int, DisplaySets] = {}
     forced: dict[int, int] = {}
     if others:
-        counts = await _count_packets(str(ffprobe.path), path, others, task, progress)
+        counts = await _count_packets(ffprobe, path, others, task, progress)
         progress.done += 1
     if pgs:
         assert ffmpeg is not None
-        assert ffmpeg.path is not None
-        sets = await _read_pgs(ctx, str(ffmpeg.path), path, pgs, task, progress)
+        sets = await _read_pgs(ctx, ffmpeg, path, pgs, task, progress)
         progress.done += 1
     for index in vobsub:
-        forced[index] = await _count_forced(str(ffprobe.path), path, index, task, progress)
+        forced[index] = await _count_forced(ffprobe, path, index, task, progress)
         progress.done += 1
 
     scanned: list[SubtitleScanTrack] = []
@@ -388,5 +418,7 @@ async def scan(
                 stream_index=track.index, event_count=event_count, forced_event_count=forced_count
             )
         )
-    await ctx.sources.store(_with_counts(source, scanned))
+    # Onto the source as it is known now: another scan of the file may have stored its
+    # values since this one probed it.
+    await ctx.sources.update(source, lambda latest: _with_counts(latest, scanned))
     return SubtitleScan(path=path, tracks=scanned)

@@ -10,7 +10,8 @@ a file and two tasks that make the same frame do not disturb each other.
 - ``source``: 16 hex digits of a hash of the source file's absolute path, size and
   modification time in nanoseconds (:func:`source_fingerprint`): a changed file gets new keys;
 - the timestamp in whole milliseconds (:func:`timestamp_ms`; the frame is taken at exactly
-  that time);
+  that time), at most :data:`MAX_TIMESTAMP_MS` (12 digits; a later time is refused before a key
+  is made);
 - ``settings``: 16 hex digits of a hash of everything else that changes the picture
   (:func:`digest` of the frame recipe, the PNG options and the FFmpeg build; the recipes are in
   :mod:`reframe.preview.graph`).
@@ -45,6 +46,7 @@ __all__ = [
     "CLIPS",
     "FRAMES",
     "GRACE",
+    "MAX_TIMESTAMP_MS",
     "STALE",
     "CacheEntry",
     "PreviewCache",
@@ -69,6 +71,8 @@ GRACE = 30.0
 STALE = 3600.0
 TEMP_PREFIX = ".tmp-"
 
+#: The latest timestamp a frame key holds (12 digits of milliseconds: about 31.7 years).
+MAX_TIMESTAMP_MS = 10**12 - 1
 _KEY = re.compile(r"[0-9a-f]{16}-[0-9]{1,12}-[0-9a-f]{16}")
 _CLIP_ID = re.compile(r"[0-9a-f]{32}")
 #: In a clip folder, the files of a plan that is running (``<id>.part.mkv``,

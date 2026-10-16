@@ -122,6 +122,12 @@ class Sources:
     async def store(self, source: MediaSource) -> None:
         self.known[os.fspath(source.ref.path)] = source
 
+    async def update(
+        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
+    ) -> None:
+        key = os.fspath(source.ref.path)
+        self.known[key] = change(self.known.get(key, source))
+
 
 class Caps:
     """``Reframe.capabilities``: a fixed snapshot; ``detected`` (when set) is the result of a
