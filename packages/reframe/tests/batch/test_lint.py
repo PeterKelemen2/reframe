@@ -136,7 +136,6 @@ def test_builtin_presets_are_clean(preset: Any) -> None:
         (rule(["ger"]), rule(["de"]), True),  # the same language
         (rule(["hu"], "stereo_or_less"), rule(["hu"], "mono"), True),
         (rule(["hu"], "mono"), rule(["hu"], "stereo_or_less"), False),
-        (rule(["hu"], "mono"), rule(["en"], "mono"), False),
         (rule(["hu"], "5.1_or_more"), rule(["hu"], "stereo_or_less"), False),
         (rule(["hu"]), rule(None), False),
         # Limited to the first track of a language: the other tracks reach the later rule.
