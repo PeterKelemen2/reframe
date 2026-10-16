@@ -42,13 +42,14 @@ C-12 batch engine and C-15 `reframe batch` / `plan` (0040, 0038), **C** C-10 (00
 0014, 0038). Duplicates were merged: R2-8 into R1-5 (the same stale feature row); R1-4 and R2-5
 (both at `jobs.py:334`) go to one agent.
 
-**Blockers (3)** — all reproduced by the lead on 3cde317:
+**Blockers (4)** — the first three reproduced by the lead on 3cde317, the fourth measured by fix agent D:
 
 | ID | Step | Where | What is wrong | Decision |
 |----|------|-------|---------------|----------|
 | R1-1 | C-12 | `batch/selection.py:386` | "No listed language found" counts commentary / description tracks: a listed language with only an extra track never triggers `no_match`, and with `commentary="drop"` the draft has **no audio track and no issue** (the encode writes a file without audio). Reproduced: French film + English audio description, *H.265 MKV 1080p*, preferred audio `en` → `audio outputs: []`, `issues: []` | Fix (A): count main tracks only; 0031 §3 corrected |
 | R2-1 | C-15 | `cli.py` `run_batch`, `batch/service.py` `_collisions` | Name collisions are checked per group only. With the collision setting *overwrite*, a job of one group **overwrites a source file of another group of the same run**; two outputs with one name lose the first. Reproduced: E01 of `anime-s01` and `multitrack.mkv` copied as `Anime.Show.S01E01.Pilot.mkv` → the second source's SHA-256 changed | Fix (B): the batch-level checks run over every group; `reframe encode` of several files checked for the same hole |
 | R5-1 | C-6 / C-15 | `command/video.py:155-167`, `validation/dryrun.py:449`, `cli.py` plan | Custom parameters that make the encoder write a file (x265 `analysis-save`, `csv`; FFmpeg's `vstats_file` through the own-option path) pass validation, and `reframe plan` dry-runs every user preset with custom parameters: importing a shared preset and only **planning** with it overwrites any file the user can write. Reproduced: `victim.txt` became a 5984-byte x265 analysis file | Fix (E): a validation error for keys that name files, the dry run refuses them and runs in a temporary working folder |
+| R4-7 | C-13 / C-11 | `queue/runner.py` (`run_streaming(cancel=…)` of the in-place step) | Found while checking a suspected item of R4: Reframe's own cancel, `close()` and the 5-minute step limit kill mkvpropedit while it edits the source in place. A kill late in the edit (after mkvpropedit voided the old `Tracks`, before the new one and its `SeekHead` entry were written) **destroyed the source's track headers in 3 of 900 runs** (ffprobe shows no streams); random kills (150 runs) had hit only the time before the first write | Fix (D, second round): a running in-place edit is never killed by a cancel or `close()`; the job's end state says whether the edit was written |
 
 **Majors (12)** — all reproduced by the lead on 3cde317:
 
@@ -102,8 +103,8 @@ the scans do not pass the tool's environment (C, fixed); a cache hit checks only
 M2TS PGS segments (C, not checked); stale `.fetch-*` folders after a crash, a slow download
 outlasting the cancel wait, the lexical tar link check, no size cap on `presets import`,
 dry-run attribution of short keys (E); mkvpropedit killed while it writes the source by
-Reframe's own cancel, `close()` or the 5-minute limit — 150 random kills damaged nothing (D:
-documented in 0034, no behaviour change).
+Reframe's own cancel, `close()` or the 5-minute limit — 150 random kills damaged nothing, but
+D's kills late in the edit did: it became the blocker R4-7 above.
 
 ### Outcome
 
