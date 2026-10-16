@@ -564,7 +564,7 @@ class Reframe:
     events: EventBus
     tools: ToolsService            # status, versions, re-scan; fetch (reframe tools fetch)
     capabilities: CapabilityService
-    sources: SourceService         # probe, probe_folder, get, store; C-10 tasks: bitrate_scan,
+    sources: SourceService         # probe, probe_folder, get, store, update; C-10 tasks: bitrate_scan,
                                    # subtitle_scan, loudness_scan, frames, frame, cropdetect
     presets: PresetService
     jobs: JobService               # draft, validate, plan (dry_run=), name, media_files; explain
