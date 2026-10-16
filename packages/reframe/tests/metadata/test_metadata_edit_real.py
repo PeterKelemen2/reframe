@@ -168,8 +168,11 @@ async def test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all(en
         sdh.metadata.name = "Magyar SDH"
         sdh.metadata.hearing_impaired = True
         job.tags.title = "{name} S{season:02}E{episode:02}"
+        kind, reason = await job_type(app, job)
+        assert kind == "metadata_edit", reason
         ended = await run(app, job)
         assert ended.state is JobState.DONE, ended.error
+        assert seconds(ended) < LIMIT, seconds(ended)
         out = await reprobe(app, env.source)
         assert out.container.title == "Show S01E01"
         rows = [
