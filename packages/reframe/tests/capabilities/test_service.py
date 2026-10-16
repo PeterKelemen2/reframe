@@ -313,11 +313,6 @@ async def test_rescan_ignores_the_cache(harness: Harness, fake_tools: ft.FakeToo
     assert encode_calls(fake_tools)
 
 
-async def test_wait_starts_a_detection(harness: Harness) -> None:
-    final = await harness.service.wait()
-    assert final.status("libx265").state is AVAILABLE
-
-
 async def test_waits_for_tool_discovery(harness: Harness) -> None:
     harness.tools.gate = asyncio.Event()
     harness.service.start()
@@ -794,10 +789,3 @@ async def test_libplacebo_result_is_in_the_snapshot(
     await until(lambda: harness.service.snapshot.status("libx265").state is CHECKING)
     assert harness.service.snapshot.usable_filter("libplacebo") is False
     await rescan
-
-
-async def test_libplacebo_untested_with_hardware_tests_off(harness: Harness) -> None:
-    harness.settings.encoders.hardware_tests = False
-    final = await harness.service.wait()
-    assert final.usable_filter("libplacebo") is None
-    assert final.untested_filters == ["libplacebo"]

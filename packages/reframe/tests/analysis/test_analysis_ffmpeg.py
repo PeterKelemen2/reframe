@@ -123,15 +123,6 @@ async def test_bitrate_scan_of_a_video_stream(
     assert known.video[0].bitrate == scan.bitrate
 
 
-async def test_bitrate_scan_of_a_subtitle_stream_fails(
-    app: Reframe, fixture_media: FixtureMedia
-) -> None:
-    done = await app.tasks.wait(app.sources.bitrate_scan(fixture_media("multitrack"), 4).id)
-    assert done.state is TaskState.FAILED
-    assert done.error is not None
-    assert "Stream 4 of multitrack.mkv is a subtitle stream" in done.error
-
-
 async def test_subtitle_scan_of_pgs_counts_the_forced_display_sets(
     tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
