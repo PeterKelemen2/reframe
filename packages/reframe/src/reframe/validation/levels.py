@@ -11,8 +11,10 @@ with "picture dimensions are out of range for specified level" when the picture 
 luma samples than the level's MaxLumaPs, or a side longer than ``sqrt(8 * MaxLumaPs)``, and
 with "frame rate is out of range for specified level" when samples x frame rate exceed
 MaxLumaSr. The limits are those of H.265 table A.8, measured on the picture padded to the
-minimum coding unit: 16 for the ``ultrafast`` preset, 8 for the others (at level 4,
-1920x1160 passes with ``medium`` and fails with ``ultrafast``).
+minimum coding unit: the job's ``min-cu-size``, else the preset's (16 for ``ultrafast``, 8 for
+the others). At level 4, 1920x1160 passes with ``medium`` and fails with ``ultrafast``;
+``medium`` with ``min-cu-size=16`` fails and ``ultrafast`` with ``min-cu-size=8`` passes
+(core-complete review R5-4, decision 0014).
 """
 
 from __future__ import annotations
@@ -21,13 +23,20 @@ import math
 from collections.abc import Iterator
 from fractions import Fraction
 
+from reframe.definitions import VideoEncoderDef, option_default
 from reframe.models.issues import Fix, ValidationIssue
+from reframe.models.job import VideoSettings
 from reframe.validation.common import error, fix, replace
 from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.registry import job_rule, template_rule
-from reframe.validation.video import OPTION_RULE_CODES, video_option_rule_issues
+from reframe.validation.video import (
+    CUSTOM_PARAM_CODES,
+    OPTION_RULE_CODES,
+    video_custom_param_issues,
+    video_option_rule_issues,
+)
 
-__all__ = ["X265_LEVELS", "x265_level_fits"]
+__all__ = ["X265_LEVELS", "x265_level_fits", "x265_min_cu_size"]
 
 #: level → (MaxLumaPs, MaxLumaSr), H.265 table A.8 (the same for both tiers).
 X265_LEVELS: dict[str, tuple[int, int]] = {
@@ -47,21 +56,49 @@ X265_LEVELS: dict[str, tuple[int, int]] = {
 }
 
 
-def _padded(size: int, preset: str | None) -> int:
-    unit = 16 if preset == "ultrafast" else 8
+def _padded(size: int, unit: int) -> int:
     return -(-size // unit) * unit
 
 
+def x265_min_cu_size(video: VideoSettings, encoder: VideoEncoderDef | None) -> int | None:
+    """The minimum coding unit x265 uses for ``video``: the job's ``min-cu-size``, else the
+    speed preset's default (C-6's per-preset table); ``None`` when not known."""
+    if encoder is None:
+        return None
+    option = encoder.option("min-cu-size")
+    if option is None:
+        return None
+    value = video.advanced.get("min-cu-size")
+    if value is None:
+        preset = video.preset or (encoder.presets.default if encoder.presets else None)
+        value = option_default(option, preset)
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        size = int(value)
+    except ValueError:
+        return None
+    return size if size in (8, 16, 32) else None
+
+
 def x265_level_fits(
-    level: str, width: int, height: int, rate: Fraction | None, preset: str | None
+    level: str,
+    width: int,
+    height: int,
+    rate: Fraction | None,
+    preset: str | None,
+    *,
+    min_cu: int | None = None,
 ) -> str | None:
     """Why x265 refuses ``level`` for this picture (``None``: it fits, or the level is not
-    in the table)."""
+    in the table). The picture is padded to ``min_cu`` (default: the preset's minimum coding
+    unit, 16 for ``ultrafast`` and 8 otherwise)."""
     limits = X265_LEVELS.get(level)
     if limits is None:
         return None
     max_samples, max_rate = limits
-    w, h = _padded(width, preset), _padded(height, preset)
+    unit = min_cu if min_cu is not None else (16 if preset == "ultrafast" else 8)
+    w, h = _padded(width, unit), _padded(height, unit)
     longest = math.isqrt(8 * max_samples)
     if w * h > max_samples or w > longest or h > longest:
         return "the picture is too large"
@@ -94,9 +131,10 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
     if levels is None or levels.get(video.level) is None:
         return  # encoder.level_unsupported
     preset = video.preset or (encoder.presets.default if encoder and encoder.presets else None)
+    min_cu = x265_min_cu_size(video, encoder)
     rate = _rate(ctx)
     width, height = size
-    why = x265_level_fits(video.level, width, height, rate, preset)
+    why = x265_level_fits(video.level, width, height, rate, preset, min_cu=min_cu)
     if why is None:
         return
     fixes: list[Fix] = []
@@ -105,7 +143,7 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
             choice.value
             for choice in levels.choices
             if choice.value in X265_LEVELS
-            and x265_level_fits(choice.value, width, height, rate, preset) is None
+            and x265_level_fits(choice.value, width, height, rate, preset, min_cu=min_cu) is None
         ),
         None,
     )
@@ -132,9 +170,19 @@ def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
     return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
 
 
-@template_rule("encoder", *OPTION_RULE_CODES)
+@job_rule("encoder", *CUSTOM_PARAM_CODES)
+def custom_params(ctx: JobContext) -> list[ValidationIssue]:
+    """Custom parameters that name a file, or that FFmpeg would read as its own options
+    (decision 0035 "Follow-up (core-complete review)")."""
+    return video_custom_param_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
+
+
+@template_rule("encoder", *OPTION_RULE_CODES, *CUSTOM_PARAM_CODES)
 def template_advanced_option_rules(ctx: TemplateContext) -> list[ValidationIssue]:
-    """A preset's video settings: the same rules, fixes on the template."""
-    return video_option_rule_issues(
-        ctx.template.video, ctx.caps, ctx.definitions, target=ctx.target
-    )
+    """A preset's video settings: the same rules (the option rules and the custom
+    parameters), fixes on the template."""
+    video = ctx.template.video
+    return [
+        *video_option_rule_issues(video, ctx.caps, ctx.definitions, target=ctx.target),
+        *video_custom_param_issues(video, ctx.caps, ctx.definitions, target=ctx.target),
+    ]

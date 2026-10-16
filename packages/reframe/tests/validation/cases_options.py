@@ -203,4 +203,61 @@ def cases(h: Any) -> list[Any]:
             video(**vp9, advanced={"qmin": 31}),
             video(**vp9, advanced={"qmin": 30}),
         ),
+        # ---- core-complete review (decision 0035 follow-up): R5-7 VBV, R5-8 HDR texts
+        case(
+            "x264 VBV maximum rate without a buffer",
+            "encoder.option_inactive",
+            "video.advanced.vbv-maxrate",
+            warn,
+            video(encoder="libx264", advanced={"vbv-maxrate": 5000}),
+            video(encoder="libx264", advanced={"vbv-maxrate": 5000, "vbv-bufsize": 6000}),
+        ),
+        case(
+            "x265 VBV buffer without a maximum rate at a constant quality",
+            "encoder.option_inactive",
+            "video.advanced.vbv-bufsize",
+            warn,
+            video(encoder="libx265", advanced={"vbv-bufsize": 5000}),
+            video(encoder="libx265", rate_control=AverageBitrate(), advanced={"vbv-bufsize": 5000}),
+        ),
+        case(
+            "x265 mastering display that x265 cannot parse",
+            "encoder.option_invalid",
+            "video.advanced.master-display",
+            err,
+            video(encoder="libx265", bit_depth=10, advanced={"master-display": "garbage"}),
+            video(
+                encoder="libx265",
+                bit_depth=10,
+                advanced={
+                    "master-display": "G(13250,34500)B(7500,3000)R(34000,16000)"
+                    "WP(15635,16450)L(10000000,1)"
+                },
+            ),
+        ),
+        # ---- custom parameters (decision 0035 follow-up, core-complete review R5-1)
+        case(
+            "x265 custom parameter that writes a file",
+            "encoder.custom_param_file",
+            "video.custom_params",
+            err,
+            video(encoder="libx265", custom_params="aq-mode=3:analysis-save=/tmp/x.dat"),
+            video(encoder="libx265", custom_params="aq-mode=3:analysis-reuse-level=5"),
+        ),
+        case(
+            "FFmpeg's own file option as a VP9 custom parameter",
+            "encoder.custom_param_file",
+            "video.custom_params",
+            err,
+            video(**vp9, custom_params="vstats_file=/tmp/v.log"),
+            video(**vp9, custom_params="lag-in-frames=16"),
+        ),
+        case(
+            "VP9 custom parameter that is no option of the encoder",
+            "encoder.custom_param_unknown",
+            "video.custom_params",
+            err,
+            video(**vp9, custom_params="bogus=1"),
+            video(**vp9, custom_params="arnr-maxframes=7:g=120"),
+        ),
     ]

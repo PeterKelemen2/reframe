@@ -154,3 +154,96 @@ metadata from the frames, x264 and VP9 cannot carry it: no options, an empty pat
   change: `supported_presets` hides the preset where the build lacks it.
 - The x265 in every build here is 4.3 (Arch) or 4.3+49 (both BtbN builds), not 4.1 as the M2
   notes said; the comments and `testdata/README.md` say so.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+The evidence is in `testdata/README.md` "Advanced encoder options (C-6, complete option sets)",
+section "Core-complete review".
+
+- **R5-1 (blocker): custom parameters that read or write files.** The custom parameters
+  reached the encoder unchanged, including keys that make the encoder or FFmpeg write a file:
+  `reframe plan` dry-runs a user preset's parameters, so importing a shared preset with
+  `analysis-save=FILE` and only planning with it overwrote FILE (5984 bytes of x265 analysis
+  data, exit 0). Changed:
+  1. A validation rule (job and template; `validation/levels.py`,
+     `video_custom_param_issues`): `encoder.custom_param_file` (error) for a key that names a
+     file, `encoder.custom_param_unknown` (error) for an own option outside the allow-list,
+     each with a fix that removes the entry. The data is
+     `reframe/definitions/data/custom_params.toml` (`reframe.definitions.custom_params`).
+     - **x264, x265, SVT-AV1** (a params argument): a **deny-list** of the keys that name a
+       file, each checked with the encoder (written: x265 `csv`, `analysis-save`,
+       `analysis-reuse-file`, `stats`; x264 `dump-yuv`, `stats`; read: x265 `analysis-load`,
+       `scaling-list` (except `default` / `off`), `lambda-file`, `dhdr10-info`, `nalu-file`,
+       `film-grain`, `aom-film-grain`, `fovea-gaze-file`; x264 `cqmfile`, `opencl-clbin`), plus
+       `pass` (x264 / x265 write `x26?_2pass.log` into the working folder; Reframe runs 2-pass
+       itself), plus the file options of the encoders' own programs that the libraries refuse
+       today (`qpfile`, `zonefile`, `recon`, SVT-AV1's `stat-file`, `fgs-table`, …), in case a
+       later library takes them. A deny-list is enough here because the library reads only its
+       own keys, and each key was looked up in the library's help and strings. Keys are
+       compared as the libraries read them (`_` as `-`, a leading `--`, a `no` / `no-` prefix:
+       x265 reads `no-csv=F` as `csv=true` and writes a file named `true`) and as FFmpeg splits
+       the text (`av_dict_parse_string`: quotes and `\` escapes).
+     - **VP9, NVENC, QSV, AMF, VAAPI** (each entry written as `-<name>:v:0`): an
+       **allow-list**, because FFmpeg reads such a name as any of its own options first, and
+       many of those read or write files (`vstats_file`, `progress`, `passlogfile`,
+       `stats_enc_post`, `print_graphs_file`, `report`, `/filter` reads the value from a file),
+       or change the command in other ways (`c`, `map`, `filter`). A deny-list of FFmpeg's
+       options would have to follow every FFmpeg release. Allowed: the encoder's private
+       options (this build's list from encoder detection, `EncoderStatus.private_options`; else
+       the list recorded from the three builds) and the 70 generic encoder options
+       (AVCodecContext, flags `E..V`), never FFmpeg's file options, and not QSV `qsv_params` /
+       `load_plugins` (they pass text to a library that cannot be checked without Intel
+       hardware). A test checks the recorded lists against the build (`ffmpeg -h full`,
+       `-h encoder=<id>`).
+  2. The dry run runs validation's check first and **never starts FFmpeg** with a refused
+     parameter (the errors are its result), and runs FFmpeg in a new temporary working folder
+     (new keyword `work_dir`), removed afterwards; a relative source path is made absolute.
+  3. Every refusal has a fix that removes the entry (all custom parameters when only FFmpeg's
+     quote handling finds the key).
+  Tests: `tests/validation/test_custom_params_rules.py`, `test_custom_params_ffmpeg.py`,
+  `test_dryrun_review_fixes.py` (`test_r5_1_*`: the reviewer's reproduction through
+  `Reframe.jobs.plan(…, dry_run=True)` leaves the file unchanged), `cases_options.py`,
+  `tests/definitions/test_custom_params.py`. Not changed: the command builder still writes
+  what it is given (validation runs before every plan, every queue run and every preview
+  clip); a guard there would change the builder tests of another task (a suggestion for the
+  lead).
+- **R5-3: libvpx codec controls.** libvpx refuses some values through a codec control: FFmpeg
+  logs "Failed to set VP8E_SET_ARNR_MAXFRAMES codec control: Invalid parameter" (and libvpx's
+  "Additional information: arnr_max_frames out of range [0..15]"), exits with 0 and encodes
+  without the value; the dry run passed. Now such a line is an error: attributed to the
+  parameter when the control maps to one (`ARNR_MAXFRAMES` → `arnr-maxframes`; FFmpeg's
+  other names, such as `CPUUSED` → `cpu-used`, are listed), else `encoder.dry_run_failed` on
+  `video.custom_params`. Tests: `test_r5_3_*` (recorded log and the real libvpx).
+- **R5-7: VBV without both values.** x264 and x265 drop `vbv-maxrate` without `vbv-bufsize`
+  (x264 silently), and `vbv-bufsize` without `vbv-maxrate` at a constant quality. Now
+  `encoder.option_inactive` (warning) for each, with a fix that removes it. A buffer alone
+  with an average bitrate is used (the encoders make it constant bitrate, with a log line)
+  and is not reported. Tests: `test_option_rules_review_fixes.py::test_r5_7_*`,
+  `test_option_formats_ffmpeg.py::test_r5_7_vbv_with_the_encoders` (x264's SEI, x265's log).
+- **R5-8: the HDR texts.** `master-display`, `max-cll` (x265) and `mastering-display`,
+  `content-light` (SVT-AV1) took any text; x265 with `master-display=garbage` writes no
+  mastering display (exit 0), and SVT-AV1 with text after the tags never ends. Now each has a
+  format check (`encoder.option_invalid`, error, with the reset fix): x265
+  `G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min)` in that order with whole numbers (chromaticities up to
+  50000, luminance up to 2³²−1; spaces before a number are allowed, as x265 allows them),
+  SVT-AV1 the same tags in any order with plain numbers (chromaticities 0–1, luminance up to
+  the PQ maximum of 10000 cd/m²: above about 8.4 million it overflows), and `MaxCLL,MaxFALL`
+  with two whole numbers up to 65535 for both. Texts that the encoders accept but change
+  (a value that wraps or is clipped, trailing text x265 ignores) are refused as well. The
+  values Copy HDR metadata writes pass the check (a test). Tests: `test_r5_8_*` in
+  `test_option_rules_review_fixes.py` and `test_option_formats_ffmpeg.py` (the side data that
+  the encoders write).
+- **R5-10: references.** `validation/dryrun.py` and `tests/validation/test_dryrun.py` named a
+  `test_dryrun_ffmpeg.py` that does not exist; they now name `test_options_facade.py` and
+  `test_dryrun_review_fixes.py`.
+- **Attribution of a log line to a whole key** (suspected in the review, real): an encoder
+  warning was given to the first job parameter whose name appeared as a word, so x265's
+  "--rd-refine disabled, requires RD level > 4" went to `rd` ("RD level"), because the `--` in
+  front of `rd-refine` hid it. Now a key as typed (also after `--`) wins over a looser form (any
+  case, words split by spaces), then the earliest in the line, then the longest. Test:
+  `test_a_warning_goes_to_the_key_it_names_not_to_a_short_key_in_its_text` and the real x265
+  run after it.
+
+Plan change: [03-features.md §Advanced encoder options](../plan/03-features.md#advanced-encoder-options),
+the custom-parameters bullet (parameters that name files are refused, the allow-list of own
+options, the dry run never runs with them).

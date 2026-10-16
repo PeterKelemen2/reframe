@@ -240,6 +240,25 @@ From the other agents' review fixes (C-4, C-6, C-7). 90 issue codes now.
    count, C-7 with the written layout's (Opus "keep" on `2.1`: C-12 36 kb/s, C-7 13 kb/s;
    on `7.1(wide)`: 48 vs 37). The agreement test marks the three Opus cases (strict xfail).
 
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R5-4: the x265 level padding follows `min-cu-size`.** `encoder.level_too_low` padded the
+  picture to 16 for `ultrafast` and to 8 for the other presets, but `min-cu-size` is an
+  advanced option since M9 and x265 pads to it: at level 4, 1920x1160 with `medium` and
+  `min-cu-size=16` fails in x265 (exit 183, "picture dimensions are out of range for specified
+  level") and validated clean; `ultrafast` with `min-cu-size=8` encodes and was an error. Now
+  the padding is the job's `min-cu-size`, else the preset's default from C-6's per-preset table
+  (`x265_min_cu_size`; `x265_level_fits` has a new keyword `min_cu`). Tests:
+  `tests/validation/test_levels_ffmpeg.py::test_the_padding_follows_min_cu_size` (the real
+  x265 and validation, five cases) and `test_option_rules_review_fixes.py::test_r5_4_*`.
+- New codes of the same review (recorded in [0035](0035-advanced-option-sets-and-dry-run.md)
+  "Follow-up (core-complete review)"): `encoder.custom_param_file` and
+  `encoder.custom_param_unknown` (errors: custom parameters that name a file, own options
+  outside the allow-list), for jobs and templates; `encoder.option_inactive` also for a VBV
+  maximum rate without a buffer (and the reverse at a constant quality); `encoder.option_invalid`
+  also for the HDR texts that x265 / SVT-AV1 cannot parse. 98 issue codes are registered now
+  (96 before this follow-up).
+
 ## Plan changes
 
 - `docs/plan/05-core.md` §C-8: the odd-size item, forced-only (PGS or VobSub, burned in), the

@@ -5,6 +5,13 @@ Not a registered rule: it runs FFmpeg, so it is async and only runs on request
 (``Reframe.jobs.dry_run``, ``Reframe.jobs.plan(…, dry_run=True)``; ``reframe plan`` asks for
 it when a job has custom parameters).
 
+**Before FFmpeg starts**, the custom parameters go through validation's check
+(:func:`reframe.validation.video.video_custom_param_issues`): a parameter that names a file
+(x265 ``csv`` / ``analysis-save``, x264 ``dump-yuv``, FFmpeg's ``vstats_file`` …) or a name
+FFmpeg would read as one of its own options is an error, and the dry run does not run. FFmpeg
+runs with a new temporary working folder, removed afterwards (x264 / x265 ``pass=1`` would
+write their statistics into the working folder).
+
 What runs: C-7's plan of the job with only its video (no audio, subtitles, chapters or 2-pass;
 fast start off), with the output replaced by ``-frames:v 1 -f null -``, through
 :func:`reframe.tools.run` with a :data:`DRY_RUN_TIMEOUT` second timeout. The hardware setup,
@@ -12,7 +19,8 @@ the filter chain, the rate control, the advanced options and the custom paramete
 job's own.
 
 What the encoders print (FFmpeg n9.0.2; testdata/README.md "Advanced encoder options (C-6,
-complete option sets)"; ``tests/validation/test_dryrun_ffmpeg.py``):
+complete option sets)"; the real dry runs are in ``tests/validation/test_options_facade.py``
+and ``test_dryrun_review_fixes.py``):
 
 =========  ===========================================================  =========
 encoder    unknown key / bad value                                      exit code
@@ -20,32 +28,40 @@ encoder    unknown key / bad value                                      exit cod
 x264       ``Error parsing option 'bogus = 1'.``                        0
 x265       ``Unknown option: bogus.`` / ``Invalid value for me: foo.``  0
 SVT-AV1    ``Error parsing option bogus: 1.``                           0
+libvpx     ``Failed to set VP8E_SET_ARNR_MAXFRAMES codec control:       0
+           Invalid parameter`` (a value out of the control's range)
 others     ``Unrecognized option 'bogus:v:0'.`` (an FFmpeg option),     8, 234
            ``Error setting option lag-in-frames to value abc.``
 =========  ===========================================================  =========
 
-x264, x265 and SVT-AV1 go on without the parameter, so the exit code is not enough: such a
-line is an **error** (decision 0035: the parameter the user typed would be dropped without a
-word). A value the encoder refuses at start (x265 ``min CU size must be less than or equal to
-max CU size``, ``Svt[error]: …``, libvpx ``Failed to initialize encoder``) fails the run: an
-error with the encoder's most informative line. An encoder warning that names one of the job's
-parameters (x265 ``limit-tu disabled, requires tu-inter-depth > 1``) is a **warning**.
+x264, x265, SVT-AV1 and libvpx's codec controls go on without the parameter, so the exit code
+is not enough: such a line is an **error** (decision 0035: the parameter the user typed would
+be dropped without a word). A value the encoder refuses at start (x265 ``min CU size must be
+less than or equal to max CU size``, ``Svt[error]: …``, libvpx ``Failed to initialize
+encoder``) fails the run: an error with the encoder's most informative line. An encoder
+warning that names one of the job's parameters (x265 ``limit-tu disabled, requires
+tu-inter-depth > 1``) is a **warning**.
 
 Issues point at ``video.custom_params`` when the name is one of the custom parameters, at
 ``video.advanced.<key>`` when it is an advanced option (by key or CLI name), and otherwise at
-``video.custom_params`` (when there are any), ``video.advanced`` or ``video.encoder``. A fix
-removes the parameter.
+``video.custom_params`` (when there are any), ``video.advanced`` or ``video.encoder``. A name
+in a log line is matched as a whole key: the key as typed (``--rd-refine``) before a looser
+form ("RD level"), then the first in the line. A fix removes the parameter.
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from reframe.capabilities.reasons import informative_line, normalise_line
 from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, EncoderOption, VideoEncoderDef, load_definitions
+from reframe.definitions.custom_params import CustomParam, split_custom_params
 from reframe.definitions.search import cli_name
 from reframe.jsonpatch import format_pointer
 from reframe.models.capabilities import CapabilitySnapshot
@@ -56,10 +72,12 @@ from reframe.models.plan import resolve_argv
 from reframe.models.tools import ToolSet, ToolStatus
 from reframe.tools import CancelToken, run
 from reframe.validation.common import error, fix, replace, warning
+from reframe.validation.video import video_custom_param_issues
 
 __all__ = [
     "DRY_RUN_CODES",
     "DRY_RUN_TIMEOUT",
+    "CustomParam",
     "dry_run",
     "dry_run_argv",
     "dry_run_job",
@@ -85,52 +103,6 @@ DRY_RUN_CODES = (
 
 
 # --------------------------------------------------------------------------- custom params
-
-
-@dataclass(frozen=True, slots=True)
-class CustomParam:
-    """One ``key=value`` entry of ``VideoSettings.custom_params``, with its text as typed."""
-
-    name: str
-    value: str
-    raw: str
-
-
-def split_custom_params(text: str) -> list[CustomParam]:
-    """The entries of a custom parameter string, split at an unescaped ``:`` (the command
-    builder's :func:`reframe.command.video.split_params` rule). ``raw`` keeps the text as typed
-    so that a fix can drop one entry and keep the others unchanged."""
-    raws: list[str] = []
-    current: list[str] = []
-    escaped = False
-    for char in text.strip():
-        if escaped:
-            current.append(char)
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            current.append(char)
-        elif char == ":":
-            raws.append("".join(current))
-            current = []
-        else:
-            current.append(char)
-    raws.append("".join(current))
-    params: list[CustomParam] = []
-    for raw in raws:
-        entry = raw.strip()
-        if not entry:
-            continue
-        name, sep, value = entry.partition("=")
-        params.append(
-            CustomParam(
-                name=name.strip().lstrip("-"),
-                value=value.strip().replace("\\:", ":") if sep else "1",
-                raw=raw,
-            )
-        )
-    return params
 
 
 def _without(params: list[CustomParam], dropped: CustomParam) -> str:
@@ -195,6 +167,21 @@ _PARAM_PROBLEMS: tuple[re.Pattern[str], ...] = (
     re.compile(r"Unrecognized option '(?P<name>[^']+)'"),
     re.compile(r"Error setting option (?P<name>\S+) to value (?P<value>.*?)\.?$"),
 )
+# libvpx: Failed to set VP8E_SET_ARNR_MAXFRAMES codec control: Invalid parameter (exit code 0;
+# the next line: "Additional information: arnr_max_frames out of range [0..15]").
+_CODEC_CONTROL = re.compile(r"Failed to set (?P<ctrl>\w+) codec control")
+#: libvpx controls whose FFmpeg option has another name (FFmpeg's libvpxenc.c).
+_CONTROL_OPTIONS = {
+    "CPUUSED": "cpu-used",
+    "CQ_LEVEL": "crf",
+    "ENABLEAUTOALTREF": "auto-alt-ref",
+    "FRAME_PARALLEL_DECODING": "frame-parallel",
+    "MAX_INTRA_BITRATE_PCT": "max-intra-rate",
+    "STATIC_THRESHOLD": "static-thresh",
+    "TARGET_LEVEL": "level",
+    "TUNING": "tune",
+}
+_ADDITIONAL = "Additional information:"
 _ENCODER_WARNING = re.compile(r"^(?:x26[45] \[warning\]:|Svt\[warn\]:)\s*(?P<text>.*)$")
 _ENCODER_ERROR = re.compile(r"^(?:x26[45] \[error\]:|Svt\[error\]:)\s*(?P<text>.*)$")
 _FAILURE_WORDS = re.compile(
@@ -206,9 +193,23 @@ _START_FAILED = re.compile(
 )
 
 
+#: A whole key in a log line: not inside a longer word or key, but after ``--`` (x265 writes
+#: ``--rd-refine``).
+_WHOLE = r"(?:(?<=--)|(?<![\w-])){}(?![\w-])"
+
+
 def _norm(name: str) -> str:
     """``bogus:v:0`` → ``bogus``; ``-b_ref_mode`` → ``b-ref-mode`` (``_`` and ``-`` alike)."""
     return name.strip().lstrip("-").split(":", 1)[0].replace("_", "-").casefold()
+
+
+def control_names(control: str) -> list[str]:
+    """The option names of a libvpx codec control: ``VP8E_SET_ARNR_MAXFRAMES`` →
+    ``arnr-maxframes``, ``VP8E_SET_CPUUSED`` → ``cpu-used`` (and ``cpuused``)."""
+    base = re.sub(r"^VP[89]E_SET_", "", control)
+    names = [base.lower().replace("_", "-")]
+    other = _CONTROL_OPTIONS.get(base)
+    return [other, *names] if other is not None else names
 
 
 def failure_detail(stderr: str, encoder_id: str) -> str | None:
@@ -304,16 +305,29 @@ class _Attribution:
         return None
 
     def mentioned(self, text: str) -> _Target | None:
-        """The first job parameter whose name appears as a word in ``text`` (``_``, ``-`` and a
-        space alike: "Hierarchical Levels" names ``hierarchical-levels``)."""
-        folded = text.casefold()
+        """The job parameter that ``text`` names, matched as a whole key (never ``rd`` inside
+        ``rd-refine``): a key as typed (``--rd-refine``, ``limit-tu``; ``_`` and ``-`` alike)
+        before a looser form (any case, words separated by spaces: "Hierarchical Levels" names
+        ``hierarchical-levels``, "RD level" names ``rd``); within each form, the first in the
+        text, then the longest."""
+        best: tuple[tuple[int, int, int], _Target] | None = None
         for name, target in self.names():
             if not name:
                 continue
-            words = r"[-_ ]".join(re.escape(part) for part in name.split("-"))
-            if re.search(rf"(?<![\w-]){words}(?![\w-])", folded):
-                return target
-        return None
+            parts = [re.escape(part) for part in name.split("-")]
+            forms = (
+                re.compile(_WHOLE.format("[-_]".join(parts))),
+                re.compile(_WHOLE.format("[-_ ]".join(parts)), re.IGNORECASE),
+            )
+            for tier, pattern in enumerate(forms):
+                match = pattern.search(text)
+                if match is None:
+                    continue
+                rank = (tier, match.start(), -len(match.group(0)))
+                if best is None or rank < best[0]:
+                    best = (rank, target)
+                break
+        return best[1] if best is not None else None
 
     def fallback_path(self) -> str:
         if self.params:
@@ -345,8 +359,32 @@ def parse_dry_run(
             issues.append(issue)
 
     lines = [raw.strip() for raw in stderr.splitlines() if raw.strip()]
-    for raw in lines:
+    for index, raw in enumerate(lines):
         text = _strip_tag(raw)
+        control = _CODEC_CONTROL.search(text)
+        if control is not None:
+            following = _strip_tag(lines[index + 1]) if index + 1 < len(lines) else ""
+            detail = f"{text} ({following})" if following.startswith(_ADDITIONAL) else text
+            names = control_names(control["ctrl"])
+            target = next((t for n in names if (t := who.target(n)) is not None), None)
+            if target is None:
+                add(
+                    error(
+                        "encoder.dry_run_failed",
+                        who.fallback_path(),
+                        f"The encoder refused a value and went on without it: {detail}",
+                    )
+                )
+            else:
+                add(
+                    error(
+                        target.code,
+                        target.path,
+                        f"The encoder refused {names[0]!r} and went on without it: {detail}",
+                        *target.fixes,
+                    )
+                )
+            continue
         for pattern in _PARAM_PROBLEMS:
             match = pattern.search(text)
             if match is None:
@@ -417,16 +455,29 @@ async def dry_run(
     *,
     definitions: Definitions | None = None,
     cancel: CancelToken | None = None,
+    work_dir: Path | None = None,
 ) -> list[ValidationIssue]:
     """Encode one frame with the job's video settings (``-frames:v 1 -f null -``) and turn what
     FFmpeg refuses (an unknown or invalid custom parameter, an option the encoder rejects)
     into ``error`` issues with the path of the field (``video.custom_params``,
     ``video.advanced.<key>``). Through ``reframe.tools.run`` with a short timeout. The caller
     validates first; a job with errors is not dry-run. A passthrough job has nothing to test
-    (``[]``); a cancelled run gives ``[]`` as well."""
+    (``[]``); a cancelled run gives ``[]`` as well.
+
+    Custom parameters that name a file or that FFmpeg would read as its own options are
+    validation's errors (:func:`~reframe.validation.video.video_custom_param_issues`): they are
+    returned and FFmpeg does not start. FFmpeg runs in a new temporary working folder (made in
+    ``work_dir``, default the system's temporary folder), removed afterwards."""
     defs = definitions if definitions is not None else load_definitions()
     if job.video.passthrough:
         return []
+    refused = video_custom_param_issues(job.video, caps, defs)
+    if refused:
+        return refused
+    if not job.source.path.is_absolute():  # FFmpeg runs in another folder
+        job = job.model_copy(
+            update={"source": job.source.model_copy(update={"path": job.source.path.absolute()})}
+        )
     ffmpeg = tools.ffmpeg
     if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
         return [
@@ -446,9 +497,19 @@ async def dry_run(
                 f"The test encode cannot be built: {exc}.",
             )
         ]
-    result = await run(
-        [str(ffmpeg.path), *argv], timeout=DRY_RUN_TIMEOUT, cancel=cancel, max_output=_MAX_OUTPUT
+    folder = Path(
+        await asyncio.to_thread(tempfile.mkdtemp, prefix="reframe-dry-run-", dir=work_dir)
     )
+    try:
+        result = await run(
+            [str(ffmpeg.path), *argv],
+            timeout=DRY_RUN_TIMEOUT,
+            cancel=cancel,
+            max_output=_MAX_OUTPUT,
+            cwd=folder,
+        )
+    finally:
+        await asyncio.to_thread(shutil.rmtree, folder, True)
     if result.cancelled:
         return []
     if not result.started:
