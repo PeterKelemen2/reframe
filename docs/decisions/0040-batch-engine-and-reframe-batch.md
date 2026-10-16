@@ -46,20 +46,21 @@ both call it, so a preset and a batch group make the same job for the same file.
 
 ### 2. Selectors, relaxation and the result cells
 
-- **Matching** (`reframe.batch.selectors`): every list is "one of" (languages, codecs,
-  profiles, roles); `profiles` match the commercial name or ffprobe's profile, any case; roles
-  are C-3's (flag, title and heuristic evidence) plus what the disposition flags give a source
-  without the prober (`stream_roles`), `main` when none; `languages` is an order of
-  preference, then `sort`. **`sort: highest_bitrate` is 0031's best quality** (lossless first,
-  an unknown bit rate after every known one, then channels); for subtitles `most_channels` and
-  `highest_bitrate` put full before SDH before forced. A title pattern that is not a regular
+- **Matching** (`reframe.batch.selectors`): every list is "one of" (languages, codecs, profiles,
+  roles); `profiles` match the commercial name or ffprobe's profile, any case; roles are C-3's
+  roles with flag or title evidence (not the heuristic ones, see §3) plus what the disposition
+  flags give a source without the prober (`stream_roles`), `main` when none; `languages` is an
+  order of preference, then `sort`. **`sort: highest_bitrate` is 0031's best quality** (lossless
+  first, an unknown bit rate after every known one, then channels); for subtitles `most_channels`
+  and `highest_bitrate` put full before SDH before forced. A title pattern that is not a regular
   expression, and a selector of the other kind, are errors (`batch.bad_title_pattern`,
   `batch.rule_kind`); the rule takes nothing.
 - **Relaxation**: exactly 04's order (title, profiles, channels, codecs; never language or
   role), only the fields the selector sets. **Several rules (open):** every rule is matched with
-  its full selector first; a relaxed rule never takes a track that another rule matches exactly,
-  nor one an earlier relaxed rule took; exact matches may share a track (a passthru and an AAC
-  copy of one source track are a choice).
+  its full selector first; a relaxed rule never takes a track that another rule matches exactly
+  (a track picked by hand, `stream`, is such a match), nor one an earlier relaxed rule took;
+  exact matches may share a track (a passthru and an AAC copy of one source track are a
+  choice).
 - **Cells**: `exact` ✓; `relaxed` ≈ "matched without title, profile" (warning
   `batch.track_relaxed`); `ambiguous` ≈ "2 candidates, picked #3 (source order)" when a
   single-track rule finds **more than `nth + 1`** candidates (warning `batch.track_ambiguous`;
@@ -82,23 +83,31 @@ both call it, so a preset and a batch group make the same job for the same file.
 
 ### 3. Descriptors, fingerprints, grouping
 
-- **No level compares bit rates (open)**: 04's descriptor table has no bit rate, and the bit
-  rate of a lossless or VBR track differs per episode of one release, so a strict level that
-  compared it would never group a season. Strict compares kind, codec, profile, channels,
-  language, title, roles and the six flags, in order; standard kind, codec, channels, language,
-  roles, in order; loose kind, codec family, language, roles, in any order (a multiset).
-  Codec families (`reframe.batch.descriptors`): DTS and DTS-HD; AC-3 and E-AC-3; TrueHD and MLP;
-  AAC; MPEG audio; every PCM; subtitles `text` (SRT, ASS, WebVTT, mov_text) and `bitmap` (PGS,
-  VobSub, DVB). Only the codec decides the family, so the levels nest (a property test).
-  Video: strict and standard compare the size, loose the resolution class (`1080p`, C-16's
-  `resolution_label`; a cropped 1920×800 is 1080p); every level compares the HDR type.
-- **Near members (open)**: a file within **2** differences (`NEAR_MAX_DIFFERENCES`: an extra,
-  a missing or a changed track, a different video size or HDR type, each 1) of a group with at
-  least as many files joins it as a near member, with one line per difference ("1 extra track
-  (eng AC-3 2.0 "Commentary")", "1 track missing (eng DTS-HD MA 5.1 "English Dub")", "1 track
-  differs (eng ASS "Signs & Songs" → eng ASS "Signs")"). Files with one fingerprint are grouped
-  first; the largest groups (then the one first in episode order) take the near files. The
-  resolution of a near member gets the warning `batch.near_match` (04's "E05 ⚠").
+- **No level compares bit rates (open)**: 04's descriptor table has no bit rate, and the bit rate
+  of a lossless or VBR track differs per episode of one release, so a strict level that compared
+  it would never group a season. **For the same reason no level compares a role that C-3 infers
+  from statistics** (heuristic evidence: a subtitle with at most 25 % of the events of another
+  track of its language is "forced", an untitled 2.0 track of at most 192 kb/s after a 5.1 track
+  of its language is "commentary"): the event counts and bit rates vary per episode of one
+  release. Descriptor roles, and so fingerprints, derived selectors and rule matching, are the
+  roles with flag or title evidence; the heuristic ones stay on the stream (the selection stage
+  and the UI show them). Strict compares kind, codec, profile, channels, language, title, roles
+  and the six flags, in order; standard kind, codec, channels, language, roles, in order; loose
+  kind, codec family, language, roles, in any order (a multiset). Codec families
+  (`reframe.batch.descriptors`): DTS and DTS-HD; AC-3 and E-AC-3; TrueHD and MLP; AAC; MPEG audio;
+  every PCM; subtitles `text` (SRT, ASS, WebVTT, mov_text) and `bitmap` (PGS, VobSub, DVB). Only
+  the codec decides the family, so the levels nest (a property test). Video: strict and standard
+  compare the size, loose the resolution class (`1080p`, C-16's `resolution_label`; a cropped
+  1920×800 is 1080p); every level compares the HDR type.
+- **Near members (open)**: a file within **2** differences (`NEAR_MAX_DIFFERENCES`: an extra, a
+  missing or a changed track, a different video size or HDR type, each 1; at the loose level too,
+  where an unmatched extra track and an unmatched missing track of one kind are paired in stream
+  order as one changed track) of a group with at least as many files joins it as a near member,
+  with one line per difference ("1 extra track (eng AC-3 2.0 "Commentary")", "1 track missing (eng
+  DTS-HD MA 5.1 "English Dub")", "1 track differs (eng ASS "Signs & Songs" → eng ASS "Signs")").
+  Files with one fingerprint are grouped first; the largest groups (then the one first in episode
+  order) take the near files. The resolution of a near member gets the warning `batch.near_match`
+  (04's "E05 ⚠").
 - **Episode order**: season, episode (C-16's parser on the file name, the folder for what the
   file name lacks), then the natural order; files without an episode after. **Group name**: the
   show name and season most members share (`Anime Show S01`). **Representative**: the first
@@ -138,6 +147,12 @@ both call it, so a preset and a batch group make the same job for the same file.
   Not chosen: a patch on the resolved job only (the index of an output track moves when the
   template's rules change; a cell pick could not re-run the codec rules) or on the template only
   (it has no place for range, chapter names or `field_overrides`).
+- **An override keeps the structure of the rule lists**: an operation that adds, removes or
+  moves a track rule, or replaces a whole rule list (or the whole document), is
+  `batch.override_invalid` and the override's template part is not applied. The matrix columns
+  are the template's rules: a file whose rules moved would show its cells under other rules'
+  columns. A change inside a rule, or a whole rule replaced in its place, is fine;
+  `replace /audio_rules/1/selector/languages []` makes a rule take no track in one file.
 - **Stale overrides are issues** (`batch.override_stale`, warning): an operation whose path
   vanished is skipped and the rest applied; a failed `test` skips the rest of the override (it
   was made for another template); a `move` / `copy` between the template and the job, or a
@@ -162,11 +177,22 @@ both call it, so a preset and a batch group make the same job for the same file.
   options.
 - **Collisions** (04: "Name collisions within the batch, or with existing files, are
   errors"): `batch.name_collision` (two files of the batch, on each row and once for the
-  batch), `batch.output_is_source` (an output that is another file of the batch);
-  `batch.output_exists` when the output exists and the collision setting would rename it
-  (C-8's info `output.renamed`) **(open)**: with *ask*, C-8's `output.exists` error says it
-  already; with *overwrite* the user chose to replace it, and C-8's warning stays. A re-run of a
-  half-encoded season so queues only the episodes not done yet.
+  batch), `batch.output_is_source` (an output that is another file of the batch, in every
+  collision setting: **a file of the batch is never overwritten**; C-8's `output.overwrite`
+  warning is then left out of the row); `batch.output_exists` when the output exists, is not
+  a file of the batch, and the collision setting would rename it (C-8's info `output.renamed`)
+  **(open)**: with *ask*, C-8's `output.exists` error says it already; with *overwrite* the
+  user chose to replace it, and C-8's warning stays. `reframe batch` checks the files of
+  **every group** of the run together (`Reframe.batch.resolve_batch`).
+- **An earlier run's outputs are left out**: a media file of the batch that is the planned
+  output of another file of the batch is not grouped, resolved or queued; it is an info
+  `batch.already_encoded` of the grouping ("`Anime Show - S01E01 - Pilot.mkv` is the planned
+  output of `….S01E01….mkv` with this preset: it is left out"). The file whose output it is
+  gets `batch.output_is_source` (its output exists and is a file of the batch). A re-run of a
+  half-encoded season (outputs next to the sources) so queues only the episodes not done yet;
+  to encode a done episode again, remove its output (or move it out of the folder), or give
+  the source files instead of the folder. Reframe cannot tell an earlier output from another
+  release that has the output's name, so neither is ever replaced.
 - Probes run 4 at a time (`PROBE_CONCURRENCY`); a file given twice is probed once; an
   unreadable file is a `source.probe_failed` issue of the grouping and an error row of the
   matrix. An unknown preset name is `preset.not_found` (the default preset's settings, every
@@ -182,8 +208,12 @@ no trailing spaces; ASCII marks when stdout is not UTF-8) and each file's errors
 **Cells name tracks by their absolute stream index**, as `reframe probe` and `reframe plan`
 do (04's matrix numbers audio and subtitle tracks separately: "S1 ✓ #1" is "✓ #3" here).
 
-- `--dry-run`: the last line is `Dry run: N of M files can be queued[; K cannot (errors)].`;
-  exit 0 when every file can be queued, else 1. `--json` (only with `--dry-run`, else exit 2):
+- The files that cannot be read and the files left out as already encoded are listed first
+  (once each); a row is labelled `E05`, `S01E05` when the group spans seasons, and the file
+  name when two rows would have one label.
+- `--dry-run`: the last line is `Dry run: N of M files can be queued[; K cannot (errors)][; L
+  left out (already encoded)].`; exit 0 when every file can be queued (a left-out file is not
+  an error), else 1. `--json` (only with `--dry-run`, else exit 2):
   `{"grouping": BatchGrouping, "resolutions": [BatchResolution]}`.
 - Without `--dry-run` **(open)**: the files without errors are queued in episode order (group
   by group) and encoded as `reframe encode` does (the same code: progress, Ctrl+C, the
@@ -236,9 +266,16 @@ matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub requir
 - Revisit with the UI (F-13): the near threshold, the Output section of *Apply to group*, the
   crop detection per file, ambiguity of derived rules on identical tracks.
 - `reframe batch DIR` searches the folder as `reframe encode DIR` does (0017): outputs written
-  next to the sources by an earlier run are media files too, and form a group of their own on
-  the next run (their names then get ` (1)`); the episodes themselves are protected by
-  `batch.output_exists`. A fixed output folder in the naming options avoids it.
+  next to the sources by an earlier run are media files too; they are left out as already
+  encoded (§6), and their episodes are not queued again (`batch.output_is_source`). A file of
+  the batch is never overwritten, also with the collision setting *overwrite*: to encode an
+  episode again, remove its output first. A fixed output folder in the naming options keeps
+  the outputs out of the folder search.
+- `reframe encode FILE|DIR…` of several files has the same name checks, file by file
+  (`reframe.jobs.OutputClaims`): a job whose output is another file of the command is
+  `batch.output_is_source`, and a job whose output an earlier job of the command already has
+  is `batch.name_collision`; both are not queued (the first file keeps the name). It does not
+  leave earlier outputs out (it has no grouping step).
 
 ## Open product questions (defaults chosen, easy to change)
 
@@ -251,8 +288,89 @@ matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub requir
 6. `detect_per_file` leaves the rectangle empty; the batch does not run crop detection
    (`resolve._dimensions`).
 7. An existing output is a batch error only with the setting *auto-rename*
-   (`service._collisions`).
+   (`service._collisions`); an output that is a file of the batch is an error with every
+   setting.
 8. `reframe batch` queues the valid files and lists the others, exit 1 (`cli.run_batch`).
+9. A file of the batch that is the planned output of another file of the batch is left out as
+   already encoded (`BatchService.resolve_batch`), not encoded as a source.
+10. A per-file override cannot add, remove or move track rules (`overrides.structural_op`).
+
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R2-1 (blocker): the name checks cover every group.** `reframe batch` resolved each group on
+  its own, so `batch.name_collision` and `batch.output_is_source` compared only the files of
+  one group: with the collision setting *overwrite*, E01's job replaced another release's file
+  named as E01's output (another group; its SHA-256 changed), and two outputs with one name in
+  two groups were both queued (the first lost; with *auto-rename* the printed target was
+  wrong). Now `Reframe.batch.resolve_batch(template, sources, *, level, overrides)` resolves
+  the whole batch and runs the checks over the rows of every group (and every folder
+  argument); `reframe batch` uses it. `batch.output_is_source` is an error with every collision
+  setting (a file of the batch is never overwritten). `reframe encode FILE|DIR…` had the same
+  hole (each file drafted alone): `reframe.jobs.OutputClaims` now refuses a job whose output is
+  another file of the command or the output of an earlier job of the command. Tests:
+  `tests/jobs/test_cli_review_fixes.py` (`test_batch_never_writes_a_file_of_another_group`,
+  `test_batch_two_outputs_with_one_name_in_two_groups`, `test_resolve_batch_checks_every_group`,
+  `test_encode_never_writes_another_file_of_the_command`, `test_encode_two_outputs_with_one_name`,
+  and `test_the_leads_reproduction_with_the_real_queue` with the real queue and FFmpeg: the
+  copy's SHA-256 changed before the fix).
+- **R2-2 (major): heuristic roles are informational.** Fingerprints and derived selectors used
+  every C-3 role, also the ones inferred from per-episode statistics, and roles are never
+  relaxed: a signs track with 22 % of the full track's events in E01 and 27 % in E02 split the
+  season (E02 a near member) and the S1 rule derived from E01 was "✗ none" in E02.
+  `descriptors.stream_roles` now keeps the roles with flag or title evidence (§3); an untitled,
+  unflagged signs track can then only be told from the full track by order (its rule is "≈ 2
+  candidates", in every file). Tests: `tests/batch/test_batch_review_fixes.py`
+  (`test_heuristic_roles_neither_split_a_season_nor_break_a_derived_rule`,
+  `test_descriptor_roles_have_flag_or_title_evidence`).
+- **R2-3: an override that changes the rule lists is invalid.** Cells are keyed by the rule's
+  index and the columns come from the template, so an override that removed or inserted a rule
+  put the file's cells under other columns. Chosen fix (the cheapest correct one): such an
+  override is `batch.override_invalid` and its template part is not applied (§5); a rule can be
+  emptied for one file with `languages: []`. The matrix also keys a cell by explicit / compiled
+  rule. Test: `test_an_override_that_changes_the_rule_lists_is_invalid`.
+- **R2-4: a changed track counts once at the loose level too** (it counted as 1 extra + 1
+  missing, so the most lenient level kept fewer near members). Tests:
+  `test_a_changed_track_counts_once_at_every_level`, `test_loose_pairs_changed_tracks_by_kind`
+  (and `test_grouping.py::test_the_loose_level_ignores_the_order`, updated).
+- **R2-5: `reframe plan` / `encode` show the track rules' issues.** `JobService.draft` kept
+  only the track stage's errors; it now also keeps every `batch.*` issue of the track rules
+  (`batch.track_relaxed`, `batch.track_ambiguous`, `batch.track_skipped`), as `reframe batch`
+  shows them. Test: `test_plan_with_a_group_preset_shows_the_track_rule_warnings`.
+- **R1-4: one issue per problem.** On the job path that C-8 validates (`JobService.draft`,
+  `BatchService` rows) the defaults lint runs with `container_codecs=False` (new keyword-only
+  parameter of `resolve_tracks`, `resolve`, `resolve_with_tracks`, `draft_from_preset`; default
+  `True`, so `explain` and the pure engine still report it): a WebM preset with an AAC codec
+  rule gives C-8's `container.codec_unsupported`, not also `defaults.codec_not_in_container`.
+  Test: `test_a_codec_the_container_cannot_hold_is_one_issue`.
+- **R2-6: labels with the season.** A group that spans seasons showed two `E01` rows; rows and
+  members are now labelled with `grouping.episode_labels` (`S01E01` when the files span
+  seasons, the file name when two files would share a label). Tests:
+  `test_matrix_labels_name_the_season_when_a_group_spans_seasons`, `test_episode_labels`,
+  `test_a_group_of_two_seasons_names_the_season`.
+- **R2-7: re-runs.** §6 said a re-run queues only the episodes not done yet, §Consequences that
+  the earlier outputs form a group and are queued again as `… (1).mkv` (the code did the
+  latter). The behaviour is now §6's: an earlier output is left out (`batch.already_encoded`).
+  **Deviation from the lead's instruction**: the lead asked that the episode whose output
+  exists keep "the existing-output handling it has today", which with *overwrite* is to
+  replace it. That cannot hold together with R2-1: in the lead's own reproduction, another
+  release's file named as E01's output is (by its name) E01's planned output, so it would be
+  left out and replaced. The episode therefore gets `batch.output_is_source` with every
+  setting: nothing given to the batch is replaced. With *ask* and *auto-rename* the episode
+  was not queued before either. Test: `test_a_rerun_queues_only_the_episodes_not_done_yet`.
+- **Suspected points (all real, all fixed):** a hand pick (`selector.stream`) now counts as an
+  exact match for relaxation (`test_a_hand_pick_counts_as_an_exact_match`); a source track
+  that two explicit rules take is the first of its language for both, for codec rules with
+  `first_track_of_language_only` (`test_a_track_that_two_rules_take_is_the_first_of_its_language_for_both`);
+  a rule whose settings are of the other kind is a "✗" cell with the error, not "✓ exact"
+  (`test_a_rule_with_settings_of_the_other_kind_is_not_an_exact_cell`); the row sort of
+  `BatchService.resolve` (C-16's parser, guessit) runs in a worker thread
+  (`test_the_row_order_is_computed_off_the_event_loop`).
+- The compiled no-match column's "skipped" text is "a main track of a listed language was
+  found" (the selection stage now counts main tracks only, decision 0031's follow-up).
+- Plan text changed with this follow-up: [04](../plan/04-batch-mode.md) §Grouping (the roles
+  compared), §Per-file overrides (the rule lists keep their structure), §Output naming (a file
+  of the batch is never overwritten; an earlier run's outputs are left out);
+  [05](../plan/05-core.md) §C-15 (`resolve_batch`, the `reframe batch` line).
 
 ## Plan changes
 

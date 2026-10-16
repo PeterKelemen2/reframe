@@ -21,6 +21,14 @@ vanished (``batch.override_stale``, a warning) is skipped and the rest is applie
 template); a ``move`` or ``copy`` between the template and the job, or a result that is not a
 valid template or job (``batch.override_invalid``, an error), leaves that part unapplied.
 
+**The rule lists keep the template's structure.** An override that adds, removes or moves a
+track rule (or replaces a whole rule list) is ``batch.override_invalid`` and its template part
+is not applied: the matrix columns are the template's rules, so a file whose rules moved would
+show its cells under other rules' columns (decision 0040, follow-up R2-3). A change inside a
+rule (its selector, settings, metadata, ``required``), or a whole rule replaced in its place,
+is fine; ``replace /audio_rules/1/selector/languages []`` makes a rule take no track in one
+file.
+
 Pure: no I/O.
 """
 
@@ -43,13 +51,17 @@ from reframe.models.template import JobTemplate
 
 __all__ = [
     "JOB_MEMBER",
+    "RULE_LISTS",
     "apply_job_override",
     "apply_template_override",
     "split_override",
+    "structural_op",
 ]
 
 #: The member of the per-file document that holds the resolved job.
 JOB_MEMBER = "job"
+#: The template's rule lists: an override keeps their structure (see the module doc).
+RULE_LISTS = ("audio_rules", "subtitle_rules")
 
 
 def _in_job(pointer: str) -> bool:
@@ -149,12 +161,50 @@ def _apply(
     return document, issues, applied
 
 
+def _changes_rules(pointer: str, *, element: bool) -> bool:
+    """Whether writing at ``pointer`` changes a rule list's structure: the whole document, a
+    rule list, or (``element`` false) one of its elements."""
+    try:
+        tokens = parse_pointer(pointer)
+    except JsonPatchError:
+        return False
+    if not tokens:
+        return True
+    if tokens[0] not in RULE_LISTS:
+        return False
+    return len(tokens) == 1 or (len(tokens) == 2 and not element)
+
+
+def structural_op(op: JsonPatchOp) -> bool:
+    """Whether ``op`` adds, removes or moves a track rule, or replaces a whole rule list (a
+    whole rule replaced in its place is not structural; a ``test`` never is)."""
+    if op.op == "test":
+        return False
+    if _changes_rules(op.path, element=op.op == "replace"):
+        return True
+    source = getattr(op, "from_", None)
+    return op.op == "move" and source is not None and _changes_rules(source, element=False)
+
+
 def apply_template_override[T: JobTemplate](
     template: T, ops: Sequence[JsonPatchOp]
 ) -> tuple[T, list[ValidationIssue]]:
     """``template`` with the template part of an override (see the module doc)."""
     if not ops:
         return template, []
+    structural = next((op for op in ops if structural_op(op)), None)
+    if structural is not None:
+        return template, [
+            _issue(
+                Severity.ERROR,
+                "batch.override_invalid",
+                structural.path,
+                f"The override's {structural.op} at {structural.path or '/'} adds, removes or "
+                "moves track rules: a file keeps the template's rules (the matrix columns), so "
+                "the override's template part is not applied. Change a field of a rule instead "
+                "(languages [] makes a rule take no track in this file).",
+            )
+        ]
     document, issues, applied = _apply(template.model_dump(mode="json"), ops, prefix="")
     if not applied:
         return template, issues

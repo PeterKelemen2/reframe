@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from reframe.batch.descriptors import fingerprint, track_key, video_key
-from reframe.models.batch import BatchGroup, Fingerprint, GroupMember, MatchLevel
+from reframe.models.batch import BatchGroup, Fingerprint, GroupMember, MatchLevel, TrackDescriptor
 from reframe.models.media import MediaSource
 from reframe.naming.context import resolution_label
 from reframe.naming.parse import parse_name
@@ -44,6 +44,7 @@ __all__ = [
     "episode_info",
     "episode_key",
     "episode_label",
+    "episode_labels",
     "group_name",
     "group_sources",
 ]
@@ -99,14 +100,34 @@ def episode_key(path: Path) -> EpisodeKey:
     )
 
 
-def episode_label(path: Path, *, season: bool = False) -> str:
-    """``E05`` (``S01E05`` with ``season``), else the file name."""
-    info = episode_info(path)
+def _label(path: Path, info: EpisodeInfo, season: bool) -> str:
     if info.episode is None:
         return path.name
     if season and info.season is not None:
         return f"S{info.season:02d}E{info.episode:02d}"
     return f"E{info.episode:02d}"
+
+
+def episode_label(path: Path, *, season: bool = False) -> str:
+    """``E05`` (``S01E05`` with ``season``), else the file name."""
+    return _label(path, episode_info(path), season)
+
+
+def episode_labels(paths: Sequence[Path], *, season: bool | None = None) -> list[str]:
+    """The labels of a list of files (the rows of a matrix, the members of a group): ``E05``;
+    ``S01E05`` when ``season`` is true or, with ``None``, when the files have more than one
+    season; the file name for a file without an episode and for files that would share a
+    label (two releases of one episode)."""
+    infos = [episode_info(path) for path in paths]
+    if season is None:
+        seasons = {info.season for info in infos if info.episode is not None}
+        season = len(seasons) > 1
+    labels = [_label(path, info, season) for path, info in zip(paths, infos, strict=True)]
+    counts = Counter(labels)
+    return [
+        label if counts[label] == 1 else path.name
+        for label, path in zip(labels, paths, strict=True)
+    ]
 
 
 def group_name(paths: Sequence[Path]) -> str:
@@ -150,7 +171,9 @@ def _listed(count: int, one: str, many: str, labels: Sequence[str]) -> str:
 
 def compare(group: Fingerprint, file: Fingerprint) -> Comparison:
     """The differences of ``file`` from ``group`` at the group's level: extra, missing and
-    changed tracks (in stream order; at the loose level as a multiset), and the video."""
+    changed tracks (in stream order; at the loose level as a multiset), and the video. A
+    track of one kind that took the place of a track of that kind counts once ("differs"),
+    at every level."""
     level = group.level
     left = [track_key(d, level) for d in group.tracks]
     right = [track_key(d, level) for d in file.tracks]
@@ -159,17 +182,29 @@ def compare(group: Fingerprint, file: Fingerprint) -> Comparison:
     changed: list[str] = []
     if level == "loose":
         wanted = Counter(left)
+        added: list[TrackDescriptor] = []
         for d, key in zip(file.tracks, right, strict=True):
             if wanted[key] > 0:
                 wanted[key] -= 1
             else:
-                extra.append(d.label)
+                added.append(d)
         have = Counter(right)
+        gone: list[TrackDescriptor] = []
         for d, key in zip(group.tracks, left, strict=True):
             if have[key] > 0:
                 have[key] -= 1
             else:
-                missing.append(d.label)
+                gone.append(d)
+        # A track of one kind in the place of a missing track of that kind "differs" (one
+        # difference, as at the other levels), paired in stream order.
+        for old in gone:
+            new = next((n for n in added if n.kind == old.kind), None)
+            if new is None:
+                missing.append(old.label)
+            else:
+                added.remove(new)
+                changed.append(f"{old.label} → {new.label}")
+        extra.extend(n.label for n in added)
     else:
         matcher = difflib.SequenceMatcher(a=left, b=right, autojunk=False)
         for op, a1, a2, b1, b2 in matcher.get_opcodes():

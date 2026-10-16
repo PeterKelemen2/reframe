@@ -278,7 +278,7 @@ def compile_defaults(
 
 _SKIPPED = {
     "all": "no track",
-    "no_match": "a listed language was found",
+    "no_match": "a main track of a listed language was found",
     "other": "no track in another language",
     "extra": "no commentary or description track",
 }
@@ -500,6 +500,20 @@ def _settings_issue(kind: Kind, n: int, label: str, list_path: str) -> Validatio
     )
 
 
+def _no_track_cell(match: TrackMatch, kind: Kind) -> TrackMatch:
+    """The cell of a rule whose settings are of the other kind: it found its track(s) but
+    makes no output (✗, an error), not "✓ exact"."""
+    other = "subtitle" if kind == "audio" else "audio"
+    return match.model_copy(
+        update={
+            "status": "missing",
+            "streams": [],
+            "severity": Severity.ERROR,
+            "message": f"the rule has {other} settings: it makes no {kind} track",
+        }
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _KindResult[T: (AudioOutputTrack, SubtitleOutputTrack)]:
     outputs: list[T]
@@ -518,22 +532,30 @@ def _explicit_audio(
     produced: list[_Output[AudioOutputTrack]] = []
     taken: dict[int, _Taken] = {}
     seen: list[str | None] = []
+    # Per source track: the first selected track of its language (a track that two rules
+    # take is the first for both).
+    first_of: dict[int, bool] = {}
+    matches = [pick.match for pick in picks]
     for pick in picks:
         rule = rules[pick.rule]
         label = labels[pick.rule]
         settings = rule.settings
         if pick.tracks and isinstance(settings, SubtitleOutputSettings):
             issues.append(_settings_issue("audio", pick.rule, label, "audio_rules"))
+            matches[pick.rule] = _no_track_cell(pick.match, "audio")
             continue
         for track in pick.tracks:
             stream = track.stream
             assert isinstance(stream, AudioStream)
             state = taken.setdefault(track.descriptor.index, _Taken())
             state.how.append(_how(pick, label))
-            language = effective_language(stream)
-            first = not any(languages.same_language(language, other) for other in seen)
-            if first:
-                seen.append(language)
+            first = first_of.get(stream.index)
+            if first is None:
+                language = effective_language(stream)
+                first = not any(languages.same_language(language, other) for other in seen)
+                first_of[stream.index] = first
+                if first:
+                    seen.append(language)
             outputs: list[AudioOutputTrack]
             if isinstance(settings, AudioCodecRules):
                 defaults = AudioDefaults(codec_rules=settings.rules, passthru=settings.passthru)
@@ -603,7 +625,7 @@ def _explicit_audio(
             )
         )
     columns = [MatrixColumn(kind="audio", rule=n, label=label) for n, label in enumerate(labels)]
-    return _KindResult(final, decisions, [p.match for p in picks], columns, issues)
+    return _KindResult(final, decisions, matches, columns, issues)
 
 
 def _explicit_subtitles(
@@ -617,12 +639,14 @@ def _explicit_subtitles(
     )
     produced: list[_Output[SubtitleOutputTrack]] = []
     taken: dict[int, _Taken] = {}
+    matches = [pick.match for pick in picks]
     for pick in picks:
         rule = rules[pick.rule]
         label = labels[pick.rule]
         settings = rule.settings
         if pick.tracks and not isinstance(settings, SubtitleOutputSettings):
             issues.append(_settings_issue("subtitle", pick.rule, label, "subtitle_rules"))
+            matches[pick.rule] = _no_track_cell(pick.match, "subtitle")
             continue
         for track in pick.tracks:
             stream = track.stream
@@ -685,7 +709,7 @@ def _explicit_subtitles(
             )
         )
     columns = [MatrixColumn(kind="subtitle", rule=n, label=label) for n, label in enumerate(labels)]
-    return _KindResult(final, decisions, [p.match for p in picks], columns, issues)
+    return _KindResult(final, decisions, matches, columns, issues)
 
 
 # =========================================================================== the engine
@@ -717,11 +741,14 @@ def resolve_tracks(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
+    container_codecs: bool = True,
 ) -> TrackResolution:
     """The audio and subtitle tracks of ``source`` with ``template`` (container
     ``template.output.container``): explicit rules where the template has them, else the
     defaults (see the module doc). ``languages``: Settings → Languages (the preferred
-    languages of the defaults)."""
+    languages of the defaults). ``container_codecs=False`` leaves the lint's
+    ``defaults.codec_not_in_container`` out: a caller that validates the job (C-8's
+    ``container.codec_unsupported``) gives one issue per problem (decision 0031 §6)."""
     defs = definitions or load_definitions()
     container = template.output.container
     preferred_audio = languages.preferred_audio if languages is not None else []
@@ -773,7 +800,11 @@ def resolve_tracks(
         selected = [d for d in audio_stage_result.decisions if d.selected]
         used = {d.rule for d in selected if d.rule is not None} if selected else None
         issues += lint_rules(
-            template.audio_defaults, container=container, definitions=defs, used=used
+            template.audio_defaults,
+            container=container,
+            definitions=defs,
+            used=used,
+            container_codecs=container_codecs,
         )
     draft = TrackDraft(
         audio=audio.outputs,

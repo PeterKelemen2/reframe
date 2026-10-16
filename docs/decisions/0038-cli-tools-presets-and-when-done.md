@@ -114,9 +114,11 @@ installed and then found as `bundled` in 5.6 s; a second run downloads nothing.
     a built-in preset**. Most built-in x265 / SVT-AV1 presets carry custom parameters
     (HandBrake's), so the plain rule would encode a frame on every `reframe plan` with the
     default preset; Reframe's own tests check the built-in parameters against the pinned
-    build. Dry-run errors are printed like other issues (exit 1, `No command`); a dry run that
-    passes adds the note "The custom encoder parameters were checked by encoding one frame
-    (dry run)." `encode` does not dry-run (it validates as before).
+    build. Dry-run errors are printed like other issues (exit 1, `No command`), and so are its
+    warnings (a setting the encoder changed, a test encode that did not run); a dry run that
+    ran without an error adds the note "The custom encoder parameters were checked by encoding
+    one frame (dry run)." `encode` does not dry-run (it validates as before). (Follow-up
+    2026-10-16 below: `plan` calls `jobs.dry_run` itself.)
 
 ### `reframe encode`: the when-done countdown
 
@@ -147,6 +149,22 @@ installed and then found as `bundled` in 5.6 s; a second run downloads nothing.
   executor has finished, `encode` may close Reframe (and with it the power service) while the
   action runs: C-14 should keep the countdown pending until the executor returned, or its
   `close` should not cancel an action that is executing.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+**R5-2 (the dry run's warnings).** `reframe plan` passed `dry_run=True` to `jobs.plan`, which
+returns only the plan when the dry run has no error: the dry run's warnings were dropped
+(`encoder.dry_run_warning`, for example x265's "limit-tu disabled, requires tu-inter-depth >
+1" for `limit-tu=2`, and `encoder.dry_run_skipped`: no FFmpeg or the 30 s timeout), and the
+note "The custom encoder parameters were checked …" was printed even when the test encode did
+not run. Now `plan` calls `jobs.dry_run` itself (`jobs.plan`'s contract is unchanged; its
+docstring says that a plan carries no warnings), adds every issue of the dry run to the
+draft's issues (human output and `--json`), plans only when the dry run has no error, and
+prints the note only when the test encode ran (no `encoder.dry_run_skipped`). Checked with the
+real FFmpeg n9.0.2 and a user preset with `limit-tu=2`: `Issues (0 errors, 1 warning, …)`,
+`warning  The encoder changed a setting: limit-tu disabled, requires tu-inter-depth > 1`, the
+note and the command. Tests: `tests/jobs/test_cli_review_fixes.py`
+(`test_plan_shows_a_skipped_dry_run`, `test_plan_shows_the_dry_runs_warnings`).
 
 ## Plan changes
 

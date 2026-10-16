@@ -25,7 +25,7 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Sequence
 
-from reframe.batch.grouping import episode_label
+from reframe.batch.grouping import episode_labels
 from reframe.batch.selectors import RELAX_WORDS
 from reframe.models.batch import BatchResolution, Resolution, TrackMatch
 from reframe.naming.sanitize import replace_undecodable
@@ -100,22 +100,27 @@ def _width(text: str) -> int:
 
 def matrix_lines(resolution: BatchResolution, *, unicode: bool = True) -> list[str]:
     """The resolution matrix as text lines: a header, a rule, then one row per file: the
-    episode and the row's mark, the video, one cell per track rule (the column's short name:
-    ``A1``, ``S2``), the output name. Columns are padded with spaces; no line ends in a
-    space."""
+    episode (:func:`~reframe.batch.grouping.episode_labels`: with the season when the rows
+    span seasons) and the row's mark, the video, one cell per track rule (the column's short
+    name: ``A1``, ``S2``; a cell is in the column of its rule, explicit or compiled), the
+    output name. Columns are padded with spaces; no line ends in a space."""
     rules = [c for c in resolution.columns if c.kind in ("audio", "subtitle")]
     header = ["File", "V", *(c.label.partition(" ")[0] for c in rules), "Output name"]
     marks = ROW_MARKS if unicode else ROW_ASCII
     table: list[Sequence[str]] = [header]
-    for row in resolution.rows:
-        cells: dict[tuple[str, int], str] = {
-            (m.kind, m.rule): match_cell(m, unicode=unicode) for m in row.matches
+    labels = episode_labels([row.path for row in resolution.rows])
+    for row, label in zip(resolution.rows, labels, strict=True):
+        cells: dict[tuple[str, bool, int], str] = {
+            (m.kind, m.defaults, m.rule): match_cell(m, unicode=unicode) for m in row.matches
         }
         table.append(
             [
-                replace_undecodable(f"{episode_label(row.path)} {marks[row.status]}"),
+                replace_undecodable(f"{label} {marks[row.status]}"),
                 video_cell(row, unicode=unicode),
-                *(cells.get((c.kind, c.rule if c.rule is not None else -1), "") for c in rules),
+                *(
+                    cells.get((c.kind, c.defaults, c.rule if c.rule is not None else -1), "")
+                    for c in rules
+                ),
                 name_cell(row),
             ]
         )
