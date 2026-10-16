@@ -166,6 +166,25 @@ real FFmpeg n9.0.2 and a user preset with `limit-tu=2`: `Issues (0 errors, 1 war
 note and the command. Tests: `tests/jobs/test_cli_review_fixes.py`
 (`test_plan_shows_a_skipped_dry_run`, `test_plan_shows_the_dry_runs_warnings`).
 
+**R5-9 (control characters of preset names).** `reframe presets import` and `presets list`
+printed a preset's name, category and id as the file gave them: a shared preset named
+`Evil\x1b[31mRED…` coloured the terminal (`od -c` of the output: `033 [ 3 1 m`), and `ESC ]0;`
+set the window title. The CLI's `printable` (every human line goes through it) now shows each
+C0 control character (the line break and the tab too), DEL and each C1 control character as
+U+FFFD; `_one_line` (the `error:` / `warning:` lines) first joins white space into one space.
+`--json` keeps the names unchanged (JSON escapes them). Text with line breaks of its own is
+printed line by line, so nothing that the CLI writes on purpose changes. Tests:
+`tests/jobs/test_cli_presets_review_fixes.py` (`test_r5_9_*`).
+
+**The size of `presets import`** (suspected in the review, real). The file was read whole:
+`reframe presets import /dev/zero` read until memory ran out, and a FIFO blocked the command.
+Now at most 16 MiB (`MAX_PRESET_FILE`) are read, from a file or from stdin; a larger one is
+"not a Reframe preset file" (exit 1), and the file is opened without blocking and must be a
+regular file (else exit 3, "is not a regular file"). Tests:
+`test_import_refuses_a_file_larger_than_the_cap`, `test_import_never_reads_a_device_or_a_fifo`
+(with `/dev/null`: the unfixed code reads `/dev/zero` without end),
+`test_import_from_stdin_is_capped`.
+
 ## Plan changes
 
 - [05-core.md §C-15](../plan/05-core.md#c-15-service-facade-and-cli): the CLI line shows the
