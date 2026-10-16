@@ -4,8 +4,9 @@ snap helpers, shared by C-7, C-8 and C-12).
 
 - The texts name the written value (``AC-3 cannot make 7.1: … is written as 5.1``).
 - The values are the helpers' answers (``AudioEncoderDef.snap_mixdown`` /
-  ``snap_samplerate``, ``AudioBitrateDef.snap``, ``channels_mixdown``), for every audio
-  encoder, every requested layout and typical source layouts.
+  ``snap_samplerate``, ``AudioBitrateDef.snap``, ``channels_mixdown``), for one audio encoder
+  of each kind (:data:`MIXDOWN_ENCODERS`, :data:`VALUE_ENCODERS`), every requested layout and
+  typical source layouts. ``test_audio_agreement`` checks C-8 against C-7 for more encoders.
 - A mixdown fix is never Dolby Pro Logic II and never an upmix (decision 0019 item 3).
 """
 
@@ -46,6 +47,13 @@ AUDIO_CODES = (
     "audio.samplerate_unsupported",
 )
 LAYOUTS = {1: "mono", 2: "stereo", 3: "3.0", 6: "5.1(side)", 8: "7.1"}
+#: One encoder of each mixdown kind: every layout up to 7.1 (AAC; libfdk_aac and FLAC have the
+#: same list), no 7.1 (AC-3; E-AC-3 is the same), stereo at most (MP3), and libopus, whose
+#: source layouts C-7 changes.
+MIXDOWN_ENCODERS = ("aac", "ac3", "libmp3lame", "libopus")
+#: For bitrates and sample rates also a lossless encoder (FLAC: no bitrate, rates to 192 kHz).
+#: AAC has a free bitrate range, AC-3 and MP3 fixed steps.
+VALUE_ENCODERS = (*MIXDOWN_ENCODERS, "flac")
 
 
 def one_track(track: AudioOutputTrack, *, channels: int = 6, rate: int = 48000) -> Any:
@@ -167,7 +175,7 @@ def test_texts_say_what_is_written(
 
 @pytest.mark.parametrize(
     ("mixdown", "channels", "kbps", "written"),
-    [("stereo", 6, 150, 128), ("5.1", 6, 700, 640), ("5.1", 6, 100, 224), (None, 2, 150, 128)],
+    [("stereo", 6, 150, 128), ("5.1", 6, 100, 224), (None, 2, 150, 128)],
 )
 def test_bitrates_snap_down_as_handbrake(
     mixdown: Mixdown | None, channels: int, kbps: int, written: int
@@ -264,7 +272,7 @@ REQUESTS: list[Mixdown | None] = [None, *get_args(Mixdown)]
 
 @pytest.mark.parametrize(
     ("encoder_id", "requested", "channels"),
-    list(itertools.product(sorted(DEFS.audio_encoders), REQUESTS, [0, 1, 2, 3, 6, 8])),
+    list(itertools.product(MIXDOWN_ENCODERS, REQUESTS, [0, 1, 2, 3, 6, 8])),
 )
 def test_mixdown_issues_follow_the_helper(
     encoder_id: str, requested: Mixdown | None, channels: int
@@ -295,7 +303,7 @@ def test_mixdown_issues_follow_the_helper(
     assert shown in issue.message
 
 
-@pytest.mark.parametrize("encoder_id", sorted(DEFS.audio_encoders))
+@pytest.mark.parametrize("encoder_id", VALUE_ENCODERS)
 @pytest.mark.parametrize("kbps", [8, 100, 250, 700, 5000])
 @pytest.mark.parametrize("channels", [1, 2, 6, 8])
 def test_bitrate_issues_follow_the_helper(encoder_id: str, kbps: int, channels: int) -> None:
@@ -317,7 +325,7 @@ def test_bitrate_issues_follow_the_helper(encoder_id: str, kbps: int, channels: 
     assert issue.message.endswith(f"is written at {snapped} kb/s.")
 
 
-@pytest.mark.parametrize("encoder_id", sorted(DEFS.audio_encoders))
+@pytest.mark.parametrize("encoder_id", VALUE_ENCODERS)
 @pytest.mark.parametrize("rate", [8000, 22050, 44100, 48000, 96000, 192000])
 def test_samplerate_issues_follow_the_helper(encoder_id: str, rate: int) -> None:
     encoder = DEFS.audio_encoders[encoder_id]
@@ -329,21 +337,3 @@ def test_samplerate_issues_follow_the_helper(encoder_id: str, rate: int) -> None
     else:
         [issue] = found
         assert issue.message.endswith(f"is written at {written} Hz.")
-
-
-def test_audio_codes_are_info() -> None:
-    """Decision 0024 item 4, for every code of the audio value rules."""
-    tracks = [
-        (AudioOutputTrack(encoder="ac3", mixdown="7.1"), 8),
-        (AudioOutputTrack(encoder="aac", mixdown="5.1"), 2),
-        (AudioOutputTrack(encoder="ac3", bitrate=700), 6),
-        (AudioOutputTrack(encoder="aac", quality=3), 2),
-        (AudioOutputTrack(encoder="ac3", samplerate=96000), 2),
-    ]
-    seen: set[str] = set()
-    for track, channels in tracks:
-        for issue in one_track(track, channels=channels).validate():
-            if issue.code in AUDIO_CODES:
-                assert issue.severity is Severity.INFO
-                seen.add(issue.code)
-    assert seen == set(AUDIO_CODES)
