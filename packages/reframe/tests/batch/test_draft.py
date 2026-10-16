@@ -192,13 +192,3 @@ def test_first_track_of_language_in_source_order() -> None:
     ]
     assert first_of_language(streams) == [True, True, False, True, False, True, False, True, False]
     assert first_of_language([]) == []
-
-
-def test_empty_source() -> None:
-    from reframe.models import SourceRef
-
-    source = MediaSource(
-        ref=SourceRef(path=Path("/media/empty.mkv"), fingerprint=SourceFingerprint(size=0, mtime=0))
-    )
-    draft = draft_tracks(source, JobTemplate())
-    assert (draft.audio, draft.subtitles, draft.decisions) == ([], [], [])

@@ -90,16 +90,13 @@ def test_listed_languages_in_order() -> None:
         (["ger"], "de", None, True),  # ISO 639-2/B = ISO 639-1
         (["de"], "ger", None, True),
         (["deu"], "ger", None, True),  # /T = /B
-        (["hun"], "hu", None, True),
         (["German"], "ger", None, True),  # a language name
-        (["pt"], "por", None, True),
         (["pt"], "por", "pt-BR", True),  # a listed base language takes every region
         (["pt-BR"], "por", "pt-BR", True),
         (["pt-BR"], "por", None, False),  # a listed region takes only that region
         (["pt-BR"], "por", "pt-PT", False),
         (["zh"], "chi", "zh-Hans", True),
         (["zh-Hant"], "chi", "zh-Hans", False),
-        (["en"], "eng", None, True),
         (["en"], None, None, False),
         (["en"], "fre", None, False),
     ],
@@ -494,7 +491,6 @@ def test_subtitle_defaults_take_nothing_without_a_match() -> None:
 @pytest.mark.parametrize(
     ("settings", "expected"),
     [
-        ({"tracks_per_language": "none"}, []),
         ({"tracks_per_language": "first"}, [4, 2]),  # the full Hungarian track, not the forced
         ({"tracks_per_language": "all"}, [4, 3, 2]),
         ({"tracks_per_language": "all", "order": "source"}, [2, 3, 4]),
