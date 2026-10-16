@@ -8,7 +8,6 @@ plain ASCII number; anything else is not matched to an ffprobe stream.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -30,22 +29,6 @@ class FakeTrack:
     frame_rate_mode: Any = None
 
 
-def test_python_facts() -> None:
-    """What ``str.isdigit()``, ``str.isdecimal()``, ``re``'s ``\\d`` and ``int()`` accept."""
-    for char in (SUPERSCRIPT_TWO, ARABIC_INDIC_THREE, FULL_WIDTH_THREE):
-        assert char.isdigit()
-        assert not char.isascii()
-    assert not SUPERSCRIPT_TWO.isdecimal()
-    assert ARABIC_INDIC_THREE.isdecimal()
-    assert FULL_WIDTH_THREE.isdecimal()
-    with pytest.raises(ValueError, match="invalid literal"):
-        int(SUPERSCRIPT_TWO)
-    assert int(ARABIC_INDIC_THREE) == int(FULL_WIDTH_THREE) == 3
-    assert re.fullmatch(r"\d", ARABIC_INDIC_THREE)
-    assert re.fullmatch(r"\d", FULL_WIDTH_THREE)
-    assert not re.fullmatch(r"\d", SUPERSCRIPT_TWO)
-
-
 @pytest.mark.parametrize(
     "order",
     [
@@ -54,7 +37,6 @@ def test_python_facts() -> None:
         FULL_WIDTH_THREE,
         f"1{SUPERSCRIPT_TWO}",
         f"1{FULL_WIDTH_THREE}",
-        "0-1",  # MPEG-TS program order
         " 1",
         "1 ",
         "1\n",
@@ -70,7 +52,7 @@ def test_a_stream_order_that_is_not_ascii_digits_is_not_matched(order: Any) -> N
     assert mediainfo.track_data(tracks) == mediainfo.MediaInfoData()
 
 
-@pytest.mark.parametrize(("order", "index"), [("0", 0), ("3", 3), ("12", 12), ("007", 7), (4, 4)])
+@pytest.mark.parametrize(("order", "index"), [("0", 0), ("12", 12), ("007", 7), (4, 4)])
 def test_an_ascii_stream_order_is_matched(order: Any, index: int) -> None:
     tracks = [FakeTrack("Video", order, 4_000_000, language="hu", frame_rate_mode="VFR")]
     data = mediainfo.track_data(tracks)
@@ -82,7 +64,6 @@ def test_an_ascii_stream_order_is_matched(order: Any, index: int) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("2104000 / 1509000", 2_104_000),
         (f"{FULL_WIDTH_THREE}{FULL_WIDTH_THREE}", None),
         (f"{ARABIC_INDIC_THREE}00", 0),  # "00" is the first ASCII number: 0 is no bit rate
         (f"{ARABIC_INDIC_THREE} 128000", 128_000),

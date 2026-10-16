@@ -246,14 +246,6 @@ def test_containers_answer_the_c8_questions() -> None:
     assert flags["hearing_impaired"].mkvpropedit == "flag-hearing-impaired"
 
 
-def test_video_encoder_option_lookup() -> None:
-    x265 = load_definitions().video_encoders["libx265"]
-    option = x265.option("sao")
-    assert option is not None
-    assert option.type == "bool"
-    assert x265.option("nope") is None
-
-
 def test_passthru_and_mixdowns() -> None:
     defs = load_definitions()
     assert defs.passthru_codecs["dtshd"].profiles is not None

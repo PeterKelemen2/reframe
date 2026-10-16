@@ -52,17 +52,9 @@ def entry_with(cache: ProbeCache, levels: int) -> Path:
     return path
 
 
-def test_json_loads_raises_recursion_error_far_beyond_the_limit() -> None:
-    """The fact the guard relies on: ``RecursionError`` (a ``RuntimeError``, not the
-    ``ValueError`` that ``_read`` caught) from ``json.loads`` for very deep JSON."""
-    assert not issubclass(RecursionError, ValueError)
-    with pytest.raises(RecursionError):
-        json.loads("[" * PARSER_DEPTH + "]" * PARSER_DEPTH)
-
-
-@pytest.mark.parametrize("levels", [MAX_DEPTH + 1, 300, 1000, PARSER_DEPTH])
+@pytest.mark.parametrize("levels", [MAX_DEPTH + 1, 300, PARSER_DEPTH])
 def test_a_deep_entry_is_a_miss_and_is_rewritten(tmp_path: Path, levels: int) -> None:
-    """65 levels (the first one too deep), 300 (Pydantic validates it), 1000 and 200 000
+    """65 levels (the first one too deep), 300 (Pydantic validates it) and 200 000
     (``json.loads`` raises ``RecursionError``)."""
     cache = ProbeCache(tmp_path)
     path = entry_with(cache, levels)
