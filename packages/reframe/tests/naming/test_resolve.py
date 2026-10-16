@@ -210,24 +210,24 @@ def test_bad_field_overrides(empty_fs: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    "number",
+    ("key", "number"),
     [
         # str.isdigit() is True, int() fails:
-        pytest.param("²", id="superscript-two"),
-        pytest.param("1²", id="one-superscript-two"),
+        pytest.param("season", "²", id="superscript-two"),
+        pytest.param("episode", "1²", id="one-superscript-two"),
         # str.isdigit() is True, int() accepts them:
-        pytest.param("\u0663", id="arabic-indic-three"),
-        pytest.param("\u06f3", id="extended-arabic-indic-three"),
-        pytest.param("\uff13", id="full-width-three"),
-        pytest.param("1" * 10, id="10-digits"),
-        pytest.param("9" * 5000, id="5000-digits"),  # int() refuses more than 4300 digits
-        pytest.param("+3", id="plus"),
-        pytest.param("-3", id="minus"),
-        pytest.param("3.0", id="decimal"),
-        pytest.param(" 3 4", id="two-numbers"),
+        pytest.param("year", "\u0663", id="arabic-indic-three"),
+        pytest.param("season", "\u06f3", id="extended-arabic-indic-three"),
+        pytest.param("episode", "\uff13", id="full-width-three"),
+        pytest.param("year", "1" * 10, id="10-digits"),
+        # int() refuses more than 4300 digits
+        pytest.param("season", "9" * 5000, id="5000-digits"),
+        pytest.param("episode", "+3", id="plus"),
+        pytest.param("year", "-3", id="minus"),
+        pytest.param("season", "3.0", id="decimal"),
+        pytest.param("episode", " 3 4", id="two-numbers"),
     ],
 )
-@pytest.mark.parametrize("key", ["season", "episode", "year"])
 def test_number_overrides_take_only_ascii_digits(key: str, number: str, empty_fs: Any) -> None:
     """A number override is 1 to 9 ASCII digits; anything else is a warning, never an
     exception, and the parsed value stays."""

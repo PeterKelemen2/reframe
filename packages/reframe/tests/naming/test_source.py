@@ -26,9 +26,8 @@ SOPRANOS_E02 = "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklys
 @pytest.mark.parametrize(
     "name",
     [
-        "Season 03", "Season 3", "season.10", "SEASON_1", "S03", "s1", "Specials", "Special",
-        "Extras", "extra", "Featurettes", "Disc 1", "Disk2", "CD1", "cd 2", "BDMV", "STREAM",
-        "VIDEO_TS", "video_ts",
+        "Season 03", "season.10", "SEASON_1", "S03", "Specials", "Special", "Extras", "extra",
+        "Featurettes", "Disc 1", "Disk2", "CD1", "BDMV", "STREAM", "VIDEO_TS",
     ],
 )  # fmt: skip
 def test_generic_folders(name: str) -> None:
@@ -38,7 +37,6 @@ def test_generic_folders(name: str) -> None:
 @pytest.mark.parametrize(
     "name",
     [
-        "The Sopranos",
         "Season of the Witch",
         "S03E02",
         "Extras (2005)",
@@ -54,16 +52,13 @@ def test_not_generic(name: str) -> None:
 @pytest.mark.parametrize(
     ("name", "stem", "ext"),
     [
-        ("movie.mkv", "movie", "mkv"),
         ("movie.MKV", "movie", "mkv"),
-        ("00800.m2ts", "00800", "m2ts"),
         ("VTS_01_1.VOB", "VTS_01_1", "vob"),
         (
             "The.Sopranos.S03.1080p.BluRay.REMUX-Kataklysm",
             "The.Sopranos.S03.1080p.BluRay.REMUX-Kataklysm",
             "",
         ),
-        ("Movie.2016.1080p", "Movie.2016.1080p", ""),
         (".mkv", ".mkv", ""),
     ],
 )

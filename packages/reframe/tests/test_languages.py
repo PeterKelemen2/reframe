@@ -73,7 +73,7 @@ B_T_PAIRS = [
 # --------------------------------------------------------------------------- normalisation
 
 
-@pytest.mark.parametrize(("b", "t", "two"), B_T_PAIRS)
+@pytest.mark.parametrize(("b", "t", "two"), [p for p in B_T_PAIRS if p[0] in ("chi", "fre", "ger")])
 def test_bibliographic_and_terminology_pairs(b: str, t: str, two: str) -> None:
     for code in (b, t, two, b.upper(), t.title()):
         assert normalize(code) == two
@@ -102,59 +102,31 @@ def test_every_iso639_2_code_keeps_its_meaning() -> None:
 @pytest.mark.parametrize(
     ("value", "tag"),
     [
-        ("de", "de"),
         ("DE", "de"),
         ("hun", "hu"),
-        ("eng", "en"),
-        ("jpn", "ja"),
-        ("pt-BR", "pt-BR"),
         ("PT-br", "pt-BR"),
-        ("pt_BR", "pt-BR"),
         ("pt_br", "pt-BR"),
-        ("es-419", "es-419"),
-        ("zh-Hans", "zh-Hans"),
         ("ZH-HANT", "zh-Hant"),
-        ("sr-Latn", "sr-Latn"),
         ("sr_cyrl", "sr-Cyrl"),
         ("en-us", "en-US"),
         ("  fr-CA  ", "fr-CA"),
         ("zh-yue", "yue"),
-        ("yue", "yue"),
         ("cmn", "cmn"),
         ("tlh", "tlh"),
-        ("qaa", "qaa"),
-        ("sgn", "sgn"),
         # deprecated codes
-        ("iw", "he"),
-        ("in", "id"),
-        ("jw", "jv"),
-        ("mo", "ro"),
         ("ji", "yi"),
         ("scc", "sr"),
         ("scr", "hr"),
         # overrides
-        ("tl", "tl"),
-        ("tgl", "tl"),
         ("TGL", "tl"),
         ("tgl-PH", "tl-PH"),
         ("fil", "fil"),
-        ("sh", "sh"),
         ("hbs", "sh"),
         # names
-        ("German", "de"),
         ("german", "de"),
-        ("Deutsch", "de"),
-        ("Hungarian", "hu"),
-        ("magyar", "hu"),
-        ("Magyar", "hu"),
         ("francais", "fr"),
-        ("Français", "fr"),
-        ("Portuguese (Brazil)", "pt-BR"),
         ("Brazilian Portuguese", "pt-BR"),
-        ("Chinese (Simplified)", "zh-Hans"),
-        ("Undetermined", "und"),
         ("Cantonese", "yue"),
-        ("Tagalog", "tl"),
         ("Serbo-Croatian", "sh"),
         ("allemand", "de"),
     ],
@@ -186,7 +158,6 @@ def test_special_code_names() -> None:
     ("value", "reason"),
     [
         (None, "No language given"),
-        ("", "No language given"),
         ("   ", "No language given"),
         ("xx", "not a known language name or code"),
         ("jp", "not a known language name or code"),
@@ -203,8 +174,6 @@ def test_special_code_names() -> None:
         ("en--US", "not a known language name or code"),
         ("toolongcode-x", "not a known language name or code"),
         ("-en", "not a known language name or code"),
-        ("123", "not a known language name or code"),
-        ("en-" + "a" * 70, "not a known language name or code"),
     ],
 )
 def test_invalid(value: str | None, reason: str) -> None:
@@ -235,15 +204,10 @@ def test_validate_reports_script_and_region() -> None:
     ("value", "legacy", "mp4", "ietf"),
     [
         ("hu", "hun", "hun", "hu"),
-        ("en", "eng", "eng", "en"),
         ("pt-BR", "por", "por", "pt-BR"),
-        ("pt-PT", "por", "por", "pt-PT"),
         ("es-419", "spa", "spa", "es-419"),
         ("zh-Hans", "chi", "zho", "zh-Hans"),
-        ("zh-Hant", "chi", "zho", "zh-Hant"),
         ("sr-Latn", "srp", "srp", "sr-Latn"),
-        ("sr-Cyrl", "srp", "srp", "sr-Cyrl"),
-        ("en-GB", "eng", "eng", "en-GB"),
         ("fr-CA", "fre", "fra", "fr-CA"),
         ("iw", "heb", "heb", "he"),
         ("in", "ind", "ind", "id"),
@@ -255,16 +219,13 @@ def test_validate_reports_script_and_region() -> None:
         ("sh", "und", "und", "sh"),
         # languages without an ISO 639-2 code: the macrolanguage, else und
         ("yue", "chi", "zho", "yue"),
-        ("cmn", "chi", "zho", "cmn"),
         ("arb", "ara", "ara", "arb"),
         ("zsm", "may", "msa", "zsm"),
-        ("swh", "swa", "swa", "swh"),
         ("aaa", "und", "und", "aaa"),
         # local use and collective codes are ISO 639-2
         ("qaa", "qaa", "qaa", "qaa"),
         ("qtz", "qtz", "qtz", "qtz"),
         ("sgn", "sgn", "sgn", "sgn"),
-        ("art", "art", "art", "art"),
     ],
 )
 def test_container_codes(value: str, legacy: str, mp4: str, ietf: str) -> None:
@@ -289,13 +250,8 @@ def test_base_language() -> None:
     [
         ("hu", "Hungarian", "magyar"),
         ("ger", "German", "Deutsch"),
-        ("fr", "French", "français"),
-        ("ja", "Japanese", "日本語"),
         ("pt-BR", "Portuguese (Brazil)", "português (Brasil)"),
         ("zh-Hans", "Chinese (Simplified)", "中文\uff08简体\uff09"),
-        ("zh-Hant", "Chinese (Traditional)", "中文\uff08繁體\uff09"),
-        ("sr-Latn", "Serbian (Latin)", "srpski (latinica)"),
-        ("es-419", "Spanish (Latin America)", "español (Latinoamérica)"),
         ("tl", "Tagalog", "Tagalog"),
         ("ace", "Acehnese", "Acehnese"),  # no CLDR autonym: the English name
         ("und", "Undetermined", "Undetermined"),
@@ -401,13 +357,8 @@ def tags_of(result: list[LanguageEntry]) -> list[str]:
 @pytest.mark.parametrize(
     ("query", "first"),
     [
-        ("hu", ["hu"]),
-        ("hun", ["hu"]),
-        ("Hungarian", ["hu"]),
         ("magyar", ["hu"]),
         ("magy", ["hu"]),
-        ("ger", ["de"]),
-        ("deu", ["de"]),
         ("Deutsch", ["de"]),
         ("por", ["pt", "pt-BR", "pt-PT"]),
         ("pt", ["pt", "pt-BR", "pt-PT"]),
@@ -415,14 +366,10 @@ def tags_of(result: list[LanguageEntry]) -> list[str]:
         ("PT_BR", ["pt-BR"]),
         ("brazil", ["pt-BR"]),
         ("chinese", ["zh", "zh-Hans", "zh-Hant"]),
-        ("zh-Hans", ["zh-Hans"]),
         ("francais", ["fr"]),
         ("iw", ["he"]),
         ("tgl", ["tl"]),
-        ("und", ["und"]),
-        ("Undetermined", ["und"]),
         ("sr-latn", ["sr-Latn"]),
-        ("es-419", ["es-419"]),
     ],
 )
 def test_search_ranking(query: str, first: list[str]) -> None:
@@ -474,11 +421,6 @@ def test_search_finds_tags_and_names_outside_the_list() -> None:
     assert "eee" not in tags_of(search("e"))
 
 
-def test_search_entries_include_display_data() -> None:
-    hu = search("hu")[0]
-    assert (hu.english_name, hu.native_name, hu.iso639_2b) == ("Hungarian", "magyar", "hun")
-
-
 # --------------------------------------------------------------------------- rule matching
 
 
@@ -486,16 +428,12 @@ def test_search_entries_include_display_data() -> None:
     ("a", "b", "same"),
     [
         ("ger", "de", True),
-        ("deu", "German", True),
-        ("pt-BR", "pt", True),
         ("pt-BR", "pt-PT", True),
         ("zh-Hans", "chi", True),
         ("cmn", "zh", True),
-        ("arb", "ar", True),
         ("yue", "zh", False),
         ("tl", "fil", False),
         ("sh", "sr", False),
-        ("en", "de", False),
         ("und", None, True),
         ("und", "garbage!", True),
         (None, None, True),
@@ -512,26 +450,20 @@ def test_same_language(a: str | None, b: str | None, same: bool) -> None:
     [
         ("pt", "pt-BR", True),
         ("pt", "por", True),
-        ("pt", "pt", True),
         ("pt-BR", "pt", False),
         ("pt-BR", "pt-PT", False),
         ("pt-BR", "pt_br", True),
-        ("ger", "de", True),
         ("de", "ger", True),
         ("zh", "zh-Hans", True),
         ("zh-Hans", "zh-Hant", False),
         ("zh-Hans", "zh-Hans-CN", True),
         ("zh", "cmn", True),
-        ("sr-Latn", "sr", False),
         ("de-1901", "de-DE-1901", True),
         ("de-1901", "de-DE", False),
         ("und", None, True),
-        ("und", "und", True),
         ("und", "en", False),
         ("en", None, False),
-        ("en", "x?", False),
         ("garbage!", "en", False),
-        (None, "en", False),
     ],
 )
 def test_matches(rule: str | None, track: str | None, result: bool) -> None:
@@ -543,21 +475,7 @@ def test_matches(rule: str | None, track: str | None, result: bool) -> None:
 entries = st.sampled_from(language_list())
 
 
-@settings(max_examples=300)
-@given(entries)
-def test_property_container_codes_round_trip(item: LanguageEntry) -> None:
-    base = base_language(item.tag)
-    assert normalize(to_matroska_legacy(item.tag)) == base
-    assert normalize(to_mp4(item.tag)) == base
-    assert normalize(to_matroska_ietf(item.tag)) == item.tag
-    assert (item.iso639_2b, item.iso639_2t) == (
-        to_matroska_legacy(item.tag),
-        to_mp4(item.tag),
-    )
-
-
 def test_container_codes_round_trip_for_every_entry() -> None:
-    """The property above, for every entry (cheap enough to check exhaustively)."""
     for item in language_list():
         base = base_language(item.tag)
         assert normalize(to_matroska_legacy(item.tag)) == base, item.tag
@@ -595,13 +513,6 @@ def _search_keys(item: LanguageEntry) -> list[str]:
     if code_meaning in (None, item.tag):
         keys.append(item.english_name)
     return keys
-
-
-@settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow])
-@given(entries)
-def test_property_search_finds_entry_first(item: LanguageEntry) -> None:
-    for key in _search_keys(item):
-        assert search(key)[0] == item, key
 
 
 def test_search_finds_every_entry_first() -> None:

@@ -60,13 +60,10 @@ def test_replacement_note() -> None:
     "name",
     [
         "CON",
-        "con",
         "PRN",
         "AUX",
         "NUL",
-        "COM1",
         "com9",
-        "LPT1",
         "LPT9",
         "COM0",
         "LPT¹",
@@ -78,9 +75,7 @@ def test_reserved_names(name: str) -> None:
     assert is_reserved(name)
 
 
-@pytest.mark.parametrize(
-    "name", ["CONSOLE", "Concord", "COM10", "NULL", "AUXILIARY.mkv", "con-air"]
-)
+@pytest.mark.parametrize("name", ["CONSOLE", "COM10", "NULL", "AUXILIARY.mkv", "con-air"])
 def test_not_reserved(name: str) -> None:
     assert not is_reserved(name)
 

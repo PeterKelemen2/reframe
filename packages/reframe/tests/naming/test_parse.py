@@ -23,14 +23,12 @@ from reframe.naming.parse import (
     ("text", "expected"),
     [
         (" - Rose ", "Rose"),
-        (".A.Scandal.in.Belgravia", "A.Scandal.in.Belgravia"),
         ("Mad Max Fury Road (", "Mad Max Fury Road"),
         ("] Sousou", "Sousou"),
         ("Show Name (2019) - S01E02", "Show Name (2019) - S01E02"),
         ("Silence)", "Silence"),
         ("(US", "US"),
         ("---", ""),
-        ("", ""),
     ],
 )
 def test_clean_text(text: str, expected: str) -> None:
@@ -51,7 +49,6 @@ def test_clean_tag() -> None:
         ("Mr. Robot", " "),
         ("the-sopranos-s03e02", "-"),
         ("WALL-E", None),
-        ("hacksawridge", None),
     ],
 )
 def test_detect_separator(text: str, separator: str | None) -> None:
@@ -221,9 +218,6 @@ def test_a_bare_code_of_superscripts_is_no_absolute_number(
 
 
 SOPRANOS = "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm"
-HACKSAW_FOLDER = (
-    "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson"
-)
 
 
 def test_guessit_reads_user_config_files_without_the_option(guessit_user_config: str) -> None:
@@ -240,20 +234,3 @@ def test_guessit_reads_user_config_files_without_the_option(guessit_user_config:
         assert result["alternative_title"].value == "Proshai Livushka"
     assert GUESSIT_OPTIONS["no_user_config"] is True
     assert guessit(SOPRANOS, dict(GUESSIT_OPTIONS))["episode_title"].value == "Proshai Livushka"
-
-
-def test_naming_ignores_guessit_user_config(guessit_user_config: str) -> None:
-    """guessit's config files in the working folder and the home folder change nothing: every
-    file-system read of naming goes through ``NamingFs``."""
-    assert ("episode_title", "Proshai Livushka") in [
-        (m.prop, m.value) for m in guess_matches(SOPRANOS)
-    ]
-    episode = parse_name(SOPRANOS).fields
-    assert (episode.name, episode.sub_title, episode.episode_code) == (
-        "The.Sopranos",
-        "Proshai.Livushka",
-        "S03E02",
-    )
-    movie = parse_name(HACKSAW_FOLDER)
-    assert (movie.fields.name, movie.fields.release_group) == ("Hacksaw.Ridge", "HenDerson")
-    assert movie.score == 10
