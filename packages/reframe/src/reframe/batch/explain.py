@@ -8,12 +8,14 @@ live preview ``source track → selected? (why) → rule # → output → reason
 (:func:`~reframe.batch.selection.select_tracks`), then the codec rules
 (:func:`~reframe.batch.apply_codec_rules`, unchanged) for every selected track in the output
 order (``first_track_of_language_only`` = the first selected track of its language in that
-order), then the default-track setting: ``first_output``, ``first_in_first_language`` (none in
-that language: the first output), ``forced`` (the first output from a forced source track,
-else none) or ``none``. Only the ``default`` flag is overridden; the other five flags, the
-language and the title come from the source track (an undetermined track treated as the first
-listed language gets that language). Extra outputs are never the default track. ``no_match =
-"none"`` with no listed language found is a ``defaults.no_listed_language`` error.
+order), then the default-track setting: ``first_output``, ``first_in_first_language`` (the
+first main track in that language, never a kept commentary, description or music-only track;
+none: the first output), ``forced`` (the first output from a forced source track, else none)
+or ``none``. Only the ``default`` flag is overridden; the other five flags, the language and
+the title come from the source track (an undetermined track treated as the first listed
+language gets that language). Extra outputs are never the default track. ``no_match =
+"none"`` with no listed language found is a ``defaults.no_listed_language`` error when the
+selection takes no main track (other languages kept are main tracks).
 
 **Subtitles** (:func:`subtitle_stage`, :func:`explain_subtitles`): the same selection, then
 
@@ -25,11 +27,13 @@ listed language gets that language). Extra outputs are never the default track. 
   another track's events in the same language); some forced events in a full PGS / VobSub
   track (only when it is burned in, with forced-only).
 - **burn-in**: ``foreign_audio`` burns the foreign audio search track, or, when the audio is
-  not in the viewer's language, the first selected subtitle in that language (HandBrake's
-  "foreign audio subtitle"); ``first`` burns the first subtitle output;
+  not in the viewer's language, the first selected main subtitle in that language (never a
+  commentary or description; HandBrake's "foreign audio subtitle"); ``first`` burns the first
+  subtitle output;
   ``foreign_audio_then_first`` the first of them that exists. At most one track is burned in.
 - the default-track policy on the copied tracks: ``none``, ``first_output``, ``forced`` (the
-  first copied track flagged forced) or ``first_in_first_language``.
+  first copied track flagged forced) or ``first_in_first_language`` (a main track; none: the
+  first copied track).
 
 **Keep everything** (decision 0031): a kind with no language set at all keeps every track in
 source order with its source flags (at most one default track per kind), as M2 did (decision
@@ -51,9 +55,11 @@ from reframe.batch.selection import (
     KEEP_EVERYTHING,
     Pick,
     Selection,
+    extra_role,
     is_forced,
     is_undetermined,
     language_label,
+    language_slot,
     select_tracks,
 )
 from reframe.definitions import ContainerDef, Definitions, load_definitions
@@ -135,11 +141,20 @@ def _default_audio_position(
         case "first_output":
             return order[0]
         case "first_in_first_language":
-            return next((p for p in order if selection.picks[p].slot == 0), order[0])
+            # A kept commentary or description in the first language is not "the track in
+            # the first language"; the extra tracks come last, so order[0] is a main track
+            # whenever there is one.
+            return next((p for p in order if _main_in_first_language(selection.picks[p])), order[0])
         case "forced":
             return next((p for p in order if is_forced(selection.picks[p].stream)), None)
         case _:
             return None
+
+
+def _main_in_first_language(pick: Pick[AudioStream] | Pick[SubtitleStream]) -> bool:
+    """A selected main track (not commentary, description or music only) that counts as the
+    first listed language."""
+    return pick.slot == 0 and pick.group != "extra"
 
 
 _DEFAULT_POLICY_WORDS = {
@@ -208,8 +223,14 @@ def audio_stage(
         for position, pick in enumerate(selection.picks)
     ]
     issues: list[ValidationIssue] = []
-    if selection.no_listed_language and defaults.selection.no_match == "none":
-        issues.append(_no_listed_language(selection))
+    if (
+        selection.no_listed_language
+        and defaults.selection.no_match == "none"
+        and not any(pick.group != "extra" for pick in selection.selected)
+    ):
+        # Take none, and nothing else (other languages kept) took a main track: the job
+        # would have no main audio track.
+        issues.append(_no_listed_language(selection, defaults.selection.undetermined))
     return AudioStage(selection, decisions, ordered, issues)
 
 
@@ -226,16 +247,29 @@ def _dropped(
     )
 
 
-def _no_listed_language(selection: Selection[AudioStream]) -> ValidationIssue:
+def _no_listed_language(
+    selection: Selection[AudioStream], undetermined: Literal["first_language", "other"]
+) -> ValidationIssue:
     names = " or ".join(language_label(tag) for tag in selection.languages)
     pointer = "/audio_defaults/selection/no_match"
+    listed_extras = any(
+        extra_role(pick.stream) is not None
+        and language_slot(effective_language(pick.stream), selection.languages, undetermined)
+        is not None
+        for pick in selection.picks
+    )
+    what = (
+        f"no main audio track in {names} (only commentary, description or music-only tracks)"
+        if listed_extras
+        else f"no audio track in {names}"
+    )
     return ValidationIssue(
         severity=Severity.ERROR,
         code="defaults.no_listed_language",
         path="audio_defaults.selection.no_match",
         message=(
-            f"This source has no audio track in {names}, and the audio defaults take no track "
-            "when no listed language is found."
+            f"This source has {what}, and the audio defaults take no track when no listed "
+            "language is found."
         ),
         fixes=[
             Fix(
@@ -325,7 +359,7 @@ def forced_evidence(
         if info.role is TrackRole.FORCED:
             return 3, info.detail or "few events"
     counted = [p for p in peers if p.event_count]
-    if count is not None and counted:
+    if count and counted:  # an empty track (0 events) is not a forced track
         biggest = max(counted, key=lambda p: p.event_count or 0)
         top = biggest.event_count or 0
         if count <= FORCED_MAX_RATIO * top:
@@ -468,7 +502,8 @@ def _burn_target(
         viewer = selection.languages[0]
         if not is_undetermined(heard) and not languages.same_language(heard, viewer):
             for position in order:
-                if selection.picks[position].slot == 0:
+                # Never a commentary or description: they do not translate the audio.
+                if _main_in_first_language(selection.picks[position]):
                     return position, (
                         f"foreign audio: the {language_label(viewer)} subtitles for the "
                         f"{language_label(heard)} audio"
@@ -494,7 +529,13 @@ def _default_subtitle_position(
         case "first_in_first_language":
             first = selection.languages[0]
             return next(
-                (p for p in copies if languages.matches(first, metadata[p].language)), copies[0]
+                (
+                    p
+                    for p in copies
+                    if languages.matches(first, metadata[p].language)
+                    and selection.picks[p].group != "extra"
+                ),
+                copies[0],
             )
         case _:
             return None

@@ -25,9 +25,11 @@ Setting                            What it does here
 ``other_languages``                Main tracks in no listed language: drop, keep the best
                                    track of the first such language (source order), or keep
                                    all of them.
-``no_match``                       No main track in any listed language: the default-flagged
-                                   track (none flagged: the first), the first track, or none
-                                   (for audio a validation error, ``reframe.batch.explain``).
+``no_match``                       No main track in any listed language (a listed-language
+                                   extra track does not count): the default-flagged main track
+                                   (none flagged: the first), the first main track, or none
+                                   (for audio a validation error when no main track is taken,
+                                   ``reframe.batch.explain``).
 ``commentary``                     Commentary, audio description and music-only tracks
                                    (:func:`extra_role`): dropped, or kept after the main tracks
                                    when their language is taken (a listed language, or any
@@ -150,8 +152,9 @@ class Selection[S: (AudioStream, SubtitleStream)]:
     order: tuple[int, ...]
     """Positions (in :attr:`picks`) of the selected tracks, in output order."""
     no_listed_language: bool = False
-    """Configured, the source has tracks of this kind, and no main track is in a listed
-    language (03 "No listed language found")."""
+    """Configured, the source has main tracks of this kind, and none of them is in a listed
+    language (03 "No listed language found"). Extra tracks (commentary, description, music
+    only) do not count, whatever their language (decision 0031 §3)."""
 
     @property
     def selected(self) -> list[Pick[S]]:
@@ -382,10 +385,11 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
                     )
                     taken_by_language.append(p)
 
-    # 2. No listed language found (no track at all in a listed language).
-    no_listed = bool(streams) and all(slot is None for slot in slots)
+    # 2. No listed language found: no **main** track is in a listed language (a commentary or
+    # description in a listed language does not count: it is not the programme's own track).
+    no_listed = bool(main) and all(slots[p] is None for p in main)
     no_match_taken: int | None = None
-    if no_listed and main:
+    if no_listed:
         head = f"No listed language found ({names})"
         match selection.no_match:
             case "default_flagged":
