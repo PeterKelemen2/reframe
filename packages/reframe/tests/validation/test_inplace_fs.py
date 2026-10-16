@@ -1,6 +1,7 @@
-"""``writable_file`` of the file-system views (C-13 follow-up of decision 0034): the real file
-system on POSIX and (mocked) on Windows, a fake view with Windows paths, and how
-``inplace.source_writable`` and the ``tool.mkvpropedit_missing`` fix use it."""
+"""``writable_file`` of the file-system views (C-13 follow-up of decision 0034; part of
+``FileSystemView`` since the core-complete review): the real file system on POSIX and (mocked)
+on Windows, the queue's runner check, the test scenario's fake view, a fake view with Windows
+paths, and how ``inplace.source_writable`` and the ``tool.mkvpropedit_missing`` fix use it."""
 
 from __future__ import annotations
 
@@ -15,8 +16,8 @@ import pytest
 
 from reframe.metadata import remux_job
 from reframe.models import ReplaceOp, ToolStatus
-from reframe.validation import LocalFileSystem
-from reframe.validation.fs import WritableFiles
+from reframe.queue import files
+from reframe.validation import FileSystemView, LocalFileSystem
 from reframe.validation.inplace import source_writable
 
 
@@ -39,7 +40,6 @@ root_user = hasattr(os, "geteuid") and os.geteuid() == 0
 
 def test_local_writable_file(tmp_path: Path) -> None:
     local = LocalFileSystem()
-    assert isinstance(local, WritableFiles)
     file = tmp_path / "a.mkv"
     assert not local.writable_file(file)  # missing
     file.write_bytes(b"x")
@@ -85,10 +85,42 @@ class WindowsView:
 
 def test_source_writable_asks_the_view_with_windows_paths() -> None:
     view = WindowsView({r"C:\Media\Show.mkv"})
-    assert isinstance(view, WritableFiles)
     assert not source_writable(view, PureWindowsPath(r"c:\media\SHOW.mkv"))  # type: ignore[arg-type]
     assert source_writable(view, PureWindowsPath(r"C:\Media\Other.mkv"))  # type: ignore[arg-type]
-    assert source_writable(object(), PureWindowsPath(r"C:\x.mkv"))  # type: ignore[arg-type]
+
+
+def test_every_view_answers_writable_file() -> None:
+    """``writable_file`` is part of ``FileSystemView``: the scenario's fake view answers it from
+    its files and read-only set, so a validation test needs no extra attribute."""
+    source = PurePath("/media/Show.mkv")
+    fake: FileSystemView = sc.FakeFs(files=[source], readonly=[PurePath("/media/Locked.mkv")])
+    assert fake.writable_file(source)
+    assert not fake.writable_file(PurePath("/media"))  # a folder
+    assert not fake.writable_file(PurePath("/media/Missing.mkv"))
+    locked = sc.FakeFs(
+        files=[PurePath("/media/Locked.mkv")], readonly=[PurePath("/media/Locked.mkv")]
+    )
+    assert not locked.writable_file(PurePath("/media/Locked.mkv"))
+    assert not source_writable(locked, PurePath("/media/Locked.mkv"))
+
+
+@pytest.mark.skipif(root_user, reason="root can open a read-only file for writing")
+def test_runner_check_is_the_local_view(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The queue's run-time check (``reframe.queue.files.writable_file``) is the validation
+    view's test, also on Windows (mocked: ``os.access`` says yes, as it does for a file whose
+    ACL denies writing; the open for update fails)."""
+    file = tmp_path / "a.mkv"
+    file.write_bytes(b"content")
+    assert files.writable_file(file)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(os, "access", lambda *a, **k: True)
+    assert files.writable_file(file)
+    file.chmod(0o444)
+    try:
+        assert not files.writable_file(file)
+    finally:
+        file.chmod(0o644)
+    assert file.read_bytes() == b"content"
 
 
 def in_place() -> Any:

@@ -83,4 +83,3 @@ def test_source_writable(tmp_path: Path) -> None:
             return False
 
     assert not source_writable(Answers(), file)  # type: ignore[arg-type]
-    assert source_writable(object(), file)  # type: ignore[arg-type]  # cannot tell: yes

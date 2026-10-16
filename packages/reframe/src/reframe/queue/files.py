@@ -24,6 +24,7 @@ from functools import partial
 from pathlib import Path
 
 from reframe.models.plan import PlanFile
+from reframe.validation.fs import LocalFileSystem
 
 __all__ = [
     "ATTEMPTS",
@@ -86,10 +87,12 @@ def same_file(a: Path, b: Path) -> bool:
 
 
 def writable_file(path: Path) -> bool:
-    """The existing file ``path`` can be opened for writing by this process (``os.access``:
-    the permissions on POSIX, the read-only attribute on Windows). An in-place metadata edit
-    checks it before mkvpropedit runs (decision 0034)."""
-    return os.path.isfile(path) and os.access(path, os.W_OK)
+    """The existing file ``path`` can be opened for writing by this process: the same test as
+    validation's :meth:`~reframe.validation.LocalFileSystem.writable_file` (``os.access`` on
+    POSIX; on Windows the file is opened for update, which also sees the ACL and a file another
+    process holds without write sharing). An in-place metadata edit checks it before
+    mkvpropedit runs (decision 0034)."""
+    return LocalFileSystem().writable_file(path)
 
 
 def _path_key(path: Path) -> str:
