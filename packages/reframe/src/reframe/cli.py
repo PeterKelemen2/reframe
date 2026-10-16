@@ -12,6 +12,11 @@ Commands:
   (decision 0018), queued and run with progress and ETA. Ctrl+C cancels the jobs.
 - ``reframe name PATH… [--template T] [--preset NAME] [--json]``: the name source and why,
   the parsed fields and the output name of each path.
+- ``reframe batch DIR… [--preset NAME] [--level strict|standard|loose] [--dry-run] [-r]
+  [--json]``: season mode (04, decision 0040): the files grouped by their track layout, the
+  preset resolved in each file of each group (the resolution matrix: one row per file, one
+  column per track rule, the output name); without ``--dry-run`` the files without errors are
+  queued in episode order and encoded as ``encode`` does.
 - ``reframe tools status [--json]``: which ffmpeg / ffprobe / mkvpropedit / mediainfo is used
   (the lines of ``python -m reframe.tools``) and the fetched build.
 - ``reframe tools fetch [--build NAME] [--platform P]``: the pinned FFmpeg build of the
@@ -29,10 +34,12 @@ formats, exit codes and the other CLI choices: decision 0017.
 
 Exit codes:
 
-- ``0``: success (``plan``: no validation errors; ``encode``: every job done).
+- ``0``: success (``plan``: no validation errors; ``encode``, ``batch``: every job done;
+  ``batch --dry-run``: no file has errors).
 - ``1``: failure: ffprobe could not read the file (``probe``, ``plan``); the job has
-  validation errors (``plan``); a job failed, was cancelled or was not queued (``encode``);
-  a name has errors (``name``).
+  validation errors (``plan``); a job failed, was cancelled or was not queued (``encode``,
+  ``batch``); a file has errors or cannot be read (``batch --dry-run``); a name has errors
+  (``name``).
 - ``2``: wrong command-line usage: typer/click errors, an unknown preset, ``-o`` with more
   than one file, a template with errors (``name --template``).
 - ``3``: a file or folder does not exist, is not a file, or cannot be read; no media files
@@ -61,6 +68,7 @@ cannot encode are replaced (never a ``UnicodeEncodeError``).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import difflib
 import io
 import json
@@ -69,7 +77,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -78,9 +86,12 @@ from typing import Annotated, Any, Protocol
 from pydantic import BaseModel
 
 from reframe import __version__, languages
+from reframe.batch.grouping import episode_label
+from reframe.batch.report import ROW_ASCII, ROW_MARKS, matrix_lines
 from reframe.events import Subscription
 from reframe.jobs import find_media_files, has_errors
 from reframe.mediatask import TaskFailed
+from reframe.models.batch import BatchGroup, BatchResolution, MatchLevel
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.draft import JobDraft
 from reframe.models.events import (
@@ -207,6 +218,12 @@ _EXIT_HELP_ENCODE = (
     "files; 130 interrupted (Ctrl+C: the jobs are cancelled first)."
 )
 _EXIT_HELP_NAME = "Exit codes: 0 named; 1 a name has errors; 2 usage error or a bad template."
+_EXIT_HELP_BATCH = (
+    "Exit codes: 0 every file resolved without errors (--dry-run) or every job done; 1 a file "
+    "has errors, cannot be read, or a job failed, was cancelled or was not queued; 2 usage "
+    "error or unknown preset; 3 a path does not exist, or no media files; 130 interrupted "
+    "(Ctrl+C: the jobs are cancelled first)."
+)
 
 _EXIT_BY_KIND = {
     ProbeErrorKind.NOT_FOUND: EXIT_NOT_FOUND,
@@ -1140,10 +1157,13 @@ def _draft_header(console: Console, draft: JobDraft, source_name: str) -> None:
         ("Name", how),
     ]
     rows += [("Note", note) for note in [*draft.notes, *name.notes]]
-    rows += [
-        ("Audio" if i == 0 else "", f"#{d.source_stream}  {d.reason}")
-        for i, d in enumerate(draft.decisions)
-    ]
+    for key, decisions in (("Audio", draft.decisions), ("Subtitle", draft.subtitle_decisions)):
+        for i, d in enumerate(decisions):
+            number = f"#{d.source_stream}"
+            rows.append((key if i == 0 else "", f"{number}  {d.reason}"))
+            if d.selected and d.selection:
+                # Why the track was taken (C-12's selection stage or track rule).
+                rows.append(("", f"{'':{len(number)}}  selected: {d.selection}"))
     for key, value in rows:
         _indented(console, Text(printable(value)), _INDENT + 9, first=f"{'':{_INDENT}}{key:<8} ")
 
@@ -1420,6 +1440,16 @@ async def run_encode(
         return await _encode(app, queue, found.files, chosen, output, console)
 
 
+@dataclasses.dataclass
+class Prepared:
+    """What a command lines up for the queue (``reframe encode`` drafts, ``reframe batch``
+    resolutions): the jobs with their labels, in queue order, and the files not queued. Filled
+    while it is made, so a Ctrl+C in between still counts what was refused."""
+
+    jobs: list[tuple[str, JobSettings]] = dataclasses.field(default_factory=list)
+    not_queued: int = 0
+
+
 async def _encode(
     app: Reframe,
     queue: QueueLike,
@@ -1428,10 +1458,24 @@ async def _encode(
     output: Path | None,
     console: Console,
 ) -> int:
+    async def prepare(prepared: Prepared) -> None:
+        await _draft_files(app, files, preset, output, console, prepared)
+
+    return await _run_jobs(app, queue, prepare, console)
+
+
+async def _run_jobs(
+    app: Reframe,
+    queue: QueueLike,
+    prepare: Callable[[Prepared], Awaitable[None]],
+    console: Console,
+) -> int:
+    """Queue what ``prepare`` lines up, run it, follow it (progress, Ctrl+C, the summary) and
+    wait for a when-done countdown that its jobs started; return the exit code."""
     # Subscribed before the queue starts: the when-done countdown begins as the last job ends.
     countdown = app.events.subscribe(types={"power.countdown"})
     try:
-        code, queued = await _encode_jobs(app, queue, files, preset, output, console)
+        code, queued = await _queue_jobs(app, queue, prepare, console)
         if code == EXIT_INTERRUPTED or not queued:
             return code
         stopped = await follow_countdown(app, countdown, console)
@@ -1440,68 +1484,75 @@ async def _encode(
         countdown.close()
 
 
-async def _encode_jobs(
+async def _draft_files(
     app: Reframe,
-    queue: QueueLike,
     files: Sequence[Path],
     preset: Preset,
     output: Path | None,
     console: Console,
-) -> tuple[int, bool]:
-    subscription = app.events.subscribe(types={"job.state", "job.progress"})
+    prepared: Prepared,
+) -> None:
+    """``reframe encode``: draft every file; the files with errors are listed, not queued."""
     total = len(files)
     width = len(str(total))
-    labels: dict[str, str] = {}
-    ids: list[str] = []
-    not_queued = 0
-    view: EncodeView | None = None
-    try:
-        console.print(Text(f"Preset: {preset.name}"), soft_wrap=True)
-        drafts: list[tuple[str, JobDraft]] = []
-        for number, file in enumerate(files, start=1):
-            label = f"[{number:>{width}}/{total}]"
-            draft = await app.jobs.draft(file, preset, output=output)
-            if isinstance(draft, ProbeError):
-                not_queued += 1
-                console.print(
-                    Text(printable(f"{label} {file.name}: not queued"), style="bold red"),
-                    soft_wrap=True,
-                )
-                _indented(
-                    console,
-                    Text(printable(draft.message + (f" ({draft.detail})" if draft.detail else ""))),
-                    9,
-                )
-                continue
-            target = draft.job.output.path
+    console.print(Text(f"Preset: {preset.name}"), soft_wrap=True)
+    for number, file in enumerate(files, start=1):
+        label = f"[{number:>{width}}/{total}]"
+        draft = await app.jobs.draft(file, preset, output=output)
+        if isinstance(draft, ProbeError):
+            prepared.not_queued += 1
             console.print(
-                Text(printable(f"{label} {file.name} → {target if target is not None else NONE}")),
+                Text(printable(f"{label} {file.name}: not queued"), style="bold red"),
                 soft_wrap=True,
             )
-            for note in draft.notes:
-                _indented(console, Text(printable(f"note: {note}"), style="dim"), 9)
-            if has_errors(draft.issues):
-                not_queued += 1
-                console.print(
-                    Text(
-                        f"{' ' * len(label)} not queued: {issue_counts(draft.issues)}",
-                        style="bold red",
-                    ),
-                    soft_wrap=True,
-                )
-                render_issues(
-                    console,
-                    draft.issues,
-                    severities=(Severity.ERROR, Severity.WARNING),
-                    indent=len(label) + 1,
-                )
-                continue
-            render_issues(
-                console, draft.issues, severities=(Severity.WARNING,), indent=len(label) + 1
+            _indented(
+                console,
+                Text(printable(draft.message + (f" ({draft.detail})" if draft.detail else ""))),
+                9,
             )
-            drafts.append((label, draft))
-        for position, (label, draft) in enumerate(drafts):
-            job = await queue.add(draft.job, position=position)
+            continue
+        target = draft.job.output.path
+        console.print(
+            Text(printable(f"{label} {file.name} → {target if target is not None else NONE}")),
+            soft_wrap=True,
+        )
+        for note in draft.notes:
+            _indented(console, Text(printable(f"note: {note}"), style="dim"), 9)
+        if has_errors(draft.issues):
+            prepared.not_queued += 1
+            console.print(
+                Text(
+                    f"{' ' * len(label)} not queued: {issue_counts(draft.issues)}",
+                    style="bold red",
+                ),
+                soft_wrap=True,
+            )
+            render_issues(
+                console,
+                draft.issues,
+                severities=(Severity.ERROR, Severity.WARNING),
+                indent=len(label) + 1,
+            )
+            continue
+        render_issues(console, draft.issues, severities=(Severity.WARNING,), indent=len(label) + 1)
+        prepared.jobs.append((label, draft.job))
+
+
+async def _queue_jobs(
+    app: Reframe,
+    queue: QueueLike,
+    prepare: Callable[[Prepared], Awaitable[None]],
+    console: Console,
+) -> tuple[int, bool]:
+    subscription = app.events.subscribe(types={"job.state", "job.progress"})
+    labels: dict[str, str] = {}
+    ids: list[str] = []
+    prepared = Prepared()
+    view: EncodeView | None = None
+    try:
+        await prepare(prepared)
+        for position, (label, settings) in enumerate(prepared.jobs):
+            job = await queue.add(settings, position=position)
             ids.append(job.id)
             labels[job.id] = label
             if job.state is JobState.FAILED:
@@ -1533,15 +1584,15 @@ async def _encode_jobs(
             "Interrupted: cancelling the jobs (their partial files are removed)…", file=sys.stderr
         )
         await _cancel_jobs(queue, ids)
-        _summary(console, queue, ids, not_queued)
+        _summary(console, queue, ids, prepared.not_queued)
         return EXIT_INTERRUPTED, True
     finally:
         subscription.close()
         if view is not None:
             view.close()
-    finals = _summary(console, queue, ids, not_queued)
+    finals = _summary(console, queue, ids, prepared.not_queued)
     all_done = all(job.state is JobState.DONE for job in finals)
-    return (EXIT_OK if all_done and not not_queued else EXIT_FAILED), True
+    return (EXIT_OK if all_done and not prepared.not_queued else EXIT_FAILED), True
 
 
 async def _follow_jobs(
@@ -1621,6 +1672,166 @@ def _summary(
     parts.append(f"{not_queued} not queued")
     console.print(Text("Summary: " + ", ".join(parts) + ".", style="bold"), soft_wrap=True)
     return finals
+
+
+# --------------------------------------------------------------------------- batch
+
+
+def _unicode(console: Console) -> bool:
+    return (console.encoding or "").lower().replace("_", "-").startswith("utf")
+
+
+def _counts(issues: Sequence[ValidationIssue]) -> str:
+    """``1 error, 2 warnings`` (only the severities that occur)."""
+    parts = []
+    for severity, word in ((Severity.ERROR, "error"), (Severity.WARNING, "warning")):
+        count = sum(1 for issue in issues if issue.severity is severity)
+        if count:
+            parts.append(_plural(count, word))
+    return ", ".join(parts)
+
+
+def render_group(console: Console, group: BatchGroup, number: int, total: int) -> None:
+    """``Group 1 of 1: Anime Show S01 · 12 files · standard match``, then each file with its
+    episode and, for a near member, how it differs."""
+    files = _plural(len(group.members), "file")
+    head = f"Group {number} of {total}: {group.name} · {files} · {group.level} match"
+    console.print(Text(printable(head), style="bold"), soft_wrap=True)
+    warn = ROW_MARKS["warning"] if _unicode(console) else ROW_ASCII["warning"]
+    labels = [episode_label(member.path) for member in group.members]
+    width = max(len(label) for label in labels)
+    for label, member in zip(labels, group.members, strict=True):
+        line = Text(printable(member.path.name))
+        if member.path == group.representative:
+            line.append(" (representative)", style="dim")
+        if member.match == "near":
+            line.append(f"  {warn} {'; '.join(member.differences)}", style="yellow")
+        first = f"{'':{_INDENT}}{label:<{width}}  "
+        _indented(console, line, len(first), first=first)
+
+
+def render_matrix(console: Console, resolution: BatchResolution) -> None:
+    """The column legend, the matrix (:func:`matrix_lines`), then each file's errors and
+    warnings and the batch's issues."""
+    unicode = _unicode(console)
+    _section(console, "Columns")
+    for column in resolution.columns:
+        if column.kind not in ("audio", "subtitle"):
+            continue
+        short, _, rest = column.label.partition(" ")
+        _indented(console, Text(printable(rest)), _INDENT + 4, first=f"{'':{_INDENT}}{short:<3} ")
+    console.print()
+    for line in matrix_lines(resolution, unicode=unicode):
+        console.print(Text(line), soft_wrap=True, crop=False)
+    problems = [
+        r for r in resolution.rows if any(i.severity is not Severity.INFO for i in r.issues)
+    ]
+    if problems or resolution.issues:
+        _section(console, "Problems")
+    for row in problems:
+        shown = [i for i in row.issues if i.severity is not Severity.INFO]
+        head = f"{'':{_INDENT}}{episode_label(row.path)}: {_counts(shown)}"
+        console.print(Text(printable(head), style="bold"), soft_wrap=True)
+        render_issues(console, shown, severities=(Severity.ERROR, Severity.WARNING), indent=4)
+    render_issues(console, resolution.issues)
+
+
+def _batch_summary(resolutions: Sequence[BatchResolution], unreadable: int) -> tuple[int, int]:
+    """(files that can be queued, files that cannot)."""
+    rows = [row for resolution in resolutions for row in resolution.rows]
+    good = sum(1 for row in rows if row.status != "error" and row.job is not None)
+    return good, len(rows) - good + unreadable
+
+
+async def run_batch(
+    paths: Sequence[Path],
+    *,
+    preset: str | None,
+    level: MatchLevel = "standard",
+    dry_run: bool = False,
+    recursive: bool = False,
+    as_json: bool = False,
+) -> int:
+    """``reframe batch``: group the media files, resolve the preset in every file of every
+    group and print the groups and the resolution matrix; without ``--dry-run``, queue the
+    files without errors in episode order and encode them as ``reframe encode`` does.
+    Returns the exit code."""
+    if as_json and not dry_run:
+        _error("--json needs --dry-run: the encode prints progress, not JSON.")
+        return EXIT_USAGE
+    console = make_console()
+    async with open_reframe() as app:
+        found = await app.jobs.media_files(paths, recursive=recursive)
+        for missing in found.missing:
+            _error(f"{display_path(missing)}: the file or folder does not exist.")
+        if found.missing:
+            return EXIT_NOT_FOUND
+        for folder in found.empty:
+            print(_one_line(f"warning: {folder}: no media files in this folder."), file=sys.stderr)
+        if not found.files:
+            _error("no media files to encode.")
+            return EXIT_NOT_FOUND
+        chosen = find_preset(app, preset)
+        if isinstance(chosen, str):
+            _error(chosen)
+            return EXIT_USAGE
+        grouping = await app.batch.group(found.files, level=level)
+        resolutions = [
+            await app.batch.resolve(chosen, [m.path for m in group.members], group=group)
+            for group in grouping.groups
+        ]
+        good, bad = _batch_summary(resolutions, len(grouping.issues))
+        if as_json:
+            _write_json_value(
+                {
+                    "grouping": grouping.model_dump(mode="json"),
+                    "resolutions": [r.model_dump(mode="json") for r in resolutions],
+                }
+            )
+            return EXIT_OK if not bad else EXIT_FAILED
+        console.print(Text(f"Preset: {chosen.name}"), soft_wrap=True)
+        if grouping.issues:
+            _section(console, "Files that cannot be read")
+            render_issues(console, grouping.issues)
+        for number, (group, resolution) in enumerate(
+            zip(grouping.groups, resolutions, strict=True), start=1
+        ):
+            console.print()
+            render_group(console, group, number, len(grouping.groups))
+            render_matrix(console, resolution)
+        console.print()
+        if dry_run:
+            line = f"Dry run: {good} of {good + bad} files can be queued"
+            line += f"; {bad} cannot (errors)." if bad else "."
+            console.print(Text(line, style="bold"), soft_wrap=True)
+            return EXIT_OK if not bad else EXIT_FAILED
+        queue = get_queue(app)
+
+        async def prepare(prepared: Prepared) -> None:
+            prepared.not_queued += len(grouping.issues)
+            rows = [row for resolution in resolutions for row in resolution.rows]
+            width = len(str(len(rows)))
+            for number, row in enumerate(rows, start=1):
+                label = f"[{number:>{width}}/{len(rows)}]"
+                target = row.job.output.path if row.job is not None else None
+                console.print(
+                    Text(printable(f"{label} {row.path.name} → {target or NONE}")),
+                    soft_wrap=True,
+                )
+                if row.job is None or row.status == "error":
+                    prepared.not_queued += 1
+                    console.print(
+                        Text(
+                            f"{' ' * len(label)} not queued: {issue_counts(row.issues)} "
+                            "(see Problems)",
+                            style="bold red",
+                        ),
+                        soft_wrap=True,
+                    )
+                    continue
+                prepared.jobs.append((label, row.job))
+
+        return await _run_jobs(app, queue, prepare, console)
 
 
 # --------------------------------------------------------------------------- when done
@@ -2144,6 +2355,14 @@ _EXIT_HELP_PRESETS_IMPORT = (
 )
 
 
+class LevelChoice(StrEnum):
+    """``reframe batch --level`` (04 §Grouping)."""
+
+    STRICT = "strict"
+    STANDARD = "standard"
+    LOOSE = "loose"
+
+
 class ConflictChoice(StrEnum):
     """``--on-conflict`` of ``reframe presets import`` (C-9's ``ConflictPolicy``)."""
 
@@ -2483,6 +2702,61 @@ def build_app() -> typer.Typer:
         Works from the path alone (no probe): variables of the output media, such as
         {resolution}, are empty here; "reframe plan" shows the full name."""
         _run(run_name(paths, template=template, preset=preset, as_json=as_json))
+
+    @app.command(epilog=_EXIT_HELP_BATCH)
+    def batch(
+        paths: Annotated[
+            list[Path],
+            typer.Argument(
+                help="Season folders (their media files) and media files.",
+                metavar="DIR…",
+                readable=False,
+            ),
+        ],
+        preset: _PresetOption = None,
+        level: Annotated[
+            LevelChoice,
+            typer.Option(
+                "--level",
+                help="How alike files must be to form a group: strict (titles and order "
+                "too), standard (codec, channels, language, role, order) or loose (codec "
+                "family, language, role; any order).",
+            ),
+        ] = LevelChoice.STANDARD,
+        dry_run: Annotated[
+            bool,
+            typer.Option("--dry-run", help="Print the groups and the matrix; encode nothing."),
+        ] = False,
+        recursive: Annotated[
+            bool,
+            typer.Option("--recursive", "-r", help="Also search the subfolders of folders."),
+        ] = False,
+        as_json: Annotated[
+            bool,
+            typer.Option(
+                "--json", help="With --dry-run: print the groups and the matrices as JSON."
+            ),
+        ] = False,
+    ) -> None:
+        """Season mode: group files with the same track layout, resolve the preset's track
+        rules in every file, and encode the season.
+
+        Prints each group (a file that differs a little is a near match, with how it
+        differs) and its resolution matrix: one row per file in episode order, one column
+        per track rule (✓ exact, ≈ matched after relaxing or one of several candidates,
+        ✗ no match for a required rule, a dash: skipped), the output name, then each file's
+        errors and warnings. Without --dry-run, the files without errors are queued in
+        episode order and encoded as "reframe encode" does; the others are listed."""
+        _run(
+            run_batch(
+                paths,
+                preset=preset,
+                level=level.value,
+                dry_run=dry_run,
+                recursive=recursive,
+                as_json=as_json,
+            )
+        )
 
     tools_app = typer.Typer(
         no_args_is_help=True,

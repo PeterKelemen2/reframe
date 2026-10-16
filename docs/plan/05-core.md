@@ -512,6 +512,10 @@ overrides for `C-16`), and per-group resolution with a match report.
     selected or dropped track and every chosen rule. It feeds the live preview.
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
 
+The rule engine (explicit track rules with relaxation; the defaults compiled into rules over
+the selection stage), grouping, derivation, overrides and the match report:
+[decision 0040](../decisions/0040-batch-engine-and-reframe-batch.md).
+
 Done when: the "Done when" list in [04](04-batch-mode.md#core-api-implemented-in-c-12) passes,
 and a table test reproduces the example in
 [03 §Audio defaults](03-features.md#audio-defaults-stored-in-the-preset) row by row (Hungarian
@@ -582,7 +586,9 @@ The method list beyond this sketch, and the task context of the C-10 methods:
       `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status` · `reframe tools fetch [--build NAME] [--platform P]` ·
       `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list` · `reframe presets export [NAME…] [-o FILE]` · `reframe presets import FILE [--on-conflict rename|replace|skip]` ·
       `reframe plan FILE [--preset NAME] [-o OUT]` (prints the issues, then the command) · `reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
-      `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
+      `reframe batch DIR… [--preset NAME] [--level strict|standard|loose] [--dry-run] [-r] [--json]`
+      (prints the groups and the resolution matrix; without `--dry-run` it encodes the files
+      without errors, [decision 0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
       No `--preset`: the default preset. Output formats, exit codes, the bounded wait for
       encoder detection and the folder search: [decision 0017](../decisions/0017-jobs-service-and-cli.md).
       The fetch, the preset commands, the dry run of `plan` and the when-done countdown of

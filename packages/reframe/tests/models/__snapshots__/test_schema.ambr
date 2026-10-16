@@ -1328,6 +1328,7 @@
       'TagSettings',
       'TestOp',
       'TimeRange',
+      'TrackDecision',
       'TrackDescriptor',
       'TrackFlags',
       'TrackMatch',
@@ -3826,6 +3827,20 @@
         'title': 'Differences',
         'type': 'array',
       }),
+      'episode': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The episode number in the file name, when there is one (``E05`` in the matrix).',
+        'title': 'Episode',
+      }),
       'match': dict({
         'default': 'exact',
         'enum': list([
@@ -3839,6 +3854,20 @@
         'format': 'path',
         'title': 'Path',
         'type': 'string',
+      }),
+      'season': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': "The season number in the file name (C-16's parser), when there is one.",
+        'title': 'Season',
       }),
     }),
     'required': list([
@@ -5002,6 +5031,15 @@
     'additionalProperties': False,
     'description': 'A column of the resolution matrix (04 §Resolution matrix).',
     'properties': dict({
+      'defaults': dict({
+        'default': False,
+        'description': '''
+          ``True``: the column of a rule compiled from the template's defaults (see
+          :attr:`TrackMatch.defaults`).
+        ''',
+        'title': 'Defaults',
+        'type': 'boolean',
+      }),
       'kind': dict({
         'enum': list([
           'video',
@@ -7359,6 +7397,7 @@
       'TagSettings',
       'TestOp',
       'TimeRange',
+      'TrackDecision',
       'TrackFlags',
       'TrackMatch',
       'TrackMetadata',
@@ -7371,6 +7410,17 @@
       (04 §Concepts).
     ''',
     'properties': dict({
+      'decisions': dict({
+        'description': '''
+          One per source audio track, in source order: taken by which rule and why, the output
+          and the reason (as ``JobDraft.decisions``).
+        ''',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Decisions',
+        'type': 'array',
+      }),
       'issues': dict({
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
@@ -7407,6 +7457,17 @@
           }),
         ]),
         'default': None,
+      }),
+      'notes': dict({
+        'description': '''
+          What the resolution changed or left out, in one line each (generated chapter names,
+          a crop that is detected per file, an output name that was the source itself).
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Notes',
+        'type': 'array',
       }),
       'override': dict({
         'description': 'The per-file override that was applied (04 §Per-file overrides).',
@@ -7461,6 +7522,14 @@
         ]),
         'title': 'Status',
         'type': 'string',
+      }),
+      'subtitle_decisions': dict({
+        'description': 'One per source subtitle track, in source order.',
+        'items': dict({
+          '$ref': '#/$defs/TrackDecision',
+        }),
+        'title': 'Subtitle Decisions',
+        'type': 'array',
       }),
     }),
     'required': list([
@@ -9642,6 +9711,16 @@
         'title': 'Candidates',
         'type': 'array',
       }),
+      'defaults': dict({
+        'default': False,
+        'description': '''
+          ``True``: a rule compiled from the template's audio / subtitle defaults (the template
+          has no explicit rules of this kind); ``rule`` is then the index in the compiled rules
+          (``reframe.batch.compile_defaults``).
+        ''',
+        'title': 'Defaults',
+        'type': 'boolean',
+      }),
       'kind': dict({
         'enum': list([
           'audio',
@@ -10229,6 +10308,12 @@
       }),
       'sort': dict({
         'default': 'source_order',
+        'description': '''
+          ``highest_bitrate`` is decision 0031's best-quality order: lossless first, then the
+          highest known bit rate (an unknown one after every known one), then more channels;
+          for subtitles ``most_channels`` and ``highest_bitrate`` put full subtitles before SDH
+          before forced and Signs & Songs (decision 0040).
+        ''',
         'enum': list([
           'source_order',
           'most_channels',
@@ -10236,6 +10321,24 @@
         ]),
         'title': 'Sort',
         'type': 'string',
+      }),
+      'stream': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          A per-file override (04 §Resolution matrix: a candidate picked by hand in a cell): the
+          absolute index of the source track this rule takes in that one file; the other fields
+          are not checked. Not for a preset: a stream index does not carry over to other files.
+        ''',
+        'title': 'Stream',
       }),
       'title_pattern': dict({
         'anyOf': list([
