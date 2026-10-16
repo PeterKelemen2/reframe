@@ -1260,7 +1260,7 @@
       'ValidationIssue',
     ]),
     'additionalProperties': False,
-    'description': '``Reframe.batch.group(...)``: the groups, and the files that could not be read.',
+    'description': '``Reframe.batch.group(...)``: the groups, and the files left out of them.',
     'properties': dict({
       'groups': dict({
         'items': dict({
@@ -1270,7 +1270,11 @@
         'type': 'array',
       }),
       'issues': dict({
-        'description': 'A file that could not be probed (``source.probe_failed``) is not in any group.',
+        'description': '''
+          The files that are in no group: one that could not be probed (``source.probe_failed``),
+          and (``Reframe.batch.resolve_batch``) one that is the planned output of another file of
+          the batch (``batch.already_encoded``, info; decision 0040).
+        ''',
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
         }),
