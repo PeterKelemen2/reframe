@@ -5,9 +5,12 @@ the output rules (folder writable, output = source, collision, free space) and t
 run against a fake file system in tests, with Windows paths too.
 
 Every method answers a question and never raises: a path that cannot be read is "does not
-exist" / "not writable" / ``None``. Paths are :class:`~pathlib.PurePath` so that tests can pass
-:class:`~pathlib.PureWindowsPath` on Linux; :class:`LocalFileSystem` uses them as ``os``
-paths.
+exist" / "not writable" / ``None``. So is a path with a NUL character, which no file system
+allows (only the API can send one): ``os.stat`` and friends raise ``ValueError`` for it, not
+``OSError`` (final review RN, decision 0016).
+
+Paths are :class:`~pathlib.PurePath` so that tests can pass :class:`~pathlib.PureWindowsPath`
+on Linux; :class:`LocalFileSystem` uses them as ``os`` paths.
 
 The view extends :class:`reframe.naming.NamingFs` (the folder listing and file times of output
 naming), so the same object serves the naming rule.
@@ -19,12 +22,12 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Protocol
 
-from reframe.naming import NamingFs, RealNamingFs
+from reframe.naming import FileTimes, NamingFs, RealNamingFs
 
-__all__ = ["FileSystemView", "LocalFileSystem"]
+__all__ = ["FileSystemView", "LocalFileSystem", "has_nul"]
 
 
 class FileSystemView(NamingFs, Protocol):
@@ -58,6 +61,12 @@ class FileSystemView(NamingFs, Protocol):
         ...
 
 
+def has_nul(path: PurePath | str) -> bool:
+    """``path`` has a NUL character: no file system allows it, and the ``os`` calls that take
+    a path raise ``ValueError`` for it (``exists`` and the ``is*`` tests answer ``False``)."""
+    return "\0" in str(path)
+
+
 def _can_open_for_update(file: PurePath) -> bool:
     try:
         with open(file, "r+b"):
@@ -75,16 +84,19 @@ def _can_create_file(folder: PurePath) -> bool:
 
 
 class LocalFileSystem(RealNamingFs):
-    """The real file system: ``os``, ``shutil`` and ``tempfile`` calls only, no subprocess."""
+    """The real file system: ``os``, ``shutil`` and ``tempfile`` calls only, no subprocess.
+
+    A path with a NUL character names no file: every method answers as for a path that does
+    not exist, before any ``os`` call (which would raise ``ValueError``)."""
 
     def exists(self, path: PurePath) -> bool:
-        return os.path.exists(path)
+        return not has_nul(path) and os.path.exists(path)
 
     def is_dir(self, path: PurePath) -> bool:
-        return os.path.isdir(path)
+        return not has_nul(path) and os.path.isdir(path)
 
     def writable_dir(self, path: PurePath) -> bool:
-        if not os.path.isdir(path):
+        if has_nul(path) or not os.path.isdir(path):
             return False
         if sys.platform == "win32":
             # os.access only reads the read-only attribute on Windows (folders ignore it), not
@@ -94,7 +106,7 @@ class LocalFileSystem(RealNamingFs):
             return os.access(path, os.W_OK | os.X_OK)
 
     def writable_file(self, path: PurePath) -> bool:
-        if not os.path.isfile(path):
+        if has_nul(path) or not os.path.isfile(path):
             return False
         if sys.platform == "win32":
             # os.access only reads the read-only attribute on Windows, not the ACL or a file
@@ -105,13 +117,23 @@ class LocalFileSystem(RealNamingFs):
             return os.access(path, os.W_OK)
 
     def free_bytes(self, path: PurePath) -> int | None:
+        if has_nul(path):
+            return None
         try:
             return shutil.disk_usage(path).free
         except OSError:
             return None
 
     def same_file(self, a: PurePath, b: PurePath) -> bool:
+        if has_nul(a) or has_nul(b):
+            return False
         try:
             return os.path.samefile(a, b)
         except OSError:
             return False
+
+    def list_files(self, folder: Path) -> list[str] | None:
+        return None if has_nul(folder) else super().list_files(folder)
+
+    def file_times(self, file: Path) -> FileTimes | None:
+        return None if has_nul(file) else super().file_times(file)

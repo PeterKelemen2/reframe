@@ -20,6 +20,11 @@ for each.
 
 A rule that fails with an exception (a bug) does not stop the others: it gives a
 ``validation.rule_failed`` error, so a job is never queued unchecked.
+
+A source path with a NUL character (only the API can send one; no file system allows it) is a
+``source.path_unusable`` error that :func:`validate` gives before the rules run (final review
+RN, decision 0016); the rules see it as a path that does not exist (:class:`LocalFileSystem`
+never raises for it). A NUL in the output path is the output rule's ``output.not_writable``.
 """
 
 from __future__ import annotations
@@ -56,7 +61,7 @@ from reframe.validation import subtitles as _subtitles  # noqa: F401
 from reframe.validation import tools as _tools  # noqa: F401
 from reframe.validation.common import error
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.fs import FileSystemView, LocalFileSystem
+from reframe.validation.fs import FileSystemView, LocalFileSystem, has_nul
 from reframe.validation.output import estimate_output_bytes, next_free_path
 from reframe.validation.registry import JOB_RULES, TEMPLATE_RULES, Rule, ordered
 from reframe.validation.video import switch_video_encoder
@@ -128,7 +133,27 @@ def validate(
         definitions=definitions if definitions is not None else load_definitions(),
         naming=naming if naming is not None else settings.output.naming,
     )
-    return _run(JOB_RULES if rules is None else rules, context)
+    return [
+        *_source_path_issues(job, source),
+        *_run(JOB_RULES if rules is None else rules, context),
+    ]
+
+
+def _source_path_issues(job: JobSettings, source: MediaSource) -> list[ValidationIssue]:
+    """``source.path_unusable`` when the job's source path, or the given source's, has a NUL
+    character: no file can have that name, so the job cannot read its source."""
+    for path in (job.source.path, source.ref.path):
+        if has_nul(path):
+            shown = str(path).replace("\0", "\\0")
+            return [
+                error(
+                    "source.path_unusable",
+                    "source",
+                    f"The source path {shown} has a NUL character, which no file system "
+                    "allows: no file can have this name. Correct the path.",
+                )
+            ]
+    return []
 
 
 def validate_template(

@@ -473,9 +473,10 @@ case. Each test below failed on 5dbf152 and passes now
   `test_a_restored_job_with_a_nul_in_its_path` (a waiting one and the leftovers of a running
   one), `test_no_key_function_raises_for_a_path_with_a_nul`,
   `test_python_facts_behind_the_rule` (CPython 3.14.7: `abspath` takes the NUL, `stat` and
-  `realpath` raise `ValueError`). Not changed (validation's files): `LocalFileSystem.same_file`
-  still lets `ValueError` out, which validation reports as `validation.rule_failed`; the queue
-  checks first, so a queued job never shows it.
+  `realpath` raise `ValueError`). Not changed here (validation's files):
+  `LocalFileSystem.same_file` still let `ValueError` out, which validation reported as
+  `validation.rule_failed`; the queue checks first, so a queued job never showed it. Fixed
+  since: RN below.
 
 - **RB-5 (minor): a paused in-place edit that a cancel or `close()` resumes was shown
   `paused`.** The runner resumed mkvpropedit (R4-7) but published no state, and the sleep
@@ -495,6 +496,44 @@ case. Each test below failed on 5dbf152 and passes now
   `test_a_zero_file_index_is_no_identity`. A volume serial number (`st_dev`) of 0 with real
   file indexes is not treated specially (two such volumes would need equal indexes to
   collide).
+
+- **RN: NUL paths outside the queue (two minors of RB, fixed).** Only the API can send a path
+  with a NUL (JSON allows `\u0000`; argv cannot hold one), and `os.stat`, `realpath`,
+  `samefile`, `access`, `disk_usage`, `scandir` and `open` raise `ValueError` for it, not
+  `OSError` (`exists` and the `is*` tests answer `False`; CPython 3.14.7). Before,
+  `Reframe.jobs.validate` / `plan` (and `draft` with such an output) showed
+  `validation.rule_failed` ("… Please report this."), and `Reframe.sources.probe` raised (the
+  CLI / API showed "unexpected error"). Now:
+  - `reframe.validation.fs.has_nul` names the case, and no `LocalFileSystem` method raises
+    for such a path: it is a path that does not exist (`False` / `None`), also for the naming
+    reads `list_files` and `file_times` (overridden there; `reframe.naming.RealNamingFs`
+    itself is not changed).
+  - A NUL in the output path is the output rule's `output.not_writable` error ("The output
+    path …/Mo\0vie.mkv has a NUL character, which no file system allows: the file cannot be
+    created. Correct the path."), with C-16's safe name as the fix when the NUL is in the file
+    name, and no file-system read. An existing code: a new code declared by a rule needs a
+    case in `tests/validation/test_rules.py`.
+  - A NUL in the source path is `source.probe_failed` when the job's source is probed (the
+    probe's error below). When the caller gives the source (`validate(job, source)`, a
+    `MediaSource` sent through the API), `validate` gives the new free-string error
+    `source.path_unusable` (path `source`) before the rules run, as it gives
+    `validation.rule_failed` (no rule declares it, so `test_rules.py` needs no case); before,
+    `plan` built a plan that reads the NUL path. A dry run of such a source is
+    `encoder.dry_run_skipped` (before, `reframe.tools.run` raised "embedded null byte").
+  - `Reframe.sources.probe` gives `ProbeError` `not_found`, "The path has a NUL character,
+    which no file system allows: no file can have this name." (also when ffprobe is missing),
+    and the scan and preview tasks that probe first fail with that message; `get` returns
+    `None`, `store` / `update` store nothing, and a folder probe of such a folder ends `done`
+    with that one error (before, the task failed with the `ValueError`).
+
+  No persisted `Literal` or enum changes. Tests (each failed before):
+  `tests/validation/test_nul_paths_final_review.py` (`LocalFileSystem` on POSIX and, mocked,
+  Windows; the output name and folder; the source path given; an in-place edit; the dry run;
+  `test_python_facts_behind_the_rule`) and `tests/test_service_nul_paths.py` (probe, `get` /
+  `store` / `update`, the folder probe, and `jobs.validate` / `plan` / `dry_run` / `draft`
+  with a NUL output or source path). Two guards passed before too: the Windows branches of
+  `writable_dir` / `writable_file` (the `isdir` / `isfile` test comes first) and the naming
+  options' fixed folder with a NUL (not listed for that job).
 
 Known limits (no change): when a killed tree has not ended after 10 s,
 `reframe.tools.runner._kill_and_reap` calls `proc.kill()` and then waits for the process with
