@@ -82,6 +82,7 @@ from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken, check_tool, locate_tools
 from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
 from reframe.tools.fetch import start_fetch
+from reframe.validation.fs import has_nul
 
 __all__ = [
     "FolderProbeResult",
@@ -372,6 +373,10 @@ class SourceService:
         root = _absolute(path)
 
         async def work(ctx: TaskContext) -> FolderProbeResult:
+            if has_nul(root):  # listing it would raise ValueError (final review RN)
+                return FolderProbeResult(
+                    root, errors=[ProbeError(root, ProbeErrorKind.NOT_FOUND, _NUL_PATH)]
+                )
             ctx.progress(None, "Waiting for tool discovery")
             prober = await self._get_prober()
             if isinstance(prober, ToolInfo):
@@ -410,6 +415,8 @@ class SourceService:
         """
         self._check_open()
         file = _absolute(path)
+        if has_nul(file):  # no file can have this name; os.stat would raise ValueError
+            return None
         try:
             stat = await asyncio.to_thread(os.stat, file)
         except OSError:
@@ -487,6 +494,8 @@ class SourceService:
 
     async def _store(self, source: MediaSource) -> None:
         file = Path(source.ref.path)
+        if has_nul(file):  # a source sent through the API; os.stat would raise ValueError
+            return
         try:
             stat = await asyncio.to_thread(os.stat, file)
         except OSError:
@@ -641,10 +650,18 @@ def _same_version(a: MediaSource, b: MediaSource) -> bool:
     return fa is not None and fb is not None and (fa.size, fa.mtime) == (fb.size, fb.mtime)
 
 
+#: The ``ProbeError`` message of a path with a NUL character (only the API can send one).
+_NUL_PATH = "The path has a NUL character, which no file system allows: no file can have this name."
+
+
 def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
     """The file checks of :meth:`Prober.probe` (missing, not a file), plus a real open, because
-    ``stat()`` succeeds on a file without read permission."""
+    ``stat()`` succeeds on a file without read permission. A path with a NUL character is
+    ``NOT_FOUND`` (``os.stat`` raises ``ValueError`` for it, not ``OSError``; final review
+    RN, decision 0016)."""
     file = _absolute(path)
+    if has_nul(file):
+        return ProbeError(file, ProbeErrorKind.NOT_FOUND, _NUL_PATH)
     try:
         stat = os.stat(file)
     except FileNotFoundError:

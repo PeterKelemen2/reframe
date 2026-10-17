@@ -36,7 +36,7 @@ from reframe.naming.sanitize import (
 )
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext
-from reframe.validation.fs import FileSystemView
+from reframe.validation.fs import FileSystemView, has_nul
 from reframe.validation.range import range_duration
 from reframe.validation.registry import job_rule
 from reframe.validation.tracks import encoded_audio, passthru_copies, track_encoder, track_stream
@@ -193,6 +193,27 @@ def _size(value: float) -> str:
     return f"{gigabytes:.1f} GB" if gigabytes >= 1 else f"{value / 1e6:.0f} MB"
 
 
+def _nul_issue(path: PurePath, target: FixTarget) -> ValidationIssue:
+    """``output.not_writable`` for a path with a NUL character (only the API can send one):
+    no file system allows it, so no other check applies (final review RN, decision 0016).
+    A NUL in the file name gets C-16's safe name as a fix; one in a folder name gets none
+    (without it the path names another folder)."""
+    shown = str(path).replace("\0", "\\0")
+    fixes: list[Fix] = []
+    safe = _safe_name(path)
+    if not has_nul(path.parent) and safe and not has_nul(safe):
+        fixes.append(
+            fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
+        )
+    return error(
+        "output.not_writable",
+        "output.path",
+        f"The output path {shown} has a NUL character, which no file system allows: the file "
+        "cannot be created. Correct the path.",
+        *fixes,
+    )
+
+
 def output_path_issues(
     path: PurePath,
     source: PurePath,
@@ -202,7 +223,8 @@ def output_path_issues(
     collision: CollisionPolicy,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """The checks of one output path (see the module doc)."""
+    """The checks of one output path (see the module doc). A path with a NUL character is
+    one error and no file-system read."""
     issues: list[ValidationIssue] = []
 
     def save_as(candidate: PurePath) -> Fix:
@@ -210,6 +232,8 @@ def output_path_issues(
             f"Save as {candidate.name}", replace("output.path", str(candidate)), target=target
         )
 
+    if has_nul(path):
+        return [_nul_issue(path, target)]
     if container is not None and path.suffix.lower() not in container.extensions:
         default = container.extensions[0]
         issues.append(

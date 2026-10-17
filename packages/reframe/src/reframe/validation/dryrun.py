@@ -72,6 +72,7 @@ from reframe.models.plan import resolve_argv
 from reframe.models.tools import ToolSet, ToolStatus
 from reframe.tools import CancelToken, run
 from reframe.validation.common import error, fix, replace, warning
+from reframe.validation.fs import has_nul
 from reframe.validation.video import video_custom_param_issues
 
 __all__ = [
@@ -495,6 +496,19 @@ async def dry_run(
                 "encoder.dry_run_failed",
                 "video.encoder",
                 f"The test encode cannot be built: {exc}.",
+            )
+        ]
+    if any(has_nul(arg) for arg in argv):
+        # A source path with a NUL (only the API can send one): no process can take it
+        # (``reframe.tools.run`` raises ``ValueError``). Final review RN, decision 0016.
+        nul_source = has_nul(job.source.path) or has_nul(source.ref.path)
+        what = "the source path" if nul_source else "a value of the job"
+        return [
+            warning(
+                "encoder.dry_run_skipped",
+                "video.encoder",
+                f"The test encode did not run: {what} has a NUL character, which no file "
+                "system allows.",
             )
         ]
     folder = Path(
