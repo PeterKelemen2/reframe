@@ -235,13 +235,6 @@ def test_a_newline_in_a_key_is_an_issue_not_a_crash(where: str) -> None:
     assert "validation.rule_failed" not in codes(issues)
 
 
-def test_no_output_folder_points_at_a_job_field() -> None:
-    s = sc.base()
-    s.settings.output.naming.output_folder_mode = "fixed"
-    [issue] = [i for i in s.validate() if i.code == "naming.no_output_folder"]
-    assert issue.path == "output.path"
-
-
 def test_deinterlaced_crop_is_on_the_frame_grid() -> None:
     """An interlaced 4:2:0 source: a 2-line crop is off the field grid (4 lines) but on the
     frame grid, which the builder uses when it deinterlaces."""

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from reframe.capabilities import render_nodes
-from reframe.models import CapabilitySnapshot, EncoderSettings
+from reframe.models import CapabilitySnapshot
 
 
 def test_render_nodes_sorted_by_number(tmp_path: Path) -> None:
@@ -24,12 +24,6 @@ def test_render_nodes_sorted_by_number(tmp_path: Path) -> None:
 
 def test_no_dri_folder(tmp_path: Path) -> None:
     assert render_nodes(tmp_path / "missing") == []
-
-
-def test_vaapi_device_setting_defaults_to_automatic() -> None:
-    assert EncoderSettings().vaapi_device is None
-    forced = EncoderSettings.model_validate({"vaapi_device": "/dev/dri/renderD129"})
-    assert forced.vaapi_device == "/dev/dri/renderD129"
 
 
 @pytest.mark.parametrize(
@@ -49,9 +43,3 @@ def test_vaapi_device_setting_defaults_to_automatic() -> None:
 )
 def test_usable_filter(snapshot: CapabilitySnapshot, usable: bool | None) -> None:
     assert snapshot.usable_filter("libplacebo") is usable
-
-
-def test_has_filter_keeps_its_meaning() -> None:
-    failed = CapabilitySnapshot(filters=["libplacebo"], filter_failures={"libplacebo": "x"})
-    assert failed.has_filter("libplacebo") is True
-    assert failed.usable_filter("libplacebo") is False

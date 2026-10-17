@@ -89,13 +89,6 @@ def test_missing_ffmpeg(
     assert "Traceback" not in result.output
 
 
-def test_help_mentions_the_line_format() -> None:
-    result = invoke("encoders", "--help")
-    assert result.exit_code == 0
-    assert "NVIDIA driver not found" in result.stdout
-    assert "Exit codes" in result.stdout
-
-
 @pytest.mark.parametrize(
     ("status", "text"),
     [

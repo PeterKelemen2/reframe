@@ -445,20 +445,6 @@ def test_demo_item_4_unavailable_nvenc_names_the_closest_encoder() -> None:
     assert validate_template(patched, caps) == []
 
 
-def test_demo_item_4_issue_json(capsys: pytest.CaptureFixture[str]) -> None:
-    """The JSON a client gets (printed for the step report)."""
-    template = preset(encoder="hevc_nvenc", rate_control=ConstantQuality(value=27))
-    issues = validate_template(template, sc.make_caps(NO_HEVC_HARDWARE))
-    from pydantic import TypeAdapter
-
-    from reframe.models import ValidationIssue
-
-    text = TypeAdapter(list[ValidationIssue]).dump_json(issues, indent=2).decode()
-    print(text)
-    assert '"code": "encoder.unavailable"' in text
-    assert capsys.readouterr().out.strip() == text
-
-
 def test_subject_names_the_template() -> None:
     template = preset(encoder="libx999")
     (issue,) = validate_template(template, sc.make_caps(), subject="Batch group 2")

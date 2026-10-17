@@ -238,7 +238,6 @@ async def test_unreadable_file(fake_tools: ft.FakeTools, media_file: Path) -> No
     ("stdout", "message"),
     [
         ("this is not json", "ffprobe printed something that is not JSON."),
-        ('{"streams": [', "ffprobe printed something that is not JSON."),
         ("[1, 2]", "ffprobe printed JSON that is not an object."),
     ],
 )

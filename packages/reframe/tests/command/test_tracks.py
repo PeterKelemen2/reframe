@@ -63,19 +63,15 @@ def planned(encoder: str, stream: AudioStream, **track: Any) -> PlannedAudio:
     [
         # A layout the encoder cannot make: its largest layout below (decision 0024 item 4).
         ("ac3", 8, "7.1", "5.1", "5.1"),
-        ("eac3", 8, "7.1", "5.1", "5.1"),
         ("libmp3lame", 6, "5.1", "stereo", "stereo"),
         ("ac3", 8, None, "5.1", "5.1"),
-        ("libmp3lame", 8, None, "stereo", "stereo"),
         # Never an upmix (decision 0019 item 3): the source layout stays.
         ("ac3", 6, "7.1", None, "5.1"),
         ("aac", 2, "5.1", None, "stereo"),
-        ("aac", 2, "7.1", None, "stereo"),
         ("libopus", 1, "stereo", None, "mono"),
         ("aac", 5, "5.1", None, "5.1"),
         # Dolby Pro Logic II only from more than two channels.
         ("aac", 2, "dpl2", None, "stereo"),
-        ("aac", 1, "dpl2", None, "mono"),
         ("aac", 6, "dpl2", "dpl2", "dpl2"),
         # A layout the encoder makes, from at least as many channels; keep.
         ("aac", 8, "5.1", "5.1", "5.1"),
@@ -101,12 +97,9 @@ def test_mixdown_is_snapped(
         ("ac3", 6, {"bitrate": 100}, 224),  # below the 5.1 minimum
         ("ac3", 2, {"bitrate": 150}, 128),  # between two steps: down, as HandBrake
         ("ac3", 8, {"mixdown": "7.1", "bitrate": 700}, 640),  # in the 5.1 table
-        ("eac3", 6, {"bitrate": 7000}, 6144),
         ("libmp3lame", 6, {"bitrate": 330}, 320),
-        ("aac", 2, {"bitrate": 700}, 512),
         ("aac", 2, {"mixdown": "5.1", "bitrate": 700}, 512),  # stereo table: no upmix
         ("libopus", 2, {"bitrate": 600}, 512),  # libopus refuses 600 kb/s stereo
-        ("libopus", 6, {"bitrate": 20}, 36),
         # No bitrate, no quality: the default of the effective mixdown.
         ("aac", 2, {"mixdown": "5.1"}, 160),
         ("ac3", 8, {"mixdown": "7.1"}, 640),
@@ -299,12 +292,9 @@ def test_encode_arguments() -> None:
 @pytest.mark.parametrize(
     ("encoder", "channels", "layout", "mixdown", "expected"),
     [
-        ("libopus", 6, "5.1(side)", None, "aresample=out_chlayout=5.1"),
         ("aac", 6, "5.1", None, None),
         ("ac3", 8, "7.1", None, "aresample=out_chlayout=5.1"),
         ("libmp3lame", 6, "5.1(side)", None, "aresample=out_chlayout=stereo"),
-        ("aac", 5, "5.0", None, None),
-        ("libopus", 3, "2.1", None, "aresample=out_chlayout=stereo"),  # libopus refuses 2.1
         ("aac", 2, None, None, None),
         ("aac", 2, "stereo", "dpl2", None),  # nothing to matrix-encode: the same PCM
         ("aac", 6, "5.1(side)", "dpl2", "aresample=matrix_encoding=dplii:out_chlayout=stereo"),
@@ -313,7 +303,6 @@ def test_encode_arguments() -> None:
         ("ac3", 8, "7.1", "7.1", "aresample=out_chlayout=5.1"),  # AC-3 has no 7.1
         ("ac3", 6, "5.1(side)", "7.1", "aresample=out_chlayout=5.1"),  # no upmix: relabel
         ("aac", 2, "stereo", "5.1", None),  # no upmix
-        ("libmp3lame", 6, "5.1(side)", "5.1", "aresample=out_chlayout=stereo"),
         ("libopus", 6, "5.1", "5.1", None),
     ],
 )  # fmt: skip

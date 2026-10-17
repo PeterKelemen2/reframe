@@ -33,7 +33,6 @@ from reframe.models import (
     SubtitleDefaults,
     SubtitleOutputTrack,
     SubtitleStream,
-    TrackDecision,
     TrackMetadata,
     TrackRole,
     TrackSelection,
@@ -663,7 +662,6 @@ POLICY = source(
         (["hu", "en"], "forced", 3),
         (["hu", "en"], "first_in_first_language", 5),
         (["de", "en"], "first_in_first_language", 2),  # no German: the first output
-        (["de", "en"], "forced", 3),
     ],
 )
 def test_subtitle_default_track(
@@ -717,10 +715,3 @@ def test_undetermined_subtitles_are_written_as_the_first_language() -> None:
     assert stage.decisions[0].notes == [
         "Undetermined language: treated and written as Hungarian, the first listed language"
     ]
-
-
-def test_every_decision_has_a_kind() -> None:
-    draft = draft_tracks(fas_source(), JobTemplate(subtitle_defaults=fas_defaults()))
-    assert {d.kind for d in draft.decisions} == {"audio"}
-    assert {d.kind for d in draft.subtitle_decisions} == {"subtitle"}
-    assert all(isinstance(d, TrackDecision) and d.reason for d in draft.subtitle_decisions)

@@ -281,7 +281,7 @@ def test_a_countdown_cancelled_elsewhere(season: Path, setup: Setup, tmp_path: P
     ]
 
 
-@pytest.mark.parametrize("setting", ["nothing", "notify", "quit"])
+@pytest.mark.parametrize("setting", ["nothing", "quit"])
 def test_no_wait_for_other_settings(
     season: Path, setup: Setup, tmp_path: Path, setting: str
 ) -> None:

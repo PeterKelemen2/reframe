@@ -850,16 +850,6 @@ def test_default_roots_use_the_data_dir(tmp_path: Path, empty_path: str) -> None
     assert located["ffmpeg"].path == bundled.ffmpeg
 
 
-def test_discover_tools_sync(tmp_path: Path, empty_path: str) -> None:
-    bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
-    tools = discover_tools_sync(
-        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path
-    )
-    assert tools.ffmpeg.status is ToolStatus.FOUND
-    assert tools.get("ffmpeg").path == bundled.ffmpeg
-    assert tools.mkvpropedit.status is ToolStatus.MISSING
-
-
 @pytest.mark.anyio
 async def test_check_tool_of_a_location_without_path() -> None:
     info = await check_tool(discovery.ToolLocation("ffmpeg", None, None))

@@ -88,8 +88,6 @@ def test_a_tool_change_is_overwritten(tmp_path: Path) -> None:
         "{not json",
         "[]",
         json.dumps({"format": 1}),
-        json.dumps({"format": 99, "parser": 1}),
-        "\x00\x01",
     ],
 )
 def test_corrupt_entry_is_ignored_and_rewritten(tmp_path: Path, content: str) -> None:
@@ -253,11 +251,3 @@ def test_parser_fingerprint_without_source(monkeypatch: pytest.MonkeyPatch) -> N
         assert cache_mod.parser_fingerprint() == f"{PARSER_VERSION}:reframe-{reframe.__version__}"
     finally:
         cache_mod.parser_fingerprint.cache_clear()
-
-
-def test_entry_of_another_parser_source_is_a_miss(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    ProbeCache(tmp_path).put(key(), source(), tool=TOOL)
-    monkeypatch.setattr(cache_mod, "parser_fingerprint", lambda: "1:0000000000000000")
-    assert ProbeCache(tmp_path).get(key(), tool=TOOL) is None

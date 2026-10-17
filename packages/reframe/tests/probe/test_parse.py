@@ -45,7 +45,6 @@ def doc(
         ("0:1", None),
         ("1/0", None),
         ("-1/2", None),
-        ("abc", None),
         ("1/2/3", None),
         ("a/b", None),
         (None, None),

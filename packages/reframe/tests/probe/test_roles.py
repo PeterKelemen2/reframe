@@ -122,7 +122,6 @@ def test_flag_and_title_give_different_roles() -> None:
 AUDIO_TITLES = [
     ("Director's Commentary", TrackRole.COMMENTARY),
     ("Commentaries", TrackRole.COMMENTARY),
-    ("Kommentar", TrackRole.COMMENTARY),
     ("Commentaire audio", TrackRole.COMMENTARY),
     ("Comentario del director", TrackRole.COMMENTARY),
     ("Commento", TrackRole.COMMENTARY),

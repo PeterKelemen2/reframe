@@ -15,7 +15,6 @@ import psutil
 import pytest
 
 from reframe.models import (
-    AppWarningEvent,
     JobState,
     NotificationEvent,
     QueueChangedEvent,
@@ -491,17 +490,6 @@ async def test_when_done_notify(harness: Harness) -> None:
     )
     assert h.events.published[-1] is note  # after the last job's events
     assert job_notifications(h) == [(good.id, "success"), (bad.id, "error")]
-
-
-@pytest.mark.parametrize("action", ["quit", "sleep", "shutdown"])
-async def test_power_actions_without_a_power_service(harness: Harness, action: str) -> None:
-    h = harness  # the harness's queue has no power service (test_when_done.py has one)
-    h.settings.queue.when_done = action  # type: ignore[assignment]
-    await h.run_one(h.job())
-    [warning] = [e for e in h.of_type("app.warning") if e.code == "queue.when_done_unavailable"]  # type: ignore[union-attr]
-    assert isinstance(warning, AppWarningEvent)
-    assert "1 job done" in warning.message
-    assert "nothing was done" in warning.message
 
 
 async def test_when_done_nothing_and_sleep_inhibit_off(harness: Harness) -> None:

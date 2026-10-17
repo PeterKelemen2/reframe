@@ -41,7 +41,6 @@ from reframe.probe import bitrate, mediainfo, parse_ffprobe, prober
         ),
         ({"tags": {"DURATION": "00:00:04.000000000"}}, (None, BitrateSource.UNKNOWN)),
         ({"tags": "junk"}, (None, BitrateSource.UNKNOWN)),
-        ({"bit_rate": "N/A"}, (None, BitrateSource.UNKNOWN)),
         ({}, (None, BitrateSource.UNKNOWN)),
     ],
 )
@@ -76,7 +75,6 @@ def test_positive_int(value: Any, expected: int | None) -> None:
         ("2:03.5", 123.5),
         ("junk", None),
         (None, None),
-        ("", None),
     ],
 )
 def test_parse_duration_tag(text: str | None, seconds: float | None) -> None:

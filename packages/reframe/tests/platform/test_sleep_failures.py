@@ -127,8 +127,15 @@ async def test_unusable_bus_address_is_unavailable_never_an_exception(address: s
     print(inhibitor.last_error)
 
 
+#: The environment is read the same way for every address: the ones that raised ValueError
+#: in the review (a bad escape, a NUL byte) and one without a transport.
+MALFORMED_ENV = [
+    p for p in MALFORMED if p.id in {"bad-escape", "escape-not-utf8", "nul-in-path", "no-transport"}
+]
+
+
 @linux_only
-@pytest.mark.parametrize("address", MALFORMED)
+@pytest.mark.parametrize("address", MALFORMED_ENV)
 async def test_default_inhibitor_with_malformed_environment(
     monkeypatch: pytest.MonkeyPatch, address: str
 ) -> None:

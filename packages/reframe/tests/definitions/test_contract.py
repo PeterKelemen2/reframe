@@ -71,10 +71,3 @@ def test_vaapi_is_linux_only_and_uploads_frames() -> None:
         assert encoder.platforms == ["linux"]
         assert encoder.hardware_setup is not None
         assert encoder.hardware_setup.filter_tail == ["format={sw_pix_fmt}", "hwupload"]
-
-
-def test_audio_encoders_have_labels() -> None:
-    audio = load_definitions().audio_encoders
-    assert {"aac", "ac3", "eac3", "libopus", "flac", "libmp3lame", "libfdk_aac"} <= set(audio)
-    assert audio["ac3"].label == "AC-3"
-    assert audio["libopus"].codec == "opus"

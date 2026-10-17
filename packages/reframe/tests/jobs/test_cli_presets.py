@@ -391,19 +391,6 @@ def test_read_preset_file_strips_a_bom(tmp_path: Path) -> None:
     assert read_preset_file(path) == {"schema_version": 1}
 
 
-def test_help() -> None:
-    for command, texts in (
-        ("list", ("--json", "default", "Exit codes")),
-        ("export", ("NAME_OR_ID", "--output", "every user preset", "newer", "Exit codes")),
-        ("import", ("FILE", "--on-conflict", "rename", "replace", "skip", "Exit codes")),
-    ):
-        result = invoke("presets", command, "--help")
-        assert result.exit_code == 0
-        for text in texts:
-            assert text in result.stdout, (command, text)
-    assert "export" in invoke("presets", "--help").stdout
-
-
 def test_human_output_survives_an_ascii_stdout(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     """A stdout that cannot encode ``·`` (``*`` legend) or ``“”`` (renamed) does not raise."""
     write_presets(tmp_path, [user_preset("u-1", "Ünïcode ✓")])

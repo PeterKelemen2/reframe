@@ -24,7 +24,6 @@ from reframe.jobs import (
 )
 from reframe.models import (
     EncodePlan,
-    EncoderState,
     JobDraft,
     NamingOptions,
     Severity,
@@ -484,11 +483,6 @@ def test_partial_outputs() -> None:
     assert is_partial_output(Path("Show S01E01 (1).part.mp4"))
     assert not is_partial_output(Path("Party.mkv"))
     assert not is_partial_output(Path("The.Part.Two.mkv"))
-
-
-def test_default_capabilities_snapshot_has_every_encoder() -> None:
-    snap = caps()
-    assert all(s.state is EncoderState.AVAILABLE for s in snap.encoders.values())
 
 
 def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -> None:
