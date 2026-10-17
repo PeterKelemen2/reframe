@@ -1811,6 +1811,15 @@ and 50 jobs that ended `cancelled` with no error although the file had the edit;
 no damaged file, and all 300 ended `cancelled` with "The edit was already written …" and had
 the edit. Only the step's 5-minute limit still kills a hung mkvpropedit.
 
+After the final review's fixes (2026-10-17, decision 0034, RB-3 / RB-4; MKVToolNix 101.0, the
+same edit on copies of five fixtures, the stop 0.6 to 1.2 times mkvpropedit's median run time
+after it started): `cancel`, `close`, `pause` + `cancel`, `pause` + `close` and cancel-all, 60
+runs each, no damaged file, and every job's end matched its file. With the step limit at 0.3 to
+1.3 times the median run time (100 runs): 93 jobs `done` after the check, 7 `failed` "the file
+may be damaged" with the file intact (killed before the write, or after it), none `cancelled`
+(before RB-3: 22 of 200). A real `asyncio.run` stopped by two SIGINTs while the edit waits at
+a gate: the shutdown cancels every task and so kills mkvpropedit; the stored job says so.
+
 ### Advanced encoder options (C-6, complete option sets)
 
 Checked on 2026-10-15 with FFmpeg n9.0.2 (Arch `/usr/bin/ffmpeg`: x264 core 165, x265 4.3,

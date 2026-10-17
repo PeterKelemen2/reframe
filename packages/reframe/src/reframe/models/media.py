@@ -289,10 +289,12 @@ class _StreamBase(DocumentModel):
     ISO 639-2 ``Language`` element); ``None`` if absent."""
     language_ietf: LanguageTag | None = None
     """The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
-    ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For Matroska it is the track's
-    ``LanguageIETF`` element as Reframe's own reader finds it, ``None`` when the track has no
-    such element or its value is not a language tag (decisions 0034, 0041); for other
-    containers MediaInfo's value when MediaInfo is available, else ``None``.
+    ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For a Matroska file whose
+    tracks Reframe's own reader reads and matches to the streams, it is the track's
+    ``LanguageIETF`` element, ``None`` when the track has no such element or its value is not a
+    language tag (decisions 0034, 0041). For other containers, and for a Matroska file whose
+    tracks the reader cannot read or match, it is MediaInfo's value when MediaInfo is
+    available, else ``None`` (decision 0007).
 
     The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
     ``language``."""

@@ -143,3 +143,27 @@ again.
 Not changed (not this task's files): the docstring of `language_ietf` in
 `reframe/models/media.py` ("as MediaInfo reports it … `None` when MediaInfo is not
 available") and 05 §C-3 ("MediaInfo also gives `language_ietf`") describe the M1 rule.
+
+## Follow-up (final review, 2026-10-17)
+
+A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) found two minors in
+C-2 / C-3:
+
+- **RB-6: the `language_ietf` docstring** (`reframe/models/media.py`, and so the JSON Schema
+  description) said that for Matroska the value is the reader's or `None`. That holds only when
+  the reader read and matched the tracks; when it cannot read them, or their counts differ from
+  ffprobe's streams, MediaInfo's value stays (the rule of the R4-3 follow-up above, and of
+  `apply_matroska`). The docstring now says so, and the schema snapshot
+  (`tests/models/__snapshots__/test_schema.ambr`: `AudioStream`, `SubtitleStream`,
+  `VideoStream`) was regenerated; with the old docstring those three snapshot tests fail.
+- **RB-7: the parser fingerprint did not cover the Matroska reader.** `_PARSER_MODULES`
+  (`reframe/probe/cache.py`) listed the modules whose source is hashed into the cache entry's
+  parser fingerprint, without `matroska.py`; a change to the reader (which fills
+  `language_ietf`) kept the old entries unless `MATROSKA_READER` was raised by hand. It is
+  listed now, so entries made before this change are misses once. Test:
+  `tests/probe/test_cache_final_review.py::test_a_change_to_a_reader_changes_the_fingerprint`
+  (a copy of the probe sources with one module changed; `matroska.py` failed on 5dbf152).
+  `MATROSKA_READER` stays in the cache options; a change to the reader no longer needs it
+  raised.
+
+Not changed (a plan file): 05 §C-3 still says "MediaInfo also gives `language_ietf`".
