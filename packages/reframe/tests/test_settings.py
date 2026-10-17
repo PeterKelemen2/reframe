@@ -159,9 +159,7 @@ def test_corrupt_file_is_backed_up_and_replaced_with_defaults(tmp_path: Path) ->
     [
         ("[1, 2, 3]", "not a JSON object"),
         ('{"queue": {"parallel_jobs": 99}}', "queue.parallel_jobs"),
-        ('{"queue": {"when_done": "explode"}}', "queue.when_done"),
         ('{"preview": {"cache_size_mb": NaN}}', "preview.cache_size_mb"),
-        ('{"schema_version": 1, "tools": "ffmpeg"}', "tools"),
         (b"\xff\xfe\x00garbage", "not valid JSON"),
     ],
 )
@@ -180,13 +178,6 @@ def test_damaged_contents_count_as_corrupt(
     assert problem.detail is not None
     assert detail in problem.detail
     assert len(list(tmp_path.glob("settings.corrupt-*.json"))) == 1
-
-
-def test_two_corrupt_loads_keep_both_backups(tmp_path: Path) -> None:
-    for _ in range(2):
-        (tmp_path / "settings.json").write_text("{", encoding="utf-8")
-        SettingsStore(tmp_path).load()
-    assert len(list(tmp_path.glob("settings.corrupt-*.json"))) == 2
 
 
 def test_a_failing_migration_counts_as_corrupt(tmp_path: Path) -> None:

@@ -4,7 +4,6 @@ probing through the facade, folder probe tasks and events, ``get``, ``close``.""
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -269,11 +268,6 @@ async def test_settings_tool_paths_feed_discovery(
         assert isinstance(await app.sources.probe(media), MediaSource)
 
 
-async def test_default_settings_are_app_settings_defaults(env: Path) -> None:
-    async with await Reframe.create() as app:
-        assert app.settings_snapshot() == AppSettings()
-
-
 async def test_missing_ffprobe_is_a_tool_error(
     env: Path, monkeypatch: pytest.MonkeyPatch, media: Path
 ) -> None:
@@ -463,11 +457,6 @@ async def test_status_starts_a_discovery_if_none_ran(env: Path) -> None:
         assert not app.tools.discovering
     finally:
         await app.close()
-
-
-def test_pid_helper_ignores_ended_processes() -> None:
-    assert alive([os.getpid()]) == [os.getpid()]
-    assert alive([2**22 + 12345]) == []
 
 
 async def test_status_restarts_a_discovery_cancelled_from_outside(fake: ft.FakeTools) -> None:

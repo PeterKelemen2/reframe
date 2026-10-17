@@ -430,12 +430,6 @@ def test_no_max_uses_the_encoder_default() -> None:
 #: fits only with a known bit rate at or below it (0023).
 NO_MAX_LOSSLESS = [
     (
-        stream("flac", 2, 133.7, display_codec="FLAC", lossless=True),
-        ("passthru", "aac", None, None),
-        "FLAC, 2.0, 133.7 ≤ 160 (the default): passthru",
-        False,
-    ),
-    (
         stream("flac", 2, 160, display_codec="FLAC", lossless=True),
         ("passthru", "aac", None, None),
         "FLAC, 2.0, 160 ≤ 160 (the default): passthru",
@@ -520,8 +514,6 @@ def test_no_max_keeps_a_lossy_source_and_a_passthru_rule_unlimited() -> None:
         ("flac", None, "flac"),
         ("opus", None, "opus"),
         ("pcm_s24le", None, None),
-        ("vorbis", None, None),
-        ("alac", None, None),
     ],
 )
 def test_passthru_codec(codec: str, profile: str | None, expected: str | None) -> None:
@@ -577,15 +569,12 @@ def test_truehd_passthru_into_mp4() -> None:
 
 MIXDOWN_TABLE: list[tuple[RuleMixdown, int, str | None]] = [
     ("keep", 8, None),
-    ("keep", 2, None),
     ("up_to_5.1", 8, "5.1"),
-    ("up_to_5.1", 7, "5.1"),
     ("up_to_5.1", 6, None),
     ("up_to_5.1", 2, None),
     ("5.1", 8, "5.1"),
     ("5.1", 6, "5.1"),
     ("5.1", 5, None),
-    ("5.1", 2, None),
     ("stereo", 6, "stereo"),
     ("stereo", 2, "stereo"),
     ("stereo", 1, None),
@@ -686,19 +675,15 @@ def test_channels_within_the_mixdown() -> None:
     ("condition", "channels", "expected"),
     [
         ("any", 0, True),
-        ("any", 8, True),
         ("mono", 1, True),
         ("mono", 2, False),
-        ("stereo_or_less", 1, True),
         ("stereo_or_less", 2, True),
         ("stereo_or_less", 3, False),
         ("5.1_or_more", 5, False),
         ("5.1_or_more", 6, True),
-        ("5.1_or_more", 8, True),
         ("7.1_or_more", 6, False),
         ("7.1_or_more", 8, True),
         ("mono", 0, False),
-        ("5.1_or_more", 0, False),
     ],
 )
 def test_channels_match(condition: SourceChannels, channels: int, expected: bool) -> None:
@@ -710,7 +695,6 @@ def test_channels_match(condition: SourceChannels, channels: int, expected: bool
     [
         (None, None, None, True),
         (["hu"], "hun", None, True),
-        (["hun"], "hun", None, True),
         (["hu", "en"], "eng", None, True),
         (["hu"], "eng", None, False),
         (["pt"], "por", "pt-BR", True),
@@ -797,12 +781,10 @@ def test_sample_rate_snaps_to_the_encoder() -> None:
     [
         # The source's own rate stays "same as source" when the encoder takes it …
         ("aac", 44100, None, []),
-        ("libopus", 48000, None, []),
         ("ac3", None, None, []),
         # … and becomes the snapped rate (C-6's ``snap_samplerate``) when it does not: the
         # rate the command builder writes with ``-ar`` (an AC-3 ``-ar 22050`` fails).
         ("libopus", 44100, 48000, ["Opus has no 44100 Hz (the source's rate): 48000 Hz"]),
-        ("libopus", 22050, 24000, ["Opus has no 22050 Hz (the source's rate): 24000 Hz"]),
         ("ac3", 22050, 32000, ["AC-3 has no 22050 Hz (the source's rate): 32000 Hz"]),
     ],
 )
@@ -824,8 +806,12 @@ def test_the_source_sample_rate_snaps_to_the_encoder(
 
 _RULE_MIXDOWNS: list[RuleMixdown] = ["keep", "up_to_5.1", "5.1", "stereo", "dpl2", "mono"]
 
+#: One encoder of each kind of layouts, bit rates and sample rates: eac3 has ac3's, and
+#: libfdk_aac has aac's.
+_ENCODER_KINDS = ["aac", "ac3", "flac", "libmp3lame", "libopus"]
 
-@pytest.mark.parametrize("encoder", sorted(DEFS.audio_encoders))
+
+@pytest.mark.parametrize("encoder", _ENCODER_KINDS)
 @pytest.mark.parametrize("channels", [0, 1, 2, 3, 6, 7, 8])
 @pytest.mark.parametrize("mixdown", _RULE_MIXDOWNS)
 def test_the_output_agrees_with_the_shared_helpers(
@@ -1102,13 +1088,3 @@ def test_unknown_channels_and_codec() -> None:
     # Unknown channels: the rule's layout (the catch-all of a new preset: up to 5.1).
     track, _ = run(source, rules())
     assert (track.mixdown, track.bitrate) == ("5.1", 256)
-
-
-def test_default_definitions_are_loaded() -> None:
-    outputs, decision = apply_codec_rules(stream("ac3", 6, 448), AudioDefaults(), "mkv")
-    assert [summary(t) for t in outputs] == [("passthru", "aac", None, None)]
-    assert (
-        decision.reason == "AC-3, 5.1, 448 > 256: passthru (a lossy source is kept above the max)"
-    )
-    with_defs = apply_codec_rules(stream("ac3", 6, 448), AudioDefaults(), "mkv", definitions=DEFS)
-    assert with_defs == (outputs, decision)

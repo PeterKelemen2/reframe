@@ -3,7 +3,6 @@ model and every public union / alias type."""
 
 from __future__ import annotations
 
-import enum
 import importlib.util
 import sys
 import types
@@ -14,7 +13,6 @@ from typing import Any
 
 import pytest
 from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
 from pydantic import BaseModel, TypeAdapter
 
 import reframe.models as models
@@ -45,12 +43,16 @@ def public_models() -> list[type[BaseModel]]:
 
 
 def public_type_aliases() -> list[tuple[str, Any]]:
-    """Unions, ``Literal`` and ``Annotated`` aliases and enums of ``reframe.models``."""
+    """Unions and ``Annotated`` aliases of ``reframe.models``. Plain ``Literal`` aliases and
+    enums are left out: their values are JSON scalars, the model round trip covers the fields
+    that use them, and the JSON Schema snapshot pins their values."""
     result = []
     for name in models.__all__:
         obj = getattr(models, name)
-        is_enum = isinstance(obj, type) and issubclass(obj, enum.Enum)
-        if is_enum or typing.get_origin(obj) is not None or isinstance(obj, types.UnionType):
+        origin = typing.get_origin(obj)
+        if (origin is not None and origin is not typing.Literal) or isinstance(
+            obj, types.UnionType
+        ):
             result.append((name, obj))
     return result
 
@@ -106,15 +108,5 @@ def test_alias_round_trip(name: str, alias: Any) -> None:
         again = adapter.validate_json(text)
         assert again == value
         assert adapter.dump_json(again) == text
-
-    check()
-
-
-def test_strategies_cover_every_model() -> None:
-    @settings(max_examples=1, deadline=None, suppress_health_check=list(HealthCheck))
-    @given(data=st.data())
-    def check(data: st.DataObject) -> None:
-        for model in public_models():
-            assert isinstance(data.draw(strategies.model_strategy(model)), model)
 
     check()

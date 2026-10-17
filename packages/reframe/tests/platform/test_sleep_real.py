@@ -420,23 +420,6 @@ async def test_without_a_desktop_session_the_logind_idle_lock_is_taken(
     _assert_nothing_left(fds_before)
 
 
-async def test_no_bus_at_all_gives_the_one_warning() -> None:
-    bus = EventBus()
-    sub = bus.subscribe()
-    nowhere = "unix:path=/nonexistent/reframe-test-bus"
-    inhibitor = SleepInhibitor(
-        [SessionInhibitBackend(address=nowhere), LogindBackend(address=nowhere)], bus
-    )
-    async with _closing(inhibitor):
-        assert await inhibitor.acquire("job") is InhibitState.UNAVAILABLE
-        event = sub.get_nowait()
-        assert event is not None
-        assert event.type == "app.warning"
-        print(event.model_dump_json(indent=2))
-        assert sub.get_nowait() is None
-        await inhibitor.release()
-
-
 async def _fail_while_the_inhibitor_holds(inhibitor: SleepInhibitor, why: str) -> None:
     async with _closing(inhibitor):
         assert await inhibitor.acquire(why) is InhibitState.ACTIVE

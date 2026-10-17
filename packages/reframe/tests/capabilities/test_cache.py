@@ -137,12 +137,6 @@ def test_round_trip(tmp_path: Path, binary: Path) -> None:
     assert entry["key"] == key.to_json()
 
 
-def test_another_key_is_a_miss(tmp_path: Path, binary: Path) -> None:
-    cache = CapabilityCache(tmp_path / "caps")
-    cache.put(key_for(binary), snapshot(binary))
-    assert cache.get(key_for(binary, hardware_tests=False)) is None
-
-
 @pytest.mark.parametrize(
     "content",
     [

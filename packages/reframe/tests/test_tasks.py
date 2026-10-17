@@ -11,9 +11,10 @@ import psutil
 import pytest
 from pydantic import BaseModel
 
+from reframe import mediatask
 from reframe.events import EventBus, Subscription
 from reframe.models import TaskDoneEvent, TaskProgressEvent, TaskState
-from reframe.tasks import DEFAULT_LIMIT, TaskContext, TaskManager
+from reframe.tasks import DEFAULT_LIMIT, TaskContext, TaskFailed, TaskManager
 from reframe.tools import run
 from reframe_testing import fake_tools as ft
 
@@ -289,6 +290,21 @@ async def test_failure_is_recorded_not_raised(caplog: pytest.LogCaptureFixture) 
     assert final.state is TaskState.FAILED
     assert final.error == "RuntimeError: disk on fire"
     assert "failed" in caplog.text
+
+
+async def test_an_expected_failure_is_its_message_without_a_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    tasks = TaskManager()
+
+    async def work(ctx: TaskContext) -> None:
+        raise TaskFailed("ffprobe cannot be used: not found")
+
+    final = await tasks.wait(tasks.start("k", work).id)
+    assert final.state is TaskState.FAILED
+    assert final.error == "ffprobe cannot be used: not found"
+    assert not any(record.exc_info for record in caplog.records)
+    assert mediatask.TaskFailed is TaskFailed
 
 
 class Result(BaseModel):

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe_testing import boxfont, media, vobsub
+from reframe_testing import boxfont, dts, media, pgs, vobsub
 from reframe_testing import fake_tools as ft
 from reframe_testing.fake_tools import FakeTools
 
@@ -35,10 +35,38 @@ def test_every_plan_fixture_has_a_recipe() -> None:
         "vfr",
         "vfr-mkv",
         "hdr10",
+        "hdr10-4k",
         "chapters",
         "season",
+        "dts-hd-ma",
+        "pgs",
+        "anime-s01",
+        "anime-s02",
     }
     assert media.fixture_names()[-2:] == ["text-subs-srt", "text-subs-ass"]
+
+
+def test_the_bitmap_and_lossless_fixtures_are_written_in_python() -> None:
+    """FFmpeg has no PGS or DTS-HD MA encoder: the recipes write the streams
+    (reframe_testing.pgs, reframe_testing.dts) and FFmpeg only copies them into Matroska."""
+    recipes = media.build_recipes()
+    hd = recipes["dts-hd-ma"]
+    writes = {s.path: s.data for s in hd.steps if isinstance(s, media.WriteFile)}
+    assert writes == {"dts-hd-ma.dtshd": dts.dts_hd_ma(media.DTS_HD_MA_SECONDS)}
+    (mux,) = [s for s in hd.steps if isinstance(s, media.Ffmpeg)]
+    position = mux.args.index("dts-hd-ma.dtshd")
+    assert mux.args[position - 3 : position] == ("-f", "dts", "-i")
+    assert mux.args[mux.args.index("-c:a:0") + 1] == "copy"
+    subs = recipes["pgs"]
+    writes = {s.path: s.data for s in subs.steps if isinstance(s, media.WriteFile)}
+    assert writes == {
+        "eng.sup": pgs.sup(media.PGS_EVENTS["eng"]),
+        "eng-forced.sup": pgs.sup(media.PGS_EVENTS["eng-forced"]),
+    }
+    (mux,) = [s for s in subs.steps if isinstance(s, media.Ffmpeg)]
+    assert mux.args[0] == "-copyts"
+    assert mux.args[mux.args.index("-c:s") + 1] == "copy"
+    assert [e.forced for e in media.PGS_EVENTS["eng"]].count(True) == 2
 
 
 def test_fixture_paths() -> None:
@@ -48,6 +76,32 @@ def test_fixture_paths() -> None:
     assert media.DEFAULT_MEDIA_DIR == REPO / "testdata" / "media"
     with pytest.raises(KeyError, match="unknown fixture"):
         media.fixture_path("nope")
+
+
+def test_anime_seasons() -> None:
+    """The 04 §Example season and a second season of the same release (C-12, M7)."""
+    recipes = media.build_recipes()
+    s01, s02 = recipes["anime-s01"], recipes["anime-s02"]
+    folder = "Anime.Show.S01.BluRay.x264-GRP"
+    assert media.fixture_path("anime-s01") == media.DEFAULT_MEDIA_DIR / folder
+    assert s01.outputs[0] == f"{folder}/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv"
+    assert len(s01.outputs) == 12
+    assert [o.split("/")[1] for o in s02.outputs] == [
+        media.anime_file_name(2, n) for n in (1, 2, 3)
+    ]
+    writes = {s.path for s in s01.steps if isinstance(s, media.WriteFile)}
+    assert writes == {"dub.dtshd", "signs.ass", "full.ass"}
+    master, *episodes = [s for s in s01.steps if isinstance(s, media.Ffmpeg)]
+    # FFmpeg's TrueHD encoder is experimental and makes 5.1 at most (testdata/README.md).
+    assert master.args[master.args.index("-c:a:0") + 1] == "truehd"
+    assert master.args[master.args.index("-strict") + 1] == "-2"
+    assert master.args[master.args.index("-ac:a:0") + 1] == "6"
+    assert len(episodes) == 12
+    e05, e11 = episodes[4].args, episodes[10].args
+    assert "-0:a:2" not in e05  # keeps the commentary
+    assert "-0:a:1" in e11  # drops the dub
+    assert f"title={media.ANIME_OTHER_SIGNS_TITLE}" in e11
+    assert all("-0:a:1" not in e.args for n, e in enumerate(episodes, 1) if n != 11)
 
 
 def test_season_names_and_variants() -> None:

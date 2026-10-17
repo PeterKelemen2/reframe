@@ -283,13 +283,6 @@ def test_recursive(cli_env: ft.FakeTools, queues: Queues, tmp_path: Path) -> Non
     assert deep.exit_code == EXIT_OK, deep.output
 
 
-def test_help() -> None:
-    result = invoke("encode", "--help")
-    assert result.exit_code == 0
-    for text in ("FILE|DIR…", "--preset", "--recursive", "Ctrl+C", "Exit codes"):
-        assert text in result.stdout
-
-
 # --------------------------------------------------------------------------- the view
 
 

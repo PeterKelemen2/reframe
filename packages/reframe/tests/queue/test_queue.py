@@ -1,5 +1,6 @@
 """The queue's behaviour (C-11): the contract of ``QueueService``, pause and resume, cancel,
-parallel slots, when-done, sleep inhibit, close and restart recovery, and the event order."""
+parallel slots, when-done (without a power service; with one: ``test_when_done.py``), sleep
+inhibit, close and restart recovery, and the event order."""
 
 from __future__ import annotations
 
@@ -14,7 +15,6 @@ import psutil
 import pytest
 
 from reframe.models import (
-    AppWarningEvent,
     JobState,
     NotificationEvent,
     QueueChangedEvent,
@@ -49,6 +49,20 @@ def running_at_once(h: Harness) -> int:
     return most
 
 
+def queue_notifications(h: Harness) -> list[NotificationEvent]:
+    """The ``notification`` events of the queue (when done), not those of a job."""
+    return [e for e in h.events.published if isinstance(e, NotificationEvent) and not e.job_id]
+
+
+def job_notifications(h: Harness) -> list[tuple[str | None, str]]:
+    """``(job id, level)`` of the ``notification`` events of jobs."""
+    return [
+        (e.job_id, e.level)
+        for e in h.events.published
+        if isinstance(e, NotificationEvent) and e.job_id
+    ]
+
+
 # --------------------------------------------------------------------------- one run
 
 
@@ -69,9 +83,12 @@ async def test_a_run_and_its_events_in_order(harness: Harness) -> None:
     # waiting (add; then queue.changed, which has no job id), running, 0 %
     assert kinds[:3] == ["job.state", "job.state", "job.progress"]
     # progress and log batches while it runs, as they come
-    assert set(kinds[3:-3]) <= {"job.progress", "job.log"}
-    # the last progress (100 %), the last log batch, then the end state
-    assert kinds[-3:] == ["job.progress", "job.log", "job.state"]
+    assert set(kinds[3:-4]) <= {"job.progress", "job.log"}
+    # the last progress (100 %), the job's notification (settings.queue.notifications is on),
+    # the last log batch, then the end state
+    assert kinds[-4:] == ["job.progress", "notification", "job.log", "job.state"]
+    [note] = [e for e in events if isinstance(e, NotificationEvent)]
+    assert (note.title, note.message, note.level) == ("Job done", "Movie.mkv", "success")
     assert h.states(ended.id) == [(None, "waiting"), ("waiting", "running"), ("running", "done")]
     # queue.changed comes right after the add's job.state.
     published = h.events.published
@@ -372,6 +389,7 @@ async def test_two_jobs_with_one_output_never_run_together(harness: Harness) -> 
 
 async def test_stop_takes_no_new_jobs(harness: Harness) -> None:
     h = harness
+    h.settings.queue.when_done = "notify"
     h.scenario(encode_rule(ft.progress(blocks=3, interval=0.05), ft.write_output()))
     first = await h.queue.add(h.job("A"))
     second = await h.queue.add(h.job("B"))
@@ -382,7 +400,8 @@ async def test_stop_takes_no_new_jobs(harness: Harness) -> None:
     await h.queue.wait([first.id])
     await asyncio.sleep(0.1)
     assert h.queue.get(second.id).state is JobState.WAITING  # type: ignore[union-attr]
-    assert h.of_type("notification") == []  # the queue is not empty: no when-done
+    assert queue_notifications(h) == []  # the queue is not empty: no when-done
+    assert job_notifications(h) == [(first.id, "success")]  # the job's own
 
 
 async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harness) -> None:
@@ -407,8 +426,8 @@ async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harne
         (foreign[1], JobState.WAITING, 1),
     ]
     assert all(h.states(job_id) == [(None, "waiting")] for job_id in foreign)
-    [note] = h.of_type("notification")
-    assert note.message == "2 jobs done."  # type: ignore[union-attr]
+    [note] = queue_notifications(h)
+    assert note.message == "2 jobs done."
     h.queue.start()  # no ids: every waiting job, as the contract says
     assert [j.state for j in await h.queue.wait(foreign)] == [JobState.DONE] * 2
 
@@ -459,37 +478,26 @@ async def test_when_done_notify(harness: Harness) -> None:
     h.scenario(
         ft.Rule(tool="ffmpeg", argv_has=["matroska"], argv_contains=["Bad"], exit_code=1),
     )
-    await h.queue.add(h.job("Good"))
-    await h.queue.add(h.job("Bad"))
+    good = await h.queue.add(h.job("Good"))
+    bad = await h.queue.add(h.job("Bad"))
     h.queue.start()
     await h.queue.wait()
-    await h.wait_for(lambda: bool(h.of_type("notification")))
-    [note] = h.of_type("notification")
-    assert isinstance(note, NotificationEvent)
+    [note] = queue_notifications(h)
     assert (note.title, note.message, note.level) == (
         "Queue finished",
         "1 job done, 1 failed.",
         "warning",
     )
     assert h.events.published[-1] is note  # after the last job's events
-
-
-@pytest.mark.parametrize("action", ["quit", "sleep", "shutdown"])
-async def test_power_actions_are_reported_as_not_done(harness: Harness, action: str) -> None:
-    h = harness
-    h.settings.queue.when_done = action  # type: ignore[assignment]
-    await h.run_one(h.job())
-    [warning] = [e for e in h.of_type("app.warning") if e.code == "queue.when_done_unavailable"]  # type: ignore[union-attr]
-    assert isinstance(warning, AppWarningEvent)
-    assert "1 job done" in warning.message
-    assert "nothing was done" in warning.message
+    assert job_notifications(h) == [(good.id, "success"), (bad.id, "error")]
 
 
 async def test_when_done_nothing_and_sleep_inhibit_off(harness: Harness) -> None:
     h = harness
     h.settings.queue.sleep_inhibit = False
-    await h.run_one(h.job())
-    assert h.of_type("notification") == []
+    ended = await h.run_one(h.job())
+    assert queue_notifications(h) == []
+    assert job_notifications(h) == [(ended.id, "success")]  # the job's own
     assert h.backend.holds == []
 
 

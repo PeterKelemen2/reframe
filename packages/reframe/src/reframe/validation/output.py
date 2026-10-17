@@ -7,6 +7,10 @@ goes through the :class:`~reframe.validation.fs.FileSystemView`.
 
 Free disk space is estimated only when the size is known in advance: average bitrate, and
 video passthrough (03: "estimate in bitrate mode"). Constant quality has no estimate.
+
+A metadata edit in place (job type ``metadata_edit``, C-13) writes no new file: its output is
+the source by design, so the path and disk-space rules do not apply to it
+(:func:`is_metadata_edit`; its own rules are in :mod:`reframe.validation.inplace`).
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePath, PureWindowsPath
 from typing import cast
 
-from reframe.command import partial_path
+from reframe.command import job_type, partial_path
 from reframe.command.video import pass_log_files
 from reframe.definitions import ContainerDef
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
@@ -32,7 +36,7 @@ from reframe.naming.sanitize import (
 )
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext
-from reframe.validation.fs import FileSystemView
+from reframe.validation.fs import FileSystemView, has_nul
 from reframe.validation.range import range_duration
 from reframe.validation.registry import job_rule
 from reframe.validation.tracks import encoded_audio, passthru_copies, track_encoder, track_stream
@@ -41,6 +45,8 @@ __all__ = [
     "MUX_OVERHEAD",
     "estimate_output_bytes",
     "existing_ancestor",
+    "free_of_source",
+    "is_metadata_edit",
     "name_issues",
     "next_free_path",
     "output_path_issues",
@@ -120,7 +126,7 @@ def source_clash(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePa
     return None
 
 
-def _free_of_source(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath:
+def free_of_source(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath:
     """``Name (1).mkv``, … : the first free name whose written files are not the source."""
     candidate = path
     for _ in range(100):
@@ -187,6 +193,27 @@ def _size(value: float) -> str:
     return f"{gigabytes:.1f} GB" if gigabytes >= 1 else f"{value / 1e6:.0f} MB"
 
 
+def _nul_issue(path: PurePath, target: FixTarget) -> ValidationIssue:
+    """``output.not_writable`` for a path with a NUL character (only the API can send one):
+    no file system allows it, so no other check applies (final review RN, decision 0016).
+    A NUL in the file name gets C-16's safe name as a fix; one in a folder name gets none
+    (without it the path names another folder)."""
+    shown = str(path).replace("\0", "\\0")
+    fixes: list[Fix] = []
+    safe = _safe_name(path)
+    if not has_nul(path.parent) and safe and not has_nul(safe):
+        fixes.append(
+            fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
+        )
+    return error(
+        "output.not_writable",
+        "output.path",
+        f"The output path {shown} has a NUL character, which no file system allows: the file "
+        "cannot be created. Correct the path.",
+        *fixes,
+    )
+
+
 def output_path_issues(
     path: PurePath,
     source: PurePath,
@@ -196,7 +223,8 @@ def output_path_issues(
     collision: CollisionPolicy,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """The checks of one output path (see the module doc)."""
+    """The checks of one output path (see the module doc). A path with a NUL character is
+    one error and no file-system read."""
     issues: list[ValidationIssue] = []
 
     def save_as(candidate: PurePath) -> Fix:
@@ -204,6 +232,8 @@ def output_path_issues(
             f"Save as {candidate.name}", replace("output.path", str(candidate)), target=target
         )
 
+    if has_nul(path):
+        return [_nul_issue(path, target)]
     if container is not None and path.suffix.lower() not in container.extensions:
         default = container.extensions[0]
         issues.append(
@@ -225,7 +255,7 @@ def output_path_issues(
                 "output.path",
                 f"The {what} {clash} is the source file: it would be overwritten while it is "
                 "read, and the queue removes its temporary files.",
-                save_as(_free_of_source(path, source, fs)),
+                save_as(free_of_source(path, source, fs)),
             )
         )
         return issues
@@ -362,8 +392,17 @@ def estimate_output_bytes(ctx: JobContext) -> int | None:
     return int((video_bps + audio_bps) * seconds / 8 * MUX_OVERHEAD)
 
 
+def is_metadata_edit(ctx: JobContext) -> bool:
+    """The job edits its source in place (job type ``metadata_edit``, C-13)."""
+    if not ctx.job.output.edit_in_place:
+        return False
+    return job_type(ctx.job, ctx.source, definitions=ctx.definitions)[0] == "metadata_edit"
+
+
 @job_rule("output", *CODES)
 def output_path(ctx: JobContext) -> Iterator[ValidationIssue]:
+    if is_metadata_edit(ctx):
+        return  # the source is edited: no new file (reframe.validation.inplace)
     path = ctx.job.output.path
     if path is None:
         name = ctx.name.path
@@ -389,7 +428,7 @@ def output_path(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("output", "output.disk_space")
 def disk_space(ctx: JobContext) -> Iterator[ValidationIssue]:
     path = ctx.job.output.path
-    if path is None:
+    if path is None or is_metadata_edit(ctx):
         return
     folder = existing_ancestor(path.parent, ctx.fs)
     estimate = estimate_output_bytes(ctx)

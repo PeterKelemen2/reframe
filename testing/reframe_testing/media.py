@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from reframe_testing import boxfont, vobsub
+from reframe_testing import boxfont, dts, pgs, vobsub
 
 #: Bump when the generator changes in a way that the recipe text does not show.
 #: 2: the ASS fixture always attaches the generated ReframeBox font (no system font search).
@@ -505,6 +505,289 @@ def _vobsub_recipe() -> Recipe:
     )
 
 
+#: Length of the DTS-HD MA fixture (375 DTS frames of 512 samples at 48 kHz).
+DTS_HD_MA_SECONDS = 4.0
+
+
+def _dts_hd_ma_recipe() -> Recipe:
+    """A lossless track whose file states no bit rate (03 §Audio "Measure", M6 demo 1).
+
+    ``reframe_testing.dts`` writes a real DTS-HD MA stream (XLL, 5.1, 24-bit, 48 kHz);
+    FFmpeg copies it into Matroska, which writes no statistics tags. Next to it, two AC-3
+    tracks with a bit rate in their headers (the M6 audio-defaults demo: a 224 kb/s 5.1 track
+    and a stereo track)."""
+    d = DTS_HD_MA_SECONDS
+    args = (
+        *_video("320x180", "25", d),
+        "-f",
+        "dts",
+        "-i",
+        "dts-hd-ma.dtshd",
+        *_sine(330, d),
+        *_sine(550, d),
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-map",
+        "2:a",
+        "-map",
+        "3:a",
+        *_X264,
+        "-c:a:0",
+        "copy",
+        "-c:a:1",
+        "ac3",
+        "-b:a:1",
+        "224k",
+        "-ac:a:1",
+        "6",
+        "-c:a:2",
+        "ac3",
+        "-b:a:2",
+        "192k",
+        "-ac:a:2",
+        "2",
+        "-metadata:s:a:0",
+        "language=hun",
+        "-metadata:s:a:0",
+        "title=DTS-HD MA 5.1",
+        "-metadata:s:a:1",
+        "language=eng",
+        "-metadata:s:a:1",
+        "title=English AC-3 5.1",
+        "-metadata:s:a:2",
+        "language=eng",
+        "-metadata:s:a:2",
+        "title=English Stereo",
+        "-disposition:v:0",
+        "default",
+        "-disposition:a:0",
+        "default",
+        "dts-hd-ma.mkv",
+    )
+    return Recipe(
+        "dts-hd-ma",
+        "H.264 + hun DTS-HD MA 5.1 (lossless XLL, written by reframe_testing.dts; no bit rate "
+        "in the file) + eng AC-3 5.1 224k + eng AC-3 stereo 192k",
+        ("dts-hd-ma.mkv",),
+        (WriteFile("dts-hd-ma.dtshd", dts.dts_hd_ma(d)), Ffmpeg(args)),
+    )
+
+
+#: PGS tracks: a full English track with two forced events among six, and a forced-only one.
+PGS_EVENTS = {
+    "eng": [
+        pgs.Event(200, 800, 300, forced=True),
+        pgs.Event(900, 1400, 420),
+        pgs.Event(1500, 2000, 360),
+        pgs.Event(2100, 2600, 250, forced=True),
+        pgs.Event(2700, 3200, 480),
+        pgs.Event(3300, 3800, 390),
+    ],
+    "eng-forced": [
+        pgs.Event(200, 800, 300, forced=True),
+        pgs.Event(2100, 2600, 250, forced=True),
+    ],
+}
+
+
+def _pgs_recipe() -> Recipe:
+    """PGS subtitles written by ``reframe_testing.pgs`` (FFmpeg has no PGS encoder).
+    ``-copyts`` keeps the event times (the ``sup`` demuxer starts at the first event)."""
+    args = (
+        "-copyts",
+        *_video("720x480", "25", 4),
+        "-i",
+        "eng.sup",
+        "-i",
+        "eng-forced.sup",
+        "-map",
+        "0:v",
+        "-map",
+        "1:s",
+        "-map",
+        "2:s",
+        *_X264,
+        "-c:s",
+        "copy",
+        "-metadata:s:s:0",
+        "language=eng",
+        "-metadata:s:s:0",
+        "title=English",
+        "-metadata:s:s:1",
+        "language=eng",
+        "-metadata:s:s:1",
+        "title=English (forced)",
+        "-disposition:v:0",
+        "default",
+        "-disposition:s:0",
+        "default",
+        "-disposition:s:1",
+        "forced",
+        "pgs.mkv",
+    )
+    return Recipe(
+        "pgs",
+        "720x480 H.264 + two PGS tracks written by reframe_testing.pgs: eng (6 events, 2 "
+        "with the forced flag) and eng forced (2 forced events)",
+        ("pgs.mkv",),
+        (
+            WriteFile("eng.sup", pgs.sup(PGS_EVENTS["eng"])),
+            WriteFile("eng-forced.sup", pgs.sup(PGS_EVENTS["eng-forced"])),
+            Ffmpeg(args),
+        ),
+    )
+
+
+#: The 04 §Example season (batch mode, C-12 M7): one show, two seasons of the same release.
+ANIME_SECONDS = 2.0
+ANIME_TITLES: dict[int, tuple[str, ...]] = {
+    1: (
+        "Pilot",
+        "Departure",
+        "Storm",
+        "Signal",
+        "Echoes",
+        "Harbor",
+        "Embers",
+        "Drift",
+        "Lantern",
+        "Tides",
+        "Static",
+        "Homecoming",
+    ),
+    2: ("Return", "Ashes", "Northbound"),
+}
+#: S01E05 also has an English AC-3 2.0 commentary track (comment flag), after the dub.
+ANIME_COMMENTARY_EPISODE = 5
+#: S01E11 has no English DTS-HD MA dub, and its signs track has another title.
+ANIME_NO_DUB_EPISODE = 11
+ANIME_SIGNS_TITLE = "Signs & Songs"
+ANIME_OTHER_SIGNS_TITLE = "Signs"
+#: Output stream layout of the master (``-map`` order): video, then these tracks.
+ANIME_TRACKS = (
+    # (spec, language, title, disposition)
+    ("a:0", "jpn", "Japanese", "default"),
+    ("a:1", "eng", "English Dub", "0"),
+    ("a:2", "eng", "Commentary", "comment"),
+    ("s:0", "eng", ANIME_SIGNS_TITLE, "forced"),
+    ("s:1", "eng", "Full", "default"),
+)
+_ANIME_SIGNS = [(0.2, 1.0, "Sign", "{\\pos(160,20)}A SIGN"), (1.2, 1.8, "Sign", "A SONG")]
+_ANIME_FULL = [
+    (0.3, 0.9, "Default", "The full subtitle track."),
+    (1.0, 1.9, "Default", "Second line."),
+]
+
+
+def anime_folder(season: int) -> str:
+    """``Anime.Show.S01.BluRay.x264-GRP``: the season folder (a season pack)."""
+    return f"Anime.Show.S{season:02d}.BluRay.x264-GRP"
+
+
+def anime_file_name(season: int, episode: int) -> str:
+    """``Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv``."""
+    title = ANIME_TITLES[season][episode - 1]
+    return f"Anime.Show.S{season:02d}E{episode:02d}.{title}.BluRay.x264-GRP.mkv"
+
+
+def _anime_recipe(season: int) -> Recipe:
+    """The anime season of 04 §Example (C-12 M7, the batch mode demo).
+
+    Every episode: H.264 320x180, ``jpn`` TrueHD 5.1 (FFmpeg's experimental ``truehd``
+    encoder: 5.1 at most, so not 04's "TrueHD Atmos 7.1"), ``eng`` DTS-HD MA 5.1 "English Dub"
+    (``reframe_testing.dts``), and two ``eng`` ASS subtitles, "Signs & Songs" (forced) and
+    "Full" (default). Season 1: E05 also has ``eng`` AC-3 2.0 "Commentary" (comment flag)
+    after the dub; E11 has no dub, and its signs track is titled "Signs". Season 2 (three
+    episodes) has E01's layout. Each episode is a stream copy of one master file, with its
+    own container title."""
+    d = ANIME_SECONDS
+    master = f"anime-s{season:02d}-master.mkv"
+    args: list[str] = [
+        *_video("320x180", "25", d),
+        *_sine(330, d),
+        "-f",
+        "dts",
+        "-i",
+        "dub.dtshd",
+        *_sine(550, d),
+        "-i",
+        "signs.ass",
+        "-i",
+        "full.ass",
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-map",
+        "2:a",
+        "-map",
+        "3:a",
+        "-map",
+        "4:s",
+        "-map",
+        "5:s",
+        *_X264,
+        "-c:a:0",
+        "truehd",
+        "-strict",
+        "-2",
+        "-ac:a:0",
+        "6",
+        "-c:a:1",
+        "copy",
+        "-c:a:2",
+        "ac3",
+        "-b:a:2",
+        "96k",
+        "-ac:a:2",
+        "2",
+        "-c:s",
+        "ass",
+        "-disposition:v:0",
+        "default",
+    ]
+    for spec, lang, title, disposition in ANIME_TRACKS:
+        args += [f"-metadata:s:{spec}", f"language={lang}", f"-metadata:s:{spec}", f"title={title}"]
+        args += [f"-disposition:{spec}", disposition]
+    args.append(master)
+    font = boxfont.FAMILY
+    steps: list[Step] = [
+        WriteFile("dub.dtshd", dts.dts_hd_ma(d)),
+        _text("signs.ass", ass(font, _ANIME_SIGNS)),
+        _text("full.ass", ass(font, _ANIME_FULL)),
+        Ffmpeg(tuple(args)),
+    ]
+    outputs: list[str] = []
+    for episode, title in enumerate(ANIME_TITLES[season], start=1):
+        out = f"{anime_folder(season)}/{anime_file_name(season, episode)}"
+        maps = ["-map", "0"]
+        meta = ["-metadata", f"title=Anime Show - S{season:02d}E{episode:02d} - {title}"]
+        if season != 1 or episode != ANIME_COMMENTARY_EPISODE:
+            maps += ["-map", "-0:a:2"]  # the commentary track
+        if season == 1 and episode == ANIME_NO_DUB_EPISODE:
+            maps += ["-map", "-0:a:1"]  # the English dub
+            meta += ["-metadata:s:s:0", f"title={ANIME_OTHER_SIGNS_TITLE}"]
+        steps.append(Ffmpeg(("-i", master, *maps, "-c", "copy", *meta, out)))
+        outputs.append(out)
+    count = len(ANIME_TITLES[season])
+    special = (
+        f"; E{ANIME_COMMENTARY_EPISODE:02d} has an extra eng AC-3 2.0 commentary, "
+        f"E{ANIME_NO_DUB_EPISODE:02d} has no dub and a signs track titled "
+        f'"{ANIME_OTHER_SIGNS_TITLE}"'
+        if season == 1
+        else ""
+    )
+    return Recipe(
+        f"anime-s{season:02d}",
+        f"04 §Example season {season}: {count} episodes of H.264 + jpn TrueHD 5.1 + eng DTS-HD "
+        f'MA 5.1 + eng ASS "{ANIME_SIGNS_TITLE}" (forced) + eng ASS "Full" (default){special}',
+        tuple(outputs),
+        tuple(steps),
+    )
+
+
 LETTERBOX_SEGMENTS = (
     # (content size, pad position) inside 320x180: 2.39:1 letterbox, then 4:3 pillarbox
     ("320x134", "0:23"),
@@ -566,6 +849,35 @@ def _hdr10_recipe() -> Recipe:
         "(stream and frame side data)",
         ("hdr10.mkv",),
         (Ffmpeg(pass1), Ffmpeg(pass2)),
+    )
+
+
+def _hdr10_4k_recipe() -> Recipe:
+    """A 4K HDR10 source for the C-10 frame budget (09 §Q-3: a 4K source frame in < 2 s).
+
+    One libx265 pass: the HDR10 metadata is SEI in the bitstream only (C-3 reads it from the
+    first frame). ``keyint=48`` (2 s at 23.976 fps) is the GOP of a typical streaming encode;
+    a fast seek decodes at most one GOP.
+    """
+    args = (
+        *_video("3840x2160", "24000/1001", 5),
+        "-vf",
+        "format=yuv420p10le,setparams=range=tv:color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
+        "-c:v",
+        "libx265",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "30",
+        "-x265-params",
+        f"keyint=48:min-keyint=24:{_X265_HDR10}",
+    )
+    return _simple(
+        "hdr10-4k",
+        "3840x2160 10-bit HEVC (libx265), BT.2020/PQ, HDR10 metadata as SEI, 5 s at 23.976 fps, "
+        "keyint 48",
+        "hdr10-4k.mkv",
+        args,
     )
 
 
@@ -679,8 +991,13 @@ def build_recipes() -> dict[str, Recipe]:
             (Ffmpeg(_vfr_args("vfr.mkv")),),
         ),
         _hdr10_recipe(),
+        _hdr10_4k_recipe(),
         _chapters_recipe(),
         _season_recipe(),
+        _dts_hd_ma_recipe(),
+        _pgs_recipe(),
+        _anime_recipe(1),
+        _anime_recipe(2),
     ]
     return {r.name: r for r in recipes}
 

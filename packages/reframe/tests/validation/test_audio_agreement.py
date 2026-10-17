@@ -3,17 +3,18 @@ value an encoder cannot do (decisions 0024, 0025, 0026).
 
 The full product (no sampling) of
 
-- source layouts: mono, stereo, 5.1, 5.1(side), 7.1 and an unknown channel count, each with
-  a known sample rate (44.1 kHz, which Opus lacks) and without one; and the layouts libopus
-  refuses, which C-7 makes into one it takes (``2.1``, ``3.0(back)`` → stereo, ``4.0`` →
-  3.0, ``6.0`` → 5.0, ``7.1(wide)`` → 5.1), with the known rate;
+- source layouts: mono, stereo, 5.1, 5.1(side), 7.1, an unknown channel count and the
+  layouts libopus refuses, which C-7 makes into one it takes (``2.1``, ``3.0(back)`` →
+  stereo, ``4.0`` → 3.0, ``6.0`` → 5.0, ``7.1(wide)`` → 5.1), each with a known sample rate
+  (44.1 kHz, which Opus lacks); stereo and the unknown channel count also without one (the
+  source rate is independent of the layout);
 - encoders: aac, ac3, eac3, libopus, flac, libmp3lame;
 - requested bitrate: valid, between two steps, above the maximum, below the minimum (of the
   layout's table), and none with a VBR quality;
 - requested mixdown: none, mono, stereo, dpl2, 5.1, 7.1;
 - requested sample rate: none, a valid one (48 kHz), one the encoder lacks (47 kHz)
 
-is 17 x 6 x 90 = 9180 tracks. For each track:
+is 13 x 6 x 90 = 7020 tracks. For each track:
 
 - **C-7**: ``build_plan`` writes ``-c:a:0``, ``-b:a:0`` (or the VBR option), ``-ar:a:0`` and
   the ``aresample`` layout (``PlannedAudio.layout``) that ``planned_audio`` says; the bitrate
@@ -429,11 +430,11 @@ def check_codec_rules(
 DISAGREE: dict[tuple[str, str], str] = {}
 
 
-#: The source layouts with both source rates; the layouts libopus refuses (added for C-7's
-#: ``PlannedAudio.layout``) with a known rate only, to keep the matrix fast.
+#: Every source layout with a known rate; the source rate does not depend on the layout, so
+#: "no rate" runs with stereo and the unknown channel count only, to keep the matrix fast.
 SOURCES = [
-    *((layout, rate) for layout in list(LAYOUTS)[:6] for rate in SOURCE_RATES),
-    *((layout, "44.1kHz") for layout in list(LAYOUTS)[6:]),
+    *((layout, "44.1kHz") for layout in LAYOUTS),
+    *((layout, "no-rate") for layout in ("stereo", "unknown")),
 ]
 
 

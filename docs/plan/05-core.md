@@ -448,7 +448,10 @@ concurrency limit per kind.
       the cache).
 - [ ] **Bitrate scan**: packet sizes for one stream (`-show_entries packet=size`) → average
       bitrate. It streams progress and can be cancelled.
-- [ ] **Subtitle scans**: event counts. PGS forced-flag count (decode with `forced_subs_only`).
+- [ ] **Subtitle scans**: event counts. PGS forced-flag count (the forced flag of the
+      composition objects, read from a stream copy: a decode with `forced_subs_only` does
+      not drop PGS events); VobSub forced count (decode with `forced_subs_only`)
+      ([0032](../decisions/0032-analysis-scans-and-their-fixtures.md)).
 - [ ] **Loudness measure** (`loudnorm` print_format=json) for the analyse step and for preview.
 
 Done when: frames for a 4K HDR fixture come back in < 2 s each on a normal desktop, and
@@ -483,7 +486,9 @@ cancelling a scan stops its FFmpeg process within 1 s.
       `Interrupted` (0016). The store is opened on first use under an exclusive lock
       (`<data>/queue.lock`): only the owner restores it and runs its jobs; another
       process gets a private queue that is not kept. No file that a job writes or removes may
-      be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
+      be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)),
+      except the source of a `metadata_edit` job, which only mkvpropedit edits and nothing
+      removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
@@ -507,6 +512,10 @@ overrides for `C-16`), and per-group resolution with a match report.
     selected or dropped track and every chosen rule. It feeds the live preview.
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
 
+The rule engine (explicit track rules with relaxation; the defaults compiled into rules over
+the selection stage), grouping, derivation, overrides and the match report:
+[decision 0040](../decisions/0040-batch-engine-and-reframe-batch.md).
+
 Done when: the "Done when" list in [04](04-batch-mode.md#core-api-implemented-in-c-12) passes,
 and a table test reproduces the example in
 [03 §Audio defaults](03-features.md#audio-defaults-stored-in-the-preset) row by row (Hungarian
@@ -522,6 +531,11 @@ and a table test reproduces the example in
 
 Done when: changing only languages and flags on an MKV fixture runs as `metadata_edit`, takes
 < 1 s, and the re-probe shows the new values.
+
+What can change in place (track languages, names, flags, the container title), the exact
+exception to decision 0027, the fix-up (only `LanguageIETF`: FFmpeg writes all six flags), and
+how the BCP 47 value is read back without MediaInfo (Reframe's own Matroska track reader):
+[decision 0034](../decisions/0034-metadata-edit-in-place.md).
 
 ## C-14 Platform services
 
@@ -548,26 +562,38 @@ class Reframe:
     @classmethod
     async def create(cls, config_dir: Path | None = None, data_dir: Path | None = None) -> Reframe: ...
     events: EventBus
-    tools: ToolsService            # status, versions, re-scan
+    tools: ToolsService            # status, versions, re-scan; fetch (reframe tools fetch)
     capabilities: CapabilityService
-    sources: SourceService         # probe, probe_folder, get, frames, cropdetect, scans
+    sources: SourceService         # probe, probe_folder, get, store, update; C-10 tasks: bitrate_scan,
+                                   # subtitle_scan, loudness_scan, frames, frame, cropdetect
     presets: PresetService
-    jobs: JobService               # draft, validate, plan, name, media_files; preview_clip (C-10)
-    batch: BatchService            # group, derive, resolve
+    jobs: JobService               # draft, validate, plan (dry_run=), name, media_files; explain
+                                   # (C-12), draft_remux (C-13), search_options, hdr_metadata,
+                                   # dry_run (C-6); preview_clip, preview_clip_path (C-10)
+    batch: BatchService            # group, derive, resolve, resolve_batch (a whole run)
     queue: QueueService            # add, list, reorder, start/pause/resume/cancel, logs
     settings: SettingsService
+    power: PowerService            # when-done power actions with the 60 s countdown (C-14)
     async def close(self) -> None  # stop the runner, kill children, flush stores
 ```
+
+The method list beyond this sketch, and the task context of the C-10 methods:
+[decision 0030](../decisions/0030-core-complete-contract.md).
 
 - [ ] Wire every service. `create()` returns quickly. Detection and queue restore continue in
       the background.
 - [ ] CLI (`reframe` entry point, `[cli]` extra):
-      `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status|fetch` ·
-      `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list|export|import` ·
+      `reframe probe FILE [--json]` · `reframe encoders` · `reframe tools status` · `reframe tools fetch [--build NAME] [--platform P]` ·
+      `reframe name PATH… [--template T] [--preset NAME]` (prints the name source, parsed fields and the output name) · `reframe presets list` · `reframe presets export [NAME…] [-o FILE]` · `reframe presets import FILE [--on-conflict rename|replace|skip]` ·
       `reframe plan FILE [--preset NAME] [-o OUT]` (prints the issues, then the command) · `reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]` (one job per media file, [decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) ·
-      `reframe batch DIR --preset NAME [--dry-run]` (prints the resolution matrix).
+      `reframe batch DIR… [--preset NAME] [--level strict|standard|loose] [--dry-run] [-r] [--json]`
+      (prints the groups and the resolution matrix; without `--dry-run` it encodes the files
+      without errors; the name checks cover every group, and an earlier run's outputs are left
+      out, [decision 0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
       No `--preset`: the default preset. Output formats, exit codes, the bounded wait for
       encoder detection and the folder search: [decision 0017](../decisions/0017-jobs-service-and-cli.md).
+      The fetch, the preset commands, the dry run of `plan` and the when-done countdown of
+      `encode`: [decision 0038](../decisions/0038-cli-tools-presets-and-when-done.md).
 
 Done when: the CLI can encode a season folder end to end with no UI. This is the first point
 where you can use Reframe for real.

@@ -265,18 +265,33 @@ Modelled on StaxRip: every parameter that matters is a typed, documented control
 - **ⓘ** opens help: what the option does, its typical range, and the quality/speed effect.
 - **Search** covers labels, CLI names and help text across all categories.
 - **Custom parameters**: a free-form `key=value:…` field, appended last and validated by a
-  dry run (`-frames:v 1 -f null`).
-- **Copy HDR metadata from source** fills master-display and MaxCLL/MaxFALL from the probe.
+  dry run (`-frames:v 1 -f null`). Encoders without a params argument (NVENC, QSV, AMF, VAAPI,
+  VP9) get each entry as their own option (`rc-lookahead=20` → `-rc-lookahead 20`). A
+  parameter the encoder refuses, or only logs and skips (x264, x265, SVT-AV1 and libvpx's codec
+  controls do that), is a validation error from the dry run
+  ([0035](../decisions/0035-advanced-option-sets-and-dry-run.md)). A parameter that makes the
+  encoder or FFmpeg read or write a file (x265 `csv` / `analysis-save`, x264 `dump-yuv` /
+  `stats`, `pass`, FFmpeg's `vstats_file` …) is a validation error, and so is an own option of
+  an encoder without a params argument that is neither its private option nor a generic encoder
+  option (an allow-list: FFmpeg would read any other name as one of its own options). The dry
+  run never runs with such a parameter, and runs FFmpeg in a temporary working folder.
+- **Copy HDR metadata from source** fills master-display and MaxCLL/MaxFALL from the probe
+  (x265 `master-display` / `max-cll`, SVT-AV1 `mastering-display` / `content-light`; the
+  hardware encoders take it from the frames).
+- An option whose condition does not hold (x265 `amp` without `rect`) is not written and shows a
+  warning; a combination the encoder silently changes is a warning, one it refuses an error
+  ([0035](../decisions/0035-advanced-option-sets-and-dry-run.md)).
 
 Option coverage for v1:
 
 | Encoder | Categories and examples |
 |---------|------------------------|
-| x264 | rate control (crf, vbv-maxrate/bufsize, qcomp, aq-mode/strength, mbtree), frames (bframes, b-adapt, b-pyramid, ref, keyint, min-keyint, scenecut, rc-lookahead, weightp), analysis (me, subme, merange, trellis, partitions, direct), psy (psy-rd, psy-trellis), deblock, colour (colorprim, transfer, colormatrix, range), threads |
+| x264 | rate control (crf, vbv-maxrate/bufsize, qcomp, aq-mode/strength, mbtree), frames (bframes, b-adapt, b-pyramid, ref, keyint, min-keyint, scenecut, rc-lookahead, weightp), analysis (me, subme, merange, trellis, partitions, direct), psy (psy-rd, psy-trellis), deblock, colour (colorprim, transfer, colormatrix; not range: FFmpeg's libx264 wrapper overrides it with the input's range), threads |
 | x265 | all x264 equivalents, plus ctu, rd, rdoq-level, psy-rdoq, limit-refs, limit-modes, rect, amp, tu-intra/inter-depth, sao / limit-sao / selective-sao, strong-intra-smoothing, hdr10, hdr10-opt, master-display, max-cll, repeat-headers, pools, frame-threads, wpp |
 | SVT-AV1 | preset, crf, tune, film-grain, film-grain-denoise, keyint, scd, lookahead, enable-overlays, enable-qm, qm-min/max, variance-boost, sharpness, enable-tf |
 | NVENC | preset p1–p7, tune (hq/uhq/ll), rc (vbr/constqp), cq, multipass, bf, b_ref_mode, refs, spatial/temporal AQ, aq-strength, rc-lookahead |
-| QSV / AMF / VAAPI | preset/quality, rc mode, bf, refs, lookahead (when supported), profile/level |
+| QSV / AMF / VAAPI | preset/quality, rc mode, bf, refs, lookahead (when supported), profile/level (QSV: no levels, not verifiable without Intel hardware) |
+| VP9 (libvpx) | keyframes (g, keyint_min), lag-in-frames, auto-alt-ref, alt-ref noise reduction, aq-mode, sharpness, qmin/qmax, under/overshoot, enable-tpl, tiles, frame-parallel, threads |
 
 ---
 
@@ -344,6 +359,14 @@ same dialog shows a live preview of the result.
 | Commentary and audio description | Drop · Keep, after the main tracks | Drop |
 | Output order | Language list order · Source order | Language list order |
 | Default track | First output track · First track in the first language · None | First output track |
+
+When no language is set at all (the preset has none and Settings has no preferred languages),
+every track is kept in source order with its source flags (at most one default track), and
+the other settings wait until a language is set. A listed language takes the tracks of that
+language: `ger` = `de`; `pt` takes `pt-BR` and `por`, `pt-BR` takes only `pt-BR`. The default
+track setting changes only the default flag; the other flags come from the source track.
+Details (unknown bit rates in the tie-break, `und` tracks, music-only tracks, the order):
+[0031](../decisions/0031-audio-and-subtitle-selection-stage.md).
 
 #### 2. Codec rules: how each selected track is encoded
 
@@ -446,8 +469,13 @@ rule does.
 | Burn in | one track per job | Text uses the `subtitles` filter, on the final picture. Bitmap uses `overlay` after the crop; when the crop removes lines, the subtitle canvas is aligned with the bottom of the picture ([0013](../decisions/0013-command-builder-details.md)). **Forced only** uses the decoder option `forced_subs_only`, which only PGS and VobSub have; a copied track keeps every event ([0014](../decisions/0014-validation-rules-and-severities.md)) |
 | Convert | text → SRT / ASS / WebVTT / mov_text | |
 
-- **Foreign audio search** (HandBrake parity): Reframe suggests a forced-subtitle track from
-  event counts and, for PGS, from forced flags found in a decode scan (background task).
+- **Foreign audio search** (HandBrake parity): when the audio is in the first subtitle language
+  (the viewer's language), Reframe takes the forced-subtitle track of that language: from the
+  forced flag or title, from event counts and, for PGS and VobSub, from forced flags found in a
+  scan of the track (background task; [0032](../decisions/0032-analysis-scans-and-their-fixtures.md)).
+  The track goes first and gets the forced flag. Burn-in "foreign audio" burns it, or, when the
+  audio is in another language, the first subtitle in the viewer's language
+  ([0031](../decisions/0031-audio-and-subtitle-selection-stage.md)).
 - **External subtitles**: add `.srt`, `.ass`, `.ssa`, `.vtt` or `.sup` files. Settings:
   language, name, flags, time offset (ms), and character encoding (auto-detected, can be
   changed).

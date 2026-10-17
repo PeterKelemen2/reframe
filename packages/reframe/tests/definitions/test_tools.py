@@ -353,11 +353,44 @@ def _sei_options(path: Path) -> dict[str, str]:
             out[token[3:]] = "0"
         else:
             out[token] = "1"
+    if out.get("rskip") == "1" and "rskip-edge-threshold" in out:
+        # x265 4.3 writes rskip=2 as "rskip=1 rskip-edge-threshold=0.050000".
+        out["rskip"] = "2"
     return out
 
 
 def _part(value: str, index: int, sep: str = ":") -> str:
     return value.split(sep)[index]
+
+
+def _on(value: str) -> bool:
+    return value == "1"
+
+
+#: x264's ``analyse=<intra>:<inter>`` partition flags of the ``partitions`` choices.
+_X264_PARTITIONS = {
+    "0": "none",
+    "0x3": "i8x8,i4x4",
+    "0x113": "p8x8,b8x8,i8x8,i4x4",
+    "0x133": "all",
+}
+#: ISO/IEC 23091-2 code points of the colour names (x265's settings SEI writes the numbers).
+_CODE_POINTS: dict[str, dict[int, str]] = {
+    "colorprim": {
+        1: "bt709", 4: "bt470m", 5: "bt470bg", 6: "smpte170m", 7: "smpte240m", 8: "film",
+        9: "bt2020", 10: "smpte428", 11: "smpte431", 12: "smpte432",
+    },
+    "transfer": {
+        1: "bt709", 4: "bt470m", 5: "bt470bg", 6: "smpte170m", 7: "smpte240m", 8: "linear",
+        9: "log100", 10: "log316", 11: "iec61966-2-4", 12: "bt1361e", 13: "iec61966-2-1",
+        14: "bt2020-10", 15: "bt2020-12", 16: "smpte2084", 17: "smpte428", 18: "arib-std-b67",
+    },
+    "colormatrix": {
+        0: "gbr", 1: "bt709", 4: "fcc", 5: "bt470bg", 6: "smpte170m", 7: "smpte240m",
+        8: "ycgco", 9: "bt2020nc", 10: "bt2020c", 11: "smpte2085", 12: "chroma-derived-nc",
+        13: "chroma-derived-c", 14: "ictcp",
+    },
+}  # fmt: skip
 
 
 #: Option key → (SEI key, value as the definitions store it) for x264 and x265.
@@ -390,6 +423,31 @@ _SEI: dict[str, dict[str, tuple[str, Callable[[str], OptionValue | None]]]] = {
             "direct",
             lambda v: {"0": "none", "1": "spatial", "2": "temporal", "3": "auto"}[v],
         ),
+        # M9
+        "open-gop": ("open_gop", _on),
+        "b-bias": ("b_bias", int),
+        "weightb": ("weightb", _on),
+        "bluray-compat": ("bluray_compat", _on),
+        "ipratio": ("ip_ratio", float),
+        "pbratio": ("pb_ratio", float),
+        "qpmin": ("qpmin", int),
+        "qpmax": ("qpmax", int),
+        "nal-hrd": ("nal_hrd", str),
+        "partitions": ("analyse", lambda v: _X264_PARTITIONS[_part(v, 1)]),
+        "8x8dct": ("8x8dct", _on),
+        "mixed-refs": ("mixed_ref", _on),
+        "fast-pskip": ("fast_pskip", _on),
+        "chroma-me": ("chroma_me", _on),
+        "dct-decimate": ("decimate", _on),
+        "cabac": ("cabac", _on),
+        "psy": ("psy", _on),
+        "nr": ("nr", int),
+        "deadzone-inter": ("deadzone", lambda v: int(_part(v, 0, ","))),
+        "deadzone-intra": ("deadzone", lambda v: int(_part(v, 1, ","))),
+        "cqm": ("cqm", lambda v: {"0": "flat", "1": "jvt"}[v]),
+        "threads": ("threads", int),
+        "lookahead-threads": ("lookahead_threads", int),
+        "sliced-threads": ("sliced_threads", _on),
     },
     "libx265": {
         "bframes": ("bframes", int),
@@ -421,8 +479,91 @@ _SEI: dict[str, dict[str, tuple[str, Callable[[str], OptionValue | None]]]] = {
         "master-display": ("master-display", str),
         "max-cll": ("cll", str),
         "repeat-headers": ("repeat-headers", lambda v: v == "1"),
+        # M9
+        "b-pyramid": ("b-pyramid", _on),
+        "bframe-bias": ("bframe-bias", int),
+        "b-intra": ("b-intra", _on),
+        "weightp": ("weightp", _on),
+        "weightb": ("weightb", _on),
+        "open-gop": ("open-gop", _on),
+        "vbv-maxrate": ("vbv-maxrate", int),
+        "vbv-bufsize": ("vbv-bufsize", int),
+        "hrd": ("hrd", _on),
+        "qcomp": ("qcomp", float),
+        "ipratio": ("ipratio", float),
+        "pbratio": ("pbratio", float),
+        "qpmin": ("qpmin", int),
+        "qpmax": ("qpmax", int),
+        "aq-motion": ("aq-motion", _on),
+        "qg-size": ("qg-size", str),
+        "rc-grain": ("rc-grain", _on),
+        "cbqpoffs": ("cbqpoffs", int),
+        "crqpoffs": ("crqpoffs", int),
+        "limit-refs": ("limit-refs", str),
+        "limit-modes": ("limit-modes", _on),
+        "rect": ("rect", _on),
+        "amp": ("amp", _on),
+        "min-cu-size": ("min-cu-size", str),
+        "max-tu-size": ("max-tu-size", str),
+        "tu-intra-depth": ("tu-intra-depth", int),
+        "tu-inter-depth": ("tu-inter-depth", int),
+        "limit-tu": ("limit-tu", int),
+        "early-skip": ("early-skip", _on),
+        "rskip": ("rskip", str),
+        "fast-intra": ("fast-intra", _on),
+        "tskip": ("tskip", _on),
+        "max-merge": ("max-merge", int),
+        "temporal-mvp": ("temporal-mvp", _on),
+        "signhide": ("signhide", _on),
+        "rd-refine": ("rd-refine", _on),
+        "dynamic-rd": ("dynamic-rd", float),
+        "nr-intra": ("nr-intra", int),
+        "nr-inter": ("nr-inter", int),
+        "sao-non-deblock": ("sao-non-deblock", _on),
+        # x265 writes the colour tags as ISO/IEC 23091-2 code points.
+        "colorprim": ("colorprim", lambda v: _CODE_POINTS["colorprim"][int(v)]),
+        "transfer": ("transfer", lambda v: _CODE_POINTS["transfer"][int(v)]),
+        "colormatrix": ("colormatrix", lambda v: _CODE_POINTS["colormatrix"][int(v)]),
+        "aud": ("aud", _on),
+        "frame-threads": ("frame-threads", int),
+        "wpp": ("wpp", _on),
+        "pmode": ("pmode", _on),
+        "pme": ("pme", _on),
+        "lookahead-slices": ("lookahead-slices", int),
     },
 }
+
+#: Options read from the stream's VUI with ffprobe (x264 does not list them in its SEI):
+#: option key → ffprobe stream field.
+_VUI: dict[str, dict[str, str]] = {
+    "libx264": {
+        "colorprim": "color_primaries",
+        "transfer": "color_transfer",
+        "colormatrix": "color_space",
+        "chromaloc": "chroma_location",
+    },
+    # x265's SEI has only "chromaloc=1" (present) and a range flag: ffprobe reads the VUI.
+    "libx265": {"range": "color_range", "chromaloc": "chroma_location"},
+}
+#: ffprobe's names of the values of VUI options.
+_VUI_VALUES: dict[str, dict[str, str]] = {
+    "chromaloc": {
+        "0": "left",
+        "1": "center",
+        "2": "topleft",
+        "3": "top",
+        "4": "bottomleft",
+        "5": "bottom",
+    },
+    "range": {"limited": "tv", "full": "pc"},
+}
+#: Options checked in the encoder's log: option key → (pattern with ``{value}``).
+_LOG: dict[str, dict[str, str]] = {
+    "libx264": {},
+    "libx265": {"pools": "Thread pool created using {value} threads"},
+}
+#: x265 turns lookahead-slices off below 720 lines: its table is read from a 720p encode.
+_SEI_720P = frozenset({"lookahead-slices"})
 
 _EXT = {"libx264": "h264", "libx265": "hevc"}
 
@@ -440,6 +581,15 @@ def test_per_preset_defaults_match_the_library(encoder_id: str, tmp_path: Path) 
         if result.returncode:
             return f"{preset}: {_fail_text(result)}"
         options = _sei_options(out)
+        options_720p: dict[str, str] = {}
+        if any(o.key in _SEI_720P for o in enc.options):
+            big = tmp_path / f"{preset}-720p.{_EXT[encoder_id]}"
+            source = ["-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25"]
+            args = [*source, *_encode_args(enc, ["-preset", preset])[len(_LAVFI_VIDEO) :]]
+            result = _ffmpeg([*args, str(big)])
+            if result.returncode:
+                return f"{preset} 720p: {_fail_text(result)}"
+            options_720p = _sei_options(big)
         wrong = []
         for option in enc.options:
             if option.default.kind == "fixed" and option.key in sei:
@@ -449,7 +599,8 @@ def test_per_preset_defaults_match_the_library(encoder_id: str, tmp_path: Path) 
             if option.default.kind != "preset":
                 continue
             key, convert = sei[option.key]
-            actual = convert(options[key]) if key in options else None
+            read = options_720p if option.key in _SEI_720P else options
+            actual = convert(read[key]) if key in read else None
             expected = option.default.values.get(preset)
             if actual != expected:
                 wrong.append(f"{option.key}: library {actual!r}, table {expected!r}")
@@ -515,6 +666,35 @@ _TEST_VALUES: dict[str, dict[str, OptionValue]] = {
         "merange": 20,
         "trellis": "2",
         "direct": "auto",
+        "open-gop": True,
+        "b-bias": 10,
+        "weightb": False,
+        "ipratio": 1.5,
+        "pbratio": 1.2,
+        "qpmin": 2,
+        "qpmax": 60,
+        "nal-hrd": "vbr",
+        "partitions": "all",
+        "mixed-refs": False,
+        "fast-pskip": False,
+        "chroma-me": False,
+        "dct-decimate": False,
+        "nr": 100,
+        "deadzone-inter": 10,
+        "deadzone-intra": 8,
+        "cqm": "jvt",
+        "threads": 4,
+        "lookahead-threads": 2,
+        "colorprim": "bt2020",
+        "transfer": "smpte2084",
+        "colormatrix": "bt2020nc",
+        "chromaloc": "2",
+        # Later encodes (they change other values): see _LATER.
+        "psy": False,
+        "cabac": False,
+        "8x8dct": False,
+        "sliced-threads": True,
+        "bluray-compat": True,
     },
     "libx265": {
         "bframes": 6,
@@ -546,35 +726,126 @@ _TEST_VALUES: dict[str, dict[str, OptionValue]] = {
         "master-display": "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
         "max-cll": "1000,400",
         "repeat-headers": True,
+        "b-pyramid": False,
+        "bframe-bias": 10,
+        "b-intra": False,
+        "weightp": False,
+        "weightb": True,
+        "open-gop": False,
+        "vbv-maxrate": 5000,
+        "vbv-bufsize": 10000,
+        "hrd": True,
+        "qcomp": 0.7,
+        "ipratio": 1.5,
+        "pbratio": 1.2,
+        "qpmin": 2,
+        "qpmax": 60,
+        "aq-motion": True,
+        "qg-size": "16",
+        "rc-grain": True,
+        "cbqpoffs": -2,
+        "crqpoffs": -3,
+        "limit-refs": "2",
+        "limit-modes": True,
+        "rect": True,
+        "amp": True,
+        "min-cu-size": "16",
+        "max-tu-size": "16",
+        "tu-intra-depth": 3,
+        "tu-inter-depth": 3,
+        "limit-tu": 2,
+        "early-skip": False,
+        "rskip": "2",
+        "fast-intra": True,
+        "tskip": True,
+        "max-merge": 4,
+        "temporal-mvp": False,
+        "signhide": False,
+        "dynamic-rd": 2.0,
+        "nr-intra": 100,
+        "nr-inter": 200,
+        # hdr10-opt needs BT.2020 colour: these are also the values the test writes for it.
+        "colorprim": "bt2020",
+        "transfer": "smpte2084",
+        "colormatrix": "bt2020nc",
+        "range": "full",
+        "chromaloc": "2",
+        "aud": True,
+        "frame-threads": 2,
+        "wpp": False,
+        "pmode": True,
+        "pme": True,
+        "pools": "2",
+        # Later encodes: see _LATER.
+        "rd-refine": True,
+        "sao-non-deblock": True,
+        "lookahead-slices": 2,
     },
+}
+
+#: Values checked in later encodes, with the other values they need (x265 turns SAO back on
+#: for selective-sao even with sao=0; rd-refine needs RD 5 or 6; lookahead-slices needs 720
+#: lines; pmode turns limit-refs 2 and 3 off; x264's psy=0 drops psy-rd from the SEI, cabac=0
+#: and 8x8dct=0 change the partitions, bluray-compat lowers the B-frames and weighted
+#: P-frames, cqm=jvt raises qpmin).
+_LATER: dict[str, list[tuple[dict[str, OptionValue], dict[str, OptionValue]]]] = {
+    "libx264": [
+        (
+            {"psy": False, "cabac": False, "8x8dct": False, "sliced-threads": True},
+            {"partitions": "none"},
+        ),
+        ({"bluray-compat": True}, {}),
+        ({"cqm": "jvt"}, {}),
+    ],
+    "libx265": [
+        ({"limit-sao": True, "selective-sao": 2, "sao-non-deblock": True}, {"sao": True}),
+        ({"rd-refine": True}, {"rd": 5}),
+        ({"lookahead-slices": 2}, {}),
+        ({"pmode": True}, {}),
+    ],
 }
 
 
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265"])
 def test_every_x26x_option_reaches_the_library(encoder_id: str, tmp_path: Path) -> None:
+    """Every option set to a value that is not its default shows up in what the library
+    writes: the settings SEI, the VUI (x264's colour tags, read with ffprobe) or the log."""
     enc = VIDEO[encoder_id]
     values = _TEST_VALUES[encoder_id]
     assert set(values) == {o.key for o in enc.options}
-    sei = _SEI[encoder_id]
-    # limit-sao and selective-sao need SAO on (x265 turns SAO back on for selective-sao, even
-    # with sao=0): check them in a second encode.
-    later = {"limit-sao", "selective-sao"}
-    first = {k: v for k, v in values.items() if k not in later}
-    sets = [first]
-    if encoder_id == "libx265":
-        sets.append({"sao": True, **{k: values[k] for k in later}})
-    for values_set in sets:
-        out = tmp_path / f"o.{_EXT[encoder_id]}"
-        params = _build_params(enc, values_set, "medium")
-        if encoder_id == "libx265":
+    sei, vui, log = _SEI[encoder_id], _VUI[encoder_id], _LOG[encoder_id]
+    assert set(sei) | set(vui) | set(log) >= set(values)
+    later = _LATER[encoder_id]
+    later_keys = {k for checked, _ in later for k in checked}
+    sets: list[tuple[dict[str, OptionValue], dict[str, OptionValue]]] = [
+        ({k: v for k, v in values.items() if k not in later_keys}, {})
+    ]
+    sets += [({k: values[k] for k in checked}, extra) for checked, extra in later]
+    for index, (checked, extra) in enumerate(sets):
+        out = tmp_path / f"o{index}.{_EXT[encoder_id]}"
+        params = _build_params(enc, {**checked, **extra}, "medium")
+        if encoder_id == "libx265" and "colorprim" not in params:
             # hdr10-opt needs BT.2020 colour ("Recommended Settings for HDR10-opt: colour
             # primaries should be BT.2020, Disabling hdr10-opt."); C-7 writes these tags.
             params |= {"colorprim": "bt2020", "transfer": "smpte2084", "colormatrix": "bt2020nc"}
-        result = _ffmpeg([*_encode_args(enc, ["-preset", "medium"], params, depth=10), str(out)])
+        args = _encode_args(enc, ["-preset", "medium"], params, depth=10)
+        if "lookahead-slices" in checked:
+            args = ["-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25", *args[4:]]
+        result = _ffmpeg([*args, str(out)])
         assert result.returncode == 0, _fail_text(result)
         assert _param_error(result) is None
         options = _sei_options(out)
-        for key, value in values_set.items():
+        stream: dict[str, Any] = {}
+        if any(key in vui for key in checked):
+            stream = _probe(out, "-show_streams")["streams"][0]
+        for key, value in checked.items():
+            if key in log:
+                assert log[key].format(value=value) in result.stderr, key
+                continue
+            if key in vui:
+                expected = _VUI_VALUES.get(key, {}).get(str(value), value)
+                assert stream.get(vui[key]) == expected, key
+                continue
             sei_key, convert = sei[key]
             assert sei_key in options, key
             got = convert(options[sei_key])
@@ -634,22 +905,49 @@ def test_every_software_choice_encodes(encoder_id: str) -> None:
     assert _parallel(_choice_jobs(enc), run) == []
 
 
-def test_svtav1_options_parse() -> None:
-    """libsvtav1 only logs a bad parameter and encodes on: check its log."""
+def test_svtav1_options_parse(tmp_path: Path) -> None:
+    """libsvtav1 only logs a bad parameter and encodes on: check its log, the
+    ``SVT [config]`` lines and the stream (colour tags, HDR10 metadata)."""
     enc = VIDEO["libsvtav1"]
     values: dict[str, OptionValue] = {
         "film-grain": 8,
         "film-grain-denoise": False,
+        "adaptive-film-grain": True,
         "keyint": 240,
         "scd": True,
         "lookahead": 60,
         "enable-overlays": True,
-        "enable-tf": "0",
+        "enable-tf": "2",
+        "tf-strength": 1,
         "enable-qm": True,
         "qm-min": 2,
         "qm-max": 12,
         "enable-variance-boost": True,
+        "variance-boost-strength": 3,
+        "variance-octile": 6,
+        "variance-boost-curve": "1",
         "sharpness": 2,
+        "aq-mode": "2",
+        "qp-scale-compress-strength": 2,
+        "min-qp": 10,
+        "max-qp": 55,
+        "irefresh-type": "1",
+        "hierarchical-levels": "4",
+        "luminance-qp-bias": 20,
+        "ac-bias": 1.5,
+        "enable-dlf": "2",
+        "enable-cdef": False,
+        "enable-restoration": False,
+        "color-primaries": "bt2020",
+        "transfer-characteristics": "smpte2084",
+        "matrix-coefficients": "bt2020-ncl",
+        "color-range": "full",
+        "chroma-sample-position": "topleft",
+        "mastering-display": "G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)",
+        "content-light": "1000,400",
+        "lp": 2,
+        "tile-rows": 1,
+        "tile-columns": 1,
     }
     assert set(values) == {o.key for o in enc.options}
     params = {
@@ -657,21 +955,64 @@ def test_svtav1_options_parse() -> None:
         for o in enc.options
         if o.mapping.kind == "x26x_param"
     }
-    result = _ffmpeg([*_encode_args(enc, ["-preset", "10"], params), "-f", "null", "-"])
+    out = tmp_path / "o.ivf"
+    result = _ffmpeg([*_encode_args(enc, ["-preset", "10"], params, depth=10), str(out)])
     assert result.returncode == 0, _fail_text(result)
     assert _param_error(result) is None
-    assert re.search(r"gop size / mini-gop size / key-frame type\s*:\s*240 /", result.stderr)
-    assert re.search(r"film grain synth / denoising / level .*: 1 / 0 / 8", result.stderr)
+    log = result.stderr
+    assert re.search(
+        r"gop size / mini-gop size / key-frame type\s*:\s*240 / 16 / FWD key frame", log
+    )
+    assert re.search(r"film grain synth / denoising / level .*: 1 / 0 / 8", log)
+    assert re.search(r"AQ mode / Variance Boost strength / octile / curve\s*:\s*2 / 3 / 6 / 1", log)
+    assert re.search(r"sharpness / luminance-based QP bias\s*:\s*2 / 20", log)
+    assert re.search(r"QP scale compress strength\s*:\s*2", log)
+    assert re.search(r"Level of Parallelism: 2", log)
+    probed = _probe(out, "-show_streams", "-show_frames", "-read_intervals", "%+#1")
+    stream = probed["streams"][0]
+    assert (stream["color_primaries"], stream["color_transfer"], stream["color_space"]) == (
+        "bt2020",
+        "smpte2084",
+        "bt2020nc",
+    )
+    assert (stream["color_range"], stream["chroma_location"]) == ("pc", "topleft")
+    side = {d["side_data_type"]: d for d in probed["frames"][0].get("side_data_list", [])}
+    assert side["Content light level metadata"]["max_content"] == 1000
+    assert side["Content light level metadata"]["max_average"] == 400
+    assert side["Mastering display metadata"]["max_luminance"] == "256000/256"
+
+
+def test_svtav1_option_defaults_in_the_log() -> None:
+    """The fixed defaults of the SVT-AV1 set are what v4.2 logs when nothing is set (AQ mode
+    2, sharpness 0, luminance QP bias 0, QP scale compress strength 0; with variance boost on:
+    strength 2, octile 5, curve 0); key frames are closed (irefresh-type 2); the mini-GOP is
+    16 at preset 10."""
+    enc = VIDEO["libsvtav1"]
+    plain = _ffmpeg([*_encode_args(enc, ["-preset", "10"]), "-f", "null", "-"]).stderr
+    assert re.search(r"AQ mode / Variance Boost\s*:\s*2 / 0", plain)
+    assert re.search(r"sharpness / luminance-based QP bias\s*:\s*0 / 0", plain)
+    assert re.search(r"QP scale compress strength\s*:\s*0", plain)
+    assert re.search(r"key-frame type\s*:\s*\d+ / 16 / key frame", plain)
+    boost = _ffmpeg(
+        [*_encode_args(enc, ["-preset", "10"], {"enable-variance-boost": "1"}), "-f", "null", "-"]
+    ).stderr
+    assert re.search(r"strength / octile / curve\s*:\s*2 / 2 / 5 / 0", boost)
+    defaults = {o.key: o.default for o in enc.options}
+    assert defaults["aq-mode"].kind == "fixed"
+    assert defaults["aq-mode"].value == "2"
+    assert defaults["irefresh-type"].value == "2"  # type: ignore[union-attr]
+    assert defaults["variance-octile"].value == 5  # type: ignore[union-attr]
 
 
 #: Other options to set with an option at the end of its range, where x265 has a rule across
 #: two options (recorded in ``test_recorded_cross_option_rules``; C-8 validates them).
+_RANGE_ARGS: dict[str, list[str]] = {"libvpx-vp9": ["-b:v", "500k"]}
 _RANGE_COMPANIONS: dict[tuple[str, str], dict[str, str]] = {
     ("libx265", "rc-lookahead"): {"bframes": "0"},
 }
 
 
-@pytest.mark.parametrize("encoder_id", ["libx264", "libx265", "libsvtav1"])
+@pytest.mark.parametrize("encoder_id", ["libx264", "libx265", "libsvtav1", "libvpx-vp9"])
 def test_option_range_ends_encode(encoder_id: str) -> None:
     """Every number option at its minimum and at its maximum reaches the library without an
     error. M2 review: x265 ``ref`` 9-16 and ``merange`` 32768 stopped the encoder, SVT-AV1
@@ -686,6 +1027,8 @@ def test_option_range_ends_encode(encoder_id: str) -> None:
         for value in (option.min, option.max):
             args, params = _mapping_args(option.mapping, _written(value))
             params = _RANGE_COMPANIONS.get((encoder_id, option.key), {}) | params
+            # libvpx without a rate control uses CRF 32, which must lie inside qmin..qmax.
+            args = [*_RANGE_ARGS.get(encoder_id, []), *args]
             jobs.append((f"{option.key}={_written(value)}", args, params))
 
     def run(job: tuple[str, list[str], dict[str, str]]) -> str | None:
@@ -1655,15 +1998,27 @@ def _option_test_value(option: EncoderOption) -> str:
 )
 def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> None:
     """AMF and VAAPI on a real GPU (AMD RX 7600 when recorded): every preset, profile and
-    level, constant quality at min / default / max, average bitrate, and every option."""
+    level, constant quality at min / default / max, average bitrate, and every option.
+
+    Choices an older build lacks (``_ADDED_IN``: n8.1.3 has no ``high_quality`` for
+    ``h264_amf`` / ``hevc_amf``, so ``supported_presets`` does not offer it there) must fail
+    on that build and work on the newer ones: the test asserts what each version does."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
+    series = _series()
+    missing = {
+        f"{name}={value}"
+        for (e, name, value), since in _ADDED_IN.items()
+        if e == encoder_id and series < since
+    }
     jobs: list[tuple[str, list[str], int]] = []
+    absent: list[tuple[str, list[str], int]] = []
     for label, args, _params, depth in _choice_jobs(enc):
         if enc.family == "amf" and enc.codec == "h264" and depth == 10:
             continue
-        jobs.append((label, args, depth))
+        (absent if label.split("@", 1)[0] in missing else jobs).append((label, args, depth))
+    assert len({label.split("@", 1)[0] for label, _a, _d in absent}) == len(missing)
     q, b = enc.rate_control.quality, enc.rate_control.bitrate
     assert q is not None
     assert b is not None
@@ -1690,6 +2045,9 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
         problem = run(job)
         if problem:
             problems.append(problem)
+    for job in absent:  # the older build refuses the value
+        if run(job) is None:
+            problems.append(f"{job[0]}: works on {series}, expected to fail")
     assert problems == []
 
 

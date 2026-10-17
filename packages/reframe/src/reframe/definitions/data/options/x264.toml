@@ -1,4 +1,4 @@
-# x264 advanced options (C-6, M2 basic set; M9 completes 03 §Advanced's coverage list).
+# x264 advanced options (C-6: 03 §Advanced's coverage list, completed in M9).
 #
 # Every option goes into `-x264-params` (x26x_param). The per-preset defaults are what x264
 # itself writes into the stream (the "x264 - core … options:" SEI) for `-preset <p>` with no
@@ -209,6 +209,7 @@ max = 2
 step = 0.05
 help = "Keeps detail and texture instead of a smooth, blurry picture. 1.0 is the default; 0.4 for animation."
 mapping = { kind = "x26x_param", name = "psy-rd", part = 0 }
+requires = [{ field = "option:psy", op = "ne", value = false }]
 default = { kind = "preset", tunes = ["animation", "psnr", "ssim", "stillimage"], values = { ultrafast = 1.0, superfast = 1.0, veryfast = 1.0, faster = 1.0, fast = 1.0, medium = 1.0, slow = 1.0, slower = 1.0, veryslow = 1.0, placebo = 1.0 } }
 
 [[set.x264]]
@@ -221,6 +222,7 @@ max = 1
 step = 0.05
 help = "Keeps grain and fine noise (needs trellis). 0.15 for film, 0.25 for grain."
 mapping = { kind = "x26x_param", name = "psy-rd", part = 1 }
+requires = [{ field = "option:psy", op = "ne", value = false }]
 default = { kind = "preset", tunes = ["film", "grain", "psnr", "ssim", "stillimage"], values = { ultrafast = 0.0, superfast = 0.0, veryfast = 0.0, faster = 0.0, fast = 0.0, medium = 0.0, slow = 0.0, slower = 0.0, veryslow = 0.0, placebo = 0.0 } }
 
 [[set.x264]]
@@ -319,3 +321,368 @@ choices = [
 help = "How motion vectors of B-frames are predicted."
 mapping = { kind = "x26x_param", name = "direct" }
 default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = "spatial", veryfast = "spatial", faster = "spatial", fast = "spatial", medium = "spatial", slow = "auto", slower = "auto", veryslow = "auto", placebo = "auto" } }
+
+# --------------------------------------------------------------------------- M9 additions
+#
+# Per-preset tables as above (the stream's settings SEI for every preset and every tune).
+# The colour options are not in the SEI: ffprobe reads them from the stream's VUI. FFmpeg's
+# libx264 wrapper overrides x264's own `range` with the input's range, so it is not offered
+# (testdata/README.md "Advanced encoder options (C-6, complete option sets)").
+
+[[set.x264]]
+key = "open-gop"
+label = "Open GOP"
+category = "Frame types / GOP"
+type = "bool"
+help = "Lets B-frames before a keyframe reference the GOP before it: slightly better compression, but cutting and some old players (Blu-ray) need closed GOPs."
+mapping = { kind = "x26x_param", name = "open-gop" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = false, veryslow = false, placebo = false } }
+
+[[set.x264]]
+key = "b-bias"
+label = "B-frame bias"
+category = "Frame types / GOP"
+type = "int"
+min = -90
+max = 100
+step = 1
+help = "Makes B-frames more (positive) or less (negative) likely to be chosen. 0 is right for almost everything; x264 clamps the value to -90 … 100."
+mapping = { kind = "x26x_param", name = "b-bias" }
+default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 0, veryslow = 0, placebo = 0 } }
+
+[[set.x264]]
+key = "weightb"
+label = "Weighted B-frames"
+category = "Frame types / GOP"
+type = "bool"
+help = "Weighted prediction for B-frames: better fades and cross-fades at a small speed cost. Off for some old hardware decoders."
+mapping = { kind = "x26x_param", name = "weightb" }
+default = { kind = "preset", tunes = ["animation", "fastdecode", "zerolatency"], values = { superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "bluray-compat"
+label = "Blu-ray compatibility"
+category = "Frame types / GOP"
+type = "bool"
+# x264 core 165: with bluray-compat=1 the stream says bframes=3, weightp=1, b_pyramid=1
+# (strict) for bframes=5:weightp=2:b-pyramid=normal, without a message. Validation (C-8)
+# warns about values the job sets above these limits.
+help = "Follows the Blu-ray limits: at most 3 B-frames, simple weighted P-frames and a strict B-pyramid (x264 lowers higher values without a message). Use with the VBV settings and a Blu-ray level."
+mapping = { kind = "x26x_param", name = "bluray-compat" }
+default = { kind = "fixed", value = false }
+
+[[set.x264]]
+key = "ipratio"
+label = "I/P quantiser ratio"
+category = "Rate control"
+type = "float"
+min = 1
+max = 2
+step = 0.05
+help = "How much better keyframes are quantised than P-frames. 1.4 is the default; the grain tune uses 1.1 to keep keyframes from standing out."
+mapping = { kind = "x26x_param", name = "ipratio" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = 1.4, superfast = 1.4, veryfast = 1.4, faster = 1.4, fast = 1.4, medium = 1.4, slow = 1.4, slower = 1.4, veryslow = 1.4, placebo = 1.4 } }
+
+[[set.x264]]
+key = "pbratio"
+label = "P/B quantiser ratio"
+category = "Rate control"
+type = "float"
+min = 1
+max = 2
+step = 0.05
+# The stream's settings show pb_ratio only with macroblock tree off.
+help = "How much worse B-frames are quantised than P-frames (1.3 by default; the grain tune uses 1.1). With the macroblock tree on, x264 decides this itself."
+mapping = { kind = "x26x_param", name = "pbratio" }
+default = { kind = "fixed", value = 1.3 }
+
+[[set.x264]]
+key = "qpmin"
+label = "Minimum quantiser"
+category = "Rate control"
+type = "int"
+min = 0
+max = 69
+step = 1
+help = "The lowest QP x264 may use. Raising it wastes fewer bits on very clean scenes; 0 (no limit) is the default."
+mapping = { kind = "x26x_param", name = "qpmin" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x264]]
+key = "qpmax"
+label = "Maximum quantiser"
+category = "Rate control"
+type = "int"
+# x264 core 165: 8-bit clamps qpmax to 69 (qpmax=81 → 69 in the stream); 10-bit allows 81.
+min = 0
+max = 69
+step = 1
+help = "The highest QP x264 may use. A lower limit avoids very blocky frames in average-bitrate encodes; by default there is no limit."
+mapping = { kind = "x26x_param", name = "qpmax" }
+default = { kind = "encoder", note = "no limit (69 for 8-bit, 81 for 10-bit)" }
+
+[[set.x264]]
+key = "nal-hrd"
+label = "HRD signalling"
+category = "Rate control"
+type = "enum"
+choices = [
+    { value = "none", label = "Off" },
+    { value = "vbr", label = "VBR", help = "Blu-ray and broadcast VBR." },
+    { value = "cbr", label = "CBR", help = "Constant bitrate with filler; for broadcast." },
+]
+# x264 core 165: without both VBV values x264 logs "NAL HRD parameters require VBV
+# parameters" and leaves it out.
+help = "Writes hypothetical reference decoder information (needed for Blu-ray). Needs the VBV maximum rate and buffer size; x264 ignores it without them."
+mapping = { kind = "x26x_param", name = "nal-hrd" }
+requires = [{ field = "option:vbv-maxrate", op = "ne", value = 0 }, { field = "option:vbv-bufsize", op = "ne", value = 0 }]
+default = { kind = "fixed", value = "none" }
+
+[[set.x264]]
+key = "partitions"
+label = "Partitions"
+category = "Motion / analysis"
+type = "enum"
+choices = [
+    { value = "none", label = "None", help = "Fastest: whole macroblocks only." },
+    { value = "i8x8,i4x4", label = "Intra only (i8x8, i4x4)" },
+    { value = "p8x8,b8x8,i8x8,i4x4", label = "Default (p8x8, b8x8, i8x8, i4x4)" },
+    { value = "all", label = "All (adds p4x4)", help = "Slowest; p4x4 rarely helps above SD." },
+]
+help = "Which macroblock partitions the analysis tries. More partitions follow fine motion better and cost speed. i8x8 needs the 8×8 transform."
+mapping = { kind = "x26x_param", name = "partitions" }
+default = { kind = "preset", values = { ultrafast = "none", superfast = "i8x8,i4x4", veryfast = "p8x8,b8x8,i8x8,i4x4", faster = "p8x8,b8x8,i8x8,i4x4", fast = "p8x8,b8x8,i8x8,i4x4", medium = "p8x8,b8x8,i8x8,i4x4", slow = "p8x8,b8x8,i8x8,i4x4", slower = "all", veryslow = "all", placebo = "all" } }
+
+[[set.x264]]
+key = "8x8dct"
+label = "8×8 transform"
+category = "Motion / analysis"
+type = "bool"
+help = "Adaptive 8×8 transform (High profile). Better compression of detail at almost no cost; off only for Main or Baseline profile players."
+mapping = { kind = "x26x_param", name = "8x8dct" }
+default = { kind = "preset", values = { ultrafast = false, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "mixed-refs"
+label = "Mixed references"
+category = "Motion / analysis"
+type = "bool"
+help = "Lets each 8×8 partition choose its own reference frame. Better quality with several reference frames, small speed cost."
+mapping = { kind = "x26x_param", name = "mixed-refs" }
+default = { kind = "preset", values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "fast-pskip"
+label = "Fast P-skip"
+category = "Motion / analysis"
+type = "bool"
+help = "Detects skipped blocks in P-frames early. Faster; off (placebo) can avoid blocking in dark, flat areas."
+mapping = { kind = "x26x_param", name = "fast-pskip" }
+default = { kind = "preset", values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = false } }
+
+[[set.x264]]
+key = "chroma-me"
+label = "Chroma motion estimation"
+category = "Motion / analysis"
+type = "bool"
+help = "Uses the colour planes in the motion search. Slightly better colour; off is a little faster."
+mapping = { kind = "x26x_param", name = "chroma-me" }
+default = { kind = "fixed", value = true }
+
+[[set.x264]]
+key = "dct-decimate"
+label = "DCT decimation"
+category = "Motion / analysis"
+type = "bool"
+help = "Drops blocks that are nearly empty. Saves bits; off (the grain tune) keeps more fine grain and noise."
+mapping = { kind = "x26x_param", name = "dct-decimate" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "cabac"
+label = "CABAC"
+category = "Motion / analysis"
+type = "bool"
+help = "Arithmetic entropy coding: about 10–15 % smaller files. Off (CAVLC) only for Baseline profile players or the fast decode tune."
+mapping = { kind = "x26x_param", name = "cabac" }
+default = { kind = "preset", tunes = ["fastdecode"], values = { ultrafast = false, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "psy"
+label = "Psycho-visual optimisations"
+category = "Psycho-visual"
+type = "bool"
+help = "Master switch for psy-RD and psy-trellis. Off (the PSNR and SSIM tunes) gives a softer picture that measures better."
+mapping = { kind = "x26x_param", name = "psy" }
+default = { kind = "preset", tunes = ["psnr", "ssim"], values = { ultrafast = true, superfast = true, veryfast = true, faster = true, fast = true, medium = true, slow = true, slower = true, veryslow = true, placebo = true } }
+
+[[set.x264]]
+key = "nr"
+label = "Noise reduction"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 10000
+step = 10
+help = "Fast DCT-domain noise reduction inside the encoder. 100–1000 for noisy sources; it smooths detail too. 0 is off."
+mapping = { kind = "x26x_param", name = "nr" }
+default = { kind = "fixed", value = 0 }
+
+[[set.x264]]
+key = "deadzone-inter"
+label = "Inter deadzone"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 32
+step = 1
+help = "Size of the luma quantisation deadzone of P and B blocks where trellis does not decide. Lower keeps more fine detail and grain (the grain tune uses 6)."
+mapping = { kind = "x26x_param", name = "deadzone-inter" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = 21, superfast = 21, veryfast = 21, faster = 21, fast = 21, medium = 21, slow = 21, slower = 21, veryslow = 21, placebo = 21 } }
+
+[[set.x264]]
+key = "deadzone-intra"
+label = "Intra deadzone"
+category = "Psycho-visual"
+type = "int"
+min = 0
+max = 32
+step = 1
+help = "As the inter deadzone, for intra blocks (default 11; the grain tune uses 6)."
+mapping = { kind = "x26x_param", name = "deadzone-intra" }
+default = { kind = "preset", tunes = ["grain"], values = { ultrafast = 11, superfast = 11, veryfast = 11, faster = 11, fast = 11, medium = 11, slow = 11, slower = 11, veryslow = 11, placebo = 11 } }
+
+[[set.x264]]
+key = "cqm"
+label = "Quantisation matrix"
+category = "Psycho-visual"
+type = "enum"
+choices = [
+    { value = "flat", label = "Flat", help = "The default." },
+    { value = "jvt", label = "JVT", help = "Softer high frequencies; rarely better." },
+]
+help = "The quantisation matrix of all block sizes."
+mapping = { kind = "x26x_param", name = "cqm" }
+default = { kind = "fixed", value = "flat" }
+
+[[set.x264]]
+key = "colorprim"
+label = "Colour primaries"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709", help = "HD." },
+    { value = "bt470m", label = "BT.470 M" },
+    { value = "bt470bg", label = "BT.470 BG", help = "PAL SD." },
+    { value = "smpte170m", label = "SMPTE 170M", help = "NTSC SD." },
+    { value = "smpte240m", label = "SMPTE 240M" },
+    { value = "film", label = "Film" },
+    { value = "bt2020", label = "BT.2020", help = "UHD and HDR." },
+    { value = "smpte428", label = "SMPTE 428 (XYZ)" },
+    { value = "smpte431", label = "DCI-P3" },
+    { value = "smpte432", label = "Display P3" },
+]
+help = "The colour primaries written into the stream (VUI). Only a tag: the picture is not converted. Not set, the source's tag is written."
+mapping = { kind = "x26x_param", name = "colorprim" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.x264]]
+key = "transfer"
+label = "Transfer characteristics"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709" },
+    { value = "bt470m", label = "BT.470 M" },
+    { value = "bt470bg", label = "BT.470 BG" },
+    { value = "smpte170m", label = "SMPTE 170M" },
+    { value = "smpte240m", label = "SMPTE 240M" },
+    { value = "linear", label = "Linear" },
+    { value = "log100", label = "Log 100:1" },
+    { value = "log316", label = "Log 316:1" },
+    { value = "iec61966-2-4", label = "IEC 61966-2-4 (xvYCC)" },
+    { value = "bt1361e", label = "BT.1361 extended" },
+    { value = "iec61966-2-1", label = "sRGB" },
+    { value = "bt2020-10", label = "BT.2020 10-bit" },
+    { value = "bt2020-12", label = "BT.2020 12-bit" },
+    { value = "smpte2084", label = "PQ (SMPTE 2084)", help = "HDR10." },
+    { value = "smpte428", label = "SMPTE 428" },
+    { value = "arib-std-b67", label = "HLG (ARIB STD-B67)" },
+]
+help = "The transfer function written into the stream (VUI). Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "transfer" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.x264]]
+key = "colormatrix"
+label = "Colour matrix"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "bt709", label = "BT.709" },
+    { value = "fcc", label = "FCC" },
+    { value = "bt470bg", label = "BT.470 BG" },
+    { value = "smpte170m", label = "SMPTE 170M" },
+    { value = "smpte240m", label = "SMPTE 240M" },
+    { value = "GBR", label = "GBR" },
+    { value = "YCgCo", label = "YCgCo" },
+    { value = "bt2020nc", label = "BT.2020 non-constant" },
+    { value = "bt2020c", label = "BT.2020 constant" },
+    { value = "smpte2085", label = "SMPTE 2085" },
+    { value = "chroma-derived-nc", label = "Chroma-derived non-constant" },
+    { value = "chroma-derived-c", label = "Chroma-derived constant" },
+    { value = "ICtCp", label = "ICtCp" },
+]
+help = "The YUV matrix written into the stream (VUI). Only a tag: the picture is not converted."
+mapping = { kind = "x26x_param", name = "colormatrix" }
+default = { kind = "encoder", note = "the source's colour tags" }
+
+[[set.x264]]
+key = "chromaloc"
+label = "Chroma sample location"
+category = "HDR / colour"
+type = "enum"
+choices = [
+    { value = "0", label = "Left", help = "MPEG-2, most video." },
+    { value = "1", label = "Centre", help = "MPEG-1, JPEG." },
+    { value = "2", label = "Top left", help = "BT.2020 / UHD." },
+    { value = "3", label = "Top" },
+    { value = "4", label = "Bottom left" },
+    { value = "5", label = "Bottom" },
+]
+help = "Where the chroma samples sit relative to the luma samples (VUI tag)."
+mapping = { kind = "x26x_param", name = "chromaloc" }
+default = { kind = "encoder", note = "the source's chroma location" }
+
+[[set.x264]]
+key = "threads"
+label = "Threads"
+category = "Performance"
+type = "int"
+min = 0
+max = 128
+step = 1
+help = "Encoding threads; 0 = automatic (1.5 × the CPU threads). Fewer threads leave the machine responsive; very many threads cost a little quality."
+mapping = { kind = "x26x_param", name = "threads" }
+default = { kind = "encoder", note = "automatic: 1.5 × the CPU threads" }
+
+[[set.x264]]
+key = "lookahead-threads"
+label = "Look-ahead threads"
+category = "Performance"
+type = "int"
+min = 0
+max = 16
+step = 1
+help = "Threads for the look-ahead; 0 = automatic (a sixth of the threads)."
+mapping = { kind = "x26x_param", name = "lookahead-threads" }
+default = { kind = "encoder", note = "automatic: a sixth of the threads" }
+
+[[set.x264]]
+key = "sliced-threads"
+label = "Sliced threads"
+category = "Performance"
+type = "bool"
+help = "Splits each frame into slices instead of encoding frames in parallel: lower latency (the zero latency tune), slightly lower quality and slower."
+mapping = { kind = "x26x_param", name = "sliced-threads" }
+default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = false, superfast = false, veryfast = false, faster = false, fast = false, medium = false, slow = false, slower = false, veryslow = false, placebo = false } }

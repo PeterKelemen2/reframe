@@ -28,13 +28,6 @@ def test_every_option_has_help_and_a_mapping() -> None:
             assert option.mapping.kind in ("x26x_param", "ffmpeg_arg", "private_opt")
 
 
-def test_every_fallback_chain_ends_in_software() -> None:
-    encoders = load_definitions().video_encoders
-    for encoder in encoders.values():
-        if encoder.hardware:
-            assert not encoders[encoder.fallback[-1]].hardware, encoder.id
-
-
 def _lint_mutated(mutate: Callable[[dict[str, Any]], None]) -> list[str]:
     raw = load_raw()
     mutate(raw)

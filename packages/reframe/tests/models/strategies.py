@@ -27,8 +27,11 @@ from reframe.models import (
     AudioCodecRule,
     AudioCodecRules,
     AudioDefaults,
+    BatchGrouping,
+    BatchResolution,
     BitrateInfo,
     BitrateSource,
+    Resolution,
 )
 
 Strategy = st.SearchStrategy[Any]
@@ -201,11 +204,25 @@ def _rules_with_catch_all() -> Strategy:
     )
 
 
-#: Strategies for single fields whose validators the annotation does not express.
+def _at_most_one(model: type[BaseModel]) -> Callable[[], Strategy]:
+    """A list of at most one ``model``: for lists of large models (a whole job per item)."""
+    return lambda: st.lists(model_strategy(model), max_size=1)
+
+
+#: Strategies for single fields whose validators the annotation does not express, or whose
+#: items are too large to generate three of.
 FIELD_OVERRIDES: dict[tuple[type[BaseModel], str], Callable[[], Strategy]] = {
     (AudioDefaults, "codec_rules"): _rules_with_catch_all,
     (AudioCodecRules, "rules"): _rules_with_catch_all,
+    (BatchResolution, "rows"): _at_most_one(Resolution),
+    (BatchGrouping, "groups"): lambda: st.lists(st.deferred(_group), max_size=1),
 }
+
+
+def _group() -> Strategy:
+    from reframe.models import BatchGroup
+
+    return model_strategy(BatchGroup)
 
 
 def _bitrates() -> Strategy:

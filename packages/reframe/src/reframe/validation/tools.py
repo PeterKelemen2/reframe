@@ -5,7 +5,9 @@ The ffmpeg issues carry C-1's fixes ("Use bundled FFmpeg": a patch on ``AppSetti
 ``settings``). Tool discovery reads Settings, so such a fix works when discovery runs again;
 it is not a change of the job. mkvpropedit is needed to edit an MKV in place (03 §Remux-only
 jobs) and to write flags the muxer cannot (``container.mkvpropedit_flags``; the flag case is a
-warning of the container rule ``track_flags``).
+warning of the container rule ``track_flags``). The in-place case's fix writes a new file: edit
+in place off and, when the output path is the source, a new path
+(:func:`reframe.validation.inplace.write_new_file_fix`).
 """
 
 from __future__ import annotations
@@ -14,8 +16,9 @@ from collections.abc import Iterator
 
 from reframe.models.issues import ValidationIssue
 from reframe.models.tools import ToolStatus
-from reframe.validation.common import error, fix, replace
+from reframe.validation.common import error
 from reframe.validation.context import JobContext
+from reframe.validation.inplace import write_new_file_fix
 from reframe.validation.registry import job_rule
 
 _CODES = {
@@ -46,6 +49,6 @@ def mkvpropedit(ctx: JobContext) -> Iterator[ValidationIssue]:
         "tool.mkvpropedit_missing",
         "output.edit_in_place",
         f"Editing in place needs mkvpropedit, which is not available{reason}.",
-        fix("Write a new file", replace("output.edit_in_place", False), target=ctx.target),
+        write_new_file_fix(ctx),
         *tool.fixes,
     )

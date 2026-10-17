@@ -2,7 +2,8 @@
 
 - Status: accepted; restore in `Reframe.create()` and "two processes would both run the
   store's jobs" are superseded by [0027](0027-one-process-owns-the-queue-store.md) (see
-  "Follow-up (M2 review)")
+  "Follow-up (M2 review)"); the power-action part of §9 (when done) is superseded by
+  [0037](0037-when-done-power-actions-and-job-notifications.md)
 - Date: 2026-10-14
 - Steps: C-11 (affects C-14, C-15, S-x, F-x queue views)
 
@@ -328,3 +329,213 @@ Each test failed before its fix and passes after it.
 ### Plan changes
 
 - None in this commit: 0027 changed 03 §Queue and 05 §C-11.
+
+## Follow-up (core-complete, task 1i), 2026-10-15: JSON nested more than 64 levels
+
+### Context
+
+Decision 0015 §3 (C-9) made a settings or presets document nested more than 64 levels a
+damaged file, never a crash, and never written. The queue store had no such guard (the M2
+review's "Known limits"). Checked on CPython 3.14.7 and Pydantic 2 (recorded in
+`tests/queue/test_store_nesting.py::test_python_facts_behind_the_rule`):
+
+- `json.loads` has no recursion limit of 1000: it raises `RecursionError` only at its C-stack
+  check (about 52 000 levels on an 8 MB stack). `RecursionError` is a `RuntimeError`, so the
+  store's `ValueError` handling did not catch it: such a row crashed the start.
+- The migrations' `copy.deepcopy` raises `RecursionError` at about 500 levels (a crash at
+  start). Pydantic validates any depth, but `model_dump` raises `ValueError` ("Circular
+  reference detected (depth exceeded)") past 255 levels: a row of 256 to 500 levels loaded,
+  then the start-up save of an interrupted job (`row_of`) crashed; a job added that deep
+  crashed `add`.
+- A `settings_json` that is JSON but not an object raised `AttributeError` in the migrations
+  (a crash at start). Found on the way; it is now a damaged row too.
+
+### Decision
+
+1. **Loading.** Each of `settings_json`, `plan_json` and `issues_json` is parsed and checked
+   with `reframe.settings.too_deep` (`MAX_DEPTH` = 64, the column's document is level 1)
+   before anything is migrated or validated. One that is deeper (or too deep to parse) makes
+   the row damaged: it stays in the file untouched and is left out of the queue, with the
+   same `queue.rows_skipped` warning as the other rows that do not load (detail
+   `<id>: <column>: the JSON is nested more than 64 levels deep`). A deep plan or issues
+   list is damage, not derived data of another version (that is still dropped): no Reframe
+   writes one.
+2. **Writing.** A document nested more than 64 levels (or one that Pydantic cannot dump) is
+   never written. `row_of` keeps its signature and never raises: the column holds a marker (a
+   private `str` subclass whose text is the reason), and `QueueStore.upsert` leaves that row
+   out of the transaction; the other rows of the call are written. The file keeps the job's
+   earlier row, if it had one (as a failed write keeps the old file in C-9). The job stays in
+   the queue in memory, as after `queue.not_saved`. One `app.warning` per job:
+   `queue.job_not_saved` ("The queue job <id> could not be saved: its data is nested too
+   deeply. It stays in the queue until Reframe closes.", detail `<column>: <why>`). A store
+   that saves nothing (a private store in memory, a newer or unreadable file) gives no such
+   warning: its warning at start already says that nothing is saved.
+
+### Consequences
+
+- A file this Reframe writes always loads again; a damaged row never stops the queue.
+- A job whose data becomes too deep after it was saved keeps its earlier row in the file:
+  after a restart that earlier version comes back. Only a hand-made or API-made document can
+  be that deep (Reframe's own documents need fewer than 10 levels).
+- Not changed here (not this step's files): other code that dumps a very deep `JobSettings`
+  (validation, events) has no guard of its own. A job of 65 levels goes through
+  `QueueService.add` (tested end to end).
+
+### Plan changes
+
+None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue.store` does.
+
+## Follow-up (core-complete review, 2026-10-16)
+
+- **R4-1 (major): "Two jobs with the same output path never run at the same time" (§3) did not
+  hold through links.** The queue keyed a job's output and source on
+  `normcase(abspath(path))`, so two jobs whose output folders were spelled through a symbolic
+  link wrote the same `.part` file at once, and (decision 0034's follow-up) an encode read a
+  source through a link or a hard link while it was edited in place. Now a key is
+  `normcase(realpath(path))` (links resolved; for an output that does not exist yet, the
+  existing part of its folder), and two keys are the same file when they are equal, equal
+  without case, or `os.path.samefile` (hard links; on Windows `os.stat` gives the volume
+  serial number and the file index): the rule of `reframe.queue.files.same_file`, which the
+  run-time guard of the M2 follow-up already uses. On Linux, two outputs that differ only in
+  case (`Movie.mkv`, `movie.mkv`) now wait for each other too (safe side, as that guard). The
+  check costs a few `stat` calls per running job in the event loop each time the queue looks
+  for a job to start (a share that does not answer blocks it as long). Tests:
+  `tests/queue/test_job_keys_review_fixes.py`, among them
+  `test_the_same_output_through_a_linked_folder` (also a folder below the link that does not
+  exist yet) and `test_file_identity_is_what_os_stat_reports` (mocked, the Windows path).
+
+## Follow-up (final review, 2026-10-17)
+
+A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) found two majors
+in the R4-1 keys above, a minor in the R4-7 stop path (decision 0034) and a suspected Windows
+case. Each test below failed on 5dbf152 and passes now
+(`tests/queue/test_queue_final_review.py`).
+
+- **RB-1 (major): the R4-1 keys read the disk on the event loop.** `realpath` is an `lstat`
+  per part of the path, `samefile` two `stat` calls, and the queue called them in `_schedule`,
+  which runs in `add()`, `start()`, `retry()`, `reorder()` and at the end of every job. Every
+  other path call of the queue runs in a worker thread. With each `stat` / `lstat` of a "share"
+  folder mocked to take 0.3 s, `parallel_jobs` 2 and three waiting jobs with outputs on the
+  share, `start()` blocked the event loop for 7.5 s (every job's progress, cancel and `close()`
+  with it).
+
+  **Decision.** The file identity of R4-1 stays, but it is read once, off the event loop, and
+  compared without I/O. `reframe.queue.files.file_key(path)` (blocking) gives a `FileKey`: the
+  path with its links resolved in the OS's case, and `(st_dev, st_ino)` when the file exists;
+  `files.same_key(a, b)` compares two keys with R4-1's rule (equal, equal without case, or the
+  same `(st_dev, st_ino)`) and no file-system call; `files.same_file(a, b)` is now
+  `same_key(file_key(a), file_key(b))` (the same meaning as before, plus the two items below).
+  The queue reads a job's keys in a worker thread (`asyncio.to_thread`) when the job is added
+  (`add` awaits them, as it awaits its probe), retried (read again) or restored (in the
+  background when the store is opened), and keeps them with the job while it waits and runs
+  (runtime only, never saved; dropped when the run ends). `_schedule` passes the kept keys to
+  `_conflicts` and gives them to the job's `ActiveJob`; it reads no file. A waiting job whose
+  keys are not there yet (a restored job in the first moments after the store opened) is
+  passed over until they are, and the queue looks for jobs to start again when they come: a
+  share that does not answer delays only its own job (its `retry`, or its start), never the
+  event loop or the other jobs. The test
+  (`test_choosing_a_job_never_reads_a_slow_share_on_the_event_loop`) records every `stat` /
+  `lstat` of the share made on the event-loop thread during `add`, `reorder`, `start`,
+  `retry` and four job ends: none now (before: an `lstat` per part of every path, and
+  `start()` took 7.5 s); `start()` now takes under a millisecond and the loop's longest pause
+  was 0.04 s. The other blocking call of the runner on the loop, the `output.exists` issue of
+  the `ask` collision case, runs in a worker thread too.
+
+  **When identity changes after the keys were read.** The keys are those of the moment the job
+  was added, retried or restored; the queue does not read them again before a job starts. The
+  queue's own work keeps them true: an output that does not exist yet is keyed on its resolved
+  path (the existing part of its folder), and a later job that reads or edits that output names
+  the same path, so the rule holds when the file is created; an in-place edit keeps the file's
+  `(st_dev, st_ino)`. What can make a kept key wrong is a change by someone else while the job
+  waits: a symbolic link pointed elsewhere, a folder replaced by a link, a hard link made to a
+  file after the job that names it was added, or a file replaced under a hard link. A replaced
+  file errs on the safe side (two paths still count as one file: an extra wait); a link that is
+  changed can let two jobs on one file run at once. Chosen because reading the keys again
+  before each start would need either a file-system call on the loop (RB-1) or an asynchronous
+  start (a job that holds a slot before it knows it may run). `retry` reads them again, and
+  the run-time checks that protect the source (`queue.writes_source`, the in-place refusal of
+  0034) read the file system at run time, in a worker thread.
+
+- **RB-2 (major): a path with a NUL character broke the scheduler.** `os.path.realpath` raises
+  `ValueError` for it (`abspath`, the key before R4-1, did not), and `files.same_file` caught
+  only `OSError`. Such a job was added as `failed` (validation's "Validation could not check
+  output … Please report this."); `retry()` made it `waiting` and raised from `_schedule`, and
+  from then on every `add()`, `start()` and job end raised: no job started. Now `file_key`,
+  `same_file`, `_path_key` and `remove_files` never raise for such a path: a path that cannot
+  be resolved is compared as written (absolute, in the OS's case), and has no identity; a file
+  name that cannot be removed is a clean-up message. A job whose source or output path has a
+  NUL character fails with the new error issue `queue.path_unusable` ("The output path
+  …/Mo\0vie.mkv has a NUL character, which no file system allows, so the job cannot run.
+  Correct the path."): at `add` (before its probe: a NUL source made `add` raise from the
+  facade's probe) and again when it runs (a retry, a stored job after a restore), and the
+  queue goes on. Tests: `test_a_nul_in_a_path_fails_its_job_and_the_queue_goes_on` (the
+  reviewer's case), `test_a_nul_in_the_source_path_is_a_clean_failure`,
+  `test_a_restored_job_with_a_nul_in_its_path` (a waiting one and the leftovers of a running
+  one), `test_no_key_function_raises_for_a_path_with_a_nul`,
+  `test_python_facts_behind_the_rule` (CPython 3.14.7: `abspath` takes the NUL, `stat` and
+  `realpath` raise `ValueError`). Not changed here (validation's files):
+  `LocalFileSystem.same_file` still let `ValueError` out, which validation reported as
+  `validation.rule_failed`; the queue checks first, so a queued job never showed it. Fixed
+  since: RN below.
+
+- **RB-5 (minor): a paused in-place edit that a cancel or `close()` resumes was shown
+  `paused`.** The runner resumed mkvpropedit (R4-7) but published no state, and the sleep
+  inhibit that the pause gave back was not taken again, so the job said `paused` while
+  mkvpropedit ran on (up to its time limit). The runner now calls the queue back when it
+  resumes such a step: the job goes `paused` → `running` (no new state: no persisted enum
+  changes) and takes its sleep inhibit again, as after `resume()`; it ends `cancelled` or
+  `interrupted` as before. Test: `test_a_paused_edit_that_a_stop_resumes_is_shown_running`
+  (cancel and close).
+
+- **A file index of 0 (suspected, Windows; fixed).** CPython's `samestat` compares
+  `(st_dev, st_ino)` with no guard, and on a volume without file indexes Windows reports
+  `st_ino` 0 for every file: any two files there were one file. The queue then ran unrelated
+  jobs one after the other, `files.same_file` could fail a job with `queue.writes_source`, and
+  the clean-up kept a `.part` file as "the source". Now a `st_ino` of 0 is no identity: the
+  path decides, as for a file that does not exist. Mocked (`os.stat` returns `st_ino` 0):
+  `test_a_zero_file_index_is_no_identity`. A volume serial number (`st_dev`) of 0 with real
+  file indexes is not treated specially (two such volumes would need equal indexes to
+  collide).
+
+- **RN: NUL paths outside the queue (two minors of RB, fixed).** Only the API can send a path
+  with a NUL (JSON allows `\u0000`; argv cannot hold one), and `os.stat`, `realpath`,
+  `samefile`, `access`, `disk_usage`, `scandir` and `open` raise `ValueError` for it, not
+  `OSError` (`exists` and the `is*` tests answer `False`; CPython 3.14.7). Before,
+  `Reframe.jobs.validate` / `plan` (and `draft` with such an output) showed
+  `validation.rule_failed` ("… Please report this."), and `Reframe.sources.probe` raised (the
+  CLI / API showed "unexpected error"). Now:
+  - `reframe.validation.fs.has_nul` names the case, and no `LocalFileSystem` method raises
+    for such a path: it is a path that does not exist (`False` / `None`), also for the naming
+    reads `list_files` and `file_times` (overridden there; `reframe.naming.RealNamingFs`
+    itself is not changed).
+  - A NUL in the output path is the output rule's `output.not_writable` error ("The output
+    path …/Mo\0vie.mkv has a NUL character, which no file system allows: the file cannot be
+    created. Correct the path."), with C-16's safe name as the fix when the NUL is in the file
+    name, and no file-system read. An existing code: a new code declared by a rule needs a
+    case in `tests/validation/test_rules.py`.
+  - A NUL in the source path is `source.probe_failed` when the job's source is probed (the
+    probe's error below). When the caller gives the source (`validate(job, source)`, a
+    `MediaSource` sent through the API), `validate` gives the new free-string error
+    `source.path_unusable` (path `source`) before the rules run, as it gives
+    `validation.rule_failed` (no rule declares it, so `test_rules.py` needs no case); before,
+    `plan` built a plan that reads the NUL path. A dry run of such a source is
+    `encoder.dry_run_skipped` (before, `reframe.tools.run` raised "embedded null byte").
+  - `Reframe.sources.probe` gives `ProbeError` `not_found`, "The path has a NUL character,
+    which no file system allows: no file can have this name." (also when ffprobe is missing),
+    and the scan and preview tasks that probe first fail with that message; `get` returns
+    `None`, `store` / `update` store nothing, and a folder probe of such a folder ends `done`
+    with that one error (before, the task failed with the `ValueError`).
+
+  No persisted `Literal` or enum changes. Tests (each failed before):
+  `tests/validation/test_nul_paths_final_review.py` (`LocalFileSystem` on POSIX and, mocked,
+  Windows; the output name and folder; the source path given; an in-place edit; the dry run;
+  `test_python_facts_behind_the_rule`) and `tests/test_service_nul_paths.py` (probe, `get` /
+  `store` / `update`, the folder probe, and `jobs.validate` / `plan` / `dry_run` / `draft`
+  with a NUL output or source path). Two guards passed before too: the Windows branches of
+  `writable_dir` / `writable_file` (the `isdir` / `isfile` test comes first) and the naming
+  options' fixed folder with a NUL (not listed for that job).
+
+Known limits (no change): when a killed tree has not ended after 10 s,
+`reframe.tools.runner._kill_and_reap` calls `proc.kill()` and then waits for the process with
+no bound (C-1's code, not this step's); a kept key can be out of date after a change on disk by
+someone else (above).

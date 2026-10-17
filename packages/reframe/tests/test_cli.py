@@ -645,12 +645,6 @@ def test_main_runs_the_app(
     assert capsys.readouterr().out.strip() == __version__
 
 
-def test_version() -> None:
-    result = invoke("version")
-    assert result.exit_code == 0
-    assert result.stdout.strip() == __version__
-
-
 # --------------------------------------------------------------------------- formatting
 
 

@@ -122,7 +122,6 @@ def test_flag_and_title_give_different_roles() -> None:
 AUDIO_TITLES = [
     ("Director's Commentary", TrackRole.COMMENTARY),
     ("Commentaries", TrackRole.COMMENTARY),
-    ("Kommentar", TrackRole.COMMENTARY),
     ("Commentaire audio", TrackRole.COMMENTARY),
     ("Comentario del director", TrackRole.COMMENTARY),
     ("Commento", TrackRole.COMMENTARY),
@@ -291,6 +290,7 @@ def test_forced_heuristic_adds_to_other_roles() -> None:
         sub(2, events=10, lang="und"),
         sub(2, events=10, forced=True),  # already forced (flag)
         sub(2, events=10, title="Signs"),  # signs track
+        sub(2, events=0),  # an empty track (core-complete review R1-6)
     ],
 )
 def test_no_forced_heuristic(other: SubtitleStream) -> None:

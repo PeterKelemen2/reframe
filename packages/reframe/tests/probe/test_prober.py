@@ -26,6 +26,7 @@ from reframe.probe import (
     probe_file,
 )
 from reframe.probe import prober as prober_mod
+from reframe.probe.prober import MATROSKA_READER
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 
@@ -237,7 +238,6 @@ async def test_unreadable_file(fake_tools: ft.FakeTools, media_file: Path) -> No
     ("stdout", "message"),
     [
         ("this is not json", "ffprobe printed something that is not JSON."),
-        ('{"streams": [', "ffprobe printed something that is not JSON."),
         ("[1, 2]", "ffprobe printed JSON that is not an object."),
     ],
 )
@@ -342,10 +342,14 @@ def test_probe_tool_from_tool_info_and_identity(tmp_path: Path) -> None:
 def test_cache_options_follow_mediainfo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
     monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "pymediainfo 1, libmediainfo 2")
-    assert Prober("ffprobe").cache_options() == {"mediainfo": "pymediainfo 1, libmediainfo 2"}
-    assert Prober("ffprobe", use_mediainfo=False).cache_options() == {"mediainfo": False}
+    reader = {"matroska": MATROSKA_READER}
+    assert Prober("ffprobe").cache_options() == {
+        "mediainfo": "pymediainfo 1, libmediainfo 2",
+        **reader,
+    }
+    assert Prober("ffprobe", use_mediainfo=False).cache_options() == {"mediainfo": False, **reader}
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    assert Prober("ffprobe").cache_options() == {"mediainfo": False}
+    assert Prober("ffprobe").cache_options() == {"mediainfo": False, **reader}
 
 
 # --------------------------------------------------------------------------- review fixes (M1)

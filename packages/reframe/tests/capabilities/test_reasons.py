@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from reframe.capabilities import TestContext, explain_failure
-from reframe.capabilities.reasons import informative_line, normalise_line
+from reframe.capabilities.reasons import informative_line
 from reframe.models import EncoderState
 from reframe_testing import fake_tools as ft
 
@@ -294,11 +294,6 @@ def test_informative_line_order() -> None:
     assert informative_line("Conversion failed!\n", "x") == "Conversion failed!"
     text = "Input #0, lavfi\nDevice creation failed: -22.\nError parsing global options: x\n"
     assert informative_line(text, "x") == "Device creation failed: -22."
-
-
-def test_normalise_line() -> None:
-    assert normalise_line("[hevc_nvenc @ 0x55b9952bd600] Cannot load") == "[hevc_nvenc] Cannot load"
-    assert normalise_line("  plain  ") == "plain"
 
 
 # --------------------------------------------------------------------------- libplacebo

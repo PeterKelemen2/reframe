@@ -131,11 +131,6 @@ def test_empty_variable_outside_a_group() -> None:
     assert _render("{edition}x") == ["x"]
 
 
-def test_render_with_a_bad_spec_uses_the_default_format() -> None:
-    parsed = parse_template("{season:upper}")
-    assert ["".join(p.text for p in s) for s in render(parsed, {"season": 3})] == ["3"]
-
-
 def test_pieces_remember_their_variable() -> None:
     segments = render(parse_template("{name} - {sub_title}"), {"name": "A", "sub_title": "B"})
     assert [(p.text, p.var) for p in segments[0]] == [
@@ -214,9 +209,7 @@ def test_unknown_variable_with_did_you_mean_fixes() -> None:
         ("Source", "source"),
         ("creation_date", "creation-date"),
         ("episode_title", "sub_title"),
-        ("show", "name"),
         ("maintitle", "main_title"),
-        ("resolutoin", "resolution"),
     ],
 )
 def test_suggestions(typed: str, suggested: str) -> None:

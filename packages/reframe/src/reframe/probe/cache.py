@@ -17,6 +17,10 @@
   and then every :data:`PRUNE_EVERY` puts.
 - Writes are atomic (a temporary file in the same folder, then ``os.replace``). A corrupt or
   unreadable entry is a miss; the next probe rewrites it. Cache errors never fail a probe.
+- **Nesting** (as C-9's stores, decision 0015): an entry nested more than
+  :data:`~reframe.settings.MAX_DEPTH` (64) levels deep (the entry object is level 1) is
+  corrupt, so a miss, never a ``RecursionError``. A source whose entry would be that deep is
+  not cached at all (not in memory either): :meth:`ProbeCache.put` returns ``False``.
 - A small in-memory layer (LRU, :data:`MEMORY_ENTRIES`) avoids reading the same file twice in
   one process. Callers get copies, so changing a returned source does not change the cache.
 """
@@ -42,6 +46,7 @@ from pydantic import ValidationError
 from reframe import paths
 from reframe.models.media import MediaSource
 from reframe.probe.parse import PARSER_VERSION
+from reframe.settings import too_deep
 
 __all__ = [
     "CACHE_FORMAT",
@@ -63,7 +68,8 @@ PRUNE_EVERY = 200
 #: A temporary file older than this was left behind by a crash.
 _STALE_TMP_AGE = 3600.0
 
-#: The modules whose source decides what a probe produces.
+#: The modules whose source decides what a probe produces (``matroska.py``: the track reader
+#: gives ``language_ietf``; final review RB-7).
 _PARSER_MODULES = (
     "parse.py",
     "names.py",
@@ -71,6 +77,7 @@ _PARSER_MODULES = (
     "hdr.py",
     "bitrate.py",
     "mediainfo.py",
+    "matroska.py",
     "prober.py",
 )
 
@@ -164,7 +171,9 @@ class ProbeCache:
             raw = json.loads(self.entry_path(key).read_text(encoding="utf-8"))
         except (OSError, ValueError):  # missing, unreadable, or not JSON (corrupt)
             return None
-        if not isinstance(raw, dict):
+        except RecursionError:  # CPython's C-stack check: nested far beyond MAX_DEPTH
+            return None
+        if not isinstance(raw, dict) or too_deep(raw):
             return None
         stored_key = raw.get("key")
         if (
@@ -195,23 +204,31 @@ class ProbeCache:
         options: Mapping[str, Any] | None = None,
     ) -> bool:
         """Store ``source``. Returns ``False`` if the file could not be written (the memory
-        layer still has it)."""
-        entry = _Entry(tool, dict(options or {}), source.model_copy(deep=True))
-        self._remember(key, entry)
+        layer still has it), or if the entry would be nested more than ``MAX_DEPTH`` levels
+        deep (then it is not cached at all)."""
+        opts = dict(options or {})
+        try:
+            dumped = source.model_dump(mode="json")
+        except (ValueError, TypeError, RecursionError):  # Pydantic: nested past 255 levels
+            return False
         doc = {
             "format": CACHE_FORMAT,
             "parser": parser_fingerprint(),
             "key": {"path": key.path, "size": key.size, "mtime_ns": key.mtime_ns},
             "tool": tool,
-            "options": entry.options,
-            "source": source.model_dump(mode="json"),
+            "options": opts,
+            "source": dumped,
         }
+        if too_deep(doc):
+            return False
+        entry = _Entry(tool, opts, source.model_copy(deep=True))
+        self._remember(key, entry)
         try:
             # ASCII: a path with a byte that is not UTF-8 holds a lone surrogate (POSIX
             # ``surrogateescape``: 0xFF → ``\udcff``; Windows: an unpaired UTF-16 surrogate),
             # which UTF-8 cannot encode. As a ``\udcff`` escape it reads back exactly.
             text = json.dumps(doc, ensure_ascii=True, separators=(",", ":"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             return False
         try:
             self.directory.mkdir(parents=True, exist_ok=True)

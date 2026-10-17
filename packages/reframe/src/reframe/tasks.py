@@ -25,7 +25,8 @@ returns the result. The manager stores the Python value (:meth:`TaskManager.valu
 JSON form in ``TaskInfo.result``: the ``result_json`` callback of :meth:`~TaskManager.start`,
 else ``model_dump(mode="json")`` for a pydantic model, the value itself if it is JSON (``None``,
 ``bool``, numbers, strings, lists and dicts of these), else ``None``. An exception in the task
-function ends the task as ``failed``; it is not raised to anybody.
+function ends the task as ``failed``; it is not raised to anybody. :class:`TaskFailed` is an
+expected failure: ``TaskInfo.error`` is its message alone, and no traceback is logged.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ __all__ = [
     "DEFAULT_LIMITS",
     "FINISHED_STATES",
     "TaskContext",
+    "TaskFailed",
     "TaskFn",
     "TaskManager",
 ]
@@ -62,13 +64,32 @@ log = logging.getLogger(__name__)
 #: Concurrency limit of a kind that has no entry in ``limits``.
 DEFAULT_LIMIT = 2
 #: Built-in limits per kind.
-DEFAULT_LIMITS: Mapping[str, int] = {"probe_folder": 2}
+DEFAULT_LIMITS: Mapping[str, int] = {
+    "probe_folder": 2,
+    # C-10 (reframe.mediatask): decodes compete for the CPU, encodes even more.
+    "bitrate_scan": 2,
+    "subtitle_scan": 2,
+    "loudness": 2,
+    "frames": 2,
+    "cropdetect": 1,
+    "preview_clip": 1,
+    # C-15: one download at a time.
+    "tools_fetch": 1,
+}
 FINISHED_STATES = frozenset({TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED})
 #: Finished tasks kept for :meth:`TaskManager.get` / :meth:`TaskManager.list`.
 DEFAULT_KEEP_FINISHED = 200
 
 #: A task function: gets the context, returns the result.
 TaskFn = Callable[["TaskContext"], Awaitable[Any]]
+
+
+class TaskFailed(Exception):
+    """An expected failure inside a task function (a missing file, an unusable tool, a stream
+    that does not exist). The task ends ``failed`` with ``TaskInfo.error = str(exc)``, a
+    message for the user, and no traceback is logged. Any other exception is a bug: the task
+    ends ``failed`` with ``"<type>: <message>"`` and the traceback is logged.
+    (``reframe.mediatask.TaskFailed`` is the same class.)"""
 
 
 def _now() -> datetime:
@@ -288,6 +309,10 @@ class TaskManager:
         except asyncio.CancelledError:
             task.cancel.cancel("cancelled")
             task.info.state = TaskState.CANCELLED
+        except TaskFailed as exc:
+            log.info("task %s (%s) failed: %s", task.info.id, task.info.kind, exc)
+            task.info.state = TaskState.FAILED
+            task.info.error = str(exc) or type(exc).__name__
         except Exception as exc:
             log.exception("task %s (%s) failed", task.info.id, task.info.kind)
             task.info.state = TaskState.FAILED

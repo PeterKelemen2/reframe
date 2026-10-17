@@ -21,6 +21,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from reframe.command import build_plan
+from reframe.metadata import remux_job
 from reframe.models import (
     AudioOutputTrack,
     AverageBitrate,
@@ -685,6 +686,44 @@ def eac3_atmos_without_mkvpropedit() -> Case:
     job = draft(src, audio="passthru", video={"encoder": "libx264"})
     job.subtitles[0].metadata = TrackMetadata(language="pt-BR")
     return plain(job, src, tools=tools(mkvpropedit=False))
+
+
+# --------------------------------------------------------------------------- metadata edit (C-13)
+
+
+def _in_place(path: Path = Path("/media/multitrack.mkv")) -> tuple[JobSettings, MediaSource]:
+    src = recorded("multitrack.mkv", path=path)
+    job = remux_job(draft(src), src, edit_in_place=True)
+    return job, src
+
+
+@case
+def metadata_edit_in_place() -> Case:
+    job, src = _in_place(Path("/media/Show.S01E02.Title.mkv"))
+    job.audio[0].metadata.language = "hu"
+    job.audio[0].metadata.name = "Magyar 5.1"
+    job.audio[0].metadata.original = True
+    job.audio[1].metadata.language = "pt-BR"
+    job.audio[1].metadata.default = True
+    job.audio[0].metadata.default = False
+    job.audio[2].metadata.name = ""
+    job.subtitles[1].metadata.visual_impaired = True
+    job.subtitles[2].metadata.forced = False
+    job.tags.title = "{name}< \u2013 S{season:02}E{episode:02}>"
+    return plain(job, src, naming=NamingOptions(word_separator="space"))
+
+
+@case
+def metadata_edit_windows_display() -> Case:
+    job, src = _in_place(Path("C:/Media/Movie & Co.mkv"))
+    job.subtitles[0].metadata.name = 'English "full" 100%'
+    return plain(job, src, shell="windows")
+
+
+@case
+def metadata_edit_nothing_to_change() -> Case:
+    job, src = _in_place()
+    return plain(job, src)
 
 
 @case

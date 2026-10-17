@@ -472,6 +472,7 @@ family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
 # --- C-6
+option_sets = ["vp9"]
 help = "Google's VP9 (libvpx), for WebM. Slow; SVT-AV1 compresses better."
 # HandBrake encavcodec.c sets row-mt=1 and deadline=good with cpu-used per preset.
 extra_args = ["-deadline", "good", "-row-mt", "1"]
@@ -543,7 +544,7 @@ pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["h264_qsv", "h264_amf", "h264_vaapi", "libx264"]
 # --- C-6
 extends = "nvenc"
-option_sets = ["nvenc"]
+option_sets = ["nvenc", "nvenc_qp51", "nvenc_h264", "nvenc_bluray"]
 
 [encoder.h264_nvenc.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -582,7 +583,7 @@ pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265"]
 # --- C-6
 extends = "nvenc"
-option_sets = ["nvenc"]
+option_sets = ["nvenc", "nvenc_qp51", "nvenc_bluray", "nvenc_hevc", "nvenc_split"]
 
 [encoder.hevc_nvenc.tunes]
 choices = [
@@ -625,7 +626,7 @@ pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["av1_qsv", "av1_amf", "av1_vaapi", "libsvtav1"]
 # --- C-6
 extends = "nvenc"
-option_sets = ["nvenc"]
+option_sets = ["nvenc", "nvenc_av1", "nvenc_split"]
 
 [encoder.av1_nvenc.tunes]
 choices = [
@@ -676,7 +677,7 @@ hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device"
 fallback = ["h264_nvenc", "h264_amf", "h264_vaapi", "libx264"]
 # --- C-6
 extends = "qsv"
-option_sets = ["qsv", "qsv_h264"]
+option_sets = ["qsv", "qsv_h264", "qsv_avc_hevc"]
 
 [encoder.h264_qsv.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -700,7 +701,7 @@ hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device"
 fallback = ["hevc_nvenc", "hevc_amf", "hevc_vaapi", "libx265"]
 # --- C-6
 extends = "qsv"
-option_sets = ["qsv", "qsv_extbrc"]
+option_sets = ["qsv", "qsv_extbrc", "qsv_avc_hevc", "qsv_hevc", "qsv_tiles"]
 
 [encoder.hevc_qsv.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -724,7 +725,7 @@ hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device"
 fallback = ["av1_nvenc", "av1_amf", "av1_vaapi", "libsvtav1"]
 # --- C-6
 extends = "qsv"
-option_sets = ["qsv", "qsv_extbrc"]
+option_sets = ["qsv", "qsv_extbrc", "qsv_tiles"]
 
 [encoder.av1_qsv.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -751,7 +752,7 @@ pix_fmts = { "8" = "nv12" }
 fallback = ["h264_nvenc", "h264_qsv", "h264_vaapi", "libx264"]
 # --- C-6
 extends = "amf"
-option_sets = ["amf", "amf_vbaq", "amf_bframes"]
+option_sets = ["amf", "amf_vbaq", "amf_bframes", "amf_minigop", "amf_h264", "amf_quarter_pel"]
 
 [encoder.h264_amf.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -788,7 +789,7 @@ pix_fmts = { "8" = "nv12", "10" = "p010le" }
 fallback = ["hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
 # --- C-6
 extends = "amf"
-option_sets = ["amf", "amf_vbaq"]
+option_sets = ["amf", "amf_vbaq", "amf_quarter_pel"]
 
 [encoder.hevc_amf.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -827,7 +828,7 @@ pix_fmts = { "8" = "nv12", "10" = "p010le" }
 fallback = ["av1_nvenc", "av1_qsv", "av1_vaapi", "libsvtav1"]
 # --- C-6
 extends = "amf"
-option_sets = ["amf", "amf_bframes", "amf_av1"]
+option_sets = ["amf", "amf_bframes", "amf_av1", "amf_minigop"]
 
 [encoder.av1_amf.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -873,7 +874,7 @@ hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-
 fallback = ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]
 # --- C-6
 extends = "vaapi"
-option_sets = ["vaapi", "vaapi_h264"]
+option_sets = ["vaapi", "vaapi_h264", "vaapi_aud"]
 
 [encoder.h264_vaapi.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -913,7 +914,7 @@ hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-
 fallback = ["hevc_nvenc", "hevc_qsv", "hevc_amf", "libx265"]
 # --- C-6
 extends = "vaapi"
-option_sets = ["vaapi"]
+option_sets = ["vaapi", "vaapi_aud", "vaapi_tier"]
 
 [encoder.hevc_vaapi.profiles]
 mapping = { kind = "private_opt", name = "profile" }
@@ -950,7 +951,7 @@ hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-
 fallback = ["av1_nvenc", "av1_qsv", "av1_amf", "libsvtav1"]
 # --- C-6
 extends = "vaapi"
-option_sets = ["vaapi"]
+option_sets = ["vaapi", "vaapi_tier"]
 
 [encoder.av1_vaapi.profiles]
 mapping = { kind = "private_opt", name = "profile" }

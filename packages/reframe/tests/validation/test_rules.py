@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1126,53 +1126,12 @@ CASES: list[Case] = [
         ),
     ),
     Case(
-        "source layout unsupported",
-        "audio.mixdown_unsupported",
-        "audio[0].mixdown",
-        INFO,
-        both(
-            lambda s: setattr(s.source.audio[0], "channels", 8),
-            audio(0, encoder="ac3", mixdown=None, bitrate=None),
-        ),
-        audio(0, encoder="ac3", mixdown=None, bitrate=None),
-    ),
-    Case(
-        "MP3 cannot keep 5.1",
-        "audio.mixdown_unsupported",
-        "audio[0].mixdown",
-        INFO,
-        audio(0, encoder="libmp3lame", mixdown=None, bitrate=None),
-        audio(0, encoder="libmp3lame", mixdown="dpl2", bitrate=None),
-    ),
-    Case(
         "mixdown would upmix",
         "audio.mixdown_upmix",
         "audio[1].mixdown",
         INFO,
         audio(1, action="encode", mixdown="5.1"),
         audio(1, action="encode", mixdown="stereo"),
-    ),
-    Case(
-        "Dolby Pro Logic II of a stereo source",
-        "audio.mixdown_upmix",
-        "audio[1].mixdown",
-        INFO,
-        audio(1, action="encode", mixdown="dpl2"),
-        audio(0, mixdown="dpl2"),
-    ),
-    Case(
-        "upmix to a layout MP3 cannot make",
-        "audio.mixdown_upmix",
-        "audio[0].mixdown",
-        INFO,
-        both(
-            lambda s: setattr(s.source.audio[0], "channels", 3),
-            audio(0, encoder="libmp3lame", mixdown="5.1", bitrate=None),
-        ),
-        both(
-            lambda s: setattr(s.source.audio[0], "channels", 3),
-            audio(0, encoder="libmp3lame", mixdown="stereo", bitrate=None),
-        ),
     ),
     Case(
         "bitrate above the range",
@@ -1189,14 +1148,6 @@ CASES: list[Case] = [
         INFO,
         audio(0, encoder="ac3", bitrate=250),
         audio(0, encoder="ac3", bitrate=224),
-    ),
-    Case(
-        "bitrate below the range of the kept layout",
-        "audio.bitrate_out_of_range",
-        "audio[0].bitrate",
-        INFO,
-        audio(0, encoder="aac", mixdown=None, bitrate=160),
-        audio(0, encoder="aac", mixdown=None, bitrate=384),
     ),
     Case(
         "VBR quality without a VBR mode",
@@ -1654,6 +1605,15 @@ CASES: list[Case] = [
         settings_naming(output_folder_mode="fixed", output_folder=Path("/out")),
     ),
 ]
+
+
+#: Cases of later steps, each in its own file next to this one, so that parallel branches do
+#: not edit this table (docs/core-breakdown.md): each file has ``cases(h) -> list[Case]``,
+#: where ``h`` gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
+EXTRA_CASE_FILES = ("cases_inplace", "cases_options")
+_HELPERS = SimpleNamespace(**globals())
+for _name in EXTRA_CASE_FILES:
+    CASES.extend(_load(_name).cases(_HELPERS))
 
 
 @pytest.fixture(autouse=True)

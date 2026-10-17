@@ -2,18 +2,30 @@
 its plan.
 
 - :meth:`JobService.draft` turns a source and a preset into a :class:`~reframe.models.JobDraft`:
-  the preset's output options, dimensions, filters, video, chapter and tag settings; every
-  audio track through the preset's codec rules and every subtitle copied (C-12
-  ``draft_tracks``, decision 0018); the video track's metadata from the source with the
-  default flag (decision 0024 item 5); and the output path: ``output`` as a manual name, else
-  the naming template (C-16) with the preset's naming options (or Settings → Output) and the
-  scaled size (C-5).
+  C-12's one rule engine (``reframe.batch.resolve``, decision 0040) makes the job: the
+  preset's output options, dimensions, filters, video, chapter and tag settings; the tracks of
+  its track rules, else of its audio and subtitle defaults (decisions 0018, 0031); the video
+  track's metadata from the source with the default flag (decision 0024 item 5). Then the
+  output path: ``output`` as a manual name, else the naming template (C-16) with the preset's
+  naming options (or Settings → Output) and the scaled size (C-5).
+- :meth:`JobService.name_job` names a job made elsewhere (a batch row) the same way.
 - :meth:`JobService.validate` runs C-8's ``validate``. When an encoder is still being checked
   (``encoder.checking``) it waits for encoder detection, but at most ``detection_wait``
   seconds (decision 0017), and validates again.
-- :meth:`JobService.plan` gives the issues when there is an error, else C-7's plan.
+- :meth:`JobService.plan` gives the issues when there is an error, else C-7's plan;
+  ``dry_run=True`` first encodes one frame (:meth:`JobService.dry_run`, C-6: custom parameters).
+- :meth:`JobService.explain` shows what the preset's audio and subtitle defaults do with a
+  source (C-12: selection, codec rules, the reason of each row; the live preview).
+- :meth:`JobService.draft_remux` drafts a remux-only job that copies every track (C-13: a
+  metadata change on an MKV becomes a ``metadata_edit`` job).
+- :meth:`JobService.preview_clip` encodes a preview clip as a task (C-10).
+- :meth:`JobService.search_options` and :meth:`JobService.hdr_metadata`: the advanced option
+  search and **Copy HDR metadata** (C-6).
 - :meth:`JobService.name` names one path without probing it (``reframe name``), and
-  :func:`find_media_files` lists the media files of files and folders (``reframe encode``).
+  :func:`find_media_files` lists the media files of files and folders (``reframe encode``);
+  :class:`OutputClaims` keeps the jobs of one command from writing each other's files. Both
+  compare files, not spellings (:func:`file_key`): a link, a linked folder or a hard link to a
+  file is that file.
 
 Expected failures are values: a source that cannot be probed is a
 :class:`~reframe.probe.ProbeError` (``draft``) or a ``source.probe_failed`` error
@@ -26,38 +38,39 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from reframe import languages
-from reframe.batch import draft_tracks
+from reframe import metadata, preview
+from reframe.batch import draft_tracks, output_size, video_metadata
+from reframe.batch.resolve import resolve_with_tracks
 from reframe.command import PlanError, build_plan
-from reframe.definitions import Definitions, load_definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.definitions import Definitions, EncoderOption, load_definitions
+from reframe.definitions import hdr_options as _hdr_options
+from reframe.definitions import search_options as _search_options
+from reframe.jsonpatch import escape_token
+from reframe.mediatask import MediaTaskContext
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.defaults import TrackDecision
+from reframe.models.defaults import TrackDecision, TrackDraft
 from reframe.models.draft import JobDraft
-from reframe.models.issues import Severity, ValidationIssue
-from reframe.models.job import (
-    ChapterSettings,
-    JobNaming,
-    JobSettings,
-    OutputSettings,
-    TrackMetadata,
-)
-from reframe.models.media import MediaSource, VideoStream
+from reframe.models.issues import AddOp, JsonPatchOp, Severity, ValidationIssue
+from reframe.models.job import Container, JobNaming, JobSettings
+from reframe.models.media import MediaSource
 from reframe.models.naming import NameResult, NamingOptions
 from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
-from reframe.models.settings import AppSettings
+from reframe.models.settings import AppSettings, LanguageSettings
+from reframe.models.tasks import TaskInfo
+from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolSet
 from reframe.naming import resolve_output_name
 from reframe.probe import ProbeError
 from reframe.probe.folder import list_media_files
 from reframe.validation import FileSystemView, LocalFileSystem, next_free_path, validate
+from reframe.validation.dryrun import dry_run as _dry_run
 
 __all__ = [
     "DETECTION_WAIT",
@@ -65,9 +78,12 @@ __all__ = [
     "Capabilities",
     "JobService",
     "MediaFiles",
+    "OutputClaims",
     "PresetLookup",
     "SourceProber",
     "ToolDiscovery",
+    "draft_from_preset",
+    "file_key",
     "find_media_files",
     "has_errors",
     "is_partial_output",
@@ -122,13 +138,48 @@ class Capabilities(Protocol):
 # --------------------------------------------------------------------------- media files
 
 
+def file_key(path: str | os.PathLike[str]) -> str:
+    """One key per file: two spellings of one file have the same key. The name checks of one
+    command (:class:`OutputClaims`, ``Reframe.batch``) and the "taken once" rule of
+    :func:`find_media_files` compare files with it, as the queue does
+    (``reframe.queue.files.same_file``; R4-1 of the core-complete review, RA-1 of the final
+    review).
+
+    - A path that exists is keyed by the file's identity: ``st_dev`` and ``st_ino`` of
+      ``os.stat``, which follows links. A symbolic link, a linked folder, a hard link and, on a
+      file system that ignores case (Windows, macOS), another case of the name are that file.
+      On Windows the two numbers are the volume serial number and the file index, so a mapped
+      drive and its UNC path give one key too.
+    - A path that does not exist (an output not written yet), or a file whose identity is not
+      known (``st_ino`` 0, which some network file systems give on Windows), is keyed by its
+      path: links resolved (``realpath``, which resolves the existing part of the folder of a
+      file that does not exist yet), in the OS's case (``normcase``) and case-folded. macOS and
+      Windows file systems ignore case; on Linux two new names that differ only in case are
+      taken as one file, the safe side (the queue's ``same_file`` does the same).
+
+    Blocking (``stat``): call it in a worker thread for many paths.
+    """
+    try:
+        info = os.stat(path)
+    except (OSError, ValueError):
+        info = None
+    if info is not None and info.st_ino:
+        return f"file:{info.st_dev}:{info.st_ino}"
+    try:
+        resolved = os.path.realpath(path)
+    except (OSError, ValueError):
+        resolved = os.path.abspath(path)
+    return "path:" + os.path.normcase(resolved).casefold()
+
+
 @dataclass(frozen=True)
 class MediaFiles:
     """The media files of the paths given to ``reframe encode`` (see
     :func:`find_media_files`)."""
 
     files: list[Path] = field(default_factory=list)
-    """Absolute paths, in argument order (a folder's files in natural order), each once."""
+    """Absolute paths, in argument order (a folder's files in natural order), each file once
+    (in the spelling it was first given)."""
     missing: list[Path] = field(default_factory=list)
     """Arguments that do not exist."""
     empty: list[Path] = field(default_factory=list)
@@ -149,7 +200,9 @@ def find_media_files(
     A file is taken as it is (ffprobe decides whether it is media). A folder gives its media
     files (C-3's extension list, hidden files left out, natural order), without the partial
     outputs of Reframe (``*.part.*``); ``recursive`` also searches its subfolders (hidden
-    folders left out). A file named twice (also through a folder) is taken once.
+    folders left out). A file named twice is taken once, in the spelling it was first given:
+    also through a folder, a link, a linked folder or a hard link (:func:`file_key`; a folder
+    given as ``real`` and as ``link`` → ``real`` gives each file once).
     """
     files: list[Path] = []
     missing: list[Path] = []
@@ -157,7 +210,7 @@ def find_media_files(
     seen: set[str] = set()
 
     def add(path: Path) -> None:
-        key = os.path.normcase(str(path))
+        key = file_key(path)
         if key not in seen:
             seen.add(key)
             files.append(path)
@@ -184,6 +237,60 @@ def find_media_files(
     return MediaFiles(files=files, missing=missing, empty=empty)
 
 
+class OutputClaims:
+    """The outputs of the jobs that one command queues (``reframe encode`` of several files):
+    no job writes another file of the command (it would replace a source, perhaps before its
+    own job reads it) or the output of an earlier job of the command (the earlier output would
+    be lost, or the later one renamed at run time). ``Reframe.batch.resolve_batch`` checks a
+    batch the same way, for all its files at once (decision 0040, follow-up R2-1).
+
+    Paths are compared as files (:func:`file_key`): an output named through a linked folder,
+    a link or a hard link to a file of the command is that file (final review RA-1). Messages
+    name the files as they were given. Blocking (``stat``): the CLI calls it in a worker
+    thread.
+
+    :param files: every file of the command, with its label in messages (``[2/3] E02.mkv``).
+    """
+
+    def __init__(self, files: Mapping[Path, str]) -> None:
+        self._files = {file_key(path): label for path, label in files.items()}
+        self._outputs: dict[str, str] = {}
+
+    def check(self, job: JobSettings, label: str) -> list[ValidationIssue]:
+        """The errors of ``job``'s output (``label``: the job in messages). Without one, the
+        output is claimed for ``job``: call it only for a job that is queued."""
+        path = job.output.path
+        if path is None or job.output.edit_in_place:
+            return []
+        key = file_key(path)
+        source = file_key(job.source.path)
+        if key != source and key in self._files:
+            return [
+                _issue(
+                    Severity.ERROR,
+                    "batch.output_is_source",
+                    "output.path",
+                    f"The output {path.name} is a source file of this command "
+                    f"({self._files[key]}): it is never overwritten. Choose another name or "
+                    "output folder for this file.",
+                )
+            ]
+        earlier = self._outputs.get(key)
+        if earlier is not None:
+            return [
+                _issue(
+                    Severity.ERROR,
+                    "batch.name_collision",
+                    "output.path",
+                    f"{path.name} is also the output of {earlier} in this command: this file is "
+                    "not queued, so that it does not replace that output. Use a naming template "
+                    "with the episode ({episode_code} or {episode}) or another name.",
+                )
+            ]
+        self._outputs[key] = label
+        return []
+
+
 # --------------------------------------------------------------------------- helpers
 
 
@@ -205,73 +312,44 @@ def _probe_issue(error: ProbeError) -> ValidationIssue:
     )
 
 
-def video_metadata(stream: VideoStream) -> TrackMetadata:
-    """The source video track's language, title and flags, with the default flag set
-    (decision 0024 item 5: what mkvmerge writes; FFmpeg-written sources often have no
-    default flag on their only video stream)."""
-    value = stream.language_ietf or stream.language
-    language = (languages.normalize(value) or value) if value else None
-    d = stream.disposition
-    return TrackMetadata(
-        language=language,
-        name=stream.title,
-        default=True,
-        forced=d.forced,
-        commentary=d.comment,
-        hearing_impaired=d.hearing_impaired,
-        visual_impaired=d.visual_impaired,
-        original=d.original,
-    )
-
-
-def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None:
-    """C-5's scaled size of the encoded picture (the source size for video passthrough)."""
-    if not source.video:
-        return None
-    stream = source.video[0]
-    if job.video.passthrough:
-        return (stream.width, stream.height)
-    src = source_geometry(stream)
-    if "deinterlace" in job.filters.root:
-        # Deinterlace runs before the crop: the crop is on the progressive grid, as the
-        # command builder (C-7) computes it.
-        src = src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(src, job.dimensions)
-    return (geometry.scaled_width, geometry.scaled_height)
-
-
 def job_from_preset(
-    source: MediaSource, preset: Preset, *, definitions: Definitions | None = None
+    source: MediaSource,
+    preset: Preset,
+    *,
+    definitions: Definitions | None = None,
+    languages: LanguageSettings | None = None,
 ) -> tuple[JobSettings, list[TrackDecision], list[str]]:
     """The job settings of ``source`` encoded with ``preset`` (without the output path), the
-    audio track decisions, and notes about how preset options were applied. Pure."""
-    notes: list[str] = []
-    tracks = draft_tracks(source, preset, definitions=definitions)
-    video = preset.video.model_copy(deep=True)
-    if source.video:
-        video.metadata = video_metadata(source.video[0])
-    names: list[str] | None = None
-    if preset.chapter_name_policy == "generated" and source.chapters:
-        names = [f"Chapter {i}" for i in range(1, len(source.chapters) + 1)]
-        notes.append("Chapter names: generated (Chapter 1, Chapter 2, …), as the preset says.")
-    job = JobSettings(
-        source=source.ref.model_copy(deep=True),
-        preset_id=preset.id,
-        preset_name=preset.name,
-        output=OutputSettings.model_validate(preset.output.model_dump()),
-        dimensions=preset.dimensions.model_copy(deep=True),
-        filters=preset.filters.model_copy(deep=True),
-        video=video,
-        audio=tracks.audio,
-        subtitles=tracks.subtitles,
-        chapters=ChapterSettings(
-            enabled=preset.chapters.enabled,
-            names=names,
-            generate_every=preset.chapters.generate_every,
-        ),
-        tags=preset.tags.model_copy(deep=True),
+    audio track decisions, and notes about how preset options were applied. ``languages``:
+    Settings → Languages (the preferred languages of the track selection). Pure."""
+    job, tracks, notes = draft_from_preset(
+        source, preset, definitions=definitions, languages=languages
     )
     return job, tracks.decisions, notes
+
+
+def draft_from_preset(
+    source: MediaSource,
+    preset: Preset,
+    *,
+    definitions: Definitions | None = None,
+    languages: LanguageSettings | None = None,
+    container_codecs: bool = True,
+) -> tuple[JobSettings, TrackDraft, list[str]]:
+    """:func:`job_from_preset` with the whole :class:`~reframe.models.TrackDraft` (audio and
+    subtitle decisions, the issues of the track stage): C-12's ``resolve`` of the preset in
+    ``source`` (the one rule engine of presets and batch mode, decision 0040). Pure.
+    ``container_codecs=False``: without the defaults lint's ``defaults.codec_not_in_container``
+    (a caller that validates the job gets C-8's ``container.codec_unsupported`` instead)."""
+    resolution, tracks = resolve_with_tracks(
+        preset,
+        source,
+        definitions=definitions,
+        languages=languages,
+        container_codecs=container_codecs,
+    )
+    assert resolution.job is not None  # resolve always makes a job
+    return resolution.job, tracks.draft, resolution.notes
 
 
 # --------------------------------------------------------------------------- the service
@@ -289,6 +367,8 @@ class JobService:
     :param detection_wait: seconds :meth:`validate` waits for a running encoder detection
         (default :data:`DETECTION_WAIT`, read when the service is made).
     :param clock: the time for the naming and tag date variables.
+    :param media: what the C-10 tasks need from the facade (preview clips); set by
+        :class:`~reframe.service.Reframe`.
     """
 
     def __init__(
@@ -303,6 +383,7 @@ class JobService:
         fs: FileSystemView | None = None,
         detection_wait: float | None = None,
         clock: Callable[[], datetime] | None = None,
+        media: MediaTaskContext | None = None,
     ) -> None:
         self._sources = sources
         self._presets = presets
@@ -313,6 +394,7 @@ class JobService:
         self._fs: FileSystemView = fs if fs is not None else LocalFileSystem()
         self._detection_wait = DETECTION_WAIT if detection_wait is None else detection_wait
         self._clock = clock or (lambda: datetime.now().astimezone())
+        self._media_context = media
 
     @property
     def definitions(self) -> Definitions:
@@ -347,13 +429,22 @@ class JobService:
             return media
         chosen, issues = self._resolve_preset(preset)
         naming = self._naming_options(chosen)
-        job, decisions, name, notes = await asyncio.to_thread(
+        job, tracks, name, notes = await asyncio.to_thread(
             self._compose, media, chosen, naming, output
         )
-        issues = [*issues, *await self._validate(job, media, naming)]
+        # The errors of the track stage (no track for a required language, a required track
+        # rule without a match) keep the draft out of the queue, and the track rules' cells
+        # that are not exact (``batch.track_relaxed``, ``batch.track_ambiguous``,
+        # ``batch.track_skipped``) are shown with it, as ``reframe batch`` shows them; the
+        # defaults lint's warnings and notes are in explain().
+        track_issues = [
+            i for i in tracks.issues if i.severity is Severity.ERROR or i.code.startswith("batch.")
+        ]
+        issues = [*issues, *track_issues, *await self._validate(job, media, naming)]
         return JobDraft(
             job=job,
-            decisions=decisions,
+            decisions=tracks.decisions,
+            subtitle_decisions=tracks.subtitle_decisions,
             naming=name,
             issues=issues,
             notes=notes,
@@ -389,8 +480,29 @@ class JobService:
         preset: Preset,
         naming: NamingOptions,
         output: Path | None,
-    ) -> tuple[JobSettings, list[TrackDecision], NameResult, list[str]]:
-        job, decisions, notes = job_from_preset(media, preset, definitions=self.definitions)
+    ) -> tuple[JobSettings, TrackDraft, NameResult, list[str]]:
+        # C-8 validates the job: its container rule reports a codec the container cannot
+        # hold, so the defaults lint does not say it again (one issue per problem, 0031 §6).
+        job, tracks, notes = draft_from_preset(
+            media,
+            preset,
+            definitions=self.definitions,
+            languages=self._settings().languages,
+            container_codecs=False,
+        )
+        job, name, more = self._name(job, media, naming, output)
+        return job, tracks, name, [*notes, *more]
+
+    def _name(
+        self,
+        job: JobSettings,
+        media: MediaSource,
+        naming: NamingOptions,
+        output: Path | None,
+    ) -> tuple[JobSettings, NameResult, list[str]]:
+        """Set ``job``'s output path (it is changed): ``output``, else the naming template;
+        the name, and notes on what naming changed."""
+        notes: list[str] = []
         file = Path(media.ref.path)
         size = output_size(job, media)
         folder: Path | None = None
@@ -431,15 +543,36 @@ class JobService:
                 )
                 path = free
         job.output.path = path
-        return job, decisions, name, notes
+        return job, name, notes
+
+    async def name_job(
+        self,
+        job: JobSettings,
+        source: MediaSource,
+        *,
+        naming: NamingOptions | None = None,
+        output: Path | None = None,
+    ) -> tuple[JobSettings, NameResult, list[str]]:
+        """Name ``job`` (made elsewhere: a batch row) as :meth:`draft` names a draft: a copy
+        with the output path, C-16's name and notes. ``naming``: the naming options (``None``:
+        the job's preset's, else Settings → Output); ``output``: a manual name or folder."""
+        options = naming if naming is not None else self._naming_options(self._job_preset(job))
+        return await asyncio.to_thread(
+            self._name, job.model_copy(deep=True), source, options, output
+        )
 
     # ------------------------------------------------------------------ validate, plan
 
     async def validate(
-        self, job: JobSettings, source: MediaSource | None = None
+        self,
+        job: JobSettings,
+        source: MediaSource | None = None,
+        *,
+        naming: NamingOptions | None = None,
     ) -> list[ValidationIssue]:
         """Every issue of ``job`` (C-8). ``source`` ``None``: the job's source is probed (the
-        probe cache makes this cheap).
+        probe cache makes this cheap). ``naming``: the naming options the job was named with
+        (``None``: its preset's, else Settings → Output).
 
         When an encoder or filter is still being checked, encoder detection is awaited for at
         most ``detection_wait`` seconds and the job is validated again; after that time the
@@ -449,18 +582,25 @@ class JobService:
         media = await self._media(job, source)
         if not isinstance(media, MediaSource):
             return media
-        return await self._validate(job, media, self._naming_options(self._job_preset(job)))
+        options = naming if naming is not None else self._naming_options(self._job_preset(job))
+        return await self._validate(job, media, options)
 
     async def plan(
-        self, job: JobSettings, source: MediaSource | None = None
+        self, job: JobSettings, source: MediaSource | None = None, *, dry_run: bool = False
     ) -> EncodePlan | list[ValidationIssue]:
         """C-7's plan of ``job``; when it has errors, every issue instead (at least one is an
-        ``error``)."""
+        ``error``). ``dry_run``: when validation finds no error, also encode one frame
+        (:meth:`dry_run`) and return its errors (custom parameters FFmpeg refuses). A plan
+        carries no issues, so the dry run's warnings (``encoder.dry_run_warning``,
+        ``encoder.dry_run_skipped``) are not returned with it: a caller that shows them calls
+        :meth:`dry_run` itself, as ``reframe plan`` does (decision 0038)."""
         media = await self._media(job, source)
         if not isinstance(media, MediaSource):
             return media
         naming = self._naming_options(self._job_preset(job))
         issues = await self._validate(job, media, naming)
+        if not has_errors(issues) and dry_run:
+            issues = [*issues, *await self.dry_run(job, media)]
         if has_errors(issues):
             return issues
         tools = await self._tools.status()
@@ -536,6 +676,128 @@ class JobService:
                 ),
             ]
         return await asyncio.to_thread(check, caps)
+
+    async def dry_run(
+        self, job: JobSettings, source: MediaSource | None = None
+    ) -> list[ValidationIssue]:
+        """Encode one frame with the job's video settings (``-frames:v 1 -f null``) and give
+        what FFmpeg refuses as ``error`` issues (C-6: custom parameters are "validated by a dry
+        run"). Validate first: a job with errors gives wrong dry-run errors."""
+        media = await self._media(job, source)
+        if not isinstance(media, MediaSource):
+            return media
+        tools = await self._tools.status()
+        return await _dry_run(
+            job, media, self._capabilities.snapshot, tools, definitions=self.definitions
+        )
+
+    # ------------------------------------------------------------------ C-12 defaults, C-13
+
+    async def explain(
+        self,
+        source: str | os.PathLike[str] | MediaSource,
+        template: JobTemplate | str | None = None,
+        *,
+        container: Container | None = None,
+    ) -> TrackDraft | ProbeError:
+        """What the audio and subtitle defaults of ``template`` (a template, a preset id or
+        name; ``None``: the default preset) do with ``source``: the drafted tracks and one
+        decision per source track, with the reason (C-12 ``draft_tracks``; the live preview of
+        03 §Audio defaults). ``container`` replaces the template's container. An unknown
+        preset name is a ``preset.not_found`` issue in the result."""
+        media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
+        if isinstance(media, ProbeError):
+            return media
+        issues: list[ValidationIssue] = []
+        chosen: JobTemplate
+        if isinstance(template, JobTemplate):
+            chosen = template
+        else:
+            chosen, issues = self._resolve_preset(template)
+        if container is not None and container != chosen.output.container:
+            chosen = chosen.model_copy(deep=True)
+            chosen.output.container = container
+        languages = self._settings().languages
+        draft = await asyncio.to_thread(
+            draft_tracks, media, chosen, definitions=self.definitions, languages=languages
+        )
+        if issues:
+            draft.issues = [*issues, *draft.issues]
+        return draft
+
+    async def draft_remux(
+        self,
+        source: str | os.PathLike[str] | MediaSource,
+        preset: Preset | str | None = None,
+        *,
+        edit_in_place: bool = True,
+    ) -> JobDraft | ProbeError:
+        """A remux-only job of ``source`` (03 §Remux-only jobs, C-13): :meth:`draft` with
+        ``preset``, then video passthrough and every track copied in source order with its
+        metadata (``reframe.metadata.remux_job``), validated again. Change only metadata on
+        the result and an MKV with ``edit_in_place`` becomes a ``metadata_edit`` job."""
+        draft = await self.draft(source, preset)
+        if isinstance(draft, ProbeError):
+            return draft
+        media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
+        if isinstance(media, ProbeError):
+            return media
+        job = metadata.remux_job(
+            draft.job, media, edit_in_place=edit_in_place, definitions=self.definitions
+        )
+        naming = self._naming_options(self._job_preset(job))
+        issues = await self._validate(job, media, naming)
+        keep = [issue for issue in draft.issues if issue.code == "preset.not_found"]
+        return draft.model_copy(
+            update={
+                "job": job,
+                "decisions": [],
+                "subtitle_decisions": [],
+                "issues": [*keep, *issues],
+            }
+        )
+
+    # ------------------------------------------------------------------ C-6 options
+
+    def search_options(self, encoder_id: str, query: str) -> list[EncoderOption]:
+        """The advanced options of ``encoder_id`` that match ``query`` in their label, CLI
+        name or help text (03 §Advanced encoder options: *Search*); empty for an unknown
+        encoder."""
+        encoder = self.definitions.video_encoders.get(encoder_id)
+        if encoder is None:
+            return []
+        return _search_options(encoder.options, query)
+
+    def hdr_metadata(self, job: JobSettings, source: MediaSource) -> list[JsonPatchOp]:
+        """**Copy HDR metadata from source** (03 §Advanced encoder options): a JSON patch on
+        ``job`` that sets the encoder's HDR options (``/video/advanced/<key>``) from the
+        source's HDR10 metadata. Empty when the source has none or the encoder has no such
+        options."""
+        encoder = self.definitions.video_encoders.get(job.video.encoder)
+        if encoder is None or not source.video:
+            return []
+        values = _hdr_options(encoder, source.video[0])
+        return [
+            AddOp(path=f"/video/advanced/{escape_token(key)}", value=value)
+            for key, value in values.items()
+        ]
+
+    # ------------------------------------------------------------------ C-10 preview clips
+
+    def preview_clip(self, job: JobSettings, *, start: float, seconds: float) -> TaskInfo:
+        """Encode ``seconds`` from ``start`` with the job's full settings into the preview
+        cache (03 §Preview: live preview clip; task ``preview_clip``, result
+        :class:`~reframe.models.PreviewClip`). Returns at once."""
+        return preview.start_preview_clip(self._media_tasks(), job, start=start, seconds=seconds)
+
+    def preview_clip_path(self, clip_id: str) -> Path | None:
+        """The cached clip of a :class:`~reframe.models.PreviewClip` id, else ``None``."""
+        return preview.clip_path(self._media_tasks(), clip_id)
+
+    def _media_tasks(self) -> MediaTaskContext:
+        if self._media_context is None:
+            raise RuntimeError("JobService has no media task context (the facade sets it)")
+        return self._media_context
 
     # ------------------------------------------------------------------ naming
 

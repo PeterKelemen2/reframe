@@ -26,8 +26,9 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
   and whose hash did not change is skipped. Each fixture is built in a temporary folder
   (`media/.tmp-*`) and moved into place only on success.
 - Time on the reference machine (Arch Linux, 12 threads, FFmpeg n9.0.2): about 0.9 s for all
-  fixtures (cold, idle machine; 3.3 s under heavy load), 0.1 s when everything is up to date.
-  About 7 MB in total.
+  fixtures but `hdr10-4k` (cold, idle machine; 3.3 s under heavy load), plus about 4 s for
+  `hdr10-4k`; 0.1 s when everything is up to date. About 15 MB in total (6 MB of it is
+  `hdr10-4k`).
 - Tests get a fixture with the `fixture_media` pytest fixture (`fixture_media("multitrack")`),
   which generates it on demand and skips the test when there is no usable ffmpeg. The code is
   in `testing/reframe_testing/media.py`.
@@ -50,8 +51,13 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `vfr` | `vfr.mp4` | 1 s each at 24, 30 and 60 fps; `r_frame_rate=120/1`, `avg_frame_rate=38/1` |
 | `vfr-mkv` | `vfr.mkv` | The same clip in Matroska; `avg_frame_rate=0/0` (see below) |
 | `hdr10` | `hdr10.mkv` | HEVC Main 10, BT.2020 / PQ, mastering display (G 0.265,0.69 … L 0.0001–1000 cd/m²), MaxCLL 1000 / MaxFALL 400, as stream **and** frame side data |
+| `hdr10-4k` | `hdr10-4k.mkv` | 3840×2160 HEVC Main 10, BT.2020 / PQ, HDR10 metadata as SEI only (one libx265 pass), 5 s at 23.976 fps, keyint 48 (2 s). The 4K source of the C-10 frame budget (Q-3; the one fixture that is not low resolution, decision 0030); about 6 MB and 4 s to generate |
 | `chapters` | `chapters.mkv` | 5 s, 4 chapters (Opening, Part One, Part Two, Credits) and a title, from an FFMETADATA file |
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
+| `dts-hd-ma` | `dts-hd-ma.mkv` | H.264 320×180, 4 s. Audio: `hun` **DTS-HD MA** 5.1(side) 24-bit 48 kHz "DTS-HD MA 5.1" **default**, a real lossless (XLL) stream written by `reframe_testing/dts.py` with **no bit rate in the file** (ffprobe: `profile` `DTS-HD MA`, no `bit_rate`; 375 frames, 1 069 764 bytes = 2 139 528 b/s); `eng` AC-3 5.1 224 kb/s "English AC-3 5.1"; `eng` AC-3 stereo 192 kb/s "English Stereo". M6 demo 1 (Measure) and the audio-defaults demo |
+| `pgs` | `pgs.mkv` | H.264 720×480, 4 s. Two PGS (`hdmv_pgs_subtitle`) tracks written by `reframe_testing/pgs.py`: `eng` "English" **default**, 6 events (2 with the forced flag, at 0.2 s and 2.1 s), 12 display sets; `eng` "English (forced)" **forced**, 2 forced events, 4 display sets |
+| `anime-s01` | `Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv` … `E12` | The 04 §Example season (batch mode, C-12 M7; decision 0040): H.264 320×180, 2 s. Audio: `jpn` **TrueHD** 5.1(side) 24-bit "Japanese" **default** (FFmpeg's experimental `truehd` encoder; no bit rate in the file), `eng` **DTS-HD MA** 5.1 "English Dub" (`reframe_testing/dts.py`, no bit rate). Subtitles (ASS): `eng` "Signs & Songs" **forced**, `eng` "Full" **default**. **E05** also has `eng` AC-3 2.0 96 kb/s "Commentary" (**comment**) after the dub; **E11** has no dub, and its signs track is titled "Signs". Each episode is a stream copy of one master, with the container title `Anime Show - S01Enn - Title`; about 770 KB each |
+| `anime-s02` | `Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv` … `E03` | Season 2 of the same release: three episodes with E01's layout (the M7 demo applies season 1's group preset to it) |
 
 `testing/tests/test_media_fixtures.py` checks every row with ffprobe.
 
@@ -73,6 +79,20 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
   `mimetype=application/x-truetype-font`. A test renders the ASS text with libass and checks
   that the glyphs are solid boxes (a fallback font fills about 30 % of the text's bounding box,
   Reframe Box about 83 %), so libass really uses the attached font.
+- **DTS-HD MA.** FFmpeg's `dca` encoder writes a DTS core only (`-strict -2`), so
+  `reframe_testing/dts.py` writes the DTS-HD MA stream in Python: extension substream (EXSS)
+  frames with one asset whose only component is an XLL (lossless) frame: 5.1, 48 kHz,
+  24-bit, 512 samples per frame, fixed prediction with Rice codes, every CRC-16 correct
+  (references: ETSI TS 102 114 and FFmpeg's `dca_exss.c` / `dca_xll.c` / `dcadec.c`).
+  There is **no DTS core** (decision 0032). Each channel is a steady tone whose frequency is
+  a whole number of periods per frame (93.75 Hz steps), so the frames of one second are the
+  same; the level changes every second (0, -6, -12, -3 dB), so the frame size varies. FFmpeg
+  copies the `.dtshd` file (`-f dts`) into Matroska. A test decodes it with
+  `-err_detect crccheck+explode` and compares every sample with what was written (lossless).
+- **PGS.** FFmpeg has no PGS encoder either. `reframe_testing/pgs.py` writes `.sup` files
+  (PCS, WDS, PDS, ODS with run-length coded bitmaps, END): one show and one clear display
+  set per event, the bars of the VobSub fixture as bitmaps, the forced flag (`0x40`) on the
+  composition object of a forced event. FFmpeg copies them into Matroska with `-copyts`.
 
 ## Fake FFmpeg (fault injection)
 
@@ -494,7 +514,11 @@ usable):
 ### Encoder definitions (C-6)
 
 Checked on 2026-10-13 with both n9.0.2 builds (Arch `/usr/bin/ffmpeg` and the pinned BtbN
-build; x264 core 165, x265 4.1, SVT-AV1 v4.2.0) and, for AMF and VAAPI, an AMD RX 7600. The
+build; x264 core 165, x265 4.3, SVT-AV1 v4.2.0, libvpx 1.17.0) and, for AMF and VAAPI, an
+AMD RX 7600. Checked again on 2026-10-15 (the HEVC encoder's own log line "HEVC encoder
+version"): Arch n9.0.2 has x265 4.3, x264 core 165 r3222, SVT-AV1 v4.2.0; both BtbN builds
+(n9.0.2 and n8.1.3) have x265 4.3+49-020d7054, x264 core 165, SVT-AV1 v4.2.0-151-g5ed9ffbcb;
+all three libvpx v1.17.0. (This section said x265 4.1 before: no build here has it.) The
 M2 review fixes (2026-10-14) were checked with these and with the CI override build n8.1.3
 (BtbN `n8.1.3-9-g29e619e767`). `packages/reframe/tests/definitions/test_tools.py` repeats
 every check (`needs_ffmpeg`; the AMF / VAAPI encodes are `needs_gpu`); where n8.1.3 differs,
@@ -1376,3 +1400,761 @@ review follow-up of decision [0012](../docs/decisions/0012-output-naming-rules.m
   `model_dump(mode="json")` and `model_validate` (Python objects) keep the surrogate, and
   `json.dumps(…, ensure_ascii=True)` / `json.loads` give it back exactly, which the probe cache
   uses (C-3).
+
+### Audio and subtitle defaults (C-12, selection stage)
+
+Checked on 2026-10-15 with MKVToolNix 101.0 (`/usr/bin/mkvmerge`) and ffprobe n9.0.2
+(`/usr/bin/ffprobe`), for decision
+[0031](../docs/decisions/0031-audio-and-subtitle-selection-stage.md). The selection itself is
+pure; it relies on what the probe reads from an mkvmerge-made file: the forced flag and the
+event count of a subtitle track (the foreign audio search), and the default flags (at most one
+default track per kind is kept). `tests/batch/test_explain_media.py` repeats this on the
+`multitrack` fixture (`needs_ffmpeg`; skipped without mkvmerge).
+
+```
+$ printf '1\n00:00:01,000 --> 00:00:02,000\nElvish: Hello\n' > forced.srt
+$ mkvmerge -q -o fas.mkv multitrack.mkv --language 0:eng --track-name 0:Forced \
+    --forced-display-flag 0:1 forced.srt
+$ ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_disposition=default,forced,comment:stream_tags=language,title,NUMBER_OF_FRAMES -of compact fas.mkv
+...
+stream|index=4|codec_name=subrip|codec_type=subtitle|disposition:default=1|disposition:comment=0|disposition:forced=0|tag:language=eng|tag:title=English|tag:NUMBER_OF_FRAMES=2
+stream|index=5|codec_name=subrip|codec_type=subtitle|disposition:default=0|disposition:comment=0|disposition:forced=0|tag:language=eng|tag:title=English SDH|tag:NUMBER_OF_FRAMES=3
+stream|index=6|codec_name=subrip|codec_type=subtitle|disposition:default=0|disposition:comment=0|disposition:forced=1|tag:language=eng|tag:title=Signs & Songs|tag:NUMBER_OF_FRAMES=1
+stream|index=7|codec_name=subrip|codec_type=subtitle|disposition:default=1|disposition:comment=0|disposition:forced=1|tag:language=eng|tag:title=Forced|tag:NUMBER_OF_FRAMES=1
+```
+
+- `--forced-display-flag` is ffprobe's `disposition:forced=1`; mkvmerge's statistics tag
+  `NUMBER_OF_FRAMES` is the event count of a subtitle track (C-3 reads it as
+  `event_count`, source `stats_tag`).
+- **mkvmerge marks an added track default** (`FlagDefault=1`) unless it is told otherwise
+  (`--default-track-flag 0:0`): the file above has two default subtitle tracks (4 and 7). So a
+  draft that keeps every track (no language set) keeps the default flag only on the first of
+  them (03 §Track metadata: one default track per type).
+- HandBrake's subtitle defaults were read in its source, not run: see decision 0031
+  ("Context").
+
+### Analysis scans (C-10: bitrate, subtitles, loudness)
+
+Checked on 2026-10-15 with FFmpeg n9.0.2 (Arch package and the pinned BtbN build
+`n9.0.2-17-g2a571b6068-20260930`; the DTS-HD MA rows also with the n8.1.3 override build).
+Decision [0032](../docs/decisions/0032-analysis-scans-and-their-fixtures.md) uses these.
+
+**Packet listing** (the bitrate scan; `-of compact=p=0`, one line per packet, keys in the
+order ffprobe prints them, not the order of `-show_entries`):
+
+```
+$ ffprobe -v error -select_streams 1 -show_entries packet=pts_time,dts_time,duration_time,size \
+      -of compact=p=0 -i dts-hd-ma.mkv
+pts_time=0.000000|dts_time=0.000000|duration_time=0.010000|size=3140
+pts_time=0.011000|dts_time=0.011000|duration_time=0.010000|size=3140
+…
+pts_time=3.989000|dts_time=3.989000|duration_time=0.010000|size=2964
+```
+
+- Matroska stores times in whole milliseconds: a 512-sample DTS frame (10.667 ms) has
+  `duration_time=0.010000`, so the 375 durations add up to 3.75 s for a 4 s track. The scan
+  uses the first packet time to the last packet end (3.999 s): 2 140 063 b/s measured, 2 139 528
+  b/s exact (0.03 %).
+- An ffprobe packet listing of 225 000 AC-3 packets (2 hours) takes about 2.3 s through the
+  scan's line reader (load average about 7).
+
+**Subtitle packets** of all subtitle streams in one pass:
+`ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,size -of compact=p=0`
+prints `stream_index=1|pts_time=0.200000|size=12`. One SRT cue, one ASS `Dialogue` line or one
+VobSub subpicture is one packet (`multitrack`: 2, 3, 1; `text-subs`: 2, 3; `vobsub`: 2, 1).
+
+**MP4 / MOV text (`mov_text`)** (checked 2026-10-16 with the pinned n9.0.2 and the n8.1.3
+override build, the same results; core-complete review R3-2). A sample is a 16-bit text
+length, the text, then style boxes. The MP4 and MOV muxers fill the time before the first cue
+and every gap between two cues with an **empty sample**, `00 00` (2 bytes). 3 SRT cues
+(1–2 s, 3–4 s, 5–6.5 s) with `-c:s mov_text` (MP4: codec tag `tx3g`; MOV: `text`):
+
+```
+$ ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,duration_time,size \
+      -of compact=p=0 three.mp4
+stream_index=1|pts_time=0.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=1.000000|duration_time=1.000000|size=7
+stream_index=1|pts_time=2.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=3.000000|duration_time=1.000000|size=7
+stream_index=1|pts_time=4.000000|duration_time=1.000000|size=2
+stream_index=1|pts_time=5.000000|duration_time=1.500000|size=9
+```
+
+- Back-to-back cues (0–1, 1–2, 2–3 s, one letter each) give 3 samples of 3 bytes, no empty
+  sample.
+- An ASS file with `Hello` (1–2 s), an empty `Dialogue` (2–3 s), one with override tags only
+  (`{\b1}{\b0}`, 3–4 s) and `{\i1}Styled{\i0}` (5–6 s) gives 4 samples: 2 bytes at 0 s, 7
+  at 1 s, **2 bytes at 2 s lasting 3 s** (the two cues without text get no sample of their
+  own), 30 bytes at 5 s (`0006 "Styled"` and a 22-byte `styl` box). In Matroska (`-c:s ass`)
+  the same file has 4 packets: the ASS decoder keeps the empty events, the `mov_text` encoder
+  drops them.
+- So the subtitle scan does not count a `mov_text` packet of 2 bytes or less: 3 events, not 6,
+  for the 3 cues (`tests/analysis/test_analysis_review_fixes.py`).
+
+**PGS in Matroska.** The `sup` demuxer returns one packet per *segment*; the Matroska muxer
+merges the segments of a display set into one block (`pgs_frame_merge`, added by
+`matroskaenc`), so `pgs.mkv` has 12 and 4 packets for 6 and 2 events (show + clear each).
+Without `-copyts` ffmpeg moves the first event of a `.sup` input to 0 s (the demuxer's start
+time is the first event); with it the tracks start at `0.200000`. `ffmpeg -i pgs.mkv -map 0:1
+-c copy -f sup out.sup` writes the segments again (8 388 bytes, the size of the written file;
+only the PTS differ).
+
+**`forced_subs_only`** (decoder option; ffprobe passes it to the decoder when it is given
+before the input; `-show_entries subtitle=…` alone shows the decoded subtitles):
+
+```
+$ ffprobe -v error -select_streams 1 -show_entries subtitle=pts_time,num_rects -of csv=p=0 pgs.mkv
+0.200000,1
+0.800000,0
+…                                   (12 lines: show 1 rect, clear 0 rects)
+$ ffprobe -v error -forced_subs_only 1 -select_streams 1 \
+      -show_entries subtitle=pts_time,num_rects -of csv=p=0 pgs.mkv
+(the same 12 lines)
+```
+
+- **PGS**: `pgssubdec` returns every display set and leaves the palette of a non-forced object
+  empty; the event count does not change. `rect->flags` (`AV_SUBTITLE_FLAG_FORCED`) is not in
+  ffprobe's output. So the scan reads the forced flag (`0x40` of the composition object in the
+  PCS) from a `.sup` copy.
+- **VobSub**: `dvdsubdec` drops every subpicture that does not start with the forced start
+  command `0x00`: a track with 3 subpictures, 2 of them forced, gives 3 lines without the
+  option and 2 with it. The `vobsub` fixture has no forced subpictures (its `fre` track only has
+  the forced *disposition*): 0 lines with the option.
+
+**`loudnorm`** prints its JSON block at log level `info` (nothing with `-v error`):
+
+| Input | `input_i` | `input_tp` | `input_lra` | `input_thresh` | exit |
+|-------|-----------|------------|-------------|----------------|------|
+| `multitrack` stream 2 (AAC stereo, 660 Hz sine, mono at -18 dBFS upmixed) | -21.66 | -20.63 | 0.00 | -31.66 | 0 |
+| `multitrack` stream 1 (AC-3 5.1, 440 Hz) | -21.75 | -18.06 | 0.00 | -31.75 | 0 |
+| 2 s of `anullsrc` (digital silence) | `-inf` | `-inf` | 0.00 | -70.00 | 0 |
+| `-ss 100` on the 4 s `multitrack` (nothing decoded) | `-inf` | `-inf` | 0.00 | -70.00 | 0, plus "Output file is empty, nothing was encoded" and one `-progress` block with `out_time_us=N/A` |
+
+**DTS-HD MA without a core** (`dts-hd-ma.mkv`, all three builds):
+
+```
+$ ffprobe -v error -of compact=p=0 -show_entries stream=index,codec_name,profile,sample_fmt,bit_rate \
+      -select_streams a:0 dts-hd-ma.mkv
+index=1|codec_name=dts|profile=DTS-HD MA|sample_fmt=s32p|bit_rate=N/A
+```
+
+In `-of json` the stream has no `bit_rate` key, `bits_per_raw_sample` is `"24"`, the layout
+`5.1(side)`, and the only tags are `language`, `title` and `DURATION`. `reframe probe` shows
+`DTS-HD MA` · `lossless` · `5.1(side), 6 ch` · `48 kHz / 24-bit` · `— (unknown)`. The raw stream
+is recognised without `-f dts` too (the `dts` probe counts EXSS headers whose size is a
+multiple of 4 and whose CRC is right). `-err_detect crccheck+explode` decodes every frame.
+
+**Cancel** (C-10 "Done when"): on a 2-hour file with an event every 25 ms (the file of
+`tests/analysis/test_analysis_cancel.py`), cancelled 0.3 s after the process started, every
+process was gone 6 to 25 ms after `TaskManager.cancel` (bitrate 12–18 ms, subtitle packet count
+16–25 ms, PGS copy 6–9 ms, loudness 7–10 ms; load average about 7). Uncancelled, the passes take
+2.3 s (bitrate), 3.4 s (subtitle packet count, 288 000 packets) and 3.0 s (PGS copy and read,
+576 000 display sets, 7 200 forced).
+
+### Preview frames, crop detection and clips (C-10)
+
+Checked on 2026-10-15 with the Arch `/usr/bin/ffmpeg` n9.0.2 (the `cropdetect` defaults also
+with the n8.1.3 override-test build), on the machine above (12 threads, AMD RX 7600:
+libplacebo works). Decision [0033](../docs/decisions/0033-preview-frames-crop-and-clips.md) is
+based on these. `packages/reframe/tests/preview/` asserts them (`test_frames.py`,
+`test_cropdetect.py`, `test_clip.py`, `test_cancel.py`, the `benchmark` test).
+
+**Fast seek gives the frame of a slow seek.** `-ss T` before `-i` decodes from the keyframe
+before T and outputs the first frame at or after T: on `letterbox.mkv` at 0.2, 1.52, 2.0 and
+3.96 s the PNG is pixel-identical to `-i … -ss T` (which decodes everything before T).
+
+**Past the last frame FFmpeg writes nothing and exits 0**, with nothing on stderr at
+`-loglevel error`:
+
+```console
+$ ffmpeg -v error -ss 3.99 -i letterbox.mkv -frames:v 1 -vf format=rgb24 -c:v png -f image2 -update 1 end.png
+$ echo $?; ls end.png        # last frame at 3.96 s
+0
+ls: cannot access 'end.png': No such file or directory
+```
+
+**One PNG needs `-update 1`**, else the image2 muxer warns: `The specified filename '…/f.png'
+does not contain an image sequence pattern … use the -update option (with -frames:v 1 if
+needed) to write a single image.`
+
+**RGB conversion and colour tags.** An untagged frame is converted to RGB with BT.601; after an
+input seek, FFmpeg converts **before** a `setparams` that comes first in the chain (the
+format negotiation puts the conversion at the decoder's link), so the tag has no effect. An
+explicit `scale` after the tag converts with it. 1280x720 untagged H.264 of the colour
+`0x3080C0`, first pixel of the PNG:
+
+| Chain | without `-ss` | with `-ss 0.5` before `-i` |
+|-------|---------------|---------------------------|
+| `format=rgb24` | 47, 127, 191 (BT.601) | 47, 127, 191 |
+| `setparams=…colorspace=bt709,format=rgb24` | 39, 123, 195 (BT.709) | **47, 127, 191** |
+| `setparams=…colorspace=bt709,scale,format=rgb24` | 39, 123, 195 | 39, 123, 195 |
+| `scale=in_color_matrix=bt709,format=rgb24` | 39, 123, 195 | 39, 123, 195 |
+
+**`split` makes the source and the output frame from one decode**, but the pixel formats are
+negotiated across the split: with `[0:0]split=2[x][y];[x]format=rgb24[src];[y]crop=…,scale=…,
+format=yuv420p,format=rgb24[out]`, FFmpeg converted the decoded frame to RGB **before** the
+split, so the output branch's crop and scale ran on RGB and its picture differed from a run
+that makes only the output frame (also with `decimate`, `tmix`, `bwdif` Bob). The source frame
+was the same. When each branch converts with its own `scale` (`…,scale=…,format=rgb24`), both
+pictures are pixel-identical to one-kind runs (`test_one_run_for_both_kinds_…`: crop +
+hqdn3d + sharpen, Bob, HDR kept with zscale display mapping, a tone-mapping job). 4K HDR,
+zscale on both, crop + scale on one: 0.65–0.75 s in one run, 1.17–1.28 s in two.
+
+**4K HDR frame times** (`hdr10-4k.mkv`, one frame per run, idle machine, load average 1.3):
+decoding all 120 frames takes 0.73 s (about 165 frames/s). One PNG at 0.25 / 1.9 / 2.5 /
+4.75 s (1.9 s is 45 frames after a keyframe), PNG compression level 1:
+
+| Chain | times (s) | PNG size |
+|-------|-----------|----------|
+| `format=rgb24` (no tone mapping) | 0.34, 0.66, 0.38, 0.40 | 2.2 MB |
+| zscale + tonemap (Hable) | 0.43, 0.57, 0.48, 0.43 | 1.6 MB |
+| libplacebo (BT.2390, peak detection) | 0.56, 0.71, 0.60, 0.60 | 5.6 MB |
+| decode only (`-f null`) | 0.26, 0.39, 0.31, 0.28 | |
+
+Ten frames: zscale 5.0 s one at a time, 4.0 s two at a time, 3.7 s three at a time;
+libplacebo 7.5 / 4.9 / 4.7 s. PNG compression of a grainy 4K picture (testsrc2 + noise,
+`-pred` default `paeth`): level 1 0.34 s 13.9 MB, level 3 0.45 s 8.9 MB, level 6 0.94 s 8.5 MB.
+An explicit `scale=flags=bicubic+accurate_rnd+full_chroma_int` before `format=rgb24` costs
+nothing measurable at 4K.
+
+**Display matrix and pixel aspect.** `ffmpeg -display_rotation:v:0 90 -i letterbox.mkv -c copy
+rotated.mp4`: ffprobe shows `rotation=90`; the PNG of a frame is 180x320 and `cropdetect` says
+`x1:22 x2:155 … w:134 h:320 x:22 y:0 crop=134:320:22:0` (the picture as decoded, decision
+0009). `anamorphic.mkv` (720x480, SAR 32:27) gives a 720x480 PNG with
+`sample_aspect_ratio=32:27`.
+
+**`cropdetect`** (both builds):
+
+```console
+$ ffmpeg -h filter=cropdetect
+   limit  <float>  Threshold below which the pixel is considered black (from 0 to 65535) (default 0.0941176)
+   round  <int>    Value by which the width/height should be divisible (from 0 to INT_MAX) (default 16)
+   skip   <int>    Number of initial frames to skip (from 0 to INT_MAX) (default 2)
+$ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=2 -f null -
+(no cropdetect line: the first 2 frames are skipped)
+$ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=2:skip=0 -f null -
+[Parsed_cropdetect_0 @ 0x…] x1:0 x2:319 y1:22 y2:155 w:320 h:134 x:0 y:22 pts:0 t:0.000000 limit:0.094118 crop=320:134:0:22
+[Parsed_cropdetect_0 @ 0x…] x1:0 x2:319 y1:22 y2:155 w:320 h:134 x:0 y:22 pts:40 t:0.040000 limit:0.094118 crop=320:134:0:22
+```
+
+- `-frames:v 1` lets two frames through the filter; the first line is the sample frame.
+- A limit below 1 is a fraction of the full range, scaled by the bit depth (24 at 8-bit, 96.3
+  at 10-bit). On a 10-bit PQ letterbox (640x268 picture, 46-line bars, x265):
+  `limit=0.094118` → `crop=640:268:0:46`; `limit=96` → the same; `limit=65` → `crop=640:270:0:44`
+  (ringing); `limit=64` → `crop=640:280:0:38`; **`limit=24` → `crop=640:360:0:0`** (no bars: 24
+  is below 10-bit black).
+- Black levels (`signalstats`, YMIN / YLOW / YAVG / YMAX): SDR letterbox bar 14 / 16 / 16.1 / 18
+  (8-bit); PQ letterbox bar 40 / 63 / 63.9 / 91 (10-bit; the extremes are x265 ringing next to
+  the picture).
+- A black frame: `x1:319 x2:0 y1:179 y2:0 w:-318 h:-178 x:320 y:180 … crop=-318:-178:320:180`.
+- Rounding (checked 2026-10-16 with the pinned n9.0.2 and n8.1.3, the same results): x and y
+  are rounded up to even, the size is recomputed to keep the right and bottom edges
+  (`w = x2 − x + 1`), then cut down to a multiple of `round` (an odd `round` is doubled, and
+  `round` 0 or 1 means 16), and x / y move by half the cut, rounded to even
+  (`x += (cut / 2 + 1) & ~1`). A white 300x150 picture at 9,13 in a black 320x181 frame
+  (`drawbox=x=9:y=13:w=300:h=150:color=white:t=fill`, 4:2:0): `x1:9 x2:308 y1:13 y2:162`,
+  `round=2` → `crop=298:148:10:14`, `round=1` → `crop=288:144:16:16`. Made with
+  `pad=320:181:9:13` instead, the picture is at **8,12** (`pad` puts it on the 4:2:0 chroma
+  grid; at 9,13 only with a 4:4:4 input): `x1:8 x2:307 y1:12 y2:161`, `round=2` →
+  `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`
+  (`tests/preview/test_preview_review_fixes.py::test_cropdetect_rounding_example`).
+
+**The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
+frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of
+two cold runs): load average 3.4–4.2 on 12 threads: cold 678, 729, 726, 770, 678, 749, 787,
+844, 688, 695, 820 ms (budget 2 s); cached mean 1.4 ms, max 3.8 ms (budget 50 ms);
+`frame(key)` 38 µs. At load average 12–13: cold 699–920 ms; at load 19: up to 2.4 s.
+
+**Cancel** (`test_cancel.py`, real FFmpeg; the time from `TaskManager.cancel` until the process
+is gone, busy machine): a 4K output frame through `nlmeans=s=10:p=15:r=31` 15 ms; crop
+detection on 60 samples of `hdr10-4k` 11 ms (no next sample starts); a 5 s 4K x265 `slow`
+preview clip 25 ms (the partial clip is removed).
+
+### Metadata edit (C-13)
+
+Checked on 2026-10-15 with MKVToolNix **101.0** (`mkvpropedit`, `mkvmerge`, `mkvinfo`), FFmpeg
+n9.0.2 (Arch) and n8.1.3 (BtbN), on copies of `multitrack.mkv`. Decision
+[0034](../docs/decisions/0034-metadata-edit-in-place.md) uses these; the real-tool tests are
+`packages/reframe/tests/metadata/test_metadata_edit_real.py` and
+`packages/reframe/tests/probe/test_matroska.py`.
+
+**Property names** (`mkvpropedit --list-property-names`): track headers `language`,
+`language-ietf`, `name`, `flag-default`, `flag-forced`, `flag-commentary`,
+`flag-hearing-impaired`, `flag-visual-impaired`, `flag-original` (also `flag-enabled`,
+`flag-text-descriptions`); segment information (`--edit info`) `title`.
+
+**An in-place edit takes about 25 ms** and writes both language elements:
+
+```
+$ time mkvpropedit e.mkv --edit track:a1 --set language=hun --set language-ietf=hu --set name="Magyar 5.1" \
+    --set flag-default=1 --set flag-original=1 --edit track:a2 --set language=por --set language-ietf=pt-BR \
+    --set flag-default=0 --edit track:a3 --set flag-commentary=1 --delete name --edit track:s2 \
+    --set flag-hearing-impaired=1 --set flag-visual-impaired=1 --edit track:v1 --delete name
+The file is being analyzed.
+The changes are written to the file.
+Done.
+… 0,026 total
+$ mkvmerge -J e.mkv     # track 1: language hun, language_ietf hu, track_name "Magyar 5.1", flag_original
+                        # track 2: language por, language_ietf pt-BR; track 3: no track_name
+```
+
+`--delete name` on a track without a name, and `--edit info --delete title`, exit 0.
+
+**Order of `language` and `language-ietf`.** `--set language=X` writes both elements
+(`ger` → `ger` + `de`, `und` → `und` + `und`, `yue` → `chi` + `yue`); a later `--set
+language=` overwrites an earlier `language-ietf`:
+
+```
+$ mkvpropedit f.mkv --edit track:a3 --set language-ietf=zh-Hant --set language=chi
+$ mkvmerge -J f.mkv     # language chi, language_ietf zh   (zh-Hant is gone)
+```
+
+So Reframe always writes `--set language=<ISO 639-2/B> --set language-ietf=<BCP 47>`, in
+that order (and its legacy code, which differs from MKVToolNix's for some tags: `test_languages.py`
+`MKVTOOLNIX_DIFFERENT_LEGACY`).
+
+**Track selectors.** `track:a2` is the second audio track in the order of the `TrackEntry`
+elements, whatever their `TrackNumber`; attachments (a cover JPEG, fonts) are not tracks;
+ffprobe lists the tracks in the same order and the attachments after them (a cover as a
+`video` stream with `attached_pic`):
+
+```
+$ mkvmerge -o r.mkv --track-order 0:2,0:4,0:0,0:1 --attachment-mime-type image/jpeg \
+    --attachment-name cover.jpg --attach-file cover.jpg m.mkv     # tracks: a, s, v, a, a, s, s
+$ mkvpropedit r.mkv --edit track:1 --set track-number=9            # first entry is now number 9
+$ mkvpropedit r.mkv --edit track:a1 --set name=FIRST-AUDIO --edit track:2 --set name=SECOND
+$ mkvmerge -J r.mkv     # entry 1 (number 9, audio): FIRST-AUDIO; entry 2 (subtitles): SECOND
+$ mkvpropedit r2.mkv --edit track:4 --set flag-original=1 --edit track:@5 --set flag-forced=1
+                        # track:4 = 4th entry; track:@5 = TrackNumber 5
+```
+
+**Errors leave the file unchanged** (exit code 2):
+
+```
+$ mkvpropedit n.mkv
+Error: Nothing to do.
+$ mkvpropedit n.mkv --edit track:a9 --set name=x
+Error: No track corresponding to the edit specification 'a9' was found. The file has not been modified.
+$ chmod a-w n.mkv; mkvpropedit n.mkv --edit track:a1 --set name=x
+Error: Updating the 'Tracks' element failed. Reason: The file could not be opened for writing. …
+```
+
+**A grown `Tracks` element moves to the end of the file.** FFmpeg leaves little room after
+`Tracks`; adding `LanguageIETF` to two tracks and changing their flags made the file 700 bytes
+larger (378787 → 379487): `mkvinfo -v -z` shows a `Void` where `Tracks` was and `Tracks` after
+the `Cues`, found through the `SeekHead`. Reframe's Matroska reader follows the `SeekHead`
+(`test_matroska.py` also checks it with 6000-character names).
+
+**FFmpeg writes all six flags into Matroska; only `LanguageIETF` needs the fix-up.** Both
+builds, the same output:
+
+```
+$ ffmpeg -v error -y -i m.mkv -map 0 -c copy -map_metadata:s -1 -metadata:s:a:0 language=hun \
+    -metadata:s:a:0 title=X -disposition:a:0 default+original+visual_impaired -disposition:a:1 0 \
+    -disposition:a:2 comment -disposition:s:0 forced+hearing_impaired -disposition:s:1 0 \
+    -disposition:s:2 0 -disposition:v:0 0 out.mkv
+$ mkvmerge -J out.mkv
+  video default_track False · audio 1 default, flag_original, flag_visual_impaired, hun, "X"
+  audio 2 default_track False · audio 3 flag_commentary · subtitles 1 forced, flag_hearing_impaired
+  (no language_ietf on any track)
+```
+
+**MediaInfo and the re-probe.** With MediaInfo (the `pymediainfo` 7.0.1 wheel, libmediainfo
+24.12) every track gets a BCP 47 `language`, derived from the legacy element when the track
+has no `LanguageIETF` (`multitrack.mkv`: `ja` for `jpn`, `en` for `eng`, none for the `und`
+video; `mkvmerge -J` shows no `language_ietf` on any track). The re-probe check compares
+canonical BCP 47 tags on both sides, so it is not fooled. Since the core-complete review
+(R4-3) the probe of a Matroska file takes `language_ietf` from Reframe's reader only, with
+MediaInfo on or off: after the M6 demo edit the probe shows `hun`/`hu`, `por`/`pt-BR`,
+`eng`/`None` (`test_metadata_review_fixes.py`, `test_matroska_review_fixes.py`).
+
+**An invalid `LanguageIETF`** (R4-4; mkvpropedit writes `language-ietf=en-US` on a1, then the
+five bytes are replaced in the file): ffprobe reads the file (a1 `language=jpn`), `mkvmerge -J`
+shows a1 as `jpn` with no `language_ietf`, MediaInfo shows the raw value (`en_US`, and
+`j / a;x` for `j\na;x`). Reframe drops it with a probe warning.
+
+**A `SeekHead` entry past the end of the file** (R4-2; the reviewer's `make_hostile.py`: long
+names make mkvpropedit move `Tracks` behind the clusters, then a `Seek` `Tracks → 2^64 - 1` is
+put in front of the real entry, in the `Void` after the `SeekHead`): ffprobe lists all seven
+streams, `mkvmerge -J` all seven tracks; mkvpropedit refuses to edit the file:
+
+```
+$ mkvpropedit h.mkv --edit track:a2 --set language=por --set language-ietf=pt-BR
+Error: Modification of properties in the section 'Track headers' was requested, but no
+corresponding level 1 element was found in the file. The file has not been modified.   (exit 2)
+```
+
+In Python, `seek(2**63)` on a file raises `ValueError` ("cannot fit 'int' into an
+offset-sized integer", CPython 3.14.7).
+
+**Killing mkvpropedit during an edit** (R4-7 of the core-complete review; MKVToolNix 101.0,
+copies of `multitrack.mkv`, an edit that grows `Tracks` so that it moves behind the clusters:
+the language pair and a 200-character name on a1–a3 and s1–s3, about 27 ms). SIGKILL at a
+random moment of the run: 150 runs, 146 killed while running, none damaged (the kill came
+before the write; the file was unchanged). SIGKILL late in the run (60–120 % of its time):
+900 runs, 3 damaged. mkvpropedit first overwrites the old `Tracks` with a `Void`, then writes
+the new `Tracks` at the end of the file and points the `SeekHead` at it; a kill in between
+leaves no reachable `Tracks` (`mkvinfo -v -z`: the `Void` of 685 bytes where `Tracks` was, and
+either a `Tracks` after the `Cues` that the `SeekHead` does not name, or no `Tracks` at all).
+ffprobe then shows no streams, `mkvmerge -J` recognises the file with 0 tracks, Reframe's
+reader says "no Tracks element found".
+
+mkvpropedit installs no signal handler: `SigCgt` and `SigIgn` in `/proc/<pid>/status`, read in
+a tight loop during 20 such edits, are empty. So SIGTERM (and SIGINT) end it at once, as
+SIGKILL does: SIGTERM late in the run, 600 runs, exit status -15 where it landed, 4 files
+damaged in the same ways.
+
+Through Reframe's queue (the real `Reframe` and mkvpropedit, the same edit, `queue.cancel()` at
+a random moment up to 30 ms after mkvpropedit started, 300 runs): before R4-7, 2 damaged files
+and 50 jobs that ended `cancelled` with no error although the file had the edit; with R4-7
+(a cancel or `close()` lets a running in-place mkvpropedit finish; decision 0034, follow-up),
+no damaged file, and all 300 ended `cancelled` with "The edit was already written …" and had
+the edit. Only the step's 5-minute limit still kills a hung mkvpropedit.
+
+After the final review's fixes (2026-10-17, decision 0034, RB-3 / RB-4; MKVToolNix 101.0, the
+same edit on copies of five fixtures, the stop 0.6 to 1.2 times mkvpropedit's median run time
+after it started): `cancel`, `close`, `pause` + `cancel`, `pause` + `close` and cancel-all, 60
+runs each, no damaged file, and every job's end matched its file. With the step limit at 0.3 to
+1.3 times the median run time (100 runs): 93 jobs `done` after the check, 7 `failed` "the file
+may be damaged" with the file intact (killed before the write, or after it), none `cancelled`
+(before RB-3: 22 of 200). A real `asyncio.run` stopped by two SIGINTs while the edit waits at
+a gate: the shutdown cancels every task and so kills mkvpropedit; the stored job says so.
+
+### Advanced encoder options (C-6, complete option sets)
+
+Checked on 2026-10-15 with FFmpeg n9.0.2 (Arch `/usr/bin/ffmpeg`: x264 core 165, x265 4.3,
+SVT-AV1 v4.2.0, libvpx 1.17.0), the pinned BtbN n9.0.2 build (x265 4.3+49, SVT-AV1
+v4.2.0-151) and the BtbN n8.1.3 override build, and for AMF / VAAPI on an AMD RX 7600 (Mesa
+26.2.4 radeonsi, amf-amdgpu-pro 25.10). Decision
+[0035](../docs/decisions/0035-advanced-option-sets-and-dry-run.md). The tests repeat every
+check (`needs_ffmpeg`; AMF / VAAPI `needs_gpu`):
+
+```sh
+uv run pytest packages/reframe/tests/definitions/test_tools.py packages/reframe/tests/definitions/test_options_values.py
+uv run pytest packages/reframe/tests/validation/test_options_ffmpeg.py packages/reframe/tests/validation/test_options_facade.py
+uv run pytest -m needs_gpu packages/reframe/tests/definitions   # every AMF / VAAPI option on the GPU
+```
+
+All three builds pass the non-GPU tests (`REFRAME_FFMPEG=…`). NVENC and QSV options come from
+`ffmpeg -h encoder=<id>` only (named constants included): **not verified** on hardware. The
+n8.1.3 help has every private option the sets use (it differs only in preset ranges and
+NVENC's old `-cbr` / `-2pass` / `-spatial_aq` aliases).
+
+**How each option was checked.** x264 / x265: a non-default value of every option reaches the
+library's settings SEI (`test_every_x26x_option_reaches_the_library`); x264's colour tags are
+not in its SEI and are read from the stream's VUI with ffprobe, as are x265's `range` and
+`chromaloc` (its SEI has only flags for them); x265 `pools` from the log ("Thread pool created
+using 2 threads"). The per-preset tables are the SEI of every preset and every tune
+(`test_per_preset_defaults_match_the_library`); `lookahead-slices` from a 1280x720 encode.
+SVT-AV1: the `SVT [config]` log lines and ffprobe (`test_svtav1_options_parse`,
+`test_svtav1_option_defaults_in_the_log`). Every number option encodes at both range ends
+(`test_option_range_ends_encode`, now with VP9) and every enum and bool value of the software
+encoders encodes (`test_every_enum_and_bool_value_encodes`).
+
+**Encoder facts behind the data:**
+
+| Encoder | What the tool does | In the definitions |
+|---------|-------------------|--------------------|
+| x264 | `range=pc` / `tv` is overwritten by the input's range (FFmpeg's wrapper); `colorprim` / `transfer` / `colormatrix` / `chromaloc` win over the input's tags | `range` not offered |
+| x264 | 8-bit `qpmax=81` → `qpmax=69`; 10-bit default 81 | 0–69, default "no limit" |
+| x264 | `cqm=jvt` raises `qpmin` (a 10-bit encode with `qpmin=2` writes 9) | tested apart |
+| x264 | `bluray-compat=1` with `bframes=5:weightp=2:b-pyramid=normal` writes 3 / 1 / strict, no message | `encoder.option_ignored` |
+| x264 | `nal-hrd=vbr` without both VBV values: "NAL HRD parameters require VBV parameters", left out | `requires` → `encoder.option_inactive` |
+| x264 | `pb_ratio` is in the SEI only with `mbtree=0` | fixed 1.3 |
+| x265 | `qpmax=70`: the encoder does not open | 0–69 |
+| x265 | `amp=1` with `rect=0` writes `amp=0`, no message | `requires` rect |
+| x265 | `rd-refine` below RD 5: "--rd-refine disabled, requires RD level > 4 and adaptive quant"; `limit-tu` with `tu-inter-depth=1`: "limit-tu disabled, requires tu-inter-depth > 1"; `dynamic-rd` without VBV: "Dynamic-rd disabled, requires RD <= 4, VBV and aq-mode enabled"; `hrd` without VBV: "NAL HRD parameters require VBV parameters, ignored" | `requires` → `encoder.option_inactive` |
+| x265 | `ctu=16:max-tu-size=32`: "Max TU size should be less than or equal to max CU size, setting max TU size = 16"; `qg-size` above the CTU likewise; `pmode=1` with `limit-refs=2`: "Limit reference options 2 and 3 are not supported with pmode. Disabling limit reference" | `encoder.option_ignored` |
+| x265 | `ctu=16:min-cu-size=32`: "min CU size must be less than or equal to max CU size", exit 183 | `encoder.option_conflict` |
+| x265 | `hdr10-opt=1` without BT.2020 tags: "Recommended Settings for HDR10-opt: colour primaries should be BT.2020, Disabling hdr10-opt." (exit 0) | help text |
+| x265 | `rskip=2` is written to the SEI as `rskip=1 rskip-edge-threshold=0.050000`; `chromaloc` as a flag | tests read it so |
+| x265 | below 720 lines: "Source height < 720p; disabling lookahead-slices"; at 720p the presets use 4 (ultrafast … slow) or 0 | per-preset table |
+| SVT-AV1 | Ranges from its own errors: `aq-mode` 0–2, variance boost strength 1–4, octile 1–8, curve 0–2, `tf-strength` 0–4, `luminance-qp-bias` 0–100, `qp-scale-compress-strength` 0–3 (an integer: `1.5` is "Error parsing option"), `ac-bias` 0–8, `irefresh-type` 1–2, `hierarchical-levels` 0–5, `enable-dlf` 0–2, `min-qp` / `max-qp` 0–63, `tile-rows` 0–6, `tile-columns` 0–4 (5–6: "MaxTiles is 128 and MaxTileCols is 16"), `lp` 0–6 (7: "Setting maximum parallelism level") | ranges |
+| SVT-AV1 | Defaults in the log: AQ mode 2, variance boost strength / octile / curve 2 / 5 / 0, sharpness 0, luminance QP bias 0, QP scale compress 0, "key frame" (irefresh-type 2), mini-GOP 32 at presets 0–8 and 16 at 10–11 | fixed / "from the preset" |
+| SVT-AV1 | `aq-mode=0` turns CRF into constant QP (log "CQP") | help text |
+| SVT-AV1 | `irefresh-type=1` with `hierarchical-levels=3`: "Fwd key frame is only supported for hierarchical levels 4 at this point. Hierarchical levels are set to 4" | `encoder.option_ignored` |
+| SVT-AV1 | `min-qp` above `max-qp`: "MinQpAllowed must be smaller than or equal to MaxQpAllowed"; `qm-min` above `qm-max`: "Min quant matrix level must not greater than max quant matrix level" (exit 234) | `encoder.option_conflict` |
+| SVT-AV1 | `matrix-coefficients=identity`: "Identity matrix … may be used only with 4:4:4" | not offered |
+| SVT-AV1 | `mastering-display=G(0.265,0.69)…L(1000,0.0001)`, `content-light=1000,400` and the colour options win over the input's tags; ffprobe shows the side data in AV1 units (`44564/65536`, `256000/256`, `2/16384`) | Copy HDR metadata |
+| libvpx-vp9 | No settings in the stream. 26 for `lag-in-frames` and 101 for `overshoot-pct`: "Failed to initialize encoder: Invalid parameter"; `arnr-maxframes=16` / `arnr-strength=7`: "Failed to set VP8E_SET_ARNR_… codec control" ("out of range [0..15]" / "[..6]"); `auto-alt-ref=7`, `sharpness=8`: "Error setting option … to value …" | ranges |
+| libvpx-vp9 | Without a rate control FFmpeg uses CRF 32; a CQ value outside `qmin`…`qmax` fails ("CQ level 30 must be between minimum and maximum quantizer value (0-29)"), as does `qmin` above `qmax` | `encoder.option_conflict` |
+| libvpx-vp9 | `qmin 0` / `qmax 63` and `sharpness 0` give the same file as no value (libvpx's defaults); undershoot / overshoot 0 or 100 give the same CQ file | fixed defaults; `requires` average bitrate |
+| AMF (RX 7600) | Every pre-analysis option, `enforce_hrd`, `filler_data`, `preencode`, `async_depth`, `high_motion_quality_boost_enable`, `coder`, `me_half_pel` / `me_quarter_pel` (H.264), `me_quarter_pel` (H.265) encode | offered |
+| AMF (RX 7600) | h264_amf with B-frames logs "AMF_INVALID_ARG: SetPropertyInternal() - BPicturesDeltaQP failed" (also for `bf_delta_qp` / `bf_ref_delta_qp`); hevc_amf `me_half_pel=0`: "Invalid settings: motionEstimationHalfPixel=0 and motionEstimationQuarterPixel=0", encoder not opened; av1_amf `-align 64x16` at 640x360: "Resolution incorrect for alignment mode", **exit code 0** and an empty output; `-align 1080p` / `none` keep 1920x1082 | not offered |
+| VAAPI (radeonsi) | `idr_interval`, `async_depth`, `aud`, `tier` (H.265, AV1) encode; `low_power=1`: "Function not implemented"; h264 `b_depth=2`: "B-frame as L1 reference not supported"; `blbrc`: "Driver does not support BLBRC" | not offered |
+
+**The dry run** (`-frames:v 1 -f null -`, video only): a refused custom parameter is in the
+log, not the exit code, for three encoders:
+
+| Encoder | `bogus=1` | Bad value | Exit code |
+|---------|-----------|-----------|-----------|
+| x264 | `Error parsing option 'bogus = 1'.` | `Error parsing option 'me = foo'.` (`bframes=99` is clamped silently) | 0 |
+| x265 | `Unknown option: bogus.` | `Invalid value for me: foo.` | 0 |
+| SVT-AV1 | `Error parsing option bogus: 1.` | `film-grain=99`: `Svt[error]: Film grain denoise strength is only supported for values between [0,50]` | 0 / 234 |
+| libvpx-vp9 (own options) | `Unrecognized option 'bogus:v:0'.` | `Error setting option lag-in-frames to value abc.` | 8 / 234 |
+
+x265 and SVT-AV1 print their own messages (`x265 [warning]: …`, `Svt[warn]: …`) whatever
+FFmpeg's log level is.
+
+#### Core-complete review (2026-10-16)
+
+Checked with the same three builds (Arch n9.0.2, BtbN n9.0.2 and n8.1.3; the results are the
+same in all three), each encode with the target in a temporary folder and a temporary working
+folder. Tests: `tests/validation/test_custom_params_ffmpeg.py`, `test_dryrun_review_fixes.py`,
+`test_option_formats_ffmpeg.py`, `test_levels_ffmpeg.py`.
+
+**Custom parameters that read or write files** (R5-1; the list is
+`reframe/definitions/data/custom_params.toml`). Through the params argument the library reads
+every key; keys are read with `_` as `-`, a leading `--`, and a `no` / `no-` prefix (which turns
+the value into `true`):
+
+| Encoder | Key | What happens (exit code 0 in every case) |
+|---------|-----|-------------------------------------------|
+| x265 | `csv=F`, `--csv=F` | F written (321 bytes for 5 frames) |
+| x265 | `analysis-save=F`, `analysis_save=F` | F written (666 KB for 5 frames at 320x240; 5984 bytes for the reviewer's one frame) |
+| x265 | `stats=F:pass=1`; `analysis-reuse-file=F:multi-pass-opt-analysis=1:pass=1` | F written |
+| x265 | `pass=1` | `x265_2pass.log` and `x265_2pass.log.cutree` in the working folder |
+| x265 | `no-csv=F` | "Invalid value for no-csv", and a file named `true` in the working folder |
+| x265 | `analysis-load`, `scaling-list`, `lambda-file`, `dhdr10-info`, `nalu-file`, `film-grain`, `aom-film-grain`, `fovea-gaze-file` | read: "Error reading analysis data", "can't read matrix from F", "lambda file is incomplete", "Error reading (Aom) FilmGrain characteristics"; `nalu-file` and `film-grain` with a bad file crash FFmpeg (exit -11), Arch's `dhdr10-info` aborts (-6); BtbN: "--dhdr10-info disabled. Enable HDR10_PLUS in cmake" |
+| x265 | `qpfile`, `zonefile`, `recon`, `recon-y4m-exec`, `dolby-vision-rpu`, `scenecut-qp-config`, `abr-ladder`, `input`, `output` | "Unknown option" (options of the x265 program only) |
+| x264 | `dump-yuv=F`, `dump_yuv=F` | F written (576000 bytes for 5 frames) |
+| x264 | `stats=F:pass=1` | F written; `pass=1` alone writes `x264_2pass.log` (+ `.mbtree`) in the working folder; `nostats=F:pass=1` writes `true` and `true.mbtree` there |
+| x264 | `cqmfile=F` | read ("can't open file 'F'" when it is missing) |
+| x264 | `opencl-clbin=F:opencl=1` | taken ("OpenCL: Unable to query installed platforms" here) |
+| x264 | `qpfile`, `tcfile-in`, `tcfile-out`, `index`, `input`, `output` | "Error parsing option" |
+| SVT-AV1 | `stat-file`, `fgs-table`, `recon`, `errlog`, `config`, `stats`, `qpfile`, `roi-map-file`, `input`, `output` | "Error parsing option" (options of SvtAv1EncApp); `pass=1` is taken and writes nothing |
+| libvpx-vp9, as `-<name>:v:0` | `vstats_file`, `progress`, `stats_enc_pre` / `_post`, `stats_mux_pre`, `print_graphs_file` | F written: FFmpeg's own options take a stream specifier too |
+| libvpx-vp9, as `-<name>:v:0` | `pass=1`; `report=1` | `ffmpeg2pass-0.log`; `ffmpeg-<date>.log` in the working folder |
+| libvpx-vp9, as `-<name>:v:0` | `/filter=F`; `attach=F`; `fpre=F` | F read (FFmpeg reads an option's value from F when its name starts with `/`); `fpre` with a bad file crashes FFmpeg (-11) |
+
+FFmpeg splits a params argument like `av_dict_parse_string`: `'csv'=F` and `c\sv=F` are the key
+`csv`; `a=1:novalue:csv=F` is the keys `a` and `novalue:csv` ("Unknown option: novalue:csv.").
+The private options of VP9, NVENC, QSV, AMF and VAAPI (`ffmpeg -h encoder=<id>`, the three
+builds) and the 70 AVCodecContext options with the flags `E..V` (`ffmpeg -h full`, the same in
+n8.1.3 and n9.0.2) name no file; `aspect`, `b` and `profile` are also FFmpeg's own options of
+the same meaning.
+
+**libvpx codec controls** (R5-3): a value out of a control's range is logged and dropped with
+**exit code 0**: `arnr-maxframes=16` → "Failed to set VP8E_SET_ARNR_MAXFRAMES codec control:
+Invalid parameter" and "Additional information: arnr_max_frames out of range [0..15]";
+`arnr-strength=7` → `VP8E_SET_ARNR_STRENGTH` ("[..6]"); `min-gf-interval=40` →
+`VP9E_SET_MIN_GF_INTERVAL` ("[0..(MAX_LAG_BUFFERS - 1)]"). Values out of an AVOption's range
+(`tune-content=3`, `sharpness=8`, `cpu-used=12` …) stop FFmpeg instead ("Error setting option",
+exit 222).
+
+**x265 levels and `min-cu-size`** (R5-4): x265 pads the picture to the minimum CU before it
+checks the level. 1920x1160 at level 4: `medium` exit 0; `medium` + `min-cu-size=16` or `32`
+exit 183 ("picture dimensions are out of range for specified level"); `ultrafast` exit 183;
+`ultrafast` + `min-cu-size=8` exit 0.
+
+**VBV** (R5-7), x264 core 165 and x265 4.3:
+
+| Parameters | CRF | Average bitrate |
+|------------|-----|-----------------|
+| `vbv-maxrate` only | dropped: x264 "VBV maxrate specified, but no bufsize, ignored" (the SEI says `rc=crf`, no VBV), x265 the same | dropped, the same message |
+| `vbv-bufsize` only | dropped: "VBV bufsize set but maxrate unspecified, ignored" | used: "VBV maxrate unspecified, assuming CBR" (maximum = the bitrate; SEI `rc=cbr`) |
+| both | used | used |
+
+**HDR texts** (R5-8):
+
+| Text | x265 `master-display` / `max-cll` | SVT-AV1 `mastering-display` / `content-light` |
+|------|----------------------------------|-----------------------------------------------|
+| `garbage` | "unable to parse mastering display color volume info", no mastering display; `max-cll`: "Invalid value", no light level | no mastering display, no message; `content-light`: "Invalid cll provided" |
+| without `L(…)` | not parsed (as above) | no mastering display, no message |
+| tags in another order | not parsed | taken |
+| spaces before a number | taken | taken |
+| text after the tags | ignored | **FFmpeg never ends** (killed after 15 s; also text before the tags) |
+| a chromaticity above 65535 (x265) / 1 (SVT-AV1) | wraps: 70000 → 4464 | "Invalid mastering display info will be clipped to 0.0 to 1.0" |
+| x265's whole numbers in SVT-AV1 | — | clipped, and `L(10000000,1)` overflows (maximum luminance −1734967296/256) |
+| plain numbers in x265 | not parsed | — |
+| `1000` (one light level) | "Invalid value for max-cll", but MaxCLL 1000, MaxFALL 0 written | "Invalid cll provided", nothing written |
+| `1000,400,5` | taken (the rest ignored) | "Invalid cll provided" |
+| `70000,400` | wraps to 4464 | clipped to 65535 |
+
+#### Final review (2026-10-17)
+
+Checked with the pinned BtbN n9.0.2 (x264 core 165, x265 4.3+49, SVT-AV1 v4.2.0); the tests
+pass with Arch n9.0.2 and BtbN n8.1.3 too. Each encode ran in an empty temporary working
+folder, with an `LD_PRELOAD` logger of every `open` / `fopen`. Tests:
+`tests/validation/test_custom_params_ffmpeg.py` (`test_rc_1_*`),
+`test_custom_params_final_review.py`, `test_option_formats_ffmpeg.py` (`test_rc_2_*`).
+
+**A value that is a name or a file name** (RC-1). The library reads the value after FFmpeg's
+quotes and escapes:
+
+| Key | Taken as a name (no file is opened) | Opened as a file |
+|-----|-------------------------------------|------------------|
+| x264 `cqm` | a value that contains `flat` (the flat matrix, SEI `cqm=0`), else one that contains `jvt` (SEI `cqm=1`): `flat`, `jvt`, `'jvt '`, `./flat`, `/x/jvt/matrix.cfg`, `xflaty`, `flatjvt` | every other value, case-sensitive: `FLAT`, `Flat`, `JVT`, `fla`, `default`, `0`, `/x/matrix.cfg` ("can't open file 'F'", exit 187); a valid matrix file is read and applied (SEI `cqm=2`, the same as `cqmfile=F`) |
+| x265 `scaling-list` | only `default` and `off` | every other value, case-sensitive: `DEFAULT`, `Off`, `./default`, `flat`, `0`, `default ` (an escaped or quoted space reaches x265) ("can't open scaling list file F", exit 183) |
+| x264 `nocqm` / `no-cqm`, x265 `no-scaling-list` / `noscaling-list` | — | a file named `true` (`=flat`, `=0`, `=default`: "Error parsing option" / "Invalid value", then the file is opened) or `false` (`=1`) |
+
+x264 does not read `CQM`, `--cqm` or `cqm_file` as `cqm` ("Error parsing option"); x265 reads
+`--scaling-list` and `scaling_list` as `scaling-list`, but not `SCALING-LIST` ("Unknown
+option").
+
+**The extra search: every key that opens the file it is given.** Every token of 2 to 41
+characters in `libavcodec.so.63` (68604) went to the library as a key: with an absolute path in
+a missing folder, a relative name, and relative names with 12 file extensions (`.cfg`, `.txt`,
+`.tbl`, `.json`, `.bin`, `.yuv`, `.y4m`, `.log`, `.csv`, `.stat`, `.dat`, `.xml`). Each key
+that was not refused ("Error parsing option", "Unknown option", "Invalid value") then ran
+alone, and with `pass=1`:
+
+| Library | Keys that open the file they are given | A name or a file |
+|---------|----------------------------------------|------------------|
+| x264 | `cqm`, `cqmfile` (read), `dump-yuv` (written), `stats` (written with `pass=1`); `opencl-clbin` is taken (no OpenCL here) | `cqm` |
+| x265 | `analysis-load`, `aom-film-grain`, `film-grain`, `lambda-file`, `nalu-file`, `scaling-list` (read), `analysis-save`, `csv`, `stats` with `pass=1` (written), also with `_` | `scaling-list` |
+| SVT-AV1 | none: no key takes a path or a file name (`mastering-display` takes the relative name as text, and with a path FFmpeg never ends) | — |
+
+Every key found is in `custom_params.toml`; keys that need another key or a build feature to
+open their file (x265 `analysis-reuse-file`, `dhdr10-info`, `fovea-gaze-file`; x264
+`opencl-clbin`) were there already.
+
+**x265 with deblocking off never finishes a small picture** (RC-3, a known limit; decision
+0041, final review). Found on the way, not a file key. An earlier note here blamed the text
+`deblock=abc`; the cause is the picture width. x265 4.3 with the deblocking filter off
+(`no-deblock=1`, `deblock=false`, or a `deblock` value that x265 cannot read) never finishes a
+picture narrower than about 256 pixels (192×108 to 224×126 checked). FFmpeg sits at 0 % CPU and
+ignores SIGTERM. In Reframe (checked by the lead): the dry run gives the warning
+`encoder.dry_run_skipped` ("did not finish within 30 s") after 30.0 s; a queued encode fails
+with "FFmpeg made no progress … (no output, no CPU use) and was stopped" at the stall limit
+(600 s by default; 20 s in the lead's reproduction), and the process is killed. Checked again
+with the Arch n9.0.2 build (x265 4.3), 0.2 s of `testsrc2`: 192×108 with `no-deblock=1` or
+`lft=abc` had not finished after 12 s (killed); 320×180 with `no-deblock=1` or `deblock=abc`,
+and 192×108 with deblocking on, finished.
+
+**Signs and white space in the HDR texts** (RC-2); "the same" means the same side data in
+the output:
+
+| Text | x265 `master-display` / `max-cll` | SVT-AV1 `mastering-display` / `content-light` |
+|------|----------------------------------|-----------------------------------------------|
+| `+N` (also ` +N`, `\f+N`) | the same as `N` | the same as `N` (also `+.15`, `+1e+3`) |
+| `-0` (`-00`, `-0.0`, `-.0`, `-0e-5`) | the same as `0` | the same as `0` |
+| `-N` | wraps: `-1` → 65535, `-400` → 65136, `-13250` → 52286 (no primaries in the output); `L(…,-1)`: no luminance | changed: `-0.265` → 48169/65536 ("Invalid mastering display info will be clipped to 0.0 to 1.0", but not clipped), `L(1000,-0.0001)` → −2/16384; `content-light` as x265 |
+| `++N`, `+ N` (x265 also `+-N`) | not parsed | no metadata |
+| tab, `\v`, `\f` before a number | skipped | skipped |
+| a no-break space before a number, Arabic-Indic digits | not parsed (`max-cll`: "Invalid value") | no metadata (`content-light`: "Invalid cll provided") |
+| `\v` or `\f` before the text (FFmpeg drops only space, tab, CR and LF around a value) | not parsed | FFmpeg never ends |
+
+### Power actions (C-14)
+
+Checked on 2026-10-15 on Arch Linux (CachyOS kernel 7.2.8), systemd 262 (`262-1-arch`), polkit
+127, KDE Plasma 6 (Wayland). **Read-only checks only: no power action was ever run, also not
+`--dry-run`.** Decision [0036](../docs/decisions/0036-power-actions.md). Code:
+`reframe/platform/power.py`. Tests: `packages/reframe/tests/platform/test_power*.py` (fake
+executors, a fake command runner, mocked Windows DLLs; the shared pytest plugin makes the real
+functions fail every test that reaches them).
+
+- `systemctl --help` lists `poweroff`, `suspend`, `--no-ask-password` ("Do not prompt for
+  password"), `--check-inhibitors=MODE` and `--dry-run` (which also covers `poweroff` and
+  `suspend`; not used and not run).
+- `man systemctl` (262): `poweroff` "is asynchronous; it will return after the power-off
+  operation is enqueued, without waiting for it to complete"; `suspend` "will return after the
+  suspend operation is successfully enqueued. It will not wait for the suspend/resume cycle to
+  complete." `--check-inhibitors` defaults to `auto`: "logind will perform the check and
+  respect active inhibitor locks, but systemctl will only do a client-side check for
+  interactive invocations (i.e. from a TTY)". So Reframe (no TTY) gets logind's answer.
+- `man org.freedesktop.login1` (262): `PowerOff(in b interactive)`, `Suspend(in b
+  interactive)`; "The interactive boolean parameters can be used to control whether polkit
+  should interactively ask the user for authentication credentials if required."
+- `busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager
+  CanPowerOff` → `s "yes"`; `… CanSuspend` → `s "yes"`; `… CanHibernate` → `s "yes"`.
+- `pkaction --action-id … --verbose` (implicit any / inactive / active):
+  `org.freedesktop.login1.power-off` `auth_admin_keep / auth_admin_keep / yes`;
+  `power-off-multiple-sessions` the same; `suspend` the same;
+  `power-off-ignore-inhibit` `auth_admin_keep` for all three. So the active desktop session
+  may shut down and suspend without a password; a service outside the active session, another
+  logged-in user or a `block` lock of someone else needs an administrator password, which
+  `--no-ask-password` turns into an error (`power.failed`) instead of a dialog.
+- `systemd-inhibit --list` on this desktop: only `delay` locks for `sleep` / `shutdown`
+  (NetworkManager, UPower, rtkit, kwin, VS Code, Discord) and PowerDevil's `block` lock on the
+  power / suspend / hibernate keys and the lid; nothing would refuse `poweroff` or `suspend`.
+
+Windows (documentation only, nothing run; the code is mock-tested on Linux):
+
+- `shutdown` (learn.microsoft.com, windows-commands/shutdown, updated 2025-12-01): `/s` "Shuts
+  down the computer"; `/t <xxx>` "Sets the time-out period before shutdown to xxx seconds. The
+  valid range is 0-315360000 (10 years), with a default of 30. If the timeout period is
+  greater than 0, the /f parameter is implied."; `/f` "Forces running applications to close
+  without warning users. Caution: Using the /f option might result in loss of unsaved data.";
+  `/a` "Aborts a pending system shutdown … during the time-out period"; `/c <comment>` "a custom
+  reason … You can use a maximum of 512 characters."
+- `SetSuspendState` (learn.microsoft.com, powrprof.h, updated 2024-02-22): `BOOLEAN
+  SetSuspendState(BOOLEAN bHibernate, BOOLEAN bForce, BOOLEAN bWakeupEventsDisabled)`;
+  `bHibernate` FALSE: "the system is suspended"; `bForce` "This parameter has no effect";
+  `bWakeupEventsDisabled` FALSE: "any system wake events remain enabled"; zero on failure
+  (`GetLastError`); "The calling process must have the SE_SHUTDOWN_NAME privilege. To enable
+  the SE_SHUTDOWN_NAME privilege, use the AdjustTokenPrivileges function." The page says
+  nothing about Modern Standby (S0ix) machines or about the call returning only after resume:
+  both are not verified.
+
+### When-done actions (C-11)
+
+Nothing to record: the queue's when-done actions run no tool. They call C-14's power service
+(its OS calls are under "Power actions (C-14)") and the notification hook
+([decision 0037](../docs/decisions/0037-when-done-power-actions-and-job-notifications.md)).
+
+### Tools fetch and the CLI (C-15)
+
+Checked on 2026-10-15 (Arch Linux, Python 3.14, the pinned BtbN n9.0.2 build of
+`tools/ffmpeg.toml`). Tests: `packages/reframe/tests/tools/test_fetch*.py`,
+`packages/reframe/tests/jobs/test_cli_{presets,when_done,plan_dry_run}.py`.
+
+- **The version check.** The first line of `-version` of the pinned build is exactly
+  `ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers`
+  and `ffprobe version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2007-2026 the FFmpeg
+  developers`: the third word is the manifest's `version`. The fake tools of
+  `reframe_testing` print the same captured text, so a fake build in a test archive passes
+  the check (and a scenario with `ft.version("n8.0")` fails it).
+- **The real build through `reframe tools fetch`.** The extracted BtbN folder (234 MB:
+  `bin/`, `lib/` with the `.so` links, `include/`, `doc/`, `man/`, `presets/`,
+  `LICENSE.txt`), packed again as `tar.xz` (xz preset 0) and served by `http.server` on
+  127.0.0.1 with a manifest of that archive's SHA-256 and size: downloaded, checked,
+  extracted with the `data` filter (the `lib/*.so` symbolic links stay inside the folder and
+  pass), `ffmpeg -version` / `ffprobe -version` of the extracted binaries print the pinned
+  version (they load `lib/` through their RPATH from the temporary folder too), installed
+  into `<data dir>/tools/ffmpeg` in 5.6 s, and tool discovery then reports both as `found ·
+  bundled`, also over `/usr/bin/ffmpeg` on `PATH`. A second run hashes the files (about 1 s)
+  and downloads nothing. The real download from GitHub was not run (no network in tests).
+- **The marker** `.fetch-tools.json` has the format of `scripts/fetch-tools.py` with
+  `layout: "bundled"` and the files relative to the install folder, so an install of
+  `scripts/fetch-tools.py --install-dir <data dir>/tools/ffmpeg` (CI) counts as installed
+  for `reframe tools fetch` and the other way round (test
+  `test_the_script_and_the_core_recognise_each_others_install`).
+- **Python 3.14 `asyncio.shield`.** When the outer future is cancelled and the shielded
+  task then ends with an exception, asyncio calls the loop's exception handler ("exception
+  in shielded future"; the anyio test runner turns it into a test error). The worker thread
+  of a cancelled fetch ends with exactly such an exception, so the fetch waits with
+  `asyncio.wait({future})` (a cancel of the wait leaves the future alone) instead of
+  `shield`.
+- **Progress events coalesce.** `task.progress` events of one task replace each other in a
+  subscription's queue (`reframe.events`); a CLI that is busy for a moment shows only the
+  latest step. The plain-line output of `tools fetch` therefore never relies on seeing every
+  step, and the tests read the events while the task runs.
+
+### Batch engine (C-12, M7)
+
+Checked on 2026-10-15 with FFmpeg n9.0.2 (the Arch package; the fixture probes recorded with
+the pinned BtbN build) and MKVToolNix 101.0.
+
+- **FFmpeg's TrueHD encoder makes 5.1 at most.** `truehd` (`mlpenc`) is experimental
+  (`-strict -2`) and lists the layouts mono … `5.1(side)`; `-ac 8` fails with "Specified
+  channel layout '7.1' is not supported by the truehd encoder" (exit 234). `-ac 6` gives
+  `5.1(side)`, 24-bit (`s32`, `bits_per_raw_sample` 24). ffprobe shows no `profile` (no Atmos)
+  and, in Matroska, no `bit_rate`: Reframe's probe calls it "TrueHD", lossless, bit rate
+  unknown. So the 04 §Example's "jpn TrueHD Atmos 7.1" is "jpn TrueHD 5.1" in `anime-s01`
+  (decision 0040). Test: `testing/tests/test_media_fixtures.py::test_truehd_encoder_has_no_7_1`.
+- **A stream copy keeps everything the batch engine reads.** `ffmpeg -i master.mkv -map 0
+  -map -0:a:2 -c copy -metadata title=…` keeps each stream's language, title and
+  dispositions (`default`, `forced`, `comment`) and the codec parameters; ffprobe of the
+  copies shows the master's tracks minus the dropped ones, renumbered (E05: the commentary is
+  #3 and the subtitles #4, #5; E11: the subtitles #2, #3). `-metadata:s:s:0 title=Signs` after
+  `-map -0:a:1` titles the output's first subtitle stream (the signs track). Test:
+  `test_media_fixtures.py::test_anime_seasons`.
+- **The ASS tracks are `ass` with no statistics:** FFmpeg's Matroska muxer writes no
+  `NUMBER_OF_FRAMES` tag, so `event_count` is unknown and C-3's "few events" heuristic does
+  not run; the signs track's roles come from its flag (`forced`) and its title ("Signs").
+- **The real encode of `reframe batch`** (`tests/jobs/test_cli_batch.py`, season 2 with the
+  demo preset): TrueHD 5.1 → `libopus` 5.1 448 kb/s and DTS-HD MA 5.1 → `ac3` 5.1 640 kb/s;
+  the re-probe shows `opus` 6 channels "Japanese 5.1" (default) and `ac3` 6 channels at
+  640 000 b/s "English 5.1"; the ASS tracks are copied with `forced` on "Signs & Songs" and
+  `default` on "Full".

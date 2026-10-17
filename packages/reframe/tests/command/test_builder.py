@@ -179,7 +179,10 @@ def test_two_pass_with_loudnorm_steps_and_weights() -> None:
     resolved = resolve_argv(pass2.argv, values)
     assert any("measured_I=-20.0" in arg for arg in resolved)
     assert edit.tool == "mkvpropedit"
-    assert argv(edit) == [str(plan.output_tmp), "--edit", "track:a2", "--set", "language=pt-BR"]
+    assert argv(edit) == [
+        str(plan.output_tmp), "--edit", "track:a2",
+        "--set", "language=por", "--set", "language-ietf=pt-BR",
+    ]  # fmt: skip
     assert final.tool is None
     assert final.description == "Rename multitrack.part.mkv to multitrack.mkv"
     assert "<a0.input_i>" in plan.display

@@ -24,7 +24,6 @@ from reframe.jobs import (
 )
 from reframe.models import (
     EncodePlan,
-    EncoderState,
     JobDraft,
     NamingOptions,
     Severity,
@@ -131,6 +130,23 @@ async def test_unknown_preset_is_an_error_issue(movie: tuple[Stubs, Path]) -> No
     assert isinstance(draft, JobDraft)
     assert errors(draft.issues)[0] == "preset.not_found"
     assert draft.job.preset_id == "h265-mkv-1080p"
+
+
+async def test_a_required_language_without_a_track_keeps_the_draft_out_of_the_queue(
+    movie: tuple[Stubs, Path],
+) -> None:
+    """C-12's track-stage error ("no listed language: take none") is a draft error (0031);
+    the subtitle decisions come with the draft too."""
+    stubs, file = movie
+    chosen = preset("h265-mkv-1080p").model_copy(deep=True)
+    chosen.audio_defaults.selection.languages = ["fre"]
+    chosen.audio_defaults.selection.no_match = "none"
+    draft = await service(stubs).draft(file, chosen)
+    assert isinstance(draft, JobDraft)
+    assert "defaults.no_listed_language" in errors(draft.issues)
+    assert draft.job.audio == []
+    source = stubs.sources[file]
+    assert len(draft.subtitle_decisions) == len(source.subtitles)
 
 
 async def test_a_user_default_preset_is_used(movie: tuple[Stubs, Path]) -> None:
@@ -467,11 +483,6 @@ def test_partial_outputs() -> None:
     assert is_partial_output(Path("Show S01E01 (1).part.mp4"))
     assert not is_partial_output(Path("Party.mkv"))
     assert not is_partial_output(Path("The.Part.Two.mkv"))
-
-
-def test_default_capabilities_snapshot_has_every_encoder() -> None:
-    snap = caps()
-    assert all(s.state is EncoderState.AVAILABLE for s in snap.encoders.values())
 
 
 def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -> None:

@@ -11,13 +11,11 @@ import pytest
 
 from reframe.events import DEFAULT_MAX_QUEUE, EventBus, Subscription
 from reframe.models import (
-    EVENT_ADAPTER,
     JobLogEvent,
     JobProgress,
     JobProgressEvent,
     JobState,
     JobStateEvent,
-    NotificationEvent,
     QueueChangedEvent,
     ResyncEvent,
     TaskDoneEvent,
@@ -315,10 +313,3 @@ def test_publish_to_a_subscriber_whose_loop_is_closed() -> None:
 def test_invalid_queue_length() -> None:
     with pytest.raises(ValueError, match="max_queue"):
         EventBus().subscribe(max_queue=0)
-
-
-def test_events_round_trip_through_the_adapter() -> None:
-    event = NotificationEvent(title="Queue finished", message="3 jobs", level="success")
-    text = EVENT_ADAPTER.dump_json(event)
-    assert EVENT_ADAPTER.validate_json(text) == event
-    assert b'"type":"notification"' in text

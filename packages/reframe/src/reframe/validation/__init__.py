@@ -6,8 +6,8 @@
   not (03 §Validation and error display).
 - :func:`validate_template` checks what a preset alone can be checked for: encoder
   availability (with the closest-match fix, quality converted), container ↔ codecs of the
-  video encoder and the audio codec rules, filters, the naming templates (M2 demo item 4).
-  Its fixes target ``"template"``.
+  video encoder and the audio codec rules, filters, the naming templates (M2 demo item 4), and
+  C-12's defaults lint (``reframe.batch.lint_defaults``). Its fixes target ``"template"``.
 - Each fix is a JSON patch (``Fix.patch``) on the document ``Fix.target`` names (``job``,
   ``template``, or ``settings``); applied with :func:`reframe.jsonpatch.apply_patch`, it
   removes its issue.
@@ -20,6 +20,11 @@ for each.
 
 A rule that fails with an exception (a bug) does not stop the others: it gives a
 ``validation.rule_failed`` error, so a job is never queued unchecked.
+
+A source path with a NUL character (only the API can send one; no file system allows it) is a
+``source.path_unusable`` error that :func:`validate` gives before the rules run (final review
+RN, decision 0016); the rules see it as a path that does not exist (:class:`LocalFileSystem`
+never raises for it). A NUL in the output path is the output rule's ``output.not_writable``.
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
+from reframe.batch.lint import lint_defaults
 from reframe.definitions import Definitions, load_definitions
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import ValidationIssue
@@ -44,6 +50,7 @@ from reframe.validation import container as _container  # noqa: F401
 from reframe.validation import dimensions as _dimensions  # noqa: F401
 from reframe.validation import encoder as _encoder  # noqa: F401
 from reframe.validation import filters as _filters  # noqa: F401
+from reframe.validation import inplace as _inplace  # noqa: F401
 from reframe.validation import levels as _levels  # noqa: F401
 from reframe.validation import metadata as _metadata  # noqa: F401
 from reframe.validation import naming as _naming  # noqa: F401
@@ -54,7 +61,7 @@ from reframe.validation import subtitles as _subtitles  # noqa: F401
 from reframe.validation import tools as _tools  # noqa: F401
 from reframe.validation.common import error
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.fs import FileSystemView, LocalFileSystem
+from reframe.validation.fs import FileSystemView, LocalFileSystem, has_nul
 from reframe.validation.output import estimate_output_bytes, next_free_path
 from reframe.validation.registry import JOB_RULES, TEMPLATE_RULES, Rule, ordered
 from reframe.validation.video import switch_video_encoder
@@ -126,7 +133,27 @@ def validate(
         definitions=definitions if definitions is not None else load_definitions(),
         naming=naming if naming is not None else settings.output.naming,
     )
-    return _run(JOB_RULES if rules is None else rules, context)
+    return [
+        *_source_path_issues(job, source),
+        *_run(JOB_RULES if rules is None else rules, context),
+    ]
+
+
+def _source_path_issues(job: JobSettings, source: MediaSource) -> list[ValidationIssue]:
+    """``source.path_unusable`` when the job's source path, or the given source's, has a NUL
+    character: no file can have that name, so the job cannot read its source."""
+    for path in (job.source.path, source.ref.path):
+        if has_nul(path):
+            shown = str(path).replace("\0", "\\0")
+            return [
+                error(
+                    "source.path_unusable",
+                    "source",
+                    f"The source path {shown} has a NUL character, which no file system "
+                    "allows: no file can have this name. Correct the path.",
+                )
+            ]
+    return []
 
 
 def validate_template(
@@ -145,10 +172,16 @@ def validate_template(
     """
     if subject is None and isinstance(template, Preset):
         subject = f'Preset "{template.name}"'
-    context = TemplateContext(
-        template=template,
-        caps=caps,
-        definitions=definitions if definitions is not None else load_definitions(),
-        subject=subject,
-    )
-    return _run(TEMPLATE_RULES if rules is None else rules, context)
+    defs = definitions if definitions is not None else load_definitions()
+    context = TemplateContext(template=template, caps=caps, definitions=defs, subject=subject)
+    issues = _run(TEMPLATE_RULES if rules is None else rules, context)
+    if rules is None:
+        # C-12's defaults lint (shadowed and unreachable codec rules, bitrates out of range).
+        # C-8's container rule already reports a codec the container cannot hold.
+        issues += lint_defaults(
+            template.audio_defaults,
+            container=template.output.container,
+            definitions=defs,
+            container_codecs=False,
+        )
+    return issues

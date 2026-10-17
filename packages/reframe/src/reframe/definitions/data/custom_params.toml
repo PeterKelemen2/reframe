@@ -1,0 +1,247 @@
+# Custom encoder parameters (C-6; decision 0035 "Follow-up (core-complete review, 2026-10-16)").
+#
+# `VideoSettings.custom_params` reaches FFmpeg in two ways (reframe.command.video):
+#
+# 1. x264, x265 and SVT-AV1 get the text in their params argument (`-x265-params a=1:b=2`).
+#    The library reads each key. [file_keys] lists the keys that name a file: validation
+#    refuses them (`encoder.custom_param_file`), and the dry run never runs with one.
+# 2. Every other encoder (VP9, NVENC, QSV, AMF, VAAPI) gets each entry as an FFmpeg option
+#    (`-rc-lookahead:v:0 20`). FFmpeg reads such a name as any of its own options first
+#    (`-vstats_file`, `-progress`, `-passlogfile`, `-/filter` read or write files), so only an
+#    allow-list is safe: the encoder's private options (`ffmpeg -h encoder=<id>`: the build's
+#    list from encoder detection, else [private_options] below) and the generic encoder options
+#    of [ffmpeg].codec_options. Anything else is `encoder.custom_param_unknown`.
+#
+# Checked with FFmpeg n9.0.2 (BtbN and Arch builds: x264 core 165, x265 4.3, SVT-AV1 v4.2.0,
+# libvpx 1.17.0) and n8.1.3 (BtbN), each key encoding with a path in a temporary folder and
+# the temporary folder as working folder: testdata/README.md "Advanced encoder options (C-6,
+# complete option sets)", tests/validation/test_custom_params_ffmpeg.py.
+#
+# Key names are compared the way the libraries read them: without leading `-`, `_` as `-`,
+# in lower case, and also without a `no-` / `no` prefix (x264 and x265 read `nostats=x` as
+# `stats=true`, and write a file named `true`).
+#
+# A key whose value is a name *or* a file name (x265 `scaling-list`, x264 `cqm`) has its names
+# in [value_exceptions], compared as the library compares them ([value_match]); every other
+# value is a file. Through a `no` prefix the library gets `true` / `false` (a file of that name),
+# so the names never apply there (decision 0035 "Follow-up (final review, 2026-10-17)").
+
+# --------------------------------------------------------------------------- params argument
+
+[file_keys.libx264]
+# Written (checked): the file appears.
+stats = "the 2-pass statistics file (written with pass=1)"
+dump-yuv = "writes the reconstructed frames to this file"
+pass = "writes the 2-pass statistics (x264_2pass.log in the working folder); Reframe runs 2-pass itself"
+# Read (checked: "can't open file").
+cqmfile = "reads quantisation matrices from this file"
+cqm = "reads quantisation matrices from this file unless the value is flat or jvt"
+# Accepted by libx264; writes the compiled OpenCL kernels (no OpenCL here to see it).
+opencl-clbin = "the OpenCL kernel cache file"
+# Refused by libx264 today ("Error parsing option"); file options of the x264 program.
+qpfile = "a file of frame types and QPs"
+tcfile-in = "a timecode file"
+tcfile-out = "a timecode file"
+index = "an index file"
+input = "an input file"
+output = "an output file"
+
+[file_keys.libx265]
+# Written (checked).
+csv = "writes a CSV log to this file"
+analysis-save = "writes the analysis data to this file"
+analysis-reuse-file = "the analysis data file (written in multi-pass analysis)"
+stats = "the 2-pass statistics file (written with pass=1)"
+pass = "writes the 2-pass statistics (x265_2pass.log in the working folder); Reframe runs 2-pass itself"
+# Read (checked: an error about the file, or a crash on a bad one).
+analysis-load = "reads analysis data from this file"
+scaling-list = "reads quantisation scaling lists from this file"
+lambda-file = "reads lambda tables from this file"
+dhdr10-info = "reads HDR10+ metadata from this JSON file"
+nalu-file = "reads SEI messages from this file (x265 crashes on a bad one)"
+film-grain = "reads a film grain model from this file (x265 crashes on a bad one)"
+aom-film-grain = "reads an AOM film grain table from this file"
+fovea-gaze-file = "reads gaze positions from this file"
+# Refused by libx265 today ("Unknown option"); file options of the x265 program.
+qpfile = "a file of frame types and QPs"
+zonefile = "a file of zones"
+recon = "a file for the reconstructed frames"
+recon-y4m-exec = "a program for the reconstructed frames"
+dolby-vision-rpu = "a Dolby Vision RPU file"
+scenecut-qp-config = "a scene-cut QP file"
+abr-ladder = "an ABR ladder file"
+input = "an input file"
+output = "an output file"
+
+[file_keys.libsvtav1]
+# SVT-AV1 v4.2.0 accepts none of these ("Error parsing option"): file options of the
+# SvtAv1EncApp program, refused in case a later library accepts them.
+stat-file = "a statistics file"
+fgs-table = "a film grain table file"
+recon = "a file for the reconstructed frames"
+errlog = "an error log file"
+config = "a configuration file"
+stats = "a 2-pass statistics file"
+qpfile = "a QP file"
+roi-map-file = "a region-of-interest map file"
+input = "an input file"
+output = "an output file"
+
+[value_exceptions]
+# Values that do not name a file, as the library sees the value (after FFmpeg's quotes and
+# escapes; checked with x264 core 165 and x265 4.3, testdata/README.md C-6 "Final review").
+# x265 `scaling-list`: the whole value, case-sensitive ("DEFAULT", "./default", "default "
+# and "flat" are opened as files).
+scaling-list = ["default", "off"]
+# x264 `cqm`: a value that contains "flat" is the flat matrix, else one that contains "jvt"
+# the JVT matrix ("./flat", "/x/jvt/y.cfg"); case-sensitive ("FLAT", "Flat", "JVT", "fla",
+# "default" and "0" are opened as files).
+cqm = ["flat", "jvt"]
+
+[value_match]
+# How the library compares a value with [value_exceptions]: "whole" (strcmp, the default) or
+# "contains" (strstr: x264's `cqm`).
+cqm = "contains"
+
+# --------------------------------------------------------------------------- own options
+
+[ffmpeg]
+# AVCodecContext options with the encoding and video flags (`ffmpeg -h full`, "AVCodecContext
+# AVOptions", flags E..V; the same in n9.0.2 and n8.1.3). `aspect`, `b` and `profile` are also
+# FFmpeg's own options of the same meaning (they set the codec option).
+codec_options = [
+    "alpha_mode", "aspect", "b", "bf", "bidir_refine", "b_qfactor", "b_qoffset", "bt", "bufsize",
+    "chroma_sample_location", "cmp", "color_primaries", "color_range", "colorspace", "color_trc",
+    "compression_level", "dark_mask", "dc", "dct", "debug", "dia_size", "dump_separator",
+    "err_detect", "export_side_data", "field_order", "flags", "flags2", "g", "global_quality",
+    "idct", "ildctcmp", "i_qfactor", "i_qoffset", "keyint_min", "last_pred", "level", "lumi_mask",
+    "max_pixels", "maxrate", "mbcmp", "mbd", "mblmax", "mblmin", "me_range", "minrate",
+    "mv0_threshold", "nssew", "p_mask", "precmp", "pre_dia_size", "profile", "qblur", "qcomp",
+    "qdiff", "qmax", "qmin", "rc_init_occupancy", "rc_max_vbv_use", "rc_min_vbv_use", "refs", "sar",
+    "scplx_mask", "slices", "strict", "subcmp", "subq", "tcplx_mask", "threads", "thread_type",
+    "trellis",
+]
+# FFmpeg's own options that read or write a file (checked: the file appears, or is read).
+# Never allowed, also not when an encoder lists an option of the same name.
+file_options = [
+    "attach", "dump_attachment", "filter_complex_script", "filter_script", "fpre", "i",
+    "pass", "passlogfile", "pre", "print_graphs_file", "progress", "report", "sdp_file",
+    "stats_enc_pre", "stats_enc_post", "stats_mux_pre", "vpre", "vstats", "vstats_file",
+]
+# Private options that pass text to a library that Reframe cannot check (no QSV hardware).
+unchecked_options = ["load_plugin", "load_plugins", "qsv_params"]
+
+[private_options]
+# `ffmpeg -h encoder=<id>` of n9.0.2 (BtbN and Arch) and n8.1.3 (BtbN), together. Used when
+# encoder detection has not read this build's list yet.
+"libvpx-vp9" = [
+    "aq-mode", "arnr-maxframes", "arnr-strength", "arnr-type", "arnr_max_frames", "arnr_strength",
+    "arnr_type", "auto-alt-ref", "corpus-complexity", "cpu-used", "crf", "deadline",
+    "drop-threshold", "enable-tpl", "error-resilient", "frame-parallel", "lag-in-frames", "level",
+    "lossless", "max-intra-rate", "min-gf-interval", "noise-sensitivity", "overshoot-pct",
+    "quality", "rc_lookahead", "row-mt", "sharpness", "speed", "static-thresh", "tile-columns",
+    "tile-rows", "ts-parameters", "tune", "tune-content", "undershoot-pct", "vp8flags",
+]
+h264_nvenc = [
+    "2pass", "a53cc", "aq-strength", "aud", "b_adapt", "b_ref_mode", "bluray-compat", "cbr",
+    "cbr_padding", "coder", "constrained-encoding", "cq", "delay", "dpb_size", "extra_sei",
+    "forced-idr", "gpu", "highbitdepth", "init_qpB", "init_qpI", "init_qpP", "intra-refresh",
+    "ldkfs", "level", "lookahead_level", "max_slice_size", "multipass", "no-scenecut", "nonref_p",
+    "preset", "profile", "qmax", "qmin", "qp", "qp_cb_offset", "qp_cr_offset", "rc",
+    "rc-lookahead", "rgb_mode", "s12m_tc", "single-slice-intra-refresh", "spatial-aq",
+    "spatial_aq", "strict_gop", "surfaces", "temporal-aq", "temporal_aq", "tf_level", "tune",
+    "udu_sei", "weighted_pred", "zerolatency",
+]
+hevc_nvenc = [
+    "2pass", "a53cc", "aq-strength", "aud", "b_adapt", "b_ref_mode", "bluray-compat", "cbr",
+    "cbr_padding", "constrained-encoding", "cq", "delay", "dpb_size", "extra_sei", "forced-idr",
+    "gpu", "highbitdepth", "init_qpB", "init_qpI", "init_qpP", "intra-refresh", "ldkfs", "level",
+    "lookahead_level", "max_slice_size", "multipass", "no-scenecut", "nonref_p", "preset",
+    "profile", "qmax", "qmin", "qp", "qp_cb_offset", "qp_cr_offset", "rc", "rc-lookahead",
+    "rgb_mode", "s12m_tc", "single-slice-intra-refresh", "spatial-aq", "spatial_aq",
+    "split_encode_mode", "strict_gop", "surfaces", "temporal-aq", "temporal_aq", "tf_level",
+    "tier", "tune", "udu_sei", "unidir_b", "weighted_pred", "zerolatency",
+]
+av1_nvenc = [
+    "a53cc", "aq-strength", "b_adapt", "b_ref_mode", "cbr_padding", "cq", "delay", "dpb_size",
+    "extra_sei", "forced-idr", "gpu", "highbitdepth", "init_qpB", "init_qpI", "init_qpP",
+    "intra-refresh", "ldkfs", "level", "lookahead_level", "multipass", "no-scenecut", "nonref_p",
+    "preset", "qmax", "qmin", "qp", "qp_cb_offset", "qp_cr_offset", "rc", "rc-lookahead",
+    "rgb_mode", "s12m_tc", "spatial-aq", "split_encode_mode", "strict_gop", "surfaces",
+    "temporal-aq", "tf_level", "tier", "tile-columns", "tile-rows", "timing-info", "tune",
+    "weighted_pred", "zerolatency",
+]
+h264_qsv = [
+    "a53cc", "adaptive_b", "adaptive_i", "async_depth", "aud", "avbr_accuracy", "avbr_convergence",
+    "b_strategy", "bitrate_limit", "cavlc", "dblk_idc", "extbrc", "forced_idr", "idr_interval",
+    "int_ref_cycle_dist", "int_ref_cycle_size", "int_ref_qp_delta", "int_ref_type", "look_ahead",
+    "look_ahead_depth", "look_ahead_downsampling", "low_delay_brc", "low_power",
+    "max_dec_frame_buffering", "max_frame_size", "max_frame_size_i", "max_frame_size_p",
+    "max_qp_b", "max_qp_i", "max_qp_p", "max_slice_size", "mbbrc", "min_qp_b", "min_qp_i",
+    "min_qp_p", "p_strategy", "pic_timing_sei", "preset", "profile", "qsv_params", "rdo",
+    "recovery_point_sei", "repeat_pps", "scenario", "single_sei_nal_unit", "skip_frame",
+]
+hevc_qsv = [
+    "adaptive_b", "adaptive_i", "async_depth", "aud", "avbr_accuracy", "avbr_convergence",
+    "b_strategy", "dblk_idc", "extbrc", "forced_idr", "gpb", "idr_interval", "int_ref_cycle_dist",
+    "int_ref_cycle_size", "int_ref_qp_delta", "int_ref_type", "load_plugin", "load_plugins",
+    "look_ahead_depth", "low_delay_brc", "low_power", "max_frame_size", "max_frame_size_i",
+    "max_frame_size_p", "max_qp_b", "max_qp_i", "max_qp_p", "max_slice_size", "mbbrc", "min_qp_b",
+    "min_qp_i", "min_qp_p", "p_strategy", "pic_timing_sei", "preset", "profile", "qsv_params",
+    "rdo", "recovery_point_sei", "scenario", "skip_frame", "tier", "tile_cols", "tile_rows",
+    "transform_skip",
+]
+av1_qsv = [
+    "adaptive_b", "adaptive_i", "async_depth", "b_strategy", "extbrc", "forced_idr",
+    "look_ahead_depth", "low_delay_brc", "low_power", "max_frame_size", "max_frame_size_i",
+    "max_frame_size_p", "preset", "profile", "qsv_params", "tile_cols", "tile_rows",
+]
+h264_amf = [
+    "async_depth", "aud", "bf", "bf_delta_qp", "bf_ref", "bf_ref_delta_qp", "coder",
+    "enforce_hrd", "filler_data", "forced_idr", "frame_skipping", "header_spacing",
+    "high_motion_quality_boost_enable", "intra_refresh_mb", "latency", "level", "max_au_size",
+    "max_b_frames", "me_half_pel", "me_quarter_pel", "pa_activity_type", "pa_adaptive_mini_gop",
+    "pa_caq_strength", "pa_frame_sad_enable", "pa_high_motion_quality_boost_mode",
+    "pa_initial_qp_after_scene_change", "pa_lookahead_buffer_depth", "pa_ltr_enable",
+    "pa_max_qp_before_force_skip", "pa_paq_mode", "pa_scene_change_detection_enable",
+    "pa_scene_change_detection_sensitivity", "pa_static_scene_detection_enable",
+    "pa_static_scene_detection_sensitivity", "pa_taq_mode", "preanalysis", "preencode", "preset",
+    "profile", "qp_b", "qp_i", "qp_p", "quality", "qvbr_quality_level", "rc",
+    "smart_access_video", "usage", "vbaq",
+]
+hevc_amf = [
+    "async_depth", "aud", "bitdepth", "enforce_hrd", "filler_data", "forced_idr", "gops_per_idr",
+    "header_insertion_mode", "high_motion_quality_boost_enable", "latency", "level",
+    "max_au_size", "max_qp_i", "max_qp_p", "me_half_pel", "me_quarter_pel", "min_qp_i",
+    "min_qp_p", "pa_activity_type", "pa_caq_strength", "pa_frame_sad_enable",
+    "pa_high_motion_quality_boost_mode", "pa_initial_qp_after_scene_change",
+    "pa_lookahead_buffer_depth", "pa_ltr_enable", "pa_max_qp_before_force_skip", "pa_paq_mode",
+    "pa_scene_change_detection_enable", "pa_scene_change_detection_sensitivity",
+    "pa_static_scene_detection_enable", "pa_static_scene_detection_sensitivity", "pa_taq_mode",
+    "preanalysis", "preencode", "preset", "profile", "profile_tier", "qp_i", "qp_p", "quality",
+    "qvbr_quality_level", "rc", "skip_frame", "smart_access_video", "usage", "vbaq",
+]
+av1_amf = [
+    "align", "aq_mode", "async_depth", "bf", "bitdepth", "enforce_hrd", "filler_data",
+    "forced_idr", "header_insertion_mode", "high_motion_quality_boost_enable", "latency", "level",
+    "max_b_frames", "max_qp_b", "max_qp_i", "max_qp_p", "min_qp_b", "min_qp_i", "min_qp_p",
+    "pa_activity_type", "pa_adaptive_mini_gop", "pa_caq_strength", "pa_frame_sad_enable",
+    "pa_high_motion_quality_boost_mode", "pa_initial_qp_after_scene_change",
+    "pa_lookahead_buffer_depth", "pa_ltr_enable", "pa_max_qp_before_force_skip", "pa_paq_mode",
+    "pa_scene_change_detection_enable", "pa_scene_change_detection_sensitivity",
+    "pa_static_scene_detection_enable", "pa_static_scene_detection_sensitivity", "pa_taq_mode",
+    "preanalysis", "preencode", "preset", "profile", "qp_b", "qp_i", "qp_p", "quality",
+    "qvbr_quality_level", "rc", "skip_frame", "smart_access_video", "usage",
+]
+h264_vaapi = [
+    "async_depth", "aud", "b_depth", "blbrc", "coder", "idr_interval", "level", "low_power",
+    "max_frame_size", "profile", "qp", "quality", "rc_mode", "sei",
+]
+hevc_vaapi = [
+    "async_depth", "aud", "b_depth", "blbrc", "idr_interval", "level", "low_power",
+    "max_frame_size", "profile", "qp", "rc_mode", "sei", "tier", "tiles",
+]
+av1_vaapi = [
+    "async_depth", "b_depth", "blbrc", "idr_interval", "level", "low_power", "max_frame_size",
+    "profile", "rc_mode", "tier", "tile_groups", "tiles",
+]

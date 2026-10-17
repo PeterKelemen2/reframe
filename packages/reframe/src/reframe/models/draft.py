@@ -27,11 +27,15 @@ class JobDraft(ReframeModel):
     """Filled from the preset (output options, dimensions, filters, video, chapters, tags),
     the source (tracks, the video track's metadata) and the output name."""
     decisions: list[TrackDecision] = Field(default_factory=list)
-    """One per source audio track, in source order (C-12 ``draft_tracks``; decision 0018)."""
+    """One per source audio track, in source order (C-12 ``draft_tracks``; decisions 0018,
+    0031)."""
+    subtitle_decisions: list[TrackDecision] = Field(default_factory=list)
+    """One per source subtitle track, in source order (C-12's subtitle selection)."""
     naming: NameResult
     """C-16's output name of the source (the template, or the manual name of ``-o``)."""
     issues: list[ValidationIssue] = Field(default_factory=list)
-    """``validate(job)`` of the drafted job; an ``error`` keeps it out of the queue."""
+    """``validate(job)`` of the drafted job, and the errors of the track stage (no track for a
+    required language: a template path); an ``error`` keeps it out of the queue."""
     notes: list[str] = Field(default_factory=list)
     """What the draft changed or left out, in one line each: an output name that was the
     source file itself, preset options that M2 does not apply yet."""

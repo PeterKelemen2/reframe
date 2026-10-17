@@ -19,7 +19,9 @@ diagnostics only; it does not change probing. Without the library, ``language_ie
 Tracks are matched to ffprobe streams by MediaInfo's ``StreamOrder`` (the stream's position in
 the file, the same number as ffprobe's ``index`` for Matroska and MP4) and the track type
 (``Video`` ↔ video, ``Audio`` ↔ audio, ``Text`` ↔ subtitle). A ``StreamOrder`` that is not a
-plain number (MPEG-TS programs: ``0-1``) is not matched.
+plain number of ASCII digits (MPEG-TS programs: ``0-1``; ``²``, Arabic-Indic ``٣`` or
+full-width ``\\uff13``, which ``str.isdigit()`` accepts) is not matched. A bit rate is read from
+ASCII digits only, too.
 
 The library call blocks, so :func:`read_mediainfo` is run in a worker thread by the caller.
 """
@@ -43,7 +45,8 @@ __all__ = [
     "track_data",
 ]
 
-_FIRST_INT = re.compile(r"\d+")
+_FIRST_INT = re.compile(r"[0-9]+")
+_STREAM_ORDER = re.compile(r"[0-9]+")
 _LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
 
 #: MediaInfo track type → MediaSource stream kind.
@@ -117,7 +120,7 @@ def track_data(tracks: Iterable[MediaInfoTrack]) -> MediaInfoData:
     for track in tracks:
         kind = _KINDS.get(str(getattr(track, "track_type", "")))
         order = str(getattr(track, "streamorder", "") or "")
-        if kind is None or not order.isdigit():
+        if kind is None or _STREAM_ORDER.fullmatch(order) is None:
             continue
         key = (kind, int(order))
         if kind != "subtitle":

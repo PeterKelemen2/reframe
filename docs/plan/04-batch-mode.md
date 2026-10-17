@@ -37,6 +37,11 @@ Strictness levels:
 | Standard (default) | Type, codec, channels, language, role, order. Ignores titles and bitrates | A typical season |
 | Loose | Type, codec family, language, role. Ignores order and channel count | Mixed sources (different releases in one season) |
 
+No level compares bit rates: the bit rate of a lossless or VBR track differs from episode to
+episode of one release. For the same reason the roles compared are those with flag or title
+evidence, not those inferred from statistics (event counts, bit rates). Every level compares the video size (loose: the resolution class) and
+the HDR type ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
+
 The sources panel shows a group like this:
 
 ```
@@ -49,7 +54,9 @@ The sources panel shows a group like this:
 ```
 
 A file that does not match the group at all is shown as a **near match**: "differs in 1
-track". You can add it anyway. It then gets per-file overrides.
+track". You can add it anyway. It then gets per-file overrides. A file within 2 differences
+(an extra, a missing or a changed track, a different video) of a group with at least as many
+files joins it as a near member ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ## Three ways to edit
 
@@ -80,6 +87,7 @@ class TrackSelector(BaseModel):
     title_pattern: str | None = None          # case-insensitive regex
     nth: int = 0                              # nth candidate after filtering and sorting
     sort: Literal["source_order", "most_channels", "highest_bitrate"] = "source_order"
+    stream: int | None = None                 # per-file override: the track picked by hand
 
 class OutputTrackRule(BaseModel):
     selector: TrackSelector
@@ -96,6 +104,12 @@ Presets use the same model. The preset's audio defaults
 rules (`AudioCodecRules`). Those rules are evaluated for each matched source track (language,
 channels, codec, bitrate). A manual edit in batch mode becomes a rule with fixed
 `AudioOutputSettings`. **There is one rule engine for presets and batch mode.**
+
+Every list of a selector means "one of"; `profiles` match the commercial name or ffprobe's
+profile; `highest_bitrate` is the best-quality order of the audio defaults (lossless first).
+What a selector cannot say (the default-flagged track, "not a listed language") stays the
+selection stage's: the compiled rules name the matrix columns
+([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ### Deriving rules from a manual selection
 
@@ -139,7 +153,9 @@ E05         │ ✓ 1080p    │ ✓ #1                   │ ✓ #2            
 E11         │ ✓ 1080p    │ ✓ #1                   │ ✗ none                 │ ≈ #1 (title) │ ✓ #2        │ Show - S01E11 - ….mkv
 ```
 
-- Click a cell to see the candidates and choose one by hand. This creates a per-file override.
+- Click a cell to see the candidates and choose one by hand. This creates a per-file override
+  (`TrackSelector.stream`). `reframe batch` names tracks by their absolute stream index, as
+  `reframe probe` does ("✓ #3" for the first subtitle of E01).
 - Columns can be sorted and filtered ("show only problems").
 
 ## Per-file overrides
@@ -153,7 +169,13 @@ E11         │ ✓ 1080p    │ ✓ #1                   │ ✗ none          
 - Any field can be overridden for one file. The editor shows a dot next to the field, with
   **Reset to group** and **Apply to whole group** actions.
 - Overrides are stored as JSON patches against the template, so later template changes still
-  reach the fields that a file did not override.
+  reach the fields that a file did not override. The patched document is the template plus a
+  member `job` with the file's resolved job: `/job/…` patches what is per file by nature
+  (range, chapter names, the parsed-name corrections `/job/output/naming/field_overrides/…`);
+  an operation whose path vanished is an issue, not an error. An override changes the fields
+  of the track rules, not their number or order (the matrix columns are the template's rules),
+  also of the rules that the audio and subtitle defaults compile to
+  ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ## Output naming
 
@@ -164,7 +186,9 @@ Batch mode uses the templates, variables and name-source rules from
   (`{name}`, `{season}`, `{episode}`, `{sub_title}`, `{year}`). An edit there is a per-file
   override.
 - A preview table shows every output name before you queue. Name collisions within the batch,
-  or with existing files, are errors.
+  or with existing files, are errors. A file of the batch is never overwritten; a file that is
+  the planned output of another file of the batch (an earlier run's output) is left out
+  ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ## Queueing a group
 
@@ -183,7 +207,9 @@ so the next season from the same release group takes one click.
 
 Anime season, 12 episodes. E01 has: `jpn TrueHD Atmos 7.1`, `eng DTS-HD MA 5.1`, subtitles
 `eng ASS "Signs & Songs" (forced)` and `eng ASS "Full"`. E05 also has `eng AC-3 2.0
-"Commentary"`.
+"Commentary"`. (The generated fixture `anime-s01` has `jpn TrueHD 5.1`: FFmpeg's TrueHD
+encoder makes 5.1 at most and no Atmos. Its E11 has no dub and a signs track titled "Signs",
+as the matrix above shows; [0040](../decisions/0040-batch-engine-and-reframe-batch.md).)
 
 1. Add the folder → one group of 12 (standard level). E05 is marked "1 extra track".
 2. **Edit group**. In Audio: A1 = jpn TrueHD → Opus 5.1 448k, name `Japanese 5.1`, default.
@@ -202,7 +228,8 @@ def group_sources(sources: list[MediaSource], level: MatchLevel) -> list[BatchGr
 def derive_template(job: JobSettings, source: MediaSource, sections: set[Section]) -> JobTemplate
 def merge_template(base: JobTemplate, incoming: JobTemplate, sections: set[Section]) -> JobTemplate
 def resolve(template: JobTemplate, source: MediaSource, override: JsonPatch | None) -> Resolution
-def resolve_group(group: BatchGroup, template: JobTemplate, overrides: dict[SourceId, JsonPatch]) -> list[Resolution]
+def resolve_group(group: BatchGroup, template: JobTemplate, sources: dict[Path, MediaSource],
+                  overrides: dict[SourceId, JsonPatch]) -> list[Resolution]   # the probed members
 ```
 
 Done when:

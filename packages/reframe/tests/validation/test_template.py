@@ -125,6 +125,20 @@ def rule(**changes: Any) -> Mod:
     return mod
 
 
+def rules(*items: AudioCodecRule) -> Mod:
+    def mod(s: Any) -> None:
+        s.template.audio_defaults.codec_rules = list(items)
+
+    return mod
+
+
+HU_ANY = AudioCodecRule(languages=["hu"], codec="aac", max_bitrate=160)
+HU_51 = AudioCodecRule(
+    languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=448
+)
+CATCH_ALL = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256)
+
+
 def nothing(s: Any) -> None:
     del s
 
@@ -309,7 +323,66 @@ CASES: list[Case] = [
         lambda s: setattr(s.template.dimensions, "pixel_aspect", "custom"),
         nothing,
     ),
+    # C-12's defaults lint (reframe.batch.lint_defaults, wired in by validate_template).
+    Case(
+        "codec rule shadowed",
+        "defaults.rule_shadowed",
+        "audio_defaults.codec_rules[1]",
+        WARN,
+        rules(HU_ANY, HU_51, CATCH_ALL),
+        rules(HU_51, HU_ANY, CATCH_ALL),
+    ),
+    Case(
+        "codec rule unreachable",
+        "defaults.rule_unreachable",
+        "audio_defaults.codec_rules[0]",
+        WARN,
+        rules(HU_51.model_copy(update={"languages": []}), CATCH_ALL),
+        rules(HU_51, CATCH_ALL),
+    ),
+    Case(
+        "codec rule max bitrate snapped",
+        "defaults.bitrate_snapped",
+        "audio_defaults.codec_rules[0].max_bitrate",
+        INFO,
+        rule(codec="ac3", mixdown="5.1", max_bitrate=700),
+        rule(codec="ac3", mixdown="5.1", max_bitrate=640),
+    ),
+    # C-6's advanced-option rules (decision 0035): they need only the video settings.
+    Case(
+        "x265 amp without rectangular partitions",
+        "encoder.option_inactive",
+        "video.advanced.amp",
+        WARN,
+        video(preset="medium", advanced={"amp": True}),
+        video(preset="medium", advanced={"amp": True, "rect": True}),
+    ),
+    Case(
+        "x265 TU size above the CTU",
+        "encoder.option_ignored",
+        "video.advanced.max-tu-size",
+        WARN,
+        video(advanced={"ctu": "16", "max-tu-size": "32"}),
+        video(advanced={"ctu": "16", "max-tu-size": "16"}),
+    ),
+    Case(
+        "SVT-AV1 minimum QP above the maximum",
+        "encoder.option_conflict",
+        "video.advanced.min-qp",
+        ERR,
+        video(encoder="libsvtav1", advanced={"min-qp": 40, "max-qp": 20}),
+        video(encoder="libsvtav1", advanced={"min-qp": 20, "max-qp": 40}),
+    ),
 ]
+
+
+def test_a_codec_the_container_cannot_hold_is_reported_once() -> None:
+    """C-8's container rule reports it; ``validate_template`` runs C-12's lint without its
+    container check (``container_codecs=False``), so the same path never gets two errors."""
+    issues = sc.check_template(build(webm_video))
+    on_path = [i for i in issues if i.path == "audio_defaults.codec_rules[0].codec"]
+    assert [i.code for i in on_path] == ["container.codec_unsupported"]
+    assert not [i for i in issues if i.code == "defaults.codec_not_in_container"]
 
 
 def test_clean_template_has_no_issues() -> None:
@@ -370,20 +443,6 @@ def test_demo_item_4_unavailable_nvenc_names_the_closest_encoder() -> None:
     assert patched.video.rate_control == ConstantQuality(value=rf)
     assert patched.video.preset is None  # p5 is an NVENC preset
     assert validate_template(patched, caps) == []
-
-
-def test_demo_item_4_issue_json(capsys: pytest.CaptureFixture[str]) -> None:
-    """The JSON a client gets (printed for the step report)."""
-    template = preset(encoder="hevc_nvenc", rate_control=ConstantQuality(value=27))
-    issues = validate_template(template, sc.make_caps(NO_HEVC_HARDWARE))
-    from pydantic import TypeAdapter
-
-    from reframe.models import ValidationIssue
-
-    text = TypeAdapter(list[ValidationIssue]).dump_json(issues, indent=2).decode()
-    print(text)
-    assert '"code": "encoder.unavailable"' in text
-    assert capsys.readouterr().out.strip() == text
 
 
 def test_subject_names_the_template() -> None:

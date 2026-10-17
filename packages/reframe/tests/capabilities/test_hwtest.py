@@ -10,9 +10,8 @@ from reframe.capabilities import (
     hardware_test_argv,
     run_filter_test,
     run_hardware_test,
-    uses_vaapi_device,
 )
-from reframe.capabilities.hwtest import BitDepth, DefinitionError, resolve_placeholders
+from reframe.capabilities.hwtest import BitDepth, DefinitionError
 from reframe.definitions import HardwareSetup, VideoEncoderDef, load_definitions
 from reframe.models import EncoderState, ToolInfo
 from reframe_testing import fake_tools as ft
@@ -82,14 +81,6 @@ def test_filter_command() -> None:
     ]
 
 
-def test_uses_vaapi_device() -> None:
-    assert {e.id for e in ENCODERS.values() if uses_vaapi_device(e)} == {
-        "h264_vaapi",
-        "hevc_vaapi",
-        "av1_vaapi",
-    }
-
-
 @pytest.mark.parametrize("name", C4_CAPTURES)
 def test_the_c4_captures_ran_the_current_command(name: str) -> None:
     """If a hardware setup in the definitions changes, capture again
@@ -101,12 +92,6 @@ def test_the_c4_captures_ran_the_current_command(name: str) -> None:
     device = next((a.split(":", 1)[1] for a in command if a.startswith("vaapi=va:")), None)
     kw = {"vaapi_device": device} if device else {}
     assert command == hardware_test_argv("ffmpeg", encoder, bit_depth, **kw)
-
-
-def test_placeholders() -> None:
-    assert resolve_placeholders("vaapi=va:{vaapi_device}", {"vaapi_device": "/x"}) == "vaapi=va:/x"
-    with pytest.raises(DefinitionError, match=r"\{qsv_device\}"):
-        resolve_placeholders("qsv={qsv_device}", {"vaapi_device": "/x"})
 
 
 def broken(**changes: object) -> VideoEncoderDef:

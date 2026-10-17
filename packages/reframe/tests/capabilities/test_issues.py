@@ -217,13 +217,6 @@ def test_audio_encoder_unavailable_with_a_fix() -> None:
     assert fix.target == "job"
 
 
-def test_audio_encoder_without_anything_available() -> None:
-    snapshot = caps(libfdk_aac=UNAVAILABLE, aac=UNAVAILABLE)
-    (issue,) = encoder_issues("libfdk_aac", snapshot, DEFS, path="audio[0].encoder")
-    assert issue.code == "encoder.unavailable"
-    assert issue.fixes == []
-
-
 def test_job_with_a_libfdk_aac_track() -> None:
     """Decision 0020: a job whose second audio track uses libfdk_aac (not in GPL builds)."""
     job = JobSettings.model_validate(

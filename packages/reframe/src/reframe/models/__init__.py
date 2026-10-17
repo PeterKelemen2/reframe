@@ -9,9 +9,16 @@ Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), 
 job drafted from a preset, C-15), ``defaults`` (audio/subtitle defaults), ``template``
 (templates and track rules), ``preset``, ``naming``, ``settings``, ``issues`` (validation
 issues and JSON patch operations), ``tools`` (C-1), ``capabilities`` (C-4), ``plan`` (C-7),
-``queue`` (C-11), ``tasks``, ``events``, ``migrations``.
+``queue`` (C-11), ``tasks``, ``batch`` (season mode, C-12), ``analysis`` (scan results,
+C-10), ``preview`` (frames, crop detection, preview clips, C-10), ``events``, ``migrations``.
 """
 
+from reframe.models.analysis import (
+    BitrateScan,
+    LoudnessMeasurement,
+    SubtitleScan,
+    SubtitleScanTrack,
+)
 from reframe.models.base import (
     DocumentModel,
     LanguageTag,
@@ -20,6 +27,20 @@ from reframe.models.base import (
     PositiveInt,
     Rational,
     ReframeModel,
+)
+from reframe.models.batch import (
+    BatchGroup,
+    BatchGrouping,
+    BatchResolution,
+    Fingerprint,
+    GroupMember,
+    MatchLevel,
+    MatchStatus,
+    MatrixColumn,
+    Resolution,
+    TemplateSection,
+    TrackDescriptor,
+    TrackMatch,
 )
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.defaults import (
@@ -187,6 +208,14 @@ from reframe.models.plan import (
     resolve_argv,
 )
 from reframe.models.preset import BUILT_IN_CATEGORIES, FieldChange, Preset, PresetFile
+from reframe.models.preview import (
+    CropDetection,
+    CropSample,
+    FrameKind,
+    FrameSet,
+    PreviewClip,
+    PreviewFrame,
+)
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import (
     AppearanceSettings,
@@ -215,7 +244,14 @@ from reframe.models.template import (
     TrackRuleSettings,
     TrackSelector,
 )
-from reframe.models.tools import ToolInfo, ToolName, ToolOrigin, ToolSet, ToolStatus
+from reframe.models.tools import (
+    ToolFetchResult,
+    ToolInfo,
+    ToolName,
+    ToolOrigin,
+    ToolSet,
+    ToolStatus,
+)
 
 __all__ = [
     "BUILT_IN_CATEGORIES",
@@ -238,7 +274,11 @@ __all__ = [
     "AudioRuleExtras",
     "AudioStream",
     "AverageBitrate",
+    "BatchGroup",
+    "BatchGrouping",
+    "BatchResolution",
     "BitrateInfo",
+    "BitrateScan",
     "BitrateSource",
     "BurnInBehaviour",
     "CapabilitiesChangedEvent",
@@ -255,9 +295,11 @@ __all__ = [
     "ContainerInfo",
     "ContentLightLevel",
     "CopyOp",
+    "CropDetection",
     "CropMode",
     "CropPolicy",
     "CropRect",
+    "CropSample",
     "CropSettings",
     "DataStream",
     "DimensionSettings",
@@ -277,13 +319,17 @@ __all__ = [
     "FieldOrder",
     "FilterConfig",
     "FilterSettings",
+    "Fingerprint",
     "FitWithin",
     "Fix",
     "FixTarget",
+    "FrameKind",
     "FrameRange",
+    "FrameSet",
     "FramerateMode",
     "FullRange",
     "Geometry",
+    "GroupMember",
     "HdrFormat",
     "HdrInfo",
     "JobDraft",
@@ -300,8 +346,12 @@ __all__ = [
     "JsonPatchOp",
     "LanguageSettings",
     "LanguageTag",
+    "LoudnessMeasurement",
     "LoudnessTarget",
     "MasteringDisplay",
+    "MatchLevel",
+    "MatchStatus",
+    "MatrixColumn",
     "Measurement",
     "MediaKind",
     "MediaSource",
@@ -340,6 +390,8 @@ __all__ = [
     "PowerCountdownEvent",
     "Preset",
     "PresetFile",
+    "PreviewClip",
+    "PreviewFrame",
     "PreviewSettings",
     "QueueChangedEvent",
     "QueueJob",
@@ -350,6 +402,7 @@ __all__ = [
     "ReframeModel",
     "RemoveOp",
     "ReplaceOp",
+    "Resolution",
     "ResyncEvent",
     "RoleEvidence",
     "Rotation",
@@ -370,6 +423,8 @@ __all__ = [
     "SubtitleKind",
     "SubtitleOutputSettings",
     "SubtitleOutputTrack",
+    "SubtitleScan",
+    "SubtitleScanTrack",
     "SubtitleStream",
     "TagSettings",
     "TaskDoneEvent",
@@ -377,8 +432,10 @@ __all__ = [
     "TaskProgressEvent",
     "TaskState",
     "TemplateKind",
+    "TemplateSection",
     "TestOp",
     "TimeRange",
+    "ToolFetchResult",
     "ToolInfo",
     "ToolName",
     "ToolOrigin",
@@ -387,8 +444,10 @@ __all__ = [
     "ToolStatus",
     "ToolsChangedEvent",
     "TrackDecision",
+    "TrackDescriptor",
     "TrackDraft",
     "TrackFlags",
+    "TrackMatch",
     "TrackMetadata",
     "TrackMetadataTemplate",
     "TrackRole",

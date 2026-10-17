@@ -40,13 +40,16 @@
 ### Test media
 
 `scripts/make-testdata.py` generates small files (≤ 5 s, low resolution) with FFmpeg `lavfi`
-sources, so the repository holds no large binaries:
+sources, so the repository holds no large binaries. One fixture is 4K on purpose: the HDR10
+source of the C-10 frame budget (`hdr10-4k`, about 6 MB, generated and never committed;
+[decision 0030](../decisions/0030-core-complete-contract.md)):
 
 | Fixture | How |
 |---------|-----|
 | Multi-track MKV | `testsrc2` + several `sine` tracks (a different tone per track) with languages, titles and dispositions (`default`, `comment`, `hearing_impaired`) |
 | Text subtitles | SRT/ASS generated from text templates. ASS with an attached open-licence font |
-| Bitmap subtitles | VobSub (`dvdsub` encoder). PGS comes from recorded probe JSON only (FFmpeg has no PGS encoder) |
+| Bitmap subtitles | VobSub (`dvdsub` encoder). PGS written as `.sup` by `reframe_testing/pgs.py` (FFmpeg has no PGS encoder), with forced and non-forced events ([0032](../decisions/0032-analysis-scans-and-their-fixtures.md)) |
+| Lossless audio without a bit rate | DTS-HD MA 5.1 (XLL, no core) written by `reframe_testing/dts.py` (FFmpeg's `dca` encoder writes a DTS core only), copied into Matroska, which has no statistics tags (M6 demo 1; [0032](../decisions/0032-analysis-scans-and-their-fixtures.md)) |
 | Letterbox / changing aspect | `testsrc2` padded with black bars. A second segment with different bars, concatenated |
 | Anamorphic | 720×480 with SAR 32:27 |
 | Interlaced | `interlace` filter + `setfield=tff` |
@@ -54,6 +57,7 @@ sources, so the repository holds no large binaries:
 | HDR10 | 10-bit x265 with `master-display` / `max-cll` |
 | Chapters | FFMETADATA input |
 | Season set | 12 copies of the multi-track MKV. One has an extra commentary track. One is missing the second audio track. Names follow `Show.S01E01.Title.mkv` |
+| Batch example seasons | 04 §Example: 12 episodes with `jpn` TrueHD 5.1 (FFmpeg makes no 7.1 and no Atmos), `eng` DTS-HD MA 5.1, ASS "Signs & Songs" (forced) and "Full"; E05 with an extra commentary, E11 without the dub and with another signs title; a second season of 3 episodes ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)) |
 
 ## Q-3 Performance budgets
 
