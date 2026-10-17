@@ -295,8 +295,12 @@ its fix and passes after it):
      `queue.cancel()` returns when the job has ended, as before. The queue's `close()` has no
      time limit of its own (it waits for every run to end), so nothing cuts the wait short; the
      10 s `CLOSE_TIMEOUT` of `Reframe.close()` bounds only the probes of `Reframe.sources`.
-     A cancellation of the run's own asyncio task (the queue never does that; an event loop
-     that shuts down does) also waits for the step, then goes on.
+     A cancellation of the run's own asyncio task alone (the queue never does that) also waits
+     for the step, then goes on. An event loop that shuts down (`asyncio.run` after a second
+     Ctrl+C) cancels every task, the step's own run too, whose clean-up kills mkvpropedit: the
+     log and the job's end (`interrupted`) then say that mkvpropedit was stopped while it edited
+     the file and that the file may be damaged. (Corrected by the final review, RB-4: this item
+     said that a shutdown also waits for the step.)
   3. A stop before the first step starts changes nothing: the job ends `cancelled` (or
      `interrupted`) as before, and mkvpropedit is never started after a stop.
   4. **Once an edit step has written the source, a stop ends the job `cancelled`** (`close()`:
@@ -332,3 +336,65 @@ its fix and passes after it):
   (it replaces `test_cancelling_an_in_place_edit_keeps_the_source`, whose 30 s fake
   mkvpropedit the cancel now waits for). testdata/README.md "Metadata edit (C-13)" records
   the measurements.
+
+## Follow-up (final review, 2026-10-17)
+
+A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) ran 1080 stop runs
+of real in-place edits (cancel, cancel-all, close, pause + cancel, pause + close): no damaged
+file. It found two minors in the R4-7 stop path (and RB-5, in decision 0016's follow-up). Each
+test below failed on 5dbf152 and passes now (`tests/queue/test_queue_final_review.py`).
+
+- **RB-3: a late step time limit made a finished edit "cancelled".** The watchdog stopped the
+  whole job (`active.stop("timeout")`) as well as the in-place step. When the limit fired after
+  mkvpropedit had exited 0 but before the step's clean-up stopped the watchdog, the step counted
+  as written, the job as stopped, and `_stopped_after_edit` reported every reason other than
+  `close` as a cancel: the job ended `cancelled` ("…when the job was cancelled…") though nobody
+  cancelled it, and the check never ran (the reviewer: 22 of 200 real runs with a short step
+  limit). Now the time limit of an in-place step cancels only the step's own token, never the
+  job: a step that exits 0 ends as any finished step and the edited file is checked. A step
+  that `run_streaming` reports as cancelled but that exited 0 (the token fired first, the
+  process ended on its own before the kill) is a finished step too; a step that was killed
+  (a signal, the kill's exit code on Windows, or never started) still fails the job with "the
+  file may be damaged" (item 5 of R4-7). `_stopped_after_edit` maps only `cancel` to
+  `cancelled` and `close` to `interrupted`; any other reason (none reaches it now) is `failed`
+  and never says "cancelled". Tests:
+  `test_a_time_limit_after_the_edit_ended_does_not_cancel_the_job` (a step watch whose limit
+  fires only after mkvpropedit exited, so the race is certain, not timed),
+  `test_an_exit_0_that_came_with_the_time_limit_is_a_finished_edit`,
+  `test_a_time_limit_is_never_reported_as_a_cancel`; `test_the_time_limit_still_stops_a_hung_edit`
+  still passes.
+- **RB-4: an event loop that shuts down killed the step, and the job said it was let finish.**
+  `_to_its_end` shields the step from a cancellation of the run's task, but `asyncio.run`
+  shutting down cancels every task, the inner `run_streaming` task too, whose clean-up kills
+  the tree. The log then said "it was let finish" and the job ended "interrupted: The job was
+  stopped." with no word about the file. (A hard exit kills the child anyway through
+  `PR_SET_PDEATHSIG`; the CLI never runs in-place edits.) Not prevented: the step would have to
+  run outside the loop's tasks (a thread with its own loop), which the stop guarantees of R4-7
+  do not need. Now, when the run's task is cancelled during an in-place step, the runner looks
+  at the step's own run: when it was cancelled too (killed), the log says "Step 1/1 ended:
+  stopped. Reframe was shut down while mkvpropedit was editing Show.mkv in place: mkvpropedit
+  was stopped before it ended, so the file may be damaged." and that text is the job's error
+  (`interrupted`); when the step ended on its own with exit code 0, the error says the edit is
+  written and was not checked; a step that its time limit killed gives the time-limit error.
+  A restored `metadata_edit` job that was running or paused (a crash or a hard exit) says
+  "Reframe stopped while the job was running. If mkvpropedit was editing Show.mkv in place at
+  that moment, the file may be damaged." Item 2 of the R4-7 decision above is corrected in
+  place. Tests: `test_an_event_loop_that_shuts_down_says_the_file_may_be_damaged` (every task
+  of the loop cancelled, as `asyncio.run` does), `test_a_restored_in_place_job_that_was_running_may_be_damaged`;
+  `test_a_cancelled_run_task_lets_the_edit_finish` (only the run's task cancelled: the edit
+  ends first) still passes. With the reviewer's `loop_shutdown.py` (the real facade, two
+  SIGINTs, a gated mkvpropedit): the stored row and the log now say the file may be damaged.
+
+After the fixes, the reviewer's stress test with the real mkvpropedit 101.0 (the same edit that
+grows `Tracks`; copies of five fixtures): `cancel` late 60, `close` late 60, `pause` + `cancel`
+late 60, `pause` + `close` late 60, cancel-all late 60: 300 runs, no damaged file, every job's
+end matched its file (`cancelled` / `interrupted` with "The edit was already written"); the step
+limit at 0.3 to 1.3 times mkvpropedit's median run time, 100 runs: 93 `done` after the check, 7
+`failed` with "the file may be damaged" (killed by the limit; every file intact), no
+`cancelled` (before: 22 of 200). The R4-1 check with real tools (40 pairs of edits of one file
+through a symbolic link, a hard link, a linked folder and a `..` spelling, and 6 encodes of a
+link beside an edit; `parallel_jobs` 2): no overlap.
+
+Known limit (no change): mkvpropedit's exit code 1 (warnings; it wrote the file) counts as a
+failed step, not as written: the job fails with mkvpropedit's message, and a stop that came
+during such a step ends the job as if nothing was written.

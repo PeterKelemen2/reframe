@@ -45,11 +45,16 @@ The outcome carries no plan, so the queue's clean-up has nothing to remove.
 the core-complete review; decision 0034): mkvpropedit catches no signal, and a kill in its
 write phase can leave the source without track headers. The step runs with a cancel token of
 its own that only its time limit fires (a hung mkvpropedit must end; that kill can still
-damage the file, and the job's error says so). A stop that comes while the step runs is
-written to the log, resumes the step if the job was paused, and waits for the step to end; so
-does a cancel of the run's own task. A stop before the first step starts changes nothing. Once
-an edit step has written the source, a stop ends the job ``cancelled`` (cancel) or
-``interrupted`` (``close()``) with an error that says the edit is written and was not checked.
+damage the file, and the job's error says so). The time limit stops only the step, never the
+job: a step that exits 0 just as the limit fires ends normally and is checked (final review
+RB-3). A stop that comes while the step runs is written to the log, resumes the step if the
+job was paused (the job is shown ``running`` again), and waits for the step to end; so does a
+cancel of the run's own task alone. An event loop that shuts down cancels every task, the
+step's own run too, so mkvpropedit is then killed: the log and the job's end (``interrupted``)
+say so and that the file may be damaged (final review RB-4). A stop before the first step
+starts changes nothing. Once an edit step has written the source, a stop ends the job
+``cancelled`` (cancel) or ``interrupted`` (``close()``) with an error that says the edit is
+written and was not checked.
 """
 
 from __future__ import annotations
@@ -83,7 +88,7 @@ from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
-from reframe.queue.errors import exit_text, stderr_reason
+from reframe.queue.errors import exit_text, printable, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
@@ -150,11 +155,11 @@ class ActiveJob:
     """The control state of one running (or paused) job, shared by the queue and the run."""
 
     job_id: str
-    output_key: str | None = None
-    """The normalised output path: two jobs with the same output never run at once (for an
-    in-place metadata edit, its source)."""
-    source_key: str | None = None
-    """The normalised source path: no job reads a source while it is edited in place."""
+    output_key: files.FileKey | None = None
+    """The file the job writes: two jobs with the same output never run at once (for an
+    in-place metadata edit, its source). Taken off the event loop (see the queue)."""
+    source_key: files.FileKey | None = None
+    """The file the job reads: no job reads a source while it is edited in place."""
     in_place: bool = False
     """The job edits its source in place (``output.edit_in_place``; decision 0034)."""
     token: CancelToken = field(default_factory=CancelToken)
@@ -172,6 +177,9 @@ class ActiveJob:
     ended: bool = False
     """The run ended: pause and resume do nothing any more."""
     task: asyncio.Task[None] | None = None
+    end_note: str | None = None
+    """The error of a run whose own task was cancelled while an in-place step ran (an event
+    loop that shuts down): what happened to the source (final review RB-4)."""
 
     def __post_init__(self) -> None:
         self.resumed.set()
@@ -251,8 +259,13 @@ class JobRunner:
         tick: float,
         log_interval: float,
         shell: Shell | None = None,
+        resumed: Callable[[QueueJob, ActiveJob], Awaitable[None]] | None = None,
     ) -> None:
+        """``resumed``: called (with ``active.control`` held) when a paused job's in-place
+        step is resumed so that a cancel or ``close()`` can let it finish; the queue shows the
+        job ``running`` again and takes its sleep inhibit (final review RB-5)."""
         self._events = events
+        self._resumed = resumed
         self._settings = settings
         self._tools = tools
         self._caps = capabilities
@@ -273,6 +286,9 @@ class JobRunner:
     async def check(self, job: JobSettings) -> list[ValidationIssue]:
         """Validate ``job`` now (the check of ``QueueService.add``): probe, tools, the
         capability snapshot as it is (no waiting for detection)."""
+        unusable = _unusable_path(job)
+        if unusable is not None:
+            return [unusable]
         source = await self._sources.probe(job.source.path)
         if isinstance(source, ProbeError):
             return [_source_issue(source)]
@@ -345,6 +361,9 @@ class JobRunner:
         self, job: QueueJob, active: ActiveJob, joblog: JobLog
     ) -> _Prepared | Outcome:
         settings = job.settings
+        unusable = _unusable_path(settings)
+        if unusable is not None:  # a stored job (restore) or a retry: fails, the queue goes on
+            return Outcome(JobState.FAILED, error=unusable.message, issues=[unusable])
         joblog.note("Probing the source again")
         source = await self._until_stopped(
             self._sources.probe(settings.source.path, cancel=active.token), active
@@ -536,7 +555,7 @@ class JobRunner:
             self._watchdog(active, watch, step_token if in_place is not None else None)
         )
         guard = (
-            asyncio.ensure_future(self._let_finish(active, joblog, in_place))
+            asyncio.ensure_future(self._let_finish(job, active, joblog, in_place))
             if in_place is not None
             else None
         )
@@ -552,7 +571,9 @@ class JobRunner:
             if in_place is None:
                 result = await run
             else:
-                result = await _to_its_end(asyncio.ensure_future(run), joblog, label)
+                result = await self._to_its_end(
+                    asyncio.ensure_future(run), active, joblog, label, in_place
+                )
         finally:
             for helper in (watchdog, guard):
                 if helper is not None:
@@ -564,33 +585,41 @@ class JobRunner:
         if result.error is not None:
             joblog.note(f"{label} could not start: {result.error}")
         else:
-            ended = "stopped" if result.cancelled else exit_text(result.returncode)
+            # A process that exited 0 just as the cancel came is not "stopped" (RB-3).
+            ended = "stopped" if _killed(result) else exit_text(result.returncode)
             joblog.note(f"{label} ended: {ended} after {result.duration:.1f} s")
         return result, list(stderr)
 
     async def _watchdog(
         self, active: ActiveJob, watch: StepWatch, step_token: CancelToken | None = None
     ) -> None:
-        """Stop the job when the step stalls or runs out of time; ``step_token`` (an
-        in-place step's own token) is cancelled too, which kills that step."""
+        """Stop the job when the step stalls or runs out of time. For an in-place step
+        (``step_token``: its own token) only the step is stopped, not the job (final review
+        RB-3): a step that exits 0 just after its limit then ends as any finished step and is
+        checked, and a step that is killed fails the job with "the file may be damaged"."""
         while True:
             await asyncio.sleep(self._tick)
             process = active.process
             cpu = tree_cpu_seconds(process.pid) if process is not None else None
             verdict: Verdict | None = watch.tick(self._clock.monotonic(), cpu, paused=active.paused)
             if verdict is not None:
-                active.stop(verdict)
                 if step_token is not None:
                     step_token.cancel(verdict)
+                else:
+                    active.stop(verdict)
                 return
 
-    async def _let_finish(self, active: ActiveJob, joblog: JobLog, source: Path) -> None:
+    async def _let_finish(
+        self, job: QueueJob, active: ActiveJob, joblog: JobLog, source: Path
+    ) -> None:
         """While an in-place step runs: when the job is stopped, say in the log that the
         step is let finish, and resume it if the job was paused (a suspended step would never
-        end). Under the job's control lock, so a pause that is under way ends first."""
+        end); the queue then shows the job ``running`` again and takes its sleep inhibit
+        (``resumed``, final review RB-5). Under the job's control lock, so a pause that is
+        under way ends first."""
         await active.token.wait()
         if active.stop_reason not in ("cancel", "close"):
-            return  # the step's own time limit: the watchdog stops the step
+            return  # not a stop of the job: only the step's own time limit stops the step
         why = "Reframe is closing" if active.stop_reason == "close" else "The job is cancelled"
         joblog.note(
             f"{why} while mkvpropedit is writing {source.name}: it is let finish (stopping it "
@@ -603,6 +632,63 @@ class JobRunner:
                     await asyncio.to_thread(resume_tree, active.process)
                 if active.tracker is not None:
                     active.tracker.resume()
+                if self._resumed is not None:
+                    try:
+                        await self._resumed(job, active)
+                    except Exception:  # only what the job shows: the step still ends first
+                        log.exception("queue job %s: showing the resumed edit failed", job.id)
+
+    async def _to_its_end(
+        self,
+        run: asyncio.Future[RunResult],
+        active: ActiveJob,
+        joblog: JobLog,
+        label: str,
+        source: Path,
+    ) -> RunResult:
+        """The result of an in-place step. When the awaiting task alone is cancelled (the
+        queue never does that), the step still runs to its end (its time limit bounds it, the
+        watchdog runs on), then the cancellation goes on. An event loop that shuts down cancels
+        every task, the step's own run too: ``run_streaming`` then kills mkvpropedit, and the
+        log and the job's end say so and that the file may be damaged (final review RB-4).
+        Either way ``active.end_note`` says what happened to the source."""
+        try:
+            return await asyncio.shield(run)
+        except asyncio.CancelledError:
+            while not run.done():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.shield(run)
+            if run.cancelled() or run.exception() is not None:
+                # The run's own task was cancelled too: its clean-up killed the process tree.
+                active.end_note = (
+                    f"Reframe was shut down while mkvpropedit was editing {source.name} in "
+                    "place: mkvpropedit was stopped before it ended, so the file may be damaged."
+                )
+                joblog.note(f"{label} ended: stopped. {active.end_note}")
+                raise
+            result = run.result()
+            if _killed(result):  # the step's time limit
+                active.end_note = self._timed_out(source)
+                joblog.note(f"{label} ended: stopped. {active.end_note}")
+                raise
+            if result.error is None and result.returncode == 0:
+                active.end_note = (
+                    f"The job was stopped while mkvpropedit was editing {source.name} in place: "
+                    "it was let finish, so the edit is written. The check of the edited file "
+                    "did not run."
+                )
+            joblog.note(
+                f"{label} ended: {exit_text(result.returncode)}; the job was stopped while "
+                "mkvpropedit was writing the source: it was let finish"
+            )
+            raise
+
+    def _timed_out(self, source: Path) -> str:
+        """The error of an in-place step that its time limit stopped."""
+        return (
+            f"mkvpropedit did not finish within {_duration(self._step_time_limit)} and was "
+            f"stopped while it was editing {source.name} in place: the file may be damaged."
+        )
 
     def _measure(
         self, step: PlanStep, result: RunResult, values: dict[str, str], joblog: JobLog
@@ -682,17 +768,17 @@ class JobRunner:
                 f"{placed.strerror or placed}",
                 plan=plan,
             )
-        issues = [
-            issue
-            for issue in output_path_issues(
-                plan.output_final,
-                Path(job.settings.source.path),
-                self._fs,
-                container=self._defs.containers.get(job.settings.output.container),
-                collision="ask",
-            )
-            if issue.code == "output.exists"
-        ] or [_issue("output.exists", f"{plan.output_final.name} already exists.", "output.path")]
+        found = await asyncio.to_thread(  # it reads the output folder: never on the event loop
+            output_path_issues,
+            plan.output_final,
+            Path(job.settings.source.path),
+            self._fs,
+            container=self._defs.containers.get(job.settings.output.container),
+            collision="ask",
+        )
+        issues = [issue for issue in found if issue.code == "output.exists"] or [
+            _issue("output.exists", f"{plan.output_final.name} already exists.", "output.path")
+        ]
         return Outcome(
             JobState.FAILED,
             error=f"{plan.output_final.name} already exists (Settings → Output asks what to "
@@ -760,20 +846,21 @@ class JobRunner:
                     job, active, joblog, step, f"Step {index + 1}/{count}", info, argv,
                     in_place=source,
                 )  # fmt: skip
-                if result.cancelled:  # only the step's time limit stops an in-place step
+                if _killed(result):  # only the step's time limit stops an in-place step
                     return Outcome(
                         JobState.FAILED,
-                        error=f"mkvpropedit did not finish within "
-                        f"{_duration(self._step_time_limit)} and was stopped while it was "
-                        f"editing {source.name} in place: the file may be damaged.",
+                        error=self._timed_out(source),
                         plan=plan,
                         stop_reason="timeout",
                     )
-                if result.ok:
+                # Exit code 0, also one that came just as the time limit fired (RB-3): the
+                # step ended on its own and its edit is in the file.
+                finished = result.error is None and result.returncode == 0
+                if finished:
                     written += 1
                 if active.stop_reason is not None:
                     raise _Stopped
-                if not result.ok:
+                if not finished:
                     return Outcome(JobState.FAILED, error=_failure(step, result, stderr), plan=plan)
                 self._publish(job, tracker.step_done())
             joblog.note(f"Checking the edited source {source.name}")
@@ -836,45 +923,37 @@ def _stopped_after_edit(
     active: ActiveJob, source: Path, plan: EncodePlan, written: int, count: int
 ) -> Outcome:
     """The end of an in-place job that was stopped after its edit was written: ``cancelled``
-    (or ``interrupted`` for ``close()``), and an error that says the file is changed and was
-    not checked (decision 0034, R4-7)."""
-    closed = active.stop_reason == "close"
-    when = "Reframe was closed" if closed else "the job was cancelled"
+    for a cancel, ``interrupted`` for ``close()``, and an error that says the file is changed
+    and was not checked (decision 0034, R4-7). Any other reason (none reaches here: the time
+    limit stops only the step, final review RB-3) is never shown as a cancel: ``failed``."""
+    reason = active.stop_reason
+    if reason == "close":
+        state, when = JobState.INTERRUPTED, "Reframe was closed"
+    elif reason == "cancel":
+        state, when = JobState.CANCELLED, "the job was cancelled"
+    else:
+        state, when = JobState.FAILED, "the job was stopped (a time limit)"
     what = (
         "The edit was"
         if written >= count
         else f"Part of the edit ({written} of {count} mkvpropedit steps) was"
     )
     return Outcome(
-        JobState.INTERRUPTED if closed else JobState.CANCELLED,
+        state,
         error=f"{what} already written to {source.name} when {when}: mkvpropedit is never "
         "stopped while it writes the source (that can damage the file). The check of the "
         "edited file did not run.",
         plan=plan,
         output_path=source,
-        stop_reason=active.stop_reason,
+        stop_reason=reason,
     )
 
 
-async def _to_its_end(run: asyncio.Future[RunResult], joblog: JobLog, label: str) -> RunResult:
-    """The result of an in-place step. When the awaiting task is cancelled meanwhile (the
-    queue never does that; an event loop that shuts down does), the step still runs to its end
-    (its time limit bounds it, the watchdog runs on), then the cancellation goes on."""
-    try:
-        return await asyncio.shield(run)
-    except asyncio.CancelledError:
-        while not run.done():
-            with contextlib.suppress(asyncio.CancelledError):
-                await asyncio.shield(run)
-        ended = "no result"
-        if not run.cancelled() and run.exception() is None:
-            result = run.result()
-            ended = "stopped" if result.cancelled else exit_text(result.returncode)
-        joblog.note(
-            f"{label} ended: {ended}; the job was stopped while mkvpropedit was writing the "
-            "source: it was let finish"
-        )
-        raise
+def _killed(result: RunResult) -> bool:
+    """The step was stopped by its cancel token: it did not end on its own. A process that
+    exited 0 just as the token fired (``cancelled`` and exit code 0) ended on its own; a
+    killed one has a signal (POSIX) or the kill's exit code (Windows), or never started."""
+    return result.cancelled and result.returncode != 0
 
 
 def _duration(seconds: float | None) -> str:
@@ -960,6 +1039,24 @@ def _in_place_refusal(
 def _write_files(plan: EncodePlan) -> None:
     plan.output_tmp.parent.mkdir(parents=True, exist_ok=True)
     files.write_plan_files(plan.files)
+
+
+def _unusable_path(job: JobSettings) -> ValidationIssue | None:
+    """``queue.path_unusable`` for a source or output path that no file system accepts (a NUL
+    character: ``os.stat`` and ``realpath`` raise ``ValueError`` for it), else ``None``. Such
+    a job fails with this message, at ``add`` and when it runs (a retry, a restored job),
+    instead of an internal error (final review RB-2)."""
+    named = (("source", "source.path", job.source.path), ("output", "output.path", job.output.path))
+    for what, field_path, path in named:
+        if path is not None and "\0" in os.fspath(path):
+            shown = os.fspath(path).replace("\0", "\\0")
+            return _issue(
+                "queue.path_unusable",
+                f"The {what} path {printable(shown)} has a NUL character, which no file system "
+                "allows, so the job cannot run. Correct the path.",
+                field_path,
+            )
+    return None
 
 
 def _source_issue(error: ProbeError) -> ValidationIssue:

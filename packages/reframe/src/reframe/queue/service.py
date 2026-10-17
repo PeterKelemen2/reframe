@@ -24,7 +24,10 @@ jobs, ``settings.queue.parallel_jobs`` at a time (read again each time a slot fr
   edits its source in place (``output.edit_in_place``, decision 0034) writes that source: it
   never runs while another job reads or writes that file, and no job that reads it starts
   while it runs. Paths are compared as files: a symbolic link, a hard link or a linked folder
-  is the file it leads to (:func:`_same_file`).
+  is the file it leads to (:func:`_conflicts`). Which file a path is (its links resolved, its
+  ``(st_dev, st_ino)``) is read in a worker thread when a job is added, retried or restored
+  and kept with the job, so choosing the next job never touches the disk on the event loop: a
+  network share that does not answer delays only its own job (final review RB-1).
 
 **Events**, in this order (02 §Events; ``job.progress`` and ``job.log`` may be coalesced or
 dropped by a slow subscriber, the others never):
@@ -71,6 +74,7 @@ import logging
 import os
 import uuid
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from reframe.definitions import Definitions, load_definitions
@@ -129,18 +133,19 @@ def _closed_error() -> Exception:
     return ReframeClosedError()
 
 
-def _path_key(path: str | os.PathLike[str]) -> str:
-    """The path with its links resolved (``realpath``; for a file that does not exist yet,
-    the existing part of its folder), in the OS's case (``normcase``). Still a usable path:
-    :func:`_same_file` stats it for hard links."""
-    return os.path.normcase(os.path.realpath(path))
+def _path_key(path: str | os.PathLike[str]) -> files.FileKey:
+    """Which file ``path`` is (:func:`reframe.queue.files.file_key`): the path with its links
+    resolved, in the OS's case, and ``(st_dev, st_ino)`` when the file exists. **Blocking**
+    (an ``lstat`` per part of the path, a ``stat``): the queue calls it in a worker thread,
+    never on the event loop (final review RB-1). Never raises (RB-2)."""
+    return files.file_key(path)
 
 
-def _source_key(job: QueueJob) -> str:
+def _source_key(job: QueueJob) -> files.FileKey:
     return _path_key(job.settings.source.path)
 
 
-def _output_key(job: QueueJob) -> str | None:
+def _output_key(job: QueueJob) -> files.FileKey | None:
     """The file the job writes: its output path, or its source for an in-place edit."""
     if job.settings.output.edit_in_place:
         return _source_key(job)
@@ -150,34 +155,59 @@ def _output_key(job: QueueJob) -> str | None:
     return _path_key(path)
 
 
-def _same_file(key: str, other: str | None) -> bool:
-    """Two keys name one file: the same resolved path (links), the same path without case
-    (``files.same_file``: Windows and macOS ignore case, on Linux it errs on the safe side),
-    or the same ``(st_dev, st_ino)`` (a hard link; on Windows the volume serial number and the
-    file index)."""
-    if other is None:
-        return False
-    return key == other or files.same_file(Path(key), Path(other))
+@dataclass(frozen=True, slots=True)
+class _Keys:
+    """A job's file keys, taken in a worker thread when the job is added, retried or restored
+    and kept while it waits and runs (runtime only, not saved)."""
+
+    source: files.FileKey
+    output: files.FileKey | None
 
 
-def _conflicts(job: QueueJob, active: Iterable[ActiveJob]) -> bool:
+def _job_keys(job: QueueJob) -> _Keys:
+    """``job``'s keys (blocking: see :func:`_path_key`)."""
+    source = _source_key(job)
+    if job.settings.output.edit_in_place:
+        return _Keys(source, source)
+    path = job.settings.output.path
+    return _Keys(source, None if path is None else _path_key(path))
+
+
+def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = None) -> bool:
     """``job`` must wait: another running job writes its output, edits its source in place,
     or (for an in-place edit) reads or writes the source it would edit. Paths are compared as
-    files (:func:`_same_file`), so a link or a hard link to a file is that file (R4-1 of the
-    core-complete review). A few ``stat`` calls per running job, in the event loop."""
-    output = _output_key(job)
-    source = _source_key(job)
+    files (:func:`reframe.queue.files.same_key`), so a link or a hard link to a file is that
+    file (R4-1 of the core-complete review). With ``keys`` (what the queue passes: taken off
+    the event loop) there is no file-system call; without them they are taken now, blocking
+    (for callers off the event loop and tests)."""
+    if keys is None:
+        keys = _job_keys(job)
+    output, source = keys.output, keys.source
     in_place = job.settings.output.edit_in_place
+    same = files.same_key
     for other in active:
-        if output is not None and _same_file(output, other.output_key):
+        if output is not None and same(output, other.output_key):
             return True  # the same output is being written by another job
-        if other.in_place and _same_file(source, other.source_key):
+        if other.in_place and same(source, other.source_key):
             return True  # its source is being edited in place
-        if in_place and (
-            _same_file(source, other.source_key) or _same_file(source, other.output_key)
-        ):
+        if in_place and (same(source, other.source_key) or same(source, other.output_key)):
             return True  # the source to edit is being read or written
     return False
+
+
+def _restored_error(job: QueueJob) -> str:
+    """The error of a job that was running or paused when Reframe stopped. An in-place edit
+    may have been stopped while mkvpropedit wrote its source (a crash or a hard exit kills the
+    child), so it says what that can mean for the file (final review RB-4)."""
+    error = "Reframe stopped while the job was running."
+    plan = job.plan
+    edits = plan is not None and plan.job_type == "metadata_edit" and bool(plan.steps)
+    if job.settings.output.edit_in_place and edits:
+        name = Path(job.settings.source.path).name
+        error += (
+            f" If mkvpropedit was editing {name} in place at that moment, the file may be damaged."
+        )
+    return error
 
 
 class QueueService:
@@ -255,9 +285,14 @@ class QueueService:
             step_time_limit=step_time_limit,
             tick=watchdog_tick,
             log_interval=log_interval,
+            resumed=self._resumed_for_stop,
         )
         self._jobs: dict[str, QueueJob] = {}
         self._active: dict[str, ActiveJob] = {}
+        self._keys: dict[str, _Keys] = {}
+        """Each waiting or running job's file keys (taken off the event loop; RB-1)."""
+        self._keying: dict[str, asyncio.Task[None]] = {}
+        """The jobs whose keys are being taken in the background (restored jobs)."""
         self._processing = False
         self._only: set[str] | None = None
         """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
@@ -297,11 +332,15 @@ class QueueService:
             log_path=log_file(self._data_dir, job_id),
             error=error,
         )
+        keys = None if errors else await self._take_keys(queued)  # a failed job: at its retry
+        self._check_open()
         async with self._lock:
             order = self._ordered()
             index = len(order) if position is None else max(0, min(position, len(order)))
             order.insert(index, queued)
             self._jobs[job_id] = queued
+            if keys is not None:
+                self._keys[job_id] = keys
             changed = self._renumber(order)
             await self._save_many([queued, *(j for j in changed if j is not queued)])
         self._events.publish(
@@ -332,6 +371,7 @@ class QueueService:
             if job.state in _ACTIVE or job_id in self._active:
                 raise JobStateError(f"job {job_id} is {job.state.value}: cancel it first")
             del self._jobs[job_id]
+            self._keys.pop(job_id, None)
             changed = self._renumber(self._ordered())
             await self._call(lambda: self._store.delete(job_id))
             await self._save_many(changed)
@@ -371,6 +411,13 @@ class QueueService:
             return job.model_copy(deep=True)
         if job.state not in _RETRY:
             raise JobStateError(f"job {job_id} is {job.state.value}: it cannot be retried")
+        # Taken again: a link or a file may have changed since the job was added (RB-1).
+        keys = await self._take_keys(job)
+        self._check_open()
+        job = self._job(job_id)  # removed meanwhile: UnknownJobError
+        if job.state not in _RETRY:  # a retry at the same time took it first
+            return job.model_copy(deep=True)
+        self._keys[job_id] = keys
         job.started_at = job.finished_at = None
         job.progress = None
         await self._set_state(job, JobState.WAITING, error=None)
@@ -585,7 +632,7 @@ class QueueService:
             if job.state in _ACTIVE:
                 interrupted.append((job, job.state))
                 job.state = JobState.INTERRUPTED
-                job.error = "Reframe stopped while the job was running."
+                job.error = _restored_error(job)
                 job.finished_at = job.finished_at or now
             self._jobs[job.id] = job
         changed = self._renumber(self._ordered())
@@ -599,12 +646,16 @@ class QueueService:
                 JobStateEvent(job_id=job.id, state=job.state, previous=previous, error=job.error)
             )
         leftovers = [job for job, _ in interrupted if job.plan is not None]
-        if not leftovers:
-            return
         try:
             loop = asyncio.get_running_loop()
-        except RuntimeError:  # used outside a loop: clean up now
-            self._remove_leftovers(leftovers)
+        except RuntimeError:  # used outside a loop: clean up now; keys when the queue runs
+            if leftovers:
+                self._remove_leftovers(leftovers)
+            return
+        for job in self._ordered():
+            if job.state is JobState.WAITING:
+                self._want_keys(job)  # in the background, so start() finds them (RB-1)
+        if not leftovers:
             return
         task = loop.create_task(self._clean_leftovers(leftovers), name="reframe-queue-leftovers")
         self._background.add(task)
@@ -656,12 +707,16 @@ class QueueService:
                 break
             if not self._eligible(job):
                 continue
-            if _conflicts(job, self._active.values()):
+            keys = self._keys.get(job.id)
+            if keys is None:  # a restored job: its keys are being taken off the event loop
+                self._want_keys(job)
+                continue
+            if _conflicts(job, self._active.values(), keys):  # no file-system call (RB-1)
                 continue  # see _conflicts; the next job in the queue may run instead
             active = ActiveJob(
                 job_id=job.id,
-                output_key=_output_key(job),
-                source_key=_source_key(job),
+                output_key=keys.output,
+                source_key=keys.source,
                 in_place=job.settings.output.edit_in_place,
             )
             self._active[job.id] = active
@@ -670,6 +725,36 @@ class QueueService:
                 self._run(job, active), name=f"reframe-queue-job-{job.id}"
             )
         return False
+
+    async def _take_keys(self, job: QueueJob) -> _Keys:
+        """``job``'s file keys, taken in a worker thread: a disk or a network share that does
+        not answer delays only this call, never the event loop (final review RB-1)."""
+        return await asyncio.to_thread(_job_keys, job)
+
+    def _want_keys(self, job: QueueJob) -> None:
+        """Take ``job``'s keys in the background (a restored waiting job); the queue looks for
+        jobs to start again when they are there. Until then the job is passed over, so a share
+        that does not answer holds back only its own job."""
+        if self._closed or job.id in self._keys or job.id in self._keying:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # used outside a loop: the next look for jobs asks again
+            return
+        task = loop.create_task(self._keys_in_background(job), name=f"reframe-queue-keys-{job.id}")
+        self._keying[job.id] = task
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _keys_in_background(self, job: QueueJob) -> None:
+        try:
+            keys = await self._take_keys(job)
+        finally:
+            self._keying.pop(job.id, None)
+        if self._closed or self._jobs.get(job.id) is not job:
+            return  # closed or removed meanwhile
+        self._keys.setdefault(job.id, keys)  # a retry meanwhile took newer ones
+        self._schedule()
 
     async def _run(self, job: QueueJob, active: ActiveJob) -> None:
         joblog = JobLog(
@@ -703,7 +788,9 @@ class QueueService:
             outcome = Outcome(JobState.FAILED, error=f"Internal error: {type(exc).__name__}: {exc}")
         finally:
             if outcome is None:  # the task itself was cancelled (never by the queue)
-                outcome = Outcome(JobState.INTERRUPTED, error="The job was stopped.")
+                # During an in-place step, what happened to the source (RB-4).
+                error = active.end_note or "The job was stopped."
+                outcome = Outcome(JobState.INTERRUPTED, error=error)
             with contextlib.suppress(Exception):
                 await self._finish(job, active, joblog, outcome)
 
@@ -748,6 +835,7 @@ class QueueService:
             # No await from here on: the slot, the count and the when-done check change
             # together, so the when-done action is taken before a wait() for the job returns.
             self._active.pop(job.id, None)
+            self._keys.pop(job.id, None)  # a retry takes them again
             self._when.count(outcome.state)
             try:
                 drained = self._schedule()
@@ -825,6 +913,14 @@ class QueueService:
             return
         active.holds_inhibit = False
         await self._inhibitor.release()
+
+    async def _resumed_for_stop(self, job: QueueJob, active: ActiveJob) -> None:
+        """A paused job's in-place mkvpropedit step was resumed so that a cancel or
+        ``close()`` can let it finish (called by the runner with ``active.control`` held): the
+        job is ``running`` again until it ends, and holds its sleep inhibit, as after
+        :meth:`resume` (final review RB-5)."""
+        await self._set_state(job, JobState.RUNNING)
+        await self._hold_inhibit(active, job)
 
     # ------------------------------------------------------------------ helpers
 

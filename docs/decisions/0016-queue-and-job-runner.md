@@ -403,3 +403,100 @@ None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue
   `tests/queue/test_job_keys_review_fixes.py`, among them
   `test_the_same_output_through_a_linked_folder` (also a folder below the link that does not
   exist yet) and `test_file_identity_is_what_os_stat_reports` (mocked, the Windows path).
+
+## Follow-up (final review, 2026-10-17)
+
+A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) found two majors
+in the R4-1 keys above, a minor in the R4-7 stop path (decision 0034) and a suspected Windows
+case. Each test below failed on 5dbf152 and passes now
+(`tests/queue/test_queue_final_review.py`).
+
+- **RB-1 (major): the R4-1 keys read the disk on the event loop.** `realpath` is an `lstat`
+  per part of the path, `samefile` two `stat` calls, and the queue called them in `_schedule`,
+  which runs in `add()`, `start()`, `retry()`, `reorder()` and at the end of every job. Every
+  other path call of the queue runs in a worker thread. With each `stat` / `lstat` of a "share"
+  folder mocked to take 0.3 s, `parallel_jobs` 2 and three waiting jobs with outputs on the
+  share, `start()` blocked the event loop for 7.5 s (every job's progress, cancel and `close()`
+  with it).
+
+  **Decision.** The file identity of R4-1 stays, but it is read once, off the event loop, and
+  compared without I/O. `reframe.queue.files.file_key(path)` (blocking) gives a `FileKey`: the
+  path with its links resolved in the OS's case, and `(st_dev, st_ino)` when the file exists;
+  `files.same_key(a, b)` compares two keys with R4-1's rule (equal, equal without case, or the
+  same `(st_dev, st_ino)`) and no file-system call; `files.same_file(a, b)` is now
+  `same_key(file_key(a), file_key(b))` (the same meaning as before, plus the two items below).
+  The queue reads a job's keys in a worker thread (`asyncio.to_thread`) when the job is added
+  (`add` awaits them, as it awaits its probe), retried (read again) or restored (in the
+  background when the store is opened), and keeps them with the job while it waits and runs
+  (runtime only, never saved; dropped when the run ends). `_schedule` passes the kept keys to
+  `_conflicts` and gives them to the job's `ActiveJob`; it reads no file. A waiting job whose
+  keys are not there yet (a restored job in the first moments after the store opened) is
+  passed over until they are, and the queue looks for jobs to start again when they come: a
+  share that does not answer delays only its own job (its `retry`, or its start), never the
+  event loop or the other jobs. The test
+  (`test_choosing_a_job_never_reads_a_slow_share_on_the_event_loop`) records every `stat` /
+  `lstat` of the share made on the event-loop thread during `add`, `reorder`, `start`,
+  `retry` and four job ends: none now (before: an `lstat` per part of every path, and
+  `start()` took 7.5 s); `start()` now takes under a millisecond and the loop's longest pause
+  was 0.04 s. The other blocking call of the runner on the loop, the `output.exists` issue of
+  the `ask` collision case, runs in a worker thread too.
+
+  **When identity changes after the keys were read.** The keys are those of the moment the job
+  was added, retried or restored; the queue does not read them again before a job starts. The
+  queue's own work keeps them true: an output that does not exist yet is keyed on its resolved
+  path (the existing part of its folder), and a later job that reads or edits that output names
+  the same path, so the rule holds when the file is created; an in-place edit keeps the file's
+  `(st_dev, st_ino)`. What can make a kept key wrong is a change by someone else while the job
+  waits: a symbolic link pointed elsewhere, a folder replaced by a link, a hard link made to a
+  file after the job that names it was added, or a file replaced under a hard link. A replaced
+  file errs on the safe side (two paths still count as one file: an extra wait); a link that is
+  changed can let two jobs on one file run at once. Chosen because reading the keys again
+  before each start would need either a file-system call on the loop (RB-1) or an asynchronous
+  start (a job that holds a slot before it knows it may run). `retry` reads them again, and
+  the run-time checks that protect the source (`queue.writes_source`, the in-place refusal of
+  0034) read the file system at run time, in a worker thread.
+
+- **RB-2 (major): a path with a NUL character broke the scheduler.** `os.path.realpath` raises
+  `ValueError` for it (`abspath`, the key before R4-1, did not), and `files.same_file` caught
+  only `OSError`. Such a job was added as `failed` (validation's "Validation could not check
+  output … Please report this."); `retry()` made it `waiting` and raised from `_schedule`, and
+  from then on every `add()`, `start()` and job end raised: no job started. Now `file_key`,
+  `same_file`, `_path_key` and `remove_files` never raise for such a path: a path that cannot
+  be resolved is compared as written (absolute, in the OS's case), and has no identity; a file
+  name that cannot be removed is a clean-up message. A job whose source or output path has a
+  NUL character fails with the new error issue `queue.path_unusable` ("The output path
+  …/Mo\0vie.mkv has a NUL character, which no file system allows, so the job cannot run.
+  Correct the path."): at `add` (before its probe: a NUL source made `add` raise from the
+  facade's probe) and again when it runs (a retry, a stored job after a restore), and the
+  queue goes on. Tests: `test_a_nul_in_a_path_fails_its_job_and_the_queue_goes_on` (the
+  reviewer's case), `test_a_nul_in_the_source_path_is_a_clean_failure`,
+  `test_a_restored_job_with_a_nul_in_its_path` (a waiting one and the leftovers of a running
+  one), `test_no_key_function_raises_for_a_path_with_a_nul`,
+  `test_python_facts_behind_the_rule` (CPython 3.14.7: `abspath` takes the NUL, `stat` and
+  `realpath` raise `ValueError`). Not changed (validation's files): `LocalFileSystem.same_file`
+  still lets `ValueError` out, which validation reports as `validation.rule_failed`; the queue
+  checks first, so a queued job never shows it.
+
+- **RB-5 (minor): a paused in-place edit that a cancel or `close()` resumes was shown
+  `paused`.** The runner resumed mkvpropedit (R4-7) but published no state, and the sleep
+  inhibit that the pause gave back was not taken again, so the job said `paused` while
+  mkvpropedit ran on (up to its time limit). The runner now calls the queue back when it
+  resumes such a step: the job goes `paused` → `running` (no new state: no persisted enum
+  changes) and takes its sleep inhibit again, as after `resume()`; it ends `cancelled` or
+  `interrupted` as before. Test: `test_a_paused_edit_that_a_stop_resumes_is_shown_running`
+  (cancel and close).
+
+- **A file index of 0 (suspected, Windows; fixed).** CPython's `samestat` compares
+  `(st_dev, st_ino)` with no guard, and on a volume without file indexes Windows reports
+  `st_ino` 0 for every file: any two files there were one file. The queue then ran unrelated
+  jobs one after the other, `files.same_file` could fail a job with `queue.writes_source`, and
+  the clean-up kept a `.part` file as "the source". Now a `st_ino` of 0 is no identity: the
+  path decides, as for a file that does not exist. Mocked (`os.stat` returns `st_ino` 0):
+  `test_a_zero_file_index_is_no_identity`. A volume serial number (`st_dev`) of 0 with real
+  file indexes is not treated specially (two such volumes would need equal indexes to
+  collide).
+
+Known limits (no change): when a killed tree has not ended after 10 s,
+`reframe.tools.runner._kill_and_reap` calls `proc.kill()` and then waits for the process with
+no bound (C-1's code, not this step's); a kept key can be out of date after a change on disk by
+someone else (above).
