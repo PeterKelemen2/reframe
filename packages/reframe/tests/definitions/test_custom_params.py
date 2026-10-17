@@ -4,6 +4,9 @@ encoders is in ``tests/validation/test_custom_params_ffmpeg.py``)."""
 
 from __future__ import annotations
 
+import tomllib
+from importlib import resources
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -63,6 +66,61 @@ def test_file_keys() -> None:
     assert file_key("libx264", "csv") is None  # an x265 key: x264 refuses it anyway
     assert file_key("libsvtav1", "fgs-table") is not None
     assert file_key("libvpx-vp9", "csv") is None
+
+
+def test_a_name_or_a_file_name_is_compared_as_the_library_compares_it() -> None:
+    """Final review RC-1 (decision 0035 "Follow-up (final review, 2026-10-17)"): x264 ``cqm``
+    reads every value as a file name unless it contains ``flat`` or ``jvt`` (``strstr``, case
+    sensitive); x265 ``scaling-list`` takes only the whole names ``default`` / ``off``
+    (``strcmp``); through a ``no`` prefix the library gets ``true`` / ``false``, a file name.
+    The real encoders: ``tests/validation/test_custom_params_ffmpeg.py``."""
+    file_named = [
+        ("libx264", "cqm", "/home/u/secret.cfg"),
+        ("libx264", "cqm", "FLAT"),
+        ("libx264", "cqm", "Flat"),
+        ("libx264", "cqm", "JVT"),
+        ("libx264", "cqm", "fla"),
+        ("libx264", "cqm", "default"),
+        ("libx264", "cqm", ""),
+        ("libx264", "nocqm", "flat"),  # x264 opens a file named "true"
+        ("libx264", "no-cqm", "jvt"),
+        ("libx264", "cqmfile", "flat"),
+        ("libx265", "scaling-list", "DEFAULT"),
+        ("libx265", "scaling-list", "default "),  # FFmpeg keeps an escaped or quoted space
+        ("libx265", "scaling-list", "./default"),
+        ("libx265", "scaling-list", "flat"),
+        ("libx265", "no-scaling-list", "default"),  # x265 opens a file named "true"
+        ("libx265", "noscaling-list", "off"),
+    ]
+    for encoder, key, value in file_named:
+        assert file_key(encoder, key, value) is not None, (encoder, key, value)
+    names = [
+        ("libx264", "cqm", "flat"),
+        ("libx264", "cqm", "jvt"),
+        ("libx264", "cqm", "jvt "),
+        ("libx264", "cqm", "./flat"),  # x264 takes these as the presets: no file is opened
+        ("libx264", "cqm", "/x/jvt/y.cfg"),
+        ("libx264", "cqm", "flatjvt"),
+        ("libx264", "CQM", "flat"),
+        ("libx265", "scaling-list", "default"),
+        ("libx265", "scaling-list", "off"),
+        ("libx265", "scaling_list", "off"),
+    ]
+    for encoder, key, value in names:
+        assert file_key(encoder, key, value) is None, (encoder, key, value)
+    assert file_key("libx264", "cqm", "/home/u/secret.cfg") == (
+        "reads quantisation matrices from this file unless the value is flat or jvt"
+    )
+
+
+def test_the_value_names_are_matched_in_a_known_way() -> None:
+    data = resources.files("reframe.definitions") / "data" / "custom_params.toml"
+    raw = tomllib.loads(data.read_text(encoding="utf-8"))
+    assert set(raw["value_match"].values()) <= {"whole", "contains"}
+    assert set(raw["value_match"]) <= set(raw["value_exceptions"])
+    rules = custom_param_rules()
+    assert rules.value_contains == {"cqm"}
+    assert rules.value_exceptions["cqm"] == {"flat", "jvt"}
 
 
 def test_own_options_are_an_allow_list() -> None:

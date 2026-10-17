@@ -20,6 +20,11 @@
 # Key names are compared the way the libraries read them: without leading `-`, `_` as `-`,
 # in lower case, and also without a `no-` / `no` prefix (x264 and x265 read `nostats=x` as
 # `stats=true`, and write a file named `true`).
+#
+# A key whose value is a name *or* a file name (x265 `scaling-list`, x264 `cqm`) has its names
+# in [value_exceptions], compared as the library compares them ([value_match]); every other
+# value is a file. Through a `no` prefix the library gets `true` / `false` (a file of that name),
+# so the names never apply there (decision 0035 "Follow-up (final review, 2026-10-17)").
 
 # --------------------------------------------------------------------------- params argument
 
@@ -30,6 +35,7 @@ dump-yuv = "writes the reconstructed frames to this file"
 pass = "writes the 2-pass statistics (x264_2pass.log in the working folder); Reframe runs 2-pass itself"
 # Read (checked: "can't open file").
 cqmfile = "reads quantisation matrices from this file"
+cqm = "reads quantisation matrices from this file unless the value is flat or jvt"
 # Accepted by libx264; writes the compiled OpenCL kernels (no OpenCL here to see it).
 opencl-clbin = "the OpenCL kernel cache file"
 # Refused by libx264 today ("Error parsing option"); file options of the x264 program.
@@ -82,8 +88,20 @@ input = "an input file"
 output = "an output file"
 
 [value_exceptions]
-# Values that do not name a file.
+# Values that do not name a file, as the library sees the value (after FFmpeg's quotes and
+# escapes; checked with x264 core 165 and x265 4.3, testdata/README.md C-6 "Final review").
+# x265 `scaling-list`: the whole value, case-sensitive ("DEFAULT", "./default", "default "
+# and "flat" are opened as files).
 scaling-list = ["default", "off"]
+# x264 `cqm`: a value that contains "flat" is the flat matrix, else one that contains "jvt"
+# the JVT matrix ("./flat", "/x/jvt/y.cfg"); case-sensitive ("FLAT", "Flat", "JVT", "fla",
+# "default" and "0" are opened as files).
+cqm = ["flat", "jvt"]
+
+[value_match]
+# How the library compares a value with [value_exceptions]: "whole" (strcmp, the default) or
+# "contains" (strstr: x264's `cqm`).
+cqm = "contains"
 
 # --------------------------------------------------------------------------- own options
 

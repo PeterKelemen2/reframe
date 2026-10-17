@@ -369,8 +369,17 @@ def video_choice_issues(
 # --------------------------------------------------------------------------- options
 
 
-_UINT = r"\s*(\d+)"
-_REAL = r"\s*((?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
+#: What FFmpeg drops around a params-argument value (``av_get_token``): the HDR texts reach the
+#: encoder without these, and with any other character kept (x265 cannot parse a text that
+#: starts with a vertical tab, and SVT-AV1 never ends).
+_FFMPEG_SPACE = " \n\t\r"
+#: A number as x265 (``sscanf`` ``%hu`` / ``%u``) and SVT-AV1 read it: C white space (not a
+#: no-break space), an optional sign, ASCII digits. ``+5`` is written as ``5`` and ``-0`` as
+#: ``0``; another negative number wraps (x265 ``-1`` → 65535) or is changed (SVT-AV1 ``-0.265``
+#: → 0.735), so the checks refuse it (decision 0035, final review RC-2).
+_C_SPACE = "[ \t\n\v\f\r]*"
+_UINT = rf"{_C_SPACE}([-+]?[0-9]+)"
+_REAL = rf"{_C_SPACE}([-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)"
 _X265_MASTER_DISPLAY = re.compile(
     f"G\\({_UINT},{_UINT}\\)B\\({_UINT},{_UINT}\\)R\\({_UINT},{_UINT}\\)WP\\({_UINT},{_UINT}\\)L\\({_UINT},{_UINT}\\)"
 )
@@ -386,7 +395,7 @@ def _x265_master_display_problem(text: str) -> str | None:
     """x265 4.3 parses ``G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min)`` with ``%hu`` and ``%u``: any
     other text writes no mastering display ("unable to parse mastering display color volume
     info", exit 0), and a number above 65535 wraps (70000 → 4464)."""
-    found = _X265_MASTER_DISPLAY.fullmatch(text.strip())
+    found = _X265_MASTER_DISPLAY.fullmatch(text.strip(_FFMPEG_SPACE))
     expected = (
         "must be G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) with whole numbers: chromaticities in "
         "units of 0.00002 (0 to 50000), luminance in units of 0.0001 cd/m²"
@@ -394,6 +403,8 @@ def _x265_master_display_problem(text: str) -> str | None:
     if found is None:
         return expected
     numbers = [int(n) for n in found.groups()]
+    if any(n < 0 for n in numbers):
+        return expected
     if any(n > 50000 for n in numbers[:8]) or any(n > _U32 for n in numbers[8:]):
         return expected
     return None
@@ -407,7 +418,7 @@ def _svt_mastering_display_problem(text: str) -> str | None:
         "must be G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) with plain numbers: chromaticities from 0 "
         "to 1, luminance in cd/m² up to 10000"
     )
-    stripped = text.strip()
+    stripped = text.strip(_FFMPEG_SPACE)
     tags = list(_SVT_DISPLAY_TAG.finditer(stripped))
     if "".join(m.group(0) for m in tags) != stripped:
         return expected
@@ -417,7 +428,7 @@ def _svt_mastering_display_problem(text: str) -> str | None:
     for m in tags:
         values = (float(m.group(2)), float(m.group(3)))
         limit = _PQ_MAX if m.group(1) == "L" else 1.0
-        if any(v > limit for v in values):
+        if any(v < 0 or v > limit for v in values):
             return expected
     return None
 
@@ -426,8 +437,8 @@ def _light_level_problem(text: str) -> str | None:
     """x265 (``%hu,%hu``) and SVT-AV1: ``MaxCLL,MaxFALL``. x265 with one number writes MaxFALL
     0 ("Invalid value"), SVT-AV1 refuses one or three numbers ("Invalid cll provided"); a
     number above 65535 wraps (x265) or is clipped (SVT-AV1)."""
-    found = _LIGHT_LEVEL.fullmatch(text.strip())
-    if found is None or any(int(n) > _U16 for n in found.groups()):
+    found = _LIGHT_LEVEL.fullmatch(text.strip(_FFMPEG_SPACE))
+    if found is None or any(not 0 <= int(n) <= _U16 for n in found.groups()):
         return "must be MaxCLL,MaxFALL: two whole numbers in cd/m² up to 65535"
     return None
 

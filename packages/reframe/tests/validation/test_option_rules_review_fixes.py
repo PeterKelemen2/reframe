@@ -164,3 +164,59 @@ def test_r5_8_copy_hdr_metadata_writes_valid_text() -> None:
         assert len(values) == 2
         found = _found(encoder=encoder, bit_depth=10, advanced=values)
         assert not [f for f in found if f[0] == "encoder.option_invalid"], (encoder, values)
+
+
+# --------------------------------------------------------------------------- RC-2 (final review)
+
+X265_SIGNED = "G(+13250,+34500)B(+7500,+3000)R(+34000,+16000)WP(+15635,+16450)L(+10000000,+1)"
+SVT_SIGNED = "G(+0.265,+0.69)B(+.15,+.06)R(+0.68,+0.32)WP(+0.3127,+0.329)L(+1e+3,+1e-4)"
+ARABIC_13250 = "\u0661\u0663\u0662\u0665\u0660"
+
+
+@pytest.mark.parametrize(
+    ("encoder", "key", "value", "valid"),
+    [
+        # x265 (sscanf %hu / %u) and SVT-AV1 take a "+" and write the same as without it.
+        ("libx265", "master-display", X265_SIGNED, True),
+        ("libx265", "master-display", X265_MD.replace("(13250", "( +13250"), True),
+        ("libx265", "max-cll", "+1000,+400", True),
+        ("libsvtav1", "mastering-display", SVT_SIGNED, True),
+        ("libsvtav1", "content-light", "+1000,+400", True),
+        # "-0" is written as 0; any other negative number wraps or is changed.
+        ("libx265", "master-display", X265_MD.replace("L(10000000,1)", "L(10000000,-0)"), True),
+        ("libx265", "max-cll", "1000,-0", True),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("L(1000,0.0001)", "L(1000,-0.0)"), True),
+        ("libsvtav1", "content-light", "1000,-0", True),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(-1"), False),  # 65535
+        ("libx265", "master-display", X265_MD.replace("L(10000000,1)", "L(10000000,-1)"), False),
+        ("libx265", "max-cll", "1000,-400", False),  # 65136
+        ("libsvtav1", "mastering-display", SVT_MD.replace("(0.265", "(-0.265"), False),  # 0.735
+        ("libsvtav1", "mastering-display", SVT_MD.replace("0.0001)", "-0.0001)"), False),
+        ("libsvtav1", "content-light", "-1,400", False),  # 65535
+        # Not parsed: two signs, a space after the sign.
+        ("libx265", "master-display", X265_MD.replace("(13250", "(++13250"), False),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(+ 13250"), False),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("(0.265", "(++0.265"), False),
+        ("libsvtav1", "content-light", "+ 1000,400", False),
+        # C white space before a number is skipped; other characters are not.
+        ("libx265", "master-display", X265_MD.replace("(13250", "(\t\v\f13250"), True),
+        ("libsvtav1", "content-light", "1000,\v400", True),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(\u00a013250"), False),
+        ("libx265", "master-display", X265_MD.replace("13250", ARABIC_13250), False),
+        ("libx265", "max-cll", "\u0661000,400", False),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("(0.265", "(\u00a00.265"), False),
+        # FFmpeg drops only " \n\t\r" around the value: x265 cannot parse a text that starts
+        # with a vertical tab, and SVT-AV1 never ends.
+        ("libx265", "master-display", "\v" + X265_MD, False),
+        ("libsvtav1", "mastering-display", "\f" + SVT_MD, False),
+        ("libx265", "master-display", " \t" + X265_MD + "\n", True),
+    ],
+)  # fmt: skip
+def test_rc_2_signs_and_spaces_as_the_encoders_read_them(
+    encoder: str, key: str, value: str, valid: bool
+) -> None:
+    """Final review RC-2 (decision 0035 "Follow-up (final review, 2026-10-17)"): the HDR texts
+    take exactly what x265 and SVT-AV1 write unchanged (``test_option_formats_ffmpeg.py``)."""
+    found = _found(encoder=encoder, bit_depth=10, advanced={key: value})
+    invalid = ("encoder.option_invalid", f"video.advanced.{key}", Severity.ERROR)
+    assert (invalid in found) is not valid, found

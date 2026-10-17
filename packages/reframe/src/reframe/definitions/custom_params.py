@@ -56,7 +56,12 @@ class CustomParamRules:
     """Encoder id → key (as :func:`library_key_forms` writes it) → what the encoder does with
     the file."""
     value_exceptions: Mapping[str, frozenset[str]]
-    """Key → values that do not name a file (x265 ``scaling-list=default``)."""
+    """Key → values that do not name a file (x265 ``scaling-list=default``, x264
+    ``cqm=flat``)."""
+    value_contains: frozenset[str]
+    """Keys of :attr:`value_exceptions` whose library takes every value that *contains* one of
+    the names (x264 ``cqm``: ``strstr``); the others compare the whole value (x265
+    ``scaling-list``: ``strcmp``)."""
     codec_options: frozenset[str]
     """The generic encoder options (AVCodecContext, ``E..V``)."""
     file_options: frozenset[str]
@@ -75,6 +80,7 @@ def custom_param_rules() -> CustomParamRules:
     with data.open("rb") as f:
         raw = tomllib.load(f)
     ffmpeg = raw["ffmpeg"]
+    match: dict[str, str] = raw.get("value_match", {})  # "whole" (the default) or "contains"
     return CustomParamRules(
         file_keys={
             encoder: {_fold(key): what for key, what in keys.items()}
@@ -83,6 +89,7 @@ def custom_param_rules() -> CustomParamRules:
         value_exceptions={
             _fold(key): frozenset(values) for key, values in raw["value_exceptions"].items()
         },
+        value_contains=frozenset(_fold(key) for key, mode in match.items() if mode == "contains"),
         codec_options=frozenset(ffmpeg["codec_options"]),
         file_options=frozenset(ffmpeg["file_options"]),
         unchecked_options=frozenset(ffmpeg["unchecked_options"]),
@@ -213,16 +220,36 @@ def library_key_forms(name: str) -> set[str]:
     return forms
 
 
+def _names_no_file(rules: CustomParamRules, key: str, value: str) -> bool:
+    """Whether the library takes ``value`` of the file key ``key`` as a name, not as a file
+    name, compared as the library compares it (a C string: up to a NUL)."""
+    names = rules.value_exceptions.get(key)
+    if not names:
+        return False
+    text = value.partition("\0")[0]
+    if key in rules.value_contains:
+        return any(name in text for name in names)
+    return text in names
+
+
 def file_key(encoder_id: str, name: str, value: str = "") -> str | None:
     """What the encoder does with the file that the params-argument key ``name`` names
-    (``None``: not a file key of ``encoder_id``, or a value that names no file)."""
+    (``None``: not a file key of ``encoder_id``, or a value the library takes as a name).
+
+    ``value`` is the value as the library reads it (after FFmpeg's quotes and escapes:
+    :func:`dict_pairs`), compared as the library compares it: the whole value (x265
+    ``scaling-list`` takes ``default`` and ``off``, and opens ``DEFAULT`` or ``default `` as a
+    file) or a part of it (x264 ``cqm`` takes any value that contains ``flat`` or ``jvt``, and
+    opens ``FLAT`` or ``/x/matrix.cfg``). Through a ``no`` prefix the library gets ``true`` or
+    ``false`` (x264 ``nocqm=flat`` opens a file named ``true``), so no name applies there."""
     rules = custom_param_rules()
     keys = rules.file_keys.get(encoder_id, {})
+    typed = _fold(name)
     for form in sorted(library_key_forms(name)):
         what = keys.get(form)
         if what is None:
             continue
-        if value.strip().strip("'") in rules.value_exceptions.get(form, frozenset()):
+        if form == typed and _names_no_file(rules, form, value):
             continue
         return what
     return None
