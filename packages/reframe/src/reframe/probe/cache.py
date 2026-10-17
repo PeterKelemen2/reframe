@@ -68,7 +68,8 @@ PRUNE_EVERY = 200
 #: A temporary file older than this was left behind by a crash.
 _STALE_TMP_AGE = 3600.0
 
-#: The modules whose source decides what a probe produces.
+#: The modules whose source decides what a probe produces (``matroska.py``: the track reader
+#: gives ``language_ietf``; final review RB-7).
 _PARSER_MODULES = (
     "parse.py",
     "names.py",
@@ -76,6 +77,7 @@ _PARSER_MODULES = (
     "hdr.py",
     "bitrate.py",
     "mediainfo.py",
+    "matroska.py",
     "prober.py",
 )
 
