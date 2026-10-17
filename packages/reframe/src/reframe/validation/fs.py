@@ -128,7 +128,13 @@ class LocalFileSystem(RealNamingFs):
         if has_nul(a) or has_nul(b):
             return False
         try:
-            return os.path.samefile(a, b)
+            first, second = os.stat(a), os.stat(b)
+            if first.st_ino and second.st_ino:
+                return os.path.samestat(first, second)
+            # A file system without file indexes (st_ino 0, some Windows volumes): every file
+            # would be "the same", so compare the paths with links resolved, as the queue does
+            # (reframe.queue.files.FileKey; final review).
+            return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
         except OSError:
             return False
 
