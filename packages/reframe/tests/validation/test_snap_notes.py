@@ -81,7 +81,8 @@ def test_crop_note_says_what_happens() -> None:
     [issue] = [i for i in s.validate() if i.code == "dimensions.crop_not_detected"]
     assert issue.severity is Severity.INFO
     assert issue.message == (
-        "Crop detection is not available yet: automatic crop leaves the picture uncropped."
+        "Crop detection did not run for this job, so automatic crop has no values: "
+        "the picture is not cropped."
     )
 
 

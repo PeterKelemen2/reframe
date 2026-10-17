@@ -399,7 +399,9 @@ None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue
   run-time guard of the M2 follow-up already uses. On Linux, two outputs that differ only in
   case (`Movie.mkv`, `movie.mkv`) now wait for each other too (safe side, as that guard). The
   check costs a few `stat` calls per running job in the event loop each time the queue looks
-  for a job to start (a share that does not answer blocks it as long). Tests:
+  for a job to start (a share that does not answer blocks it as long). *Superseded by RB-1 of
+  the final review (below): the keys are read once, in a worker thread, and compared without
+  a file-system call.* Tests:
   `tests/queue/test_job_keys_review_fixes.py`, among them
   `test_the_same_output_through_a_linked_folder` (also a folder below the link that does not
   exist yet) and `test_file_identity_is_what_os_stat_reports` (mocked, the Windows path).

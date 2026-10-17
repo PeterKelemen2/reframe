@@ -69,6 +69,7 @@ from reframe.models.tools import ToolSet
 from reframe.naming import resolve_output_name
 from reframe.probe import ProbeError
 from reframe.probe.folder import list_media_files
+from reframe.queue import files as queue_files
 from reframe.validation import FileSystemView, LocalFileSystem, next_free_path, validate
 from reframe.validation.dryrun import dry_run as _dry_run
 
@@ -141,9 +142,9 @@ class Capabilities(Protocol):
 def file_key(path: str | os.PathLike[str]) -> str:
     """One key per file: two spellings of one file have the same key. The name checks of one
     command (:class:`OutputClaims`, ``Reframe.batch``) and the "taken once" rule of
-    :func:`find_media_files` compare files with it, as the queue does
-    (``reframe.queue.files.same_file``; R4-1 of the core-complete review, RA-1 of the final
-    review).
+    :func:`find_media_files` compare files with it. It is the queue's
+    :class:`~reframe.queue.files.FileKey` (R4-1 of the core-complete review, RA-1 and RB-1 of
+    the final review) as a string that a ``dict`` or a ``set`` can hold:
 
     - A path that exists is keyed by the file's identity: ``st_dev`` and ``st_ino`` of
       ``os.stat``, which follows links. A symbolic link, a linked folder, a hard link and, on a
@@ -155,21 +156,15 @@ def file_key(path: str | os.PathLike[str]) -> str:
       path: links resolved (``realpath``, which resolves the existing part of the folder of a
       file that does not exist yet), in the OS's case (``normcase``) and case-folded. macOS and
       Windows file systems ignore case; on Linux two new names that differ only in case are
-      taken as one file, the safe side (the queue's ``same_file`` does the same).
+      taken as one file, the safe side (the queue does the same).
 
-    Blocking (``stat``): call it in a worker thread for many paths.
+    Blocking (``stat``): call it in a worker thread for many paths. Never raises (a path with
+    a NUL character is keyed as written).
     """
-    try:
-        info = os.stat(path)
-    except (OSError, ValueError):
-        info = None
-    if info is not None and info.st_ino:
-        return f"file:{info.st_dev}:{info.st_ino}"
-    try:
-        resolved = os.path.realpath(path)
-    except (OSError, ValueError):
-        resolved = os.path.abspath(path)
-    return "path:" + os.path.normcase(resolved).casefold()
+    key = queue_files.file_key(path)
+    if key.identity is not None:
+        return f"file:{key.identity[0]}:{key.identity[1]}"
+    return "path:" + key.path.casefold()
 
 
 @dataclass(frozen=True)

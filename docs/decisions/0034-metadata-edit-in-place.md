@@ -126,12 +126,14 @@ order unchanged, only metadata changed, *Edit in place* chosen". Several things 
 - The queue's same-output rule keys on `output.path`, which is the source for an in-place
   edit: two edits of one file never run at once. An encode that *reads* the same source can
   still run beside an in-place edit of it (a `queue/service.py` change; reported to the lead).
+  *Done since: item 1 of the follow-up of 2026-10-15 below.*
 - `tool.mkvpropedit_missing`'s fix "Write a new file" (validation/tools.py) only turns edit in
   place off; for a job whose path is the source it then gets `output.same_as_source` (with its
-  own fix). Reported to the lead.
+  own fix). Reported to the lead. *Done since: item 3 of the follow-up of 2026-10-15 below.*
 - Restored interrupted rows: the queue's leftover clean-up passes `plan.output_tmp` (the
   source) to `remove_files(…, keep=source)`, which refuses and logs it. Harmless; a
-  `queue/service.py` change could skip `metadata_edit` plans (reported).
+  `queue/service.py` change could skip `metadata_edit` plans (reported). *Done since: item 2
+  of the follow-up of 2026-10-15 below.*
 
 ### Open questions (defaults chosen, easy to change)
 

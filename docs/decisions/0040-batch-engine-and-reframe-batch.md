@@ -418,6 +418,15 @@ A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) foun
   fallback takes them as one, the safe side for running jobs; for "taken once" both must be
   encoded).
 
+  *Changed on 2026-10-17 (core-complete follow-up, after RB-1 made the queue's `FileKey`
+  public):* `file_key` is now built on `reframe.queue.files.file_key`, so there is one
+  implementation of the rule. The string is the identity when there is one, else the resolved,
+  case-folded path, so the case difference above stays. Validation's
+  `LocalFileSystem.same_file` (`os.path.samefile` before) follows the same rule for a file
+  system without file indexes (`st_ino` 0: the paths decide, not the identity). Test:
+  `tests/validation/test_same_file.py` (`test_without_file_indexes_two_files_are_not_the_same`
+  failed before).
+
   The key is computed **off the event loop** (the lead's note from RB-1: a `stat` of a network
   share that stops answering would freeze the loop): `find_media_files` already runs in a
   worker thread; the CLI builds `OutputClaims` and calls `check` with `asyncio.to_thread`; the

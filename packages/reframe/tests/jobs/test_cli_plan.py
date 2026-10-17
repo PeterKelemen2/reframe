@@ -49,7 +49,7 @@ def test_default_preset_prints_issues_then_the_command(movie: Path, cli_env: ft.
     assert "  Audio    #1  " in out
     assert out.index("Issues (") < out.index("Command (")
     issues = section(out, "Issues (0 errors, 0 warnings, 1 info)")
-    assert issues[0].startswith("  info     Crop detection is not available yet")
+    assert issues[0].startswith("  info     Crop detection did not run for this job")
     assert "[dimensions.crop_not_detected · dimensions.crop]" in issues[1]
     assert "fix: Do not crop" in issues[2]
     command = section(out, "Command (encode, 2 steps)")

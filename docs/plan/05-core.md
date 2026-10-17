@@ -161,8 +161,10 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (the pymediainfo library, if it loads) →
       `unknown`. The value records its source. Statistics tags are used only when they are
       plausible for the file (size, bit rate, duration); FFmpeg copies stale ones on re-encode.
-      MediaInfo also gives `language_ietf` (Matroska `LanguageIETF`, which ffprobe does not
-      show) (decision 0007).
+      `language_ietf` is the file's BCP 47 tag (Matroska `LanguageIETF`, which ffprobe does
+      not show): for Matroska, Reframe's own track reader gives it (`None` when the track has
+      none); for other containers, and when the reader cannot read or match the tracks,
+      MediaInfo gives it (decision 0007 and its follow-ups, decision 0034).
 - [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present and plausible.
 - [ ] **Role heuristics** (`probe/roles.py`): dispositions first, then title keywords
       (commentary, kommentar, commentaire, comentario, commento, kommentár, コメンタリー; SDH, CC,
@@ -393,7 +395,9 @@ functions in a registry, grouped by area.
       rounds every size to the chroma grid, so a property test replaces the rule; C-5's notes
       give the other issues (crop not detected, crop snapped, outside the fit box)
       ([0014](../decisions/0014-validation-rules-and-severities.md)). "Crop not detected" is
-      info until crop detection exists (M8, [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
+      info: an automatic crop without a rectangle means crop detection did not run for the
+      job, as for every CLI job ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md),
+      follow-up of 2026-10-17).
 - [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix). An HDR source
       encoded to 8-bit without tone mapping stays tagged HDR in 8 bits (warning, with fixes:
       tone mapping, 10-bit; [0014](../decisions/0014-validation-rules-and-severities.md)
