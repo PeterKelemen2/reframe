@@ -2007,8 +2007,20 @@ alone, and with `pass=1`:
 
 Every key found is in `custom_params.toml`; keys that need another key or a build feature to
 open their file (x265 `analysis-reuse-file`, `dhdr10-info`, `fovea-gaze-file`; x264
-`opencl-clbin`) were there already. Found on the way, not a file: x265 `deblock=abc` (and
-`lft=abc`) encodes no frame and FFmpeg never ends (SIGTERM does not end it either).
+`opencl-clbin`) were there already.
+
+**x265 with deblocking off never finishes a small picture** (RC-3, a known limit; decision
+0041, final review). Found on the way, not a file key. An earlier note here blamed the text
+`deblock=abc`; the cause is the picture width. x265 4.3 with the deblocking filter off
+(`no-deblock=1`, `deblock=false`, or a `deblock` value that x265 cannot read) never finishes a
+picture narrower than about 256 pixels (192×108 to 224×126 checked). FFmpeg sits at 0 % CPU and
+ignores SIGTERM. In Reframe (checked by the lead): the dry run gives the warning
+`encoder.dry_run_skipped` ("did not finish within 30 s") after 30.0 s; a queued encode fails
+with "FFmpeg made no progress … (no output, no CPU use) and was stopped" at the stall limit
+(600 s by default; 20 s in the lead's reproduction), and the process is killed. Checked again
+with the Arch n9.0.2 build (x265 4.3), 0.2 s of `testsrc2`: 192×108 with `no-deblock=1` or
+`lft=abc` had not finished after 12 s (killed); 320×180 with `no-deblock=1` or `deblock=abc`,
+and 192×108 with deblocking on, finished.
 
 **Signs and white space in the HDR texts** (RC-2); "the same" means the same side data in
 the output:
