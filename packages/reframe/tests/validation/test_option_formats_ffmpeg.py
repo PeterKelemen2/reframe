@@ -12,10 +12,12 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 
+from reframe.command.filtergraph import escape_value
 from reframe.definitions import load_definitions
 from reframe.models import (
     AverageBitrate,
@@ -176,3 +178,86 @@ def test_r5_8_svt_av1_never_ends_with_text_after_the_tags(tmp_path: Path) -> Non
         ended = False
     assert not ended
     assert _invalid("libsvtav1", "mastering-display", value)
+
+
+# --------------------------------------------------------------------------- RC-2 (final review)
+
+X265_SIGNED = "G(+13250,+34500)B(+7500,+3000)R(+34000,+16000)WP(+15635,+16450)L(+10000000,+1)"
+SVT_SIGNED = "G(+0.265,+0.69)B(+.15,+.06)R(+0.68,+0.32)WP(+0.3127,+0.329)L(+1e+3,+1e-4)"
+NEVER_ENDS = "FFmpeg never ended"
+
+
+def _written(encoder: str, key: str, value: str) -> object:
+    """The HDR side data ``encoder`` writes for ``key=value``, written as the command builder
+    writes an advanced option (``escape_value``): a dict, ``None`` (no side data of that kind)
+    or :data:`NEVER_ENDS` (killed after 10 s; two frames take well under a second)."""
+    ffmpeg, ffprobe = _tools()
+    params_arg = DEFS.video_encoders[encoder].params_arg
+    assert params_arg is not None
+    preset = ["-preset", "12"] if encoder == "libsvtav1" else ["-preset", "ultrafast"]
+    with tempfile.TemporaryDirectory(prefix="reframe-rc2-") as tmp:
+        out = Path(tmp) / "o.mkv"
+        try:
+            result = _run(
+                [ffmpeg, "-hide_banner", "-nostdin", "-y", "-f", "lavfi", "-i",
+                 "testsrc2=size=192x108:rate=25", "-frames:v", "2", "-pix_fmt", "yuv420p10le",
+                 "-c:v", encoder, *preset, params_arg, f"{key}={escape_value(value)}", str(out)],
+                timeout=10,
+            )  # fmt: skip
+        except subprocess.TimeoutExpired:
+            return NEVER_ENDS
+        assert result.returncode == 0, result.stderr[-1500:]
+        kind = "Mastering display metadata" if "display" in key else "Content light level metadata"
+        return _hdr_side_data(ffprobe, out).get(kind)
+
+
+@pytest.mark.parametrize(
+    ("encoder", "key", "value", "plain"),
+    [
+        # (a text, and the text without its sign or extra characters)
+        ("libx265", "master-display", X265_SIGNED, X265_MD),
+        ("libx265", "master-display", X265_MD.replace("(13250", "( +13250"), X265_MD),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(\t\v\f13250"), X265_MD),
+        ("libx265", "master-display", X265_MD.replace("L(10000000,1)", "L(10000000,-0)"),
+         X265_MD.replace("L(10000000,1)", "L(10000000,0)")),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(-13250"), X265_MD),  # 52286
+        ("libx265", "master-display", X265_MD.replace("L(10000000,1)", "L(10000000,-1)"), X265_MD),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(++13250"), X265_MD),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(+ 13250"), X265_MD),
+        ("libx265", "master-display", X265_MD.replace("(13250", "(\u00a013250"), X265_MD),
+        ("libx265", "master-display", X265_MD.replace("13250", "\u0661\u0663\u0662\u0665\u0660"),
+         X265_MD),
+        ("libx265", "master-display", "\v" + X265_MD, X265_MD),
+        ("libx265", "master-display", " \t" + X265_MD + "\n", X265_MD),
+        ("libx265", "max-cll", "+1000,+400", "1000,400"),
+        ("libx265", "max-cll", "1000,-0", "1000,0"),
+        ("libx265", "max-cll", "1000,-400", "1000,400"),
+        ("libx265", "max-cll", "\u0661000,400", "1000,400"),
+        ("libsvtav1", "mastering-display", SVT_SIGNED, SVT_MD),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("L(1000,0.0001)", "L(1000,-0.0)"),
+         SVT_MD.replace("L(1000,0.0001)", "L(1000,0.0)")),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("(0.265", "(-0.265"), SVT_MD),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("0.0001)", "-0.0001)"), SVT_MD),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("(0.265", "(++0.265"), SVT_MD),
+        ("libsvtav1", "mastering-display", SVT_MD.replace("(0.265", "(\u00a00.265"), SVT_MD),
+        ("libsvtav1", "mastering-display", "\f" + SVT_MD, SVT_MD),
+        ("libsvtav1", "content-light", "+1000,+400", "1000,400"),
+        ("libsvtav1", "content-light", "1000,-0", "1000,0"),
+        ("libsvtav1", "content-light", "-1,400", "1,400"),
+        ("libsvtav1", "content-light", "+ 1000,400", "1000,400"),
+        ("libsvtav1", "content-light", "1000,\v400", "1000,400"),
+    ],
+)  # fmt: skip
+def test_rc_2_signs_and_spaces_with_the_encoders(
+    encoder: str, key: str, value: str, plain: str
+) -> None:
+    """Final review RC-2 (decision 0035 "Follow-up (final review, 2026-10-17)"): validation
+    accepts a text exactly when the encoder writes the same as for the plain text (a ``+``,
+    ``-0`` and C white space before a number: the same; a negative number, two signs, a
+    no-break space, other digits, a vertical tab before the text: not)."""
+    reference = _written(encoder, key, plain)
+    assert reference is not None
+    assert reference != NEVER_ENDS
+    assert not _invalid(encoder, key, plain)
+    same = _written(encoder, key, value) == reference
+    assert _invalid(encoder, key, value) is not same

@@ -109,6 +109,7 @@ def test_a_parameter_that_writes_a_file(
     ("encoder", "key", "message"),
     [
         ("libx264", "cqmfile", "can't open file"),
+        ("libx264", "cqm", "can't open file"),  # final review RC-1
         ("libx265", "scaling-list", "can't read matrix"),
         ("libx265", "lambda-file", "lambda file is incomplete"),
         ("libx265", "analysis-load", "Error reading analysis data"),
@@ -120,17 +121,124 @@ def test_a_parameter_that_reads_a_file(
 ) -> None:
     junk = tmp_path / "junk.txt"
     junk.write_text("junk\n")
-    path = junk if key != "cqmfile" else tmp_path / "missing.txt"
+    path = junk if key not in ("cqmfile", "cqm") else tmp_path / "missing.txt"
     result = _encode(encoder, f"{key}={path}", tmp_path)
     assert message in result.stderr, result.stderr[-1500:]
     assert _refused_by_validation(encoder, f"{key}={path}")
+
+
+#: x264's own CQM file format (``x264 --fullhelp``, ``--cqmfile``): every matrix flat 16.
+CQM_FILE = "".join(
+    f"{name} =\n" + ",".join(["16"] * size) + "\n"
+    for name, size in (
+        ("INTRA4X4_LUMA", 16),
+        ("INTRA4X4_CHROMA", 16),
+        ("INTER4X4_LUMA", 16),
+        ("INTER4X4_CHROMA", 16),
+        ("INTRA8X8_LUMA", 64),
+        ("INTER8X8_LUMA", 64),
+    )
+)
+
+
+def _x264_sei_cqm(encoder_params: str, out: Path, cwd: Path) -> str | None:
+    """x264's ``cqm=`` in the settings SEI of a one-frame encode (0 flat, 1 JVT, 2 custom)."""
+    result = subprocess.run(
+        [_ffmpeg(), "-hide_banner", "-nostdin", "-f", "lavfi", "-i",
+         "testsrc2=size=192x108:rate=25", "-frames:v", "1", "-c:v", "libx264",
+         "-x264-params", encoder_params, "-f", "h264", str(out)],
+        capture_output=True, text=True, timeout=120, cwd=cwd, check=False,
+    )  # fmt: skip
+    assert result.returncode == 0, result.stderr[-1500:]
+    found = re.search(rb"cqm=(\d)", out.read_bytes())
+    return found.group(1).decode() if found else None
+
+
+def test_rc_1_x264_reads_and_applies_the_file_a_cqm_value_names(tmp_path: Path) -> None:
+    """Final review RC-1 (decision 0035 "Follow-up (final review, 2026-10-17)"): ``cqm=FILE``
+    makes x264 read FILE like ``cqmfile=FILE`` (the settings SEI says ``cqm=2``, a custom
+    matrix), so a shared preset with it read any file the user can; validation refuses it."""
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    matrix = tmp_path / "matrix.cfg"  # no "flat" / "jvt" in the path: x264 matches those
+    matrix.write_text(CQM_FILE)
+    assert _x264_sei_cqm(f"cqm={matrix}", tmp_path / "file.h264", cwd) == "2"
+    assert _x264_sei_cqm(f"cqmfile={matrix}", tmp_path / "cqmfile.h264", cwd) == "2"
+    assert _x264_sei_cqm("cqm=flat", tmp_path / "flat.h264", cwd) == "0"
+    assert _x264_sei_cqm("cqm=jvt", tmp_path / "jvt.h264", cwd) == "1"
+    assert _refused_by_validation("libx264", f"cqm={matrix}")
+    assert not _refused_by_validation("libx264", "cqm=flat")
+    assert not _refused_by_validation("libx264", "cqm=jvt")
+
+
+def _opened(encoder: str, stderr: str) -> str | None:
+    """The file the encoder could not open (the working folder is empty, every path is
+    missing): x264 "can't open file 'F'", x265 "can't open scaling list file F"."""
+    pattern = (
+        r"can't open file '(.*)'$"
+        if encoder == "libx264"
+        else r"can't open scaling list file (.*)$"
+    )
+    found = re.search(pattern, stderr, re.MULTILINE)
+    return found.group(1) if found else None
+
+
+@pytest.mark.parametrize(
+    ("encoder", "params", "opened"),
+    [
+        # x264 core 165: strstr(value, "flat"), else strstr(value, "jvt"), else a file name.
+        ("libx264", "cqm=flat", None),
+        ("libx264", "cqm=jvt", None),
+        ("libx264", "cqm='jvt '", None),
+        ("libx264", "cqm=./flat", None),
+        ("libx264", "cqm={tmp}/jvt/matrix.cfg", None),
+        ("libx264", "cqm=xflaty", None),
+        ("libx264", "cqm=FLAT", "FLAT"),
+        ("libx264", "cqm=Flat", "Flat"),
+        ("libx264", "cqm=JVT", "JVT"),
+        ("libx264", "cqm=fla", "fla"),
+        ("libx264", "cqm=default", "default"),
+        ("libx264", "cqm=0", "0"),
+        ("libx264", "cqm={tmp}/matrix.cfg", "{tmp}/matrix.cfg"),
+        ("libx264", "nocqm=flat", "true"),  # a "no" prefix: the value becomes true / false
+        ("libx264", "no-cqm=jvt", "true"),
+        ("libx264", "nocqm=1", "false"),
+        # x265 4.3: strcmp with "default" / "off", else a file name.
+        ("libx265", "scaling-list=default", None),
+        ("libx265", "scaling-list=off", None),
+        ("libx265", "scaling-list=DEFAULT", "DEFAULT"),
+        ("libx265", "scaling-list=Off", "Off"),
+        ("libx265", "scaling-list=./default", "./default"),
+        ("libx265", "scaling-list='default '", "default "),
+        ("libx265", "scaling-list=default\\ :aq-mode=1", "default "),
+        ("libx265", "scaling-list=flat", "flat"),
+        ("libx265", "no-scaling-list=default", "true"),
+        ("libx265", "noscaling-list=off", "true"),
+    ],
+)
+def test_rc_1_a_value_that_is_a_name_or_a_file_name(
+    tmp_path: Path, encoder: str, params: str, opened: str | None
+) -> None:
+    """Validation refuses exactly the values the encoder opens as a file (decision 0035
+    "Follow-up (final review, 2026-10-17)"; testdata/README.md C-6 "Final review")."""
+    if "flat" in str(tmp_path) or "jvt" in str(tmp_path):
+        pytest.skip("x264 would take the temporary path for a matrix name")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    text = params.replace("{tmp}", str(tmp_path))
+    result = _encode(encoder, text, cwd, frames=1)
+    expected = None if opened is None else opened.replace("{tmp}", str(tmp_path))
+    assert _opened(encoder, result.stderr) == expected, result.stderr[-1500:]
+    if opened is None:
+        assert result.returncode == 0, result.stderr[-1500:]
+    assert _refused_by_validation(encoder, text) is (opened is not None)
 
 
 #: The file keys the library takes today; the others of ``custom_params.toml`` are refused by
 #: the library ("Unknown option" / "Error parsing option": file options of the encoders' own
 #: programs, refused by Reframe in case a later library takes them).
 ACCEPTED = {
-    "libx264": {"stats", "dump-yuv", "pass", "cqmfile", "opencl-clbin"},
+    "libx264": {"stats", "dump-yuv", "pass", "cqmfile", "cqm", "opencl-clbin"},
     "libx265": {
         "csv",
         "analysis-save",

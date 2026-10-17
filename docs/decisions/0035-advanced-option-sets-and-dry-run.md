@@ -256,3 +256,80 @@ Tests: `tests/jobs/test_cli_review_fixes.py` (`test_plan_shows_a_skipped_dry_run
 Plan change: [03-features.md §Advanced encoder options](../plan/03-features.md#advanced-encoder-options),
 the custom-parameters bullet (parameters that name files are refused, the allow-list of own
 options, the dry run never runs with them).
+
+## Follow-up (final review, 2026-10-17)
+
+A final review of the fix rounds (reviewer R-C, on `core-complete` 5dbf152) found two defects.
+The evidence is in `testdata/README.md` "Advanced encoder options (C-6, complete option sets)",
+section "Final review". Every test named here failed on 5dbf152.
+
+- **RC-1 (major): x264 `cqm` with a file name.** `[file_keys.libx264]` had `cqmfile` but not
+  `cqm`. x264 reads every `cqm` value as a file name unless the value contains `flat` or `jvt`.
+  With the pinned n9.0.2, `-x264-params cqm=/…/nope.cfg` gives `[libx264] can't open file
+  '/…/nope.cfg'` (exit 187), and x264 reads and applies a valid matrix file (the settings SEI
+  says `cqm=2`, as with `cqmfile`). So a shared preset with `cqm=<path>` passed validation,
+  `reframe plan` dry-ran it, and `reframe encode` read the file. The temporary working folder
+  of the dry run does not help: x264 reads an absolute path from anywhere. Changed
+  (`definitions/data/custom_params.toml`, `definitions/custom_params.py`):
+  1. `cqm` is a file key of x264 ("reads quantisation matrices from this file unless the value
+     is flat or jvt"), with the names `flat` and `jvt` in `[value_exceptions]`.
+  2. A name is compared as the library compares it, with the value that the library gets
+     (after FFmpeg's quotes and escapes; spaces and quotes are no longer stripped first). x264
+     `cqm` takes every value that **contains** a name (the new table `[value_match]`,
+     `cqm = "contains"`): `./flat` and `/x/jvt/matrix.cfg` are the presets for x264 and it
+     opens no file, so Reframe accepts them too. x265 `scaling-list` takes only the **whole**
+     value: `DEFAULT`, `./default` and `default ` (an escaped space) are files. Both are
+     case-sensitive (`FLAT` is a file). Validation also checks the text as Reframe splits it
+     (the quotes stay), so a quoted name such as `scaling-list='default'` is refused, although
+     x265 gets `default`: a refusal on the safe side, for a spelling nobody needs.
+  3. Through a `no` prefix the library gets `true` or `false`: x264 `nocqm=flat` and x265
+     `no-scaling-list=default` open a file named `true` in the working folder. So a name never
+     applies to a key read through the prefix. This also closes the same gap of R5-1 for
+     `scaling-list`.
+
+  Validation refuses `cqm=<file>` (`encoder.custom_param_file`, with the fix that removes the
+  entry). The dry run runs the validation check first and does not start FFmpeg, so `reframe
+  plan` and `reframe encode` refuse it too. `cqm=flat` and `cqm=jvt` stay valid and are
+  dry-run.
+
+  **The extra search for "a name or a file name" keys.** Every token in the strings of
+  `libavcodec.so.63` (68604) went to x264, x265 and SVT-AV1 as a key: with an absolute path, a
+  relative name, and relative names with 12 file extensions. Each key that the library did not
+  refuse then ran alone (and with `pass=1`) with an `LD_PRELOAD` logger of `open` / `fopen`.
+  Keys that open the file they get: x264 `cqm`, `cqmfile`, `dump-yuv`, `stats`; x265
+  `analysis-load`, `analysis-save`, `aom-film-grain`, `csv`, `film-grain`, `lambda-file`,
+  `nalu-file`, `scaling-list`, `stats`; SVT-AV1 none (no key takes a path or a file name).
+  All of them are on the deny list. Only `cqm` and `scaling-list` take a name or a file name.
+
+  Tests: `tests/validation/test_custom_params_rules.py` (`cqm=<path>`, `cqm=FLAT`,
+  `nocqm=flat`, `scaling-list=default\ `, `no-scaling-list=default` are refused; `cqm=flat`,
+  `cqm=jvt`, `cqm='jvt '` pass); `test_custom_params_ffmpeg.py`
+  (`test_rc_1_x264_reads_and_applies_the_file_a_cqm_value_names`;
+  `test_rc_1_a_value_that_is_a_name_or_a_file_name`: validation refuses exactly the values
+  that x264 / x265 open; `cqm` in the keys that libx264 takes);
+  `test_custom_params_final_review.py` (the dry run does not start FFmpeg; the reviewer's
+  reproduction through `Reframe.jobs.plan(…, dry_run=True)`, `dry_run` and `validate`);
+  `tests/definitions/test_custom_params.py`.
+- **RC-2 (minor): signs and spaces in the HDR texts.** The R5-8 formats refused a leading
+  `+`. x265 (`sscanf` `%hu` / `%u`) and SVT-AV1 accept it and write the same values as without
+  it (`G(+13250,…)` gives the same mastering display as `G(13250,…)`). Now a number can have a
+  sign: `+N` and `-0` are accepted (the encoders write `N` and `0`), and every other negative
+  number is refused (x265 wraps `-1` to 65535; SVT-AV1 writes `-0.265` as 0.735). The check
+  with the encoders found three more texts that the formats accepted and the encoders do not:
+  a no-break space (or another Unicode space) before a number, digits of other scripts (both
+  from Python's `\s` and `\d`), and a vertical tab or form feed before the whole text (Python's
+  `strip()`; FFmpeg removes only space, tab, CR and LF around a value, then x265 cannot parse
+  the text and SVT-AV1 never ends). Now the space before a number is C's white space
+  (`isspace`), the digits are ASCII, and the text is stripped as FFmpeg strips it
+  (`validation/video.py`). Tests:
+  `test_option_rules_review_fixes.py::test_rc_2_signs_and_spaces_as_the_encoders_read_them`,
+  `test_option_formats_ffmpeg.py::test_rc_2_signs_and_spaces_with_the_encoders` (validation
+  accepts a text exactly when the encoder writes the same side data as for the plain text).
+- **Found during the search, not changed:** x265 `deblock=abc` (also `lft=abc`) encodes no
+  frame, and FFmpeg does not stop (also not on SIGTERM; checked for 60 s). Validation checks
+  the custom parameters of x265 only for file keys, so such a parameter reaches the dry run
+  (which has a 30 s limit) and the encode. This is outside RC-1 / RC-2; it is reported to the
+  lead.
+
+No plan change: 03 §Advanced encoder options already says that parameters that name files are
+refused.

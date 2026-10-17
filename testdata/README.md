@@ -1962,6 +1962,58 @@ exit 183 ("picture dimensions are out of range for specified level"); `ultrafast
 | `1000,400,5` | taken (the rest ignored) | "Invalid cll provided" |
 | `70000,400` | wraps to 4464 | clipped to 65535 |
 
+#### Final review (2026-10-17)
+
+Checked with the pinned BtbN n9.0.2 (x264 core 165, x265 4.3+49, SVT-AV1 v4.2.0); the tests
+pass with Arch n9.0.2 and BtbN n8.1.3 too. Each encode ran in an empty temporary working
+folder, with an `LD_PRELOAD` logger of every `open` / `fopen`. Tests:
+`tests/validation/test_custom_params_ffmpeg.py` (`test_rc_1_*`),
+`test_custom_params_final_review.py`, `test_option_formats_ffmpeg.py` (`test_rc_2_*`).
+
+**A value that is a name or a file name** (RC-1). The library reads the value after FFmpeg's
+quotes and escapes:
+
+| Key | Taken as a name (no file is opened) | Opened as a file |
+|-----|-------------------------------------|------------------|
+| x264 `cqm` | a value that contains `flat` (the flat matrix, SEI `cqm=0`), else one that contains `jvt` (SEI `cqm=1`): `flat`, `jvt`, `'jvt '`, `./flat`, `/x/jvt/matrix.cfg`, `xflaty`, `flatjvt` | every other value, case-sensitive: `FLAT`, `Flat`, `JVT`, `fla`, `default`, `0`, `/x/matrix.cfg` ("can't open file 'F'", exit 187); a valid matrix file is read and applied (SEI `cqm=2`, the same as `cqmfile=F`) |
+| x265 `scaling-list` | only `default` and `off` | every other value, case-sensitive: `DEFAULT`, `Off`, `./default`, `flat`, `0`, `default ` (an escaped or quoted space reaches x265) ("can't open scaling list file F", exit 183) |
+| x264 `nocqm` / `no-cqm`, x265 `no-scaling-list` / `noscaling-list` | — | a file named `true` (`=flat`, `=0`, `=default`: "Error parsing option" / "Invalid value", then the file is opened) or `false` (`=1`) |
+
+x264 does not read `CQM`, `--cqm` or `cqm_file` as `cqm` ("Error parsing option"); x265 reads
+`--scaling-list` and `scaling_list` as `scaling-list`, but not `SCALING-LIST` ("Unknown
+option").
+
+**The extra search: every key that opens the file it is given.** Every token of 2 to 41
+characters in `libavcodec.so.63` (68604) went to the library as a key: with an absolute path in
+a missing folder, a relative name, and relative names with 12 file extensions (`.cfg`, `.txt`,
+`.tbl`, `.json`, `.bin`, `.yuv`, `.y4m`, `.log`, `.csv`, `.stat`, `.dat`, `.xml`). Each key
+that was not refused ("Error parsing option", "Unknown option", "Invalid value") then ran
+alone, and with `pass=1`:
+
+| Library | Keys that open the file they are given | A name or a file |
+|---------|----------------------------------------|------------------|
+| x264 | `cqm`, `cqmfile` (read), `dump-yuv` (written), `stats` (written with `pass=1`); `opencl-clbin` is taken (no OpenCL here) | `cqm` |
+| x265 | `analysis-load`, `aom-film-grain`, `film-grain`, `lambda-file`, `nalu-file`, `scaling-list` (read), `analysis-save`, `csv`, `stats` with `pass=1` (written), also with `_` | `scaling-list` |
+| SVT-AV1 | none: no key takes a path or a file name (`mastering-display` takes the relative name as text, and with a path FFmpeg never ends) | — |
+
+Every key found is in `custom_params.toml`; keys that need another key or a build feature to
+open their file (x265 `analysis-reuse-file`, `dhdr10-info`, `fovea-gaze-file`; x264
+`opencl-clbin`) were there already. Found on the way, not a file: x265 `deblock=abc` (and
+`lft=abc`) encodes no frame and FFmpeg never ends (SIGTERM does not end it either).
+
+**Signs and white space in the HDR texts** (RC-2); "the same" means the same side data in
+the output:
+
+| Text | x265 `master-display` / `max-cll` | SVT-AV1 `mastering-display` / `content-light` |
+|------|----------------------------------|-----------------------------------------------|
+| `+N` (also ` +N`, `\f+N`) | the same as `N` | the same as `N` (also `+.15`, `+1e+3`) |
+| `-0` (`-00`, `-0.0`, `-.0`, `-0e-5`) | the same as `0` | the same as `0` |
+| `-N` | wraps: `-1` → 65535, `-400` → 65136, `-13250` → 52286 (no primaries in the output); `L(…,-1)`: no luminance | changed: `-0.265` → 48169/65536 ("Invalid mastering display info will be clipped to 0.0 to 1.0", but not clipped), `L(1000,-0.0001)` → −2/16384; `content-light` as x265 |
+| `++N`, `+ N` (x265 also `+-N`) | not parsed | no metadata |
+| tab, `\v`, `\f` before a number | skipped | skipped |
+| a no-break space before a number, Arabic-Indic digits | not parsed (`max-cll`: "Invalid value") | no metadata (`content-light`: "Invalid cll provided") |
+| `\v` or `\f` before the text (FFmpeg drops only space, tab, CR and LF around a value) | not parsed | FFmpeg never ends |
+
 ### Power actions (C-14)
 
 Checked on 2026-10-15 on Arch Linux (CachyOS kernel 7.2.8), systemd 262 (`262-1-arch`), polkit

@@ -72,6 +72,14 @@ def _issues(encoder: str, custom: str, **caps: EncoderStatus) -> list[tuple[str,
         ("libx264", "stats=/home/u/x.log"),
         ("libx264", "nostats=/home/u/x.log"),  # x264 writes a file named "true" with pass=1
         ("libx264", "cqmfile=/home/u/cqm.txt"),
+        # Final review RC-1: x264 reads every cqm value as a file name unless it contains
+        # "flat" or "jvt" (case-sensitive), and a "no" prefix gives it "true" / "false".
+        ("libx264", "cqm=/home/u/cqm.txt"),
+        ("libx264", "cqm=FLAT"),
+        ("libx264", "nocqm=flat"),
+        # x265 compares the whole scaling-list value; FFmpeg keeps an escaped space.
+        ("libx265", "scaling-list=default\\ :aq-mode=3"),
+        ("libx265", "no-scaling-list=default"),
         ("libsvtav1", "fgs-table=/home/u/grain.tbl"),
         ("libvpx-vp9", "vstats_file=/home/u/v.log"),
         ("libvpx-vp9", "passlogfile=/home/u/p"),
@@ -92,6 +100,9 @@ def test_a_parameter_that_names_a_file_is_an_error(encoder: str, custom: str) ->
         ("libx265", "aq-mode=3:psy-rd=2.0:scaling-list=default"),
         ("libx265", "no-sao=1:nr-intra=100"),
         ("libx264", "nr=100:no-dct-decimate=1"),
+        ("libx264", "cqm=flat"),  # x264's presets (final review RC-1)
+        ("libx264", "cqm=jvt:nr=100"),
+        ("libx264", "cqm='jvt '"),  # FFmpeg gives x264 "jvt ": the JVT matrix
         ("libsvtav1", "film-grain=8:enable-qm=1"),
         ("libvpx-vp9", "lag-in-frames=16:arnr-maxframes=7:g=120"),
         ("hevc_nvenc", "rc-lookahead=20:spatial-aq=1:init_qpB=20"),
