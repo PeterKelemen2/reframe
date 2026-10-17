@@ -325,11 +325,18 @@ section "Final review". Every test named here failed on 5dbf152.
   `test_option_rules_review_fixes.py::test_rc_2_signs_and_spaces_as_the_encoders_read_them`,
   `test_option_formats_ffmpeg.py::test_rc_2_signs_and_spaces_with_the_encoders` (validation
   accepts a text exactly when the encoder writes the same side data as for the plain text).
-- **Found during the search, not changed:** x265 `deblock=abc` (also `lft=abc`) encodes no
-  frame, and FFmpeg does not stop (also not on SIGTERM; checked for 60 s). Validation checks
-  the custom parameters of x265 only for file keys, so such a parameter reaches the dry run
-  (which has a 30 s limit) and the encode. This is outside RC-1 / RC-2; it is reported to the
-  lead.
+- **RC-3 (minor, found during the search; a known limit, not fixed).** The first note here
+  blamed the text `deblock=abc`. The cause is the picture width with the deblocking filter off:
+  x265 4.3 with deblocking off (`no-deblock=1`, `deblock=false`, or a `deblock` value that
+  x265 cannot read) never finishes a picture narrower than about 256 pixels (192×108 to
+  224×126 checked). FFmpeg sits at 0 % CPU and ignores SIGTERM. The lead checked it in
+  Reframe: the dry run gives the warning `encoder.dry_run_skipped` ("did not finish within
+  30 s") after 30.0 s; a queued encode fails with "FFmpeg made no progress … (no output, no
+  CPU use) and was stopped" at the stall limit (600 s by default; 20 s in the lead's
+  reproduction), and the process is killed. Validation checks the custom parameters of x265
+  only for file keys, so nothing refuses such a job before it runs. Not cheap to fix: a
+  validation rule needs x265's exact condition. Recorded in
+  [0041](0041-core-complete-review.md) (final review).
 
 No plan change: 03 §Advanced encoder options already says that parameters that name files are
 refused.
