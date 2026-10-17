@@ -585,7 +585,8 @@ _INDENT = 2
 
 
 def _text(value: str | None, style: str = "") -> Text:
-    return Text(value if value else NONE, style=style)
+    """A table cell (:func:`printable`: track titles come from the file)."""
+    return Text(printable(value) if value else NONE, style=style)
 
 
 def _badges(roles: Sequence[TrackRoleInfo]) -> Text:
@@ -665,7 +666,7 @@ def _evidence_lines(streams: Sequence[AudioStream | SubtitleStream]) -> list[Tex
         for role in s.roles:
             line = Text(f"#{s.index}  ")
             line.append_text(_badges([role]))
-            line.append(f"  {role.detail or role.evidence.value}", style="dim")
+            line.append(printable(f"  {role.detail or role.evidence.value}"), style="dim")
             lines.append(line)
     return lines
 
@@ -716,14 +717,14 @@ def render_source(source: MediaSource, console: Console) -> None:
     ]
     for key, value in rows:
         if value is not None:
-            _indented(console, Text(value), first=f"{'':{_INDENT}}{key:<10} ")
+            _indented(console, Text(printable(value)), first=f"{'':{_INDENT}}{key:<10} ")
 
     _section(console, f"Video ({len(source.video)})")
     if not source.video:
         _indented(console, Text(NONE))
     for v in source.video:
-        _indented(console, Text.assemble(f"#{v.index}  ", (video_line(v), "bold")))
-        _indented(console, Text(video_details(v), style="dim"), _INDENT + 4)
+        _indented(console, Text.assemble(f"#{v.index}  ", (printable(video_line(v)), "bold")))
+        _indented(console, Text(printable(video_details(v)), style="dim"), _INDENT + 4)
 
     _section(console, f"Audio ({len(source.audio)})")
     if source.audio:
@@ -790,7 +791,7 @@ def _print_list(
     _section(console, title)
     shown = items[:limit] if limit else items
     for item in shown:
-        _indented(console, Text(item, style=style))
+        _indented(console, Text(printable(item), style=style))
     if len(items) > len(shown):
         _indented(console, Text(f"… and {len(items) - len(shown)} more", style="dim"))
 
@@ -1098,7 +1099,7 @@ async def _follow_encoders(
         key = _encoder_key(status)
         if shown.get(status.id) != key:
             shown[status.id] = key
-            console.print(Text(encoder_text(status)), soft_wrap=True)
+            console.print(Text(printable(encoder_text(status))), soft_wrap=True)
 
     async with subscription:
         async for event in subscription:
@@ -1109,11 +1110,16 @@ async def _follow_encoders(
                 first = False
                 checking = all(s.state is EncoderState.CHECKING for s in event.encoders)
                 if not snapshot.detecting:
-                    console.print(Text(f"Encoders of {_ffmpeg_text(snapshot)}:"), soft_wrap=True)
+                    console.print(
+                        Text(printable(f"Encoders of {_ffmpeg_text(snapshot)}:")), soft_wrap=True
+                    )
                 elif checking:
                     console.print(
                         Text(
-                            f"No cached result: checking the encoders of {_ffmpeg_text(snapshot)}…"
+                            printable(
+                                "No cached result: checking the encoders of "
+                                f"{_ffmpeg_text(snapshot)}…"
+                            )
                         ),
                         soft_wrap=True,
                     )
@@ -1121,7 +1127,9 @@ async def _follow_encoders(
                     when = snapshot.checked_at
                     at = f" of {when.astimezone():%Y-%m-%d %H:%M}" if when is not None else ""
                     console.print(
-                        Text(f"Encoders of {_ffmpeg_text(snapshot)} (cached result{at}):"),
+                        Text(
+                            printable(f"Encoders of {_ffmpeg_text(snapshot)} (cached result{at}):")
+                        ),
                         soft_wrap=True,
                     )
                 for status in event.encoders:
@@ -1521,10 +1529,12 @@ async def _draft_files(
     (:class:`~reframe.jobs.OutputClaims`): such a file is not queued either."""
     total = len(files)
     width = len(str(total))
-    console.print(Text(f"Preset: {preset.name}"), soft_wrap=True)
+    console.print(Text(printable(f"Preset: {preset.name}")), soft_wrap=True)
     labels = [f"[{number:>{width}}/{total}]" for number in range(1, total + 1)]
-    claims = OutputClaims(
-        {file: f"{label} {file.name}" for file, label in zip(files, labels, strict=True)}
+    # OutputClaims stats the files (links, hard links: final review RA-1): in a worker thread.
+    claims = await asyncio.to_thread(
+        OutputClaims,
+        {file: f"{label} {file.name}" for file, label in zip(files, labels, strict=True)},
     )
     for label, file in zip(labels, files, strict=True):
         draft = await app.jobs.draft(file, preset, output=output)
@@ -1548,9 +1558,9 @@ async def _draft_files(
         for note in draft.notes:
             _indented(console, Text(printable(f"note: {note}"), style="dim"), 9)
         if not has_errors(draft.issues):
-            conflicts = claims.check(draft.job, f"{label} {file.name}")
+            conflicts = await asyncio.to_thread(claims.check, draft.job, f"{label} {file.name}")
             if conflicts:
-                draft = draft.model_copy(update={"issues": [*draft.issues, *conflicts]})
+                draft = draft.model_copy(update={"issues": _with_claims(draft.issues, conflicts)})
         if has_errors(draft.issues):
             prepared.not_queued += 1
             console.print(
@@ -1569,6 +1579,18 @@ async def _draft_files(
             continue
         render_issues(console, draft.issues, severities=(Severity.WARNING,), indent=len(label) + 1)
         prepared.jobs.append((label, draft.job))
+
+
+def _with_claims(
+    issues: Sequence[ValidationIssue], conflicts: Sequence[ValidationIssue]
+) -> list[ValidationIssue]:
+    """A draft's issues with :class:`~reframe.jobs.OutputClaims`' errors. An output that is a
+    source of the command is never overwritten: C-8's ``output.overwrite`` warning ("will be
+    replaced") would say the opposite and is left out, as ``reframe batch`` does (final
+    review RA-4)."""
+    if any(conflict.code == "batch.output_is_source" for conflict in conflicts):
+        issues = [issue for issue in issues if issue.code != "output.overwrite"]
+    return [*issues, *conflicts]
 
 
 async def _queue_jobs(
@@ -1731,14 +1753,25 @@ def render_group(console: Console, group: BatchGroup, number: int, total: int) -
     head = f"Group {number} of {total}: {group.name} · {files} · {group.level} match"
     console.print(Text(printable(head), style="bold"), soft_wrap=True)
     warn = ROW_MARKS["warning"] if _unicode(console) else ROW_ASCII["warning"]
-    labels = episode_labels([member.path for member in group.members])
-    width = max(len(label) for label in labels)
+    # A member labelled by its file name (no episode, two releases of one episode) shows the
+    # name once, without a label column (final review RA-5).
+    labels = [
+        None if label == member.path.name else printable(label)
+        for label, member in zip(
+            episode_labels([member.path for member in group.members]), group.members, strict=True
+        )
+    ]
+    width = max((len(label) for label in labels if label is not None), default=0)
     for label, member in zip(labels, group.members, strict=True):
         line = Text(printable(member.path.name))
         if member.path == group.representative:
             line.append(" (representative)", style="dim")
         if member.match == "near":
-            line.append(f"  {warn} {'; '.join(member.differences)}", style="yellow")
+            # The differences name track titles from the file (final review RA-2).
+            line.append(printable(f"  {warn} {'; '.join(member.differences)}"), style="yellow")
+        if label is None:
+            _indented(console, line)
+            continue
         first = f"{'':{_INDENT}}{label:<{width}}  "
         _indented(console, line, len(first), first=first)
 
@@ -1754,8 +1787,10 @@ def render_matrix(console: Console, resolution: BatchResolution) -> None:
         short, _, rest = column.label.partition(" ")
         _indented(console, Text(printable(rest)), _INDENT + 4, first=f"{'':{_INDENT}}{short:<3} ")
     console.print()
+    # Row labels and output names come from file names (final review RA-2); printable keeps
+    # the columns: each control character becomes one U+FFFD.
     for line in matrix_lines(resolution, unicode=unicode):
-        console.print(Text(line), soft_wrap=True, crop=False)
+        console.print(Text(printable(line)), soft_wrap=True, crop=False)
     # The matrix's row labels (with the season when the rows span seasons).
     labels = episode_labels([row.path for row in resolution.rows])
     problems = [
@@ -1837,7 +1872,7 @@ async def run_batch(
                 }
             )
             return EXIT_OK if not bad else EXIT_FAILED
-        console.print(Text(f"Preset: {chosen.name}"), soft_wrap=True)
+        console.print(Text(printable(f"Preset: {chosen.name}")), soft_wrap=True)
         if unreadable:
             _section(console, "Files that cannot be read")
             render_issues(console, unreadable)

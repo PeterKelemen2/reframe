@@ -26,6 +26,12 @@ others are grouped and each group gets its matrix; the batch-level checks run ov
 **every** group, so a job never writes a file or the output of another group (decision 0040,
 follow-up R2-1, R2-7).
 
+Files are compared as files, not spellings (``reframe.jobs.file_key``, the queue's rule): a
+file given twice (also through a link, a linked folder or a hard link) is probed and resolved
+once, an output named through a linked folder or a hard link to a file of the batch is that
+file, and an override is found by its file whatever the spelling (decision 0040, follow-up of
+the final review, RA-1). Messages and rows keep the paths as they were given.
+
 A near member of the group (``resolve(…, group=…)``) gets the warning ``batch.near_match`` with
 its differences (04: "E05 ⚠ 1 extra track"). Decision 0040.
 """
@@ -42,10 +48,12 @@ from reframe.batch.derive import derive_template, merge_template
 from reframe.batch.grouping import episode_key, episode_labels, group_sources
 from reframe.batch.resolve import matrix_columns, resolve, row_status
 from reframe.definitions import Definitions, load_definitions
+from reframe.jobs import file_key
 from reframe.models.batch import (
     BatchGroup,
     BatchGrouping,
     BatchResolution,
+    GroupMember,
     MatchLevel,
     Resolution,
 )
@@ -102,11 +110,6 @@ class _Jobs(Protocol):
     ) -> list[ValidationIssue]: ...
 
 
-def _key(path: str | os.PathLike[str]) -> str:
-    """One spelling of a path for comparisons: absolute, case-folded where the OS does."""
-    return os.path.normcase(os.path.abspath(path))
-
-
 def _near_issue(differences: Sequence[str]) -> ValidationIssue:
     """A near member of the group (04: "E05 ⚠ 1 extra track …"): the user checks that the
     group's rules suit it."""
@@ -118,26 +121,45 @@ def _near_issue(differences: Sequence[str]) -> ValidationIssue:
     )
 
 
-def _already_encoded(file: Path, owner: Path) -> ValidationIssue:
-    """A file of the batch that is the planned output of ``owner``: left out (R2-7)."""
+def _already_encoded(file: Path, owner: Path, output: Path) -> ValidationIssue:
+    """A file of the batch that is the planned output (``output``) of ``owner``: left out
+    (R2-7). ``output`` is named when it is the file by another name (a hard link)."""
+    same = f" (the same file as {output.name})" if output.name != file.name else ""
     return ValidationIssue(
         severity=Severity.INFO,
         code="batch.already_encoded",
         path="source",
         message=(
-            f"{file.name} is the planned output of {owner.name} with this preset: it is left out "
-            "of the batch (an earlier output is not encoded again)."
+            f"{file.name} is the planned output of {owner.name} with this preset{same}: it is "
+            "left out of the batch (an earlier output is not encoded again)."
         ),
     )
 
 
+type _Probed = MediaSource | ProbeError
+type _Patches = dict[str, Sequence[JsonPatchOp]]
+
+
+def _patches(overrides: Mapping[str, Sequence[JsonPatchOp]] | None) -> _Patches:
+    """The overrides by :func:`~reframe.jobs.file_key` (a file's patch whatever the spelling
+    of its path). Blocking."""
+    return {file_key(path): ops for path, ops in (overrides or {}).items()}
+
+
+def _keyed(probed: Sequence[tuple[Path, _Probed]]) -> list[tuple[str, Path, _Probed]]:
+    """Each probed file with its :func:`~reframe.jobs.file_key`. Blocking."""
+    return [(file_key(path), path, found) for path, found in probed]
+
+
 def _ordered(
-    probed: list[tuple[Path, MediaSource | ProbeError]], rank: Mapping[str, int]
-) -> list[tuple[Path, MediaSource | ProbeError]]:
-    """``probed`` in the group's order, else in episode order (C-16's parser: guessit takes
-    milliseconds per name, so this runs in a worker thread)."""
+    probed: Sequence[tuple[Path, _Probed]], members: Sequence[GroupMember]
+) -> list[tuple[str, Path, _Probed]]:
+    """:func:`_keyed` ``probed`` in the group's order (``members``, by file), else in episode
+    order (C-16's parser: guessit takes milliseconds per name, and the keys stat the files, so
+    this runs in a worker thread)."""
+    rank = {file_key(m.path): n for n, m in enumerate(members)}
     return sorted(
-        probed, key=lambda item: (rank.get(_key(item[0]), len(rank)), episode_key(item[0]))
+        _keyed(probed), key=lambda item: (rank.get(item[0], len(rank)), episode_key(item[1]))
     )
 
 
@@ -188,13 +210,14 @@ class BatchService:
         self, sources: Sequence[str | os.PathLike[str] | MediaSource]
     ) -> list[tuple[Path, MediaSource | ProbeError]]:
         """Each source probed (a :class:`MediaSource` is taken as it is), in the given order;
-        a file given twice is probed once."""
+        a file given twice is probed once, in its first spelling (also through a link, a
+        linked folder or a hard link: :func:`~reframe.jobs.file_key`)."""
         gate = asyncio.Semaphore(PROBE_CONCURRENCY)
+        paths = [item.ref.path if isinstance(item, MediaSource) else Path(item) for item in sources]
+        keys = await asyncio.to_thread(lambda: [file_key(path) for path in paths])
         seen: set[str] = set()
         unique: list[str | os.PathLike[str] | MediaSource] = []
-        for item in sources:
-            path = item.ref.path if isinstance(item, MediaSource) else Path(item)
-            key = _key(path)
+        for item, key in zip(sources, keys, strict=True):
             if key not in seen:
                 seen.add(key)
                 unique.append(item)
@@ -289,26 +312,28 @@ class BatchService:
         the default preset) in every file: one :class:`~reframe.models.Resolution` per file
         in episode order (the job with its output name, the track matches, the issues), the
         columns, and the batch-level issues (name collisions). ``overrides``: per-file JSON
-        patches, keyed by the file's path as a string."""
+        patches, keyed by the file's path as a string (any spelling of the file)."""
         chosen, template_issues = self._template(template)
         settings = self._settings()
         naming = chosen.naming if chosen.naming is not None else settings.output.naming
-        patches = {_key(path): ops for path, ops in (overrides or {}).items()}
         probed = await self._probe_all(sources)
         members = group.members if group is not None else []
-        rank = {_key(m.path): n for n, m in enumerate(members)}
-        near = {_key(m.path): m.differences for m in members if m.match == "near"}
-        probed = await asyncio.to_thread(_ordered, probed, rank)
+
+        def prepare() -> tuple[_Patches, dict[str, list[str]], list[tuple[str, Path, _Probed]]]:
+            near = {file_key(m.path): m.differences for m in members if m.match == "near"}
+            return _patches(overrides), near, _ordered(probed, members)
+
+        patches, near, ordered = await asyncio.to_thread(prepare)
         rows: list[Resolution] = []
-        for path, found in probed:
+        for key, path, found in ordered:
             if isinstance(found, ProbeError):
                 issues = [*template_issues, _probe_issue(found)]
                 rows.append(Resolution(path=path, issues=issues, status="error"))
                 continue
             first = list(template_issues)
-            if _key(path) in near:
-                first.append(_near_issue(near[_key(path)]))
-            rows.append(await self._row(chosen, found, patches.get(_key(path)), naming, first))
+            if key in near:
+                first.append(_near_issue(near[key]))
+            rows.append(await self._row(chosen, found, patches.get(key), naming, first))
         rows, batch_issues = await asyncio.to_thread(_collisions, rows)
         columns = await asyncio.to_thread(
             matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
@@ -340,39 +365,44 @@ class BatchService:
           ``batch.output_is_source`` on its row, two rows with one output are
           ``batch.name_collision`` on both, and the batch issue of a shared name is in the
           resolution of the first group concerned.
+
+        Files are compared as files (:func:`~reframe.jobs.file_key`): a file given through
+        two spellings is one file, and an output named through a link is that file.
         """
         chosen, template_issues = self._template(template)
         settings = self._settings()
         naming = chosen.naming if chosen.naming is not None else settings.output.naming
-        patches = {_key(path): ops for path, ops in (overrides or {}).items()}
         probed = await self._probe_all(sources)
-        files = {_key(path): path for path, _ in probed}
+        patches, keyed = await asyncio.to_thread(lambda: (_patches(overrides), _keyed(probed)))
+        files = {key: path for key, path, _ in keyed}
+        key_of = {path: key for key, path, _ in keyed}
         rows: dict[str, Resolution] = {}
-        for path, found in probed:
+        for key, _path, found in keyed:
             if isinstance(found, MediaSource):
-                key = _key(path)
                 rows[key] = await self._row(
                     chosen, found, patches.get(key), naming, template_issues
                 )
         # An earlier run's outputs (R2-7): the planned output of another file of the batch.
+        outputs = await asyncio.to_thread(_output_keys, rows)
         owners: dict[str, Path] = {}
-        for key, row in rows.items():
-            output = row.job.output.path if row.job is not None else None
-            if output is not None and _key(output) in rows and _key(output) != key:
-                owners.setdefault(_key(output), row.path)
+        planned: dict[str, Path] = {}
+        for key, (output, out_key) in outputs.items():
+            if out_key in rows and out_key != key and out_key not in owners:
+                owners[out_key] = rows[key].path
+                planned[out_key] = output
         kept = [
-            found
-            for path, found in probed
-            if isinstance(found, MediaSource) and _key(path) not in owners
+            found for key, _, found in keyed if isinstance(found, MediaSource) and key not in owners
         ]
         groups = await asyncio.to_thread(group_sources, kept, level)
         issues = [_probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
-        issues += [_already_encoded(files[key], owner) for key, owner in owners.items()]
+        issues += [
+            _already_encoded(files[key], owner, planned[key]) for key, owner in owners.items()
+        ]
         grouped: list[list[Resolution]] = []
         for group in groups:
             members: list[Resolution] = []
             for member in group.members:
-                row = rows[_key(member.path)]
+                row = rows[key_of[member.path]]
                 if member.match == "near":
                     at = len(template_issues)
                     near = _near_issue(member.differences)
@@ -456,6 +486,17 @@ class BatchService:
         )
 
 
+def _output_keys(rows: Mapping[str, Resolution]) -> dict[str, tuple[Path, str]]:
+    """Each row's output path with its :func:`~reframe.jobs.file_key` (rows by key; a row
+    without an output is left out). Blocking."""
+    found: dict[str, tuple[Path, str]] = {}
+    for key, row in rows.items():
+        output = row.job.output.path if row.job is not None else None
+        if output is not None:
+            found[key] = (output, file_key(output))
+    return found
+
+
 def _collisions(
     rows: list[Resolution],
     *,
@@ -464,18 +505,19 @@ def _collisions(
 ) -> tuple[list[Resolution], list[tuple[int, ValidationIssue]]]:
     """The batch-level name checks (see the module doc): an issue on each row concerned, and
     one batch issue per shared output path, with the number of the first row concerned.
-    ``files``: every file of the batch by its :func:`_key` (default: the rows' files);
-    ``left_out``: the files left out as an earlier run's outputs, each with the file whose
-    planned output it is."""
+    ``files``: every file of the batch by its :func:`~reframe.jobs.file_key` (default: the
+    rows' files); ``left_out``: the files left out as an earlier run's outputs (by key), each
+    with the file whose planned output it is. Paths are compared as files (``file_key``: a
+    link, a linked folder or a hard link to a file is that file). Blocking (``stat``)."""
     added: dict[int, list[ValidationIssue]] = {}
     batch: list[tuple[int, ValidationIssue]] = []
-    sources = {_key(row.path): n for n, row in enumerate(rows)}
+    sources = {file_key(row.path): n for n, row in enumerate(rows)}
     every = dict(files) if files is not None else {k: rows[n].path for k, n in sources.items()}
     earlier = left_out or {}
     outputs: dict[str, list[int]] = {}
     for n, row in enumerate(rows):
         if row.job is not None and row.job.output.path is not None:
-            outputs.setdefault(_key(row.job.output.path), []).append(n)
+            outputs.setdefault(file_key(row.job.output.path), []).append(n)
     labels = episode_labels([row.path for row in rows], season=True)
     is_source: set[int] = set()
 

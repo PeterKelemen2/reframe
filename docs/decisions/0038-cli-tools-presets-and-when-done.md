@@ -225,6 +225,26 @@ messages reported without an `await` between them.
   fetch writes into its folder all the time, so a fresh one (another fetch) is never removed.
   Test: `test_a_killed_fetchs_work_folder_is_removed_by_the_next_fetch`.
 
+## Follow-up (final review, 2026-10-17)
+
+**RA-2 (R5-9 was incomplete).** The final review of the fix rounds (reviewer R-A, on
+`core-complete` 5dbf152) found human lines that did not go through `printable`, so ESC reached
+the terminal (rich's `Text` strips only BEL, BS, VT, FF and CR): the `Preset: <name>` line of
+`reframe encode` and `reframe batch` (an imported preset named `Evil ESC[31m RED` coloured the
+output), the differences of a near group member (they quote track titles from the file), the
+member label column (the file name when two files share a label) and the matrix lines of
+`reframe batch` (row labels and output names come from file names; `matrix_lines` only
+replaced undecodable bytes). Looking for other places, the human output of `reframe probe`
+(track, container, chapter and data-stream titles, attachment file names, the path, the role
+evidence) and of `reframe encoders` (FFmpeg's path, reasons from FFmpeg's output) did not go
+through it either. Now all of them do; a matrix line goes through `printable` whole (each
+control character becomes one U+FFFD, so the columns stay aligned). `--json` keeps the text
+unchanged. Tests: `tests/jobs/test_cli_final_review.py`
+(`test_ra2_preset_line_of_batch_and_encode_has_no_control_characters`, the reviewer's;
+`test_ra2_titles_and_file_names_in_the_batch_output_are_printable`: a commentary title with ESC
+in a near member's difference, a file name with ESC as a member label and in the matrix;
+`test_ra2_reframe_probe_prints_titles_without_control_characters`).
+
 ## Plan changes
 
 - [05-core.md §C-15](../plan/05-core.md#c-15-service-facade-and-cli): the CLI line shows the

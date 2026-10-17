@@ -152,7 +152,10 @@ both call it, so a preset and a batch group make the same job for the same file.
   `batch.override_invalid` and the override's template part is not applied. The matrix columns
   are the template's rules: a file whose rules moved would show its cells under other rules'
   columns. A change inside a rule, or a whole rule replaced in its place, is fine;
-  `replace /audio_rules/1/selector/languages []` makes a rule take no track in one file.
+  `replace /audio_rules/1/selector/languages []` makes a rule take no track in one file. The
+  same holds for the rules that the defaults compile to (a template without explicit rules):
+  an override of `/audio_defaults` or `/subtitle_defaults` that changes which rules they
+  compile to is `batch.override_invalid` too (follow-up of the final review, RA-3).
 - **Stale overrides are issues** (`batch.override_stale`, warning): an operation whose path
   vanished is skipped and the rest applied; a failed `test` skips the rest of the override (it
   was made for another template); a `move` / `copy` between the template and the job, or a
@@ -193,8 +196,9 @@ both call it, so a preset and a batch group make the same job for the same file.
   to encode a done episode again, remove its output (or move it out of the folder), or give
   the source files instead of the folder. Reframe cannot tell an earlier output from another
   release that has the output's name, so neither is ever replaced.
-- Probes run 4 at a time (`PROBE_CONCURRENCY`); a file given twice is probed once; an
-  unreadable file is a `source.probe_failed` issue of the grouping and an error row of the
+- Probes run 4 at a time (`PROBE_CONCURRENCY`); a file given twice is probed once (also
+  through a link, a linked folder or a hard link: files are compared as files, follow-up of
+  the final review, RA-1); an unreadable file is a `source.probe_failed` issue of the grouping and an error row of the
   matrix. An unknown preset name is `preset.not_found` (the default preset's settings, every
   row an error).
 
@@ -275,7 +279,9 @@ matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub requir
   (`reframe.jobs.OutputClaims`): a job whose output is another file of the command is
   `batch.output_is_source`, and a job whose output an earlier job of the command already has
   is `batch.name_collision`; both are not queued (the first file keeps the name). It does not
-  leave earlier outputs out (it has no grouping step).
+  leave earlier outputs out (it has no grouping step). Paths are compared as files
+  (`reframe.jobs.file_key`): an output named through a linked folder or a hard link to a
+  source is that source (follow-up of the final review, RA-1).
 
 ## Open product questions (defaults chosen, easy to change)
 
@@ -293,7 +299,8 @@ matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub requir
 8. `reframe batch` queues the valid files and lists the others, exit 1 (`cli.run_batch`).
 9. A file of the batch that is the planned output of another file of the batch is left out as
    already encoded (`BatchService.resolve_batch`), not encoded as a source.
-10. A per-file override cannot add, remove or move track rules (`overrides.structural_op`).
+10. A per-file override cannot add, remove or move track rules (`overrides.structural_op`),
+    or change the rules that the defaults compile to (`resolve.compiled_rules_moved`).
 
 ## Follow-up (core-complete review, 2026-10-16)
 
@@ -371,6 +378,119 @@ matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub requir
   compared), §Per-file overrides (the rule lists keep their structure), §Output naming (a file
   of the batch is never overwritten; an earlier run's outputs are left out);
   [05](../plan/05-core.md) §C-15 (`resolve_batch`, the `reframe batch` line).
+
+## Follow-up (final review, 2026-10-17)
+
+A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) found one blocker
+(RA-1) and minors in C-12 / C-15. The lead ran RA-1's reproduction again on the real tools.
+
+- **RA-1 (blocker): the name checks compare files, not spellings.** The R2-1 fix compared paths
+  as `normcase(abspath(p))`: links were not resolved and file identity was not compared, while
+  the queue compares files (R4-1). With the collision setting *overwrite*, `reframe encode
+  real/E01.mkv link/Anime.Show.S01E01.Pilot.mkv` (`link` → `real`, the second file a user
+  file named as E01's planned output) queued E01's job, which replaced the user file (real
+  FFmpeg n9.0.2 and the real queue: its SHA-256 changed from 2071b4d0… to another value; the
+  second job then failed reading it); `reframe batch` of the same files did the same, and
+  `reframe batch real link --dry-run` listed every episode twice. Now one key per file,
+  `reframe.jobs.file_key(path) -> str`, is used by `OutputClaims`, `find_media_files`,
+  `BatchService._probe_all`, `resolve` (the group order, near members, overrides),
+  `resolve_batch` (the rows, the left-out outputs) and `_collisions`:
+  - a path that exists is its identity, `st_dev` and `st_ino` of `os.stat` (links followed): a
+    symbolic link, a linked folder and a hard link are the file; on a file system that ignores
+    case (Windows, macOS) another case of the name is the file too, because `stat` finds it;
+    on Windows the two numbers are the volume serial number and the file index, so a mapped
+    drive and its UNC path are one file;
+  - a path that does not exist (a new output), or a file whose identity is not known
+    (`st_ino` 0, which some Windows network file systems give), is its path with the links
+    resolved (`realpath`, which resolves the existing part of the folder; on Windows
+    `GetFinalPathNameByHandle` gives a mapped drive's UNC path), `normcase`d and case-folded,
+    as the queue's `reframe.queue.files.same_file` does. On Linux two new output names that
+    differ only in case are taken as one file (the safe side: the second is
+    `batch.name_collision`); two **existing** files that differ in case stay two files (their
+    identities differ), so a folder with `E01.mkv` and `e01.mkv` gives two jobs;
+  - a path that `stat` or `realpath` refuses (a NUL character: `ValueError`, RB-2 of the
+    review) falls back to `normcase(abspath(…))`: the key never raises.
+
+  The key is a string of `reframe.jobs` (dictionaries of a whole batch need a hashable key;
+  `queue/` is not changed) and follows the queue's rule; `test_ra1_file_key_agrees_with_the_queue`
+  checks it against `reframe.queue.files.same_file`. It differs on purpose in one case: two existing
+  files whose names differ only in case on Linux are two files here (the queue's case-folded
+  fallback takes them as one, the safe side for running jobs; for "taken once" both must be
+  encoded).
+
+  The key is computed **off the event loop** (the lead's note from RB-1: a `stat` of a network
+  share that stops answering would freeze the loop): `find_media_files` already runs in a
+  worker thread; the CLI builds `OutputClaims` and calls `check` with `asyncio.to_thread`; the
+  batch service computes the keys of the given files, the group members, the overrides and the
+  outputs in worker threads and then compares strings (`_collisions` runs in a thread).
+  **Decision: a file given twice through two spellings is taken once**, like a file given twice
+  the same way, in the spelling it was first given (labels, rows, messages and job sources keep
+  the paths as typed): `reframe batch real link` lists each episode once. Two hard-linked
+  names are one file too (also for `reframe name DIR`). A batch file that is the planned output
+  of another file by identity (a hard link with another name) is left out as already encoded;
+  the message then names the planned output ("`Other.mkv` is the planned output of `…E01…`
+  with this preset (the same file as `Anime.Show.S01E01.Pilot.mkv`)"). Tests:
+  `tests/jobs/test_cli_final_review.py` (`test_ra1_encode_never_writes_a_source_given_through_a_linked_folder`
+  and `test_ra1_batch_never_writes_a_source_given_through_a_linked_folder`, the reviewer's
+  tests; `test_ra1_encode_never_writes_a_hard_linked_output_name`,
+  `test_ra1_batch_never_writes_a_hard_linked_output_name`,
+  `test_ra1_a_folder_given_through_two_spellings_is_taken_once`,
+  `test_ra1_encode_takes_a_file_named_through_a_link_once`,
+  `test_ra1_the_file_keys_are_computed_off_the_event_loop`,
+  `test_ra1_the_batch_service_keys_files_off_the_event_loop`, and
+  `test_ra1_the_symlink_case_with_the_real_queue`: the real FFmpeg and queue, `encode` and
+  `batch`, the user file's SHA-256 unchanged) and `tests/batch/test_batch_final_review.py`
+  (`test_ra1_file_key_compares_files`, `test_ra1_file_key_agrees_with_the_queue`,
+  `test_ra1_file_key_on_windows_mocked` (the Windows rule with mocked `stat`, `realpath` and
+  `ntpath.normcase`: a mapped drive and its UNC path, case, a file index 0),
+  `test_ra1_output_claims_compare_files`, `test_ra1_find_media_files_takes_a_file_once`,
+  `test_ra1_find_media_files_keeps_two_files_whose_names_differ_in_case`,
+  `test_ra1_file_key_never_raises_for_a_bad_path`, `test_ra1_resolve_batch_through_a_linked_folder`).
+  Known limit: on Windows, two **new** outputs named through a mapped drive and through its UNC
+  path are one key only when `realpath` resolves the drive (it does through
+  `GetFinalPathNameByHandle`; a network redirector that does not support it leaves the drive
+  letter); existing files are compared by identity in every case. Not run on Windows or macOS.
+- **RA-3: an override that changes the compiled rules is invalid.** R2-3 kept the structure of
+  the explicit rule lists only. A template without explicit rules has compiled columns
+  (`matrix_columns`: one per listed language, the no-match track, other languages,
+  commentary, the foreign audio search), and a per-file override of the defaults (`replace
+  /audio_defaults/selection/languages ["eng","jpn"]` on *H.265 MKV 1080p* with `["jpn"]` and
+  other languages kept) changed that file's compiled rules: its cells were keyed by rule number
+  under the template's columns (the "A1 jpn" column showed the English dub, "no listed
+  language" the Japanese track). **Chosen fix** (the cheap one): `resolve_with_tracks` compares
+  the rules that each kind's defaults compile to (with Settings → Languages, since an empty
+  list compiles to the preferred languages) for the patched and the original template
+  (`reframe.batch.resolve.compiled_rules_moved`); when the parts of the selection they stand
+  for differ (the n-th listed language, no-match, other languages, commentary, foreign audio
+  search), the override is `batch.override_invalid` (path `audio_defaults.selection`, the
+  message lists both rule lists) and its template part is not applied. A change of the codec
+  rules, or another language in a listed language's place, keeps the structure and is applied,
+  as a change inside an explicit rule is (the column label is then the template's, as for an
+  explicit rule whose languages a file changes). A kind with explicit rules is not checked (its
+  defaults are not used). Not chosen: keying cells by the compiled rule's identity (a file's
+  extra rules would have no column). Tests: `tests/batch/test_batch_final_review.py`
+  (`test_ra3_an_override_that_changes_the_compiled_rules_is_invalid`,
+  `test_ra3_an_override_inside_the_compiled_rules_is_applied`,
+  `test_ra3_preferred_languages_count`, `test_ra3_through_reframe_batch_resolve`: the
+  reviewer's case through `Reframe.batch.resolve` with the real ffprobe, the override found
+  through a linked folder).
+- **RA-4: `reframe encode` no longer says "will be replaced" next to "never overwritten".**
+  `OutputClaims`' `batch.output_is_source` error was added to the draft's issues with C-8's
+  `output.overwrite` warning still there; the batch path already left it out. The CLI now
+  leaves `output.overwrite` out of that job's issues (`cli._with_claims`). Tests:
+  `test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten` (the reviewer's),
+  `test_ra4_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command`.
+- **RA-5: a member labelled by its file name shows the name once.** For two releases of one
+  episode `episode_labels` gives the file name, and `render_group` printed the label column
+  and the name (`Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv  Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv
+  (representative)`). The label column is printed only when the label differs from the file
+  name (its width is that of the other labels). Test:
+  `test_ra5_a_member_labelled_by_its_file_name_shows_the_name_once`.
+- RA-2 (control characters in the batch and encode output) is in
+  [0038](0038-cli-tools-presets-and-when-done.md)'s follow-up of the same date.
+- Plan text changed with this follow-up: [04](../plan/04-batch-mode.md) §Per-file overrides
+  (the compiled rules keep their structure too). §Output naming ("a file of the batch is never
+  overwritten") is unchanged: RA-1 makes it hold through links.
 
 ## Plan changes
 
