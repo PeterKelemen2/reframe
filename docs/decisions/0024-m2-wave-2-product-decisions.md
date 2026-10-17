@@ -52,3 +52,22 @@ the first four on 2026-10-13; the fifth is the lead's choice.
 - [03 §Presets](../plan/03-features.md#presets): the default preset.
 - [05 §C-7](../plan/05-core.md#c-7-command-builder): audio values are snapped.
 - [05 §C-8](../plan/05-core.md#c-8-validation): the crop note and the audio snap are info.
+
+## Follow-up (core-complete, 2026-10-17): the crop note stays info
+
+Item 3 said `dimensions.crop_not_detected` becomes a warning again with C-10. C-10 is built
+([0033](0033-preview-frames-crop-and-clips.md)), but crop detection is a task that a caller
+runs (the UI's crop view fills the rectangle). `reframe plan`, `encode` and `batch` do not run
+it ([0040](0040-batch-engine-and-reframe-batch.md) §6), so every CLI job with the default
+automatic crop has no rectangle. A warning there would be on every CLI job.
+
+Decision (the user's choice): the note **stays info**, and its text says what is true now:
+"Crop detection did not run for this job, so automatic crop has no values: the picture is not
+cropped." (before: "Crop detection is not available yet: …"). The fix is still "Do not crop".
+Running crop detection in the CLI is not built.
+
+Tests: `tests/validation/test_snap_notes.py::test_crop_note_says_what_happens`,
+`tests/jobs/test_cli_plan.py::test_default_preset_prints_issues_then_the_command`.
+
+Plan change: [05 §C-8](../plan/05-core.md#c-8-validation) says the note is info because the
+CLI runs no crop detection.

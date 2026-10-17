@@ -88,12 +88,14 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
                 no_crop,
             )
         else:
-            # Info until crop detection exists (C-10, M8): decision 0024 item 3.
+            # No rectangle: crop detection (C-10) did not run for this job, as for every job of
+            # the CLI. Info, not a warning: decision 0024, follow-up of 2026-10-17.
             name = "automatic" if settings.mode == "auto" else "conservative"
             yield info(
                 "dimensions.crop_not_detected",
                 "dimensions.crop",
-                f"Crop detection is not available yet: {name} crop leaves the picture uncropped.",
+                f"Crop detection did not run for this job, so {name} crop has no values: "
+                "the picture is not cropped.",
                 no_crop,
             )
         return

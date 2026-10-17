@@ -393,7 +393,9 @@ functions in a registry, grouped by area.
       rounds every size to the chroma grid, so a property test replaces the rule; C-5's notes
       give the other issues (crop not detected, crop snapped, outside the fit box)
       ([0014](../decisions/0014-validation-rules-and-severities.md)). "Crop not detected" is
-      info until crop detection exists (M8, [decision 0024](../decisions/0024-m2-wave-2-product-decisions.md)).
+      info: an automatic crop without a rectangle means crop detection did not run for the
+      job, as for every CLI job ([decision 0024](../decisions/0024-m2-wave-2-product-decisions.md),
+      follow-up of 2026-10-17).
 - [ ] Filters: HDR → SDR conversion without tone mapping (warning, with a fix). An HDR source
       encoded to 8-bit without tone mapping stays tagged HDR in 8 bits (warning, with fixes:
       tone mapping, 10-bit; [0014](../decisions/0014-validation-rules-and-severities.md)
