@@ -142,7 +142,9 @@ installed and then found as `bundled` in 5.6 s; a second run downloads nothing.
 - A fetch for another platform never changes what this computer runs.
 - `TaskInfo.error` of a `TaskFailed` task still starts with `TaskFailed: ` and the task manager
   still logs a traceback for it: the core (`reframe.tasks`) should treat `TaskFailed` as 0030
-  says (message only, no traceback). The CLI handles both forms.
+  says (message only, no traceback). The CLI handles both forms. *Fixed since (fb895a9,
+  2026-10-15): a `TaskFailed` task ends `failed` with its message alone and no traceback
+  (`tests/test_tasks.py::test_an_expected_failure_is_its_message_without_a_traceback`).*
 - A user preset with custom parameters costs one encoded frame per `reframe plan`.
 - The countdown is tested against a fake power service and a fake queue; the real C-14 /
   C-11 services are built in parallel. If the real service clears `pending` before its

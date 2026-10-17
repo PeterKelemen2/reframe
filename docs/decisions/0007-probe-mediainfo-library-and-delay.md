@@ -143,6 +143,7 @@ again.
 Not changed (not this task's files): the docstring of `language_ietf` in
 `reframe/models/media.py` ("as MediaInfo reports it … `None` when MediaInfo is not
 available") and 05 §C-3 ("MediaInfo also gives `language_ietf`") describe the M1 rule.
+*Both changed since: the docstring by RB-6 (final review, below), 05 §C-3 on 2026-10-17.*
 
 ## Follow-up (final review, 2026-10-17)
 
@@ -167,3 +168,6 @@ C-2 / C-3:
   raised.
 
 Not changed (a plan file): 05 §C-3 still says "MediaInfo also gives `language_ietf`".
+*Changed on 2026-10-17 (core-complete follow-up):* 05 §C-3 now states the rule of the R4-3
+follow-up (the Matroska reader's value or `None`; MediaInfo for other containers and when the
+reader cannot read or match the tracks).
