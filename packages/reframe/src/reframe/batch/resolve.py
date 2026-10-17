@@ -31,7 +31,13 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.overrides import apply_job_override, apply_template_override, split_override
-from reframe.batch.rules import TrackResolution, resolve_tracks
+from reframe.batch.rules import (
+    CompiledRule,
+    Kind,
+    TrackResolution,
+    compile_defaults,
+    resolve_tracks,
+)
 from reframe.definitions import Definitions, load_definitions
 from reframe.dimensions import compute_geometry, source_geometry
 from reframe.models.batch import BatchGroup, MatrixColumn, Resolution, TrackMatch
@@ -52,6 +58,7 @@ from reframe.models.template import JobTemplate
 __all__ = [
     "NAME_COLUMN",
     "build_job",
+    "compiled_rules_moved",
     "matrix_columns",
     "output_size",
     "resolve",
@@ -208,6 +215,10 @@ def resolve_with_tracks(
     defs = definitions or load_definitions()
     template_ops, job_ops, issues = split_override(override)
     patched, found = apply_template_override(template, template_ops)
+    if patched is not template:
+        moved = compiled_rules_moved(template, patched, languages=languages)
+        if moved is not None:
+            patched, found = template, [moved]
     issues += found
     tracks = resolve_tracks(
         patched,
@@ -231,6 +242,62 @@ def resolve_with_tracks(
         notes=notes,
     )
     return resolution, tracks
+
+
+def _part(rule: CompiledRule) -> tuple[str, int | None]:
+    """What a compiled rule stands for: its part of the selection (``language``, ``no_match``,
+    ``other``, ``extra``, ``foreign_audio``, ``all``) and, for a language rule, the number of
+    its language in the list."""
+    return rule.group, rule.slot
+
+
+def _shown(rules: Sequence[CompiledRule]) -> str:
+    """``A1 jpn, A2 no listed language``."""
+    return ", ".join(rule.label(n).removesuffix(" (defaults)") for n, rule in enumerate(rules))
+
+
+def compiled_rules_moved(
+    template: JobTemplate, patched: JobTemplate, *, languages: LanguageSettings | None = None
+) -> ValidationIssue | None:
+    """``batch.override_invalid`` when an override changes the list of rules that a kind's
+    defaults compile to (final review RA-3). The matrix columns are the template's compiled
+    rules and a cell is keyed by its rule's number, so a file whose defaults compile to other
+    rules (``languages ["jpn"]`` → ``["eng", "jpn"]``: one more language rule before the
+    no-match rule) would show its cells under other rules' columns. The list keeps its
+    structure when each rule stands for the same part of the selection (:func:`_part`): a
+    change of the codec rules, or of a listed language in its place, is fine, as a change
+    inside an explicit rule is (decision 0040 §5). A kind with explicit rules is not checked:
+    its defaults are not used, and an override cannot change an explicit list's structure
+    (``overrides.structural_op``). ``languages``: Settings → Languages (an empty language
+    list compiles to the preferred languages)."""
+    kinds: tuple[tuple[Kind, bool, Sequence[str]], ...] = (
+        ("audio", bool(template.audio_rules), languages.preferred_audio if languages else ()),
+        (
+            "subtitle",
+            bool(template.subtitle_rules),
+            languages.preferred_subtitle if languages else (),
+        ),
+    )
+    for kind, explicit, preferred in kinds:
+        if explicit:
+            continue
+        before = compile_defaults(template, kind, preferred=preferred)
+        after = compile_defaults(patched, kind, preferred=preferred)
+        if [_part(rule) for rule in before] == [_part(rule) for rule in after]:
+            continue
+        return ValidationIssue(
+            severity=Severity.ERROR,
+            code="batch.override_invalid",
+            path=f"{kind}_defaults.selection",
+            message=(
+                f"The override changes the rules that the {kind} defaults make "
+                f"({_shown(before)} → {_shown(after)}): a file keeps the template's rules (the "
+                "matrix columns), so the override's template part is not applied. Change the "
+                "selection in the template, or change a codec rule or a listed language in its "
+                "place."
+            ),
+        )
+    return None
 
 
 def matrix_columns(

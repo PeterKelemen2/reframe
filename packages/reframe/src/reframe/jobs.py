@@ -23,7 +23,9 @@ its plan.
   search and **Copy HDR metadata** (C-6).
 - :meth:`JobService.name` names one path without probing it (``reframe name``), and
   :func:`find_media_files` lists the media files of files and folders (``reframe encode``);
-  :class:`OutputClaims` keeps the jobs of one command from writing each other's files.
+  :class:`OutputClaims` keeps the jobs of one command from writing each other's files. Both
+  compare files, not spellings (:func:`file_key`): a link, a linked folder or a hard link to a
+  file is that file.
 
 Expected failures are values: a source that cannot be probed is a
 :class:`~reframe.probe.ProbeError` (``draft``) or a ``source.probe_failed`` error
@@ -81,6 +83,7 @@ __all__ = [
     "SourceProber",
     "ToolDiscovery",
     "draft_from_preset",
+    "file_key",
     "find_media_files",
     "has_errors",
     "is_partial_output",
@@ -135,13 +138,48 @@ class Capabilities(Protocol):
 # --------------------------------------------------------------------------- media files
 
 
+def file_key(path: str | os.PathLike[str]) -> str:
+    """One key per file: two spellings of one file have the same key. The name checks of one
+    command (:class:`OutputClaims`, ``Reframe.batch``) and the "taken once" rule of
+    :func:`find_media_files` compare files with it, as the queue does
+    (``reframe.queue.files.same_file``; R4-1 of the core-complete review, RA-1 of the final
+    review).
+
+    - A path that exists is keyed by the file's identity: ``st_dev`` and ``st_ino`` of
+      ``os.stat``, which follows links. A symbolic link, a linked folder, a hard link and, on a
+      file system that ignores case (Windows, macOS), another case of the name are that file.
+      On Windows the two numbers are the volume serial number and the file index, so a mapped
+      drive and its UNC path give one key too.
+    - A path that does not exist (an output not written yet), or a file whose identity is not
+      known (``st_ino`` 0, which some network file systems give on Windows), is keyed by its
+      path: links resolved (``realpath``, which resolves the existing part of the folder of a
+      file that does not exist yet), in the OS's case (``normcase``) and case-folded. macOS and
+      Windows file systems ignore case; on Linux two new names that differ only in case are
+      taken as one file, the safe side (the queue's ``same_file`` does the same).
+
+    Blocking (``stat``): call it in a worker thread for many paths.
+    """
+    try:
+        info = os.stat(path)
+    except (OSError, ValueError):
+        info = None
+    if info is not None and info.st_ino:
+        return f"file:{info.st_dev}:{info.st_ino}"
+    try:
+        resolved = os.path.realpath(path)
+    except (OSError, ValueError):
+        resolved = os.path.abspath(path)
+    return "path:" + os.path.normcase(resolved).casefold()
+
+
 @dataclass(frozen=True)
 class MediaFiles:
     """The media files of the paths given to ``reframe encode`` (see
     :func:`find_media_files`)."""
 
     files: list[Path] = field(default_factory=list)
-    """Absolute paths, in argument order (a folder's files in natural order), each once."""
+    """Absolute paths, in argument order (a folder's files in natural order), each file once
+    (in the spelling it was first given)."""
     missing: list[Path] = field(default_factory=list)
     """Arguments that do not exist."""
     empty: list[Path] = field(default_factory=list)
@@ -162,7 +200,9 @@ def find_media_files(
     A file is taken as it is (ffprobe decides whether it is media). A folder gives its media
     files (C-3's extension list, hidden files left out, natural order), without the partial
     outputs of Reframe (``*.part.*``); ``recursive`` also searches its subfolders (hidden
-    folders left out). A file named twice (also through a folder) is taken once.
+    folders left out). A file named twice is taken once, in the spelling it was first given:
+    also through a folder, a link, a linked folder or a hard link (:func:`file_key`; a folder
+    given as ``real`` and as ``link`` → ``real`` gives each file once).
     """
     files: list[Path] = []
     missing: list[Path] = []
@@ -170,7 +210,7 @@ def find_media_files(
     seen: set[str] = set()
 
     def add(path: Path) -> None:
-        key = os.path.normcase(str(path))
+        key = file_key(path)
         if key not in seen:
             seen.add(key)
             files.append(path)
@@ -197,10 +237,6 @@ def find_media_files(
     return MediaFiles(files=files, missing=missing, empty=empty)
 
 
-def _path_key(path: str | os.PathLike[str]) -> str:
-    return os.path.normcase(os.path.abspath(path))
-
-
 class OutputClaims:
     """The outputs of the jobs that one command queues (``reframe encode`` of several files):
     no job writes another file of the command (it would replace a source, perhaps before its
@@ -208,11 +244,16 @@ class OutputClaims:
     be lost, or the later one renamed at run time). ``Reframe.batch.resolve_batch`` checks a
     batch the same way, for all its files at once (decision 0040, follow-up R2-1).
 
+    Paths are compared as files (:func:`file_key`): an output named through a linked folder,
+    a link or a hard link to a file of the command is that file (final review RA-1). Messages
+    name the files as they were given. Blocking (``stat``): the CLI calls it in a worker
+    thread.
+
     :param files: every file of the command, with its label in messages (``[2/3] E02.mkv``).
     """
 
     def __init__(self, files: Mapping[Path, str]) -> None:
-        self._files = {_path_key(path): label for path, label in files.items()}
+        self._files = {file_key(path): label for path, label in files.items()}
         self._outputs: dict[str, str] = {}
 
     def check(self, job: JobSettings, label: str) -> list[ValidationIssue]:
@@ -221,8 +262,8 @@ class OutputClaims:
         path = job.output.path
         if path is None or job.output.edit_in_place:
             return []
-        key = _path_key(path)
-        source = _path_key(job.source.path)
+        key = file_key(path)
+        source = file_key(job.source.path)
         if key != source and key in self._files:
             return [
                 _issue(

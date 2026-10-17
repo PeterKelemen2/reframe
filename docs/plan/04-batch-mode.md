@@ -173,7 +173,8 @@ E11         │ ✓ 1080p    │ ✓ #1                   │ ✗ none          
   member `job` with the file's resolved job: `/job/…` patches what is per file by nature
   (range, chapter names, the parsed-name corrections `/job/output/naming/field_overrides/…`);
   an operation whose path vanished is an issue, not an error. An override changes the fields
-  of the track rules, not their number or order (the matrix columns are the template's rules)
+  of the track rules, not their number or order (the matrix columns are the template's rules),
+  also of the rules that the audio and subtitle defaults compile to
   ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 
 ## Output naming

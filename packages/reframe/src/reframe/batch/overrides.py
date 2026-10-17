@@ -27,7 +27,12 @@ is not applied: the matrix columns are the template's rules, so a file whose rul
 show its cells under other rules' columns (decision 0040, follow-up R2-3). A change inside a
 rule (its selector, settings, metadata, ``required``), or a whole rule replaced in its place,
 is fine; ``replace /audio_rules/1/selector/languages []`` makes a rule take no track in one
-file.
+file. The same holds for the rules that the audio and subtitle defaults compile to (a
+template without explicit rules): an override of ``/audio_defaults`` or
+``/subtitle_defaults`` that changes that list (another number of listed languages, the
+no-match track or other languages turned on or off…) is ``batch.override_invalid`` too
+(``reframe.batch.resolve.compiled_rules_moved``, which needs Settings → Languages; final
+review RA-3).
 
 Pure: no I/O.
 """
