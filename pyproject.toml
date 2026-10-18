@@ -13,7 +13,7 @@ dev = [
     "reframe[cli,mediainfo]",
     "reframe-server",
     "anyio>=4.15.1",
-    "hypothesis>=6.169.0",
+    "hypothesis>=6.169.2",
     "mypy>=2.4.0",
     "pip-audit>=2.10.1",
     "pytest>=9.1.1",
