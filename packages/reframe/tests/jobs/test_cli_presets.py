@@ -1,5 +1,4 @@
-"""``reframe presets list|export|import`` (C-15; demo 8 of the core breakdown: the list and an
-export → import round trip). Private config folders (``cli_env``)."""
+"""The ``reframe presets`` commands: list, export and import."""
 
 from __future__ import annotations
 
@@ -65,13 +64,9 @@ def stored(tmp_path: Path) -> dict[str, Any]:
     return data
 
 
-# --------------------------------------------------------------------------- list
-
-
 def test_list_shows_builtins_then_user_presets_with_the_default(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """Demo 8: ``reframe presets list``."""
     write_presets(
         tmp_path, [user_preset("u-1", "Anime 720p"), user_preset("u-2", "Grain")], default="u-2"
     )
@@ -143,14 +138,9 @@ def test_preset_rows_align_the_columns() -> None:
     ]
 
 
-# --------------------------------------------------------------------------- export → import
-
-
 def test_export_import_round_trip(
     cli_env: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Demo 8: every user preset exported to a file, imported into an empty config: the same
-    presets, ids and default."""
     presets = [user_preset("u-1", "Anime 720p"), user_preset("u-2", "Grain", description="x")]
     write_presets(tmp_path, presets, default="u-2")
     out = tmp_path / "backup.json"
@@ -202,7 +192,6 @@ def test_export_without_user_presets_warns(cli_env: ft.FakeTools) -> None:
 
 
 def test_export_keeps_presets_of_a_newer_reframe(cli_env: ft.FakeTools, tmp_path: Path) -> None:
-    """Decision 0028: a newer preset is exported unchanged, with a warning."""
     future = {"id": "f", "name": "Future", "schema_version": 5, "video": {"encoder": "h266"}}
     write_presets(tmp_path, [future, user_preset("u-1", "Mine")])
     result = invoke("presets", "export")
@@ -244,9 +233,6 @@ def test_write_text_file_leaves_no_temporary_file(tmp_path: Path) -> None:
     assert [p.name for p in tmp_path.iterdir()] == ["out.json"]
 
 
-# --------------------------------------------------------------------------- import
-
-
 @pytest.fixture
 def backup(tmp_path: Path) -> Path:
     path = tmp_path / "backup.json"
@@ -285,8 +271,7 @@ def backup(tmp_path: Path) -> Path:
 def test_import_conflicts(
     cli_env: ft.FakeTools, tmp_path: Path, backup: Path, policy: str, expected: list[str]
 ) -> None:
-    """``u-1`` exists with the same name; ``Fast 720p30`` is a built-in's name (never
-    replaced: renamed)."""
+    """``Fast 720p30`` is a built-in's name, so it is renamed, never replaced."""
     write_presets(tmp_path, [user_preset("u-1", "Anime 720p", description="old")])
     result = invoke("presets", "import", str(backup), "--on-conflict", policy)
     assert result.exit_code == EXIT_OK, result.output
@@ -297,7 +282,7 @@ def test_import_conflicts(
     ]
     assert result.stdout.splitlines() == lines
     if policy == "replace":
-        assert users[0]["description"] != "old"  # overwritten by the file's version
+        assert users[0]["description"] != "old"
     if policy == "skip":
         assert len(users) == 1
 
@@ -392,7 +377,7 @@ def test_read_preset_file_strips_a_bom(tmp_path: Path) -> None:
 
 
 def test_human_output_survives_an_ascii_stdout(cli_env: ft.FakeTools, tmp_path: Path) -> None:
-    """A stdout that cannot encode ``·`` (``*`` legend) or ``“”`` (renamed) does not raise."""
+    """A stdout that cannot encode ``·`` or ``“”`` does not raise."""
     write_presets(tmp_path, [user_preset("u-1", "Ünïcode ✓")])
     buffer = io.BytesIO()
     stream = io.TextIOWrapper(buffer, encoding="ascii", errors="strict")

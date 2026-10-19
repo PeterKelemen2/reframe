@@ -1,23 +1,4 @@
-"""C-15 (``reframe batch``, ``reframe encode``, ``reframe plan``) and C-12 (the job path of the
-one rule engine): the fixes of the core-complete review (2026-10-16; decisions 0040, 0038 and
-0035, "Follow-up").
-
-- R2-1: the batch-level name checks cover every file of a ``reframe batch`` run, across
-  groups (an output that is another file of the batch, two outputs with one name), and
-  ``reframe encode`` of several files has the same checks: no job writes another file of the
-  command or another job's output.
-- R2-7: a file of the batch that is the planned output of another file of the batch is left
-  out (already encoded); its source gets the batch's existing-output error.
-- R2-6: rows and members are labelled with the season when a group spans seasons.
-- R2-5: ``reframe plan`` / ``encode`` with a group preset show the track rules' warnings.
-- R1-4: a codec the container cannot hold is one issue in a draft (C-8's).
-- R5-2: ``reframe plan`` shows the dry run's warnings and claims the check only when it ran.
-- The row sort of ``Reframe.batch.resolve`` (guessit) runs off the event loop.
-
-The sources are recorded probes replayed by the fake ffprobe (or :class:`~.conftest.Stubs`);
-the queue is the fake queue of the ``encode`` tests. The last test is the lead's reproduction
-with the real FFmpeg and the real queue.
-"""
+"""``reframe batch``, ``encode`` and ``plan``: output name checks, season labels and warnings."""
 
 from __future__ import annotations
 
@@ -89,18 +70,12 @@ def outputs_of(made: Queues) -> list[Path | None]:
     return [job.settings.output.path for q in made.made for job in q.list()]
 
 
-# --------------------------------------------------------------------------- R2-1: batch
-
-
 def test_batch_never_writes_a_file_of_another_group(
     cli_env: ft.FakeTools,
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """The lead's reproduction: E01 and another release's file named as E01's output (two
-    layouts: two groups), with the collision setting *overwrite*. E01's job would replace
-    that file: it is ``batch.output_is_source`` (not queued), and the other file, the planned
-    output of E01, is left out (R2-7)."""
+    """With the collision setting *overwrite*, E01's job would otherwise replace that file."""
     write_settings(tmp_path, collision="overwrite")
     folder, _e01, copy = two_sources(cli_env, tmp_path, E01_OUT)
     result = invoke("batch", str(folder), "--dry-run")
@@ -110,7 +85,7 @@ def test_batch_never_writes_a_file_of_another_group(
     assert any(f"{E01_OUT} is the planned output of {E01}" in line for line in out)
     assert "Group 1 of 1: Anime Show S01 · 1 file · standard match" in out
     assert any("[batch.output_is_source · output.path]" in line for line in out)
-    assert not any("[output.overwrite" in line for line in out)  # it is not replaced
+    assert not any("[output.overwrite" in line for line in out)
     assert out[-1] == (
         "Dry run: 0 of 1 file can be queued; 1 cannot (errors); 1 left out (already encoded)."
     )
@@ -124,8 +99,6 @@ def test_batch_never_writes_a_file_of_another_group(
 def test_batch_two_outputs_with_one_name_in_two_groups(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """Two releases of E01 (two layouts: two groups) get one output name: both rows are
-    errors, and the batch issue is printed once."""
     folder, _e01, _web = two_sources(cli_env, tmp_path, WEB)
     result = invoke("batch", str(folder), "--dry-run")
     assert result.exit_code == EXIT_FAILED, result.output
@@ -151,16 +124,11 @@ def test_batch_json_has_the_left_out_files(cli_env: ft.FakeTools, tmp_path: Path
     assert str(copy) not in json.dumps(data["grouping"]["groups"])
 
 
-# --------------------------------------------------------------------------- R2-1: encode
-
-
 def test_encode_never_writes_another_file_of_the_command(
     cli_env: ft.FakeTools,
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """``reframe encode DIR`` (the files drafted one by one): E01's output is the other file
-    of the folder, so E01 is not queued; that file is encoded to its own free name."""
     write_settings(tmp_path, collision="overwrite")
     folder, _e01, copy = two_sources(cli_env, tmp_path, E01_OUT)
     result = invoke("encode", str(folder))
@@ -179,8 +147,7 @@ def test_encode_two_outputs_with_one_name(
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """Two files get one output name: the first keeps it, the second is not queued (its
-    output would replace the first's)."""
+    """The second file is not queued: its output would replace the first's."""
     folder, _e01, _web = two_sources(cli_env, tmp_path, WEB)
     result = invoke("encode", str(folder))
     assert result.exit_code == EXIT_FAILED, result.output
@@ -191,17 +158,13 @@ def test_encode_two_outputs_with_one_name(
     assert out.splitlines()[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 1 not queued."
 
 
-# --------------------------------------------------------------------------- R2-7
-
-
 def test_a_rerun_queues_only_the_episodes_not_done_yet(
     cli_env: ft.FakeTools,
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """0040 §6: E01 and E02 were encoded by an earlier run (their outputs are in the season
-    folder, with another layout). The outputs are left out, E01 and E02 are not queued (their
-    outputs exist), and the 10 other episodes are queued."""
+    """E01 and E02 were encoded by an earlier run (their outputs are in the season folder,
+    with another layout)."""
     folder = tmp_path / "media" / S01
     done = [
         media_file(folder, "Anime Show - S01E01 - Pilot.mkv"),
@@ -235,9 +198,6 @@ def test_a_rerun_queues_only_the_episodes_not_done_yet(
     )
 
 
-# --------------------------------------------------------------------------- R2-6
-
-
 def test_a_group_of_two_seasons_names_the_season(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     per_file = {}
     for season, count in ((1, 2), (2, 2)):
@@ -258,14 +218,10 @@ def test_a_group_of_two_seasons_names_the_season(cli_env: ft.FakeTools, tmp_path
     assert labels == ["S01E01", "S01E02", "S02E01", "S02E02"]
 
 
-# --------------------------------------------------------------------------- R2-5, R1-4
-
-
 def test_plan_with_a_group_preset_shows_the_track_rule_warnings(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """``reframe plan E11 --preset <group preset>``: S1 matched without its title, A2 is
-    skipped; ``reframe batch`` says so, and now ``plan`` too."""
+    """S1 matches without its title; A2 is skipped."""
     folder = tmp_path / "media" / S01
     e11 = media_file(folder, media.anime_file_name(1, 11))
     replay(cli_env, anime(1, 11))
@@ -280,9 +236,6 @@ def test_plan_with_a_group_preset_shows_the_track_rule_warnings(
 
 @pytest.mark.anyio
 async def test_a_codec_the_container_cannot_hold_is_one_issue(tmp_path: Path) -> None:
-    """0031 §6: one issue per problem. A WebM preset with an AAC codec rule: C-8's
-    ``container.codec_unsupported`` (with its fixes), not also the lint's
-    ``defaults.codec_not_in_container``."""
     file = media_file(tmp_path / "Movie.2016.1080p.BluRay-GRP", "movie.mkv")
     stubs = Stubs({file: recorded("multitrack", file)})
     webm = preset("vp9-mkv-1080p").model_copy(deep=True)
@@ -300,13 +253,10 @@ async def test_a_codec_the_container_cannot_hold_is_one_issue(tmp_path: Path) ->
     codes = [issue.code for issue in draft.issues]
     assert "container.codec_unsupported" in codes
     assert "defaults.codec_not_in_container" not in codes
-    # The pure engine without validation still reports it (the explain view, a template).
+    # The pure engine without validation still reports it.
     explained = await jobs.explain(file, webm)
     assert isinstance(explained, TrackDraft)
     assert "defaults.codec_not_in_container" in [i.code for i in explained.issues]
-
-
-# --------------------------------------------------------------------------- R5-2
 
 
 SKIPPED = ValidationIssue(
@@ -324,8 +274,7 @@ CHANGED = ValidationIssue(
 
 
 def test_plan_shows_a_skipped_dry_run(movie: Path, dry_run: DryRun) -> None:  # noqa: F811
-    """R5-2: the dry run did not run (a timeout): its warning is shown and the note does not
-    claim that the parameters were checked."""
+    """A dry run that did not finish does not get the note that the parameters were checked."""
     dry_run.issues = [SKIPPED]
     result = invoke("plan", str(movie), "--preset", CUSTOM)
     assert result.exit_code == EXIT_OK, result.output
@@ -347,9 +296,6 @@ def test_plan_shows_the_dry_runs_warnings(movie: Path, dry_run: DryRun) -> None:
     data = json.loads(invoke("plan", str(movie), "--preset", CUSTOM, "--json").stdout)
     assert "encoder.dry_run_warning" in [i["code"] for i in data["draft"]["issues"]]
     assert data["plan"] is not None
-
-
-# --------------------------------------------------------------------------- the service
 
 
 class BatchStubs(Stubs):
@@ -374,8 +320,6 @@ def make_batch(stubs: BatchStubs) -> BatchService:
 
 @pytest.mark.anyio
 async def test_resolve_batch_checks_every_group(tmp_path: Path) -> None:
-    """``Reframe.batch.resolve_batch``: the grouping and one resolution per group, with the
-    name checks over every file; a left-out file is an info of the grouping."""
     folder = tmp_path / S01
     e01, e02 = (media_file(folder, media.anime_file_name(1, n)) for n in (1, 2))
     web = media_file(folder, "Anime.Show.S01E02.Departure.WEB.x264-GRP.mkv")
@@ -435,16 +379,12 @@ async def test_the_row_order_is_computed_off_the_event_loop(
     assert set(where) == {"thread"}
 
 
-# --------------------------------------------------------------------------- real FFmpeg
-
-
 @pytest.mark.needs_ffmpeg
 def test_the_leads_reproduction_with_the_real_queue(
     fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """R2-1 as the lead reproduced it: E01 of ``anime-s01`` and ``multitrack.mkv`` copied as
-    ``Anime.Show.S01E01.Pilot.mkv``, the collision setting *overwrite*, ``reframe batch`` on
-    the real queue and FFmpeg: the copy is not overwritten (its SHA-256 stays)."""
+    """E01 of ``anime-s01`` and ``multitrack.mkv`` copied as ``Anime.Show.S01E01.Pilot.mkv``,
+    with the collision setting *overwrite*: the copy is not overwritten."""
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
