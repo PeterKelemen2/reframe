@@ -15,7 +15,7 @@ from reframe.cli import EXIT_FAILED, EXIT_OK, build_app
 from reframe.probe import mediainfo
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
-from reframe_testing.capabilities import c4_rule
+from reframe_testing.capabilities import detect_rule
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBE = ROOT / "testdata" / "probes" / "truehd-atmos.json"
@@ -70,7 +70,7 @@ def test_a_stale_cached_unavailable_is_checked_again(
     movie.parent.mkdir(parents=True)
     movie.write_bytes(b"placeholder")
 
-    scenario(fake_tools, c4_rule("c4_hevc_amf_no_runtime"))
+    scenario(fake_tools, detect_rule("detect_hevc_amf_no_runtime"))
     first = plan(movie)
     assert first.exit_code == EXIT_FAILED, first.output
     assert NO_RUNTIME in first.stdout

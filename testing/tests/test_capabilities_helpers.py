@@ -13,7 +13,13 @@ import pytest
 from reframe.models import ToolStatus
 from reframe_testing import capture_fake_data
 from reframe_testing import fake_tools as ft
-from reframe_testing.capabilities import PINNED_VERSION, StubTools, c4_rule, ffmpeg_info, tool_set
+from reframe_testing.capabilities import (
+    PINNED_VERSION,
+    StubTools,
+    detect_rule,
+    ffmpeg_info,
+    tool_set,
+)
 
 
 def test_tool_set() -> None:
@@ -46,8 +52,8 @@ def test_the_test_encode_rule_replays_the_capture(fake_tools: ft.FakeTools) -> N
     fake_tools.set_scenario(
         ft.Scenario(
             [
-                c4_rule("c4_hevc_amf_no_runtime"),
-                c4_rule("c4_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
+                detect_rule("detect_hevc_amf_no_runtime"),
+                detect_rule("detect_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
             ]
         )
     )
@@ -62,14 +68,14 @@ def test_the_test_encode_rule_replays_the_capture(fake_tools: ft.FakeTools) -> N
 
 def test_the_test_encode_captures_are_listed_with_their_files() -> None:
     captures = ft.captures()
-    names = set(capture_fake_data.c4_captures())
+    names = set(capture_fake_data.detect_captures())
     assert names <= set(captures)
     for name in names:
         capture = captures[name]
         assert capture.machine is not None
         assert capture.stderr is not None
         assert (ft.DATA_DIR / capture.stderr).is_file()
-    assert captures["c4_hevc_amf_no_runtime"].env == {
+    assert captures["detect_hevc_amf_no_runtime"].env == {
         "LD_LIBRARY_PATH": capture_fake_data.EMPTY_AMF_RUNTIME
     }
 
@@ -80,9 +86,9 @@ def test_only_captures_merge_into_the_index(
     data = tmp_path / "fake_data"
     shutil.copytree(ft.DATA_DIR, data)
     monkeypatch.setattr(capture_fake_data, "DATA_DIR", data)
-    fake_tools.set_scenario(ft.Scenario([c4_rule("c4_hevc_nvenc_no_driver")]))
+    fake_tools.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
     before = json.loads((data / "captures.json").read_text(encoding="utf-8"))
-    (data / "c4_hevc_nvenc_no_driver.stderr.txt").unlink()
+    (data / "detect_hevc_nvenc_no_driver.stderr.txt").unlink()
     code = capture_fake_data.main(
         [
             "--ffmpeg",
@@ -90,17 +96,20 @@ def test_only_captures_merge_into_the_index(
             "--ffprobe",
             str(fake_tools.ffprobe),
             "--only",
-            "c4_hevc_nvenc_no_driver",
+            "detect_hevc_nvenc_no_driver",
         ]
     )
     assert code == 0
     after = json.loads((data / "captures.json").read_text(encoding="utf-8"))
     assert set(after) == set(before)
     assert after["encoders"] == before["encoders"]
-    assert after["c4_hevc_nvenc_no_driver"]["exit_code"] == 255
-    assert b"Cannot load libcuda.so.1" in (data / "c4_hevc_nvenc_no_driver.stderr.txt").read_bytes()
+    assert after["detect_hevc_nvenc_no_driver"]["exit_code"] == 255
+    assert (
+        b"Cannot load libcuda.so.1"
+        in (data / "detect_hevc_nvenc_no_driver.stderr.txt").read_bytes()
+    )
     assert (data / "encoders.stdout.txt").is_file()
     calls = fake_tools.calls()
     assert [c for c in calls if "-c:v" in c] == [
-        tuple(capture_fake_data.c4_captures()["c4_hevc_nvenc_no_driver"][0])
+        tuple(capture_fake_data.detect_captures()["detect_hevc_nvenc_no_driver"][0])
     ]
