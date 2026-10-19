@@ -53,7 +53,7 @@ def _load(name: str) -> ModuleType:
 A = _load("anime")
 
 
-def test_the_most_specific_selector_of_04() -> None:
+def test_the_most_specific_selector() -> None:
     e01 = A.recorded(1, 1)
     selector = derive_selector(e01.audio[1], e01)
     assert selector == TrackSelector(

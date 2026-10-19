@@ -22,6 +22,7 @@ from reframe.batch.selection import (
 )
 from reframe.models import (
     AudioStream,
+    SubtitleDefaults,
     SubtitleStream,
     TrackRole,
     TrackSelection,
@@ -460,8 +461,6 @@ def test_extras_follow_the_main_tracks_in_source_order() -> None:
 
 def test_subtitle_defaults_take_nothing_without_a_match() -> None:
     """The subtitle defaults: no match → none, and no error for subtitles."""
-    from reframe.models import SubtitleDefaults
-
     streams = [subtitle(1, "jpn"), subtitle(2, "fre", default=True)]
     selection = select_tracks(streams, SubtitleDefaults().selection, preferred_languages=["hu"])
     assert selection.no_listed_language

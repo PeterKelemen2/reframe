@@ -181,6 +181,7 @@ def _reachability(defaults: AudioDefaults, index: int) -> ValidationIssue | None
     path = _rules_path(index)
     base = "/audio_defaults/codec_rules"
     if rule.languages is not None and not rule.languages:
+        # Never the last rule: the model keeps the catch-all there, so the removal is safe.
         # "Any language" is not offered when it would make a rule that takes every track, which
         # hides every later rule.
         anything = rule.model_copy(update={"languages": None})

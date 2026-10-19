@@ -135,6 +135,8 @@ def test_season() -> None:
     assert (commentary.metadata.name, commentary.metadata.commentary) == ("Commentary", True)
     assert commentary.action == "passthru"
     assert e05.decisions[3].reason == "AC-3, 2.0, 96 ≤ 256: passthru"
+    e09 = draft_tracks(recorded("season/Show.S01E09.Title.mkv.json"), JobTemplate())
+    assert [t.metadata.name for t in e09.audio] == ["Japanese 5.1", "Director's Commentary"]
 
 
 def test_container_and_rules_of_the_template() -> None:

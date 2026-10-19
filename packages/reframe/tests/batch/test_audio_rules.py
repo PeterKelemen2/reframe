@@ -149,7 +149,7 @@ EXAMPLE = [
     EXAMPLE,
     ids=["hun DTS-HD MA 5.1", "hun AC-3 5.1 224", "eng TrueHD Atmos 7.1", "eng AC-3 2.0 192"],
 )
-def test_example_of_03_row_by_row(
+def test_the_codec_rules_example_row_by_row(
     source: AudioStream, rule: int, expected: tuple[Any, ...], reason: str, measure: bool
 ) -> None:
     track, decision = run(source, EXAMPLE_RULES)
@@ -907,9 +907,8 @@ def test_name_template() -> None:
     rule = AudioCodecRule(codec="aac", max_bitrate=640, extras=full)
     track, _ = run(stream("ac3", 6, 448, display_codec="AC-3"), rules(rule))
     assert (track.action, track.metadata.name) == ("passthru", "English 5.1 AC-3")
-    assert render_track_name(
-        "{title} / {source_codec:upper}", {"title": "Main", "source_codec": "dts"}
-    ) == ("Main / DTS")
+    values = {"title": "Main", "source_codec": "dts"}
+    assert render_track_name("{title} / {source_codec:upper}", values) == "Main / DTS"
 
 
 def test_metadata_from_the_source() -> None:
