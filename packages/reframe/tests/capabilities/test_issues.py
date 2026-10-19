@@ -1,6 +1,4 @@
-"""``closest_available`` and ``encoder_issues`` (pure), and the third "Done when" of 05 §C-4:
-a preset that references a removed encoder gives ``encoder.unavailable`` with a fix to the
-closest available encoder."""
+"""Encoder fallback chains and the encoder issues they produce."""
 
 from __future__ import annotations
 
@@ -45,7 +43,7 @@ NO_HEVC_HARDWARE = {
 
 
 def test_closest_available_walks_the_fallback_chain() -> None:
-    assert closest_available("hevc_nvenc", caps(), DEFS) == "hevc_nvenc"  # itself
+    assert closest_available("hevc_nvenc", caps(), DEFS) == "hevc_nvenc"
     assert closest_available("hevc_nvenc", caps(hevc_nvenc=UNAVAILABLE), DEFS) == "hevc_qsv"
     two = caps(hevc_nvenc=UNAVAILABLE, hevc_qsv=UNAVAILABLE)
     assert closest_available("hevc_nvenc", two, DEFS) == "hevc_amf"
@@ -66,7 +64,7 @@ def test_closest_available_none() -> None:
 
 
 def test_closest_available_audio() -> None:
-    """Decision 0020: audio encoders have a fallback chain too (``libfdk_aac → aac``)."""
+    """Audio encoders have a fallback chain too (``libfdk_aac → aac``)."""
     assert DEFS.audio_encoders["libfdk_aac"].fallback == ["aac"]
     assert closest_available("libfdk_aac", caps(libfdk_aac=UNAVAILABLE), DEFS) == "aac"
     assert closest_available("libfdk_aac", caps(), DEFS) == "libfdk_aac"
@@ -120,8 +118,7 @@ def test_unknown_encoder() -> None:
 
 
 def test_checking_is_info() -> None:
-    """03: "A preset or job can be edited. Queueing waits until the encoder's status is
-    known": an error would block Add to queue, so ``info``."""
+    """Checking is ``info``, not an error: an error would block Add to queue."""
     for snapshot in (caps(hevc_amf=EncoderState.CHECKING), CapabilitySnapshot(detecting=True)):
         (issue,) = encoder_issues("hevc_amf", snapshot, DEFS)
         assert (issue.code, issue.severity) == ("encoder.checking", Severity.INFO)
@@ -133,10 +130,8 @@ def test_checking_is_info() -> None:
 
 
 def test_a_cached_result_is_checked_again() -> None:
-    """M2 review: a cached status that is not ``available`` can be stale (the GPU fingerprint
-    does not see user-space drivers: AMF runtime, Mesa, oneVPL). While the detection checks it
-    again it is ``encoder.checking`` (info), so a caller waits for the new result instead of
-    failing on the old one."""
+    """A cached status can be stale: the GPU fingerprint does not see user-space drivers
+    (AMF runtime, Mesa, oneVPL)."""
     stale = caps(**NO_HEVC_HARDWARE).model_copy(update={"from_cache": True, "detecting": True})
     stale.encoders["hevc_qsv"] = EncoderStatus(
         id="hevc_qsv", state=EncoderState.UNKNOWN, reason="Not tested", in_build=True
@@ -218,7 +213,7 @@ def test_audio_encoder_unavailable_with_a_fix() -> None:
 
 
 def test_job_with_a_libfdk_aac_track() -> None:
-    """Decision 0020: a job whose second audio track uses libfdk_aac (not in GPL builds)."""
+    """A job whose second audio track uses libfdk_aac (not in GPL builds)."""
     job = JobSettings.model_validate(
         {
             "source": {"path": "/media/a.mkv"},
@@ -272,7 +267,6 @@ def test_job_fix_applies() -> None:
     ],
 )
 def test_preset_with_a_removed_encoder(removed: str, expected: str) -> None:
-    """05 §C-4 "Done when", third sentence."""
     preset = Preset.model_validate(
         {"id": "h265-nvenc-1080p", "name": "H.265 NVENC 1080p", "video": {"encoder": removed}}
     )

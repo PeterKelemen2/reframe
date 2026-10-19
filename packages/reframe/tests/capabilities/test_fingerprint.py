@@ -159,8 +159,7 @@ def windows_gpu_fingerprint(monkeypatch: pytest.MonkeyPatch, fake: FakeWinreg) -
 
 
 def test_the_windows_registry_reader(monkeypatch: pytest.MonkeyPatch) -> None:
-    """M2 review: the ``winreg`` reader itself (CLAUDE.md: Windows code paths are unit-tested
-    with mocks on Linux)."""
+    """The ``winreg`` reader itself, with a fake ``winreg`` module."""
     fake = FakeWinreg(
         {
             f"{DISPLAY_CLASS_KEY}\\0000": {

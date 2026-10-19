@@ -1,8 +1,5 @@
-"""Encoder detection with the real FFmpeg of this machine or CI job.
-
-``needs_ffmpeg`` tests run in CI (no GPU there: hardware tests off). ``needs_gpu`` tests run the
-hardware test encodes for real; they never run in CI and check what this machine must give,
-from its PCI ids and drivers, so they also pass on another GPU machine.
+"""Encoder detection with the real FFmpeg. ``needs_ffmpeg`` tests run in CI with hardware tests
+off; ``needs_gpu`` tests never run there and expect what this machine's PCI ids and drivers give.
 """
 
 from __future__ import annotations
@@ -64,7 +61,7 @@ async def test_real_detection_without_hardware_tests() -> None:
 
 
 async def test_a_replaced_pixel_format_fails_the_10bit_test() -> None:
-    """M2 review: FFmpeg replaces a ``-pix_fmt`` that the encoder does not take ("Incompatible
+    """FFmpeg replaces a ``-pix_fmt`` that the encoder does not take ("Incompatible
     pixel format 'p010le' for codec 'libx264', auto-selecting format 'yuv420p10le'") and exits
     0. libx264 does not take p010le: the 10-bit test of a definition that asks for it fails."""
     ffmpeg = await real_ffmpeg()
@@ -79,8 +76,6 @@ async def test_a_replaced_pixel_format_fails_the_10bit_test() -> None:
     )
     assert (await run_hardware_test(ffmpeg.path, x264, "8")).ok
 
-
-# --------------------------------------------------------------------------- real GPUs
 
 DRM = Path("/sys/class/drm")
 
@@ -161,7 +156,7 @@ async def test_vaapi_and_amf_on_an_amd_gpu(hardware_snapshot: CapabilitySnapshot
     for encoder in ("h264_vaapi", "hevc_vaapi"):
         status = hardware_snapshot.status(encoder)
         assert status.state is EncoderState.AVAILABLE, encoder
-        assert status.device in nodes, status  # decision 0020: the node it works on
+        assert status.device in nodes, status  # the node it works on
     assert hardware_snapshot.status("hevc_vaapi").supports_10bit is True
     assert hardware_snapshot.status("h264_vaapi").supports_10bit is False  # no 10-bit format
     amf = hardware_snapshot.status("hevc_amf")
@@ -198,7 +193,7 @@ async def test_the_facade_caches_the_real_result(
 @pytest.mark.needs_gpu
 async def test_libplacebo_run_test(hardware_snapshot: CapabilitySnapshot) -> None:
     """The real libplacebo test gives a definite answer; with a Vulkan driver and a GPU
-    (RADV here) it works."""
+    (RADV) it works."""
     if not hardware_snapshot.has_filter("libplacebo"):
         pytest.skip("this FFmpeg has no libplacebo")
     usable = hardware_snapshot.usable_filter("libplacebo")

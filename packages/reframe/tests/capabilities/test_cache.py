@@ -74,7 +74,7 @@ def test_key_changes(binary: Path) -> None:
     key = key_for(binary)
     assert key_for(binary) == key
     assert key_for(binary, hardware_tests=False) != key
-    assert key_for(binary, vaapi_device="/dev/dri/renderD129") != key  # the setting
+    assert key_for(binary, vaapi_device="/dev/dri/renderD129") != key
     nodes = key_for(binary, render_nodes=("/dev/dri/renderD128",))
     assert nodes != key
     assert key_for(binary, render_nodes=("/dev/dri/renderD128", "/dev/dri/renderD129")) != nodes

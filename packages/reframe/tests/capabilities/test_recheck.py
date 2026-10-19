@@ -1,9 +1,5 @@
-"""A stale cached status does not block a short CLI run (M2 review).
-
-The GPU fingerprint of the cache key does not change when a user-space driver changes (AMF
-runtime, Mesa / libva, oneVPL), so a cached ``unavailable`` can be wrong. While the detection
-checks the encoders again, such a status is ``encoder.checking``: ``reframe plan`` and
-``reframe encode`` wait for the new result, and the new result is in the cache when they end.
+"""A cached status can be stale: the GPU fingerprint does not change with a user-space driver
+(AMF runtime, Mesa / libva, oneVPL), so a cached ``unavailable`` is checked again.
 """
 
 from __future__ import annotations
@@ -74,14 +70,13 @@ def test_a_stale_cached_unavailable_is_checked_again(
     movie.parent.mkdir(parents=True)
     movie.write_bytes(b"placeholder")
 
-    # 1. No AMF runtime: the plan fails, and the cache says "unavailable".
     scenario(fake_tools, c4_rule("c4_hevc_amf_no_runtime"))
     first = plan(movie)
     assert first.exit_code == EXIT_FAILED, first.output
     assert NO_RUNTIME in first.stdout
     assert cached(cli_env)["state"] == "unavailable"
 
-    # 2. The runtime is installed (the GPU fingerprint is the same). The file changed, so it is
+    # The runtime is installed (the GPU fingerprint is the same). The file changed, so it is
     # probed again; the probe ends after the cached result is shown and before the re-check
     # ends, so the plan sees the cached status: it waits for the re-check instead of failing.
     movie.write_bytes(b"placeholder, changed")
@@ -95,7 +90,6 @@ def test_a_stale_cached_unavailable_is_checked_again(
     assert "-c:v:0 hevc_amf" in second.stdout
     assert cached(cli_env)["state"] == "available"  # the re-check was written to the cache
 
-    # 3. The next run starts from the new cached result.
     scenario(fake_tools)
     third = plan(movie)
     assert third.exit_code == EXIT_OK, third.output

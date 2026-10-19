@@ -1,5 +1,4 @@
-"""``CapabilityService`` and ``Reframe.capabilities`` (05 §C-4 "Done when": the app starts in
-< 1 s while detection runs; detection then finishes and publishes ``capabilities.changed``)."""
+"""The capability service and its ``Reframe.capabilities`` facade."""
 
 from __future__ import annotations
 
@@ -102,9 +101,6 @@ async def harness(fake_tools: ft.FakeTools, tmp_path: Path) -> Any:
     await h.close()
 
 
-# --------------------------------------------------------------------------- the facade
-
-
 @pytest.fixture
 def fake_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
@@ -119,7 +115,6 @@ def fake_env(
 
 
 async def test_create_is_fast_while_detection_runs(fake_env: ft.FakeTools) -> None:
-    """05 §C-4 "Done when", first sentence (there is no UI yet: ``create()`` and the snapshot)."""
     fake_env.set_scenario(
         ft.Scenario(
             [
@@ -177,7 +172,6 @@ async def test_close_kills_running_test_encodes(fake_env: ft.FakeTools) -> None:
 async def test_a_new_ffmpeg_starts_a_new_detection(
     fake_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """02 §Bundled FFmpeg: changing the path triggers a new encoder detection."""
     app = await Reframe.create()
     try:
         first = await app.capabilities.wait()
@@ -206,9 +200,6 @@ async def test_a_new_ffmpeg_starts_a_new_detection(
         await app.close()
 
 
-# --------------------------------------------------------------------------- the service
-
-
 async def test_first_start_without_cache(harness: Harness) -> None:
     harness.service.start()
     snapshot = harness.service.snapshot
@@ -218,7 +209,6 @@ async def test_first_start_without_cache(harness: Harness) -> None:
     assert not final.detecting
     assert not final.from_cache
     events = changed(drain(harness.subscription))
-    # all "checking" first, then the changes as they come, then everything at the end
     assert {s.state for s in events[0].encoders} == {CHECKING}
     assert len(events[0].encoders) == len(final.encoders)
     assert {s.id for s in events[-1].encoders} == set(final.encoders)
@@ -333,7 +323,7 @@ async def test_unusable_ffmpeg(harness: Harness, tmp_path: Path) -> None:
     assert final.status("libx265").reason == "FFmpeg is too old"
     assert final.status("libx265").detail == "FFmpeg 6.1 is too old"
     assert harness.fake.calls() == []
-    assert cache_files(tmp_path / "caps") == []  # nothing cached
+    assert cache_files(tmp_path / "caps") == []
 
 
 async def test_hardware_tests_off(harness: Harness, fake_tools: ft.FakeTools) -> None:
@@ -433,9 +423,6 @@ async def test_a_failing_gpu_fingerprint_is_not_fatal(
         await h.close()
 
 
-# --------------------------------------------------------------------------- the cache write
-
-
 def cached_snapshot(folder: Path) -> Any:
     """The snapshot of the only cache entry, as JSON."""
     (path,) = cache_files(folder)
@@ -445,16 +432,14 @@ def cached_snapshot(folder: Path) -> Any:
 async def test_closing_on_the_final_event_keeps_the_cache(
     harness: Harness, fake_tools: ft.FakeTools
 ) -> None:
-    """A short run (``reframe encoders``) closes the service when the final
-    ``capabilities.changed`` event comes: the result is in the cache by then, so the next start
-    shows it at once (M2 demo item 1)."""
+    """The result is cached before the final event, so closing on that event keeps it."""
     service = harness.service
     subscription = harness.events.subscribe(types={"capabilities.changed"})
 
     async def close_on_the_final_event() -> CapabilitySnapshot:
         async for _event in subscription:
             if not service.snapshot.detecting:
-                await service.close()  # at once, like Reframe.close() at the end of a command
+                await service.close()
                 break
         return service.snapshot
 
@@ -481,8 +466,6 @@ async def test_closing_on_the_final_event_keeps_the_cache(
 async def test_wait_and_rescan_return_after_the_cache_write(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The result is in the cache before the final ``capabilities.changed`` event and before
-    ``wait()`` / ``rescan()`` return."""
     order: list[str] = []
     put, publish = CapabilityCache.put, harness.events.publish
 
@@ -610,9 +593,6 @@ async def test_tool_discovery_closed_under_the_detection(harness: Harness) -> No
     assert harness.fake.calls() == []
 
 
-# --------------------------------------------------------------------------- M2 review
-
-
 def running_detections() -> list[asyncio.Task[Any]]:
     return [
         t
@@ -641,8 +621,8 @@ async def test_close_waits_for_a_replaced_detection(
 async def test_a_new_ffmpeg_does_not_show_the_old_filter_results(
     harness: Harness, fake_tools: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """A re-scan of the same ffmpeg keeps the last filter results until the new ones are in
-    (``test_libplacebo_result_is_in_the_snapshot``); another ffmpeg starts without them."""
+    """A re-scan of the same ffmpeg keeps the last filter results until the new ones are in;
+    another ffmpeg starts without them."""
     capture = ft.captures()["c4_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
@@ -696,9 +676,6 @@ async def test_a_failing_tool_discovery_ends_the_detection(harness: Harness) -> 
     assert events, "no capabilities.changed event"
     assert {s.id for s in events[-1].encoders} == set(final.encoders)
     assert harness.fake.calls() == []
-
-
-# --------------------------------------------------------------------------- VAAPI, libplacebo
 
 
 def no_driver_on(node: str) -> ft.Rule:
