@@ -1,4 +1,4 @@
-"""C-12 M7: grouping by fingerprint, near members, episode order, group names (04 §Grouping)."""
+"""Grouping files by fingerprint, near members, episode order and group names."""
 
 from __future__ import annotations
 
@@ -43,9 +43,6 @@ def _load(name: str) -> ModuleType:
 
 
 A = _load("anime")
-
-
-# --------------------------------------------------------------------------- episodes
 
 
 @pytest.mark.parametrize(
@@ -104,9 +101,6 @@ def test_group_name() -> None:
     assert group_name(mixed) == "Show S01"
     assert group_name([Path("/tv/Show - 01.mkv")]) == "Show"
     assert group_name([Path("/tv/My Folder/01.mkv")]) == "My Folder"
-
-
-# --------------------------------------------------------------------------- comparing
 
 
 def video(width: int = 320, height: int = 180, **kw: object) -> VideoStream:
@@ -181,7 +175,7 @@ def test_the_loose_level_ignores_the_order() -> None:
     c = media("/c.mkv", video(1920, 1080), audio(1, "jpn"), audio(2, "hun"))
     found = compare(fingerprint(a, "loose"), fingerprint(c, "loose"))
     # A track in the place of a missing one of its kind differs: one difference, as at the
-    # standard level (0040 §3; review R2-4).
+    # standard level.
     assert found.lines == ["1 track differs (eng AC-3 2.0 → hun AC-3 5.1)"]
     assert found.count == 1
     assert (
@@ -201,11 +195,7 @@ def test_no_video() -> None:
     assert compare(a, b).lines[-1] == "video 320x180 (the group: none)"
 
 
-# --------------------------------------------------------------------------- grouping
-
-
 def test_the_example_season_is_one_group() -> None:
-    """04 §Example step 1: one group of 12 (standard level), E05 marked "1 extra track"."""
     sources = A.season(1)
     random.Random(7).shuffle(sources)
     (group,) = group_sources(sources, "standard")

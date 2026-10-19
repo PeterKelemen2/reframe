@@ -1,6 +1,4 @@
-"""C-12 ``explain``, ``explain_subtitles`` and ``draft_tracks`` with the selection stage (05
-§C-12; 03 §Audio defaults, §Subtitles; decision 0031): the example of 03 row by row, M6 demo
-item 5, the default track, the foreign audio search, burn-in, and the keep-everything mode."""
+"""``explain``, ``explain_subtitles`` and ``draft_tracks`` with the selection stage."""
 
 from __future__ import annotations
 
@@ -70,9 +68,7 @@ def defaults_flags(tracks: list[AudioOutputTrack] | list[SubtitleOutputTrack]) -
     return [t.metadata.default for t in tracks]
 
 
-# =========================================================================== 03's example
-
-#: The four rules of 03 §Audio defaults (the same as tests/batch/test_audio_rules.py).
+#: The four rules of the example.
 EXAMPLE_RULES = [
     AudioCodecRule(
         languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
@@ -92,7 +88,7 @@ EXAMPLE_RULES = [
     ),
 ]  # fmt: skip
 
-#: Hungarian, English; every matching track, so that all four rows of 03 are selected.
+#: Hungarian, English; every matching track, so that all four rows of the example are selected.
 EXAMPLE_DEFAULTS = AudioDefaults(
     selection=TrackSelection(languages=["hu", "en"], tracks_per_language="all"),
     codec_rules=EXAMPLE_RULES,
@@ -102,12 +98,12 @@ EXAMPLE_SOURCE = source(
     [
         audio(1, "hun", "dts", 6, 2104, lossless=True),
         audio(2, "hun", "ac3", 6, 224),
-        audio(3, "eng", "truehd", 8, None, lossless=True),  # 03 gives no bit rate
+        audio(3, "eng", "truehd", 8, None, lossless=True),
         audio(4, "eng", "ac3", 2, 192, title="English Stereo"),
     ]
 )
 
-#: (stream, rule, output, reason, measure): the "With your setup" table of 03, row by row.
+#: (stream, rule, output, reason, measure) for each track of the example.
 EXAMPLE_ROWS = [
     (1, 1, ("encode", "ac3", "5.1", 320), "Lossless source → encode at the max", False),
     (2, 1, ("passthru", "ac3", None, None), "AC-3, 5.1, 224 ≤ 320: passthru", False),
@@ -125,8 +121,6 @@ EXAMPLE_ROWS = [
 
 
 def test_example_of_03_row_by_row_through_draft_and_explain() -> None:
-    """C-12 "Done when": Hungarian 5.1 → 320, English 5.1 → 384, AC-3 224 passthru, stereo
-    passthru (decision 0023), now through the selection stage."""
     template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
     draft = draft_tracks(EXAMPLE_SOURCE, template)
     decisions = explain(EXAMPLE_DEFAULTS, EXAMPLE_SOURCE)
@@ -148,10 +142,6 @@ def test_example_of_03_row_by_row_through_draft_and_explain() -> None:
 
 
 def test_m6_demo_item_5() -> None:
-    """08 §M6 demo item 5: "Audio defaults `Hungarian 5.1 or more → AC-3 5.1, max 320` and
-    `English 5.1 or more → AC-3 5.1, max 384`: the live preview shows that DTS-HD MA becomes
-    AC-3 320, an AC-3 224 kb/s source is passed through, and a stereo track falls to the next
-    rule. Each row has a reason." """
     media = source(
         [
             audio(1, "hun", "dts", 6, 2104, lossless=True),
@@ -215,8 +205,6 @@ async def test_m6_demo_item_5_through_the_facade(tmp_path: Path) -> None:
     finally:
         await app.close()
 
-
-# =========================================================================== audio: default track
 
 DEFAULT_SOURCE = source(
     [
@@ -298,8 +286,8 @@ def test_first_track_of_language_follows_the_selection() -> None:
 
 
 def test_an_undetermined_track_is_treated_as_the_first_language() -> None:
-    """``undetermined = first_language``: selected as Hungarian, matched by the Hungarian
-    rule, and written as Hungarian (decision 0031)."""
+    """``undetermined = first_language``: selected as Hungarian, matched by the Hungarian rule,
+    and written as Hungarian."""
     defaults = AudioDefaults(
         selection=TrackSelection(languages=["hu"], undetermined="first_language"),
         codec_rules=[EXAMPLE_RULES[0], EXAMPLE_RULES[3]],
@@ -353,8 +341,7 @@ def test_no_listed_language_take_none_is_an_error_with_fixes() -> None:
         assert not [i for i in again.issues if i.code == "defaults.no_listed_language"]
     # A source without audio is not an error.
     assert draft_tracks(source(), template).issues == []
-    # Other languages kept: the selection takes a track, so there is nothing to fix
-    # (core-complete review R1-2).
+    # Other languages kept: the selection takes a track, so there is nothing to fix.
     for other, expected in (("keep_first", [1]), ("keep_all", [1, 2])):
         selection = defaults.selection.model_copy(update={"other_languages": other})
         kept = JobTemplate(audio_defaults=defaults.model_copy(update={"selection": selection}))
@@ -364,7 +351,7 @@ def test_no_listed_language_take_none_is_an_error_with_fixes() -> None:
 
 
 def test_the_draft_has_the_lint_for_this_source() -> None:
-    """``defaults.rule_unused`` for a rule no selected track uses (C-12 lint with a source)."""
+    """``defaults.rule_unused`` for a rule that no selected track uses."""
     template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
     media = source([audio(1, "hun", "ac3", 6, 224)])
     draft = draft_tracks(media, template)
@@ -374,13 +361,9 @@ def test_the_draft_has_the_lint_for_this_source() -> None:
     ]
 
 
-# =========================================================================== keep everything
-
-
 def test_keep_everything_keeps_the_source_flags_with_one_default() -> None:
-    """No language set: every track in source order with its source flags (M2), but at most
-    one default track per kind (mkvmerge writes ``FlagDefault=1`` on every track it is not
-    told otherwise: testdata/README.md)."""
+    """No language set: every track in source order with its source flags, but at most one
+    default track per kind."""
     media = source(
         [audio(1, "jpn", default=True), audio(2, "eng", default=True, comment=True)],
         [subtitle(3, "eng", default=True), subtitle(4, "eng", default=True, forced=True)],
@@ -418,8 +401,6 @@ def test_settings_languages_switch_the_selection_on() -> None:
     assert len(only_audio.audio) == 1
     assert len(only_audio.subtitles) == 2  # no subtitle language: every subtitle
 
-
-# =========================================================================== foreign audio search
 
 ENGLISH_AUDIO = [
     AudioOutputTrack(
@@ -509,7 +490,7 @@ def test_foreign_audio_search_takes_the_strongest_evidence() -> None:
 
 def test_forced_events_in_a_full_bitmap_track_need_burn_in() -> None:
     """A full PGS track with some forced events can only show just those when it is burned in
-    with forced-only (``forced_subs_only``: decision 0014)."""
+    with forced-only (``forced_subs_only``)."""
     pgs = subtitle(4, "eng", "hdmv_pgs_subtitle", events=900, forced_events=12)
     media = fas_source(pgs)
     copied = subtitle_stage(fas_defaults(), media, audio=ENGLISH_AUDIO)
@@ -595,8 +576,6 @@ def test_explain_subtitles_without_audio_uses_the_source_default_audio() -> None
     ]
 
 
-# =========================================================================== burn-in
-
 BURN = source(
     [audio(1, "eng")],
     [subtitle(2, "eng", events=900), subtitle(4, "eng", forced=True, events=20)],
@@ -645,8 +624,6 @@ def test_burn_in_for_foreign_audio() -> None:
     row = next(d for d in stage.decisions if d.source_stream == 3)
     assert row.reason == "Burn in (foreign audio: the Hungarian subtitles for the Japanese audio)"
 
-
-# =========================================================================== subtitle default track
 
 POLICY = source(
     [audio(1, "eng")],

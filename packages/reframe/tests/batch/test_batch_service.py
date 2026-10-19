@@ -1,11 +1,4 @@
-"""``Reframe.batch`` (C-15; 04-batch-mode.md) through the facade, on the generated 04 §Example
-seasons and the real ffprobe: grouping, derive / merge, the resolution matrix with names and
-validation, the batch-level name checks, saving the group template as a preset, and the core
-part of 08 §M7's demo.
-
-Each test has its own config, data and cache folders; the seasons are copied into the test's
-folder, so the queue and the name checks see only the test's files.
-"""
+"""``Reframe.batch`` through the facade, on the generated anime seasons and the real ffprobe."""
 
 from __future__ import annotations
 
@@ -63,7 +56,10 @@ async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
 
 
 def season(fixture_media: Media, tmp_path: Path, number: int, *episodes: int) -> list[Path]:
-    """A copy of the season's folder (only ``episodes``, default all) under ``tmp_path``."""
+    """A copy of the season's folder under ``tmp_path`` (only ``episodes``, default all).
+
+    The queue and the name checks then see only this test's files.
+    """
     source = fixture_media(f"anime-s{number:02d}")
     folder = tmp_path / "media" / source.name
     folder.mkdir(parents=True, exist_ok=True)
@@ -77,8 +73,7 @@ def season(fixture_media: Media, tmp_path: Path, number: int, *episodes: int) ->
 
 
 async def example_template(app: Reframe, e01: Path) -> tuple[JobTemplate, MediaSource]:
-    """*Edit group* as 04 §Example step 2, through the facade: E01's draft edited by hand,
-    applied to the group (audio and subtitles), with 04's naming template."""
+    """The group template: E01's draft with the example's audio and subtitles, and its naming."""
     source = await app.sources.probe(e01)
     assert isinstance(source, MediaSource)
     draft = await app.jobs.draft(source)
@@ -95,9 +90,6 @@ async def example_template(app: Reframe, e01: Path) -> tuple[JobTemplate, MediaS
 
 
 async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -> None:
-    """08 §M7 (core part): open a season folder → one group → edit audio and subtitles once →
-    the matrix shows ✓ for every file, with the right warnings for E05 and E11 → queue 12 jobs
-    with templated names → save the group as a preset → apply it to season 2 in one click."""
     files = season(fixture_media, tmp_path, 1)
     grouping = await app.batch.group(list(reversed(files)))
     assert grouping.issues == []
@@ -158,7 +150,6 @@ async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -
         "Anime Show - S01E11 - Static.mkv"
     )
 
-    # Save the group as a preset; season 2 with it, by name.
     saved = await app.batch.save_preset(template, "Anime Show", description="04 example")
     assert isinstance(saved, Preset)
     assert (saved.category, saved.audio_rules) == ("Custom", template.audio_rules)
@@ -217,8 +208,6 @@ async def test_the_default_preset_and_an_unknown_preset(
 
 
 async def test_name_collisions(app: Reframe, fixture_media: Media, tmp_path: Path) -> None:
-    """04 §Output naming: "Name collisions within the batch, or with existing files, are
-    errors"."""
     files = season(fixture_media, tmp_path, 2)
     template, _ = await example_template(app, files[0])
     same = template.model_copy(

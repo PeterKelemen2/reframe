@@ -1,7 +1,4 @@
-"""C-12 defaults lint (05 §C-12; 03 §Audio defaults → How the defaults are applied; decision
-0031): shadowed and unreachable rules, a max bitrate the encoder snaps, a codec the container
-cannot hold, and rules a source does not use. Every fix is applied: it removes its issue and
-adds no error."""
+"""Lint of the audio defaults; every fix removes its issue and adds no error."""
 
 from __future__ import annotations
 
@@ -78,9 +75,8 @@ def template_of(audio_defaults: AudioDefaults, container: Container = "mkv") -> 
 
 
 def check_fixes(template: JobTemplate) -> list[ValidationIssue]:
-    """Apply every fix of every issue: its issue is gone and no error is new (C-8's rule for
-    fixes). A fix that removes a rule renumbers the later rules, so it is checked by code: one
-    issue of that code fewer."""
+    """Apply every fix of every issue: its issue is gone and no error is new. A fix that removes
+    a rule renumbers the later rules, so it is checked by code: one issue of that code fewer."""
     issues = lint_defaults(template.audio_defaults, container=template.output.container)
     errors = {(i.code, i.path) for i in issues if i.severity is Severity.ERROR}
     for issue in issues:
@@ -102,9 +98,6 @@ def check_fixes(template: JobTemplate) -> list[ValidationIssue]:
     return issues
 
 
-# =========================================================================== clean
-
-
 def test_clean_defaults() -> None:
     assert lint_defaults(AudioDefaults()) == []
     example = defaults(
@@ -119,9 +112,6 @@ def test_clean_defaults() -> None:
 @pytest.mark.parametrize("preset", builtin_presets(), ids=lambda p: p.id)
 def test_builtin_presets_are_clean(preset: Any) -> None:
     assert lint_defaults(preset.audio_defaults, container=preset.output.container) == []
-
-
-# =========================================================================== shadowed
 
 
 @pytest.mark.parametrize(
@@ -170,9 +160,6 @@ def test_shadowed_message_and_fixes() -> None:
     # The same conditions twice: moving would only swap them.
     (same,) = lint_defaults(defaults(rule(["hu"]), rule(["hu"], codec="ac3")))
     assert [f.label for f in same.fixes] == ["Remove rule 2"]
-
-
-# =========================================================================== unreachable
 
 
 def test_an_empty_language_list_matches_nothing() -> None:
@@ -224,9 +211,6 @@ def test_a_rule_for_a_language_the_selection_never_takes() -> None:
     ):
         loose = defaults(rule(["fr"]), selection=selection.model_copy(update=change))
         assert lint_defaults(loose) == []
-
-
-# =========================================================================== bit rates
 
 
 @pytest.mark.parametrize(
@@ -310,9 +294,6 @@ def test_no_bitrate_check() -> None:
         assert lint_defaults(defaults(quiet)) == [], quiet
 
 
-# =========================================================================== containers
-
-
 def test_codec_not_in_container() -> None:
     bad = defaults(
         rule(
@@ -344,8 +325,6 @@ def test_codec_not_in_container() -> None:
     assert lint_defaults(bad, container="mkv") == []
     assert lint_defaults(bad, container="webm", container_codecs=False) == []
 
-
-# =========================================================================== with a source
 
 EXAMPLE = defaults(
     rule(["hu"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320),

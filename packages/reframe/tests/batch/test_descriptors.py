@@ -1,4 +1,4 @@
-"""C-12 M7: track descriptors and fingerprints (04 §Concepts, §Grouping)."""
+"""Track descriptors and fingerprints."""
 
 from __future__ import annotations
 
@@ -72,9 +72,6 @@ def source(*streams: VideoStream | AudioStream | SubtitleStream) -> MediaSource:
     )
 
 
-# --------------------------------------------------------------------------- descriptors
-
-
 def test_descriptors_of_the_example_episode_with_the_commentary() -> None:
     e05 = A.recorded(1, 5)
     tracks = describe_tracks(e05)
@@ -110,7 +107,7 @@ def test_descriptors_of_the_example_episode_with_the_commentary() -> None:
     assert commentary.roles == [TrackRole.COMMENTARY]
     assert commentary.flags.commentary
     assert commentary.bitrate == 96_000
-    assert jpn.bitrate is None  # TrueHD in Matroska has no bit rate
+    assert jpn.bitrate is None
     assert set(signs.roles) == {TrackRole.FORCED, TrackRole.SIGNS}
     assert (signs.codec_family, signs.title) == ("text", "Signs & Songs")
 
@@ -167,8 +164,7 @@ def test_codec_label() -> None:
 def test_audio_roles_without_the_prober(
     disposition: dict[str, bool], roles: list[TrackRole]
 ) -> None:
-    """A source built without C-3 has no roles: the disposition flags give them, as the
-    selection stage reads them (``extra_role``)."""
+    """Without the prober a source has no roles, so the disposition flags give them."""
     assert stream_roles(audio(1, disposition=Disposition(**disposition))) == roles
 
 
@@ -217,9 +213,6 @@ def test_undetermined_languages_are_none() -> None:
     assert [d.language for d in tracks] == [None, None, "qaa"]
 
 
-# --------------------------------------------------------------------------- fingerprints
-
-
 def base() -> list[VideoStream | AudioStream | SubtitleStream]:
     return [
         video(0),
@@ -240,7 +233,7 @@ def digests(media: MediaSource) -> dict[str, str]:
     return {level: fingerprint(media, level).digest for level in MATCH_LEVELS}
 
 
-#: What each change does at each level (04 §Grouping): ``True`` = still the same group.
+#: What each change does at each level: ``True`` = still the same group.
 CASES = [
     ("nothing", source(*base()), (True, True, True)),
     ("a title", changed(2, title="English"), (False, True, True)),
