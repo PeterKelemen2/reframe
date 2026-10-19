@@ -1,15 +1,5 @@
-"""Helpers of the ``reframe tools fetch`` tests (C-15): a local HTTP server on 127.0.0.1, fake
-FFmpeg archives and manifests that point at them. **Never the network.**
-
-- :class:`LocalServer`: serves byte strings by path; per route an HTTP status for the first
-  requests, a delay per 64 KiB block (a slow download that a test can cancel), and a request
-  count.
-- :func:`fake_archive`: a ``tar.xz`` (Linux layout: ``bin/ffmpeg``, ``bin/ffprobe``, ``lib/``
-  with a symbolic link) or ``zip`` (Windows layout: ``bin/*.exe``) build. The Linux binaries
-  are the launchers of ``reframe_testing.fake_tools``, so the extracted build runs and prints
-  the captured ``-version`` text (:data:`FAKE_VERSION`).
-- :func:`write_manifest`: a manifest in the format of ``tools/ffmpeg.toml``.
-"""
+"""Helpers of the ``reframe tools fetch`` tests: fake archives and manifests served by a local
+HTTP server. Never the network."""
 
 from __future__ import annotations
 
@@ -27,7 +17,7 @@ from pathlib import Path
 from reframe.tools.fetch import host_platform
 from reframe_testing import fake_tools as ft
 
-#: What the fake ffmpeg / ffprobe print after ``ffmpeg version`` (the captured n9.0.2 text).
+#: What the fake ffmpeg / ffprobe print after ``ffmpeg version``.
 FAKE_VERSION = "n9.0.2-17-g2a571b6068-20260930"
 LINUX_ROOT = "ffmpeg-test-linux64"
 WINDOWS_ROOT = "ffmpeg-test-win64"
@@ -43,9 +33,6 @@ def sha256(data: bytes) -> str:
 def foreign_platform() -> str:
     """A manifest platform that is not this computer's."""
     return "windows-x64" if host_platform() == "linux-x64" else "linux-x64"
-
-
-# --------------------------------------------------------------------------- archives
 
 
 def tar_xz(members: list[tuple[tarfile.TarInfo, bytes | None]]) -> bytes:
@@ -122,9 +109,6 @@ def fake_archive(platform: str, work: Path, *, version_ok: bool = True) -> bytes
     )
 
 
-# --------------------------------------------------------------------------- manifest
-
-
 @dataclass(frozen=True)
 class Archive:
     """One platform entry of a test manifest."""
@@ -174,9 +158,6 @@ def write_manifest(
             ]
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
-
-
-# --------------------------------------------------------------------------- the server
 
 
 @dataclass

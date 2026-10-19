@@ -1,11 +1,4 @@
-"""``reframe.tools.fetch`` (C-15, ``reframe tools fetch``): the manifest, the download with its
-size and SHA-256 check, safe extraction, the version check, the install as the bundled build
-and tool discovery after it.
-
-Downloads come from a local HTTP server on 127.0.0.1 or a ``file:`` URL (``fetch_server``),
-**never the network**. The Linux build of the fake archive holds the fake ffmpeg / ffprobe
-launchers, so the version check and tool discovery run for real on POSIX.
-"""
+"""``reframe.tools.fetch``: the manifest, the download, the safe extraction and the install."""
 
 from __future__ import annotations
 
@@ -114,9 +107,7 @@ class Fetch:
         self, manifest: Path, *, platform: str | None = None, build: str = "default"
     ) -> tuple[TaskInfo, Any]:
         # Every progress event as it is published: a subscription keeps only the newest
-        # ``task.progress`` of a task in its queue (testdata/README.md "Progress events
-        # coalesce"), so under load a step's message could be replaced before it was read
-        # (core-complete review R5-6).
+        # ``task.progress`` of a task, so a step's message can be replaced before it is read.
         events = _RecordingBus(self._record)
         tasks = TaskManager(events)
         info = start_fetch(
@@ -157,13 +148,8 @@ def leftovers(data_dir: Path) -> list[str]:
     return sorted(p.name for p in tools.glob(".fetch-*")) if tools.exists() else []
 
 
-# --------------------------------------------------------------------------- the manifest
-
-
 def test_packaged_manifest_is_a_copy_of_tools_ffmpeg_toml() -> None:
-    """The installed package carries the manifest (decision 0038): it must stay equal to
-    ``tools/ffmpeg.toml``. When this fails: ``cp tools/ffmpeg.toml
-    packages/reframe/src/reframe/tools/ffmpeg.toml``."""
+    """The installed package carries a copy of ``tools/ffmpeg.toml``: the two must stay equal."""
     packaged = DEFAULT_MANIFEST.read_text(encoding="utf-8").replace("\r\n", "\n")
     repo = REPO_MANIFEST.read_text(encoding="utf-8").replace("\r\n", "\n")
     assert packaged == repo, "copy tools/ffmpeg.toml to packages/reframe/src/reframe/tools/"
@@ -311,17 +297,10 @@ def test_safe_member_names() -> None:
     assert str(member_path("root/", "root")) == "root"
 
 
-# --------------------------------------------------------------------------- install
-
-
 @pytest.mark.anyio
 async def test_the_fetch_helper_sees_every_step_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Core-complete review R5-6: a subscription keeps only the newest progress event of a task,
-    so two steps reported without an await between them left only the second, and the install
-    test below failed under load. The helper records every event as it is published."""
-
     def two_steps(tasks: TaskManager, **kwargs: object) -> TaskInfo:
         async def fn(ctx: Any) -> None:
             ctx.progress(10.0, "first step")
@@ -832,9 +811,7 @@ def test_sleep_ends_at_a_cancel() -> None:
 async def test_the_script_and_the_core_recognise_each_others_install(
     tmp_path: Path, server: LocalServer, fetch: Fetch
 ) -> None:
-    """CI installs with ``scripts/fetch-tools.py --install-dir <data dir>/tools/ffmpeg``:
-    ``reframe tools fetch`` keeps that install, and the script keeps ours (same marker).
-    The script's manifest has an https URL that is never fetched: its downloader is local."""
+    """The script and ``reframe tools fetch`` recognise each other's install by its marker."""
     script = _load_script()
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
@@ -867,9 +844,6 @@ async def test_the_script_and_the_core_recognise_each_others_install(
     assert result.downloaded is True
     script.install_bundled(build, build.platforms[other], install, downloader=downloader)
     assert downloads == [https]
-
-
-# --------------------------------------------------------------------------- the facade
 
 
 @POSIX_ONLY

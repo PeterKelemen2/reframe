@@ -1,10 +1,4 @@
-"""Tool discovery (C-1): search order, origins, ffprobe next to ffmpeg, broken overrides.
-
-Every test passes the environment, the bundled roots and ``PATH`` explicitly, and the
-``REFRAME_*`` variables of the test process are removed (CI's override job sets
-``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``). The tools are fake FFmpeg launchers
-(``reframe_testing.fake_tools``) and small script tools for mkvpropedit / mediainfo.
-"""
+"""Tool discovery: search order, origins, ffprobe next to ffmpeg, broken overrides."""
 
 from __future__ import annotations
 
@@ -80,9 +74,6 @@ def empty_path(tmp_path: Path) -> str:
     folder = tmp_path / "empty-path"
     folder.mkdir()
     return str(folder)
-
-
-# --------------------------------------------------------------------------- search order
 
 
 @pytest.mark.anyio
@@ -270,9 +261,6 @@ async def test_nothing_found(tmp_path: Path, empty_path: str) -> None:
     assert "REFRAME_FFMPEG" in tools.ffmpeg.reason
     assert tools.mediainfo.reason is not None
     assert "optional" in tools.mediainfo.reason
-
-
-# --------------------------------------------------------------------------- ffprobe next to ffmpeg
 
 
 @pytest.mark.anyio
@@ -489,9 +477,6 @@ def test_path_search_skips_files_that_are_not_executable(tmp_path: Path) -> None
     (folder / "mkvpropedit").chmod(0o644)
     located = locate_tools(environ={}, bundled_roots=[], search_path=str(folder))
     assert located["mkvpropedit"].path is None
-
-
-# --------------------------------------------------------------------------- broken overrides
 
 
 def _use_bundled_patch(tool: str) -> list[RemoveOp]:
@@ -738,9 +723,6 @@ async def test_unknown_version_is_found_with_a_note(tmp_path: Path, empty_path: 
     assert "could not be checked" in tools.ffmpeg.reason
 
 
-# --------------------------------------------------------------------------- LIBVA_DRIVERS_PATH
-
-
 @pytest.fixture
 def driver_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     first = tmp_path / "dri-missing"
@@ -815,9 +797,6 @@ async def test_tool_env_reaches_the_version_check(
     assert tools.ffmpeg.status is ToolStatus.FOUND
 
 
-# --------------------------------------------------------------------------- inputs
-
-
 def test_empty_env_variable_counts_as_unset(tmp_path: Path, empty_path: str) -> None:
     bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
     located = locate_tools(
@@ -857,9 +836,6 @@ async def test_check_tool_of_a_location_without_path() -> None:
     assert info.reason == "ffmpeg was not found."
 
 
-# --------------------------------------------------------------------------- __main__
-
-
 def test_main_reports_and_checks_the_origin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -886,9 +862,6 @@ def test_main_reports_and_checks_the_origin(
         main(["--require", "ffmpeeg"])
 
 
-# --------------------------------------------------------------------------- cancellation
-
-
 def _alive(pid: int) -> bool:
     import psutil
 
@@ -900,11 +873,7 @@ def _alive(pid: int) -> bool:
 
 @pytest.mark.anyio
 async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path: str) -> None:
-    """Cancelling discovery returns only after every version check's process is gone.
-
-    Regression: with ``asyncio.gather`` a cancel returned as soon as the first check ended,
-    and the other checks' process kills could be dropped when the loop stopped (orphans).
-    """
+    """Cancelling discovery leaves no version-check process behind."""
     import asyncio
     import time
 
