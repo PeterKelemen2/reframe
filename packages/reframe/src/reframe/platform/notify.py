@@ -1,5 +1,4 @@
-"""The notification hook (05 §C-14): it only emits a ``notification`` event. The UI layer (the
-desktop shell, the web app) shows it; the core never shows anything itself."""
+"""The notification hook: the core publishes a ``notification`` event and never shows one."""
 
 from __future__ import annotations
 
