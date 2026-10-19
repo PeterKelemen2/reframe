@@ -1,6 +1,4 @@
-"""The VBV rule (R5-7) and the HDR text formats (R5-8) agree with the real encoders
-(core-complete review; decision 0035 "Follow-up (core-complete review, 2026-10-16)";
-testdata/README.md "Advanced encoder options (C-6, complete option sets)").
+"""The VBV rule and the HDR text formats agree with the real encoders.
 
 Each row encodes with the parameters written directly and reads what the encoder did (x264's
 settings SEI, x265's log, the HDR side data of the output); validation must warn exactly when
@@ -46,9 +44,6 @@ def _run(argv: list[str], timeout: float = 120) -> subprocess.CompletedProcess[s
     return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-# --------------------------------------------------------------------------- R5-7
-
-
 @pytest.mark.parametrize("encoder", ["libx264", "libx265"])
 @pytest.mark.parametrize("abr", [False, True], ids=["crf", "abr"])
 @pytest.mark.parametrize(
@@ -84,8 +79,6 @@ def test_r5_7_vbv_with_the_encoders(
     }
     assert bool(warned) is not used, (result.stderr[-800:], warned)
 
-
-# --------------------------------------------------------------------------- R5-8
 
 X265_MD = "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)"
 SVT_MD = "G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)"
@@ -132,7 +125,6 @@ def _invalid(encoder: str, key: str, value: OptionValue) -> bool:
 def test_r5_8_what_the_encoders_write(
     tmp_path: Path, encoder: str, key: str, value: str, expected: dict[str, object] | None
 ) -> None:
-    """Validation accepts a text exactly when the encoder writes it as given."""
     ffmpeg, ffprobe = _tools()
     out = tmp_path / "o.mkv"
     escaped = value.replace(":", "\\:").replace(",", "\\,")
@@ -160,9 +152,8 @@ def test_r5_8_what_the_encoders_write(
 
 
 def test_r5_8_svt_av1_never_ends_with_text_after_the_tags(tmp_path: Path) -> None:
-    """SVT-AV1 v4.2.0: ``mastering-display`` with any other text (``…L(1000,0.0001)junk``)
-    keeps FFmpeg busy until it is killed (one frame normally takes 0.1 s); validation refuses
-    such a text."""
+    """SVT-AV1 keeps running until it is killed when text follows the tags (one frame
+    normally takes 0.1 s)."""
     ffmpeg, _ = _tools()
     value = SVT_MD + "junk"
     try:
@@ -180,17 +171,14 @@ def test_r5_8_svt_av1_never_ends_with_text_after_the_tags(tmp_path: Path) -> Non
     assert _invalid("libsvtav1", "mastering-display", value)
 
 
-# --------------------------------------------------------------------------- RC-2 (final review)
-
 X265_SIGNED = "G(+13250,+34500)B(+7500,+3000)R(+34000,+16000)WP(+15635,+16450)L(+10000000,+1)"
 SVT_SIGNED = "G(+0.265,+0.69)B(+.15,+.06)R(+0.68,+0.32)WP(+0.3127,+0.329)L(+1e+3,+1e-4)"
 NEVER_ENDS = "FFmpeg never ended"
 
 
 def _written(encoder: str, key: str, value: str) -> object:
-    """The HDR side data ``encoder`` writes for ``key=value``, written as the command builder
-    writes an advanced option (``escape_value``): a dict, ``None`` (no side data of that kind)
-    or :data:`NEVER_ENDS` (killed after 10 s; two frames take well under a second)."""
+    """The HDR side data ``encoder`` writes for ``key=value``: a dict, ``None`` for none, or
+    :data:`NEVER_ENDS` (killed after 10 s; two frames take well under a second)."""
     ffmpeg, ffprobe = _tools()
     params_arg = DEFS.video_encoders[encoder].params_arg
     assert params_arg is not None
@@ -251,10 +239,6 @@ def _written(encoder: str, key: str, value: str) -> object:
 def test_rc_2_signs_and_spaces_with_the_encoders(
     encoder: str, key: str, value: str, plain: str
 ) -> None:
-    """Final review RC-2 (decision 0035 "Follow-up (final review, 2026-10-17)"): validation
-    accepts a text exactly when the encoder writes the same as for the plain text (a ``+``,
-    ``-0`` and C white space before a number: the same; a negative number, two signs, a
-    no-break space, other digits, a vertical tab before the text: not)."""
     reference = _written(encoder, key, plain)
     assert reference is not None
     assert reference != NEVER_ENDS

@@ -1,6 +1,4 @@
-"""The advanced-option rules (C-6, M9) in detail: messages, fixes, the builder agreement, and
-the encoder switch (pure; the rule cases are in ``cases_options.py``, the encoder evidence in
-``test_options_ffmpeg.py``)."""
+"""The advanced-option rules: messages, fixes, the builder agreement and the encoder switch."""
 
 from __future__ import annotations
 
@@ -39,8 +37,6 @@ def test_an_inactive_option_is_not_written_and_says_why() -> None:
 
 
 def test_every_inactive_option_is_left_out_by_the_builder() -> None:
-    """For every option with ``requires`` of every encoder: validation calls it inactive
-    exactly when the builder leaves it out (decision 0026)."""
     checked = 0
     for encoder in DEFS.video_encoders.values():
         for option in encoder.options:
@@ -88,7 +84,7 @@ def test_the_rules_skip_passthrough_and_unknown_encoders() -> None:
 
 def test_switching_encoders_drops_values_the_new_encoder_does_not_take() -> None:
     """x264's colour matrix ``GBR`` is ``gbr`` in x265: the switch drops it instead of leaving
-    an ``encoder.option_invalid`` behind; a value both take is kept."""
+    an ``encoder.option_invalid`` behind."""
     video = VideoSettings(
         encoder="libx264", advanced={"colormatrix": "GBR", "colorprim": "bt2020", "nr": 100}
     )

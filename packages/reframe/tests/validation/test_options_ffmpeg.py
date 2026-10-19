@@ -1,5 +1,5 @@
-"""The advanced-option rules of validation (C-6, M9, ``video_option_rule_issues``) agree with
-the real encoders (testdata/README.md "Advanced encoder options (C-6, complete option sets)").
+"""The advanced-option rules of validation (``video_option_rule_issues``) agree with the real
+encoders.
 
 Each row encodes the combination with the encoder itself (the parameters written directly,
 not through the command builder, which leaves an inactive option out) and checks what the
@@ -158,7 +158,6 @@ _VP9_CQ = ("-crf", "30", "-b:v", "0")
 _VP9_ABR = ("-b:v", "500k")
 
 ROWS = [
-    # ---- inactive: the encoder ignores the option
     Row("x265 amp without rect", "libx265", {"amp": True, "rect": False}, INACTIVE,
         "video.advanced.amp", _silent(amp="0")),
     Row("x264 HRD without VBV", "libx264", {"nal-hrd": "vbr"}, INACTIVE,
@@ -179,7 +178,6 @@ ROWS = [
     Row("SVT-AV1 variance boost strength without boost", "libsvtav1",
         {"variance-boost-strength": 3}, INACTIVE, "video.advanced.variance-boost-strength",
         _warns(r"AQ mode / Variance Boost\s*:\s*2 / 0")),
-    # ---- ignored: the encoder changes the value
     Row("x264 Blu-ray B-frames", "libx264", {"bluray-compat": True, "bframes": 5}, IGNORED,
         "video.advanced.bframes", _silent(bframes="3")),
     Row("x264 Blu-ray weighted P-frames", "libx264", {"bluray-compat": True, "weightp": "2"},
@@ -201,7 +199,6 @@ ROWS = [
         {"irefresh-type": "1", "hierarchical-levels": "3"}, IGNORED,
         "video.advanced.hierarchical-levels",
         _warns(r"Fwd key frame is only supported for hierarchical levels 4")),
-    # ---- conflict: the encoder refuses to start
     Row("x265 min CU above the CTU", "libx265", {"ctu": "16", "min-cu-size": "32"}, CONFLICT,
         "video.advanced.min-cu-size",
         _fails(r"min CU size must be less than or equal to max CU size")),
@@ -235,9 +232,7 @@ def test_the_encoder_and_validation_agree(row: Row, tmp_path: Path) -> None:
 
 
 def test_vp9_rate_tolerances_do_nothing_in_constant_quality(tmp_path: Path) -> None:
-    """libvpx's undershoot / overshoot are rate-control tolerances: a CQ encode (``-b:v 0``)
-    is the same file with 0 and 100 (so they ``require`` average bitrate)."""
-    low = _encode("libvpx-vp9", {"undershoot-pct": 0, "overshoot-pct": 0}, _VP9_CQ, tmp_path,
+    low =_encode("libvpx-vp9", {"undershoot-pct": 0, "overshoot-pct": 0}, _VP9_CQ, tmp_path,
                   "low", frames=20)  # fmt: skip
     high = _encode("libvpx-vp9", {"undershoot-pct": 100, "overshoot-pct": 100}, _VP9_CQ,
                    tmp_path, "high", frames=20)  # fmt: skip
@@ -253,9 +248,6 @@ def test_vp9_rate_tolerances_do_nothing_in_constant_quality(tmp_path: Path) -> N
 
 
 def test_hdr10_opt_needs_bt2020(tmp_path: Path) -> None:
-    """Recorded for the help text: x265 drops ``hdr10-opt`` unless the output is tagged
-    BT.2020 ("Recommended Settings for HDR10-opt: colour primaries should be BT.2020,
-    Disabling hdr10-opt.", exit 0). C-7 writes the source's tags when the output stays HDR."""
     plain = _encode("libx265", {"hdr10-opt": True}, (), tmp_path, "plain")
     assert plain.returncode == 0
     assert "colour primaries should be BT.2020" in plain.stderr

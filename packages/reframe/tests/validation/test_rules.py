@@ -1,11 +1,8 @@
-"""C-8 "Done when": every rule has a positive and a negative test, and every fix patch, when
-applied, removes its issue.
+"""Each rule has a positive and a negative case in :data:`CASES`; every fix removes its issue.
 
-:data:`CASES` is the rule table: for each issue code (and path), a change of the clean
-scenario that must produce it (positive) and a close change that must not (negative). The
-positive scenario goes through :func:`scenario.check`, which applies every fix of every issue
-and validates again (the issue, same code and path, must be gone). ``test_every_code_has_a_case``
-proves that the table covers every code the registered rules declare.
+A positive case is a change of the clean scenario that must produce a code at a path; its
+negative case is a close change that must not. ``scenario.check`` applies every fix of every
+issue and validates again: the issue (same code and path) must be gone.
 """
 
 from __future__ import annotations
@@ -85,9 +82,6 @@ def build(mod: Mod) -> Any:
     return scenario
 
 
-# --------------------------------------------------------------------------- modifiers
-
-
 def video(**changes: Any) -> Mod:
     def mod(s: Any) -> None:
         for key, value in changes.items():
@@ -123,7 +117,6 @@ def one_audio(s: Any) -> None:
 
 
 def webm(s: Any) -> None:
-    """WebM with tracks it can hold: Opus audio, no subtitles."""
     s.job.output.container = "webm"
     s.job.output.path = Path("/out/Movie (2019).webm")
     s.job.audio = s.job.audio[:1]
@@ -227,7 +220,7 @@ def defs(change: Callable[[Definitions], None]) -> Mod:
 
 def ffmpeg_status(status: ToolStatus | None) -> Mod:
     """ffmpeg from a Settings path with ``status``; "Use bundled" removes the path, and the
-    rediscovery then finds the bundled ffmpeg (C-1)."""
+    rediscovery then finds the bundled ffmpeg."""
 
     def mod(s: Any) -> None:
         if status is None:
@@ -265,7 +258,7 @@ def hdr_source(s: Any) -> None:
 
 
 def hdr10_source(s: Any) -> None:
-    """HDR10 as the probe reports it (C-3): the format list, not only the transfer."""
+    """HDR10 as the probe reports it: the format list, not only the transfer."""
     hdr_source(s)
     s.source.video[0].hdr = HdrInfo(formats=[HdrFormat.HDR10])
 
@@ -289,12 +282,11 @@ TALL = FitWithin(width=1920, height=1160)
 
 
 def rechecking(s: Any) -> None:
-    """A cached snapshot that detection checks again (C-4: from_cache and detecting)."""
+    """A cached snapshot that detection checks again (from_cache and detecting)."""
     s.caps = s.caps.model_copy(update={"from_cache": True, "detecting": True})
 
 
 def tall_source(s: Any) -> None:
-    """1920x1160: within level 4 at 8-pixel padding, not at ultrafast's 16 (1168 lines)."""
     s.source.video[0].height = 1160
 
 
@@ -314,9 +306,6 @@ def nothing(s: Any) -> None:
 def no_frame_rate(s: Any) -> None:
     s.source.video[0].frame_rate = None
     s.source.video[0].avg_frame_rate = None
-
-
-# --------------------------------------------------------------------------- custom definitions
 
 
 def mkv_original_via_mkvpropedit(d: Definitions) -> None:
@@ -385,10 +374,7 @@ def nvenc_options(options: list[str]) -> Mod:
 SRT, PGS = 0, 1  # subtitle output tracks of the clean job
 EXTERNAL = Path("/media/movies/Movie.2019.en.srt")
 
-# --------------------------------------------------------------------------- the table
-
 CASES: list[Case] = [
-    # ---- tools
     Case(
         "ffmpeg missing",
         "tool.missing",
@@ -438,7 +424,6 @@ CASES: list[Case] = [
             lambda s: setattr(s.job.audio[0].metadata, "original", True),
         ),
     ),
-    # ---- encoder: availability (C-4) with the conversion
     Case(
         "unknown video encoder",
         "encoder.unknown",
@@ -516,7 +501,6 @@ CASES: list[Case] = [
         ),
         both(audio(1, encoder="libfdk_aac"), caps({"libfdk_aac": EncoderState.UNAVAILABLE})),
     ),
-    # ---- encoder: settings
     Case(
         "10-bit on an 8-bit encoder",
         "encoder.no_10bit",
@@ -767,7 +751,6 @@ CASES: list[Case] = [
         video(encoder="libx265", tune="grain", fast_decode=True),
         video(encoder="libx264", tune="film", fast_decode=True),
     ),
-    # ---- source
     Case(
         "source without video",
         "source.no_video",
@@ -776,7 +759,6 @@ CASES: list[Case] = [
         lambda s: setattr(s.source, "video", []),
         nothing,
     ),
-    # ---- container
     Case(
         "unknown container",
         "container.unknown",
@@ -851,7 +833,6 @@ CASES: list[Case] = [
         both(container("mp4"), lambda s: setattr(s.job.audio[0].metadata, "original", True)),
         lambda s: setattr(s.job.audio[0].metadata, "original", True),
     ),
-    # ---- dimensions
     Case(
         "crop removes the whole width",
         "dimensions.crop_invalid",
@@ -930,7 +911,6 @@ CASES: list[Case] = [
         dims(pixel_aspect="custom"),
         dims(pixel_aspect="custom", custom_par=Rational(num=4, den=3)),
     ),
-    # ---- filters
     Case(
         "unknown filter",
         "filter.unknown",
@@ -1070,7 +1050,6 @@ CASES: list[Case] = [
         both(hdr10_source, video(bit_depth=8)),
         both(hdr10_source, video(bit_depth=8, passthrough=True)),
     ),
-    # ---- audio
     Case(
         "audio source missing",
         "audio.source_missing",
@@ -1165,7 +1144,6 @@ CASES: list[Case] = [
         audio(0, encoder="ac3", bitrate=224, samplerate=96000),
         audio(0, encoder="ac3", bitrate=224, samplerate=48000),
     ),
-    # ---- subtitles
     Case(
         "subtitle source missing",
         "subtitle.source_missing",
@@ -1271,7 +1249,6 @@ CASES: list[Case] = [
         sub(PGS, forced_only=True),
         sub(PGS, action="burn", forced_only=True),
     ),
-    # ---- metadata
     Case(
         "BCP 47 tag without mkvpropedit",
         "metadata.language_tag_lost",
@@ -1308,7 +1285,6 @@ CASES: list[Case] = [
         lambda s: setattr(s.job.audio[0].metadata, "language", "xyz"),
         lambda s: setattr(s.job.audio[0].metadata, "language", "hu"),
     ),
-    # ---- range
     Case(
         "frame range without a frame rate",
         "range.no_frame_rate",
@@ -1402,7 +1378,6 @@ CASES: list[Case] = [
         job_range(FrameRange(start=10, end=10)),
         job_range(FrameRange(start=10, end=11)),
     ),
-    # ---- output
     Case("no output path", "output.no_path", "output.path", ERR, output_path(None), nothing),
     Case(
         "output is the source",
@@ -1523,7 +1498,6 @@ CASES: list[Case] = [
         both(video(passthrough=True), lambda s: setattr(s.fs, "free", 100_000_000)),
         video(passthrough=True),
     ),
-    # ---- naming
     Case(
         "unknown template variable",
         "naming.unknown_variable",
@@ -1607,9 +1581,8 @@ CASES: list[Case] = [
 ]
 
 
-#: Cases of later steps, each in its own file next to this one, so that parallel branches do
-#: not edit this table (docs/core-breakdown.md): each file has ``cases(h) -> list[Case]``,
-#: where ``h`` gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
+#: Cases in other files next to this one: each has ``cases(h) -> list[Case]``, where ``h``
+#: gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
 EXTRA_CASE_FILES = ("cases_inplace", "cases_options")
 _HELPERS = SimpleNamespace(**globals())
 for _name in EXTRA_CASE_FILES:

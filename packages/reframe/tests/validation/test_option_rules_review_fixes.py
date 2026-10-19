@@ -1,8 +1,4 @@
-"""Option rules after the core-complete review (decision 0014 and 0035 "Follow-up
-(core-complete review, 2026-10-16)"): R5-4 (the x265 level padding follows ``min-cu-size``),
-R5-7 (a VBV maximum rate without a buffer, or the reverse) and R5-8 (the text formats of the
-HDR options). Pure; each test failed before its fix. The encoders' behaviour is in
-``test_levels_ffmpeg.py`` and ``test_option_formats_ffmpeg.py``."""
+"""Option rules for the x265 level padding, the VBV pair and the HDR text formats."""
 
 from __future__ import annotations
 
@@ -39,9 +35,6 @@ def _found(**video: Any) -> list[tuple[str, str, Severity]]:
     return [(i.code, i.path, i.severity) for i in sc.check(s)]
 
 
-# --------------------------------------------------------------------------- R5-4
-
-
 def _level_errors(preset: str, advanced: dict[str, Any]) -> set[str]:
     s = sc.base()
     s.source.video[0].height = 1160
@@ -54,19 +47,13 @@ def _level_errors(preset: str, advanced: dict[str, Any]) -> set[str]:
 
 
 def test_r5_4_level_with_min_cu_size_16_at_medium() -> None:
-    """Real x265 (n9.0.2): 1920x1160, level-idc=4, ``medium``, min-cu-size=16: "picture
-    dimensions are out of range for specified level", exit 183."""
     assert "encoder.level_too_low" in _level_errors("medium", {"min-cu-size": "16"})
     assert "encoder.level_too_low" not in _level_errors("medium", {})
 
 
 def test_r5_4_level_with_min_cu_size_8_at_ultrafast() -> None:
-    """Real x265: 1920x1160, level-idc=4, ``ultrafast``, min-cu-size=8: exit 0."""
     assert "encoder.level_too_low" not in _level_errors("ultrafast", {"min-cu-size": "8"})
     assert "encoder.level_too_low" in _level_errors("ultrafast", {})
-
-
-# --------------------------------------------------------------------------- R5-7
 
 
 @pytest.mark.parametrize("encoder", ["libx264", "libx265"])
@@ -95,8 +82,6 @@ def test_r5_7_a_vbv_buffer_without_a_maximum_rate(encoder: str) -> None:
     assert not [f for f in abr if f[1].startswith("video.advanced.vbv")]
 
 
-# --------------------------------------------------------------------------- R5-8
-
 X265_MD = "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)"
 SVT_MD = "G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)"
 X265_SPACED = X265_MD.replace("(13250,", "(13250, ")
@@ -110,7 +95,7 @@ SVT_SHORT = "G(.265,.69)B(.15,.06)R(.68,.32)WP(.3127,.329)L(1e3,1e-4)"
     [
         ("libx265", "master-display", X265_MD, True),
         ("libx265", "master-display", X265_SPACED, True),
-        ("libx265", "master-display", "garbage", False),  # the reviewer's case
+        ("libx265", "master-display", "garbage", False),
         ("libx265", "master-display", X265_MD.removesuffix("L(10000000,1)"), False),
         ("libx265", "master-display", SVT_MD, False),  # plain numbers: x265 cannot parse them
         ("libx265", "master-display", X265_R_FIRST, False),
@@ -145,7 +130,6 @@ def test_r5_8_the_hdr_text_options_are_checked(
 
 
 def test_r5_8_copy_hdr_metadata_writes_valid_text() -> None:
-    """The values ``hdr_options`` copies from a probe pass the same check."""
     from reframe.definitions import hdr_options, load_definitions
     from reframe.models import ContentLightLevel, HdrInfo, MasteringDisplay
 
@@ -165,8 +149,6 @@ def test_r5_8_copy_hdr_metadata_writes_valid_text() -> None:
         found = _found(encoder=encoder, bit_depth=10, advanced=values)
         assert not [f for f in found if f[0] == "encoder.option_invalid"], (encoder, values)
 
-
-# --------------------------------------------------------------------------- RC-2 (final review)
 
 X265_SIGNED = "G(+13250,+34500)B(+7500,+3000)R(+34000,+16000)WP(+15635,+16450)L(+10000000,+1)"
 SVT_SIGNED = "G(+0.265,+0.69)B(+.15,+.06)R(+0.68,+0.32)WP(+0.3127,+0.329)L(+1e+3,+1e-4)"
@@ -215,8 +197,6 @@ ARABIC_13250 = "\u0661\u0663\u0662\u0665\u0660"
 def test_rc_2_signs_and_spaces_as_the_encoders_read_them(
     encoder: str, key: str, value: str, valid: bool
 ) -> None:
-    """Final review RC-2 (decision 0035 "Follow-up (final review, 2026-10-17)"): the HDR texts
-    take exactly what x265 and SVT-AV1 write unchanged (``test_option_formats_ffmpeg.py``)."""
     found = _found(encoder=encoder, bit_depth=10, advanced={key: value})
     invalid = ("encoder.option_invalid", f"video.advanced.{key}", Severity.ERROR)
     assert (invalid in found) is not valid, found
