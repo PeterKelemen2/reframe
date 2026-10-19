@@ -1,32 +1,7 @@
-"""The preview cache (05 §C-10, 03 §Preview): PNG frames and preview clips on disk.
+"""PNG frames and preview clips on disk, with keys and an LRU size limit.
 
-**Layout.** ``<cache dir>/frames/<key>.png`` and ``<cache dir>/clips/<id>.<ext>``. A file is
-written under a temporary name in the same folder (``.tmp-<random>-<name>``, or the plan's
-``<id>.part.<ext>`` for a clip) and renamed when it is complete, so a reader never sees half
-a file and two tasks that make the same frame do not disturb each other.
-
-**Keys** (decision 0033). A frame key is ``<source>-<milliseconds>-<settings>``:
-
-- ``source``: 16 hex digits of a hash of the source file's absolute path, size and
-  modification time in nanoseconds (:func:`source_fingerprint`): a changed file gets new keys;
-- the timestamp in whole milliseconds (:func:`timestamp_ms`; the frame is taken at exactly
-  that time), at most :data:`MAX_TIMESTAMP_MS` (12 digits; a later time is refused before a key
-  is made);
-- ``settings``: 16 hex digits of a hash of everything else that changes the picture
-  (:func:`digest` of the frame recipe, the PNG options and the FFmpeg build; the recipes are in
-  :mod:`reframe.preview.graph`).
-
-A key is also the file name, so :func:`is_frame_key` accepts only that form: a key from a URL
-can never name another file. A clip id is 32 hex digits (:func:`is_clip_id`).
-
-**LRU with a size limit.** Every use of a file (a cache hit, :meth:`PreviewCache.find_frame`,
-:meth:`PreviewCache.find_clip`) sets its modification time to now, so the modification time is
-the time of the last use. :meth:`PreviewCache.trim` removes the least recently used files of
-both folders until they fit the limit (Settings → Preview ``cache_size_mb``, one budget for
-frames and clips). It never removes the files the calling task made or used (``protect``) or a
-file used in the last :data:`GRACE` seconds (another task's fresh result that its caller has
-not fetched yet); so a limit of 0 keeps only the latest results. Temporary files are removed
-when they are older than :data:`STALE` seconds (a crash left them).
+A file is written under a temporary name and renamed when it is complete, so a reader never
+sees a partial file and two tasks that make the same frame do not disturb each other.
 """
 
 from __future__ import annotations
@@ -71,12 +46,11 @@ GRACE = 30.0
 STALE = 3600.0
 TEMP_PREFIX = ".tmp-"
 
-#: The latest timestamp a frame key holds (12 digits of milliseconds: about 31.7 years).
+#: The latest timestamp a frame key holds (12 digits of milliseconds).
 MAX_TIMESTAMP_MS = 10**12 - 1
 _KEY = re.compile(r"[0-9a-f]{16}-[0-9]{1,12}-[0-9a-f]{16}")
 _CLIP_ID = re.compile(r"[0-9a-f]{32}")
-#: In a clip folder, the files of a plan that is running (``<id>.part.mkv``,
-#: ``<id>.part.passlog-0.log``, ``<id>.part.chapters.txt``).
+#: Marks the files of a running clip plan (``<id>.part.<ext>``, and its logs).
 _PART = ".part."
 
 
@@ -99,11 +73,13 @@ def timestamp_ms(seconds: float) -> int:
 
 
 def frame_key(source: str, timestamp: float, settings: str) -> str:
-    """``<source>-<milliseconds>-<settings>`` (see the module doc)."""
+    """The key of one frame: ``<source>-<milliseconds>-<settings>``."""
     return f"{source}-{timestamp_ms(timestamp)}-{settings[:16]}"
 
 
 def is_frame_key(key: str) -> bool:
+    """Whether ``key`` has the frame-key form. Only that form may name a file, so a key from a
+    URL never names another file."""
     return _KEY.fullmatch(key) is not None
 
 
@@ -112,7 +88,7 @@ def is_clip_id(clip_id: str) -> bool:
 
 
 def megabytes(value: int) -> int:
-    """Settings → Preview ``cache_size_mb`` in bytes (1 MB = 2**20 bytes)."""
+    """The ``preview.cache_size_mb`` setting in bytes (1 MB = 2**20 bytes)."""
     return max(0, value) * 2**20
 
 
@@ -129,8 +105,8 @@ def _is_temp(name: str) -> bool:
 
 
 class PreviewCache:
-    """The frame and clip folders of one ``<cache dir>`` (see the module doc). Blocking file
-    calls: run them in a thread from async code, except the cheap lookups."""
+    """The frame and clip folders of one cache directory. Blocking file calls: run them in a
+    thread from async code, except the cheap lookups."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -232,8 +208,8 @@ class PreviewCache:
         grace: float = GRACE,
     ) -> list[Path]:
         """Remove the least recently used files until the cache holds at most ``limit``
-        bytes; returns the removed files. ``protect`` and files used in the last ``grace``
-        seconds stay (see the module doc)."""
+        bytes; returns the removed files. ``protect`` (the calling task's own files) and files
+        used in the last ``grace`` seconds (another task's fresh result, not fetched yet) stay."""
         clock = time.time() if now is None else now
         entries = self.entries(now=clock)
         total = sum(e.size for e in entries)
@@ -255,8 +231,8 @@ class PreviewCache:
         return removed
 
     def clear(self) -> int:
-        """Remove every cached frame and clip (Settings → Preview → Clear cache); returns the
-        bytes freed. Temporary files of running tasks stay."""
+        """Remove every cached frame and clip; returns the bytes freed. Temporary files of
+        running tasks stay."""
         freed = 0
         for entry in self.entries():
             try:

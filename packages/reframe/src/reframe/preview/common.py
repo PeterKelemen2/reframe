@@ -47,11 +47,10 @@ def sample_times(
     timestamps: Sequence[float] | None = None,
 ) -> list[float]:
     """The timestamps of a task: ``timestamps`` (sorted, rounded to milliseconds, without
-    duplicates), else ``count`` evenly spaced ones (:func:`~reframe.mediatask.
-    sample_timestamps`, the same for frames and crop detection). :class:`TaskFailed` for
-    times that are not a time in the source (also a time later than a frame key can hold,
-    :data:`~reframe.preview.cache.MAX_TIMESTAMP_MS`), a count out of range, or an unknown
-    duration."""
+    duplicates), else ``count`` evenly spaced ones (:func:`~reframe.mediatask.sample_timestamps`).
+    :class:`TaskFailed` for times that are not a time in the source (also a time later than a
+    frame key can hold, :data:`~reframe.preview.cache.MAX_TIMESTAMP_MS`), a count out of range,
+    or an unknown duration."""
     name = source.ref.path.name
     if timestamps is not None:
         values = list(timestamps)
@@ -114,7 +113,7 @@ def png_size(path: Path) -> tuple[int, int] | None:
 
 def displayed_size(video: VideoStream) -> tuple[int, int]:
     """The picture size as FFmpeg decodes it: the automatic rotation of a 90° or 270° display
-    matrix swaps width and height (decision 0009)."""
+    matrix swaps width and height."""
     if video.rotation in (90, 270):
         return video.height, video.width
     return video.width, video.height

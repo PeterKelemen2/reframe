@@ -1,28 +1,9 @@
-"""The probe cache (C-3, 02 §State model): memory + JSON files in ``<cache dir>/probe/``.
+"""Probe results by file version: JSON files in ``<cache dir>/probe/`` and a small memory layer.
 
-- **Key**: absolute path + size + mtime (nanoseconds). A changed file gets a new key.
-- **Entry**: one JSON file per key (``<sha256 of the key>.json``) with the key, the probe tool
-  identity (the ffprobe version, or the binary's path/size/mtime when the version is not
-  known), the parser fingerprint (:func:`parser_fingerprint`: ``PARSER_VERSION`` plus a hash
-  of the source of the modules that shape a ``MediaSource``, so any change to them
-  invalidates old entries without a manual bump), the probe options (the MediaInfo version in
-  use, or ``False``) and the :class:`MediaSource`. An entry made by another ffprobe, another
-  parser or other options is a miss (and is overwritten by the next :meth:`ProbeCache.put`).
-  The JSON is ASCII (``\\uXXXX`` escapes): a path with a byte that is not UTF-8 holds a lone
-  surrogate (``bad\\xffname.mkv`` → ``bad\\udcffname.mkv``), which UTF-8 cannot encode; an
-  escape reads back exactly. Older UTF-8 entries read the same.
-- **Pruning**: :meth:`ProbeCache.prune` removes entries older than ``max_age`` (default 180
-  days, by file mtime), then the oldest beyond ``max_entries`` (default 10 000), and
-  temporary files left by a crash. It runs on the first :meth:`~ProbeCache.put` of a process
-  and then every :data:`PRUNE_EVERY` puts.
-- Writes are atomic (a temporary file in the same folder, then ``os.replace``). A corrupt or
-  unreadable entry is a miss; the next probe rewrites it. Cache errors never fail a probe.
-- **Nesting** (as C-9's stores, decision 0015): an entry nested more than
-  :data:`~reframe.settings.MAX_DEPTH` (64) levels deep (the entry object is level 1) is
-  corrupt, so a miss, never a ``RecursionError``. A source whose entry would be that deep is
-  not cached at all (not in memory either): :meth:`ProbeCache.put` returns ``False``.
-- A small in-memory layer (LRU, :data:`MEMORY_ENTRIES`) avoids reading the same file twice in
-  one process. Callers get copies, so changing a returned source does not change the cache.
+The key is the absolute path, size and mtime in nanoseconds, so a changed file gets a new key.
+An entry also records the ffprobe identity, the probe options and :func:`parser_fingerprint`,
+which changes with the parser's source: an entry that does not match is a miss, as is a corrupt
+or unreadable one. A cache error never fails a probe.
 """
 
 from __future__ import annotations
@@ -68,8 +49,8 @@ PRUNE_EVERY = 200
 #: A temporary file older than this was left behind by a crash.
 _STALE_TMP_AGE = 3600.0
 
-#: The modules whose source decides what a probe produces (``matroska.py``: the track reader
-#: gives ``language_ietf``; final review RB-7).
+#: The modules whose source decides what a probe produces (``matroska.py`` gives the track's
+#: ``language_ietf``).
 _PARSER_MODULES = (
     "parse.py",
     "names.py",
@@ -84,7 +65,7 @@ _PARSER_MODULES = (
 
 @functools.cache
 def parser_fingerprint() -> str:
-    """``PARSER_VERSION`` + a hash of the parser modules' source (``1:3f2a…``).
+    """``PARSER_VERSION`` and a hash of the parser modules' source.
 
     Without the source files (a frozen app that ships only bytecode), the Reframe version
     stands in for the hash.
@@ -152,7 +133,8 @@ class ProbeCache:
     def get(
         self, key: CacheKey, *, tool: str, options: Mapping[str, Any] | None = None
     ) -> MediaSource | None:
-        """The cached source for ``key`` made by ``tool`` with ``options``, else ``None``."""
+        """The cached source for ``key`` made by ``tool`` with ``options``, else ``None``.
+        The source is a copy: changing it does not change the cache."""
         opts = dict(options or {})
         with self._lock:
             entry = self._memory.get(key)
@@ -209,7 +191,7 @@ class ProbeCache:
         opts = dict(options or {})
         try:
             dumped = source.model_dump(mode="json")
-        except (ValueError, TypeError, RecursionError):  # Pydantic: nested past 255 levels
+        except (ValueError, TypeError, RecursionError):  # Pydantic gives up on very deep nesting
             return False
         doc = {
             "format": CACHE_FORMAT,
@@ -224,9 +206,7 @@ class ProbeCache:
         entry = _Entry(tool, opts, source.model_copy(deep=True))
         self._remember(key, entry)
         try:
-            # ASCII: a path with a byte that is not UTF-8 holds a lone surrogate (POSIX
-            # ``surrogateescape``: 0xFF → ``\udcff``; Windows: an unpaired UTF-16 surrogate),
-            # which UTF-8 cannot encode. As a ``\udcff`` escape it reads back exactly.
+            # ASCII escapes: a path with a lone surrogate cannot be written as UTF-8.
             text = json.dumps(doc, ensure_ascii=True, separators=(",", ":"))
         except (TypeError, ValueError, RecursionError):
             return False
@@ -243,9 +223,7 @@ class ProbeCache:
                 f.write(text)
             os.replace(tmp, self.entry_path(key))
         except (OSError, ValueError):
-            # Disk full, read-only, or (Windows) the target is open elsewhere. (A ValueError,
-            # that is a UnicodeError, cannot come from ASCII text; a cache error never fails a
-            # probe.)
+            # Disk full, read-only, or (Windows) the target is open elsewhere.
             with contextlib.suppress(OSError):
                 tmp.unlink()
             return False

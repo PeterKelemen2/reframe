@@ -1,36 +1,8 @@
-"""How a preview frame is made (05 §C-10): the filter chains and the FFmpeg command. Pure.
+"""How a preview frame is made: the filter chains and the FFmpeg command. Pure: no I/O.
 
-**Source frame**: the picture as FFmpeg decodes it, at full resolution: the automatic rotation
-applies the display matrix (decision 0009: the crop rectangle is measured on this picture),
-nothing else changes it. Then, for a PNG:
-
-- ``setparams`` with the colour the source does not say (:func:`~reframe.command.filtergraph.
-  colour_params`, the values C-7's graph assumes), so the RGB conversion uses the same matrix
-  as a player (FFmpeg converts an untagged frame with BT.601, ``testdata/README.md``);
-- an HDR source is tone mapped to SDR (a PNG cannot hold PQ or HLG) with the filters of the Tone
-  mapping filter's default preset (:func:`~reframe.command.filtergraph.tonemap_filters`):
-  ``libplacebo`` when its run test passed, else ``zscale`` + ``tonemap``;
-- :data:`DISPLAY_TAIL`: an explicit ``scale`` converts to 8-bit RGB with the colour of the frame
-  as it is there. Without it, FFmpeg n9.0.2 converted an input-seeked frame **before**
-  ``setparams`` (``setparams=colorspace=bt709,format=rgb24`` gave BT.601 colours after
-  ``-ss``; ``testdata/README.md``).
-
-**Output frame**: the job's video filter graph, made by the same functions as C-7's builder
-(:func:`job_video_graph`: the geometry of ``source_geometry`` / ``compute_geometry`` and
-``build_video_graph`` with the encoder's software pixel format as the format stage), then the
-display tail: the same tone mapping when the output is still HDR (no Tone mapping or Colorspace
-filter), then :data:`DISPLAY_TAIL`. Subtitle burn-in is not drawn (decision 0033: the ``subtitles``
-filter reads the whole source file for every frame); a preview clip shows it. A copied video
-(passthrough) gives the source picture.
-
-**Command** (:func:`frame_argv`): one FFmpeg run per timestamp makes every kind that is not
-cached: ``-ss T`` before ``-i`` (fast seek; FFmpeg still decodes from the keyframe before T and
-starts at the first frame at or after T, the same frame as a slow seek), a ``split`` when two
-kinds are made, one ``-frames:v 1`` PNG output per kind. FFmpeg negotiates the pixel format
-across the ``split``: a branch that ended in a bare ``format=rgb24`` made it convert to RGB
-before the split, so the other branch filtered RGB. Each branch converts with its own
-``scale`` (:data:`DISPLAY_TAIL`), and each picture equals the one of a run that makes only that
-kind (tested).
+The source frame is the decoded picture with its display rotation applied. An HDR source is
+tone mapped to SDR, since a PNG cannot hold HDR. An output frame uses the job's own video
+filter graph, and a copied video gives the source picture.
 """
 
 from __future__ import annotations
@@ -64,13 +36,10 @@ __all__ = [
     "source_recipe",
 ]
 
-#: The conversion of a PNG frame: 8-bit RGB (enough for a screen; the crop magnifier reads it)
-#: by an explicit ``scale`` that reads the frame's colour tags (see the module doc), with full
-#: chroma interpolation and accurate rounding (the magnifier shows single pixels; no slower at
-#: 4K, measured).
+#: 8-bit RGB for the PNG, with full chroma interpolation and accurate rounding (the crop
+#: magnifier shows single pixels). The explicit ``scale`` comes first in every branch: see the
+#: frame-seek notes in testdata/README.md.
 DISPLAY_TAIL = ("scale=flags=bicubic+accurate_rnd+full_chroma_int", "format=rgb24")
-#: PNG encoder options: compression level 3 with the default Paeth prediction (measured on a
-#: grainy 4K picture: 0.45 s and 8.9 MB, level 6: 0.94 s and 8.5 MB; decision 0033).
 PNG_ARGS = ("-c:v", "png", "-compression_level", "3", "-f", "image2", "-update", "1")
 #: Global options of a frame run (errors only: the frame files are the result).
 GLOBAL_ARGS = ("-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-y")
@@ -129,7 +98,7 @@ def _prefix(video: VideoStream) -> list[str]:
 def source_recipe(
     video: VideoStream, caps: CapabilitySnapshot, definitions: Definitions
 ) -> FrameRecipe:
-    """The source frame (see the module doc)."""
+    """The source frame: the decoded picture, tone mapped when it is HDR."""
     chain: list[str] = []
     notes: list[str] = []
     if is_hdr(video):
@@ -150,12 +119,9 @@ def job_video_graph(
     *,
     tail: Sequence[str] = (),
 ) -> VideoGraph | None:
-    """The job's video filter graph as C-7's builder makes it (``_video_plan``), without
-    subtitle burn-in: the geometry from ``source_geometry`` (not interlaced when the job
-    deinterlaces) and ``compute_geometry``, then ``build_video_graph`` with the format stage
-    ``format=<the encoder's software pixel format>`` followed by ``tail``. ``None`` for a
-    copied video. Raises :class:`PlanError` like the builder (unknown encoder, a filter that
-    cannot run, …)."""
+    """The job's video filter graph, as the command builder makes it, without subtitle burn-in.
+    ``None`` for a copied video. Raises :class:`PlanError` like the builder (an unknown encoder,
+    a filter that cannot run, …)."""
     if not source.video:
         raise PlanError("the source has no video stream")
     if job.video.passthrough:
@@ -186,13 +152,14 @@ def job_video_graph(
 def output_recipe(
     job: JobSettings, source: MediaSource, caps: CapabilitySnapshot, definitions: Definitions
 ) -> FrameRecipe:
-    """The output frame of ``job`` (see the module doc). Raises :class:`PlanError` when the
-    job's graph cannot be made."""
+    """The output frame of ``job``. Raises :class:`PlanError` when the job's graph cannot be
+    made."""
     if not source.video:
         raise PlanError("the source has no video stream")
     video = source.video[0]
     notes: list[str] = []
     if any(t.action == "burn" for t in job.subtitles):
+        # The subtitles filter reads the whole source for each frame: burn-in is left out.
         notes.append(
             "Burned-in subtitles are not drawn on the output frames; a preview clip shows them."
         )
@@ -217,8 +184,8 @@ def frame_argv(
     timestamp: float,
     outputs: Sequence[tuple[FrameRecipe, Path]],
 ) -> list[str]:
-    """One FFmpeg run that writes a PNG of each recipe at ``timestamp`` (see the module doc).
-    Every recipe must have the same :attr:`~FrameRecipe.prefix` (they are of one source)."""
+    """One FFmpeg run that writes a PNG of each recipe at ``timestamp``. Every recipe must have
+    the same :attr:`~FrameRecipe.prefix` (they are of one source)."""
     if not outputs:
         raise ValueError("no frame to make")
     prefix = outputs[0][0].prefix

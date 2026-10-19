@@ -1,24 +1,11 @@
-"""Preview tasks (05 §C-10): frames, crop detection, preview clips, and their cache.
+"""Preview tasks (frames, crop detection, preview clips) and their on-disk cache.
 
-Each ``start_*`` function starts a background task (:mod:`reframe.tasks`) with the facade's
-:class:`~reframe.mediatask.MediaTaskContext` and returns its :class:`~reframe.models.TaskInfo`
-at once. The results are :mod:`reframe.models.preview` models. ``Reframe.sources`` calls
-``start_frames``, ``frame_path`` and ``start_cropdetect``; ``Reframe.jobs`` calls
-``start_preview_clip`` and ``clip_path``. The signatures are the contract of
-``docs/core-breakdown.md``.
-
-Modules:
-
-- :mod:`~reframe.preview.frames`: the ``frames`` task (source and output PNGs);
-- :mod:`~reframe.preview.graph`: how a frame is made (the filter chains, the FFmpeg command);
-- :mod:`~reframe.preview.crop`: the ``cropdetect`` task and its log parser;
-- :mod:`~reframe.preview.clip`: the ``preview_clip`` task (the job's full plan, cached);
-- :mod:`~reframe.preview.cache`: keys, the cache folders and the LRU with a size limit.
-
-Decision 0033 has the choices the plan leaves open (cache keys, one size budget for frames and
-clips, HDR frames for display, the ``cropdetect`` limit, what a missing frame does, 2-pass
-clips).
+Each ``start_*`` function returns its :class:`~reframe.models.TaskInfo` at once. The work runs
+in a background task (:mod:`reframe.tasks`).
 """
+
+# See decision 0033 for the choices the plan leaves open: cache keys, one size budget, HDR
+# frames, the cropdetect limit, a missing frame and two-pass clips.
 
 from __future__ import annotations
 
@@ -53,10 +40,10 @@ def start_frames(
     job: JobSettings | None,
 ) -> TaskInfo:
     """Task ``frames``: PNG frames of the source at ``timestamps`` (default: ``count`` evenly
-    spaced ones, :func:`~reframe.mediatask.sample_timestamps`; ``count`` ``None`` = Settings →
-    Preview ``sample_frames``), and with ``job`` also the output frames (crop, scale and the
-    job's filter graph). Cached on disk (LRU, ``preview.cache_size_mb``) by source fingerprint
-    + timestamp + settings hash (:class:`~reframe.models.FrameSet`)."""
+    spaced ones, :func:`~reframe.mediatask.sample_timestamps`; ``count`` ``None``: the
+    ``preview.sample_frames`` setting), and with ``job`` also the output frames (crop, scale
+    and the job's filter graph). Cached on disk (LRU, ``preview.cache_size_mb``) by source
+    fingerprint, timestamp and settings hash (:class:`~reframe.models.FrameSet`)."""
     wanted = list(timestamps) if timestamps is not None else None
     snapshot = job.model_copy(deep=True) if job is not None else None
     return ctx.tasks.start(
@@ -75,8 +62,8 @@ def frame_path(ctx: MediaTaskContext, key: str) -> Path | None:
 
 def start_cropdetect(ctx: MediaTaskContext, path: Path, *, count: int | None) -> TaskInfo:
     """Task ``cropdetect``: ``cropdetect`` on each sample frame (the timestamps of
-    :func:`start_frames`), then C-5's ``detect_crop_consensus`` for the automatic and the
-    conservative crop (:class:`~reframe.models.CropDetection`)."""
+    :func:`start_frames`), then :func:`~reframe.dimensions.detect_crop_consensus` for the
+    automatic and the conservative crop (:class:`~reframe.models.CropDetection`)."""
     return ctx.tasks.start(
         "cropdetect",
         lambda tctx: detect_crop(tctx, ctx, path, count=count),
@@ -103,12 +90,11 @@ def clip_path(ctx: MediaTaskContext, clip_id: str) -> Path | None:
 
 
 def clear_cache(ctx: MediaTaskContext) -> int:
-    """Remove every cached frame and clip (Settings → Preview → Clear cache); the bytes
-    freed. Blocking file calls: call it in a thread from async code."""
+    """Remove every cached frame and clip; returns the bytes freed. Blocking file calls: call
+    it in a thread from async code."""
     return PreviewCache(ctx.cache_dir).clear()
 
 
 def cache_size(ctx: MediaTaskContext) -> int:
-    """Bytes of cached frames and clips (for Settings → Preview). Blocking, like
-    :func:`clear_cache`."""
+    """Bytes of cached frames and clips. Blocking, like :func:`clear_cache`."""
     return PreviewCache(ctx.cache_dir).size()

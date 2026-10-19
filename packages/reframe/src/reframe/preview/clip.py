@@ -1,32 +1,10 @@
-"""The ``preview_clip`` task (05 §C-10, 03 §Preview → Live preview clip).
+"""The ``preview_clip`` task: ``seconds`` from ``start`` of the job, encoded into the cache.
 
-``seconds`` from ``start`` of the job's source, encoded with the job's **full plan**: a copy of
-the job with the range ``start … start + seconds`` (to the end when that is past it), the
-output in the cache (``<cache dir>/clips/<id>.<ext>``, the job's container) and no in-place
-edit. Then, like the queue (C-11):
-
-1. **Validation** first (C-8, with the current capabilities; when an encoder is still being
-   checked, after the detection): a job with errors fails the task with the first error.
-2. **C-7's** ``build_plan``; its steps run in order through ``reframe.tools.run_streaming``
-   with the task's cancel token: the loudness ``analyse`` steps (their ``loudnorm``
-   measurements fill the later steps), both passes of a 2-pass encode (decision 0033: the
-   clip shows the rate control of the job), ``mkvpropedit``, then the rename of the ``.part``
-   file. Progress comes from FFmpeg's ``-progress`` blocks, weighted like a queue job.
-3. The plan files, the 2-pass statistics and a partial output are removed, also after a
-   failure or a cancel.
-
-**Each run has its own files.** The plan of a run writes to a temporary name of its own
-(``.tmp-<random>-<id>.<ext>``, so ``….part.<ext>``, ``….part.passlog…`` and
-``….part.chapters.txt`` too), and the finished clip is renamed to ``<id>.<ext>``: two runs of
-the same clip at once (a raised ``preview_clip`` limit, two processes on one cache folder)
-never write the same file. When the rename fails because the other run's clip is already
-there (Windows refuses to replace a file that a reader has open), that clip is used.
-
-**The id** is a hash of the source file version, the plan's steps and files (the FFMETADATA
-chapter file holds the chapter names) and the tool builds: the same request gives the cached
-clip at once (``PreviewClip`` with the same id). The clip's
-timeline starts at 0: its frame at ``t`` is the source frame at ``start + t`` (03 §Preview,
-encoded frame compare: ``Reframe.sources.frames(clip.path, timestamps=[t])``).
+The clip is a copy of the job with the range ``start … start + seconds`` (to the end when that
+is past it) and no in-place edit, so its output goes to the cache and never to the source.
+The clip id hashes the source version, the plan and the tool builds: the same request gives
+the cached clip at once. The clip's timeline starts at 0: its frame at ``t`` is the source
+frame at ``start + t``.
 """
 
 from __future__ import annotations
@@ -129,7 +107,8 @@ async def make_clip(
     start: float,
     seconds: float,
 ) -> PreviewClip:
-    """The body of the ``preview_clip`` task (see the module doc)."""
+    """Make the clip, or return the cached clip with the same id. Expected failures raise
+    :class:`TaskFailed`."""
     if not math.isfinite(start) or start < 0:
         raise TaskFailed(f"The clip start {start} is not a time in the source (seconds from 0).")
     if not math.isfinite(seconds) or seconds <= 0:
@@ -202,7 +181,7 @@ async def make_clip(
         return result(cached, cached.stat().st_size)
 
     final = cache.clip(clip_id, extension)
-    own = PreviewCache.temporary(final)  # this run's files (see the module doc)
+    own = PreviewCache.temporary(final)  # this run's own file: no other run writes it
     plan = _plan(_clip_job(job, start=start, end=end, output=own), source, caps, tools, defs)
     if plan.job_type == "metadata_edit" or plan.output_tmp.parent != cache.clips:
         # Never reached: the clip job does not edit in place. A preview must never write
@@ -220,7 +199,7 @@ async def make_clip(
 
 
 async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None:
-    """Run the plan's steps (see the module doc); :class:`TaskFailed` when one fails."""
+    """Run the plan's steps; :class:`TaskFailed` when one fails."""
     tracker = ProgressTracker(plan.steps, plan.expected_duration)
     values: dict[str, str] = {}
     leftovers = [plan.output_tmp, *plan.temp_files, *(f.path for f in plan.files)]
@@ -273,8 +252,7 @@ async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None
 
 async def _place(own: Path, final: Path) -> int:
     """Rename this run's finished clip to the clip's name; its size. When that fails because
-    another run has just made the same clip (Windows refuses to replace a file that a reader
-    has open), that clip is used."""
+    another run has just made the same clip, that clip is used."""
     try:
         await asyncio.to_thread(os.replace, own, final)
     except OSError as exc:
@@ -294,7 +272,7 @@ async def _file_call[*A](what: str, fn: Callable[[*A], object], *args: *A) -> No
 
 
 def _measure(measures: list[Measurement], stderr: str, values: dict[str, str], what: str) -> None:
-    """Store an ``analyse`` step's ``loudnorm`` measurements (as the queue runner does)."""
+    """Store an ``analyse`` step's ``loudnorm`` measurements in ``values``."""
     try:
         blocks = loudnorm.parse_blocks(stderr)
         if len(blocks) != len(measures):
