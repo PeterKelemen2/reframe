@@ -413,7 +413,7 @@ def test_every_template_rule_has_a_positive_case(registered: Any) -> None:
     pytest.fail(f"no positive case for the template rule {registered.name}")
 
 
-def test_demo_item_4_unavailable_nvenc_names_the_closest_encoder() -> None:
+def test_an_unavailable_nvenc_preset_names_the_closest_encoder() -> None:
     template = preset(encoder="hevc_nvenc", rate_control=ConstantQuality(value=27), preset="p5")
     caps = sc.make_caps(NO_HEVC_HARDWARE)
     issues = validate_template(template, caps)

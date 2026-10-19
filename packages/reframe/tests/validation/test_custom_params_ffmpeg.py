@@ -144,7 +144,7 @@ def _x264_sei_cqm(encoder_params: str, out: Path, cwd: Path) -> str | None:
     return found.group(1).decode() if found else None
 
 
-def test_rc_1_x264_reads_and_applies_the_file_a_cqm_value_names(tmp_path: Path) -> None:
+def test_x264_reads_and_applies_the_file_a_cqm_value_names(tmp_path: Path) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     matrix = tmp_path / "matrix.cfg"  # no "flat" / "jvt" in the path: x264 matches those
@@ -203,7 +203,7 @@ def _opened(encoder: str, stderr: str) -> str | None:
         ("libx265", "noscaling-list=off", "true"),
     ],
 )
-def test_rc_1_a_value_that_is_a_name_or_a_file_name(
+def test_a_value_that_is_a_name_or_a_file_name(
     tmp_path: Path, encoder: str, params: str, opened: str | None
 ) -> None:
     if "flat" in str(tmp_path) or "jvt" in str(tmp_path):

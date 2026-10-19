@@ -51,7 +51,7 @@ def _run(argv: list[str], timeout: float = 120) -> subprocess.CompletedProcess[s
     [{"vbv-maxrate": 5000}, {"vbv-bufsize": 5000}, {"vbv-maxrate": 5000, "vbv-bufsize": 6000}],
     ids=["maxrate", "bufsize", "both"],
 )
-def test_r5_7_vbv_with_the_encoders(
+def test_vbv_with_the_encoders(
     tmp_path: Path, encoder: str, abr: bool, advanced: dict[str, int]
 ) -> None:
     ffmpeg, _ = _tools()
@@ -124,7 +124,7 @@ def _invalid(encoder: str, key: str, value: OptionValue) -> bool:
         ("libsvtav1", "content-light", "70000,400", {"max_content": 65535, "max_average": 400}),
     ],
 )  # fmt: skip
-def test_r5_8_what_the_encoders_write(
+def test_what_the_encoders_write_for_the_hdr_texts(
     tmp_path: Path, encoder: str, key: str, value: str, expected: dict[str, object] | None
 ) -> None:
     ffmpeg, ffprobe = _tools()
@@ -153,7 +153,7 @@ def test_r5_8_what_the_encoders_write(
     assert _invalid(encoder, key, value) is not as_given
 
 
-def test_r5_8_svt_av1_never_ends_with_text_after_the_tags(tmp_path: Path) -> None:
+def test_svt_av1_never_ends_with_text_after_the_tags(tmp_path: Path) -> None:
     """SVT-AV1 keeps running until it is killed when text follows the tags (one frame
     normally takes 0.1 s)."""
     ffmpeg, _ = _tools()
@@ -185,7 +185,7 @@ def _written(encoder: str, key: str, value: str) -> object:
     params_arg = DEFS.video_encoders[encoder].params_arg
     assert params_arg is not None
     preset = ["-preset", "12"] if encoder == "libsvtav1" else ["-preset", "ultrafast"]
-    with tempfile.TemporaryDirectory(prefix="reframe-rc2-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="reframe-signs-") as tmp:
         out = Path(tmp) / "o.mkv"
         try:
             result = _run(
@@ -238,9 +238,7 @@ def _written(encoder: str, key: str, value: str) -> object:
         ("libsvtav1", "content-light", "1000,\v400", "1000,400"),
     ],
 )  # fmt: skip
-def test_rc_2_signs_and_spaces_with_the_encoders(
-    encoder: str, key: str, value: str, plain: str
-) -> None:
+def test_signs_and_spaces_with_the_encoders(encoder: str, key: str, value: str, plain: str) -> None:
     reference = _written(encoder, key, plain)
     assert reference is not None
     assert reference != NEVER_ENDS

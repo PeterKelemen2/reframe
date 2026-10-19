@@ -46,18 +46,18 @@ def _level_errors(preset: str, advanced: dict[str, Any]) -> set[str]:
     return {i.code for i in sc.check(s) if i.severity is Severity.ERROR}
 
 
-def test_r5_4_level_with_min_cu_size_16_at_medium() -> None:
+def test_x265_level_with_min_cu_size_16_at_medium() -> None:
     assert "encoder.level_too_low" in _level_errors("medium", {"min-cu-size": "16"})
     assert "encoder.level_too_low" not in _level_errors("medium", {})
 
 
-def test_r5_4_level_with_min_cu_size_8_at_ultrafast() -> None:
+def test_x265_level_with_min_cu_size_8_at_ultrafast() -> None:
     assert "encoder.level_too_low" not in _level_errors("ultrafast", {"min-cu-size": "8"})
     assert "encoder.level_too_low" in _level_errors("ultrafast", {})
 
 
 @pytest.mark.parametrize("encoder", ["libx264", "libx265"])
-def test_r5_7_vbv_maxrate_without_a_buffer_is_inactive(encoder: str) -> None:
+def test_vbv_maxrate_without_a_buffer_is_inactive(encoder: str) -> None:
     """Both encoders drop it and log "VBV maxrate specified, but no bufsize, ignored"."""
     found = _found(encoder=encoder, advanced={"vbv-maxrate": 5000})
     assert ("encoder.option_inactive", "video.advanced.vbv-maxrate", Severity.WARNING) in found
@@ -69,7 +69,7 @@ def test_r5_7_vbv_maxrate_without_a_buffer_is_inactive(encoder: str) -> None:
 
 
 @pytest.mark.parametrize("encoder", ["libx264", "libx265"])
-def test_r5_7_a_vbv_buffer_without_a_maximum_rate(encoder: str) -> None:
+def test_a_vbv_buffer_without_a_maximum_rate(encoder: str) -> None:
     """At a constant quality it is dropped ("VBV bufsize set but maxrate unspecified,
     ignored"); with an average bitrate the encoder uses the bitrate as the maximum ("VBV maxrate
     unspecified, assuming CBR"): not reported."""
@@ -120,15 +120,13 @@ SVT_SHORT = "G(.265,.69)B(.15,.06)R(.68,.32)WP(.3127,.329)L(1e3,1e-4)"
         ("libsvtav1", "content-light", "70000,400", False),  # clipped to 65535
     ],
 )  # fmt: skip
-def test_r5_8_the_hdr_text_options_are_checked(
-    encoder: str, key: str, value: str, valid: bool
-) -> None:
+def test_the_hdr_text_options_are_checked(encoder: str, key: str, value: str, valid: bool) -> None:
     found = _found(encoder=encoder, bit_depth=10, advanced={key: value})
     invalid = ("encoder.option_invalid", f"video.advanced.{key}", Severity.ERROR)
     assert (invalid in found) is not valid, found
 
 
-def test_r5_8_copy_hdr_metadata_writes_valid_text() -> None:
+def test_copy_hdr_metadata_writes_valid_text() -> None:
     from reframe.definitions import hdr_options, load_definitions
     from reframe.models import ContentLightLevel, HdrInfo, MasteringDisplay
 
@@ -193,7 +191,7 @@ ARABIC_13250 = "\u0661\u0663\u0662\u0665\u0660"
         ("libx265", "master-display", " \t" + X265_MD + "\n", True),
     ],
 )  # fmt: skip
-def test_rc_2_signs_and_spaces_as_the_encoders_read_them(
+def test_signs_and_spaces_as_the_encoders_read_them(
     encoder: str, key: str, value: str, valid: bool
 ) -> None:
     found = _found(encoder=encoder, bit_depth=10, advanced={key: value})
