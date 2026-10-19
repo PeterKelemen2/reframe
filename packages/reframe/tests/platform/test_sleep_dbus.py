@@ -147,6 +147,52 @@ def test_bad_messages_raise_protocol_errors() -> None:
         dbus.decode_message(raw, [])
 
 
+def _is_open(fd: int) -> bool:
+    try:
+        os.fstat(fd)
+    except OSError:
+        return False
+    return True
+
+
+def test_a_bad_header_closes_every_queued_descriptor() -> None:
+    weird = dbus.encode(dbus.SIGNAL, 1, [])
+    fields = struct.pack("<B", 1) + b"\x01x\x00" + b"\0" * 4 + struct.pack("<q", 1)
+    raw = weird[:12] + struct.pack("<I", len(fields)) + fields
+    queued = list(os.pipe())
+    fds = list(queued)
+    try:
+        with pytest.raises(dbus.DBusProtocolError, match="unsupported type 'x'"):
+            dbus.decode_message(raw, fds)
+        assert fds == []
+        assert not any(_is_open(fd) for fd in queued)
+    finally:
+        for fd in queued:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
+def test_a_bad_body_closes_only_the_message_descriptors() -> None:
+    head = dbus.encode(
+        dbus.METHOD_RETURN,
+        3,
+        [(dbus.FIELD_REPLY_SERIAL, 2), (dbus.FIELD_SIGNATURE, "v"), (dbus.FIELD_UNIX_FDS, 1)],
+    )
+    raw = head[:4] + struct.pack("<I", 4) + head[8:] + b"\x02as\x00"
+    own, nxt = os.pipe()
+    fds = [own, nxt]
+    try:
+        with pytest.raises(dbus.DBusProtocolError, match="unsupported variant type"):
+            dbus.decode_message(raw, fds)
+        assert fds == [nxt]
+        assert not _is_open(own)
+        assert _is_open(nxt)
+    finally:
+        for fd in (own, nxt):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
 def test_parse_address() -> None:
     assert dbus.parse_address("unix:path=/run/dbus/system_bus_socket") == [
         "/run/dbus/system_bus_socket"
