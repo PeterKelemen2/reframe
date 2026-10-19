@@ -328,6 +328,17 @@ def test_ra2_reframe_probe_prints_titles_without_control_characters(
         if stream.get("tags", {}).get("title") == "Commentary":
             stream["tags"]["title"] = "Comm\x1b[32mGreen"
     data["format"]["tags"]["title"] = "Movie\x1b]0;PWNED\x07"
+    data["chapters"] = [
+        {
+            "id": 1,
+            "time_base": "1/1000",
+            "start": 0,
+            "start_time": "0.000000",
+            "end": 1000,
+            "end_time": "1.000000",
+            "tags": {"title": "Open\x1b[2Jing\nNext"},
+        }
+    ]
     path = tmp_path / "probe.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     cli_env.set_scenario(ft.Scenario([probe_rule(path)]))
@@ -337,8 +348,10 @@ def test_ra2_reframe_probe_prints_titles_without_control_characters(
     assert "\x07" not in result.stdout
     assert "Comm\ufffd[32mGreen" in result.stdout
     assert "Movie\ufffd]0;PWNED\ufffd" in result.stdout
+    assert "   1  0:00:00.000  Open\ufffd[2Jing\ufffdNext" in result.stdout.splitlines()
     raw = json.loads(invoke("probe", str(file), "--json").stdout)
     assert raw["container"]["title"] == "Movie\x1b]0;PWNED\x07"
+    assert raw["chapters"][0]["title"] == "Open\x1b[2Jing\nNext"
 
 
 def test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
