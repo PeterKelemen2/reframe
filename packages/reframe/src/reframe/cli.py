@@ -158,7 +158,9 @@ _EXIT_HELP_ENCODE = (
     "error, unknown preset, or -o with several files; 3 a path does not exist, or no media "
     "files; 130 interrupted (Ctrl+C: the jobs are cancelled first)."
 )
-_EXIT_HELP_NAME = "Exit codes: 0 named; 1 a name has errors; 2 usage error or a bad template."
+_EXIT_HELP_NAME = (
+    "Exit codes: 0 named; 1 a name has errors; 2 usage error or a bad template; 3 no media files."
+)
 _EXIT_HELP_BATCH = (
     "Exit codes: 0 every file resolved without errors (--dry-run) or every job done; 1 a file "
     "has errors, cannot be read, or a job failed, was cancelled or was not queued; 2 usage "
@@ -2083,7 +2085,10 @@ async def run_name(
         for file, root, exists in await asyncio.to_thread(name_targets, paths):
             result = await app.jobs.name(file, preset=chosen, template=template, root=root)
             named.append((file, result, exists))
-    if template is not None and named:
+    if not named:
+        _error("no media files to name.")
+        return EXIT_NOT_FOUND
+    if template is not None:
         bad = [
             issue
             for issue in named[0][1].issues
@@ -2101,7 +2106,7 @@ async def run_name(
                 console.print()
             render_name(console, file, result, exists=exists)
     has_error = any(has_errors(result.issues) for _, result, _ in named)
-    return EXIT_FAILED if has_error or not named else EXIT_OK
+    return EXIT_FAILED if has_error else EXIT_OK
 
 
 _EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one of them cannot."
