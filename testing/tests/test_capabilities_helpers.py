@@ -1,4 +1,4 @@
-"""``reframe_testing.capabilities`` and the C-4 additions to ``capture_fake_data.py``."""
+"""``reframe_testing.capabilities`` and the capture helpers in ``capture_fake_data.py``."""
 
 from __future__ import annotations
 
@@ -77,7 +77,6 @@ def test_c4_captures_are_listed_with_their_files() -> None:
 def test_only_captures_merge_into_the_index(
     fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``--only`` keeps every other capture and file (run with the fake ffmpeg into a copy)."""
     data = tmp_path / "fake_data"
     shutil.copytree(ft.DATA_DIR, data)
     monkeypatch.setattr(capture_fake_data, "DATA_DIR", data)
@@ -100,7 +99,7 @@ def test_only_captures_merge_into_the_index(
     assert after["encoders"] == before["encoders"]
     assert after["c4_hevc_nvenc_no_driver"]["exit_code"] == 255
     assert b"Cannot load libcuda.so.1" in (data / "c4_hevc_nvenc_no_driver.stderr.txt").read_bytes()
-    assert (data / "encoders.stdout.txt").is_file()  # not cleaned
+    assert (data / "encoders.stdout.txt").is_file()
     calls = fake_tools.calls()
     assert [c for c in calls if "-c:v" in c] == [
         tuple(capture_fake_data.c4_captures()["c4_hevc_nvenc_no_driver"][0])

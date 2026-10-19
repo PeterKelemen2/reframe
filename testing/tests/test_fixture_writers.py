@@ -1,6 +1,4 @@
-"""The bitstream writers of the DTS-HD MA and PGS fixtures (``reframe_testing.dts``,
-``reframe_testing.pgs``), checked without FFmpeg. ``test_media_fixtures.py`` checks that
-FFmpeg reads what they write (and decodes the DTS-HD MA track losslessly)."""
+"""The DTS-HD MA and PGS bitstream writers in ``reframe_testing``, checked without FFmpeg."""
 
 from __future__ import annotations
 
@@ -10,8 +8,6 @@ import pytest
 
 from reframe_testing import dts, pgs
 from reframe_testing.vobsub import bar_image
-
-# --------------------------------------------------------------------------- DTS: bits and CRC
 
 
 def test_crc16_ccitt() -> None:
@@ -79,9 +75,6 @@ def test_tone_frames_repeat_every_frame() -> None:
     assert [dts.frame_gain(i) for i in (0, 93, 94, 187, 188, 374)] == [0, 0, -6, -6, -12, -3]
 
 
-# --------------------------------------------------------------------------- DTS: frames
-
-
 def _field(data: bytes, start_bit: int, nbits: int) -> int:
     return int(_bits(data)[start_bit : start_bit + nbits], 2)
 
@@ -132,7 +125,7 @@ def test_exss_frame() -> None:
     assert _field(frame, 42, 1) == 0  # short header
     header_size = _field(frame, 43, 8) + 1
     assert _field(frame, 51, 16) + 1 == len(frame)
-    assert header_size % 4 == 0  # what the dts demuxer's probe wants
+    assert header_size % 4 == 0
     assert header_size >= 16
     assert len(frame) % 4 == 0
     assert dts.crc16(frame[5:header_size]) == 0  # the header CRC (from byte 5)
@@ -154,10 +147,7 @@ def test_the_stream_is_exss_frames_back_to_back() -> None:
         frames += 1
     assert pos == len(data)
     assert frames == dts.frame_count(1.0) == 94
-    assert dts.dts_hd_ma(1.0) is data  # cached: the recipe asks for it on every build
-
-
-# --------------------------------------------------------------------------- PGS
+    assert dts.dts_hd_ma(1.0) is data
 
 
 def _decode_rle(data: bytes, width: int) -> list[list[int]]:

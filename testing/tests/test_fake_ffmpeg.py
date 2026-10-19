@@ -68,9 +68,6 @@ def gone(pid: int) -> bool:
         return True
 
 
-# --------------------------------------------------------------------------- defaults
-
-
 def test_version_defaults_are_the_real_captures(fake_tools: FakeTools) -> None:
     r = run(fake_tools, "-version")
     assert r.returncode == 0
@@ -123,9 +120,6 @@ def test_no_defaults_means_silent_success(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(ft.Scenario(defaults=False))
     r = run(fake_tools, "-version")
     assert (r.returncode, r.stdout, r.stderr) == (0, b"", b"")
-
-
-# --------------------------------------------------------------------------- rules and actions
 
 
 def test_version_with_chosen_version_and_build_flags(fake_tools: FakeTools) -> None:
@@ -206,13 +200,12 @@ PINNED_BUILD = "n9.0.2-17-g2a571b6068-20260930"  # tools/ffmpeg.toml [builds.def
 
 
 def test_captures_come_from_the_pinned_build() -> None:
-    """C-4 parses -version / -encoders / -h encoder= texts of the build that ships."""
     for cap in ft.captures().values():
         assert cap.build is not None
         assert cap.build.split()[2] == PINNED_BUILD, cap.name
     version = data("ffmpeg_version.stdout.txt").decode()
     assert version.startswith(f"ffmpeg version {PINNED_BUILD} ")
-    assert "configuration: --prefix=/ffbuild/prefix" in version  # BtbN's build flags
+    assert "configuration: --prefix=/ffbuild/prefix" in version
 
 
 def test_library_strings_confirm_the_c4_texts() -> None:
@@ -227,7 +220,7 @@ def test_library_strings_confirm_the_c4_texts() -> None:
     assert util in found["Failed to initialise VAAPI connection"]
     assert util in found["No VA display found for device"]
     assert "bin/ffmpeg" in found["Conversion failed!"]
-    # names the plan or memory suggest, but the build does not contain
+    # names that the pinned build does not contain
     assert found["MFX_ERR_UNSUPPORTED"] == set()
     assert found["No NVENC capable devices found"] == set()
 
@@ -278,7 +271,7 @@ def test_crash_with_exit_code_and_plain_failure(fake_tools: FakeTools) -> None:
 def test_exit_code_for_os_fits_a_c_int() -> None:
     code = fake_ffmpeg.exit_code_for_os(0xC0000005)
     assert code == -1073741819
-    assert ctypes.c_int(code).value == code  # os._exit() accepts it (0xC0000005 overflows)
+    assert ctypes.c_int(code).value == code
     assert code & 0xFFFFFFFF == ft.WINDOWS_CRASH_CODE  # what Windows reports
     assert [fake_ffmpeg.exit_code_for_os(c) for c in (0, 1, 255, -1)] == [0, 1, 255, -1]
 
@@ -326,7 +319,7 @@ def test_crash_on_windows_exits_with_access_violation(fake_tools: FakeTools) -> 
     )
     assert r.returncode == 0xC0000005
     assert r.stderr == b""
-    assert run(fake_tools, "-i", "x", "y.mkv").returncode == 0xC0000005  # through cmd.exe
+    assert run(fake_tools, "-i", "x", "y.mkv").returncode == 0xC0000005
 
 
 def test_flood_prints_64_mib(fake_tools: FakeTools) -> None:
@@ -392,7 +385,7 @@ def test_progress_blocks_then_output(fake_tools: FakeTools, tmp_path: Path) -> N
     assert blocks[-1]["out_time"] == "00:00:08.000000"
     assert blocks[-1]["speed"].endswith("x")
     assert float(blocks[-1]["fps"]) > 0
-    # the field order is the one real ffmpeg n9.0.2 prints
+    # the field order is the one real ffmpeg prints
     real = [
         line.partition("=")[0] for line in data("progress_encode.stdout.txt").decode().splitlines()
     ]
@@ -411,7 +404,7 @@ def parse_blocks(text: str) -> list[dict[str, str]]:
 
 
 def test_real_long_progress_captures() -> None:
-    """The real multi-block runs that C-11's parser must handle (pinned build)."""
+    """The real multi-block progress captures from the pinned build."""
     caps = ft.captures()
     null = parse_blocks(data("progress_null_long.stdout.txt").decode())
     mkv = parse_blocks(data("progress_mkv_long.stdout.txt").decode())
@@ -421,11 +414,9 @@ def test_real_long_progress_captures() -> None:
         assert len(blocks) >= 5, name
         assert [b["progress"] for b in blocks] == ["continue"] * (len(blocks) - 1) + ["end"]
         assert all(tuple(b) == ft.PROGRESS_FIELDS for b in blocks), name
-    # before the first packet: N/A times and speed; -f null: bitrate and size N/A throughout
     assert {k: null[0][k] for k in fake_ffmpeg.STARTUP_BLOCK} == fake_ffmpeg.STARTUP_BLOCK
     assert all(b["bitrate"] == "N/A" for b in null)
     assert null[-1]["total_size"] == "N/A"
-    # a real file: bitrate and speed are padded with spaces
     assert all(re.fullmatch(r" *\d+\.\dkbits/s", b["bitrate"]) for b in mkv)
     assert any(b["bitrate"].startswith(" ") for b in mkv)
 
@@ -463,8 +454,8 @@ def test_progress_block_formats_like_real_ffmpeg() -> None:
     block = parse_blocks(
         fake_ffmpeg.progress_block({"blocks": 1, "bytes_per_second": 5475}, 0, 1.0)
     )[0]
-    assert block["bitrate"] == "  43.8kbits/s"  # "%6.1fkbits/s"
-    assert block["speed"] == "   2x"  # "%4.3gx"
+    assert block["bitrate"] == "  43.8kbits/s"
+    assert block["speed"] == "   2x"
     with pytest.raises(ValueError, match="unknown"):
         ft.progress(na_fields=["nope"])
 
@@ -549,9 +540,6 @@ def test_unknown_data_name_is_rejected() -> None:
         ft.stderr_data("does-not-exist.txt")
 
 
-# ------------------------------------------------------------------- process trees and signals
-
-
 def test_tree_kill_leaves_no_process(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
@@ -628,7 +616,6 @@ def test_max_lifetime_default_and_bad_values(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_kill_leftovers_kills_every_logged_process(fake_tools: FakeTools) -> None:
-    """What the ``fake_tools`` fixture teardown does when a test fails."""
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
@@ -690,9 +677,6 @@ def test_exit_on_sigterm_like_real_ffmpeg(fake_tools: FakeTools) -> None:
     assert err == b"Exiting normally, received signal 15.\n"
 
 
-# --------------------------------------------------------------------------- asyncio
-
-
 @pytest.mark.anyio
 async def test_launcher_works_with_asyncio_create_subprocess_exec(fake_tools: FakeTools) -> None:
     proc = await asyncio.create_subprocess_exec(
@@ -729,9 +713,6 @@ async def test_asyncio_timeout_and_tree_kill(fake_tools: FakeTools) -> None:
     finally:
         kill_tree(proc.pid)
         await asyncio.wait_for(proc.wait(), timeout=10)
-
-
-# --------------------------------------------------------------------------- launchers
 
 
 def test_posix_launcher_falls_back_to_sh_for_a_spaced_interpreter(tmp_path: Path) -> None:
@@ -785,7 +766,6 @@ def test_the_fake_runs_with_the_base_interpreter_not_a_venv_launcher(
     win = ft.make_fake_tools(tmp_path / "win", platform="win32")
     run_line = next(line for line in win.ffmpeg.read_text().splitlines() if "--fake-tool" in line)
     assert run_line.startswith(f'"{base}" -I ')
-    # the processes really run the base interpreter (main and grandchild)
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
@@ -853,8 +833,6 @@ def test_script_cli_entry_point(fake_tools: FakeTools) -> None:
     assert bad.returncode == 2
 
 
-# --------------------------------------------------------------------------- exec (C-11)
-
 _PRINT_ARGS = (
     "import sys; sys.stdout.write('out:' + ' '.join(sys.argv[1:])); "
     "sys.stderr.write('err'); sys.exit(3)"
@@ -862,9 +840,6 @@ _PRINT_ARGS = (
 
 
 def test_exec_passes_the_call_to_another_program(fake_tools: FakeTools) -> None:
-    """A rule that fails one command first, then a catch-all ``exec`` (as the queue tests do
-    with a real ffmpeg): the program gets the same arguments and stdio, its exit code is
-    the fake's."""
     fake_tools.set_scenario(
         ft.Scenario(
             [

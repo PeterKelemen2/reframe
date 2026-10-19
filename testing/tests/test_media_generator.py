@@ -47,8 +47,6 @@ def test_every_plan_fixture_has_a_recipe() -> None:
 
 
 def test_the_bitmap_and_lossless_fixtures_are_written_in_python() -> None:
-    """FFmpeg has no PGS or DTS-HD MA encoder: the recipes write the streams
-    (reframe_testing.pgs, reframe_testing.dts) and FFmpeg only copies them into Matroska."""
     recipes = media.build_recipes()
     hd = recipes["dts-hd-ma"]
     writes = {s.path: s.data for s in hd.steps if isinstance(s, media.WriteFile)}
@@ -79,7 +77,7 @@ def test_fixture_paths() -> None:
 
 
 def test_anime_seasons() -> None:
-    """The 04 §Example season and a second season of the same release (C-12, M7)."""
+    """The anime fixtures: season 1 and a second season of the same release."""
     recipes = media.build_recipes()
     s01, s02 = recipes["anime-s01"], recipes["anime-s02"]
     folder = "Anime.Show.S01.BluRay.x264-GRP"
@@ -142,9 +140,6 @@ def test_text_templates() -> None:
     assert text.endswith("Dialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,Hi\n")
 
 
-# --------------------------------------------------------------------------- incremental generation
-
-
 def _gen(names: list[str], out_dir: Path, tools: FakeTools, **kw: object) -> dict[str, str]:
     results = media.generate(names, out_dir=out_dir, ffmpeg=str(tools.ffmpeg), jobs=2, **kw)  # type: ignore[arg-type]
     return {r.name: r.status for r in results}
@@ -166,7 +161,6 @@ def test_incremental_generation_with_the_fake(
     assert _gen(names, out_dir, fake_tools) == dict.fromkeys(names, "up-to-date")
     assert fake_tools.calls() == []  # not even "-version": it is cached per binary
 
-    # a missing output, --force, and a recipe change regenerate
     (out_dir / "season" / "Show.S01E07.Title.mkv").unlink()
     assert _gen(names, out_dir, fake_tools) == {
         "anamorphic": "up-to-date",
@@ -274,11 +268,8 @@ def test_script_wrapper_runs(fake_tools: FakeTools, out_dir: Path) -> None:
     assert (out_dir / "vfr.mp4").is_file()
 
 
-# --------------------------------------------------------------------------- fonts
-
-
 def test_the_ass_fixture_always_attaches_the_generated_box_font() -> None:
-    """No system font: text-subs.mkv is the same on every machine (C-3 snapshots)."""
+    """No system font: text-subs.mkv is the same on every machine."""
     font = media.fixture_font()
     assert (font.family, font.file_name, font.source) == (
         boxfont.FAMILY,
@@ -294,9 +285,6 @@ def test_the_ass_fixture_always_attaches_the_generated_box_font() -> None:
     assert ffmpeg.args[ffmpeg.args.index("-attach") + 1] == "ReframeBox.ttf"
     assert not hasattr(media, "find_font")  # the system font search is gone
     assert media.GENERATOR_VERSION >= 2  # fixtures made with a system font are regenerated
-
-
-# --------------------------------------------------------------------------- manifest races
 
 
 class _RecordingLock:
@@ -432,9 +420,6 @@ def test_box_font_structure() -> None:
     assert struct.unpack(">I", tables[b"head"][12:16])[0] == 0x5F0F3CF5
     assert boxfont._checksum(font) == 0xB1B0AFBA  # checkSumAdjustment is right
     assert "Test Family".encode("utf-16-be") in tables[b"name"]
-
-
-# --------------------------------------------------------------------------- vobsub
 
 
 def _decode_rle(data: bytes, width: int, lines: int) -> list[list[int]]:
