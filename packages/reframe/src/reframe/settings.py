@@ -1,49 +1,6 @@
-"""The settings store (C-9): ``<config>/settings.json``, and the JSON file helpers that the
-preset store (``reframe.presets``) uses too.
-
-**Files.** :class:`JsonDocumentFile` reads and writes one JSON document:
-
-- Writes are atomic: the JSON goes to a temporary file in the same folder (flushed and
-  ``fsync``-ed), then ``os.replace`` puts it in place. A reader sees the old or the new file,
-  never half of one.
-- **Windows**: ``os.replace`` onto a file that another process holds open (an antivirus
-  scanner, a backup tool, a second Reframe) raises ``PermissionError`` (a sharing violation).
-  On Windows the replace is tried again :data:`REPLACE_ATTEMPTS` times with a short, growing
-  pause; then it fails, the temporary file is removed and the old file stays. On Linux a
-  ``PermissionError`` is a real permission problem and is not retried.
-- Reading accepts a UTF-8 BOM (Windows editors write one).
-- **Symbolic links** (a ``settings.json`` that links into a dotfiles folder): the read, the
-  write and the backup go to the link's target (followed to the end, as
-  ``os.path.realpath`` gives it), so the link stays a link. The temporary file is made next
-  to the target (``os.replace`` needs one file system). A dangling link gets its target
-  written. Decision 0015, follow-up.
-- **Nesting**: a document nested more than :data:`MAX_DEPTH` levels deep (objects and
-  lists) is damaged. Deeper JSON made the parser, the migrations' ``deepcopy`` or Pydantic's
-  ``model_dump`` raise ``RecursionError`` / ``ValueError``. A document that deep is never
-  written either, so a saved file always loads again.
-
-**Loading** (:meth:`SettingsStore.load`; the preset store does the same):
-
-- No file: the defaults. Nothing is written until something is saved.
-- The file runs through the schema migrations (``reframe.models.migrations``), then the model
-  validates it. Unknown fields are kept and written back (``DocumentModel``).
-- **Corrupt** (not JSON, not an object, nested too deeply, a failed migration, or a value the
-  model rejects): the
-  file is renamed to ``settings.corrupt-<time>.json`` (the backup), the defaults are written in
-  its place, and an ``app.warning`` event (``settings.corrupt``) says where the backup is.
-- **Newer** than this Reframe (``UnsupportedSchemaVersion``): the file is kept untouched and
-  the defaults are used for this session only. Saving is refused (``settings.not_saved``), so
-  the newer file is never overwritten. Warning ``settings.newer_version``.
-- **Unreadable** (permission denied, a folder in its place …): the same as newer: defaults,
-  nothing written, warning ``settings.unreadable``.
-
-**Saving** writes the current ``schema_version`` (the content is what this Reframe's model
-holds). ``Reframe.settings.update`` refuses a change of ``schema_version``
-(``settings.schema_version``).
-
-Expected failures are never exceptions: they are ``app.warning`` events, published on the
-event bus and kept in :attr:`SettingsStore.problems` (the events of the start-up load are
-published before any UI could subscribe, so a UI reads them there).
+"""The settings store: ``<config>/settings.json`` with migrations, atomic writes, and the
+handling of damaged, newer, unreadable and linked files. The JSON file helpers here are shared
+with the preset store. Expected failures are ``app.warning`` events, never exceptions.
 """
 
 from __future__ import annotations
@@ -96,13 +53,13 @@ log = logging.getLogger(__name__)
 SETTINGS_FILE = "settings.json"
 #: How often a replace that fails with ``PermissionError`` is tried on Windows.
 REPLACE_ATTEMPTS = 6
-#: The first pause between two tries (seconds); it doubles each time (about 1.5 s in all).
+#: The first pause between two tries (seconds); it doubles each time.
 REPLACE_DELAY = 0.05
 #: ``True`` on Windows: a ``PermissionError`` of ``os.replace`` is retried (tests set it).
 WINDOWS = os.name == "nt"
-#: The deepest nesting (objects and lists, the document itself is level 1) a settings or
-#: presets document may have. Reframe's own documents need fewer than 10 levels; Pydantic's
-#: ``model_dump`` fails at about 250, and the migrations' ``deepcopy`` at about 500.
+#: The deepest nesting (objects and lists, the document itself is level 1) that a settings or
+#: presets document may have. Far below the depth where the parser, Pydantic's ``model_dump``
+#: or the migrations' ``deepcopy`` fail.
 MAX_DEPTH = 64
 #: The detail of a damaged document that is nested too deeply.
 TOO_DEEP = f"the JSON is nested more than {MAX_DEPTH} levels deep"
@@ -127,8 +84,8 @@ def too_deep(value: object, limit: int = MAX_DEPTH) -> bool:
 
 
 def _link_target(path: Path) -> Path:
-    """The file that a read or write of ``path`` really touches: ``path``, or the end of
-    the chain of symbolic links at it (one place, so tests can mock it)."""
+    """The file that a read or write of ``path`` touches: ``path``, or the end of its chain of
+    symbolic links."""
     try:
         if not path.is_symlink():
             return path
@@ -138,7 +95,6 @@ def _link_target(path: Path) -> Path:
 
 
 def _replace(source: Path, target: Path) -> None:
-    """``os.replace`` (one place, so tests can make it fail)."""
     os.replace(source, target)
 
 
@@ -161,16 +117,11 @@ def replace_file(source: Path, target: Path) -> None:
             delay *= 2
 
 
-# --------------------------------------------------------------------------- JSON files
-
-
 @dataclass(frozen=True)
 class DocumentRead:
-    """What :meth:`JsonDocumentFile.read` found.
-
-    ``missing``: no file. ``unreadable``: it exists but cannot be read (``detail`` says why).
-    ``corrupt``: not UTF-8 JSON, not an object, or nested too deeply. ``ok``: ``data`` is the
-    parsed object.
+    """What :meth:`JsonDocumentFile.read` found: no file, an unreadable one (``detail`` says
+    why), a damaged one (not UTF-8 JSON, not an object, or nested too deeply), or a parsed
+    object in ``data``.
     """
 
     status: Literal["missing", "unreadable", "corrupt", "ok"]
@@ -184,8 +135,8 @@ class JsonDocumentFile:
 
     def __init__(self, path: Path, *, max_depth: int | None = MAX_DEPTH) -> None:
         """``max_depth``: a deeper document is ``corrupt`` on read and never written. ``None``:
-        the caller checks the parts itself (the preset store, so that one deep preset does
-        not damage the whole file)."""
+        the caller checks the parts itself, so that one deep preset does not damage the whole
+        file."""
         self.path = path
         self.max_depth = max_depth
 
@@ -275,8 +226,8 @@ def _os_error(exc: OSError) -> str:
 def migrate_document(
     kind: str, data: dict[str, Any], registry: MigrationRegistry | None = None
 ) -> dict[str, Any]:
-    """``reframe.models.migrations.migrate`` (the real registry), or ``registry.migrate`` when
-    one is given (tests). Raises ``UnsupportedSchemaVersion`` / ``MigrationError``."""
+    """The migrations of ``kind``: the real registry, or ``registry`` when one is given (tests).
+    Raises ``UnsupportedSchemaVersion`` / ``MigrationError``."""
     return migrate(kind, data) if registry is None else registry.migrate(kind, data)
 
 
@@ -293,7 +244,7 @@ def is_newer(exc: UnsupportedSchemaVersion) -> bool:
 
 
 def validation_detail(exc: ValidationError, limit: int = 5) -> str:
-    """A short text of a Pydantic error: ``queue.parallel_jobs: Input should be …``."""
+    """A short text of a Pydantic error: ``where: message`` for each error, up to ``limit``."""
     parts = []
     for error in exc.errors()[:limit]:
         where = ".".join(str(part) for part in error["loc"])
@@ -302,9 +253,6 @@ def validation_detail(exc: ValidationError, limit: int = 5) -> str:
     if more > 0:
         parts.append(f"… and {more} more")
     return "; ".join(parts)
-
-
-# --------------------------------------------------------------------------- settings
 
 
 @dataclass
@@ -329,8 +277,7 @@ class SettingsUpdate:
 
 
 class SettingsStore:
-    """``<config>/settings.json``: load (with migrations and the corrupt-file handling of the
-    module doc) and atomic save."""
+    """``<config>/settings.json``: load (migrations, corrupt-file handling) and atomic save."""
 
     def __init__(
         self,
@@ -349,7 +296,8 @@ class SettingsStore:
 
     @property
     def problems(self) -> list[AppWarningEvent]:
-        """The warnings of the last :meth:`load` and of later failed saves."""
+        """The warnings of the last :meth:`load` and of later failed saves. The start-up ones
+        are published before any UI can subscribe, so a UI reads them here."""
         return list(self._problems)
 
     @property
@@ -426,8 +374,6 @@ class SettingsStore:
                     error,
                 )
             return None
-
-    # ------------------------------------------------------------------ internals
 
     def _replace_corrupt(self, detail: str | None) -> AppSettings:
         try:

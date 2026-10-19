@@ -1,32 +1,8 @@
-"""Background tasks (02 §Events, C-10): folder probe, crop scan, bitrate scan, …
-
-Every long operation is a task with an id. :meth:`TaskManager.start` returns a
-:class:`~reframe.models.TaskInfo` at once; the work runs as an asyncio task and reports through
-the event bus:
-
-- ``task.progress`` (:class:`~reframe.models.TaskProgressEvent`) when the task is queued, when
-  it starts running, and on every :meth:`TaskContext.progress` call;
-- ``task.done`` (:class:`~reframe.models.TaskDoneEvent`) once, when it ends: state ``done``
-  (with ``result``), ``failed`` (with ``error``) or ``cancelled``.
-
-Events of one task are published in this order. Each event carries a copy of the
-``TaskInfo``, so later changes do not change an event that is already queued.
-
-**Concurrency limit per kind.** At most ``limit(kind)`` tasks of one kind run at the same time;
-the others wait in state ``queued`` (first in, first out).
-
-**Cancel.** :meth:`TaskManager.cancel` cancels the task's :class:`~reframe.tools.CancelToken`
-(so every ``reframe.tools.run`` call that got it kills its process tree at once) and cancels
-the asyncio task (so a ``run`` call without the token is killed too, by its own cleanup).
-A cancelled task ends in state ``cancelled``.
-
-**The task function** gets a :class:`TaskContext` (``ctx.cancel``, ``ctx.progress(...)``) and
-returns the result. The manager stores the Python value (:meth:`TaskManager.value`) and a
-JSON form in ``TaskInfo.result``: the ``result_json`` callback of :meth:`~TaskManager.start`,
-else ``model_dump(mode="json")`` for a pydantic model, the value itself if it is JSON (``None``,
-``bool``, numbers, strings, lists and dicts of these), else ``None``. An exception in the task
-function ends the task as ``failed``; it is not raised to anybody. :class:`TaskFailed` is an
-expected failure: ``TaskInfo.error`` is its message alone, and no traceback is logged.
+"""Background tasks: every long operation is a task with an id. :meth:`TaskManager.start`
+returns its :class:`~reframe.models.TaskInfo` at once, and the work reports ``task.progress``
+and ``task.done`` on the event bus, in that order. Each event carries a copy of the
+``TaskInfo``, so a later change does not alter an event that is already queued. At most
+``limit(kind)`` tasks of one kind run at the same time; the others wait in state ``queued``.
 """
 
 from __future__ import annotations
@@ -66,14 +42,14 @@ DEFAULT_LIMIT = 2
 #: Built-in limits per kind.
 DEFAULT_LIMITS: Mapping[str, int] = {
     "probe_folder": 2,
-    # C-10 (reframe.mediatask): decodes compete for the CPU, encodes even more.
+    # Decodes compete for the CPU; encodes even more.
     "bitrate_scan": 2,
     "subtitle_scan": 2,
     "loudness": 2,
     "frames": 2,
     "cropdetect": 1,
     "preview_clip": 1,
-    # C-15: one download at a time.
+    # One download at a time.
     "tools_fetch": 1,
 }
 FINISHED_STATES = frozenset({TaskState.DONE, TaskState.FAILED, TaskState.CANCELLED})
@@ -85,11 +61,10 @@ TaskFn = Callable[["TaskContext"], Awaitable[Any]]
 
 
 class TaskFailed(Exception):
-    """An expected failure inside a task function (a missing file, an unusable tool, a stream
-    that does not exist). The task ends ``failed`` with ``TaskInfo.error = str(exc)``, a
-    message for the user, and no traceback is logged. Any other exception is a bug: the task
-    ends ``failed`` with ``"<type>: <message>"`` and the traceback is logged.
-    (``reframe.mediatask.TaskFailed`` is the same class.)"""
+    """An expected failure inside a task function, with a message for the user. The task ends
+    ``failed`` with that message as ``TaskInfo.error``, and no traceback is logged. Any other
+    exception is a bug: the task ends ``failed`` too, and the traceback is logged.
+    """
 
 
 def _now() -> datetime:
@@ -196,8 +171,6 @@ class TaskManager:
         self._ids = itertools.count(1)
         self._prefix = os.urandom(3).hex()
 
-    # ------------------------------------------------------------------ limits
-
     def limit(self, kind: str) -> int:
         return self._limits.get(kind, self._default_limit)
 
@@ -215,8 +188,6 @@ class TaskManager:
         if gate is None:
             gate = self._gates[kind] = _Gate(self.limit(kind))
         return gate
-
-    # ------------------------------------------------------------------ API
 
     def start(
         self,
@@ -283,8 +254,6 @@ class TaskManager:
         handles = [t.handle for t in pending if t.handle is not None]
         if handles:
             await asyncio.gather(*handles, return_exceptions=True)
-
-    # ------------------------------------------------------------------ internals
 
     async def _run(self, task: _Task, fn: TaskFn) -> None:
         gate = self._gate(task.info.kind)

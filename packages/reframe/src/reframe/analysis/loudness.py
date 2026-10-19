@@ -1,20 +1,8 @@
-"""Loudness measure (05 §C-10): EBU R128 values of one audio track with FFmpeg's ``loudnorm``.
+"""EBU R128 loudness of one audio track, measured with FFmpeg's ``loudnorm``.
 
-**Command** (the same measurement as the ``analyse`` step of a job, C-7 / decision 0013, with
-loudnorm's default targets: the ``input_*`` values do not depend on them)::
-
-    ffmpeg -hide_banner -nostdin -nostats -progress pipe:1 [-ss <start>] -i <file> \\
-        [-t <duration>] -map 0:<index> -filter:a loudnorm=print_format=json -f null -
-
-loudnorm prints one JSON block on stderr at the end (:func:`reframe.queue.loudnorm.parse_blocks`
-finds it). Values: ``input_i`` (integrated, LUFS), ``input_tp`` (true peak, dBTP),
-``input_lra`` (loudness range, LU), ``input_thresh`` (gating threshold, LUFS). A silent track
-measures ``-inf`` (``testdata/README.md``, C-11), which is ``None`` in the result.
-
-**Progress**: ``out_time`` of the ``-progress`` blocks against the measured length (the
-``duration`` asked for, else the stream's duration minus ``start``). When no block has an
-``out_time`` above 0, nothing was decoded (a ``start`` after the end): ffmpeg exits with 0 and
-loudnorm prints the values of silence, so the task fails instead.
+The ``input_*`` values do not depend on loudnorm's targets, so its defaults are used. A silent
+track measures ``-inf``, which is ``None`` in the result (``testdata/README.md``). The progress
+is ``out_time`` of the ``-progress`` blocks against the measured length.
 """
 
 from __future__ import annotations
@@ -61,13 +49,13 @@ def parse_measurement(stderr: str) -> dict[str, float | None]:
     block = blocks[-1]
     values = {field: _value(block.get(key)) for field, key in KEYS.items()}
     lra = values["lra"]
-    if lra is not None and lra < 0:  # never seen; the model only takes LRA >= 0
+    if lra is not None and lra < 0:  # the model only takes LRA >= 0
         values["lra"] = None
     return values
 
 
 def seconds(value: float) -> str:
-    """``12.5`` → ``12.5``, ``3.0`` → ``3``: FFmpeg's time syntax (no exponent)."""
+    """Seconds in FFmpeg's time syntax, without an exponent."""
     return f"{value:.6f}".rstrip("0").rstrip(".") or "0"
 
 

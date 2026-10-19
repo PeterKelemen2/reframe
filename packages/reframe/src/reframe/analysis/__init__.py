@@ -1,23 +1,11 @@
-"""Analysis tasks (05 §C-10): bitrate scan, subtitle scans, loudness measure.
-
-Each function starts a background task (:mod:`reframe.tasks`) with the facade's
-:class:`~reframe.mediatask.MediaTaskContext` and returns its :class:`~reframe.models.TaskInfo`
-at once. The results are :mod:`reframe.models.analysis` models. ``Reframe.sources`` calls
-these (``bitrate_scan``, ``subtitle_scan``, ``loudness_scan``); the signatures are the contract
-of ``docs/core-breakdown.md``.
-
-- :mod:`reframe.analysis.bitrate`: packet sizes of one stream (ffprobe) → the average bit
-  rate, stored with the source as ``measured`` (the **Measure** button of 03 §Audio).
-- :mod:`reframe.analysis.subtitles`: event counts of subtitle tracks, forced events of PGS
-  (the forced flag in the stream) and VobSub (a ``forced_subs_only`` decode); stored with the
-  source.
-- :mod:`reframe.analysis.loudness`: ``loudnorm`` EBU R128 values of one audio track.
-
-Every task streams progress, runs its processes through :func:`reframe.tools.run_streaming`
-with the task's cancel token (``TaskManager.cancel`` kills the process tree at once), and
-ends ``failed`` with a message for the user on an expected failure (a missing file, an
-unusable tool, a stream that does not exist or has the wrong type). Why the commands are what
-they are: decision 0032 and ``testdata/README.md`` "Analysis scans".
+"""The bit rate, subtitle and loudness scans of a source. Each function starts a background
+task (:mod:`reframe.tasks`) with the facade's :class:`~reframe.mediatask.MediaTaskContext` and
+returns its :class:`~reframe.models.TaskInfo` at once. The signatures are the contract in
+``docs/core-breakdown.md``. Each task runs its processes through
+:func:`reframe.tools.run_streaming` with the task's cancel token, so a cancel kills them at
+once. An expected failure (a missing file, an unusable tool, a stream that does not exist or
+has the wrong type) ends the task ``failed`` with a message for the user. Why the commands are
+what they are: ``testdata/README.md``, "Analysis scans".
 """
 
 from __future__ import annotations
@@ -35,9 +23,9 @@ __all__ = ["start_bitrate_scan", "start_loudness_scan", "start_subtitle_scan"]
 
 
 def start_bitrate_scan(ctx: MediaTaskContext, path: Path, stream_index: int) -> TaskInfo:
-    """Task ``bitrate_scan``: the packet sizes of one stream → its average bit rate
-    (:class:`~reframe.models.BitrateScan`). Streams progress, can be cancelled. When done, the
-    measured bit rate is stored in the source (``ctx.sources.store``)."""
+    """The average bit rate of one stream, from its packet sizes
+    (:class:`~reframe.models.BitrateScan`). When done, the measured bit rate is stored in the
+    known source (``ctx.sources.store``)."""
 
     async def work(task: TaskContext) -> BitrateScan:
         return await bitrate.scan(ctx, path, stream_index, task)
@@ -50,10 +38,9 @@ def start_bitrate_scan(ctx: MediaTaskContext, path: Path, stream_index: int) -> 
 def start_subtitle_scan(
     ctx: MediaTaskContext, path: Path, stream_indexes: Sequence[int] | None
 ) -> TaskInfo:
-    """Task ``subtitle_scan``: event counts of the subtitle tracks (all when
-    ``stream_indexes`` is ``None``), and the forced events of PGS / VobSub tracks
-    (:class:`~reframe.models.SubtitleScan`). When done, the counts are stored in the source
-    (``ctx.sources.store``)."""
+    """Event counts of the subtitle tracks (all when ``stream_indexes`` is ``None``), and the
+    forced events of PGS and VobSub tracks (:class:`~reframe.models.SubtitleScan`). When done,
+    the counts are stored in the known source (``ctx.sources.store``)."""
     wanted = None if stream_indexes is None else list(stream_indexes)
 
     async def work(task: TaskContext) -> SubtitleScan:
@@ -70,8 +57,8 @@ def start_loudness_scan(
     start: float | None,
     duration: float | None,
 ) -> TaskInfo:
-    """Task ``loudness``: ``loudnorm=print_format=json`` on one audio track, the whole track
-    or ``duration`` seconds from ``start`` (:class:`~reframe.models.LoudnessMeasurement`)."""
+    """The loudness of one audio track (EBU R128, ``loudnorm``): the whole track, or
+    ``duration`` seconds from ``start`` (:class:`~reframe.models.LoudnessMeasurement`)."""
 
     async def work(task: TaskContext) -> LoudnessMeasurement:
         return await loudness.scan(ctx, path, stream_index, task, start=start, duration=duration)
