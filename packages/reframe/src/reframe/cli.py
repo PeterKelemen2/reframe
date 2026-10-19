@@ -369,7 +369,7 @@ def fmt_color(color: ColorInfo) -> str | None:
 
 
 def video_line(stream: VideoStream) -> str:
-    """03 §Summary: ``HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ``."""  # noqa: RUF002
+    """The stream as one line: ``HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ``."""  # noqa: RUF002
     parts = [stream.display_codec or stream.codec or "unknown codec"]
     parts.append(f"{stream.width}{TIMES}{stream.height}")
     avg, base = stream.avg_frame_rate, stream.frame_rate
