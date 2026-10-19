@@ -1,4 +1,4 @@
-# Dependency audits (Q-1.3): known vulnerabilities in the locked Python and npm dependencies.
+# Dependency audits: known vulnerabilities in the locked Python and npm dependencies.
 # Runs on PRs and main, and weekly, so a new advisory for an unchanged lock file is found too.
 name: Audit
 

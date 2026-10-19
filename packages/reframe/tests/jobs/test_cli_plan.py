@@ -13,7 +13,7 @@ from reframe import jobs as jobs_module
 from reframe.cli import EXIT_FAILED, EXIT_NO_FFPROBE, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
 from reframe.models import EncodePlan, JobDraft
 from reframe_testing import fake_tools as ft
-from reframe_testing.capabilities import c4_rule
+from reframe_testing.capabilities import detect_rule
 
 from .conftest import invoke, media_file, replay
 
@@ -70,7 +70,7 @@ def test_unavailable_encoder_fails_and_names_the_closest(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
     """The real FFmpeg text of a machine without the NVIDIA driver."""
-    replay(cli_env, "truehd-atmos", extra=(c4_rule("c4_hevc_nvenc_no_driver"),))
+    replay(cli_env, "truehd-atmos", extra=(detect_rule("detect_hevc_nvenc_no_driver"),))
     movie = media_file(tmp_path / "media" / Media, "movie.mkv")
     started = time.monotonic()
     result = invoke("plan", str(movie), "--preset", "H.265 NVENC 1080p")

@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config'
 
 const PLATFORMS = ['web', 'desktop'] as const
 
-// The local reframe-server (S-0 default port). The dev server forwards REST calls and the
+// The local reframe-server on its default port. The dev server forwards REST calls and the
 // `/api/events` WebSocket to it, so the browser sees one origin (CORS stays off in web mode).
 const BACKEND = 'http://127.0.0.1:8765'
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from reframe.models import ToolInfo, ToolName, ToolSet, ToolStatus
 from reframe_testing import fake_tools as ft
 
-__all__ = ["PINNED_VERSION", "StubTools", "c4_rule", "ffmpeg_info", "tool_set"]
+__all__ = ["PINNED_VERSION", "StubTools", "detect_rule", "ffmpeg_info", "tool_set"]
 
 #: ``ffmpeg -version`` of the pinned build (``tools/ffmpeg.toml``).
 PINNED_VERSION = "n9.0.2-17-g2a571b6068-20260930"
@@ -59,7 +59,7 @@ class StubTools:
         return self.tools
 
 
-def c4_rule(name: str, *, encoder: str | None = None, ten_bit: bool = False) -> ft.Rule:
+def detect_rule(name: str, *, encoder: str | None = None, ten_bit: bool = False) -> ft.Rule:
     """Replay the capture ``name`` (stderr and exit code) for the test encode of ``encoder``
     (default: the capture's ``-c:v``). ``ten_bit``: only for the 10-bit test (``p010le``)."""
     capture = ft.captures()[name]

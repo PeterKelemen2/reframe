@@ -15,14 +15,14 @@ Hardware captures depend on the machine (GPU, drivers); the ``machine`` field in
 that contain it. It confirms the exact texts of errors that cannot be provoked on the capture
 machine.
 
-The ``c4_*`` captures run the exact test-encode command of the capability detection
+The ``detect_*`` captures run the exact test-encode command of the capability detection
 (``reframe.capabilities.hardware_test_argv`` with the encoder definitions), so the reason
 mapping is tested against the command that detection runs. ``--only NAME…`` captures just those
-hardware captures (``hw_*`` with their ``.v_error`` twin, ``c4_*``), keeps the other files and
+hardware captures (``hw_*`` with their ``.v_error`` twin, ``detect_*``), keeps the other files and
 merges ``captures.json``; ``library_strings.json`` is always written again::
 
     uv run python testing/reframe_testing/capture_fake_data.py \\
-        --ffmpeg "$BIN/ffmpeg" --ffprobe "$BIN/ffprobe" --only c4_hevc_amf_no_runtime
+        --ffmpeg "$BIN/ffmpeg" --ffprobe "$BIN/ffprobe" --only detect_hevc_amf_no_runtime
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ HW_CAPTURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
 EMPTY_AMF_RUNTIME = "{folder with an empty libamfrt64.so.1}"
 
 
-def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
+def detect_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
     """The test encodes (``hardware_test_argv``) and filter run tests
     (``filter_test_argv``) captured on the capture machine: name -> (arguments without the
     ffmpeg path, extra environment variables)."""
@@ -151,23 +151,26 @@ def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
     )
     return {
         # Working encoders on the capture machine (AMD: VAAPI and AMF).
-        "c4_h264_vaapi_ok": (argv("h264_vaapi"), {}),
-        "c4_hevc_vaapi_10bit_ok": (argv("hevc_vaapi", "10"), {}),
-        "c4_hevc_amf_ok": (argv("hevc_amf"), {}),
-        "c4_hevc_amf_10bit_ok": (argv("hevc_amf", "10"), {}),
+        "detect_h264_vaapi_ok": (argv("h264_vaapi"), {}),
+        "detect_hevc_vaapi_10bit_ok": (argv("hevc_vaapi", "10"), {}),
+        "detect_hevc_amf_ok": (argv("hevc_amf"), {}),
+        "detect_hevc_amf_10bit_ok": (argv("hevc_amf", "10"), {}),
         # h264_amf has no 10-bit pixel format in the definitions; this shows why.
-        "c4_h264_amf_10bit": (h264_amf_10bit, {}),
+        "detect_h264_amf_10bit": (h264_amf_10bit, {}),
         # Failures: no NVIDIA driver, no Intel GPU, a missing render node, no VA driver, no
         # AMF runtime.
-        "c4_hevc_nvenc_no_driver": (argv("hevc_nvenc"), {}),
-        "c4_hevc_qsv_no_device": (argv("hevc_qsv"), {}),
-        "c4_h264_vaapi_bad_device": (argv("h264_vaapi", vaapi_device="/dev/dri/renderD999"), {}),
-        "c4_h264_vaapi_no_driver": (argv("h264_vaapi"), no_driver),
-        "c4_hevc_amf_no_runtime": (argv("hevc_amf"), {"LD_LIBRARY_PATH": EMPTY_AMF_RUNTIME}),
+        "detect_hevc_nvenc_no_driver": (argv("hevc_nvenc"), {}),
+        "detect_hevc_qsv_no_device": (argv("hevc_qsv"), {}),
+        "detect_h264_vaapi_bad_device": (
+            argv("h264_vaapi", vaapi_device="/dev/dri/renderD999"),
+            {},
+        ),
+        "detect_h264_vaapi_no_driver": (argv("h264_vaapi"), no_driver),
+        "detect_hevc_amf_no_runtime": (argv("hevc_amf"), {"LD_LIBRARY_PATH": EMPTY_AMF_RUNTIME}),
         # libplacebo needs a working Vulkan device (RADV on the capture machine); a Vulkan ICD
         # file that does not exist gives "no Vulkan driver".
-        "c4_libplacebo_ok": (libplacebo, {}),
-        "c4_libplacebo_no_vulkan": (libplacebo, {"VK_ICD_FILENAMES": "/nonexistent/icd.json"}),
+        "detect_libplacebo_ok": (libplacebo, {}),
+        "detect_libplacebo_no_vulkan": (libplacebo, {"VK_ICD_FILENAMES": "/nonexistent/icd.json"}),
     }
 
 
@@ -358,7 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--only",
         nargs="+",
         metavar="NAME",
-        help="capture only these hardware captures (hw_*, c4_*); keep the other files",
+        help="capture only these hardware captures (hw_*, detect_*); keep the other files",
     )
     args = parser.parse_args(argv)
     if not args.ffmpeg or not args.ffprobe:
@@ -484,7 +487,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _hardware_captures(cap: Capturer, only: set[str] | None) -> None:
-    """The ``hw_*`` captures (each with a ``-v error`` twin) and the ``c4_*`` captures
+    """The ``hw_*`` captures (each with a ``-v error`` twin) and the ``detect_*`` captures
     (``only``: just these names)."""
 
     def wanted(name: str) -> bool:
@@ -503,11 +506,13 @@ def _hardware_captures(cap: Capturer, only: set[str] | None) -> None:
         )
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "libamfrt64.so.1").write_bytes(b"")
-        for name, (c4_args, recorded) in c4_captures().items():
+        for name, (detect_args, recorded) in detect_captures().items():
             if not wanted(name):
                 continue
             env = {k: v.replace(EMPTY_AMF_RUNTIME, tmp) for k, v in recorded.items()}
-            cap.capture(name, "ffmpeg", list(c4_args), machine=True, env=env, recorded_env=recorded)
+            cap.capture(
+                name, "ffmpeg", list(detect_args), machine=True, env=env, recorded_env=recorded
+            )
 
 
 def _write_indexes(cap: Capturer, ffmpeg: str) -> None:

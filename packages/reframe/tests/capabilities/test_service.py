@@ -189,7 +189,7 @@ async def test_a_new_ffmpeg_starts_a_new_detection(
                 [
                     ft.Rule(
                         argv_has=["-c:v", "hevc_amf"],
-                        actions=[ft.stderr_data("c4_hevc_amf_no_runtime.stderr.txt")],
+                        actions=[ft.stderr_data("detect_hevc_amf_no_runtime.stderr.txt")],
                         exit_code=171,
                     )
                 ]
@@ -269,7 +269,7 @@ async def test_a_changed_status_is_published(harness: Harness, fake_tools: ft.Fa
             [
                 ft.Rule(
                     argv_has=["-c:v", "hevc_amf"],
-                    actions=[ft.stderr_data("c4_hevc_amf_no_runtime.stderr.txt")],
+                    actions=[ft.stderr_data("detect_hevc_amf_no_runtime.stderr.txt")],
                     exit_code=171,
                 )
             ]
@@ -348,12 +348,12 @@ async def test_closest_available(harness: Harness, fake_tools: ft.FakeTools) -> 
             [
                 ft.Rule(
                     argv_has=["-c:v", "hevc_nvenc"],
-                    actions=[ft.stderr_data("c4_hevc_nvenc_no_driver.stderr.txt")],
+                    actions=[ft.stderr_data("detect_hevc_nvenc_no_driver.stderr.txt")],
                     exit_code=255,
                 ),
                 ft.Rule(
                     argv_has=["-c:v", "hevc_qsv"],
-                    actions=[ft.stderr_data("c4_hevc_qsv_no_device.stderr.txt")],
+                    actions=[ft.stderr_data("detect_hevc_qsv_no_device.stderr.txt")],
                     exit_code=187,
                 ),
             ]
@@ -622,7 +622,7 @@ async def test_a_new_ffmpeg_does_not_show_the_old_filter_results(
 ) -> None:
     """A re-scan of the same ffmpeg keeps the last filter results until the new ones are in;
     another ffmpeg starts without them."""
-    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
         ft.Scenario(
@@ -679,7 +679,7 @@ async def test_a_failing_tool_discovery_ends_the_detection(harness: Harness) -> 
 
 def no_driver_on(node: str) -> ft.Rule:
     """The real "no VA driver" failure for every VAAPI test encode on ``node``."""
-    capture = ft.captures()["c4_h264_vaapi_no_driver"]
+    capture = ft.captures()["detect_h264_vaapi_no_driver"]
     assert capture.stderr is not None
     return ft.Rule(
         actions=[ft.stderr_data(capture.stderr)],
@@ -744,7 +744,7 @@ async def test_the_setting_and_the_nodes_are_in_the_cache_key(
 async def test_libplacebo_result_is_in_the_snapshot(
     harness: Harness, fake_tools: ft.FakeTools
 ) -> None:
-    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
         ft.Scenario(
