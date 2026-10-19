@@ -587,7 +587,10 @@ class PowerService:
         action = countdown.action
         if action == "quit":
             self._publish(countdown, "executing", 0)
-            log.info("power action quit: the UI layer quits (countdown %s)", countdown.id)
+            log.info(
+                "power action quit: only the executing event is published (countdown %s)",
+                countdown.id,
+            )
             return
         # The action runs in its own task, which close() never cancels; registered in the
         # same step as `executing`, so `pending` never shows a gap.

@@ -192,6 +192,7 @@ def _hello(conn: socket.socket, buf: bytearray) -> None:
 
 
 def _retyped(message: bytes, code: int) -> bytes:
+    """``message`` whose first header field (a string) gets the field code ``code``."""
     data = bytearray(message)
     data[16] = code
     return bytes(data)

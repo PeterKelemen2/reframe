@@ -11,6 +11,7 @@ import sys
 import textwrap
 import threading
 import time
+import types
 from pathlib import Path
 
 import psutil
@@ -205,9 +206,14 @@ async def test_cancel_from_another_thread_reacts_quickly(fake_tools: ft.FakeTool
     _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.stdout("ready\n"), ft.hang()]))
     token = CancelToken()
     cancelled_at: list[float] = []
+    returned = threading.Event()
 
     def cancel_later() -> None:
+        deadline = time.monotonic() + 30.0
         while not fake_tools.pids():
+            if returned.is_set() or time.monotonic() > deadline:
+                token.cancel()  # never started: let run() return, the assert below fails
+                return
             time.sleep(0.01)
         time.sleep(0.2)
         cancelled_at.append(time.monotonic())
@@ -215,9 +221,13 @@ async def test_cancel_from_another_thread_reacts_quickly(fake_tools: ft.FakeTool
 
     thread = threading.Thread(target=cancel_later)
     thread.start()
-    result = await run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token)
-    returned_at = time.monotonic()
-    thread.join()
+    try:
+        result = await run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token)
+        returned_at = time.monotonic()
+    finally:
+        returned.set()
+        thread.join()
+    assert cancelled_at, f"the fake ffmpeg never started: {result.error or result.stderr_text}"
     assert result.cancelled
     latency = returned_at - cancelled_at[0]
     # The token wakes the loop at once; the rest is the kill and the reap.
@@ -353,6 +363,31 @@ def test_kill_leftovers_on_windows_kills_the_orphans(monkeypatch: pytest.MonkeyP
     killed = runner_mod.kill_leftovers(4242, created_after=1000.0, platform="win32")
     assert trees == [10]
     assert [p.pid for p in killed] == [10]
+
+
+def test_kill_leftovers_on_posix_kills_the_process_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POSIX branch (mocked, as Windows has no process groups): every member of the group."""
+
+    class Proc:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+    groups = {10: 4242, 11: 4242, 12: 1}
+    signalled: list[tuple[int, int]] = []
+
+    def getpgid(pid: int) -> int:
+        return groups[pid]
+
+    def killpg(pgid: int, signum: int) -> None:
+        signalled.append((pgid, int(signum)))
+
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(map(Proc, groups)))
+    monkeypatch.setattr(os, "getpgid", getpgid, raising=False)
+    monkeypatch.setattr(os, "killpg", killpg, raising=False)
+    monkeypatch.setattr(runner_mod, "sys", types.SimpleNamespace(platform="win32"))
+    killed = runner_mod.kill_leftovers(4242, platform="linux")
+    assert [p.pid for p in killed] == [10, 11]
+    assert signalled == [(4242, 9)]
 
 
 async def test_zero_output_limit_stores_nothing(fake_tools: ft.FakeTools) -> None:

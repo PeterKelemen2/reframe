@@ -27,8 +27,9 @@ import socket
 import struct
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 __all__ = [
     "DEFAULT_SYSTEM_BUS",
@@ -394,18 +395,47 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
     """Parse one complete message. Takes ``UNIX_FDS`` descriptors from the front of ``fds``.
 
     Bodies that use other types are left empty (this client never needs them). Raises only
-    :class:`DBusProtocolError` (and then closes the message's descriptors), whatever the bytes
-    are.
+    :class:`DBusProtocolError`, whatever the bytes are, and then has closed the message's
+    descriptors. After a bad header it closes all of ``fds``: which message owns which is
+    then unknown.
     """
     try:
-        return _decode_message(data, fds)
+        with _malformed_is_protocol_error():
+            header = _decode_header(data)
     except DBusProtocolError:
+        _close_all(fds)
+        fds.clear()
         raise
+    n_fds = int(header.fields.get(FIELD_UNIX_FDS, 0))
+    own_fds = fds[:n_fds]
+    del fds[:n_fds]
+    try:
+        with _malformed_is_protocol_error():
+            body = _decode_body(data, header)
+    except DBusProtocolError:
+        _close_all(own_fds)
+        raise
+    return Message(header.msg_type, header.serial, header.fields, body, own_fds)
+
+
+@contextlib.contextmanager
+def _malformed_is_protocol_error() -> Iterator[None]:
+    try:
+        yield
     except (ValueError, IndexError, struct.error) as exc:  # garbage that slipped through
         raise DBusProtocolError(f"malformed message: {type(exc).__name__}: {exc}") from None
 
 
-def _decode_message(data: bytes, fds: list[int]) -> Message:
+class _Header(NamedTuple):
+    endian: str
+    msg_type: int
+    serial: int
+    fields: dict[int, str | int]
+    body_start: int
+    body_len: int
+
+
+def _decode_header(data: bytes) -> _Header:
     if len(data) < 16:
         raise DBusProtocolError("message ends early")
     endian = _endian(data[0:1])
@@ -430,21 +460,16 @@ def _decode_message(data: bytes, fds: list[int]) -> Message:
         fields[code] = value
     reader.pos = end
     reader.align(8)
-    body_start = reader.pos
-    n_fds = int(fields.get(FIELD_UNIX_FDS, 0))
-    own_fds = fds[:n_fds]
-    del fds[:n_fds]
-    body: list[str | int] = []
-    sig = str(fields.get(FIELD_SIGNATURE, ""))
-    if sig and all(c in "sogyuhibv" for c in sig):
-        body_reader = _Reader(data[: body_start + body_len], endian)
-        body_reader.pos = body_start
-        try:
-            body = [body_reader.value(c) for c in sig]
-        except DBusProtocolError:
-            _close_all(own_fds)
-            raise
-    return Message(msg_type, serial, fields, body, own_fds)
+    return _Header(endian, msg_type, serial, fields, reader.pos, body_len)
+
+
+def _decode_body(data: bytes, header: _Header) -> list[str | int]:
+    sig = str(header.fields.get(FIELD_SIGNATURE, ""))
+    if not sig or not all(c in "sogyuhibv" for c in sig):
+        return []
+    reader = _Reader(data[: header.body_start + header.body_len], header.endian)
+    reader.pos = header.body_start
+    return [reader.value(c) for c in sig]
 
 
 def _close_all(fds: Sequence[int]) -> None:
