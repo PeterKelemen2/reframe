@@ -1,9 +1,7 @@
-"""Source tracks for the C-12 defaults tests (selection, ``explain``, lint).
+"""Hand-built source tracks for the batch default tests.
 
-Loaded with ``importlib`` by the test files (pytest runs with ``--import-mode=importlib``).
-Streams are built without the prober, so they have only the roles a test gives them; the
-selection also reads the disposition flags (``comment``, ``visual_impaired``,
-``clean_effects``, ``forced``).
+Streams are built without the prober, so they have only the roles and disposition flags that
+a test gives them.
 """
 
 from __future__ import annotations

@@ -1,9 +1,8 @@
-"""Property tests of the batch engine (C-12 M7, decision 0040):
+"""Property tests of the batch engine: derived templates, overrides and fingerprint levels.
 
-- a template derived from a file resolves to the same tracks on that file (exactly, unless
-  the file has indistinguishable twins: then by order, with an "ambiguous" warning);
-- a per-file override survives a change of the template, and the change reaches the rest;
-- the fingerprint levels nest: equal at strict ⇒ equal at standard ⇒ equal at loose.
+A template derived from a file resolves to that file's tracks, in order when tracks are twins.
+The fingerprint levels nest: equal at strict implies equal at standard, and equal at standard
+implies equal at loose.
 """
 
 from __future__ import annotations

@@ -1,17 +1,4 @@
-"""C-12 M7: the fixes of the core-complete review (2026-10-16; decision 0040 "Follow-up").
-
-- R2-2: roles that C-3 infers from per-episode statistics (heuristic evidence) neither split a
-  season nor break a derived rule: fingerprints and selectors use flag and title roles only.
-- R2-3: a per-file override that changes the structure of the rule lists is
-  ``batch.override_invalid`` (its template part is not applied), so the row's cells stay in
-  the template's columns.
-- R2-4: a changed track counts once at every level (the loose level too).
-- R2-6: the matrix names the season when a group spans seasons, and a file name when two rows
-  would have one label.
-- The suspected points: a hand pick counts as an exact match for relaxation; a source track
-  that two rules take is the first of its language for both; a rule with settings of the
-  other kind is not "✓ exact" in the matrix.
-"""
+"""Batch engine regression tests: roles, overrides, match levels, labels and rule matching."""
 
 from __future__ import annotations
 
@@ -75,13 +62,7 @@ OPS = TypeAdapter(list[JsonPatchOp])
 DEFS = load_definitions()
 
 
-# --------------------------------------------------------------------------- R2-2
-
-
 def _episode_with_counts(episode: int, signs_events: int, full_events: int) -> MediaSource:
-    """An episode of the 04 example whose first subtitle is an untitled, unflagged track with
-    ``NUMBER_OF_FRAMES`` statistics (a signs track as mkvmerge writes it): C-3's heuristic
-    calls it forced when it has at most 25 % of the full track's events."""
     rel = f"{A.media.anime_folder(1)}/{A.media.anime_file_name(1, episode)}"
     data = json.loads((A.PROBES / f"{rel}.json").read_text(encoding="utf-8"))
     signs, full = [s for s in data["streams"] if s["codec_type"] == "subtitle"]
@@ -93,9 +74,7 @@ def _episode_with_counts(episode: int, signs_events: int, full_events: int) -> M
 
 
 def test_heuristic_roles_neither_split_a_season_nor_break_a_derived_rule() -> None:
-    """R2-2: the signs track has 22 % of the full track's events in E01 and 27 % in E02 (the
-    heuristic's limit is 25 %): one release, one layout, one group, and the rule derived from
-    E01 matches E02 exactly."""
+    """The signs track is forced at 22 % of the full track's events, but not at 27 %."""
     e01 = _episode_with_counts(1, 90, 400)
     e02 = _episode_with_counts(2, 110, 400)
     signs01, signs02 = e01.subtitles[0], e02.subtitles[0]
@@ -111,8 +90,8 @@ def test_heuristic_roles_neither_split_a_season_nor_break_a_derived_rule() -> No
         [TrackRole.MAIN],
         [TrackRole.MAIN],
     ]
-    # The untitled signs track: its rule can only go by order (2 candidates, 0040 §2), in
-    # E01 as in E02; never "✗ none".
+    # The untitled signs track: its rule can only go by order (2 candidates), in E01 as in
+    # E02; never "✗ none".
     for source in (e01, e02):
         row = resolve(template, source)
         assert [(m.status, m.streams) for m in row.matches if m.kind == "subtitle"] == [
@@ -123,8 +102,7 @@ def test_heuristic_roles_neither_split_a_season_nor_break_a_derived_rule() -> No
 
 
 def test_descriptor_roles_have_flag_or_title_evidence() -> None:
-    """R2-2: a heuristic role (C-3's untitled low-bitrate 2.0 commentary, a forced track by its
-    event count) is not a descriptor role; flag and title roles are."""
+    """A heuristic role is not a descriptor role; flag and title roles are."""
     heuristic = AudioStream.model_validate(
         {
             "index": 2,
@@ -154,13 +132,8 @@ def test_descriptor_roles_have_flag_or_title_evidence() -> None:
     assert stream_roles(forced) == [TrackRole.SIGNS]
 
 
-# --------------------------------------------------------------------------- R2-3
-
-
 def test_an_override_that_changes_the_rule_lists_is_invalid() -> None:
-    """R2-3: removing, adding or moving a rule for one file would put the file's cells under
-    other rules' columns: such an override is ``batch.override_invalid``, and its template
-    part is not applied (the cells stay in the template's columns)."""
+    """A change to the rule list would put this file's cells under other rules' columns."""
     template = A.example_template()
     sources = A.season(1)[:3]
     (group,) = group_sources(sources, "standard")
@@ -200,13 +173,8 @@ def test_an_override_that_changes_the_rule_lists_is_invalid() -> None:
     assert all(i.severity.value != "error" for i in row.issues)
 
 
-# --------------------------------------------------------------------------- R2-4
-
-
 def test_a_changed_track_counts_once_at_every_level() -> None:
-    """R2-4 (0040 §3: an extra, a missing or a changed track each count 1): an episode whose
-    dub and full subtitles are German instead of English has 2 changed tracks at every
-    level, so the loose level keeps it as a near member as the standard level does."""
+    """Each changed track counts 1 at every level, so two German tracks count 2 at each."""
     e01, e03 = A.recorded(1, 1), A.recorded(1, 3)
     e02 = A.recorded(1, 2)
     audio = [e02.audio[0], e02.audio[1].model_copy(update={"language": "ger"})]
@@ -243,12 +211,8 @@ def test_loose_pairs_changed_tracks_by_kind() -> None:
     ]
 
 
-# --------------------------------------------------------------------------- R2-6
-
-
 def test_matrix_labels_name_the_season_when_a_group_spans_seasons() -> None:
-    """R2-6: ``reframe batch <S01> <S02>`` makes one group (one layout); its rows are
-    ``S01E01`` … ``S02E01``, not two ``E01``."""
+    """A group that spans two seasons labels its rows by season, not as two ``E01``."""
     sources = [*A.season(1)[:2], *A.season(2)[:2]]
     (group,) = group_sources(sources, "standard")
     template = A.example_template()
@@ -283,9 +247,6 @@ def test_episode_labels() -> None:
     ]
 
 
-# --------------------------------------------------------------------------- suspected points
-
-
 def _audio_rule(**kw: Any) -> OutputTrackRule:
     settings = kw.pop("settings", AudioOutputSettings())
     return OutputTrackRule(
@@ -294,7 +255,7 @@ def _audio_rule(**kw: Any) -> OutputTrackRule:
 
 
 def test_a_hand_pick_counts_as_an_exact_match() -> None:
-    """0040 §2: a relaxed rule never takes a track that another rule matches exactly; a track
+    """A relaxed rule never takes a track that another rule matches exactly, and a track
     picked by hand (``selector.stream``) is such a match."""
     e05 = A.recorded(1, 5)  # #1 jpn TrueHD, #2 eng DTS-HD MA, #3 eng AC-3 2.0 "Commentary"
     rules = [
