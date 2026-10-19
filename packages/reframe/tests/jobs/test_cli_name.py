@@ -1,4 +1,4 @@
-"""``reframe name`` on the two demo cases of ``testdata/names.toml``: the folder name wins for
+"""``reframe name`` on two cases of ``testdata/names.toml``: the folder name wins for
 Hacksaw Ridge, the file name for a Sopranos season pack."""
 
 from __future__ import annotations
