@@ -271,8 +271,8 @@ def test_ra2_preset_line_of_batch_and_encode_has_no_control_characters(
     encode = invoke("encode", str(folder), "--preset", "evil")
     assert ESC not in batch.stdout, batch.stdout.splitlines()[0]
     assert ESC not in encode.stdout, encode.stdout.splitlines()[0]
-    assert batch.stdout.splitlines()[0] == "Preset: Evil�[31mRED"
-    assert encode.stdout.splitlines()[0] == "Preset: Evil�[31mRED"
+    assert batch.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
+    assert encode.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
 
 
 def escaped_probe(tmp_path: Path, name: str, old: str, new: str) -> Path:
@@ -311,9 +311,9 @@ def test_ra2_titles_and_file_names_in_the_batch_output_are_printable(
     assert result.exit_code == EXIT_OK, result.output
     out = result.stdout
     assert ESC not in out, out
-    assert 'extra track (eng AC-3 2.0 "Comm�[32mGreen")' in out
+    assert 'extra track (eng AC-3 2.0 "Comm\ufffd[32mGreen")' in out
     # The member list and the matrix row label.
-    assert out.count("Anime.Show.S01E01.�[31mRed.WEB.x264-GRP.mkv") == 2
+    assert out.count("Anime.Show.S01E01.\ufffd[31mRed.WEB.x264-GRP.mkv") == 2
     assert "Anime.Show.S01E01.[31mRed.mkv" in out
 
 
@@ -335,8 +335,8 @@ def test_ra2_reframe_probe_prints_titles_without_control_characters(
     assert result.exit_code == EXIT_OK, result.output
     assert ESC not in result.stdout, result.stdout
     assert "\x07" not in result.stdout
-    assert "Comm�[32mGreen" in result.stdout
-    assert "Movie�]0;PWNED�" in result.stdout
+    assert "Comm\ufffd[32mGreen" in result.stdout
+    assert "Movie\ufffd]0;PWNED\ufffd" in result.stdout
     raw = json.loads(invoke("probe", str(file), "--json").stdout)
     assert raw["container"]["title"] == "Movie\x1b]0;PWNED\x07"
 
