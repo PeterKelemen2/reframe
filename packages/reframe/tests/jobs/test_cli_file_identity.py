@@ -22,7 +22,7 @@ from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
 from .conftest import Queues, invoke, media_file, probe_json, probe_rule, recorded, replay
-from .test_cli_review_fixes import (
+from .test_cli_output_names import (
     E01,
     E01_OUT,
     S01,
