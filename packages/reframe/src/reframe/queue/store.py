@@ -42,6 +42,7 @@ from reframe.models.job import JobSettings
 from reframe.models.migrations import MigrationError, load_document
 from reframe.models.plan import EncodePlan
 from reframe.models.queue import JobState, QueueJob
+from reframe.models.text import json_text
 from reframe.settings import TOO_DEEP, too_deep
 
 __all__ = ["SCHEMA_VERSION", "STORE_FILE", "QueueStore", "Row", "StoreLoad", "row_of"]
@@ -105,7 +106,7 @@ class _TooDeep(ValueError):
 
 
 def _json(data: Any) -> str:
-    return json.dumps(data, ensure_ascii=True, separators=(",", ":"))
+    return json_text(data, separators=(",", ":"))
 
 
 def _text(value: str | None) -> str | bytes | None:
