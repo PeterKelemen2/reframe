@@ -1,36 +1,5 @@
-"""The audio defaults lint (05 §C-12; 03 §Audio defaults → How the defaults are applied;
-decision 0031).
-
-``validate_template`` (C-8) adds :func:`lint_defaults`' issues to a preset's issues; the draft
-(``draft_tracks``, the live preview) adds them with the source-dependent ones. Paths are
-template paths (``audio_defaults.codec_rules[1].max_bitrate``); fixes are JSON patches on the
-template (``Fix.target = "template"``).
-
-=================================  ========  ==================================================
-Code                               Severity  When
-=================================  ========  ==================================================
-``defaults.rule_unreachable``      warning   A rule can match no track at all: an empty
-                                             language list; languages the selection never
-                                             takes (explicit languages, other languages
-                                             dropped, no listed language: take none); or an
-                                             earlier rule takes every track (any language, any
-                                             channels, not limited to the first track)
-``defaults.rule_shadowed``         warning   An earlier rule matches every track this rule
-                                             would (its languages and channels contain this
-                                             rule's)
-``defaults.bitrate_snapped``       info      The max is outside the encoder's range (or not
-                                             an allowed step) for a layout the rule writes;
-                                             the note names the written value (C-6's snap,
-                                             decision 0025)
-``defaults.codec_not_in_container`` error    A rule, extra output or fallback encoder the
-                                             container cannot hold; fixes: another encoder,
-                                             another container
-``defaults.rule_unused``           info      (with a source) no selected track of the source
-                                             is encoded by the rule (the catch-all is not
-                                             reported)
-=================================  ========  ==================================================
-
-Pure: no I/O.
+"""The audio defaults lint: problems of the codec rules, each with fixes that are JSON patches
+on the template. Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -111,12 +80,8 @@ def _fix(label: str, *ops: JsonPatchOp) -> Fix:
     return Fix(label=label, patch=list(ops), target="template")
 
 
-# --------------------------------------------------------------------------- rule conditions
-
-
 def describe_rule(rule: AudioCodecRule) -> str:
-    """``Hungarian, 5.1 or more``, ``any language, any channels``,
-    ``Hungarian or English, stereo or less, the first track of a language``."""
+    """The rule's languages, channel condition and first-track limit, in words."""
     if rule.languages is None:
         langs = "any language"
     elif not rule.languages:
@@ -163,9 +128,6 @@ def _overlaps(a: str, b: str) -> bool:
     return matches(a, b) or matches(b, a)
 
 
-# --------------------------------------------------------------------------- reachability
-
-
 def _move_fixes(index: int, above: int, rules: Sequence[AudioCodecRule]) -> list[Fix]:
     """Move rule ``index`` above rule ``above``, or remove it (never the catch-all)."""
     base = "/audio_defaults/codec_rules"
@@ -195,8 +157,8 @@ def _move_fixes(index: int, above: int, rules: Sequence[AudioCodecRule]) -> list
 
 
 def _outside_selection(defaults: AudioDefaults, rule: AudioCodecRule) -> list[str] | None:
-    """The rule's languages when the selection never takes a track in any of them (explicit
-    selection languages, other languages dropped, no listed language: take none)."""
+    """The rule's languages when the selection never takes a track in any of them, else
+    ``None``."""
     selection = defaults.selection
     listed = selection.languages
     if (
@@ -219,8 +181,8 @@ def _reachability(defaults: AudioDefaults, index: int) -> ValidationIssue | None
     path = _rules_path(index)
     base = "/audio_defaults/codec_rules"
     if rule.languages is not None and not rule.languages:
-        # Never the last rule (the model wants the catch-all there). "Any language" is not
-        # offered when it would make an Any / Any rule that hides every later rule.
+        # "Any language" is not offered when it would make a rule that takes every track, which
+        # hides every later rule.
         anything = rule.model_copy(update={"languages": None})
         any_language = [
             _fix("Match any language", ReplaceOp(path=f"{base}/{index}/languages", value=None))
@@ -272,9 +234,6 @@ def _reachability(defaults: AudioDefaults, index: int) -> ValidationIssue | None
     return None
 
 
-# --------------------------------------------------------------------------- bit rates
-
-
 def _bitrate_issue(
     path: str,
     encoder: AudioEncoderDef,
@@ -284,14 +243,13 @@ def _bitrate_issue(
     container: Container,
     defs: Definitions,
 ) -> ValidationIssue | None:
-    """``defaults.bitrate_snapped`` when ``maximum`` is not what C-7 writes for a layout the
-    rule makes (the same table as the codec rules, :func:`bitrate_table`).
+    """``defaults.bitrate_snapped`` when ``maximum`` is not what the command builder writes for
+    a layout the rule makes (the same table as the codec rules, :func:`bitrate_table`).
 
-    The layouts: a rule that downmixes to a fixed layout (mono, stereo, Dolby Pro Logic II,
-    5.1) is checked for the sources it downmixes, the layout it was written for; a source
-    with fewer channels keeps its own layout (no upmix), and its snap is a note of that
-    source's decision. A rule that keeps the layout (``keep``, ``up_to_5.1``) is checked for
-    every layout its channel condition allows (mono, stereo, 5.1, 7.1)."""
+    A rule that downmixes to a fixed layout is checked for the sources it downmixes. A source
+    with fewer channels keeps its own layout (no upmix), and its snap is a note of that source's
+    decision. A rule that keeps the layout (``keep``, ``up_to_5.1``) is checked for every layout
+    its channel condition allows."""
     if encoder.bitrate is None:
         return None
     counts = _CHANNELS[condition]
@@ -325,9 +283,6 @@ def _bitrate_issue(
         "; ".join(notes) + ".",
         *fixes,
     )
-
-
-# --------------------------------------------------------------------------- containers
 
 
 def _encoders(defaults: AudioDefaults) -> list[tuple[str, str]]:
@@ -392,9 +347,6 @@ def _container_issues(
     return issues
 
 
-# --------------------------------------------------------------------------- the lint
-
-
 def lint_rules(
     defaults: AudioDefaults,
     *,
@@ -404,8 +356,7 @@ def lint_rules(
     container_codecs: bool = True,
 ) -> list[ValidationIssue]:
     """The lint of :func:`lint_defaults`. ``used``: the 1-based numbers of the rules that
-    encoded a selected track of a source (``None``: no source, no ``defaults.rule_unused``).
-    ``container_codecs``: :func:`lint_defaults`."""
+    encoded a selected track of a source (``None``: no source, so no ``defaults.rule_unused``)."""
     defs = definitions or load_definitions()
     rules = defaults.codec_rules
     issues: list[ValidationIssue] = []
@@ -471,17 +422,15 @@ def lint_defaults(
     preferred_languages: Sequence[str] = (),
     container_codecs: bool = True,
 ) -> list[ValidationIssue]:
-    """Problems of the codec rules: a rule shadowed by an earlier rule (warning), an
-    unreachable rule (warning), a max bitrate outside the encoder's range (info: snapped, the
-    note names the written value), a codec the container cannot hold (error, with fixes); with
-    ``source``, a rule that no selected track of that source uses (info; the selection uses
-    ``preferred_languages``, Settings → preferred audio languages). Paths are template paths
-    (``audio_defaults.codec_rules[1].max_bitrate``); fixes target ``"template"``. Pure.
+    """Problems of the codec rules: shadowed or unreachable rules (warning), a max bitrate that
+    the encoder snaps (info; the note names the written value), and an encoder the container
+    cannot hold (error, with fixes). With ``source``, also the rules that no selected track of
+    that source uses (info), with the selection taking ``preferred_languages``. Paths are
+    template paths; fixes target ``"template"``.
 
-    ``container_codecs=False`` leaves out ``defaults.codec_not_in_container``: C-8's
-    ``container.codec_unsupported`` reports the same encoders of a template (with fixes that
-    know which encoders are available), so ``validate_template`` can pass it to give one
-    issue per problem (decision 0031)."""
+    ``container_codecs=False`` leaves out ``defaults.codec_not_in_container``, for a caller whose
+    own check reports the same encoders.
+    """
     defs = definitions or load_definitions()
     used: set[int] | None = None
     if source is not None:

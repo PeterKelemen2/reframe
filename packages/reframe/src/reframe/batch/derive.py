@@ -1,37 +1,9 @@
-"""Deriving a template from one file's job, and merging templates (04 §Three ways to edit,
-§Deriving rules from a manual selection; 05 §C-12, M7).
+"""Deriving a template from one file's job, and merging templates into a group's template.
 
-*Apply to group…* and *Copy / paste sections* turn a job into a :class:`~reframe.models.
-JobTemplate` (:func:`derive_template`) and merge its sections into the group template
-(:func:`merge_template`). The sections and the template fields they hold:
-
-==============  ===================================================================
-Section         Template fields
-==============  ===================================================================
-``dimensions``  ``dimensions``, ``crop_policy`` (a manual crop is ``fixed`` for every
-                file; an automatic one is detected per file, without this file's rect)
-``filters``     ``filters``
-``video``       ``video`` (the video track's metadata is per file)
-``audio``       ``audio_rules`` (one rule per output track), ``audio_defaults``
-``subtitles``   ``subtitle_rules`` (one rule per output track from a source track;
-                external subtitle files are per file), ``subtitle_defaults``
-``chapters``    ``chapters``, ``chapter_name_policy`` (generated names stay generated;
-                edited names are per file)
-``tags``        ``tags``
-``naming``      ``naming`` (the job's own template and name source; a manual name and
-                parsed-name corrections are per file)
-==============  ===================================================================
-
-Output options (container, web optimized, …) are in no section: they stay the base's
-(decision 0040).
-
-A track rule gets **the most specific selector** of its source track: its language, codec,
-commercial name (audio), channels (audio), roles, ``^title$`` and the ``nth`` that picks it
-among the tracks this selector finds in the file. The track's settings become fixed settings;
-its language and six flags are written as they are; its name only when it is not the source
-track's title (an unchanged name stays "from the source" in every file).
-
-Pure: no I/O.
+Sections carry the template fields of the job, but not its per-file parts: a manual crop is
+``fixed`` for every file and an automatic one is detected per file, and the video track's
+metadata, external subtitle files, edited chapter names and a manual name stay per file.
+Output options are in no section, so they stay the base's. Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -72,7 +44,7 @@ __all__ = [
     "merge_template",
 ]
 
-#: Every section, in the order of 04's *Apply to group…* dialog.
+#: Every section, in display order.
 SECTIONS: tuple[TemplateSection, ...] = (
     "dimensions",
     "filters",
@@ -99,8 +71,8 @@ _FLAGS = ("default", "forced", "commentary", "hearing_impaired", "visual_impaire
 
 
 def as_template(template: JobTemplate) -> JobTemplate:
-    """A copy of ``template`` as a plain :class:`~reframe.models.JobTemplate` (a preset's id,
-    name, category, description and built-in flag left out; unknown fields kept)."""
+    """A copy of ``template`` as a plain :class:`~reframe.models.JobTemplate`: the preset-only
+    fields are left out, unknown fields are kept."""
     data = template.model_dump(mode="json", exclude=set(_PRESET_ONLY))
     return JobTemplate.model_validate(data)
 
@@ -108,8 +80,8 @@ def as_template(template: JobTemplate) -> JobTemplate:
 def merge_template(
     base: JobTemplate, incoming: JobTemplate, sections: Collection[TemplateSection]
 ) -> JobTemplate:
-    """``base`` with the fields of ``incoming``'s ``sections`` (04: *Apply to group…*).
-    The result is a plain template (see :func:`as_template`); neither input changes."""
+    """``base`` with the fields of ``incoming``'s ``sections``. The result is a plain template
+    (see :func:`as_template`); neither input changes."""
     copied = incoming.model_copy(deep=True)
     update = {
         name: getattr(copied, name)
@@ -120,16 +92,11 @@ def merge_template(
     return as_template(base).model_copy(update=update)
 
 
-# --------------------------------------------------------------------------- selectors
-
-
 def derive_selector(
     stream: AudioStream | SubtitleStream, source: MediaSource
 ) -> TrackSelector | None:
-    """The most specific selector of ``stream`` (04 §Deriving rules): language, codec,
-    commercial name and channels (audio), roles, ``^title$``, and the ``nth`` that picks it
-    among what that selector finds in ``source``. ``None`` when ``stream`` is not a track of
-    ``source``."""
+    """The most specific selector of ``stream``. Its ``nth`` picks ``stream`` among the tracks
+    that selector finds in ``source``. ``None`` when ``stream`` is not a track of ``source``."""
     kind: Literal["audio", "subtitle"] = "audio" if isinstance(stream, AudioStream) else "subtitle"
     tracks = describe_kind(source.audio if kind == "audio" else source.subtitles)
     track = next((t for t in tracks if t.descriptor.index == stream.index), None)
@@ -215,15 +182,12 @@ def _subtitle_rules(
 
 def _no_track(kind: Literal["audio", "subtitle"]) -> OutputTrackRule:
     """The rule of a job without tracks of ``kind``: it takes no track (``languages: []``
-    matches none) and is optional. An empty rule list would mean "the template's defaults"
-    (decision 0040)."""
+    matches none) and is optional. An empty rule list would mean the template's defaults, so
+    a job with no tracks needs this rule."""
     settings = AudioOutputSettings() if kind == "audio" else SubtitleOutputSettings()
     return OutputTrackRule(
         selector=TrackSelector(kind=kind, languages=[]), settings=settings, required=False
     )
-
-
-# --------------------------------------------------------------------------- templates
 
 
 def _naming(job: JobSettings, base: NamingOptions | None) -> NamingOptions | None:
@@ -246,9 +210,9 @@ def derive_template(
     *,
     base: JobTemplate | None = None,
 ) -> JobTemplate:
-    """The template of ``job``'s ``sections`` (04 §Deriving rules), on top of ``base``
-    (default: a new template with the job's output options). ``source`` is the job's probed
-    source: the track rules are derived from its tracks."""
+    """The template of ``job``'s ``sections``, on top of ``base`` (default: a new template with
+    the job's output options). ``source`` is the job's probed source: the track rules are
+    derived from its tracks."""
     if base is None:
         base = JobTemplate(output=OutputOptions.model_validate(job.output.model_dump()))
     template = as_template(base)

@@ -1,32 +1,5 @@
-"""Batch engine (04-batch-mode.md; 05 §C-12). Pure: no I/O (``Reframe.batch``,
-:mod:`reframe.batch.service`, is the one part that probes, names and validates; it is not
-imported here).
-
-**Audio and subtitle defaults** of a preset (03 §Audio defaults, §Subtitles; decisions 0018,
-0019, 0023, 0031):
-
-- the **selection stage** (:mod:`reframe.batch.selection`, :func:`select_tracks`): which
-  source tracks to take, why, and in which order;
-- the **codec-rule stage** of the audio defaults (:func:`apply_codec_rules`, built in M2);
-- the foreign audio search, burn-in and the default-track settings, and
-  :func:`explain` / :func:`explain_subtitles` (:mod:`reframe.batch.explain`): one
-  :class:`~reframe.models.TrackDecision` per source track, the rows of the live preview;
-- the defaults lint (:func:`lint_defaults`).
-
-**Batch / season mode** (04; decision 0040):
-
-- :func:`describe_tracks`, :func:`fingerprint` (:mod:`reframe.batch.descriptors`): track
-  descriptors and fingerprints at the strict, standard and loose levels;
-- :func:`group_sources` (:mod:`reframe.batch.grouping`): groups, near members, episode order;
-- the **one rule engine** for presets and batch mode (:mod:`reframe.batch.rules`,
-  :mod:`reframe.batch.selectors`): explicit track rules with relaxation, or the defaults
-  compiled into rules (:func:`compile_defaults`); :func:`draft_tracks` is its track stage;
-- :func:`derive_template`, :func:`merge_template` (:mod:`reframe.batch.derive`): *Apply to
-  group…* and copy / paste of sections;
-- :func:`resolve`, :func:`resolve_group` (:mod:`reframe.batch.resolve`) with per-file
-  overrides as JSON patches (:mod:`reframe.batch.overrides`): the job of each file and its
-  match report.
-"""
+"""The batch engine. Pure: no I/O. The service that probes, names and validates a batch is
+not imported here."""
 
 from reframe.batch.audio_rules import (
     PASSTHRU,

@@ -1,28 +1,11 @@
-"""Track descriptors and fingerprints (04 §Concepts, §Grouping; 05 §C-12, M7).
+"""Track descriptors and fingerprints. A descriptor is the normalised summary of one track; a
+fingerprint is a file's descriptors plus its main video's size and HDR type, compared at one
+of three strictness levels.
 
-A **track descriptor** is the normalised summary of one stream: kind, codec, codec family,
-profile (the commercial name), channels, the effective language, title, roles, the six flags,
-position and bit rate. A **fingerprint** is a file's descriptors plus the video resolution and
-HDR type, compared at one strictness level:
-
-=========  ==================================================================================
-Level      What two files must share (per track, plus the video)
-=========  ==================================================================================
-strict     the ordered tracks with kind, codec, profile, channels, language, title, roles and
-           flags; the video size and HDR type
-standard   the ordered tracks with kind, codec, channels, language and roles (no titles, no
-           profiles, no flags, no bit rates); the video size and HDR type
-loose      the tracks in any order with kind, codec family, language and roles (no channel
-           count); the video's resolution class (``1080p``) and HDR type
-=========  ==================================================================================
-
-No level compares bit rates: the bit rate of a lossless or VBR track differs from episode to
-episode of the same release (decision 0040). For the same reason the roles are C-3's roles with
-**flag or title evidence** only, plus the roles that the disposition flags give a source built
-without the prober (:func:`stream_roles`); a track without any such role is ``main``. A role
-that C-3 infers from statistics (a forced track by its share of events, an untitled
-low-bitrate 2.0 commentary) varies per episode of one release: it stays on the stream, for
-the selection stage and the UI, but is no descriptor role (decision 0040, follow-up R2-2).
+No level compares bit rates: a lossless or VBR track differs from episode to episode of one
+release. Roles count only with flag or title evidence, plus the roles that the disposition
+flags give a source built without the prober (:func:`stream_roles`). A role inferred from
+statistics varies per episode, so it stays on the stream but is no descriptor role.
 
 Pure: no I/O.
 """
@@ -66,12 +49,11 @@ __all__ = [
     "video_key",
 ]
 
-#: The strictness levels, strictest first (04 §Grouping).
+#: The strictness levels, strictest first.
 MATCH_LEVELS: tuple[MatchLevel, ...] = ("strict", "standard", "loose")
 
-#: ffprobe codec name → codec family (what the loose level compares; 04 §Grouping). A codec
-#: that is not listed is its own family. Subtitles are ``text`` or ``bitmap`` (mixed releases
-#: carry the same subtitles as SRT in one and ASS in another).
+#: ffprobe codec name → codec family, for the loose level. A codec that is not listed is its
+#: own family.
 _FAMILIES = {
     "dts": "dts",
     "truehd": "truehd",
@@ -113,21 +95,21 @@ CODEC_LABELS = {
     "mpeg2video": "MPEG-2",
 }
 
-#: The order in which an HDR type is named when a stream has several (``{hdr}`` of C-16).
+#: The order in which an HDR type is named when a stream has several.
 _HDR_ORDER = (HdrFormat.DOLBY_VISION, HdrFormat.HDR10_PLUS, HdrFormat.HDR10, HdrFormat.HLG)
 
 Stream = VideoStream | AudioStream | SubtitleStream
 
 
-#: Subtitle codecs by family (a codec that is in neither is its own family).
+#: Subtitle codecs by family: a release may carry the same subtitles as SRT or as ASS. A codec
+#: in neither set is its own family.
 _TEXT_SUBTITLES = frozenset({"ass", "ssa", "subrip", "srt", "webvtt", "mov_text", "text"})
 _BITMAP_SUBTITLES = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
 
 
 def codec_family(stream: Stream) -> str | None:
-    """``dts`` for DTS and DTS-HD, ``ac3`` for AC-3 and E-AC-3, ``pcm`` for every PCM
-    format; subtitles are ``text`` or ``bitmap``; other codecs are their own family. Only
-    the codec decides, so two tracks with one codec are always one family."""
+    """The codec family of ``stream``, or ``None`` without a codec. Only the codec decides, so
+    two tracks with one codec are always one family."""
     codec = stream.codec
     if codec is None:
         return None
@@ -143,8 +125,7 @@ def codec_family(stream: Stream) -> str | None:
 
 
 def codec_label(stream: Stream) -> str:
-    """The commercial name (``DTS-HD MA``, ``TrueHD Atmos``, ``ASS``), else a short codec
-    name."""
+    """The commercial name of the codec, else a short codec name."""
     if stream.display_codec:
         return stream.display_codec
     if stream.codec is None:
@@ -153,8 +134,8 @@ def codec_label(stream: Stream) -> str:
 
 
 def _flag_extra_role(stream: AudioStream | SubtitleStream) -> TrackRole | None:
-    """The extra role of the disposition flags alone (as the selection stage's
-    ``extra_role`` reads a source built without the prober)."""
+    """The extra role that the disposition flags alone give, for a source built without the
+    prober."""
     d = stream.disposition
     audio = isinstance(stream, AudioStream)
     if d.comment:
@@ -167,10 +148,9 @@ def _flag_extra_role(stream: AudioStream | SubtitleStream) -> TrackRole | None:
 
 
 def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
-    """The track's roles, in C-3's order: the roles of the prober with flag or title evidence
-    (not the heuristic ones: they vary per episode), plus the roles that the disposition
-    flags give a source built without the prober (commentary, description, music, forced,
-    SDH); ``[main]`` when there is none."""
+    """The track's roles: the prober's roles with flag or title evidence (not the heuristic
+    ones, which vary per episode), plus the roles that the disposition flags give a source built
+    without the prober; ``[main]`` when there is none."""
     found: list[TrackRole] = [
         info.role for info in stream.roles if info.evidence is not RoleEvidence.HEURISTIC
     ]
@@ -191,8 +171,7 @@ def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
 
 
 def language_code(language: str | None) -> str:
-    """The ISO 639-2 code that labels and the matrix show: ``jpn``, ``eng``; ``und`` for
-    none."""
+    """The three-letter ISO 639-2 code used in labels; ``und`` for none."""
     return languages.to_matroska_legacy(language)
 
 
@@ -270,8 +249,8 @@ def describe_stream(stream: Stream, position: int) -> TrackDescriptor:
 
 
 def describe_tracks(source: MediaSource) -> list[TrackDescriptor]:
-    """Every video, audio and subtitle track of ``source``, in stream order (04 §Concepts).
-    Cover art, attachments and data streams are not tracks."""
+    """Every video, audio and subtitle track of ``source``, in stream order. Cover art,
+    attachments and data streams are not tracks."""
     found: list[TrackDescriptor] = [
         *(describe_stream(stream, position) for position, stream in enumerate(source.video)),
         *(describe_stream(stream, position) for position, stream in enumerate(source.audio)),
@@ -289,7 +268,7 @@ def hdr_type(source: MediaSource) -> HdrFormat | None:
 
 
 def track_key(descriptor: TrackDescriptor, level: MatchLevel) -> tuple[object, ...]:
-    """What ``level`` compares of one track (see the module doc)."""
+    """What ``level`` compares of one track."""
     roles = tuple(sorted(role.value for role in descriptor.roles))
     if level == "loose":
         return (descriptor.kind, descriptor.codec_family, descriptor.language, roles)

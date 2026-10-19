@@ -1,7 +1,5 @@
-"""Output track metadata taken from a source track (03 §Track metadata; decision 0018).
-
-The output track gets the source track's language, title and the six flags of its
-disposition. An audio codec rule's name template (``{lang_native} {channels}`` →
+"""Output track metadata, taken from a source track: its language, title and the six flags of
+its disposition. An audio codec rule's name template (``{lang_native} {channels}`` →
 ``Magyar 5.1``) replaces the title.
 """
 
@@ -31,7 +29,7 @@ NAME_TEMPLATE_VARIABLES: dict[str, str] = {
 
 def effective_language(stream: AudioStream | SubtitleStream) -> str | None:
     """The language that rules match and that is written: ``language_ietf`` if set, else
-    ``language`` (05 §C-2); canonical BCP 47 (``jpn`` → ``ja``) when it is valid.
+    ``language``; canonical BCP 47 (``jpn`` → ``ja``) when it is valid.
 
     A ``language_ietf`` that is not a valid tag (a broken Matroska ``LanguageIETF``) is passed
     over for a valid ``language``, so the track is not undetermined. When neither is valid,

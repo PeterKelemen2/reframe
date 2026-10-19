@@ -1,19 +1,7 @@
-"""Grouping files by structure (04 §Grouping; 05 §C-12, M7).
-
-Files whose fingerprints are equal at the chosen level form a group. A file that differs
-from a larger group (or an equal one that comes first in episode order) by at most
-:data:`NEAR_MAX_DIFFERENCES` tracks is a **near** member of that group, with one line per
-difference ("1 extra track (eng AC-3 2.0 "Commentary")", "1 track missing (eng DTS-HD MA
-5.1 "English Dub")"): 04 shows E05 with an extra commentary track and E11 without the dub in
-the season's group, so they get the group's template and their own warnings, not a group of
-their own (decision 0040).
-
-- **Episode order**: the season and episode numbers parsed from the file name (C-16's
-  parser; the folder name when the file name has none), then the natural order of the path.
-  Files without an episode number come after the episodes.
-- **Group name**: the show name and season most members share (``Anime Show S01``).
-- **Representative**: the first exact member in episode order; its fingerprint is the
-  group's.
+"""Grouping files by structure. Files whose fingerprints are equal at the chosen level form a
+group. A file that differs from a group by at most :data:`NEAR_MAX_DIFFERENCES` differences is a
+near member of it, with one line per difference. So an episode with an extra commentary track
+gets the group's template and its own warnings, rather than a group of its own.
 
 Pure: no I/O (the parser reads no files).
 """
@@ -49,9 +37,8 @@ __all__ = [
     "group_sources",
 ]
 
-#: A file that differs from a group by at most this many tracks (an extra track, a missing
-#: track, a changed one; a different video size or HDR type counts as one) is a near member
-#: of it (decision 0040).
+#: The most differences (an extra, missing or changed track, or a different video size or HDR
+#: type, one each) that still make a file a near member of a group.
 NEAR_MAX_DIFFERENCES = 2
 
 
@@ -60,15 +47,14 @@ class EpisodeInfo:
     """What the file name says about the episode."""
 
     name: str | None
-    """The show name, words separated by spaces (``Anime Show``)."""
+    """The show name, words separated by single spaces."""
     season: int | None
     episode: int | None
 
 
 def episode_info(path: Path) -> EpisodeInfo:
-    """The show name, season and episode of ``path`` from its file name (C-16's parser),
-    with the folder's name and season when the file name has none (``S01E01.mkv`` in
-    ``Show.S01.1080p``)."""
+    """The show name, season and episode of ``path``, from its file name. The folder's name and
+    season fill in what the file name lacks (``S01E01.mkv`` in ``Show.S01.1080p``)."""
     stem, _ = split_extension(path.name)
     fields = parse_name(stem).fields
     name, season = fields.name, fields.season
@@ -114,10 +100,9 @@ def episode_label(path: Path, *, season: bool = False) -> str:
 
 
 def episode_labels(paths: Sequence[Path], *, season: bool | None = None) -> list[str]:
-    """The labels of a list of files (the rows of a matrix, the members of a group): ``E05``;
-    ``S01E05`` when ``season`` is true or, with ``None``, when the files have more than one
-    season; the file name for a file without an episode and for files that would share a
-    label (two releases of one episode)."""
+    """The labels of a list of files: ``E05``; ``S01E05`` when ``season`` is true or, with
+    ``None``, when the files have more than one season. The file name stands for a file without
+    an episode and for files that would share a label (two releases of one episode)."""
     infos = [episode_info(path) for path in paths]
     if season is None:
         seasons = {info.season for info in infos if info.episode is not None}
@@ -147,18 +132,15 @@ def group_name(paths: Sequence[Path]) -> str:
     return paths[0].parent.name or paths[0].name
 
 
-# --------------------------------------------------------------------------- comparing
-
-
 @dataclass(frozen=True, slots=True)
 class Comparison:
     """How a file's fingerprint differs from a group's (at the group's level)."""
 
     count: int
-    """Differing tracks (an extra, a missing or a changed track counts as one; a different
-    video size or HDR type counts as one)."""
+    """Differences: an extra, missing or changed track, or a different video size or HDR
+    type, each counts as one."""
     lines: list[str]
-    """One line per kind of difference, for :attr:`GroupMember.differences`."""
+    """One line per kind of difference."""
 
 
 def _plural(count: int, one: str, many: str) -> str:
@@ -253,9 +235,6 @@ def _hdr(fp: Fingerprint) -> str:
     return names[fp.hdr.value] if fp.hdr is not None else "SDR"
 
 
-# --------------------------------------------------------------------------- grouping
-
-
 @dataclass(slots=True)
 class _Bucket:
     """Files with one fingerprint digest, in episode order once every file is in."""
@@ -274,11 +253,10 @@ class _Bucket:
 
 
 def group_sources(sources: Sequence[MediaSource], level: MatchLevel) -> list[BatchGroup]:
-    """Group ``sources`` by their fingerprints at ``level`` (04 §Grouping): equal
-    fingerprints form a group; a file within :data:`NEAR_MAX_DIFFERENCES` of a group with at
-    least as many files (the larger group, then the one first in episode order) joins it as a
-    near member. Groups are in episode order of their first member; members in episode
-    order."""
+    """Group ``sources`` by their fingerprints at ``level``: equal fingerprints form a group; a
+    file within :data:`NEAR_MAX_DIFFERENCES` of a group with at least as many files (the larger
+    group, then the one first in episode order) joins it as a near member. Groups are in
+    episode order of their first member; members in episode order."""
     buckets: dict[str, _Bucket] = {}
     for source in sources:
         fp = fingerprint(source, level)
