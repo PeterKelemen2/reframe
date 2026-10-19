@@ -223,11 +223,15 @@ def test_one_group_at_every_level(level: str) -> None:
 
 
 def test_two_seasons_of_one_release_are_one_group_at_the_standard_level() -> None:
-    """The same structure: the group is named after its first files."""
+    """The same structure: the group is named after the season that most of its files share."""
     groups = group_sources([*A.season(2), *A.season(1)], "standard")
     assert len(groups) == 1
     assert len(groups[0].members) == 15
     assert groups[0].members[0].path == A.path(1, 1)
+    assert groups[0].name == "Anime Show S01"
+    (fewer,) = group_sources([*A.season(2), *A.season(1)[:2]], "standard")
+    assert fewer.members[0].path == A.path(1, 1)
+    assert fewer.name == "Anime Show S02"
 
 
 def test_files_that_differ_more_are_another_group() -> None:
