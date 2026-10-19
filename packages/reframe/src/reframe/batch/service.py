@@ -1,39 +1,17 @@
-"""``Reframe.batch`` (05 §C-15; 04-batch-mode.md): group files, derive and merge templates,
-resolve a template in every file, save a group template as a preset.
+"""``Reframe.batch``: group files, derive and merge templates, resolve a template in every file,
+and save a group template as a preset.
 
-The rest of :mod:`reframe.batch` is pure; this module is the one place that probes, names
-and validates (through the other services of the facade). It is not imported by
-``reframe.batch`` itself, so the pure engine never depends on the facade.
+The rest of :mod:`reframe.batch` is pure. This module is the one place that probes, names and
+validates, through the other services of the facade, so the pure engine never depends on the
+facade.
 
-:meth:`BatchService.resolve` gives the resolution matrix: for every file in episode order the
-pure :func:`~reframe.batch.resolve` (the job and its match report, with the file's override),
-then the output name (C-16, through ``Reframe.jobs.name_job``: the template's naming options,
-else Settings → Output) and validation (C-8, ``Reframe.jobs.validate``). Batch-level checks
-(04 §Output naming: "Name collisions within the batch, or with existing files, are errors"):
+The batch-level name checks run over the files of every group, so a job never writes a file of
+another group. A file that is the planned output of another file of the batch is left out: an
+earlier run's output is not encoded again.
 
-- ``batch.name_collision`` (error): two files of the batch get the same output path;
-- ``batch.output_is_source`` (error): a file's output is another file of the batch (a file
-  of the batch is never overwritten, whatever the collision setting: with *overwrite*, C-8's
-  ``output.overwrite`` warning is left out of that row);
-- ``batch.output_exists`` (error): the output exists and the collision setting would rename it
-  (C-8's ``output.renamed``). With the setting *ask*, C-8's ``output.exists`` error says it
-  already; with *overwrite* the user chose to replace it, and C-8's warning stays.
-
-:meth:`BatchService.resolve_batch` is a whole batch (``reframe batch``): every file is
-resolved, then a file that is the planned output of another file of the batch is **left out**
-(``batch.already_encoded``, info: the output of an earlier run is not encoded again), the
-others are grouped and each group gets its matrix; the batch-level checks run over the files of
-**every** group, so a job never writes a file or the output of another group (decision 0040,
-follow-up R2-1, R2-7).
-
-Files are compared as files, not spellings (``reframe.jobs.file_key``, the queue's rule): a
-file given twice (also through a link, a linked folder or a hard link) is probed and resolved
-once, an output named through a linked folder or a hard link to a file of the batch is that
-file, and an override is found by its file whatever the spelling (decision 0040, follow-up of
-the final review, RA-1). Messages and rows keep the paths as they were given.
-
-A near member of the group (``resolve(…, group=…)``) gets the warning ``batch.near_match`` with
-its differences (04: "E05 ⚠ 1 extra track"). Decision 0040.
+Files are compared as files, not spellings (:func:`~reframe.jobs.file_key`): a file given twice,
+also through a link or a hard link, is probed and resolved once. Messages keep the paths as they
+were given.
 """
 
 from __future__ import annotations
@@ -111,8 +89,6 @@ class _Jobs(Protocol):
 
 
 def _near_issue(differences: Sequence[str]) -> ValidationIssue:
-    """A near member of the group (04: "E05 ⚠ 1 extra track …"): the user checks that the
-    group's rules suit it."""
     return ValidationIssue(
         severity=Severity.WARNING,
         code="batch.near_match",
@@ -122,8 +98,6 @@ def _near_issue(differences: Sequence[str]) -> ValidationIssue:
 
 
 def _already_encoded(file: Path, owner: Path, output: Path) -> ValidationIssue:
-    """A file of the batch that is the planned output (``output``) of ``owner``: left out
-    (R2-7). ``output`` is named when it is the file by another name (a hard link)."""
     same = f" (the same file as {output.name})" if output.name != file.name else ""
     return ValidationIssue(
         severity=Severity.INFO,
@@ -141,8 +115,8 @@ type _Patches = dict[str, Sequence[JsonPatchOp]]
 
 
 def _patches(overrides: Mapping[str, Sequence[JsonPatchOp]] | None) -> _Patches:
-    """The overrides by :func:`~reframe.jobs.file_key` (a file's patch whatever the spelling
-    of its path). Blocking."""
+    """The overrides by :func:`~reframe.jobs.file_key`, so a file's patch is found whatever the
+    spelling of its path. Blocking."""
     return {file_key(path): ops for path, ops in (overrides or {}).items()}
 
 
@@ -155,8 +129,8 @@ def _ordered(
     probed: Sequence[tuple[Path, _Probed]], members: Sequence[GroupMember]
 ) -> list[tuple[str, Path, _Probed]]:
     """:func:`_keyed` ``probed`` in the group's order (``members``, by file), else in episode
-    order (C-16's parser: guessit takes milliseconds per name, and the keys stat the files, so
-    this runs in a worker thread)."""
+    order. Blocking: the episode parser and the file keys stat the files, so this runs in a
+    worker thread."""
     rank = {file_key(m.path): n for n, m in enumerate(members)}
     return sorted(
         _keyed(probed), key=lambda item: (rank.get(item[0], len(rank)), episode_key(item[1]))
@@ -209,9 +183,8 @@ class BatchService:
     async def _probe_all(
         self, sources: Sequence[str | os.PathLike[str] | MediaSource]
     ) -> list[tuple[Path, MediaSource | ProbeError]]:
-        """Each source probed (a :class:`MediaSource` is taken as it is), in the given order;
-        a file given twice is probed once, in its first spelling (also through a link, a
-        linked folder or a hard link: :func:`~reframe.jobs.file_key`)."""
+        """Each source probed (a :class:`MediaSource` is taken as it is), in the given order. A
+        file given twice is probed once, in its first spelling."""
         gate = asyncio.Semaphore(PROBE_CONCURRENCY)
         paths = [item.ref.path if isinstance(item, MediaSource) else Path(item) for item in sources]
         keys = await asyncio.to_thread(lambda: [file_key(path) for path in paths])
@@ -243,8 +216,8 @@ class BatchService:
         level: MatchLevel = "standard",
     ) -> BatchGrouping:
         """Probe the files (a path that is not probed yet) and group them by fingerprint at
-        ``level`` (04 §Grouping): files that differ a little from a group are ``near``
-        members with their differences; a file that cannot be probed is an issue."""
+        ``level``: files that differ a little from a group are ``near`` members with their
+        differences; a file that cannot be probed is an issue."""
         probed = await self._probe_all(sources)
         media = [found for _, found in probed if isinstance(found, MediaSource)]
         issues = [_probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
@@ -261,9 +234,8 @@ class BatchService:
         *,
         base: JobTemplate | None = None,
     ) -> JobTemplate:
-        """The template of ``job``'s ``sections`` (04 §Deriving rules from a manual
-        selection): the most specific track rules for the chosen source tracks, merged into
-        ``base`` (``None``: the job's preset, else the default preset)."""
+        """The template of ``job``'s ``sections``: the most specific track rules for the chosen
+        source tracks, merged into ``base`` (the job's preset or the default when ``None``)."""
         if base is None:
             found = self._presets.find(job.preset_id) if job.preset_id else None
             base = found if found is not None else self._presets.default()
@@ -272,7 +244,7 @@ class BatchService:
     def merge(
         self, base: JobTemplate, incoming: JobTemplate, sections: Collection[Section]
     ) -> JobTemplate:
-        """``base`` with ``incoming``'s ``sections`` (04: *Apply to group…*)."""
+        """``base`` with ``incoming``'s ``sections``."""
         return merge_template(base, incoming, sections)
 
     def _template(
@@ -354,20 +326,13 @@ class BatchService:
         overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
     ) -> tuple[BatchGrouping, list[BatchResolution]]:
         """A whole batch (``reframe batch``): every file resolved with ``template`` (as
-        :meth:`resolve`), the files grouped at ``level`` (as :meth:`group`) and one
-        resolution matrix per group, in the grouping's order.
+        :meth:`resolve`), the files grouped at ``level`` (as :meth:`group`), and one resolution
+        matrix per group, in the grouping's order.
 
-        - A file that is the planned output of another file of the batch is left out (an
-          earlier run's output: it is not grouped, resolved or queued) and is an info
-          ``batch.already_encoded`` of the grouping, next to the files that cannot be read.
-        - The batch-level name checks run over the files of every group: an output that is
-          another file of the batch (also a left-out or unreadable one) is
-          ``batch.output_is_source`` on its row, two rows with one output are
-          ``batch.name_collision`` on both, and the batch issue of a shared name is in the
-          resolution of the first group concerned.
-
-        Files are compared as files (:func:`~reframe.jobs.file_key`): a file given through
-        two spellings is one file, and an output named through a link is that file.
+        A file that is the planned output of another file of the batch is left out: an earlier
+        run's output is not grouped, resolved or queued. The batch-level name checks run over the
+        files of every group, so a job never writes a file of another group. A batch issue for a
+        shared name is in the resolution of the first group concerned.
         """
         chosen, template_issues = self._template(template)
         settings = self._settings()
@@ -382,7 +347,7 @@ class BatchService:
                 rows[key] = await self._row(
                     chosen, found, patches.get(key), naming, template_issues
                 )
-        # An earlier run's outputs (R2-7): the planned output of another file of the batch.
+        # An earlier run's output is not encoded again: it is a planned output of another file.
         outputs = await asyncio.to_thread(_output_keys, rows)
         owners: dict[str, Path] = {}
         planned: dict[str, Path] = {}
@@ -454,7 +419,7 @@ class BatchService:
             override,
             definitions=self.definitions,
             languages=self._settings().languages,
-            container_codecs=False,  # C-8's validation below reports them (0031 §6)
+            container_codecs=False,  # the validation below reports the codecs
         )
         assert resolution.job is not None  # resolve always makes a job
         job, name, notes = await self._jobs.name_job(resolution.job, source, naming=naming)
@@ -480,7 +445,7 @@ class BatchService:
         category: str = "Custom",
         description: str = "",
     ) -> Preset | ValidationIssue:
-        """Save a group template as a user preset (04 §Save as preset)."""
+        """Save a group template as a user preset."""
         return await self._presets.create(
             template, name, category=category, description=description
         )
@@ -507,8 +472,7 @@ def _collisions(
     one batch issue per shared output path, with the number of the first row concerned.
     ``files``: every file of the batch by its :func:`~reframe.jobs.file_key` (default: the
     rows' files); ``left_out``: the files left out as an earlier run's outputs (by key), each
-    with the file whose planned output it is. Paths are compared as files (``file_key``: a
-    link, a linked folder or a hard link to a file is that file). Blocking (``stat``)."""
+    with the file whose planned output it is. Blocking (``stat``)."""
     added: dict[int, list[ValidationIssue]] = {}
     batch: list[tuple[int, ValidationIssue]] = []
     sources = {file_key(row.path): n for n, row in enumerate(rows)}
@@ -557,7 +521,7 @@ def _collisions(
         owner = sources.get(key)
         for n in numbers:
             if n == owner:
-                continue  # C-8's output.same_as_source says it
+                continue  # output.same_as_source says it
             is_source.add(n)
             if owner is not None:
                 message = (
@@ -590,8 +554,8 @@ def _collisions(
     fixed = list(rows)
     for n, issues in added.items():
         row = fixed[n]
-        # A file of the batch is not replaced: C-8's "will be replaced" warning would say
-        # the opposite of the error.
+        # A file of the batch is not replaced, so the overwrite warning would say the opposite
+        # of the error.
         kept = [i for i in row.issues if n not in is_source or i.code != "output.overwrite"]
         all_issues = [*kept, *issues]
         fixed[n] = row.model_copy(

@@ -1,38 +1,19 @@
-"""Per-file overrides as JSON patches (04 §Per-file overrides; 05 §C-12, M7).
+"""Per-file overrides as RFC 6902 JSON patches, against the per-file document: the group
+template with the resolved job in the member ``job``.
 
-An override is one RFC 6902 JSON patch per file, against the **per-file document**: the group
-template, with one extra member ``job`` that holds the job resolved for that file
-(decision 0040):
+Paths under ``/job`` patch the resolved job after the file is resolved, for the fields that
+differ per file. Other paths patch the template before the file is resolved, so the track
+rules resolve again with the patched rules and later template changes still reach the fields
+that the patch does not touch.
 
-- ``/audio_rules/1/settings/bitrate``, ``/video/rate_control/value``, … patch the template
-  **before** the file is resolved. A later change of the template still reaches every field
-  the patch does not touch, and the track rules are resolved again with the patched rules:
-  a candidate picked by hand in a matrix cell is ``add /audio_rules/1/selector/stream 5``
-  (:attr:`~reframe.models.TrackSelector.stream`), and its codec rules are evaluated for the
-  track that was picked.
-- ``/job/...`` patches the resolved job **after** the resolution: the fields that are per file
-  by nature (04: range, chapter names, a crop of this file) and the parsed-name corrections of
-  C-16, ``add /job/output/naming/field_overrides/episode "5"`` (03 §Naming editor).
+An operation whose path no longer exists is a warning and is skipped. A failed ``test`` is a
+warning too, and it skips the rest of the override: the override was made for another template.
+A result that is not a valid template or job is an error, and that part is not applied.
 
-The template part is applied first, then the job part, each in the patch's order. An
-override that no longer applies is an issue, never an exception: an operation whose path
-vanished (``batch.override_stale``, a warning) is skipped and the rest is applied; a failed
-``test`` operation skips the rest of the override (the override was made for another
-template); a ``move`` or ``copy`` between the template and the job, or a result that is not a
-valid template or job (``batch.override_invalid``, an error), leaves that part unapplied.
-
-**The rule lists keep the template's structure.** An override that adds, removes or moves a
-track rule (or replaces a whole rule list) is ``batch.override_invalid`` and its template part
-is not applied: the matrix columns are the template's rules, so a file whose rules moved would
-show its cells under other rules' columns (decision 0040, follow-up R2-3). A change inside a
-rule (its selector, settings, metadata, ``required``), or a whole rule replaced in its place,
-is fine; ``replace /audio_rules/1/selector/languages []`` makes a rule take no track in one
-file. The same holds for the rules that the audio and subtitle defaults compile to (a
-template without explicit rules): an override of ``/audio_defaults`` or
-``/subtitle_defaults`` that changes that list (another number of listed languages, the
-no-match track or other languages turned on or off…) is ``batch.override_invalid`` too
-(``reframe.batch.resolve.compiled_rules_moved``, which needs Settings → Languages; final
-review RA-3).
+The rule lists keep the template's structure. An override that adds, removes or moves a track
+rule, or replaces a whole rule list, is an error and its template part is not applied. A change
+inside a rule, or a whole rule replaced in its place, is fine. The matrix columns are the
+template's rules, so a file whose rules moved would show its cells under other rules' columns.
 
 Pure: no I/O.
 """
@@ -82,7 +63,6 @@ def _strip(pointer: str) -> str:
 
 
 def _dotted(pointer: str) -> str:
-    """``/audio_rules/1/settings/bitrate`` → ``audio_rules[1].settings.bitrate``."""
     try:
         tokens = parse_pointer(pointer)
     except JsonPatchError:
@@ -132,7 +112,6 @@ def split_override(
 def _apply(
     document: Any, ops: Sequence[JsonPatchOp], *, prefix: str
 ) -> tuple[Any, list[ValidationIssue], int]:
-    """Apply ``ops`` one by one; return the document, the issues and how many applied."""
     issues: list[ValidationIssue] = []
     applied = 0
     for number, op in enumerate(ops):
@@ -167,8 +146,6 @@ def _apply(
 
 
 def _changes_rules(pointer: str, *, element: bool) -> bool:
-    """Whether writing at ``pointer`` changes a rule list's structure: the whole document, a
-    rule list, or (``element`` false) one of its elements."""
     try:
         tokens = parse_pointer(pointer)
     except JsonPatchError:

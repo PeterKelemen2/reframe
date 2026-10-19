@@ -1,26 +1,9 @@
-"""Resolving a template in one file and in a group (04 §Concepts "Resolution", §Resolution
-matrix, §Per-file overrides; 05 §C-12, M7).
+"""Resolving a template in one file and in a group: the job, the match report and the issues.
 
-:func:`resolve` gives the concrete :class:`~reframe.models.JobSettings` of one source, the
-match report (one :class:`~reframe.models.TrackMatch` per track rule) and the issues. It is
-the one way a job is made from a template: ``Reframe.jobs.draft`` (a single file and a
-preset) goes through it too (``reframe.jobs.draft_from_preset``), so a preset and a batch
-group make the same job for the same file.
+:func:`resolve` is the one way a job is made from a template. ``reframe.jobs.draft_from_preset``
+goes through it too, so a preset and a batch group make the same job for the same file.
 
-The template's per-file **policies** (04 §Per-file overrides):
-
-- **Crop** ``detect_per_file`` (default): an automatic or conservative crop has no rectangle
-  in the job (each file is detected on its own; the template's rectangle, measured on another
-  file, is not used); a manual crop stays. ``fixed``: the template's crop for every file (a
-  detected rectangle becomes a manual crop).
-- **Chapter names** ``source`` (the file's) or ``generated`` (``Chapter 1``, …).
-- **Tags and output name**: templates, rendered per file by C-7 and C-16.
-- **Range**: the whole file.
-
-Naming (C-16), validation (C-8) and name collisions read the file system: they are
-``Reframe.batch``'s (:mod:`reframe.batch.service`).
-
-Pure: no I/O.
+Pure: no I/O. Naming and the file-system checks are made elsewhere.
 """
 
 from __future__ import annotations
@@ -67,16 +50,15 @@ __all__ = [
     "video_metadata",
 ]
 
-#: The last column of the matrix (04 §Output naming: the naming column).
+#: The last column of the matrix: the output name.
 NAME_COLUMN = MatrixColumn(kind="name", label="Output name")
 #: The first column: the video track.
 VIDEO_COLUMN = MatrixColumn(kind="video", label="V")
 
 
 def video_metadata(stream: VideoStream) -> TrackMetadata:
-    """The source video track's language, title and flags, with the default flag set
-    (decision 0024 item 5: what mkvmerge writes; FFmpeg-written sources often have no
-    default flag on their only video stream)."""
+    """The source video track's language, title and flags. The default flag is always set,
+    because FFmpeg's Matroska muxer leaves it off a single stream."""
     value = stream.language_ietf or stream.language
     language = (languages.normalize(value) or value) if value else None
     d = stream.disposition
@@ -93,7 +75,7 @@ def video_metadata(stream: VideoStream) -> TrackMetadata:
 
 
 def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None:
-    """C-5's scaled size of the encoded picture (the source size for video passthrough)."""
+    """The scaled size of the encoded picture, or the source size for video passthrough."""
     if not source.video:
         return None
     stream = source.video[0]
@@ -101,19 +83,18 @@ def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None
         return (stream.width, stream.height)
     src = source_geometry(stream)
     if "deinterlace" in job.filters.root:
-        # Deinterlace runs before the crop: the crop is on the progressive grid, as the
-        # command builder (C-7) computes it.
+        # Deinterlace runs before the crop, so the crop is on the progressive grid.
         src = src.model_copy(update={"interlaced": False})
     geometry = compute_geometry(src, job.dimensions)
     return (geometry.scaled_width, geometry.scaled_height)
 
 
 def _dimensions(template: JobTemplate, notes: list[str]) -> DimensionSettings:
-    """The template's dimensions with its crop policy applied (see the module doc)."""
     dims = template.dimensions.model_copy(deep=True)
     crop = dims.crop
     if crop.rect is None or crop.mode not in ("auto", "conservative"):
         return dims
+    # A rectangle measured on another file does not fit this one: only a fixed policy keeps it.
     if template.crop_policy == "fixed":
         dims.crop = CropSettings(mode="manual", rect=crop.rect)
     else:
@@ -128,10 +109,9 @@ def _dimensions(template: JobTemplate, notes: list[str]) -> DimensionSettings:
 def build_job(
     template: JobTemplate, source: MediaSource, tracks: TrackDraft
 ) -> tuple[JobSettings, list[str]]:
-    """The job of ``source`` with ``template`` and the resolved ``tracks`` (without the output
-    path: naming is C-16's), and notes on how per-file policies were applied. A
-    :class:`~reframe.models.Preset` gives the job its id and name (the *modified* marker,
-    ``{preset}``)."""
+    """The job of ``source`` with ``template`` and the resolved ``tracks``, with no output path
+    yet, and notes on how the per-file policies were applied. A :class:`~reframe.models.Preset`
+    gives the job its id and name."""
     notes: list[str] = []
     video = template.video.model_copy(deep=True)
     if source.video:
@@ -165,8 +145,8 @@ RowStatus = Literal["ok", "warning", "error"]
 
 
 def row_status(matches: Sequence[TrackMatch], issues: Sequence[ValidationIssue]) -> RowStatus:
-    """✓ / ⚠ / ✗ of a row: ``error`` when a cell or an issue is an error, ``warning`` for a
-    warning, else ``ok`` (info does not count)."""
+    """The status of a row: ``error`` when a cell or an issue is an error, ``warning`` for a
+    warning, else ``ok``. Info does not count."""
     severities = {m.severity for m in matches} | {i.severity for i in issues}
     if Severity.ERROR in severities:
         return "error"
@@ -184,12 +164,11 @@ def resolve(
     languages: LanguageSettings | None = None,
     container_codecs: bool = True,
 ) -> Resolution:
-    """``template`` applied to ``source`` with its per-file ``override`` (04 §Concepts):
-    the job (no output path yet), the match report, one decision per source track and the
-    issues of the track stage and of the override. ``languages``: Settings → Languages (the
-    preferred languages of the defaults). ``container_codecs=False``: without the defaults
-    lint's ``defaults.codec_not_in_container``, for a caller that validates the job (C-8
-    reports the same codecs; :func:`~reframe.batch.rules.resolve_tracks`)."""
+    """``template`` applied to ``source`` with its per-file ``override``: the job (no output
+    path yet), the match report, one decision per source track and the issues. ``languages``:
+    the language settings, whose preferred languages the defaults use. ``container_codecs=False``
+    leaves out the ``defaults.codec_not_in_container`` lint, for a caller that reports those
+    codecs itself."""
     resolution, _ = resolve_with_tracks(
         template,
         source,
@@ -245,31 +224,25 @@ def resolve_with_tracks(
 
 
 def _part(rule: CompiledRule) -> tuple[str, int | None]:
-    """What a compiled rule stands for: its part of the selection (``language``, ``no_match``,
-    ``other``, ``extra``, ``foreign_audio``, ``all``) and, for a language rule, the number of
-    its language in the list."""
     return rule.group, rule.slot
 
 
 def _shown(rules: Sequence[CompiledRule]) -> str:
-    """``A1 jpn, A2 no listed language``."""
     return ", ".join(rule.label(n).removesuffix(" (defaults)") for n, rule in enumerate(rules))
 
 
 def compiled_rules_moved(
     template: JobTemplate, patched: JobTemplate, *, languages: LanguageSettings | None = None
 ) -> ValidationIssue | None:
-    """``batch.override_invalid`` when an override changes the list of rules that a kind's
-    defaults compile to (final review RA-3). The matrix columns are the template's compiled
-    rules and a cell is keyed by its rule's number, so a file whose defaults compile to other
-    rules (``languages ["jpn"]`` → ``["eng", "jpn"]``: one more language rule before the
-    no-match rule) would show its cells under other rules' columns. The list keeps its
-    structure when each rule stands for the same part of the selection (:func:`_part`): a
-    change of the codec rules, or of a listed language in its place, is fine, as a change
-    inside an explicit rule is (decision 0040 §5). A kind with explicit rules is not checked:
-    its defaults are not used, and an override cannot change an explicit list's structure
-    (``overrides.structural_op``). ``languages``: Settings → Languages (an empty language
-    list compiles to the preferred languages)."""
+    """``batch.override_invalid`` when an override changes the rules that a kind's defaults
+    compile to. The matrix columns are the template's compiled rules and a cell is keyed by its
+    rule's number, so a file whose defaults compile to other rules would show its cells under
+    other rules' columns. The list keeps its structure when each rule stands for the same part
+    of the selection, so a change of the codec rules, or of a listed language in its place, is
+    fine. A kind with explicit rules is not checked: its defaults are not used, and an override
+    cannot change an explicit list's structure (see
+    :func:`~reframe.batch.overrides.structural_op`). ``languages``: the settings; an empty
+    language list compiles to the preferred languages."""
     kinds: tuple[tuple[Kind, bool, Sequence[str]], ...] = (
         ("audio", bool(template.audio_rules), languages.preferred_audio if languages else ()),
         (
@@ -307,10 +280,10 @@ def matrix_columns(
     languages: LanguageSettings | None = None,
     source: MediaSource | None = None,
 ) -> list[MatrixColumn]:
-    """The columns of the resolution matrix (04 §Resolution matrix): ``V``, one per audio
-    rule, one per subtitle rule (explicit, or compiled from the defaults), ``Output name``.
-    They depend on the template and the preferred languages only; ``source`` is any file to
-    resolve them on (none: an empty source)."""
+    """The columns of the resolution matrix: the video, one per audio and subtitle rule
+    (explicit, or compiled from the defaults), then the output name. They depend on the template
+    and the preferred languages only; ``source`` is any file to resolve the rules on, and an empty
+    source is used without one."""
     probe = source or MediaSource.model_validate({"ref": {"path": "columns"}})
     tracks = resolve_tracks(template, probe, definitions=definitions, languages=languages)
     return [VIDEO_COLUMN, *tracks.columns, NAME_COLUMN]
@@ -325,10 +298,10 @@ def resolve_group(
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
 ) -> list[Resolution]:
-    """:func:`resolve` for every member of ``group``, in the group's (episode) order.
-    ``sources``: the probed members (04's ``resolve_group`` has none; the pure engine needs
-    them, decision 0040). ``overrides``: per-file JSON patches keyed by the file's path as a
-    string. A member without a source is an error row."""
+    """:func:`resolve` for every member of ``group``, in the group's order. ``sources``: the
+    probed members, by path or as a sequence; this module does not probe. ``overrides``:
+    per-file JSON patches keyed by the file's path as a string. A member without a source is an
+    error row."""
     by_path = (
         dict(sources)
         if isinstance(sources, Mapping)

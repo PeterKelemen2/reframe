@@ -1,53 +1,12 @@
 """The selection stage of the audio and subtitle defaults: which source tracks a preset takes,
-why, and in which order (03 §Audio defaults part 1, §Subtitles "Subtitle defaults"; 05 §C-12;
-decision 0031).
+why, and in which order.
 
-:func:`select_tracks` applies one :class:`~reframe.models.TrackSelection` to the audio or the
-subtitle tracks of a source, setting by setting:
+:func:`select_tracks` applies one :class:`~reframe.models.TrackSelection` to the tracks of one
+kind and gives every track a :class:`Pick` that says why it was taken or dropped. When no
+language is set at all (the selection has none and the settings have no preferred languages of
+that kind), every track is kept in source order and the other settings are ignored.
 
-=================================  ==========================================================
-Setting                            What it does here
-=================================  ==========================================================
-``languages``                      The ordered list (``None`` or empty: the preferred
-                                   languages of Settings). A track belongs to the first listed
-                                   language that :func:`reframe.languages.matches` it: rule
-                                   ``pt`` takes ``pt-BR`` and ``por``; ``pt-BR`` takes only
-                                   ``pt-BR``; ``ger`` = ``de``.
-``undetermined``                   A track without a language (or ``und``): the first listed
-                                   language (it is then treated, encoded and written as that
-                                   language), or an other language.
-``tracks_per_language``            None, the first (after the tie-break), or all of them.
-``tie_break``                      :func:`sort_key`. Audio "best quality": lossless first,
-                                   then the highest known bit rate; an unknown bit rate after
-                                   every known one; then more channels, then source order.
-                                   Subtitles: full subtitles before SDH before forced and
-                                   Signs & Songs, then source order.
-``other_languages``                Main tracks in no listed language: drop, keep the best
-                                   track of the first such language (source order), or keep
-                                   all of them.
-``no_match``                       No main track in any listed language (a listed-language
-                                   extra track does not count): the default-flagged main track
-                                   (none flagged: the first), the first main track, or none
-                                   (for audio a validation error when no main track is taken,
-                                   ``reframe.batch.explain``).
-``commentary``                     Commentary, audio description and music-only tracks
-                                   (:func:`extra_role`): dropped, or kept after the main tracks
-                                   when their language is taken (a listed language, or any
-                                   language when other languages are kept).
-``order``                          Language list order (each language in tie-break order,
-                                   then the no-match track, then other languages in source
-                                   order), or source order; the extra tracks always come last.
-=================================  ==========================================================
-
-``default_track`` is applied to the outputs by ``reframe.batch.explain``, which runs the codec
-rules (audio) and the foreign audio search and burn-in (subtitles) on the selection.
-
-**Keep everything** (decision 0031, after decision 0018): when no language is set at all
-(``languages`` is ``None`` or empty and Settings has no preferred languages of that kind), the
-selection takes every track in source order and ignores the other settings, as M2 did.
-
-The functions here are the building blocks the batch engine (C-12, M7) reuses when it compiles
-the defaults into track rules. Pure: no I/O.
+Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -79,11 +38,9 @@ __all__ = [
 ]
 
 TrackKind = Literal["audio", "subtitle"]
-#: Why a selected track was taken: every track (no language set), a listed language, the
-#: no-match rule, an other language, or an extra track (commentary, description, music).
 PickGroup = Literal["all", "language", "no_match", "other", "extra"]
 
-#: The one line every track gets when no language is set (decision 0031).
+#: The reason every track gets when no language is set.
 KEEP_EVERYTHING: dict[TrackKind, str] = {
     "audio": "No audio languages set (preset or Settings): every track is kept, in source order",
     "subtitle": (
@@ -91,7 +48,6 @@ KEEP_EVERYTHING: dict[TrackKind, str] = {
     ),
 }
 
-#: Extra tracks (03: "Commentary and audio description"; music-only too, decision 0031).
 _EXTRA_ROLES: dict[TrackKind, dict[TrackRole, str]] = {
     "audio": {
         TrackRole.COMMENTARY: "Commentary",
@@ -111,9 +67,6 @@ _TIE_BREAK_WORDS = {
 }
 
 
-# --------------------------------------------------------------------------- results
-
-
 @dataclass(frozen=True, slots=True)
 class Pick[S: (AudioStream, SubtitleStream)]:
     """What the selection did with one source track."""
@@ -121,8 +74,7 @@ class Pick[S: (AudioStream, SubtitleStream)]:
     stream: S
     selected: bool
     why: str
-    """One line: ``Hungarian: the first of 2 matching tracks (best quality)``,
-    ``Commentary (disposition comment): dropped``."""
+    """One line that says why the track was taken or dropped."""
     group: PickGroup | None = None
     """Why it was taken; ``None`` for a dropped track."""
     slot: int | None = None
@@ -144,7 +96,7 @@ class Selection[S: (AudioStream, SubtitleStream)]:
 
     kind: TrackKind
     configured: bool
-    """``False``: no language set, every track kept in source order (decision 0031)."""
+    """``False``: no language set, every track kept in source order."""
     languages: tuple[str, ...]
     """The effective languages, canonical BCP 47, in order (empty when not configured)."""
     picks: tuple[Pick[S], ...]
@@ -153,8 +105,7 @@ class Selection[S: (AudioStream, SubtitleStream)]:
     """Positions (in :attr:`picks`) of the selected tracks, in output order."""
     no_listed_language: bool = False
     """Configured, the source has main tracks of this kind, and none of them is in a listed
-    language (03 "No listed language found"). Extra tracks (commentary, description, music
-    only) do not count, whatever their language (decision 0031 §3)."""
+    language. Extra tracks do not count, whatever their language."""
 
     @property
     def selected(self) -> list[Pick[S]]:
@@ -162,14 +113,11 @@ class Selection[S: (AudioStream, SubtitleStream)]:
         return [self.picks[position] for position in self.order]
 
 
-# --------------------------------------------------------------------------- helpers
-
-
 def effective_languages(
     selection_languages: Sequence[str] | None, preferred: Sequence[str] = ()
 ) -> tuple[str, ...]:
-    """The selection's languages, or the preferred languages of Settings when it has none
-    (``None`` or empty); canonical BCP 47 (``hun`` → ``hu``), duplicates removed, in order."""
+    """The selection's languages, or the preferred languages when it has none; canonical BCP 47
+    (``hun`` → ``hu``), duplicates removed, in order."""
     found: list[str] = []
     for tag in selection_languages or preferred:
         canonical = languages.normalize(tag) or tag
@@ -211,9 +159,8 @@ def _has_role(stream: AudioStream | SubtitleStream, role: TrackRole) -> bool:
 
 def extra_role(stream: AudioStream | SubtitleStream) -> tuple[TrackRole, str] | None:
     """The role that makes a track an **extra** track, with its evidence: commentary, audio
-    description or music only (audio), commentary or descriptions (subtitles). From C-3's
-    roles (``disposition comment``, ``title contains "Commentary"``, a heuristic), else from
-    the disposition flags alone (a source built without the prober)."""
+    description or music only (audio), commentary or descriptions (subtitles). The detected
+    roles come first, else the disposition flags alone (a source built without the prober)."""
     kind: TrackKind = "audio" if isinstance(stream, AudioStream) else "subtitle"
     extras = _EXTRA_ROLES[kind]
     for info in stream.roles:
@@ -238,7 +185,7 @@ def _extra_label(stream: AudioStream | SubtitleStream, found: tuple[TrackRole, s
 
 
 def is_forced(stream: AudioStream | SubtitleStream) -> bool:
-    """The forced flag, or C-3's ``forced`` role (flag, title or heuristic)."""
+    """The forced flag, or the ``forced`` role (from the flag, the title or a heuristic)."""
     return stream.disposition.forced or _has_role(stream, TrackRole.FORCED)
 
 
@@ -257,13 +204,9 @@ def sort_key(
     position: int,
     tie_break: Literal["source_order", "most_channels", "best_quality"],
 ) -> tuple[int, ...]:
-    """The tie-break order of the tracks of one language (smallest first).
-
-    Audio: ``source_order``; ``most_channels`` (then source order); ``best_quality``:
-    lossless first, then the highest known bit rate (an unknown bit rate after every known
-    one: the preview offers **Measure**), then more channels, then source order.
-    Subtitles: ``source_order``; the other two put full subtitles first, then SDH, then
-    forced and Signs & Songs (:func:`subtitle_rank`), then source order.
+    """The tie-break order of the tracks of one language (smallest first). Subtitles are ranked
+    by :func:`subtitle_rank` for any tie-break but source order; an unknown audio bit rate sorts
+    after every known one.
     """
     if tie_break == "source_order":
         return (position,)
@@ -282,12 +225,7 @@ def sort_key(
 
 
 def _track(stream: AudioStream | SubtitleStream) -> str:
-    """``#3``: the absolute stream index, as ``reframe plan`` and C-3's role details show
-    it."""
     return f"#{stream.index}"
-
-
-# --------------------------------------------------------------------------- the stage
 
 
 @dataclass(slots=True)
@@ -312,9 +250,9 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
     kind: TrackKind | None = None,
 ) -> Selection[S]:
     """Apply ``selection`` to ``streams`` (all audio or all subtitle tracks of one source, in
-    source order). ``preferred_languages``: Settings → Languages, preferred audio or subtitle
-    languages, used when the selection has no languages. ``kind``: for an empty ``streams``
-    (else taken from the streams). Every track gets one :class:`Pick`."""
+    source order). ``preferred_languages``: the preferred audio or subtitle languages, used when
+    the selection has no languages. ``kind``: for an empty ``streams`` (else taken from the
+    streams). Every track gets one :class:`Pick`."""
     if kind is None:
         kind = "subtitle" if streams and isinstance(streams[0], SubtitleStream) else "audio"
     listed = effective_languages(selection.languages, preferred_languages)
@@ -351,7 +289,6 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
             return f"Undetermined (treated as {language_label(listed[slot])})"
         return language_label(listed[slot])
 
-    # 1. The listed languages, in order.
     by_language: list[list[int]] = [
         sorted((p for p in main if slots[p] == slot), key=key) for slot in range(len(listed))
     ]
@@ -385,8 +322,8 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
                     )
                     taken_by_language.append(p)
 
-    # 2. No listed language found: no **main** track is in a listed language (a commentary or
-    # description in a listed language does not count: it is not the programme's own track).
+    # A commentary or description in a listed language is not the programme's own track, so only
+    # main tracks count here.
     no_listed = bool(main) and all(slots[p] is None for p in main)
     no_match_taken: int | None = None
     if no_listed:
@@ -410,7 +347,6 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
             case "none":
                 pass
 
-    # 3. Other languages (main tracks in no listed language).
     others = [p for p in main if slots[p] is None and p != no_match_taken]
     taken_others: list[int] = []
     not_listed = "is not a listed language"
@@ -465,7 +401,6 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
                 )
                 taken_others.append(p)
 
-    # 4. Commentary, audio description, music only.
     taken_extras: list[int] = []
     for p, found in extras.items():
         label = _extra_label(streams[p], found)
@@ -477,7 +412,6 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
         else:
             state.drop(p, f"{label}: {name_of(p)} {not_listed}: dropped")
 
-    # 5. The output order.
     main_order: list[int]
     extra_order: list[int]
     if selection.order == "language_list":

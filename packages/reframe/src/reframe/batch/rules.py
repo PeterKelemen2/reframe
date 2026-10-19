@@ -1,28 +1,13 @@
-"""The one rule engine for presets and batch mode (04 §Track rules; 03 §Audio defaults → "How
-the defaults are applied"; 05 §C-12, M7).
+"""The rule engine for presets and batch mode: the audio and subtitle tracks of one source.
 
-:func:`resolve_tracks` gives the audio and subtitle tracks of one source for a template:
+Explicit rules (``JobTemplate.audio_rules`` / ``subtitle_rules``) each take the source tracks
+their selector finds and make one output per track: fixed settings, or the codec rules evaluated
+for that track. A kind without explicit rules compiles its defaults into rules
+(:func:`compile_defaults`), and its tracks come from the selection stage. Every selected track is
+attributed to its compiled rule, so the matrix has one column per rule.
 
-- **Explicit rules** (``JobTemplate.audio_rules`` / ``subtitle_rules``, made by *Edit group*
-  and *Apply to group*, decision 0040): each :class:`~reframe.models.OutputTrackRule` takes
-  the source track(s) its selector finds (with relaxation, :mod:`reframe.batch.selectors`) and
-  makes one output per track: fixed :class:`~reframe.models.AudioOutputSettings` /
-  :class:`~reframe.models.SubtitleOutputSettings`, or the codec rules of
-  :class:`~reframe.models.AudioCodecRules` evaluated for that track
-  (:func:`~reframe.batch.apply_codec_rules`). The output's language, name and flags come from
-  the source track unless the rule's :class:`~reframe.models.TrackMetadataTemplate` sets
-  them. When a rule sets the default flag, outputs that take it from the source do not.
-- **No explicit rules of a kind**: the template's defaults of that kind compile into
-  :class:`~reframe.models.OutputTrackRule` s (:func:`compile_defaults`: one per listed
-  language, with the codec rules as ``AudioCodecRules``, plus the no-match, other-language,
-  commentary and foreign-audio rules the defaults turn on), and the tracks come from 1a's
-  selection stage (:func:`~reframe.batch.audio_stage`, :func:`~reframe.batch.subtitle_stage`),
-  so a preset gives the same tracks, order, flags and reasons as before (decisions 0018,
-  0031). Every selected track is attributed to its compiled rule: the matrix shows one
-  column per compiled rule.
-
-Explicit rules take precedence over the defaults of their kind; subtitles and audio are
-independent (the subtitle defaults' foreign audio search hears the explicit audio).
+Explicit rules take precedence over the defaults of their kind. Audio and subtitles are
+independent, except that the subtitle defaults' foreign audio search hears the explicit audio.
 
 Pure: no I/O.
 """
@@ -102,24 +87,21 @@ _SORT_OF_TIE_BREAK: dict[str, Literal["source_order", "most_channels", "highest_
 }
 
 
-# =========================================================================== labels
-
-
-#: The characters that have a meaning in a regular expression outside a character class
-#: (``re.escape`` also escapes spaces, ``&``, ``#`` and ``~``, which only verbose mode reads).
+#: Regex metacharacters outside a character class. ``re.escape`` also escapes spaces, ``&``, ``#``
+#: and ``~``, which only verbose mode reads.
 _SPECIAL = re.compile(r"([.^$*+?{}\[\]\\|()])")
 
 
 def literal_title(title: str) -> str:
-    """The title pattern that matches exactly ``title`` (case-insensitively, as every title
-    pattern): ``Signs & Songs`` → ``^Signs & Songs$`` (04 §Deriving rules)."""
+    """The title pattern that matches exactly ``title``, case-insensitively like every title
+    pattern: ``Signs & Songs`` → ``^Signs & Songs$``."""
     escaped = _SPECIAL.sub(r"\\\1", title)
     return f"^{escaped}$"
 
 
 def title_text(pattern: str) -> str:
-    """The title a pattern stands for: ``^Signs & Songs$`` → ``Signs & Songs`` (a literal
-    title, as *Apply to group* derives it), else the pattern itself."""
+    """The title a pattern stands for: ``^Signs & Songs$`` → ``Signs & Songs`` for a literal
+    title, else the pattern itself."""
     match = re.fullmatch(r"\^(.*)\$", pattern, re.DOTALL)
     if match is not None:
         literal = re.sub(r"\\(.)", r"\1", match.group(1), flags=re.DOTALL)
@@ -129,8 +111,6 @@ def title_text(pattern: str) -> str:
 
 
 def _selector_source(selector: TrackSelector) -> str:
-    """``jpn TrueHD``, ``eng DTS-HD MA``, ``any``; ``no track`` for a selector that matches
-    nothing (``languages: []``, the rule *Apply to group* makes of a job without tracks)."""
     if selector.languages == []:
         return "no track"
     parts = []
@@ -154,13 +134,11 @@ def _selector_source(selector: TrackSelector) -> str:
 
 
 def _layout(mixdown: Mixdown, defs: Definitions) -> str:
-    """``5.1``, ``2.0``: the channel layout of a mixdown, as track names show it."""
     mix = defs.mixdowns.get(mixdown)
     return f"{mix.channels - mix.lfe}.{mix.lfe}" if mix is not None else mixdown
 
 
 def _target(rule: OutputTrackRule, defs: Definitions) -> str:
-    """``Opus 5.1``, ``passthru``, ``codec rules``, ``copy``, ``burn in``, ``SRT``."""
     settings = rule.settings
     if isinstance(settings, AudioCodecRules):
         return "codec rules"
@@ -180,8 +158,7 @@ def _target(rule: OutputTrackRule, defs: Definitions) -> str:
 
 
 def rule_label(kind: Kind, number: int, rule: OutputTrackRule, definitions: Definitions) -> str:
-    """The matrix column of an explicit rule (04 §Resolution matrix): ``A1 jpn TrueHD→Opus
-    5.1``, ``S1 eng Signs & Songs`` (``number`` is 0-based)."""
+    """The matrix column of an explicit rule; ``number`` is 0-based."""
     head = f"{_PREFIX[kind]}{number + 1} {_selector_source(rule.selector)}"
     if rule.selector.languages == []:
         return head
@@ -189,9 +166,6 @@ def rule_label(kind: Kind, number: int, rule: OutputTrackRule, definitions: Defi
     if kind == "audio":
         return f"{head}→{target}"
     return head if target == "copy" else f"{head} ({target})"
-
-
-# =========================================================================== compiled defaults
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,7 +178,7 @@ class CompiledRule:
     foreign audio search)."""
     rule: OutputTrackRule
     words: str
-    """The column text after ``A1``: ``jpn``, ``every track``, ``commentary``."""
+    """The column text after the rule's number."""
     slot: int | None = None
     """The index of its language in the listed languages (``language`` rules)."""
     language: str | None = None
@@ -216,16 +190,15 @@ class CompiledRule:
 def compile_defaults(
     template: JobTemplate, kind: Kind, *, preferred: Sequence[str] = ()
 ) -> list[CompiledRule]:
-    """The template's ``kind`` defaults as track rules (04 §Track rules: "one per language in
-    the selection list, with ``settings`` set to the codec rules"), plus one rule for each
-    other part of the selection that takes tracks: the no-match track, other languages,
-    commentary and descriptions, and (subtitles) the foreign audio search. ``preferred``:
-    Settings → the preferred languages of ``kind``. With no language at all, one rule takes
-    every track (decision 0031).
+    """The template's ``kind`` defaults as track rules: one per listed language, with the codec
+    rules as settings, plus one rule for each other part of the selection that takes tracks (the
+    no-match track, other languages, commentary and descriptions, and for subtitles the foreign
+    audio search). ``preferred``: the preferred languages of ``kind``. With no language at all,
+    one rule takes every track.
 
-    What a selector cannot say (the default-flagged track of the no-match rule, "not a listed
-    language", ``und`` treated as the first language) is the selection stage's: these rules
-    name the columns and show where each track came from; the selection stage decides."""
+    A selector cannot say everything the selection stage decides (the default-flagged track of
+    the no-match rule, "not a listed language", ``und`` as the first language). These rules only
+    name the columns and show where each track came from."""
     defaults = template.audio_defaults if kind == "audio" else template.subtitle_defaults
     selection = defaults.selection
     settings: AudioCodecRules | SubtitleOutputSettings
@@ -351,9 +324,6 @@ def _slot(
     return language_slot(effective_language(stream), listed, undetermined)
 
 
-# =========================================================================== explicit rules
-
-
 @dataclass(slots=True)
 class _Output[T: (AudioOutputTrack, SubtitleOutputTrack)]:
     rule: int
@@ -430,7 +400,6 @@ def _metadata(
     *,
     extra: bool,
 ) -> TrackMetadata:
-    """``meta`` (from the source track) with the rule's language, name template and flags."""
     update: dict[str, object] = {}
     if template.language is not None:
         update["language"] = template.language
@@ -454,8 +423,8 @@ def _metadata(
 def _defaults_flag[T: (AudioOutputTrack, SubtitleOutputTrack)](
     outputs: list[_Output[T]], *, eligible: Sequence[bool]
 ) -> list[T]:
-    """The default flags: a rule's explicit ``default: true`` wins; without one, the first
-    output whose source track is default keeps the flag (at most one, decision 0031)."""
+    """The default flags: a rule's explicit ``default: true`` wins over the source flags of the
+    other outputs; otherwise only the first output with a default source track keeps the flag."""
     explicit = any(
         o.explicit_default is True and not o.extra and ok
         for o, ok in zip(outputs, eligible, strict=True)
@@ -501,8 +470,6 @@ def _settings_issue(kind: Kind, n: int, label: str, list_path: str) -> Validatio
 
 
 def _no_track_cell(match: TrackMatch, kind: Kind) -> TrackMatch:
-    """The cell of a rule whose settings are of the other kind: it found its track(s) but
-    makes no output (✗, an error), not "✓ exact"."""
     other = "subtitle" if kind == "audio" else "audio"
     return match.model_copy(
         update={
@@ -712,9 +679,6 @@ def _explicit_subtitles(
     return _KindResult(final, decisions, matches, columns, issues)
 
 
-# =========================================================================== the engine
-
-
 @dataclass(frozen=True, slots=True)
 class TrackResolution:
     """The tracks of one source for one template."""
@@ -743,12 +707,10 @@ def resolve_tracks(
     languages: LanguageSettings | None = None,
     container_codecs: bool = True,
 ) -> TrackResolution:
-    """The audio and subtitle tracks of ``source`` with ``template`` (container
-    ``template.output.container``): explicit rules where the template has them, else the
-    defaults (see the module doc). ``languages``: Settings → Languages (the preferred
-    languages of the defaults). ``container_codecs=False`` leaves the lint's
-    ``defaults.codec_not_in_container`` out: a caller that validates the job (C-8's
-    ``container.codec_unsupported``) gives one issue per problem (decision 0031 §6)."""
+    """The audio and subtitle tracks of ``source`` with ``template``: explicit rules where the
+    template has them, else the defaults. ``languages``: the preferred languages of the defaults.
+    ``container_codecs=False`` leaves out the lint's ``defaults.codec_not_in_container``, for a
+    caller that reports ``container.codec_unsupported`` itself."""
     defs = definitions or load_definitions()
     container = template.output.container
     preferred_audio = languages.preferred_audio if languages is not None else []
