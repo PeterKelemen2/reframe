@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -60,6 +61,16 @@ def probe(path: Path) -> dict[str, Any]:
     )
     data: dict[str, Any] = json.loads(out.stdout)
     return data
+
+
+def chapter_titles(path: Path) -> list[str]:
+    ffprobe = media.find_ffprobe()
+    assert ffprobe
+    out = subprocess.run(
+        [ffprobe, "-v", "error", "-of", "json", "-show_chapters", str(path)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    return [c.get("tags", {}).get("title", "") for c in json.loads(out.stdout)["chapters"]]
 
 
 async def clip(env: Env, job: JobSettings, start: float, seconds: float) -> PreviewClip:
@@ -125,6 +136,69 @@ async def test_the_same_request_gives_the_cached_clip(
     monkeypatch.undo()
     changed = await clip(env, other, start=0.5, seconds=1.0)
     assert changed.id != first.id
+
+
+async def test_renamed_chapters_give_a_new_clip(tmp_path: Path, fixture_media: Media) -> None:
+    src = fixture_media("chapters")
+    env = make_env(tmp_path / "cache")
+    first_job = job_for(src)
+    first_job.chapters.names = ["Old A", "Old B", "Old C", "Old D", "Old E"]
+    first = await clip(env, first_job, start=0.0, seconds=5.0)
+    assert chapter_titles(first.path)[0] == "Old A"
+    second_job = job_for(src)
+    second_job.chapters.names = ["New A", "New B", "New C", "New D", "New E"]
+    second = await clip(env, second_job, start=0.0, seconds=5.0)
+    assert second.id != first.id
+    assert chapter_titles(second.path)[0] == "New A"
+    again = await clip(env, first_job, start=0.0, seconds=5.0)  # still cached
+    assert (again.id, again.path) == (first.id, first.path)
+
+
+async def test_two_identical_clips_at_once(tmp_path: Path, fixture_media: Media) -> None:
+    """Two runs of the same clip id at once (a raised limit, or two processes on one cache)."""
+    env = make_env(tmp_path / "cache")
+    env.tasks.set_limit("preview_clip", 2)
+    src = fixture_media("hdr10-4k")
+    job = job_for(src, encoder="libx265", bit_depth=10, preset="ultrafast")
+    a = start_preview_clip(env.ctx, job, start=0.0, seconds=3.0)
+    b = start_preview_clip(env.ctx, job, start=0.0, seconds=3.0)
+    (done_a, clip_a), (done_b, clip_b) = await env.finish(a), await env.finish(b)
+    assert done_a.state is TaskState.DONE, done_a.error
+    assert done_b.state is TaskState.DONE, done_b.error
+    assert isinstance(clip_a, PreviewClip)
+    assert isinstance(clip_b, PreviewClip)
+    assert clip_a.id == clip_b.id
+    assert clip_a.path == clip_b.path
+    clips = tmp_path / "cache" / "clips"
+    assert sorted(p.name for p in clips.iterdir()) == [clip_a.path.name]
+    assert clip_a.path.stat().st_size == clip_b.size
+
+
+async def test_a_clip_made_meanwhile_by_another_run(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses to replace a clip that a reader has open: when another run has just
+    made the same clip, its file is used and ours is removed."""
+    env = make_env(tmp_path / "cache")
+    src = fixture_media("letterbox")
+    job = job_for(src)
+    first = await clip(env, job, start=0.0, seconds=1.0)
+    replace = os.replace
+    refused: list[str] = []
+
+    def refuse_existing(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+        if Path(target) == first.path:
+            refused.append(Path(source).name)
+            raise PermissionError(target)
+        replace(source, target)
+
+    monkeypatch.setattr("reframe.preview.cache.PreviewCache.find_clip", lambda *_: None)
+    monkeypatch.setattr("reframe.preview.clip.os.replace", refuse_existing)
+    again = await clip(env, job, start=0.0, seconds=1.0)
+    assert (again.id, again.path) == (first.id, first.path)
+    assert len(refused) == 1
+    assert refused[0].startswith(".tmp-")
+    assert no_leftovers(tmp_path / "cache" / "clips") == []
 
 
 async def test_the_clip_cache_is_read_off_the_event_loop(

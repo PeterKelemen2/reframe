@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from reframe.models import (
     TaskState,
 )
 from reframe.preview import start_cropdetect, start_frames
-from reframe.preview.crop import CROPDETECT
+from reframe.preview.crop import CROPDETECT, parse_cropdetect
 from reframe_testing import fake_tools as ft
 
 from .helpers import ffmpeg, make_env, real_tools, run_ffmpeg, tool
@@ -197,6 +198,37 @@ def test_an_absolute_limit_finds_no_bars_in_10_bit(pq_letterbox: Path) -> None:
     assert ours.endswith("crop=640:268:0:46")
     absolute = cropdetect_line(pq_letterbox, "cropdetect=limit=24:round=2:skip=0")
     assert absolute.endswith("crop=640:360:0:0")
+
+
+def _cropdetect(chain: str, size: str, round_to: int) -> str:
+    """The first ``cropdetect`` line of FFmpeg's log (with its ``[Parsed_cropdetect_0 @ …]``
+    prefix)."""
+    proc = subprocess.run(
+        [ffmpeg(), "-hide_banner", "-nostdin", "-loglevel", "info", "-f", "lavfi",
+         "-i", f"color=c={'white' if 'pad' in chain else 'black'}:s={size}:d=1,format=yuv420p",
+         "-vf", f"{chain},cropdetect=round={round_to}:skip=0", "-frames:v", "1", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=60, check=True,
+    )  # fmt: skip
+    (line,) = [x for x in proc.stderr.splitlines() if "crop=" in x][:1]
+    return line
+
+
+def test_cropdetect_rounding_example() -> None:
+    box = "drawbox=x=9:y=13:w=300:h=150:color=white:t=fill"
+    at_9_13 = _cropdetect(box, "320x181", 2)
+    assert "] x1:9 x2:308 y1:13 y2:162 w:298 h:148 x:10 y:14 " in at_9_13
+    assert at_9_13.endswith(" crop=298:148:10:14")
+    assert _cropdetect(box, "320x181", 1).endswith(" crop=288:144:16:16")
+    padded = _cropdetect("pad=320:181:9:13:black", "300x150", 2)
+    assert "] x1:8 x2:307 y1:12 y2:161 w:300 h:150 x:8 y:12 " in padded
+    assert padded.endswith(" crop=300:150:8:12")
+    assert _cropdetect("pad=320:181:9:13:black", "300x150", 1).endswith(" crop=288:144:14:16")
+    # What the crop task makes of it (round=2 is the task's value).
+    assert "round=2" in CROPDETECT
+    found, rect = parse_cropdetect(at_9_13, 320, 181)
+    assert found
+    assert rect is not None
+    assert (rect.top, rect.bottom, rect.left, rect.right) == (14, 19, 10, 12)
 
 
 def test_a_single_frame_needs_skip_0(fixture_media: Media) -> None:
