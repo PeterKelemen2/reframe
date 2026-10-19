@@ -199,8 +199,9 @@ def test_fetch_installs_the_build_that_discovery_then_uses(
     assert f"Installed FFmpeg {FAKE_VERSION} into {install}." in out
     assert f"ffmpeg       found    bundled  {install / 'bin' / 'ffmpeg'}  {FAKE_VERSION}" in out
     assert f"ffprobe      found    bundled  {install / 'bin' / 'ffprobe'}  {FAKE_VERSION}" in out
-    # Plain lines (not a terminal).
-    assert "Reading the manifest" in result.stdout or "Downloading" in result.stdout
+    # Plain lines (not a terminal). Earlier steps may be coalesced away, never the last one.
+    installed = out.index(f"Installed FFmpeg {FAKE_VERSION} into {install}.")
+    assert out[installed - 1] == "Running tool discovery (99%)"
     assert result.stderr == ""
     assert route.requests == 1
 
