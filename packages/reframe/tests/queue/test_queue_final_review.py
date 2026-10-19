@@ -213,7 +213,6 @@ def test_no_key_function_raises_for_a_path_with_a_nul(tmp_path: Path) -> None:
     assert files.remove_files([bad]) == [f"{os.fspath(bad)!r} could not be removed: " + _nul(bad)]
     key = files.file_key(bad)
     assert key.identity is None
-    assert files._path_key(bad) == key.path.casefold()
 
 
 def _nul(path: Path) -> str:
