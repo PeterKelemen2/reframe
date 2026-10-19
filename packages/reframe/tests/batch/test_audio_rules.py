@@ -907,9 +907,8 @@ def test_name_template() -> None:
     rule = AudioCodecRule(codec="aac", max_bitrate=640, extras=full)
     track, _ = run(stream("ac3", 6, 448, display_codec="AC-3"), rules(rule))
     assert (track.action, track.metadata.name) == ("passthru", "English 5.1 AC-3")
-    assert render_track_name(
-        "{title} / {source_codec:upper}", {"title": "Main", "source_codec": "dts"}
-    ) == ("Main / DTS")
+    values = {"title": "Main", "source_codec": "dts"}
+    assert render_track_name("{title} / {source_codec:upper}", values) == "Main / DTS"
 
 
 def test_metadata_from_the_source() -> None:

@@ -236,7 +236,8 @@ def test_a_rule_for_a_language_the_selection_never_takes() -> None:
         ),
         (
             # A stereo rule is checked for the sources it downmixes: a mono source keeps its
-            # layout (no upmix) and gets AAC Mono's maximum, which its own decision notes.
+            # layout (no upmix), and its snap to AAC Mono's maximum is a note on that track's
+            # decision, not a lint issue.
             rule(None, "stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=600),
             "audio_defaults.codec_rules[0].max_bitrate",
             "AAC Stereo goes up to 512 kb/s: 600 → 512 kb/s.",
