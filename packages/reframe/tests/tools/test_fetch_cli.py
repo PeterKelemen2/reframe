@@ -1,9 +1,4 @@
-"""``reframe tools status`` and ``reframe tools fetch`` (C-15; demo 8 of the core breakdown).
-
-The fetch downloads a fake build from a local HTTP server on 127.0.0.1 (``fetch_server``):
-the packaged manifest is replaced by a test manifest that points there. **Never the
-network.** The folders are private (``REFRAME_*_DIR`` in ``tmp_path``).
-"""
+"""``reframe tools status`` and ``reframe tools fetch`` against a local HTTP server."""
 
 from __future__ import annotations
 
@@ -60,7 +55,6 @@ def invoke(*args: str) -> Result:
 
 
 def assert_clean_failure(result: Result, code: int) -> list[str]:
-    """Exit ``code``, ``error:`` lines on stderr, never a traceback."""
     assert result.exit_code == code, (result.stdout, result.stderr)
     assert "Traceback" not in result.stderr
     errors = [line for line in result.stderr.splitlines() if line.startswith("error: ")]
@@ -75,7 +69,6 @@ def server() -> Iterator[LocalServer]:
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, nothing on ``PATH``, private folders, MediaInfo off."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
@@ -89,7 +82,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 @pytest.fixture
 def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -> ft.FakeTools:
-    """``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` point at the fake tools."""
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
     return fake_tools
@@ -100,11 +92,7 @@ def _ext(platform: str) -> str:
 
 
 def use_manifest(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> None:
-    """The CLI and the task read this manifest instead of the packaged one."""
     monkeypatch.setattr(fetch_module, "DEFAULT_MANIFEST", manifest)
-
-
-# --------------------------------------------------------------------------- tools status
 
 
 def test_status_prints_the_lines_of_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
@@ -192,9 +180,6 @@ def test_status_help() -> None:
     assert "fetch" in invoke("tools", "--help").stdout
 
 
-# --------------------------------------------------------------------------- tools fetch
-
-
 @POSIX_ONLY
 def test_fetch_installs_the_build_that_discovery_then_uses(
     env: Path, server: LocalServer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -214,7 +199,7 @@ def test_fetch_installs_the_build_that_discovery_then_uses(
     assert f"Installed FFmpeg {FAKE_VERSION} into {install}." in out
     assert f"ffmpeg       found    bundled  {install / 'bin' / 'ffmpeg'}  {FAKE_VERSION}" in out
     assert f"ffprobe      found    bundled  {install / 'bin' / 'ffprobe'}  {FAKE_VERSION}" in out
-    # Plain lines (not a terminal): the steps, without a traceback or a warning.
+    # Plain lines (not a terminal).
     assert "Reading the manifest" in result.stdout or "Downloading" in result.stdout
     assert result.stderr == ""
     assert route.requests == 1
@@ -342,8 +327,7 @@ def test_an_unsupported_host_without_platform(env: Path, monkeypatch: pytest.Mon
 async def test_ctrl_c_stops_the_download(
     env: Path, server: LocalServer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Cancelling the command (what asyncio.run does on Ctrl+C) cancels the task: the
-    download stops, nothing is installed, no temporary folder is left, exit 130."""
+    """Cancelling the task is what asyncio.run does on Ctrl+C."""
     other = foreign_platform()
     ext = "zip" if other == "windows-x64" else "tar.xz"
     data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)
@@ -371,9 +355,6 @@ def test_fetch_help() -> None:
     assert result.exit_code == 0
     for text in ("--build", "--platform", "linux-x64", "windows-x64", "SHA-256", "Exit codes"):
         assert text in result.stdout
-
-
-# --------------------------------------------------------------------------- the view
 
 
 def _task(message: str, progress: float | None) -> TaskInfo:
@@ -419,8 +400,7 @@ def test_task_error_drops_the_expected_failure_prefix() -> None:
 
 
 def test_an_expected_task_failure_is_not_logged_with_a_traceback() -> None:
-    """With no logging configured, the task manager's ``log.exception`` would print a
-    traceback on stderr (decision 0017 item 23): the CLI drops it for ``TaskFailed``."""
+    """With no logging configured, the task manager's ``log.exception`` would print a traceback."""
     import logging
 
     from reframe.mediatask import TaskFailed

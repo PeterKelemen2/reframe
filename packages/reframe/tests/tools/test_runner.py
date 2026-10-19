@@ -1,9 +1,4 @@
-"""reframe.tools.runner: timeout, cancel, output limits, missing binaries, tree kill (C-1).
-
-Most tests drive the fake FFmpeg (``reframe_testing.fake_tools``), so they run the same on
-Linux and Windows (where the fake is a ``.cmd`` launcher: ``cmd.exe -> python``, a real
-process tree).
-"""
+"""``reframe.tools.runner``: timeouts, cancel, output limits, missing binaries and tree kill."""
 
 from __future__ import annotations
 
@@ -50,9 +45,6 @@ async def _wait_for(predicate: object, limit: float = 10.0) -> None:
 
 def _scenario(tools: ft.FakeTools, *rules: ft.Rule) -> None:
     tools.set_scenario(ft.Scenario(list(rules)))
-
-
-# --------------------------------------------------------------------------- basics
 
 
 async def test_exit_code_and_output_are_returned(fake_tools: ft.FakeTools) -> None:
@@ -130,9 +122,6 @@ async def test_programming_errors_raise(
         await run(argv, **kwargs)  # type: ignore[arg-type]
 
 
-# --------------------------------------------------------------------------- missing binary
-
-
 async def test_missing_binary_is_a_result_not_an_exception(tmp_path: Path) -> None:
     result = await run([str(tmp_path / "no-such-ffmpeg"), "-version"], timeout=5)
     assert result.returncode is None
@@ -159,9 +148,6 @@ async def test_directory_is_a_result(tmp_path: Path) -> None:
     assert result.returncode is None
 
 
-# --------------------------------------------------------------------------- timeout
-
-
 async def test_timeout_kills_the_process(fake_tools: ft.FakeTools) -> None:
     _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.stderr("started\n"), ft.hang()]))
     started = time.monotonic()
@@ -171,7 +157,7 @@ async def test_timeout_kills_the_process(fake_tools: ft.FakeTools) -> None:
     assert not result.cancelled
     assert result.returncode not in (0, None)
     assert 1.4 <= elapsed < 10
-    assert b"started" in result.stderr  # output before the kill is kept
+    assert b"started" in result.stderr
     for pid in fake_tools.pids():
         assert not _alive(pid)
 
@@ -195,9 +181,6 @@ async def test_timeout_does_not_depend_on_sigterm(fake_tools: ft.FakeTools) -> N
     result = await run([str(fake_tools.ffmpeg), "-stubborn"], timeout=1)
     assert result.timed_out
     assert result.returncode == -9  # SIGKILL
-
-
-# --------------------------------------------------------------------------- cancel
 
 
 async def test_cancel_from_a_coroutine(fake_tools: ft.FakeTools) -> None:
@@ -261,7 +244,7 @@ async def test_cancelled_token_does_not_start_the_process(fake_tools: ft.FakeToo
     assert result.cancelled
     assert result.returncode is None
     assert fake_tools.pids() == []
-    await token.wait()  # returns at once
+    await token.wait()
 
 
 async def test_one_token_cancels_several_runs(fake_tools: ft.FakeTools) -> None:
@@ -293,9 +276,6 @@ async def test_cancel_after_exit_is_a_normal_result(fake_tools: ft.FakeTools) ->
     token.cancel()
     assert result.ok
     assert not result.cancelled
-
-
-# --------------------------------------------------------------------------- output limits
 
 
 async def test_large_output_is_limited_and_drained(fake_tools: ft.FakeTools) -> None:
@@ -331,10 +311,8 @@ async def test_output_below_the_limit_is_complete(fake_tools: ft.FakeTools) -> N
 
 
 async def test_a_grandchild_holding_the_pipe_does_not_block(tmp_path: Path) -> None:
-    """The process exits, but a grandchild it left behind keeps stdout open: run() returns
-    after a short grace period, and the grandchild is killed (POSIX: the child's process
-    group; Windows: the orphans whose parent was the child). The base interpreter runs both,
-    so no venv launcher sits in between on Windows."""
+    """A grandchild that keeps stdout open does not block ``run()``. The base interpreter
+    runs both, so no venv launcher sits in between on Windows."""
     code = (
         "import subprocess, sys; "
         "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
@@ -382,9 +360,6 @@ async def test_zero_output_limit_stores_nothing(fake_tools: ft.FakeTools) -> Non
     assert result.ok
     assert result.stdout == b""
     assert result.truncated
-
-
-# --------------------------------------------------------------------------- streaming
 
 
 async def test_streaming_passes_lines_to_callbacks(fake_tools: ft.FakeTools) -> None:
@@ -535,9 +510,6 @@ def test_line_splitting_does_not_depend_on_chunk_boundaries(data: bytes, cuts: l
     assert sink.value() == data[-10:]
 
 
-# --------------------------------------------------------------------------- tree kill helper
-
-
 def test_kill_process_tree_on_a_dead_pid_is_harmless() -> None:
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()
@@ -590,21 +562,12 @@ def test_kill_process_tree_can_keep_the_root(tmp_path: Path) -> None:
             proc.wait()
 
 
-# --------------------------------------------------------------------------- child safety
-
-
 @pytest.mark.skipif(
     not (sys.platform.startswith("linux") or sys.platform == "win32"),
     reason="PR_SET_PDEATHSIG (Linux) or the kill-on-close job (Windows)",
 )
 def test_children_die_when_reframe_is_killed(fake_tools: ft.FakeTools) -> None:
-    """Kill the process that called run() (SIGKILL / TerminateProcess): its FFmpeg dies too.
-
-    Linux: PR_SET_PDEATHSIG. Windows: the process was in Reframe's kill-on-close job, and
-    the job closes with Reframe (``cmd.exe`` of the ``.cmd`` launcher and the fake both die).
-    The helper runs on the base interpreter (not the venv launcher, which is one more process
-    on Windows), with this process's ``sys.path``.
-    """
+    """Kill the process that called run() (SIGKILL / TerminateProcess): its FFmpeg dies too."""
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-hang"], actions=[ft.hang()])]))
     helper = textwrap.dedent(
         f"""
@@ -654,7 +617,7 @@ async def test_on_start_gets_the_pid_of_the_running_process() -> None:
 
 
 async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
-    # What the queue runner (C-11) does for pause/resume: psutil suspend()/resume().
+    # The queue runner pauses a job with psutil suspend()/resume().
     lines: list[str] = []
     pids: list[int] = []
     code = "import time\nfor i in range(400):\n    print(i, flush=True)\n    time.sleep(0.01)"

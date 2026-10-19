@@ -1,38 +1,4 @@
-"""C-12 x C-7 x C-8: the codec rules, the command builder and validation agree on every audio
-value an encoder cannot do (decisions 0024, 0025, 0026).
-
-The full product (no sampling) of
-
-- source layouts: mono, stereo, 5.1, 5.1(side), 7.1, an unknown channel count and the
-  layouts libopus refuses, which C-7 makes into one it takes (``2.1``, ``3.0(back)`` →
-  stereo, ``4.0`` → 3.0, ``6.0`` → 5.0, ``7.1(wide)`` → 5.1), each with a known sample rate
-  (44.1 kHz, which Opus lacks); stereo and the unknown channel count also without one (the
-  source rate is independent of the layout);
-- encoders: aac, ac3, eac3, libopus, flac, libmp3lame;
-- requested bitrate: valid, between two steps, above the maximum, below the minimum (of the
-  layout's table), and none with a VBR quality;
-- requested mixdown: none, mono, stereo, dpl2, 5.1, 7.1;
-- requested sample rate: none, a valid one (48 kHz), one the encoder lacks (47 kHz)
-
-is 13 x 6 x 90 = 7020 tracks. For each track:
-
-- **C-7**: ``build_plan`` writes ``-c:a:0``, ``-b:a:0`` (or the VBR option), ``-ar:a:0`` and
-  the ``aresample`` layout (``PlannedAudio.layout``) that ``planned_audio`` says; the bitrate
-  table follows the written channels.
-- **C-8**: the info notes (``audio.bitrate_out_of_range``, ``audio.mixdown_unsupported``,
-  ``audio.mixdown_upmix``, ``audio.samplerate_unsupported``, ``audio.quality_unsupported``)
-  are there exactly when C-7 writes something other than the track asks for, and name what
-  C-7 writes. Each fix leaves C-7's arguments unchanged and removes its note.
-- **C-12**: ``apply_codec_rules`` with a rule that asks for the same values (a lossless
-  source of unknown bit rate and ``if_fits="reencode"``, so the rule encodes at its max and
-  the "never bigger than the source" cap does not apply) gives the values C-7 writes for the
-  request; its already-snapped track has no snap notes (except the note on a layout libopus
-  refuses, which a rule cannot name), and C-7 writes it unchanged (:data:`DISAGREE`). The rule
-  mixdowns are ``keep`` (= none), ``mono``, ``stereo``, ``dpl2``, ``5.1`` and ``up_to_5.1``
-  (rules have no 7.1). C-12's effective values: ``track.samplerate or
-  snap_samplerate(None, source rate)``; the mixdown is the rule's ``requested_mixdown``
-  snapped.
-"""
+"""Codec rules, the command builder and validation agree on every audio track of the matrix."""
 
 from __future__ import annotations
 
@@ -102,7 +68,7 @@ LAYOUTS: dict[str, tuple[int, str | None]] = {
     "5.1(side)": (6, "5.1(side)"),
     "7.1": (8, "7.1"),
     "unknown": (0, None),
-    # Layouts libopus refuses (C-7 downmixes or relabels them, decision 0013 / M2 review).
+    # Layouts libopus refuses (the command builder downmixes or relabels them).
     "2.1": (3, "2.1"),
     "3.0(back)": (3, "3.0(back)"),
     "4.0": (4, "4.0"),
@@ -132,9 +98,6 @@ def source_stream(layout: str, rate: int | None) -> AudioStream:
         lossless=True,
         language="eng",
     )
-
-
-# --------------------------------------------------------------------------- C-7
 
 
 @dataclass(frozen=True)
@@ -208,9 +171,6 @@ def check_builder(planned: PlannedAudio, written: Written, stream: AudioStream) 
         assert planned.bitrate_mixdown == channels_mixdown(len(channels))
 
 
-# --------------------------------------------------------------------------- the jobs
-
-
 @functools.cache
 def _base(stream_json: str) -> Any:
     s = sc.base()
@@ -273,12 +233,8 @@ def tracks(encoder_id: str, stream: AudioStream) -> Iterator[AudioOutputTrack]:
                 )
 
 
-# --------------------------------------------------------------------------- C-8
-
-
 def is_upmix(requested: Mixdown, channels: int) -> bool:
-    """Decision 0019 item 3: more channels than a known source, or Dolby Pro Logic II of a
-    source that is not surround."""
+    """More channels than a known source, or Dolby Pro Logic II of a source that is not surround."""
     wanted = DEFS.mixdowns[requested].channels
     return channels > 0 and (wanted > channels or (requested == "dpl2" and channels <= 2))
 
@@ -293,8 +249,8 @@ def layout_downmix(planned: PlannedAudio, stream: AudioStream) -> bool:
 def check_notes(
     s: Any, track: AudioOutputTrack, planned: PlannedAudio, written: Written
 ) -> set[str]:
-    """The notes exist exactly when C-7 writes another value than the track asks for, and
-    name it; each fix keeps C-7's arguments and removes its note. Returns the note codes."""
+    """The notes exist exactly when the builder writes another value than the track asks for, and
+    name it; each fix keeps the builder's arguments and removes its note. Returns the note codes."""
     issues = issues_of(s)
     assert [i for i in issues if i.severity is Severity.ERROR] == []
     notes = {i.code: i for i in issues if i.code in SNAP_CODES}
@@ -346,9 +302,6 @@ def check_notes(
     return expected
 
 
-# --------------------------------------------------------------------------- C-12
-
-
 RULE_MIXDOWNS: dict[Mixdown | None, RuleMixdown] = {
     None: "keep",
     "mono": "mono",
@@ -361,14 +314,16 @@ RULE_MIXDOWNS: dict[Mixdown | None, RuleMixdown] = {
 def check_codec_rules(
     stream: AudioStream, track: AudioOutputTrack, seen: list[AudioOutputTrack]
 ) -> None:
-    """C-12's track for the same request is what C-7 writes for the request, and is already
-    snapped: no notes, and C-7 writes its values unchanged."""
+    """The codec rules' track for the same request is what the builder writes for it, and is
+    already snapped: no notes, and the builder writes its values unchanged."""
     rule_mixdowns: list[RuleMixdown] = []
     if track.mixdown in RULE_MIXDOWNS:
         rule_mixdowns.append(RULE_MIXDOWNS[track.mixdown])
     if track.mixdown == "5.1":
         rule_mixdowns.append("up_to_5.1")
     for rule_mixdown in rule_mixdowns:
+        # A lossless source of unknown bit rate and if_fits="reencode": the rule encodes at its
+        # max, and the "never bigger than the source" cap does not apply.
         rule = AudioCodecRule(
             codec=track.encoder or "aac",
             mixdown=rule_mixdown,
@@ -383,7 +338,7 @@ def check_codec_rules(
         encoder = DEFS.audio_encoders[out.encoder or ""]
         effective_rate = out.samplerate or encoder.snap_samplerate(None, stream.sample_rate)
 
-        # The same request to C-7: the rule's mixdown, its max as the bitrate (none = the
+        # The same request to the builder: the rule's mixdown, its max as the bitrate (none = the
         # default), its sample rate.
         request = AudioOutputTrack(
             encoder=out.encoder,
@@ -399,7 +354,7 @@ def check_codec_rules(
             expected.samplerate,
         ), (rule_mixdown, track)
 
-        # C-12's own track is already snapped (each distinct track is checked once).
+        # The rule's own track is already snapped (each distinct track is checked once).
         if out in seen:
             continue
         seen.append(out)
@@ -413,20 +368,17 @@ def check_codec_rules(
         written = write(s)
         assert (written.bitrate, written.samplerate) == (out.bitrate, effective_rate)
         assert written.layout == planned.layout
-        # A rule keeps the source layout or names a mixdown: it does not name the layout C-7
-        # makes of a source layout libopus refuses (5.0 of 6.0, stereo of 2.1), so that note
-        # stays on C-12's track (reported to the M2 lead).
+        # A rule keeps the source layout or names a mixdown: it does not name the layout the
+        # builder makes of a source layout libopus refuses (5.0 of 6.0, stereo of 2.1), so that
+        # note stays on the rule's track.
         allowed = {"audio.mixdown_unsupported"} if layout_downmix(planned, stream) else set()
         left = [i for i in issues_of(s) if i.code in SNAP_CODES or i.severity is Severity.ERROR]
         assert {i.code for i in left} <= allowed, left
 
 
-# --------------------------------------------------------------------------- the test
-
-
-#: (layout, encoder) where C-12 disagrees with C-7, run as strict xfail until the owner
-#: fixes it (then delete the entry). Empty: the libopus layout cases of the M2 review agree
-#: since C-12 takes the bitrate table of the layout C-7 writes.
+#: (layout, encoder) where the codec rules disagree with the builder, run as strict xfail until
+#: the owner fixes it (then delete the entry). Empty: the libopus layout cases agree, since the
+#: rules take the bitrate table of the layout the builder writes.
 DISAGREE: dict[tuple[str, str], str] = {}
 
 
