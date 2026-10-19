@@ -1,6 +1,5 @@
-"""The ``settings`` and ``presets`` services of the facade (C-9): ``settings.json`` read in
-``create()``, ``settings.update`` with its reactions (tool discovery for tool paths, encoder
-detection for ``encoders.hardware_tests`` / ``encoders.vaapi_device``), and the presets."""
+"""The ``settings`` and ``presets`` services of the facade: loading and saving the settings, and
+the rescans that a change starts."""
 
 from __future__ import annotations
 
@@ -81,9 +80,6 @@ class Calls:
                 self.cancelled = True
                 raise
         return self.result
-
-
-# --------------------------------------------------------------------------- settings
 
 
 async def test_create_reads_settings_json(config: Path, fake_tools: ft.FakeTools) -> None:
@@ -184,8 +180,7 @@ async def test_an_invalid_change_is_an_issue_and_changes_nothing(
     ],
 )
 async def test_schema_version_cannot_be_changed(config: Path, change: Any) -> None:
-    """A changed ``schema_version`` was saved; the next start then treated the file as newer
-    and used the defaults. The change is refused now and nothing is written."""
+    """Saving it would make the next start read the file as newer and use the defaults."""
     async with await Reframe.create() as app:
         before = (config / "settings.json").read_bytes()
         result = await app.settings.update(change)
@@ -331,7 +326,6 @@ async def test_a_newer_settings_file_is_not_overwritten(env: Path) -> None:
 async def test_settings_hook_still_overrides_the_file(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``Reframe._load_settings`` (a test hook) wins over the file; a change is saved."""
     settings = AppSettings.model_validate({"queue": {"parallel_jobs": 4}})
     monkeypatch.setattr(Reframe, "_load_settings", staticmethod(lambda config_dir: settings))
     async with await Reframe.create() as app:
@@ -339,9 +333,6 @@ async def test_settings_hook_still_overrides_the_file(
         await app.settings.update([{"op": "replace", "path": "/queue/parallel_jobs", "value": 5}])
     saved = json.loads((env / "config" / "settings.json").read_text("utf-8"))
     assert saved["queue"]["parallel_jobs"] == 5
-
-
-# --------------------------------------------------------------------------- presets
 
 
 async def test_presets_are_read_at_first_use_not_in_create(env: Path) -> None:

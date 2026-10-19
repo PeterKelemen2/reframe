@@ -1,11 +1,5 @@
-"""C-10 "Done when": "cancelling a scan stops its FFmpeg process within 1 s", for the bitrate
-scan, the subtitle scan (both of its process kinds) and the loudness measure, with the real
-ffmpeg / ffprobe on a 2-hour file. The file is made in a few seconds by looping a 4 s file
-with ``-stream_loop`` and stream copy; its subtitle tracks have an event every 25 ms, so the
-subtitle passes (which only read packets) still run for more than a second on a fast machine.
-Uncancelled on the reference machine (n9.0.2, load average about 7): bitrate scan 2.3 s,
-subtitle packet count 3.4 s, PGS copy and read 3.0 s; cancelled, every process was gone 6 to
-25 ms after ``TaskManager.cancel`` (``testdata/README.md`` "Analysis scans").
+"""Cancelling a scan stops its FFmpeg process within ``LIMIT``, on a 2-hour file. Its subtitle
+tracks have an event every 25 ms, so every pass still runs when the cancel comes.
 """
 
 from __future__ import annotations
@@ -25,9 +19,9 @@ from reframe_testing import media, pgs
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg, pytest.mark.slow]
 
-#: The C-10 limit, from the cancel to the process being gone.
+#: The limit, from the cancel to the process being gone.
 LIMIT = 1.0
-#: Loops of the 4 s file: 2 hours, 225 000 audio packets, 288 000 SRT and 576 000 PGS packets.
+#: Loops of the 4 s file: 2 hours.
 LOOPS = 1800
 #: Milliseconds between two subtitle events.
 EVENT_STEP = 25

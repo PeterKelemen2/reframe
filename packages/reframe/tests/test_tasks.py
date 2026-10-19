@@ -1,4 +1,4 @@
-"""The background task manager (``reframe.tasks``, C-3 / C-10)."""
+"""The background task manager (``reframe.tasks``)."""
 
 from __future__ import annotations
 

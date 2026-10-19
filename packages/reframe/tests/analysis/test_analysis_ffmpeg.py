@@ -1,8 +1,4 @@
-"""The analysis tasks (C-10) with the real ffmpeg / ffprobe on the generated fixtures, through
-the facade (``Reframe.sources.bitrate_scan / subtitle_scan / loudness_scan``).
-
-M6 demo 1: "A DTS-HD MA track with no bitrate in the file → **Measure** → a bitrate appears."
-"""
+"""The analysis scans through the facade, with the real FFmpeg and ffprobe on the fixtures."""
 
 from __future__ import annotations
 
@@ -239,7 +235,7 @@ async def test_loudness_of_a_track(app: Reframe, fixture_media: FixtureMedia) ->
     result = app.tasks.value(done.id)
     assert isinstance(result, LoudnessMeasurement)
     # A 660 Hz sine at FFmpeg's default amplitude (1/8: -18 dBFS), upmixed from mono to
-    # stereo at -3 dB per channel (n9.0.2: -21.66 LUFS, -20.63 dBTP).
+    # stereo at -3 dB per channel.
     assert result.true_peak == pytest.approx(-20.6, abs=1.0)
     assert result.integrated is not None
     assert result.integrated == pytest.approx(-21.7, abs=1.0)
@@ -283,7 +279,7 @@ async def test_loudness_after_the_end_fails(app: Reframe, fixture_media: Fixture
 
 
 async def test_measured_counts_feed_the_forced_heuristic(app: Reframe, tmp_path: Path) -> None:
-    """FFmpeg writes no ``NUMBER_OF_FRAMES``, so the C-3 forced heuristic has no counts after
+    """FFmpeg writes no ``NUMBER_OF_FRAMES``, so the forced heuristic has no counts after
     the probe; the scan stores them and works the roles out again."""
     full = [(i + 0.1, i + 0.9, f"Line {i}") for i in range(12)]
     signs = [(2.1, 2.9, "A SIGN")]
