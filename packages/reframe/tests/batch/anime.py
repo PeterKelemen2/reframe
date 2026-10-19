@@ -36,7 +36,7 @@ EXAMPLE_NAMING = NamingOptions(
     word_separator="space",
 )
 #: The name of the user preset that :func:`preset_document` writes.
-PRESET_NAME = "Anime Season (04 example)"
+PRESET_NAME = "Anime Season (example)"
 #: The preset file that the ``__main__`` block writes and the tests import.
 PRESET_FILE = Path(__file__).with_name("data") / "anime-season.preset.json"
 
@@ -136,8 +136,8 @@ def preset_document() -> dict[str, object]:
         id=PRESET_ID,
         name=PRESET_NAME,
         category="Custom",
-        description="04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: "
-        "E11 has no dub), Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
+        description="jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: E11 has no dub), "
+        "Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
         built_in=False,
     )
     preset = Preset.model_validate(data)

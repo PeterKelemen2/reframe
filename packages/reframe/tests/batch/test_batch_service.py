@@ -150,7 +150,7 @@ async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -
         "Anime Show - S01E11 - Static.mkv"
     )
 
-    saved = await app.batch.save_preset(template, "Anime Show", description="04 example")
+    saved = await app.batch.save_preset(template, "Anime Show", description="The example season")
     assert isinstance(saved, Preset)
     assert (saved.category, saved.audio_rules) == ("Custom", template.audio_rules)
     s02 = season(fixture_media, tmp_path, 2)
