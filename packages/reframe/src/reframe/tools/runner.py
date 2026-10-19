@@ -1,4 +1,4 @@
-"""The one way Reframe runs a subprocess (C-1, 02 §Cross-cutting rules: "Never block").
+"""The one way Reframe runs a subprocess.
 
 - :func:`run` collects the output; :func:`run_streaming` passes each line to callbacks.
 - Both have a timeout (``run``: required) and a :class:`CancelToken`. On timeout, cancel, or
@@ -60,7 +60,7 @@ LineCallback = Callable[[str], object]
 class CancelToken:
     """A cancel flag that any coroutine or thread can set; :func:`run` reacts at once.
 
-    One token can cancel several runs (for example every step of a job).
+    One token can cancel several runs.
     """
 
     def __init__(self) -> None:
@@ -144,9 +144,6 @@ class RunResult:
     @property
     def stderr_text(self) -> str:
         return self.stderr.decode("utf-8", errors="replace")
-
-
-# --------------------------------------------------------------------------- output sinks
 
 
 class _Sink(Protocol):
@@ -267,9 +264,6 @@ async def _pump(stream: asyncio.StreamReader | None, sink: _Sink) -> None:
     await sink.close()
 
 
-# --------------------------------------------------------------------------- tree kill
-
-
 def _collect_tree(proc: psutil.Process) -> list[psutil.Process]:
     try:
         return proc.children(recursive=True)
@@ -283,8 +277,7 @@ def kill_process_tree(pid: int, *, kill_root: bool = True) -> list[psutil.Proces
 
     The root is suspended first, so it cannot start new children while they are killed; the
     tree is listed again until no new process shows up. On POSIX the root's process group is
-    killed as well (a sweep for descendants whose parent already exited, which psutil cannot
-    find through the parent any more).
+    killed as well: a descendant whose parent already exited cannot be found through the parent.
 
     Returns the descendants that were signalled (not the root: the caller reaps it, so that
     asyncio gets its exit code). Errors for processes that are already gone are ignored.
@@ -380,9 +373,6 @@ async def _wait_gone(procs: Sequence[psutil.Process], limit: float) -> None:
         pending = still
         if pending:
             await asyncio.sleep(0.02)
-
-
-# --------------------------------------------------------------------------- core
 
 
 def _check_args(argv: Sequence[str], timeout: float | None, max_output: int) -> list[str]:
@@ -542,13 +532,10 @@ def _close_transport(proc: asyncio.subprocess.Process) -> None:
             transport.close()
 
 
-# --------------------------------------------------------------------------- public API
-
-
 async def run(
     argv: Sequence[str],
     *,
-    timeout: float,  # noqa: ASYNC109 - the plan's signature; it limits the child process
+    timeout: float,  # noqa: ASYNC109 - a deadline for the child, not for this coroutine
     cancel: CancelToken | None = None,
     max_output: int = DEFAULT_MAX_OUTPUT,
     cwd: Path | None = None,
@@ -585,7 +572,7 @@ async def run_streaming(
     on_stdout_line: LineCallback | None,
     on_stderr_line: LineCallback | None,
     cancel: CancelToken | None,
-    timeout: float | None = None,  # noqa: ASYNC109 - the plan's signature
+    timeout: float | None = None,  # noqa: ASYNC109
     max_output: int = DEFAULT_STREAMING_TAIL,
     cwd: Path | None = None,
     extra_env: Mapping[str, str] | None = None,
@@ -601,8 +588,7 @@ async def run_streaming(
     :param timeout: ``None`` (the default) means no time limit: use ``cancel`` to stop it.
     :param max_output: the result keeps the **last** ``max_output`` bytes of each stream.
     :param on_start: called once with the pid of the started process, before any output is
-        read (the queue runner uses it to suspend and resume the process tree). If it
-        raises, the process tree is killed and the exception propagates.
+        read. If it raises, the process tree is killed and the exception propagates.
     """
     args = _check_args(argv, timeout, max_output)
     return await _execute(

@@ -1,28 +1,8 @@
-"""Parse the version output of FFmpeg, ffprobe, mkvpropedit and mediainfo (C-1).
+"""Parse the version output of FFmpeg, ffprobe, mkvpropedit and MediaInfo.
 
-FFmpeg ``-version`` output (checked with real builds, see ``tests/tools/data/``)::
-
-    ffmpeg version n9.0.2-17-g2a571b6068-20260930 Copyright (c) 2000-2026 the FFmpeg developers
-    built with gcc 16.2.0 (crosstool-NG 1.29.0.7_b1a94f6)
-    configuration: --prefix=/ffbuild/prefix ... --enable-libx265 ...
-    libavutil      61.  1.102 / 61.  1.102
-    libavcodec     63.  1.102 / 63.  1.102
-    ...
-
-    Exiting with exit code 0
-
-- The version token takes several forms: ``n9.0.2`` (Arch), ``n9.0.2-17-g2a571b6068-20260930``
-  (BtbN release branch), ``7.1.1-1+b1`` (Debian), ``7.0.2-static https://…`` (static builds),
-  ``7.1-full_build-www.gyan.dev``, and **git master** builds with no release number:
-  ``N-127032-g6ae491a26c-20260930`` (BtbN), ``2024-10-10-git-0f5592cfc7-full_build-…``.
-- FFmpeg 8 and 9 print ``Exiting with exit code 0`` after ``-version`` (7.1 does not): it is
-  ignored.
-- For a git master build, the release series comes from the **library major versions**.
-  Checked against real binaries: FFmpeg 6.1 → libavcodec/libavformat 60, 7.1 → 61, 8.1 → 62,
-  9.0 → 63, and the master build ``N-127032`` (after 9.0) → 63. A major version is bumped
-  on master some time before the release that carries it, so a master build is placed in the
-  series of its major version: ``libavcodec 61`` counts as 7.0. The minimum (7.0) therefore
-  means ``libavcodec >= 61`` and ``libavformat >= 61`` for master builds.
+A git master build has no release number, so its release series comes from its libavcodec and
+libavformat major versions. A major version is bumped on master some time before the release
+that carries it, so the minimum is checked against the library majors.
 """
 
 from __future__ import annotations
@@ -41,12 +21,12 @@ __all__ = [
     "parse_mkvpropedit_version",
 ]
 
-#: Reframe needs at least FFmpeg 7.0 (C-1).
+#: The oldest FFmpeg release series that Reframe accepts.
 MIN_FFMPEG: tuple[int, int] = (7, 0)
 
 #: libavcodec / libavformat major version → FFmpeg release series, checked against real
-#: builds (``tests/tools/data/ffmpeg-*.txt``). Older majors follow the same rule
-#: (series = major - 54: 58 → 4.x, 59 → 5.x) from FFmpeg's release notes.
+#: builds (``tests/tools/data``). Older majors follow the same rule (series = major - 54) from
+#: FFmpeg's release notes.
 _VERIFIED_LIB_MAJORS = {60: 6, 61: 7, 62: 8, 63: 9}
 
 _FIRST_LINE_RE = re.compile(
@@ -68,13 +48,13 @@ class FfmpegVersion:
     tool: str
     """``ffmpeg`` or ``ffprobe`` (from the first line)."""
     version: str
-    """The version token as printed (``n9.0.2-17-g2a571b6068-20260930``)."""
+    """The version token as printed."""
     release: tuple[int, int, int] | None
-    """``(9, 0, 2)``; ``None`` for git master builds. A missing patch number is 0."""
+    """The release number; ``None`` for git master builds. A missing patch number is 0."""
     configuration: list[str] = field(default_factory=list)
     """The arguments of the ``configuration:`` line."""
     libraries: dict[str, tuple[int, int, int]] = field(default_factory=dict)
-    """``{"libavcodec": (63, 1, 102), …}`` (the version the binary runs with)."""
+    """The library versions the binary runs with, by name."""
 
     @property
     def is_git_build(self) -> bool:
@@ -151,7 +131,7 @@ def parse_ffmpeg_version(text: str) -> FfmpegVersion | None:
 
 @dataclass(frozen=True)
 class SimpleVersion:
-    """A version like ``101.0`` (mkvpropedit) or ``24.06`` (mediainfo)."""
+    """The version of mkvpropedit or MediaInfo, as printed and as its numbers."""
 
     version: str
     parts: tuple[int, ...]
@@ -169,10 +149,10 @@ def _simple(match: re.Match[str] | None) -> SimpleVersion | None:
 
 
 def parse_mkvpropedit_version(text: str) -> SimpleVersion | None:
-    """``mkvpropedit v101.0 ('Time To Turn') 64-bit`` → ``101.0``."""
+    """The version from ``mkvpropedit --version`` output; ``None`` if it is not one."""
     return _simple(_MKVPROPEDIT_RE.match(text.strip()))
 
 
 def parse_mediainfo_version(text: str) -> SimpleVersion | None:
-    """``MediaInfo Command line,\\nMediaInfoLib - v24.06`` → ``24.06``."""
+    """The MediaInfoLib version from ``--Version`` output; ``None`` if it is not one."""
     return _simple(_MEDIAINFO_RE.search(text))

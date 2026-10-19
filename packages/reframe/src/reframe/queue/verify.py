@@ -1,27 +1,10 @@
-"""The output check after the encode (05 §C-11: "re-probe the output and check its layout"), and
-the re-probe check after every metadata change (05 §C-13: the in-place edit and the post-mux
-fix-up; decision 0034).
+"""The output check after an encode or a metadata edit: the re-probed file must have the
+streams the job asked for, with the languages, names and flags the job wrote.
 
-**Layout and languages** (every job). The job says which streams the output must have: one
-video stream, one audio stream per output audio track, one subtitle stream per output
-subtitle track that is not burned in. Each must carry the language the command builder wrote
-(the container's form of the track's language, or of the source track's: ISO 639-2/B for
-Matroska and WebM, /T for MP4; ``und`` when there is none). The re-probed file is compared
-with that; every difference is one line of the failure message.
-
-Only video, audio and subtitle streams are compared: attachments (fonts copied with ASS
-subtitles) and data streams (MP4 writes the chapters as a ``bin_data`` text track) are not
-tracks of the job. The language comparison uses the container's form on both sides, so
-``ger`` and ``deu`` for German are the same language, and ``und`` equals no tag.
-
-**Metadata** (a plan with an ``mkvpropedit`` step, or a ``metadata_edit`` job): also the BCP 47
-language, the name and the flags of every track, and the container title an in-place edit
-sets. The BCP 47 language read back is ``language_ietf`` (the probe reads Matroska's
-``LanguageIETF`` itself, :mod:`reframe.probe.matroska`), else the ISO 639-2 code; both sides
-are compared as canonical BCP 47 tags, so ``eng`` without ``LanguageIETF`` equals ``en``. A
-post-mux fix-up writes ``LanguageIETF`` only for a language that ISO 639-2 cannot say
-(``pt-BR``); the flags compared are those the muxer writes plus those the step writes. An
-in-place edit is compared on all six flags.
+Attachments and data streams are not tracks of the job, so they are not compared. Languages
+are compared in the container's form on both sides, so ``ger`` and ``deu`` are the same
+language, and ``und`` equals no tag. Metadata is compared as canonical BCP 47 tags, so
+``eng`` without ``LanguageIETF`` equals ``en``.
 """
 
 from __future__ import annotations
@@ -53,7 +36,7 @@ class ExpectedStream:
     kind: str
     """``video``, ``audio`` or ``subtitle``."""
     language: str
-    """In the container's form (``jpn``, ``und``)."""
+    """In the container's form."""
     bcp47: str | None = None
     """The effective language as written (BCP 47 or ISO 639; ``None``: undetermined)."""
     title: str | None = None
@@ -161,9 +144,9 @@ def metadata_problems(
     fixup: bool,
     title: tuple[bool, str | None] = (False, None),
 ) -> list[str]:
-    """What differs in BCP 47 languages, names and flags (see the module doc). ``in_place``:
-    the source was edited with mkvpropedit; ``fixup``: a post-mux mkvpropedit step ran;
-    ``title``: :func:`planned_title`."""
+    """What differs in BCP 47 languages, names and flags. ``in_place``: the source was edited
+    with mkvpropedit; ``fixup``: a post-mux mkvpropedit step ran; ``title``:
+    :func:`planned_title`."""
     flags: tuple[TrackFlag, ...] = (
         TRACK_FLAGS
         if in_place

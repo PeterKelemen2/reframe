@@ -1,19 +1,15 @@
-"""The step watchdog (decision 0016, "Timeouts"): a stall check for FFmpeg steps and a time
-limit for short steps, both counted in **active** time.
+"""Stall and time-limit checks for one running step, counted in **active** time.
 
-An encode has no wall-clock limit: a 4K AV1 encode can take a day. What the watchdog catches
-is a step that hangs: no change in its ``-progress`` values, no line on stderr, and almost no
-CPU time used by its process tree (less than :data:`CPU_SHARE` of one core) for
-``stall_after`` seconds. FFmpeg ≥ 7 prints a progress block every 0.5 s even while no frame
-comes out, so "no output" alone never happens for a live FFmpeg; the CPU check keeps a slow
-encoder with a long look-ahead (no new frame for minutes, all cores busy) from being killed.
+An encode has no wall-clock limit. A step is stalled when, for ``stall_after`` seconds, it
+shows no progress, prints no line, and its process tree uses less than :data:`CPU_SHARE` of
+one core. FFmpeg prints a progress block about every half second even with no new frame, so
+"no output" alone never means a hang: the CPU check keeps a slow encoder with a long
+look-ahead from being killed.
 
-Sleep-aware: the caller ticks every few seconds and each tick counts at most ``max_tick``
-seconds, so a system sleep (the event loop did not run) adds one short tick, whatever the
-clocks say. Paused time does not count, and a pause resets the idle time.
+Sleep-aware: each tick counts at most ``max_tick`` seconds, so a system sleep adds one short
+tick, whatever the clocks say. Paused time does not count, and a pause resets the idle time.
 
-:class:`StepWatch` is pure (the caller passes the clock and CPU readings); the queue runs it
-in a small loop next to each step.
+:class:`StepWatch` is pure: the caller passes the clock and CPU readings.
 """
 
 from __future__ import annotations

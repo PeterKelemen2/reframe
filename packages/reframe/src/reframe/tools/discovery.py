@@ -1,44 +1,15 @@
-"""Find ffmpeg, ffprobe, mkvpropedit and mediainfo, and check that they work (C-1).
+"""Find the external tools and check that they work.
 
-Search order for each tool (02 §Bundled FFmpeg):
+An override (an environment variable or a Settings path) that is missing, broken or too old is
+reported, never replaced: discovery never falls back to the bundled build or to ``PATH``
+behind the user's back. A bundled FFmpeg folder without ffprobe leaves ffprobe missing.
 
-1. **Environment variable** (``REFRAME_FFMPEG``, ``REFRAME_FFPROBE``, ``REFRAME_MKVPROPEDIT``,
-   ``REFRAME_MEDIAINFO``). Origin ``env``.
-2. **Settings path** (``AppSettings.tools``). Origin ``settings``.
-3. ffprobe only: if ffmpeg came from 1 or 2 and ffprobe has no override of its own,
-   **ffprobe next to that ffmpeg** (same folder; ``ffprobe``, ``ffprobe.exe``, or the
-   ffmpeg file name with ``ffmpeg`` replaced, so ``ffmpeg-9.exe`` → ``ffprobe-9.exe``). It
-   gets the ffmpeg's origin and ``next_to_ffmpeg=True``.
-4. **Bundled build** (:func:`reframe.paths.bundled_tool_roots`). Origin ``bundled``.
-5. **PATH**, only when there is no bundled build of the tool. Origin ``path``. Only the
-   absolute folders of ``PATH`` are searched, never the current folder (``shutil.which``
-   searches the current folder first on Windows, so it is not used).
+The bundled build is per tool family: FFmpeg (ffmpeg and ffprobe), mkvpropedit and MediaInfo.
+On Linux, FFmpeg is bundled but mkvpropedit comes from the distro, so a bundled FFmpeg does not
+stop the ``PATH`` search for mkvpropedit.
 
-**Windows: only ``.exe`` programs.** ``CreateProcess`` runs a ``.cmd`` / ``.bat`` file
-through ``cmd.exe``, which interprets ``& | % ^ < >`` in the arguments: a file name such as
-``Tom & Jerry.mkv`` would break the command or inject another one. So discovery accepts only
-``.exe`` files on Windows; an override that names a ``.cmd`` / ``.bat`` is ``broken``. The
-test suites set ``REFRAME_ALLOW_SCRIPT_TOOLS=1`` (:data:`ALLOW_SCRIPT_TOOLS_ENV`), so the
-fake ``.cmd`` tools of ``reframe_testing`` work; nothing else should set it.
-
-An override (1 or 2) may name the binary or a folder that holds it (or its ``bin/``).
-
-An override that is missing, broken or too old is reported as such (status, reason, and for a
-Settings path a "Use bundled" fix that removes the path from ``AppSettings``). Discovery
-**never** falls back to the bundled build or to ``PATH`` behind the user's back. The same
-holds for a damaged bundled FFmpeg: when a bundled FFmpeg folder exists but lacks ffprobe,
-ffprobe is ``missing`` (not taken from ``PATH``).
-
-"Bundled build" is per tool family: FFmpeg (ffmpeg + ffprobe, one folder), mkvpropedit and
-mediainfo. On Linux packages FFmpeg is bundled but mkvpropedit comes from the distro, so a
-bundled FFmpeg does not stop the ``PATH`` search for mkvpropedit.
-
-Linux, bundled FFmpeg only: when ``LIBVA_DRIVERS_PATH`` is not set, the tool gets
-``LIBVA_DRIVERS_PATH`` = the first existing distro driver folder (:data:`LIBVA_DRIVER_DIRS`) in
-:attr:`ToolInfo.env`, because the bundled libva may not look in the distro's folder.
-
-Entry points: :func:`locate_tools` (sync, file checks only, no process) and
-:func:`discover_tools` (async: locate, then run each tool's version command in parallel).
+On Windows only ``.exe`` programs run: a ``.cmd`` or ``.bat`` file goes through ``cmd.exe``,
+which interprets ``& | % ^ < >`` in the arguments.
 """
 
 from __future__ import annotations
@@ -72,7 +43,7 @@ __all__ = [
     "locate_tools",
 ]
 
-#: Test-only opt-in: accept ``.cmd`` / ``.bat`` tools on Windows (see the module doc).
+#: Test-only opt-in: accept ``.cmd`` / ``.bat`` tools on Windows. Nothing else should set it.
 ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
 
 TOOL_NAMES: tuple[ToolName, ...] = ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")
@@ -82,8 +53,8 @@ ENV_VARS: Mapping[ToolName, str] = {
     "mkvpropedit": "REFRAME_MKVPROPEDIT",
     "mediainfo": "REFRAME_MEDIAINFO",
 }
-#: LIBVA_DRIVERS_PATH candidates for the bundled FFmpeg on Linux (Debian/Ubuntu, Fedora,
-#: Arch). C-1 keeps this until D-7 shows whether the bundled build needs it.
+#: Distro folders with libva drivers. The bundled libva may not look there, so the bundled
+#: FFmpeg on Linux gets the first one that exists as ``LIBVA_DRIVERS_PATH``.
 LIBVA_DRIVER_DIRS = (
     Path("/usr/lib/x86_64-linux-gnu/dri"),
     Path("/usr/lib64/dri"),
@@ -106,8 +77,7 @@ _FAMILY: Mapping[ToolName, ToolName] = {
     "mediainfo": "mediainfo",
 }
 
-#: Settings → Tools paths by tool name. ``AppSettings.tools`` (a pydantic model with the
-#: fields ``ffmpeg``, ``ffprobe``, …) is accepted as well.
+#: Tool paths by tool name. A model with the same fields (``AppSettings.tools``) is accepted too.
 ToolPathSettings = Mapping[str, str | os.PathLike[str] | None]
 
 
@@ -250,7 +220,8 @@ def _sibling_ffprobe(ctx: _Context, ffmpeg: Path) -> Path | None:
 
 
 def _search_path(ctx: _Context, tool: str) -> Path | None:
-    """Search the absolute folders of ``PATH`` (never the current folder)."""
+    """Search the absolute folders of ``PATH``. Never the current folder: ``shutil.which``
+    checks it first on Windows."""
     separator = ";" if ctx.windows else ":"
     for entry in (ctx.search_path or "").split(separator):
         folder = entry.strip().strip('"')
@@ -328,14 +299,7 @@ def locate_tools(
     search_path: str | None = None,
     platform: str | None = None,
 ) -> dict[ToolName, ToolLocation]:
-    """Find every tool without running it (file checks only).
-
-    :param settings: Settings → Tools paths by tool name (``AppSettings.tools``).
-    :param environ: environment (default ``os.environ``).
-    :param bundled_roots: ``tools`` folders (default :func:`reframe.paths.bundled_tool_roots`).
-    :param search_path: the ``PATH`` string (default: ``PATH`` from ``environ``).
-    :param platform: ``sys.platform`` value (default: this platform).
-    """
+    """Find every tool without running it (file checks only)."""
     env = dict(os.environ if environ is None else environ)
     ctx = _Context(
         environ=env,
@@ -361,9 +325,6 @@ def _settings_mapping(settings: ToolPathSettings | BaseModel | None) -> ToolPath
         dumped: dict[str, str | None] = settings.model_dump(mode="json")
         return dumped
     return settings
-
-
-# --------------------------------------------------------------------------- version checks
 
 
 def _version_argv(tool: ToolName, path: Path) -> list[str]:
@@ -491,9 +452,8 @@ async def discover_tools(
         search_path=search_path,
         platform=platform,
     )
-    # A TaskGroup, not gather(): a cancelled gather() returns as soon as its first child ends,
-    # and the other children's process kills can then be dropped when the loop stops
-    # (orphaned ffmpeg/ffprobe). A TaskGroup returns only after every child has finished.
+    # A TaskGroup, not gather(): a cancelled gather() returns at its first child's end, so the
+    # other children's process kills can be dropped (orphaned ffmpeg). A TaskGroup waits for all.
     async with asyncio.TaskGroup() as group:
         checks = [group.create_task(check_tool(located[t], timeout=timeout)) for t in TOOL_NAMES]
     return ToolSet(**{check.result().name: check.result() for check in checks})
@@ -508,7 +468,7 @@ def discover_tools_sync(
     platform: str | None = None,
     timeout: float = VERSION_TIMEOUT,
 ) -> ToolSet:
-    """:func:`discover_tools` for synchronous code (scripts, the test helpers).
+    """:func:`discover_tools` for synchronous code.
 
     It runs its own event loop, so it must not be called from a running loop.
     """

@@ -1,46 +1,17 @@
-"""``reframe tools fetch`` (05 §C-15; 02 §Bundled FFmpeg; 06 §S-6 bare metal): download the
-pinned FFmpeg build of the manifest, check its size and SHA-256, and install it as the
-bundled build in ``<data dir>/tools/ffmpeg``, where tool discovery (C-1) finds it.
+"""``reframe tools fetch``: download the pinned FFmpeg build of the manifest, check its size and
+SHA-256, and install it as the bundled build in ``<data dir>/tools/ffmpeg``, where tool
+discovery finds it.
 
-``Reframe.tools.fetch`` calls :func:`start_fetch`; the work runs as the task ``tools_fetch``
-(progress, cancel, result :class:`~reframe.models.ToolFetchResult`). Decision 0038.
+The work runs as the task ``tools_fetch`` (see :func:`start_fetch`). Nothing is extracted before
+the size and SHA-256 match. A failure leaves nothing half-installed, and an installed build stays
+as it was. A folder with files but no marker at the install path is never replaced.
 
-**The manifest.** The installed package carries a copy of ``tools/ffmpeg.toml``
-(:data:`DEFAULT_MANIFEST`, ``reframe/tools/ffmpeg.toml``); a test keeps the two equal. It is
-validated as ``scripts/fetch-tools.py`` validates it, except that the URL may also be a
-``file:`` URL or ``http:`` on the loopback address (tests; the SHA-256 is checked anyway).
+The marker ``.fetch-tools.json`` has the format of ``scripts/fetch-tools.py``, so each recognises
+the other's install. The manifest is validated as ``scripts/fetch-tools.py`` validates it, except
+that a URL may also be a ``file:`` URL or an ``http:`` URL on the loopback address (tests).
 
-**Steps** (each failure ends the task ``failed`` with the reason; nothing half-installed is
-left, and a build that was installed before stays as it was):
-
-1. An installed build whose marker names the same archive (SHA-256) and whose files all still
-   have the hashes recorded at install time is kept: nothing is downloaded
-   (``downloaded=False``).
-2. A folder at the install path that is not empty and was not installed by this function or by
-   ``scripts/fetch-tools.py`` (no marker) is never replaced.
-3. Download into ``<data dir>/tools/.fetch-*`` (retries with back-off; never more bytes than the
-   pinned size), then the size and SHA-256, **before** anything is extracted.
-4. Safe extraction: every member must be inside the archive's root folder; absolute paths,
-   drive letters, backslashes, ``..``, ``:`` and links that leave the folder are refused before
-   a file is written; tar members get Python's ``data`` filter (no setuid bits, no devices).
-5. Host platform only: ``ffmpeg -version`` and ``ffprobe -version`` of the extracted build must
-   print the pinned version (through ``reframe.tools.run``), still in the temporary folder.
-6. The marker (``.fetch-tools.json``, the format of ``scripts/fetch-tools.py``, so each
-   recognises the other's install) is written, the old build is moved aside, the new one moved
-   into place, the old one removed. Then tool discovery runs again (``rescan``). Once the new
-   build is in place, a cancel no longer stops anything: the work folder is removed, tool
-   discovery runs to its end, and the task (still ``cancelled``) says that the build was
-   installed.
-
-A build for another platform (``--platform windows-x64`` on Linux) goes to
-``<data dir>/tools/ffmpeg-<platform>``: tool discovery never looks there, so it cannot replace
-the build this computer uses; copy that folder to the other computer's
-``<data dir>/tools/ffmpeg``.
-
-The download and extraction run in a worker thread that stops at the task's cancel token
-(as soon as the next data arrives, or at the socket timeout when the server stalls). A work
-folder ``.fetch-*`` that a killed fetch left behind is removed by the next fetch once nothing
-has been written in it for :data:`STALE_WORK_AGE` seconds.
+A build for another platform goes to ``<data dir>/tools/ffmpeg-<platform>``: tool discovery never
+looks there, so it cannot replace the build this computer uses.
 """
 
 from __future__ import annotations
@@ -133,9 +104,6 @@ _DRIVE_RE = re.compile(r"^[A-Za-z]:")
 class FetchError(Exception):
     """An expected failure: a bad manifest, a download error, a checksum mismatch, an unsafe
     or broken archive, a build that does not run. The task ends ``failed`` with the text."""
-
-
-# --------------------------------------------------------------------------- manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,8 +279,7 @@ def load_manifest(path: Path | None = None) -> dict[str, Build]:
 
 
 def host_platform(sys_platform: str | None = None, machine: str | None = None) -> str | None:
-    """The manifest platform of this computer (``linux-x64``, ``windows-x64``), or ``None``
-    when no build is pinned for it."""
+    """The manifest platform of this computer, or ``None`` when no build is pinned for it."""
     sys_platform = sys.platform if sys_platform is None else sys_platform
     machine = (platform_module.machine() if machine is None else machine).lower()
     if machine in ("x86_64", "amd64"):
@@ -331,16 +298,14 @@ def install_dir_for(data_dir: Path, target: str, host: str | None) -> Path:
 
 
 def installed_build(install_dir: Path) -> dict[str, Any] | None:
-    """The marker of the build installed in ``install_dir`` (``build``, ``version``,
-    ``platform``, ``sha256`` …), without checking its files; ``None`` when there is none."""
+    """The marker of the build installed in ``install_dir``, without checking its files;
+    ``None`` when there is none."""
     try:
         data = json.loads((Path(install_dir) / MARKER_NAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
 
-
-# --------------------------------------------------------------------------- download + verify
 
 #: ``progress(done_bytes)``, called from the worker thread.
 _Progress = Callable[[int], None]
@@ -366,16 +331,16 @@ def download(
     timeout: float = SOCKET_TIMEOUT,
 ) -> None:
     """Download ``url`` to ``dest`` (worker thread). Network errors and HTTP 429 / 5xx are
-    retried with back-off (2, 4, 8 s); a response longer than ``size`` stops at once (a wrong
-    or hostile server cannot fill the disk) and is not retried."""
+    retried with back-off; a response longer than ``size`` stops at once (a wrong or hostile
+    server cannot fill the disk) and is not retried."""
     for attempt in range(1, attempts + 1):
         error: Exception
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as f:
                 written = 0
-                # read1: what has arrived (at most CHUNK), so that a slow server never keeps a
-                # cancel waiting for a whole block (core-complete review).
+                # read1 returns what has arrived, so a slow server does not keep a cancel
+                # waiting for a whole block.
                 while chunk := response.read1(CHUNK):
                     _check_cancel(cancel)
                     written += len(chunk)
@@ -433,9 +398,6 @@ def verify_file(path: Path, sha256: str, size: int, cancel: CancelToken | None =
         raise FetchError(f"{path.name}: the SHA-256 is {actual}, expected {sha256}")
 
 
-# --------------------------------------------------------------------------- safe extraction
-
-
 def member_path(name: str, root: str) -> PurePosixPath:
     """The safe relative path of an archive member. Every member must be inside the folder
     ``root``; absolute paths, drive letters, backslashes, NUL, ``..`` and ``:`` (NTFS streams)
@@ -451,20 +413,17 @@ def member_path(name: str, root: str) -> PurePosixPath:
 
 
 def _check_link_target(member: PurePosixPath, link: str, root: str) -> None:
-    """The text of a link: relative, without a drive letter or a backslash. Where it points
-    is checked by :func:`_check_links`."""
+    """A link's text must be relative; where it points is checked by :func:`_check_links`."""
     if not link or link.startswith("/") or "\\" in link or "\x00" in link or _DRIVE_RE.match(link):
         raise FetchError(f"the link {member} -> {link!r} is absolute")
 
 
 def _check_links(paths: list[PurePosixPath], links: Mapping[PurePosixPath, str], root: str) -> None:
     """Every link resolves inside ``root``, following the archive's other links as the file
-    system will (core-complete review: ``s/t -> ..`` and ``s/u -> t/..`` are each inside the
-    folder by their text, but ``u`` points above it). A path that leaves ``root`` on the way,
-    even to come back by the folder's name (the folder is renamed when it is installed), a
-    chain of more than :data:`MAX_LINK_DEPTH` links (a loop), and a member inside a linked
-    folder (it would be written where the link points, not where its name says) are refused.
-    :raises FetchError:"""
+    system does. A path that leaves ``root`` on the way is refused even when it comes back by
+    the folder's name, because the folder is renamed when it is installed. A chain of more than
+    :data:`MAX_LINK_DEPTH` links (a loop), and a member inside a linked folder (it would be
+    written where the link points), are refused too. :raises FetchError:"""
     by_text = {member.as_posix(): text for member, text in links.items()}
     for path in paths:
         for parent in path.parents:
@@ -516,7 +475,7 @@ def _extract_tar(archive: Path, root: str, dest: Path, cancel: CancelToken) -> N
             elif not (m.isfile() or m.isdir()):
                 raise FetchError(f"unsupported archive member type: {m.name!r}")
         _check_links(paths, links, root)
-        # The "data" filter repeats the checks above and drops setuid / setgid and group /
+        # The "data" filter repeats the checks above and drops setuid, setgid and group and
         # other write bits; it keeps the executable bits.
         for m in members:
             _check_cancel(cancel)
@@ -558,9 +517,6 @@ def safe_extract(archive: Path, fmt: str, root: str, dest: Path, cancel: CancelT
             raise FetchError(f"unsupported archive format {fmt!r}")
     except (tarfile.TarError, zipfile.BadZipFile, EOFError, lzma.LZMAError) as e:
         raise FetchError(f"{archive.name} is not a valid {fmt} archive: {e}") from e
-
-
-# --------------------------------------------------------------------------- install
 
 
 def tree_digest(directory: Path, cancel: CancelToken | None = None) -> dict[str, str]:
@@ -899,8 +855,8 @@ async def _fetch_steps(
         except asyncio.CancelledError:
             if not job.swapped:
                 raise
-            # The cancel came after the swap: the new build is installed (core-complete
-            # review R5-5); finish the steps after it.
+            # The cancel came after the swap: the new build is installed, so the steps after
+            # it still run.
             current = asyncio.current_task()
             if current is not None and current.cancelling():
                 current.uncancel()

@@ -1,45 +1,22 @@
-"""The queue's SQLite store: ``<data dir>/queue.sqlite3`` (05 §C-11).
-
-One table, the columns of the plan::
-
-    jobs(id, position, state, settings_json, plan_json, issues_json, created_at, started_at,
-         finished_at, output_path, log_path, error)
+"""The queue's SQLite store, ``<data dir>/queue.sqlite3``.
 
 - **One writer.** Every call runs on one dedicated thread (:class:`QueueStore` owns it), in
-  the order the queue made the calls. The queue keeps the jobs in memory; the store only
-  persists them. A row is written whole (``INSERT OR REPLACE``) from values the caller
-  serialised on the event loop, so a later write always carries the later state.
-- **Atomic, crash-safe.** WAL journal, ``synchronous=FULL``; a change of several rows
-  (positions) is one transaction. A crash loses nothing that was written.
-- **Exact values.** JSON columns are ASCII (``\\uXXXX`` escapes), and a path or error text
-  with lone surrogates (a file name that is not UTF-8) is a BLOB of its exact code units, so
-  such a name is stored and loaded back unchanged (M2 review, decision 0016 follow-up).
-- **Documents.** ``settings_json`` is a ``JobSettings`` document: it is migrated with
-  ``load_document("job_settings", …)`` and keeps unknown fields (``DocumentModel``), which are
-  written back unchanged. ``plan_json`` and ``issues_json`` are derived data: if they do not
-  load (written by a newer Reframe), they are dropped from memory; the runner plans and
-  validates again before a job runs.
-- **A row that does not load** (a newer ``JobSettings`` schema, a state this Reframe does not
-  know, or a ``settings_json``, ``plan_json`` or ``issues_json`` nested more than
-  :data:`~reframe.settings.MAX_DEPTH` levels deep) stays in the file untouched and is left out
-  of the queue; one ``app.warning`` (``queue.rows_skipped``) says how many.
-- **Nesting** (as C-9's stores, decision 0015): a JSON document nested more than
-  :data:`~reframe.settings.MAX_DEPTH` (64) levels is damage, never a crash. Deeper JSON made
-  ``json.loads`` (CPython 3.14: a C-stack check, tens of thousands of levels), the
-  migrations' ``deepcopy`` (about 500) or Pydantic's ``model_dump`` (``ValueError`` past 255)
-  fail. Such a document is never written either: :func:`row_of` marks the row, and
-  :meth:`QueueStore.upsert` leaves it out (the file keeps the row as it was, if it had one) and
-  gives one ``app.warning`` per job (``queue.job_not_saved``); the job stays in the queue
-  until Reframe closes (decision 0016, follow-up).
-- **The file** (decisions 0016, 0027): created at the first write, not at start-up. Only the
-  process that holds ``queue.lock`` uses it; another one keeps its jobs in a private
-  database in memory (:meth:`QueueStore.use_memory`). Its schema version
-  is ``PRAGMA user_version``. A file of a newer Reframe is not read and never written
-  (``queue.newer_version``: the queue starts empty for this session and is not saved). A
-  corrupt file is renamed to ``queue.corrupt-<time>.sqlite3`` and a new one is started
-  (``queue.corrupt``). A file that cannot be opened is left alone (``queue.unreadable``). A
-  write that fails later (disk full) gives ``queue.not_saved`` once; the queue goes on in
-  memory.
+  the order the queue made the calls. A row is written whole (``INSERT OR REPLACE``) from
+  values serialised on the caller's thread, so a later write carries the later state.
+- **Atomic.** Each call is one transaction. The file uses WAL and ``synchronous=FULL``, so a
+  crash loses no committed write.
+- **Exact values.** Text round-trips exactly, lone surrogates included (a file name that is
+  not UTF-8): JSON is ASCII, and a text column with a surrogate is stored as a BLOB.
+- **Documents.** ``settings_json`` is migrated on load and keeps unknown fields
+  (``DocumentModel``), which are written back unchanged. ``plan_json`` and ``issues_json``
+  are derived data: when they do not load, the runner plans and validates again before a run.
+- **A row that does not load** (a newer schema, an unknown state, or a document nested more
+  than :data:`~reframe.settings.MAX_DEPTH` levels) stays in the file untouched and is left
+  out of the queue. Such a document is damage, never a crash, and is never written
+  (:func:`row_of`).
+- **The file** is created at the first write, not at start-up. A file of a newer Reframe is
+  never written. Only the process that holds the owner lock writes it; another process keeps
+  its jobs in memory (:meth:`QueueStore.use_memory`).
 """
 
 from __future__ import annotations
@@ -117,8 +94,8 @@ def _time(value: datetime | None) -> str | None:
 
 
 class _Refused(str):
-    """The value of a JSON column that is not written (see :func:`row_of`): the text is why.
-    A ``str``, so a :data:`Row` keeps its type; :meth:`QueueStore.upsert` leaves the row out."""
+    """The value of a JSON column that is not written (see :func:`row_of`); the text says why.
+    A ``str``, so a :data:`Row` keeps its type."""
 
     __slots__ = ()
 
@@ -128,9 +105,6 @@ class _TooDeep(ValueError):
 
 
 def _json(data: Any) -> str:
-    """Compact JSON, ASCII only. A lone surrogate (a byte of a file name that is not UTF-8,
-    PEP 383's ``\\udcff``; an unpaired UTF-16 surrogate of a Windows name) is written as a
-    ``\\udcXX`` escape that ``json.loads`` restores exactly; SQLite gets valid UTF-8."""
     return json.dumps(data, ensure_ascii=True, separators=(",", ":"))
 
 
@@ -164,11 +138,11 @@ def _path(value: Path | None) -> str | bytes | None:
 
 
 def _document(column: str, dump: Callable[[], Any]) -> str:
-    """The JSON text of one document column, or a :class:`_Refused` value when the document
-    is nested more than ``MAX_DEPTH`` levels deep (never an exception)."""
+    """The JSON text of a document column, or a :class:`_Refused` value when it is nested too
+    deep. Never raises."""
     try:
         data = dump()
-    except (ValueError, TypeError, RecursionError) as exc:  # Pydantic: past 255 levels
+    except (ValueError, TypeError, RecursionError) as exc:  # Pydantic's model_dump: too deep
         return _Refused(f"{column}: {exc}")
     if too_deep(data):
         return _Refused(f"{column}: {TOO_DEEP}")
@@ -176,12 +150,9 @@ def _document(column: str, dump: Callable[[], Any]) -> str:
 
 
 def row_of(job: QueueJob) -> Row:
-    """The row of ``job`` (serialised on the caller's thread). Every value is kept exactly,
-    also a path that is not valid UTF-8 (see :func:`_json`, :func:`_text`).
-
-    A settings, plan or issues document nested more than ``MAX_DEPTH`` levels deep is not
-    serialised: its column holds a marker, and :meth:`QueueStore.upsert` does not write the
-    row (never an exception here)."""
+    """The row of ``job``, serialised on the caller's thread. A settings, plan or issues
+    document nested too deep is not serialised: its column holds a marker, and
+    :meth:`QueueStore.upsert` does not write the row. Never raises for such a document."""
     plan = job.plan
     return (
         job.id,
@@ -208,9 +179,8 @@ def _refused(row: Sequence[object]) -> str | None:
 
 
 def _parse(column: str, value: object, default: str) -> Any:
-    """``json.loads`` of a JSON column. Raises :class:`_TooDeep` for a document nested more
-    than ``MAX_DEPTH`` levels (whatever depth the parser itself would manage) and
-    ``ValueError`` for text that is not JSON."""
+    """Raises :class:`_TooDeep` for a document nested too deep, whatever depth the parser
+    itself would manage, and ``ValueError`` for text that is not JSON."""
     try:
         data = json.loads(_untext(value) or default)
     except RecursionError:  # CPython's C-stack check, far beyond MAX_DEPTH
@@ -221,8 +191,8 @@ def _parse(column: str, value: object, default: str) -> Any:
 
 
 def _derived(column: str, value: object, default: str) -> tuple[bool, Any]:
-    """``(True, parsed)`` for a derived column (plan, issues), ``(False, None)`` when it is
-    not JSON (dropped: planned and validated again before a run). Too deep: ``_TooDeep``."""
+    """A derived column that is not JSON is dropped (``(False, None)``); a too-deep one raises
+    :class:`_TooDeep`."""
     try:
         return True, _parse(column, value, default)
     except _TooDeep:
@@ -278,11 +248,11 @@ class StoreLoad:
 
 
 class QueueStore:
-    """The SQLite file, used from one worker thread (see the module doc).
+    """The SQLite file, used from one worker thread.
 
-    The public methods are coroutines-friendly: :meth:`submit` runs a call on the store's
-    thread and returns a ``concurrent.futures.Future``; the queue awaits it with
-    ``asyncio.wrap_future``. The blocking ``_…`` methods run on that thread only.
+    :meth:`submit` runs a call on that thread and returns a ``concurrent.futures.Future``,
+    which the queue awaits with ``asyncio.wrap_future``. The ``_…`` methods run on that
+    thread only.
     """
 
     def __init__(self, path: Path, *, now: Callable[[], datetime]) -> None:
@@ -295,14 +265,12 @@ class QueueStore:
         self.read_only = False
         """The file is newer than this Reframe or cannot be opened: nothing is written."""
         self.memory = False
-        """A private store in memory (another process owns the file; decision 0027)."""
+        """A private store in memory (another process owns the file)."""
         self._failed = False
         self._refused: set[str] = set()
         """Jobs whose ``queue.job_not_saved`` warning was given."""
         self.warnings: list[AppWarningEvent] = []
         """Warnings of writes that failed (one per kind), to be published by the queue."""
-
-    # ------------------------------------------------------------------ thread side
 
     def submit[T](self, call: Callable[[], T]) -> concurrent.futures.Future[T]:
         return self._executor.submit(call)
@@ -382,9 +350,8 @@ class QueueStore:
     def upsert(self, rows: Sequence[Row]) -> None:
         """Write whole rows in one transaction (store thread).
 
-        A row that :func:`row_of` marked (a document nested more than ``MAX_DEPTH`` levels
-        deep) is left out: the file keeps that job's row as it was, if it had one. One
-        ``queue.job_not_saved`` warning per job (none for a store that saves nothing)."""
+        A row that :func:`row_of` marked is left out, so the file keeps that job's row as it
+        was. One ``queue.job_not_saved`` warning per job."""
         kept: list[Row] = []
         for row in rows:
             reason = _refused(row)
@@ -423,8 +390,6 @@ class QueueStore:
         self._executor.submit(self._close_quietly).result()
         self._executor.shutdown(wait=True)
 
-    # ------------------------------------------------------------------ internals
-
     def _connect(self, *, configure: bool = True) -> sqlite3.Connection:
         if self.memory:
             return sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
@@ -441,7 +406,7 @@ class QueueStore:
 
     @staticmethod
     def _configure(db: sqlite3.Connection) -> None:
-        """WAL journal (it changes the file header, so only for a file of this version)."""
+        """WAL journal. Only for a file of this version: the change rewrites its header."""
         mode = db.execute("PRAGMA journal_mode = WAL").fetchone()
         log.debug("queue store journal mode: %s", mode)
         db.execute("PRAGMA synchronous = FULL")
