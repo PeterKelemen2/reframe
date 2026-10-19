@@ -1,11 +1,4 @@
-"""``reframe batch`` (C-15, 05 §C-15: "``reframe batch DIR --preset NAME [--dry-run]``
-(prints the resolution matrix)"; 04-batch-mode.md; decision 0040) and the ``selected:``
-lines of ``reframe plan``.
-
-The sources are the recorded probes of the 04 §Example seasons, replayed by the fake ffprobe
-for placeholder files; the queue is the fake queue of the ``encode`` tests. The end-to-end test
-at the bottom encodes season 2 with the real FFmpeg.
-"""
+"""``reframe batch`` and the ``selected:`` lines of ``reframe plan``."""
 
 from __future__ import annotations
 
@@ -48,7 +41,7 @@ Media = Callable[[str], Path]
 
 
 class Queues:
-    """The fake queue as ``cli.get_queue`` (as in the ``encode`` tests)."""
+    """The fake queue as ``cli.get_queue``."""
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch, log_dir: Path) -> None:
         self.made: list[FakeQueue] = []
@@ -108,8 +101,7 @@ STRICT = "Anime Season (dub required)"
 
 
 def import_strict_preset(tmp_path: Path) -> None:
-    """The demo preset with the dub required again (as *Apply to group* derives it): E11,
-    which has no dub, is an error (04's matrix: "A2 ✗ none")."""
+    """The demo preset with the dub (A2) required: E11, which has no dub, is an error."""
     data = json.loads(A.PRESET_FILE.read_text(encoding="utf-8"))
     (preset,) = data["presets"]
     preset.update(id="strict-dub", name=STRICT)
@@ -118,9 +110,6 @@ def import_strict_preset(tmp_path: Path) -> None:
     file.write_text(json.dumps(data), encoding="utf-8")
     result = invoke("presets", "import", str(file))
     assert result.exit_code == EXIT_OK, result.output
-
-
-# --------------------------------------------------------------------------- dry run
 
 
 def test_dry_run_with_the_default_preset(s01: Path) -> None:
@@ -149,9 +138,7 @@ def test_dry_run_with_the_default_preset(s01: Path) -> None:
 
 
 def test_dry_run_with_the_group_preset(s01: Path) -> None:
-    """M7 demo 5: one group, ✓ for every file (no errors), the right warnings for E05 (an
-    extra track) and E11 (no dub: the optional A2 is skipped; the signs track has another
-    title)."""
+    """E05 has an extra track. E11 has no dub (A2 skipped) and another signs title."""
     import_demo_preset()
     result = invoke("batch", str(s01), "--preset", A.PRESET_NAME, "--dry-run")
     assert result.exit_code == EXIT_OK, result.output
@@ -187,8 +174,6 @@ def test_dry_run_with_the_group_preset(s01: Path) -> None:
 
 
 def test_dry_run_with_the_dub_required(s01: Path, tmp_path: Path) -> None:
-    """04's matrix: with A2 required, E11 is "✗ none" (an error, with the fix that the demo
-    preset applied)."""
     import_strict_preset(tmp_path)
     result = invoke("batch", str(s01), "--preset", STRICT, "--dry-run")
     assert result.exit_code == EXIT_FAILED, result.output
@@ -274,11 +259,7 @@ def test_a_file_that_cannot_be_read(cli_env: ft.FakeTools, tmp_path: Path) -> No
     assert out[-1] == "Dry run: 12 of 13 files can be queued; 1 cannot (errors)."
 
 
-# --------------------------------------------------------------------------- encode
-
-
 def test_the_season_is_queued_in_episode_order(s01: Path, queues: Queues) -> None:
-    """M7 demo: queue 12 jobs with templated names."""
     import_demo_preset()
     result = invoke("batch", str(s01), "--preset", A.PRESET_NAME)
     assert result.exit_code == EXIT_OK, result.output
@@ -313,7 +294,7 @@ def test_a_file_with_errors_is_not_queued(s01: Path, queues: Queues, tmp_path: P
 
 
 def test_cancelling_the_batch_cancels_its_jobs(s01: Path, queues: Queues) -> None:
-    """Ctrl+C (the cancelled task) cancels the batch's jobs, as for ``reframe encode``."""
+    """Ctrl+C (the cancelled task) cancels the batch's jobs."""
     queues.behaviour = lambda _job: "hang"
 
     async def run() -> int:
@@ -328,11 +309,7 @@ def test_cancelling_the_batch_cancels_its_jobs(s01: Path, queues: Queues) -> Non
     assert {job.state.value for job in queues.made[0].list()} == {"cancelled"}
 
 
-# --------------------------------------------------------------------------- pieces
-
-
 def test_plan_shows_why_a_track_was_selected(s01: Path) -> None:
-    """``reframe plan`` prints ``TrackDecision.selection`` under each selected track."""
     import_demo_preset()
     result = invoke("plan", str(s01 / media.anime_file_name(1, 5)), "--preset", A.PRESET_NAME)
     assert result.exit_code == EXIT_OK, result.output
@@ -344,13 +321,10 @@ def test_plan_shows_why_a_track_was_selected(s01: Path) -> None:
     assert "           #3  No track rule takes this track" in out
     subtitle = out.index("  Subtitle #4  Copy (rule S1 eng Signs & Songs)")
     assert out[subtitle + 1] == "               selected: Rule S1 eng Signs & Songs: exact match"
-    # With the default preset, the M2 reasons and the keep-everything selection.
+    # With the default preset, the keep-everything selection.
     result = invoke("plan", str(s01 / media.anime_file_name(1, 1)))
     keep = "No audio languages set (preset or Settings): every track is kept, in source order"
     assert f"               selected: {keep}" in result.stdout
-
-
-# --------------------------------------------------------------------------- real FFmpeg
 
 
 @pytest.mark.needs_ffmpeg
@@ -358,8 +332,7 @@ def test_plan_shows_why_a_track_was_selected(s01: Path) -> None:
 def test_a_season_encoded_end_to_end(
     fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """05 §C-15 "the CLI can encode a season folder end to end", through ``reframe batch``:
-    season 2 with the group preset of season 1, on the real queue and FFmpeg."""
+    """Season 2 with the group preset of season 1, on the real queue and FFmpeg."""
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)

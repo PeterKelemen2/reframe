@@ -1,6 +1,4 @@
-"""``reframe plan`` runs the one-frame dry run (C-6) when the job has custom encoder parameters
-(C-15). The dry run itself is C-6's; here ``JobService.dry_run`` is replaced, so these tests
-check only what the CLI asks for and how it prints the result."""
+"""What ``reframe plan`` asks of the dry run, and how it prints the result."""
 
 from __future__ import annotations
 
@@ -106,7 +104,7 @@ def test_no_dry_run_without_custom_or_with_builtin_parameters(
     movie: Path, dry_run: DryRun, preset: str
 ) -> None:
     """*Fast 1080p30* has no custom parameters; the default *H.265 MKV 1080p* has its own,
-    unchanged (decision 0038: those are not dry-run)."""
+    unchanged, and those are not dry-run."""
     result = invoke("plan", str(movie), "--preset", preset)
     assert result.exit_code == EXIT_OK, result.output
     assert dry_run.calls == []

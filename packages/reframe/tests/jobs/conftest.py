@@ -1,15 +1,4 @@
-"""Shared helpers of the jobs service and CLI tests (C-15).
-
-- :func:`recorded`: a ``MediaSource`` parsed from a recorded probe (``testdata/probes``) at a
-  path of the test's choice.
-- :func:`caps`: a capability snapshot with every encoder available except ``unavailable``.
-- :class:`Stubs`: the services ``JobService`` uses, without processes (probe results by path,
-  a capability snapshot, a detection that can be held).
-- ``cli_env``: the fake ffmpeg / ffprobe through ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` and
-  private config, data and cache folders (never the user's).
-- :func:`replay`: the fake ffprobe prints a recorded probe for every file, or per file.
-- :func:`invoke`: runs the CLI in-process (``CliRunner``).
-"""
+"""Shared helpers of the jobs service and CLI tests."""
 
 from __future__ import annotations
 
@@ -49,8 +38,7 @@ WIDTH = "200"
 
 
 def probe_json(name: str) -> Path:
-    """``testdata/probes/fixtures/<name>.mkv.json`` (a generated fixture: ``multitrack``,
-    ``chapters``…) or ``testdata/probes/<name>.json`` (a recorded file: ``pgs``…)."""
+    """Path of the probe ``name``: a generated fixture, or a recorded file."""
     for path in (PROBES / "fixtures" / f"{name}.mkv.json", PROBES / f"{name}.json"):
         if path.exists():
             return path
@@ -58,7 +46,7 @@ def probe_json(name: str) -> Path:
 
 
 def recorded(name: str, path: Path) -> MediaSource:
-    """The recorded probe ``name`` as C-3 parses it, for the file ``path``."""
+    """The recorded probe ``name`` parsed as the file ``path``."""
     probe = probe_json(name)
     frames = probe.with_name(probe.name.removesuffix(".json") + ".frames.json")
     return parse_ffprobe(
@@ -72,8 +60,7 @@ def recorded(name: str, path: Path) -> MediaSource:
 def caps(
     *, unavailable: Mapping[str, str] | None = None, detecting: bool = False
 ) -> CapabilitySnapshot:
-    """Every encoder of the definitions available (VAAPI on ``renderD128``), except
-    ``unavailable`` (id → reason); the build has every filter."""
+    """Every encoder of the definitions available, except ``unavailable`` (id → reason)."""
     defs = load_definitions()
     down = dict(unavailable or {})
     encoders = {}
@@ -142,7 +129,6 @@ class Stubs:
         self.probes = 0
         self.settings = AppSettings()
 
-    # sources
     async def probe(self, path: Any) -> MediaSource | ProbeError:
         self.probes += 1
         found = self.sources.get(Path(path))
@@ -150,7 +136,6 @@ class Stubs:
             return ProbeError(Path(path), ProbeErrorKind.NOT_FOUND, "The file does not exist.")
         return found
 
-    # presets
     def get(self, preset_id: str) -> Preset | None:
         return self.presets.get(preset_id)
 
@@ -163,11 +148,9 @@ class Stubs:
     def default(self) -> Preset:
         return self.presets[self.default_id]
 
-    # tools
     async def status(self) -> ToolSet:
         return self.tools
 
-    # capabilities
     async def wait(self) -> CapabilitySnapshot:
         self.waits += 1
         if self.gate is not None:
@@ -177,15 +160,11 @@ class Stubs:
         return self.snapshot
 
 
-# --------------------------------------------------------------------------- the CLI
-
-
 @pytest.fixture
 def cli_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
 ) -> ft.FakeTools:
-    """The fake ffmpeg/ffprobe through ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, no
-    mkvpropedit, MediaInfo off, private config, data and cache folders."""
+    """Fake ffmpeg and ffprobe, and private config, data and cache folders (never the user's)."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):

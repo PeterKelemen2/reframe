@@ -1,23 +1,4 @@
-"""C-5 "Done when": hypothesis properties of ``compute_geometry``.
-
-05 §C-5: "the output is inside the fit box; no upscale unless allowed; the result is a multiple
-of the modulus; display aspect error < 0.5 % (or < 1 px); the crop is never negative and never
-removes the full frame."
-
-"The fit box" is the box turned to the shape of the output frame (decision 0020): long side
-vertical for a frame taller than wide, horizontal for a wider one, as written for a square one.
-
-The corners where a property cannot hold are defined behaviour (decision record 0009, module
-docstring of ``reframe.dimensions``) and are asserted here, not skipped:
-
-- a fit box, or a picture, smaller than one modulus step on an axis gives exactly one step on
-  that axis (outside the box, or upscaled);
-- when no size inside the limits meets the aspect tolerance (tiny limits, large modulus), the
-  result is the closest one, and an exhaustive search proves that nothing better existed.
-
-The oracle below works from the definitions (display size, natural size) with exact fractions;
-it does not call the module's helpers.
-"""
+"""Hypothesis properties of ``compute_geometry``, checked against an independent oracle."""
 
 from __future__ import annotations
 
@@ -119,9 +100,6 @@ def cases(draw: st.DrawFn) -> tuple[SourceGeometry, DimensionSettings]:
     return src, dimension_settings
 
 
-# --------------------------------------------------------------------------- the oracle
-
-
 @dataclass(frozen=True)
 class Expect:
     """What the definitions say about one case."""
@@ -198,9 +176,6 @@ def _requested(s: DimensionSettings) -> tuple[int, int, int, int]:
     return (rect.top, rect.bottom, rect.left, rect.right)
 
 
-# --------------------------------------------------------------------------- properties
-
-
 @PROPERTY
 @given(cases())
 def test_the_result_is_a_multiple_of_the_modulus(
@@ -257,8 +232,8 @@ def test_no_upscale_unless_allowed(case: tuple[SourceGeometry, DimensionSettings
         assert not g.upscaled
 
 
-#: Extreme aspect ratios (1:10923) found by hypothesis: the acceptable sizes are thousands of
-#: modulus steps apart on the long side, so the search walks the short side.
+#: Extreme aspect ratios: the acceptable sizes are thousands of modulus steps apart on the
+#: long side, so the search walks the short side.
 EXTREME_SIZES: list[tuple[int, Literal[4, 8]]] = [(1, 4), (36, 8)]
 EXTREME = [
     (

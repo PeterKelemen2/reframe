@@ -1,5 +1,4 @@
-"""``reframe encoders`` (C-15; M2 demo item 1) on the fake ffmpeg: the cached result at once,
-then the changes while detection runs, one line per encoder."""
+"""``reframe encoders`` on the fake ffmpeg: the cached result, then the changes."""
 
 from __future__ import annotations
 
@@ -33,7 +32,6 @@ def test_first_run_checks_then_lists_every_encoder(cli_env: ft.FakeTools) -> Non
     assert "libfdk_aac — unavailable: Not in this FFmpeg build" in out
     assert out[-1].startswith("Done in ")
     assert "(no changes)" not in out[-1]
-    # Each encoder once (no "checking…" lines without a cache).
     names = [line.split(" — ")[0] for line in out[1:-1]]
     assert len(names) == len(set(names))
     assert not any("checking…" in line for line in out)
@@ -52,7 +50,7 @@ def test_second_run_prints_the_cache_at_once(cli_env: ft.FakeTools) -> None:
 
 
 def test_no_nvidia_driver(cli_env: ft.FakeTools) -> None:
-    """Demo item 1: the real FFmpeg text of a machine without the NVIDIA driver."""
+    """The real FFmpeg text of a machine without the NVIDIA driver."""
     cli_env.set_scenario(ft.Scenario([c4_rule("c4_hevc_nvenc_no_driver")]))
     result = invoke("encoders")
     assert result.exit_code == EXIT_OK, result.output

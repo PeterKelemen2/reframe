@@ -1,5 +1,4 @@
-"""M2 cross-step check (lead): every built-in preset (C-9) passes C-8's template validation
-on a machine where every encoder of the definitions (C-6) is available (C-4)."""
+"""Every built-in preset has no template validation errors when every encoder is available."""
 
 from __future__ import annotations
 

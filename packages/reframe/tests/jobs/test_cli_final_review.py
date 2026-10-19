@@ -1,18 +1,4 @@
-"""C-15 (``reframe encode``, ``reframe batch``, ``reframe probe``): the fixes of the final review
-of the fix rounds (reviewer R-A on core-complete 5dbf152, 2026-10-17; decisions 0040 and 0038,
-"Follow-up (final review, 2026-10-17)").
-
-- RA-1: the name checks of one command compare files, not spellings: a source named through a
-  linked folder (or a hard link) is never overwritten, and a folder given through two
-  spellings is taken once.
-- RA-2: every human line that carries a preset name, a track title or a file name goes
-  through ``printable`` (no ESC reaches the terminal).
-- RA-4: ``reframe encode`` does not say "will be replaced" next to "it is never overwritten".
-- RA-5: a group member whose label is its file name shows the name once.
-
-The sources are recorded probes replayed by the fake ffprobe; the queue is the fake queue of the
-``encode`` tests. The last test runs the symlink case with the real FFmpeg and the real queue.
-"""
+"""Regression tests for file identity, control characters, overwrite warnings and labels."""
 
 from __future__ import annotations
 
@@ -64,17 +50,13 @@ def linked(tmp_path: Path, folder: Path) -> Path:
     return link
 
 
-# --------------------------------------------------------------------------- RA-1: links
-
-
 def test_ra1_encode_never_writes_a_source_given_through_a_linked_folder(
     cli_env: ft.FakeTools,
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """The reviewer's test: ``test_encode_never_writes_another_file_of_the_command`` with the
-    second file named through a link to the folder. E01's output is that file by another
-    spelling: E01 is not queued."""
+    """The second file is named through a link to the folder. E01's output is that file by
+    another spelling: E01 is not queued."""
     write_settings(tmp_path, collision="overwrite")
     folder, e01, copy = two_sources(cli_env, tmp_path, E01_OUT)
     link = linked(tmp_path, folder)
@@ -95,8 +77,8 @@ def test_ra1_batch_never_writes_a_source_given_through_a_linked_folder(
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """The same with ``reframe batch``: the linked file is E01's planned output (left out as
-    already encoded), and E01 is ``batch.output_is_source``: nothing is queued."""
+    """``reframe batch``: the linked file is E01's planned output (left out as already encoded),
+    and E01 is ``batch.output_is_source``: nothing is queued."""
     write_settings(tmp_path, collision="overwrite")
     folder, e01, copy = two_sources(cli_env, tmp_path, E01_OUT)
     link = linked(tmp_path, folder)
@@ -207,7 +189,7 @@ def test_ra1_encode_takes_a_file_named_through_a_link_once(
 class LoopSpy:
     """``file_key`` of ``reframe.jobs`` and of the batch service, recording for each call
     whether it ran on the event loop's thread (a file system that stops answering would then
-    freeze the loop: RB-1 of the final review)."""
+    freeze the loop)."""
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.where: list[str] = []
@@ -266,9 +248,6 @@ async def test_ra1_the_batch_service_keys_files_off_the_event_loop(
     assert set(spy.where) == {"thread"}
 
 
-# --------------------------------------------------------------------------- RA-2: printable
-
-
 def import_evil_preset(tmp_path: Path) -> None:
     exported = tmp_path / "h265.json"
     assert invoke("presets", "export", "H.265 MKV 1080p", "--output", str(exported)).exit_code == 0
@@ -284,16 +263,16 @@ def test_ra2_preset_line_of_batch_and_encode_has_no_control_characters(
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """The reviewer's test: a preset named ``Evil ESC[31m RED`` (imported) in the ``Preset:``
-    line of ``reframe batch`` and ``reframe encode``."""
+    """A preset named ``Evil ESC[31m RED`` (imported) in the ``Preset:`` line of
+    ``reframe batch`` and ``reframe encode``."""
     import_evil_preset(tmp_path)
     folder, _e01, _copy = two_sources(cli_env, tmp_path, "Other.mkv")
     batch = invoke("batch", str(folder), "--preset", "evil", "--dry-run")
     encode = invoke("encode", str(folder), "--preset", "evil")
     assert ESC not in batch.stdout, batch.stdout.splitlines()[0]
     assert ESC not in encode.stdout, encode.stdout.splitlines()[0]
-    assert batch.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
-    assert encode.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
+    assert batch.stdout.splitlines()[0] == "Preset: Evil�[31mRED"
+    assert encode.stdout.splitlines()[0] == "Preset: Evil�[31mRED"
 
 
 def escaped_probe(tmp_path: Path, name: str, old: str, new: str) -> Path:
@@ -332,9 +311,9 @@ def test_ra2_titles_and_file_names_in_the_batch_output_are_printable(
     assert result.exit_code == EXIT_OK, result.output
     out = result.stdout
     assert ESC not in out, out
-    assert 'extra track (eng AC-3 2.0 "Comm\ufffd[32mGreen")' in out
-    # The member list and the matrix row label (C-16's output name has no control character).
-    assert out.count("Anime.Show.S01E01.\ufffd[31mRed.WEB.x264-GRP.mkv") == 2
+    assert 'extra track (eng AC-3 2.0 "Comm�[32mGreen")' in out
+    # The member list and the matrix row label.
+    assert out.count("Anime.Show.S01E01.�[31mRed.WEB.x264-GRP.mkv") == 2
     assert "Anime.Show.S01E01.[31mRed.mkv" in out
 
 
@@ -356,13 +335,10 @@ def test_ra2_reframe_probe_prints_titles_without_control_characters(
     assert result.exit_code == EXIT_OK, result.output
     assert ESC not in result.stdout, result.stdout
     assert "\x07" not in result.stdout
-    assert "Comm\ufffd[32mGreen" in result.stdout
-    assert "Movie\ufffd]0;PWNED\ufffd" in result.stdout
+    assert "Comm�[32mGreen" in result.stdout
+    assert "Movie�]0;PWNED�" in result.stdout
     raw = json.loads(invoke("probe", str(file), "--json").stdout)
     assert raw["container"]["title"] == "Movie\x1b]0;PWNED\x07"
-
-
-# --------------------------------------------------------------------------- RA-4
 
 
 def test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
@@ -370,9 +346,7 @@ def test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
     queues: Queues,  # noqa: F811
     tmp_path: Path,
 ) -> None:
-    """The reviewer's test: with *overwrite*, E01's output is the other file of the folder:
-    ``batch.output_is_source`` ("never overwritten") without C-8's ``output.overwrite``
-    ("will be replaced")."""
+    """With *overwrite*, E01's output is the other file of the folder."""
     write_settings(tmp_path, collision="overwrite")
     folder, _e01, _copy = two_sources(cli_env, tmp_path, E01_OUT)
     result = invoke("encode", str(folder))
@@ -386,7 +360,7 @@ def test_ra4_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command(
     tmp_path: Path,
 ) -> None:
     """An existing output that is not a file of the command is replaced with *overwrite*, and
-    C-8's warning says so (0040 §6)."""
+    ``output.overwrite`` warns about it."""
     write_settings(tmp_path, collision="overwrite")
     folder = tmp_path / "media" / S01
     e01 = media_file(folder, E01)
@@ -395,9 +369,6 @@ def test_ra4_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command(
     result = invoke("encode", str(e01))
     assert result.exit_code == EXIT_OK, result.output
     assert "[output.overwrite · output.path]" in result.stdout
-
-
-# --------------------------------------------------------------------------- RA-5
 
 
 def test_ra5_a_member_labelled_by_its_file_name_shows_the_name_once(
@@ -426,17 +397,14 @@ def test_ra5_a_member_labelled_by_its_file_name_shows_the_name_once(
     ]
 
 
-# --------------------------------------------------------------------------- real FFmpeg
-
-
 @pytest.mark.needs_ffmpeg
 def test_ra1_the_symlink_case_with_the_real_queue(
     fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The reviewer's reproduction with the real FFmpeg and the real queue: ``real/`` holds E01
-    and a user file named as E01's output (a copy of ``multitrack.mkv``), ``link`` → ``real``,
-    the collision setting *overwrite*. ``reframe encode real/E01 link/<E01's output>`` and
-    ``reframe batch`` of the same files leave the user file as it was (its SHA-256)."""
+    """``real/`` holds E01 and a user file named as E01's output (a copy of ``multitrack.mkv``),
+    ``link`` → ``real``, the collision setting *overwrite*. ``reframe encode real/E01
+    link/<E01's output>`` and ``reframe batch`` of the same files leave the user file as it was
+    (its SHA-256)."""
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
