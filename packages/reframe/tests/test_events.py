@@ -1,5 +1,4 @@
-"""reframe.events.EventBus: fan-out, coalescing, lossy drops with a resync marker, overflow,
-close, threads."""
+"""reframe.events.EventBus: fan-out, coalescing, lossy drops, overflow, close and threads."""
 
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ pytestmark = pytest.mark.anyio
 
 
 def _progress(n: int, job: str | None = None) -> JobProgressEvent:
-    """Progress of job ``job`` (default: a job of its own, ``j<n>``, so nothing coalesces)."""
     return JobProgressEvent(
         job_id=job if job is not None else f"j{n}", progress=JobProgress(percent=float(n % 101))
     )

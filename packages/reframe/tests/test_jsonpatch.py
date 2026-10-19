@@ -24,8 +24,6 @@ from reframe.jsonpatch import (
 )
 from reframe.models import AddOp, CopyOp, MoveOp, RemoveOp, ReplaceOp, TestOp
 
-# --------------------------------------------------------------------------- RFC 6902 Appendix A
-
 RFC6902_OK: list[tuple[str, Any, list[dict[str, Any]], Any]] = [
     (
         "A.1 adding an object member",
@@ -146,14 +144,12 @@ def test_rfc6902_error_examples(
 
 
 def test_a13_duplicate_members_parse_to_the_last_value() -> None:
-    """A.13 (an invalid patch document with two "op" members) is a JSON parsing matter. Python's
-    json keeps the last member, so it becomes "remove /baz", which fails on this document."""
+    """A.13 has two "op" members. Python's json keeps the last, so the patch is
+    "remove /baz", which fails on this document."""
     patch = json.loads('[{"op": "add", "path": "/baz", "value": "qux", "op": "remove"}]')
     with pytest.raises(JsonPatchConflict):
         apply_patch({"foo": "bar"}, patch)
 
-
-# --------------------------------------------------------------------------- RFC 6901 §5
 
 POINTER_DOC: dict[str, Any] = {
     "foo": ["bar", "baz"],
@@ -209,9 +205,6 @@ def test_pointer_helpers() -> None:
 @given(st.lists(st.text(max_size=6), max_size=5))
 def test_format_and_parse_are_inverse(tokens: list[str]) -> None:
     assert parse_pointer(format_pointer(tokens)) == tokens
-
-
-# --------------------------------------------------------------------------- more cases
 
 
 @pytest.mark.parametrize(

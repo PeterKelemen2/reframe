@@ -1,6 +1,4 @@
-"""The core-complete contract (docs/core-breakdown.md): the C-10 task context and its helpers,
-measured values kept by ``Reframe.sources.store``, ``Reframe.jobs.explain`` and the facade
-wiring of the new services."""
+"""``reframe.mediatask``: sample timestamps and task helpers, and the facade's media services."""
 
 from __future__ import annotations
 
@@ -38,8 +36,6 @@ from reframe.tools import CancelToken
 
 pytestmark = pytest.mark.anyio
 
-# --------------------------------------------------------------------------- sample_timestamps
-
 
 @pytest.mark.parametrize(("duration", "count"), [(None, 10), (0.0, 10), (-1.0, 3), (100.0, 0)])
 def test_no_timestamps(duration: float | None, count: int) -> None:
@@ -62,9 +58,6 @@ def test_timestamps_are_rounded_to_milliseconds() -> None:
     stamps = sample_timestamps(1.0 / 3.0, 3)
     assert stamps == [round(s, 3) for s in stamps]
     assert all(0 < s < 1 / 3 for s in stamps)
-
-
-# --------------------------------------------------------------------------- helpers
 
 
 class _Tools:
@@ -154,9 +147,6 @@ async def test_require_source_gives_the_probe_error_as_the_message(tmp_path: Pat
     ctx = _context(tmp_path, _toolset(_info("ffmpeg", ToolStatus.FOUND)), _Sources(error))
     with pytest.raises(TaskFailed, match=r"^a\.mkv is not media\. \(EBML\)$"):
         await require_source(ctx, tmp_path / "a.mkv")
-
-
-# --------------------------------------------------------------------------- the facade
 
 
 @pytest.fixture
