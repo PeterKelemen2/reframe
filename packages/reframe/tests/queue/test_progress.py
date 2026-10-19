@@ -162,7 +162,7 @@ def test_eta_survives_a_linux_suspend() -> None:
         mono_gap=0.5, wall_gap=3600.0
     )
     assert speed_after == pytest.approx(speed_before, rel=0.01)
-    assert eta_after == pytest.approx(eta_before - 3.0 / 1.0, abs=2.0)  # 3 s more of 2x media
+    assert eta_after == pytest.approx(eta_before - 5.0 / 2.0, abs=0.5)  # 5 s more media at 2x
 
 
 def test_eta_survives_a_suspend_that_both_clocks_count() -> None:
@@ -171,7 +171,7 @@ def test_eta_survives_a_suspend_that_both_clocks_count() -> None:
         mono_gap=3600.0, wall_gap=3600.0
     )
     assert speed_after == pytest.approx(speed_before, rel=0.01)
-    assert eta_after == pytest.approx(eta_before - 3.0, abs=2.0)
+    assert eta_after == pytest.approx(eta_before - 5.0 / 2.0, abs=0.5)
     assert MAX_INTERVAL < 3600.0
 
 
@@ -194,7 +194,7 @@ def test_paused_time_is_not_counted() -> None:
     after = tracker.snapshot()
     assert after.speed == pytest.approx(2.0, rel=0.01)
     assert before.eta is not None
-    assert after.eta == pytest.approx(before.eta - 3.0, abs=2.0)
+    assert after.eta == pytest.approx(before.eta - 5.0 / 2.0, abs=0.5)  # 5 s more media at 2x
     assert tracker.active_time == pytest.approx(62.0, abs=0.6)
 
 
