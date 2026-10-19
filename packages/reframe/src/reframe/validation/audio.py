@@ -1,16 +1,8 @@
-"""Audio track rules: the source stream exists, auto passthru, and the values the encoder
-cannot do.
+"""Audio track rules: the source stream exists, auto passthru, and values the encoder cannot do.
 
-Decision 0024 item 4: a mixdown, bitrate or sample rate the encoder cannot do is snapped by
-the command builder to the nearest allowed value, with C-6's helpers
-(:meth:`~reframe.definitions.AudioEncoderDef.snap_mixdown`,
-:meth:`~reframe.definitions.AudioEncoderDef.snap_samplerate`,
-:meth:`~reframe.definitions.AudioBitrateDef.snap`,
-:func:`~reframe.definitions.channels_mixdown`). Validation computes the same values
-(:func:`~reframe.validation.tracks.encoded_audio`) and shows an **info** issue that says
-what will change; it never blocks the queue. A layout is never upmixed (decision 0019 item
-3): a mixdown with more channels than the source, or Dolby Pro Logic II on a source that is
-not surround, keeps the source layout (``audio.mixdown_upmix``).
+The command builder snaps a mixdown, bitrate or sample rate that the encoder cannot do to an
+allowed value (a bitrate goes down). These rules show the change as an **info** issue; it never
+blocks the queue. A layout is never upmixed: an upmix only adds silent channels.
 """
 
 from __future__ import annotations
@@ -65,8 +57,8 @@ def source_streams(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 @job_rule("audio", "audio.passthru_fallback")
 def auto_passthru(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """03 §Audio: "Passthru falls back to an encoder when the container cannot hold the codec"
-    (HandBrake's auto passthru). Info: nothing is wrong, but the track is encoded."""
+    """A passthru track whose codec the container cannot hold is encoded with the fallback
+    encoder. Info: nothing is wrong."""
     container = ctx.container
     if container is None:
         return
@@ -88,9 +80,8 @@ def auto_passthru(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 @job_rule("audio", "audio.passthru_settings_ignored")
 def passthru_settings(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """Gain, DRC and loudness normalisation need a decode: a passthru track that is copied
-    ignores them (the command builder writes ``-c:a:N copy``). Warning; the fixes encode the
-    track (with its encoder, or AAC) or drop the settings."""
+    """Gain, DRC and loudness normalisation need a decode, which a copied passthru track skips.
+    Warning."""
     for index, track in enumerate(ctx.job.audio):
         if not passthru_copies(ctx, track):
             continue
@@ -125,15 +116,10 @@ def passthru_settings(ctx: JobContext) -> Iterator[ValidationIssue]:
         )
 
 
-# --------------------------------------------------------------------------- snapped values
-
-
 def _encoded_tracks(
     ctx: JobContext,
 ) -> Iterator[tuple[int, AudioOutputTrack, AudioStream, EncodedAudio]]:
-    """Every track that an encoder writes, with the values the builder writes for it. Tracks
-    without a source stream are ``audio.source_missing``; an unknown encoder is
-    ``encoder.unknown``."""
+    """Every track an encoder writes, with the values the builder writes for it."""
     for index, track in enumerate(ctx.job.audio):
         encoder_id = track_encoder(ctx, track)
         encoder = ctx.definitions.audio_encoders.get(encoder_id) if encoder_id else None
@@ -149,8 +135,8 @@ def _label(definitions: Definitions, mixdown: Mixdown) -> str:
 
 
 def _source_layout(stream: AudioStream) -> str:
-    """``5.1(side)``, ``7.1``; ``6 channels`` when the probe gives no layout name. (A layout
-    changes only for a known channel count: the helper keeps an unknown one.)"""
+    """The probe's layout name, or ``N channels`` when it gives none. A layout changes only
+    for a known channel count: the helper keeps an unknown one."""
     return stream.channel_layout or f"{stream.channels} channels"
 
 
@@ -170,8 +156,8 @@ def _mixdown_fix(ctx: JobContext, index: int, mixdown: Mixdown | None) -> Fix:
 
 
 def _layout_downmix(planned: EncodedAudio) -> bool:
-    """No mixdown, but the builder writes fewer channels than the source has: the encoder
-    refuses the source layout (libopus: ``2.1`` → ``stereo``, ``6.0`` → ``5.0``)."""
+    """No mixdown, but the builder writes fewer channels than the source has, because the
+    encoder refuses the source layout."""
     written = layout_channels(planned.layout)
     return (
         planned.mixdown is None and written is not None and len(written) < planned.source_channels
@@ -179,8 +165,7 @@ def _layout_downmix(planned: EncodedAudio) -> bool:
 
 
 def _layout_mixdown(definitions: Definitions, layout: str) -> Mixdown | None:
-    """The mixdown that writes ``layout`` (``stereo`` → ``stereo``); ``None`` for a layout
-    no mixdown makes (``5.0``, ``3.0``)."""
+    """The mixdown that writes ``layout``, or ``None`` when no mixdown makes it."""
     return next(
         (
             mixdown
@@ -194,8 +179,8 @@ def _layout_mixdown(definitions: Definitions, layout: str) -> Mixdown | None:
 def _dropped_as_upmix(
     encoder: AudioEncoderDef, requested: Mixdown, channels: int, definitions: Definitions
 ) -> bool:
-    """The helper's no-upmix rule (decision 0019 item 3) drops ``requested``: asked as if the
-    encoder could make every layout, it still does not return the request."""
+    """The no-upmix rule drops ``requested``: asked as if the encoder made every layout, the
+    helper still does not return it. An upmix only adds silent channels."""
     every_layout = encoder.model_copy(update={"mixdowns": list(definitions.mixdowns)})
     return every_layout.snap_mixdown(requested, channels, definitions.mixdowns) != requested
 
@@ -203,10 +188,8 @@ def _dropped_as_upmix(
 @job_rule("audio", "audio.mixdown_unsupported", "audio.mixdown_upmix")
 def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
     """The layout the builder writes differs from the track's: the encoder cannot make it
-    (``audio.mixdown_unsupported``: AC-3 and E-AC-3 have no 7.1, MP3 no 5.1, and libopus
-    refuses the source layouts ``2.1``, ``3.0(back)``, ``4.0``, ``6.0`` and ``7.1(wide)``:
-    the builder downmixes them, ``PlannedAudio.layout``), or it would be an upmix
-    (``audio.mixdown_upmix``). Both are info: the builder writes the snapped layout."""
+    (``audio.mixdown_unsupported``), or it would be an upmix (``audio.mixdown_upmix``). Both
+    are info: the builder writes the snapped layout."""
     defs = ctx.definitions
     for index, track, stream, planned in _encoded_tracks(ctx):
         requested, written = track.mixdown, planned.mixdown
@@ -250,9 +233,9 @@ def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 @job_rule("audio", "audio.bitrate_out_of_range")
 def bitrates(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A bitrate outside the encoder's range for the layout, or not one of its fixed steps
-    (AC-3, E-AC-3, MP3): the builder snaps it down, as HandBrake does (decision 0025). A
-    bitrate on a lossless encoder (FLAC): the builder writes none. Both info."""
+    """A bitrate outside the encoder's range for the layout, or not one of its fixed steps:
+    the builder snaps it down, as HandBrake does. A bitrate on a lossless encoder: the builder
+    writes none. Both info."""
     for index, track, _, planned in _encoded_tracks(ctx):
         encoder, kbps, snapped = planned.encoder, track.bitrate, planned.bitrate
         if kbps is not None and encoder.bitrate is None:

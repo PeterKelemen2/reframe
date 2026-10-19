@@ -1,20 +1,8 @@
-"""Encoder rules of C-6's options: x265 level limits (M2 review) and the advanced-option rules
-(M9, :func:`reframe.validation.video.video_option_rule_issues`, registered here for jobs and
-for templates: the three codes need only the video settings, no source).
+"""Encoder rules for x265 levels, and for the advanced options and custom parameters.
 
-x265 levels: a level too small for the output size or frame rate validates clean, then x265
-refuses to start.
-
-Checked with x265 in FFmpeg n9.0.2 (both builds; testdata/README.md "Validation (C-8)",
-``tests/validation/test_levels_ffmpeg.py``): with ``-x265-params level-idc=L`` x265 exits
-with "picture dimensions are out of range for specified level" when the picture has more
-luma samples than the level's MaxLumaPs, or a side longer than ``sqrt(8 * MaxLumaPs)``, and
-with "frame rate is out of range for specified level" when samples x frame rate exceed
-MaxLumaSr. The limits are those of H.265 table A.8, measured on the picture padded to the
-minimum coding unit: the job's ``min-cu-size``, else the preset's (16 for ``ultrafast``, 8 for
-the others). At level 4, 1920x1160 passes with ``medium`` and fails with ``ultrafast``;
-``medium`` with ``min-cu-size=16`` fails and ``ultrafast`` with ``min-cu-size=8`` passes
-(core-complete review R5-4, decision 0014).
+Without the level rule, a level too small for the picture would validate, and x265 would then
+refuse to start. The option and custom-parameter rules also run for templates, since they need
+only the video settings.
 """
 
 from __future__ import annotations
@@ -62,7 +50,7 @@ def _padded(size: int, unit: int) -> int:
 
 def x265_min_cu_size(video: VideoSettings, encoder: VideoEncoderDef | None) -> int | None:
     """The minimum coding unit x265 uses for ``video``: the job's ``min-cu-size``, else the
-    speed preset's default (C-6's per-preset table); ``None`` when not known."""
+    speed preset's default; ``None`` when not known."""
     if encoder is None:
         return None
     option = encoder.option("min-cu-size")
@@ -162,9 +150,6 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
     )
 
 
-# --------------------------------------------------------------------------- option rules (M9)
-
-
 @job_rule("encoder", *OPTION_RULE_CODES)
 def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
     return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
@@ -172,8 +157,7 @@ def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
 
 @job_rule("encoder", *CUSTOM_PARAM_CODES)
 def custom_params(ctx: JobContext) -> list[ValidationIssue]:
-    """Custom parameters that name a file, or that FFmpeg would read as its own options
-    (decision 0035 "Follow-up (core-complete review)")."""
+    """Custom parameters that name a file, or that FFmpeg would read as its own options."""
     return video_custom_param_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
 
 

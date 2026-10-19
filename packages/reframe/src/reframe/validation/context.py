@@ -1,7 +1,6 @@
-"""What the rules see: the job (or template) and everything validation knows around it.
+"""What the rules see: the job (or template) and what validation knows around it.
 
-The derived values (the container definition, the source streams by index, C-5's geometry,
-C-16's name) are computed once per validation and shared by the rules.
+The derived values are computed once per validation and shared by the rules.
 """
 
 from __future__ import annotations
@@ -63,7 +62,7 @@ class JobContext:
 
     @cached_property
     def geometry(self) -> Geometry | None:
-        """C-5's geometry of the encoded picture; ``None`` for video passthrough or a source
+        """The geometry of the encoded picture; ``None`` for video passthrough or a source
         without video."""
         if self.job.video.passthrough or self.source_geometry is None:
             return None
@@ -71,9 +70,9 @@ class JobContext:
 
     @cached_property
     def source_geometry(self) -> SourceGeometry | None:
-        """C-5's view of the main video stream, as the command builder gives it: a job that
-        deinterlaces encodes progressive frames (``interlaced`` off, so the crop is on the
-        frame's chroma grid, not the field's)."""
+        """The geometry of the main video stream, as the command builder sees it. A job that
+        deinterlaces encodes progressive frames (``interlaced`` off), so the crop is on the
+        frame's chroma grid, not the field's."""
         if self.video_stream is None:
             return None
         src = source_geometry(self.video_stream)
@@ -98,7 +97,7 @@ class JobContext:
 
     @cached_property
     def name(self) -> NameResult:
-        """C-16's output name of the source, read through :attr:`fs`."""
+        """The output name of the source, read through :attr:`fs`."""
         return resolve_output_name(
             Path(self.job.source.path),
             self.naming,
