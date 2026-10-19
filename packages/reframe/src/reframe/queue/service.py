@@ -34,7 +34,7 @@ from reframe.platform.power import PowerService
 from reframe.platform.sleep import SleepInhibitor, create_sleep_inhibitor
 from reframe.queue import files
 from reframe.queue.clock import Clock, SystemClock
-from reframe.queue.errors import JobStateError, UnknownJobError, printable
+from reframe.queue.errors import JobStateError, UnknownJobError, closed_error, printable
 from reframe.queue.lock import LOCK_FILE, LockBackend, StoreLock
 from reframe.queue.logs import EVENT_INTERVAL, JobLog, log_file
 from reframe.queue.process import resume_tree, suspend_tree
@@ -65,12 +65,6 @@ _RETRY = frozenset({JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 _Jobs = list[QueueJob]
 _Actives = list[ActiveJob]
 _Tasks = list[asyncio.Task[None]]
-
-
-def _closed_error() -> Exception:
-    from reframe.service import ReframeClosedError  # reframe.service imports this package
-
-    return ReframeClosedError()
 
 
 def _path_key(path: str | os.PathLike[str]) -> files.FileKey:
@@ -832,7 +826,7 @@ class QueueService:
 
     def _check_open(self) -> None:
         if self._closed:
-            raise _closed_error()
+            raise closed_error()
 
     def _job(self, job_id: str) -> QueueJob:
         job = self._jobs.get(job_id)

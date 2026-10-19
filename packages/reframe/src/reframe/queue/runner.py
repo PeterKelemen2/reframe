@@ -38,7 +38,7 @@ from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
-from reframe.queue.errors import exit_text, printable, stderr_reason
+from reframe.queue.errors import closed_error, exit_text, printable, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
@@ -170,12 +170,6 @@ class _Prepared:
     plan: EncodePlan
 
 
-def _closed_error() -> type[Exception]:
-    from reframe.service import ReframeClosedError  # reframe.service imports this package
-
-    return ReframeClosedError
-
-
 def _block_key(block: ProgressBlock) -> tuple[float | None, int | None, int | None]:
     return (block.out_time, block.frame, block.total_size)
 
@@ -252,7 +246,7 @@ class JobRunner:
         return outcome
 
     async def _run(self, job: QueueJob, active: ActiveJob, joblog: JobLog) -> Outcome:
-        closed = _closed_error()
+        closed = closed_error()
         plan: EncodePlan | None = None
         try:
             prepared = await self._prepare(job, active, joblog)
@@ -804,7 +798,7 @@ class JobRunner:
             )
             if active.token.cancelled:
                 raise _Stopped
-        except (_Stopped, _closed_error()):
+        except (_Stopped, closed_error()):
             if not written:
                 raise
             if active.stop_reason is None:  # Reframe closed under the check
