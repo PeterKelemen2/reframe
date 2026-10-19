@@ -153,7 +153,7 @@ class FakeWin32:
     """Mocked ``powrprof`` / ``advapi32`` / ``kernel32`` with the Win32 call semantics."""
 
     # GetCurrentProcess's (HANDLE)-1, which a HANDLE restype returns unsigned.
-    PROCESS = 2 ** (8 * ctypes.sizeof(ctypes.c_void_p)) - 1
+    PROCESS = (1 << 8 * ctypes.sizeof(ctypes.c_void_p)) - 1
     TOKEN = 0x1234
     SHUTDOWN_LUID = 19
 

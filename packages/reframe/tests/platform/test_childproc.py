@@ -22,7 +22,7 @@ from reframe.platform.childproc import (
 
 JOB = 0x1234
 # GetCurrentProcess's (HANDLE)-1, which a HANDLE restype returns unsigned.
-CURRENT_PROCESS = 2 ** (8 * ctypes.sizeof(ctypes.c_void_p)) - 1
+CURRENT_PROCESS = (1 << 8 * ctypes.sizeof(ctypes.c_void_p)) - 1
 CHILD_HANDLE = 0x5678
 SIGKILL = int(getattr(signal, "SIGKILL", 9))
 
