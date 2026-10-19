@@ -1,31 +1,8 @@
 """Download, verify and extract a pinned FFmpeg build from ``tools/ffmpeg.toml``.
 
-Usage::
-
-    uv run python scripts/fetch-tools.py [--build default|override-test]
-        [--platform auto|linux-x64|windows-x64] [--dest .tools | --install-dir DIR]
-
-The script:
-
-1. reads the build from the manifest and validates every field;
-2. downloads the archive (with retries) and checks its size and SHA-256 **before** it extracts
-   anything. A mismatch is a hard failure;
-3. extracts the archive safely (no absolute paths, no ``..``, no links that leave the archive
-   folder), keeps the executable bit on POSIX and keeps the layout of the archive, so the shared
-   libraries stay where the binaries expect them. By default it goes to
-   ``<dest>/ffmpeg/<build>-<platform>/<archive root>/``. With ``--install-dir DIR`` the
-   archive's root folder becomes ``DIR`` (``DIR/bin/ffmpeg``, ``DIR/lib/`` on Linux): the
-   layout of a bundled build, so ``--install-dir "$REFRAME_DATA_DIR/tools/ffmpeg"`` makes it
-   the bundled FFmpeg for Reframe's tool discovery (C-1). A non-empty ``DIR`` that this script
-   did not create is never deleted;
-4. runs ``ffmpeg -version`` and ``ffprobe -version`` and checks the pinned version string
-   (only when the platform is the host platform);
-5. prints the absolute ``bin`` folder on stdout, and nothing else, so CI can append it to
-   ``$GITHUB_PATH``. Progress messages go to stderr.
-
-It is idempotent: if the build is already extracted and every file still has the hash recorded
-at extraction time, it skips the download. It uses only the standard library, so it can run
-before ``uv sync`` (``uv run --no-project python scripts/fetch-tools.py``).
+The archive's size and SHA-256 are checked before anything is extracted. Only the absolute
+``bin`` folder goes to stdout, so CI can append it to ``$GITHUB_PATH``. The script uses only
+the standard library, so it runs before ``uv sync``.
 """
 
 from __future__ import annotations
@@ -60,7 +37,7 @@ DEFAULT_DEST = REPO_ROOT / ".tools"
 SCHEMA_VERSION = 1
 PLATFORMS = ("linux-x64", "windows-x64")
 FORMATS = ("tar.xz", "zip")
-# C-1: Reframe needs at least FFmpeg 7.0. A pinned build below that is a manifest error.
+# Reframe needs at least FFmpeg 7.0. A pinned build below that is a manifest error.
 MIN_FFMPEG_VERSION = (7, 0)
 MARKER_NAME = ".fetch-tools.json"
 USER_AGENT = "reframe-fetch-tools/1"
@@ -115,9 +92,6 @@ class Build:
     license: str
     source_commit: str
     platforms: Mapping[str, PlatformBuild]
-
-
-# --------------------------------------------------------------------------- manifest
 
 
 def _get_str(table: Mapping[str, object], key: str, where: str) -> str:
@@ -255,9 +229,6 @@ def detect_platform(sys_platform: str | None = None, machine: str | None = None)
     raise FetchError(f"no pinned FFmpeg build for {sys_platform}/{machine}; use --platform")
 
 
-# --------------------------------------------------------------------------- download + verify
-
-
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as f:
@@ -325,14 +296,10 @@ def download(
         sleep(delay)
 
 
-# --------------------------------------------------------------------------- safe extraction
-
-
 def member_path(name: str, root: str) -> PurePosixPath:
     """Return the safe relative path of an archive member, or raise UnsafeArchiveError.
 
-    Every member must be inside the folder ``root``. Absolute paths, drive letters,
-    backslashes, ``..`` parts and ``:`` (NTFS streams) are rejected.
+    Every member must be inside the folder ``root``. A ``:`` is refused: it names an NTFS stream.
     """
     if not name or name.startswith("/") or "\\" in name or "\x00" in name or _DRIVE_RE.match(name):
         raise UnsafeArchiveError(f"unsafe archive member name: {name!r}")
@@ -399,9 +366,6 @@ def safe_extract(archive: Path, fmt: str, root: str, dest: Path) -> None:
         _extract_zip(archive, root, dest)
     else:
         raise FetchError(f"unsupported archive format {fmt!r}")
-
-
-# --------------------------------------------------------------------------- install
 
 
 def tree_digest(directory: Path) -> dict[str, str]:
@@ -575,9 +539,6 @@ def check_version(executable: Path, tool: str, version: str) -> None:
             f"expected '{tool} version {version}'. stderr: {result.stderr.strip()[:500]}"
         )
     _log(first_line)
-
-
-# --------------------------------------------------------------------------- CLI
 
 
 def main(argv: list[str] | None = None) -> int:

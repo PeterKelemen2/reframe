@@ -1,12 +1,4 @@
-"""Helpers for encoder-detection tests (C-4): a tool-discovery stand-in and C-4 capture rules.
-
-- :class:`StubTools`: what ``CapabilityService`` needs from ``ToolsService`` (``status()``),
-  with a gate that holds it like a slow discovery.
-- :func:`tool_set` / :func:`ffmpeg_info`: a ``ToolSet`` whose ffmpeg is a given binary (the
-  fake from :mod:`reframe_testing.fake_tools`, or a real one).
-- :func:`c4_rule`: a fake-ffmpeg rule that replays a ``c4_*`` capture (the exact C-4 test
-  encode, run on the capture machine) for the test encode of an encoder.
-"""
+"""Helpers for encoder-detection tests: a tool-discovery stand-in and replayed capture rules."""
 
 from __future__ import annotations
 

@@ -8,17 +8,14 @@ the **pinned** build (``tools/ffmpeg.toml``) when the pin changes, check the dif
     uv run python testing/reframe_testing/capture_fake_data.py \\
         --ffmpeg "$BIN/ffmpeg" --ffprobe "$BIN/ffprobe"
 
-Each capture writes ``<name>.stdout.txt`` and/or ``<name>.stderr.txt`` (only the streams that
-have output) and one entry in ``captures.json`` with the exact command, extra environment
-variables, the exit code and the build (first line of ``ffmpeg -version``). Hardware captures
-depend on the machine (GPU, drivers); the ``machine`` field says where they were made.
+Hardware captures depend on the machine (GPU, drivers); the ``machine`` field in
+``captures.json`` says where they were made.
 
-``library_strings.json`` lists, for each hardware error text that ``C-4`` maps to a reason,
-the libraries of the build that contain it (a plain byte search in ``lib/libav*`` and the
-``ffmpeg`` binary). It confirms the exact texts of errors that cannot be provoked on the
-capture machine.
+``library_strings.json`` lists, for each text in :data:`LIBRARY_STRINGS`, the files of the build
+that contain it. It confirms the exact texts of errors that cannot be provoked on the capture
+machine.
 
-The ``c4_*`` captures run the exact test-encode command of ``C-4``
+The ``c4_*`` captures run the exact test-encode command of the capability detection
 (``reframe.capabilities.hardware_test_argv`` with the encoder definitions), so the reason
 mapping is tested against the command that detection runs. ``--only NAME…`` captures just those
 hardware captures (``hw_*`` with their ``.v_error`` twin, ``c4_*``), keeps the other files and
@@ -78,7 +75,7 @@ HELP_ENCODERS = (
     "mov_text",
 )
 
-#: Hardware test encodes, in the form that C-4 uses (3 frames of ``color`` to ``-f null -``):
+#: Hardware test encodes, in the form that detection uses (3 frames of ``color`` to ``-f null -``):
 #: name -> (arguments, extra environment variables).
 _TEST_INPUT = ("-f", "lavfi", "-i", "color=size=640x360", "-frames:v", "3")
 _VAAPI_UPLOAD = ("-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-f", "null", "-")
@@ -135,7 +132,7 @@ EMPTY_AMF_RUNTIME = "{folder with an empty libamfrt64.so.1}"
 
 
 def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
-    """The C-4 test encodes (``hardware_test_argv``) and filter run tests
+    """The test encodes (``hardware_test_argv``) and filter run tests
     (``filter_test_argv``) captured on the capture machine: name -> (arguments without the
     ffmpeg path, extra environment variables)."""
     from reframe.capabilities import filter_test_argv, hardware_test_argv  # needs uv run
@@ -177,7 +174,7 @@ def c4_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
 #: Environment variables removed for every capture: they change the log format.
 _DROP_ENV = ("AV_LOG_FORCE_COLOR", "AV_LOG_FORCE_NOCOLOR", "AV_LOG_FORCE_256COLOR")
 
-#: Texts that C-4's reason mapping may use (or that the plan names), searched in the build.
+#: Texts that the reason mapping may use, searched in the build.
 LIBRARY_STRINGS = (
     # NVIDIA
     "10 bit encode not supported",

@@ -1,9 +1,7 @@
 """Generate the test media fixtures into testdata/media/ (git-ignored).
 
-    uv run python scripts/make-testdata.py [--only NAME ...] [--force] [--out DIR] [--list]
-
 ffmpeg comes from $REFRAME_FFMPEG, else PATH. Re-running is fast: fixtures whose recipe did not
-change are skipped. The logic lives in testing/reframe_testing/media.py.
+change are skipped.
 """
 
 from __future__ import annotations

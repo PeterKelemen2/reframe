@@ -1,13 +1,4 @@
-"""The x264 / x265 option rules of validation agree with the real encoders
-(testdata/README.md "Validation (C-8)").
-
-- ``encoder.lookahead_too_short``: x265 stops ("Lookahead depth must be greater than the
-  max consecutive bframe count", exit 183) exactly when validation reports the error; the
-  per-preset defaults, the ``animation`` tune (+2 B-frames) and ``zerolatency`` (both 0)
-  are taken into account.
-- ``encoder.subme_needs_trellis``: x264 writes ``subme=9`` into its settings SEI exactly
-  when validation warns (``subme`` 10 or 11 without ``trellis`` 2).
-"""
+"""The x264 and x265 option rules of validation agree with the real encoders."""
 
 from __future__ import annotations
 

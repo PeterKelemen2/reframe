@@ -1,9 +1,4 @@
-"""One rule for "the same file" (core-complete follow-up, 2026-10-17): validation's
-``LocalFileSystem.same_file``, the queue's ``FileKey`` (final review RB-1) and
-``reframe.jobs.file_key`` (final review RA-1, now built on the queue's ``FileKey``) agree. A
-file system without file indexes (``st_ino`` 0, some Windows volumes) has no identity, so the
-paths decide, as the queue does: before, ``os.path.samefile`` called every two files there the
-same file."""
+"""Validation, the queue and ``reframe.jobs`` agree on when two paths are the same file."""
 
 from __future__ import annotations
 
@@ -65,7 +60,7 @@ def test_without_file_indexes_two_files_are_not_the_same(
     fs = LocalFileSystem()
     assert not fs.same_file(tree["movie"], tree["other"])
     assert fs.same_file(tree["movie"], tree["through_link"])  # the resolved paths are equal
-    assert not files.same_file(tree["movie"], tree["other"])  # the queue's rule agrees
+    assert not files.same_file(tree["movie"], tree["other"])
 
 
 @pytest.mark.parametrize(
