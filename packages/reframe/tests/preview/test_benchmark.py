@@ -79,7 +79,7 @@ async def test_4k_hdr_frame_budget(tmp_path: Path, fixture_media: Callable[[str]
             assert [f.cached for f in frames.frames] == [True]
             cached.append(elapsed)
         lookups = time.perf_counter()
-        assert app.sources.frame(frames.frames[0].key) is not None
+        assert await app.sources.frame(frames.frames[0].key) is not None
         lookup = time.perf_counter() - lookups
     finally:
         await app.close()

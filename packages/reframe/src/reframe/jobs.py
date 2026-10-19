@@ -711,9 +711,9 @@ class JobService:
         """
         return preview.start_preview_clip(self._media_tasks(), job, start=start, seconds=seconds)
 
-    def preview_clip_path(self, clip_id: str) -> Path | None:
+    async def preview_clip_path(self, clip_id: str) -> Path | None:
         """The cached clip of a :class:`~reframe.models.PreviewClip` id, else ``None``."""
-        return preview.clip_path(self._media_tasks(), clip_id)
+        return await asyncio.to_thread(preview.clip_path, self._media_tasks(), clip_id)
 
     def _media_tasks(self) -> MediaTaskContext:
         if self._media_context is None:

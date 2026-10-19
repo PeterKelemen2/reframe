@@ -533,9 +533,9 @@ class SourceService:
             self._media(), _absolute(path), count=count, timestamps=timestamps, job=job
         )
 
-    def frame(self, key: str) -> Path | None:
+    async def frame(self, key: str) -> Path | None:
         """The cached PNG of a :class:`~reframe.models.PreviewFrame` key, else ``None``."""
-        return preview.frame_path(self._media(), key)
+        return await asyncio.to_thread(preview.frame_path, self._media(), key)
 
     async def preview_cache_size(self) -> int:
         """Bytes of cached preview frames and clips."""
