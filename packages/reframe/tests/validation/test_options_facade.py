@@ -1,6 +1,5 @@
-"""The C-6 options through the facade (08 §M9, the core part of the demo): the option search,
-**Copy HDR metadata** on the HDR10 fixture (and a real encode with the copied values), and the
-dry run of custom parameters through ``Reframe.jobs``."""
+"""The advanced options through the facade: the option search, Copy HDR metadata on the HDR10
+fixture, and the dry run of custom parameters through ``Reframe.jobs``."""
 
 from __future__ import annotations
 
@@ -29,11 +28,7 @@ async def app(tmp_path: Path) -> Reframe:
     )
 
 
-# --------------------------------------------------------------------------- search
-
-
 async def test_search_psy_finds_psy_rd_and_psy_rdoq(app: Reframe) -> None:
-    """M9 demo: x265 advanced panel, search "psy" finds psy-rd and psy-rdoq."""
     try:
         found = [o.key for o in app.jobs.search_options("libx265", "psy")]
         assert found[:2] == ["psy-rd", "psy-rdoq"]
@@ -44,9 +39,6 @@ async def test_search_psy_finds_psy_rd_and_psy_rdoq(app: Reframe) -> None:
         assert everything == app.jobs.definitions.video_encoders["libx264"].options
     finally:
         await app.close()
-
-
-# --------------------------------------------------------------------------- HDR metadata
 
 
 def _fixture_hdr10() -> tuple[str, str]:
@@ -85,9 +77,6 @@ def _encode(ffmpeg: str, source: Path, out: Path, encoder: str, params: str) -> 
 async def test_copy_hdr_metadata_fills_master_display_and_max_cll(
     app: Reframe, fixture_media: FixtureMedia, tmp_path: Path
 ) -> None:
-    """M9 demo: **Copy HDR metadata** fills master-display and MaxCLL on the HDR10 fixture with
-    the values it was made with; a real x265 encode with them (and an SVT-AV1 encode with its
-    own options) carries the same metadata (ffprobe side data, read by the probe)."""
     from reframe_testing import media
 
     path = fixture_media("hdr10")
@@ -164,15 +153,11 @@ async def test_no_hdr_metadata_on_an_sdr_source(
         await app.close()
 
 
-# --------------------------------------------------------------------------- dry run
-
-
 @pytest.mark.needs_ffmpeg
 async def test_an_unsupported_custom_parameter_fails_the_dry_run(
     app: Reframe, fixture_media: FixtureMedia, tmp_path: Path
 ) -> None:
-    """M9 demo: an unsupported custom parameter shows a validation error from the dry run.
-    x265 only logs it and exits with 0; the dry run reads the log."""
+    """x265 only logs it and exits with 0; the dry run reads the log."""
     path = fixture_media("multitrack")
     try:
         job = await _draft(app, path, tmp_path)
@@ -189,7 +174,6 @@ async def test_an_unsupported_custom_parameter_fails_the_dry_run(
         assert fixed.video.custom_params == "ref=3"
         assert await app.jobs.dry_run(fixed) == []
 
-        # plan(dry_run=True) returns the issues instead of a plan; without it, a plan.
         planned = await app.jobs.plan(job, dry_run=True)
         assert isinstance(planned, list)
         assert ("encoder.custom_param_rejected", "video.custom_params") in {
@@ -207,7 +191,7 @@ async def test_an_unsupported_custom_parameter_fails_the_dry_run(
     [
         ("libx264", "bogus=1", "encoder.custom_param_rejected"),
         ("libsvtav1", "bogus=1", "encoder.custom_param_rejected"),
-        # Not an option of libvpx-vp9: refused before FFmpeg starts (decision 0035 follow-up).
+        # Not an option of libvpx-vp9: refused before FFmpeg starts.
         ("libvpx-vp9", "bogus=1", "encoder.custom_param_unknown"),
         # libvpx refuses the value through a codec control and goes on (exit code 0).
         ("libvpx-vp9", "arnr-maxframes=16", "encoder.custom_param_rejected"),

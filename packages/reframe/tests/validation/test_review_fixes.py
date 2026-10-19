@@ -1,9 +1,4 @@
-"""Regression tests of the M2 review findings in validation (C-8; decision 0014 "Follow-up
-(M2 review)", decision 0027 item 5).
-
-Each test failed before its fix. The rule-table cases of the new codes are in
-``test_rules.py``; the builder refusals in ``test_command_agreement.py``.
-"""
+"""Validation regression tests for output paths, fixes and some edge cases."""
 
 from __future__ import annotations
 
@@ -61,16 +56,12 @@ def errors(issues: list[Any]) -> list[str]:
     return [i.code for i in issues if i.severity is Severity.ERROR]
 
 
-# --------------------------------------------------------------------------- B2
-
-
 def path_issues(path: PurePath, source: PurePath, fs: Any) -> list[Any]:
     return output_path_issues(path, source, fs, container=MKV, collision="auto_rename")
 
 
 def test_the_partial_file_is_the_source() -> None:
-    """Repro 1: a source named ``Foo.part.mkv`` and the output ``Foo.mkv``: the builder would
-    write ``Foo.part.mkv`` (the source) and the queue would remove it."""
+    """The builder would write ``Foo.part.mkv`` (the source), and the queue would remove it."""
     source = Path("/media/Foo.part.mkv")
     fs = sc.FakeFs(files=[source], dirs=[Path("/media")])
     [issue] = path_issues(Path("/media/Foo.mkv"), source, fs)
@@ -94,7 +85,6 @@ def test_plan_and_statistics_files_are_the_source(source_name: str) -> None:
 
 
 def test_written_paths_are_the_builders() -> None:
-    """``written_paths`` names every file of a 2-pass plan with generated chapters."""
     s = sc.base()
     s.job.video.encoder = "libx265"
     s.job.video.rate_control = AverageBitrate(kbps=2000, two_pass=True)
@@ -113,8 +103,8 @@ def test_windows_spelling_of_the_partial_file() -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
 @pytest.mark.parametrize("source_name", ["Foo.mkv", "Foo.part.mkv"])
 def test_output_folder_linked_to_the_source_folder(tmp_path: Path, source_name: str) -> None:
-    """Repro 2: the output folder is a symlink to the source's folder (a string compare
-    misses it); the real file system finds the same file."""
+    """The output folder is a symlink to the source's folder (a string compare misses it);
+    the real file system finds the same file."""
     real = tmp_path / "real"
     real.mkdir()
     link = tmp_path / "link"
@@ -123,9 +113,6 @@ def test_output_folder_linked_to_the_source_folder(tmp_path: Path, source_name: 
     source.write_bytes(b"x")
     issues = path_issues(link / "Foo.mkv", source, LocalFileSystem())
     assert errors(issues) == ["output.same_as_source"]
-
-
-# --------------------------------------------------------------------------- fixes
 
 
 def test_switch_container_changes_the_extension() -> None:
@@ -142,8 +129,7 @@ def test_switch_container_changes_the_extension() -> None:
 
 
 def test_switch_container_keeps_every_track_valid() -> None:
-    """The unknown-container fixes offer only containers that hold every track (WebM holds
-    neither x265 nor the subtitles)."""
+    """WebM holds neither x265 nor the subtitles, so the fixes offer only MKV."""
     s = sc.base()
     s.job.output.container = "avi"
     [issue] = [i for i in sc.check(s) if i.code == "container.unknown"]
@@ -165,8 +151,6 @@ def test_encode_the_video_picks_an_encoder_the_container_holds() -> None:
 
 
 def test_closest_match_respects_detected_10bit() -> None:
-    """hevc_nvenc unavailable; the closest available HEVC encoder failed its 10-bit test: the
-    fix turns 10-bit off instead of leaving encoder.no_10bit behind."""
     states: dict[str, EncoderState | EncoderStatus] = {
         "hevc_nvenc": EncoderState.UNAVAILABLE,
     }
@@ -200,9 +184,6 @@ def test_burn_it_in_is_not_offered_next_to_another_burn_in() -> None:
     assert "Burn it in" not in [f.label for f in issue.fixes]
 
 
-# --------------------------------------------------------------------------- minor
-
-
 def test_reserved_name_is_an_error_for_a_windows_path() -> None:
     fs = sc.FakeFs(files=[W("C:\\Videos\\Movie.mkv")], dirs=[W("C:\\Out")], case_insensitive=True)
     issues = path_issues(W("C:\\Out\\con.mkv"), W("C:\\Videos\\Movie.mkv"), fs)
@@ -212,7 +193,6 @@ def test_reserved_name_is_an_error_for_a_windows_path() -> None:
 
 
 def test_too_long_name_counts_the_partial_suffix() -> None:
-    """250 + ``.mkv`` fits 255 bytes, but ``.part.mkv`` does not; the fix fits."""
     s = sc.base()
     s.job.output.path = Path("/out") / ("é" * 124 + ".mkv")  # 248 bytes + .part.mkv
     [issue] = [i for i in sc.check(s) if i.code == "output.name_too_long"]
@@ -221,8 +201,6 @@ def test_too_long_name_counts_the_partial_suffix() -> None:
 
 @pytest.mark.parametrize("where", ["advanced", "filter"])
 def test_a_newline_in_a_key_is_an_issue_not_a_crash(where: str) -> None:
-    """The JSON-pointer pattern took ``.`` without DOTALL: the fix of an option key or a
-    filter id with a newline failed to build (``validation.rule_failed``)."""
     s = sc.base()
     if where == "advanced":
         s.job.video.advanced = {"psy\nrd": 1.0}
@@ -250,7 +228,6 @@ def test_deinterlaced_crop_is_on_the_frame_grid() -> None:
 
 
 def test_source_ref_is_used_for_the_clash() -> None:
-    """The job's source path (not the probe's) is compared, as the builder reads it."""
     s = sc.base()
     s.job.source = SourceRef(path=Path("/out/Movie (2019).part.mkv"))
     s.fs.add_file(Path("/out/Movie (2019).part.mkv"))

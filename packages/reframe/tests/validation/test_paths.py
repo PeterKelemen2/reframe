@@ -133,9 +133,6 @@ def test_no_fix_to_the_source_folder_when_it_is_read_only() -> None:
     assert issues[0].fixes == []
 
 
-# --------------------------------------------------------------------------- LocalFileSystem
-
-
 def test_local_file_system(tmp_path: Path) -> None:
     local = LocalFileSystem()
     movie = tmp_path / "Movie.mkv"
@@ -175,8 +172,7 @@ def test_local_read_only_folder(tmp_path: Path) -> None:
 def test_local_windows_branch_creates_a_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """On Windows, ``writable_dir`` creates (and deletes) a temporary file, because
-    ``os.access`` does not read ACLs there. The branch runs here with a patched platform."""
+    """The Windows branch runs here with a patched platform."""
     monkeypatch.setattr(fs_module, "sys", SimpleNamespace(platform="win32"))
     local = LocalFileSystem()
     assert local.writable_dir(tmp_path)
