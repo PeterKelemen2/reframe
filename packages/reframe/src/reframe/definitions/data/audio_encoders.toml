@@ -1,11 +1,7 @@
-# Audio encoders (C-6). Table key = FFmpeg encoder name.
+# Audio encoders. Table key = FFmpeg encoder name.
 #
-# M2 contract (docs/m2-breakdown.md): identity only, so that C-4 lists every audio encoder in
-# the capability snapshot. C-6 owns this file and adds bitrates per mixdown, allowed bitrate
-# values, sample rates and passthru data. libfdk_aac is not in the GPL builds; it is listed so
-# that a preset that names it gets "not in this build" instead of "unknown encoder".
-#
-# ---------------------------------------------------------------------- C-6 additions
+# libfdk_aac is not in the GPL builds; it is listed so that a preset that names it gets
+# "not in this build" instead of "unknown encoder".
 #
 # Bitrates (kb/s, for 44.1 / 48 kHz output) follow HandBrake 1.11.2 libhb/common.c:
 # - limits: `hb_audio_bitrate_get_limits` (per full-band channel and LFE), rounded up to the
@@ -13,22 +9,12 @@
 # - defaults: `hb_audio_bitrate_get_default` (AC-3 96/224/640, E-AC-3 384/768/1536, AAC and
 #   MP3 80 per channel, Opus 96 per coupled pair + 64 per single channel), snapped down to
 #   HandBrake's bitrate list as HandBrake does;
-# - AC-3, E-AC-3 and MP3 use fixed steps; AAC and Opus a free range (03 §Audio).
-# Real FFmpeg n9.0.2 behaviour (tests/definitions/test_tools.py, testdata/README.md):
-# - `ac3` accepts any `-b:a` and silently snaps to the AC-3 rates (150k → 160k, 700k → 640k);
-#   5.1 needs at least 40k. `eac3` accepts 24k–6144k (7000k fails).
-# - `libmp3lame` snaps to the MPEG-1 Layer III rates at 32–48 kHz (150k → 160k).
-# - `aac` clamps above 6144 bits per frame per channel ("Too many bits … clamping to max").
-# - `libopus` accepts 0.5k up to 256k per channel ("between 500 and 512000" for stereo).
-# - FFmpeg cannot encode 7.1 to AC-3, E-AC-3 or MP3: it negotiates 5.1(side) / stereo.
-# - Sample rates: `ffmpeg -h encoder=<id>` ("Supported sample rates"); a rate the encoder
-#   does not list fails ("Specified sample rate 44100 is not supported by the libopus
-#   encoder").
+# - AC-3, E-AC-3 and MP3 use fixed steps; AAC and Opus a free range.
+# What FFmpeg's encoders accept is in testdata/README.md ("Verified tool behaviour").
 
 [encoder.aac]
 label = "AAC"
 codec = "aac"
-# --- C-6
 help = "FFmpeg's native AAC encoder. Plays everywhere; fine at 128–160 kb/s stereo."
 max_channels = 8
 mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
@@ -45,10 +31,8 @@ dpl2 = { min = 64, max = 512, default = 160 }
 [encoder.libfdk_aac]
 label = "AAC (FDK)"
 codec = "aac"
-# --- C-6
 help = "Fraunhofer FDK AAC: better than FFmpeg's AAC at low bitrates. Not in GPL builds of FFmpeg (licence), so not in the bundled build."
 in_gpl_builds = false
-# Decision 0020: a preset that names libfdk_aac falls back to FFmpeg's AAC.
 fallback = ["aac"]
 max_channels = 8
 mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
@@ -75,7 +59,6 @@ help = "VBR mode 1 (smallest) to 5 (best); HandBrake's default is 3."
 [encoder.ac3]
 label = "AC-3"
 codec = "ac3"
-# --- C-6
 help = "Dolby Digital. For older home-cinema receivers; up to 5.1 and 640 kb/s."
 max_channels = 6
 mixdowns = ["mono", "stereo", "dpl2", "5.1"]
@@ -94,7 +77,6 @@ dpl2 = { min = 96, max = 640, default = 224 }
 [encoder.eac3]
 label = "E-AC-3"
 codec = "eac3"
-# --- C-6
 help = "Dolby Digital Plus. FFmpeg's encoder handles up to 5.1."
 max_channels = 6
 mixdowns = ["mono", "stereo", "dpl2", "5.1"]
@@ -114,7 +96,6 @@ dpl2 = { min = 96, max = 6144, default = 768 }
 [encoder.libopus]
 label = "Opus"
 codec = "opus"
-# --- C-6
 help = "The most efficient lossy codec: transparent at about 96 kb/s stereo. MKV, WebM and MP4."
 max_channels = 8
 mixdowns = ["mono", "stereo", "dpl2", "5.1", "7.1"]
@@ -131,7 +112,6 @@ dpl2 = { min = 12, max = 512, default = 96 }
 [encoder.flac]
 label = "FLAC"
 codec = "flac"
-# --- C-6
 help = "Lossless. For archiving; the files are large."
 lossless = true
 max_channels = 8
@@ -143,7 +123,6 @@ passthru = "flac"
 [encoder.libmp3lame]
 label = "MP3"
 codec = "mp3"
-# --- C-6
 help = "LAME MP3. Only for very old players; mono and stereo only."
 max_channels = 2
 mixdowns = ["mono", "stereo", "dpl2"]
@@ -166,8 +145,6 @@ step = 0.5
 default = 2
 direction = "lower_is_better"
 help = "LAME VBR quality: 0 is the best (about 245 kb/s), 9 the smallest. HandBrake's default is 2."
-
-# --------------------------------------------------------------------------- mixdowns
 
 [mixdown.mono]
 label = "Mono"
@@ -197,9 +174,8 @@ channels = 8
 lfe = 1
 layout = "7.1"
 
-# --------------------------------------------------------------------------- passthru
-# 03 §Audio defaults part 3; matched on the source track's ffprobe codec_name and profile
-# (the profile names are those of reframe.probe.names).
+# Passthru codecs, matched on the source track's ffprobe codec_name and profile (the profile
+# names are those of reframe.probe.names).
 
 [passthru.ac3]
 label = "AC-3"

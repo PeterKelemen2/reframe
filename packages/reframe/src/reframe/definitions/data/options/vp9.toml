@@ -1,13 +1,12 @@
-# VP9 (libvpx-vp9) advanced options (C-6, M9).
+# VP9 (libvpx-vp9) advanced options.
 #
 # Private options from `ffmpeg -h encoder=libvpx-vp9` (FFmpeg n9.0.2 and n8.1.3, libvpx in
 # both builds); generic ones (`-g`, `-keyint_min`, `-qmin`, `-qmax`, `-threads`) are FFmpeg codec
 # options. libvpx writes no settings into the stream, so each value is checked by an encode:
 # a value outside libvpx's range fails ("Failed to initialize encoder: Invalid parameter",
 # exit 234) or is refused with a message ("Failed to set VP8E_SET_ARNR_STRENGTH codec
-# control: Invalid parameter", "arnr_strength out of range [..6]"); testdata/README.md
-# "Advanced encoder options (C-6, complete option sets)". The libvpx defaults are not printed,
-# so most defaults are "encoder decides".
+# control: Invalid parameter", "arnr_strength out of range [..6]"); testdata/README.md has
+# the results. The libvpx defaults are not printed, so most defaults are "encoder decides".
 
 [[set.vp9]]
 key = "g"
@@ -125,7 +124,7 @@ min = 0
 max = 63
 step = 1
 # libvpx: the CQ value must lie between qmin and qmax ("CQ level 30 must be between minimum
-# and maximum quantizer value (0-29)"); validation (C-8) reports it.
+# and maximum quantizer value (0-29)"); validation reports it.
 help = "The lowest quantiser libvpx may use (0–63). The constant-quality value must not be below it."
 mapping = { kind = "ffmpeg_arg", arg = "-qmin" }
 default = { kind = "fixed", value = 0 }

@@ -1,10 +1,9 @@
-# Output containers (C-6). Table key = `reframe.models.job.Container`.
+# Output containers. Table key = `reframe.models.job.Container`.
 #
-# Checked with FFmpeg n9.0.2 by muxing short streams (`-c copy` from Matroska sources, and
-# encodes), reading the result back with ffprobe; tests/definitions/test_tools.py repeats it,
-# testdata/README.md "Encoder definitions (C-6)" has the tables. Where FFmpeg accepts more
-# than HandBrake does (Vorbis in MP4 with a generic `mp4a` tag), the HandBrake 1.11.2 muxer
-# masks (libhb/common.c `hb_audio_encoders`, `hb_video_encoders`) decide.
+# What each muxer takes is checked by tests/definitions/test_tools.py and recorded in
+# testdata/README.md ("Verified tool behaviour"). Where FFmpeg accepts more than HandBrake does
+# (Vorbis in MP4 with a generic `mp4a` tag), the HandBrake 1.11.2 muxer masks (libhb/common.c
+# `hb_audio_encoders`, `hb_video_encoders`) decide.
 #
 # Codec names are ffprobe `codec_name`s; `copy = ["*"]` means any codec but those in
 # `copy_except` (the codecs the muxer refuses).
@@ -24,26 +23,16 @@ help = "Holds almost every codec, chapters, attachments (fonts) and all track fl
 
 [container.mkv.video]
 copy = ["*"]
-# M2 review, every software video encoder of the build `-c copy`-muxed into Matroska
-# (tests/definitions/test_tools.py `test_mkv_copy_except_matches_the_muxer`): dirac, gif,
-# qtrle, rpza and svq1 mux with exit 0, but FFmpeg cannot read the file back ("unknown codec",
-# "Unsupported colorspace: 0 bits/sample?"); n8.1.3 still reads svq1 back, n9.0.2 does not.
-# rawvideo with an RGB pixel format fails ("Raw RGB is not supported Natively in Matroska");
-# YUV rawvideo works, but the codec name cannot tell them apart, so rawvideo is always
-# encoded.
+# These mux, but FFmpeg cannot read the file back. RGB rawvideo is refused, and the codec name
+# does not tell it from YUV rawvideo, so rawvideo is always encoded.
 copy_except = ["dirac", "gif", "qtrle", "rawvideo", "rpza", "svq1"]
 encode = ["h264", "hevc", "av1", "vp9"]
 
 [container.mkv.audio]
 copy = ["*"]
-# Codecs the Matroska muxer refuses (M2 review). Every audio encoder of the three builds
-# (n9.0.2 Arch and BtbN, n8.1.3) made a short stream that was then `-c copy`-muxed into
-# Matroska (tests/definitions/test_tools.py `test_mkv_copy_except_matches_the_muxer`). These
-# fail with "No wav codec tag found for codec …" (exit 234): Matroska has no codec ID for
-# them and they have no WAVE format tag. `dfpwm` muxes with exit 0, but FFmpeg cannot read the
-# file back. DSD and the decode-only PCM variants come last: the DSD streams are from a
-# hand-made DSF file (they fail the same way); pcm_f16le, pcm_f24le, pcm_lxf, pcm_sga, dsd_lsbf
-# and dsd_msbf could not be made at all and are denied to be safe (encoded, never a failed mux).
+# "No wav codec tag found for codec …" (exit 234): no Matroska codec ID and no WAVE format tag.
+# `dfpwm` muxes, but FFmpeg cannot read the file back. The unverified ones are denied to be
+# safe: they are encoded, never a failed mux.
 copy_except = [
     # PCM-like
     "pcm_bluray", "pcm_dvd", "s302m", "pcm_s24daud", "pcm_vidc",
@@ -80,7 +69,7 @@ flags = ["default", "forced", "commentary", "hearing_impaired", "visual_impaired
 # With no default track of a type, the MP4 muxer marks the first one default.
 default_always_set = true
 language_format = "iso639_2t"
-# Text subtitles (SRT, ASS, WebVTT) are converted to mov_text (03 §Subtitles).
+# Text subtitles (SRT, ASS, WebVTT) are converted to mov_text.
 text_subtitle_target = "mov_text"
 # HandBrake writes H.265 in MP4 as `hvc1` (Apple players need it); FFmpeg's default is `hev1`.
 codec_tags = { hevc = "hvc1" }
@@ -127,9 +116,8 @@ encode = ["opus"]
 copy = ["webvtt"]
 encode = ["webvtt"]
 
-# --------------------------------------------------------------------------- track flags
-# FFmpeg disposition and the mkvpropedit property for each flag of 03 §Track metadata
-# (`mkvpropedit --list-property-names`, MKVToolNix v101.0).
+# The FFmpeg disposition and the mkvpropedit property of each track flag
+# (`mkvpropedit --list-property-names`).
 
 [flag.default]
 disposition = "default"
