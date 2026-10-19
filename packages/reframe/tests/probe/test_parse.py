@@ -1,4 +1,4 @@
-"""The ffprobe JSON parser (C-3) on hand-made edge cases."""
+"""The ffprobe JSON parser on hand-made edge cases."""
 
 from __future__ import annotations
 
@@ -159,8 +159,6 @@ def test_stream_duration_falls_back_to_the_matroska_tag() -> None:
 
 
 def test_mp4_track_title_is_the_name_tag() -> None:
-    # FFmpeg n9.0.2's mov demuxer reports a track title written with
-    # `-metadata:s:a:0 title=…` as the stream tag "name" (checked with ffprobe, M2 C-7).
     named = {"index": 1, "codec_type": "audio", "tags": {"name": "English Stereo"}}
     both = {"index": 2, "codec_type": "audio", "tags": {"title": "Title", "name": "Name"}}
     source = parse_ffprobe(doc(video(), named, both), FILE)
@@ -288,9 +286,6 @@ def test_fingerprint_gets_the_layout_hash() -> None:
     assert parse_ffprobe(data, FILE).ref.fingerprint is None
 
 
-# --------------------------------------------------------------------------- delay
-
-
 def test_delay_is_relative_to_the_main_video_stream() -> None:
     """An M2TS clip: everything starts near 1.4 s; the audio starts 5 ms before the video."""
     v = video(start_time="1.405000")
@@ -314,8 +309,6 @@ def test_delay_without_video_uses_the_container_start() -> None:
     with_cover = parse_ffprobe(doc(cover, a1, fmt={"start_time": "0.5"}), FILE)
     assert with_cover.audio[0].delay == pytest.approx(0.25)  # cover art is not the reference
 
-
-# --------------------------------------------------------------------------- VFR in Matroska
 
 MKV = {"format_name": "matroska,webm", "duration": "3.1", "size": "10000000", "bit_rate": "9000000"}
 
@@ -387,9 +380,6 @@ def _pts(*steps_ms: float, start: float = 0.0) -> list[float]:
 def test_vfr_from_timestamps(pts: list[float], vfr: bool | None) -> None:
     assert parse.vfr_from_timestamps(pts) is vfr
     assert parse.vfr_from_timestamps(list(reversed(pts))) is vfr  # order does not matter
-
-
-# --------------------------------------------------------------------------- stale counts
 
 
 def test_stale_stats_drop_frame_and_event_counts() -> None:

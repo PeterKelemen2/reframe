@@ -1,11 +1,6 @@
-"""Commercial codec names (C-3): the whole map, table-driven.
+"""Commercial codec names: the whole map, table-driven.
 
-Every ffprobe profile string used here was confirmed by a byte search (a NUL-terminated C
-string) in the pinned build (``n9.0.2-17-g2a571b6068-20260930``: ``lib/libavcodec.so.63.1.102``,
-``lib/libavutil.so.61.1.102``, ``bin/ffprobe``) and in the Arch Linux n9.0.2 package
-(``/usr/lib/libavcodec.so.63.1.102``, ``/usr/bin/ffprobe``). The result is
-``testdata/probes/confirmed_strings.json`` (``record_probes.py --strings``);
-:func:`test_every_profile_in_the_map_is_confirmed` checks the map against it.
+The profile strings are checked against ``testdata/probes/confirmed_strings.json``.
 """
 
 from __future__ import annotations
@@ -156,7 +151,6 @@ def test_no_codec_no_name() -> None:
 
 
 def test_every_profile_in_the_map_is_confirmed() -> None:
-    """Each profile the map matches on is a C string in the pinned build and the system's."""
     confirmed = json.loads(CONFIRMED.read_text(encoding="utf-8"))["strings"]
     found = {text: hits for group in confirmed.values() for text, hits in group.items()}
     used = {profile for table in names._AUDIO_PROFILES.values() for profile in table} | set(

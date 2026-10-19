@@ -1,8 +1,7 @@
-"""Probing the generated fixtures with the real ffprobe (C-3).
+"""Probing the generated fixtures with the real ffprobe.
 
 Not exact snapshots (those use the recorded JSON in ``test_snapshots.py``): this must pass with
-the pinned n9.0.2 build and the CI override build n8.1.3, so it checks the structure only.
-The timing test measures the Q-3 budgets: one local file < 500 ms, a 24-file folder < 5 s.
+the pinned FFmpeg and the CI override build, so it checks the structure only.
 """
 
 from __future__ import annotations
@@ -154,7 +153,7 @@ async def test_season_folder(prober: Prober, fixture_media: Media) -> None:
 
 @pytest.mark.benchmark
 async def test_probe_budgets(prober: Prober, fixture_media: Media, tmp_path: Path) -> None:
-    """Q-3: one local file < 500 ms; a 24-file folder < 5 s (cold, no cache)."""
+    """One local file < 500 ms; a 24-file folder < 5 s (cold, no cache)."""
     single = fixture_media("multitrack")
     await probe(prober, single)  # warm up (MediaInfo library load, page cache)
     started = time.perf_counter()
@@ -202,8 +201,7 @@ def _tool(name: str) -> str:
 async def test_mkvmerge_vfr_without_stats_is_found_by_packet_sampling(
     prober: Prober, fixture_media: Media, tmp_path: Path
 ) -> None:
-    """mkvmerge writes DefaultDuration (r = avg); without statistics tags and without
-    MediaInfo the prober samples packet timestamps."""
+    """Without statistics tags and without MediaInfo the prober samples packet timestamps."""
     out = tmp_path / "vfr-mkvmerge.mkv"
     _run(
         [
@@ -263,8 +261,7 @@ async def test_language_ietf_from_mediainfo(
 async def test_stale_statistics_after_an_ffmpeg_reencode(
     prober: Prober, fixture_media: Media, tmp_path: Path
 ) -> None:
-    """mkvmerge writes statistics tags; an FFmpeg re-encode keeps them (stale). Neither the
-    tags nor MediaInfo (which reads the same tags) may give the bit rate then."""
+    """An FFmpeg re-encode keeps the mkvmerge statistics tags, which are then stale."""
     from reframe_testing import media
 
     muxed = tmp_path / "muxed.mkv"

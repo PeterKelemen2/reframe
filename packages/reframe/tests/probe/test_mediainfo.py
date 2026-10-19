@@ -1,9 +1,8 @@
-"""MediaInfo's ``StreamOrder`` and bit rates are ASCII digits only (C-3, M2 review).
+"""MediaInfo's ``StreamOrder`` and bit rates are ASCII digits only.
 
-``str.isdigit()`` accepts more than ``0``-``9``: superscripts (``\u00b2``) that ``int()``
-rejects (a ``ValueError`` in the probe), and other scripts' decimal digits (Arabic-Indic
-``\u0663``, full-width ``\uff13``) that ``int()`` reads as 3. A MediaInfo stream order is a
-plain ASCII number; anything else is not matched to an ffprobe stream.
+``str.isdigit()`` accepts superscripts, which ``int()`` rejects, and other scripts' decimal
+digits, which ``int()`` reads. A MediaInfo stream order is a plain ASCII number; anything else
+is not matched to an ffprobe stream.
 """
 
 from __future__ import annotations

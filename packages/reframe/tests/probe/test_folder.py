@@ -1,4 +1,4 @@
-"""Folder probe (C-3): media files only, natural order, concurrency limit, progress, task."""
+"""Folder probe: media files only, natural order, concurrency limit, progress, task."""
 
 from __future__ import annotations
 
@@ -269,11 +269,7 @@ def _proc(pid: int) -> Any:
 async def test_cancelling_probe_folder_reaps_every_ffprobe(
     fake_tools: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """A cancelled probe_folder() returns only after every running ffprobe is gone.
-
-    Regression: with ``asyncio.gather`` a cancel returned as soon as the first probe ended,
-    and the other probes' process kills could be dropped when the loop stopped (orphans).
-    """
+    """A cancelled probe_folder() returns only after every running ffprobe is gone."""
     fake_tools.set_scenario(
         ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=[ft.hang()])])
     )

@@ -1,10 +1,7 @@
-"""The probe cache's parser fingerprint covers the Matroska track reader (final review RB-7;
-decision 0007, "Follow-up (final review, 2026-10-17)").
+"""The parser fingerprint covers the Matroska track reader.
 
-``reframe.probe.matroska`` gives every Matroska stream its ``language_ietf`` (decision 0034
-item 5), so a change to it changes what a probe produces. Before, ``matroska.py`` was not one of
-the hashed modules: such a change kept the old cache entries unless ``MATROSKA_READER`` was
-raised by hand.
+The reader sets each Matroska stream's ``language_ietf``. A change to it changes what a probe
+produces, so it must change the fingerprint too.
 """
 
 from __future__ import annotations

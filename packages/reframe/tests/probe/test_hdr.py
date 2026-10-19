@@ -1,5 +1,5 @@
-"""HDR detection from side data (C-3), with hand-made side data for the cases that cannot be
-generated (HDR10+, Dolby Vision profile 5, a DOVI record in a frame)."""
+"""HDR detection from side data, with hand-made side data for the cases that cannot be
+generated."""
 
 from __future__ import annotations
 

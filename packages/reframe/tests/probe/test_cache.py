@@ -1,5 +1,4 @@
-"""The probe cache (C-3): key = path + size + mtime; ffprobe build, parser version and options
-invalidate; corrupt entries are ignored and rewritten; writes are atomic."""
+"""The probe cache: keys, invalidation, corrupt entries, pruning and atomic writes."""
 
 from __future__ import annotations
 
@@ -183,9 +182,6 @@ def test_key_for_file(tmp_path: Path) -> None:
     k = CacheKey.for_file(file, stat)
     assert (k.path, k.size, k.mtime_ns) == (str(file.absolute()), 5, stat.st_mtime_ns)
     assert k.digest() != CacheKey(k.path, 6, k.mtime_ns).digest()
-
-
-# --------------------------------------------------------------------------- pruning, parser
 
 
 def _age(path: Path, seconds: float) -> None:
