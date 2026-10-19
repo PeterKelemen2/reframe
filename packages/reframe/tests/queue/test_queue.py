@@ -17,6 +17,7 @@ from reframe.models import (
     NotificationEvent,
     QueueChangedEvent,
     QueueJob,
+    Severity,
 )
 from reframe.queue import JobStateError, UnknownJobError
 from reframe.service import ReframeClosedError
@@ -698,17 +699,11 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a file name that is not UTF-8 (Linux)")
-async def test_a_file_name_that_is_not_utf8(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_file_name_that_is_not_utf8(harness: Harness) -> None:
     """A source named ``bad\\xffname.mkv`` (byte 0xFF; Python's ``\\udcff``, PEP 383): the store
-    keeps the path exactly, the log file and the events show it escaped, and nothing raises.
-    Validation is left out: its naming rule fails on such a name."""
-    from reframe.queue import runner
-
+    keeps the path exactly, the log file and the events show it escaped, and nothing raises."""
     from .conftest import draft, recorded
 
-    monkeypatch.setattr(runner, "validate", lambda *args, **kwargs: [])
     h = harness
     source = h.tmp / "media" / "bad\udcffname.mkv"
     source.write_bytes(b"not really matroska")
@@ -717,6 +712,9 @@ async def test_a_file_name_that_is_not_utf8(
     output = h.tmp / "out" / "bad\udcffname.mkv"
     ended = await h.run_one(draft(h.sources.source, output))
     assert ended.state is JobState.DONE, ended.error
+    assert [i.code for i in ended.issues if i.severity is not Severity.INFO] == [
+        "output.name_not_portable"
+    ]
     assert ended.output_path == output
     assert os.fsencode(ended.output_path).endswith(b"bad\xffname.mkv")
     log = h.log_text(ended.id)  # valid UTF-8, the byte written as an escape
