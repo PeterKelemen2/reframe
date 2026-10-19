@@ -106,7 +106,7 @@ def _is_temp(name: str) -> bool:
 
 class PreviewCache:
     """The frame and clip folders of one cache directory. Blocking file calls: run them in a
-    thread from async code, except the cheap lookups."""
+    thread from async code."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
