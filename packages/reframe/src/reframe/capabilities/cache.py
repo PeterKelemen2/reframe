@@ -41,6 +41,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 CACHE_FORMAT = 1
+#: Switching between a few ffmpeg builds keeps their results.
 MAX_ENTRIES = 8
 #: The modules whose source decides what a detection produces.
 _DETECTOR_MODULES = ("parse.py", "reasons.py", "hwtest.py", "detect.py", "devices.py")
