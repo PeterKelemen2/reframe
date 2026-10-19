@@ -111,6 +111,18 @@ def example_template(e01: MediaSource | None = None) -> JobTemplate:
     return template.model_copy(update={"naming": EXAMPLE_NAMING})
 
 
+def japanese_template() -> JobTemplate:
+    """The default preset with Japanese as the audio defaults' language and other languages
+    kept: its defaults compile to the columns "A1 jpn", "A2 no listed language" and "A3 other
+    languages"."""
+    base: JobTemplate = builtin("h265-mkv-1080p")
+    selection = base.audio_defaults.selection.model_copy(
+        update={"languages": ["jpn"], "other_languages": "keep_all"}
+    )
+    defaults = base.audio_defaults.model_copy(update={"selection": selection})
+    return base.model_copy(update={"audio_defaults": defaults})
+
+
 #: The id of the preset in :data:`PRESET_FILE`. Fixed, so rewriting the file changes nothing.
 PRESET_ID = "5f0c1d3e-04e0-4a7e-9b1a-0000000000c7"
 

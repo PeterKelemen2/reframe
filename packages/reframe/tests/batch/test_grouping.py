@@ -11,12 +11,14 @@ from types import ModuleType
 import pytest
 
 from reframe.batch import fingerprint, group_sources
+from reframe.batch.descriptors import MATCH_LEVELS
 from reframe.batch.grouping import (
     NEAR_MAX_DIFFERENCES,
     compare,
     episode_info,
     episode_key,
     episode_label,
+    episode_labels,
     group_name,
 )
 from reframe.models import (
@@ -275,3 +277,63 @@ def test_equal_groups_the_first_in_episode_order_is_the_anchor() -> None:
 
 def test_no_files() -> None:
     assert group_sources([], "standard") == []
+
+
+def test_a_changed_track_counts_once_at_every_level() -> None:
+    """Each changed track counts 1 at every level, so two German tracks count 2 at each."""
+    e01, e03 = A.recorded(1, 1), A.recorded(1, 3)
+    e02 = A.recorded(1, 2)
+    audio = [e02.audio[0], e02.audio[1].model_copy(update={"language": "ger"})]
+    subs = [e02.subtitles[0], e02.subtitles[1].model_copy(update={"language": "ger"})]
+    changed = e02.model_copy(update={"audio": audio, "subtitles": subs})
+    counts = {}
+    for level in MATCH_LEVELS:
+        found = compare(fingerprint(e01, level), fingerprint(changed, level))
+        counts[level] = found.count
+        assert found.lines == [
+            '2 tracks differ (eng DTS-HD MA 5.1 "English Dub" → ger DTS-HD MA 5.1 "English Dub"; '
+            'eng ASS "Full" → ger ASS "Full")'
+        ], level
+    assert counts == {"strict": 2, "standard": 2, "loose": 2}
+    for level in MATCH_LEVELS[1:]:
+        (group,) = group_sources([e01, e03, changed], level)
+        assert [m.match for m in group.members] == ["exact", "near", "exact"], level
+
+
+def test_loose_pairs_changed_tracks_by_kind() -> None:
+    """An extra audio track and a missing subtitle are not one changed track."""
+    e01 = A.recorded(1, 1)
+    other = e01.model_copy(
+        update={
+            "audio": [*e01.audio, e01.audio[1].model_copy(update={"index": 9, "language": "ger"})],
+            "subtitles": e01.subtitles[:1],
+        }
+    )
+    found = compare(fingerprint(e01, "loose"), fingerprint(other, "loose"))
+    assert found.count == 2
+    assert found.lines == [
+        '1 extra track (ger DTS-HD MA 5.1 "English Dub")',
+        '1 track missing (eng ASS "Full")',
+    ]
+
+
+def test_episode_labels() -> None:
+    folder = Path("/media/Show.S01")
+    paths = [
+        folder / "Show.S01E01.BluRay.mkv",
+        folder / "Show.S01E01.WEB.mkv",
+        folder / "Show.S01E02.mkv",
+        folder / "movie.mkv",
+    ]
+    # Two files of one episode: their file names.
+    assert episode_labels(paths) == [
+        "Show.S01E01.BluRay.mkv",
+        "Show.S01E01.WEB.mkv",
+        "E02",
+        "movie.mkv",
+    ]
+    assert episode_labels(paths[2:], season=True) == ["S01E02", "movie.mkv"]
+    assert episode_labels([Path("/a/Show.S01E01.mkv"), Path("/a/Show.S02E01.mkv")]) == [
+        "S01E01",
+        "S02E01",
+    ]

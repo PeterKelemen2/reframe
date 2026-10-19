@@ -27,6 +27,7 @@ from reframe.models import (
     AudioCodecRules,
     AudioDefaults,
     AudioOutputSettings,
+    AudioRuleExtras,
     JobTemplate,
     LanguageSettings,
     MediaSource,
@@ -453,3 +454,53 @@ def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | No
             assert draft.decisions == audio.decisions
             assert draft.subtitle_decisions == subtitles.decisions
             assert draft.issues == issues
+
+
+def test_a_hand_pick_counts_as_an_exact_match() -> None:
+    """A relaxed rule never takes a track that another rule matches exactly, and a track
+    picked by hand (``selector.stream``) is such a match."""
+    e05 = A.recorded(1, 5)  # #1 jpn TrueHD, #2 eng DTS-HD MA, #3 eng AC-3 2.0 "Commentary"
+    rules = [
+        audio_rule(stream=2),
+        audio_rule(languages=["eng"], codecs=["eac3"]),  # relaxed: any eng track
+    ]
+    result = resolve_tracks(JobTemplate(audio_rules=rules), e05, definitions=DEFS)
+    assert [(m.status, m.streams) for m in result.matches[:2]] == [
+        ("exact", [2]),
+        ("relaxed", [3]),
+    ]
+
+
+def test_a_track_that_two_rules_take_is_the_first_of_its_language_for_both() -> None:
+    """A codec rule for the first track of a language applies to every output of that track
+    (a second rule that takes the same source track does not make it a second track)."""
+    e01 = A.recorded(1, 1)
+    first_only = AudioCodecRule(
+        languages=["ja"],
+        codec="libopus",
+        mixdown="5.1",
+        max_bitrate=448,
+        if_fits="reencode",
+        extras=AudioRuleExtras(first_track_of_language_only=True),
+    )
+    codec_rules = AudioCodecRules(rules=[first_only, AudioCodecRule(codec="aac")])
+    rules = [
+        audio_rule(languages=["jpn"], settings=codec_rules),
+        audio_rule(languages=["jpn"], settings=codec_rules),
+    ]
+    result = resolve_tracks(JobTemplate(audio_rules=rules), e01, definitions=DEFS)
+    assert [(a.source_stream, a.encoder) for a in result.draft.audio] == [
+        (1, "libopus"),
+        (1, "libopus"),
+    ]
+
+
+def test_a_rule_with_settings_of_the_other_kind_is_not_an_exact_cell() -> None:
+    e05 = A.recorded(1, 5)
+    wrong = audio_rule(languages=["jpn"], settings=SubtitleOutputSettings())
+    result = resolve_tracks(JobTemplate(audio_rules=[wrong]), e05, definitions=DEFS)
+    assert result.draft.audio == []
+    (cell,) = [m for m in result.matches if m.kind == "audio"]
+    assert (cell.status, cell.severity.value if cell.severity else None) == ("missing", "error")
+    assert cell.message == "the rule has subtitle settings: it makes no audio track"
+    assert [i.code for i in result.draft.issues] == ["batch.rule_settings"]

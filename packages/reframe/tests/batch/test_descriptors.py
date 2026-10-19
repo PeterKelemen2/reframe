@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
-from reframe.batch import describe_tracks, fingerprint
+from reframe.batch import derive_template, describe_tracks, fingerprint, group_sources, resolve
 from reframe.batch.descriptors import (
     MATCH_LEVELS,
     codec_family,
@@ -19,6 +20,7 @@ from reframe.batch.descriptors import (
     stream_roles,
     track_label,
 )
+from reframe.jobs import draft_from_preset
 from reframe.models import (
     AudioStream,
     BitrateInfo,
@@ -27,11 +29,14 @@ from reframe.models import (
     HdrFormat,
     HdrInfo,
     MediaSource,
+    SourceFingerprint,
     SourceRef,
     SubtitleStream,
     TrackRole,
     VideoStream,
 )
+from reframe.probe import parse_ffprobe
+from reframe.probe.roles import FORCED_MAX_RATIO
 
 
 def _load(name: str) -> ModuleType:
@@ -306,3 +311,74 @@ def test_the_example_episodes_share_a_fingerprint() -> None:
         assert fingerprint(e01, level).digest != fingerprint(e11, level).digest
     # Season 2 of the same release: the same structure.
     assert fingerprint(A.recorded(2, 1), "strict").digest == fingerprint(e01, "strict").digest
+
+
+def _episode_with_counts(episode: int, signs_events: int, full_events: int) -> MediaSource:
+    rel = f"{A.media.anime_folder(1)}/{A.media.anime_file_name(1, episode)}"
+    data = json.loads((A.PROBES / f"{rel}.json").read_text(encoding="utf-8"))
+    signs, full = [s for s in data["streams"] if s["codec_type"] == "subtitle"]
+    signs["disposition"]["forced"] = 0
+    signs["tags"].pop("title", None)
+    signs["tags"]["NUMBER_OF_FRAMES"] = str(signs_events)
+    full["tags"]["NUMBER_OF_FRAMES"] = str(full_events)
+    return parse_ffprobe(data, A.path(1, episode), fingerprint=SourceFingerprint(size=0, mtime=0.0))
+
+
+def test_heuristic_roles_neither_split_a_season_nor_break_a_derived_rule() -> None:
+    """E01's signs track has fewer events than the heuristic's forced limit, E02's has more."""
+    assert 90 / 400 <= FORCED_MAX_RATIO < 110 / 400
+    e01 = _episode_with_counts(1, 90, 400)
+    e02 = _episode_with_counts(2, 110, 400)
+    signs01, signs02 = e01.subtitles[0], e02.subtitles[0]
+    assert [(r.role, r.evidence.value) for r in signs01.roles] == [(TrackRole.FORCED, "heuristic")]
+    assert [(r.role, r.evidence.value) for r in signs02.roles] == [(TrackRole.MAIN, "heuristic")]
+    for level in MATCH_LEVELS:
+        (group,) = group_sources([e01, e02], level)
+        assert [m.match for m in group.members] == ["exact", "exact"], level
+    base = A.builtin("h265-mkv-1080p")
+    job, _tracks, _notes = draft_from_preset(e01, base)
+    template = derive_template(job, e01, {"subtitles"}, base=base)
+    assert [r.selector.roles for r in template.subtitle_rules] == [
+        [TrackRole.MAIN],
+        [TrackRole.MAIN],
+    ]
+    # The untitled signs track: its rule can only go by order (2 candidates), in E01 as in
+    # E02; never "✗ none".
+    for source in (e01, e02):
+        row = resolve(template, source)
+        assert [(m.status, m.streams) for m in row.matches if m.kind == "subtitle"] == [
+            ("ambiguous", [3]),
+            ("exact", [4]),
+        ]
+        assert row.status == "warning"
+
+
+def test_descriptor_roles_have_flag_or_title_evidence() -> None:
+    """A heuristic role is not a descriptor role; flag and title roles are."""
+    heuristic = AudioStream.model_validate(
+        {
+            "index": 2,
+            "codec": "ac3",
+            "channels": 2,
+            "roles": [{"role": "commentary", "evidence": "heuristic"}],
+        }
+    )
+    assert stream_roles(heuristic) == [TrackRole.MAIN]
+    flagged = AudioStream.model_validate(
+        {
+            **heuristic.model_dump(mode="json"),
+            "roles": [{"role": "commentary", "evidence": "flag"}],
+        }
+    )
+    assert stream_roles(flagged) == [TrackRole.COMMENTARY]
+    forced = SubtitleStream.model_validate(
+        {
+            "index": 3,
+            "codec": "ass",
+            "roles": [
+                {"role": "signs", "evidence": "title"},
+                {"role": "forced", "evidence": "heuristic"},
+            ],
+        }
+    )
+    assert stream_roles(forced) == [TrackRole.SIGNS]

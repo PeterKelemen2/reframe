@@ -257,3 +257,16 @@ def test_the_preset_file_is_the_derived_template_with_an_optional_dub() -> None:
     rows = matrix(preset, A.season(1)).rows
     assert [r.status for r in rows] == ["ok"] * 10 + ["warning", "ok"]
     assert [(m.status, m.streams) for m in rows[10].matches][1] == ("skipped", [])
+
+
+def test_matrix_labels_name_the_season_when_a_group_spans_seasons() -> None:
+    """A group that spans two seasons labels its rows by season, not as two ``E01``."""
+    sources = [*A.season(1)[:2], *A.season(2)[:2]]
+    (group,) = group_sources(sources, "standard")
+    template = A.example_template()
+    rows = resolve_group(group, template, sources)
+    resolution = BatchResolution(group=group, columns=matrix_columns(template), rows=rows)
+    labels = [line.split()[0] for line in matrix_lines(resolution)[2:]]
+    assert labels == ["S01E01", "S01E02", "S02E01", "S02E02"]
+    one_season = BatchResolution(group=group, columns=matrix_columns(template), rows=rows[:2])
+    assert [line.split()[0] for line in matrix_lines(one_season)[2:]] == ["E01", "E02"]
