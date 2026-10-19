@@ -1,19 +1,4 @@
-"""The queue test harness (C-11).
-
-:class:`Harness` builds a :class:`~reframe.queue.QueueService` with stand-ins for the other
-services, so every failure path runs with the fake ffmpeg (``reframe_testing.fake_tools``) and
-no real FFmpeg:
-
-- tools: a ``ToolSet`` whose ffmpeg (and mkvpropedit, when a test wants a failing
-  mkvpropedit step) is the fake;
-- capabilities: a snapshot with every encoder available (or ``checking`` until ``wait()``);
-- sources: the recorded ffprobe JSON of the ``multitrack`` fixture (``testdata/probes``) for
-  the source, and the same layout at the ``.part`` path for the output check (a test can
-  replace the output);
-- the sleep inhibitor: a real ``SleepInhibitor`` with a counting backend.
-
-Events are collected from the start (:meth:`Harness.events_of`).
-"""
+"""The queue test harness: the real queue with the fake ffmpeg and stand-in services."""
 
 from __future__ import annotations
 
@@ -63,8 +48,7 @@ PROBES = ROOT / "testdata" / "probes" / "fixtures"
 
 
 class RecordingBus(EventBus):
-    """An event bus that also keeps every published event, in publish order (no coalescing:
-    the order the queue publishes in is what the tests check)."""
+    """An event bus that keeps every published event, in publish order (no coalescing)."""
 
     def __init__(self) -> None:
         super().__init__(max_queue=100_000)
@@ -76,8 +60,7 @@ class RecordingBus(EventBus):
 
 
 async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
-    """Wait until ``condition()`` (a check of recorded events or files) is true; a generous
-    limit is only a safety net."""
+    """Wait until ``condition()`` is true; the limit is only a safety net."""
     deadline = time.monotonic() + limit
     while not condition():
         if time.monotonic() > deadline:
@@ -204,7 +187,7 @@ def encode_rule(*actions: ft.Action, exit_code: int = 0) -> ft.Rule:
 
 
 def draft(source: MediaSource, output: Path, **video: Any) -> JobSettings:
-    """A job like the M2 draft: every audio track to AAC, every subtitle copied, x264."""
+    """A job with every audio track to AAC, every subtitle copied, and x264."""
 
     def flags(stream: Any) -> TrackMetadata:
         d = stream.disposition
@@ -257,7 +240,6 @@ class Harness:
         return build_plan(job, self.sources.source, self.caps.snapshot, self.tools.tools)
 
     async def run_one(self, job: JobSettings) -> QueueJob:
-        """Add ``job``, start the queue and wait until the job ends."""
         added = await self.queue.add(job)
         self.queue.start()
         [ended] = await self.queue.wait([added.id])
@@ -296,9 +278,8 @@ class Harness:
         await poll(condition, limit)
 
     async def running_process(self, job_id: str, limit: float = 20.0) -> psutil.Process:
-        """The process of the job's running step, once it exists. The job's first
-        ``job.progress`` (0 %, and the one of a step's start) comes before the step's process
-        is started, so a test that needs the process waits for it here."""
+        """The process of the job's running step, once it exists: the first ``job.progress``
+        comes before the process starts."""
 
         def current() -> psutil.Process | None:
             active = self.queue._active.get(job_id)

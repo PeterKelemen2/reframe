@@ -1,4 +1,4 @@
-"""Role heuristics (C-3 ``probe/roles.py``): flags, title keywords, structure."""
+"""Role heuristics: flags, title keywords, structure."""
 
 from __future__ import annotations
 
@@ -63,9 +63,6 @@ def role_set(stream: Any) -> set[tuple[TrackRole, RoleEvidence]]:
     return {(r.role, r.evidence) for r in stream.roles}
 
 
-# --------------------------------------------------------------------------- flags
-
-
 @pytest.mark.parametrize(
     ("flag", "role"),
     [
@@ -117,8 +114,6 @@ def test_flag_and_title_give_different_roles() -> None:
     ]
 
 
-# --------------------------------------------------------------------------- title keywords
-
 AUDIO_TITLES = [
     ("Director's Commentary", TrackRole.COMMENTARY),
     ("Commentaries", TrackRole.COMMENTARY),
@@ -141,7 +136,7 @@ AUDIO_NOT = [
     "Leader",  # "AD" inside a word
     "Ad Astra",  # "AD" must be upper case
     "Headphones mix",
-    "Commentator's cut",  # not a keyword
+    "Commentator's cut",
     "Descriptions",  # not "descriptive"
     "English 5.1",
     "",
@@ -192,9 +187,6 @@ def test_signs_and_songs_is_one_role() -> None:
     found = roles.title_roles("Signs & Songs", roles.SUBTITLE_KEYWORDS)
     assert [r.role for r in found] == [TrackRole.SIGNS]
     assert found[0].detail == 'title contains "Signs"'
-
-
-# --------------------------------------------------------------------------- structure: audio
 
 
 def test_low_bitrate_stereo_after_multichannel_is_possible_commentary() -> None:
@@ -259,9 +251,6 @@ def test_assignment_is_repeatable() -> None:
     assert [s.roles for s in streams] == first
 
 
-# --------------------------------------------------------------------------- structure: subs
-
-
 def test_low_event_count_is_possible_forced() -> None:
     full, forced = sub(1, events=900), sub(2, events=40)
     roles.assign_subtitle_roles([full, forced])
@@ -290,7 +279,7 @@ def test_forced_heuristic_adds_to_other_roles() -> None:
         sub(2, events=10, lang="und"),
         sub(2, events=10, forced=True),  # already forced (flag)
         sub(2, events=10, title="Signs"),  # signs track
-        sub(2, events=0),  # an empty track (core-complete review R1-6)
+        sub(2, events=0),  # an empty track
     ],
 )
 def test_no_forced_heuristic(other: SubtitleStream) -> None:
@@ -306,9 +295,6 @@ def test_forced_heuristic_needs_another_track_with_a_count() -> None:
     zero = sub(3, events=0)
     roles.assign_subtitle_roles([zero, sub(4, events=0)])
     assert role_set(zero) == {(TrackRole.MAIN, RoleEvidence.HEURISTIC)}
-
-
-# --------------------------------------------------------------------------- review fixes (M1)
 
 
 @pytest.mark.parametrize("title", ["Non-Forced", "Not Forced", "Full (not forced)", "non forced"])

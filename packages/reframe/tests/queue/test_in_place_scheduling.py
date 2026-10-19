@@ -1,7 +1,5 @@
-"""In-place metadata edits in the queue (C-13, decision 0034 follow-up): the same-output rule
-keys an in-place job on its source (it writes it), so no job that reads that source runs while
-it is edited, and two edits of one file never run at once; restored interrupted in-place jobs
-have nothing to clean up. With the fake tools (the harness of ``conftest.py``)."""
+"""In-place edits write their source, so no job that reads that source runs during an edit,
+and two edits of one file never run at once."""
 
 from __future__ import annotations
 
@@ -53,9 +51,6 @@ def ended_before_started(h: Harness, first: str, second: str) -> bool:
     return end < start
 
 
-# --------------------------------------------------------------------------- the rule
-
-
 async def test_conflict_rule(harness: Harness, tmp_path: Path) -> None:
     h = harness
     edit = queued(in_place_job(h), "edit")
@@ -72,9 +67,6 @@ async def test_conflict_rule(harness: Harness, tmp_path: Path) -> None:
     writes_source = queued(h.job("Other"), "w")
     writes_source.settings.output.path = h.source_path  # validation stops this; the rule too
     assert _conflicts(edit, [active_for(writes_source)])
-
-
-# --------------------------------------------------------------------------- the queue
 
 
 async def test_an_in_place_edit_waits_for_an_encode_of_its_source(harness: Harness) -> None:
@@ -117,9 +109,6 @@ async def test_two_in_place_edits_of_one_file_run_one_after_the_other(harness: H
     h.queue.start()
     await h.queue.wait([first.id, second.id])
     assert ended_before_started(h, first.id, second.id)
-
-
-# --------------------------------------------------------------------------- restore
 
 
 async def test_restored_in_place_jobs_have_nothing_to_clean_up(

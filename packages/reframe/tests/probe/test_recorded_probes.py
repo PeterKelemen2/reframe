@@ -1,8 +1,4 @@
-"""What the parser makes of the recorded real-world probes (Q-2.2), beyond the snapshots.
-
-How each file was made (and which fields were edited) is in ``testdata/probes/README.md`` and
-``testdata/probes/index.json``.
-"""
+"""What the parser makes of the recorded real-world probes, beyond the snapshots."""
 
 from __future__ import annotations
 
@@ -120,8 +116,7 @@ def test_interlaced_dvd(probe_source: Load) -> None:
     vob = probe_source("dvd-interlaced-vob")
     assert vob.container.display_name == "VOB"
     assert vob.video[0].field_order is FieldOrder.TOP_FIRST  # "tt" in MPEG-PS
-    # Raw start times, and the delay relative to the video (what the UI shows): the audio
-    # starts 5 ms before the video, not 528 ms after the container start.
+    # The delay is relative to the video (what the UI shows), not the container start.
     assert vob.audio[0].start_time == pytest.approx(0.528033)
     assert vob.video[0].start_time == pytest.approx(0.533367)
     assert vob.audio[0].delay == pytest.approx(-0.005334)
@@ -187,8 +182,7 @@ def test_phone_rotation_timecode_and_creation_time(probe_source: Load) -> None:
 
 
 def test_mkvmerge_vfr_is_detected_from_the_statistics_tags(probe_source: Load) -> None:
-    """mkvmerge writes DefaultDuration, so r_frame_rate = avg_frame_rate = 29999/500; its
-    statistics tags say 114 frames in 3.01 s (37.9 fps): VFR."""
+    """mkvmerge's DefaultDuration makes the frame rates equal; the statistics tags say VFR."""
     source = probe_source("mkvmerge-vfr")
     video = source.video[0]
     assert video.frame_rate == video.avg_frame_rate == Rational(num=29999, den=500)
@@ -199,11 +193,10 @@ def test_mkvmerge_vfr_is_detected_from_the_statistics_tags(probe_source: Load) -
 
 
 def test_stale_statistics_tags_are_not_used(probe_source: Load) -> None:
-    """A 200 kb/s FFmpeg re-encode of an mkvmerge file keeps the old tags (BPS 9.6 Mb/s,
-    2.4 MB in an 85 kB file)."""
+    """A 200 kb/s FFmpeg re-encode of an mkvmerge file keeps the old tags."""
     source = probe_source("stale-stats")
     video = source.video[0]
-    assert video.tags["BPS"] == "9582197"  # still visible in the tags
+    assert video.tags["BPS"] == "9582197"
     assert video.bitrate.source is BitrateSource.UNKNOWN
     assert video.frame_count is None
     assert not video.vfr

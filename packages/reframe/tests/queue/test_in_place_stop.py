@@ -1,18 +1,7 @@
-"""A running in-place mkvpropedit step is never killed by a cancel or by ``close()`` (R4-7 of the
-core-complete review; decision 0034, follow-up).
-
-mkvpropedit catches no signal (``/proc/<pid>/status`` ``SigCgt`` is empty; SIGTERM ends it as
-SIGKILL does), and a kill in its write phase can leave the source without track headers
-(``testdata/README.md``, "Metadata edit (C-13)"). So a stop that comes while the step runs
-waits for the step to end, and the job's end says what happened to the file. The step's own
-time limit still kills a hung mkvpropedit.
-
-The "mkvpropedit" here is a gate: a small Python program that marks that it started, waits
-until the test opens the gate, marks that it finished and exits 0. So every test decides when
-the step ends, and no assertion depends on how fast this machine is. The runner's checks before
-the edit (``_in_place_refusal``: the harness source is not real Matroska) are replaced; they are
-tested in ``test_metadata_edit_runner.py``.
-"""
+"""A running in-place mkvpropedit step is never killed by a cancel or by ``close()``: it
+catches no signal and a kill can damage the source, so a stop waits for the step (the step's
+time limit still applies). The mkvpropedit here is a gate that runs until the test opens it,
+and the runner's refusal check of the harness source (not real Matroska) is replaced."""
 
 from __future__ import annotations
 
@@ -112,9 +101,6 @@ def last_state(h: Harness, job_id: str) -> tuple[str, str | None]:
     return event.state.value, event.error
 
 
-# --------------------------------------------------------------------------- cancel, close
-
-
 async def test_a_cancel_lets_the_running_edit_finish(harness: Harness, gate: Gate) -> None:
     h = harness
     job = await h.queue.add(in_place_job(h))
@@ -136,8 +122,7 @@ async def test_a_cancel_lets_the_running_edit_finish(harness: Harness, gate: Gat
 
 
 async def test_close_lets_the_running_edit_finish(harness: Harness, gate: Gate) -> None:
-    """The queue's ``close()`` has no time limit of its own: it waits for every run to end,
-    and the run waits for the edit (bounded by the step's time limit)."""
+    """The queue's close() has no time limit of its own: it waits for every run to end."""
     h = harness
     job = await h.queue.add(in_place_job(h))
     h.queue.start()
@@ -182,10 +167,7 @@ async def test_a_cancel_before_the_edit_starts_changes_nothing(
     assert ended is not None
     assert ended.state is JobState.CANCELLED
     assert ended.error is None
-    assert not gate.started.exists()  # mkvpropedit never ran
-
-
-# --------------------------------------------------------------------------- the time limit
+    assert not gate.started.exists()
 
 
 IN_PLACE_TIMEOUT = (
@@ -208,8 +190,7 @@ async def test_the_time_limit_still_stops_a_hung_edit(harness: Harness, gate: Ga
 async def test_a_cancelled_edit_that_hangs_is_stopped_by_the_time_limit(
     harness: Harness, gate: Gate
 ) -> None:
-    """The cancel waits for the edit, but not for ever: the step's time limit (5 min by
-    default, 0.3 s here) ends it, and the job says what that means for the file."""
+    """The cancel waits for the edit, but not for ever: the step's time limit ends it."""
     h = harness
     h.queue._runner._step_time_limit = 0.3
     job = await h.queue.add(in_place_job(h))
@@ -223,12 +204,9 @@ async def test_a_cancelled_edit_that_hangs_is_stopped_by_the_time_limit(
     assert not gate.finished.exists()
 
 
-# --------------------------------------------------------------------------- not the queue
-
-
 async def test_a_cancelled_run_task_lets_the_edit_finish(harness: Harness, gate: Gate) -> None:
-    """The run's asyncio task is cancelled from outside (the queue never does this; an event
-    loop that shuts down does): the edit still ends first."""
+    """The run's asyncio task is cancelled from outside (an event loop that shuts down does this):
+    the edit still ends first."""
     h = harness
     job = await h.queue.add(in_place_job(h))
     h.queue.start()
@@ -236,7 +214,7 @@ async def test_a_cancelled_run_task_lets_the_edit_finish(harness: Harness, gate:
     task = h.queue._active[job.id].task
     assert task is not None
     task.cancel()
-    await asyncio.sleep(0.05)  # give a kill (the bug) time to happen
+    await asyncio.sleep(0.05)  # give a kill time to happen
     gate.open()
     [ended] = await h.queue.wait([job.id])
     assert gate.finished.exists()
