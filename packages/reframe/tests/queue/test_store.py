@@ -1,5 +1,4 @@
-"""The SQLite store (C-11): columns, whole-row writes, unknown fields kept, rows that do not
-load, and damaged, newer and unwritable files."""
+"""The SQLite queue store: its schema, round trips and damaged, newer or unwritable files."""
 
 from __future__ import annotations
 

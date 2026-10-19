@@ -1,4 +1,4 @@
-"""The ``-progress`` parser, the weighted percent and the ETA (C-11), with clocks that jump."""
+"""The ``-progress`` parser, the weighted percent and the ETA, with clocks that jump."""
 
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ from reframe.queue.progress import (
 from reframe_testing import fake_tools as ft
 from reframe_testing.fake_ffmpeg import progress_block
 
-# --------------------------------------------------------------------------- parser
-
 
 def blocks_of(text: str) -> list[ProgressBlock]:
     parser = ProgressParser()
@@ -23,7 +21,7 @@ def blocks_of(text: str) -> list[ProgressBlock]:
 
 
 def test_parser_reads_the_real_long_captures() -> None:
-    """The real n9.0.2 runs (``fake_data``): N/A start-up blocks, padded values, one end."""
+    """The real FFmpeg captures (``fake_data``): N/A start-up blocks, padded values, one end."""
     for name in ("progress_null_long.stdout.txt", "progress_mkv_long.stdout.txt"):
         text = (ft.DATA_DIR / name).read_text(encoding="utf-8")
         blocks = blocks_of(text)
@@ -53,9 +51,6 @@ def test_parser_ignores_other_lines_and_odd_values() -> None:
     for line in ("out_time_us=-23220", "fps=nan", "speed=fast", "frame=", "progress=continue"):
         result = parser.feed(line)
     assert result == ProgressBlock(out_time=0.0, frame=None, fps=None, speed=None)
-
-
-# --------------------------------------------------------------------------- tracker
 
 
 def step(kind: StepKind, weight: float) -> PlanStep:

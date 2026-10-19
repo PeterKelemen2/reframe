@@ -1,5 +1,5 @@
-"""Small parts of the queue (C-11): the watchdog, loudnorm clamping, failure texts, the job
-log, the output check, file operations and process-tree suspend (Windows paths mocked)."""
+"""Small parts of the queue: the watchdog, loudnorm, failure texts, the job log, output checks,
+files and process trees."""
 
 from __future__ import annotations
 
@@ -32,8 +32,6 @@ from reframe.queue.verify import check_output, expected_streams
 from reframe.queue.watchdog import StepWatch, tree_cpu_seconds
 
 from .conftest import draft, recorded
-
-# --------------------------------------------------------------------------- watchdog
 
 
 def test_stall_needs_no_progress_no_output_and_no_cpu() -> None:
@@ -78,8 +76,6 @@ def test_tree_cpu_seconds() -> None:
     assert tree_cpu_seconds(proc.pid) is None
 
 
-# --------------------------------------------------------------------------- loudnorm
-
 SILENT = """[Parsed_loudnorm_0 @ 0x7f5668002bc0]
 {
 \t"input_i" : "-inf",
@@ -98,7 +94,7 @@ SILENT = """[Parsed_loudnorm_0 @ 0x7f5668002bc0]
 
 
 def test_loudnorm_of_a_silent_track_is_clamped() -> None:
-    """The real block of a silent track (pinned n9.0.2, ``testdata/README.md``)."""
+    """The real block of a silent track, as FFmpeg prints it."""
     [block] = loudnorm.parse_blocks(SILENT)
     clamped, notes = loudnorm.clamp(block)
     assert clamped["input_i"] == "-99.00"
@@ -130,9 +126,6 @@ def test_loudnorm_errors() -> None:
         loudnorm.clamp({"input_i": "loud"})
 
 
-# --------------------------------------------------------------------------- failure texts
-
-
 def test_stderr_reason_picks_the_cause() -> None:
     nan = [
         "Stream mapping:",
@@ -161,9 +154,6 @@ def test_exit_text() -> None:
     assert exit_text(None) == "no exit code"
     assert exit_text(0xC0000005) == "exit code 0xC0000005"
     assert str(UnknownJobError("x")) == "no job 'x' in the queue"
-
-
-# --------------------------------------------------------------------------- job log
 
 
 @pytest.mark.anyio
@@ -200,9 +190,6 @@ async def test_job_log_timer_and_a_broken_file(tmp_path: Path) -> None:
     assert first.lines[1].endswith("a note")
     joblog.flush_file()
     joblog.close()
-
-
-# --------------------------------------------------------------------------- output check
 
 
 def test_expected_streams_and_languages(tmp_path: Path) -> None:
@@ -252,9 +239,6 @@ def test_check_output_names_each_difference(tmp_path: Path) -> None:
     assert "audio track 1: language und expected, jpn found" in check_output(
         job, source, source, defs
     )
-
-
-# --------------------------------------------------------------------------- files
 
 
 def test_rename_no_replace_posix(tmp_path: Path) -> None:
@@ -361,9 +345,6 @@ def test_write_plan_files_uses_utf8_and_lf(tmp_path: Path) -> None:
     path = tmp_path / "m.part.chapters.txt"
     files.write_plan_files([PlanFile(path=path, content=";FFMETADATA1\ntitle=Ünnep\n")])
     assert path.read_bytes() == ";FFMETADATA1\ntitle=Ünnep\n".encode()
-
-
-# --------------------------------------------------------------------------- process tree
 
 
 def test_suspend_and_resume_a_real_tree() -> None:

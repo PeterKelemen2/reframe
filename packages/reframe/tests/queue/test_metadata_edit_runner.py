@@ -1,6 +1,5 @@
-"""The runner's checks before an in-place metadata edit (decision 0034: the one exception to
-"a job never writes its source", and nothing else): ``reframe.queue.runner._in_place_refusal``,
-and that an in-place outcome hands the queue no plan to clean up."""
+"""The checks before an in-place metadata edit, the one exception to
+"a job never writes its source"."""
 
 from __future__ import annotations
 
@@ -120,8 +119,7 @@ def test_writable_file(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_a_refused_in_place_job_fails_and_cleans_nothing(harness: Harness) -> None:
-    """Through the queue with the recorded probe: the source is not a real Matroska file, so
-    the track check refuses the edit; the source stays, nothing is removed."""
+    """The source is not a real Matroska file, so the track check refuses the edit."""
     h = harness
     h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     job = remux_job(JobSettings(source=SourceRef(path=h.source_path)), h.sources.source)

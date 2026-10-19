@@ -1,8 +1,4 @@
-"""One process owns the queue store (decision 0027, M2 review finding B1).
-
-A second Reframe process on the same data folder must not touch the first one's jobs: before
-the fix, every ``Reframe.create()`` restored the store, marked the other process's running job
-``interrupted`` and removed its ``.part`` file. These tests run real processes."""
+"""The queue store's owner: a second process on the same data folder leaves its jobs alone."""
 
 from __future__ import annotations
 
@@ -87,8 +83,6 @@ async def test_a_second_process_leaves_a_running_encode_alone(
     env: Path,  # noqa: F811
     fake_tools: ft.FakeTools,
 ) -> None:
-    """Terminal 1 encodes; terminal 2 runs a command (``create()`` + ``close()``), then a
-    whole ``encode``. The first job finishes ``done``; the second runs on a private queue."""
     fake_tools.set_scenario(
         ft.Scenario(
             [
@@ -140,7 +134,7 @@ async def test_a_second_process_leaves_a_running_encode_alone(
     finally:
         await app.close()
     again = await Reframe.create()
-    try:  # only the owner's job is in the saved queue
+    try:
         assert [(j.id, j.state) for j in again.queue.list()] == [(first.id, JobState.DONE)]
     finally:
         await again.close()
@@ -190,9 +184,6 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         await poll(lambda: not (env / "out" / "Killed.part.mkv").exists())
     finally:
         await app.close()
-
-
-# --------------------------------------------------------------------------- the lock
 
 
 def test_two_owners_in_one_process_conflict(tmp_path: Path) -> None:

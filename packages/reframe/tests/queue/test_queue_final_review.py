@@ -1,26 +1,4 @@
-"""The final review of the fix rounds (reviewer R-B on ``core-complete`` 5dbf152; decisions
-0016 and 0034, "Follow-up (final review, 2026-10-17)"). Each test failed on 5dbf152.
-
-- **RB-1**: the queue's file keys are read in a worker thread when a job is added, retried or
-  restored; choosing the next job (``start()``, ``add()``, ``retry()``, ``reorder()``, the end
-  of a job) compares them without a file-system call, so a share that does not answer never
-  stops the event loop.
-- **RB-2**: a path with a NUL character (``realpath`` and ``stat`` raise ``ValueError``) never
-  makes a key, ``same_file`` or the clean-up raise; such a job fails with
-  ``queue.path_unusable`` and the queue goes on (also after a restore).
-- **RB-3**: the step time limit of an in-place mkvpropedit step stops only the step, never the
-  job: a step that exited 0 is checked as usual, and no time limit is reported as a cancel.
-- **RB-4**: an event loop that shuts down cancels every task and so kills mkvpropedit: the log
-  and the job's end say so and that the file may be damaged (and a restored in-place job that
-  was running says the same).
-- **RB-5**: a paused in-place edit that a cancel or ``close()`` resumes is shown ``running``
-  and holds the sleep inhibit while it finishes.
-- **st_ino 0**: a file system without file indexes (some Windows volumes) gives every file the
-  same ``(st_dev, st_ino)``; that pair is then no identity (mocked).
-
-The in-place tests use the gate of ``test_in_place_stop.py`` (a stand-in mkvpropedit that runs
-until the test opens it), so no assertion depends on how fast this machine is.
-"""
+"""The queue's file keys, NUL paths, time limits, shutdown, pauses and zero file indexes."""
 
 from __future__ import annotations
 
@@ -92,8 +70,6 @@ def store_rows(h: Harness, *jobs: Any) -> None:
     db.close()
 
 
-# --------------------------------------------------------------------------- RB-1
-
 #: How long a ``stat`` / ``lstat`` of the share takes on the event-loop thread: longer than
 #: any pause the loop takes on its own, so one such call shows in the heartbeat.
 LOOP_DELAY = 0.3
@@ -128,10 +104,8 @@ def slow_share(monkeypatch: pytest.MonkeyPatch, share: Path, loop_thread: int) -
 async def test_choosing_a_job_never_reads_a_slow_share_on_the_event_loop(
     harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The reviewer's case: the outputs are on a share that answers slowly, ``parallel_jobs``
-    2. ``add``, ``start``, ``retry``, ``reorder`` and every job end decide which job may run;
-    none of them may ``stat`` the share on the event loop (5dbf152: ``start()`` blocked the
-    loop for seconds, one ``lstat`` per part of every path)."""
+    """With a slow share and ``parallel_jobs`` 2, ``add``, ``start``, ``retry``, ``reorder`` and
+    every job end must not ``stat`` the share on the event loop."""
     h = harness
     h.settings.queue.parallel_jobs = 2
     h.scenario(DONE_QUICKLY)
@@ -202,8 +176,8 @@ async def test_a_restored_job_gets_its_keys_off_the_event_loop(
 
 
 async def test_the_keys_are_what_the_rule_compares(harness: Harness, tmp_path: Path) -> None:
-    """``_conflicts`` with the keys the queue keeps gives what it gives with keys read now
-    (the rule of R4-1), and the keys of an in-place edit are its source."""
+    """``_conflicts`` with the keys the queue keeps gives what it gives with keys read now, and
+    the keys of an in-place edit are its source."""
     h = harness
     edit = queued(in_place_job(h), "edit")
     encode = queued(h.job("Encode"), "encode")
@@ -217,14 +191,12 @@ async def test_the_keys_are_what_the_rule_compares(harness: Harness, tmp_path: P
         assert _conflicts(job, [active_for(edit)]) is expected
 
 
-# --------------------------------------------------------------------------- RB-2
-
 NUL_MESSAGE = "has a NUL character, which no file system allows, so the job cannot run"
 
 
 def test_python_facts_behind_the_rule(tmp_path: Path) -> None:
-    """CPython 3.14.7: ``abspath`` (R4-1's keys before) takes a NUL character; ``stat`` and,
-    on POSIX, ``realpath`` (its ``lstat``) raise ``ValueError``, not ``OSError``."""
+    """``abspath`` takes a NUL character; ``stat`` and, on POSIX, ``realpath`` raise
+    ``ValueError``, not ``OSError``."""
     bad = tmp_path / "Mo\0vie.mkv"
     assert "\0" in os.path.abspath(bad)
     with pytest.raises(ValueError, match="embedded null"):
@@ -253,8 +225,6 @@ def _nul(path: Path) -> str:
 
 
 async def test_a_nul_in_a_path_fails_its_job_and_the_queue_goes_on(harness: Harness) -> None:
-    """The reviewer's case: before, ``retry`` raised ``ValueError`` from the scheduler, and
-    from then on every ``add``, ``start`` and job end did too; no job started."""
     h = harness
     h.scenario(DONE_QUICKLY)
     bad = await h.queue.add(h.job("Mo\0vie"))
@@ -283,9 +253,6 @@ async def test_a_nul_in_the_source_path_is_a_clean_failure(harness: Harness) -> 
 
 
 async def test_a_restored_job_with_a_nul_in_its_path(harness: Harness) -> None:
-    """A waiting job with such a path in the store fails when it runs and the other jobs run;
-    the leftovers of a running one (a ``.part`` path with a NUL) are cleaned up without an
-    exception."""
     h = harness
     h.scenario(DONE_QUICKLY)
     bad = await h.queue.add(h.job("Mo\0vie"))
@@ -327,12 +294,9 @@ async def test_the_conflict_rule_takes_a_nul_path(harness: Harness) -> None:
     assert not _conflicts(bad, [active_for(queued(h.job("Good"), "good"))])
 
 
-# --------------------------------------------------------------------------- RB-3
-
-
 class LateLimit(StepWatch):
     """A step watch whose time limit fires only once :attr:`fire` is set (after the step's
-    process has exited): the moment the reviewer's real runs hit by chance."""
+    process has exited)."""
 
     fire = False
 
@@ -346,8 +310,7 @@ async def test_a_time_limit_after_the_edit_ended_does_not_cancel_the_job(
     harness: Harness, gate: Gate, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """mkvpropedit exited 0; the step's time limit fires before the step's clean-up stops the
-    watchdog. Before: the job was stopped as ``timeout``, ended ``cancelled`` ("…when the job
-    was cancelled…") and the check never ran, though nobody cancelled it."""
+    watchdog."""
     h = harness
     LateLimit.fire = False
     monkeypatch.setattr(runner, "StepWatch", LateLimit)
@@ -383,7 +346,7 @@ async def test_an_exit_0_that_came_with_the_time_limit_is_a_finished_edit(
 ) -> None:
     """``run_streaming`` reports ``cancelled`` when the token fired first, even if the process
     then exited 0 on its own before the kill (``returncode`` 0): that edit is complete and is
-    checked; before, the job failed with "the file may be damaged"."""
+    checked."""
     h = harness
     real = run_streaming
 
@@ -417,15 +380,11 @@ def test_a_time_limit_is_never_reported_as_a_cancel(tmp_path: Path) -> None:
         assert runner._stopped_after_edit(stopped, tmp_path / "Show.mkv", plan, 1, 1).state is state
 
 
-# --------------------------------------------------------------------------- RB-4
-
-
 async def test_an_event_loop_that_shuts_down_says_the_file_may_be_damaged(
     harness: Harness, gate: Gate
 ) -> None:
     """What ``asyncio.run`` does when it ends with tasks left (a second Ctrl+C): it cancels
-    every task, the step's own run too, whose clean-up kills mkvpropedit. Before: the log said
-    "it was let finish" and the job ended "The job was stopped."."""
+    every task, the step's own run too, whose clean-up kills mkvpropedit."""
     h = harness
     job = await h.queue.add(in_place_job(h))
     h.queue.start()
@@ -480,9 +439,6 @@ async def test_a_restored_in_place_job_that_was_running_may_be_damaged(harness: 
     ]
 
 
-# --------------------------------------------------------------------------- RB-5
-
-
 def inhibit_held(h: Harness) -> bool:
     return h.backend.held
 
@@ -491,8 +447,6 @@ def inhibit_held(h: Harness) -> bool:
 async def test_a_paused_edit_that_a_stop_resumes_is_shown_running(
     harness: Harness, gate: Gate, stop: str
 ) -> None:
-    """Before: the job stayed ``paused`` (without its sleep inhibit) while mkvpropedit ran on,
-    up to its time limit."""
     h = harness
     h.settings.queue.sleep_inhibit = True
     job = await h.queue.add(in_place_job(h))
@@ -516,12 +470,7 @@ async def test_a_paused_edit_that_a_stop_resumes_is_shown_running(
     assert gate.finished.exists()
 
 
-# --------------------------------------------------------------------------- st_ino 0
-
-
 def zero_file_index(monkeypatch: pytest.MonkeyPatch, volume: Path) -> None:
-    """``os.stat`` of any file under ``volume`` gives ``st_ino`` 0 and one ``st_dev``: what
-    Windows reports on a file system without file indexes."""
     real_stat = os.stat
     prefix = str(volume)
 
@@ -539,9 +488,6 @@ def zero_file_index(monkeypatch: pytest.MonkeyPatch, volume: Path) -> None:
 async def test_a_zero_file_index_is_no_identity(
     harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Before (CPython's ``samestat`` has no guard), any two files there were one: the queue
-    serialised unrelated jobs, a job failed with ``queue.writes_source``, and the clean-up
-    kept a ``.part`` file as "the source"."""
     h = harness
     other = tmp_path / "media" / "Other.mkv"
     other.write_bytes(b"another file")
