@@ -425,12 +425,9 @@ def test_every_plan_error_is_covered() -> None:
     for message in messages:
         if any(message.startswith(start) for start in UNREACHABLE):
             continue
-        pieces = [p for p in message.split("\x00") if len(p.strip()) > 3]
-        covered = [
-            r.id
-            for r in REFUSALS
-            if any(re.search(re.escape(p.strip()), _example(r)) for p in pieces)
-        ]
+        # A refusal's message is the f-string with each \x00 (a formatted value) filled in.
+        pattern = re.compile(".*".join(re.escape(p) for p in message.split("\x00")), re.DOTALL)
+        covered = [r.id for r in REFUSALS if pattern.fullmatch(_example(r))]
         assert covered, f"no REFUSALS case for: raise PlanError({message!r})"
 
 
