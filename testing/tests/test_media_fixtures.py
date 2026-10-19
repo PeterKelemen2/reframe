@@ -1,9 +1,4 @@
-"""Every fixture has what the plan's "Test media" table promises (checked with ffprobe).
-
-Also records FFmpeg behaviour that the plan did not know (see testdata/README.md,
-"Verified tool behaviour"). If one of those tests fails after an FFmpeg update, update the
-README and tell the authors of C-3 / C-7.
-"""
+"""The generated media fixtures, checked with ffprobe and FFmpeg."""
 
 from __future__ import annotations
 
@@ -69,7 +64,7 @@ def test_fixture_media_fixture_returns_paths(fixture_media: Callable[[str], Path
     assert fixture_media("text-subs-srt").read_text(encoding="utf-8").startswith("1\n")
 
 
-#: Fixtures that must be large: the 4K source of C-10's frame budget (decision 0030).
+#: Fixtures that must be large: the 4K source of the frame budget.
 LARGE = {"hdr10-4k.mkv": 10 * 2**20}
 
 
@@ -108,7 +103,6 @@ def test_multitrack(probe: Callable[..., Probe]) -> None:
     assert (a0["codec_name"], a0["channels"], a0["channel_layout"]) == ("ac3", 6, "5.1(side)")
     assert (a1["codec_name"], a1["channels"]) == ("aac", 2)
     assert (a2["codec_name"], a2["channels"]) == ("aac", 2)
-    # Verified: no per-stream bit_rate for AAC in Matroska (AC-3 has one, from its header).
     assert "bit_rate" not in a2
     assert all(s["codec_name"] == "subrip" for s in subs)
     assert p["format"]["tags"]["title"] == "Reframe multi-track fixture"
@@ -323,8 +317,6 @@ def test_vfr_mp4(all_media: Path, probe: Callable[..., Probe]) -> None:
 def test_vfr_mkv(all_media: Path, probe: Callable[..., Probe]) -> None:
     v = streams(probe("vfr.mkv"), "video")[0]
     assert v["r_frame_rate"] != v["avg_frame_rate"]
-    # Verified behaviour: Matroska written by FFmpeg has no frame count, so ffprobe reports
-    # avg_frame_rate 0/0 (unknown), not a real average.
     assert v["avg_frame_rate"] == "0/0"
     shortest, longest = _frame_intervals(all_media / "vfr.mkv")
     assert shortest < 0.02
@@ -401,7 +393,7 @@ def test_season_set(all_media: Path, probe: Callable[..., Probe]) -> None:
             assert got == MULTITRACK_LAYOUT
 
 
-#: The 04 §Example layout: (kind, language, title, flags) per stream.
+#: The layout of the anime fixtures: (kind, language, title, flags) per stream.
 ANIME_LAYOUT = [
     ("video", None, None, frozenset({"default"})),
     ("audio", "jpn", "Japanese", frozenset({"default"})),
@@ -413,8 +405,8 @@ ANIME_COMMENTARY = ("audio", "eng", "Commentary", frozenset({"comment"}))
 
 
 def test_anime_seasons(all_media: Path, probe: Callable[..., Probe]) -> None:
-    """The batch-mode fixtures (C-12 M7, 04 §Example): one layout, E05 with an extra
-    commentary, E11 without the dub and with another signs title; season 2 like E01."""
+    """The anime fixtures: one layout, E05 with an extra commentary, E11 without the dub
+    and with another signs title; season 2 like E01."""
     for season, count in ((1, 12), (2, 3)):
         folder = media.anime_folder(season)
         names = sorted(p.name for p in (all_media / folder).glob("*.mkv"))
@@ -435,7 +427,6 @@ def test_anime_seasons(all_media: Path, probe: Callable[..., Probe]) -> None:
             else:
                 assert got == ANIME_LAYOUT
             audio = streams(p, "audio")
-            # Verified: FFmpeg's TrueHD encoder writes 5.1(side), no profile, no bit rate.
             assert (audio[0]["codec_name"], audio[0]["channel_layout"]) == ("truehd", "5.1(side)")
             assert "bit_rate" not in audio[0]
             if (season, n) != (1, media.ANIME_NO_DUB_EPISODE):
@@ -445,8 +436,8 @@ def test_anime_seasons(all_media: Path, probe: Callable[..., Probe]) -> None:
 
 
 def test_truehd_encoder_has_no_7_1(tmp_path: Path) -> None:
-    """Why the 04 §Example's "TrueHD Atmos 7.1" is TrueHD 5.1 here: FFmpeg's ``truehd``
-    encoder (experimental, ``-strict -2``) takes at most 5.1(side) and refuses 7.1."""
+    """FFmpeg's ``truehd`` encoder (experimental, ``-strict -2``) takes at most 5.1(side) and
+    refuses 7.1."""
     ffmpeg = media.find_ffmpeg()
     assert ffmpeg
     base = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-f", "lavfi", "-i"]
@@ -486,8 +477,6 @@ def test_dts_hd_ma(all_media: Path, probe: Callable[..., Probe]) -> None:
         "24",
     )
     assert (hd["channels"], hd["channel_layout"], hd["sample_rate"]) == (6, "5.1(side)", "48000")
-    # The point of the fixture: the decoder sets bit_rate 0 for XLL and Matroska written by
-    # FFmpeg has no statistics tags, so nothing in the file says the bit rate.
     assert "bit_rate" not in hd
     assert set(tags(hd)) == {"language", "title", "DURATION"}
     assert (ac3["bit_rate"], ac3["channels"]) == ("224000", 6)
@@ -512,8 +501,8 @@ def test_dts_hd_ma_decodes_losslessly(all_media: Path) -> None:
     """FFmpeg's decoder accepts every CRC and gives back exactly the samples written."""
     samples = _decode_s32(all_media / "dts-hd-ma.mkv", "0:a:0", 1.0)
     assert len(samples) == 6 * dts.SAMPLE_RATE
-    frames = len(samples) // (6 * dts.FRAME_SAMPLES)  # 93 whole frames of 512 samples
-    # FFmpeg's 5.1(side) order: FL FR FC LFE SL SR
+    frames = len(samples) // (6 * dts.FRAME_SAMPLES)  # whole frames
+    # FFmpeg's 5.1(side) order, see testdata/README.md
     position = {"L": 0, "R": 1, "C": 2, "LFE": 3, "Ls": 4, "Rs": 5}
     for frame in range(frames):
         want = dts.expected_samples(frame)
@@ -535,19 +524,13 @@ def test_pgs(probe: Callable[..., Probe]) -> None:
     subs = streams(p, "subtitle")
     assert all(s["codec_name"] == "hdmv_pgs_subtitle" for s in subs)
     assert all((s["width"], s["height"]) == (720, 480) for s in subs)
-    # One Matroska block per display set (the muxer's pgs_frame_merge), two per event.
     assert [int(s["nb_read_packets"]) for s in subs] == [
         2 * len(events) for events in media.PGS_EVENTS.values()
     ]
     assert [s["start_time"] for s in subs] == ["0.200000", "0.200000"]  # -copyts
 
 
-# -------------------------------------------------------------------- verified tool behaviour
-
-
 def test_matroska_muxer_writes_no_statistics_tags(probe: Callable[..., Probe]) -> None:
-    """FFmpeg writes only DURATION (and ENCODER) per track, no BPS / NUMBER_OF_FRAMES /
-    NUMBER_OF_BYTES (mkvmerge writes those). C-3's bitrate chain must cope."""
     for s in probe("multitrack.mkv")["streams"]:
         keys = set(tags(s))
         assert "DURATION" in keys
@@ -568,8 +551,8 @@ DISPOSITIONS = {
     "hearing_impaired": ("subtitle", True),
     "visual_impaired": ("audio", True),
     "original": ("audio", True),
-    "dub": ("audio", True),  # stored as FlagOriginal=0
-    "descriptions": ("subtitle", True),  # FlagTextDescriptions
+    "dub": ("audio", True),
+    "descriptions": ("subtitle", True),
     "captions": ("subtitle", False),
     "lyrics": ("subtitle", False),
     "karaoke": ("audio", False),
@@ -610,8 +593,6 @@ def test_matroska_disposition_round_trip(disposition: str, tmp_path: Path) -> No
 
 
 def test_single_streams_get_no_default_flag(tmp_path: Path) -> None:
-    """With no -disposition, FFmpeg sets "default" only when a type has 2+ streams; a single
-    video or audio stream is written with FlagDefault=0 (mkvmerge would write 1)."""
     ffmpeg = media.find_ffmpeg()
     assert ffmpeg
     subprocess.run(
@@ -654,10 +635,6 @@ def _subtitle_frames(path: Path, stream: int, *extra: str) -> list[tuple[str, st
 
 
 def test_forced_subs_only_does_not_drop_pgs_display_sets(all_media: Path) -> None:
-    """pgssubdec with ``forced_subs_only`` still returns every display set (it leaves the
-    palette of a non-forced object empty), so a decode cannot count the forced events of a
-    PGS track; C-10 reads the forced flag of the composition objects instead (decision
-    0032). dvdsubdec drops the non-forced subpictures (``test_analysis_ffmpeg.py``)."""
     path = all_media / "pgs.mkv"
     plain = _subtitle_frames(path, 1)
     assert len(plain) == 12

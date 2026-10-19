@@ -1,7 +1,4 @@
-"""Unit tests for scripts/fetch-tools.py (Q-1.2): manifest, checksums, safe extraction.
-
-No network: downloads are replaced by a function that copies a local archive.
-"""
+"""Unit tests for scripts/fetch-tools.py. No network: downloads copy a local archive."""
 
 from __future__ import annotations
 
@@ -133,9 +130,6 @@ def _copier(archive: bytes, calls: list[str]) -> Callable[[str, Path], None]:
     return download
 
 
-# --------------------------------------------------------------------------- manifest
-
-
 def test_real_manifest_is_valid() -> None:
     builds = ft.load_manifest(MANIFEST)
     assert set(builds) == {"default", "override-test"}
@@ -224,9 +218,6 @@ def test_detect_platform_unsupported(sys_platform: str, machine: str) -> None:
         ft.detect_platform(sys_platform, machine)
 
 
-# --------------------------------------------------------------------------- checksums
-
-
 def test_verify_file_accepts_matching_file(tmp_path: Path) -> None:
     path = tmp_path / "a.bin"
     path.write_bytes(b"payload")
@@ -253,11 +244,7 @@ def test_install_fails_on_checksum_mismatch_before_extracting(tmp_path: Path) ->
     tampered = good[:-1] + bytes([good[-1] ^ 0xFF])  # same size, one byte changed
     with pytest.raises(ft.ChecksumError):
         ft.install(_build(pbuild), pbuild, tmp_path, downloader=_copier(tampered, []))
-    # Nothing was extracted and no temporary folder is left behind.
     assert list((tmp_path / "ffmpeg").iterdir()) == []
-
-
-# --------------------------------------------------------------------------- safe extraction
 
 
 @pytest.mark.parametrize(
@@ -353,9 +340,6 @@ def test_zip_extraction_keeps_exec_bit(tmp_path: Path) -> None:
     assert not os.access(tmp_path / ROOT / "LICENSE.txt", os.X_OK)
 
 
-# --------------------------------------------------------------------------- install
-
-
 def test_install_is_idempotent_and_repairs_damage(tmp_path: Path) -> None:
     archive = _good_tar()
     pbuild = _platform_build(archive)
@@ -368,11 +352,9 @@ def test_install_is_idempotent_and_repairs_damage(tmp_path: Path) -> None:
     assert ffmpeg.is_file()
     assert len(calls) == 1
 
-    # Second run: already extracted and verified, no download.
     assert ft.install(build, pbuild, tmp_path, downloader=download) == install_dir
     assert len(calls) == 1
 
-    # A changed file (corrupt cache) is detected and the build is fetched again.
     ffmpeg.write_bytes(b"corrupt")
     ft.install(build, pbuild, tmp_path, downloader=download)
     assert len(calls) == 2
@@ -436,9 +418,6 @@ def test_main_reports_unknown_build(capsys: pytest.CaptureFixture[str]) -> None:
     assert "unknown build 'nope'" in err
 
 
-# --------------------------------------------------------------------------- --install-dir
-
-
 def test_install_bundled_lays_out_bin_and_lib(tmp_path: Path) -> None:
     archive = _good_tar()
     pbuild = _platform_build(archive)
@@ -453,13 +432,10 @@ def test_install_bundled_lays_out_bin_and_lib(tmp_path: Path) -> None:
     assert not (target / ROOT).exists()  # the archive's root folder is the install dir
     if os.name == "posix":
         assert os.access(target / "bin" / "ffmpeg", os.X_OK)
-    # No temporary folders are left next to it.
     assert sorted(p.name for p in target.parent.iterdir()) == ["ffmpeg"]
 
-    # Idempotent: verified, no second download.
     ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, calls))
     assert len(calls) == 1
-    # Damage is repaired.
     (target / "lib" / "libavutil.so.61").write_bytes(b"corrupt")
     ft.install_bundled(_build(pbuild), pbuild, target, downloader=_copier(archive, calls))
     assert len(calls) == 2
@@ -573,9 +549,6 @@ ffprobe = "bin/ffprobe"
     assert out == f"{(target / 'bin').resolve()}\n".encode()
     assert (target / "bin" / "ffmpeg").is_file()
     assert b"installed to" in err
-
-
-# --------------------------------------------------------------------------- download retries
 
 
 class _Response(io.BytesIO):
