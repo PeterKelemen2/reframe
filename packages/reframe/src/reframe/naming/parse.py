@@ -1,32 +1,10 @@
-"""Release-name parsing (03 §Output naming → Variables, "Name parts"; C-16).
+"""Release-name parsing.
 
-``guessit`` runs in advanced mode, so every match comes with its position. Text fields are cut
-from the original string and keep their spelling and separators: ``{main_title}`` of
-``Hacksaw.Ridge.2016.HYBRID.2160p…`` is ``Hacksaw.Ridge``, not guessit's ``Hacksaw Ridge``.
-
-The rules:
-
-- ``{main_title}`` is the text from the start of the name to the first **release tag** (year,
-  resolution, source, codec, edition, group…). Leading tags (an anime ``[Group]``, a website)
-  are skipped. For an episode, the cut is the first tag *after* the episode code, so the show
-  name, a year before the code (``Doctor.Who.2005.S01E01.Rose``), the code and the episode
-  title stay.
-- ``{name}`` is the movie title (``{main_title}`` of a movie) or the show name: the text before
-  the episode code, without a year that stands right before the code.
-- ``{sub_title}`` is the text between the episode code (or air date) and the cut.
-- ``{episode_code}`` is the code as written, multi-episode codes included (``S03E02E03``,
-  ``1x01-1x02``, ``S01E16-E17``, ``E1071``, ``001``).
-
-guessit quirks worked around here (each has a test with the real guessit output in
-``tests/naming/test_guessit_quirks.py``):
-
-1. A title *after* the episode number (``01 - Pilot.mkv``) is the episode title.
-2. A bare number after `` - `` (``Bleach - 001 - …``, ``One Piece - 1000 - …``) is an absolute
-   episode number; guessit splits it into season 0 / episode 1, or season 10 / episode 0.
-3. ``UHD.BluRay``: guessit's source match covers only ``BluRay``; ``UHD`` right before it is
-   added back. ``WEB`` + ``Rip`` (two matches) is one source, ``WEBRip``.
-4. A site tag glued to the group (``-GRP[rarbg]``) is dropped from the release group.
-5. HDR tags that guessit does not report (``HDR10Plus``, ``HLG``) are still scored.
+Text fields are cut from the original string and keep their spelling and separators:
+``{main_title}`` of ``Hacksaw.Ridge.2016.HYBRID.2160p…`` is ``Hacksaw.Ridge``, not guessit's
+``Hacksaw Ridge``. guessit runs in advanced mode, so every match comes with its position.
+The guessit quirks that this module works around are tested in
+``tests/naming/test_guessit_quirks.py``.
 """
 
 from __future__ import annotations
@@ -84,7 +62,7 @@ _HDR_TOKEN = re.compile(
     r"(?<![A-Za-z0-9])(?:HDR10\+|HDR10Plus|HDR10|HDR|HLG|DoVi|DV)(?![A-Za-z0-9])", re.IGNORECASE
 )
 
-#: The scored fields of 03 §Where the name comes from, in display order.
+#: The fields that score a parse, in display order.
 SCORED_FIELDS = (
     "title",
     "year",
@@ -108,12 +86,9 @@ _SPAN_FIELD = {
 }
 
 
-#: The options of every guessit call (a copy is passed: guessit wants a ``dict``).
-#: ``no_user_config``: guessit 4.4.0 otherwise reads ``guessit.options.(json|yml|yaml)`` in the
-#: working folder and ``options.*`` in ``~/.guessit`` and ``~/.config/guessit``. Such a file
-#: changes the parse (``{"type": "movie"}`` turns an episode title into ``alternative_title``)
-#: or, when it is malformed, makes every call fail; and naming reads the file system only
-#: through :class:`~reframe.naming.fs.NamingFs`.
+#: The options of every guessit call. guessit wants a ``dict``, so a copy is passed.
+#: ``no_user_config`` stops guessit from reading ``guessit.options.*`` files in the working
+#: folder and the home folder, which would change the parse.
 GUESSIT_OPTIONS: Mapping[str, object] = MappingProxyType(
     {"advanced": True, "name_only": True, "no_user_config": True}
 )
@@ -263,8 +238,7 @@ _CODE_PREFIX = re.compile(r"(?i)(?<![A-Za-z0-9])(?:season[ ._]?|episode[ ._]?|ep
 
 
 def _code_left(text: str, pos: int) -> int:
-    """Extend an episode code to the left over its prefix: ``S``01, ``E``1071, ``Ep``01,
-    ``Season.``5, ``Episode ``01."""
+    """Extend an episode code to the left over its prefix, such as ``Season.`` or ``Ep``."""
     prefix = _CODE_PREFIX.search(text[:pos])
     return prefix.start() if prefix else pos
 
@@ -311,7 +285,7 @@ def parse_name(text: str) -> NameParse:
     separator = detect_separator(text)
 
     code = [m for m in matches if m.prop in _CODE_PROPS]
-    # Quirk 1: a title after the episode number is the episode title (``01 - Pilot``).
+    # A title after the episode number is the episode title (``01 - Pilot``).
     titles = [m for m in matches if m.prop == "title"]
     if titles and code and titles[0].start > code[0].start:
         matches = [
@@ -399,7 +373,7 @@ def parse_name(text: str) -> NameParse:
             and len(bare) >= 3
             and text[:code_start].rstrip(" ").endswith("-")
         ):
-            # Quirk 2: ``Bleach - 001`` / ``One Piece - 1000`` are absolute episode numbers.
+            # guessit splits ``Bleach - 001`` into season and episode: it is an absolute number.
             fields.season = None
             fields.episodes = [int(bare)]
         else:
@@ -431,7 +405,7 @@ def parse_name(text: str) -> NameParse:
         fields.source_type = clean_tag(text[source[0] : source[1]]) or None
     groups = [m for m in matches if m.prop == "release_group"]
     if groups:
-        # Quirk 4: ``GRP[rarbg]`` → ``GRP``.
+        # A site tag glued to the group (``GRP[rarbg]``) is not part of the group.
         raw = text[groups[0].start : groups[0].end].strip(_STRIP)
         group = clean_tag(re.sub(r"(?<=[^\s\[])\[[^\]]*\]$", "", raw))
         fields.release_group = group or None
@@ -454,7 +428,7 @@ def parse_name(text: str) -> NameParse:
     covered = [(m.start, m.end) for m in matches]
     for token in _HDR_TOKEN.finditer(text, cut):
         if not any(a <= token.start() < b for a, b in covered):
-            hdr = True  # Quirk 5: ``HDR10Plus``, ``HLG``
+            hdr = True  # guessit does not report ``HDR10Plus`` or ``HLG``.
             span("hdr", token.start(), token.end())
     spans.sort(key=lambda s: (s.start, s.end))
 

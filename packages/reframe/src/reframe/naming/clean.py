@@ -1,15 +1,6 @@
-"""Clean-up of text that comes from the name (03 §Output naming → Options).
-
-- **Word separator** (Reframe): Keep source · Space · Dot · Underscore. The source separator is
-  the one of the parsed name (:func:`reframe.naming.parse.detect_separator`). Dots that are not
-  word separators stay: between the letters of an acronym (``S.H.I.E.L.D``, ``E.T.``) and
-  between numbers (``12.00``, ``1.23.45``, ``AM-1.00``).
-- **HandBrake parity**, in HandBrake's order (``AutoNameHelper.CleanupSourceName``): replace
-  underscores with spaces; remove dashes, commas and periods; title case (HandBrake lower-cases
-  the text, then capitalises each word).
-
-The word separator runs first, so *Space* + *Remove common punctuation* gives
-``The Sopranos``, not HandBrake's ``TheSopranos``.
+"""Clean-up of text from the name. The word separator runs first, so *Space* and *Remove
+common punctuation* give ``The Sopranos``, not HandBrake's ``TheSopranos``. The other options
+follow the order of HandBrake's ``AutoNameHelper.CleanupSourceName``.
 """
 
 from __future__ import annotations
@@ -33,7 +24,6 @@ def _letter(token: str) -> bool:
 
 
 def _number_end(token: str) -> bool:
-    """A number, or text that ends with ``-`` and a number (``12``, ``AM-1``)."""
     return re.search(r"(?:^|-)\d+$", token) is not None
 
 

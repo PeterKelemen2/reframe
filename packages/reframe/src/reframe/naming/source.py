@@ -1,20 +1,8 @@
-"""The name source: the file name or its folder name (03 §Where the name comes from; C-16).
+"""The name source of a file: its file name or its folder name.
 
-**Auto** (the default):
-
-1. Skip generic folders (``Season 03``, ``S03``, ``Specials``, ``Extras``, ``Featurettes``,
-   ``Disc 1``, ``CD1``, ``BDMV``, ``STREAM``, ``VIDEO_TS``) and look one level higher, at most
-   two levels, never above the opened folder or media root.
-2. If the folder holds several episode files (a season pack), the file name is the source,
-   because only it has the episode number and title. The same holds when only the file name
-   has an episode number (decision 0012: a folder that names a season, such as
-   ``The.Sopranos.S03.1080p…``, or a show folder). The folder then fills the fields that the
-   file name does not have (year, edition, source, group, season, and the show name).
-3. Otherwise the candidate with the higher score wins: +1 for each recognised field (title,
-   year, resolution, source, video codec, audio codec, HDR, edition, release group), +2 if
-   the title has word separators. A tie goes to the file name.
-
-**File name** / **Folder name**: forced (in the naming options, or per job).
+In a season pack the file name is the source, because only it has the episode number and
+title; the folder fills the fields that the file name lacks. Otherwise the candidate with the
+higher score wins, and a tie goes to the file name.
 """
 
 from __future__ import annotations
@@ -208,7 +196,7 @@ def choose_source(
         candidates.append(_candidate("folder", folder_parse, folder))
     notes = [f"Skipped the generic folder '{name}'." for name in skipped]
 
-    # Season packs (rule 2), also used to merge folder fields in the forced File mode.
+    # Season packs, also used to merge folder fields in the forced File mode.
     pack_reason: str | None = None
     if folder_parse is not None and file.parent.name.lower() not in DISC_FOLDERS:
         count = _count_episode_files(file.parent, fs)

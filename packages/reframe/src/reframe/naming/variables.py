@@ -1,8 +1,5 @@
-"""The template variables (03 §Output naming → Variables).
-
-Three groups: the 17 HandBrake variables (same names, same meaning), the name parts parsed
-from the name source, and the output media from the job settings. ``GET /api/definitions``
-lists :data:`VARIABLES` for the naming editor (autocomplete, chips).
+"""The template variables. The HandBrake variables keep HandBrake's names and meanings; the name
+parts come from the parsed name, and the media variables from the job settings.
 """
 
 from __future__ import annotations
@@ -84,7 +81,7 @@ NAME_TEXT_VARIABLES = frozenset(
 )
 
 #: Default formats of the date variables: ISO dates and ``14-30`` times, because a system
-#: short date can contain ``/`` and ``:`` (03 §Variables).
+#: short date can contain ``/`` and ``:``.
 DATE_FORMATS = {
     "date": "%Y-%m-%d",
     "time": "%H-%M",

@@ -1,4 +1,4 @@
-"""The values of the template variables for one file (03 §Variables; C-16).
+"""The values of the template variables for one file.
 
 Built from the parsed name, the job settings and the probed source. Every input except the
 name is optional: a variable whose data is missing is empty (``None``), and an optional group
@@ -38,7 +38,7 @@ __all__ = [
 
 CONTAINER_LABELS: dict[Container, str] = {"mkv": "MKV", "mp4": "MP4", "webm": "WebM"}
 
-#: Named resolutions: label, width, height (03 §Variables → ``{resolution}``).
+#: Named resolutions, largest first: :func:`resolution_label` returns the first one that fits.
 _RESOLUTIONS = (
     ("2160p", 3840, 2160),
     ("1080p", 1920, 1080),
@@ -59,12 +59,11 @@ _HDR_LABELS = (
 
 
 def resolution_label(width: int, height: int) -> str:
-    """``2160p``, ``1080p``, ``720p``, ``576p``, ``480p``, or ``WxH`` for other sizes.
+    """The ``{resolution}`` label: the first named class that the size fits, else ``WxH``.
 
-    A size is named when it fits in the class's frame (DCI widths up to 1/14 wider are
-    allowed: 4096x2160 is ``2160p``) and its width or height is within 1/32 of the frame's:
-    cropped scope (1920x800) is ``1080p``, anamorphic HDV (1440x1080) too, PAL DVD (720x576)
-    is ``576p``. A cropped DVD (720x432) or qHD (960x540) is ``WxH``.
+    A size fits a class when it is at most 1/14 wider (DCI) and not taller than the class's
+    frame, and its width or height is within 1/32 of the frame's. So cropped scope (1920x800)
+    is ``1080p``, and a cropped DVD (720x432) is ``WxH``.
     """
     for label, frame_w, frame_h in _RESOLUTIONS:
         fits = width <= frame_w + frame_w // 14 and height <= frame_h
@@ -74,7 +73,7 @@ def resolution_label(width: int, height: int) -> str:
 
 
 def hdr_label(formats: list[HdrFormat]) -> str | None:
-    """The one HDR label of ``{hdr}``: ``DV``, ``HDR10+``, ``HDR10`` or ``HLG``."""
+    """The ``{hdr}`` label of the highest-ranked HDR format in ``formats``, or None."""
     for fmt, label in _HDR_LABELS:
         if fmt in formats:
             return label
@@ -82,7 +81,7 @@ def hdr_label(formats: list[HdrFormat]) -> str | None:
 
 
 def audio_channels_label(channels: int, layout: str | None = None) -> str:
-    """``5.1``, ``7.1``, ``2.0``, ``1.0`` from an ffprobe layout or a channel count."""
+    """The ``N.M`` channel label from an ffprobe layout, or else from the channel count."""
     if layout:
         head = layout.split("(", 1)[0]
         named = {"mono": "1.0", "stereo": "2.0", "quad": "4.0", "hexagonal": "6.0"}

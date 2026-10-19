@@ -1,18 +1,11 @@
-"""Naming templates: parse, check and render (03 §Output naming → Template syntax; C-16).
+"""Naming templates: parse, check and render.
 
-=================  =====================================================================
-``{variable}``     Insert the value
-``{variable:spec}`` Numbers: ``{season:02}``. Dates: ``{date:%Y-%m-%d}``. Text: ``:upper``,
-                   ``:lower``, ``:title`` (or a Python string format such as ``:.20``)
-``<…>``            Optional group: dropped when a variable directly inside it is empty.
-                   Groups nest; an inner group that is dropped does not drop the outer one
-``/``              A subfolder under the output folder
-``{{`` ``}}``      Literal braces
-=================  =====================================================================
+An optional group ``<…>`` is dropped when a variable directly inside it is empty. An inner group
+that is dropped does not drop the outer one.
 
-A bad template is never an exception: :func:`parse_template` collects syntax errors and
-:func:`check_template` turns them, unknown variables (with a "did you mean" fix) and bad
-format specs into :class:`~reframe.models.issues.ValidationIssue`.
+A bad template is never an exception: :func:`parse_template` collects syntax errors, and
+:func:`check_template` turns them, unknown variables (with a "did you mean" fix) and bad format
+specs into :class:`~reframe.models.issues.ValidationIssue`.
 """
 
 from __future__ import annotations
@@ -52,10 +45,9 @@ Value = str | int | float | date | None
 
 _NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _TEXT_SPECS = ("upper", "lower", "title")
-#: The largest width or precision of a number or text format spec (``{name:.20}``,
-#: ``{season:03}``). A path part has at most 255 bytes, so a wider value is never needed;
-#: and without a limit ``{season:999999999999}`` makes ``format`` build a 1 TB string.
-#: (``strftime`` limits its own output, so date specs need no limit.)
+#: The largest width or precision of a number or text format spec. A path part has at most
+#: 255 bytes, and without a limit ``format`` builds a huge string. Date specs need no limit:
+#: ``strftime`` limits its own output.
 MAX_SPEC_NUMBER = 255
 #: Decimal digits of any script: ``format`` reads them all (``\d`` of a ``str`` pattern).
 _SPEC_DIGITS = re.compile(r"\d+")
@@ -208,8 +200,8 @@ def _check_spec_size(spec: str) -> None:
     :data:`MAX_SPEC_NUMBER`, before ``format`` builds the string.
 
     Every run of decimal digits counts, in any script: ``format`` reads Arabic-Indic and
-    full-width digits too (U+0662 U+0665 U+0666 is 256). A digit fill character (``0>3``) is
-    a run of one digit, so it never fails.
+    full-width digits too. A digit fill character (``0>3``) is a run of one digit, so it never
+    fails.
     """
     for match in _SPEC_DIGITS.finditer(spec):
         digits = "".join(str(unicodedata.decimal(char)) for char in match.group()).lstrip("0")

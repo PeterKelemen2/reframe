@@ -1,4 +1,4 @@
-"""The output name of one source file (C-16): name source, template, safe file name, path."""
+"""The output name of one source file: name source, template, safe file name, path."""
 
 from __future__ import annotations
 
@@ -65,9 +65,9 @@ def output_extension(
     *,
     definitions: Definitions | None = None,
 ) -> str:
-    """The extension (no dot). Other containers: the first extension of the container's
-    definition (C-6). MP4: ``mp4``, ``m4v``, or *Auto* (HandBrake): ``m4v`` with AC-3 audio
-    (encoded or passed through), chapter markers, or 3GPP (``mov_text``) subtitles."""
+    """The extension, without the dot. For other containers, the first extension of the
+    container's definition. For MP4 with *Auto* (HandBrake's rule), ``m4v`` when the output has
+    AC-3 audio, chapter markers or ``mov_text`` (3GPP) subtitles."""
     if container != "mp4":
         defs = definitions if definitions is not None else load_definitions()
         return defs.containers[container].extensions[0].lstrip(".")
@@ -105,9 +105,9 @@ def _replace_part(text: str | None, old: str | None, new: str | None) -> str | N
 def apply_overrides(
     fields: ParsedName, overrides: dict[str, str]
 ) -> tuple[ParsedName, list[ValidationIssue], list[str]]:
-    """Apply the per-file overrides of the naming editor. An edited ``name``, ``sub_title``
-    or ``episode_code`` is also changed inside ``main_title`` (unless that is edited too).
-    Unknown names and bad numbers are warnings."""
+    """Apply the per-file overrides. An edited ``name``, ``sub_title`` or ``episode_code`` is
+    also changed inside ``main_title`` (unless that is edited too). Unknown names and bad
+    numbers are warnings."""
     if not overrides:
         return fields, [], []
     fields = fields.model_copy(deep=True)
@@ -175,16 +175,16 @@ def resolve_output_name(
     fs: NamingFs | None = None,
     definitions: Definitions | None = None,
 ) -> NameResult:
-    """The output name of ``file`` (03 §Output naming).
+    """The output name of ``file``.
 
     Works from the path alone: ``job`` and ``source`` are optional, and variables that need
     missing data are empty. ``options`` are the effective naming options (the preset's, else
-    Settings → Output); the job's own template, name source, manual name and per-file
-    overrides (``job.output.naming``) win over them. ``output_size`` is the scaled size
-    (C-5) for ``{width}``, ``{height}`` and ``{resolution}``. ``container`` is used when
-    there is no job (default ``mkv``). ``root`` is the opened folder or media root: generic
-    folder skipping never goes above it. ``fs`` replaces the file-system reads (folder
-    listing, file times) in tests. A bad template gives issues, never an exception.
+    the output settings); the job's own template, name source, manual name and per-file
+    overrides (``job.output.naming``) win over them. ``output_size`` is the scaled size for
+    ``{width}``, ``{height}`` and ``{resolution}``. ``container`` is used when there is no job
+    (default ``mkv``). ``root`` is the opened folder or media root: generic folder skipping
+    never goes above it. ``fs`` replaces the file-system reads (folder listing, file times) in
+    tests. A bad template gives issues, never an exception.
     """
     fs = fs if fs is not None else RealNamingFs()
     definitions = definitions if definitions is not None else load_definitions()
