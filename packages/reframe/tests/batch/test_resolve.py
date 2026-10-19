@@ -1,5 +1,4 @@
-"""C-12 M7: resolving a template in one file (the job, its per-file policies) and in a group
-(04 §Concepts "Resolution", §Per-file overrides)."""
+"""Resolving a template for one file and for a group of files."""
 
 from __future__ import annotations
 
@@ -48,8 +47,8 @@ def test_the_job_of_a_preset_and_of_a_template() -> None:
     job, notes = build_job(preset, e01, TrackDraft())
     assert (job.preset_id, job.preset_name) == ("h265-mkv-1080p", "H.265 MKV 1080p")
     assert job.source == e01.ref
-    assert job.video.metadata.default  # decision 0024 item 5
-    assert job.range.kind == "full"  # 04: the range is the whole file
+    assert job.video.metadata.default  # The drafted video track gets the default flag.
+    assert job.range.kind == "full"  # The range is the whole file.
     assert notes == []
     job, _ = build_job(JobTemplate(), e01, TrackDraft())
     assert (job.preset_id, job.preset_name) == (None, None)

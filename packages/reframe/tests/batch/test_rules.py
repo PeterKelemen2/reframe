@@ -1,5 +1,4 @@
-"""C-12 M7: the one rule engine for presets and batch mode (04 §Track rules; 03 §Audio
-defaults → "How the defaults are applied")."""
+"""The rule engine that presets and batch mode share."""
 
 from __future__ import annotations
 
@@ -85,11 +84,8 @@ def sub_rule(settings: Any = None, metadata: Any = None, **kw: Any) -> OutputTra
     )
 
 
-# --------------------------------------------------------------------------- labels
-
-
 def test_labels() -> None:
-    """04 §Resolution matrix: ``A1 jpn TrueHD→Opus 5.1``, ``S1 eng Signs``."""
+    """Rule labels: ``A1 jpn TrueHD→Opus 5.1``, ``S1 eng Signs``."""
     opus = AudioOutputSettings(encoder="libopus", mixdown="5.1", bitrate=448)
     a1 = audio_rule(opus, languages=["ja"], codecs=["truehd"], profiles=["TrueHD"])
     assert rule_label("audio", 0, a1, DEFS) == "A1 jpn TrueHD→Opus 5.1"
@@ -119,11 +115,7 @@ def test_literal_titles() -> None:
     assert title_text("^a.b$") == "^a.b$"  # not a literal: the dot is a wildcard
 
 
-# --------------------------------------------------------------------------- explicit rules
-
-
 def example() -> MediaSource:
-    """E05: jpn TrueHD, eng DTS-HD MA, eng AC-3 commentary, two subtitles."""
     source: MediaSource = A.recorded(1, 5)
     return source
 
@@ -177,8 +169,6 @@ def test_fixed_settings_and_metadata() -> None:
 
 
 def test_codec_rules_are_evaluated_for_each_matched_track() -> None:
-    """A rule with ``AudioCodecRules`` (the defaults' kind of settings) runs 03's codec rules
-    on the track it takes: here the 03 example's rule 1 on a DTS-HD MA track."""
     english = AudioCodecRule(
         languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320
     )
@@ -201,15 +191,13 @@ def test_codec_rules_are_evaluated_for_each_matched_track() -> None:
     both = audio_rule(rules, languages=["en"], roles=[TrackRole.COMMENTARY])
     result = resolve_tracks(template(audio=[both]), example(), definitions=DEFS)
     main, extra = result.draft.audio
-    # AC-3 96 kb/s fits rule 2 (passthru); the extra AAC output is never bigger than its
-    # source: 128 → 96 kb/s.
+    # The extra AAC output is never bigger than its source: 128 → 96 kb/s.
     assert (main.action, extra.encoder, extra.bitrate) == ("passthru", "aac", 96)
     assert not extra.metadata.default
 
 
 def test_default_flags() -> None:
-    """A rule's explicit default wins; without one, the first output whose source track is
-    default keeps it (at most one)."""
+    """An explicit default wins; without one, the first output of a default track keeps it."""
     keep = audio_rule(languages=["ja"])
     dub = audio_rule(languages=["en"], codecs=["dts"])
     source = example()
@@ -257,7 +245,6 @@ def test_subtitle_rules() -> None:
         "Burn in, forced events only (rule S1 any forced (burn in))",
         "Convert to srt (rule S2 any Full (SRT))",
     ]
-    # Copy into MP4: the container note.
     mp4 = template(subtitles=[sub_rule(title_pattern="^Full$")]).model_copy(
         update={"output": JobTemplate().output.model_copy(update={"container": "mp4"})}
     )
@@ -289,8 +276,6 @@ def test_settings_of_the_other_kind_are_an_error() -> None:
 
 
 def test_explicit_audio_with_subtitle_defaults_hears_the_explicit_audio() -> None:
-    """The subtitle defaults' foreign audio search hears the explicit rules' audio: English
-    audio + English subtitles → the forced English track is found."""
     preset = JobTemplate(
         audio_rules=[
             audio_rule(
@@ -309,9 +294,6 @@ def test_explicit_audio_with_subtitle_defaults_hears_the_explicit_audio() -> Non
     assert [m.status for m in fas] == ["exact", "exact"]
     assert fas[1].streams == [4]
     assert "Foreign audio search" in fas[1].message
-
-
-# --------------------------------------------------------------------------- compiled defaults
 
 
 def test_compiled_defaults_without_languages() -> None:
@@ -415,9 +397,6 @@ def test_no_match_column() -> None:
     ] == "a main track of a listed language was found"
 
 
-# --------------------------------------------------------------------------- one engine
-
-
 def _recorded(path: Path) -> MediaSource:
     data = json.loads(path.read_text(encoding="utf-8"))
     frames = path.with_name(path.name.removesuffix(".json") + ".frames.json")
@@ -441,8 +420,7 @@ SOURCES = sorted(
     "languages", [None, LanguageSettings(preferred_audio=["ja", "en"], preferred_subtitle=["en"])]
 )
 def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | None) -> None:
-    """One rule engine: a preset without explicit rules gives exactly the tracks, decisions
-    and issues of 1a's selection stage (decisions 0018, 0031) for every recorded probe."""
+    """A preset without explicit rules gives the selection stage's tracks, decisions and issues."""
     for path in SOURCES:
         source = _recorded(path)
         for preset in builtin_presets():
@@ -480,6 +458,5 @@ def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | No
 
 
 def test_a_streams_of_the_wrong_kind_list_is_fine() -> None:
-    """``AudioStream`` / ``SubtitleStream`` type check of the helpers."""
     assert isinstance(example().audio[0], AudioStream)
     assert isinstance(example().subtitles[0], SubtitleStream)

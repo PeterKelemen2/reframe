@@ -1,5 +1,4 @@
-"""C-12 selection stage (03 §Audio defaults part 1, §Subtitles "Subtitle defaults"; decision
-0031): one table test per setting, for audio and for subtitles."""
+"""The track selection stage: one table test per setting, for audio and for subtitles."""
 
 from __future__ import annotations
 
@@ -68,9 +67,6 @@ def check_invariants(selection: Selection[Any], streams: Sequence[Any]) -> None:
     assert all(p.why for p in selection.picks)
 
 
-# =========================================================================== languages
-
-
 def test_listed_languages_in_order() -> None:
     streams = [audio(1, "jpn"), audio(2, "eng"), audio(3, "hun")]
     selection = run(streams, languages=["hu", "en"])
@@ -103,7 +99,7 @@ def test_listed_languages_in_order() -> None:
 )
 def test_language_identity(listed: list[str], language: str, ietf: str, expected: bool) -> None:
     """Languages are compared as languages, not strings; a region or script subtag of the
-    listed language must be on the track (decision 0031, ``reframe.languages.matches``)."""
+    listed language must be on the track (``reframe.languages.matches``)."""
     streams = [audio(1, language, ietf=ietf)]
     selection = run(streams, languages=listed, no_match="none")
     assert taken(selection) == ([1] if expected else [])
@@ -120,8 +116,7 @@ def test_languages_from_settings() -> None:
 
 
 def test_keep_everything_without_languages() -> None:
-    """No language anywhere: every track, in source order, whatever the other settings say
-    (decision 0031, as M2 did: decision 0018)."""
+    """No language anywhere: every track, in source order, whatever the other settings say."""
     streams = [
         audio(1, "jpn"),
         audio(2, "eng", comment=True),
@@ -145,8 +140,6 @@ def test_no_tracks() -> None:
     assert selection.picks == ()
     assert not selection.no_listed_language
 
-
-# =========================================================================== tracks per language
 
 HUN_TWO = [audio(1, "hun", "ac3", 6, 448), audio(2, "hun", "ac3", 2, 192), audio(3, "eng")]
 
@@ -174,8 +167,6 @@ def test_tracks_per_language(setting: str, expected: list[int], dropped: dict[in
     if setting == "all":
         assert why(selection, 2) == "Hungarian: all matching tracks"
 
-
-# =========================================================================== tie-break
 
 TIE = [
     audio(1, "hun", "ac3", 2, 192),
@@ -224,8 +215,6 @@ def test_subtitle_tie_break_prefers_full_subtitles() -> None:
     assert taken(run(streams, languages=["en"])) == [4]
 
 
-# =========================================================================== undetermined
-
 UND = [audio(1, None), audio(2, "und"), audio(3, "eng"), audio(4, "qaa")]
 
 
@@ -260,8 +249,6 @@ def test_a_listed_und_takes_undetermined_tracks() -> None:
     assert is_undetermined("zxx") is False
     assert is_undetermined("not a language") is True
 
-
-# =========================================================================== other languages
 
 OTHERS = [
     audio(1, "jpn", "ac3", 2, 192),
@@ -301,8 +288,6 @@ def test_other_languages(setting: str, expected: list[int]) -> None:
         )
         assert [selection.picks[i].group for i in (0, 3)] == ["other", "language"]
 
-
-# =========================================================================== no listed language
 
 NO_HUNGARIAN = [audio(1, "jpn"), audio(2, "fre", default=True), audio(3, "ger")]
 
@@ -358,16 +343,14 @@ def test_no_listed_language_with_other_languages_kept() -> None:
 
 
 def test_a_listed_commentary_does_not_count_as_found() -> None:
-    """Only a **main** track in a listed language counts (0031 §3, core-complete review R1-1):
-    the Hungarian commentary does not, so the no-match rule takes the Japanese track."""
+    """Only a **main** track in a listed language counts: the Hungarian commentary does not,
+    so the no-match rule takes the Japanese track."""
     streams = [audio(1, "jpn"), audio(2, "hun", comment=True)]
     selection = run(streams, languages=["hu"], no_match="first_track")
     assert selection.no_listed_language
     assert taken(selection) == [1]
     assert why(selection, 1) == "No listed language found (Hungarian): the first track"
 
-
-# =========================================================================== commentary
 
 EXTRAS = [
     audio(1, "eng"),
@@ -441,8 +424,6 @@ def test_commentary_subtitles() -> None:
     assert taken(kept) == [1, 2]
 
 
-# =========================================================================== order
-
 ORDER = [
     audio(1, "eng"),
     audio(2, "hun"),
@@ -477,11 +458,8 @@ def test_extras_follow_the_main_tracks_in_source_order() -> None:
     assert taken(selection) == [2, 1]
 
 
-# =========================================================================== subtitles
-
-
 def test_subtitle_defaults_take_nothing_without_a_match() -> None:
-    """The subtitle selection's own defaults: no match → none (no error for subtitles)."""
+    """The subtitle defaults: no match → none, and no error for subtitles."""
     from reframe.models import SubtitleDefaults
 
     streams = [subtitle(1, "jpn"), subtitle(2, "fre", default=True)]

@@ -1,7 +1,4 @@
-"""Property tests of the audio and subtitle defaults (C-12, decision 0031): for any source
-and any settings, every source track has exactly one decision, at most one track per kind is
-the default, outputs come only from selected tracks, at most one subtitle is burned in, and
-the output order follows the ``order`` setting."""
+"""Property tests of the audio and subtitle defaults, over generated sources and settings."""
 
 from __future__ import annotations
 
@@ -172,8 +169,7 @@ def cases(draw: st.DrawFn) -> tuple[MediaSource, JobTemplate, LanguageSettings]:
 
 
 def _first_positions(sources: list[int]) -> list[int]:
-    """The source streams in output order, one entry per track (extra outputs of the same
-    track are adjacent)."""
+    """Source streams in output order, one entry per track (its extra outputs are adjacent)."""
     seen: list[int] = []
     for index in sources:
         if index not in seen:
@@ -209,7 +205,6 @@ def _check_order(
 
 
 def _check(draft: TrackDraft, media: MediaSource, template: JobTemplate, langs: Any) -> None:
-    # One decision per source track, in source order.
     assert [d.source_stream for d in draft.decisions] == [s.index for s in media.audio]
     assert [d.source_stream for d in draft.subtitle_decisions] == [s.index for s in media.subtitles]
     assert {d.kind for d in draft.decisions} <= {"audio"}
@@ -219,10 +214,8 @@ def _check(draft: TrackDraft, media: MediaSource, template: JobTemplate, langs: 
         if not d.selected:
             assert (d.outputs, d.subtitle_outputs, d.rule) == ([], [], None)
             assert d.reason == d.selection
-    # At most one default track per kind.
     assert sum(t.metadata.default for t in draft.audio) <= 1
     assert sum(t.metadata.default for t in draft.subtitles) <= 1
-    # Outputs only from selected tracks, and every output is in its track's decision.
     selected_audio = {d.source_stream for d in draft.decisions if d.selected}
     assert {t.source_stream for t in draft.audio} <= selected_audio
     assert sorted(t.model_dump_json() for t in draft.audio) == sorted(
@@ -234,11 +227,9 @@ def _check(draft: TrackDraft, media: MediaSource, template: JobTemplate, langs: 
         (t for d in draft.subtitle_decisions for t in d.subtitle_outputs),
         key=draft.subtitles.index,
     )
-    # At most one burned-in subtitle; extra outputs are never default.
     assert sum(t.action == "burn" for t in draft.subtitles) <= 1
     for d in draft.decisions:
         assert not any(t.metadata.default for t in d.outputs[1:])
-    # The output order.
     audio_selection = template.audio_defaults.selection
     listed = effective_languages(audio_selection.languages, langs.preferred_audio)
     order = _first_positions([t.source_stream for t in draft.audio if t.source_stream])
