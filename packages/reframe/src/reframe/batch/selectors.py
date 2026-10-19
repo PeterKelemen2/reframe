@@ -1,36 +1,13 @@
-"""Track selectors: which source tracks a track rule takes, with relaxation (04 §Track
-rules, §Resolving rules in another file; 05 §C-12, M7).
+"""Track selectors: which source tracks a track rule takes, with relaxation.
 
-A :class:`~reframe.models.TrackSelector` filters the tracks of its kind:
+When a selector finds no candidate, its title pattern, profiles, channels and codecs are dropped
+one at a time, in :data:`RELAX_ORDER`, and each dropped field is recorded. Languages and roles
+are never dropped.
 
-==================  =================================================================
-Field               A track matches when
-==================  =================================================================
-``languages``       its effective language matches one of them
-                    (:func:`reframe.languages.matches`: ``pt`` takes ``pt-BR``); ``und``
-                    takes undetermined tracks. The list is an order of preference.
-``codecs``          its ffprobe codec name is one of them (``truehd``, ``dts``)
-``profiles``        its commercial name or ffprobe profile is one of them
-                    (``DTS-HD MA``, ``TrueHD Atmos``)
-``roles``           it has at least one of them (C-3's roles; ``main`` when none)
-``exclude_roles``   it has none of them
-``channels``        it has exactly that many channels
-``title_pattern``   the case-insensitive regular expression is found in its title
-==================  =================================================================
-
-The candidates are ordered by the language preference, then by ``sort``: ``source_order``;
-``most_channels``; ``highest_bitrate`` = decision 0031's best quality (lossless first, then
-the highest known bit rate; subtitles: full before SDH before forced). ``nth`` picks one.
-
-**Relaxation** (04): when the full selector finds no candidate, the fields are dropped one at
-a time in a fixed order: ``title_pattern``, ``profiles``, ``channels``, ``codecs``. Language
-and roles are never dropped. Each dropped field is recorded.
-
-**Several rules** (:func:`match_rules`): every rule is first matched with its full selector;
-a relaxed rule then never takes a track that another rule matches exactly (a track picked by
-hand, ``stream``, is such a match), nor one an earlier relaxed rule took (decision 0040).
-Exact matches may share a track (one source track in two outputs is a choice, for example a
-passthru and a stereo AAC copy).
+Among several rules, a relaxed rule never takes a track that another rule matches exactly (a
+track picked by hand is such a match), nor a track that an earlier relaxed rule took. Exact
+matches may share a track: one source track in two outputs is a choice, as a passthru and a
+stereo copy of one track are.
 
 Pure: no I/O.
 """
@@ -64,17 +41,16 @@ __all__ = [
     "title_regex",
 ]
 
-#: The fields dropped one at a time when a selector finds nothing (04: never the language or
-#: the roles).
+#: The fields dropped one at a time when a selector finds nothing; never the language or the roles.
 RELAX_ORDER: tuple[str, ...] = ("title_pattern", "profiles", "channels", "codecs")
-#: How a dropped field is named in ``matched without title, profile``.
+#: How a dropped field is named in the match message.
 RELAX_WORDS = {
     "title_pattern": "title",
     "profiles": "profile",
     "channels": "channels",
     "codecs": "codec",
 }
-#: The words of a selector's sort (``2 candidates, picked #3 (source order)``).
+#: How a selector's sort is named in the match message.
 SORT_WORDS = {
     "source_order": "source order",
     "most_channels": "most channels",
@@ -199,9 +175,6 @@ def relaxation_steps(selector: TrackSelector) -> list[tuple[tuple[str, ...], Tra
     return steps
 
 
-# --------------------------------------------------------------------------- several rules
-
-
 @dataclass(frozen=True, slots=True)
 class RulePick:
     """What one rule took in one file."""
@@ -225,10 +198,9 @@ def match_rules(
     labels: Sequence[str],
     list_path: str,
 ) -> tuple[list[RulePick], list[ValidationIssue]]:
-    """Match every rule of one kind against the tracks of that kind (04 §Resolving rules):
-    one :class:`RulePick` per rule, with its matrix cell (``exact``, ``relaxed``,
-    ``ambiguous``, ``missing`` or ``skipped``), and an issue for every cell that is not an
-    exact match (``labels``: the rules' column labels; ``list_path``: ``audio_rules``).
+    """Match every rule of one kind against the tracks of that kind: one :class:`RulePick` per
+    rule, and an issue for every cell that is not an exact match. ``labels``: the rules' column
+    labels; ``list_path``: the template's list of rules, for the issue paths.
 
     A rule whose selector is of the other kind, or whose title pattern is not a regular
     expression, matches nothing and is an error.
@@ -270,7 +242,6 @@ def match_rules(
         patterns.append(compiled)
         usable.append(ok)
 
-    # 1. Every rule with its full selector.
     exact: list[list[Track]] = [
         candidates(rule.selector, tracks, title=patterns[n]) if usable[n] else []
         for n, rule in enumerate(rules)
@@ -297,7 +268,7 @@ def match_rules(
         if selector.stream is not None:
             picks.append(_pinned(kind, n, rule, tracks))
             continue
-        if selector.languages == []:  # takes no track by design (decision 0040)
+        if selector.languages == []:  # takes no track by design
             message = "the rule takes no track"
             picks.append(RulePick(n, _cell(kind, n, "skipped", [], [], (), message), []))
             continue
@@ -377,8 +348,6 @@ def _cell(
 
 
 def _pinned(kind: Kind, n: int, rule: OutputTrackRule, tracks: Sequence[Track]) -> RulePick:
-    """A rule whose selector names a stream (a hand pick): that stream, if it is a track of
-    this kind."""
     index = rule.selector.stream
     track = next((t for t in tracks if t.descriptor.index == index), None)
     if track is None:

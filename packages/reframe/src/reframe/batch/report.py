@@ -1,21 +1,6 @@
-"""The match report as plain text (04 §Resolving rules, §Resolution matrix): the marks of
-04 and the matrix of ``reframe batch``, one row per file and one column per track rule.
-
-==========  ====  ==========================================================
-Cell        Mark  Text
-==========  ====  ==========================================================
-exact       ✓     ``✓ #1`` (several tracks for a ``multiple`` rule: ``✓ #1 #2``)
-relaxed     ≈     ``≈ #2 (title, profile)``: the selector fields dropped
-ambiguous   ≈     ``≈ #3 (2 candidates)``
-missing     ✗     ``✗ none`` (the rule is required: an error)
-skipped     (en   an en dash and ``skipped`` (the rule is optional)
-            dash)
-==========  ====  ==========================================================
-
-A row's mark is ✓ / ⚠ / ✗ (``Resolution.status``). Tracks are named by their absolute stream
-index, as ``reframe probe`` and ``reframe plan`` name them (04's matrix numbers audio and
-subtitle tracks separately; decision 0040). With ``unicode=False`` the marks are ASCII (a
-console that cannot print them).
+"""The match report as plain text: the matrix of ``reframe batch``, one row per file and one
+column per track rule. Tracks are named by their absolute stream index, not by their position
+among the tracks of one kind.
 
 Pure: no I/O.
 """
@@ -57,7 +42,7 @@ _NONE = "—"
 
 
 def match_cell(match: TrackMatch, *, unicode: bool = True) -> str:
-    """One matrix cell (see the module doc)."""
+    """One matrix cell: the mark, the streams, and the note for a relaxed or ambiguous match."""
     mark = (CELL_MARKS if unicode else CELL_ASCII)[match.status]
     streams = " ".join(f"#{index}" for index in match.streams)
     match match.status:
@@ -74,7 +59,7 @@ def match_cell(match: TrackMatch, *, unicode: bool = True) -> str:
 
 
 def video_cell(row: Resolution, *, unicode: bool = True) -> str:
-    """``✓ 1080p``: the output size of the video (C-16's ``{resolution}``)."""
+    """The output size as a cell, ``✓ 1080p``, from the ``resolution`` naming variable."""
     marks = CELL_MARKS if unicode else CELL_ASCII
     if row.job is None:
         return marks["missing"]
@@ -83,8 +68,8 @@ def video_cell(row: Resolution, *, unicode: bool = True) -> str:
 
 
 def name_cell(row: Resolution) -> str:
-    """The output name: the template's relative path (subfolders too), or the file name when
-    the path is not the template's (a name changed to ``Name (1).mkv``)."""
+    """The output name: the template's relative path (subfolders too), or only the file name
+    when the output was renamed away from the template."""
     if row.job is None or row.job.output.path is None:
         return _NONE
     path = row.job.output.path
@@ -94,16 +79,13 @@ def name_cell(row: Resolution) -> str:
 
 
 def _width(text: str) -> int:
-    """The width on a terminal: east Asian wide and full-width characters count twice."""
     return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
 
 
 def matrix_lines(resolution: BatchResolution, *, unicode: bool = True) -> list[str]:
-    """The resolution matrix as text lines: a header, a rule, then one row per file: the
-    episode (:func:`~reframe.batch.grouping.episode_labels`: with the season when the rows
-    span seasons) and the row's mark, the video, one cell per track rule (the column's short
-    name: ``A1``, ``S2``; a cell is in the column of its rule, explicit or compiled), the
-    output name. Columns are padded with spaces; no line ends in a space."""
+    """The resolution matrix as text lines, one per file under a header and a rule. A cell is in
+    the column of its rule, explicit or compiled from the defaults. ``unicode=False`` gives ASCII
+    marks for a console that cannot print them."""
     rules = [c for c in resolution.columns if c.kind in ("audio", "subtitle")]
     header = ["File", "V", *(c.label.partition(" ")[0] for c in rules), "Output name"]
     marks = ROW_MARKS if unicode else ROW_ASCII
