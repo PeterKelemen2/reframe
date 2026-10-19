@@ -1,13 +1,6 @@
-"""Rule cases of the advanced encoder options (C-6 option
-sets, ``reframe.validation.video``), added to ``test_rules.CASES`` (see ``EXTRA_CASE_FILES``
-there).
+"""Rule cases of the advanced encoder options (``reframe.validation.video``).
 
-Each case: an issue code and path, a change of the clean scenario that must produce it
-(positive), and a close change that must not (negative). ``h`` is a namespace with the helpers
-of ``test_rules.py`` (``h.Case``, ``h.ERR`` / ``h.WARN`` / ``h.INFO``, ``h.video``, ``h.both``, …).
-
-Every rule here is behaviour recorded with the encoders (testdata/README.md "Advanced encoder
-options (C-6, complete option sets)", ``tests/validation/test_options_ffmpeg.py``).
+Each rule is behaviour recorded with the encoders (testdata/README.md, "Advanced encoder options").
 """
 
 from __future__ import annotations
@@ -21,7 +14,7 @@ def cases(h: Any) -> list[Any]:
     case, video, warn, err = h.Case, h.video, h.WARN, h.ERR
     vp9 = {"encoder": "libvpx-vp9", "rate_control": ConstantQuality(value=30)}
     return [
-        # ---- encoder.option_inactive: the builder leaves the option out
+        # encoder.option_inactive: the builder leaves the option out
         case(
             "x265 amp without rectangular partitions",
             "encoder.option_inactive",
@@ -78,7 +71,7 @@ def cases(h: Any) -> list[Any]:
                 encoder="libvpx-vp9", rate_control=AverageBitrate(), advanced={"undershoot-pct": 50}
             ),
         ),
-        # ---- encoder.option_ignored: the encoder changes the value without an error
+        # encoder.option_ignored: the encoder changes the value without an error
         case(
             "x264 Blu-ray compatibility lowers the B-frames",
             "encoder.option_ignored",
@@ -146,7 +139,7 @@ def cases(h: Any) -> list[Any]:
             video(encoder="libsvtav1", advanced={"irefresh-type": "1", "hierarchical-levels": "3"}),
             video(encoder="libsvtav1", advanced={"irefresh-type": "2", "hierarchical-levels": "3"}),
         ),
-        # ---- encoder.option_conflict: the encoder refuses to start
+        # encoder.option_conflict: the encoder refuses to start
         case(
             "x265 minimum CU above the CTU",
             "encoder.option_conflict",
@@ -203,7 +196,6 @@ def cases(h: Any) -> list[Any]:
             video(**vp9, advanced={"qmin": 31}),
             video(**vp9, advanced={"qmin": 30}),
         ),
-        # ---- core-complete review (decision 0035 follow-up): R5-7 VBV, R5-8 HDR texts
         case(
             "x264 VBV maximum rate without a buffer",
             "encoder.option_inactive",
@@ -235,7 +227,6 @@ def cases(h: Any) -> list[Any]:
                 },
             ),
         ),
-        # ---- custom parameters (decision 0035 follow-up, core-complete review R5-1)
         case(
             "x265 custom parameter that writes a file",
             "encoder.custom_param_file",

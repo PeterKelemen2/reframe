@@ -1,4 +1,4 @@
-"""Version parsing (C-1), from real captured outputs and from the real binaries."""
+"""Version parsing, from real captured outputs and from the real binaries."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from reframe_testing import media
 
 DATA = Path(__file__).parent / "data"
 
-# file, tool, version token, release, series, avcodec, avformat, meets 7.0, "Exiting" line
 CASES = [
     (
         ft.DATA_DIR / "ffmpeg_version.stdout.txt",
@@ -139,7 +138,7 @@ def test_real_version_outputs(
     exiting: bool,
 ) -> None:
     text = path.read_text(encoding="utf-8")
-    assert ("Exiting with exit code 0" in text) is exiting  # FFmpeg 8+ prints it; it is ignored
+    assert ("Exiting with exit code 0" in text) is exiting
     parsed = parse_ffmpeg_version(text)
     assert parsed is not None
     assert parsed.tool == tool
@@ -280,7 +279,7 @@ def test_mkvpropedit_version() -> None:
 
 
 def test_mediainfo_version() -> None:
-    # MediaInfo CLI output format (``mediainfo --Version``); mediainfo is not installed here.
+    # MediaInfo CLI output format (``mediainfo --Version``).
     parsed = parse_mediainfo_version("MediaInfo Command line, \nMediaInfoLib - v24.06\n")
     assert parsed is not None
     assert parsed.version == "24.06"

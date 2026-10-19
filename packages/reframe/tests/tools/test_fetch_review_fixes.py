@@ -1,8 +1,4 @@
-"""``reframe tools fetch`` after the core-complete review (decision 0038 "Follow-up
-(core-complete review, 2026-10-16)"): R5-5 (a cancel after the swap), the suspected findings
-(a slow server outlasting the stop wait, a link chain that leaves the build folder, work
-folders left by a killed fetch). Each test failed before its fix. Local server only, **never
-the network**."""
+"""Regression tests for ``reframe tools fetch``: cancels, slow servers, links, stale folders."""
 
 from __future__ import annotations
 
@@ -71,19 +67,12 @@ def _leftovers(data_dir: Path) -> list[str]:
     return sorted(p.name for p in tools.glob(".fetch-*")) if tools.exists() else []
 
 
-# --------------------------------------------------------------------------- R5-5
-
-
 @POSIX_ONLY
 @pytest.mark.anyio
 @pytest.mark.parametrize("when", ["during discovery", "during the swap"])
 async def test_r5_5_a_cancel_after_the_swap_finishes_and_says_so(
     tmp_path: Path, server: LocalServer, monkeypatch: pytest.MonkeyPatch, when: str
 ) -> None:
-    """The reviewer's ``test_r5_cancel_during_discovery_reports_cancelled_but_installed``: the
-    task ended cancelled with the new build installed and tool discovery cut off. Now
-    discovery runs to its end, nothing is left behind, and the task's message says that the
-    build was installed (the task manager still reports the cancel)."""
     data = fake_archive("linux-x64", tmp_path / "work")
     server.add("/ffmpeg-test-linux64.tar.xz", data)
     manifest = write_manifest(
@@ -149,8 +138,6 @@ async def test_r5_5_the_cli_says_what_was_installed_after_an_interrupt(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Ctrl+C after the swap printed "Nothing was installed." while the new build was in
-    place. The CLI now reads the install marker."""
     data = fake_archive("linux-x64", tmp_path / "work")
     server.add("/a.tar.xz", data)
     monkeypatch.setattr(
@@ -208,14 +195,8 @@ async def test_r5_5_an_interrupt_before_the_swap_still_installs_nothing(
     assert "Nothing was installed." in capsys.readouterr().err
 
 
-# --------------------------------------------------------------------------- a slow server
-
-
 @pytest.mark.anyio
 async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: LocalServer) -> None:
-    """The worker thread checked the cancel once per 1 MiB ``read``: at 160 KB/s (64 KiB every
-    0.4 s) a cancel waited for the rest of the MiB, and below about 35 KB/s for longer than
-    the 30 s the task waits for its thread. It now reads what has arrived."""
     other = foreign_platform()
     url = f"/slow.{_ext(other)}"
     data = fake_archive(other, tmp_path / "work") + b"\0" * (4 << 20)
@@ -243,9 +224,6 @@ async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: Lo
     assert _leftovers(data_dir) == []
 
 
-# --------------------------------------------------------------------------- link chains
-
-
 def _archive_with(*links: tuple[str, str]) -> bytes:
     root = LINUX_ROOT
     members = [
@@ -262,7 +240,7 @@ def _archive_with(*links: tuple[str, str]) -> bytes:
 @pytest.mark.parametrize(
     "links",
     [
-        # The reviewer's chain: each link is lexically inside the root; u points above it.
+        # Each link is lexically inside the root; u points above it.
         (("s/t", ".."), ("s/u", "t/..")),
         # The same in the other order (links are checked against all others).
         (("s/u", "t/.."), ("s/t", "..")),
@@ -285,8 +263,8 @@ def test_a_link_chain_that_leaves_the_build_folder_is_refused(
 
 
 def test_a_member_inside_a_linked_folder_is_refused(tmp_path: Path) -> None:
-    """``s/t -> ..`` is inside the folder, but a link stored as ``s/t/evil -> ../x`` is written
-    at ``evil`` (through ``t``) and points above the folder; its name alone looks harmless."""
+    """``s/t/evil -> ../x`` is written through the link ``s/t -> ..``, and it points
+    above the folder."""
     root = LINUX_ROOT
     members = [
         (tar_dir(root), None),
@@ -316,16 +294,11 @@ def test_links_inside_the_build_folder_are_kept(tmp_path: Path) -> None:
     assert (dest / LINUX_ROOT / "s" / "x").resolve() == (dest / LINUX_ROOT / "bin" / "ffmpeg")
 
 
-# --------------------------------------------------------------------------- stale work folders
-
-
 @pytest.mark.anyio
 async def test_a_killed_fetchs_work_folder_is_removed_by_the_next_fetch(
     tmp_path: Path, server: LocalServer
 ) -> None:
-    """A SIGKILL during a fetch leaves ``<data dir>/tools/.fetch-*`` (the archive, the
-    extracted build, the previous build); a fetch now removes such a folder once nothing has
-    been written in it for six hours, and never a fresh one (another fetch may be running)."""
+    """A killed fetch leaves its work folder. A fresh one stays: another fetch may be running."""
     other = foreign_platform()
     url = f"/a.{_ext(other)}"
     data = fake_archive(other, tmp_path / "work")

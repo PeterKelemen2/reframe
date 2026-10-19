@@ -1,6 +1,4 @@
-"""Test scenarios for C-8: a clean job on a typical source, a fake file system, and the generic
-fix check ("every fix patch, when applied, removes its issue", 05 §C-8 Done when).
-
+"""Scenarios for the validation tests: a clean job, a fake file system and the fix check.
 Loaded by path from the test modules (pytest runs with ``--import-mode=importlib``).
 """
 
@@ -55,9 +53,6 @@ OUTPUT = Path("/out/Movie (2019).mkv")
 GB = 1_000_000_000
 
 
-# --------------------------------------------------------------------------- file system
-
-
 class FakeFs:
     """Files (with sizes) and folders in memory. Paths of one flavour (POSIX or Windows);
     ``case_insensitive`` compares them case-insensitively, as NTFS and APFS do."""
@@ -93,7 +88,6 @@ class FakeFs:
         self.add_dir(path.parent)
         self.files[self._key(path)] = path
 
-    # FileSystemView
     def exists(self, path: PurePath) -> bool:
         key = self._key(path)
         return key in self.files or key in self.dirs
@@ -114,7 +108,6 @@ class FakeFs:
     def same_file(self, a: PurePath, b: PurePath) -> bool:
         return self.exists(a) and self.exists(b) and self._key(a) == self._key(b)
 
-    # NamingFs
     def list_files(self, folder: Path) -> list[str] | None:
         if not self.is_dir(folder):
             return None
@@ -125,12 +118,7 @@ class FakeFs:
         return None
 
 
-# --------------------------------------------------------------------------- inputs
-
-
 def make_source(path: Path = SOURCE) -> MediaSource:
-    """A 10-minute 1080p H.264 film: AC-3 5.1 (stream 1), AAC stereo (2), SRT (3), PGS (4),
-    two chapters."""
     return MediaSource(
         ref=SourceRef(path=path),
         container=ContainerInfo(
@@ -191,8 +179,7 @@ def make_source(path: Path = SOURCE) -> MediaSource:
 
 
 def make_job(source: MediaSource) -> JobSettings:
-    """A job with no issues: x265 RF 22 into MKV, the AC-3 encoded to AAC stereo, the AAC
-    passed through, both subtitles copied, no crop."""
+    """A job with no issues."""
     return JobSettings(
         source=source.ref,
         output=OutputSettings(container="mkv", path=OUTPUT),
@@ -216,8 +203,8 @@ def make_caps(
     *,
     filters: list[str] | None = None,
 ) -> CapabilitySnapshot:
-    """Every encoder of the definitions available (unless ``states`` says otherwise), every
-    filter of the definitions in the build and usable."""
+    """Every encoder and filter of the definitions available, unless ``states`` or ``filters``
+    says otherwise."""
     states = states or {}
     encoders: dict[str, EncoderStatus] = {}
     for encoder_id in [*DEFS.video_encoders, *DEFS.audio_encoders]:
@@ -260,9 +247,6 @@ def make_fs() -> FakeFs:
     return FakeFs(files=[SOURCE], dirs=[Path("/out")])
 
 
-# --------------------------------------------------------------------------- scenario
-
-
 @dataclass
 class Scenario:
     """Everything ``validate`` takes. Tests change a fresh one (``base()``) and validate."""
@@ -276,7 +260,7 @@ class Scenario:
     definitions: Definitions = field(default_factory=lambda: DEFS)
     naming: NamingOptions | None = None
     rediscover: Callable[[AppSettings], ToolSet] | None = None
-    """Tool discovery for ``settings`` fixes of tool issues (C-1 reads Settings)."""
+    """Tool discovery for ``settings`` fixes of tool issues."""
 
     def validate(self) -> list[ValidationIssue]:
         return validate(
@@ -341,8 +325,7 @@ def check_fix(
 
 def check(scenario: Scenario) -> list[ValidationIssue]:
     """Validate, then apply every fix of every issue and validate again: the issue (same code
-    and path) must be gone, and no new error may appear. The generic half of C-8's "Done
-    when"."""
+    and path) must be gone, and no new error may appear."""
     issues = scenario.validate()
     assert not found(issues, "validation.rule_failed"), issues
     for issue in issues:
@@ -353,9 +336,6 @@ def check(scenario: Scenario) -> list[ValidationIssue]:
 
 #: Every (code, fix label) that :func:`check` applied, for the coverage assertion.
 FIXES_CHECKED: list[tuple[str, str]] = []
-
-
-# --------------------------------------------------------------------------- templates
 
 
 @dataclass
