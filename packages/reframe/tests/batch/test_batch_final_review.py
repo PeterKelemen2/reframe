@@ -1,13 +1,7 @@
-"""C-12 / C-15 (``Reframe.batch``, ``reframe.jobs``): the fixes of the final review of the fix
-rounds (reviewer R-A on core-complete 5dbf152, 2026-10-17; decision 0040, "Follow-up (final
-review, 2026-10-17)").
+"""Batch checks that compare files by identity, and overrides that keep the compiled columns.
 
-- RA-1: the name checks compare files, not spellings (``reframe.jobs.file_key``): a link, a
-  linked folder or a hard link to a file is that file, as in the queue
-  (``reframe.queue.files.same_file``). Unit tests of the key (also the Windows rule, with
-  mocks) and of ``OutputClaims``; ``Reframe.batch`` with the real ffprobe.
-- RA-3: a per-file override that changes the rules the defaults compile to is
-  ``batch.override_invalid``, so a row's cells stay under their columns.
+A link or a hard link is the same file as its target. An override that changes the rules the
+defaults compile to is invalid, so each cell stays under its column.
 """
 
 from __future__ import annotations
@@ -63,13 +57,8 @@ E02 = media.anime_file_name(1, 2)
 E01_OUT = "Anime.Show.S01E01.Pilot.mkv"
 
 
-# --------------------------------------------------------------------------- RA-1: the key
-
-
 @pytest.fixture
 def tree(tmp_path: Path) -> SimpleNamespace:
-    """``real/a.mkv``, ``real/b.mkv``, ``link`` → ``real``, ``a-link.mkv`` → ``real/a.mkv`` and
-    ``hard.mkv``, a hard link to ``real/b.mkv``."""
     real = tmp_path / "real"
     real.mkdir()
     a, b = real / "a.mkv", real / "b.mkv"
@@ -85,9 +74,6 @@ def tree(tmp_path: Path) -> SimpleNamespace:
 
 
 def test_ra1_file_key_compares_files(tree: SimpleNamespace) -> None:
-    """A symbolic link, a linked folder, a hard link and a relative spelling are the file; two
-    files are two; an output that does not exist yet is its path with the folder's links
-    resolved."""
     a = file_key(tree.a)
     assert file_key(tree.a_link) == a
     assert file_key(tree.link / "a.mkv") == a
@@ -103,8 +89,6 @@ def test_ra1_file_key_compares_files(tree: SimpleNamespace) -> None:
 
 
 def test_ra1_file_key_agrees_with_the_queue(tree: SimpleNamespace) -> None:
-    """The key and the queue's ``same_file`` (R4-1) agree on links, hard links, linked
-    folders, new names and two files."""
     pairs = [
         (tree.a, tree.a_link),
         (tree.a, tree.link / "a.mkv"),
@@ -123,11 +107,7 @@ def _stat(dev: int, ino: int) -> os.stat_result:
 
 
 def test_ra1_file_key_on_windows_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Windows rule, with the OS calls mocked (Linux cannot show it): an existing file is
-    its volume serial number and file index, whatever the spelling (a mapped drive and its UNC
-    path, another case); a file index 0 (unknown) and a new output fall back to the path,
-    which ``realpath`` resolves (``GetFinalPathNameByHandle`` gives a mapped drive's UNC path)
-    and ``normcase`` lower-cases."""
+    """On Windows, ``realpath`` gives a mapped drive's UNC path (``GetFinalPathNameByHandle``)."""
     files = {
         "z:\\show\\e01.mkv": _stat(0x1234, 77),
         "\\\\server\\share\\show\\e01.mkv": _stat(0x1234, 77),
@@ -170,9 +150,6 @@ def _codes(issues: list[ValidationIssue]) -> list[str]:
 
 
 def test_ra1_output_claims_compare_files(tree: SimpleNamespace) -> None:
-    """``OutputClaims`` with links: an output named through the linked folder (or a hard link)
-    is the other file of the command; two outputs that are one new file through two spellings
-    collide; the job's own source is left to C-8."""
     claims = OutputClaims({tree.a: "[1/2] a.mkv", tree.link / "b.mkv": "[2/2] b.mkv"})
     (issue,) = claims.check(_job(tree.a, tree.real / "b.mkv"), "[1/2] a.mkv")
     assert issue.code == "batch.output_is_source"
@@ -181,7 +158,8 @@ def test_ra1_output_claims_compare_files(tree: SimpleNamespace) -> None:
     assert _codes(claims.check(_job(tree.a, tree.hard), "[1/2] a.mkv")) == [
         "batch.output_is_source"
     ]
-    assert claims.check(_job(tree.a, tree.a_link), "[1/2] a.mkv") == []  # its own source: C-8
+    # The job's own source is not a claim here.
+    assert claims.check(_job(tree.a, tree.a_link), "[1/2] a.mkv") == []
     assert claims.check(_job(tree.a, tree.link / "new.mkv"), "[1/2] a.mkv") == []
     assert _codes(claims.check(_job(tree.b, tree.real / "new.mkv"), "[2/2] b.mkv")) == [
         "batch.name_collision"
@@ -189,8 +167,7 @@ def test_ra1_output_claims_compare_files(tree: SimpleNamespace) -> None:
 
 
 def test_ra1_find_media_files_takes_a_file_once(tree: SimpleNamespace) -> None:
-    """A folder given as ``real`` and as ``link``, a file through a link and a hard link: each
-    file once, in the spelling it was first given."""
+    """Each file once, in the spelling it was first given."""
     found = find_media_files([tree.link, tree.real, tree.a_link, tree.hard])
     assert found.files == [tree.link / "a.mkv", tree.link / "b.mkv"]
     assert found.missing == []
@@ -200,8 +177,6 @@ def test_ra1_find_media_files_takes_a_file_once(tree: SimpleNamespace) -> None:
 def test_ra1_find_media_files_keeps_two_files_whose_names_differ_in_case(
     tmp_path: Path,
 ) -> None:
-    """Two existing files are compared by identity, not by a case-folded name: on a file
-    system that keeps case (Linux) ``E01.mkv`` and ``e01.mkv`` are two files."""
     upper = tmp_path / "E01.mkv"
     upper.write_bytes(b"1")
     lower = tmp_path / "e01.mkv"
@@ -212,8 +187,7 @@ def test_ra1_find_media_files_keeps_two_files_whose_names_differ_in_case(
 
 
 def test_ra1_file_key_never_raises_for_a_bad_path(tmp_path: Path) -> None:
-    """A path with a NUL character: ``os.stat`` and ``os.path.realpath`` raise ``ValueError``
-    (RB-2 of the review); the key falls back to the absolute path, and the checks go on."""
+    """A NUL character makes ``os.stat`` and ``realpath`` raise: the key uses the absolute path."""
     bad = str(tmp_path / "a\x00b.mkv")
     assert file_key(bad) == "path:" + os.path.normcase(os.path.abspath(bad)).casefold()
     source = tmp_path / "a.mkv"
@@ -222,12 +196,7 @@ def test_ra1_file_key_never_raises_for_a_bad_path(tmp_path: Path) -> None:
     assert claims.check(_job(source, Path(bad)), "[1/1] a.mkv") == []
 
 
-# --------------------------------------------------------------------------- RA-3
-
-
 def _jpn_template() -> JobTemplate:
-    """*H.265 MKV 1080p* with the audio languages ``["jpn"]`` and other languages kept: the
-    compiled columns A1 jpn, A2 no listed language, A3 other languages (the reviewer's case)."""
     base: JobTemplate = A.builtin("h265-mkv-1080p")
     selection = base.audio_defaults.selection.model_copy(
         update={"languages": ["jpn"], "other_languages": "keep_all"}
@@ -241,10 +210,8 @@ def _replace(path: str, value: object) -> list[JsonPatchOp]:
 
 
 def test_ra3_an_override_that_changes_the_compiled_rules_is_invalid() -> None:
-    """E02's override ``languages ["eng", "jpn"]`` compiles to A1 eng, A2 jpn, A3 no listed
-    language, A4 other languages: its cells would land under the template's A1 jpn / A2 no
-    listed language columns (the English dub under "A1 jpn"). It is ``batch.override_invalid``
-    and not applied: E02's cells are E01's."""
+    """The override changes what the compiled audio columns mean, so it is invalid: the English
+    dub would land under "A1 jpn"."""
     template = _jpn_template()
     sources = A.season(1)[:2]
     (group,) = group_sources(sources, "standard")
@@ -276,8 +243,7 @@ def test_ra3_an_override_that_changes_the_compiled_rules_is_invalid() -> None:
 
 
 def test_ra3_an_override_inside_the_compiled_rules_is_applied() -> None:
-    """The structure is kept: another listed language in its place (the A1 rule takes the dub
-    in this file), a codec rule; and a template with explicit rules ignores the defaults."""
+    """A language override that keeps the structure is applied: here the A1 rule takes the dub."""
     template = _jpn_template()
     e02 = A.recorded(1, 2)
     swapped = resolve(template, e02, _replace("/audio_defaults/selection/languages", ["eng"]))
@@ -307,8 +273,8 @@ def test_ra3_an_override_inside_the_compiled_rules_is_applied() -> None:
 
 
 def test_ra3_preferred_languages_count() -> None:
-    """An empty language list compiles to Settings → preferred languages: replacing it with
-    the same list keeps the structure; with another number of languages it does not."""
+    """An empty language list compiles to the preferred languages: another number of them is
+    invalid."""
     base = A.builtin("h265-mkv-1080p")
     e02 = A.recorded(1, 2)
     languages = LanguageSettings(preferred_audio=["jpn"])
@@ -325,9 +291,6 @@ def test_ra3_preferred_languages_count() -> None:
     assert "batch.override_invalid" in _codes(more.issues)
 
 
-# --------------------------------------------------------------------------- the facade
-
-
 @pytest.fixture
 async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Reframe]:
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
@@ -338,7 +301,6 @@ async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
 
 
 def _real_and_link(fixture_media: Media, tmp_path: Path) -> tuple[Path, Path]:
-    """``real/`` with E01 and E02 of season 1, ``link`` → ``real``."""
     source = fixture_media("anime-s01")
     real = tmp_path / "media" / "real"
     real.mkdir(parents=True)
@@ -354,9 +316,8 @@ def _real_and_link(fixture_media: Media, tmp_path: Path) -> tuple[Path, Path]:
 async def test_ra3_through_reframe_batch_resolve(
     app: Reframe, fixture_media: Media, tmp_path: Path
 ) -> None:
-    """The reviewer's reproduction through ``Reframe.batch.resolve`` (the real ffprobe): E02's
-    override of the defaults' languages is invalid, and the "A1 jpn" column shows the Japanese
-    track in both rows. The override is found through a link to its folder (RA-1)."""
+    """E02's override is found through a linked folder and is invalid, so the "A1 jpn" column
+    shows the Japanese track in both rows."""
     real, link = _real_and_link(fixture_media, tmp_path)
     override = _replace("/audio_defaults/selection/languages", ["eng", "jpn"])
     resolution = await app.batch.resolve(
@@ -376,10 +337,6 @@ async def test_ra3_through_reframe_batch_resolve(
 async def test_ra1_resolve_batch_through_a_linked_folder(
     app: Reframe, fixture_media: Media, tmp_path: Path
 ) -> None:
-    """``Reframe.batch.resolve_batch``: E01 and a user file named as E01's output, given
-    through a linked folder (``link/<E01's output>``); the folder given twice through two
-    spellings. The user file is E01's planned output (left out), E01 is never queued; each
-    file of the folder is resolved once."""
     real, link = _real_and_link(fixture_media, tmp_path)
     user = real / E01_OUT
     shutil.copy2(fixture_media("multitrack"), user)
@@ -394,7 +351,7 @@ async def test_ra1_resolve_batch_through_a_linked_folder(
     grouping, resolutions = await app.batch.resolve_batch(None, [real / E01, link / E01])
     assert grouping.issues == []
     assert [r.path for res in resolutions for r in res.rows] == [real / E01]
-    # The service dedupes the paths it is given (as ``reframe batch real link`` does).
+    # The service dedupes the paths it is given.
     grouping, resolutions = await app.batch.resolve_batch(
         None, [real / E01, real / E02, link / E01, link / E02]
     )

@@ -1,4 +1,4 @@
-"""C-12 codec-rule stage (03 §Audio defaults part 2 and 3; decision 0018, 0019)."""
+"""Audio codec rules: how each source track becomes its output tracks."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def stream(
 
 
 def rules(*items: AudioCodecRule, passthru: PassthruPolicy | None = None) -> AudioDefaults:
-    """Defaults with these rules and a catch-all last (AAC, up to 5.1, 256 kb/s) if needed."""
+    """Defaults with these rules; an AAC catch-all is appended when the last rule is not one."""
     codec_rules = list(items)
     if not codec_rules or not codec_rules[-1].is_catch_all:
         codec_rules.append(AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256))
@@ -84,9 +84,7 @@ def summary(track: AudioOutputTrack) -> tuple[str, str | None, str | None, int |
     return (track.action, track.encoder, track.mixdown, track.bitrate)
 
 
-# --------------------------------------------------------------------------- 03's example
-
-#: The four rules of 03 §Audio defaults, exactly as written there.
+#: Hungarian and English 5.1 rules, a stereo rule and a catch-all.
 EXAMPLE_RULES = AudioDefaults(
     codec_rules=[
         AudioCodecRule(
@@ -108,7 +106,7 @@ EXAMPLE_RULES = AudioDefaults(
     ]
 )  # fmt: skip
 
-#: The four source tracks of 03's example, exactly as written there.
+#: Source tracks, each with the rule, output and reason that the example gives.
 EXAMPLE = [
     # (source, rule, (action, encoder, mixdown, bitrate), reason, measure)
     (
@@ -127,7 +125,7 @@ EXAMPLE = [
         False,
     ),
     (
-        # 03 gives no bit rate: unknown, so the preview offers Measure.
+        # No bit rate given: unknown, so the preview offers Measure.
         stream("truehd", 8, None, profile="Dolby TrueHD + Dolby Atmos",
                display_codec="TrueHD Atmos", lossless=True),
         2,
@@ -154,8 +152,6 @@ EXAMPLE = [
 def test_example_of_03_row_by_row(
     source: AudioStream, rule: int, expected: tuple[Any, ...], reason: str, measure: bool
 ) -> None:
-    """C-12 "Done when": Hungarian 5.1 → 320, English 5.1 → 384, AC-3 224 passthru, stereo
-    passthru (decision 0023)."""
     track, decision = run(source, EXAMPLE_RULES)
     assert decision.rule == rule
     assert summary(track) == expected
@@ -165,8 +161,6 @@ def test_example_of_03_row_by_row(
     assert decision.measure is measure
 
 
-# --------------------------------------------------------------------------- max bitrate rules
-
 AC3_51_448 = AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=448)
 NO_DTS = PassthruPolicy(allowed=["ac3", "eac3", "aac"])
 
@@ -174,7 +168,7 @@ NO_DTS = PassthruPolicy(allowed=["ac3", "eac3", "aac"])
 @pytest.mark.parametrize(
     ("source", "defaults", "expected", "reason", "measure"),
     [
-        # Row 1. The source fits → passthru: a lossy source at any bit rate …
+        # The source fits → passthru: a lossy source at any bit rate …
         (
             stream("eac3", 6, 384, display_codec="E-AC-3"),
             rules(AC3_51_448),
@@ -220,7 +214,7 @@ NO_DTS = PassthruPolicy(allowed=["ac3", "eac3", "aac"])
             "The rule says re-encode, 640 > 448 → encode at the max",
             False,
         ),
-        # Row 2. Lossless above the max or unknown → encode at the max …
+        # Lossless above the max or unknown → encode at the max …
         (
             stream("truehd", 6, 3912, display_codec="TrueHD", lossless=True),
             rules(AC3_51_448),
@@ -250,7 +244,7 @@ NO_DTS = PassthruPolicy(allowed=["ac3", "eac3", "aac"])
             "PCM cannot be passed through, 1536 > 1000 → encode at the max",
             False,
         ),
-        # Row 3. At or below the max, but another codec …
+        # At or below the max, but another codec …
         (
             stream("pcm_s16le", 2, 1536, display_codec="PCM", lossless=False),
             rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=2000)),
@@ -275,7 +269,7 @@ NO_DTS = PassthruPolicy(allowed=["ac3", "eac3", "aac"])
             " kb/s, the smallest allowed value ≥ 384",
             False,
         ),
-        # Row 4. Bit rate unknown, and the source does not fit → as above the max; Measure.
+        # Bit rate unknown, and the source does not fit → as above the max; Measure.
         (
             stream("vorbis", 2, None, display_codec="Vorbis"),
             rules(AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=160)),
@@ -318,7 +312,6 @@ def test_max_bitrate_rules(
     reason: str,
     measure: bool,
 ) -> None:
-    """Every row of 03's "Max bitrate rules" table."""
     track, decision = run(source, defaults)
     assert summary(track) == expected
     if reason == "2000 kb/s":
@@ -332,7 +325,7 @@ def test_max_bitrate_rules(
 
 
 def test_never_bigger_than_the_source() -> None:
-    """A lossless source with a known bit rate below the max fits like any other (0019)."""
+    """A lossless source with a known bit rate below the max fits like any other."""
     flac = stream("flac", 2, 133.718, display_codec="FLAC", lossless=True, language="jpn")
     track, decision = run(flac, rules(AudioCodecRule(codec="aac", max_bitrate=160)))
     assert summary(track) == ("passthru", "aac", None, None)
@@ -346,9 +339,6 @@ def test_never_bigger_than_the_source() -> None:
         "128.5 ≤ 160, but AAC passthru is not allowed → encode at 129 kb/s, the smallest allowed"
         " value ≥ 128.5"
     )
-
-
-# --------------------------------------------------------------------------- snapping
 
 
 @pytest.mark.parametrize(
@@ -426,8 +416,8 @@ def test_no_max_uses_the_encoder_default() -> None:
 
 
 #: (source, (action, encoder, mixdown, bitrate), reason, measure) for a lossy rule without a
-#: max: the encoder's default for the layout is the max (0019 item 5), and a lossless source
-#: fits only with a known bit rate at or below it (0023).
+#: max: the encoder's default for the layout is the max, and a lossless source fits only with a
+#: known bit rate at or below it.
 NO_MAX_LOSSLESS = [
     (
         stream("flac", 2, 160, display_codec="FLAC", lossless=True),
@@ -479,8 +469,8 @@ def test_no_max_is_the_default_for_a_lossless_source(
 
 
 def test_no_max_keeps_a_lossy_source_and_a_passthru_rule_unlimited() -> None:
-    """Unchanged by the default: a lossy source fits at any bit rate (0023), and a
-    ``passthru`` rule without a max passes anything that fits (0019 consequences)."""
+    """A lossy source fits at any bit rate, and a ``passthru`` rule without a max passes
+    anything that fits."""
     aac = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=None)
     track, decision = run(stream("ac3", 6, 640, display_codec="AC-3"), rules(aac))
     assert (track.action, decision.reason) == ("passthru", "AC-3, 5.1: passthru")
@@ -491,9 +481,6 @@ def test_no_max_keeps_a_lossy_source_and_a_passthru_rule_unlimited() -> None:
     # A lossless rule encoder (FLAC) has no default bit rate: no max stays no max.
     flac = AudioCodecRule(codec="flac", mixdown="keep", max_bitrate=None)
     assert run(truehd, rules(flac))[0].action == "passthru"
-
-
-# --------------------------------------------------------------------------- passthru
 
 
 @pytest.mark.parametrize(
@@ -528,7 +515,7 @@ def test_passthru_policy_and_container() -> None:
     track, decision = run(dts_hd, defaults)
     assert summary(track) == ("passthru", "aac", None, None)
     assert decision.reason == "DTS-HD, 5.1: passthru"
-    # MP4 holds DTS (C-6, testdata/README.md "Containers").
+    # MP4 holds DTS (testdata/README.md, "Containers").
     assert run(dts_hd, defaults, "mp4")[0].action == "passthru"
     # WebM does not: the fallback encoder.
     track, decision = run(dts_hd, defaults, "webm")
@@ -544,7 +531,7 @@ def test_passthru_policy_and_container() -> None:
     assert decision.reason == (
         "DTS-HD passthru is not allowed → fallback encoder AC-3. 2104 > 640 → encode at the default"
     )
-    # A passthru rule with a max: a lossy source passes at any bit rate (decision 0023) …
+    # A passthru rule with a max: a lossy source passes at any bit rate …
     capped = AudioCodecRule(codec="passthru", mixdown="keep", max_bitrate=640)
     track, decision = run(stream("ac3", 6, None, display_codec="AC-3"), rules(capped))
     assert summary(track) == ("passthru", "aac", None, None)
@@ -558,14 +545,12 @@ def test_passthru_policy_and_container() -> None:
 
 
 def test_truehd_passthru_into_mp4() -> None:
-    """MP4 can hold TrueHD (with ``-strict -2``, C-7's ``copy_args``): passthru is allowed."""
+    """MP4 can hold TrueHD (with ``-strict -2``): passthru is allowed."""
     truehd = stream("truehd", 8, 3912, display_codec="TrueHD Atmos", lossless=True)
     keep = AudioCodecRule(codec="passthru", mixdown="keep", max_bitrate=None)
     assert run(truehd, rules(keep), "mp4")[0].action == "passthru"
     assert run(truehd, rules(keep), "webm")[0].action == "encode"
 
-
-# --------------------------------------------------------------------------- mixdown
 
 MIXDOWN_TABLE: list[tuple[RuleMixdown, int, str | None]] = [
     ("keep", 8, None),
@@ -636,8 +621,8 @@ def test_mixdown_in_the_output() -> None:
 
 
 def test_no_upmix() -> None:
-    """Decision 0019: a stereo source with a 5.1 rule stays stereo (FFmpeg's upmix only adds
-    silent channels, testdata/README.md "Audio codec rules")."""
+    """A stereo source with a 5.1 rule stays stereo: FFmpeg's upmix only adds silent channels
+    (testdata/README.md "Audio codec rules")."""
     track, decision = run(
         stream("pcm_s16le", 2, 1536, display_codec="PCM", lossless=True),
         rules(AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=448)),
@@ -666,9 +651,6 @@ def test_channels_within_the_mixdown() -> None:
         stream("ac3", 2, 192), rules(AudioCodecRule(codec="ac3", mixdown="5.1", max_bitrate=448))
     )
     assert track.action == "passthru"
-
-
-# --------------------------------------------------------------------------- matching
 
 
 @pytest.mark.parametrize(
@@ -727,9 +709,6 @@ def test_first_match_wins_and_language_misses_are_not_explained() -> None:
     assert decision.rule == 4  # the catch-all
 
 
-# --------------------------------------------------------------------------- extras
-
-
 def test_extras_go_to_the_output_and_block_passthru() -> None:
     extras = AudioRuleExtras(samplerate=48000, gain=-3.0, drc=2.0, loudness="ebu_r128")
     rule = AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=160, extras=extras)
@@ -782,8 +761,8 @@ def test_sample_rate_snaps_to_the_encoder() -> None:
         # The source's own rate stays "same as source" when the encoder takes it …
         ("aac", 44100, None, []),
         ("ac3", None, None, []),
-        # … and becomes the snapped rate (C-6's ``snap_samplerate``) when it does not: the
-        # rate the command builder writes with ``-ar`` (an AC-3 ``-ar 22050`` fails).
+        # … and becomes the snapped rate when it does not: the rate the command builder writes
+        # with ``-ar``.
         ("libopus", 44100, 48000, ["Opus has no 44100 Hz (the source's rate): 48000 Hz"]),
         ("ac3", 22050, 32000, ["AC-3 has no 22050 Hz (the source's rate): 32000 Hz"]),
     ],
@@ -791,7 +770,7 @@ def test_sample_rate_snaps_to_the_encoder() -> None:
 def test_the_source_sample_rate_snaps_to_the_encoder(
     encoder: str, source_rate: int | None, expected: int | None, notes: list[str]
 ) -> None:
-    """Decision 0024: a source rate the encoder cannot write is snapped, with a note."""
+    """A source rate that the encoder cannot write is snapped, with a note."""
     rule = AudioCodecRule(codec=encoder, mixdown="stereo", max_bitrate=128)
     source = stream("flac", 2, None, lossless=True, sample_rate=source_rate)
     track, decision = run(source, rules(rule))
@@ -801,8 +780,6 @@ def test_the_source_sample_rate_snaps_to_the_encoder(
     enc = DEFS.audio_encoders[encoder]
     assert (track.samplerate or source_rate) == enc.snap_samplerate(None, source_rate)
 
-
-# --------------------------------------------------------------------------- shared helpers
 
 _RULE_MIXDOWNS: list[RuleMixdown] = ["keep", "up_to_5.1", "5.1", "stereo", "dpl2", "mono"]
 
@@ -817,9 +794,7 @@ _ENCODER_KINDS = ["aac", "ac3", "flac", "libmp3lame", "libopus"]
 def test_the_output_agrees_with_the_shared_helpers(
     encoder: str, channels: int, mixdown: RuleMixdown
 ) -> None:
-    """Decision 0024: the layout, bit rate and sample rate C-12 writes are C-6's
-    ``snap_mixdown``, ``channels_mixdown``, ``AudioBitrateDef.snap`` and ``snap_samplerate``,
-    the helpers that C-7 and C-8 use."""
+    """The layout, bit rate and sample rate agree with the shared encoder helpers."""
     enc = DEFS.audio_encoders[encoder]
     rule = AudioCodecRule(codec=encoder, mixdown=mixdown, max_bitrate=700)
     source = stream("pcm_s16le", channels, None, lossless=True, sample_rate=44100)
@@ -829,8 +804,8 @@ def test_the_output_agrees_with_the_shared_helpers(
     # Never an upmix of a known source.
     if track.mixdown is not None and channels > 0:
         assert DEFS.mixdowns[track.mixdown].channels <= channels
-    # The rule's no-upmix rule is the helper's; only ``up_to_5.1`` keeps a 5.1 source's
-    # own layout (decision 0019 item 3).
+    # The rule's no-upmix rule is the helper's; only ``up_to_5.1`` keeps a 5.1 source's own
+    # layout.
     target: Mixdown | None = (
         None if mixdown == "keep" else "5.1" if mixdown == "up_to_5.1" else mixdown
     )
@@ -844,10 +819,10 @@ def test_the_output_agrees_with_the_shared_helpers(
     assert (track.samplerate or 44100) == enc.snap_samplerate(None, 44100)
 
 
-#: (source channels, source layout, max, (mixdown, bitrate), reason, notes) for an Opus
-#: "keep" rule on a lossless source: libopus refuses some layouts, and the command builder
-#: (C-7's ``planned_audio``) downmixes them to one it takes, with the bitrate table of the
-#: written channels.
+#: (source channels, source layout, max, (mixdown, bitrate), reason, notes) for an Opus "keep"
+#: rule on a lossless source: libopus refuses some layouts, and the command builder
+#: (``planned_audio``) downmixes them to one it takes, with the bitrate table of the written
+#: channels.
 OPUS_LAYOUTS = [
     (
         3, "2.1", 13, (None, 13),
@@ -1008,7 +983,7 @@ def test_extra_outputs() -> None:
 
 
 def test_first_track_of_language_only() -> None:
-    """M2: ``first_of_language`` comes from the draft (first in source order)."""
+    """``first_of_language`` comes from the draft (first in source order)."""
     first_only = AudioRuleExtras(first_track_of_language_only=True)
     defaults = rules(
         AudioCodecRule(
@@ -1041,9 +1016,6 @@ def test_no_rule_matches() -> None:
         "Rule 1 is only for the first track of a language. No codec rule matches: the track is"
         " not encoded"
     )
-
-
-# --------------------------------------------------------------------------- odd inputs
 
 
 def test_encoder_problems_are_notes() -> None:
