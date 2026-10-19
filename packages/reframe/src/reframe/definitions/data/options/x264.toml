@@ -1,4 +1,4 @@
-# x264 advanced options (C-6: 03 §Advanced's coverage list, completed in M9).
+# x264 advanced options.
 #
 # Every option goes into `-x264-params` (x26x_param). The per-preset defaults are what x264
 # itself writes into the stream (the "x264 - core … options:" SEI) for `-preset <p>` with no
@@ -275,7 +275,7 @@ max = 11
 step = 1
 # x264 core 165: subme 10 and 11 need trellis=2; with a lower trellis x264 writes subme=9
 # into the stream without a message (also for the veryslow and placebo presets with
-# trellis 0 or 1). A rule across two options: validation (C-8) checks it.
+# trellis 0 or 1). A rule across two options: validation checks it.
 help = "Quality of the motion and mode decisions. 7–9 is a good balance; 10 and 11 are slow and need Trellis set to Always (with a lower trellis x264 uses 9)."
 mapping = { kind = "x26x_param", name = "subme" }
 default = { kind = "preset", values = { ultrafast = 0, superfast = 1, veryfast = 2, faster = 4, fast = 6, medium = 7, slow = 8, slower = 9, veryslow = 10, placebo = 11 } }
@@ -322,12 +322,10 @@ help = "How motion vectors of B-frames are predicted."
 mapping = { kind = "x26x_param", name = "direct" }
 default = { kind = "preset", tunes = ["animation", "zerolatency"], values = { superfast = "spatial", veryfast = "spatial", faster = "spatial", fast = "spatial", medium = "spatial", slow = "auto", slower = "auto", veryslow = "auto", placebo = "auto" } }
 
-# --------------------------------------------------------------------------- M9 additions
-#
 # Per-preset tables as above (the stream's settings SEI for every preset and every tune).
 # The colour options are not in the SEI: ffprobe reads them from the stream's VUI. FFmpeg's
 # libx264 wrapper overrides x264's own `range` with the input's range, so it is not offered
-# (testdata/README.md "Advanced encoder options (C-6, complete option sets)").
+# (testdata/README.md).
 
 [[set.x264]]
 key = "open-gop"
@@ -365,7 +363,7 @@ label = "Blu-ray compatibility"
 category = "Frame types / GOP"
 type = "bool"
 # x264 core 165: with bluray-compat=1 the stream says bframes=3, weightp=1, b_pyramid=1
-# (strict) for bframes=5:weightp=2:b-pyramid=normal, without a message. Validation (C-8)
+# (strict) for bframes=5:weightp=2:b-pyramid=normal, without a message. Validation
 # warns about values the job sets above these limits.
 help = "Follows the Blu-ray limits: at most 3 B-frames, simple weighted P-frames and a strict B-pyramid (x264 lowers higher values without a message). Use with the VBV settings and a Blu-ray level."
 mapping = { kind = "x26x_param", name = "bluray-compat" }

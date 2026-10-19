@@ -1,35 +1,17 @@
-# Video encoders (C-6). Table key = FFmpeg encoder name.
+# Video encoders. Table key = FFmpeg encoder name.
 #
-# M2 contract (docs/m2-breakdown.md): the lead wrote the identity, platforms, pixel formats,
-# hardware setup and fallback chain of every encoder before wave 1, so that C-4 can run its
-# hardware test encodes on real data. C-6 owns this file from now on and adds the rest
-# (rate control, presets, tunes, profiles, levels, options, quality conversion).
-#
-# Hardware setup, checked with FFmpeg n9.0.2 (Arch package and the pinned BtbN build) on
-# Linux with an AMD Navi 33 GPU (Mesa radeonsi VAAPI, AMF), 2026-10-13, encoding 3 frames of
-# `-f lavfi -i color=size=640x360` to `-f null -`:
-#   VAAPI: `-init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va` and
-#          `-vf format=nv12,hwupload` (8-bit) / `format=p010le,hwupload` (10-bit): h264, hevc
-#          and av1 (8 and 10-bit) exit 0.
-#   AMF:   no setup, software frames (`-pix_fmt yuv420p` / `p010le`): hevc and av1 (8 and
-#          10-bit) and h264 (8-bit) exit 0. h264 10-bit fails: "10-bit input video is not
-#          supported by AMF H264 encoder".
-#   NVENC: no setup; with no NVIDIA driver: "Cannot load libcuda.so.1" (exit 255).
-#   QSV:   `-init_hw_device qsv=hw` fails without an Intel GPU ("Device creation failed:
-#          -542398533."). The QSV setup below is the plan's (05 §C-6) and is NOT verified on
-#          a machine with QSV yet.
+# Hardware setup: the VAAPI and AMF setup is checked by real encodes on an AMD GPU
+# (testdata/README.md); NVENC and QSV are NOT verified on their hardware.
 # Placeholders: {vaapi_device} (default /dev/dri/renderD128), {sw_pix_fmt} (pix_fmts below).
 #
-# Fallback chains (05 §C-4): the same codec on the other hardware families, then software.
-#
-# ---------------------------------------------------------------------- C-6 additions
+# Fallback chains: the same codec on the other hardware families, then software.
 #
 # Loader rules (reframe/definitions/loader.py): `extends = "<base>"` merges a [base.<name>]
 # table under the encoder's keys; `option_sets = [...]` prepends the options of
 # options/*.toml.
 #
-# Sources (every value is checked against FFmpeg n9.0.2, see testdata/README.md
-# "Encoder definitions (C-6)" and tests/definitions/test_tools.py):
+# Sources (every value is checked against FFmpeg, see testdata/README.md and
+# tests/definitions/test_tools.py):
 # - Presets, tunes, profiles, levels and private options: `ffmpeg -h encoder=<id>`
 #   (testing/reframe_testing/fake_data/help_encoder/) and, for x264 / x265, the lists the
 #   libraries print for a bad value ("Possible presets: …").
@@ -44,9 +26,7 @@
 #   same resolution); NVENC / QSV / AMF H.265 follow HandBrake's hardware presets (NVENC 27 /
 #   30, QSV and VCN 25 / 28 against x264 22 / 24 at 1080p / 2160p). Encoders without a
 #   HandBrake preset (NVENC H.264 and AV1, AMF H.264, VAAPI) are ASSUMED to match their
-#   nearest relative; the result is approximate by design (03 §Missing encoder behaviour).
-
-# --------------------------------------------------------------------------- bases
+#   nearest relative; the result is approximate by design.
 
 [base.x26x.presets]
 default = "medium"
@@ -85,8 +65,6 @@ recommended = [
 [base.x26x.rate_control.bitrate]
 args = ["-b:v", "{kbps}k"]
 help = "Average bitrate: a predictable file size. Use 2-pass for the best quality at that size."
-
-# ---- NVENC
 
 [base.nvenc]
 help = "NVIDIA's hardware encoder (GeForce, RTX, Quadro). Very fast; at the same quality the files are larger than with x264 / x265."
@@ -138,8 +116,6 @@ mode = "single_run"
 turbo_args = ["-multipass", "qres"]
 full_args = ["-multipass", "fullres"]
 
-# ---- QSV
-
 [base.qsv]
 help = "Intel Quick Sync Video (Intel integrated graphics and Arc). Not verified on Intel hardware yet."
 
@@ -172,8 +148,6 @@ help = "Intelligent constant quality. Lower is better quality and a bigger file.
 args = ["-b:v", "{kbps}k"]
 help = "Average bitrate (VBR)."
 
-# ---- AMF
-
 [base.amf]
 help = "AMD's hardware encoder (Radeon, Ryzen APUs). Fast; at the same quality the files are larger than with x264 / x265."
 
@@ -205,15 +179,13 @@ help = "Constant QP (I frames; P and B frames get a slightly higher QP, as in Ha
 args = ["-rc", "vbr_peak", "-b:v", "{kbps}k"]
 help = "Peak-constrained VBR (as HandBrake)."
 
-# ---- VAAPI
-
 [base.vaapi]
 help = "VAAPI (Linux): Intel and AMD GPUs through Mesa or the Intel media driver."
 
 [base.vaapi.rate_control.quality]
 kind = "qp"
 label = "QP"
-# Real encodes (radeonsi, M2 review): `-global_quality 0` means "not set", so the driver picks
+# Real encodes (radeonsi): `-global_quality 0` means "not set", so the driver picks
 # the QP (h264 20, hevc 25, av1 25: the same file as no quality option); 52 gives the same
 # file as 51. So 1-51 (av1_vaapi 1-255: 256 gives the same file as 255).
 min = 1
@@ -230,8 +202,6 @@ help = "Constant QP. Lower is better quality and a bigger file."
 args = ["-rc_mode", "VBR", "-b:v", "{kbps}k"]
 help = "Average bitrate (VBR)."
 
-# --------------------------------------------------------------------------- software
-
 [encoder.libx264]
 label = "x264"
 codec = "h264"
@@ -240,7 +210,6 @@ handbrake_key = "x264"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
-# --- C-6
 extends = "x26x"
 option_sets = ["x264"]
 help = "The reference H.264 encoder: very good quality per bit, plays everywhere."
@@ -312,7 +281,6 @@ handbrake_key = "x265"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
-# --- C-6
 extends = "x26x"
 option_sets = ["x265"]
 help = "The reference H.265 encoder: about the size of x264 at a lower bitrate, but slower."
@@ -373,7 +341,6 @@ handbrake_key = "svt_av1"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
-# --- C-6
 option_sets = ["svtav1"]
 help = "AV1 encoder: the smallest files at a given quality; slower than x265 at the slow presets."
 params_arg = "-svtav1-params"
@@ -471,7 +438,6 @@ handbrake_key = "VP9"
 family = "software"
 hardware = false
 pix_fmts = { "8" = "yuv420p", "10" = "yuv420p10le" }
-# --- C-6
 option_sets = ["vp9"]
 help = "Google's VP9 (libvpx), for WebM. Slow; SVT-AV1 compresses better."
 # HandBrake encavcodec.c sets row-mt=1 and deadline=good with cpu-used per preset.
@@ -529,8 +495,6 @@ help = "Average bitrate (VBR)."
 mode = "two_runs"
 args = ["-pass", "{pass}", "-passlogfile", "{passlog}"]
 
-# --------------------------------------------------------------------------- NVIDIA NVENC
-
 [encoder.h264_nvenc]
 label = "NVIDIA NVENC H.264"
 codec = "h264"
@@ -539,10 +503,9 @@ handbrake_key = "nvenc_h264"
 family = "nvenc"
 hardware = true
 vendor = "nvidia"
-# 10-bit H.264 needs a recent GPU: the 10-bit test encode (C-4) decides.
+# 10-bit H.264 needs a recent GPU: the 10-bit test encode of encoder detection decides.
 pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["h264_qsv", "h264_amf", "h264_vaapi", "libx264"]
-# --- C-6
 extends = "nvenc"
 option_sets = ["nvenc", "nvenc_qp51", "nvenc_h264", "nvenc_bluray"]
 
@@ -581,7 +544,6 @@ hardware = true
 vendor = "nvidia"
 pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265"]
-# --- C-6
 extends = "nvenc"
 option_sets = ["nvenc", "nvenc_qp51", "nvenc_bluray", "nvenc_hevc", "nvenc_split"]
 
@@ -624,7 +586,6 @@ hardware = true
 vendor = "nvidia"
 pix_fmts = { "8" = "yuv420p", "10" = "p010le" }
 fallback = ["av1_qsv", "av1_amf", "av1_vaapi", "libsvtav1"]
-# --- C-6
 extends = "nvenc"
 option_sets = ["nvenc", "nvenc_av1", "nvenc_split"]
 
@@ -662,8 +623,6 @@ derived = { qp_i = { factor = 4.047619047619048, offset = -8, min = 0, max = 255
 default = 33
 scale = [[1, 1], [33, 22], [37, 24], [63, 51]]
 
-# --------------------------------------------------------------------------- Intel QSV
-
 [encoder.h264_qsv]
 label = "Intel QSV H.264"
 codec = "h264"
@@ -675,7 +634,6 @@ vendor = "intel"
 pix_fmts = { "8" = "nv12" }
 hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["h264_nvenc", "h264_amf", "h264_vaapi", "libx264"]
-# --- C-6
 extends = "qsv"
 option_sets = ["qsv", "qsv_h264", "qsv_avc_hevc"]
 
@@ -699,7 +657,6 @@ vendor = "intel"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["hevc_nvenc", "hevc_amf", "hevc_vaapi", "libx265"]
-# --- C-6
 extends = "qsv"
 option_sets = ["qsv", "qsv_extbrc", "qsv_avc_hevc", "qsv_hevc", "qsv_tiles"]
 
@@ -723,7 +680,6 @@ vendor = "intel"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["av1_nvenc", "av1_amf", "av1_vaapi", "libsvtav1"]
-# --- C-6
 extends = "qsv"
 option_sets = ["qsv", "qsv_extbrc", "qsv_tiles"]
 
@@ -734,11 +690,9 @@ choices = [{ value = "main", label = "Main" }]
 
 [encoder.av1_qsv.rate_control.quality]
 # HandBrake's "AV1 QSV 2160p 4K" uses 24 where x264 uses 24. The default is the 1080p value
-# of the other encoders (x264 22), as the scale gives it (M2 review: it was the 2160p 24).
+# of the other encoders (x264 22), as the scale gives it.
 default = 22
 scale = [[1, 1], [24, 24], [51, 51]]
-
-# --------------------------------------------------------------------------- AMD AMF
 
 [encoder.h264_amf]
 label = "AMD AMF H.264"
@@ -750,7 +704,6 @@ hardware = true
 vendor = "amd"
 pix_fmts = { "8" = "nv12" }
 fallback = ["h264_nvenc", "h264_qsv", "h264_vaapi", "libx264"]
-# --- C-6
 extends = "amf"
 option_sets = ["amf", "amf_vbaq", "amf_bframes", "amf_minigop", "amf_h264", "amf_quarter_pel"]
 
@@ -787,7 +740,6 @@ hardware = true
 vendor = "amd"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 fallback = ["hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
-# --- C-6
 extends = "amf"
 option_sets = ["amf", "amf_vbaq", "amf_quarter_pel"]
 
@@ -826,7 +778,6 @@ hardware = true
 vendor = "amd"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 fallback = ["av1_nvenc", "av1_qsv", "av1_vaapi", "libsvtav1"]
-# --- C-6
 extends = "amf"
 option_sets = ["amf", "amf_bframes", "amf_av1", "amf_minigop"]
 
@@ -859,8 +810,6 @@ default = 110
 derived = { qp_p = { offset = 8, ramp_below = 32, max = 255, integer = true }, qp_b = { offset = 16, ramp_below = 32, max = 255, integer = true } }
 scale = [[0, 0], [120, 24], [255, 51]]
 
-# --------------------------------------------------------------------------- VAAPI (Linux)
-
 [encoder.h264_vaapi]
 label = "VAAPI H.264"
 codec = "h264"
@@ -872,7 +821,6 @@ platforms = ["linux"]
 pix_fmts = { "8" = "nv12" }
 hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
 fallback = ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]
-# --- C-6
 extends = "vaapi"
 option_sets = ["vaapi", "vaapi_h264", "vaapi_aud"]
 
@@ -912,7 +860,6 @@ platforms = ["linux"]
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
 fallback = ["hevc_nvenc", "hevc_qsv", "hevc_amf", "libx265"]
-# --- C-6
 extends = "vaapi"
 option_sets = ["vaapi", "vaapi_aud", "vaapi_tier"]
 
@@ -949,7 +896,6 @@ platforms = ["linux"]
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
 hardware_setup = { init_args = ["-init_hw_device", "vaapi=va:{vaapi_device}", "-filter_hw_device", "va"], filter_tail = ["format={sw_pix_fmt}", "hwupload"] }
 fallback = ["av1_nvenc", "av1_qsv", "av1_amf", "libsvtav1"]
-# --- C-6
 extends = "vaapi"
 option_sets = ["vaapi", "vaapi_tier"]
 
