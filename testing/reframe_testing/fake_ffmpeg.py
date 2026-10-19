@@ -1,62 +1,10 @@
-"""Fake ``ffmpeg`` / ``ffprobe`` for fault-injection tests (plan Q-2, "Fault injection").
+"""Fake ``ffmpeg`` / ``ffprobe`` for fault-injection tests.
 
-This file is a standalone script (standard library only). Do not run it directly in tests: use
-:func:`reframe_testing.fake_tools.make_fake_tools`, which writes launchers named ``ffmpeg`` and
-``ffprobe`` that run this script with the right tool name.
-
-Behaviour comes from a JSON *scenario* file. Its path is read from the environment variable
-``REFRAME_FAKE_FFMPEG_SCENARIO`` (the launcher sets a default). Without a scenario, or when no
-rule matches, the built-in defaults apply (see :func:`run_defaults`): ``-version``,
-``-encoders``, ``-filters``, ``-hwaccels`` and ``-h encoder=<name>`` print text captured from a
-real FFmpeg (``fake_data/``); an encode (``-i`` present) emits ``-progress`` blocks if asked and
-writes the output file.
-
-Scenario format::
-
-    {
-      "rules": [
-        {
-          "tool": "ffmpeg",                     # optional: "ffmpeg" | "ffprobe"
-          "argv_has": ["-c:v", "hevc_nvenc"],   # optional: every item is an exact argv element
-          "argv_contains": ["nvenc"],           # optional: every item is a substring of an element
-          "argv_regex": "-h encoder=\\\\S+",    # optional: re.search on the argv joined with spaces
-          "actions": [{"stderr": "Cannot load libcuda.so.1\\n"}, {"sleep": 0.5}],
-          "exit_code": 1
-        }
-      ],
-      "defaults": true                          # use the built-in defaults if no rule matches
-    }
-
-The first matching rule wins. Actions run in order; each is an object with one key:
-
-``stdout`` / ``stderr``: text. ``stdout_data`` / ``stderr_data``: a file name in ``fake_data/``.
-``stdout_file`` / ``stderr_file``: any file path. ``sleep``: seconds. ``hang``: sleep until the
-maximum lifetime (below) is over. ``crash``: ``{"signal": "SIGSEGV"}`` (POSIX; on Windows exit
-0xC0000005) or ``{"exit_code": N}`` (abrupt ``os._exit``, no flush). ``flood``: ``{"bytes": N,
-"stream": "stdout"}``. ``spawn_grandchild``: ``{}``, starts a child process that hangs (with the
-same maximum lifetime). ``progress``: ``{"blocks": N, "interval": s, "media_seconds": s, "fps":
-f, "bytes_per_second": n, "end": true, "na_fields": ["bitrate", ...], "na_blocks": N}``.
-``write_output``: ``{"bytes": N}``, writes the last argv element. ``version``: ``{"version":
-"7.1", "configuration": "--enable-gpl ..."}``. ``on_sigterm``: ``"ignore"`` or ``{"exit_code":
-255}``. ``exit``: exit code now. ``exec``: a program path; run it with the same arguments
-(stdin, stdout and stderr shared) and exit with its exit code (128 + N when signal N ended
-it), so a scenario can fail one command and pass every other one to a real FFmpeg.
-
-``hang`` and the grandchild do not run forever: they exit when
-``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` seconds (default 120) have passed since the process
-started, so a failed test cannot leave processes behind for long. ``hang`` then exits with
-:data:`LIFETIME_EXIT_CODE`.
-
-Exit codes above ``2**31 - 1`` (such as ``0xC0000005``) are given to the OS as the signed C
-``int`` with the same 32 bits, because ``os._exit`` and ``sys.exit`` take a C ``int``.
-
-Every invocation writes one JSON file into the folder named by ``REFRAME_FAKE_FFMPEG_LOG`` (if
-set): ``<pid>-<random hex>.json`` with ``{"role": "main" | "grandchild", "tool", "pid", "ppid",
-"argv", "cwd", "monotonic_ns", "time_ns"}``. The file is written under a ``.tmp`` name and then
-renamed, so a reader never sees a partial file, and parallel processes never share a file (an
-``O_APPEND`` log is not atomic between processes on Windows). Tests use the folder as the pid
-file and as a record of the commands that were run, sorted by ``monotonic_ns`` (a system-wide
-clock on Linux, macOS and Windows).
+The script uses only the standard library and runs with ``-I``. Its behaviour comes from a JSON
+scenario (the path is in ``REFRAME_FAKE_FFMPEG_SCENARIO``). Without a scenario, or when no rule
+matches, :func:`run_defaults` answers the discovery commands with output captured from a real
+FFmpeg (``fake_data/``). Each invocation is logged to the folder in ``REFRAME_FAKE_FFMPEG_LOG``
+when that is set, so a test can see the commands that ran.
 """
 
 from __future__ import annotations
@@ -125,9 +73,6 @@ def exit_code_for_os(code: int) -> int:
     return code - 2**32 if code >= 2**31 else code
 
 
-# --------------------------------------------------------------------------- output helpers
-
-
 def _write(stream: str, data: bytes) -> None:
     target = sys.stdout if stream == "stdout" else sys.stderr
     try:
@@ -164,10 +109,15 @@ def _flood(stream: str, nbytes: int) -> None:
 
 
 def _log(entry: dict[str, Any]) -> None:
-    """Write ``entry`` as a new file in the log folder (a temporary name, then a rename)."""
+    """Write ``entry`` as a new file in the log folder.
+
+    A temporary name, then a rename: a reader never sees a partial file, and no two processes
+    share a file.
+    """
     folder = os.environ.get(LOG_ENV)
     if not folder:
         return
+    # monotonic_ns is comparable between processes: one system-wide clock on Linux, macOS, Windows.
     entry = {**entry, "monotonic_ns": time.monotonic_ns(), "time_ns": time.time_ns()}
     os.makedirs(folder, exist_ok=True)
     name = f"{os.getpid()}-{os.urandom(16).hex()}"
@@ -175,9 +125,6 @@ def _log(entry: dict[str, Any]) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(entry, f, separators=(",", ":"))
     os.replace(tmp, os.path.join(folder, name + ".json"))
-
-
-# --------------------------------------------------------------------------- argv helpers
 
 
 def _option_value(argv: Sequence[str], option: str) -> str | None:
@@ -203,9 +150,7 @@ def _progress_target(argv: Sequence[str]) -> str | None:
     return _option_value(argv, "-progress")
 
 
-# --------------------------------------------------------------------------- progress
-
-#: Fields of a ``-progress`` block, in the order that real ffmpeg n9.0.2 prints them.
+#: Fields of a ``-progress`` block, in the order that real ffmpeg prints them.
 PROGRESS_FIELDS = (
     "frame",
     "fps",
@@ -221,8 +166,8 @@ PROGRESS_FIELDS = (
     "progress",
 )
 
-#: A block that real ffmpeg prints before the encoder has returned its first packet (copied
-#: from ``fake_data/progress_null_long.stdout.txt``: libx264 to ``-f null``, ``-stats_period``).
+#: The block real ffmpeg prints before the encoder returns its first packet
+#: (``fake_data/progress_null_long.stdout.txt``).
 STARTUP_BLOCK = {
     "frame": "0",
     "fps": "0.00",
@@ -241,10 +186,8 @@ STARTUP_BLOCK = {
 def progress_block(spec: dict[str, Any], n: int, elapsed: float) -> str:
     """Text of block ``n`` (from 0) of a ``progress`` action; ``elapsed``: wall seconds so far.
 
-    The first ``na_blocks`` blocks are :data:`STARTUP_BLOCK`. Then ``blocks`` blocks follow, with
-    ``out_time_us`` going linearly up to ``media_seconds``. The fields in ``na_fields`` are
-    ``N/A`` in every block (real ffmpeg prints ``bitrate=N/A`` and ``total_size=N/A`` with
-    ``-f null``). The last block has ``progress=end`` unless ``end`` is false.
+    The fields in ``na_fields`` are ``N/A`` in every block, as real ffmpeg prints
+    ``bitrate=N/A`` and ``total_size=N/A`` with ``-f null``.
     """
     blocks = max(1, int(spec.get("blocks", 5)))
     media_seconds = float(spec.get("media_seconds", 2.0))
@@ -266,8 +209,7 @@ def progress_block(spec: dict[str, Any], n: int, elapsed: float) -> str:
         secs, us = divmod(out_us, 1_000_000)
         mins, secs = divmod(secs, 60)
         hours, mins = divmod(mins, 60)
-        # The formats of fftools/ffmpeg.c print_report(): "%6.1fkbits/s" and "%4.3gx" pad with
-        # spaces ("bitrate=  43.8kbits/s", "speed= 4.3x"), as in fake_data/progress_mkv_long.
+        # ffmpeg pads these values with spaces, as its print_report() does (testdata/README.md).
         values = {
             "frame": str(frame),
             "fps": f"{frame / wall:.2f}",
@@ -303,9 +245,6 @@ def _emit_progress(argv: Sequence[str], spec: dict[str, Any]) -> None:
         else:
             with open(target, "a", encoding="utf-8") as f:
                 f.write(block)
-
-
-# --------------------------------------------------------------------------- actions
 
 
 def _write_output(argv: Sequence[str], spec: dict[str, Any]) -> None:
@@ -441,9 +380,6 @@ def run_action(tool: str, argv: Sequence[str], action: dict[str, Any]) -> None:
         raise ValueError(f"unknown fake ffmpeg action: {kind!r}")
 
 
-# --------------------------------------------------------------------------- rules
-
-
 def rule_matches(rule: dict[str, Any], tool: str, argv: Sequence[str]) -> bool:
     if rule.get("tool") not in (None, tool):
         return False
@@ -533,7 +469,7 @@ def main(tool: str, argv: Sequence[str]) -> int:
 
 
 def _cli(args: list[str]) -> int:
-    """``python fake_ffmpeg.py --fake-tool ffmpeg <ffmpeg args>`` (used by the Windows launcher)."""
+    """Run the fake as ``--fake-tool ffmpeg|ffprobe`` followed by the tool's arguments."""
     if len(args) < 2 or args[0] != "--fake-tool":
         print("usage: fake_ffmpeg.py --fake-tool ffmpeg|ffprobe [args...]", file=sys.stderr)
         return 2

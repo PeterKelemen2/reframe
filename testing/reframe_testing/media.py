@@ -1,19 +1,10 @@
-"""Fixture media generator (plan Q-2.1, "Test media").
+"""Generate the test media fixtures from FFmpeg ``lavfi`` sources: the repository holds no media.
 
-Small files (at most 5 s, low resolution) made with FFmpeg ``lavfi`` sources, so the repository
-holds no media. ``scripts/make-testdata.py`` is the command-line front end; tests use
-:func:`ensure_fixture` (or the ``fixture_media`` pytest fixture), which generates a fixture on
-demand.
-
-Generation is incremental: each fixture is a :class:`Recipe` (files to write plus FFmpeg
-commands). Its hash (recipe, generator version, FFmpeg version) is stored in
-``<media dir>/manifest.json``; a fixture whose outputs exist and whose hash did not change is
-skipped. Each fixture is built in a temporary folder next to the outputs and moved into place
+A fixture is a :class:`Recipe` (files to write and FFmpeg commands). Its hash (recipe, generator
+and FFmpeg version) is kept in ``manifest.json``, and a fixture is rebuilt only when that hash
+changes. Each recipe runs in a temporary folder with relative file names only: no path appears in
+a filter graph (no quoting problems on Windows) or in the hash, and its outputs move into place
 only when all its steps succeeded.
-
-All FFmpeg commands run with the temporary folder as the working directory and use relative
-file names only, so no path ever appears in a filter graph (no quoting problems on Windows),
-and the recipe hash does not depend on where the repository is.
 """
 
 from __future__ import annotations
@@ -38,7 +29,6 @@ from typing import Any, Literal
 from reframe_testing import boxfont, dts, pgs, vobsub
 
 #: Bump when the generator changes in a way that the recipe text does not show.
-#: 2: the ASS fixture always attaches the generated ReframeBox font (no system font search).
 GENERATOR_VERSION = 2
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MEDIA_DIR = REPO_ROOT / "testdata" / "media"
@@ -61,14 +51,10 @@ class MediaError(RuntimeError):
     """A fixture could not be generated (FFmpeg missing or a step failed)."""
 
 
-# --------------------------------------------------------------------------- tool discovery
-
-
 def _discovered(tool: Literal["ffmpeg", "ffprobe"]) -> str | None:
-    """The binary that ``reframe.tools`` discovery picks (no Settings file in tests), if it
-    exists: ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` → ffprobe next to an overridden ffmpeg →
-    the bundled build (``$REFRAME_DATA_DIR/tools/ffmpeg`` in CI) → ``PATH`` (only without a
-    bundled build). File checks only; the plugin runs ``-version`` itself."""
+    """The binary that ``reframe.tools`` discovery picks (no Settings file in tests), if it exists.
+
+    File checks only; the plugin runs ``-version`` itself."""
     from reframe.tools.discovery import locate_tools
 
     location = locate_tools()[tool]
@@ -135,9 +121,6 @@ def probe(path: Path, *extra: str, ffprobe: str | None = None) -> dict[str, Any]
     return data
 
 
-# --------------------------------------------------------------------------- fonts
-
-
 @dataclass(frozen=True)
 class FontChoice:
     family: str
@@ -161,9 +144,6 @@ def fixture_font() -> FontChoice:
     return FontChoice(
         boxfont.FAMILY, "ReframeBox.ttf", boxfont.build_font(), "generated", "public domain (CC0)"
     )
-
-
-# --------------------------------------------------------------------------- recipes
 
 
 @dataclass(frozen=True)
@@ -510,12 +490,11 @@ DTS_HD_MA_SECONDS = 4.0
 
 
 def _dts_hd_ma_recipe() -> Recipe:
-    """A lossless track whose file states no bit rate (03 §Audio "Measure", M6 demo 1).
+    """A lossless track whose file states no bit rate.
 
     ``reframe_testing.dts`` writes a real DTS-HD MA stream (XLL, 5.1, 24-bit, 48 kHz);
     FFmpeg copies it into Matroska, which writes no statistics tags. Next to it, two AC-3
-    tracks with a bit rate in their headers (the M6 audio-defaults demo: a 224 kb/s 5.1 track
-    and a stereo track)."""
+    tracks with a bit rate in their headers (a 224 kb/s 5.1 track and a stereo track)."""
     d = DTS_HD_MA_SECONDS
     args = (
         *_video("320x180", "25", d),
@@ -640,7 +619,7 @@ def _pgs_recipe() -> Recipe:
     )
 
 
-#: The 04 §Example season (batch mode, C-12 M7): one show, two seasons of the same release.
+#: Two seasons of one show (the batch-mode fixture).
 ANIME_SECONDS = 2.0
 ANIME_TITLES: dict[int, tuple[str, ...]] = {
     1: (
@@ -693,15 +672,10 @@ def anime_file_name(season: int, episode: int) -> str:
 
 
 def _anime_recipe(season: int) -> Recipe:
-    """The anime season of 04 §Example (C-12 M7, the batch mode demo).
+    """The master file of an anime season, and one stream copy of it per episode.
 
-    Every episode: H.264 320x180, ``jpn`` TrueHD 5.1 (FFmpeg's experimental ``truehd``
-    encoder: 5.1 at most, so not 04's "TrueHD Atmos 7.1"), ``eng`` DTS-HD MA 5.1 "English Dub"
-    (``reframe_testing.dts``), and two ``eng`` ASS subtitles, "Signs & Songs" (forced) and
-    "Full" (default). Season 1: E05 also has ``eng`` AC-3 2.0 "Commentary" (comment flag)
-    after the dub; E11 has no dub, and its signs track is titled "Signs". Season 2 (three
-    episodes) has E01's layout. Each episode is a stream copy of one master file, with its
-    own container title."""
+    The tracks are in :data:`ANIME_TRACKS`; the episodes that differ are named by the constants
+    above it."""
     d = ANIME_SECONDS
     master = f"anime-s{season:02d}-master.mkv"
     args: list[str] = [
@@ -853,11 +827,10 @@ def _hdr10_recipe() -> Recipe:
 
 
 def _hdr10_4k_recipe() -> Recipe:
-    """A 4K HDR10 source for the C-10 frame budget (09 §Q-3: a 4K source frame in < 2 s).
+    """A 4K HDR10 source for the frame-budget tests: a 4K source frame in under 2 s.
 
-    One libx265 pass: the HDR10 metadata is SEI in the bitstream only (C-3 reads it from the
-    first frame). ``keyint=48`` (2 s at 23.976 fps) is the GOP of a typical streaming encode;
-    a fast seek decodes at most one GOP.
+    One libx265 pass: the HDR10 metadata is SEI in the bitstream only. ``keyint=48`` (2 s at
+    23.976 fps) is the GOP of a typical streaming encode; a fast seek decodes at most one GOP.
     """
     args = (
         *_video("3840x2160", "24000/1001", 5),
@@ -1036,9 +1009,6 @@ def fixture_path(name: str, out_dir: Path | None = None) -> Path:
     return (out_dir or DEFAULT_MEDIA_DIR) / output
 
 
-# --------------------------------------------------------------------------- generation
-
-
 @dataclass(frozen=True)
 class Result:
     name: str
@@ -1196,9 +1166,6 @@ def ensure_fixture(name: str, *, out_dir: Path | None = None, ffmpeg: str | None
     recipe, output = _resolve(name, recipes)
     generate([recipe.name], out_dir=out_dir, ffmpeg=ffmpeg, jobs=1)
     return out_dir / output
-
-
-# --------------------------------------------------------------------------- CLI
 
 
 def main(argv: Sequence[str] | None = None) -> int:

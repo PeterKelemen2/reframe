@@ -1,25 +1,8 @@
-"""Write a PGS (Blu-ray Presentation Graphic Stream, ``.sup``) subtitle file with plain Python.
+"""Write PGS (``.sup``) subtitle files in plain Python, for the test media.
 
-FFmpeg has no PGS encoder, and it cannot turn text subtitles into bitmaps. So the PGS fixture
-is written here, the way :mod:`reframe_testing.vobsub` writes VobSub, and FFmpeg only muxes it
-into Matroska (``-i track.sup -c:s copy``; the Matroska muxer merges the segments of a display
-set into one block with its ``pgs_frame_merge`` filter).
-
-A ``.sup`` file is a series of segments, each with a 13-byte header: ``PG``, the PTS and DTS
-(90 kHz), the segment type and the payload size. Every subtitle event is two **display sets**:
-
-- *show*: a presentation composition (PCS, ``0x16``, "epoch start") with one composition
-  object, a window definition (WDS, ``0x17``), a palette (PDS, ``0x14``), the object (ODS,
-  ``0x15``: a run-length encoded bitmap) and the end segment (``0x80``);
-- *clear*: a PCS with no composition object, the window and the end segment.
-
-A **forced** event has the forced flag (``0x40``) on its composition object. That is the bit
-that FFmpeg's ``pgssubdec`` checks for ``forced_subs_only`` and that Blu-ray players use for
-"forced subtitles only" (the forced dialogue in a full track: HandBrake's foreign audio
-search).
-
-The bitmaps are the same white bars with a black outline as the VobSub fixture
-(:func:`reframe_testing.vobsub.bar_image`), each event a different width.
+FFmpeg has no PGS encoder, so the fixture is written here, the way
+:mod:`reframe_testing.vobsub` writes VobSub. Each event is a show display set followed by a
+clear one, with the bitmaps of the VobSub fixture (:func:`reframe_testing.vobsub.bar_image`).
 """
 
 from __future__ import annotations
@@ -48,7 +31,7 @@ class Event:
     start_ms: int
     end_ms: int
     width: int
-    """Width of the bar in pixels (each event gets a different width, so they differ)."""
+    """Width of the bar in pixels."""
     forced: bool = False
 
 

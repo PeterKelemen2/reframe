@@ -1,12 +1,8 @@
-"""Write a minimal VobSub (``.idx`` + ``.sub``) file pair with plain Python.
+"""Write a minimal VobSub (``.idx`` + ``.sub``) file pair with plain Python, for the test media.
 
-FFmpeg cannot convert text subtitles to bitmap subtitles ("Subtitle encoding currently only
-possible from text to text or bitmap to bitmap"). So the bitmap-subtitle fixture is made in two
-steps: this module writes DVD subpicture units (SPU) into an MPEG program stream, and FFmpeg
-decodes them and encodes them again with its ``dvdsub`` encoder into Matroska.
-
-The images are simple: a white bar with a black outline and gaps, which looks like a line of
-text. Enough for probing, burn-in and track-selection tests.
+FFmpeg cannot convert text subtitles to bitmap subtitles, so the fixture is made in two steps:
+this module writes DVD subpicture units (SPU) into an MPEG program stream, and FFmpeg decodes
+them and encodes them again with its ``dvdsub`` encoder into Matroska.
 """
 
 from __future__ import annotations
@@ -28,7 +24,7 @@ class Event:
     start_ms: int
     end_ms: int
     width: int
-    """Width of the bar in pixels (each event gets a different width, so they differ)."""
+    """Width of the bar in pixels."""
 
 
 def _rle_line(pixels: Sequence[int]) -> bytes:

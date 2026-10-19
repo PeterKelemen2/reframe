@@ -1,37 +1,9 @@
-"""Create fake ``ffmpeg`` / ``ffprobe`` executables for fault-injection tests.
+"""Fake ``ffmpeg`` / ``ffprobe`` executables for fault-injection tests.
 
-Typical use::
-
-    from reframe_testing import fake_tools as ft
-
-    tools = ft.make_fake_tools(tmp_path, ft.Scenario([
-        ft.Rule(argv_has=["hevc_nvenc"], exit_code=1,
-                actions=[ft.stderr("Cannot load libcuda.so.1\\n")]),
-        ft.Rule(argv_has=["-encoders"], actions=[ft.sleep(30)]),        # a hanging discovery
-    ]))
-    result = subprocess.run([tools.ffmpeg, "-hide_banner", "-encoders"], timeout=1)  # times out
-    tools.set_scenario(ft.Scenario([ft.captured("hw_hevc_nvenc_no_driver")]))       # real stderr
-    tools.invocations()   # every call: tool, pid, argv
-    tools.pids()          # every process the fake started (main and grandchildren)
-    tools.kill_leftovers()  # kill those that still run (the ``fake_tools`` fixture does this)
-
-``tools.ffmpeg`` / ``tools.ffprobe`` are paths that ``subprocess`` and
-``asyncio.create_subprocess_exec`` can run directly. They run the fake with the base
-interpreter (:data:`PYTHON`, ``sys._base_executable``), never with a venv's ``python``: on
-Windows that is a launcher that starts the real interpreter as one more child process.
-
-- POSIX: a Python file with a ``#!`` line that points at :data:`PYTHON` (a ``/bin/sh`` wrapper
-  with ``exec`` if that path is too long for a ``#!`` line or has spaces). The process that
-  ``subprocess`` starts is the fake itself.
-- Windows: ``ffmpeg.cmd`` / ``ffprobe.cmd`` batch files. ``CreateProcess`` runs them through
-  ``cmd.exe``, so the process tree is ``cmd.exe -> python.exe (the fake)``: a tree kill is
-  needed, which is what Reframe does anyway. Limitation: ``cmd.exe`` interprets
-  ``& | < > ^ %`` in arguments that ``subprocess.list2cmdline`` does not quote (it quotes only
-  arguments with spaces). For such arguments use :meth:`FakeTools.argv`, which runs the script
-  with :data:`PYTHON` directly.
-
-``hang`` and the grandchild exit by themselves after ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME``
-seconds (default 120).
+:func:`make_fake_tools` writes launchers that run :mod:`reframe_testing.fake_ffmpeg` with the
+base interpreter. The scenario (:class:`Scenario` and the action helpers) is what the fake
+reads. Every invocation is logged, so a test can check the calls and every process the fake
+started.
 """
 
 from __future__ import annotations
@@ -69,9 +41,6 @@ Action = dict[str, Any]
 _MAX_SHEBANG = 120
 
 
-# --------------------------------------------------------------------------- actions
-
-
 def stdout(text: str) -> Action:
     """Print ``text`` to stdout."""
     return {"stdout": text}
@@ -99,8 +68,8 @@ def sleep(seconds: float) -> Action:
 
 
 def hang() -> Action:
-    """Sleep until killed, or until ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` (default 120 s) is over
-    (then exit with :data:`LIFETIME_EXIT_CODE`)."""
+    """Sleep until killed, or until ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` is over (then exit with
+    :data:`LIFETIME_EXIT_CODE`)."""
     return {"hang": True}
 
 
@@ -117,7 +86,7 @@ def flood(nbytes: int, stream: Literal["stdout", "stderr"] = "stdout") -> Action
 
 def spawn_grandchild() -> Action:
     """Start a child process that hangs (to test process-tree kill). Logged with its pid. It
-    exits by itself after ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME`` (default 120 s)."""
+    exits by itself after ``REFRAME_FAKE_FFMPEG_MAX_LIFETIME``."""
     return {"spawn_grandchild": {}}
 
 
@@ -135,16 +104,10 @@ def progress(
     """Emit ``na_blocks + blocks`` ``-progress`` blocks, one every ``interval`` seconds.
 
     The destination is the value of ``-progress`` in argv (``pipe:1``, ``pipe:2`` or a file),
-    default stdout. Field names and order are :data:`PROGRESS_FIELDS` (real ffmpeg n9.0.2).
-
-    - ``na_blocks``: first print this many start-up blocks, as real ffmpeg does before the
-      encoder returns its first packet: ``frame=0``, ``bitrate=N/A``, ``total_size=0``,
-      ``out_time_us`` / ``out_time_ms`` / ``out_time`` / ``speed`` ``=N/A``
-      (``fake_data/progress_null_long``).
-    - Then ``blocks`` blocks: ``out_time_us`` goes linearly up to ``media_seconds``. The last
-      block has ``progress=end`` (unless ``end=False``).
-    - ``na_fields``: these fields are ``N/A`` in every block. Real ffmpeg prints
-      ``bitrate=N/A`` and ``total_size=N/A`` when the output is ``-f null``.
+    default stdout. Field names and order are :data:`PROGRESS_FIELDS`. The first ``na_blocks``
+    blocks are start-up blocks, as real ffmpeg prints them before the encoder returns its first
+    packet (``fake_data/progress_null_long``). The fields in ``na_fields`` are ``N/A`` in every
+    block.
     """
     unknown = set(na_fields) - set(PROGRESS_FIELDS[:-1])
     if unknown:
@@ -206,9 +169,6 @@ def exec_program(program: str | os.PathLike[str]) -> Action:
 def _check_data(name: str) -> None:
     if not (DATA_DIR / name).is_file():
         raise FileNotFoundError(f"no captured fake data named {name!r} in {DATA_DIR}")
-
-
-# --------------------------------------------------------------------------- rules and scenarios
 
 
 @dataclass(frozen=True)
@@ -287,8 +247,7 @@ def captures() -> dict[str, Capture]:
 
 def library_strings() -> dict[str, list[dict[str, str]]]:
     """``fake_data/library_strings.json``: for each hardware error text, the files of the pinned
-    build that contain it (``[{"file": "lib/libavcodec.so.63.1.102", "string": "..."}]``; an
-    empty list means the text is not in the build)."""
+    build that contain it. An empty list means the text is not in the build."""
     raw: dict[str, Any] = json.loads(
         (DATA_DIR / "library_strings.json").read_text(encoding="utf-8")
     )
@@ -307,9 +266,8 @@ def captured(
 ) -> Rule:
     """A rule that replays a real capture: same stdout, stderr and exit code.
 
-    By default it matches when argv contains the encoder (``-c:v`` value) or, failing that, the
-    last option of the captured command. Example: ``captured("hw_hevc_nvenc_no_driver")``
-    matches any argv with ``hevc_nvenc`` and prints the real "Cannot load libcuda.so.1" stderr.
+    Unless ``argv_has``, ``argv_contains`` or ``argv_regex`` is given, it matches the ``-c:v``
+    value of the captured command, or else its last element.
     """
     cap = captures()[name]
     if argv_has is None and not argv_contains and argv_regex is None:
@@ -330,9 +288,6 @@ def captured(
         argv_contains=tuple(argv_contains),
         argv_regex=argv_regex,
     )
-
-
-# --------------------------------------------------------------------------- launchers
 
 
 @dataclass(frozen=True)
@@ -380,9 +335,13 @@ class FakeTools:
         return env
 
     def argv(self, tool: Tool = "ffmpeg") -> list[str]:
-        """Run the fake without a launcher: ``[*tools.argv("ffmpeg"), "-version"]``.
+        """The command that runs the fake without a launcher, for example
+        ``[*tools.argv("ffmpeg"), "-version"]``.
 
-        Uses the default scenario and log only through :meth:`env`; pass ``env=tools.env()``.
+        On Windows a launcher runs through ``cmd.exe``, which interprets ``& | < > ^ %`` in
+        arguments that ``subprocess`` does not quote (it quotes only arguments with spaces).
+        Pass such arguments through this command instead. The scenario and the log come only
+        from ``env``, so pass ``env=tools.env()``.
         """
         return [PYTHON, "-I", str(SCRIPT), "--fake-tool", tool]
 
@@ -433,8 +392,7 @@ class FakeTools:
         """Kill every logged process that is still running and wait for it; return the pids.
 
         A pid is skipped when its process started after the log entry was written: the OS
-        reused the pid for an unrelated process. The ``fake_tools`` fixture calls this in its
-        teardown, so a failed test does not leave hanging fakes behind.
+        reused the pid for an unrelated process.
         """
         import psutil  # only the tests need it, not the fake itself
 
