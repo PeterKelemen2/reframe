@@ -2,7 +2,7 @@
 
 :class:`JobDraft` is a runtime model, never stored: the job settings that a source and a
 preset give, with the decisions and the output name that made them, and the validation issues
-of the result. The CLI (``reframe plan``, ``reframe encode``) and the UI's *Open source* use it.
+of the result.
 """
 
 from __future__ import annotations
