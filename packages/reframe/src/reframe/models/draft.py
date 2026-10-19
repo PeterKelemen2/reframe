@@ -1,9 +1,8 @@
-"""A job drafted from a preset (C-15 ``Reframe.jobs.draft``).
+"""A job drafted from a preset.
 
 :class:`JobDraft` is a runtime model, never stored: the job settings that a source and a
-preset give, with the decisions that made them (the audio codec rules of C-12, the output
-name of C-16) and the validation issues of the result. The CLI (``reframe plan``,
-``reframe encode``) and later the UI's *Open source* use it.
+preset give, with the decisions and the output name that made them, and the validation issues
+of the result. The CLI (``reframe plan``, ``reframe encode``) and the UI's *Open source* use it.
 """
 
 from __future__ import annotations
@@ -20,22 +19,21 @@ __all__ = ["JobDraft"]
 
 
 class JobDraft(ReframeModel):
-    """``JobService.draft(source, preset)``: the job, why its tracks and name are what they
-    are, and its issues."""
+    """The job drafted from a preset: why its tracks and name are what they are, and its
+    issues."""
 
     job: JobSettings
     """Filled from the preset (output options, dimensions, filters, video, chapters, tags),
     the source (tracks, the video track's metadata) and the output name."""
     decisions: list[TrackDecision] = Field(default_factory=list)
-    """One per source audio track, in source order (C-12 ``draft_tracks``; decisions 0018,
-    0031)."""
+    """One per source audio track, in source order."""
     subtitle_decisions: list[TrackDecision] = Field(default_factory=list)
-    """One per source subtitle track, in source order (C-12's subtitle selection)."""
+    """One per source subtitle track, in source order."""
     naming: NameResult
-    """C-16's output name of the source (the template, or the manual name of ``-o``)."""
+    """The output name of the source: from the template, or the manual name given with ``-o``."""
     issues: list[ValidationIssue] = Field(default_factory=list)
-    """``validate(job)`` of the drafted job, and the errors of the track stage (no track for a
-    required language: a template path); an ``error`` keeps it out of the queue."""
+    """Issues of the drafted job, and the errors of the track stage (no track for a required
+    language: a template path); an ``error`` keeps it out of the queue."""
     notes: list[str] = Field(default_factory=list)
     """What the draft changed or left out, in one line each: an output name that was the
-    source file itself, preset options that M2 does not apply yet."""
+    source file itself, preset options the draft does not apply."""

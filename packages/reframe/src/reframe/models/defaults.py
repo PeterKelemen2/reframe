@@ -1,8 +1,7 @@
-"""Audio and subtitle defaults stored in a preset (03 §Audio defaults, §Subtitles; C-12).
+"""Audio and subtitle defaults stored in a preset: which source tracks to take, how to encode
+them (codec rules, first match wins) and when to pass a track through unchanged.
 
-Three parts: **which tracks** (:class:`TrackSelection`), **how to encode them**
-(:class:`AudioCodecRule` list, first match wins) and **passthru** (:class:`PassthruPolicy`).
-The defaults below are the "Default" column of 03's tables.
+The last codec rule is always the catch-all (:func:`check_catch_all`).
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ __all__ = [
     "default_codec_rules",
 ]
 
-#: Codecs that can be passed through (03 §Audio defaults, part 3).
+#: Codecs that can be passed through.
 PassthruCodec = Literal["ac3", "eac3", "dts", "dtshd", "truehd", "aac", "mp3", "flac", "opus"]
 ALL_PASSTHRU_CODECS: tuple[PassthruCodec, ...] = get_args(PassthruCodec)
 #: Condition on the **source** track's channels.
@@ -51,8 +50,8 @@ BurnInBehaviour = Literal["none", "foreign_audio", "first", "foreign_audio_then_
 
 
 class TrackSelection(DocumentModel):
-    """Which source tracks to take (03 §Audio defaults, part 1). Shared by audio and subtitle
-    defaults; :class:`SubtitleDefaults` uses other default values.
+    """Which source tracks to take. Shared by audio and subtitle defaults; :class:`SubtitleDefaults`
+    uses other default values.
 
     ``languages`` ``None`` = the preferred languages from Settings (audio or subtitle).
     """
@@ -73,7 +72,7 @@ class TrackSelection(DocumentModel):
     default_track: Literal["first_output", "first_in_first_language", "forced", "none"] = (
         "first_output"
     )
-    """``forced`` is meant for subtitles (03 §Subtitles: none / first output / forced)."""
+    """``forced`` is meant for subtitles."""
 
 
 class ExtraAudioOutput(DocumentModel):
@@ -86,7 +85,7 @@ class ExtraAudioOutput(DocumentModel):
 
 
 class AudioRuleExtras(DocumentModel):
-    """The optional settings of a codec rule (the expanded row in 03)."""
+    """The optional settings of a codec rule."""
 
     samplerate: PositiveInt | None = None
     gain: float = 0.0
@@ -133,12 +132,12 @@ def check_catch_all(rules: list[AudioCodecRule]) -> list[AudioCodecRule]:
 
 
 def default_codec_rules() -> list[AudioCodecRule]:
-    """The single catch-all rule of a new preset: anything → AAC, up to 5.1, 256 kb/s."""
+    """The single catch-all rule of a new preset."""
     return [AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256)]
 
 
 class PassthruPolicy(DocumentModel):
-    """Allowed passthru codecs and the fallback encoder (03 §Audio defaults, part 3)."""
+    """Allowed passthru codecs and the fallback encoder."""
 
     allowed: list[PassthruCodec] = Field(default_factory=lambda: list(ALL_PASSTHRU_CODECS))
     fallback_encoder: str = "aac"
@@ -147,8 +146,7 @@ class PassthruPolicy(DocumentModel):
 
 
 class AudioDefaults(DocumentModel):
-    """``AudioDefaults(selection, codec_rules, passthru)``. The last codec rule is always the
-    catch-all; the model enforces it."""
+    """Audio defaults. The last codec rule is always the catch-all; the model enforces it."""
 
     selection: TrackSelection = Field(default_factory=TrackSelection)
     codec_rules: list[AudioCodecRule] = Field(default_factory=default_codec_rules)
@@ -173,30 +171,26 @@ class SubtitleDefaults(DocumentModel):
     burn_in: BurnInBehaviour = "none"
 
 
-# --------------------------------------------------------------------------- results (C-12)
-
-
 class TrackDecision(ReframeModel):
     """What the audio or subtitle defaults did with one source track, and why: one row of the
-    live preview (03 §Audio defaults → Live preview: ``source track → selected? (why) → rule #
-    → output → reason``) and of ``explain`` (C-12).
+    live preview.
 
-    The selection stage fills ``selected`` and ``selection``; for a selected audio track the
-    codec-rule stage (``reframe.batch.apply_codec_rules``) fills ``rule``, ``outputs`` and
-    ``reason``. A dropped track has no outputs, and ``reason`` repeats why it was dropped.
+    The selection stage fills ``selected`` and ``selection``. For a selected audio track, the
+    codec-rule stage fills ``rule``, ``outputs`` and ``reason``. A dropped track has no outputs,
+    and ``reason`` repeats why it was dropped.
     """
 
     source_stream: NonNegativeInt
     """Absolute stream index of the source track."""
     kind: Literal["audio", "subtitle"] = "audio"
     selected: bool = True
-    """Taken by the selection stage (03 §Audio defaults, part 1)."""
+    """Taken by the selection stage."""
     selection: str | None = None
     """Why it was taken or dropped, in one line: ``Hungarian: first matching track (best
     quality)``, ``Commentary: dropped``, ``No listed language: the default-flagged track``.
     ``None`` when no selection stage ran."""
     rule: PositiveInt | None = None
-    """The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched."""
+    """The codec rule that matched, 1-based; ``None`` when none matched."""
     outputs: list[AudioOutputTrack] = Field(default_factory=list)
     """Audio: the output track(s), the rule's output, then its extra outputs. Empty when the
     track was dropped or no rule matched."""
@@ -211,13 +205,12 @@ class TrackDecision(ReframeModel):
     forced by the encoder, the extra outputs."""
     measure: bool = False
     """The source bit rate is unknown and decided the outcome: the preview offers
-    **Measure** (a packet-size scan, C-10)."""
+    **Measure** (a packet-size scan)."""
 
 
 class TrackDraft(ReframeModel):
-    """The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``):
-    the selection stage, then the codec rules for audio (decision 0018 for M2, where every
-    track was taken), in the output order of the defaults."""
+    """The output tracks drafted for a source from a template: the selection stage, then the
+    codec rules for audio, in the output order of the defaults."""
 
     audio: list[AudioOutputTrack] = Field(default_factory=list)
     subtitles: list[SubtitleOutputTrack] = Field(default_factory=list)

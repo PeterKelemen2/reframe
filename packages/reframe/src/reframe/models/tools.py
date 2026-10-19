@@ -1,4 +1,4 @@
-"""External tool status (C-1): which ffmpeg / ffprobe / mkvpropedit / mediainfo is used.
+"""External tool status: which ffmpeg / ffprobe / mkvpropedit / mediainfo is used.
 
 Produced by :func:`reframe.tools.discover_tools`. A missing, broken or too old tool is data
 (:class:`ToolStatus` plus a reason and fixes), never an exception.
@@ -22,7 +22,7 @@ ToolName = Literal["ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"]
 
 
 class ToolOrigin(StrEnum):
-    """Where the tool path came from, in discovery order (02 §Bundled FFmpeg)."""
+    """Where the tool path came from, in discovery order."""
 
     ENV = "env"
     """An environment variable (``REFRAME_FFMPEG`` …). Read-only in the UI."""
@@ -40,7 +40,7 @@ class ToolStatus(StrEnum):
     MISSING = "missing"
     """No binary at the configured path, or not found anywhere."""
     TOO_OLD = "too_old"
-    """It runs, but its version is below the minimum (FFmpeg 7.0)."""
+    """It runs, but its version is below the minimum."""
     BROKEN = "broken"
     """The file exists but does not run, times out, fails ``-version``, or is not that tool."""
 
@@ -64,22 +64,20 @@ class ToolInfo(ReframeModel):
     """Why the status is not ``found``; for ``found`` an optional note (for example "version
     could not be read")."""
     version: str | None = None
-    """The version string as the tool prints it: ``n9.0.2-17-g2a571b6068-20260930``,
-    ``N-127032-g6ae491a26c-20260930``, ``101.0``."""
+    """The version string as the tool prints it."""
     release: str | None = None
-    """The upstream release, ``9.0.2``; ``None`` for git master builds."""
+    """The upstream release; ``None`` for git master builds."""
     release_series: str | None = None
-    """``9.0`` for a release; for a git master build the series of its library versions
-    (``9.0`` for ``libavcodec 63``), used for the minimum-version check."""
+    """The release series of a release. For a git master build, the series of its library
+    versions, which the minimum-version check uses."""
     build_flags: list[str] = Field(default_factory=list)
     """FFmpeg: the arguments of the ``configuration:`` line (``--enable-libx265`` …), for
     diagnostics."""
     library_versions: dict[str, str] = Field(default_factory=dict)
-    """FFmpeg: ``{"libavcodec": "63.1.102", …}``."""
+    """FFmpeg: the version of each library, by name."""
     env: dict[str, str] = Field(default_factory=dict)
     """Extra environment variables to set when running this tool (for example
-    ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux). Pass as ``extra_env`` to
-    :func:`reframe.tools.run`."""
+    ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux)."""
     env_var: str | None = None
     """The environment variable that overrides this tool (``REFRAME_FFMPEG``)."""
     next_to_ffmpeg: bool = False
@@ -101,10 +99,8 @@ class ToolSet(ReframeModel):
 
 
 class ToolFetchResult(ReframeModel):
-    """``reframe tools fetch`` (C-15): the pinned FFmpeg build of the manifest, downloaded,
-    checked (size and SHA-256) and installed as the bundled build in ``<data dir>/tools/ffmpeg``,
-    where tool discovery finds it (02 §Bundled FFmpeg). The result of the ``tools_fetch`` task.
-    """
+    """The pinned FFmpeg build, downloaded, checked (size and SHA-256) and installed as the
+    bundled build in ``<data dir>/tools/ffmpeg``, where tool discovery finds it."""
 
     build: str
     """The manifest's build name (``default``)."""

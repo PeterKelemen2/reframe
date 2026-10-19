@@ -1,15 +1,12 @@
-"""Job templates and track rules (04 §Track rules, §Per-file overrides; C-12).
+"""Job templates and track rules.
 
 A :class:`JobTemplate` is a :class:`~reframe.models.job.JobSettings` without the
 source-specific parts, plus track **rules** instead of concrete tracks, a naming template and
-the per-file policies. A preset is a template with a name (``reframe.models.preset``); a
-batch group template is the same model. There is one rule engine for presets and batch mode.
+the per-file policies. A preset is a template with a name, and a batch group template is the
+same model. There is one rule engine for presets and batch mode.
 
-How the audio rules are built (04): when ``audio_rules`` is empty, C-12 compiles
-``audio_defaults`` into rules (one per language of the selection, with
-:class:`AudioCodecRules` settings). A manual edit in batch mode becomes explicit rules with
-fixed :class:`AudioOutputSettings`; explicit rules take precedence over the defaults. The
-same holds for subtitles.
+When ``audio_rules`` (or ``subtitle_rules``) is empty, the defaults are compiled into rules;
+explicit rules take precedence over the defaults.
 """
 
 from __future__ import annotations
@@ -60,7 +57,7 @@ ChapterNamePolicy = Literal["source", "generated"]
 
 
 class TrackSelector(DocumentModel):
-    """Which source track(s) a rule takes (04 §Track rules; field names as in the plan)."""
+    """Which source track(s) a rule takes."""
 
     kind: Literal["audio", "subtitle"]
     languages: list[LanguageTag] | None = None
@@ -77,14 +74,13 @@ class TrackSelector(DocumentModel):
     nth: NonNegativeInt = 0
     """The nth candidate after filtering and sorting."""
     sort: Literal["source_order", "most_channels", "highest_bitrate"] = "source_order"
-    """``highest_bitrate`` is decision 0031's best-quality order: lossless first, then the
-    highest known bit rate (an unknown one after every known one), then more channels;
-    for subtitles ``most_channels`` and ``highest_bitrate`` put full subtitles before SDH
-    before forced and Signs & Songs (decision 0040)."""
+    """``highest_bitrate``: lossless first, then the highest known bit rate (an unknown one after
+    every known one), then more channels. For subtitles, ``most_channels`` and
+    ``highest_bitrate`` put full subtitles before SDH, before forced and Signs & Songs."""
     stream: NonNegativeInt | None = None
-    """A per-file override (04 §Resolution matrix: a candidate picked by hand in a cell): the
-    absolute index of the source track this rule takes in that one file; the other fields
-    are not checked. Not for a preset: a stream index does not carry over to other files."""
+    """A per-file override: the absolute index of the source track this rule takes in that one
+    file; the other fields are not checked. Not for a preset: a stream index does not carry over
+    to other files."""
 
 
 class AudioOutputSettings(_AudioEncoding):
@@ -134,8 +130,8 @@ class TrackMetadataTemplate(DocumentModel):
 
 
 class OutputTrackRule(DocumentModel):
-    """ "Output track N comes from the source track that matches ``selector``, with
-    ``settings`` and ``metadata``" (04 §Track rules)."""
+    """One output track: it comes from the source track that matches ``selector``, with
+    ``settings`` and ``metadata``."""
 
     selector: TrackSelector
     multiple: bool = False
@@ -155,7 +151,7 @@ class ChapterOptions(DocumentModel):
 
 
 class JobTemplate(DocumentModel):
-    """``JobSettings`` without source-specific fields, plus rules, naming and policies.
+    """JobSettings without source-specific fields, plus rules, naming and policies.
 
     Not in a template: the source, the range (always the full file), the output path and
     per-job name, concrete audio/subtitle tracks, chapter names.

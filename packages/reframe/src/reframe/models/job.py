@@ -1,12 +1,12 @@
-"""Job settings: everything needed to encode one source (C-2, 03 §Summary … §Tags).
+"""Job settings: everything needed to encode one source.
 
-The client edits a ``JobSettings`` (02 §State model) and sends it to the helper endpoints
-(validate, plan, preview). The queue stores it (so it is a document model: unknown fields
-are kept). Validation fixes are JSON patches on this document.
+The client edits a ``JobSettings`` and sends it to the helper endpoints. The queue stores it
+(so it is a document model: unknown fields are kept). Validation fixes are JSON patches on this
+document.
 
 Encoder ids (``libx265``, ``hevc_nvenc``), filter ids and option keys are strings here: the
-definitions (C-6) list the valid values, and validation (C-8) reports unknown ones as issues
-instead of failing to load a saved job.
+definitions list the valid values, and validation reports unknown ones as issues instead of
+failing to load a saved job.
 """
 
 from __future__ import annotations
@@ -62,16 +62,13 @@ __all__ = [
 ]
 
 Container = Literal["mkv", "mp4", "webm"]
-#: A value of an advanced encoder option (C-6 ``EncoderOption.type``).
+#: A value of an advanced encoder option.
 OptionValue = bool | int | float | str
 NameSource = Literal["auto", "file", "folder"]
 
 
-# --------------------------------------------------------------------------- track metadata
-
-
 class TrackFlags(DocumentModel):
-    """The six track flags of 03 §Track metadata (Matroska ``Flag*``, FFmpeg dispositions)."""
+    """The six track flags (Matroska ``Flag*``, FFmpeg dispositions)."""
 
     default: bool = False
     forced: bool = False
@@ -92,9 +89,6 @@ class TrackMetadata(TrackFlags):
     language: LanguageTag | None = None
     """BCP 47 (``hu``, ``pt-BR``). MKV gets ISO 639-2/B + ``LanguageIETF``, MP4 ISO 639-2/T."""
     name: str | None = None
-
-
-# --------------------------------------------------------------------------- range
 
 
 class FullRange(DocumentModel):
@@ -128,15 +122,12 @@ class FrameRange(DocumentModel):
 
 
 #: The part of the source to encode, discriminated by ``kind``. Ranges outside the source
-#: are validation issues (C-8), not model errors.
+#: are validation issues, not model errors.
 Range = Annotated[FullRange | ChapterRange | TimeRange | FrameRange, Field(discriminator="kind")]
 
 
-# --------------------------------------------------------------------------- output
-
-
 class OutputOptions(DocumentModel):
-    """Container options of the Summary tab's Output card (shared by jobs and templates)."""
+    """Container options, shared by jobs and templates."""
 
     container: Container = "mkv"
     web_optimized: bool = False
@@ -152,7 +143,7 @@ class JobNaming(DocumentModel):
     ``mode="manual"`` uses ``manual_name`` (*Reset to template* sets ``mode`` back).
     ``template`` and ``name_source`` override the preset's naming options for this job only
     (``None`` = use them). ``field_overrides`` holds the parsed-name fields that the user
-    corrected for this file (03 §Naming editor, 04 §Per-file overrides).
+    corrected for this file.
     """
 
     mode: Literal["template", "manual"] = "template"
@@ -162,56 +153,46 @@ class JobNaming(DocumentModel):
     """Used for movies and episodes alike (it replaces both templates of the options)."""
     name_source: NameSource | None = None
     field_overrides: dict[str, str] = Field(default_factory=dict)
-    """Parsed-name fields corrected for this file, by variable name: ``name``,
-    ``main_title``, ``sub_title``, ``season``, ``episode``, ``episode_code``, ``year``,
-    ``edition``, ``source_type``, ``release_group``. They replace what the parser found;
-    ``""`` clears a field. Numbers are written as text (``"3"``). Unknown names and bad
-    numbers are naming issues, not load errors."""
+    """Parsed-name fields corrected for this file, by variable name (such as ``season``).
+    They replace what the parser found; ``""`` clears a field. Numbers are written as text
+    (``"3"``). Unknown names and bad numbers are naming issues, not load errors."""
 
 
 class OutputSettings(OutputOptions):
-    """``JobSettings.output``: container options, the output path and naming."""
+    """Container options, the output path and naming of a job."""
 
     path: Path | None = None
     """The final output path once naming resolved it; ``None`` until then."""
     naming: JobNaming = Field(default_factory=JobNaming)
     edit_in_place: bool = False
-    """Remux-only jobs on MKV: edit metadata in place with mkvpropedit (03 §Remux-only)."""
-
-
-# --------------------------------------------------------------------------- filters
+    """Remux-only jobs on MKV: edit metadata in place with mkvpropedit."""
 
 
 class FilterConfig(DocumentModel):
-    """One filter of 03 §Filters: a preset (``default``, ``light``, …), an optional tune, and
-    a custom parameter string for the ``custom`` preset. A filter that is off is not in
+    """One filter: a preset (``default``, ``light``, …), an optional tune, and a custom
+    parameter string for the ``custom`` preset. A filter that is off is not in
     :class:`FilterSettings` at all."""
 
     preset: str = "default"
-    """A preset of the chosen implementation (``FilterImplementation.presets`` in C-6)."""
+    """A preset of the chosen implementation."""
     tune: str | None = None
     custom: str | None = None
     implementation: str | None = None
-    """The FFmpeg implementation (C-6 ``FilterImplementation.id``): ``nlmeans`` or
-    ``hqdn3d`` for Denoise, ``bwdif`` or ``yadif`` for Deinterlace, ``unsharp`` or ``cas``
-    for Sharpen, ``zscale`` or ``libplacebo`` for Colorspace and Tone mapping. ``None`` = the
-    filter's default: the first implementation the FFmpeg build can run (HandBrake stores
-    this choice separately too, for example ``PictureDenoiseFilter``)."""
+    """The FFmpeg implementation of the filter, by its id in the definitions. ``None`` = the
+    filter's default: the first implementation the FFmpeg build can run."""
 
 
 class FilterSettings(RootModel[dict[str, FilterConfig]]):
     """Ordered map ``filter_id → FilterConfig``.
 
-    Filter ids are those of the definitions (C-6): ``detelecine``, ``interlace_detection``,
+    Filter ids are those of the definitions: ``detelecine``, ``interlace_detection``,
     ``deinterlace``, ``denoise``, ``chroma_smooth``, ``sharpen``, ``deblock``,
-    ``colorspace``, ``tonemap``, ``grayscale``, ``custom``. The order in the graph is fixed
-    by 03 §Filters; the map order matters only for display.
+    ``colorspace``, ``tonemap``, ``grayscale``, ``custom``. The order in the graph is fixed;
+    the map order matters only for display.
     """
 
     root: dict[str, FilterConfig] = Field(default_factory=dict)
 
-
-# --------------------------------------------------------------------------- video
 
 FramerateMode = Literal["variable", "constant", "peak"]
 
@@ -236,7 +217,7 @@ RateControl = Annotated[ConstantQuality | AverageBitrate, Field(discriminator="m
 
 
 class VideoSettings(DocumentModel):
-    """``JobSettings.video``: an encoder, or passthrough (copy the video stream).
+    """The video track of a job: an encoder, or passthrough (copy the video stream).
 
     With ``passthrough`` the other fields are kept (so switching back restores them) but not
     used, and dimensions and filters do not apply.
@@ -257,13 +238,11 @@ class VideoSettings(DocumentModel):
     bit_depth: Literal[8, 10] = 8
     fast_decode: bool = False
     advanced: dict[str, OptionValue] = Field(default_factory=dict)
-    """Advanced encoder options by key (C-6 ``EncoderOption.key``); only changed values."""
+    """Advanced encoder options by key; only changed values."""
     custom_params: str = ""
     """Free ``key=value:…`` text, appended last."""
     metadata: TrackMetadata = Field(default_factory=TrackMetadata)
 
-
-# --------------------------------------------------------------------------- audio
 
 AudioAction = Literal["passthru", "encode"]
 Mixdown = Literal["mono", "stereo", "dpl2", "5.1", "7.1"]
@@ -302,8 +281,6 @@ class AudioOutputTrack(_AudioEncoding):
     metadata: TrackMetadata = Field(default_factory=TrackMetadata)
 
 
-# --------------------------------------------------------------------------- subtitles
-
 SubtitleAction = Literal["copy", "burn", "convert"]
 SubtitleFormat = Literal["srt", "ass", "webvtt", "mov_text"]
 
@@ -340,11 +317,8 @@ class SubtitleOutputTrack(_SubtitleHandling):
     metadata: TrackMetadata = Field(default_factory=TrackMetadata)
 
 
-# --------------------------------------------------------------------------- chapters, tags
-
-
 class ChapterSettings(DocumentModel):
-    """``JobSettings.chapters``: markers on/off, renamed chapters, generated chapters."""
+    """Chapter markers: on or off, renamed chapters, generated chapters."""
 
     enabled: bool = True
     names: list[str] | None = None
@@ -366,11 +340,8 @@ class TagSettings(DocumentModel):
     plot: str | None = None
 
 
-# --------------------------------------------------------------------------- the job
-
-
 class JobSettings(DocumentModel):
-    """Everything needed to encode one source (05 §C-2 sketch)."""
+    """Everything needed to encode one source."""
 
     schema_version: PositiveInt = 1
     source: SourceRef

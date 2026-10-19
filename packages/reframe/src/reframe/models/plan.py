@@ -1,39 +1,9 @@
-"""Encode plans (C-7): the exact commands for one job.
+"""Encode plans: the exact commands for one job.
 
-``build_plan(job, source, caps, tools) -> EncodePlan`` is pure. The queue runner (C-11) runs
-the steps in order.
-
-**Measured values.** A later step can need a value that an earlier step measures: two-pass
-``loudnorm`` needs the ``input_i`` / ``input_tp`` / ``input_lra`` / ``input_thresh`` /
-``target_offset`` that the ``analyse`` step prints. Such an argument is an
-:class:`ArgTemplate` instead of a plain string: literal parts and :class:`ValueRef` parts,
-joined after substitution. A step declares what it measures in ``measures``
-(:class:`Measurement`: an id and a parser); the runner parses the step's output and stores
-the values as ``"<measurement id>.<key>"`` (``"a0.input_i"``). :func:`resolve_argv` turns
-an argv with templates into plain strings. Example (one audio track)::
-
-    PlanStep(kind="analyse", tool="ffmpeg", argv=[..., "-af",
-             "loudnorm=I=-23:TP=-1:LRA=7:print_format=json", "-f", "null", "-"],
-             measures=[Measurement(id="a0", parser="loudnorm")])
-    PlanStep(kind="encode", tool="ffmpeg", argv=[..., "-filter:a:0", ArgTemplate(parts=[
-             "loudnorm=I=-23:TP=-1:LRA=7:measured_I=", ValueRef(ref="a0.input_i"),
-             ":measured_TP=", ValueRef(ref="a0.input_tp"), ...]), ...])
-
-The command preview (:attr:`EncodePlan.display`) shows a reference as
-``<a0.input_i>``.
-
-**Files.** The builder is pure, but some steps read a file that it generates: the FFMETADATA
-chapter file for renamed or generated chapters (``-i <file> -map_chapters 1``). Such files
-are :class:`PlanFile` entries in :attr:`EncodePlan.files` (path and full text). The runner
-writes them (UTF-8) before the first step, next to ``output_tmp``
-(``<name>.part.chapters.txt``), and removes them when the job ends, also when it fails or is
-cancelled. The steps' argv refer to the same paths.
-
-**Temporary files.** Steps can leave files of their own behind: the 2-pass statistics
-(x264 ``<prefix>-0.log`` and ``.mbtree``, x265 ``<prefix>`` and ``.cutree``, plus the
-``.temp`` files the encoders write while a pass runs). They are listed in
-:attr:`EncodePlan.temp_files`; the runner removes the ones that exist when the job ends,
-also when it fails or is cancelled.
+``build_plan`` is pure: it builds the commands and runs nothing. A step can need a value that an
+earlier step measures. Such an argument is an :class:`ArgTemplate` (literal text and
+:class:`ValueRef` parts), and :func:`resolve_argv` turns it into plain strings once the values
+are known.
 """
 
 from __future__ import annotations
@@ -102,7 +72,7 @@ class PlanStep(ReframeModel):
 
 
 class PlanFile(ReframeModel):
-    """A file that the runner writes before the steps run (see the module doc)."""
+    """A file that the runner writes before the steps run."""
 
     path: Path
     """Where to write it: next to ``output_tmp`` (``<name>.part.chapters.txt``)."""
@@ -113,7 +83,7 @@ class PlanFile(ReframeModel):
 
 
 class EncodePlan(ReframeModel):
-    """``EncodePlan`` as C-7 sketches it, plus ``files`` (inputs that the builder generates)."""
+    """The steps of one job, with the files they read and the files they leave behind."""
 
     job_type: JobType
     steps: list[PlanStep]
@@ -123,7 +93,8 @@ class EncodePlan(ReframeModel):
     expected_duration: NonNegativeFloat
     """Seconds, range-adjusted, for progress."""
     display: str
-    """Shell-quoted command preview (POSIX or Windows style)."""
+    """Shell-quoted command preview (POSIX or Windows style); a measured value shows as
+    ``<a0.input_i>``."""
     files: list[PlanFile] = Field(default_factory=list)
     """Files to write before the first step and remove after the job."""
     temp_files: list[Path] = Field(default_factory=list)

@@ -1,10 +1,7 @@
-"""Events of the core event bus (02 §Events). The server forwards them over one WebSocket.
+"""Events of the core event bus. The server forwards them over one WebSocket.
 
-:data:`Event` is one discriminated union (discriminator ``type``). The table of 02 §Events
-gives the first seven types; C-1, C-9 and C-14 add ``tools.changed``, ``app.warning``,
-``power.countdown`` and ``notification``. ``resync`` is never published: the event bus puts
-it into a subscriber's stream when that subscriber lost events (``reframe.events``). The
-bus itself is ``reframe.events.EventBus``.
+:data:`Event` is one discriminated union (discriminator ``type``). ``resync`` is never
+published: the event bus puts it into a subscriber's stream when that subscriber lost events.
 """
 
 from __future__ import annotations
@@ -40,7 +37,7 @@ __all__ = [
 
 
 class CapabilitiesChangedEvent(ReframeModel):
-    """Encoder detection changed a status (C-4)."""
+    """Encoder detection changed a status."""
 
     type: Literal["capabilities.changed"] = "capabilities.changed"
     encoders: list[EncoderStatus]
@@ -53,7 +50,7 @@ class TaskProgressEvent(ReframeModel):
 
 
 class TaskDoneEvent(ReframeModel):
-    """A task ended: ``task.state`` is ``done``, ``failed`` or ``cancelled``."""
+    """A task ended; ``task.state`` says how."""
 
     type: Literal["task.done"] = "task.done"
     task: TaskInfo
@@ -101,13 +98,13 @@ class ToolsChangedEvent(ReframeModel):
 class AppWarningEvent(ReframeModel):
     """A problem that the user should know about but that does not stop anything.
 
-    Examples: a corrupt settings or presets file was backed up and replaced (C-9); sleep
-    inhibit is not available (C-14).
+    Examples: a corrupt settings or presets file was backed up and replaced; sleep inhibit is
+    not available.
     """
 
     type: Literal["app.warning"] = "app.warning"
     code: str
-    """``settings.corrupt``, ``presets.corrupt``, ``sleep_inhibit.unavailable``, …"""
+    """A stable code for the warning, such as ``settings.corrupt``."""
     message: str
     detail: str | None = None
 
@@ -116,10 +113,10 @@ PowerAction = Literal["shutdown", "sleep", "quit"]
 
 
 class PowerCountdownEvent(ReframeModel):
-    """The when-done power action countdown (C-14): always 60 s and cancellable.
+    """The when-done power action countdown: always 60 s and cancellable.
 
     ``phase``: ``started`` (once), ``tick`` (every second), then ``cancelled`` or
-    ``executing``. The UI shows a dialog with a *Cancel* button while it runs.
+    ``executing``.
     """
 
     type: Literal["power.countdown"] = "power.countdown"
@@ -131,7 +128,7 @@ class PowerCountdownEvent(ReframeModel):
 
 
 class NotificationEvent(ReframeModel):
-    """A notification for the UI to show (C-14 only emits the event)."""
+    """A notification for the UI to show."""
 
     type: Literal["notification"] = "notification"
     title: str
@@ -146,8 +143,7 @@ class ResyncEvent(ReframeModel):
     The event bus inserts it where events were dropped (``reason="dropped"``: progress or log
     events of a subscriber that fell behind), or as the last event before it closes a
     subscription that fell too far behind (``reason="overflow"``: subscribe again). The
-    receiver should fetch the current queue, tasks and statuses again. S-3 sends the same
-    marker over the WebSocket.
+    receiver should fetch the current queue, tasks and statuses again.
     """
 
     type: Literal["resync"] = "resync"

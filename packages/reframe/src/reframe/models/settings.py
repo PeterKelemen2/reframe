@@ -1,8 +1,7 @@
-"""Application settings (03 §Settings, C-9): ``<config>/settings.json``.
+"""Application settings: ``<config>/settings.json``.
 
-One section per Settings page: Tools, Encoders, Output, Languages, Preview, Queue,
-Appearance. Paths set by environment variables (``REFRAME_FFMPEG`` …) are not stored here:
-they win over these values and are shown read-only (02 §Bundled FFmpeg).
+Paths set by environment variables (``REFRAME_FFMPEG`` …) are not stored here: they win over
+these values and are shown read-only.
 """
 
 from __future__ import annotations
@@ -36,9 +35,8 @@ WhenDone = Literal["nothing", "notify", "quit", "sleep", "shutdown"]
 
 
 class ToolPaths(DocumentModel):
-    """Settings → Tools: path overrides (``None`` = no override). A path may name the binary
-    or its folder. The "Use bundled" fix removes the key (``{"op": "remove", "path":
-    "/tools/ffmpeg"}``)."""
+    """Tool path overrides (``None`` = no override). A path may name the binary or its folder.
+    The "Use bundled" fix removes the key."""
 
     ffmpeg: Path | None = None
     ffprobe: Path | None = None
@@ -48,15 +46,15 @@ class ToolPaths(DocumentModel):
 
 class EncoderSettings(DocumentModel):
     hardware_tests: bool = True
-    """Run the hardware test encodes (C-4). Off: hardware encoders stay "unknown"."""
+    """Run the hardware test encodes. Off: hardware encoders stay "unknown"."""
     vaapi_device: str | None = None
     """The VAAPI render node to use (``/dev/dri/renderD129``). ``None`` or empty = automatic:
     detection tests the VAAPI encoders on every ``/dev/dri/renderD*`` node and each encoder
-    uses the first node where it works (decision 0020)."""
+    uses the first node where it works."""
 
 
 class OutputDefaults(DocumentModel):
-    """Settings → Output."""
+    """The output settings."""
 
     naming: NamingOptions = Field(default_factory=NamingOptions)
     default_container: Container = "mkv"
@@ -71,7 +69,7 @@ class LanguageSettings(DocumentModel):
     favourites: list[LanguageTag] = Field(default_factory=list)
     """Shown first in the language picker."""
     preferred_audio: list[LanguageTag] = Field(default_factory=list)
-    """Used by preset rules whose language list is empty (``TrackSelection.languages``)."""
+    """Used by preset rules whose language list is empty."""
     preferred_subtitle: list[LanguageTag] = Field(default_factory=list)
 
 

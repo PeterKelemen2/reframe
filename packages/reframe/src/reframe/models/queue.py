@@ -1,8 +1,7 @@
-"""Queue jobs and progress (03 §Queue, C-11).
+"""Queue jobs and progress.
 
-A :class:`QueueJob` is one row of the SQLite ``jobs`` table (C-11): ``id, position, state,
-settings_json, plan_json, issues_json, created_at, started_at, finished_at, output_path,
-log_path, error``, with the JSON columns as models.
+A :class:`QueueJob` is one row of the queue's SQLite ``jobs`` table, with the JSON columns as
+models.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ __all__ = ["JobProgress", "JobState", "QueueJob"]
 
 
 class JobState(StrEnum):
-    """The seven queue states. ``interrupted``: it was running when Reframe stopped."""
+    """The queue states. ``interrupted``: it was running when Reframe stopped."""
 
     WAITING = "waiting"
     RUNNING = "running"
@@ -34,7 +33,7 @@ class JobState(StrEnum):
 
 
 class JobProgress(ReframeModel):
-    """Progress of a running job (``job.progress`` event, queue columns)."""
+    """Progress of a running job."""
 
     percent: Annotated[float, Field(ge=0.0, le=100.0)] = 0.0
     """Whole job, weighted across steps."""

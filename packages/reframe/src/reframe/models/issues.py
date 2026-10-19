@@ -1,4 +1,4 @@
-"""Validation issues and their fixes (03 §Validation, C-8).
+"""Validation issues and their fixes.
 
 A fix is an RFC 6902 JSON patch. The client applies it to the document named by
 :attr:`Fix.target` (usually the ``JobSettings`` being edited) and validates again.

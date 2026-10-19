@@ -1,24 +1,13 @@
 """Base classes and shared field types for every Reframe model.
 
-Two base classes:
-
-- :class:`ReframeModel` — runtime and API models (events, issues, tool and encoder status,
-  plans, progress). Unknown fields are an error (``extra="forbid"``), so a typo in code or in
-  a request is caught at once.
-- :class:`DocumentModel` — models that are part of a **persisted document**: the presets file,
-  the settings file, the job settings stored in the queue, the probe cache. Every model that
-  can appear inside such a document is a document model, also when an API model uses it too
-  (for example :class:`Rational`). Unknown fields are
-  **kept** (``extra="allow"``) and written back unchanged, so a file written by a newer
-  Reframe is not damaged by an older one (02 §Cross-cutting rules, rule 4). The JSON Schema of
-  a document model does not say ``additionalProperties: true``: that is the JSON Schema default
-  anyway, and it keeps the generated TypeScript types strict.
-
-Both serialise by alias and accept the field name or the alias on input (only
-:class:`~reframe.models.issues.JsonPatchOp` uses an alias: ``from``). Floats must be finite
-(``allow_inf_nan=False``): JSON has no NaN or infinity. The docstring under a field becomes
-its ``description`` in the JSON Schema (``use_attribute_docstrings``), so the frontend's
-generated types carry the same documentation.
+:class:`ReframeModel` is for runtime and API models. It rejects unknown fields
+(``extra="forbid"``), so a typo in code or in a request fails at once. :class:`DocumentModel`
+is for models inside a persisted document (presets, settings, queued job settings, the probe
+cache). It keeps unknown fields and writes them back unchanged (``extra="allow"``), so an older
+Reframe does not damage a file from a newer one. A model that can appear in such a document is
+a document model, even when an API model uses it too (:class:`Rational`). Both serialise by
+alias and accept the field name or the alias on input. Floats must be finite
+(``allow_inf_nan=False``), because JSON has no NaN or infinity.
 """
 
 from __future__ import annotations
@@ -39,7 +28,8 @@ __all__ = [
 
 
 def _drop_additional_properties(schema: dict[str, Any], cls: type[Any]) -> None:
-    """``json_schema_extra`` hook: remove ``additionalProperties: true`` from the schema."""
+    """``json_schema_extra`` hook: drop the ``additionalProperties: true`` that ``extra="allow"``
+    adds, so the generated TypeScript types stay strict."""
     if schema.get("additionalProperties") is True:
         del schema["additionalProperties"]
 
@@ -72,8 +62,8 @@ class DocumentModel(BaseModel):
 
 
 #: A BCP 47 language tag (``en``, ``hun``, ``pt-BR``, ``zh-Hans``, ``und``). Only the shape is
-#: checked here. Normalisation and the ISO 639-2/B and /T forms are in ``reframe.languages``
-#: (C-6). ISO 639-2 three-letter codes are valid BCP 47 primary subtags.
+#: checked here; normalisation is in ``reframe.languages``. ISO 639-2 three-letter codes are
+#: valid BCP 47 primary subtags.
 LanguageTag = Annotated[
     str,
     StringConstraints(pattern=r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", max_length=64),
@@ -88,7 +78,6 @@ class Rational(DocumentModel):
     """An exact fraction ``num/den``: frame rates (``24000/1001``) and aspect ratios (``32:27``).
 
     ffprobe's ``0/0`` ("unknown") is never stored as a ``Rational``: the field is ``None``.
-    A document model, because job settings and probe results contain it.
     """
 
     num: int
