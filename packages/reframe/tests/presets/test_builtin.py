@@ -1,11 +1,4 @@
-"""The built-in presets (C-9): valid presets, only ids of the definitions, the presets the M2
-demo needs, and the HandBrake 1.11.2 values they were made from (decision 0015).
-
-HandBrake source: ``preset/preset_builtin.json`` at tag ``1.11.2``
-(github.com/HandBrake/HandBrake); the NVENC and QSV speed-preset names are mapped as
-``libhb/nvenc_common.c`` ``hb_map_nvenc_preset_name`` (``medium`` → ``p4``) and
-``libhb/qsv_common.c`` ``hb_map_qsv_preset_name`` (``speed`` → ``veryfast``) do.
-"""
+"""The built-in presets: valid, built from the definitions, and the HandBrake 1.11.2 values."""
 
 from __future__ import annotations
 
@@ -48,9 +41,6 @@ IDS = [p.id for p in PRESETS]
 
 def by_id(preset_id: str) -> Preset:
     return next(p for p in PRESETS if p.id == preset_id)
-
-
-# --------------------------------------------------------------------------- the list
 
 
 def test_the_file_is_a_current_preset_file() -> None:
@@ -99,7 +89,7 @@ def test_every_preset_is_built_in_valid_and_ends_with_the_catch_all() -> None:
         assert preset.description
         assert Preset.model_validate(preset.model_dump(mode="json")) == preset
         assert preset.audio_defaults.codec_rules[-1].is_catch_all, preset.id
-        assert preset.naming is None  # the naming options of Settings → Output
+        assert preset.naming is None
 
 
 def test_every_category_has_presets() -> None:
@@ -119,7 +109,7 @@ def test_presets_of_the_m2_demo_exist() -> None:
 
 
 def test_default_preset_is_h265_mkv_1080p() -> None:
-    """Decision 0024 (HandBrake's default would be Fast 1080p30)."""
+    """Not HandBrake's default, Fast 1080p30."""
     import json
 
     assert DEFAULT_BUILTIN_ID == "h265-mkv-1080p"
@@ -132,9 +122,6 @@ def test_builtin_presets_returns_copies() -> None:
     first = builtin_presets()
     first[0].video.encoder = "changed"
     assert builtin_presets()[0].video.encoder != "changed"
-
-
-# --------------------------------------------------------------------------- definitions
 
 
 @pytest.mark.parametrize("preset", PRESETS, ids=IDS)
@@ -219,13 +206,11 @@ def test_audio_uses_only_definition_values(preset: Preset, defs: Definitions) ->
         assert "*" in container.audio.copy_codecs or name in container.audio.copy_codecs
 
 
-# --------------------------------------------------------------------------- HandBrake values
-
-#: Key values of each built-in, and the HandBrake 1.11.2 preset they come from. The text
-#: column is: encoder, quality (or ``<kbps>k`` for 2-pass average bit rate), speed preset,
-#: profile, level, bit depth, fit box (or ``source``), frame rate ``fps:mode``, container, crop
-#: mode, comb detection preset (with deinterlace ``default``); ``-`` = not set. Then the audio
-#: codec rules as (codec, mixdown, kb/s).
+#: The HandBrake 1.11.2 values of each built-in. The text column is space-separated: encoder,
+#: quality (or ``<kbps>k`` for 2-pass average bit rate), speed preset, profile, level, bit
+#: depth, fit box (or ``source``), frame rate ``fps:mode``, container, crop mode, comb detection
+#: preset (with deinterlace ``default``); ``-`` = not set. Then the audio codec rules as
+#: (codec, mixdown, kb/s).
 SURROUND = [("ac3", "5.1", 640), ("aac", "stereo", 160)]
 AAC160 = [("aac", "stereo", 160)]
 AAC320 = [("aac", "stereo", 320)]
@@ -409,18 +394,14 @@ def test_values_come_from_handbrake(preset_id: str) -> None:
     assert set(preset.filters.root) <= {"interlace_detection", "deinterlace"}
     rules = preset.audio_defaults.codec_rules
     assert [(r.codec, r.mixdown, r.max_bitrate) for r in rules] == audio
-    # HandBrake passes through only where its AudioList has a ``copy:*`` encoder (decision
-    # 0015); an encoder entry such as ``aac`` always re-encodes (decision 0023: "reencode").
+    # HandBrake passes through only where its AudioList has a ``copy:*`` encoder; an encoder
+    # entry such as ``aac`` always re-encodes.
     assert [r.if_fits for r in rules] == [
         "passthru" if r.codec == "ac3" else "reencode" for r in rules
     ]
 
 
 def test_surround_presets_pass_ac3_through_and_add_aac_stereo() -> None:
-    """HandBrake's AudioList ``aac`` stereo 160 + ``copy:ac3``. ``copy:ac3`` passes an AC-3
-    source through at any bitrate and encodes any other source with the AC-3 encoder at 640
-    kb/s (``libhb/preset.c`` ``sanitize_audio_codec`` →
-    ``hb_audio_encoder_get_fallback_for_passthru``: AC-3 passthru falls back to AC-3)."""
     surround = 0
     for preset in PRESETS:
         rules = preset.audio_defaults.codec_rules
@@ -437,10 +418,6 @@ def test_surround_presets_pass_ac3_through_and_add_aac_stereo() -> None:
 
 
 def test_passthru_lists_hold_what_handbrake_passes_through() -> None:
-    """``PassthruPolicy.allowed`` = the ``copy:*`` encoders of HandBrake's AudioList (only
-    ``copy:ac3`` in the Surround presets). HandBrake's AudioCopyMask is not mapped: it is
-    used only by the auto-passthru encoder, which no built-in uses. The fallback encoder is
-    HandBrake's AudioEncoderFallback (``none`` becomes ``aac``)."""
     for preset in PRESETS:
         passthru = preset.audio_defaults.passthru
         if preset.audio_defaults.codec_rules[-1].codec == "libopus":
@@ -484,9 +461,6 @@ def test_handbrake_extra_options_are_kept() -> None:
     assert all(p.output.align_av_start for p in general)
 
 
-# --------------------------------------------------------------------------- real FFmpeg
-
-
 def _params_cases() -> list[tuple[str, str, str]]:
     cases = []
     for preset in PRESETS:
@@ -495,8 +469,7 @@ def _params_cases() -> list[tuple[str, str, str]]:
     return cases
 
 
-#: How the encoder wrappers report a bad key in the parameter string. FFmpeg n9.0.2 does not
-#: fail on one: it logs a warning and encodes on (exit code 0), so the log must be checked.
+#: A bad key in the parameter string is logged as a warning: the exit code stays 0.
 BAD_PARAM = re.compile(r"unknown option|error parsing option", re.IGNORECASE)
 
 
@@ -527,9 +500,6 @@ def run_params(encoder: str, bit_depth: int, params: str, defs: Definitions) -> 
 def test_handbrake_parameter_strings_work_in_ffmpeg(
     preset_id: str, encoder: str, params: str, defs: Definitions
 ) -> None:
-    """Every ``custom_params`` string (HandBrake's ``VideoOptionExtra``) is accepted, key by
-    key, by the encoder of this FFmpeg build (checked with n9.0.2: x264, x265, SVT-AV1 4.2;
-    ``keyint=10s`` and ``ac-bias`` included)."""
     stderr = run_params(encoder, by_id(preset_id).video.bit_depth, params, defs)
     assert not BAD_PARAM.search(stderr), stderr[-2000:]
 
@@ -537,12 +507,8 @@ def test_handbrake_parameter_strings_work_in_ffmpeg(
 @pytest.mark.needs_ffmpeg
 @pytest.mark.parametrize("encoder", ["libx264", "libx265", "libsvtav1"])
 def test_a_bad_parameter_key_is_only_a_warning(encoder: str, defs: Definitions) -> None:
-    """The control for the test above: a made-up key is reported in the log, not by the exit
-    code (``Error parsing option`` for x264 / SVT-AV1, ``Unknown option`` for x265)."""
     assert BAD_PARAM.search(run_params(encoder, 8, "bogus-key=1", defs))
 
-
-# --------------------------------------------------------------------------- M2 drafts
 
 MULTITRACK = (
     Path(__file__).resolve().parents[4] / "testdata" / "probes" / "fixtures" / "multitrack.mkv.json"
@@ -567,9 +533,9 @@ AC3_PASSTHRU = [(1, "passthru", "ac3", None), *AAC]
 def test_m2_draft_of_the_multitrack_fixture(
     preset_id: str, expected: list[tuple[int, str, str, int | None]]
 ) -> None:
-    """What an M2 draft (decision 0018, C-12 ``draft_tracks``) does with the audio of the
-    ``multitrack`` fixture: HandBrake re-encodes to AAC / Opus stereo and passes AC-3 5.1
-    through only in the Surround presets (plus an AAC stereo copy of it)."""
+    """What ``draft_tracks`` does with the audio of the ``multitrack`` fixture: HandBrake
+    re-encodes to AAC / Opus stereo and passes AC-3 5.1 through only in the Surround presets
+    (plus an AAC stereo copy of it)."""
     import json
 
     from reframe.batch import draft_tracks
