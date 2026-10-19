@@ -1,8 +1,4 @@
-"""``reframe plan`` (C-15; M2 demo items 2 and 4): the issues, then the FFmpeg command.
-
-Most tests replay recorded probes through the fake ffprobe and detect encoders on the fake
-ffmpeg; one runs the real tools on a generated fixture.
-"""
+"""``reframe plan``: the issues, then the FFmpeg command."""
 
 from __future__ import annotations
 
@@ -73,7 +69,7 @@ def test_preset_by_name_and_output(movie: Path, tmp_path: Path) -> None:
 def test_unavailable_encoder_fails_and_names_the_closest(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """Demo item 4 on the real FFmpeg text of a machine without the NVIDIA driver."""
+    """The real FFmpeg text of a machine without the NVIDIA driver."""
     replay(cli_env, "truehd-atmos", extra=(c4_rule("c4_hevc_nvenc_no_driver"),))
     movie = media_file(tmp_path / "media" / Media, "movie.mkv")
     started = time.monotonic()
@@ -164,8 +160,6 @@ def test_json_with_errors_has_no_plan(cli_env: ft.FakeTools, tmp_path: Path) -> 
 def test_real_ffmpeg_plan_of_a_fixture(
     fixture_media: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M2 demo item 2 with the real tools: ``reframe plan multitrack.mkv --preset "H.265 MKV
-    1080p"`` prints the command, and the command's input and output are the right files."""
     assert callable(fixture_media)
     source: Path = fixture_media("multitrack")
     for name in ("config", "data", "cache"):

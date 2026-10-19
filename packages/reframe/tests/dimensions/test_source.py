@@ -1,8 +1,4 @@
-"""C-5: what the maths takes from the probed video stream (``source_geometry``).
-
-The chroma-step table is checked against FFmpeg's ``crop`` for every pixel format of the build
-in ``test_ffmpeg.py``; these are the unit tests that run without FFmpeg.
-"""
+"""What ``source_geometry`` takes from the probed video stream, and the chroma-step table."""
 
 from __future__ import annotations
 

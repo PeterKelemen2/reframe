@@ -1,8 +1,4 @@
-"""``reframe encode`` (C-15; decision 0018) against a fake queue that follows C-11's contract.
-
-The sources are recorded probes replayed by the fake ffprobe; the queue is
-:class:`~.fake_queue.FakeQueue` (``job.state`` / ``job.progress`` events, the ``.part`` file).
-"""
+"""``reframe encode`` against the in-memory fake queue."""
 
 from __future__ import annotations
 
@@ -101,7 +97,6 @@ def test_a_season_folder_and_a_file(season: Path, queues: Queues, tmp_path: Path
     assert out[4] == f"[4/4] movie.mkv → {movie.parent / 'Movie.mkv'}"
     assert "Queued 4 jobs." in out
     assert "[1/4] running" in out
-    # Progress with fps, speed, ETA and size; then done with the output path.
     assert "[1/4] 25.0% · 48.0 fps · 2.00x · ETA 0:00:06 · 244.1 KiB" in out
     assert any(line.startswith("[4/4] done in 0:00:0") for line in out)
     assert out[-1] == "Summary: 4 done, 0 failed, 0 cancelled, 0 not queued."
@@ -183,8 +178,6 @@ def test_failed_job(season: Path, queues: Queues) -> None:
 
 
 def test_job_that_fails_when_queued(season: Path, queues: Queues) -> None:
-    """The queue validates again when a job is added; a job with errors is added as failed."""
-
     async def refuse(_job: JobSettings) -> list[Issue]:
         return [
             Issue(
@@ -213,8 +206,7 @@ def _interrupt(_job: QueueJob) -> None:
 )
 def test_ctrl_c_cancels_the_jobs_and_removes_the_partial_file(season: Path, queues: Queues) -> None:
     """A real SIGINT while the first job runs: asyncio.run cancels the command, which cancels
-    the waiting and running jobs through the queue (the fake removes the ``.part`` file the
-    way the real queue does) and exits with 130."""
+    the waiting and running jobs through the queue."""
     queues.behaviour = lambda _job: "hang"
     queues.on_running = _interrupt
     result = invoke("encode", str(season))
@@ -234,7 +226,7 @@ async def test_cancelling_the_command_cancels_the_jobs(
     season: Path, queues: Queues, tmp_path: Path
 ) -> None:
     """The same through the task (how asyncio.run reacts to Ctrl+C on every OS, also to
-    Windows' CTRL_C_EVENT): cancelling ``run_encode`` cancels the jobs and returns 130."""
+    Windows' CTRL_C_EVENT)."""
     running = asyncio.Event()
     queues.behaviour = lambda _job: "hang"
     queues.on_running = lambda _job: running.set()
@@ -281,9 +273,6 @@ def test_recursive(cli_env: ft.FakeTools, queues: Queues, tmp_path: Path) -> Non
     assert flat.exit_code == EXIT_NOT_FOUND
     deep = invoke("encode", "-r", str(show))
     assert deep.exit_code == EXIT_OK, deep.output
-
-
-# --------------------------------------------------------------------------- the view
 
 
 def test_progress_text() -> None:
@@ -376,8 +365,7 @@ class _Events:
 
 @pytest.mark.anyio
 async def test_follow_rereads_the_queue_after_a_resync(tmp_path: Path) -> None:
-    """Events were dropped (a resync marker): the states are read from the queue again; a
-    subscription that ends early falls back to ``queue.wait``."""
+    """A subscription that ends early falls back to ``queue.wait``."""
     from reframe.events import EventBus
     from reframe.models import JobSettings, OutputSettings, ResyncEvent, SourceRef
 

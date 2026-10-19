@@ -1,15 +1,7 @@
-"""A fake ``QueueService`` that follows C-11's contract (``docs/m2-breakdown.md``, wave 3).
+"""A ``QueueService`` in memory, for tests that must not run FFmpeg.
 
-It runs no FFmpeg. A started job publishes ``job.state`` and ``job.progress`` events on the
-real event bus, writes the partial file ``<name>.part.<ext>`` next to the output, and:
-
-- ``done``: progress 25 → 100 %, then the partial file is renamed to the output (the next
-  free name when it exists: ``auto_rename``);
-- ``fail``: progress 30 %, then the partial file is removed and the job is ``failed``;
-- ``hang``: progress 10 %, then it waits until it is cancelled.
-
-``cancel()`` removes the partial file (``output.partial_file = "delete"``), like the real one.
-``reframe encode`` is tested against it until C-11 is merged.
+It writes the partial file ``<name>.part.<ext>`` next to the output, and renames or removes it
+when the job ends.
 """
 
 from __future__ import annotations
@@ -76,8 +68,6 @@ class FakeQueue:
         self.calls: _Ids = []
         """Method calls, in order: ``add``, ``start``, ``stop``, ``cancel <id>``, …"""
 
-    # ------------------------------------------------------------------ contract
-
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob:
         self.calls.append("add")
         self._next += 1
@@ -131,7 +121,7 @@ class FakeQueue:
         return self._jobs[job_id].model_copy(deep=True)
 
     def start(self, *, job_ids: Sequence[str] | None = None) -> None:
-        """``job_ids``: take only these jobs (C-11's keyword-only addition)."""
+        """``job_ids``: take only these jobs."""
         self.calls.append("start" if job_ids is None else f"start {' '.join(job_ids)}")
         self.only = None if job_ids is None else set(job_ids)
         self.started = True
@@ -186,8 +176,6 @@ class FakeQueue:
                 await self._loop
         if self._tasks:
             await asyncio.wait(list(self._tasks.values()))
-
-    # ------------------------------------------------------------------ internals
 
     def _targets(self, job_id: str | None, states: set[JobState]) -> _Ids:
         ids = [job_id] if job_id is not None else list(self._order)
