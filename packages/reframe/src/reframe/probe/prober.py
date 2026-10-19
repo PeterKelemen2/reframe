@@ -33,6 +33,7 @@ from reframe.models.media import (
     SubtitleStream,
     VideoStream,
 )
+from reframe.models.text import replace_undecodable
 from reframe.models.tools import ToolInfo
 from reframe.probe import matroska, mediainfo, roles
 from reframe.probe.cache import CacheKey, ProbeCache
@@ -303,6 +304,8 @@ class Prober:
                 if isinstance(vfr, ProbeError):
                     return vfr  # cancelled
                 stream.vfr = bool(vfr)
+        # Warnings added after validation can quote the path: show it as the cached copy does.
+        source.warnings = [replace_undecodable(text) for text in source.warnings]
         if self.cache is not None:
             await asyncio.to_thread(self.cache.put, key, source, tool=identity, options=options)
         return source
