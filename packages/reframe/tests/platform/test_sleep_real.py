@@ -43,7 +43,7 @@ PM = (
     "/org/freedesktop/PowerManagement/Inhibit",
     "org.freedesktop.PowerManagement.Inhibit",
 )
-SUSPEND, SCREEN = 1, 4
+SUSPEND, SCREEN = 1, 4  # PolicyAgent: InterruptSession, ChangeScreenSettings
 
 
 # Other programs hold inhibits too: a test looks only for its own reason.
@@ -101,7 +101,8 @@ async def _busctl_json(*argv: str) -> object:
     return json.loads(result.stdout_text)
 
 
-async def _logind_ours(why: str) -> list[list[object]]:
+async def _logind_inhibitors() -> list[list[object]]:
+    """logind's inhibitors: ``[what, who, why, mode, uid, pid]`` each."""
     data = await _busctl_json(
         "call",
         "org.freedesktop.login1",
@@ -111,10 +112,16 @@ async def _logind_ours(why: str) -> list[list[object]]:
     )
     assert isinstance(data, dict)
     (inhibitors,) = data["data"]
-    return [entry for entry in inhibitors if entry[2] == why]
+    assert isinstance(inhibitors, list)
+    return inhibitors
+
+
+async def _logind_ours(why: str) -> list[list[object]]:
+    return [entry for entry in await _logind_inhibitors() if entry[2] == why]
 
 
 async def _kde_ours(why: str) -> list[list[object]]:
+    """KDE's active inhibitions with our reason: ``[what, who, why, mode, flags]`` each."""
     data = await _busctl_json("--user", "get-property", *POLICY_AGENT, "ActiveInhibitions")
     assert isinstance(data, dict)
     return [entry for entry in data["data"] if entry[2] == why]
@@ -169,18 +176,9 @@ async def _print_flags(label: str) -> None:
 
 async def _foreign_sleep_blocks(why: str) -> list[list[object]]:
     """logind's ``sleep`` block locks of other programs (they would change ``CanSuspend``)."""
-    data = await _busctl_json(
-        "call",
-        "org.freedesktop.login1",
-        "/org/freedesktop/login1",
-        "org.freedesktop.login1.Manager",
-        "ListInhibitors",
-    )
-    assert isinstance(data, dict)
-    (inhibitors,) = data["data"]
     return [
         entry
-        for entry in inhibitors
+        for entry in await _logind_inhibitors()
         if "sleep" in str(entry[0]).split(":") and entry[3] == "block" and entry[2] != why
     ]
 
