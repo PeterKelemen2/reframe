@@ -1,16 +1,6 @@
-"""Probe a folder (C-3): media files only, natural order, a concurrency limit, progress.
+"""Probing a folder: media files only, in natural order, with a limit on parallel ffprobe runs.
 
-- :func:`list_media_files`: the files of a folder whose extension is in
-  :data:`MEDIA_EXTENSIONS` (case-insensitive), hidden files (``.name``) left out, sorted
-  naturally (``E2`` before ``E10``, case-insensitive).
-- :func:`probe_folder`: probes them with at most ``concurrency`` (default 4) ffprobe processes
-  at a time; reports ``done / total`` after each file. A file that cannot be probed is an
-  entry in :attr:`FolderProbeResult.errors`, not an exception.
-- :func:`start_probe_folder`: the same as a background task of kind ``probe_folder``
-  (:mod:`reframe.tasks`). Progress events say ``"3/24 files"``; the result
-  (``TaskInfo.result``) is :meth:`FolderProbeResult.to_json`: the folder, the probed paths and
-  the errors. The sources themselves are in the probe cache and in
-  ``TaskManager.value(task_id)``.
+A file that cannot be probed is an entry in :attr:`FolderProbeResult.errors`, not an exception.
 """
 
 from __future__ import annotations
@@ -183,9 +173,8 @@ async def probe_folder(
         if on_progress is not None:
             on_progress(done, total, path)
 
-    # A TaskGroup, not gather(): a cancelled gather() returns as soon as its first child ends,
-    # and the other probes' process kills can then be dropped when the loop stops (orphaned
-    # ffprobe). A TaskGroup returns only after every probe has finished.
+    # A TaskGroup, not gather(): a cancelled gather() returns at its first child's end, and
+    # the other ffprobe kills can then be dropped when the loop stops.
     async with asyncio.TaskGroup() as group:
         for i, path in enumerate(files):
             group.create_task(one(i, path))

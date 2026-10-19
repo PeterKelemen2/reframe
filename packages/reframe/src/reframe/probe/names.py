@@ -1,14 +1,6 @@
-"""Commercial display names for codecs and containers (C-3, 03 §Audio, 03 §Subtitles).
+"""Commercial display names for codecs, profiles and containers, from the names ffprobe prints.
 
-``(codec_name, profile)`` as ffprobe prints them → the name the UI shows: ``dts`` +
-``DTS-HD MA + DTS:X`` → ``DTS:X``, ``aac`` + ``LC`` → ``AAC-LC``, ``hdmv_pgs_subtitle`` →
-``PGS``.
-
-Every profile string below was confirmed by a byte search (a NUL-terminated C string) in the
-pinned build's ``lib/libavcodec.so.63.1.102`` and in the Arch Linux package's
-``/usr/lib/libavcodec.so.63.1.102`` (FFmpeg n9.0.2, both). The list is in
-``testdata/probes/README.md`` ("Confirmed profile strings"); the table test is
-``tests/probe/test_names.py``.
+Profile strings are those of the pinned FFmpeg build; ``tests/probe/test_names.py`` checks them.
 """
 
 from __future__ import annotations
@@ -29,8 +21,6 @@ __all__ = [
 
 #: ffprobe's placeholder when a codec has profiles but the stream's is not known.
 _NO_PROFILE = frozenset({"", "unknown"})
-
-# --------------------------------------------------------------------------- video
 
 _VIDEO_BASE: Mapping[str, str] = {
     "h264": "H.264",
@@ -53,13 +43,12 @@ _VIDEO_BASE: Mapping[str, str] = {
     "h263": "H.263",
 }
 
-#: Profiles that are the codec's default and add nothing to the name (``AV1`` not
-#: ``AV1 Main``; ``VP9`` not ``VP9 Profile 0``).
+#: Profiles that are the codec's default and add nothing to the name.
 _DEFAULT_VIDEO_PROFILE: Mapping[str, str] = {"av1": "Main", "vp9": "Profile 0"}
 
 
 def video_display_name(codec: str | None, profile: str | None) -> str | None:
-    """``HEVC Main 10``, ``H.264 High``, ``AV1``, ``VP9 Profile 2``, ``MPEG-2 Main``."""
+    """The display name of a video codec and profile; ``None`` without a codec."""
     if not codec:
         return None
     base = _VIDEO_BASE.get(codec, codec)
@@ -67,8 +56,6 @@ def video_display_name(codec: str | None, profile: str | None) -> str | None:
         return base
     return f"{base} {profile}"
 
-
-# --------------------------------------------------------------------------- audio
 
 _AAC_PROFILES: Mapping[str, str] = {
     "LC": "AAC-LC",
@@ -138,7 +125,7 @@ LOSSLESS_AUDIO_CODECS = frozenset(
 
 
 def audio_display_name(codec: str | None, profile: str | None) -> str | None:
-    """``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``, ``AAC-LC``, ``PCM``."""
+    """The display name of an audio codec and profile; ``None`` without a codec."""
     if not codec:
         return None
     if codec.startswith("pcm_"):
@@ -151,15 +138,13 @@ def audio_display_name(codec: str | None, profile: str | None) -> str | None:
 
 
 def is_lossless_audio(codec: str | None, profile: str | None) -> bool:
-    """TrueHD, DTS-HD MA (and DTS:X), FLAC, ALAC, PCM, …: encoded at the maximum (03)."""
+    """Whether an audio codec and profile are lossless (PCM, and DTS with a lossless profile)."""
     if not codec:
         return False
     if codec.startswith("pcm_") or codec in LOSSLESS_AUDIO_CODECS:
         return True
     return codec == "dts" and profile in LOSSLESS_DTS_PROFILES
 
-
-# --------------------------------------------------------------------------- subtitles
 
 _SUBTITLE_NAMES: Mapping[str, str] = {
     "subrip": "SRT",
@@ -181,18 +166,16 @@ _SUBTITLE_NAMES: Mapping[str, str] = {
     "arib_caption": "ARIB",
 }
 
-#: Subtitle codecs whose events are pictures (``subtitle_kind = "bitmap"``).
+#: Subtitle codecs whose events are pictures, not text.
 BITMAP_SUBTITLE_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
 
 
 def subtitle_display_name(codec: str | None) -> str | None:
-    """``SRT``, ``ASS``, ``PGS``, ``VobSub``, ``WebVTT``, ``mov_text``, ``DVB``."""
+    """The display name of a subtitle codec; the codec name itself when it is not known."""
     if not codec:
         return None
     return _SUBTITLE_NAMES.get(codec, codec)
 
-
-# --------------------------------------------------------------------------- containers
 
 #: ``format_name`` → ``{file extension: name}``; ``""`` is the default for the format.
 _CONTAINERS: Mapping[str, Mapping[str, str]] = {
@@ -221,7 +204,8 @@ _CONTAINERS: Mapping[str, Mapping[str, str]] = {
 
 
 def container_display_name(format_name: str | None, filename: str | PurePath | None) -> str | None:
-    """``MKV``, ``MP4``, ``WebM``, ``M2TS``, ``VOB``: from ``format_name`` and the extension."""
+    """The display name of a container, from ``format_name`` and the file extension. An unknown
+    format gives its first name, upper-cased."""
     if not format_name:
         return None
     names = _CONTAINERS.get(format_name)

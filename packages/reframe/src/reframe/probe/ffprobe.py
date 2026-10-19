@@ -1,14 +1,7 @@
-"""Running ffprobe (C-3): the commands, the tool identity, and typed failures.
+"""Running ffprobe: the commands, the tool identity and typed failures.
 
-The probe command is the plan's
-``ffprobe -v error -of json -show_format -show_streams -show_chapters -show_programs`` with a
-60 s timeout (network shares can be slow). The HDR fallback reads the first frames of the
-main video stream: ``-show_frames -read_intervals %+#5 -select_streams <index>`` (five packets:
-the first packet alone may decode to no frame, and SEI-only HDR would then be missed). The VFR
-check samples packet timestamps (:func:`packets_argv`). All go through
-:func:`reframe.tools.run` (timeout, cancel, process-tree kill).
-
-A failure is a :class:`ProbeError` value with a :class:`ProbeErrorKind`, never an exception.
+Every run goes through :func:`reframe.tools.run`. A failure is a :class:`ProbeError` value with
+a :class:`ProbeErrorKind`, never an exception.
 """
 
 from __future__ import annotations
@@ -36,11 +29,12 @@ __all__ = [
     "run_json",
 ]
 
-#: Seconds for the main probe (02 §Cross-cutting rules: never block).
+#: Seconds for the main probe. Network shares can be slow.
 PROBE_TIMEOUT = 60.0
 #: Seconds for the first-frame read (it decodes one frame).
 FRAME_TIMEOUT = 30.0
-#: Packets read for the HDR frame fallback.
+#: Packets read for the HDR frame fallback. The first packet may decode to no frame, and
+#: SEI-only HDR would then be missed.
 FRAME_PACKETS = 5
 #: Packets sampled for the VFR check of a Matroska stream without statistics tags.
 VFR_SAMPLE_PACKETS = 120
@@ -62,7 +56,7 @@ class ProbeErrorKind(StrEnum):
     CANCELLED = "cancelled"
     """The probe was cancelled; the process tree was killed."""
     FAILED = "failed"
-    """ffprobe exited with an error (for example "Invalid data found when processing input")."""
+    """ffprobe exited with an error."""
     INVALID_OUTPUT = "invalid_output"
     """ffprobe printed something that is not the expected JSON."""
 
@@ -74,7 +68,6 @@ class ProbeError:
     path: Path
     kind: ProbeErrorKind
     message: str
-    """One sentence for the UI."""
     detail: str | None = None
     """The useful part of ffprobe's stderr, if any."""
 
@@ -93,7 +86,7 @@ class ProbeTool:
 
     path: str
     version: str | None = None
-    """The version string (``n9.0.2-17-g2a571b6068-20260930``), when known."""
+    """The version string, when known."""
     env: Mapping[str, str] = field(default_factory=dict)
     """Extra environment variables (:attr:`ToolInfo.env`)."""
 
@@ -208,7 +201,7 @@ async def run_json(
     path: Path,
     *,
     tool: ProbeTool,
-    timeout: float,  # noqa: ASYNC109 - passed to run()
+    timeout: float,  # noqa: ASYNC109
     cancel: CancelToken | None,
     what: str = "",
 ) -> dict[str, Any] | ProbeError:

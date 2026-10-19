@@ -1,42 +1,8 @@
-"""A small reader of Matroska track headers (C-13; decision 0034).
+"""The track headers of a Matroska file, read directly: ffprobe does not show ``LanguageIETF``.
 
-ffprobe does not show the ``LanguageIETF`` element (BCP 47: ``pt-BR``, ``zh-Hant``), and
-MediaInfo, which does, is optional. This reader gets the track headers straight from the
-file's ``Tracks`` element, and the segment title from ``Info``. Reframe uses it to
-
-- set ``language_ietf`` of a Matroska source's streams to what the file holds (the element's
-  value, or ``None`` when the track has none), so the probe shows ``pt-BR`` without MediaInfo
-  (:mod:`reframe.probe.prober`);
-- check, before an in-place metadata edit, that the file's tracks are the probe's streams in
-  the same order (the mkvpropedit track selectors ``track:a2`` count them so).
-
-Only the start of the file is read: the EBML header, then the top-level elements of the
-``Segment`` one after the other (each skipped by its size) until ``Tracks`` and ``Info`` are
-found. When they come after the first ``Cluster`` (as when mkvpropedit had to move a grown
-``Tracks`` element to the end), the first ``SeekHead`` gives their position, or the one
-``SeekHead`` that it links to. Elements with an unknown size other than the ``Segment`` and a
-``Cluster`` end the scan.
-
-**Every read is bounded**, so a damaged or hostile file costs little time and memory (the
-core-complete review, R4-2 and R4-5): an element of more than :data:`MAX_ELEMENT` bytes is not
-read (a ``SeekHead`` of more than :data:`MAX_SEEK_HEAD` is skipped); at most
-:data:`MAX_TOP_LEVEL` top-level elements are looked at, at most :data:`MAX_CHILDREN` children
-of one element (a ``SeekHead``'s further entries are not looked at; more children elsewhere
-is a :class:`MatroskaError`), at most :data:`MAX_ELEMENTS` element headers in all, and at
-most :data:`MAX_READ` bytes are read in all. Of a ``SeekHead`` only the entries of ``Tracks``,
-``Info`` and ``SeekHead`` are kept, and only those whose position is inside the file (the
-first such entry of each wins; FFmpeg also skips an entry it cannot use and looks at the
-next). An element at a ``SeekHead`` position must be the element the entry names. Any
-``ValueError`` or ``OverflowError`` of a damaged header is a :class:`MatroskaError`.
-
-Element IDs (Matroska specification, RFC 9559): ``Tracks`` 0x1654AE6B, ``TrackEntry`` 0xAE,
-``TrackNumber`` 0xD7, ``TrackType`` 0x83 (1 video, 2 audio, 0x11 subtitle), ``FlagDefault``
-0x88 (default 1), ``FlagForced`` 0x55AA, ``FlagHearingImpaired`` 0x55AB,
-``FlagVisualImpaired`` 0x55AC, ``FlagTextDescriptions`` 0x55AD, ``FlagOriginal`` 0x55AE,
-``FlagCommentary`` 0x55AF, ``Name`` 0x536E, ``Language`` 0x22B59C (default ``eng``),
-``LanguageBCP47`` 0x22B59D (``LanguageIETF`` in MKVToolNix), ``CodecID`` 0x86; ``Info``
-0x1549A966 with ``Title`` 0x7BA9; ``SeekHead`` 0x114D9B74 with ``Seek`` 0x4DBB, ``SeekID``
-0x53AB and ``SeekPosition`` 0x53AC (relative to the start of the segment's data).
+Only the start of the file is read, and every read is bounded by the ``MAX_*`` limits, so a
+damaged or hostile file costs little time and memory. A damaged header, or one beyond the
+limits, raises :class:`MatroskaError`.
 """
 
 from __future__ import annotations
@@ -72,7 +38,7 @@ MAX_TOP_LEVEL = 4096
 #: Children of one element that are looked at (a ``SeekHead``'s further entries are ignored;
 #: a ``Tracks``, ``TrackEntry``, ``Info`` or EBML header with more is damaged).
 MAX_CHILDREN = 4096
-#: Element headers that one read parses in all (a real file needs a few thousand).
+#: Element headers that one read parses in all.
 MAX_ELEMENTS = 65536
 #: Bytes that one read reads in all: a ``Tracks`` and an ``Info`` element of the largest size,
 #: two ``SeekHead`` elements and the headers fit.
@@ -158,9 +124,6 @@ def tracks_by_kind(info: MatroskaFile) -> dict[TrackKind, list[MatroskaTrack]]:
     for track in info.tracks:
         result[track.kind].append(track)
     return result
-
-
-# --------------------------------------------------------------------------- EBML
 
 
 class _Budget:
@@ -277,10 +240,9 @@ def _title(payload: bytes, budget: _Budget) -> str | None:
 
 
 def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:
-    """``{element ID: position relative to the segment's data}`` of the ``Tracks``, ``Info``
-    and ``SeekHead`` entries whose position is inside the file (``room``: the bytes after the
-    segment's data start). The first usable entry of each ID wins; at most
-    :data:`MAX_CHILDREN` children are looked at."""
+    """``{element ID: position}`` of the ``Tracks``, ``Info`` and ``SeekHead`` entries inside the
+    file. Positions are relative to the segment's data, and ``room`` is the number of bytes
+    after it. The first usable entry of each ID wins."""
     entries: dict[int, int] = {}
     for element_id, seek in itertools.islice(_iter_children(payload, budget), MAX_CHILDREN):
         if element_id != _SEEK:
@@ -300,9 +262,6 @@ def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:
         ):
             entries[target] = position
     return entries
-
-
-# --------------------------------------------------------------------------- file
 
 
 class _Reader:
@@ -351,8 +310,8 @@ def _doc_type(reader: _Reader) -> tuple[str, int]:
 def read_matroska(path: str | os.PathLike[str]) -> MatroskaFile:
     """The track headers and the title of the Matroska file ``path`` (blocking).
 
-    :raises MatroskaError: not a Matroska file, or a damaged header (also one that would
-        need more than the limits of the module doc).
+    :raises MatroskaError: not a Matroska file, or a damaged header (also one beyond the
+        ``MAX_*`` limits).
     :raises OSError: the file cannot be read.
     """
     with open(Path(path), "rb") as handle:
