@@ -46,9 +46,6 @@ class JsonPatchTestFailed(JsonPatchError):
     """A ``test`` operation found a different value."""
 
 
-# --------------------------------------------------------------------------- pointers
-
-
 def escape_token(token: str) -> str:
     """Escape one reference token: ``~`` → ``~0``, ``/`` → ``~1``."""
     return token.replace("~", "~0").replace("/", "~1")
@@ -115,9 +112,6 @@ def _parent(document: Any, pointer: str) -> tuple[Any, str]:
     return parent, tokens[-1]
 
 
-# --------------------------------------------------------------------------- equality
-
-
 def json_equal(a: Any, b: Any) -> bool:
     """Equality with JSON semantics (RFC 6902 §4.6).
 
@@ -136,9 +130,6 @@ def json_equal(a: Any, b: Any) -> bool:
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(json_equal(a[k], b[k]) for k in a)
     return False
-
-
-# --------------------------------------------------------------------------- operations
 
 
 def _add(document: Any, pointer: str, value: Any) -> Any:

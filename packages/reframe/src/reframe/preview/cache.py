@@ -113,8 +113,6 @@ class PreviewCache:
         self.frames = root / FRAMES
         self.clips = root / CLIPS
 
-    # ------------------------------------------------------------------ names
-
     def frame(self, key: str) -> Path:
         """The file of a frame key (it may not exist)."""
         if not is_frame_key(key):
@@ -131,8 +129,6 @@ class PreviewCache:
     def temporary(final: Path) -> Path:
         """A fresh temporary name next to ``final`` (renamed to ``final`` when complete)."""
         return final.with_name(f"{TEMP_PREFIX}{secrets.token_hex(4)}-{final.name}")
-
-    # ------------------------------------------------------------------ lookups
 
     def find_frame(self, key: str) -> Path | None:
         """The cached PNG of ``key`` (marked as used), else ``None`` (also for a key that is
@@ -166,8 +162,6 @@ class PreviewCache:
         except OSError:
             return False
         return path.is_file()
-
-    # ------------------------------------------------------------------ the LRU
 
     def entries(self, *, now: float | None = None) -> list[CacheEntry]:
         """The cached files of both folders, least recently used first. Temporary files are

@@ -80,9 +80,6 @@ class OutputTrack:
         return self.source_title if name is None else (name or None)
 
 
-# --------------------------------------------------------------------------- languages
-
-
 def container_language(value: str | None, container: ContainerDef) -> str:
     if container.language_format == "iso639_2t":
         return languages.to_mp4(value)
@@ -131,9 +128,6 @@ def ietf_edits(tracks: list[OutputTrack]) -> list[str]:
             tag = languages.to_matroska_ietf(t.language)
             args += ["--edit", f"track:{t.type}{t.index + 1}", "--set", f"language={tag}"]
     return args
-
-
-# --------------------------------------------------------------------------- chapters
 
 
 @dataclass(slots=True)
@@ -261,9 +255,6 @@ def chapter_range(source: MediaSource, job_range: ChapterRange) -> tuple[float, 
         )
     last = min(job_range.end, len(chapters))
     return chapters[job_range.start - 1].start, chapters[last - 1].end
-
-
-# --------------------------------------------------------------------------- tags
 
 
 def render_tag(

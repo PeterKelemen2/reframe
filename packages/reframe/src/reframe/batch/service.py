@@ -178,8 +178,6 @@ class BatchService:
             self._definitions = load_definitions()
         return self._definitions
 
-    # ------------------------------------------------------------------ probing
-
     async def _probe_all(
         self, sources: Sequence[str | os.PathLike[str] | MediaSource]
     ) -> list[tuple[Path, MediaSource | ProbeError]]:
@@ -207,8 +205,6 @@ class BatchService:
 
         return list(await asyncio.gather(*(one(item) for item in unique)))
 
-    # ------------------------------------------------------------------ grouping
-
     async def group(
         self,
         sources: Sequence[str | os.PathLike[str] | MediaSource],
@@ -223,8 +219,6 @@ class BatchService:
         issues = [_probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
         groups = await asyncio.to_thread(group_sources, media, level)
         return BatchGrouping(groups=groups, issues=issues)
-
-    # ------------------------------------------------------------------ templates
 
     def derive(
         self,
@@ -269,8 +263,6 @@ class BatchService:
                 ),
             )
         ]
-
-    # ------------------------------------------------------------------ resolving
 
     async def resolve(
         self,
@@ -434,8 +426,6 @@ class BatchService:
                 "status": row_status(resolution.matches, issues),
             }
         )
-
-    # ------------------------------------------------------------------ presets
 
     async def save_preset(
         self,

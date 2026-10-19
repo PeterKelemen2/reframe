@@ -181,9 +181,6 @@ def _kept_layout(
     return fits[-1] if fits else None
 
 
-# --------------------------------------------------------------------------- what is written
-
-
 @dataclass(frozen=True, slots=True)
 class PlannedAudio:
     """What the builder writes for one output audio track (:func:`planned_audio`).
@@ -299,9 +296,6 @@ def planned_audio(
     the container cannot hold (validation reports them)."""
     defs = definitions if definitions is not None else load_definitions()
     return _plan(track, stream, _container(container, defs), defs)[0]
-
-
-# --------------------------------------------------------------------------- arguments
 
 
 @dataclass(slots=True)

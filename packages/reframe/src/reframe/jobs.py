@@ -73,9 +73,6 @@ DETECTION_WAIT = 60.0
 WAIT_CODES = frozenset({"encoder.checking", "filter.implementation_untested"})
 
 
-# --------------------------------------------------------------------------- the services it uses
-
-
 class SourceProber(Protocol):
     """What the jobs service needs from ``Reframe.sources``."""
 
@@ -105,9 +102,6 @@ class Capabilities(Protocol):
     def snapshot(self) -> CapabilitySnapshot: ...
 
     async def wait(self) -> CapabilitySnapshot: ...
-
-
-# --------------------------------------------------------------------------- media files
 
 
 def file_key(path: str | os.PathLike[str]) -> str:
@@ -239,9 +233,6 @@ class OutputClaims:
         return []
 
 
-# --------------------------------------------------------------------------- helpers
-
-
 def _issue(severity: Severity, code: str, path: str, message: str) -> ValidationIssue:
     return ValidationIssue(severity=severity, code=code, path=path, message=message)
 
@@ -301,9 +292,6 @@ def draft_from_preset(
     return resolution.job, tracks.draft, resolution.notes
 
 
-# --------------------------------------------------------------------------- the service
-
-
 class JobService:
     """Draft, validate and plan jobs; name paths.
 
@@ -354,8 +342,6 @@ class JobService:
     @property
     def detection_wait(self) -> float:
         return self._detection_wait
-
-    # ------------------------------------------------------------------ draft
 
     async def draft(
         self,
@@ -507,8 +493,6 @@ class JobService:
             self._name, job.model_copy(deep=True), source, options, output
         )
 
-    # ------------------------------------------------------------------ validate, plan
-
     async def validate(
         self,
         job: JobSettings,
@@ -634,8 +618,6 @@ class JobService:
             job, media, self._capabilities.snapshot, tools, definitions=self.definitions
         )
 
-    # ------------------------------------------------------------------ defaults, remux
-
     async def explain(
         self,
         source: str | os.PathLike[str] | MediaSource,
@@ -701,8 +683,6 @@ class JobService:
             }
         )
 
-    # ------------------------------------------------------------------ encoder options
-
     def search_options(self, encoder_id: str, query: str) -> list[EncoderOption]:
         """The advanced options of ``encoder_id`` that match ``query`` in their label, CLI
         name or help text; empty for an unknown encoder."""
@@ -725,8 +705,6 @@ class JobService:
             for key, value in values.items()
         ]
 
-    # ------------------------------------------------------------------ preview clips
-
     def preview_clip(self, job: JobSettings, *, start: float, seconds: float) -> TaskInfo:
         """Encode ``seconds`` from ``start`` with the job's full settings into the preview cache,
         as a task whose result is a :class:`~reframe.models.PreviewClip`. Returns at once.
@@ -741,8 +719,6 @@ class JobService:
         if self._media_context is None:
             raise RuntimeError("JobService has no media task context (the facade sets it)")
         return self._media_context
-
-    # ------------------------------------------------------------------ naming
 
     async def name(
         self,

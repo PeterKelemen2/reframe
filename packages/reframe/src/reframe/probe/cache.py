@@ -128,8 +128,6 @@ class ProbeCache:
     def entry_path(self, key: CacheKey) -> Path:
         return self.directory / f"{key.digest()}.json"
 
-    # ------------------------------------------------------------------ read
-
     def get(
         self, key: CacheKey, *, tool: str, options: Mapping[str, Any] | None = None
     ) -> MediaSource | None:
@@ -174,8 +172,6 @@ class ProbeCache:
         except ValidationError:
             return None
         return _Entry(raw["tool"], raw["options"], source)
-
-    # ------------------------------------------------------------------ write
 
     def put(
         self,
@@ -272,8 +268,6 @@ class ProbeCache:
             self._memory.move_to_end(key)
             while len(self._memory) > self._memory_entries:
                 self._memory.popitem(last=False)
-
-    # ------------------------------------------------------------------ maintenance
 
     def forget_memory(self) -> None:
         """Drop the in-memory layer (the files stay)."""

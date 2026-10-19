@@ -173,7 +173,6 @@ _EXIT_BY_KIND = {
     ProbeErrorKind.TOOL_FAILED: EXIT_NO_FFPROBE,
 }
 
-# --------------------------------------------------------------------------- plain formatting
 
 #: The dash for "no value".
 NONE = "—"
@@ -516,8 +515,6 @@ def error_message(error: ProbeError, ffprobe: ToolInfo | None) -> str:
     return _one_line(message)
 
 
-# --------------------------------------------------------------------------- rich rendering
-
 #: Indent of the lines under a section title.
 _INDENT = 2
 
@@ -734,9 +731,6 @@ def _print_list(
         _indented(console, Text(f"… and {len(items) - len(shown)} more", style="dim"))
 
 
-# --------------------------------------------------------------------------- commands
-
-
 def _write_json(source: MediaSource) -> None:
     """``model_dump_json(indent=2)`` on stdout. If stdout cannot encode every character, the
     JSON is written with ``\\uXXXX`` escapes instead (same value, valid JSON)."""
@@ -791,9 +785,6 @@ def _isatty(fd: int) -> bool:
         return os.isatty(fd)
     except OSError:  # pragma: no cover - a closed standard stream
         return False
-
-
-# --------------------------------------------------------------------------- shared helpers
 
 
 def _error(message: str) -> None:
@@ -950,9 +941,6 @@ def _labelled(console: Console, label: str, style: str, line: Text, lead: int) -
         console.print(prefix + part, overflow="fold", soft_wrap=True)
 
 
-# --------------------------------------------------------------------------- encoders
-
-
 def encoder_text(status: EncoderStatus) -> str:
     """``hevc_nvenc — unavailable: NVIDIA driver not found``."""
     state = status.state
@@ -1098,9 +1086,6 @@ async def _follow_encoders(
     return final
 
 
-# --------------------------------------------------------------------------- plan
-
-
 def _draft_header(console: Console, draft: JobDraft, source_name: str) -> None:
     job = draft.job
     console.print(Text(display_path(source_name), style="bold"), soft_wrap=True)
@@ -1208,9 +1193,6 @@ async def _probe_failed(app: Reframe, error: ProbeError) -> int:
         ffprobe = (await app.tools.status()).ffprobe
     print(error_message(error, ffprobe), file=sys.stderr)
     return _EXIT_BY_KIND.get(error.kind, EXIT_PROBE_FAILED)
-
-
-# --------------------------------------------------------------------------- the queue
 
 
 class QueueLike(Protocol):
@@ -1666,9 +1648,6 @@ def _summary(
     return finals
 
 
-# --------------------------------------------------------------------------- batch
-
-
 def _unicode(console: Console) -> bool:
     return (console.encoding or "").lower().replace("_", "-").startswith("utf")
 
@@ -1856,9 +1835,6 @@ async def run_batch(
         return await _run_jobs(app, queue, prepare, console)
 
 
-# --------------------------------------------------------------------------- when done
-
-
 class PowerLike(Protocol):
     """The part of ``PowerService`` (``Reframe.power``) that ``reframe encode`` uses."""
 
@@ -2019,8 +1995,6 @@ async def _executed(power: PowerLike, countdown_id: str) -> None:
         await asyncio.sleep(0.1)
 
 
-# --------------------------------------------------------------------------- name
-
 #: The parsed-name fields that ``reframe name`` prints, in this order, with their labels.
 _NAME_FIELDS: tuple[tuple[str, str], ...] = (
     ("kind", "kind"),
@@ -2129,8 +2103,6 @@ async def run_name(
     has_error = any(has_errors(result.issues) for _, result, _ in named)
     return EXIT_FAILED if has_error or not named else EXIT_OK
 
-
-# --------------------------------------------------------------------------- tools
 
 _EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one of them cannot."
 _EXIT_HELP_TOOLS_FETCH = (
@@ -2386,8 +2358,6 @@ def _fetch_report(console: Console, result: ToolFetchResult, tools: ToolSet | No
             file=sys.stderr,
         )
 
-
-# --------------------------------------------------------------------------- presets
 
 _EXIT_HELP_PRESETS_LIST = "Exit codes: 0 listed."
 _EXIT_HELP_PRESETS_EXPORT = (

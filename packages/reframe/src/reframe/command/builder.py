@@ -101,9 +101,6 @@ def partial_path(final: Path, suffix: str = "") -> Path:
     return final.with_name(f"{stem}.part{suffix or final.suffix}")
 
 
-# --------------------------------------------------------------------------- range
-
-
 @dataclass(frozen=True, slots=True)
 class _Range:
     start: float
@@ -144,9 +141,6 @@ def _resolve_range(job: JobSettings, source: MediaSource, video: VideoStream) ->
     else:
         expected = max(0.0, total - start) if total is not None else 0.0
     return _Range(start=start, duration=duration, expected=expected)
-
-
-# --------------------------------------------------------------------------- the job
 
 
 @dataclass(slots=True)
@@ -311,9 +305,6 @@ def _tracks(
             OutputTrack("s", sub.index, sub.track.metadata, sub.source_language, sub.source_title)
         )
     return tracks
-
-
-# --------------------------------------------------------------------------- build_plan
 
 
 def build_plan(

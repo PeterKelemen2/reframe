@@ -122,9 +122,6 @@ _MAX_TAG_LENGTH: Final = 64
 _MAX_NAME_LENGTH: Final = 100
 
 
-# --------------------------------------------------------------------------- data
-
-
 @functools.cache
 def _iso639_2_codes() -> frozenset[str]:
     """Every ISO 639-2 code, /B and /T (``ger`` and ``deu``), and the collective codes."""
@@ -157,9 +154,6 @@ def _macrolanguages() -> dict[str, str]:
         if fields.get("Type") == "language" and "Macrolanguage" in fields:
             result[fields["Subtag"]] = fields["Macrolanguage"]
     return result
-
-
-# --------------------------------------------------------------------------- normalisation
 
 
 @functools.lru_cache(maxsize=4096)
@@ -283,9 +277,6 @@ def base_language(value: str | None) -> str:
     return _language_or_und(value).language or UNDETERMINED
 
 
-# --------------------------------------------------------------------------- container codes
-
-
 def _iso639_2(value: str | None, variant: str) -> str:
     language = _language_or_und(value).language
     if language is None:
@@ -317,9 +308,6 @@ def to_matroska_ietf(value: str | None) -> str:
     """BCP 47 for the Matroska ``LanguageIETF`` element: the canonical tag, ``und`` if
     invalid."""
     return normalize(value) or UNDETERMINED
-
-
-# --------------------------------------------------------------------------- display
 
 
 def english_name(value: str | None) -> str:
@@ -363,9 +351,6 @@ def picker_label(value: str | None, *, container: Container = "mkv") -> str:
     """
     code = to_mp4(value) if container == "mp4" else to_matroska_legacy(value)
     return f"{english_name(value)} · {code} (ISO 639-2) · {to_matroska_ietf(value)} (BCP 47)"
-
-
-# --------------------------------------------------------------------------- language list
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,8 +424,6 @@ def _name_index() -> dict[str, str]:
         index[_fold(item.english_name)] = item.tag
     return index
 
-
-# --------------------------------------------------------------------------- search
 
 # Match ranks, best first.
 _RANK_TAG = 0  # the query is (or normalises to) the entry's tag: "de", "ger", "pt_br"
@@ -559,9 +542,6 @@ def _score(
         key = (0 if fav is not None else 1, rank, fav or 0, item.variant, *_sort_key(item))
         scored.append((key, item))
     return scored
-
-
-# --------------------------------------------------------------------------- rule matching
 
 
 def _match_language(lang: Language) -> str:

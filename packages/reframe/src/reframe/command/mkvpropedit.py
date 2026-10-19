@@ -110,9 +110,6 @@ def edit_args(edits: Sequence[TrackEdit | InfoEdit]) -> list[str]:
     return out
 
 
-# --------------------------------------------------------------------------- in place
-
-
 def _track_edit(
     selector: str,
     metadata: TrackMetadata,
@@ -194,9 +191,6 @@ def in_place_edits(
         if title != (source.container.title or None):
             edits.append(InfoEdit(title))
     return edits
-
-
-# --------------------------------------------------------------------------- post-mux
 
 
 @dataclass(frozen=True, slots=True)

@@ -154,9 +154,6 @@ class VideoArgs:
         return [*self.args, spec(encoder.params_arg, V0), ":".join(items)]
 
 
-# --------------------------------------------------------------------------- choices
-
-
 def _choice(setting: ChoiceSetting | None, value: str | None, what: str, out: VideoArgs) -> None:
     if value is None:
         return
@@ -186,9 +183,6 @@ def _tune(encoder: VideoEncoderDef, video: VideoSettings, out: VideoArgs) -> Non
     if fast is not None:
         out.add(fast.args, {})
         out.add_params(fast.params, {})
-
-
-# --------------------------------------------------------------------------- options
 
 
 def _options(
@@ -250,9 +244,6 @@ def _choice_value(option: EncoderOption, value: OptionValue) -> str:
     return _option_text(value)
 
 
-# --------------------------------------------------------------------------- HDR
-
-
 #: SVT-AV1 colour names that differ from FFmpeg's (``svt-av1/Docs/Parameters.md``).
 _SVT_MATRIX = {"bt2020nc": "bt2020-ncl", "bt2020c": "bt2020-cl", "smpte170m": "bt601"}
 _SVT_TRANSFER = {"arib-std-b67": "hlg", "smpte170m": "bt601", "iec61966-2-1": "srgb"}
@@ -293,9 +284,6 @@ def hdr_params(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, str]:
     return params
 
 
-# --------------------------------------------------------------------------- 2-pass
-
-
 def pass_log_files(prefix: Path, *, stats_param: bool) -> list[Path]:
     """The files a 2-pass encode writes next to ``prefix``. ``stats_param`` says whether the
     encoder names its log with a ``stats=`` param (x265) rather than ``-passlogfile``."""
@@ -308,9 +296,6 @@ def pass_log_files(prefix: Path, *, stats_param: bool) -> list[Path]:
 
 def _passlog_param(prefix: Path) -> str:
     return filter_path(prefix) if isinstance(prefix, PureWindowsPath) else str(prefix)
-
-
-# --------------------------------------------------------------------------- frame rate
 
 
 def _rate(value: Rational | Fraction) -> str:
@@ -376,9 +361,6 @@ def frame_rate_args(
     if rate is not None:
         return [spec("-fpsmax", V0), _rate(rate)]
     return []
-
-
-# --------------------------------------------------------------------------- the encoder
 
 
 def video_encoder_args(

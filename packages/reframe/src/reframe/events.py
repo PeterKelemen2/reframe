@@ -68,8 +68,6 @@ class Subscription:
         self.overflowed = False
         """The subscription was closed because it fell too far behind."""
 
-    # ---------------------------------------------------------------- bus side
-
     def _push(self, event: Event) -> None:
         if self._types is not None and event.type not in self._types:
             return
@@ -150,8 +148,6 @@ class Subscription:
         else:
             with contextlib.suppress(RuntimeError):  # the subscriber's loop is closed
                 loop.call_soon_threadsafe(self._wakeup.set)
-
-    # ---------------------------------------------------------------- subscriber side
 
     @property
     def closed(self) -> bool:

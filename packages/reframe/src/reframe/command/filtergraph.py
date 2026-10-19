@@ -52,9 +52,6 @@ HDR_SIDE_DATA = (
 _UNKNOWN_COLOUR = frozenset({"unknown", "unspecified", "reserved", ""})
 
 
-# --------------------------------------------------------------------------- escaping
-
-
 def escape_value(text: str) -> str:
     """Escape a value for FFmpeg's option parser (``av_get_token``): a backslash before
     ``\\``, ``'`` and ``:``."""
@@ -87,9 +84,6 @@ def subtitles_filter(
     return ":".join(parts)
 
 
-# --------------------------------------------------------------------------- availability
-
-
 def filter_available(caps: CapabilitySnapshot, definitions: Definitions) -> dict[str, bool]:
     """Which FFmpeg filters of the definitions this build can run, for
     :meth:`FilterDef.implementation_for`.
@@ -113,9 +107,6 @@ def filter_available(caps: CapabilitySnapshot, definitions: Definitions) -> dict
         usable = caps.usable_filter(name)
         result[name] = usable is True if name in vulkan else usable is not False
     return result
-
-
-# --------------------------------------------------------------------------- colour
 
 
 def _known(value: str | None) -> str | None:
@@ -195,9 +186,6 @@ def keeps_hdr(video: VideoStream, filters: Mapping[str, FilterConfig], bit_depth
     )  # fmt: skip
 
 
-# --------------------------------------------------------------------------- burn-in
-
-
 @dataclass(frozen=True, slots=True)
 class TextBurn:
     """A text subtitle burned in with the ``subtitles`` filter."""
@@ -222,9 +210,6 @@ class BitmapBurn:
     canvas: tuple[int, int] | None = None
     """The subtitle canvas size, when it is known and differs from the picture: it is scaled
     to the picture first."""
-
-
-# --------------------------------------------------------------------------- the graph
 
 
 @dataclass(slots=True)

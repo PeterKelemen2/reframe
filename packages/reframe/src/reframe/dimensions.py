@@ -61,8 +61,6 @@ ASSUMED_CHROMA_STEPS = (2, 2)
 #: after a few steps; this is reached only for absurd inputs.
 _SEARCH_STEPS = 8192
 
-# --------------------------------------------------------------------------- source
-
 
 _SUBSAMPLING_STEPS: dict[str, tuple[int, int]] = {
     "420": (2, 2),
@@ -161,9 +159,6 @@ def source_geometry(stream: VideoStream) -> SourceGeometry:
     )
 
 
-# --------------------------------------------------------------------------- crop detection
-
-
 def _edges(rect: CropRect) -> tuple[int, int, int, int]:
     return (rect.top, rect.bottom, rect.left, rect.right)
 
@@ -218,9 +213,6 @@ def rotate_crop(rect: CropRect, rotation: Rotation, *, flip_horizontal: bool = F
     if flip_horizontal:
         left, right = right, left
     return CropRect(top=top, bottom=bottom, left=left, right=right)
-
-
-# --------------------------------------------------------------------------- crop
 
 
 def _subsampling_label(src: SourceGeometry) -> str:
@@ -331,9 +323,6 @@ def _crop(
             notes.append(f"Crop {axis.far_name} {far} → {new_far} for {label}.")
     (left, right), (top, bottom) = final
     return CropRect(top=top, bottom=bottom, left=left, right=right)
-
-
-# --------------------------------------------------------------------------- size
 
 
 @dataclass(frozen=True, slots=True)
@@ -598,9 +587,6 @@ def _scaled_size(
             )
     upscaled = result[0] > no_up[0] or result[1] > no_up[1]
     return _SizeResult(chosen.width, chosen.height, upscaled)
-
-
-# --------------------------------------------------------------------------- geometry
 
 
 def _source_sar(src: SourceGeometry, notes: list[str]) -> Fraction:

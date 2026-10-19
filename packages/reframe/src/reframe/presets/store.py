@@ -168,8 +168,6 @@ class PresetStore:
         self._protected: str | None = None
         self._lock = threading.RLock()
 
-    # ------------------------------------------------------------------ state
-
     @property
     def problems(self) -> list[AppWarningEvent]:
         """The warnings of the last load and of later failed writes."""
@@ -196,8 +194,6 @@ class PresetStore:
         with self._lock:
             self._load()
             return self.user_presets()
-
-    # ------------------------------------------------------------------ reading
 
     def builtins(self) -> list[Preset]:
         return [p.model_copy(deep=True) for p in self._builtins]
@@ -249,8 +245,6 @@ class PresetStore:
             while self._name_owner(f"{base} ({number})", exclude_id) is not None:
                 number += 1
             return f"{base} ({number})"
-
-    # ------------------------------------------------------------------ changing
 
     def create(
         self,
@@ -369,8 +363,6 @@ class PresetStore:
                 return self._not_found(preset_id)
             return self._commit(list(self._entries or []), preset_id) or self.default()
 
-    # ------------------------------------------------------------------ export / import
-
     def export(self, ids: Sequence[str] | None = None) -> PresetExport:
         """The given presets (``None``: every user preset) as a :class:`PresetExport`. Unknown
         ids are left out (resolve names with :meth:`find` first). Presets of a newer Reframe
@@ -450,8 +442,6 @@ class PresetStore:
                 result.imported, result.renamed, result.replaced = [], [], []
             return result
 
-    # ------------------------------------------------------------------ internals: lookup
-
     def _ensure(self) -> None:
         if self._entries is None:
             self._load()
@@ -495,8 +485,6 @@ class PresetStore:
                 return preset
         return self._not_found(preset_id)
 
-    # ------------------------------------------------------------------ internals: issues
-
     def _check_name(self, name: str, preset_id: str) -> ValidationIssue | None:
         if not _clean_name(name):
             return _issue("preset.name_empty", "A preset needs a name.", "name")
@@ -531,8 +519,6 @@ class PresetStore:
 
     def _read_only_issue(self) -> ValidationIssue:
         return _issue("presets.read_only", f"The presets were not saved: {self._protected}")
-
-    # ------------------------------------------------------------------ internals: import
 
     def _incoming(
         self, file: PresetFile | PresetExport | Mapping[str, Any], result: ImportResult
@@ -671,8 +657,6 @@ class PresetStore:
         while self._name_owner(f"{name} ({number})", preset_id, entries) is not None:
             number += 1
         return f"{name} ({number})"
-
-    # ------------------------------------------------------------------ internals: file
 
     def _newer_ids(self, entries: Sequence[_Entry] | None = None) -> set[object]:
         """The ids of the presets of a newer Reframe (kept as raw JSON)."""
