@@ -269,6 +269,26 @@ def test_too_long_name_counts_the_partial_suffix() -> None:
     assert "output.name_too_long" not in codes(sc.check(s))
 
 
+def test_a_byte_that_is_not_utf8_in_the_name_is_not_portable() -> None:
+    """``bad\\xffname.mkv`` on POSIX is ``bad\\udcffname.mkv`` in Python (PEP 383)."""
+    s = sc.base()
+    s.job.output.path = Path("/out/bad\udcffname.mkv")
+    issues = sc.check(s)
+    assert sc.error_codes(issues) == set()
+    [issue] = [i for i in issues if i.code == "output.name_not_portable"]
+    assert issue.severity is Severity.WARNING
+    assert issue.fixes[0].label == "Save as bad�name.mkv"
+    issue.model_dump_json()  # the message holds no lone surrogate
+
+
+def test_a_byte_that_is_not_utf8_counts_as_one_byte() -> None:
+    s = sc.base()
+    s.job.output.path = Path("/out") / ("\udcff" * 246 + ".mkv")  # .part.mkv: 255 bytes
+    assert not sc.found(s.validate(), "output.name_too_long")
+    s.job.output.path = Path("/out") / ("\udcff" * 247 + ".mkv")
+    assert sc.found(s.validate(), "output.name_too_long")
+
+
 def test_source_ref_is_used_for_the_clash() -> None:
     s = sc.base()
     s.job.source = SourceRef(path=Path("/out/Movie (2019).part.mkv"))
