@@ -1,6 +1,4 @@
-"""``validate_template``: what a preset alone can be checked for, and M2 demo item 4 at the API
-level ("A preset that uses an unavailable encoder fails validation and names the closest
-encoder. Nothing hangs.")."""
+"""``validate_template``: what a preset alone can be checked for."""
 
 from __future__ import annotations
 
@@ -323,7 +321,7 @@ CASES: list[Case] = [
         lambda s: setattr(s.template.dimensions, "pixel_aspect", "custom"),
         nothing,
     ),
-    # C-12's defaults lint (reframe.batch.lint_defaults, wired in by validate_template).
+    # The defaults lint (reframe.batch.lint_defaults, wired in by validate_template).
     Case(
         "codec rule shadowed",
         "defaults.rule_shadowed",
@@ -348,7 +346,7 @@ CASES: list[Case] = [
         rule(codec="ac3", mixdown="5.1", max_bitrate=700),
         rule(codec="ac3", mixdown="5.1", max_bitrate=640),
     ),
-    # C-6's advanced-option rules (decision 0035): they need only the video settings.
+    # The advanced-option rules need only the video settings.
     Case(
         "x265 amp without rectangular partitions",
         "encoder.option_inactive",
@@ -377,8 +375,7 @@ CASES: list[Case] = [
 
 
 def test_a_codec_the_container_cannot_hold_is_reported_once() -> None:
-    """C-8's container rule reports it; ``validate_template`` runs C-12's lint without its
-    container check (``container_codecs=False``), so the same path never gets two errors."""
+    """The container rule reports it; the defaults lint runs with ``container_codecs=False``."""
     issues = sc.check_template(build(webm_video))
     on_path = [i for i in issues if i.path == "audio_defaults.codec_rules[0].codec"]
     assert [i.code for i in on_path] == ["container.codec_unsupported"]
@@ -416,12 +413,7 @@ def test_every_template_rule_has_a_positive_case(registered: Any) -> None:
     pytest.fail(f"no positive case for the template rule {registered.name}")
 
 
-# --------------------------------------------------------------------------- demo item 4
-
-
 def test_demo_item_4_unavailable_nvenc_names_the_closest_encoder() -> None:
-    """``hevc_nvenc`` on a machine without NVIDIA (and no other H.265 hardware): an error that
-    names the preset, the reason, and a fix to ``libx265`` that converts the quality."""
     template = preset(encoder="hevc_nvenc", rate_control=ConstantQuality(value=27), preset="p5")
     caps = sc.make_caps(NO_HEVC_HARDWARE)
     issues = validate_template(template, caps)

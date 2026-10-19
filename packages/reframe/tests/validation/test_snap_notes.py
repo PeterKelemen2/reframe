@@ -1,14 +1,4 @@
-"""Decision 0024 items 3 and 4: the crop note and the audio values the encoder cannot do are
-**info** issues that say what will change, with the values the command builder writes (C-6's
-snap helpers, shared by C-7, C-8 and C-12).
-
-- The texts name the written value (``AC-3 cannot make 7.1: … is written as 5.1``).
-- The values are the helpers' answers (``AudioEncoderDef.snap_mixdown`` /
-  ``snap_samplerate``, ``AudioBitrateDef.snap``, ``channels_mixdown``), for one audio encoder
-  of each kind (:data:`MIXDOWN_ENCODERS`, :data:`VALUE_ENCODERS`), every requested layout and
-  typical source layouts. ``test_audio_agreement`` checks C-8 against C-7 for more encoders.
-- A mixdown fix is never Dolby Pro Logic II and never an upmix (decision 0019 item 3).
-"""
+"""The info notes on crop and audio values the encoder cannot do, with what is written instead."""
 
 from __future__ import annotations
 
@@ -47,12 +37,9 @@ AUDIO_CODES = (
     "audio.samplerate_unsupported",
 )
 LAYOUTS = {1: "mono", 2: "stereo", 3: "3.0", 6: "5.1(side)", 8: "7.1"}
-#: One encoder of each mixdown kind: every layout up to 7.1 (AAC; libfdk_aac and FLAC have the
-#: same list), no 7.1 (AC-3; E-AC-3 is the same), stereo at most (MP3), and libopus, whose
-#: source layouts C-7 changes.
+#: One encoder of each mixdown kind.
 MIXDOWN_ENCODERS = ("aac", "ac3", "libmp3lame", "libopus")
-#: For bitrates and sample rates also a lossless encoder (FLAC: no bitrate, rates to 192 kHz).
-#: AAC has a free bitrate range, AC-3 and MP3 fixed steps.
+#: For bitrates and sample rates also a lossless encoder (FLAC: no bitrate).
 VALUE_ENCODERS = (*MIXDOWN_ENCODERS, "flac")
 
 
@@ -70,9 +57,6 @@ def one_track(track: AudioOutputTrack, *, channels: int = 6, rate: int = 48000) 
 
 def messages(s: Any, code: str) -> list[str]:
     return [i.message for i in s.validate() if i.code == code]
-
-
-# --------------------------------------------------------------------------- the texts
 
 
 def test_crop_note_says_what_happens() -> None:
@@ -181,8 +165,7 @@ def test_texts_say_what_is_written(
 def test_bitrates_snap_down_as_handbrake(
     mixdown: Mixdown | None, channels: int, kbps: int, written: int
 ) -> None:
-    """Decision 0025 (HandBrake 1.11.2, libhb/common.c): clamp to the range of the layout,
-    then the largest allowed step at or below. The fix sets that value."""
+    """Clamp to the layout's range, then take the largest allowed step at or below."""
     track = AudioOutputTrack(encoder="ac3", mixdown=mixdown, bitrate=kbps)
     [issue] = [
         i
@@ -217,8 +200,7 @@ def test_a_passthru_copy_is_never_snapped() -> None:
 def test_opus_layout_downmix_is_a_note(
     layout: str, channels: int, message: str, fixes: list[str]
 ) -> None:
-    """C-7 makes a layout libopus refuses into one it takes (``PlannedAudio.layout``); the
-    note names it. A fix exists only where a mixdown writes that layout."""
+    """The note names the layout that libopus writes instead."""
     s = one_track(AudioOutputTrack(encoder="libopus"), channels=channels)
     s.source.audio[0].channel_layout = layout
     [issue] = [i for i in sc.check(s) if i.code == "audio.mixdown_unsupported"]
@@ -265,9 +247,6 @@ def test_audio_values_never_block_the_queue() -> None:
     assert all(i.severity is not Severity.ERROR for i in issues), issues
 
 
-# --------------------------------------------------------------------------- the helpers
-
-
 REQUESTS: list[Mixdown | None] = [None, *get_args(Mixdown)]
 
 
@@ -278,9 +257,6 @@ REQUESTS: list[Mixdown | None] = [None, *get_args(Mixdown)]
 def test_mixdown_issues_follow_the_helper(
     encoder_id: str, requested: Mixdown | None, channels: int
 ) -> None:
-    """For every encoder, layout and source: an issue exactly when the helper changes the
-    track's layout; its fix sets the helper's layout, which is never Dolby Pro Logic II
-    (unless asked for and kept) and never has more channels than the source."""
     encoder = DEFS.audio_encoders[encoder_id]
     written = encoder.snap_mixdown(requested, channels, DEFS.mixdowns)
     track = AudioOutputTrack(encoder=encoder_id, mixdown=requested)
@@ -308,8 +284,6 @@ def test_mixdown_issues_follow_the_helper(
 @pytest.mark.parametrize("kbps", [8, 100, 250, 700, 5000])
 @pytest.mark.parametrize("channels", [1, 2, 6, 8])
 def test_bitrate_issues_follow_the_helper(encoder_id: str, kbps: int, channels: int) -> None:
-    """The written bitrate is ``AudioBitrateDef.snap`` (down) for the written layout, or for
-    ``channels_mixdown`` of the kept source layout. A lossless encoder writes none."""
     encoder = DEFS.audio_encoders[encoder_id]
     s = one_track(AudioOutputTrack(encoder=encoder_id, bitrate=kbps), channels=channels)
     found = [i for i in s.validate() if i.code == "audio.bitrate_out_of_range"]

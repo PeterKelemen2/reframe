@@ -1,38 +1,8 @@
 """Write a DTS-HD Master Audio stream (lossless, XLL) with plain Python.
 
-FFmpeg cannot encode DTS-HD MA: its ``dca`` encoder writes a DTS core only. A lossless track
-whose file states no bit rate is what the **Measure** button of 03 §Audio is for (M6 demo 1),
-so this module builds a real DTS-HD MA bitstream, the way :mod:`reframe_testing.vobsub` builds
-VobSub: FFmpeg only muxes it (``-f dts -i … -c:a copy``) into Matroska, which writes no
-statistics tags, so the file has no bit rate for the track.
-
-The stream is a sequence of **extension substream** (EXSS) frames (ETSI TS 102 114, clause 7;
-sync word ``0x64582025``), each with one audio asset whose only coding component is an
-**XLL** (lossless) frame (clause 8; sync word ``0x41A29547``). There is no DTS core: the asset
-descriptor says "XLL only" and the header says "no backward-compatible core". (A Blu-ray
-track also carries a lossy core before each EXSS frame. FFmpeg's core frames cannot be put
-between the EXSS frames by the fixture recipes, which are files plus FFmpeg commands, and a
-Python core encoder is far more work than this; decision 0032.)
-
-What FFmpeg's decoder checks (``libavcodec/dca_exss.c``, ``dca_xll.c``, ``dcadec.c``,
-``dca_parser.c``, ``libavformat/dtsdec.c``, n9.0.2), and how this writer meets it:
-
-- EXSS header: CRC-16 (CCITT, initial value 0xFFFF) over the header from byte 5; the header
-  size and the frame size are multiples of 4 (the ``dts`` demuxer's probe); one presentation,
-  one asset; the asset descriptor ends exactly at its stated size.
-- XLL frame: one channel set, one frequency band, ``2`` segments of ``256`` samples (512
-  samples per frame, 93.75 frames per second at 48 kHz, like a Blu-ray track), 24-bit samples,
-  CRC-16 on the common header, the channel set header and the segment table (NAVI); the XLL
-  frame size equals the asset's XLL size (no peak bit rate smoothing).
-- Every channel is coded on its own (``residual_encode`` all ones: no core residual): fixed
-  prediction of order 0 to 3 per channel and frame, then Rice codes per segment and channel; the
-  first ``order`` residuals of a frame are "isolated samples" in hybrid Rice mode (a linear
-  code), as a real encoder does.
-
-The decoder then reports ``profile`` ``DTS-HD MA``, ``sample_fmt`` ``s32p``,
-``bits_per_raw_sample`` 24 and sets the bit rate to 0 (``ff_dca_xll_filter_frame``), so
-ffprobe prints no ``bit_rate`` for the stream. ``testing/tests/test_media_fixtures.py`` checks
-that, and that the decoded samples are the ones written here (the coding is lossless).
+FFmpeg's ``dca`` encoder writes a DTS core only, so this module writes the stream itself:
+extension substream frames with one XLL asset and no DTS core. The decoded samples are the
+ones written.
 """
 
 from __future__ import annotations
@@ -123,7 +93,6 @@ def crc16(data: bytes) -> int:
 
 
 def _with_crc(writer: BitWriter, start_byte: int) -> bytes:
-    """The writer's bytes plus the CRC-16 of everything from ``start_byte``."""
     data = writer.getvalue()
     return data + crc16(data[start_byte:]).to_bytes(2, "big")
 
@@ -203,7 +172,6 @@ def xll_frame(channels: Sequence[Sequence[int]], speakers: Sequence[str]) -> byt
     nabits = 5  # storage resolution > 16 bits
     seg_samples = 1 << SEGMENT_SAMPLES_LOG2
 
-    # ---- band data: one segment after the other (band 0, one channel set)
     segments: list[bytes] = []
     for seg in range(1 << SEGMENTS_LOG2):
         w = BitWriter()
@@ -242,7 +210,6 @@ def xll_frame(channels: Sequence[Sequence[int]], speakers: Sequence[str]) -> byt
         w.align()
         segments.append(w.getvalue())
 
-    # ---- channel set sub-header
     chs = BitWriter()
     chs.zeros(10)  # header size, set below
     chs.write(nch - 1, 4)
@@ -269,7 +236,6 @@ def xll_frame(channels: Sequence[Sequence[int]], speakers: Sequence[str]) -> byt
     chs_bytes[1] |= ((size - 1) & 0x3) << 6
     chs_header = bytes(chs_bytes) + crc16(bytes(chs_bytes)).to_bytes(2, "big")
 
-    # ---- NAVI: segment sizes
     navi = BitWriter()
     for data in segments:
         navi.write(len(data) - 1, 16)
@@ -392,8 +358,7 @@ class Tone:
     level_db: float
 
 
-#: A 5.1 layout, a different tone per channel (C 468.75 Hz, L 375, R 562.5, Ls 281.25,
-#: Rs 656.25, LFE 93.75).
+#: A 5.1 layout, a different tone per channel.
 TONES_5_1 = (
     Tone("C", 5, -20.0),
     Tone("L", 4, -20.0),
