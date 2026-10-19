@@ -2,7 +2,7 @@
 
 The order is ffprobe's stream ``bit_rate``, then the Matroska statistics tags, then MediaInfo
 (applied by :func:`reframe.probe.probe_file`, since it needs the file). When none gives one,
-the bitrate is unknown, and the audio rules treat unknown as above every maximum.
+the bitrate is unknown.
 """
 
 from __future__ import annotations
