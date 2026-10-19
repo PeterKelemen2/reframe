@@ -873,7 +873,10 @@ def _alive(pid: int) -> bool:
 
 @pytest.mark.anyio
 async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path: str) -> None:
-    """Cancelling discovery leaves no version-check process behind."""
+    """Cancelling discovery leaves no version-check process behind.
+
+    ``asyncio.gather`` once returned at the first finished check and dropped the other kills.
+    """
     import asyncio
     import time
 
