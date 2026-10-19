@@ -388,7 +388,7 @@ them.
 | Source channels | Any · Mono · Stereo or less · 5.1 or more · 7.1 or more. This is a condition on the **source** track |
 | Codec | Any audio encoder, or Passthru |
 | Mixdown | Keep source · Up to 5.1 (only downmixes 7.1) · 5.1 · Stereo · Dolby Pro Logic II · Mono. A mixdown never upmixes: a source with fewer channels keeps its layout, because FFmpeg's upmix only adds silent channels ([0019](../decisions/0019-audio-codec-rule-details.md)) |
-| Max bitrate | The target bitrate. It snaps to the encoder's allowed values (AC-3 and E-AC-3 use fixed steps). A note shows any snap |
+| Max bitrate | The target bitrate. It snaps down to the encoder's next allowed value (AC-3 and E-AC-3 use fixed steps; [0025](../decisions/0025-audio-bitrate-snaps-down.md)). A note shows any snap |
 | If the source already fits | Passthru · Re-encode |
 
 Expand a row for the optional settings: sample rate, gain, DRC, loudness normalisation, name

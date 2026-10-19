@@ -325,6 +325,12 @@ Each test failed before its fix and passes after it.
   `validation.rule_failed`), and a `QueueJob` or `JobSettings` with such a path still cannot
   go through `model_dump_json()` (the server will need `model_dump(mode="json")` plus an ASCII
   JSON encoder, as the store does).
+  - Follow-up, 2026-10-19: the naming rule and validation's `name_issues` now count a name's
+    bytes as the file system writes them (`\udcff` is one byte). A manual output name with
+    such a byte gets `output.name_not_portable` (a warning on POSIX, an error for a Windows
+    path; 0012 points 3 and 5), and `tests/queue/test_queue.py` runs that job with real
+    validation. The `model_dump_json()` limit stands, and an issue message that quotes such
+    a path has it too.
 
 ### Plan changes
 

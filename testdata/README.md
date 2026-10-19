@@ -245,12 +245,14 @@ Error opening output files: Invalid argument
 
 Relevant to `C-7`/`C-8`: "convert" from text to VobSub/PGS is impossible with FFmpeg.
 
-### FFmpeg 9 prints "Exiting with exit code 0" on stdout
+### FFmpeg 8.1 and later print "Exiting with exit code 0" on stdout
 
-After `ffmpeg -version` and `ffmpeg -h …` (also `-h encoder=<name>`), FFmpeg n9.0.2 prints an
-empty line and `Exiting with exit code 0` **to stdout**. `-encoders`, `-filters`,
-`-hwaccels` and `ffprobe -version` do not (both builds; see the files in
-`testing/reframe_testing/fake_data/`):
+After `ffmpeg -version` and `ffmpeg -h …` (also `-h encoder=<name>`), FFmpeg n8.1.3 and n9.0.2
+print an empty line and `Exiting with exit code 0` **to stdout**, even with `-v quiet`. n7.1
+and n6.1.2 do not (the recorded `-version` outputs in `packages/reframe/tests/tools/data/`).
+`-encoders`, `-filters`, `-hwaccels` and `ffprobe -version` do not (both builds; see the files
+in `testing/reframe_testing/fake_data/`). After an encode the line goes to stderr, and only at
+`-v verbose` or above:
 
 ```
 $ ffmpeg -hide_banner -h encoder=reframe_nonexistent

@@ -79,7 +79,8 @@ installed and then found as `bundled` in 5.6 s; a second run downloads nothing.
    installed; `1` download, checksum, archive or version check failed, or no build for this
    computer; `2` unknown build, or a platform the build has no archive for; `130` Ctrl+C (the
    task is cancelled: the download stops within one 1 MiB block, the temporary folder is
-   removed, nothing is installed).
+   removed, nothing is installed; an interrupt after the new build was swapped in lets the
+   fetch finish, and the last line says that the build was installed).
 9. **An expected failure in a task is one line.** The task manager logs a failed task with
    its traceback (`log.exception`), and with no logging configured Python prints that on
    stderr. The CLI drops the log record of a task that ended with `TaskFailed` (an expected

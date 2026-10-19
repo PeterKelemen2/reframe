@@ -215,7 +215,8 @@ section "Core-complete review".
   other names, such as `CPUUSED` → `cpu-used`, are listed), else `encoder.dry_run_failed` on
   `video.custom_params`. Tests: `test_r5_3_*` (recorded log and the real libvpx).
 - **R5-7: VBV without both values.** x264 and x265 drop `vbv-maxrate` without `vbv-bufsize`
-  (x264 silently), and `vbv-bufsize` without `vbv-maxrate` at a constant quality. Now
+  (both log "VBV maxrate specified, but no bufsize, ignored"; corrected 2026-10-19, this said
+  x264 is silent), and `vbv-bufsize` without `vbv-maxrate` at a constant quality. Now
   `encoder.option_inactive` (warning) for each, with a fix that removes it. A buffer alone
   with an average bitrate is used (the encoders make it constant bitrate, with a log line)
   and is not reported. Tests: `test_option_rules_review_fixes.py::test_r5_7_*`,
