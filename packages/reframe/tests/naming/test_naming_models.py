@@ -1,8 +1,4 @@
-"""The naming models: round trips, and ``JobNaming.field_overrides`` in stored jobs.
-
-``tests/models/test_roundtrip.py`` already round-trips every public model with generated
-values; these tests pin the cases that matter for C-16.
-"""
+"""The naming models: round trips, and ``JobNaming.field_overrides`` in stored jobs."""
 
 from __future__ import annotations
 
@@ -19,7 +15,6 @@ from reframe.models import (
 
 
 def test_job_without_field_overrides_still_loads() -> None:
-    """A job stored before C-16 has no ``field_overrides``: it loads with an empty dict."""
     stored = {"source": {"path": "/m/a.mkv"}, "output": {"naming": {"mode": "template"}}}
     job = JobSettings.model_validate(stored)
     assert job.output.naming.field_overrides == {}

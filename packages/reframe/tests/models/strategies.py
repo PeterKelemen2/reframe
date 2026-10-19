@@ -1,10 +1,7 @@
-"""Hypothesis strategies for every Reframe model, built from the type annotations.
+"""Hypothesis strategies for the Reframe models, built from their type annotations.
 
-:func:`strategy_for` walks a type (``Annotated``, unions, ``Literal``, enums, lists, dicts,
-models, ``JsonValue``…) and honours the constraints pydantic records (``ge``/``gt``/``le``/
-``lt``, lengths, ``pattern``). Models whose validators need more than the annotations say get
-an entry in :data:`MODEL_OVERRIDES` or :data:`FIELD_OVERRIDES`, so every generated value is
-valid.
+Models whose validators need more than the annotations say get an entry in
+:data:`MODEL_OVERRIDES` or :data:`FIELD_OVERRIDES`, so every generated value is valid.
 """
 
 from __future__ import annotations
@@ -205,7 +202,6 @@ def _rules_with_catch_all() -> Strategy:
 
 
 def _at_most_one(model: type[BaseModel]) -> Callable[[], Strategy]:
-    """A list of at most one ``model``: for lists of large models (a whole job per item)."""
     return lambda: st.lists(model_strategy(model), max_size=1)
 
 

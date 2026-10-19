@@ -1,5 +1,5 @@
-"""C-2 "Done when": round trip (model → JSON → model) is a property test, for every public
-model and every public union / alias type."""
+"""Every public model and union or ``Annotated`` alias of ``reframe.models`` round-trips through
+JSON."""
 
 from __future__ import annotations
 
@@ -43,9 +43,9 @@ def public_models() -> list[type[BaseModel]]:
 
 
 def public_type_aliases() -> list[tuple[str, Any]]:
-    """Unions and ``Annotated`` aliases of ``reframe.models``. Plain ``Literal`` aliases and
-    enums are left out: their values are JSON scalars, the model round trip covers the fields
-    that use them, and the JSON Schema snapshot pins their values."""
+    """Unions and ``Annotated`` aliases of ``reframe.models``. ``Literal`` aliases are left out:
+    they are JSON scalars, covered by the model round trips and pinned by the JSON Schema
+    snapshot."""
     result = []
     for name in models.__all__:
         obj = getattr(models, name)
@@ -68,7 +68,6 @@ def test_every_public_name_is_exported() -> None:
     assert len(models.__all__) == len(set(models.__all__))
     for name in models.__all__:
         assert hasattr(models, name), name
-    # Every model class defined in a reframe.models module is public.
     defined = {
         obj
         for module in list(sys.modules.values())
@@ -91,7 +90,6 @@ def test_model_round_trip(model: type[BaseModel]) -> None:
         again = model.model_validate_json(text)
         assert again == instance
         assert again.model_dump_json() == text
-        # The python-mode dump validates too (what the server does with request bodies).
         assert model.model_validate(instance.model_dump(mode="json")) == instance
 
     check()

@@ -1,4 +1,4 @@
-"""Word separator and the HandBrake clean-up options (03 §Output naming → Options)."""
+"""Word separator and the HandBrake clean-up options."""
 
 from __future__ import annotations
 

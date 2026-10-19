@@ -1,5 +1,5 @@
-"""Template syntax (03 §Template syntax): variables, format specs, optional groups,
-subfolders, brace escapes, and the validation issues of a bad template."""
+"""Template syntax: variables, format specs, optional groups, subfolders, brace escapes, and the
+validation issues of a bad template."""
 
 from __future__ import annotations
 
@@ -27,13 +27,9 @@ from reframe.naming.variables import VARIABLE_KINDS
 
 
 def _render(template: str, **values: Any) -> list[str]:
-    """The rendered segments as strings."""
     parsed = parse_template(template)
     assert not parsed.errors, parsed.errors
     return ["".join(piece.text for piece in segment) for segment in render(parsed, values)]
-
-
-# --------------------------------------------------------------------------- parsing
 
 
 def test_parse_nodes() -> None:
@@ -80,9 +76,6 @@ def test_any_text_parses_without_an_exception(text: str) -> None:
     parsed = parse_template(text)
     render(parsed, dict.fromkeys(VARIABLE_KINDS, "x"))
     check_template(text)
-
-
-# --------------------------------------------------------------------------- rendering
 
 
 def test_literal_braces() -> None:
@@ -140,9 +133,6 @@ def test_pieces_remember_their_variable() -> None:
     ]
 
 
-# --------------------------------------------------------------------------- format specs
-
-
 def test_number_specs() -> None:
     assert format_value("season", 3, "02") == "03"
     assert format_value("episode", 7, "03d") == "007"
@@ -172,9 +162,6 @@ def test_date_specs() -> None:
 def test_empty_values() -> None:
     assert format_value("season", None, "02") == ""
     assert format_value("name", None, None) == ""
-
-
-# --------------------------------------------------------------------------- check_template
 
 
 def test_good_templates_have_no_issues() -> None:
@@ -257,7 +244,7 @@ _SPEC_VALUES: dict[str, int | float | str] = {
 @pytest.mark.parametrize(
     "spec",
     [
-        pytest.param("999999999999", id="1e12"),  # MemoryError without the limit
+        pytest.param("999999999999", id="1e12"),
         pytest.param("0>999999999999", id="fill-1e12"),
         pytest.param(".999999999999", id="precision-1e12"),
         pytest.param("9" * 5000, id="5000-digits"),
@@ -267,7 +254,6 @@ _SPEC_VALUES: dict[str, int | float | str] = {
         pytest.param("1>256", id="digit-fill-256"),
         pytest.param(".256", id="precision-256"),
         pytest.param("10.1000", id="width-and-precision"),
-        # format() reads every decimal digit, not only 0-9:
         pytest.param("\u0669" * 12, id="arabic-indic-1e12"),
         pytest.param("\uff12\uff15\uff16", id="full-width-256"),
         pytest.param(".\u0662\u0665\u0666", id="arabic-indic-precision-256"),

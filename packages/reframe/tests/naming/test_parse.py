@@ -1,4 +1,4 @@
-"""Release-name parsing: position-preserving fields, spans and scores (03 §Variables)."""
+"""Release-name parsing: position-preserving fields, spans and scores."""
 
 from __future__ import annotations
 
@@ -190,9 +190,9 @@ def test_editions_far_apart_are_joined_with_the_separator() -> None:
     ("text", "season", "episodes"),
     [
         ("Bleach - 001 - Title", None, [1]),
-        ("Bleach - \u0660\u0660\u0661 - Title", None, [1]),  # Arabic-Indic: guessit reads them
-        ("Bleach - \uff10\uff10\uff11 - Title", None, [1]),  # full-width digits
-        ("Bleach - ²²³ - Title", None, []),  # guessit does not read superscripts
+        ("Bleach - \u0660\u0660\u0661 - Title", None, [1]),
+        ("Bleach - \uff10\uff10\uff11 - Title", None, [1]),
+        ("Bleach - ²²³ - Title", None, []),
     ],
 )
 def test_absolute_numbers_in_other_digits(
@@ -205,8 +205,8 @@ def test_absolute_numbers_in_other_digits(
 def test_a_bare_code_of_superscripts_is_no_absolute_number(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``²`` passes ``str.isdigit`` but ``int`` refuses it: the absolute-number rule must not
-    take it, even if guessit ever matched it."""
+    """``²`` passes ``str.isdigit`` but ``int`` refuses it, so the absolute-number rule must
+    skip it."""
     matches = (
         GuessMatch("title", "Show", 0, 4),
         GuessMatch("season", 2, 7, 8),
@@ -221,9 +221,6 @@ SOPRANOS = "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm"
 
 
 def test_guessit_reads_user_config_files_without_the_option(guessit_user_config: str) -> None:
-    """What the fixture's config files do to guessit when it may read them (guessit 4.4.0):
-    the episode title becomes ``alternative_title``, or every call fails. With
-    ``no_user_config`` they change nothing."""
     plain = {"advanced": True, "name_only": True}
     if guessit_user_config.startswith("{not"):
         with pytest.raises(GuessitException):

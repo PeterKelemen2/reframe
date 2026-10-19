@@ -55,9 +55,8 @@ def now() -> datetime:
     return NOW
 
 
-#: Contents of the guessit config files of :func:`guessit_user_config`: one that changes what
-#: guessit reports (the episode title of an episode becomes ``alternative_title``), and one
-#: that makes every guessit call fail.
+#: Contents of the guessit config files of :func:`guessit_user_config`: one changes what guessit
+#: reports, one makes every guessit call fail.
 GUESSIT_USER_CONFIGS = {"type-movie": '{"type": "movie"}', "malformed": "{not json"}
 
 
@@ -65,9 +64,8 @@ GUESSIT_USER_CONFIGS = {"type-movie": '{"type": "movie"}', "malformed": "{not js
 def guessit_user_config(
     request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[str]:
-    """A guessit config file in every place guessit 4.4.0 reads one from (the working folder,
-    ``~/.guessit``, ``~/.config/guessit``) and in ``$XDG_CONFIG_HOME/guessit``, under a fake
-    home folder. Yields the file contents.
+    """Writes a guessit config file in every folder guessit reads from, and in
+    ``$XDG_CONFIG_HOME/guessit``, which it does not read. Yields the file contents.
 
     guessit loads its config files once per process and keeps them in ``default_api``, so the
     fixture resets it (and the parse cache) before and after the test: else a config loaded

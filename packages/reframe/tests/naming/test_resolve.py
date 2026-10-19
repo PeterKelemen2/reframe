@@ -1,5 +1,4 @@
-"""``resolve_output_name``: 03 §Examples, the M2 demo (item 5), job overrides, extensions,
-output folders and bad templates."""
+"""``resolve_output_name``: examples, job overrides, extensions, output folders, bad templates."""
 
 from __future__ import annotations
 
@@ -39,7 +38,7 @@ SOPRANOS = Path(
     "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm.mkv"
 )
 
-#: 03 §Examples, "Output to MKV at 1080p": template, separator, Hacksaw Ridge, Sopranos.
+#: Template, separator, and the names expected for Hacksaw Ridge and The Sopranos.
 EXAMPLES = [
     ("{main_title}", "keep", "Hacksaw.Ridge.mkv", "The.Sopranos.S03E02.Proshai.Livushka.mkv"),
     (
@@ -84,7 +83,6 @@ def test_examples_of_03(
 
 
 def test_demo_hacksaw_ridge(empty_fs: Any, now: datetime) -> None:
-    """M2 demo item 5: the folder name, ``Hacksaw.Ridge``."""
     result = resolve_output_name(HACKSAW, NamingOptions(), fs=empty_fs, now=now)
     assert result.source == "folder"
     assert result.fields.main_title == "Hacksaw.Ridge"
@@ -94,8 +92,8 @@ def test_demo_hacksaw_ridge(empty_fs: Any, now: datetime) -> None:
 
 
 def test_demo_sopranos(fake_fs: Any, now: datetime) -> None:
-    """M2 demo item 5: ``The.Sopranos.S03E02.Proshai.Livushka``, from the file name — with
-    the season pack listed, and with the folder not readable."""
+    """The file name is the source, with the season pack listed and with the folder not
+    readable."""
     other = SOPRANOS.name.replace("E02.Proshai.Livushka", "E01.Mr.Ruggerios.Neighborhood")
     for fs in (fake_fs({SOPRANOS.parent: [SOPRANOS.name, other]}), fake_fs()):
         result = resolve_output_name(SOPRANOS, NamingOptions(), fs=fs, now=now)
@@ -122,9 +120,6 @@ def test_movie_and_episode_templates(empty_fs: Any) -> None:
     options = NamingOptions(movie_template="M {name}", episode_template="E {name}")
     assert resolve_output_name(HACKSAW, options, fs=empty_fs).relative_path == "M Hacksaw.Ridge.mkv"
     assert resolve_output_name(SOPRANOS, options, fs=empty_fs).relative_path == "E The.Sopranos.mkv"
-
-
-# --------------------------------------------------------------------------- the job's naming
 
 
 def _job(**naming: Any) -> JobSettings:
@@ -212,15 +207,12 @@ def test_bad_field_overrides(empty_fs: Any) -> None:
 @pytest.mark.parametrize(
     ("key", "number"),
     [
-        # str.isdigit() is True, int() fails:
         pytest.param("season", "²", id="superscript-two"),
         pytest.param("episode", "1²", id="one-superscript-two"),
-        # str.isdigit() is True, int() accepts them:
         pytest.param("year", "\u0663", id="arabic-indic-three"),
         pytest.param("season", "\u06f3", id="extended-arabic-indic-three"),
         pytest.param("episode", "\uff13", id="full-width-three"),
         pytest.param("year", "1" * 10, id="10-digits"),
-        # int() refuses more than 4300 digits
         pytest.param("season", "9" * 5000, id="5000-digits"),
         pytest.param("episode", "+3", id="plus"),
         pytest.param("year", "-3", id="minus"),
@@ -229,8 +221,6 @@ def test_bad_field_overrides(empty_fs: Any) -> None:
     ],
 )
 def test_number_overrides_take_only_ascii_digits(key: str, number: str, empty_fs: Any) -> None:
-    """A number override is 1 to 9 ASCII digits; anything else is a warning, never an
-    exception, and the parsed value stays."""
     job = _job(field_overrides={key: number})
     result = resolve_output_name(SOPRANOS, NamingOptions(), job=job, fs=empty_fs)
     [issue] = result.issues
@@ -245,9 +235,6 @@ def test_number_overrides_strip_spaces_and_keep_leading_zeros(empty_fs: Any) -> 
     result = resolve_output_name(SOPRANOS, NamingOptions(), job=job, fs=empty_fs)
     assert not result.issues
     assert (result.fields.season, result.fields.episode, result.fields.year) == (7, 123456789, None)
-
-
-# --------------------------------------------------------------------------- bad templates
 
 
 def test_bad_template_gives_issues_and_the_file_name(empty_fs: Any) -> None:
@@ -281,9 +268,6 @@ def test_empty_render_falls_back_to_the_file_name(empty_fs: Any) -> None:
     )
     assert result.relative_path == "hacksawridge.2160p.remux-henderson.mkv"
     assert result.notes[-1].startswith("The file name was empty")
-
-
-# --------------------------------------------------------------------------- folders, extensions
 
 
 def test_fixed_output_folder(empty_fs: Any) -> None:
@@ -366,9 +350,6 @@ def test_job_container_wins(empty_fs: Any) -> None:
     assert result.relative_path == "Hacksaw.Ridge.webm"
 
 
-# --------------------------------------------------------------------------- the real file system
-
-
 def test_real_file_system(tmp_path: Path) -> None:
     """Without ``fs``, naming lists the real folder and reads the real file times."""
     folder = tmp_path / "Breaking.Bad.S01.1080p.BluRay.x264-ROVERS"
@@ -391,7 +372,7 @@ posix_only = pytest.mark.skipif(
 @posix_only
 def test_a_file_name_that_is_not_utf8(tmp_path: Path) -> None:
     """``reframe name DIR`` with a real file ``bad\\xffname.mkv``: the byte becomes ``�``
-    (0012 follow-up) in the output name and in every text of the result; only the real paths
+    in the output name and in every text of the result; only the real paths
     keep it."""
     media = tmp_path / "media"
     media.mkdir()
@@ -436,8 +417,8 @@ def test_a_folder_name_that_is_not_utf8(tmp_path: Path) -> None:
 
 
 def test_check_template_and_names_with_surrogates() -> None:
-    """Lone surrogates in a template or a manual name (text from the API can hold them) are
-    never an exception, and never reach the output name."""
+    """Lone surrogates in a template or a manual name are never an exception, and never reach
+    the output name."""
     assert check_template("{name}\udcff<{date:%Y\ud800}>") == []
     job = _job(template="{main_title}\udcff\ud800")
     result = resolve_output_name(HACKSAW, NamingOptions(), job=job, fs=RealNamingFs())
