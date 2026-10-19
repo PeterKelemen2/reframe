@@ -84,12 +84,12 @@
     'description': '''
       A problem that the user should know about but that does not stop anything.
       
-      Examples: a corrupt settings or presets file was backed up and replaced (C-9); sleep
-      inhibit is not available (C-14).
+      Examples: a corrupt settings or presets file was backed up and replaced; sleep inhibit is
+      not available.
     ''',
     'properties': dict({
       'code': dict({
-        'description': '``settings.corrupt``, ``presets.corrupt``, ``sleep_inhibit.unavailable``, …',
+        'description': 'A stable code for the warning, such as ``settings.corrupt``.',
         'title': 'Code',
         'type': 'string',
       }),
@@ -500,10 +500,7 @@
       'PassthruPolicy',
       'TrackSelection',
     ]),
-    'description': '''
-      ``AudioDefaults(selection, codec_rules, passthru)``. The last codec rule is always the
-      catch-all; the model enforces it.
-    ''',
+    'description': 'Audio defaults. The last codec rule is always the catch-all; the model enforces it.',
     'properties': dict({
       'codec_rules': dict({
         'items': dict({
@@ -794,7 +791,7 @@
     '$defs': list([
       'ExtraAudioOutput',
     ]),
-    'description': 'The optional settings of a codec rule (the expanded row in 03).',
+    'description': 'The optional settings of a codec rule.',
     'properties': dict({
       'drc': dict({
         'default': 0.0,
@@ -959,7 +956,10 @@
           }),
         ]),
         'default': None,
-        'description': 'Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``, ``AAC-LC``.',
+        'description': '''
+          Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``,
+          ``AAC-LC``.
+        ''',
         'title': 'Display Codec',
       }),
       'disposition': dict({
@@ -1034,22 +1034,19 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
-          ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For a Matroska file whose
-          tracks Reframe's own reader reads and matches to the streams, it is the track's
-          ``LanguageIETF`` element, ``None`` when the track has no such element or its value is not a
-          language tag (decisions 0034, 0041). For other containers, and for a Matroska file whose
-          tracks the reader cannot read or match, it is MediaInfo's value when MediaInfo is
-          available, else ``None`` (decision 0007).
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
+          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
+          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
           
-          The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+          The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
         ''',
         'title': 'Language Ietf',
       }),
       'lossless': dict({
         'default': False,
-        'description': 'TrueHD, DTS-HD MA, FLAC, PCM, ALAC: encoded at the maximum by codec rules (03).',
+        'description': 'TrueHD, DTS-HD MA, FLAC, PCM, ALAC: encoded at the maximum by codec rules.',
         'title': 'Lossless',
         'type': 'boolean',
       }),
@@ -1108,7 +1105,10 @@
           }),
         ]),
         'default': None,
-        'description': "ffprobe's raw ``start_time`` in seconds (the first packet's timestamp).",
+        'description': '''
+          ffprobe's raw ``start_time`` in seconds: the timestamp of the first packet (an M2TS
+          stream can start at 600 s).
+        ''',
         'title': 'Start Time',
       }),
       'tags': dict({
@@ -1190,7 +1190,7 @@
       'TrackRole',
     ]),
     'additionalProperties': False,
-    'description': 'Files that share a fingerprint at ``level`` (04 §Grouping).',
+    'description': 'Files that share a fingerprint at ``level``.',
     'properties': dict({
       'fingerprint': dict({
         '$ref': '#/$defs/Fingerprint',
@@ -1262,7 +1262,7 @@
       'ValidationIssue',
     ]),
     'additionalProperties': False,
-    'description': '``Reframe.batch.group(...)``: the groups, and the files left out of them.',
+    'description': 'The groups of a batch, and the files left out of them.',
     'properties': dict({
       'groups': dict({
         'items': dict({
@@ -1273,9 +1273,9 @@
       }),
       'issues': dict({
         'description': '''
-          The files that are in no group: one that could not be probed (``source.probe_failed``),
-          and (``Reframe.batch.resolve_batch``) one that is the planned output of another file of
-          the batch (``batch.already_encoded``, info; decision 0040).
+          The files that are in no group: one that could not be probed
+          (``source.probe_failed``), and one that is the planned output of another file of the
+          batch (``batch.already_encoded``, info).
         ''',
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
@@ -1346,7 +1346,7 @@
       'VideoSettings',
     ]),
     'additionalProperties': False,
-    'description': '``Reframe.batch.resolve(...)``: the resolution matrix.',
+    'description': 'The resolution matrix.',
     'properties': dict({
       'columns': dict({
         'items': dict({
@@ -1367,7 +1367,7 @@
         'default': None,
       }),
       'issues': dict({
-        'description': 'Batch-level problems: output name collisions within the batch (04 §Output naming).',
+        'description': 'Batch-level problems: output name collisions within the batch.',
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
         }),
@@ -1394,7 +1394,7 @@
     ]),
     'description': '''
       A bit rate and its source. ``value`` is ``None`` exactly when ``source`` is ``unknown``
-      (C-12 treats an unknown bit rate as above every maximum).
+      (a rule treats an unknown bit rate as above every maximum).
     ''',
     'properties': dict({
       'source': dict({
@@ -1427,7 +1427,7 @@
       'BitrateSource',
     ]),
     'additionalProperties': False,
-    'description': 'A packet-size scan of one stream (05 §C-10: ``-show_entries packet=size``).',
+    'description': 'A packet-size scan of one stream.',
     'properties': dict({
       'bitrate': dict({
         '$ref': '#/$defs/BitrateInfo',
@@ -1487,7 +1487,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'Where a bit rate came from (C-3 bitrate chain, then a measurement on request).',
+    'description': 'Where a bit rate came from.',
     'enum': list([
       'stream',
       'stats_tag',
@@ -1519,7 +1519,7 @@
       'EncoderStatus',
     ]),
     'additionalProperties': False,
-    'description': 'Encoder detection changed a status (C-4).',
+    'description': 'Encoder detection changed a status.',
     'properties': dict({
       'encoders': dict({
         'description': 'The encoders whose status changed (all of them after a full re-scan).',
@@ -1551,11 +1551,10 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      Every known encoder's status at one moment (C-4), plus the filters of the build.
+      Every known encoder's status at one moment, plus the filters of the build.
       
-      The ``caps`` argument of ``build_plan`` (C-7) and ``validate`` (C-8). The capability
-      service returns one at once (from the cache, or all ``unknown``) and never blocks; a
-      finished detection replaces it and publishes ``capabilities.changed``.
+      The capability service returns one at once (from the cache, or all ``unknown``) and never
+      blocks. A finished detection replaces it and publishes ``capabilities.changed``.
     ''',
     'properties': dict({
       'checked_at': dict({
@@ -1582,7 +1581,7 @@
         'additionalProperties': dict({
           '$ref': '#/$defs/EncoderStatus',
         }),
-        'description': 'By encoder id: every video and audio encoder of the definitions (C-6).',
+        'description': 'By encoder id: every video and audio encoder of the definitions.',
         'title': 'Encoders',
         'type': 'object',
       }),
@@ -1619,7 +1618,7 @@
         'description': '''
           Filters of the build whose run test failed, with the reason. ``libplacebo`` is listed
           by ``ffmpeg -filters`` but needs a working Vulkan device, so detection runs one frame
-          through it ("No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)").
+          through it.
         ''',
         'title': 'Filter Failures',
         'type': 'object',
@@ -1739,7 +1738,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': '``JobSettings.chapters``: markers on/off, renamed chapters, generated chapters.',
+    'description': 'Chapter markers: on or off, renamed chapters, generated chapters.',
     'properties': dict({
       'enabled': dict({
         'default': True,
@@ -2151,11 +2150,11 @@
       'CropSample',
     ]),
     'additionalProperties': False,
-    'description': 'Crop detection over the sample frames (03 §Dimensions → Crop).',
+    'description': 'Crop detection over the sample frames.',
     'properties': dict({
       'auto': dict({
         '$ref': '#/$defs/CropRect',
-        'description': 'The most common result (``detect_crop_consensus(…, "auto")``).',
+        'description': 'The most common result (the ``auto`` mode of :class:`CropSettings`).',
       }),
       'auto_frames': dict({
         'default': 0,
@@ -2166,7 +2165,7 @@
       }),
       'conservative': dict({
         '$ref': '#/$defs/CropRect',
-        'description': 'Only what is black on every sample (``detect_crop_consensus(…, "conservative")``).',
+        'description': 'Only what is black on every sample (the ``conservative`` mode).',
       }),
       'notes': dict({
         'items': dict({
@@ -2227,7 +2226,7 @@
     ]),
     'description': '''
       Pixels removed from each edge of the source picture as FFmpeg decodes it: the display
-      matrix is applied, the job's rotate and flip are not (decision 0009).
+      matrix is applied, the job's rotate and flip are not.
     ''',
     'properties': dict({
       'bottom': dict({
@@ -2298,7 +2297,7 @@
       'CropRect',
     ]),
     'description': '''
-      03 §Dimensions → Crop.
+      Crop mode and the crop rectangle.
       
       - ``auto``: the most common ``cropdetect`` result over the sample frames;
         ``conservative``: only what is black on every sample. In both modes ``rect`` holds the
@@ -2409,11 +2408,10 @@
       'SameAsSource',
     ]),
     'description': '''
-      ``JobSettings.dimensions``: rotate, flip, crop, size, pixel aspect, modulus, scaler.
+      Rotate, flip, crop, size, pixel aspect, modulus and scaler of a job.
       
-      Defaults are those of 03 §Dimensions: fit within 1080p, no upscaling, square pixels,
-      modulus 2, Lanczos. ``custom_par`` is used only with ``pixel_aspect="custom"`` (a missing
-      value is a validation issue, not a model error).
+      ``custom_par`` is used only with ``pixel_aspect="custom"`` (a missing value is a validation
+      issue, not a model error).
     ''',
     'properties': dict({
       'allow_upscaling': dict({
@@ -2519,11 +2517,10 @@
     '$defs': list([
     ]),
     'description': '''
-      Every ffprobe disposition flag (FFmpeg n9.0.2 prints exactly these 19).
+      Every ffprobe disposition flag.
       
-      Which flags survive a Matroska mux is recorded in ``testdata/README.md`` ("Verified tool
-      behaviour"): ``captions``, ``lyrics``, ``karaoke``, ``metadata``, ``dependent`` and
-      ``still_image`` are lost; ``descriptions`` only on subtitle tracks.
+      Matroska keeps only some of them; ``testdata/README.md`` ("Matroska muxer: dispositions")
+      records which.
     ''',
     'properties': dict({
       'attached_pic': dict({
@@ -2709,10 +2706,13 @@
       'ValueRef',
     ]),
     'additionalProperties': False,
-    'description': '``EncodePlan`` as C-7 sketches it, plus ``files`` (inputs that the builder generates).',
+    'description': 'The steps of one job, with the files they read and the files they leave behind.',
     'properties': dict({
       'display': dict({
-        'description': 'Shell-quoted command preview (POSIX or Windows style).',
+        'description': '''
+          Shell-quoted command preview (POSIX or Windows style); a measured value shows as
+          ``<a0.input_i>``.
+        ''',
         'title': 'Display',
         'type': 'string',
       }),
@@ -2789,7 +2789,7 @@
     'properties': dict({
       'hardware_tests': dict({
         'default': True,
-        'description': 'Run the hardware test encodes (C-4). Off: hardware encoders stay "unknown".',
+        'description': 'Run the hardware test encodes. Off: hardware encoders stay "unknown".',
         'title': 'Hardware Tests',
         'type': 'boolean',
       }),
@@ -2806,7 +2806,7 @@
         'description': '''
           The VAAPI render node to use (``/dev/dri/renderD129``). ``None`` or empty = automatic:
           detection tests the VAAPI encoders on every ``/dev/dri/renderD*`` node and each encoder
-          uses the first node where it works (decision 0020).
+          uses the first node where it works.
         ''',
         'title': 'Vaapi Device',
       }),
@@ -2836,7 +2836,7 @@
       'EncoderState',
     ]),
     'additionalProperties': False,
-    'description': '``EncoderStatus(id, state, reason, checked_at, supports_10bit, …)``.',
+    'description': 'The detection result of one encoder.',
     'properties': dict({
       'checked_at': dict({
         'anyOf': list([
@@ -2877,8 +2877,8 @@
         'description': '''
           The device the encoder works on, for encoders that need one: the VAAPI render node
           (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
-          Settings → Encoders forces (decision 0020). The command builder (C-7) uses it. ``None``
-          for encoders without a device choice and for encoders that are not available.
+          Settings → Encoders forces. The command builder uses it. ``None`` for encoders without a
+          device choice and for encoders that are not available.
         ''',
         'title': 'Device',
       }),
@@ -2907,8 +2907,8 @@
       }),
       'pix_fmts': dict({
         'description': '''
-          Pixel formats the encoder accepts in this build (``Supported pixel formats`` of
-          ``ffmpeg -h encoder=<id>``; only ``vaapi`` for VAAPI encoders, which take hardware frames).
+          Pixel formats the encoder accepts in this build (the ``Supported pixel formats`` line of
+          ``ffmpeg -h encoder=<id>``). VAAPI encoders list only ``vaapi``: they take hardware frames.
           Empty when not read.
         ''',
         'items': dict({
@@ -3253,9 +3253,8 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      One difference between edited settings and the preset they started from: C-9's
-      ``diff(job_template, preset) -> list[FieldChange]`` for the *modified* marker (03
-      §Presets: "Hover it to see what changed").
+      One difference between edited settings and the preset they started from, for the
+      *modified* marker.
     ''',
     'properties': dict({
       'kind': dict({
@@ -3321,8 +3320,8 @@
     '$defs': list([
     ]),
     'description': '''
-      One filter of 03 §Filters: a preset (``default``, ``light``, …), an optional tune, and
-      a custom parameter string for the ``custom`` preset. A filter that is off is not in
+      One filter: a preset (``default``, ``light``, …), an optional tune, and a custom
+      parameter string for the ``custom`` preset. A filter that is off is not in
       :class:`FilterSettings` at all.
     ''',
     'properties': dict({
@@ -3349,17 +3348,14 @@
         ]),
         'default': None,
         'description': '''
-          The FFmpeg implementation (C-6 ``FilterImplementation.id``): ``nlmeans`` or
-          ``hqdn3d`` for Denoise, ``bwdif`` or ``yadif`` for Deinterlace, ``unsharp`` or ``cas``
-          for Sharpen, ``zscale`` or ``libplacebo`` for Colorspace and Tone mapping. ``None`` = the
-          filter's default: the first implementation the FFmpeg build can run (HandBrake stores
-          this choice separately too, for example ``PictureDenoiseFilter``).
+          The FFmpeg implementation of the filter, by its id in the definitions. ``None`` = the
+          filter's default: the first implementation the FFmpeg build can run.
         ''',
         'title': 'Implementation',
       }),
       'preset': dict({
         'default': 'default',
-        'description': 'A preset of the chosen implementation (``FilterImplementation.presets`` in C-6).',
+        'description': 'A preset of the chosen implementation.',
         'title': 'Preset',
         'type': 'string',
       }),
@@ -3391,10 +3387,10 @@
     'description': '''
       Ordered map ``filter_id → FilterConfig``.
       
-      Filter ids are those of the definitions (C-6): ``detelecine``, ``interlace_detection``,
+      Filter ids are those of the definitions: ``detelecine``, ``interlace_detection``,
       ``deinterlace``, ``denoise``, ``chroma_smooth``, ``sharpen``, ``deblock``,
-      ``colorspace``, ``tonemap``, ``grayscale``, ``custom``. The order in the graph is fixed
-      by 03 §Filters; the map order matters only for display.
+      ``colorspace``, ``tonemap``, ``grayscale``, ``custom``. The order in the graph is fixed;
+      the map order matters only for display.
     ''',
     'title': 'FilterSettings',
     'type': 'object',
@@ -3410,8 +3406,8 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      The ordered track descriptors of a file plus the video resolution and HDR type, at one
-      strictness level (04 §Concepts); ``digest`` is the hash two files compare.
+      The ordered track descriptors of a file, plus its video resolution and HDR type, at one
+      strictness level. ``digest`` is the hash that two files compare.
     ''',
     'properties': dict({
       'digest': dict({
@@ -3484,7 +3480,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'Fit inside ``width`` x ``height``, keep the aspect ratio (03: "Fit within 1080p").',
+    'description': 'Fit inside ``width`` x ``height``, keep the aspect ratio.',
     'properties': dict({
       'height': dict({
         'default': 1080,
@@ -3722,7 +3718,7 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      The result of C-5's ``compute_geometry``.
+      The result of the geometry maths.
       
       ``scaled_width`` x ``scaled_height`` is the stored output size; ``output_sar`` its pixel
       aspect; ``display_aspect`` = width x SAR / height. ``notes`` explain every snap or limit
@@ -3752,7 +3748,7 @@
         'description': '''
           Clockwise rotation that the filter graph applies after the crop: the job's ``rotate``.
           FFmpeg's automatic rotation has already applied the source's display matrix before the
-          filter graph, so the crop is in that orientation (``reframe.dimensions``).
+          filter graph, so the crop is in that orientation.
         ''',
         'enum': list([
           0,
@@ -3825,7 +3821,7 @@
     '$defs': list([
     ]),
     'additionalProperties': False,
-    'description': 'One file of a group. ``near``: it differs from the group (04: "E05 ⚠ 1 extra track").',
+    'description': 'One file of a group. ``near``: it differs from the group.',
     'properties': dict({
       'differences': dict({
         'description': 'One line per difference: ``1 extra track (eng AC-3 2.0 "Commentary")``.',
@@ -3846,7 +3842,7 @@
           }),
         ]),
         'default': None,
-        'description': 'The episode number in the file name, when there is one (``E05`` in the matrix).',
+        'description': 'The episode number from the file name, when there is one.',
         'title': 'Episode',
       }),
       'match': dict({
@@ -3874,7 +3870,7 @@
           }),
         ]),
         'default': None,
-        'description': "The season number in the file name (C-16's parser), when there is one.",
+        'description': 'The season number from the file name, when there is one.',
         'title': 'Season',
       }),
     }),
@@ -3951,7 +3947,7 @@
       }),
       'source': dict({
         'default': 'stream',
-        'description': "Where the side data was read: stream side data, or the first frame's (C-3 fallback).",
+        'description': "Where the side data was read: stream side data, or the first frame's as a fallback.",
         'enum': list([
           'stream',
           'frame',
@@ -4014,15 +4010,12 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      ``JobService.draft(source, preset)``: the job, why its tracks and name are what they
-      are, and its issues.
+      The job drafted from a preset: why its tracks and name are what they are, and its
+      issues.
     ''',
     'properties': dict({
       'decisions': dict({
-        'description': '''
-          One per source audio track, in source order (C-12 ``draft_tracks``; decisions 0018,
-          0031).
-        ''',
+        'description': 'One per source audio track, in source order.',
         'items': dict({
           '$ref': '#/$defs/TrackDecision',
         }),
@@ -4031,8 +4024,8 @@
       }),
       'issues': dict({
         'description': '''
-          ``validate(job)`` of the drafted job, and the errors of the track stage (no track for a
-          required language: a template path); an ``error`` keeps it out of the queue.
+          Issues of the drafted job, and the errors of the track stage (no track for a required
+          language: a template path); an ``error`` keeps it out of the queue.
         ''',
         'items': dict({
           '$ref': '#/$defs/ValidationIssue',
@@ -4049,12 +4042,12 @@
       }),
       'naming': dict({
         '$ref': '#/$defs/NameResult',
-        'description': "C-16's output name of the source (the template, or the manual name of ``-o``).",
+        'description': 'The output name of the source: from the template, or the manual name given with ``-o``.',
       }),
       'notes': dict({
         'description': '''
           What the draft changed or left out, in one line each: an output name that was the
-          source file itself, preset options that M2 does not apply yet.
+          source file itself, preset options the draft does not apply.
         ''',
         'items': dict({
           'type': 'string',
@@ -4063,7 +4056,7 @@
         'type': 'array',
       }),
       'subtitle_decisions': dict({
-        'description': "One per source subtitle track, in source order (C-12's subtitle selection).",
+        'description': 'One per source subtitle track, in source order.',
         'items': dict({
           '$ref': '#/$defs/TrackDecision',
         }),
@@ -4129,7 +4122,7 @@
       ``mode="manual"`` uses ``manual_name`` (*Reset to template* sets ``mode`` back).
       ``template`` and ``name_source`` override the preset's naming options for this job only
       (``None`` = use them). ``field_overrides`` holds the parsed-name fields that the user
-      corrected for this file (03 §Naming editor, 04 §Per-file overrides).
+      corrected for this file.
     ''',
     'properties': dict({
       'field_overrides': dict({
@@ -4137,11 +4130,9 @@
           'type': 'string',
         }),
         'description': '''
-          Parsed-name fields corrected for this file, by variable name: ``name``,
-          ``main_title``, ``sub_title``, ``season``, ``episode``, ``episode_code``, ``year``,
-          ``edition``, ``source_type``, ``release_group``. They replace what the parser found;
-          ``""`` clears a field. Numbers are written as text (``"3"``). Unknown names and bad
-          numbers are naming issues, not load errors.
+          Parsed-name fields corrected for this file, by variable name (such as ``season``).
+          They replace what the parser found; ``""`` clears a field. Numbers are written as text
+          (``"3"``). Unknown names and bad numbers are naming issues, not load errors.
         ''',
         'title': 'Field Overrides',
         'type': 'object',
@@ -4237,7 +4228,7 @@
     '$defs': list([
     ]),
     'additionalProperties': False,
-    'description': 'Progress of a running job (``job.progress`` event, queue columns).',
+    'description': 'Progress of a running job.',
     'properties': dict({
       'eta': dict({
         'anyOf': list([
@@ -4372,7 +4363,7 @@
       'TrackMetadata',
       'VideoSettings',
     ]),
-    'description': 'Everything needed to encode one source (05 §C-2 sketch).',
+    'description': 'Everything needed to encode one source.',
     'properties': dict({
       'audio': dict({
         'items': dict({
@@ -4531,7 +4522,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'The seven queue states. ``interrupted``: it was running when Reframe stopped.',
+    'description': 'The queue states. ``interrupted``: it was running when Reframe stopped.',
     'enum': list([
       'waiting',
       'running',
@@ -4582,7 +4573,7 @@
       'VideoSettings',
     ]),
     'description': '''
-      ``JobSettings`` without source-specific fields, plus rules, naming and policies.
+      JobSettings without source-specific fields, plus rules, naming and policies.
       
       Not in a template: the source, the range (always the full file), the output path and
       per-job name, concrete audio/subtitle tracks, chapter names.
@@ -4787,7 +4778,7 @@
         'type': 'array',
       }),
       'preferred_audio': dict({
-        'description': 'Used by preset rules whose language list is empty (``TrackSelection.languages``).',
+        'description': 'Used by preset rules whose language list is empty.',
         'items': dict({
           'maxLength': 64,
           'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
@@ -4825,8 +4816,9 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      EBU R128 values of one audio track (``loudnorm=print_format=json``, the ``input_*``
-      keys). ``None`` where FFmpeg prints ``-inf`` / ``inf`` (a silent track).
+      EBU R128 values of one audio track, measured by FFmpeg's ``loudnorm`` filter.
+      
+      ``None`` where it prints ``-inf`` or ``inf`` (a silent track).
     ''',
     'properties': dict({
       'duration': dict({
@@ -5037,7 +5029,7 @@
     '$defs': list([
     ]),
     'additionalProperties': False,
-    'description': 'A column of the resolution matrix (04 §Resolution matrix).',
+    'description': 'A column of the resolution matrix.',
     'properties': dict({
       'defaults': dict({
         'default': False,
@@ -5157,8 +5149,8 @@
     'description': '''
       Everything Reframe knows about one source file.
       
-      Known gap: ``-show_programs`` output (the programs of a multi-program MPEG-TS) has no model
-      yet; C-3 reads streams across all programs.
+      Known gap: the programs of a multi-program MPEG-TS (``-show_programs``) have no model.
+      Streams are read across all programs.
     ''',
     'properties': dict({
       'attachments': dict({
@@ -5209,7 +5201,7 @@
           }),
         ]),
         'default': None,
-        'description': 'The ffprobe version that produced it (``n9.0.2-17-g2a571b6068-20260930``).',
+        'description': 'The ffprobe version that produced it.',
         'title': 'Probe Tool',
       }),
       'probed_at': dict({
@@ -5342,7 +5334,7 @@
       'ParsedName',
     ]),
     'additionalProperties': False,
-    'description': 'The file name or the folder name, parsed and scored (03 §Where the name comes from).',
+    'description': 'The file name or the folder name, parsed and scored.',
     'properties': dict({
       'fields': dict({
         '$ref': '#/$defs/ParsedName',
@@ -5362,10 +5354,7 @@
         'type': 'string',
       }),
       'recognised': dict({
-        'description': '''
-          The scored fields found: ``title``, ``year``, ``resolution``, ``source``,
-          ``video_codec``, ``audio_codec``, ``hdr``, ``edition``, ``release_group``.
-        ''',
+        'description': 'The scored fields found.',
         'items': dict({
           'type': 'string',
         }),
@@ -5592,9 +5581,8 @@
       }),
       'field': dict({
         'description': '''
-          ``name``, ``year``, ``episode_code``, ``sub_title``, ``resolution``, ``source_type``,
-          ``edition``, ``release_group``, ``hdr``, ``date``, or a guessit property name for other
-          release tags (``video_codec``, ``audio_codec``, ``language``, ``other``…).
+          The ``ParsedName`` field the part belongs to, or a guessit property name for other
+          release tags.
         ''',
         'title': 'Field',
         'type': 'string',
@@ -5623,7 +5611,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'The options table of 03 §Output naming, with its defaults.',
+    'description': 'The naming options, with their defaults.',
     'properties': dict({
       'episode_template': dict({
         'default': '{main_title}',
@@ -5779,7 +5767,7 @@
     '$defs': list([
     ]),
     'additionalProperties': False,
-    'description': 'A notification for the UI to show (C-14 only emits the event).',
+    'description': 'A notification for the UI to show.',
     'properties': dict({
       'job_id': dict({
         'anyOf': list([
@@ -5852,7 +5840,7 @@
     '$defs': list([
       'NamingOptions',
     ]),
-    'description': 'Settings → Output.',
+    'description': 'The output settings.',
     'properties': dict({
       'collision': dict({
         'default': 'auto_rename',
@@ -5911,7 +5899,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': "Container options of the Summary tab's Output card (shared by jobs and templates).",
+    'description': 'Container options, shared by jobs and templates.',
     'properties': dict({
       'align_av_start': dict({
         'default': False,
@@ -5950,7 +5938,7 @@
     '$defs': list([
       'JobNaming',
     ]),
-    'description': '``JobSettings.output``: container options, the output path and naming.',
+    'description': 'Container options, the output path and naming of a job.',
     'properties': dict({
       'align_av_start': dict({
         'default': False,
@@ -5969,7 +5957,7 @@
       }),
       'edit_in_place': dict({
         'default': False,
-        'description': 'Remux-only jobs on MKV: edit metadata in place with mkvpropedit (03 §Remux-only).',
+        'description': 'Remux-only jobs on MKV: edit metadata in place with mkvpropedit.',
         'title': 'Edit In Place',
         'type': 'boolean',
       }),
@@ -6022,8 +6010,8 @@
       'TrackSelector',
     ]),
     'description': '''
-      "Output track N comes from the source track that matches ``selector``, with
-      ``settings`` and ``metadata``" (04 §Track rules).
+      One output track: it comes from the source track that matches ``selector``, with
+      ``settings`` and ``metadata``.
     ''',
     'properties': dict({
       'metadata': dict({
@@ -6081,8 +6069,8 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      The name parts of 03 §Variables. Text keeps its original spelling and separators.
-      ``None``: not recognised.
+      The name parts of a file. Text keeps its original spelling and separators; ``None``
+      means not recognised.
     ''',
     'properties': dict({
       'edition': dict({
@@ -6299,7 +6287,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'Allowed passthru codecs and the fallback encoder (03 §Audio defaults, part 3).',
+    'description': 'Allowed passthru codecs and the fallback encoder.',
     'properties': dict({
       'allowed': dict({
         'items': dict({
@@ -6366,7 +6354,7 @@
     '$defs': list([
     ]),
     'additionalProperties': False,
-    'description': 'A file that the runner writes before the steps run (see the module doc).',
+    'description': 'A file that the runner writes before the steps run.',
     'properties': dict({
       'content': dict({
         'description': 'The full text, written as UTF-8 with LF line ends.',
@@ -6502,10 +6490,10 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      The when-done power action countdown (C-14): always 60 s and cancellable.
+      The when-done power action countdown: always 60 s and cancellable.
       
       ``phase``: ``started`` (once), ``tick`` (every second), then ``cancelled`` or
-      ``executing``. The UI shows a dialog with a *Cancel* button while it runs.
+      ``executing``.
     ''',
     'properties': dict({
       'action': dict({
@@ -6671,7 +6659,7 @@
       'TrackSelector',
       'VideoSettings',
     ]),
-    'description': '``Preset`` = ``JobTemplate`` + id, name, category, description, built-in flag.',
+    'description': 'A job template saved as a preset.',
     'properties': dict({
       'audio_defaults': dict({
         '$ref': '#/$defs/AudioDefaults',
@@ -6791,7 +6779,7 @@
     '$defs': list([
     ]),
     'additionalProperties': False,
-    'description': 'An encoded preview clip in the cache (03 §Preview: live preview clip).',
+    'description': 'An encoded preview clip in the cache.',
     'properties': dict({
       'container': dict({
         'enum': list([
@@ -6809,7 +6797,7 @@
         'type': 'number',
       }),
       'id': dict({
-        'description': 'For ``Reframe.jobs.preview_clip_path(id)``.',
+        'description': 'The id of the clip in the cache.',
         'title': 'Id',
         'type': 'string',
       }),
@@ -7273,7 +7261,6 @@
       An exact fraction ``num/den``: frame rates (``24000/1001``) and aspect ratios (``32:27``).
       
       ffprobe's ``0/0`` ("unknown") is never stored as a ``Rational``: the field is ``None``.
-      A document model, because job settings and probe results contain it.
     ''',
     'properties': dict({
       'den': dict({
@@ -7413,10 +7400,7 @@
       'VideoSettings',
     ]),
     'additionalProperties': False,
-    'description': '''
-      A template applied to one file: the concrete job, the match report and the issues
-      (04 §Concepts).
-    ''',
+    'description': 'A template applied to one file: the concrete job, the match report and the issues.',
     'properties': dict({
       'decisions': dict({
         'description': '''
@@ -7478,7 +7462,7 @@
         'type': 'array',
       }),
       'override': dict({
-        'description': 'The per-file override that was applied (04 §Per-file overrides).',
+        'description': 'The per-file override that was applied.',
         'items': dict({
           'discriminator': dict({
             'mapping': dict({
@@ -7558,8 +7542,7 @@
       The event bus inserts it where events were dropped (``reason="dropped"``: progress or log
       events of a subscriber that fell behind), or as the last event before it closes a
       subscription that fell too far behind (``reason="overflow"``: subscribe again). The
-      receiver should fetch the current queue, tasks and statuses again. S-3 sends the same
-      marker over the WebSocket.
+      receiver should fetch the current queue, tasks and statuses again.
     ''',
     'properties': dict({
       'dropped': dict({
@@ -7770,13 +7753,13 @@
       'Rational',
     ]),
     'additionalProperties': False,
-    'description': 'What C-5 needs to know about the source picture.',
+    'description': 'What the geometry maths needs to know about the source picture.',
     'properties': dict({
       'chroma_assumed': dict({
         'default': False,
         'description': '''
-          ``True`` when the pixel format is unknown and the chroma steps are C-5's assumption
-          (4:2:0, steps of 2).
+          ``True`` when the pixel format is unknown and the chroma steps are assumed (4:2:0, steps
+          of 2).
         ''',
         'title': 'Chroma Assumed',
         'type': 'boolean',
@@ -7791,8 +7774,8 @@
       'chroma_step_y': dict({
         'default': 2,
         'description': '''
-          Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; C-5 doubles it for interlaced
-          sources, decision 0009).
+          Vertical crop step (2 for 4:2:0, 1 for 4:2:2 and 4:4:4; doubled for interlaced
+          sources).
         ''',
         'minimum': 1,
         'title': 'Chroma Step Y',
@@ -8150,8 +8133,8 @@
         ]),
         'default': None,
         'description': '''
-          Events with the forced flag (a decode with ``forced_subs_only``): PGS and VobSub only;
-          ``None`` for other formats or when the decode failed.
+          Events with the forced flag: PGS and VobSub only; ``None`` for other formats or when the
+          decode failed.
         ''',
         'title': 'Forced Event Count',
       }),
@@ -8174,10 +8157,7 @@
       'SubtitleScanTrack',
     ]),
     'additionalProperties': False,
-    'description': '''
-      Event counts of a source's subtitle tracks (03 §Subtitles: the *Events* column and the
-      forced-subtitle suggestion).
-    ''',
+    'description': "Event counts of a source's subtitle tracks.",
     'properties': dict({
       'path': dict({
         'format': 'path',
@@ -8325,7 +8305,7 @@
           }),
         ]),
         'default': None,
-        'description': 'PGS: events with the forced flag (decode scan, C-10).',
+        'description': 'PGS: events with the forced flag (from a decode scan).',
         'title': 'Forced Event Count',
       }),
       'frame_count': dict({
@@ -8397,15 +8377,12 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
-          ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For a Matroska file whose
-          tracks Reframe's own reader reads and matches to the streams, it is the track's
-          ``LanguageIETF`` element, ``None`` when the track has no such element or its value is not a
-          language tag (decisions 0034, 0041). For other containers, and for a Matroska file whose
-          tracks the reader cannot read or match, it is MediaInfo's value when MediaInfo is
-          available, else ``None`` (decision 0007).
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
+          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
+          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
           
-          The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+          The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
         ''',
         'title': 'Language Ietf',
@@ -8440,7 +8417,10 @@
           }),
         ]),
         'default': None,
-        'description': "ffprobe's raw ``start_time`` in seconds (the first packet's timestamp).",
+        'description': '''
+          ffprobe's raw ``start_time`` in seconds: the timestamp of the first packet (an M2TS
+          stream can start at 600 s).
+        ''',
         'title': 'Start Time',
       }),
       'subtitle_kind': dict({
@@ -8616,7 +8596,7 @@
       'TaskState',
     ]),
     'additionalProperties': False,
-    'description': 'A task ended: ``task.state`` is ``done``, ``failed`` or ``cancelled``.',
+    'description': 'A task ended; ``task.state`` says how.',
     'properties': dict({
       'task': dict({
         '$ref': '#/$defs/TaskInfo',
@@ -8642,7 +8622,7 @@
       'TaskState',
     ]),
     'additionalProperties': False,
-    'description': '``TaskInfo(id, kind, state, progress, message)``.',
+    'description': 'A background task: its state, its progress and, when done, its result.',
     'properties': dict({
       'created_at': dict({
         'anyOf': list([
@@ -8879,9 +8859,8 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      ``reframe tools fetch`` (C-15): the pinned FFmpeg build of the manifest, downloaded,
-      checked (size and SHA-256) and installed as the bundled build in ``<data dir>/tools/ffmpeg``,
-      where tool discovery finds it (02 §Bundled FFmpeg). The result of the ``tools_fetch`` task.
+      The pinned FFmpeg build, downloaded, checked (size and SHA-256) and installed as the
+      bundled build in ``<data dir>/tools/ffmpeg``, where tool discovery finds it.
     ''',
     'properties': dict({
       'build': dict({
@@ -8975,8 +8954,7 @@
         }),
         'description': '''
           Extra environment variables to set when running this tool (for example
-          ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux). Pass as ``extra_env`` to
-          :func:`reframe.tools.run`.
+          ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux).
         ''',
         'title': 'Env',
         'type': 'object',
@@ -9005,7 +8983,7 @@
         'additionalProperties': dict({
           'type': 'string',
         }),
-        'description': 'FFmpeg: ``{"libavcodec": "63.1.102", …}``.',
+        'description': 'FFmpeg: the version of each library, by name.',
         'title': 'Library Versions',
         'type': 'object',
       }),
@@ -9077,7 +9055,7 @@
           }),
         ]),
         'default': None,
-        'description': 'The upstream release, ``9.0.2``; ``None`` for git master builds.',
+        'description': 'The upstream release; ``None`` for git master builds.',
         'title': 'Release',
       }),
       'release_series': dict({
@@ -9091,8 +9069,8 @@
         ]),
         'default': None,
         'description': '''
-          ``9.0`` for a release; for a git master build the series of its library versions
-          (``9.0`` for ``libavcodec 63``), used for the minimum-version check.
+          The release series of a release. For a git master build, the series of its library
+          versions, which the minimum-version check uses.
         ''',
         'title': 'Release Series',
       }),
@@ -9109,10 +9087,7 @@
           }),
         ]),
         'default': None,
-        'description': '''
-          The version string as the tool prints it: ``n9.0.2-17-g2a571b6068-20260930``,
-          ``N-127032-g6ae491a26c-20260930``, ``101.0``.
-        ''',
+        'description': 'The version string as the tool prints it.',
         'title': 'Version',
       }),
     }),
@@ -9141,7 +9116,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'Where the tool path came from, in discovery order (02 §Bundled FFmpeg).',
+    'description': 'Where the tool path came from, in discovery order.',
     'enum': list([
       'env',
       'settings',
@@ -9157,9 +9132,8 @@
     '$defs': list([
     ]),
     'description': '''
-      Settings → Tools: path overrides (``None`` = no override). A path may name the binary
-      or its folder. The "Use bundled" fix removes the key (``{"op": "remove", "path":
-      "/tools/ffmpeg"}``).
+      Tool path overrides (``None`` = no override). A path may name the binary or its folder.
+      The "Use bundled" fix removes the key.
     ''',
     'properties': dict({
       'ffmpeg': dict({
@@ -9322,12 +9296,11 @@
     'additionalProperties': False,
     'description': '''
       What the audio or subtitle defaults did with one source track, and why: one row of the
-      live preview (03 §Audio defaults → Live preview: ``source track → selected? (why) → rule #
-      → output → reason``) and of ``explain`` (C-12).
+      live preview.
       
-      The selection stage fills ``selected`` and ``selection``; for a selected audio track the
-      codec-rule stage (``reframe.batch.apply_codec_rules``) fills ``rule``, ``outputs`` and
-      ``reason``. A dropped track has no outputs, and ``reason`` repeats why it was dropped.
+      The selection stage fills ``selected`` and ``selection``. For a selected audio track, the
+      codec-rule stage fills ``rule``, ``outputs`` and ``reason``. A dropped track has no outputs,
+      and ``reason`` repeats why it was dropped.
     ''',
     'properties': dict({
       'kind': dict({
@@ -9343,7 +9316,7 @@
         'default': False,
         'description': '''
           The source bit rate is unknown and decided the outcome: the preview offers
-          **Measure** (a packet-size scan, C-10).
+          **Measure** (a packet-size scan).
         ''',
         'title': 'Measure',
         'type': 'boolean',
@@ -9390,12 +9363,12 @@
           }),
         ]),
         'default': None,
-        'description': 'The codec rule that matched, 1-based (the ``#`` column); ``None`` when none matched.',
+        'description': 'The codec rule that matched, 1-based; ``None`` when none matched.',
         'title': 'Rule',
       }),
       'selected': dict({
         'default': True,
-        'description': 'Taken by the selection stage (03 §Audio defaults, part 1).',
+        'description': 'Taken by the selection stage.',
         'title': 'Selected',
         'type': 'boolean',
       }),
@@ -9446,7 +9419,7 @@
       'TrackRole',
     ]),
     'additionalProperties': False,
-    'description': 'The normalised summary of one stream (04 §Concepts).',
+    'description': 'The normalised summary of one stream.',
     'properties': dict({
       'bitrate': dict({
         'anyOf': list([
@@ -9498,10 +9471,7 @@
           }),
         ]),
         'default': None,
-        'description': '''
-          What the loose level compares (``dts`` for DTS and DTS-HD, ``ac3`` for AC-3 and
-          E-AC-3, …).
-        ''',
+        'description': 'What the loose level compares, for example ``dts`` for DTS and DTS-HD.',
         'title': 'Codec Family',
       }),
       'flags': dict({
@@ -9611,9 +9581,8 @@
     ]),
     'additionalProperties': False,
     'description': '''
-      The output tracks drafted for a source from a template (``reframe.batch.draft_tracks``):
-      the selection stage, then the codec rules for audio (decision 0018 for M2, where every
-      track was taken), in the output order of the defaults.
+      The output tracks drafted for a source from a template: the selection stage, then the
+      codec rules for audio, in the output order of the defaults.
     ''',
     'properties': dict({
       'audio': dict({
@@ -9666,7 +9635,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': 'The six track flags of 03 §Track metadata (Matroska ``Flag*``, FFmpeg dispositions).',
+    'description': 'The six track flags (Matroska ``Flag*``, FFmpeg dispositions).',
     'properties': dict({
       'commentary': dict({
         'default': False,
@@ -9709,10 +9678,7 @@
       'Severity',
     ]),
     'additionalProperties': False,
-    'description': '''
-      One cell of the resolution matrix: how one track rule matched in one file
-      (04 §Resolving rules in another file).
-    ''',
+    'description': 'One cell of the resolution matrix: how one track rule matched in one file.',
     'properties': dict({
       'candidates': dict({
         'description': 'Every stream that matched after the relaxing steps.',
@@ -9727,8 +9693,7 @@
         'default': False,
         'description': '''
           ``True``: a rule compiled from the template's audio / subtitle defaults (the template
-          has no explicit rules of this kind); ``rule`` is then the index in the compiled rules
-          (``reframe.batch.compile_defaults``).
+          has no explicit rules of this kind); ``rule`` is then the index in the compiled rules.
         ''',
         'title': 'Defaults',
         'type': 'boolean',
@@ -9748,10 +9713,7 @@
         'type': 'string',
       }),
       'relaxed': dict({
-        'description': '''
-          The selector fields that were dropped, in order (``title_pattern``, ``profiles``,
-          ``channels``, ``codecs``).
-        ''',
+        'description': 'The selector fields that were dropped, in order.',
         'items': dict({
           'type': 'string',
         }),
@@ -10032,13 +9994,7 @@
   dict({
     '$defs': list([
     ]),
-    'description': '''
-      What a track is for. One vocabulary for audio and subtitles.
-      
-      Reconciles the badges of 03 §Audio (``Main``, ``Commentary``, ``Audio description``,
-      ``Music only``) and 03 §Subtitles (``Forced``, ``SDH``, ``Signs & Songs``, ``Commentary``)
-      with 04's ``TrackSelector.roles`` (main, commentary, description, sdh, forced, signs).
-    ''',
+    'description': 'What a track is for. One vocabulary for audio and subtitles.',
     'enum': list([
       'main',
       'commentary',
@@ -10089,8 +10045,8 @@
     '$defs': list([
     ]),
     'description': '''
-      Which source tracks to take (03 §Audio defaults, part 1). Shared by audio and subtitle
-      defaults; :class:`SubtitleDefaults` uses other default values.
+      Which source tracks to take. Shared by audio and subtitle defaults; :class:`SubtitleDefaults`
+      uses other default values.
       
       ``languages`` ``None`` = the preferred languages from Settings (audio or subtitle).
     ''',
@@ -10107,7 +10063,7 @@
       }),
       'default_track': dict({
         'default': 'first_output',
-        'description': '``forced`` is meant for subtitles (03 §Subtitles: none / first output / forced).',
+        'description': '``forced`` is meant for subtitles.',
         'enum': list([
           'first_output',
           'first_in_first_language',
@@ -10208,7 +10164,7 @@
     '$defs': list([
       'TrackRole',
     ]),
-    'description': 'Which source track(s) a rule takes (04 §Track rules; field names as in the plan).',
+    'description': 'Which source track(s) a rule takes.',
     'properties': dict({
       'channels': dict({
         'anyOf': list([
@@ -10321,10 +10277,9 @@
       'sort': dict({
         'default': 'source_order',
         'description': '''
-          ``highest_bitrate`` is decision 0031's best-quality order: lossless first, then the
-          highest known bit rate (an unknown one after every known one), then more channels;
-          for subtitles ``most_channels`` and ``highest_bitrate`` put full subtitles before SDH
-          before forced and Signs & Songs (decision 0040).
+          ``highest_bitrate``: lossless first, then the highest known bit rate (an unknown one after
+          every known one), then more channels. For subtitles, ``most_channels`` and
+          ``highest_bitrate`` put full subtitles before SDH, before forced and Signs & Songs.
         ''',
         'enum': list([
           'source_order',
@@ -10346,9 +10301,9 @@
         ]),
         'default': None,
         'description': '''
-          A per-file override (04 §Resolution matrix: a candidate picked by hand in a cell): the
-          absolute index of the source track this rule takes in that one file; the other fields
-          are not checked. Not for a preset: a stream index does not carry over to other files.
+          A per-file override: the absolute index of the source track this rule takes in that one
+          file; the other fields are not checked. Not for a preset: a stream index does not carry over
+          to other files.
         ''',
         'title': 'Stream',
       }),
@@ -10483,7 +10438,7 @@
       'TrackMetadata',
     ]),
     'description': '''
-      ``JobSettings.video``: an encoder, or passthrough (copy the video stream).
+      The video track of a job: an encoder, or passthrough (copy the video stream).
       
       With ``passthrough`` the other fields are kept (so switching back restores them) but not
       used, and dimensions and filters do not apply.
@@ -10506,7 +10461,7 @@
             }),
           ]),
         }),
-        'description': 'Advanced encoder options by key (C-6 ``EncoderOption.key``); only changed values.',
+        'description': 'Advanced encoder options by key; only changed values.',
         'title': 'Advanced',
         'type': 'object',
       }),
@@ -10863,15 +10818,12 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
-          ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For a Matroska file whose
-          tracks Reframe's own reader reads and matches to the streams, it is the track's
-          ``LanguageIETF`` element, ``None`` when the track has no such element or its value is not a
-          language tag (decisions 0034, 0041). For other containers, and for a Matroska file whose
-          tracks the reader cannot read or match, it is MediaInfo's value when MediaInfo is
-          available, else ``None`` (decision 0007).
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
+          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
+          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
           
-          The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+          The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
         ''',
         'title': 'Language Ietf',
@@ -10948,7 +10900,10 @@
           }),
         ]),
         'default': None,
-        'description': "ffprobe's raw ``start_time`` in seconds (the first packet's timestamp).",
+        'description': '''
+          ffprobe's raw ``start_time`` in seconds: the timestamp of the first packet (an M2TS
+          stream can start at 600 s).
+        ''',
         'title': 'Start Time',
       }),
       'tags': dict({
@@ -10981,8 +10936,8 @@
       'vfr': dict({
         'default': False,
         'description': '''
-          Variable frame rate: ``r_frame_rate`` ≠ ``avg_frame_rate`` (C-3 decides when the
-          average is unknown).
+          Variable frame rate: ``r_frame_rate`` ≠ ``avg_frame_rate``. When the average is unknown,
+          the probe decides.
         ''',
         'title': 'Vfr',
         'type': 'boolean',
