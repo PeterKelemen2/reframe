@@ -1,32 +1,12 @@
-"""The capability service (C-4): encoder detection in the background, cached, never blocking.
+"""Encoder detection in the background: cached, and never blocking.
 
-:class:`CapabilityService` is ``Reframe.capabilities``:
-
-- :meth:`~CapabilityService.start` (called by ``Reframe.create()``) returns at once. A
-  background task waits for tool discovery, shows the cached result of the same ffmpeg and GPU
-  (``from_cache=True``), runs a full detection anyway ("checked again in the background") and
-  replaces the result with it.
-- :attr:`~CapabilityService.snapshot` never waits. Before the first result every encoder is
-  ``unknown`` (``detecting=True``); without a cached result, every encoder is ``checking``
-  while the detection runs (with the filter results of the last detection of the same
-  ffmpeg build, not of another one). While a cached result is checked again, its statuses
-  that are not ``available`` are ``encoder.checking`` issues
-  (:func:`~reframe.capabilities.encoder_issues`): the cache can be stale.
-- Every detection ends with statuses, never with ``detecting`` left on: a bug, also one in
-  tool discovery, gives ``error`` statuses ("Encoder detection failed: …").
-- ``capabilities.changed`` is published when statuses change: all encoders when the cached
-  result or the ``checking`` statuses are put in place, each encoder whose status changes
-  while the detection runs, and all encoders when a detection ends.
-- A finished detection is in the cache before anyone can see that it ended: before the last
-  ``capabilities.changed`` event and before :meth:`~CapabilityService.wait` /
-  :meth:`~CapabilityService.rescan` return. A caller that closes the service on that event
-  (a short CLI run) leaves the result for the next start.
-- A new ffmpeg (a ``tools.changed`` event with another path, version or status, for example
-  after a Settings → Tools change) starts a new detection (02 §Bundled FFmpeg).
-- :meth:`~CapabilityService.close` cancels the detection; the running test encodes are killed
-  (process tree). It returns when every detection it started has ended, also one that
-  ``rescan()`` replaced. A cache write that has started is not cancelled: ``close()`` waits
-  for it.
+:attr:`~CapabilityService.snapshot` never waits. A detection ends with statuses, never with
+``detecting`` left on: a bug, also one in tool discovery, ends it with ``error`` statuses.
+A finished detection is in the cache before anyone can see that it ended, so a short CLI run
+that closes the service on that event still leaves the result for the next start. A new
+ffmpeg (another path, version or status) starts a new detection.
+:meth:`~CapabilityService.close` cancels the detection and returns when every detection it
+started has ended.
 """
 
 from __future__ import annotations
@@ -93,7 +73,7 @@ def _is_closed_error(exc: Exception) -> bool:
 
 
 class CapabilityService:
-    """Which encoders this FFmpeg build and this computer can use (C-4).
+    """Which encoders this FFmpeg build and this computer can use.
 
     :param events: ``capabilities.changed`` goes here; ``tools.changed`` is watched.
     :param tools: tool discovery; detection waits for its result (``ToolsService.status()``).
@@ -103,8 +83,8 @@ class CapabilityService:
     :param platform: a ``sys.platform`` value for the definitions' ``platforms`` (default:
         this one); tests use it to get the same results on every OS.
     :param render_nodes: lists the VAAPI render nodes to try (blocking; called in a worker
-        thread before each detection on Linux; default ``/dev/dri/renderD*``). Settings →
-        Encoders ``vaapi_device`` replaces the list with one node.
+        thread, on Linux only, and not when the settings force one device; default
+        ``/dev/dri/renderD*``).
     :param gpu_fingerprint: returns the GPU fingerprint of the cache key (blocking; called
         in a worker thread once per service).
     :param watch_tools: start a new detection when ``tools.changed`` reports another ffmpeg.
@@ -150,8 +130,6 @@ class CapabilityService:
         """Every detection that has not ended (a replaced one may still kill its encodes)."""
         self._closed = False
 
-    # ------------------------------------------------------------------ public API
-
     @property
     def definitions(self) -> Definitions:
         return self._definitions
@@ -188,14 +166,13 @@ class CapabilityService:
             if not task.cancelled():
                 return task.result()
             # Cancelled: replaced by rescan() or a new ffmpeg (wait for the new one), closed
-            # (raise above), or cancelled from outside (start a new one).
+            # (raised above), or cancelled from outside (start a new one).
             if self._task is task:
                 self._task = None
 
     async def rescan(self) -> CapabilitySnapshot:
-        """Detect again without the cache (*Re-scan*, *Check again*). A running detection is
-        cancelled first (its test encodes are killed); every encoder is ``checking`` until
-        its new result is in."""
+        """Detect again without the cache. A running detection is cancelled first (its test
+        encodes are killed); every encoder is ``checking`` until its new result is in."""
         self._check_open()
         self._start(use_cache=False)
         return await self.wait()
@@ -222,8 +199,6 @@ class CapabilityService:
             await asyncio.wait(pending)
         if self._writes:
             await asyncio.wait(set(self._writes))
-
-    # ------------------------------------------------------------------ internals
 
     def _check_open(self) -> None:
         if self._closed:

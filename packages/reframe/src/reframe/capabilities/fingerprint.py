@@ -1,20 +1,7 @@
-"""The GPU fingerprint of the capability cache key (C-4).
+"""The GPU fingerprint: a cached detection result is reused only on the same GPUs and drivers.
 
-A cached detection result is reused only on the same GPUs and drivers:
-
-- **Linux**: the PCI vendor and device id of every DRM device
-  (``/sys/class/drm/*/device/{vendor,device}``) and its kernel driver, plus the first line of
-  ``/proc/driver/nvidia/version`` (the NVIDIA driver version) when it exists.
-- **Windows**: the name and driver version of every display adapter, read from the registry
-  (the display adapter class key, ``DriverDesc`` and ``DriverVersion``). No subprocess, no WMI:
-  ``winreg`` from the standard library. Called in a worker thread by the capability service
-  ("read once in the background", 05 §C-4).
-
-Reading never raises: a value that cannot be read is left out. The fingerprint is a stable
-text (sorted), so it can be compared and stored as it is.
-
-The Windows code is unit-tested on Linux with a fake registry (:class:`Registry`) and a fake
-``winreg`` module (the reader itself); it has not run on Windows yet.
+Reading never raises: a value that cannot be read is left out. The fingerprint is sorted
+text, so it can be compared and stored as it is.
 """
 
 from __future__ import annotations
@@ -48,7 +35,8 @@ def _read(path: Path) -> str | None:
 
 
 def linux_fingerprint(drm: Path = _DRM, nvidia_version: Path = _NVIDIA_VERSION) -> str:
-    """``drm 0x1002:0x7480 amdgpu; nvidia none`` (one entry per PCI device, sorted)."""
+    """``drm <vendor>:<device> <driver>`` per PCI device, sorted, then the NVIDIA driver line
+    (``nvidia none`` without one)."""
     devices: dict[str, str] = {}
     try:
         entries = sorted(drm.iterdir())
@@ -87,7 +75,7 @@ class Registry(Protocol):
 
 
 def windows_fingerprint(registry: Registry) -> str:
-    """``AMD Radeon RX 7600 32.0.21025.1024; …`` (one entry per display adapter, sorted)."""
+    """``<description> <driver version>`` per display adapter, sorted."""
     adapters = []
     for name in registry.subkeys(DISPLAY_CLASS_KEY):
         if not (len(name) == 4 and name.isdigit()):
@@ -102,8 +90,8 @@ def windows_fingerprint(registry: Registry) -> str:
 
 
 class _WinReg:
-    """:class:`Registry` with ``winreg`` (tested on Linux with a fake ``winreg`` module and
-    ``sys.platform`` set to ``win32``)."""
+    """:class:`Registry` with ``winreg``: no subprocess and no WMI. Off Windows every read
+    returns nothing."""
 
     def subkeys(self, path: str) -> list[str]:
         names: list[str] = []

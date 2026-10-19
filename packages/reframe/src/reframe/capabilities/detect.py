@@ -1,29 +1,8 @@
-"""One encoder detection run (C-4): list, help, hardware tests. No cache, no service state.
+"""One encoder detection run: list, help and hardware tests. No cache, no service state.
 
-:func:`detect_capabilities` runs, with :func:`reframe.tools.run` (timeouts, cancel, tree kill):
-
-1. ``ffmpeg -hide_banner -encoders`` and ``ffmpeg -hide_banner -filters`` (in parallel).
-2. For every encoder of the definitions: software and audio encoders are ``available`` when
-   the build lists them and ``unavailable`` ("Not in this FFmpeg build") otherwise. Hardware
-   encoders: ``unavailable`` when not in the build or not for this OS (``platforms``),
-   ``unknown`` when hardware tests are off, else they wait for their test encode.
-3. ``ffmpeg -hide_banner -h encoder=<id>`` for every encoder in the build (private options,
-   presets, pixel formats; ``max_parallel_help`` at a time, about 10 ms each).
-4. The hardware test encodes (at most ``max_parallel_tests`` at a time), each followed by
-   the 10-bit test when the encoder has a 10-bit pixel format. A VAAPI encoder is tested on
-   every render node in order (``/dev/dri/renderD*``) and uses the first node where it works,
-   or only on the node that Settings → Encoders forces (decision 0020); the node goes into
-   ``EncoderStatus.device``. With hardware tests off, a forced node is still the ``device``
-   (the encode uses it). The 10-bit test fails when FFmpeg replaced the 10-bit pixel format
-   (:mod:`reframe.capabilities.hwtest`). In the same queue: the run test of ``libplacebo``
-   (one frame; it needs a working Vulkan device), when the build lists it. With hardware
-   tests off it stays in ``untested_filters``.
-
-``on_update`` gets the statuses that changed, as soon as they change: once when every status
-that needs no test is known (after steps 2 and 3), then after each hardware test (with its
-help data, so a status is never published without its options). An FFmpeg that is missing,
-too old or broken gives ``unavailable`` statuses with the tool's reason. Nothing here raises
-for an FFmpeg problem.
+``on_update`` gets the statuses that changed, as soon as they change. Nothing here raises for
+an FFmpeg problem: a missing, old or broken FFmpeg gives ``unavailable`` statuses with the
+tool's reason.
 """
 
 from __future__ import annotations
@@ -77,10 +56,10 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-#: Seconds for ``-encoders``, ``-filters`` and ``-h encoder=``: like the version check, generous
-#: for a first start from a slow disk; these answer in about 10 ms otherwise.
+#: Seconds for each FFmpeg list call. Generous for a first start from a slow disk; the calls
+#: take about 10 ms otherwise.
 LIST_TIMEOUT = 20.0
-#: Hardware test encodes at the same time (05 §C-4).
+#: Hardware test encodes running at the same time.
 MAX_PARALLEL_TESTS = 3
 MAX_PARALLEL_HELP = 4
 NOT_IN_BUILD = "Not in this FFmpeg build"
@@ -102,15 +81,15 @@ def current_os(platform: str | None = None) -> OperatingSystem:
 
 @dataclass(frozen=True)
 class DetectionOptions:
-    """How a detection runs. The service fills it from the settings."""
+    """How a detection runs."""
 
     hardware_tests: bool = True
-    """``AppSettings.encoders.hardware_tests``: off leaves hardware encoders ``unknown``."""
+    """Off: the hardware encoders stay ``unknown``."""
     os: OperatingSystem | None = None
     """The OS for the definitions' ``platforms`` (default: this one)."""
     vaapi_device: str | None = None
-    """``AppSettings.encoders.vaapi_device``: test VAAPI only on this render node. ``None``
-    or empty: automatic (every node of :attr:`render_nodes`)."""
+    """Test VAAPI only on this render node. ``None`` or empty: test every node (see
+    :attr:`render_nodes`)."""
     render_nodes: tuple[str, ...] | None = None
     """The render nodes to try, in order; ``None``: list ``/dev/dri/renderD*`` when a VAAPI
     encoder is tested (:func:`reframe.capabilities.devices.render_nodes`)."""
@@ -225,8 +204,6 @@ class _Detection:
         self.untested_filters: list[str] = []
         self.nodes: list[str] = []
 
-    # ------------------------------------------------------------------ helpers
-
     def set(self, encoder_id: str, **changes: object) -> EncoderStatus:
         status = self.statuses[encoder_id].model_copy(update=changes)
         self.statuses[encoder_id] = status
@@ -243,8 +220,6 @@ class _Detection:
             cancel=self.cancel,
             extra_env=self.env,
         )
-
-    # ------------------------------------------------------------------ steps
 
     async def run(self) -> CapabilitySnapshot:
         timeout = self.options.list_timeout
@@ -271,8 +246,8 @@ class _Detection:
 
         pending = self.classify(listing)
         await self.read_help(listing)
-        # One update with every status that needs no test (help data included), so a status
-        # is never published without its options and then again with them.
+        # Publish the statuses that need no test now, with their help data, so no status
+        # goes out without its options.
         self.publish([s for s in self.statuses.values() if s.state is not EncoderState.CHECKING])
         if any(uses_vaapi_device(encoder) for encoder in pending):
             self.nodes = await asyncio.to_thread(vaapi_nodes, self.options)
@@ -499,7 +474,7 @@ async def detect_capabilities(
     cancel: CancelToken | None = None,
     on_update: StatusCallback | None = None,
 ) -> CapabilitySnapshot:
-    """Detect every encoder of ``definitions`` with the ``ffmpeg`` that tool discovery found.
+    """Detect every encoder of ``definitions`` with ``ffmpeg``.
 
     Returns the finished snapshot (``detecting=False``). A cancel (``cancel`` or the task)
     kills every running FFmpeg; the snapshot is then incomplete (statuses stay ``checking``).
