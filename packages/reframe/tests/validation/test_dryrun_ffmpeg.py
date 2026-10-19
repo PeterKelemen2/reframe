@@ -282,6 +282,61 @@ async def test_the_real_libvpx_codec_control_refusals(
     assert info in issues[0].message
 
 
+VBV_MAXRATE = "video.advanced.vbv-maxrate"
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.parametrize(
+    ("encoder", "custom", "advanced", "validation_says", "dry_run_says"),
+    [
+        (
+            "libx264",
+            "vbv-maxrate=1000",
+            {},
+            [],
+            [("encoder.dry_run_warning", "video.custom_params")],
+        ),
+        ("libx264", "", {"vbv-maxrate": 1000}, [("encoder.option_inactive", VBV_MAXRATE)], []),
+        ("libx265", "", {"vbv-maxrate": 1000}, [("encoder.option_inactive", VBV_MAXRATE)], []),
+        (
+            "libx265",
+            "",
+            {"limit-refs": "2", "pmode": True},
+            [("encoder.option_ignored", "video.advanced.limit-refs")],
+            [],
+        ),
+    ],
+    ids=["x264-custom", "x264-advanced", "x265-advanced", "x265-limit-refs-pmode"],
+)
+async def test_each_real_encoder_warning_is_one_issue(
+    app: Reframe,
+    fixture_media: FixtureMedia,
+    tmp_path: Path,
+    encoder: str,
+    custom: str,
+    advanced: dict[str, Any],
+    validation_says: list[tuple[str, str]],
+    dry_run_says: list[tuple[str, str]],
+) -> None:
+    try:
+        job = await _draft(app, fixture_media("multitrack"), tmp_path)
+        job.video.encoder = encoder
+        job.video.preset = None
+        job.video.tune = None
+        job.video.profile = None
+        job.video.level = None
+        job.video.custom_params = custom
+        job.video.advanced = advanced
+        validated = await app.jobs.validate(job)
+        issues = await app.jobs.dry_run(job)
+    finally:
+        await app.close()
+    assert [(i.code, i.path) for i in validated if i.code.startswith("encoder.")] == (
+        validation_says
+    )
+    assert [(i.code, i.path) for i in issues] == dry_run_says
+
+
 RD_REFINE = (
     "x265 [warning]: --rd-refine disabled, requires RD level > 4 and adaptive quant\n"
     "x265 [warning]: Source height < 720p; disabling lookahead-slices\n"
