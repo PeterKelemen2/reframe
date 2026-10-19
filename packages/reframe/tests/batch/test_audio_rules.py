@@ -149,7 +149,7 @@ EXAMPLE = [
     EXAMPLE,
     ids=["hun DTS-HD MA 5.1", "hun AC-3 5.1 224", "eng TrueHD Atmos 7.1", "eng AC-3 2.0 192"],
 )
-def test_example_of_03_row_by_row(
+def test_the_codec_rules_example_row_by_row(
     source: AudioStream, rule: int, expected: tuple[Any, ...], reason: str, measure: bool
 ) -> None:
     track, decision = run(source, EXAMPLE_RULES)

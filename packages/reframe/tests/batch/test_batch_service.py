@@ -89,7 +89,9 @@ async def example_template(app: Reframe, e01: Path) -> tuple[JobTemplate, MediaS
     return template, source
 
 
-async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -> None:
+async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
     files = season(fixture_media, tmp_path, 1)
     grouping = await app.batch.group(list(reversed(files)))
     assert grouping.issues == []

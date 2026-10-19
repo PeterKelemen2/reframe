@@ -120,7 +120,7 @@ EXAMPLE_ROWS = [
 ]  # fmt: skip
 
 
-def test_example_of_03_row_by_row_through_draft_and_explain() -> None:
+def test_the_codec_rules_example_row_by_row_through_draft_and_explain() -> None:
     template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
     draft = draft_tracks(EXAMPLE_SOURCE, template)
     decisions = explain(EXAMPLE_DEFAULTS, EXAMPLE_SOURCE)
@@ -141,7 +141,7 @@ def test_example_of_03_row_by_row_through_draft_and_explain() -> None:
     assert draft.issues == []
 
 
-def test_m6_demo_item_5() -> None:
+def test_each_preview_row_has_its_rule_outputs_and_a_reason() -> None:
     media = source(
         [
             audio(1, "hun", "dts", 6, 2104, lossless=True),
@@ -169,7 +169,7 @@ def test_m6_demo_item_5() -> None:
 
 
 @pytest.mark.anyio
-async def test_m6_demo_item_5_through_the_facade(tmp_path: Path) -> None:
+async def test_explain_through_the_facade_with_the_settings_languages(tmp_path: Path) -> None:
     """``Reframe.jobs.explain`` with the languages of Settings (the selection has none)."""
     app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "c")
     try:

@@ -115,7 +115,7 @@ def example_template(e01: MediaSource | None = None) -> JobTemplate:
 PRESET_ID = "5f0c1d3e-04e0-4a7e-9b1a-0000000000c7"
 
 
-def demo_template() -> JobTemplate:
+def optional_dub_template() -> JobTemplate:
     """:func:`example_template` with the fix that E11's missing track offers, so that every
     episode can be queued."""
     template = example_template()
@@ -129,9 +129,9 @@ def demo_template() -> JobTemplate:
 
 
 def preset_document() -> dict[str, object]:
-    """The :func:`demo_template` as the user preset :data:`PRESET_NAME`, in the format that
+    """The :func:`optional_dub_template` as the user preset :data:`PRESET_NAME`, in the format that
     ``reframe presets export`` writes."""
-    data = demo_template().model_dump(mode="json", exclude={"schema_version"})
+    data = optional_dub_template().model_dump(mode="json", exclude={"schema_version"})
     data.update(
         id=PRESET_ID,
         name=PRESET_NAME,

@@ -98,7 +98,7 @@ def cells(resolution: BatchResolution) -> dict[str, list[tuple[str, list[int]]]]
     }
 
 
-def test_the_season_groups_and_resolves_as_the_matrix_of_04(snapshot: SnapshotAssertion) -> None:
+def test_the_season_groups_and_resolves_as_the_example_matrix(snapshot: SnapshotAssertion) -> None:
     resolution = matrix(A.example_template(), A.season(1))
     labels = [c.label for c in resolution.columns]
     assert labels == [
@@ -243,7 +243,7 @@ def test_the_saved_template_resolves_season_2_exactly() -> None:
     ]
 
 
-def test_the_demo_preset_file_is_the_derived_template() -> None:
+def test_the_preset_file_is_the_derived_template_with_an_optional_dub() -> None:
     saved = json.loads(A.PRESET_FILE.read_text(encoding="utf-8"))
     assert saved == A.preset_document()
     (preset,) = PresetFile.model_validate(saved).presets
