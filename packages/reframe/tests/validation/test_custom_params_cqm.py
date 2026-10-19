@@ -98,7 +98,7 @@ def _source() -> MediaSource:
         ("cqm=default", ""),
     ],
 )
-async def test_rc_1_the_dry_run_never_starts_ffmpeg_with_a_cqm_file(
+async def test_the_dry_run_never_starts_ffmpeg_with_a_cqm_file(
     custom: str, rest: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def no_run(*args: Any, **kwargs: Any) -> RunResult:
@@ -116,7 +116,7 @@ async def test_rc_1_the_dry_run_never_starts_ffmpeg_with_a_cqm_file(
 
 
 @pytest.mark.parametrize("custom", ["cqm=flat", "cqm=jvt", "nr=100:cqm=jvt"])
-async def test_rc_1_the_matrix_presets_are_still_dry_run(
+async def test_the_matrix_presets_are_still_dry_run(
     custom: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     argvs: list[list[str]] = []
@@ -140,7 +140,7 @@ async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Reframe:
 
 
 @pytest.mark.needs_ffmpeg
-async def test_rc_1_planning_with_a_shared_preset_refuses_its_cqm_file(
+async def test_planning_with_a_shared_preset_refuses_its_cqm_file(
     app: Reframe, fixture_media: FixtureMedia, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if "flat" in str(tmp_path) or "jvt" in str(tmp_path):

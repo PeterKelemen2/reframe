@@ -71,6 +71,33 @@ def cases(h: Any) -> list[Any]:
                 encoder="libvpx-vp9", rate_control=AverageBitrate(), advanced={"undershoot-pct": 50}
             ),
         ),
+        case(
+            "x265 dynamic RD without VBV",
+            "encoder.option_inactive",
+            "video.advanced.dynamic-rd",
+            warn,
+            video(encoder="libx265", advanced={"dynamic-rd": 2.0}),
+            video(
+                encoder="libx265",
+                advanced={"dynamic-rd": 2.0, "vbv-maxrate": 8000, "vbv-bufsize": 8000},
+            ),
+        ),
+        case(
+            "x264 VBV maximum rate without a buffer",
+            "encoder.option_inactive",
+            "video.advanced.vbv-maxrate",
+            warn,
+            video(encoder="libx264", advanced={"vbv-maxrate": 5000}),
+            video(encoder="libx264", advanced={"vbv-maxrate": 5000, "vbv-bufsize": 6000}),
+        ),
+        case(
+            "x265 VBV buffer without a maximum rate at a constant quality",
+            "encoder.option_inactive",
+            "video.advanced.vbv-bufsize",
+            warn,
+            video(encoder="libx265", advanced={"vbv-bufsize": 5000}),
+            video(encoder="libx265", rate_control=AverageBitrate(), advanced={"vbv-bufsize": 5000}),
+        ),
         # encoder.option_ignored: the encoder changes the value without an error
         case(
             "x264 Blu-ray compatibility lowers the B-frames",
@@ -119,17 +146,6 @@ def cases(h: Any) -> list[Any]:
             warn,
             video(encoder="libx265", advanced={"pmode": True, "limit-refs": "2"}),
             video(encoder="libx265", advanced={"pmode": True, "limit-refs": "1"}),
-        ),
-        case(
-            "x265 dynamic RD without VBV",
-            "encoder.option_inactive",
-            "video.advanced.dynamic-rd",
-            warn,
-            video(encoder="libx265", advanced={"dynamic-rd": 2.0}),
-            video(
-                encoder="libx265",
-                advanced={"dynamic-rd": 2.0, "vbv-maxrate": 8000, "vbv-bufsize": 8000},
-            ),
         ),
         case(
             "SVT-AV1 forward keyframes force hierarchical levels 4",
@@ -196,22 +212,7 @@ def cases(h: Any) -> list[Any]:
             video(**vp9, advanced={"qmin": 31}),
             video(**vp9, advanced={"qmin": 30}),
         ),
-        case(
-            "x264 VBV maximum rate without a buffer",
-            "encoder.option_inactive",
-            "video.advanced.vbv-maxrate",
-            warn,
-            video(encoder="libx264", advanced={"vbv-maxrate": 5000}),
-            video(encoder="libx264", advanced={"vbv-maxrate": 5000, "vbv-bufsize": 6000}),
-        ),
-        case(
-            "x265 VBV buffer without a maximum rate at a constant quality",
-            "encoder.option_inactive",
-            "video.advanced.vbv-bufsize",
-            warn,
-            video(encoder="libx265", advanced={"vbv-bufsize": 5000}),
-            video(encoder="libx265", rate_control=AverageBitrate(), advanced={"vbv-bufsize": 5000}),
-        ),
+        # other option and custom parameter errors
         case(
             "x265 mastering display that x265 cannot parse",
             "encoder.option_invalid",

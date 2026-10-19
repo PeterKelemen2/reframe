@@ -414,7 +414,10 @@ def test_codec_rules_builder_and_validation_agree(
     assert count == len(MIXDOWNS) * len(BITRATES) * len(SAMPLERATES)
     reason = DISAGREE.get((layout, encoder_id))
     if reason is not None:
-        assert codec_rules, f"C-12 now agrees for {layout} / {encoder_id}: remove DISAGREE"
+        assert codec_rules, (
+            f"the codec rules agree with the builder for {layout} / {encoder_id}: remove its "
+            "DISAGREE entry"
+        )
         pytest.xfail(f"{reason} ({len(codec_rules)} tracks)")
     if codec_rules:
         raise codec_rules[0]

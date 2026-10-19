@@ -24,7 +24,10 @@ from reframe.models import (
     AverageBitrate,
     CapabilitySnapshot,
     ChapterRange,
+    CropRect,
+    CropSettings,
     ExternalSubtitle,
+    FieldOrder,
     FilterConfig,
     FilterSettings,
     FrameRange,
@@ -44,7 +47,7 @@ _COMMAND_TESTS = Path(__file__).resolve().parents[1] / "command"
 def _load_command_tests() -> tuple[ModuleType, ModuleType]:
     """The ``tests/command`` conftest and ``test_snapshots``, imported as a package of their own
     (they use relative imports; pytest runs with ``--import-mode=importlib``)."""
-    name = "_reframe_c7_command_tests"
+    name = "_reframe_command_tests"
     if name not in sys.modules:
         spec = importlib.util.spec_from_file_location(
             name, _COMMAND_TESTS / "__init__.py", submodule_search_locations=[str(_COMMAND_TESTS)]
@@ -72,7 +75,7 @@ def _load(name: str) -> ModuleType:
     return module
 
 
-c7, snapshots = _load_command_tests()
+cmd_tests, snapshots = _load_command_tests()
 sc = _load("scenario")
 DEFS = load_definitions()
 
@@ -120,8 +123,8 @@ class Refusal:
 
 def multitrack(change: Callable[[JobSettings], None] | None = None, **draft: Any) -> Any:
     def build() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-        src = c7.recorded("multitrack.mkv")
-        job = c7.draft(src, video={"encoder": "libx264"}, **draft)
+        src = cmd_tests.recorded("multitrack.mkv")
+        job = cmd_tests.draft(src, video={"encoder": "libx264"}, **draft)
         if change is not None:
             change(job)
         return job, src, {}
@@ -131,8 +134,8 @@ def multitrack(change: Callable[[JobSettings], None] | None = None, **draft: Any
 
 def on(source: str, change: Callable[[JobSettings], None], **draft: Any) -> Any:
     def build() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-        src = c7.recorded(source)
-        job = c7.draft(src, video={"encoder": "libx264"}, **draft)
+        src = cmd_tests.recorded(source)
+        job = cmd_tests.draft(src, video={"encoder": "libx264"}, **draft)
         change(job)
         return job, src, {}
 
@@ -178,33 +181,33 @@ def without_video(job: JobSettings) -> None:
 
 
 def no_frame_rate() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-    src = c7.recorded("multitrack.mkv")
+    src = cmd_tests.recorded("multitrack.mkv")
     src.video[0].frame_rate = None
     src.video[0].avg_frame_rate = None
-    job = c7.draft(src, video={"encoder": "libx264"})
+    job = cmd_tests.draft(src, video={"encoder": "libx264"})
     job.range = FrameRange(start=1, end=5)
     return job, src, {}
 
 
 def source_without_video() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-    src = c7.recorded("multitrack.mkv")
-    job = c7.draft(src, video={"encoder": "libx264"})
+    src = cmd_tests.recorded("multitrack.mkv")
+    job = cmd_tests.draft(src, video={"encoder": "libx264"})
     return job, src.model_copy(update={"video": []}), {}
 
 
 def unknown_video_codec() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-    src = c7.recorded("multitrack.mkv")
+    src = cmd_tests.recorded("multitrack.mkv")
     src.video[0].codec = None
-    job = c7.draft(src, container="mp4", audio="passthru", subtitles=False)
+    job = cmd_tests.draft(src, container="mp4", audio="passthru", subtitles=False)
     job.video.passthrough = True
     return job, src, {}
 
 
 def zero_length_chapters() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-    src = c7.recorded("chapters.mkv")
+    src = cmd_tests.recorded("chapters.mkv")
     for chapter in src.chapters:
         chapter.end = chapter.start = 1.0
-    job = c7.draft(src, video={"encoder": "libx264"})
+    job = cmd_tests.draft(src, video={"encoder": "libx264"})
     job.range = ChapterRange(start=1, end=2)
     return job, src, {}
 
@@ -215,8 +218,8 @@ def custom_definitions(
     def build() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
         defs = DEFS.model_copy(deep=True)
         change(defs)
-        src = c7.recorded("multitrack.mkv")
-        job = c7.draft(src, video={"encoder": encoder, **video})
+        src = cmd_tests.recorded("multitrack.mkv")
+        job = cmd_tests.draft(src, video={"encoder": encoder, **video})
         return job, src, {"definitions": defs}
 
     return build
@@ -375,8 +378,8 @@ DISAGREE: dict[str, str] = {}
 )
 def test_plan_errors_are_validation_errors(refusal: Refusal) -> None:
     job, source, kwargs = refusal.build()
-    caps = c7.caps(libplacebo=False)
-    tools = c7.tools()
+    caps = cmd_tests.caps(libplacebo=False)
+    tools = cmd_tests.tools()
     with pytest.raises(PlanError, match=refusal.raises):
         build_plan(job, source, caps, tools, **kwargs)
     found = errors(run_validation(job, source, caps, tools, **kwargs))
@@ -386,8 +389,8 @@ def test_plan_errors_are_validation_errors(refusal: Refusal) -> None:
 def test_a_chapter_range_end_after_the_last_chapter_is_clamped() -> None:
     job, source, kwargs = on("chapters.mkv", setter(range=ChapterRange(start=4, end=5)))()
     assert len(source.chapters) == 4
-    caps = c7.caps(libplacebo=False)
-    tools = c7.tools()
+    caps = cmd_tests.caps(libplacebo=False)
+    tools = cmd_tests.tools()
     build_plan(job, source, caps, tools, **kwargs)
     issues = run_validation(job, source, caps, tools, **kwargs)
     assert errors(issues) == []
@@ -425,19 +428,16 @@ def test_every_plan_error_is_covered() -> None:
     for message in messages:
         if any(message.startswith(start) for start in UNREACHABLE):
             continue
-        pieces = [p for p in message.split("\x00") if len(p.strip()) > 3]
-        covered = [
-            r.id
-            for r in REFUSALS
-            if any(re.search(re.escape(p.strip()), _example(r)) for p in pieces)
-        ]
+        # A refusal's message is the f-string with each \x00 (a formatted value) filled in.
+        pattern = re.compile(".*".join(re.escape(p) for p in message.split("\x00")), re.DOTALL)
+        covered = [r.id for r in REFUSALS if pattern.fullmatch(_example(r))]
         assert covered, f"no REFUSALS case for: raise PlanError({message!r})"
 
 
 def _example(refusal: Refusal) -> str:
     job, source, kwargs = refusal.build()
     try:
-        build_plan(job, source, c7.caps(libplacebo=False), c7.tools(), **kwargs)
+        build_plan(job, source, cmd_tests.caps(libplacebo=False), cmd_tests.tools(), **kwargs)
     except PlanError as exc:
         return str(exc)
     return ""  # pragma: no cover - test_plan_errors_are_validation_errors fails first
@@ -460,9 +460,9 @@ def test_composite_parts_have_defaults(encoder: str, key: str, preset: str | Non
     """The ``option … has no default to complete …`` refusal cannot happen with the shipped
     definitions: one part of a composite parameter set alone, with any speed preset, is
     completed from the other parts' defaults."""
-    src = c7.recorded("multitrack.mkv")
-    job = c7.draft(src, video={"encoder": encoder, "preset": preset, "advanced": {key: 1}})
-    build_plan(job, src, c7.caps(), c7.tools())
+    src = cmd_tests.recorded("multitrack.mkv")
+    job = cmd_tests.draft(src, video={"encoder": encoder, "preset": preset, "advanced": {key: 1}})
+    build_plan(job, src, cmd_tests.caps(), cmd_tests.tools())
 
 
 #: Snapshot jobs that test the builder with a value validation refuses on purpose:
@@ -481,3 +481,17 @@ def test_snapshot_jobs_validate_without_errors(name: str) -> None:
     assert {i.code for i in found} <= KNOWN_ERRORS.get(name, set()), [
         (i.code, i.path, i.message) for i in found
     ]
+
+
+def test_deinterlaced_crop_is_on_the_frame_grid() -> None:
+    """An interlaced 4:2:0 source: a 2-line crop is off the field grid (4 lines) but on the
+    frame grid, which the builder uses when it deinterlaces."""
+    s = sc.base()
+    s.source.video[0].field_order = FieldOrder.TOP_FIRST
+    s.job.dimensions.crop = CropSettings(mode="manual", rect=CropRect(top=2, bottom=2))
+    assert sc.found(s.validate(), "dimensions.crop_snapped")
+    s.job.filters = FilterSettings({"deinterlace": FilterConfig()})
+    assert not sc.found(sc.check(s), "dimensions.crop_snapped")
+    plan = build_plan(s.job, s.source, s.caps, s.tools)
+    argv = [str(a) for step in plan.steps for a in step.argv]
+    assert any("crop=1920:1076:0:2" in a for a in argv), argv

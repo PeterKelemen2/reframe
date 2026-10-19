@@ -1624,3 +1624,72 @@ def test_every_case_code_is_declared() -> None:
     assert {case.code for case in CASES} - declared == set()
     template_declared = {code for rule in TEMPLATE_RULES for code in rule.codes}
     assert template_declared <= declared
+
+
+def test_switch_container_changes_the_extension() -> None:
+    s = sc.base()
+    s.job.output.container = "mp4"
+    s.job.output.path = Path("/out/Movie (2019).mp4")
+    s.job.subtitles = [SubtitleOutputTrack(source=4, action="copy")]  # PGS
+    issues = sc.check(s)
+    [issue] = [i for i in issues if i.code == "subtitle.bitmap_unsupported"]
+    [switch] = [f for f in issue.fixes if f.label == f"Switch to {sc.DEFS.containers['mkv'].label}"]
+    switched = s.apply(switch)
+    assert switched.job.output.path == Path("/out/Movie (2019).mkv")
+    assert not sc.found(switched.validate(), "output.extension_mismatch")
+
+
+def test_switch_container_keeps_every_track_valid() -> None:
+    """WebM holds neither x265 nor the subtitles, so the fixes offer only MKV."""
+    s = sc.base()
+    s.job.output.container = "avi"
+    [issue] = [i for i in sc.check(s) if i.code == "container.unknown"]
+    assert [f.label for f in issue.fixes] == [f"Switch to {sc.DEFS.containers['mkv'].label}"]
+
+
+def test_encode_the_video_picks_an_encoder_the_container_holds() -> None:
+    s = sc.base()
+    s.job.video.passthrough = True
+    s.job.output.container = "webm"
+    s.job.output.path = Path("/out/Movie (2019).webm")
+    s.job.audio = s.job.audio[:1]
+    s.job.audio[0].encoder = "libopus"
+    s.job.subtitles = []
+    [issue] = [i for i in sc.check(s) if i.code == "container.codec_unsupported"]
+    encode = next(f for f in issue.fixes if f.label.startswith("Encode the video"))
+    after = s.apply(encode).validate()
+    assert sc.error_codes(after) == set()
+
+
+def test_closest_match_respects_detected_10bit() -> None:
+    states: dict[str, EncoderState | EncoderStatus] = {
+        "hevc_nvenc": EncoderState.UNAVAILABLE,
+    }
+    for encoder_id in sc.DEFS.video_encoders:
+        if encoder_id != "hevc_nvenc":
+            states[encoder_id] = EncoderStatus(
+                id=encoder_id,
+                state=EncoderState.AVAILABLE,
+                in_build=True,
+                supports_10bit=False,
+                reason_10bit="10-bit is not supported by this GPU",
+            )
+    s = sc.base()
+    s.caps = sc.make_caps(states)
+    s.job.video.encoder = "hevc_nvenc"
+    s.job.video.bit_depth = 10
+    [issue] = [i for i in sc.check(s) if i.code == "encoder.unavailable"]
+    after = s.apply(issue.fixes[0]).validate()
+    assert not sc.found(after, "encoder.no_10bit")
+
+
+def test_burn_it_in_is_not_offered_next_to_another_burn_in() -> None:
+    s = sc.base()
+    pgs = sc.make_source().subtitles[1].index
+    s.source = sc.make_source()
+    s.job.subtitles = [
+        SubtitleOutputTrack(source=3, action="burn"),
+        SubtitleOutputTrack(source=pgs, action="convert", convert_to="srt"),
+    ]
+    [issue] = [i for i in sc.check(s) if i.code == "subtitle.convert_bitmap"]
+    assert "Burn it in" not in [f.label for f in issue.fixes]

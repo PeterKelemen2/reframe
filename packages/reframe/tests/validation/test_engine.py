@@ -8,6 +8,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -21,6 +22,8 @@ from reframe.models import (
     CropSettings,
     DimensionSettings,
     FieldOrder,
+    FilterConfig,
+    FilterSettings,
     FitWithin,
     FrameRange,
     JobSettings,
@@ -302,3 +305,17 @@ def test_no_odd_sizes(
     if applied:
         assert geometry.cropped_width % 2 == 0
         assert geometry.cropped_height % (4 if interlaced else 2) == 0
+
+
+@pytest.mark.parametrize("where", ["advanced", "filter"])
+def test_a_newline_in_a_key_is_an_issue_not_a_crash(where: str) -> None:
+    s = sc.base()
+    if where == "advanced":
+        s.job.video.advanced = {"psy\nrd": 1.0}
+        code = "encoder.option_unknown"
+    else:
+        s.job.filters = FilterSettings.model_construct({"de\nnoise": FilterConfig()})
+        code = "filter.unknown"
+    issues = sc.check(s)
+    assert sc.found(issues, code)
+    assert not sc.found(issues, "validation.rule_failed")

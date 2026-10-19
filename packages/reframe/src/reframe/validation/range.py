@@ -1,5 +1,5 @@
-"""Range rules. The checks against the end of the source need the duration (for frames, the
-frame count), and are skipped without it.
+"""Range rules. The checks of a time or frame range against the end of the source need the
+duration (for frames, the frame count), and are skipped without it.
 """
 
 from __future__ import annotations
