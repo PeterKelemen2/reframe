@@ -1,4 +1,4 @@
-"""VAAPI render nodes (decision 0020) and ``CapabilitySnapshot.usable_filter``."""
+"""VAAPI render nodes and ``CapabilitySnapshot.usable_filter``."""
 
 from __future__ import annotations
 

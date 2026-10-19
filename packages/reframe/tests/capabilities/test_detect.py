@@ -1,5 +1,4 @@
-"""One detection run with the fake ffmpeg (05 §C-4 "Done when": a fake-ffmpeg test double that
-sleeps or prints driver errors proves timeouts and reason mapping)."""
+"""Capability detection against the fake ffmpeg."""
 
 from __future__ import annotations
 
@@ -42,8 +41,7 @@ SOFTWARE = [enc.id for enc in DEFS.video_encoders.values() if not enc.hardware]
 AVAILABLE = EncoderState.AVAILABLE
 UNAVAILABLE = EncoderState.UNAVAILABLE
 ERROR = EncoderState.ERROR
-#: FFmpeg's warning when it replaces the ``-pix_fmt`` of a test encode (the text of FFmpeg
-#: n9.0.2; it then exits 0).
+#: The warning FFmpeg prints when it replaces the ``-pix_fmt`` of a test encode; it then exits 0.
 AUTO_SELECTED = (
     "Incompatible pixel format 'p010le' for codec 'hevc_amf', auto-selecting format 'nv12'\n"
 )
@@ -92,14 +90,12 @@ async def test_everything_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo)
     assert snap.status("h264_vaapi").supports_10bit is False
     assert snap.status("h264_amf").supports_10bit is False
     assert snap.status("aac").supports_10bit is None
-    # every hardware encoder was tested at 8 bit, and those with a 10-bit format at 10 bit
     calls = encode_calls(fake_tools)
     eight = [c[c.index("-c:v") + 1] for c in calls if not any("p010le" in a for a in c)]
     ten = [c[c.index("-c:v") + 1] for c in calls if any("p010le" in a for a in c)]
     assert sorted(eight) == sorted(HARDWARE)
     ten_bit = [e for e in HARDWARE if "10" in DEFS.video_encoders[e].pix_fmts]
     assert sorted(ten) == sorted(ten_bit)
-    # help was read for every encoder in the build
     helps = {c[-1] for c in fake_tools.calls() if "-h" in c}
     assert helps == {f"encoder={e}" for e in snap.encoders if e != "libfdk_aac"}
     # updates: the classification first, then each hardware encoder once, the help once
@@ -182,7 +178,7 @@ async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
         False,
         "The test encode did not finish within 0.5 s",
     )
-    assert fake_tools.kill_leftovers() == []  # nothing left running
+    assert fake_tools.kill_leftovers() == []
 
 
 async def test_a_crash_is_an_error(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
@@ -211,8 +207,6 @@ async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInf
 async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
     fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
 ) -> None:
-    """M2 review: the node that Settings → Encoders forces is the node the encode uses
-    (``EncoderStatus.device``) even when nothing was tested; else the builder's default."""
     forced = linux(hardware_tests=False, vaapi_device=f" {OTHER_NODE} ")
     snap = await detect_capabilities(fake_ffmpeg, DEFS, forced)
     for encoder in ("h264_vaapi", "hevc_vaapi", "av1_vaapi"):
@@ -228,8 +222,8 @@ async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
 async def test_a_10bit_test_with_another_pixel_format_fails(
     fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
 ) -> None:
-    """M2 review: FFmpeg replaces a pixel format the encoder does not take and exits 0 (checked
-    with FFmpeg n9.0.2, see ``test_real``): the 10-bit test did not encode 10-bit."""
+    """FFmpeg replaces a pixel format the encoder does not take and exits 0: the 10-bit test
+    did not encode 10-bit."""
     fake_tools.set_scenario(
         ft.Scenario(
             [
@@ -391,9 +385,6 @@ async def test_task_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg
     assert fake_tools.kill_leftovers() == []
 
 
-# --------------------------------------------------------------------------- VAAPI nodes
-
-
 def vaapi_calls(fake: ft.FakeTools, encoder: str) -> list[tuple[str, str]]:
     """``(node, pixel format)`` of each test encode of ``encoder``, in order."""
     calls = []
@@ -420,7 +411,7 @@ def node_rule(capture: str, node: str, encoder: str | None = None) -> ft.Rule:
 async def test_vaapi_uses_the_first_node_that_works(
     fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
 ) -> None:
-    """Decision 0020: two render nodes, the encoder fails on the first one (no VA driver)."""
+    """Two render nodes; the encoder fails on the first one (no VA driver)."""
     fake_tools.set_scenario(
         ft.Scenario([node_rule("c4_h264_vaapi_no_driver", NODE, encoder="hevc_vaapi")])
     )
@@ -429,13 +420,11 @@ async def test_vaapi_uses_the_first_node_that_works(
     hevc = snap.status("hevc_vaapi")
     assert (hevc.state, hevc.device, hevc.supports_10bit) == (AVAILABLE, OTHER_NODE, True)
     assert hevc.reason is None
-    # 8-bit on the first node (fails), 8-bit on the second (works), 10-bit on the second
     assert vaapi_calls(fake_tools, "hevc_vaapi") == [
         (NODE, "nv12"),
         (OTHER_NODE, "nv12"),
         (OTHER_NODE, "p010le"),
     ]
-    # the other VAAPI encoders work on the first node and never try the second
     h264 = snap.status("h264_vaapi")
     assert (h264.state, h264.device) == (AVAILABLE, NODE)
     assert vaapi_calls(fake_tools, "h264_vaapi") == [(NODE, "nv12")]
@@ -499,9 +488,6 @@ def test_vaapi_nodes(tmp_path: Path) -> None:
     assert vaapi_nodes(DetectionOptions(render_nodes=())) == []
 
 
-# --------------------------------------------------------------------------- libplacebo
-
-
 async def test_libplacebo_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
     assert snap.usable_filter("libplacebo") is True
@@ -526,7 +512,7 @@ async def test_libplacebo_without_vulkan(fake_tools: ft.FakeTools, fake_ffmpeg: 
     )
     snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
     assert snap.has_filter("libplacebo") is True  # listed by -filters
-    assert snap.usable_filter("libplacebo") is False  # but it does not work
+    assert snap.usable_filter("libplacebo") is False
     assert snap.filter_failures == {
         "libplacebo": "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)"
     }

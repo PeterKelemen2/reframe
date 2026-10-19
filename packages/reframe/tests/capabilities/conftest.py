@@ -1,4 +1,4 @@
-"""Fixtures for the C-4 tests (helpers are in ``reframe_testing.capabilities``)."""
+"""Fixtures for the capability tests (helpers are in ``reframe_testing.capabilities``)."""
 
 from __future__ import annotations
 

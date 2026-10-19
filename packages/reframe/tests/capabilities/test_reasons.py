@@ -1,8 +1,6 @@
-"""Reason mapping (05 §C-4 as changed by decision 0008).
-
-The stderr texts are real (``fake_data/c4_*`` and ``hw_*``: the pinned build on the capture
-machine). Errors that cannot be provoked there are built from the exact strings in the
-pinned build (``library_strings.json``, asserted below).
+"""Reason mapping. The stderr texts are real captures (``fake_data/c4_*`` and ``hw_*``, from the
+pinned build); errors that cannot be provoked there use the exact strings of that build
+(``library_strings.json``, asserted below).
 """
 
 from __future__ import annotations
@@ -85,7 +83,6 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[VAAPI] Failed to initialise VAAPI connection: -1 (unknown libva error).",
         ),
         (
-            # -vaapi_device /dev/null: no [VAAPI] line at all, only fftools' lines
             "hw_h264_vaapi_not_drm",
             "h264_vaapi",
             "/dev/null",
@@ -139,7 +136,6 @@ def test_real_failures(
 
 
 def test_the_last_line_is_never_the_reason() -> None:
-    """The plan's "keep the last stderr line" gives "Conversion failed!" (decision 0008)."""
     text = stderr("c4_hevc_nvenc_no_driver")
     assert text.strip().splitlines()[-1] == "Conversion failed!"
     assert "Conversion failed" not in explain_failure(text, ctx("hevc_nvenc")).reason
@@ -296,13 +292,10 @@ def test_informative_line_order() -> None:
     assert informative_line(text, "x") == "Device creation failed: -22."
 
 
-# --------------------------------------------------------------------------- libplacebo
-
 FILTER = TestContext(encoder="libplacebo", family="filter")
 
 
 def test_libplacebo_without_vulkan_real() -> None:
-    """``VK_ICD_FILENAMES`` pointing to nothing (``c4_libplacebo_no_vulkan``, pinned build)."""
     failure = explain_failure(stderr("c4_libplacebo_no_vulkan"), FILTER, returncode=187)
     assert (failure.state, failure.reason, failure.detail) == (
         UNAVAILABLE,

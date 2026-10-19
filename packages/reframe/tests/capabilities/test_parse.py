@@ -50,7 +50,6 @@ def test_filter_list_of_the_pinned_build() -> None:
 
 
 def test_filter_list_with_three_flag_columns() -> None:
-    """FFmpeg 7.x prints three flag columns (``TSC``); FFmpeg 9 prints two."""
     text = (
         "Filters:\n  T.. = Timeline support\n  .S. = Slice threading\n  ..C = Command support\n"
         "  A = Audio input/output\n  | = Source or sink filter\n  ------\n"
@@ -95,7 +94,7 @@ def test_help_of_libx265() -> None:
         "x265-params",
         "dolbyvision",
     ]
-    assert parsed.presets == []  # a free string: FFmpeg does not list x265's presets
+    assert parsed.presets == []
     assert "yuv420p10le" in parsed.pix_fmts
     assert parsed.hardware_devices == []
 
@@ -112,7 +111,7 @@ def test_help_of_hevc_nvenc_lists_the_named_presets() -> None:
 def test_help_of_libsvtav1_lists_the_preset_range() -> None:
     parsed = parse_encoder_help(data_text("help_encoder/libsvtav1.stdout.txt"))
     assert parsed is not None
-    assert parsed.presets == [str(n) for n in range(-2, 14)]  # "(from -2 to 13)"
+    assert parsed.presets == [str(n) for n in range(-2, 14)]
     assert parsed.pix_fmts == ["yuv420p", "yuv420p10le"]
 
 
@@ -121,7 +120,7 @@ def test_help_of_amf_and_qsv_presets() -> None:
     qsv = parse_encoder_help(data_text("help_encoder/hevc_qsv.stdout.txt"))
     assert amf is not None
     assert qsv is not None
-    assert amf.presets == ["quality", "balanced", "speed", "high_quality"]  # -preset, not -quality
+    assert amf.presets == ["quality", "balanced", "speed", "high_quality"]
     assert qsv.presets == ["veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
 
 
