@@ -1,8 +1,5 @@
-"""Validation of custom encoder parameters (core-complete review R5-1; decision 0035
-"Follow-up (core-complete review, 2026-10-16)"): a parameter that names a file, and the
-allow-list of the encoders without a params argument. Pure: no FFmpeg (the encoders'
-behaviour is in ``test_custom_params_ffmpeg.py``; the rule-table cases in
-``cases_options.py``)."""
+"""Validation of custom encoder parameters: files they name and the allow-list of the encoders
+without a params argument. Runs no FFmpeg."""
 
 from __future__ import annotations
 
@@ -57,7 +54,6 @@ def _issues(encoder: str, custom: str, **caps: EncoderStatus) -> list[tuple[str,
 @pytest.mark.parametrize(
     ("encoder", "custom"),
     [
-        # The reviewer's reproduction: an imported preset with analysis-save overwrote a file.
         ("libx265", "analysis-save=/home/u/victim.txt"),
         ("libx265", "csv=/home/u/log.csv"),
         ("libx265", "--csv=/home/u/log.csv"),
@@ -72,7 +68,7 @@ def _issues(encoder: str, custom: str, **caps: EncoderStatus) -> list[tuple[str,
         ("libx264", "stats=/home/u/x.log"),
         ("libx264", "nostats=/home/u/x.log"),  # x264 writes a file named "true" with pass=1
         ("libx264", "cqmfile=/home/u/cqm.txt"),
-        # Final review RC-1: x264 reads every cqm value as a file name unless it contains
+        # x264 reads every cqm value as a file name unless it contains
         # "flat" or "jvt" (case-sensitive), and a "no" prefix gives it "true" / "false".
         ("libx264", "cqm=/home/u/cqm.txt"),
         ("libx264", "cqm=FLAT"),
@@ -100,7 +96,7 @@ def test_a_parameter_that_names_a_file_is_an_error(encoder: str, custom: str) ->
         ("libx265", "aq-mode=3:psy-rd=2.0:scaling-list=default"),
         ("libx265", "no-sao=1:nr-intra=100"),
         ("libx264", "nr=100:no-dct-decimate=1"),
-        ("libx264", "cqm=flat"),  # x264's presets (final review RC-1)
+        ("libx264", "cqm=flat"),  # x264's presets
         ("libx264", "cqm=jvt:nr=100"),
         ("libx264", "cqm='jvt '"),  # FFmpeg gives x264 "jvt ": the JVT matrix
         ("libsvtav1", "film-grain=8:enable-qm=1"),
@@ -157,7 +153,6 @@ def test_a_key_only_ffmpegs_split_finds_is_removed_with_all_parameters() -> None
 
 
 def test_presets_get_the_check_too() -> None:
-    """A shared preset with ``analysis-save`` is reported when it is imported or checked."""
     template = next(p for p in builtin_presets() if p.video.encoder == "libx265")
     template = template.model_copy(deep=True)
     template.video.custom_params = "analysis-save=/home/u/victim.txt"

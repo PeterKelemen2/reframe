@@ -1,9 +1,5 @@
-"""The dry run after the core-complete review (decision 0035 "Follow-up (core-complete review,
-2026-10-16)"): R5-1 (a custom parameter that names a file is refused before FFmpeg starts;
-FFmpeg runs in a temporary working folder), R5-3 (libvpx refuses a value through a codec
-control and exits with 0), and the attribution of an encoder warning to a whole key.
-
-Each test failed before its fix. The real runs use the fixtures and FFmpeg on ``PATH``."""
+"""The dry run: refused custom parameters never start FFmpeg, FFmpeg runs in a temporary folder,
+and libvpx codec-control refusals and encoder warnings name the parameter they are about."""
 
 from __future__ import annotations
 
@@ -93,9 +89,6 @@ def _source() -> MediaSource:
     return source
 
 
-# --------------------------------------------------------------------------- R5-1, no FFmpeg
-
-
 @pytest.mark.parametrize(
     "job",
     [
@@ -123,8 +116,8 @@ async def test_r5_1_a_refused_parameter_never_starts_ffmpeg(
 async def test_r5_1_ffmpeg_runs_in_a_temporary_folder_that_is_removed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """x264 / x265 ``pass=1`` write ``x26?_2pass.log`` into the working folder (checked): the
-    dry run gives FFmpeg a new folder of its own and removes it, with what FFmpeg wrote."""
+    """x264 / x265 ``pass=1`` write ``x26?_2pass.log`` into the working folder: the dry run
+    gives FFmpeg a new folder of its own and removes it, with what FFmpeg wrote."""
     seen: list[Path | None] = []
 
     async def fake_run(argv: list[str], **kwargs: Any) -> RunResult:
@@ -168,9 +161,6 @@ async def test_r5_1_a_relative_source_is_given_to_ffmpeg_as_an_absolute_path(
     assert argv[argv.index("-i") + 1] == str(tmp_path / "in.mkv")
 
 
-# --------------------------------------------------------------------------- R5-1, real FFmpeg
-
-
 @pytest.fixture
 async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Reframe:
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # the dry run's working folder
@@ -189,7 +179,7 @@ async def _draft(app: Reframe, path: Path, tmp_path: Path) -> JobSettings:
 @pytest.mark.parametrize(
     ("encoder", "custom"),
     [
-        ("libx265", "analysis-save={victim}"),  # the reviewer's plan_writes.sh
+        ("libx265", "analysis-save={victim}"),
         ("libx265", "csv={victim}"),
         ("libx264", "dump-yuv={victim}"),
         ("libvpx-vp9", "vstats_file={victim}"),
@@ -203,9 +193,6 @@ async def test_r5_1_planning_with_a_shared_preset_leaves_the_users_file_alone(
     encoder: str,
     custom: str,
 ) -> None:
-    """``reframe plan`` dry-runs a user preset's custom parameters: with ``analysis-save=FILE``
-    the one-frame encode overwrote FILE (5984 bytes of x265 analysis data, exit 0). Now
-    validation refuses the parameter and the dry run never starts FFmpeg."""
     victim = tmp_path / "victim.txt"
     victim.write_text(PRECIOUS)
     monkeypatch.chdir(tmp_path)
@@ -241,9 +228,6 @@ async def test_r5_1_planning_with_a_shared_preset_leaves_the_users_file_alone(
     assert names <= {"cache", "config", "data", "victim.txt"}
 
 
-# --------------------------------------------------------------------------- R5-3
-
-
 ARNR_STDERR = (
     "[libvpx-vp9 @ 0x5616] v1.17.0\n"
     "[libvpx-vp9 @ 0x5616] Failed to set VP8E_SET_ARNR_MAXFRAMES codec control: Invalid "
@@ -254,7 +238,6 @@ ARNR_STDERR = (
 
 
 def test_r5_3_a_value_libvpx_refuses_through_a_codec_control_is_an_error() -> None:
-    """FFmpeg n9.0.2 logs the refusal, exits with 0 and encodes without the value."""
     job = _vp9(custom_params="lag-in-frames=16:arnr-maxframes=16")
     issues = parse_dry_run(job, ARNR_STDERR, 0)
     assert [(i.severity, i.code, i.path) for i in issues] == [
@@ -299,8 +282,6 @@ async def test_r5_3_the_real_libvpx(
     assert info in issues[0].message
 
 
-# --------------------------------------------------------------------------- attribution
-
 RD_REFINE = (
     "x265 [warning]: --rd-refine disabled, requires RD level > 4 and adaptive quant\n"
     "x265 [warning]: Source height < 720p; disabling lookahead-slices\n"
@@ -308,8 +289,7 @@ RD_REFINE = (
 
 
 def test_a_warning_goes_to_the_key_it_names_not_to_a_short_key_in_its_text() -> None:
-    """x265 4.3: ``--rd-refine disabled, requires RD level > 4``: the warning is about
-    ``rd-refine`` (``rd`` matched "RD level" and won before)."""
+    """The warning is about ``rd-refine``, not ``rd``: the text also contains "RD level"."""
     job = _job(custom_params="rd=3:rd-refine=1")
     (issue,) = parse_dry_run(job, RD_REFINE, 0)
     assert (issue.severity, issue.code) == (Severity.WARNING, "encoder.dry_run_warning")

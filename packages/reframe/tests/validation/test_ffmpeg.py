@@ -1,12 +1,4 @@
-"""The FFmpeg behaviour the forced-only rule relies on (``subtitle.forced_only_unsupported``),
-checked with the real FFmpeg (testdata/README.md "Validation (C-8)").
-
-- ``forced_subs_only`` is a decoder option of ``pgssub`` and ``dvdsub`` only (not ``dvbsub``,
-  not the text decoders).
-- A stream copy does not decode, so the option changes nothing: every event is kept.
-- Decoded (as for a burn-in), the VobSub fixture, which has no forced events, keeps none.
-- On a text track the option is reported as unused and every event is kept.
-"""
+"""The FFmpeg behaviour of ``forced_subs_only``, which the forced-only subtitle rule relies on."""
 
 from __future__ import annotations
 

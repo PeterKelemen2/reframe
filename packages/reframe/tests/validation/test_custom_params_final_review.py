@@ -1,12 +1,5 @@
-"""Custom parameters after the final review (decision 0035 "Follow-up (final review,
-2026-10-17)"), RC-1: x264 reads every ``cqm`` value as a file name unless it contains ``flat``
-or ``jvt`` (checked with x264 core 165), as it reads ``cqmfile``. ``cqm=FILE`` passed validation,
-so ``reframe plan`` dry-ran a shared preset with it and ``reframe encode`` read and applied FILE.
-Now validation refuses it (``encoder.custom_param_file``), the dry run never starts FFmpeg with
-it, and planning returns the error; ``cqm=flat`` / ``cqm=jvt`` still dry-run.
-
-Each test failed on 5dbf152. The real runs use the fixtures and FFmpeg on ``PATH``; the
-encoders' behaviour is in ``test_custom_params_ffmpeg.py``."""
+"""x264 ``cqm`` with a file name: validation refuses it, and the dry run never starts FFmpeg
+with it. The matrix presets ``cqm=flat`` and ``cqm=jvt`` still dry-run."""
 
 from __future__ import annotations
 
@@ -42,7 +35,7 @@ pytestmark = pytest.mark.anyio
 
 FixtureMedia = Callable[[str], Path]
 
-#: x264's own CQM file format: every matrix flat 16 (as the reviewer's reproduction).
+#: x264's own CQM file format: every matrix flat 16.
 CQM_FILE = "".join(
     f"{name} =\n" + ",".join(["16"] * size) + "\n"
     for name, size in (
@@ -95,9 +88,6 @@ def _source() -> MediaSource:
     return source
 
 
-# --------------------------------------------------------------------------- no FFmpeg
-
-
 @pytest.mark.parametrize(
     ("custom", "rest"),
     [
@@ -141,9 +131,6 @@ async def test_rc_1_the_matrix_presets_are_still_dry_run(
     assert argv[argv.index("-x264-params:v:0") + 1].endswith(custom)
 
 
-# --------------------------------------------------------------------------- real FFmpeg
-
-
 @pytest.fixture
 async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Reframe:
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # the dry run's working folder
@@ -156,9 +143,6 @@ async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Reframe:
 async def test_rc_1_planning_with_a_shared_preset_refuses_its_cqm_file(
     app: Reframe, fixture_media: FixtureMedia, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The reviewer's reproduction (``rc1_cqm_plan.py``): a user preset with
-    ``cqm=<matrix file>``. Before the fix, ``plan(…, dry_run=True)`` returned a plan (the dry
-    run's x264 read the file) and the encode applied it (``cqm=2`` in the output's SEI)."""
     if "flat" in str(tmp_path) or "jvt" in str(tmp_path):
         pytest.skip("x264 would take the temporary path for a matrix name")
     matrix = tmp_path / "matrix.cfg"
@@ -184,13 +168,11 @@ async def test_rc_1_planning_with_a_shared_preset_refuses_its_cqm_file(
         assert [(i.code, i.path) for i in issues] == [
             ("encoder.custom_param_file", "video.custom_params")
         ]
-        # What `reframe encode` checks before it queues the job.
         refused = await app.jobs.validate(job)
         assert ("encoder.custom_param_file", Severity.ERROR) in {
             (i.code, i.severity) for i in refused
         }
 
-        # The presets still run: the one-frame encode passes.
         job.video.custom_params = "cqm=jvt"
         assert [i for i in await app.jobs.dry_run(job) if i.severity is Severity.ERROR] == []
     finally:

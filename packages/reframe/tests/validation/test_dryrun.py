@@ -1,7 +1,5 @@
 """The dry run without FFmpeg: the custom-parameter split, the reduced job and command, and the
-reading of FFmpeg's log (recorded texts of FFmpeg n9.0.2: x264 core 165, x265 4.3, SVT-AV1
-v4.2.0, libvpx 1.17; ``test_options_facade.py`` and ``test_dryrun_review_fixes.py`` run them
-for real)."""
+reading of FFmpeg's log."""
 
 from __future__ import annotations
 
@@ -65,17 +63,11 @@ def _codes(issues: list) -> list[tuple[str, str, Severity]]:  # type: ignore[typ
     return [(i.code, i.path, i.severity) for i in issues]
 
 
-# --------------------------------------------------------------------------- custom params
-
-
 def test_split_custom_params_keeps_the_typed_text() -> None:
     params = split_custom_params(" ref=4 :bogus:path=C\\:/x::")
     assert [(p.name, p.value) for p in params] == [("ref", "4"), ("bogus", "1"), ("path", "C:/x")]
     assert [p.raw for p in params] == ["ref=4 ", "bogus", "path=C\\:/x"]
     assert split_custom_params("") == []
-
-
-# --------------------------------------------------------------------------- the job
 
 
 def test_the_dry_run_job_is_video_only() -> None:
@@ -95,9 +87,6 @@ def test_the_dry_run_job_is_video_only() -> None:
     assert isinstance(job.video.rate_control, AverageBitrate)
     assert job.video.rate_control.two_pass
     assert job.output.path is None
-
-
-# --------------------------------------------------------------------------- the log
 
 
 @pytest.mark.parametrize(
@@ -182,8 +171,7 @@ def test_a_failed_start_that_names_an_option() -> None:
 
 
 def test_exit_code_zero_without_output_is_a_failure() -> None:
-    """av1_amf with a bad ``-align`` (RX 7600): "Resolution incorrect for alignment mode",
-    "Could not open encoder before EOF", and FFmpeg still exits with 0."""
+    """av1_amf with a bad ``-align`` (RX 7600) writes nothing and still exits with 0."""
     stderr = (
         "[av1_amf @ 0x1] Resolution incorrect for alignment mode\n"
         "[vost#0:0/av1_amf @ 0x2] [enc:av1_amf @ 0x3] Could not open encoder before EOF\n"
@@ -213,9 +201,6 @@ def test_a_clean_run_has_no_issues() -> None:
     assert _codes(issues) == [("encoder.dry_run_failed", "video.encoder", Severity.ERROR)]
     assert issues[0].message.endswith("exit code 1")
     assert {code for code, _, _ in _codes(issues)} <= set(DRY_RUN_CODES)
-
-
-# --------------------------------------------------------------------------- without FFmpeg
 
 
 def _tools(status: ToolStatus, path: Path | None = None) -> ToolSet:

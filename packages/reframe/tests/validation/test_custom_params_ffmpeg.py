@@ -1,13 +1,5 @@
-"""Custom encoder parameters that read or write files, checked with the real encoders
-(core-complete review R5-1; decision 0035 "Follow-up (core-complete review, 2026-10-16)";
-testdata/README.md "Advanced encoder options (C-6, complete option sets)").
-
-Each run encodes a few frames with FFmpeg directly (the parameter written as the command
-builder writes it), with a target path in ``tmp_path`` and ``tmp_path / "cwd"`` as the working
-folder, and checks what the encoder did with the file; then validation must refuse the
-parameter. The allow-list of the encoders without a params argument is checked against this
-build's ``ffmpeg -h full`` and ``ffmpeg -h encoder=<id>``.
-"""
+"""Custom encoder parameters that read or write files: the real encoders run with them, and
+validation refuses them."""
 
 from __future__ import annotations
 
@@ -40,8 +32,6 @@ def _ffmpeg() -> str:
 def _encode(
     encoder: str, params: str, cwd: Path, frames: int = 3
 ) -> subprocess.CompletedProcess[str]:
-    """``params`` the way the builder writes custom parameters: the params argument, or
-    ``-<name>:v:0 <value>`` for an encoder without one."""
     definition = DEFS.video_encoders[encoder]
     argv = [_ffmpeg(), "-hide_banner", "-nostdin", "-f", "lavfi", "-i",
             "testsrc2=size=192x108:rate=25", "-frames:v", str(frames), "-c:v", encoder]  # fmt: skip
@@ -109,7 +99,7 @@ def test_a_parameter_that_writes_a_file(
     ("encoder", "key", "message"),
     [
         ("libx264", "cqmfile", "can't open file"),
-        ("libx264", "cqm", "can't open file"),  # final review RC-1
+        ("libx264", "cqm", "can't open file"),
         ("libx265", "scaling-list", "can't read matrix"),
         ("libx265", "lambda-file", "lambda file is incomplete"),
         ("libx265", "analysis-load", "Error reading analysis data"),
@@ -155,9 +145,6 @@ def _x264_sei_cqm(encoder_params: str, out: Path, cwd: Path) -> str | None:
 
 
 def test_rc_1_x264_reads_and_applies_the_file_a_cqm_value_names(tmp_path: Path) -> None:
-    """Final review RC-1 (decision 0035 "Follow-up (final review, 2026-10-17)"): ``cqm=FILE``
-    makes x264 read FILE like ``cqmfile=FILE`` (the settings SEI says ``cqm=2``, a custom
-    matrix), so a shared preset with it read any file the user can; validation refuses it."""
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     matrix = tmp_path / "matrix.cfg"  # no "flat" / "jvt" in the path: x264 matches those
@@ -173,7 +160,7 @@ def test_rc_1_x264_reads_and_applies_the_file_a_cqm_value_names(tmp_path: Path) 
 
 def _opened(encoder: str, stderr: str) -> str | None:
     """The file the encoder could not open (the working folder is empty, every path is
-    missing): x264 "can't open file 'F'", x265 "can't open scaling list file F"."""
+    missing)."""
     pattern = (
         r"can't open file '(.*)'$"
         if encoder == "libx264"
@@ -186,7 +173,7 @@ def _opened(encoder: str, stderr: str) -> str | None:
 @pytest.mark.parametrize(
     ("encoder", "params", "opened"),
     [
-        # x264 core 165: strstr(value, "flat"), else strstr(value, "jvt"), else a file name.
+        # x264: strstr(value, "flat"), else strstr(value, "jvt"), else a file name.
         ("libx264", "cqm=flat", None),
         ("libx264", "cqm=jvt", None),
         ("libx264", "cqm='jvt '", None),
@@ -203,7 +190,7 @@ def _opened(encoder: str, stderr: str) -> str | None:
         ("libx264", "nocqm=flat", "true"),  # a "no" prefix: the value becomes true / false
         ("libx264", "no-cqm=jvt", "true"),
         ("libx264", "nocqm=1", "false"),
-        # x265 4.3: strcmp with "default" / "off", else a file name.
+        # x265: strcmp with "default" / "off", else a file name.
         ("libx265", "scaling-list=default", None),
         ("libx265", "scaling-list=off", None),
         ("libx265", "scaling-list=DEFAULT", "DEFAULT"),
@@ -219,8 +206,6 @@ def _opened(encoder: str, stderr: str) -> str | None:
 def test_rc_1_a_value_that_is_a_name_or_a_file_name(
     tmp_path: Path, encoder: str, params: str, opened: str | None
 ) -> None:
-    """Validation refuses exactly the values the encoder opens as a file (decision 0035
-    "Follow-up (final review, 2026-10-17)"; testdata/README.md C-6 "Final review")."""
     if "flat" in str(tmp_path) or "jvt" in str(tmp_path):
         pytest.skip("x264 would take the temporary path for a matrix name")
     cwd = tmp_path / "cwd"
@@ -270,9 +255,6 @@ def test_which_file_keys_the_library_takes(tmp_path: Path, encoder: str) -> None
     assert taken == ACCEPTED[encoder]
 
 
-# --------------------------------------------------------------------------- the allow-list
-
-
 def _help(*args: str) -> str:
     result = subprocess.run(
         [_ffmpeg(), "-hide_banner", "-h", *args], capture_output=True, text=True, timeout=60
@@ -281,9 +263,8 @@ def _help(*args: str) -> str:
 
 
 def test_the_generic_options_and_ffmpegs_own_options() -> None:
-    """The recorded AVCodecContext options are this build's (flags ``E..V``), and no name of
-    the allow-list is one of FFmpeg's own options (which FFmpeg reads first), except three that
-    set the codec option of the same name."""
+    """No name of the allow-list is one of FFmpeg's own options, except three that set the
+    codec option of the same name."""
     text = _help("full")
     own_part, _, rest = text.partition("AVCodecContext AVOptions:")
     codec_part = rest.split("\n\n", 1)[0]
