@@ -1,4 +1,4 @@
-"""The notification hook (05 §C-14): it only emits a ``notification`` event."""
+"""The notification hook: it only emits a ``notification`` event."""
 
 from __future__ import annotations
 

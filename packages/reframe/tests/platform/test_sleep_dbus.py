@@ -1,11 +1,4 @@
-"""reframe.platform.dbus: the minimal D-Bus client that the logind backend uses.
-
-Marshalling is checked against a golden message (the same bytes as jeepney 0.9.0 produces
-for this call, see testdata/README.md "Sleep inhibit (C-14)"); the connection is checked
-against a fake bus (a thread on a unix socket) that speaks the same protocol: success with a
-file descriptor, error replies, refused authentication, no fd passing, timeouts. The real
-system bus is in ``test_sleep_real.py``.
-"""
+"""reframe.platform.dbus: the minimal D-Bus client that the logind backend uses."""
 
 from __future__ import annotations
 
@@ -26,7 +19,7 @@ from reframe.platform import dbus
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
 
-# The Inhibit call (serial 2), as jeepney 0.9.0 serialises it (checked byte for byte).
+# The Inhibit call (serial 2), as jeepney 0.9.0 serialises it.
 INHIBIT_CALL = bytes.fromhex(
     "6c0100012e000000020000008200000001016f00170000002f6f72672f667265656465736b746f70"
     "2f6c6f67696e3100020173001e0000006f72672e667265656465736b746f702e6c6f67696e312e4d"
@@ -36,7 +29,7 @@ INHIBIT_CALL = bytes.fromhex(
 )
 
 
-# The session inhibit calls (serial 2), as jeepney 0.9.0 serialises them (byte for byte).
+# The session inhibit calls (serial 2), as jeepney 0.9.0 serialises them.
 PM_INHIBIT_CALL = bytes.fromhex(
     "6c0100011900000002000000b000000001016f00280000002f6f72672f667265656465736b746f702f"
     "506f7765724d616e6167656d656e742f496e6869626974000000000000000002017300270000006f72"
@@ -87,9 +80,6 @@ def _is_closed(connection: dbus.Connection) -> bool:
 
 def _open_fds() -> set[int]:
     return {int(name) for name in os.listdir("/proc/self/fd")}
-
-
-# --------------------------------------------------------------------------- marshalling
 
 
 def test_method_call_matches_the_reference_bytes() -> None:
@@ -175,9 +165,6 @@ def test_system_bus_address(monkeypatch: pytest.MonkeyPatch) -> None:
     assert dbus.system_bus_address() == "unix:path=/x"
 
 
-# --------------------------------------------------------------------------- fake bus
-
-
 @dataclass
 class Scenario:
     """What the fake bus does. ``inhibit`` answers every call after ``Hello``;
@@ -186,7 +173,7 @@ class Scenario:
     auth: str = "OK 0123456789abcdef0123456789abcdef"
     fd_answer: str = "AGREE_UNIX_FD"
     hello_error: bool = False
-    inhibit: str = "fd"  # fd | error | close | silent | two_fds
+    inhibit: str = "fd"
     stray_fd: bool = False
     received: list[dbus.Message] = field(default_factory=list)
     auth_lines: list[str] = field(default_factory=list)

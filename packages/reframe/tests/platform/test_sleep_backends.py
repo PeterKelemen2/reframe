@@ -1,5 +1,5 @@
-"""The sleep inhibit backends: Windows (mocked kernel32), logind (fake D-Bus call) and the
-desktop session's inhibit (fake connections; the real ones are in test_sleep_real.py)."""
+"""The sleep inhibit backends: Windows (mocked kernel32), logind and the desktop session
+(fake D-Bus connections)."""
 
 from __future__ import annotations
 
@@ -32,9 +32,6 @@ PORTAL = "org.freedesktop.portal.Inhibit"
 pytestmark = pytest.mark.anyio
 
 linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
-
-
-# --------------------------------------------------------------------------- Windows
 
 
 class RecordingKernel32:
@@ -141,9 +138,6 @@ async def test_windows_backend_without_kernel32_is_unavailable() -> None:
     await backend.free()
 
 
-# --------------------------------------------------------------------------- logind
-
-
 def _open_fds() -> set[int]:
     return {int(name) for name in os.listdir("/proc/self/fd")}
 
@@ -238,7 +232,7 @@ async def test_logind_expected_failures_are_data(error: BaseException, message: 
 
 async def test_windows_backend_accepts_a_mock_kernel32() -> None:
     # The Windows binding is only loaded on Windows; the backend accepts any object with
-    # SetThreadExecutionState (here a Mock), like childproc's Kernel32.
+    # SetThreadExecutionState (here a Mock).
     k32 = mock.Mock(spec=["SetThreadExecutionState"])
     k32.SetThreadExecutionState.return_value = ES_CONTINUOUS
     backend = sleep.WindowsExecutionStateBackend(k32)
@@ -304,9 +298,6 @@ async def test_logind_without_unless_never_asks_for_idle_action() -> None:
     assert call.kwargs["member"] == "Inhibit"
     await backend.free()
     os.close(write_end)
-
-
-# --------------------------------------------------------------------------- session
 
 
 def _held(backend: SessionInhibitBackend) -> bool:

@@ -1,13 +1,7 @@
-"""No test can shut down or suspend the machine that runs it (C-14 safety).
-
-Two layers, both proved here:
-
-1. the shared pytest plugin replaces the two functions of ``reframe.platform.power`` that
-   reach the operating system with ones that fail the test (``power_guard``);
-2. those two functions refuse by themselves while ``PYTEST_CURRENT_TEST`` (or
-   ``REFRAME_POWER_DRY_RUN``) is set. That layer is tested with ``reframe.tools.run``
-   mocked and a harmless argv, so even a broken refusal cannot run a power command.
-"""
+"""No test can shut down or suspend the machine that runs it: the shared pytest plugin fails a
+test that reaches a power function, and those functions refuse while ``PYTEST_CURRENT_TEST`` or
+``REFRAME_POWER_DRY_RUN`` is set. The refusal tests use a harmless argv, so a broken refusal
+still runs nothing."""
 
 from __future__ import annotations
 
@@ -58,9 +52,6 @@ def no_run(monkeypatch: pytest.MonkeyPatch) -> NoRun:
     return fake
 
 
-# --------------------------------------------------------------------------- layer 1: the plugin
-
-
 def test_the_plugin_replaced_both_functions(power_guard: PowerGuard) -> None:
     assert power._run_command == power_guard.run_command
     assert power._load_win32 == power_guard.load_win32
@@ -87,7 +78,6 @@ async def test_linux_service_executor_fails_the_test_instead_of_running(
 async def test_the_default_executor_of_a_bare_service_is_guarded_too(
     power_guard: PowerGuard, no_run: NoRun
 ) -> None:
-    """``PowerService(events)`` (no executor) uses this OS's executor: guarded as well."""
     service = PowerService(EventBus())
     with pytest.raises(FAILED):
         await service.executor.execute("shutdown")
@@ -116,8 +106,6 @@ async def test_windows_path_fails_the_test_instead_of_running(
 async def test_a_whole_countdown_into_the_real_executor_is_stopped(
     power_guard: PowerGuard, no_run: NoRun
 ) -> None:
-    """The service path: the countdown ends, ``executing`` is published, and the guard
-    stops the executor; no ``app.warning`` hides it."""
     events = EventBus()
     subscription = events.subscribe()
     release = asyncio.Event()
@@ -149,9 +137,6 @@ async def test_a_whole_countdown_into_the_real_executor_is_stopped(
     assert not [e for e in seen if isinstance(e, AppWarningEvent)]
     assert no_run.calls == []
     await service.close()
-
-
-# --------------------------------------------------------------------------- layer 2: refusal
 
 
 def original_run_command(guard: PowerGuard) -> Callable[[Sequence[str]], Awaitable[RunResult]]:
@@ -199,8 +184,6 @@ async def test_real_run_command_refuses_a_dry_run(
 async def test_real_run_command_goes_through_reframe_tools_run(
     power_guard: PowerGuard, no_run: NoRun, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without a refusal it calls ``reframe.tools.run`` (mocked here; the argv is harmless
-    anyway) with the command time-out."""
     monkeypatch.delenv("PYTEST_CURRENT_TEST")
     monkeypatch.delenv(DRY_RUN_ENV, raising=False)
     run_command = original_run_command(power_guard)
