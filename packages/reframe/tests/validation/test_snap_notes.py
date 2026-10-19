@@ -275,7 +275,7 @@ def test_mixdown_issues_follow_the_helper(
     assert op.value == written
     assert op.value != "dpl2"
     if op.value is not None and channels > 0:
-        assert DEFS.mixdowns[op.value].channels <= max(channels, 2)
+        assert DEFS.mixdowns[op.value].channels <= channels  # never an upmix
     shown = "the source layout" if written is None else DEFS.mixdowns[written].label
     assert shown in issue.message
 
