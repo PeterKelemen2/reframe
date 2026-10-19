@@ -1,4 +1,4 @@
-"""The name source (03 §Where the name comes from): generic folders, season packs, scores."""
+"""The name source: generic folders, season packs, scores."""
 
 from __future__ import annotations
 
@@ -66,9 +66,6 @@ def test_split_extension(name: str, stem: str, ext: str) -> None:
     assert split_extension(name) == (stem, ext)
 
 
-# --------------------------------------------------------------------------- generic folders
-
-
 def test_skip_generic_folders_at_most_two_levels() -> None:
     file = Path("/lib/Movie.2016.1080p.BluRay-GRP/BDMV/STREAM/00800.m2ts")
     assert find_folder(file, None) == (Path("/lib/Movie.2016.1080p.BluRay-GRP"), ["STREAM", "BDMV"])
@@ -95,9 +92,6 @@ def test_no_folder_name() -> None:
     assert find_folder(Path("/x.mkv"), None) == (None, [])
     assert find_folder(Path("x.mkv"), None) == (None, [])
     assert find_folder(Path("/Season 1/x.mkv"), None) == (None, ["Season 1"])
-
-
-# --------------------------------------------------------------------------- choosing
 
 
 def test_hacksaw_ridge_picks_the_folder(fake_fs: Any) -> None:
@@ -139,8 +133,8 @@ def test_sopranos_season_pack_picks_the_file(fake_fs: Any) -> None:
 
 
 def test_only_the_file_has_an_episode_number(fake_fs: Any) -> None:
-    """Decision 0012: the folder cannot be listed (or holds only this file), and only the
-    file name has an episode number: the file name is the source, and the folder fills."""
+    """With the folder unlistable or holding only this file, and only the file name having an
+    episode number, the file name is the source and the folder fills."""
     folder = Path("/lib/Breaking Bad (2008)")
     choice = choose_source(folder / "breaking.bad.s01e01.mkv", "auto", root=None, fs=fake_fs())
     assert choice.kind == "file"
@@ -239,9 +233,6 @@ def test_one_episode_file_is_not_a_season_pack_when_both_have_an_episode(fake_fs
     )
     assert choice.kind == "folder"
     assert not choice.season_pack
-
-
-# --------------------------------------------------------------------------- merging
 
 
 def test_merge_fills_missing_fields_only() -> None:

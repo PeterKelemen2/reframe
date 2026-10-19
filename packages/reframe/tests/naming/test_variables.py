@@ -1,5 +1,4 @@
-"""05 §C-16 "Done when": every HandBrake variable has a test. And the Reframe variables
-(03 §Variables): name parts, output media."""
+"""The naming variables: the HandBrake variables, then the Reframe name parts and output media."""
 
 from __future__ import annotations
 
@@ -69,9 +68,6 @@ def render(template: str, *, fs: _Fs | None = None, **kwargs: Any) -> str:
     assert not result.issues, result.issues
     assert result.extension in ("mkv", "mp4", "m4v", "webm")
     return result.relative_path.removesuffix("." + result.extension)
-
-
-# --------------------------------------------------------------------------- HandBrake parity
 
 
 def test_there_are_17_handbrake_variables() -> None:
@@ -163,7 +159,7 @@ def test_hb_width_and_height() -> None:
     assert render("{width}x{height}", output_size=(1920, 800)) == "1920x800"
     passthrough = _job(video=VideoSettings(passthrough=True))
     assert render("{width}x{height}", job=passthrough, source=_source()) == "3840x2160"
-    assert render("x<{width}>", job=_job(), source=_source()) == "x"  # C-5 not asked
+    assert render("x<{width}>", job=_job(), source=_source()) == "x"
 
 
 def test_hb_codec() -> None:
@@ -207,9 +203,6 @@ def test_hb_quality_bitrate_and_type() -> None:
 def test_hb_video_variables_are_empty_without_a_job() -> None:
     template = "x<{codec}><{encoder}><{encoder_bit_depth}><{quality_bitrate}><{quality_type}>"
     assert render(template) == "x"
-
-
-# --------------------------------------------------------------------------- name parts
 
 
 def test_name_parts() -> None:
@@ -261,9 +254,6 @@ def test_handbrake_clean_up_applies_to_source() -> None:
     options = NamingOptions(movie_template="{source}", title_case=True, remove_punctuation=True)
     result = resolve_output_name(Path("/hacksaw_ridge-2016.mkv"), options, fs=_Fs())
     assert result.relative_path == "Hacksaw_Ridge2016.mkv"
-
-
-# --------------------------------------------------------------------------- output media
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,4 @@
-"""Behaviour of the C-2 models: persistence (unknown fields, migrations), validators, unions."""
+"""Behaviour of the models: persistence (unknown fields, migrations), validators and unions."""
 
 from __future__ import annotations
 
@@ -65,8 +65,6 @@ from reframe.models import (
 from reframe.models import migrations as migrations_mod
 from reframe.tools.discovery import locate_tools
 
-# --------------------------------------------------------------------------- persistence
-
 
 def _full_settings() -> dict[str, Any]:
     data = AppSettings().model_dump(mode="json")
@@ -124,12 +122,10 @@ def _full_job() -> dict[str, Any]:
     [("settings", _full_settings), ("preset_file", _full_presets), ("job_settings", _full_job)],
 )
 def test_unknown_fields_are_kept(kind: str, make: Any) -> None:
-    """Load JSON with unknown (nested) fields and dump it back unchanged (02 rule 4)."""
     text = json.dumps(make())
     original = json.loads(text)
     loaded = load_document(kind, json.loads(text))
     assert json.loads(loaded.model_dump_json()) == original
-    # Through the model's own JSON parser as well.
     model = DOCUMENT_MODELS[kind]
     assert json.loads(model.model_validate_json(text).model_dump_json()) == original
 
@@ -166,9 +162,6 @@ def test_runtime_models_reject_unknown_fields() -> None:
         )
 
 
-# --------------------------------------------------------------------------- migrations
-
-
 def test_migration_chain_keeps_unknown_fields() -> None:
     registry = MigrationRegistry()
     registry.add_kind("thing", 3)
@@ -190,7 +183,7 @@ def test_migration_chain_keeps_unknown_fields() -> None:
         "queue": {"parallel_jobs": 2, "when_done": "nothing"},
         "unknown": {"keep": True},
     }
-    assert original == {"parallel": 2, "unknown": {"keep": True}}  # not changed
+    assert original == {"parallel": 2, "unknown": {"keep": True}}
     assert registry.migrate("thing", {"schema_version": 2, "queue": {}})["schema_version"] == 3
     assert registry.migrate("thing", {"schema_version": 3}) == {"schema_version": 3}
 
@@ -237,12 +230,8 @@ def test_register_migration_uses_the_global_registry(monkeypatch: pytest.MonkeyP
     assert migrate("settings", {"schema_version": 1}) == {"schema_version": 2, "renamed": True}
 
 
-# --------------------------------------------------------------------------- validators
-
-
 def test_audio_defaults_end_with_a_catch_all() -> None:
     assert AudioDefaults().codec_rules[-1].is_catch_all
-    # The example of 03 §Audio defaults.
     rules = [
         AudioCodecRule(
             languages=["hun"],
@@ -302,9 +291,6 @@ def test_subtitle_defaults_differ_from_audio() -> None:
     assert AudioDefaults().selection.default_track == "first_output"
 
 
-# --------------------------------------------------------------------------- unions
-
-
 def test_range_union() -> None:
     adapter: TypeAdapter[Range] = TypeAdapter(Range)
     assert adapter.validate_python({"kind": "chapters", "start": 2, "end": 5}) == ChapterRange(
@@ -352,9 +338,6 @@ def test_move_op_alias() -> None:
     assert MoveOp.model_validate({"from": "/a", "path": "/b"}) == op
 
 
-# --------------------------------------------------------------------------- plan
-
-
 def test_plan_placeholders_resolve() -> None:
     analyse = PlanStep(
         kind="analyse",
@@ -385,9 +368,6 @@ def test_plan_placeholders_resolve() -> None:
         ValueRef(ref="no-dot")
 
 
-# --------------------------------------------------------------------------- fixes on settings
-
-
 def test_use_bundled_fix_applies_to_app_settings(tmp_path: Path) -> None:
     settings = AppSettings(tools=ToolPaths(ffmpeg=tmp_path / "missing" / "ffmpeg"))
     located = locate_tools(settings.tools, environ={}, bundled_roots=[], search_path=str(tmp_path))
@@ -395,9 +375,6 @@ def test_use_bundled_fix_applies_to_app_settings(tmp_path: Path) -> None:
     assert fix.target == "settings"
     patched = apply_patch(settings.model_dump(mode="json"), fix.patch)
     assert AppSettings.model_validate(patched).tools.ffmpeg is None
-
-
-# --------------------------------------------------------------------------- media
 
 
 @pytest.mark.needs_ffmpeg
@@ -416,7 +393,7 @@ def test_rational() -> None:
     assert str(Rational(num=32, den=27)) == "32/27"
     assert Rational.square() == Rational(num=1, den=1)
     with pytest.raises(ValidationError):
-        Rational(num=0, den=0)  # ffprobe's 0/0 is stored as None, never as a Rational
+        Rational(num=0, den=0)
 
 
 def test_capability_snapshot_lookups() -> None:

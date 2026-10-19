@@ -1,13 +1,8 @@
-"""C-2 "Done when": a JSON Schema snapshot test exists for all public models.
-
-The snapshots (``__snapshots__/test_schema.ambr``) are the contract with the frontend
-(02 §One contract): a change to a model shows up here and must be reviewed. Update them with
-``uv run pytest packages/reframe/tests/models/test_schema.py --snapshot-update``.
-
-Each snapshot holds a model's own schema with only the **names** of its ``$defs``: every
-definition is a public model or enum with its own snapshot, and
-:func:`test_definitions_match_their_own_schema` checks that the inlined definition is the
-same. This keeps the snapshot file small without losing anything.
+"""JSON Schema snapshots of the public models, the contract with the frontend: a model change
+must be reviewed. Update them with
+``uv run pytest packages/reframe/tests/models/test_schema.py --snapshot-update``. Each snapshot
+lists only the names of its ``$defs``; :func:`test_definitions_match_their_own_schema` checks
+that each inlined definition equals that model's own schema.
 """
 
 from __future__ import annotations
@@ -80,5 +75,4 @@ def test_document_models_keep_strict_typescript_types() -> None:
     ``additionalProperties: true`` (openapi-typescript would add an index signature)."""
     schema = json.dumps(models.AppSettings.model_json_schema())
     assert "additionalProperties" not in schema
-    # Runtime models forbid unknown fields, and say so.
     assert models.ValidationIssue.model_json_schema()["additionalProperties"] is False

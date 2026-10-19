@@ -1,8 +1,8 @@
-"""05 §C-16 "Done when": the name corpus ``testdata/names.toml`` passes.
+"""The name corpus ``testdata/names.toml`` passes.
 
 Every case runs the real guessit and the default naming options. A path with a folder lies
 under the media root ``/library``; the case's ``siblings`` are the other files in its folder
-(season packs). See the header of ``names.toml`` for the keys.
+(season packs). The header of ``names.toml`` describes the keys.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ NAMES = REPO / "testdata" / "names.toml"
 CASES: list[dict[str, Any]] = tomllib.loads(NAMES.read_text(encoding="utf-8"))["case"]
 LIBRARY = Path("/library")
 
-#: The "Done when" categories and the least number of cases each must have.
+#: The categories the corpus must cover, and the least number of cases in each.
 REQUIRED = {
     "movie": 20,
     "episode": 20,
@@ -74,14 +74,11 @@ def test_corpus_case(case: dict[str, Any], fake_fs: Any, now: datetime) -> None:
 def test_corpus_ignores_guessit_user_config(
     guessit_user_config: str, fake_fs: Any, now: datetime
 ) -> None:
-    """The whole corpus gives the same names with guessit config files in the working folder
-    and the home folder (``guessit_user_config``): naming never reads them."""
     for case in CASES:
         _check_case(case, fake_fs, now)
 
 
 def test_corpus_size_and_categories() -> None:
-    """At least 100 real-world cases, in every category the "Done when" names."""
     assert len(CASES) >= 100
     counts = Counter(case["category"] for case in CASES)
     assert set(counts) <= CATEGORIES
@@ -94,8 +91,6 @@ def test_corpus_size_and_categories() -> None:
 
 
 def test_corpus_holds_the_examples_of_03() -> None:
-    """The Hacksaw Ridge and Sopranos examples of 03 §Examples are corpus cases, with the
-    exact paths and the name source that 03 gives."""
     by_path = {case["path"]: case for case in CASES}
     hacksaw = by_path[
         "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC."

@@ -1,5 +1,4 @@
-"""``reframe.naming.render_value``: one value template with the naming variables (C-16's public
-form of what C-7 writes as a tag value and C-13 as the container title)."""
+"""``reframe.naming.render_value``: one value template rendered with the naming variables."""
 
 from __future__ import annotations
 

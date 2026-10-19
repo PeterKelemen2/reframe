@@ -1,4 +1,4 @@
-"""The real guessit output that ``reframe.naming.parse`` works around (guessit 4.4.0).
+"""The guessit output that ``reframe.naming.parse`` works around.
 
 Each test first shows what guessit itself returns (so a guessit upgrade that changes it is
 noticed here), then what Reframe makes of it.
@@ -28,8 +28,8 @@ def _spans(name: str) -> list[tuple[str, Any, int, int]]:
 def test_season_and_episode_spans_leave_out_the_letters() -> None:
     name = "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm"
     spans = _spans(name)
-    assert ("season", 3, 14, 16) in spans  # "03", not "S03"
-    assert ("episode", 2, 17, 19) in spans  # "02", not "E02"
+    assert ("season", 3, 14, 16) in spans
+    assert ("episode", 2, 17, 19) in spans
     fields = parse_name(name).fields
     assert fields.episode_code == "S03E02"
     assert fields.main_title == "The.Sopranos.S03E02.Proshai.Livushka"
@@ -37,12 +37,11 @@ def test_season_and_episode_spans_leave_out_the_letters() -> None:
 
 def test_guessit_normalises_text_but_we_keep_the_original() -> None:
     spans = _spans("Hacksaw.Ridge.2016.HYBRID.2160p")
-    assert ("title", "Hacksaw Ridge", 0, 14) in spans  # the value has spaces
+    assert ("title", "Hacksaw Ridge", 0, 14) in spans
     assert parse_name("Hacksaw.Ridge.2016.HYBRID.2160p").fields.name == "Hacksaw.Ridge"
 
 
 def test_quirk_title_after_the_episode_number_is_the_episode_title() -> None:
-    """guessit: ``01 - Pilot`` → title ``Pilot``, after the episode number."""
     spans = _spans("01 - Pilot")
     assert ("episode", 1, 0, 2) in spans
     assert ("title", "Pilot", 4, 10) in spans
@@ -53,8 +52,7 @@ def test_quirk_title_after_the_episode_number_is_the_episode_title() -> None:
 
 
 def test_quirk_bare_absolute_numbers_are_split_into_season_and_episode() -> None:
-    """guessit: ``Bleach - 001 - …`` → season 0 + episode 1; ``One Piece - 1000 - …`` →
-    season 10 + episode 0. A bare number after `` - `` is an absolute episode number."""
+    """A bare number after `` - `` is an absolute episode number."""
     bleach = "Bleach - 001 - The Day I Became a Shinigami"
     assert ("season", 0, 9, 10) in _spans(bleach)
     assert ("episode", 1, 10, 12) in _spans(bleach)
@@ -84,15 +82,13 @@ def test_guessit_prefers_absolute_numbers_only_sometimes() -> None:
 
 
 def test_quirk_uhd_is_outside_the_source_match() -> None:
-    """guessit: ``UHD.BluRay`` → source ``Ultra HD Blu-ray`` over ``BluRay`` only."""
     name = "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX"
     assert ("source", "Ultra HD Blu-ray", 36, 42) in _spans(name)
-    assert not [s for s in _spans(name) if s[2] <= 32 < s[3]]  # nothing covers "UHD"
+    assert not [s for s in _spans(name) if s[2] <= 32 < s[3]]
     assert parse_name(name).fields.source_type == "UHD.BluRay"
 
 
 def test_quirk_rip_is_a_separate_match() -> None:
-    """guessit: ``WEBRip`` → source ``Web`` (``WEB``) + other ``Rip``."""
     name = "Movie.2020.1080p.WEBRip.x264-GRP"
     spans = _spans(name)
     assert ("source", "Web", 17, 20) in spans
@@ -108,7 +104,6 @@ def test_quirk_site_tag_glued_to_the_group() -> None:
 
 
 def test_quirk_hdr_tags_guessit_does_not_report() -> None:
-    """guessit reports no HDR for ``HDR10Plus`` and ``HLG``; the score still counts HDR."""
     for name in (
         "Movie.2020.2160p.WEB-DL.DDP5.1.HDR10Plus.HEVC-GRP",
         "Movie.2020.2160p.HLG.HEVC-GRP",
@@ -120,7 +115,6 @@ def test_quirk_hdr_tags_guessit_does_not_report() -> None:
 
 
 def test_quirk_duplicate_episode_matches() -> None:
-    """guessit reports ``01`` and ``1`` for one anime episode number."""
     name = "[SubsPlease] Sousou no Frieren - 01 (1080p) [8F2A1B3C]"
     episodes = [s for s in _spans(name) if s[0] == "episode"]
     assert episodes == [("episode", 1, 33, 35), ("episode", 1, 34, 35)]
@@ -128,8 +122,6 @@ def test_quirk_duplicate_episode_matches() -> None:
 
 
 def test_quirk_episode_title_raw_text_includes_the_dash() -> None:
-    """The episode title match of ``Show Name - S01E02 - Episode Title`` starts at the
-    `` - ``; we strip it."""
     name = "Show Name - S01E02 - Episode Title"
     assert ("episode_title", "Episode Title", 18, 34) in _spans(name)
     assert name[18:34] == " - Episode Title"
@@ -144,8 +136,6 @@ def test_quirk_dvd_title_files_look_like_episodes() -> None:
 
 
 def test_quirk_final_cut_is_an_episode_title_of_a_movie() -> None:
-    """guessit: ``Apocalypse.Now.1979.Final.Cut`` → type episode with an episode title, but
-    no season or episode. Without an episode code or air date it is a movie for us."""
     name = "Apocalypse.Now.1979.Final.Cut.1080p.BluRay.x264-SADPANDA"
     result = guessit(name, {"name_only": True, "no_user_config": True})
     assert result["type"] == "episode"

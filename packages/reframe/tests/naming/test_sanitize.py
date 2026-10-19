@@ -1,4 +1,4 @@
-"""Safe file names (03 §Safe file names): the Windows rules, tested on every OS."""
+"""Safe file names: the Windows rules, tested on every OS."""
 
 from __future__ import annotations
 
@@ -117,8 +117,7 @@ def test_a_long_reserved_name_stays_in_the_byte_limit(extension: str) -> None:
 
 
 _DEVICES = ["CON", "nul", "COM1", "LPT¹", "AUX", "aux "]
-#: Text that exercises every rule: reserved names, dots, spaces, forbidden characters, bytes
-#: that are not UTF-8 (lone surrogates), multi-byte characters and long runs.
+#: Text that exercises the rules of :func:`sanitize_segments`.
 _MIXED = st.lists(
     st.one_of(
         st.sampled_from(
@@ -169,9 +168,6 @@ _PIECES = st.lists(
 def test_every_part_is_safe_and_fits(
     segments: list[list[Piece]], extension: str, fallback: str
 ) -> None:
-    """After every rule (the ``_`` of a reserved name last), each folder part has at most 255
-    bytes and the file part room for ``.part``; no part is reserved, empty, ends with a dot
-    or a space, or holds a forbidden character or a byte that is not UTF-8."""
     parts, _ = sanitize_segments(segments, extension=extension, fallback=fallback)
     assert parts
     suffix = f".{extension}" if extension else ""
@@ -286,7 +282,7 @@ def test_folder_parts_have_the_full_255_bytes() -> None:
 def test_multibyte_characters_are_never_split() -> None:
     part, _ = _one("日本語" * 40, extension="mkv")
     assert len(part.encode()) <= 250
-    part.encode().decode("utf-8")  # valid UTF-8
+    part.encode().decode("utf-8")
 
 
 def test_no_extension() -> None:
