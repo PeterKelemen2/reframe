@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import signal
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -351,7 +352,7 @@ async def test_follow_rereads_the_queue_after_a_resync(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_cancel_wait_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class Stuck(FakeQueue):
-        async def wait(self, job_ids: object = None) -> list[QueueJob]:
+        async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]:
             await asyncio.Event().wait()
             return []
 
