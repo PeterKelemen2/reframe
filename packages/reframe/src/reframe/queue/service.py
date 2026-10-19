@@ -1,68 +1,8 @@
-"""The queue (C-11): ``Reframe.queue``, a :class:`QueueService`.
-
-Jobs live in memory in queue order and are saved in ``<data dir>/queue.sqlite3``
-(:mod:`reframe.queue.store`). :meth:`QueueService.start` lets the runner take ``waiting``
-jobs, ``settings.queue.parallel_jobs`` at a time (read again each time a slot frees);
-:mod:`reframe.queue.runner` runs one job.
-
-**States** (03 §Queue)::
-
-    add ──► waiting ──► running ◄──► paused
-       │        │          │            │
-       │        │          ├──► done    │
-       └► failed│          ├──► failed ◄┤
-                │          ├──► cancelled ◄┤
-                └► cancelled  └──► interrupted (Reframe closed or stopped)
-
-    retry: failed | cancelled | interrupted ──► waiting
-
-- :meth:`~QueueService.add` validates at once: a job with errors is added as ``failed`` with
-  its issues (it can be retried after its cause is fixed, for example a missing encoder).
-- A paused job keeps its slot (its process is suspended, not ended).
-- Two jobs with the same output path never run at the same time (both would write the same
-  ``.part`` file): the second waits and the next job in the queue runs instead. A job that
-  edits its source in place (``output.edit_in_place``, decision 0034) writes that source: it
-  never runs while another job reads or writes that file, and no job that reads it starts
-  while it runs. Paths are compared as files: a symbolic link, a hard link or a linked folder
-  is the file it leads to (:func:`_conflicts`). Which file a path is (its links resolved, its
-  ``(st_dev, st_ino)``) is read in a worker thread when a job is added, retried or restored
-  and kept with the job, so choosing the next job never touches the disk on the event loop: a
-  network share that does not answer delays only its own job (final review RB-1).
-
-**Events**, in this order (02 §Events; ``job.progress`` and ``job.log`` may be coalesced or
-dropped by a slow subscriber, the others never):
-
-- ``add``: ``job.state`` (``previous=None``, ``waiting`` or ``failed``), ``queue.changed``.
-- a run: ``job.state`` (→ ``running``), ``job.progress`` (0 %), then ``job.progress`` and
-  ``job.log`` while it runs; ``job.state`` ``running`` ↔ ``paused``; at the end the last
-  ``job.progress`` (100 % when done), the last ``job.log`` batch, then ``job.state`` with the
-  end state and ``error``. The ``.part`` file, the plan files and the temporary files are
-  already handled when the end state is published.
-- ``remove`` and ``reorder``: ``queue.changed``. ``retry``: ``job.state`` (→ ``waiting``).
-- A job that ended on its own (``done``, ``failed``), when ``settings.queue.notifications``
-  is on: a ``notification`` with its ``job_id``, after its files are handled and before its
-  last ``job.log`` batch (the end ``job.state`` stays the last event of a run).
-- When the queue empties after jobs ran: the when-done action (``settings.queue.when_done``):
-  a ``notification`` "Queue finished", or the power service's 60 s countdown
-  (``power.countdown``) for ``quit``, ``sleep`` and ``shutdown``. New work cancels the
-  countdown that the queue started, and so does :meth:`~QueueService.close`
-  (:mod:`reframe.queue.whendone`).
-
-**Clean-up** when a run ends: ``EncodePlan.files`` and ``temp_files`` are always removed;
-the ``.part`` file is removed on cancel and on close, and on failure when
-``settings.output.partial_file`` is ``delete`` (kept on ``keep``, and kept when the encode is
-complete but its name is taken under the ``ask`` policy).
-
-**One owner** (decision 0027). The store is opened at the queue's first use, not by
-``Reframe.create()``. The process that takes the lock ``<data dir>/queue.lock`` owns it;
-another process keeps its jobs in a private store in memory (``app.warning``
-``queue.store_busy``) and never touches the saved jobs or their files.
-
-**Restart.** When the owner opens the store, jobs that were ``running`` or ``paused`` become
-``interrupted``, and their leftover files are cleaned up in the background (the ``.part`` file
-by the partial-file policy, as for a failure; never the source). :meth:`~QueueService.close`
-stops running jobs as ``interrupted`` too (their ``.part`` file is removed, as on cancel) and
-frees the lock. Every choice beyond the plan is in decision 0016.
+"""The queue (``Reframe.queue``): :class:`QueueService` keeps the jobs in queue order and saves
+them in ``<data dir>/queue.sqlite3``. Two jobs never run at once when they write the same output,
+or when one edits in place a file that the other reads or writes; paths are compared as files.
+Only the process that holds ``queue.lock`` uses the saved queue, and the end state of a run is
+its last event.
 """
 
 from __future__ import annotations
@@ -134,10 +74,8 @@ def _closed_error() -> Exception:
 
 
 def _path_key(path: str | os.PathLike[str]) -> files.FileKey:
-    """Which file ``path`` is (:func:`reframe.queue.files.file_key`): the path with its links
-    resolved, in the OS's case, and ``(st_dev, st_ino)`` when the file exists. **Blocking**
-    (an ``lstat`` per part of the path, a ``stat``): the queue calls it in a worker thread,
-    never on the event loop (final review RB-1). Never raises (RB-2)."""
+    """The :class:`~reframe.queue.files.FileKey` of ``path``. Blocking: never call it on the
+    event loop."""
     return files.file_key(path)
 
 
@@ -157,15 +95,15 @@ def _output_key(job: QueueJob) -> files.FileKey | None:
 
 @dataclass(frozen=True, slots=True)
 class _Keys:
-    """A job's file keys, taken in a worker thread when the job is added, retried or restored
-    and kept while it waits and runs (runtime only, not saved)."""
+    """A job's file keys, taken in a worker thread when the job is added, retried or restored.
+    Kept in memory only, not saved."""
 
     source: files.FileKey
     output: files.FileKey | None
 
 
 def _job_keys(job: QueueJob) -> _Keys:
-    """``job``'s keys (blocking: see :func:`_path_key`)."""
+    """``job``'s keys. Blocking: never call it on the event loop."""
     source = _source_key(job)
     if job.settings.output.edit_in_place:
         return _Keys(source, source)
@@ -174,12 +112,9 @@ def _job_keys(job: QueueJob) -> _Keys:
 
 
 def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = None) -> bool:
-    """``job`` must wait: another running job writes its output, edits its source in place,
-    or (for an in-place edit) reads or writes the source it would edit. Paths are compared as
-    files (:func:`reframe.queue.files.same_key`), so a link or a hard link to a file is that
-    file (R4-1 of the core-complete review). With ``keys`` (what the queue passes: taken off
-    the event loop) there is no file-system call; without them they are taken now, blocking
-    (for callers off the event loop and tests)."""
+    """``job`` must wait for another active job that writes its output, edits its source in
+    place, or reads or writes the source of an in-place edit. Given ``keys``, this makes no
+    file-system call; otherwise the keys are taken now, blocking."""
     if keys is None:
         keys = _job_keys(job)
     output, source = keys.output, keys.source
@@ -198,7 +133,7 @@ def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = 
 def _restored_error(job: QueueJob) -> str:
     """The error of a job that was running or paused when Reframe stopped. An in-place edit
     may have been stopped while mkvpropedit wrote its source (a crash or a hard exit kills the
-    child), so it says what that can mean for the file (final review RB-4)."""
+    child), so the error says what that can mean for the file."""
     error = "Reframe stopped while the job was running."
     plan = job.plan
     edits = plan is not None and plan.job_type == "metadata_edit" and bool(plan.steps)
@@ -211,33 +146,20 @@ def _restored_error(job: QueueJob) -> str:
 
 
 class QueueService:
-    """The queue of encode jobs (C-11). See the module doc.
+    """The queue of encode jobs.
 
-    :param events: the event bus (``job.*``, ``queue.changed``, ``notification``,
-        ``app.warning``).
-    :param settings: returns the current settings; read each time a decision needs them
-        (``queue.parallel_jobs``, ``when_done``, ``sleep_inhibit``, ``output.collision``,
-        ``output.partial_file``).
-    :param data_dir: ``<data dir>``: the store ``queue.sqlite3`` and the logs ``logs/``.
-    :param tools: tool discovery (``status()``).
-    :param capabilities: encoder detection (``snapshot``, ``wait()``).
-    :param sources: probing (``probe(path, use_cache=, cancel=)``).
+    :param events: the event bus.
+    :param settings: returns the current settings, read each time a decision needs them.
     :param naming: the effective naming options of a job (its preset's), or ``None`` for
         Settings → Output.
-    :param inhibitor: the sleep inhibitor (default: :func:`create_sleep_inhibitor`).
-    :param power: the power actions of the when-done setting (``Reframe.power``, C-14): the
-        queue schedules ``quit``, ``sleep`` and ``shutdown`` there, and cancels its own
-        countdown when new work starts and at :meth:`close`. ``None``: they are reported as
-        not available (``queue.when_done_unavailable``).
+    :param power: the when-done power actions; ``None``: they are reported as not available
+        (``queue.when_done_unavailable``).
     :param clock: the clocks (tests replace them).
     :param fs: the file-system view of validation and of the collision rename.
     :param stall_after: seconds without progress, output or CPU use before an FFmpeg step is
         stopped (``None``: never).
     :param step_time_limit: seconds a short step (``mkvpropedit``) may take.
-    :param watchdog_tick: seconds between two watchdog checks.
-    :param log_interval: seconds between two ``job.log`` events of a job.
-    :param lock_backend: the OS lock of ``queue.lock`` (default: ``flock`` or
-        ``msvcrt.locking``; tests replace it).
+    :param lock_backend: the OS lock of ``queue.lock``; tests replace it.
     """
 
     def __init__(
@@ -290,7 +212,7 @@ class QueueService:
         self._jobs: dict[str, QueueJob] = {}
         self._active: dict[str, ActiveJob] = {}
         self._keys: dict[str, _Keys] = {}
-        """Each waiting or running job's file keys (taken off the event loop; RB-1)."""
+        """Each waiting or running job's file keys, taken off the event loop."""
         self._keying: dict[str, asyncio.Task[None]] = {}
         """The jobs whose keys are being taken in the background (restored jobs)."""
         self._processing = False
@@ -303,8 +225,6 @@ class QueueService:
         self._background: set[asyncio.Task[None]] = set()
         self._when = WhenDoneActions(events, power)
         """The batch counts, the job notifications and the when-done action."""
-
-    # ------------------------------------------------------------------ the contract
 
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob:
         """Add a job (validated at once). A job with errors is added in state ``failed``
@@ -411,7 +331,7 @@ class QueueService:
             return job.model_copy(deep=True)
         if job.state not in _RETRY:
             raise JobStateError(f"job {job_id} is {job.state.value}: it cannot be retried")
-        # Taken again: a link or a file may have changed since the job was added (RB-1).
+        # Taken again: a link or a file may have changed since the job was added.
         keys = await self._take_keys(job)
         self._check_open()
         job = self._job(job_id)  # removed meanwhile: UnknownJobError
@@ -427,13 +347,11 @@ class QueueService:
     def start(self, *, job_ids: Sequence[str] | None = None) -> None:
         """Start taking waiting jobs, in queue order, ``parallel_jobs`` at a time.
 
-        ``job_ids`` (keyword-only, an addition to the contract): take only these jobs, while
-        they are waiting; other waiting jobs stay as they are (a CLI run must not start jobs
-        that another front end left in the shared store). When none of them is waiting or
-        running any more, the runner goes idle, as after :meth:`stop`. A call while the
-        runner is already taking jobs never narrows what it takes: ``start()`` without ids
-        takes every job, and ids are added to those of an earlier ``start(job_ids=…)``.
-        Running state only: it is not saved, a restored queue is idle.
+        ``job_ids`` takes only these jobs while they are waiting, so other waiting jobs stay as
+        they are (a CLI run must not start jobs that another front end left in the shared store).
+        When none of them is waiting or running any more, the runner goes idle, as after
+        :meth:`stop`. A call while the runner is already taking jobs never narrows what it takes.
+        Running state only: it is not saved, so a restored queue is idle.
         """
         self._check_open()
         self._ensure_open()
@@ -503,8 +421,8 @@ class QueueService:
     async def cancel(self, job_id: str | None = None) -> None:
         """Cancel a job: a waiting one is marked ``cancelled``; a running or paused one has
         its process tree killed and ends ``cancelled`` with its ``.part`` file removed — except a
-        running in-place mkvpropedit edit, which is let finish (stopping it could damage the
-        source; decision 0034, review fix R4-7) before the job ends ``cancelled``.
+        running in-place mkvpropedit edit, which is let finish first (stopping it could damage
+        the source) before the job ends ``cancelled``.
         ``None``: every job that has not ended (running, paused and waiting). Returns when
         the cancelled jobs have ended."""
         self._check_open()
@@ -582,18 +500,15 @@ class QueueService:
         self._owner.release()
         await self._notify()
 
-    # ------------------------------------------------------------------ restore
-
     def _ensure_open(self) -> None:
-        """Open the store at the queue's first use (decision 0027). ``Reframe.create()`` does
-        not: a command that never uses the queue never touches it.
+        """Open the store at the queue's first use, not at ``Reframe.create()``: a command that
+        never uses the queue never touches it.
 
-        The process that takes the exclusive lock on ``<data dir>/queue.lock`` owns the saved
-        queue: it loads the store (``running`` and ``paused`` jobs become ``interrupted``;
-        their leftover files are removed in the background) and runs its jobs. A process
-        that cannot take the lock keeps its jobs in a private store in memory and sends one
-        ``app.warning`` (``queue.store_busy``). Blocking, once: the lock is taken without
-        waiting and the store is a small local file.
+        The process that holds the lock loads the store. Running and paused jobs become
+        interrupted, and their leftover files are removed in the background. A process that
+        cannot take the lock keeps its jobs in a private store in memory and sends one
+        ``app.warning``. Blocking, once: the lock is taken without waiting, and the store is a
+        small local file.
         """
         if self._opened or self._closed:
             return
@@ -654,7 +569,7 @@ class QueueService:
             return
         for job in self._ordered():
             if job.state is JobState.WAITING:
-                self._want_keys(job)  # in the background, so start() finds them (RB-1)
+                self._want_keys(job)  # in the background, so start() finds them
         if not leftovers:
             return
         task = loop.create_task(self._clean_leftovers(leftovers), name="reframe-queue-leftovers")
@@ -678,8 +593,6 @@ class QueueService:
                 paths.append(plan.output_tmp)
             for problem in files.remove_files(paths, keep=Path(job.settings.source.path)):
                 log.warning("queue restore: %s", problem)
-
-    # ------------------------------------------------------------------ scheduling
 
     def _eligible(self, job: QueueJob) -> bool:
         """A waiting job that the runner may take now."""
@@ -711,7 +624,7 @@ class QueueService:
             if keys is None:  # a restored job: its keys are being taken off the event loop
                 self._want_keys(job)
                 continue
-            if _conflicts(job, self._active.values(), keys):  # no file-system call (RB-1)
+            if _conflicts(job, self._active.values(), keys):  # no file-system call
                 continue  # see _conflicts; the next job in the queue may run instead
             active = ActiveJob(
                 job_id=job.id,
@@ -728,7 +641,7 @@ class QueueService:
 
     async def _take_keys(self, job: QueueJob) -> _Keys:
         """``job``'s file keys, taken in a worker thread: a disk or a network share that does
-        not answer delays only this call, never the event loop (final review RB-1)."""
+        not answer delays only this call, never the event loop."""
         return await asyncio.to_thread(_job_keys, job)
 
     def _want_keys(self, job: QueueJob) -> None:
@@ -788,7 +701,7 @@ class QueueService:
             outcome = Outcome(JobState.FAILED, error=f"Internal error: {type(exc).__name__}: {exc}")
         finally:
             if outcome is None:  # the task itself was cancelled (never by the queue)
-                # During an in-place step, what happened to the source (RB-4).
+                # During an in-place step, what happened to the source.
                 error = active.end_note or "The job was stopped."
                 outcome = Outcome(JobState.INTERRUPTED, error=error)
             with contextlib.suppress(Exception):
@@ -863,8 +776,6 @@ class QueueService:
         for problem in problems:
             joblog.note(f"Clean-up: {problem}")
 
-    # ------------------------------------------------------------------ when done
-
     def _job_notification(self, job: QueueJob, outcome: Outcome) -> None:
         """The notification of a run that ended on its own (``settings.queue.notifications``);
         never raises (it is called while the run ends)."""
@@ -895,8 +806,6 @@ class QueueService:
             return  # stopped with jobs left: the queue did not empty
         self._when.emptied(last, self._settings().queue.when_done)
 
-    # ------------------------------------------------------------------ sleep inhibit
-
     async def _hold_inhibit(self, active: ActiveJob, job: QueueJob) -> None:
         """Take one count for the job (called with ``active.control`` held). The job holds it
         only once ``acquire`` returned: an ``acquire`` that is cancelled undoes its own count,
@@ -918,11 +827,9 @@ class QueueService:
         """A paused job's in-place mkvpropedit step was resumed so that a cancel or
         ``close()`` can let it finish (called by the runner with ``active.control`` held): the
         job is ``running`` again until it ends, and holds its sleep inhibit, as after
-        :meth:`resume` (final review RB-5)."""
+        :meth:`resume`."""
         await self._set_state(job, JobState.RUNNING)
         await self._hold_inhibit(active, job)
-
-    # ------------------------------------------------------------------ helpers
 
     def _check_open(self) -> None:
         if self._closed:

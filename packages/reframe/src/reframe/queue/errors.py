@@ -1,10 +1,7 @@
-"""Errors of the queue: the exceptions of :class:`~reframe.queue.QueueService` misuse, and the
-short plain reason of a failed step (``QueueJob.error``).
+"""Errors of the queue, and the short reason of a failed step (``QueueJob.error``).
 
-The reason is taken from the end of the tool's stderr (decision 0016): a known cause first
-("No space left on device"), else the first line that reads like an error in the last lines,
-without FFmpeg's ``[module @ 0x…]`` prefix and without the generic follow-up lines
-("Conversion failed!", "Task finished with error code: …").
+The reason is read from the end of the tool's stderr. Generic follow-up lines and FFmpeg's
+``[module @ 0x…]`` prefixes are left out of it.
 """
 
 from __future__ import annotations
@@ -71,7 +68,7 @@ MAX_LENGTH = 300
 
 def _clean(line: str) -> str:
     text = _PREFIX.sub("", line.strip())
-    # FFmpeg 7+ nests the prefixes: "[aost#0:0/aac @ 0x…] [enc:aac @ 0x…] Error …"
+    # FFmpeg can nest two prefixes on one line.
     return _PREFIX.sub("", text).strip()
 
 
@@ -103,9 +100,8 @@ def stderr_reason(lines: Sequence[str], *, last_line: bool = True) -> str | None
 
 
 def printable(text: str) -> str:
-    """``text`` as valid UTF-8 for messages, logs and events: a lone surrogate (a byte of a
-    file name that is not UTF-8, ``bad\\udcffname.mkv``) is written as the escape
-    ``\\udcff``, so a JSON encoder or a UTF-8 log never fails on it."""
+    """``text`` as valid UTF-8: a lone surrogate (from a file name that is not UTF-8) is
+    written as an escape, so a JSON encoder or a UTF-8 log never fails on it."""
     try:
         text.encode("utf-8")
     except UnicodeEncodeError:
@@ -118,8 +114,8 @@ def _shorten(text: str) -> str:
 
 
 def exit_text(returncode: int | None) -> str:
-    """``exit code 1``, or ``signal 11 (SIGSEGV)`` for a POSIX signal, or the Windows
-    status in hexadecimal (``exit code 0xC0000005``)."""
+    """Text for a return code: a negative code is a POSIX signal, a large one a Windows
+    status in hexadecimal."""
     if returncode is None:
         return "no exit code"
     if returncode < 0:

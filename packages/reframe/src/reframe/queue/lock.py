@@ -1,19 +1,9 @@
-"""The queue store's owner lock (decision 0027): ``<data dir>/queue.lock``.
+"""The queue store's owner lock: ``<data dir>/queue.lock``.
 
-One Reframe process owns the saved queue: it holds an exclusive OS lock on ``queue.lock``
-from the queue's first use until ``close()``. The OS frees the lock when the process ends,
-also after a crash or ``kill -9``, so it is never stale. The file holds the owner's pid, for
-messages only. Another process that tries gets "busy" and the pid.
-
-- POSIX: ``fcntl.flock(LOCK_EX | LOCK_NB)`` on the file. A lock of another open file
-  description conflicts, also in the same process (two ``QueueService`` objects in one test
-  behave like two processes).
-- Windows: ``msvcrt.locking(fd, LK_NBLCK, 1)`` on one byte at :data:`WINDOWS_LOCK_OFFSET`, far
-  beyond the pid text: Windows locks are mandatory, so a locked byte cannot be read by
-  another process, and the pid must stay readable. Tested with a mocked ``msvcrt`` on Linux.
-
-The descriptor is not inherited by child processes (Python's default, PEP 446), so an FFmpeg
-started by the queue cannot keep the lock after Reframe ends.
+One Reframe process owns the saved queue. It holds an exclusive OS lock on the file from the
+first use until ``close()``; the OS frees it when the process ends, so it is never stale. The
+file holds the owner's pid, for messages only. Child processes must not inherit the descriptor,
+or a child could keep the lock after Reframe ends.
 """
 
 from __future__ import annotations
@@ -38,7 +28,8 @@ __all__ = [
 ]
 
 LOCK_FILE = "queue.lock"
-#: The byte that the Windows backend locks (1 GiB: beyond any pid text).
+#: The byte that the Windows backend locks, beyond the pid text: Windows locks are mandatory,
+#: so the pid must stay readable.
 WINDOWS_LOCK_OFFSET = 1 << 30
 #: ``msvcrt.locking`` errors that mean "another process holds it".
 _BUSY = {errno.EACCES, errno.EDEADLK, errno.EAGAIN}
@@ -137,7 +128,7 @@ def _read_pid(fd: int) -> int | None:
 
 
 class StoreLock:
-    """The exclusive lock of one data folder's queue store (see the module doc)."""
+    """The exclusive lock of one data folder's queue store."""
 
     def __init__(self, path: Path, backend: LockBackend | None = None) -> None:
         self.path = path

@@ -1,18 +1,6 @@
-"""The queue and job runner (C-11): ``Reframe.queue``.
+"""The queue and job runner. :class:`QueueService` is the entry point.
 
-- :class:`QueueService`: add, list, get, remove, reorder, retry, start, stop, pause, resume,
-  cancel, wait, log_path, close (the M2 contract in ``docs/m2-breakdown.md``; ``start`` has
-  the keyword-only ``job_ids``). The store is opened at the queue's first use, by the one
-  process that holds ``<data dir>/queue.lock`` (decision 0027).
-- Modules: ``store`` (SQLite, ``<data dir>/queue.sqlite3``), ``runner`` (one job: prepare,
-  steps, finalize), ``progress`` (``-progress`` parser, weighted percent, sleep-aware ETA),
-  ``watchdog`` (stall check and step time limit), ``loudnorm`` (measurements and clamping),
-  ``verify`` (the output check), ``logs`` (log file and ``job.log`` events), ``process``
-  (suspend / resume of a process tree), ``files`` (rename, clean-up), ``lock`` (the store's
-  owner lock), ``whendone`` (the when-done action through C-14's power service, the job
-  notifications), ``errors``.
-
-The choices the plan does not make are in decisions 0016 and 0037 (when done).
+The store is opened at the first use, by the one process that holds ``queue.lock``.
 """
 
 from reframe.queue.errors import JobStateError, QueueError, UnknownJobError

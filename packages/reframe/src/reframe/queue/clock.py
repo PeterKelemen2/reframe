@@ -1,15 +1,8 @@
 """The clocks of the queue, behind one small interface that tests replace.
 
-Two clocks are needed because a system sleep looks different on each OS
-(decision 0016, "ETA that survives a system sleep"):
-
-- :meth:`Clock.monotonic` never goes back. On Linux (``CLOCK_MONOTONIC``) it **stops**
-  while the system is suspended; on Windows it may count the suspended time.
-- :meth:`Clock.wall` is ``time.time()``: it always counts the suspended time (and jumps when
-  the user or NTP sets the clock).
-
-The progress tracker and the watchdog use both to tell an encode that is slow from one that
-did not run (the system slept, or the job was paused).
+Across a system sleep, :meth:`Clock.monotonic` stops on Linux and may count the sleep on
+Windows, while :meth:`Clock.wall` always counts it. The progress tracker and the watchdog use
+both to tell a slow encode from one that did not run.
 """
 
 from __future__ import annotations
