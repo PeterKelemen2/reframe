@@ -80,7 +80,7 @@ def test_a_name_or_a_file_name_is_compared_as_the_library_compares_it() -> None:
         ("libx264", "no-cqm", "jvt"),
         ("libx264", "cqmfile", "flat"),
         ("libx265", "scaling-list", "DEFAULT"),
-        ("libx265", "scaling-list", "default "),  # FFmpeg keeps an escaped or quoted space
+        ("libx265", "scaling-list", "default "),  # quoted or escaped: FFmpeg trims a plain space
         ("libx265", "scaling-list", "./default"),
         ("libx265", "scaling-list", "flat"),
         ("libx265", "no-scaling-list", "default"),  # x265 opens a file named "true"
