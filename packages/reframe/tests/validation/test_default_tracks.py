@@ -275,12 +275,6 @@ def test_the_agreement_cases_cover_both_answers() -> None:
     assert False in results
 
 
-#: Strict: these pass once ``validate_template`` runs the track rule lint.
-TEMPLATE_LINT = pytest.mark.xfail(
-    reason="validate_template does not run reframe.batch.lint.lint_track_rules", strict=True
-)
-
-
 def audio_rule(default: bool | None, *, multiple: bool = False) -> OutputTrackRule:
     return OutputTrackRule(
         selector=TrackSelector(kind="audio", languages=["en"]),
@@ -298,7 +292,6 @@ def subtitle_rule(default: bool | None) -> OutputTrackRule:
     )
 
 
-@TEMPLATE_LINT
 def test_a_template_rule_that_marks_every_track_default() -> None:
     template = JobTemplate(audio_rules=[audio_rule(True, multiple=True)])
     issues = several(sc.check_template(sc.TemplateScenario(template)))
@@ -307,7 +300,6 @@ def test_a_template_rule_that_marks_every_track_default() -> None:
     ]
 
 
-@TEMPLATE_LINT
 def test_two_template_rules_that_mark_their_tracks_default() -> None:
     template = JobTemplate(subtitle_rules=[subtitle_rule(True), subtitle_rule(True)])
     issues = several(sc.check_template(sc.TemplateScenario(template)))

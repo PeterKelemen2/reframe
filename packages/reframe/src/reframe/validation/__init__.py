@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
-from reframe.batch.lint import lint_defaults
+from reframe.batch.lint import lint_defaults, lint_track_rules
 from reframe.definitions import Definitions, load_definitions
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import ValidationIssue
@@ -159,4 +159,5 @@ def validate_template(
             definitions=defs,
             container_codecs=False,
         )
+        issues += lint_track_rules(template)
     return issues
