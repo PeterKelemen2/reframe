@@ -1,4 +1,4 @@
-"""C-5: crop consensus over the sample frames, and crop rotation."""
+"""Crop consensus over the sample frames, and crop rotation."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def test_auto_takes_the_most_common_result() -> None:
     samples = [LETTERBOX] * 7 + [IMAX] * 2 + [NOISY]
     result = detect_crop_consensus(samples, "auto")
     assert edges(result) == (140, 140, 0, 0)
-    assert crop_agreement(samples, result) == 7  # "on 7 of 10 frames"
+    assert crop_agreement(samples, result) == 7
 
 
 def test_auto_tie_goes_to_the_smaller_crop() -> None:

@@ -1,12 +1,6 @@
-"""C-5 table tests: the classic cases of 05 §C-5 and the behaviour of each setting.
+"""Table tests of the dimension maths: the classic cases and the behaviour of each setting."""
 
-"Table tests cover the classic cases (DVD NTSC 720×480 anamorphic 16:9, 1080p 2.40:1
-letterbox, 4K → 1080p)."
-
-The notes are user-facing text with the multiplication sign of the pipeline header.
-"""
-
-# ruff: noqa: RUF001, RUF002
+# ruff: noqa: RUF001
 
 from __future__ import annotations
 
@@ -45,8 +39,6 @@ def manual(top: int = 0, bottom: int = 0, left: int = 0, right: int = 0) -> Crop
 
 @dataclass(frozen=True)
 class Row:
-    """One table row: input → crop (t/b/l/r), cropped size, scaled size, SAR, aspect, notes."""
-
     name: str
     src: SourceGeometry
     settings: DimensionSettings
@@ -257,7 +249,7 @@ MORE = [
         1904 / 1072,
         ["Size 1920×1080 → 1904×1072: multiples of 16 (aspect error 0.09 %)."],
     ),
-    # Decision 0020: "Fit within" turns the box to the shape of the output frame.
+    # "Fit within" turns the box to the shape of the output frame.
     Row(
         "Phone video (display matrix 90°), fit 1080p: the box turns, the video stays 1080×1920",
         SourceGeometry(width=1920, height=1080, rotation=90),
@@ -550,7 +542,7 @@ MORE = [
         [
             "Crop left + right (8) leaves less than 2 pixels on the 4:2:0 grid: no horizontal "
             "crop is applied.",
-            # 11 % off, but less than one pixel from 8 x 7.1: the "< 1 px" rule of 05 §C-5.
+            # 11 % off, but less than one pixel from 8 x 7.1.
             "Size 9×8 → 8×8: multiples of 2 (aspect error 11.11 %).",
         ],
     ),

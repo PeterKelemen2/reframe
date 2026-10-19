@@ -1,12 +1,5 @@
 """The definitions checked against the real FFmpeg build (``needs_ffmpeg``; ``needs_gpu`` for
-the AMF / VAAPI encodes).
-
-These tests are the record of where the data comes from: every private option name, preset,
-tune, profile and level against ``ffmpeg -h encoder=<id>``; the x264 / x265 per-preset
-defaults against what the libraries write into the stream; every rate-control argument,
-audio bitrate and sample rate against a real encode; what each muxer accepts and which
-flags it writes; and every filter chain against a real run. testdata/README.md
-("Encoder definitions (C-6)") has the results as tables.
+the AMF / VAAPI encodes). The results are tables in testdata/README.md.
 """
 
 from __future__ import annotations
@@ -67,9 +60,6 @@ _GENERIC_ARGS = frozenset(
 )
 
 
-# =========================================================================== helpers
-
-
 def _tools() -> tuple[str, str]:
     from reframe_testing import media
 
@@ -109,8 +99,6 @@ def _parallel[T](jobs: Iterable[T], run: Callable[[T], str | None]) -> list[str]
         return [p for p in pool.map(run, list(jobs)) if p]
 
 
-#: libx264, libx265 and libsvtav1 do not fail on a bad params entry: they log one of these
-#: and encode on (exit 0).
 _PARAM_ERRORS = re.compile(r"Error parsing option|Unknown option|Invalid value|bad parameter")
 
 
@@ -144,8 +132,7 @@ def _series() -> tuple[int, int]:
 
 
 #: Choices that older FFmpeg builds do not have: (encoder, setting, value) → the first
-#: ``(major, minor)`` with it. FFmpeg n8.1.3 has no ``high_quality`` constant for
-#: ``h264_amf`` / ``hevc_amf`` ``-quality`` (only speed, balanced, quality); n9.0.2 has it.
+#: ``(major, minor)`` with it.
 _ADDED_IN: dict[tuple[str, str, str], tuple[int, int]] = {
     ("h264_amf", "presets", "high_quality"): (9, 0),
     ("hevc_amf", "presets", "high_quality"): (9, 0),
@@ -233,13 +220,8 @@ def _encode_args(
     ]
 
 
-# =========================================================================== help output
-
-
 @pytest.mark.parametrize("encoder_id", sorted(VIDEO))
 def test_private_options_and_choices_exist_in_the_build(encoder_id: str) -> None:
-    """Every private option the definitions write is listed by ``ffmpeg -h encoder=<id>``,
-    and every choice of an option with named constants is one of them."""
     _need_encoder(encoder_id)
     enc = VIDEO[encoder_id]
     known = _help(encoder_id)
@@ -268,8 +250,8 @@ def test_private_options_and_choices_exist_in_the_build(encoder_id: str) -> None
             if set(missing) != older:
                 problems.append(f"{name}: {missing} not constants of -{opt}, expected {older}")
             if name == "presets" and older:
-                # The product hides them: C-4 reads the build's presets, supported_presets
-                # offers only those.
+                # The product hides them: supported_presets offers only the presets that
+                # the build lists.
                 parsed = parse_encoder_help(_help_text(encoder_id))
                 assert parsed is not None
                 status = EncoderStatus(
@@ -319,7 +301,6 @@ def test_private_options_and_choices_exist_in_the_build(encoder_id: str) -> None
 
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265"])
 def test_x26x_lists_match_the_library(encoder_id: str) -> None:
-    """x264 / x265 take free text; the library prints its own lists for a bad value."""
     enc = VIDEO[encoder_id]
     out = _ffmpeg([*_encode_args(enc, ["-preset", "bogus"]), "-f", "null", "-"]).stderr
     presets = re.search(r"Possible presets: (.+)", out)
@@ -338,9 +319,6 @@ def test_x26x_lists_match_the_library(encoder_id: str) -> None:
     assert set(enc.profiles.values()) <= set(profiles.group(1).split())
 
 
-# =========================================================================== x264 / x265 SEI
-
-
 def _sei_options(path: Path) -> dict[str, str]:
     match = re.search(rb"options: ([ -~]+)", path.read_bytes())
     assert match is not None, "no encoder settings SEI"
@@ -354,7 +332,6 @@ def _sei_options(path: Path) -> dict[str, str]:
         else:
             out[token] = "1"
     if out.get("rskip") == "1" and "rskip-edge-threshold" in out:
-        # x265 4.3 writes rskip=2 as "rskip=1 rskip-edge-threshold=0.050000".
         out["rskip"] = "2"
     return out
 
@@ -423,7 +400,6 @@ _SEI: dict[str, dict[str, tuple[str, Callable[[str], OptionValue | None]]]] = {
             "direct",
             lambda v: {"0": "none", "1": "spatial", "2": "temporal", "3": "auto"}[v],
         ),
-        # M9
         "open-gop": ("open_gop", _on),
         "b-bias": ("b_bias", int),
         "weightb": ("weightb", _on),
@@ -479,7 +455,6 @@ _SEI: dict[str, dict[str, tuple[str, Callable[[str], OptionValue | None]]]] = {
         "master-display": ("master-display", str),
         "max-cll": ("cll", str),
         "repeat-headers": ("repeat-headers", lambda v: v == "1"),
-        # M9
         "b-pyramid": ("b-pyramid", _on),
         "bframe-bias": ("bframe-bias", int),
         "b-intra": ("b-intra", _on),
@@ -520,7 +495,6 @@ _SEI: dict[str, dict[str, tuple[str, Callable[[str], OptionValue | None]]]] = {
         "nr-intra": ("nr-intra", int),
         "nr-inter": ("nr-inter", int),
         "sao-non-deblock": ("sao-non-deblock", _on),
-        # x265 writes the colour tags as ISO/IEC 23091-2 code points.
         "colorprim": ("colorprim", lambda v: _CODE_POINTS["colorprim"][int(v)]),
         "transfer": ("transfer", lambda v: _CODE_POINTS["transfer"][int(v)]),
         "colormatrix": ("colormatrix", lambda v: _CODE_POINTS["colormatrix"][int(v)]),
@@ -542,7 +516,6 @@ _VUI: dict[str, dict[str, str]] = {
         "colormatrix": "color_space",
         "chromaloc": "chroma_location",
     },
-    # x265's SEI has only "chromaloc=1" (present) and a range flag: ffprobe reads the VUI.
     "libx265": {"range": "color_range", "chromaloc": "chroma_location"},
 }
 #: ffprobe's names of the values of VUI options.
@@ -562,7 +535,6 @@ _LOG: dict[str, dict[str, str]] = {
     "libx264": {},
     "libx265": {"pools": "Thread pool created using {value} threads"},
 }
-#: x265 turns lookahead-slices off below 720 lines: its table is read from a 720p encode.
 _SEI_720P = frozenset({"lookahead-slices"})
 
 _EXT = {"libx264": "h264", "libx265": "hevc"}
@@ -570,7 +542,6 @@ _EXT = {"libx264": "h264", "libx265": "hevc"}
 
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265"])
 def test_per_preset_defaults_match_the_library(encoder_id: str, tmp_path: Path) -> None:
-    """Every per-preset default table equals what the library writes for that preset."""
     enc = VIDEO[encoder_id]
     assert enc.presets is not None
     sei = _SEI[encoder_id]
@@ -764,7 +735,6 @@ _TEST_VALUES: dict[str, dict[str, OptionValue]] = {
         "dynamic-rd": 2.0,
         "nr-intra": 100,
         "nr-inter": 200,
-        # hdr10-opt needs BT.2020 colour: these are also the values the test writes for it.
         "colorprim": "bt2020",
         "transfer": "smpte2084",
         "colormatrix": "bt2020nc",
@@ -783,11 +753,8 @@ _TEST_VALUES: dict[str, dict[str, OptionValue]] = {
     },
 }
 
-#: Values checked in later encodes, with the other values they need (x265 turns SAO back on
-#: for selective-sao even with sao=0; rd-refine needs RD 5 or 6; lookahead-slices needs 720
-#: lines; pmode turns limit-refs 2 and 3 off; x264's psy=0 drops psy-rd from the SEI, cabac=0
-#: and 8x8dct=0 change the partitions, bluray-compat lowers the B-frames and weighted
-#: P-frames, cqm=jvt raises qpmin).
+#: Values checked in later encodes, with the other values they need. x264's psy=0 drops
+#: psy-rd from the SEI; cabac=0 and 8x8dct=0 change the partitions.
 _LATER: dict[str, list[tuple[dict[str, OptionValue], dict[str, OptionValue]]]] = {
     "libx264": [
         (
@@ -808,8 +775,6 @@ _LATER: dict[str, list[tuple[dict[str, OptionValue], dict[str, OptionValue]]]] =
 
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265"])
 def test_every_x26x_option_reaches_the_library(encoder_id: str, tmp_path: Path) -> None:
-    """Every option set to a value that is not its default shows up in what the library
-    writes: the settings SEI, the VUI (x264's colour tags, read with ffprobe) or the log."""
     enc = VIDEO[encoder_id]
     values = _TEST_VALUES[encoder_id]
     assert set(values) == {o.key for o in enc.options}
@@ -825,8 +790,6 @@ def test_every_x26x_option_reaches_the_library(encoder_id: str, tmp_path: Path) 
         out = tmp_path / f"o{index}.{_EXT[encoder_id]}"
         params = _build_params(enc, {**checked, **extra}, "medium")
         if encoder_id == "libx265" and "colorprim" not in params:
-            # hdr10-opt needs BT.2020 colour ("Recommended Settings for HDR10-opt: colour
-            # primaries should be BT.2020, Disabling hdr10-opt."); C-7 writes these tags.
             params |= {"colorprim": "bt2020", "transfer": "smpte2084", "colormatrix": "bt2020nc"}
         args = _encode_args(enc, ["-preset", "medium"], params, depth=10)
         if "lookahead-slices" in checked:
@@ -864,9 +827,6 @@ def test_x265_level_idc_reaches_the_library(tmp_path: Path) -> None:
     assert _sei_options(out)["level-idc"] == "41"
 
 
-# =========================================================================== software choices
-
-
 def _choice_jobs(enc: VideoEncoderDef) -> list[tuple[str, list[str], dict[str, str], int]]:
     jobs: list[tuple[str, list[str], dict[str, str], int]] = []
     for name in ("presets", "tunes", "profiles", "levels"):
@@ -889,7 +849,6 @@ def _choice_jobs(enc: VideoEncoderDef) -> list[tuple[str, list[str], dict[str, s
 
 @pytest.mark.parametrize("encoder_id", SOFTWARE)
 def test_every_software_choice_encodes(encoder_id: str) -> None:
-    """Every preset, tune, profile and level (at each bit depth it is valid for) encodes."""
     enc = VIDEO[encoder_id]
 
     def run(job: tuple[str, list[str], dict[str, str], int]) -> str | None:
@@ -906,8 +865,6 @@ def test_every_software_choice_encodes(encoder_id: str) -> None:
 
 
 def test_svtav1_options_parse(tmp_path: Path) -> None:
-    """libsvtav1 only logs a bad parameter and encodes on: check its log, the
-    ``SVT [config]`` lines and the stream (colour tags, HDR10 metadata)."""
     enc = VIDEO["libsvtav1"]
     values: dict[str, OptionValue] = {
         "film-grain": 8,
@@ -983,10 +940,6 @@ def test_svtav1_options_parse(tmp_path: Path) -> None:
 
 
 def test_svtav1_option_defaults_in_the_log() -> None:
-    """The fixed defaults of the SVT-AV1 set are what v4.2 logs when nothing is set (AQ mode
-    2, sharpness 0, luminance QP bias 0, QP scale compress strength 0; with variance boost on:
-    strength 2, octile 5, curve 0); key frames are closed (irefresh-type 2); the mini-GOP is
-    16 at preset 10."""
     enc = VIDEO["libsvtav1"]
     plain = _ffmpeg([*_encode_args(enc, ["-preset", "10"]), "-f", "null", "-"]).stderr
     assert re.search(r"AQ mode / Variance Boost\s*:\s*2 / 0", plain)
@@ -1005,7 +958,7 @@ def test_svtav1_option_defaults_in_the_log() -> None:
 
 
 #: Other options to set with an option at the end of its range, where x265 has a rule across
-#: two options (recorded in ``test_recorded_cross_option_rules``; C-8 validates them).
+#: two options (recorded in ``test_recorded_cross_option_rules``).
 _RANGE_ARGS: dict[str, list[str]] = {"libvpx-vp9": ["-b:v", "500k"]}
 _RANGE_COMPANIONS: dict[tuple[str, str], dict[str, str]] = {
     ("libx265", "rc-lookahead"): {"bframes": "0"},
@@ -1015,8 +968,7 @@ _RANGE_COMPANIONS: dict[tuple[str, str], dict[str, str]] = {
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265", "libsvtav1", "libvpx-vp9"])
 def test_option_range_ends_encode(encoder_id: str) -> None:
     """Every number option at its minimum and at its maximum reaches the library without an
-    error. M2 review: x265 ``ref`` 9-16 and ``merange`` 32768 stopped the encoder, SVT-AV1
-    ``lookahead=-1`` was rejected ("Error parsing option lookahead: -1.")."""
+    error."""
     enc = VIDEO[encoder_id]
     jobs: list[tuple[str, list[str], dict[str, str]]] = []
     for option in enc.options:
@@ -1027,7 +979,6 @@ def test_option_range_ends_encode(encoder_id: str) -> None:
         for value in (option.min, option.max):
             args, params = _mapping_args(option.mapping, _written(value))
             params = _RANGE_COMPANIONS.get((encoder_id, option.key), {}) | params
-            # libvpx without a rate control uses CRF 32, which must lie inside qmin..qmax.
             args = [*_RANGE_ARGS.get(encoder_id, []), *args]
             jobs.append((f"{option.key}={_written(value)}", args, params))
 
@@ -1045,15 +996,7 @@ def test_option_range_ends_encode(encoder_id: str) -> None:
 
 
 def test_recorded_cross_option_rules(tmp_path: Path) -> None:
-    """Rules across two options that a range cannot express (for C-8's validation):
-
-    - x265: ``rc-lookahead`` at or below ``bframes`` stops the encoder ("Lookahead depth must
-      be greater than the max consecutive bframe count"); ``ref`` 9 and more with B-frames
-      stops it too ("NumPocTotalCurr (total references) is non-compliant"), so the range ends
-      at 8.
-    - x264: ``subme`` 10 and 11 need ``trellis=2``; with a lower trellis x264 writes
-      ``subme=9`` without a message.
-    """
+    """Rules across two options that a range cannot express."""
     x265, x264 = VIDEO["libx265"], VIDEO["libx264"]
 
     def x265_run(params: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -1090,8 +1033,6 @@ def test_recorded_cross_option_rules(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("encoder_id", SOFTWARE)
 def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
-    """Constant quality at min / default / max, average bitrate, and 2-pass with a turbo and
-    a full first pass."""
     enc = VIDEO[encoder_id]
     q = enc.rate_control.quality
     b = enc.rate_control.bitrate
@@ -1143,9 +1084,8 @@ def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
 
 
 def _quality_args(q: QualityMode, value: float | None) -> tuple[list[str], dict[str, str]]:
-    """The quality mode's arguments for ``value``; ``None`` = the arguments without any
-    placeholder pair (the mode with no quality value: what the encoder does when it is not
-    set)."""
+    """The quality mode's arguments for ``value``. ``None`` keeps the arguments without a
+    placeholder: what the encoder does when no quality is set."""
     if value is None:
         args: list[str] = []
         for flag, arg in zip(q.args[::2], q.args[1::2], strict=True):
@@ -1176,9 +1116,7 @@ def _quality_points(q: QualityMode) -> dict[str, float | None]:
 
 
 def _check_quality_points(results: dict[str, tuple[int, str]]) -> list[str]:
-    """M2 review: an end of the range that the encoder ignores (SVT-AV1 ``-crf 0``, VAAPI
-    ``-global_quality 0`` and AMF AV1 QP 0 = the default quality; VAAPI 52 = 51) gives the
-    same file as another value."""
+    """An end of the range that the encoder ignores gives the same file as another value."""
     size = {k: v[0] for k, v in results.items()}
     digest = {k: v[1] for k, v in results.items()}
     problems = [
@@ -1202,8 +1140,6 @@ def _encode_digest(args: Sequence[str], out: Path, timeout: float = 120) -> tupl
 
 @pytest.mark.parametrize("encoder_id", SOFTWARE)
 def test_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
-    """Each end of the constant-quality range has its own effect: the best end is not "not
-    set" and the worst end is not clamped to the one before it."""
     enc = VIDEO[encoder_id]
     q = enc.rate_control.quality
     assert q is not None
@@ -1225,9 +1161,7 @@ def test_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> Non
 @pytest.mark.parametrize("encoder_id", sorted(e for e, d in VIDEO.items() if d.family == "nvenc"))
 def test_nvenc_initial_qps_span_the_build_range(encoder_id: str) -> None:
     """The initial QPs derived from the CQ value use the scale of ``-init_qp*``: the worst CQ
-    gives the worst initial QP. M2 review: av1_nvenc's ``-cq`` is 0-63 but ``-init_qp*`` is
-    0-255, and the QPs were written on the 0-63 scale (no NVIDIA hardware here: the ranges of
-    ``ffmpeg -h`` only)."""
+    gives the worst initial QP."""
     _need_encoder(encoder_id)
     q = VIDEO[encoder_id].rate_control.quality
     assert q is not None
@@ -1238,9 +1172,6 @@ def test_nvenc_initial_qps_span_the_build_range(encoder_id: str) -> None:
         assert low <= derived.compute(q.min)
         assert derived.compute(q.max) <= high
         assert derived.compute(q.max) >= 0.9 * high, (name, derived.compute(q.max))
-
-
-# =========================================================================== audio
 
 
 _MIXDOWN_LAYOUT = {"mono": "mono", "stereo": "stereo", "dpl2": "stereo", "5.1": "5.1", "7.1": "7.1"}
@@ -1272,8 +1203,6 @@ def _audio_encode(
 
 @pytest.mark.parametrize("encoder_id", sorted(DEFS.audio_encoders))
 def test_audio_bitrates_and_sample_rates_encode(encoder_id: str) -> None:
-    """Every mixdown at its minimum, default and maximum (and every allowed value for the
-    fixed-step encoders), every sample rate, and the VBR quality ends."""
     _need_encoder(encoder_id)
     enc = DEFS.audio_encoders[encoder_id]
     jobs: list[tuple[str, str, list[str], int]] = []
@@ -1302,8 +1231,6 @@ def test_audio_bitrates_and_sample_rates_encode(encoder_id: str) -> None:
 
 
 def test_recorded_audio_encoder_behaviour(tmp_path: Path) -> None:
-    """testdata/README.md: AC-3 snaps silently, Opus and AC-3 reject unlisted rates, 7.1 is
-    negotiated down for AC-3."""
     out = tmp_path / "a.ac3"
     ffmpeg_args = [
         "-f",
@@ -1337,9 +1264,6 @@ def test_recorded_audio_encoder_behaviour(tmp_path: Path) -> None:
         == 0
     )
     assert _probe(out71, "-show_streams")["streams"][0]["channels"] == 6
-
-
-# =========================================================================== containers
 
 
 _VIDEO_SOURCES: dict[str, list[str]] = {
@@ -1457,7 +1381,7 @@ def test_listed_codecs_can_be_copied_in(
         names = all_of_kind if "*" in support.copy_codecs else support.copy_codecs
         for name in names:
             if name not in stream_sources:
-                continue  # hdmv_pgs_subtitle: FFmpeg has no PGS encoder to make a source
+                continue
             jobs.append((name, support.copy_args.get(name, [])))
 
     def run(job: tuple[str, list[str]]) -> str | None:
@@ -1513,7 +1437,6 @@ def test_truehd_in_mp4_needs_strict(stream_sources: dict[str, Path], tmp_path: P
 #: into Matroska (the muxer sees the same codec as with ``-c copy``). Audio input is
 #: ``rate/layout``; video input is a pixel format.
 _MKV_SOURCES: dict[str, tuple[str, str, str]] = {
-    # refused: "No wav codec tag found for codec …"
     "pcm_bluray": ("pcm_bluray", "direct", "48000/stereo"),
     "pcm_dvd": ("pcm_dvd", "vob", "48000/stereo"),
     "s302m": ("s302m", "mpegts", "48000/stereo"),
@@ -1560,16 +1483,13 @@ _MKV_SOURCES: dict[str, tuple[str, str, str]] = {
     "gsm": ("libgsm", "mov", "8000/mono"),
     "nellymoser": ("nellymoser", "mov", "44100/mono"),
     "comfortnoise": ("comfortnoise", "nut", "8000/mono"),
-    # muxed with exit 0, but FFmpeg cannot read the file back
     "dfpwm": ("dfpwm", "wav", "48000/stereo"),
     "dirac": ("vc2", "nut", "yuv420p"),
     "gif": ("gif", "nut", "rgb8"),
     "qtrle": ("qtrle", "mov", "rgb24"),
     "rpza": ("rpza", "nut", "rgb555le"),
     "svq1": ("svq1", "nut", "yuv410p"),
-    # refused: "Raw RGB is not supported Natively in Matroska"
     "rawvideo": ("rawvideo", "nut", "rgb24"),
-    # copied and read back
     **{
         c: (c, "nut", "48000/stereo")
         for c in (
@@ -1598,14 +1518,10 @@ _MKV_SOURCES: dict[str, tuple[str, str, str]] = {
     "prores": ("prores", "nut", "yuv422p10le"),
     "png": ("png", "nut", "rgb24"),
 }
-#: Denied without a stream: FFmpeg has no encoder for them, and no hand-made source worked.
 _MKV_NOT_VERIFIED = frozenset(
     {"pcm_f16le", "pcm_f24le", "pcm_lxf", "pcm_sga", "dsd_lsbf", "dsd_msbf"}
 )
 _MKV_UNREADABLE = frozenset({"dfpwm", "dirac", "gif", "qtrle", "rpza", "svq1"})
-#: Unreadable only from this FFmpeg ``(major, minor)`` on: n8.1.3 copies svq1 into Matroska
-#: and reads it back; both n9.0.2 builds cannot read the file. It stays denied (the bundled
-#: build is n9).
 _MKV_UNREADABLE_SINCE: dict[str, tuple[int, int]] = {"svq1": (9, 0)}
 
 
@@ -1643,10 +1559,6 @@ def _codec_back(path: Path) -> str | None:
 
 
 def test_mkv_copy_except_matches_the_muxer(tmp_path: Path) -> None:
-    """M2 review: Matroska took every audio codec (``copy = ["*"]``), so pcm_bluray was
-    planned as a copy that FFmpeg refused ("No wav codec tag found for codec pcm_bluray",
-    exit 234). Every denied codec really fails (or writes a file FFmpeg cannot read back), and
-    the PCM variants that are not denied copy and read back."""
     mkv = _container("mkv")
     denied = set(mkv.audio.copy_except) | set(mkv.video.copy_except)
     assert denied <= set(_MKV_SOURCES) | _MKV_NOT_VERIFIED | {"dsd_lsbf_planar", "dsd_msbf_planar"}
@@ -1819,7 +1731,7 @@ def test_chapters_and_attachments(
     if result.returncode == 0:
         streams = _probe(out, "-show_streams")["streams"]
         attachments = sum(1 for s in streams if s["codec_type"] == "attachment")
-    assert (attachments == 1) == cont.attachments  # WebM drops it silently, MP4 fails
+    assert (attachments == 1) == cont.attachments
 
 
 def test_mp4_codec_tags_and_format_flags(tmp_path: Path) -> None:
@@ -1832,8 +1744,6 @@ def test_mp4_codec_tags_and_format_flags(tmp_path: Path) -> None:
     data = out.read_bytes()
     assert data.index(b"moov") < data.index(b"mdat")  # +faststart moved the index forward
 
-
-# =========================================================================== filters
 
 _CUSTOM: dict[str, str] = {
     "detelecine": "order=auto",
@@ -1909,7 +1819,6 @@ def test_every_filter_chain_runs(fixture_media: Callable[[str], Path]) -> None:
 
 
 def test_zscale_needs_tagged_input() -> None:
-    """Why ``requires_tagged_input``: zscale fails on an untagged source."""
     chain = "zscale=p=bt709:t=bt709:m=bt709,format=yuv420p"
     untagged = _ffmpeg([*_LAVFI_VIDEO, "-vf", chain, "-frames:v", "2", "-f", "null", "-"])
     tagged = _ffmpeg(
@@ -1929,8 +1838,7 @@ def test_zscale_needs_tagged_input() -> None:
 
 
 def test_idet_flags_interlaced_frames(fixture_media: Callable[[str], Path]) -> None:
-    """Interlace detection works because idet sets the frames' interlaced flag, which
-    bwdif / yadif ``deint=interlaced`` reads. setfield=prog clears the source flag first."""
+    """``setfield=prog`` clears the source flag first."""
     src = fixture_media("interlaced")
     result = _ffmpeg(
         ["-i", str(src), "-vf", "setfield=prog,idet,showinfo", "-frames:v", "12", "-f", "null", "-"]
@@ -1943,16 +1851,10 @@ def test_idet_flags_interlaced_frames(fixture_media: Callable[[str], Path]) -> N
 
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265", "libsvtav1"])
 def test_a_bad_params_entry_does_not_fail_the_encode(encoder_id: str) -> None:
-    """Recorded for C-8's custom-parameter dry run: the exit code is 0, only the log says it
-    ("Error parsing option 'bogus = 1'." / "Unknown option: bogus." / "Error parsing option
-    bogus: 1.")."""
     enc = VIDEO[encoder_id]
     result = _ffmpeg([*_encode_args(enc, [], {"bogus": "1"}, small=True), "-f", "null", "-"])
     assert result.returncode == 0
     assert _param_error(result) is not None
-
-
-# =========================================================================== hardware
 
 
 _HW_SETUP = {
@@ -1997,12 +1899,8 @@ def _option_test_value(option: EncoderOption) -> str:
     "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
 )
 def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> None:
-    """AMF and VAAPI on a real GPU (AMD RX 7600 when recorded): every preset, profile and
-    level, constant quality at min / default / max, average bitrate, and every option.
-
-    Choices an older build lacks (``_ADDED_IN``: n8.1.3 has no ``high_quality`` for
-    ``h264_amf`` / ``hevc_amf``, so ``supported_presets`` does not offer it there) must fail
-    on that build and work on the newer ones: the test asserts what each version does."""
+    """Choices that an older build lacks (``_ADDED_IN``) must fail on that build and work on
+    the newer ones."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
@@ -2056,9 +1954,7 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
 )
 def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
-    """As ``test_quality_range_ends_are_honoured``, on the GPU (AMD RX 7600 when recorded).
-    M2 review: VAAPI ``-global_quality 0`` gave the driver's QP (h264 20, hevc 25), 52 the
-    same file as 51; AMF AV1 QP 0 logged ``AMF_OUT_OF_RANGE`` and gave the default."""
+    """As ``test_quality_range_ends_are_honoured``, on the GPU."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
@@ -2075,10 +1971,6 @@ def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Pat
 
 @pytest.mark.needs_gpu
 def test_av1_amf_pads_the_picture(tmp_path: Path) -> None:
-    """Recorded for C-7 / C-8: av1_amf on the RX 7600 (VCN 4) writes 1920x1080 as 1920x1082
-    and 720x480 as 768x480 (the width up to a multiple of 64; a height that is not a multiple
-    of 16 gets 2 more lines); the extra lines repeat the picture's edge. av1_vaapi on the same
-    GPU keeps 1920x1080; hevc_amf keeps the display size and pads only the coded size."""
     enc = VIDEO["av1_amf"]
     if not _hw_usable(enc):
         pytest.skip("av1_amf does not work on this machine")

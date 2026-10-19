@@ -1,21 +1,5 @@
-"""C-5 against the real FFmpeg: the rules the maths relies on, and the filter chain that the
-command builder (C-7) makes from a ``Geometry``, run on real files.
-
-Verified with FFmpeg n9.0.2 (and it must hold for the CI override build):
-
-- ``crop`` silently rounds x, y, width and height down to the chroma grid of its input (also
-  ``crop=iw:ih`` on an odd-sized 4:2:0 frame: 853x481 -> 852x480). Exact numbers survive only
-  when they are on the grid, so ``compute_geometry`` snaps them first.
-- ``scale`` changes the SAR to keep the display aspect (720x480 32:27 scaled to 854x480 gives
-  SAR 1280:1281), so ``setsar`` must follow every ``scale``.
-- With the default automatic rotation, FFmpeg puts a ``transpose`` for the display matrix
-  before the user's filters, inverts the SAR, and writes no display matrix to the output.
-  So the crop is in the displayed orientation. ``-noautorotate`` copies the display matrix to
-  the output: a builder that rotates by itself would turn the picture twice.
-- Matroska keeps the exact SAR (32:27, 27:32, 1:1).
-- libx264 needs an even height for 4:2:0, and a height divisible by 4 for interlaced 4:2:0
-  ("height not divisible by 4 (320x242)"): the reason for the doubled vertical step.
-"""
+"""The dimension maths against the real FFmpeg: the rules it relies on, and the filter chains
+run on real files."""
 
 from __future__ import annotations
 
@@ -94,7 +78,6 @@ async def video_stream(path: Path) -> VideoStream:
 
 
 def filter_chain(g: Geometry, scaler: str = "lanczos", *, setsar: bool = True) -> str:
-    """The reference chain for C-7 (see the ``reframe.dimensions`` module docstring)."""
     parts: list[str] = []
     c = g.crop
     if any((c.top, c.bottom, c.left, c.right)):
@@ -122,7 +105,6 @@ def encode(source: Path, out: Path, vf: str, *before_input: str) -> dict[str, An
 
 
 def frame_md5(source: Path, vf: str) -> str:
-    """MD5 of the first filtered frame."""
     out = ffmpeg(
         "-v", "error", "-i", str(source), "-frames:v", "1", "-vf", vf, "-f", "framemd5", "-",
     ).stdout  # fmt: skip
@@ -131,9 +113,6 @@ def frame_md5(source: Path, vf: str) -> str:
 
 def sar_of(info: dict[str, Any]) -> str:
     return str(info.get("sample_aspect_ratio", "1:1"))
-
-
-# --------------------------------------------------------------------------- crop grid
 
 
 def _pixel_formats() -> list[str]:
@@ -148,8 +127,7 @@ def _pixel_formats() -> list[str]:
 
 
 def test_chroma_steps_match_ffmpeg_crop_for_every_pixel_format() -> None:
-    """One FFmpeg run: ``format=<f>,crop=35:35:3:3`` per format; crop rounds 35 down to its
-    grid, which shows the steps it uses."""
+    """Crop rounds 35 down to its grid for each pixel format, which shows the steps it uses."""
     names = _pixel_formats()
     assert len(names) > 100
     labels = "".join(f"[s{i}]" for i in range(len(names)))
@@ -176,7 +154,6 @@ def test_crop_rounds_silently_to_the_grid(tmp_path: Path, fixture_media: Media) 
     source = fixture_media("letterbox")  # 320x180 4:2:0, 2.39:1 bars: top 22, bottom 24
     raw = encode(source, tmp_path / "raw.mkv", "crop=319:135:1:23")
     assert (raw["width"], raw["height"]) == (318, 134)
-    # x and y are rounded down too: 1:23 crops the same pixels as 0:22, not as 2:24.
     first = frame_md5(source, "crop=318:134:1:23")
     assert first == frame_md5(source, "crop=318:134:0:22")
     assert first != frame_md5(source, "crop=318:134:2:24")
@@ -202,9 +179,6 @@ def test_x264_height_rules_for_4_2_0(height: int, interlaced: bool, ok: bool) ->
     if not ok:
         divisor = 4 if interlaced else 2
         assert f"height not divisible by {divisor} (320x{height})" in result.stderr
-
-
-# --------------------------------------------------------------------------- fixtures
 
 
 @pytest.mark.anyio
@@ -261,9 +235,6 @@ async def test_interlaced_fixture(fixture_media: Media) -> None:
     g = compute_geometry(src, DimensionSettings(crop=crop, size=SameAsSource()))
     assert g.crop.top == 4
     assert g.notes[0] == "Crop top 6 → 4 for interlaced 4:2:0."
-
-
-# --------------------------------------------------------------------------- rotation
 
 
 @pytest.fixture(scope="module")
@@ -366,8 +337,8 @@ async def test_rotation_chain(
 
 @pytest.mark.anyio
 async def test_portrait_fit_turns_the_box(tmp_path: Path, corner_source: Path) -> None:
-    """Decision 0020: the 64x32 corner file turned 90° by its display matrix is portrait
-    (32x64, SAR 27:32); "Fit within 48x24" fits it inside 24x48 with its long side vertical."""
+    """The 64x32 corner file turned 90° by its display matrix is portrait (32x64, SAR 27:32);
+    "Fit within 48x24" fits it inside 24x48 with its long side vertical."""
     source = with_display_matrix(corner_source, 90, tmp_path / "rotated.mkv")
     src = source_geometry(await video_stream(source))
     s = DimensionSettings(crop=CropSettings(mode="none"), size=FitWithin(width=48, height=24))
@@ -381,9 +352,6 @@ async def test_portrait_fit_turns_the_box(tmp_path: Path, corner_source: Path) -
 
 
 def test_noautorotate_keeps_the_display_matrix(tmp_path: Path, corner_source: Path) -> None:
-    """FFmpeg n9.0 copies the display matrix to the output with ``-noautorotate``; n8.1.3
-    (the CI override build) drops it (rotation ``[]``). Either way ``-display_rotation 0``
-    leaves none, so a builder that rotates by itself and writes it is right on both."""
     from reframe.tools.versions import parse_ffmpeg_version
 
     version = parse_ffmpeg_version(run(tools()[0], "-hide_banner", "-version").stdout)
