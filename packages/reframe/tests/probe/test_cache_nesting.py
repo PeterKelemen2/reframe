@@ -1,6 +1,8 @@
-"""The probe cache and JSON nested more than 64 levels deep (C-3, C-9's rule of decision
-0015): such an entry is a miss (never a ``RecursionError``) and the next probe rewrites it; a
-source whose entry would be that deep is not cached (``put`` returns ``False``)."""
+"""The probe cache with JSON nested more than 64 levels deep.
+
+A deep entry is a miss (never a ``RecursionError``), and the next probe rewrites it. A deep
+source is not cached: ``put`` returns ``False``.
+"""
 
 from __future__ import annotations
 
@@ -15,8 +17,7 @@ from reframe.probe.cache import CacheKey, ProbeCache
 from reframe.settings import MAX_DEPTH, too_deep
 
 TOOL = "ffprobe n9.0.2"
-#: Deep enough for CPython's ``json.loads`` to raise ``RecursionError`` (3.14: a C-stack check,
-#: about 52 000 levels on an 8 MB stack; far fewer on a small thread stack).
+#: Deep enough for CPython's ``json.loads`` to raise ``RecursionError`` (a C-stack check).
 PARSER_DEPTH = 200_000
 
 
@@ -88,9 +89,8 @@ def test_a_source_of_64_levels_is_cached(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("levels", [MAX_DEPTH + 1, 300])
 def test_a_source_that_would_write_a_deep_entry_is_not_cached(tmp_path: Path, levels: int) -> None:
-    """65 levels, and 300 (Pydantic's ``model_dump`` raises ``ValueError`` past 255; it was
-    not caught and failed the probe). Not in memory either: a later ``get`` is a miss. An
-    earlier entry of the file stays as it was."""
+    """65 levels, and 300 (past the 255 levels that Pydantic's ``model_dump`` accepts). Not in
+    memory either: a later ``get`` is a miss. An earlier entry of the file stays as it was."""
     cache = ProbeCache(tmp_path)
     assert cache.put(key(), source(), tool=TOOL)
     before = cache.entry_path(key()).read_bytes()

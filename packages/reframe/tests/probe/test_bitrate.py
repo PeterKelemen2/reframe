@@ -1,7 +1,6 @@
-"""The bitrate chain (C-3): stream → statistics tags → MediaInfo → unknown.
+"""The bitrate chain: stream → statistics tags → MediaInfo → unknown.
 
-MediaInfo is tested with mocks: whether ``pymediainfo`` and its library load differs between
-machines (the ``pymediainfo`` 7 wheel bundles ``libmediainfo``).
+MediaInfo is mocked: whether ``pymediainfo`` and its library load differs between machines.
 """
 
 from __future__ import annotations
@@ -90,9 +89,6 @@ def test_tag_value_prefers_the_exact_key() -> None:
     assert bitrate.tag_value({"BPSX": "1"}, "BPS") is None
 
 
-# --------------------------------------------------------------------------- stale statistics
-
-
 def _doc(*streams: dict[str, Any], **fmt: Any) -> dict[str, Any]:
     return {"streams": list(streams), "format": fmt}
 
@@ -148,7 +144,7 @@ def test_the_byte_sum_check_covers_every_stream() -> None:
 
 
 def test_streams_without_stats_and_junk() -> None:
-    plain = {"index": 0, "codec_type": "video", "tags": {"DURATION": "99:00:00"}}  # FFmpeg's tag
+    plain = {"index": 0, "codec_type": "video", "tags": {"DURATION": "99:00:00"}}
     assert bitrate.check_stats_tags(_doc(plain, duration="1.0")).stale == {}
     assert bitrate.check_stats_tags({"streams": "junk", "format": []}).stale == {}
     tiny_rate = _stats(0, BPS="1000")
@@ -159,9 +155,6 @@ def test_stream_bitrate_skips_untrusted_stats() -> None:
     stream = {"tags": {"BPS": "1000"}}
     assert bitrate.stream_bitrate(stream, trust_stats=False) == BitrateInfo()
     assert bitrate.stream_bitrate({"bit_rate": "5"}, trust_stats=False).value == 5
-
-
-# --------------------------------------------------------------------------- MediaInfo
 
 
 @dataclass
@@ -181,8 +174,8 @@ def test_track_data() -> None:
         FakeTrack("Audio", "1", "2104000 / 1509000", language="pt-BR"),  # first value counts
         FakeTrack("Audio", "2", None, 640_000.0, language="Portuguese (BR)"),  # not a tag
         FakeTrack("Audio", "3", "junk", frame_rate_mode="VFR"),  # audio: no mode
-        FakeTrack("Audio", "0-1", 128000),  # MPEG-TS program order: not matched
-        FakeTrack("Text", "4", 100, language="hu"),  # subtitles: language only
+        FakeTrack("Audio", "0-1", 128000),
+        FakeTrack("Text", "4", 100, language="hu"),
         FakeTrack("Audio", "5", 0),
         FakeTrack("Audio", "6", True),
         FakeTrack("Audio", "7", -2.0, frame_rate_mode="CFR"),
@@ -313,7 +306,7 @@ def test_apply_mediainfo_fills_bitrates_languages_vfr_and_redoes_roles() -> None
     prober._apply_mediainfo(source, info, undecided)
     assert source.video[0].bitrate == BitrateInfo(value=9, source=BitrateSource.MEDIAINFO)
     assert source.audio[0].bitrate == BitrateInfo(value=1_509_000, source=BitrateSource.MEDIAINFO)
-    assert source.audio[2].bitrate.source is BitrateSource.STREAM  # not replaced
+    assert source.audio[2].bitrate.source is BitrateSource.STREAM
     assert [(r.role, r.evidence) for r in source.audio[1].roles] == [
         (TrackRole.COMMENTARY, RoleEvidence.HEURISTIC)
     ]
@@ -376,7 +369,6 @@ pytestmark = pytest.mark.anyio
 
 
 def test_apply_mediainfo_rejects_a_bit_rate_above_the_container() -> None:
-    """MediaInfo repeats stale statistics tags (it reads BPS as well)."""
     source = _source()
     source.container.bitrate = 200_000
     info = mediainfo.MediaInfoData(bitrates={("video", 0): 1_858_881, ("audio", 2): 192_000})

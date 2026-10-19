@@ -1,10 +1,6 @@
-"""The probe cache with file names that are not UTF-8 (C-3, M2 review).
+"""The probe cache with file names and tags that hold lone surrogates.
 
-On POSIX a file name is bytes; Python holds a byte that is not UTF-8 as a lone surrogate
-(``bad\\xffname.mkv`` → ``bad\\udcffname.mkv``), and on Windows a name can hold an unpaired
-UTF-16 surrogate. Such a path is part of the cache key and of the cached ``MediaSource``:
-writing it as UTF-8 raised ``UnicodeEncodeError`` and ended ``reframe encode`` with a
-traceback. The entry is now ASCII JSON (``\\udcff`` escapes), which reads back exactly.
+The entry is ASCII JSON, so such a path or tag is written and reads back exactly.
 """
 
 from __future__ import annotations
@@ -81,8 +77,7 @@ def test_an_entry_that_cannot_be_serialised_is_not_an_error(
 async def test_probe_of_a_real_file_whose_name_is_not_utf8(
     tmp_path: Path, fixture_media: Callable[[str], Path]
 ) -> None:
-    """``reframe encode <folder with bad\\xffname.mkv>`` ended with ``UnicodeEncodeError …
-    surrogates not allowed`` in ``ProbeCache.put``."""
+    """A name that is not UTF-8 must not make ``ProbeCache.put`` raise ``UnicodeEncodeError``."""
     file = tmp_path / os.fsdecode(b"bad\xffname.mkv")
     shutil.copyfile(fixture_media("multitrack"), file)
     assert os.fsencode(file).endswith(b"bad\xffname.mkv")

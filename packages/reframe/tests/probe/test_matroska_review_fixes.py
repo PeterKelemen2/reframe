@@ -1,19 +1,4 @@
-"""The Matroska reader and the probe's ``language_ietf`` (core-complete review R4-2 … R4-5;
-decisions 0007 and 0034).
-
-- R4-2: a ``SeekHead`` position at or past the end of the file (2^64 - 1 made ``seek`` raise
-  ``ValueError``, which escaped the probe) is skipped and the next entry is used; any
-  ``ValueError`` / ``OverflowError`` of the reader is a :class:`MatroskaError`.
-- R4-5: the reader's work is bounded: only the first ``SeekHead`` and the one it links to,
-  only their ``Tracks`` / ``Info`` / ``SeekHead`` entries, at most ``MAX_CHILDREN`` children
-  of one element, ``MAX_ELEMENTS`` headers and ``MAX_READ`` bytes in all. The tests count the
-  element headers parsed and the bytes read (no wall clock).
-- R4-3: for a Matroska file whose tracks the reader matched, ``language_ietf`` is the file's
-  ``LanguageIETF`` or ``None``, never the tag that MediaInfo derives from the legacy
-  ``Language`` element (``jpn`` → ``ja``); other containers keep MediaInfo's value.
-- R4-4: a ``LanguageIETF`` that is not a language tag (``en_US``, ``j\\na;x``) is not used
-  (a probe warning), so drafts and plans of that file work.
-"""
+"""The Matroska reader's limits and SeekHead checks, and the probe's ``language_ietf`` rules."""
 
 from __future__ import annotations
 
@@ -89,9 +74,6 @@ class Counter:
         monkeypatch.setattr(matroska._Reader, "read", counting_read)
 
 
-# --------------------------------------------------------------------------- R4-2
-
-
 def test_a_seek_position_past_2_63_is_skipped_and_the_next_entry_used(tmp_path: Path) -> None:
     track_data = tracks(track(1, 2, language="por", ietf="pt-BR"))
     head = seek_head(seek(_TRACKS, 2**64 - 1), seek(_TRACKS, 0))
@@ -105,16 +87,15 @@ def test_a_seek_position_past_2_63_is_skipped_and_the_next_entry_used(tmp_path: 
 def test_a_seek_head_with_only_unusable_positions_is_a_matroska_error(
     tmp_path: Path, position: int
 ) -> None:
-    """The reviewer's file (only the prober's and the runner's ``MatroskaError`` / ``OSError``
-    are caught); 10 000 is past the end of this small file."""
+    """The prober and the runner catch only ``MatroskaError`` and ``OSError``. 10 000 is past
+    the end of this small file."""
     data = segment(seek_head(seek(_TRACKS, position)) + cluster())
     with pytest.raises(MatroskaError, match="no Tracks"):
         read_matroska(write(tmp_path, data))
 
 
 def test_a_seek_position_must_name_its_element(tmp_path: Path) -> None:
-    """The entry says Tracks, but the element there is an Info: no tracks are made up
-    (before: the Info's children were read as an empty track list)."""
+    """The entry says Tracks, but the element there is an Info: no tracks are made up."""
     head = seek_head(seek(_TRACKS, 0))
     data = segment(seek_head(seek(_TRACKS, len(head) + len(cluster()))) + cluster() + info("x"))
     with pytest.raises(MatroskaError, match="no Tracks"):
@@ -134,11 +115,8 @@ def test_value_and_overflow_errors_of_the_reader_are_matroska_errors(
         read_matroska(write(tmp_path, data))
 
 
-# --------------------------------------------------------------------------- R4-5
-
-
 def filler(count: int, first_id: int) -> bytes:
-    """``count`` Seek entries of other elements (distinct IDs), as in the reviewer's bomb."""
+    """``count`` Seek entries of other elements (distinct IDs)."""
     return b"".join(seek(first_id + i, 1, width=1) for i in range(count))
 
 
@@ -146,8 +124,7 @@ def test_many_seek_heads_full_of_entries_are_bounded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Four SeekHeads of 20 000 entries each, then Tracks: only the first SeekHead is read,
-    and only its first MAX_CHILDREN entries are looked at (before: 240 000 headers and every
-    byte of all four)."""
+    and only its first MAX_CHILDREN entries are looked at."""
     heads = [seek_head(filler(20_000, 0x10000000 + n * 20_000)) for n in range(4)]
     data = segment(b"".join(heads) + tracks(track(1, 2, ietf="de")))
     path = write(tmp_path, data)
@@ -195,8 +172,6 @@ def test_linked_seek_heads_full_of_entries_are_bounded(
 
 
 def test_a_tracks_element_with_too_many_children_is_a_matroska_error(tmp_path: Path) -> None:
-    """A Tracks element of 70 000 empty TrackEntries (before: 70 000 tracks; 1 000 000 took
-    1.4 s and 290 MB, a full 16 MB one about eight times that)."""
     data = segment(element(_TRACKS, b"\xae\x80" * 70_000))
     with pytest.raises(MatroskaError, match="Tracks has more than 4096 elements"):
         read_matroska(write(tmp_path, data))
@@ -231,9 +206,6 @@ def test_a_seek_head_over_its_limit_is_skipped(
     count = Counter(monkeypatch)
     assert len(read_matroska(path).tracks) == 1
     assert count.headers < 20  # its entries were not parsed
-
-
-# --------------------------------------------------------------------------- R4-3, R4-4
 
 
 def _all_ietf(source: MediaSource) -> list[str | None]:
@@ -301,11 +273,8 @@ def test_mediainfo_languages_that_are_too_long_are_not_used() -> None:
 
 
 def test_the_cache_options_name_the_new_reader() -> None:
-    """Entries made with the old rule (MediaInfo's derived tags, unchecked values) are misses."""
+    """Entries made with MediaInfo's derived tags and unchecked values are misses."""
     assert Prober("ffprobe", use_mediainfo=False).cache_options()["matroska"] == 2
-
-
-# --------------------------------------------------------------------------- real files
 
 
 def _copy(fixture_media: Callable[[str], Path], tmp_path: Path, name: str) -> Path:
@@ -345,10 +314,9 @@ def _with_bogus_seek_entry(path: Path) -> None:
 async def test_probe_of_a_file_with_a_seek_position_past_2_63(
     fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The reviewer's ``make_hostile.py`` file, built here: ``Tracks`` after the clusters (long
-    names made mkvpropedit move it), then a bogus Seek entry in front. ffprobe lists all seven
-    streams; the probe returns them (before: ``ValueError`` out of ``Prober.probe``) with the
-    BCP 47 tag that the reader found through the real entry."""
+    """The file has ``Tracks`` after the clusters (long names make mkvpropedit move it), then
+    a bogus Seek entry in front. ffprobe lists all seven streams; the probe returns them with
+    the BCP 47 tag that the reader found through the real entry."""
     mkvpropedit, ffprobe = _tool("mkvpropedit"), _tool("ffprobe")
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     copy = _copy(fixture_media, tmp_path, "hostile.mkv")
@@ -372,8 +340,8 @@ def _ffprobe_streams(ffprobe: str, path: Path) -> int:
 
 
 def _fake_mediainfo(monkeypatch: pytest.MonkeyPatch, languages: dict[tuple[str, int], str]) -> None:
-    """MediaInfo on, with these ``(kind, index) → language`` results (what pymediainfo 7.0.1,
-    libmediainfo 24.12 reports for multitrack.mkv: ``ja`` for jpn, ``en`` for eng)."""
+    """MediaInfo on, with these ``(kind, index) → language`` results: ``ja`` for jpn and
+    ``en`` for eng."""
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
     monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "fake MediaInfo")
     monkeypatch.setattr(
@@ -417,8 +385,8 @@ async def test_probe_with_mediainfo_on_keeps_only_the_files_bcp47_tags(
 def test_real_mediainfo_derives_a_bcp47_tag_from_the_legacy_language(
     fixture_media: Callable[[str], Path],
 ) -> None:
-    """What R4-3 is about, with the real library: multitrack.mkv has no ``LanguageIETF``
-    (``mkvmerge -J``: none), yet MediaInfo reports ``ja`` / ``en``."""
+    """multitrack.mkv has no ``LanguageIETF`` (``mkvmerge -J``: none), yet MediaInfo reports
+    ``ja`` / ``en``."""
     if not mediainfo.mediainfo_available():
         pytest.skip("MediaInfo (pymediainfo) is not available")
     data = mediainfo.read_mediainfo(fixture_media("multitrack"))
@@ -450,7 +418,7 @@ async def test_probe_of_an_invalid_language_ietf(
 ) -> None:
     """ffprobe reads the file (legacy ``jpn``); ``mkvmerge -J`` shows no ``language_ietf``
     for that track. The probe drops the value with a warning, and a remux job of the file
-    is a valid ``JobSettings`` (before: ``ValidationError`` in ``reframe plan``)."""
+    is a valid ``JobSettings``."""
     mkvpropedit, ffprobe = _tool("mkvpropedit"), _tool("ffprobe")
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     copy = _copy(fixture_media, tmp_path, "badtag.mkv")

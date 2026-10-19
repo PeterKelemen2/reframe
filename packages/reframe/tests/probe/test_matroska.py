@@ -1,10 +1,4 @@
-"""The Matroska track-header reader (C-13, ``reframe.probe.matroska``) and how the prober uses it
-to show ``language_ietf`` without MediaInfo.
-
-Pure tests build EBML in memory; the real-file tests read a generated fixture, a copy edited
-with mkvpropedit (``LanguageIETF`` written), and a copy whose ``Tracks`` element mkvpropedit had
-to move behind the clusters (long names), and compare with ``mkvmerge -J``.
-"""
+"""The Matroska track reader, and the prober's ``language_ietf`` without MediaInfo."""
 
 from __future__ import annotations
 
@@ -22,8 +16,6 @@ from reframe.probe.matroska import MatroskaError, read_matroska, tracks_by_kind
 from reframe.probe.prober import Prober, apply_matroska
 
 from .conftest import parse_probe
-
-# --------------------------------------------------------------------------- EBML in memory
 
 
 def vint_size(size: int) -> bytes:
@@ -174,9 +166,6 @@ def test_scan_gives_up_after_max_top_level(tmp_path: Path, monkeypatch: pytest.M
         read_matroska(write(tmp_path, data))
 
 
-# --------------------------------------------------------------------------- the prober
-
-
 def test_apply_matroska_sets_ietf_by_kind_and_order() -> None:
     source = parse_probe("fixtures/multitrack.mkv")
     data = matroska.MatroskaFile(
@@ -199,9 +188,6 @@ def test_apply_matroska_sets_ietf_by_kind_and_order() -> None:
         "were not read."
     )
     assert all(a.language_ietf is None for a in fresh.audio)
-
-
-# --------------------------------------------------------------------------- real files
 
 
 def _tool(name: str) -> str:
@@ -251,8 +237,6 @@ def test_generated_fixture_and_mkvpropedit_edits(
     )  # fmt: skip
     same_as_mkvmerge(copy)
     assert [t.language_ietf for t in read_matroska(copy).tracks][2] == "pt-BR"
-    # Long names do not fit where the Tracks element was: mkvpropedit moves it to the end of
-    # the file (after the clusters) and points the seek head at it.
     long = "N" * 6000
     args = [arg for n in (1, 2, 3) for arg in ("--edit", f"track:a{n}", "--set", f"name={long}")]
     subprocess.run([mkvpropedit, str(copy), *args], check=True, capture_output=True)
