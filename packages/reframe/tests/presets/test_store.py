@@ -1,16 +1,4 @@
-"""C-9 preset store: CRUD, default, export / import with name conflicts, migrations, and the
-damaged / newer / unreadable file handling of ``<config>/presets.json``.
-
-"Done when" (05 §C-9) parts proved here:
-
-- an old-schema fixture loads after migration: :func:`test_old_schema_fixture_loads_after_migration`
-  (``fixtures/presets-v1.json`` with a test registry) and
-  :func:`test_real_loader_runs_the_migration_registry` (the real ``migrate()`` path);
-- export → import gives the same result: :func:`test_export_import_gives_the_same_result`
-  and the property :func:`test_export_import_round_trip_property`;
-- a corrupt file is backed up and replaced with defaults plus a warning event:
-  :func:`test_corrupt_file_is_backed_up_and_replaced_with_defaults`.
-"""
+"""The preset store: CRUD, default, export and import, migrations, and damaged or newer files."""
 
 from __future__ import annotations
 
@@ -51,11 +39,6 @@ def drain(subscription: Subscription) -> list[Event]:
 
 
 def registry_v2() -> MigrationRegistry:
-    """``preset_file`` and ``preset`` at version 2 (see ``fixtures/presets-v1.json``):
-
-    - ``preset_file`` 1 → 2: the default was stored as ``default`` (now ``default_preset_id``);
-    - ``preset`` 1 → 2: the quality was ``video.quality`` (now ``video.rate_control``).
-    """
     registry = MigrationRegistry()
     registry.add_kind("preset_file", 2)
     registry.add_kind("preset", 2)
@@ -88,9 +71,6 @@ def created(store: PresetStore, name: str, **video: Any) -> Preset:
     result = store.create(template(**video), name)
     assert isinstance(result, Preset), result
     return result
-
-
-# --------------------------------------------------------------------------- reading
 
 
 def test_builtins_come_first_and_user_presets_after(store: PresetStore) -> None:
@@ -130,9 +110,6 @@ def test_returned_presets_are_copies(store: PresetStore) -> None:
     again = store.get("fast-1080p30")
     assert again is not None
     assert again.video.encoder == "libx264"
-
-
-# --------------------------------------------------------------------------- CRUD
 
 
 def test_create_saves_a_user_preset_with_a_uuid(tmp_path: Path, store: PresetStore) -> None:
@@ -301,9 +278,6 @@ def test_a_failed_write_changes_nothing(
     [event] = drain(events)
     assert isinstance(event, AppWarningEvent)
     assert event.code == "presets.write_failed"
-
-
-# --------------------------------------------------------------------------- export / import
 
 
 def test_export_import_gives_the_same_result(tmp_path: Path) -> None:
@@ -510,9 +484,6 @@ def test_import_migrates_an_old_export(tmp_path: Path) -> None:
     assert result.imported[0].video.rate_control == ConstantQuality(value=19)
 
 
-# --------------------------------------------------------------------------- file handling
-
-
 def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     (tmp_path / "presets.json").write_bytes((FIXTURES / "presets-v1.json").read_bytes())
     store = PresetStore(tmp_path, registry=registry_v2())
@@ -687,8 +658,6 @@ def test_user_preset_named_like_a_newer_builtin_wins_find(tmp_path: Path) -> Non
     assert found.id == "u"
 
 
-# --------------------------------------------------------------------------- M2 review fixes
-
 #: A preset that a newer Reframe wrote (its schema version is above ours).
 FUTURE: dict[str, Any] = {
     "id": "f",
@@ -731,8 +700,7 @@ def nested(depth: int) -> list[Any]:
 
 
 def test_save_refuses_a_preset_of_a_newer_reframe(tmp_path: Path) -> None:
-    """``save`` stored a preset with a newer schema version; after a restart it was hidden
-    (kept only as raw JSON). It is refused now, and the file is not changed."""
+    """A preset of a newer Reframe would be hidden after a restart, so ``save`` refuses it."""
     store = PresetStore(tmp_path)
     mine = created(store, "Mine")
     before = (tmp_path / "presets.json").read_bytes()
@@ -759,7 +727,6 @@ def test_create_from_a_template_makes_a_preset_of_the_current_version(tmp_path: 
 
 
 def test_import_of_a_preset_file_refuses_newer_presets(tmp_path: Path) -> None:
-    """``import_(PresetFile)`` stored newer presets, which were hidden after a restart."""
     store = PresetStore(tmp_path)
     file = PresetFile(
         presets=[Preset(id="a", name="A", schema_version=5), Preset(id="b", name="B")]
@@ -789,8 +756,8 @@ def test_save_and_import_never_take_the_id_of_a_newer_preset(tmp_path: Path) -> 
 
 
 def test_export_all_keeps_newer_presets_unchanged(tmp_path: Path) -> None:
-    """ "Export all" left newer presets out without a word. They are in the export file now,
-    unchanged, with a warning that only that newer Reframe can import them."""
+    """Newer presets go into the export file unchanged, with a warning that only a newer
+    Reframe can import them."""
     mine = with_future(tmp_path / "a", default="f")
     store = PresetStore(tmp_path / "a")
     exported = store.export()

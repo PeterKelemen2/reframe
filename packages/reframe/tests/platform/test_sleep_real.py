@@ -1,24 +1,4 @@
-"""The real sleep inhibit on this machine (Linux with logind and/or a desktop session).
-
-Other programs may hold inhibits at the same time (a media player, other test runs in
-parallel), so every test looks only for **its own** inhibit: a unique reason per test, found
-in the lists that name the holder and the reason (logind ``ListInhibitors``, KDE PowerDevil's
-``PolicyAgent.ActiveInhibitions``), present during the hold and gone after it. Global flags
-(``PowerManagement.HasInhibit``, the PolicyAgent's ``HasInhibition``) are only printed, never
-asserted: another program can change them at any moment (``systemd-inhibit --what=idle``
-started during a test sets KDE's "screen" flag about 5 s later). ``CanSuspend`` must stay
-``yes`` during the hold (the user's own suspend is never blocked, decision 0020), unless it
-was not ``yes`` before or another program holds a ``sleep`` block lock.
-
-Every lock and connection is freed in a ``finally`` (:func:`_closing`,
-:func:`_session_connection`), so a failing check never leaks a socket into a later test, and
-each test checks that no fd is left open and no unclosed socket is left to the garbage
-collector.
-
-Each test prints what it sees (``pytest -s`` shows it). Skipped where the bus or the
-service is missing (CI containers). Recorded output: testdata/README.md "Sleep inhibit
-(C-14)".
-"""
+"""The real sleep inhibit on this machine, checked through logind and the KDE session bus."""
 
 from __future__ import annotations
 
@@ -52,7 +32,6 @@ pytestmark = [
     pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only"),
 ]
 
-#: KDE PowerDevil makes an inhibition active about 5 s after it is requested.
 KDE_DELAY = 5.0
 POLICY_AGENT = (
     "org.kde.Solid.PowerManagement",
@@ -64,18 +43,15 @@ PM = (
     "/org/freedesktop/PowerManagement/Inhibit",
     "org.freedesktop.PowerManagement.Inhibit",
 )
-SUSPEND, SCREEN = 1, 4  # PolicyAgent: InterruptSession, ChangeScreenSettings
+SUSPEND, SCREEN = 1, 4
 
 
+# Other programs hold inhibits too: a test looks only for its own reason.
 def _why(label: str) -> str:
     return f"Reframe {label} {uuid.uuid4().hex[:10]}"
 
 
-# --------------------------------------------------------------------------- probes
-
-
 def _logind_reachable() -> str | None:
-    """``None`` if logind answers on the system bus, else why not."""
     if shutil.which("busctl") is None:
         return "no busctl (used to list the inhibitors)"
     try:
@@ -92,7 +68,6 @@ def _logind_reachable() -> str | None:
 
 
 def _session_call(target: tuple[str, str, str], member: str, *args: int) -> int | None:
-    """A session-bus call that returns a number (``b`` or ``u``), ``None`` if not there."""
     address = dbus.session_bus_address()
     if address is None:
         return None
@@ -127,7 +102,6 @@ async def _busctl_json(*argv: str) -> object:
 
 
 async def _logind_ours(why: str) -> list[list[object]]:
-    """logind's inhibitors with our reason: ``[what, who, why, mode, uid, pid]`` each."""
     data = await _busctl_json(
         "call",
         "org.freedesktop.login1",
@@ -141,7 +115,6 @@ async def _logind_ours(why: str) -> list[list[object]]:
 
 
 async def _kde_ours(why: str) -> list[list[object]]:
-    """KDE's active inhibitions with our reason: ``[what, who, why, mode, flags]`` each."""
     data = await _busctl_json("--user", "get-property", *POLICY_AGENT, "ActiveInhibitions")
     assert isinstance(data, dict)
     return [entry for entry in data["data"] if entry[2] == why]
@@ -158,7 +131,6 @@ async def _until(check: Callable[[], Awaitable[bool]], limit: float) -> bool:
 
 
 async def _kde_appears(why: str) -> list[list[object]]:
-    """Wait (KDE needs about 5 s) until our inhibition is active; return it."""
     found: list[list[object]] = []
 
     async def check() -> bool:
@@ -188,8 +160,7 @@ async def _can_suspend() -> str:
 
 
 async def _print_flags(label: str) -> None:
-    """Global flags, printed only: other programs change them at any time (a media player,
-    ``systemd-inhibit``, KDE mirroring someone else's logind lock), so no test asserts them."""
+    """Global flags, printed only: other programs change them at any time."""
     has = await _flag(PM, "HasInhibit")
     suspend = await _flag(POLICY_AGENT, "HasInhibition", SUSPEND)
     screen = await _flag(POLICY_AGENT, "HasInhibition", SCREEN)
@@ -215,20 +186,20 @@ async def _foreign_sleep_blocks(why: str) -> list[list[object]]:
 
 
 async def _check_can_suspend(why: str, before: str) -> None:
-    """The user's own suspend is never blocked by Reframe (decision 0020).
+    """The user's own suspend is never blocked by Reframe.
 
     ``CanSuspend`` is global: another program's ``sleep`` block lock turns it to
     ``inhibited``. So a change is a failure only when no other program holds such a lock.
     """
     during = await _can_suspend()
     print(f"CanSuspend before={before} during={during}")
-    if before != "yes":  # pragma: no cover - depends on the machine
+    if before != "yes":  # pragma: no cover
         print(f"not checked: CanSuspend was {before!r} before the test")
         return
     if during == "yes":
         return
-    foreign = await _foreign_sleep_blocks(why)  # pragma: no cover - depends on the machine
-    if foreign:  # pragma: no cover - depends on the machine
+    foreign = await _foreign_sleep_blocks(why)  # pragma: no cover
+    if foreign:  # pragma: no cover
         print(f"not checked: other programs hold sleep block locks: {foreign}")
         return
     raise AssertionError(f"CanSuspend is {during!r} and only Reframe holds a lock")
@@ -240,7 +211,6 @@ def _open_fds() -> set[int]:
 
 
 def _new_fds(before: set[int]) -> dict[int, str]:
-    """The fds opened since ``before`` and still open, with what they point to."""
     new: dict[int, str] = {}
     for fd in sorted(_open_fds() - before):
         try:
@@ -251,7 +221,6 @@ def _new_fds(before: set[int]) -> dict[int, str]:
 
 
 def _assert_nothing_left(fds_before: set[int]) -> None:
-    """No fd left open, and no unclosed socket left to the garbage collector."""
     assert not _new_fds(fds_before)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -272,21 +241,17 @@ async def _closing(inhibitor: SleepInhibitor) -> AsyncIterator[SleepInhibitor]:
 
 @contextlib.asynccontextmanager
 async def _session_connection() -> AsyncIterator[dbus.Connection]:
-    """A raw session bus connection, always closed at the end."""
     address = dbus.session_bus_address()
-    if address is None:  # pragma: no cover - the fixtures skip first
+    if address is None:  # pragma: no cover
         pytest.skip("no session bus")
     try:
         connection = await asyncio.to_thread(dbus.Connection.open, address)
-    except OSError as exc:  # pragma: no cover - depends on the machine
+    except OSError as exc:  # pragma: no cover
         pytest.skip(f"no session bus: {exc}")
     try:
         yield connection
     finally:
         connection.close()
-
-
-# --------------------------------------------------------------------------- fixtures
 
 
 @pytest.fixture
@@ -308,9 +273,6 @@ def kde() -> None:
         pytest.skip("needs KDE's PolicyAgent on the session bus (and busctl)")
 
 
-# --------------------------------------------------------------------------- tests
-
-
 @pytest.mark.usefixtures("logind")
 async def test_logind_idle_lock_appears_and_disappears() -> None:
     why = _why("logind")
@@ -324,7 +286,7 @@ async def test_logind_idle_lock_appears_and_disappears() -> None:
         print(f"logind during: {during}")
         (entry,) = during
         what, who, _, mode, _, pid = entry
-        assert what == "idle"  # never "sleep" (decision 0020)
+        assert what == "idle"  # never "sleep": that would block the user's own suspend
         assert who == "Reframe"
         assert mode == "block"
         assert pid == os.getpid()  # logind records the caller: Reframe itself
@@ -387,7 +349,7 @@ async def test_default_inhibitor_on_this_desktop() -> None:
             assert inhibitor.backends == ("session",)
             assert logind == []
             assert [e[0] for e in kde] == ["sleep"]
-        else:  # pragma: no cover - depends on the machine
+        else:  # pragma: no cover
             assert inhibitor.backends == ("session", "logind")
         await _check_can_suspend(why, can_before)
         assert inhibitor.not_stopped == ()
@@ -435,9 +397,6 @@ async def _fail_while_a_connection_holds(why: str) -> None:
 
 @pytest.mark.usefixtures("logind", "power_management")
 async def test_a_failing_check_inside_the_hold_frees_everything() -> None:
-    """The pattern of every test here: a check that fails while the locks are held still
-    frees them and closes every socket (a leaked socket would fail a later, unrelated test
-    with ``PytestUnraisableExceptionWarning``)."""
     why = _why("failing")
     fds_before = _open_fds()
     inhibitor = SleepInhibitor([SessionInhibitBackend(), LogindBackend()])
@@ -461,7 +420,7 @@ async def test_portal_inhibit_with_this_client() -> None:
     async with _session_connection() as connection:
         try:
             reply = await asyncio.to_thread(sleep._portal_inhibit, connection, why, 5.0)
-        except dbus.DBusError as exc:  # pragma: no cover - depends on the machine
+        except dbus.DBusError as exc:  # pragma: no cover
             pytest.skip(f"no XDG desktop portal: {exc}")
         print(f"portal reply: {reply.signature} {reply.body}")
         assert reply.signature == "o"
@@ -497,8 +456,6 @@ async def test_closing_the_connection_alone_ends_the_power_management_inhibit() 
 @pytest.mark.slow
 @pytest.mark.usefixtures("logind", "kde")
 async def test_kde_turns_a_logind_idle_lock_into_an_idle_inhibition() -> None:
-    """Why the logind idle lock is taken only where needed: KDE mirrors it (after ~5 s) as
-    an "idle" inhibition, which also keeps the screen from dimming and locking."""
     why = _why("mirror")
     fds_before = _open_fds()
     async with _closing(SleepInhibitor([LogindBackend()])) as inhibitor:

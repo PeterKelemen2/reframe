@@ -1,4 +1,4 @@
-"""``diff(template, preset)`` for the *modified* marker (C-9)."""
+"""``diff(template, preset)`` for the *modified* marker."""
 
 from __future__ import annotations
 

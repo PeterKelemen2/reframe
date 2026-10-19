@@ -1,15 +1,4 @@
-"""Sleep inhibit never raises and never leaks a socket (decision 0011 item 7, M2 review).
-
-Every failure of a backend, also one that is not a D-Bus error (a malformed bus address, a
-peer that closes in the middle of the handshake, garbage bytes), is "this backend is
-unavailable": the socket is closed, the encode goes on, and when nothing holds there is the
-one ``sleep_inhibit.unavailable`` warning. Each test checks that no socket stays open and that
-the garbage collector finds no unclosed socket (``ResourceWarning``).
-
-The second part checks that ``acquire`` / ``release`` / ``close`` stay correct when their
-caller is cancelled: the operating-system lock is freed exactly when the count reaches zero,
-never before, and a freeing that is still running never overlaps a new take.
-"""
+"""Sleep inhibit under failure: bad bus addresses and peers, raising backends, cancellation."""
 
 from __future__ import annotations
 
@@ -47,11 +36,7 @@ linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Li
 AF_UNIX: int = vars(socket).get("AF_UNIX", 0)
 
 
-# --------------------------------------------------------------------------- leak checks
-
-
 def _sockets() -> dict[int, str]:
-    """The open file descriptors of this process that are sockets."""
     found: dict[int, str] = {}
     for name in os.listdir("/proc/self/fd"):
         try:
@@ -82,7 +67,6 @@ def _warnings(bus_events: list[object]) -> list[AppWarningEvent]:
 
 
 async def _acquire_on(address: str) -> tuple[SleepInhibitor, InhibitState, list[object]]:
-    """Both Linux backends on one bus ``address``; acquire, close, return what happened."""
     bus = EventBus()
     sub = bus.subscribe()
     inhibitor = SleepInhibitor(
@@ -98,8 +82,6 @@ async def _acquire_on(address: str) -> tuple[SleepInhibitor, InhibitState, list[
         events.append(event)
     return inhibitor, state, events
 
-
-# --------------------------------------------------------------------------- bad addresses
 
 MALFORMED = [
     pytest.param("unix:path=%zz", id="bad-escape"),
@@ -128,7 +110,7 @@ async def test_unusable_bus_address_is_unavailable_never_an_exception(address: s
 
 
 #: The environment is read the same way for every address: the ones that raised ValueError
-#: in the review (a bad escape, a NUL byte) and one without a transport.
+#: (a bad escape, a NUL byte) and one without a transport.
 MALFORMED_ENV = [
     p for p in MALFORMED if p.id in {"bad-escape", "escape-not-utf8", "nul-in-path", "no-transport"}
 ]
@@ -139,7 +121,6 @@ MALFORMED_ENV = [
 async def test_default_inhibitor_with_malformed_environment(
     monkeypatch: pytest.MonkeyPatch, address: str
 ) -> None:
-    """The case of the review: every queued job failed with "Internal error: ValueError"."""
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", address)
     monkeypatch.setenv("DBUS_SYSTEM_BUS_ADDRESS", address)
     bus = EventBus()
@@ -160,9 +141,6 @@ def test_parse_address_rejects_bad_escapes_with_value_error() -> None:
     for address in ("unix:path=%zz", "unix:path=%ff", "unix:abstract=%0"):
         with pytest.raises(ValueError, match="malformed D-Bus address"):
             dbus.parse_address(address)
-
-
-# --------------------------------------------------------------------------- bad peers
 
 
 Peer = Callable[[socket.socket], None]
@@ -214,15 +192,12 @@ def _hello(conn: socket.socket, buf: bytearray) -> None:
 
 
 def _retyped(message: bytes, code: int) -> bytes:
-    """``message`` whose first header field (a string) gets the field code ``code``: a field
-    with the wrong type, for example ``REPLY_SERIAL`` or ``UNIX_FDS`` as a string."""
     data = bytearray(message)
     data[16] = code
     return bytes(data)
 
 
 def _string_field_reply(code: int, reply_serial: int | None) -> bytes:
-    """A reply whose field ``code`` is the string ``"x"``."""
     fields: list[tuple[int, str | int]] = [(dbus.FIELD_SENDER, "x")]
     if reply_serial is not None:
         fields.append((dbus.FIELD_REPLY_SERIAL, reply_serial))
@@ -359,7 +334,6 @@ async def test_broken_bus_peer_is_unavailable_never_an_exception(peer: Peer) -> 
 @linux_only
 @pytest.mark.parametrize("peer", PEERS, ids=lambda p: p.__name__.removeprefix("peer_"))
 def test_broken_bus_peer_raises_only_the_documented_errors(peer: Peer) -> None:
-    """The client itself: OSError, DBusError or DBusProtocolError, and the socket is closed."""
     with (
         no_leaked_sockets(),
         bad_bus(peer) as address,
@@ -373,9 +347,6 @@ def test_broken_bus_peer_raises_only_the_documented_errors(peer: Peer) -> None:
             address=address,
             timeout=2.0,
         )
-
-
-# --------------------------------------------------------------------------- unexpected errors
 
 
 class Exploding:
@@ -415,14 +386,11 @@ async def test_a_free_that_raises_does_not_stop_the_others() -> None:
     second = Exploding(on="nothing")
     inhibitor = SleepInhibitor([first, second])
     assert await inhibitor.acquire("job") is InhibitState.ACTIVE
-    await inhibitor.release()  # no exception
+    await inhibitor.release()
     assert not first.held
     assert not second.held
     assert inhibitor.state is InhibitState.INACTIVE
     await inhibitor.close()
-
-
-# --------------------------------------------------------------------------- cancellation
 
 
 class Gated:
@@ -471,7 +439,6 @@ async def test_cancelled_release_keeps_the_lock_until_the_free_is_done(how: str)
     ending.cancel()
     with pytest.raises(asyncio.CancelledError):
         await ending
-    # A new holder now: it must wait until the free is done, never overlap it.
     later = asyncio.ensure_future(inhibitor.acquire("b"))
     await asyncio.sleep(0.05)
     assert backend.calls == ["hold", "held", "free"]
@@ -510,9 +477,6 @@ async def test_acquire_cancelled_while_waiting_for_another_leaves_no_count() -> 
     await inhibitor.release()
     assert not backend.holding
     assert backend.calls == ["hold", "held", "free", "freed"]
-
-
-# --------------------------------------------------------------------------- cancelled backends
 
 
 class SlowConnection:
@@ -649,9 +613,7 @@ def _held_backends(inhibitor: SleepInhibitor) -> tuple[str, ...]:
 
 
 async def test_take_cut_short_by_loop_shutdown_keeps_what_it_holds_until_close() -> None:
-    """When the event loop shuts down it cancels every task, also the inhibitor's own: the
-    count is undone, the locks already taken stay listed (and are not taken twice), and
-    close() frees them."""
+    """A cancelled take undoes its count, keeps the locks it took, and close() frees them."""
     first = Gated()
     second = Gated()
     second.name = "second"
