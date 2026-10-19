@@ -216,7 +216,7 @@ def test_filter_chain_for_a_config() -> None:
     assert all(i.combed_only == "deint=interlaced" for i in deinterlace.implementations)
 
 
-def test_containers_answer_the_c8_questions() -> None:
+def test_containers_answer_the_validation_questions() -> None:
     c = load_definitions().containers
     assert c["mkv"].video.can_copy("vc1")
     assert c["mp4"].audio.can_copy("truehd")

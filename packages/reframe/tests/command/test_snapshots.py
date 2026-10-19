@@ -188,8 +188,6 @@ def webm_truehd_falls_back_to_opus() -> Case:
     src = recorded("truehd-atmos")
     job = draft(src, container="webm", audio="passthru", audio_encoder="libopus",
                 video={"encoder": "libsvtav1"})  # fmt: skip
-    job.audio[1].encoder = None  # no fallback named: AAC, which WebM cannot hold
-    job.audio[1].encoder = "libopus"
     return plain(job, src)
 
 

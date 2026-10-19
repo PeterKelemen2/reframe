@@ -35,7 +35,7 @@ def test_unknown_fields_are_rejected() -> None:
         )
 
 
-def test_every_video_encoder_of_the_m2_contract_is_defined() -> None:
+def test_exactly_the_supported_video_encoders_are_defined() -> None:
     expected = {
         "libx264",
         "libx265",
