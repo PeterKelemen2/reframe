@@ -1,24 +1,10 @@
-"""Safe file names (03 §Output naming → Safe file names; C-16).
+"""Safe file names. Pure: no file-system access.
 
-Windows rules apply on every OS, because files move between systems:
-
-- The characters ``< > : " / \\ | ? *`` and control characters are replaced (table
-  :data:`REPLACEMENTS`; ``": "`` becomes ``" - "``, so ``Mission: Impossible`` reads
-  ``Mission - Impossible``).
-- A byte that is not UTF-8 (a POSIX file name such as ``bad\\xffname.mkv``, which Python
-  holds as the lone surrogate ``\\udcff``) becomes ``�`` (U+FFFD), as a UTF-8 decoder shows
-  it: such a name cannot be written on Windows, in JSON or on most other file systems.
-- Reserved device names (``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM0`` to ``COM9``,
-  ``LPT0`` to ``LPT9``, also with an extension: ``CON.mkv``) get a ``_`` (``CON_.mkv``).
-- Trailing dots and spaces are removed (and leading spaces).
-- Each path part is at most 255 bytes (UTF-8, which is what ``os.fsencode`` writes once the
-  text has no surrogates). The file part keeps room for the ``.part`` that the queue inserts
-  while it writes (``<name>.part.<ext>``, 03 §Queue). ``{sub_title}`` is shortened first, then
-  ``{main_title}``; then the part is cut. The limit holds after every change (the ``_`` of a
-  reserved name included).
-- An empty file part falls back to ``{file_name}``; an empty folder part is dropped.
-
-Pure: no file-system access.
+Windows rules apply on every OS, because files move between systems. Each path part is at most
+255 bytes of UTF-8, the size ``os.fsencode`` writes once the text has no surrogates. The file
+part keeps room for the ``.part`` suffix that the queue inserts while it writes, so the name
+still fits after the rename. The limit holds after every change, including the ``_`` that a
+reserved name gets.
 """
 
 from __future__ import annotations
@@ -41,7 +27,7 @@ __all__ = [
 ]
 
 MAX_PART_BYTES = 255
-#: The queue writes ``<name>.part.<ext>`` and renames it when the job succeeds.
+#: Inserted before the extension of a partial output file (``<name>.part.<ext>``).
 PARTIAL_SUFFIX = ".part"
 #: Characters Windows does not allow in a file name, and what replaces them.
 REPLACEMENTS = {
@@ -133,7 +119,6 @@ def _cut(text: str, limit: int) -> str:
 
 
 def _tidy(text: str) -> str:
-    """Leading spaces, trailing dots and spaces removed."""
     return text.lstrip(" ").rstrip(". ")
 
 
@@ -148,7 +133,7 @@ def _shorten(pieces: list[Piece], limit: int) -> tuple[list[Piece], list[str]]:
             if _size(_join(pieces)) <= limit:
                 return pieces, shortened
             # Cut by the excess of the untidied text: the piece may hold the trailing dots
-            # that the tidied text no longer counts.
+            # that the tidied text does not count.
             excess = _size("".join(piece.text for piece in pieces)) - limit
             piece = pieces[index]
             text = _cut(piece.text, _size(piece.text) - excess).rstrip(" ._-")
@@ -176,7 +161,7 @@ def sanitize_segments(
     """Make the rendered path parts safe. The last segment is the file name; ``extension``
     (without the dot) is added to it. ``fallback`` is ``{file_name}``.
 
-    Returns the path parts and the notes (what was changed, for :class:`NameResult`).
+    Returns the path parts and the notes of what was changed.
     """
     notes: list[str] = []
     replaced: list[str] = []

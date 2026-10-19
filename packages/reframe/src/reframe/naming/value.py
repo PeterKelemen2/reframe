@@ -1,16 +1,12 @@
-"""One value template rendered with the naming variables (03 §Tags: "Tag fields can use the same
-variables as Output naming"; C-16).
+"""One value template rendered with the naming variables, for example ``{name}< - S{season:02}>``.
 
-:func:`render_value` fills a template such as ``{name}< - S{season:02}E{episode:02}>`` with the
-values that output naming computes for the job's source (the parsed release name, the job's
-codecs and languages, the output size …). It is what the command builder (C-7) writes as a
-tag value and what an in-place metadata edit (C-13) writes as the container title. Unlike a
-file name, the text is not made safe for a file system: a ``/`` stays a ``/``.
+:func:`render_value` fills the template with the values that output naming computes for the
+job's source. Unlike a file name, the text is not made safe for a file system: a ``/`` stays a
+``/``.
 
-Pure by default: without ``fs`` no folder is listed and no file time is read (``{source}``
-from a folder name that needs a listing falls back as naming does when a folder cannot be
-read, and ``{modification-date}`` is empty); without ``now`` the variables ``{date}`` and
-``{time}`` are empty. A template with errors is returned as typed.
+Pure by default: without ``fs`` no folder is listed and no file time is read, and without
+``now`` the variables ``{date}`` and ``{time}`` are empty. A template with errors is returned as
+typed.
 """
 
 from __future__ import annotations
@@ -63,10 +59,9 @@ def render_value(
     root: Path | None = None,
     definitions: Definitions | None = None,
 ) -> str:
-    """``template`` with the naming variables of ``job`` (and its probed ``source``) filled
-    in (see the module doc).
+    """``template`` with the naming variables of ``job`` (and its probed ``source``) filled in.
 
-    :param options: the effective naming options (the preset's, else Settings → Output);
+    :param options: the effective naming options (the preset's, else the output settings);
         ``None`` = the defaults. The job's own name source and per-file field overrides win.
     :param output_size: the scaled size of the output picture (``{width}``, ``{resolution}``).
     :param now: the time of ``{date}`` and ``{time}``; ``None`` leaves them empty.

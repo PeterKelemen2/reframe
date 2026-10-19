@@ -1,9 +1,7 @@
 """The file-system reads of output naming, behind one small interface that tests replace.
 
-Naming reads the file system twice, and both reads are optional: the folder listing (season
-pack detection) and the file times (``{modification-date}``, and ``{creation-date}`` when the
-container has no ``creation_time``). A missing file or an unreadable folder gives ``None``,
-never an exception: ``reframe name`` works on paths that do not exist.
+Both reads are optional: the folder listing (season-pack detection) and the file times. A
+missing file or an unreadable folder gives ``None``, never an exception.
 """
 
 from __future__ import annotations
