@@ -497,7 +497,7 @@ def test_chapter_plans() -> None:
         edges = plan(start=start, duration=duration)
         assert edges.map_from == ChapterPlan.FROM_FILE
         assert edges.file is not None
-        assert "Opening" not in edges.file.content or start == 0
+        assert ("Opening" in edges.file.content) == (start == 0)
     cut = plan(start=1.0, duration=3.0).file
     assert cut is not None
     assert cut.content == ffmetadata([(0.0, 1.5, "Part One"), (1.5, 3.0, "Part Two")])
