@@ -1,42 +1,6 @@
-"""ffprobe JSON → :class:`~reframe.models.MediaSource` (C-3). Pure: no I/O.
+"""ffprobe JSON → :class:`~reframe.models.MediaSource`. Pure: no I/O.
 
-Input is the output of ``ffprobe -v error -of json -show_format -show_streams -show_chapters
--show_programs`` (:func:`reframe.probe.ffprobe.probe_argv`) and, optionally, the first frame of
-the main video stream (``-show_frames -read_intervals %+#5``) for HDR side data.
-
-Rules (see also the ``reframe.models.media`` docstrings):
-
-- Streams with ``disposition.attached_pic`` are cover art (:class:`AttachedPicture`), never
-  video tracks. ``type_index`` counts every stream of the same ffprobe ``codec_type`` (cover
-  art included), so it matches FFmpeg's ``0:v:N`` stream specifier.
-- ``codec_type`` ``attachment`` → :class:`Attachment` (``size`` = ``extradata_size``, the
-  attached file's size); ``data`` and unknown types → :class:`DataStream`. A video stream
-  without a frame size also becomes a data stream (with a warning).
-- Frame rates: ``0/0`` is unknown (``None``). VFR: ``r_frame_rate`` and ``avg_frame_rate``
-  differ by more than 0.5 % (an exact 2:1 field-rate ratio on interlaced video does not
-  count). In Matroska an unknown average means the file has no default frame duration, which
-  FFmpeg writes only for constant frame rate (testdata/README.md, "VFR in Matroska"), so
-  there an unknown average with a known base rate counts as VFR. A known average is **not**
-  proof of CFR in Matroska: the demuxer takes both rates from ``DefaultDuration``, which
-  mkvmerge always writes (a VFR file remuxed by mkvmerge shows ``r = avg = 29999/500``). So
-  for Matroska the frame rate from the (plausible) statistics tags, ``NUMBER_OF_FRAMES`` /
-  ``DURATION``, is compared with the average (VFR if they differ by more than 1 %); without
-  those tags the stream is *undecided* (:func:`vfr_undecided`) and the prober asks MediaInfo
-  (``FrameRate_Mode``) or samples packet timestamps.
-- Statistics tags that fail :func:`reframe.probe.bitrate.check_stats_tags` (stale tags copied
-  by a re-encode) are not used for the bit rate, frame count, event count or VFR check; the
-  source gets a warning.
-- ``delay`` = ``start_time`` minus the main video stream's ``start_time`` (else the container's
-  ``start_time``), rounded to microseconds.
-- ``field_order``: ``tt`` / ``tb`` → top field first, ``bb`` / ``bt`` → bottom field first.
-- Durations: the stream's ``duration``, else the Matroska ``DURATION`` tag; the container's
-  ``duration``, else ``None`` with a warning.
-- Rotation: the ``Display Matrix`` side data (ffprobe prints degrees counter-clockwise, so
-  ``-90`` is a 90° clockwise rotation), or the old ``rotate`` tag (clockwise).
-- ``unknown`` / ``unspecified`` colour values, ``profile`` ``unknown`` and ``level`` ``-99``
-  are ``None``.
-- Event counts of subtitles: the Matroska ``NUMBER_OF_FRAMES`` statistics tag.
-- HDR from the frames: the first frame that has side data (or the first frame).
+Expected problems become warnings on the source, not exceptions.
 """
 
 from __future__ import annotations
@@ -136,9 +100,6 @@ _FIELD_ORDERS: Mapping[str, FieldOrder] = {
 }
 
 
-# --------------------------------------------------------------------------- small helpers
-
-
 def _text(value: Any) -> str | None:
     if value is None or isinstance(value, (dict, list)):
         return None
@@ -178,7 +139,7 @@ def _tags(raw: Any) -> dict[str, str]:
 
 
 def parse_rational(value: Any) -> Rational | None:
-    """``"24000/1001"`` or ``"32:27"`` → ``Rational``; ``0/0``, ``0:1``, junk → ``None``."""
+    """Parse ffprobe's ``num/den`` (or ``num:den``) text; zero, negative and junk give ``None``."""
     text = _text(value)
     if text is None:
         return None
@@ -307,7 +268,7 @@ def _is_ratio(ratio: float, target: float, tolerance: float) -> bool:
 
 
 def _vfr_decision(stream: Mapping[str, Any], ctx: _Context) -> bool | None:
-    """VFR from the stream's own data; ``None`` = undecided (see the module doc)."""
+    """VFR from the stream's own data; ``None`` when undecided (see :func:`vfr_undecided`)."""
     r_rate = parse_rational(stream.get("r_frame_rate"))
     avg_rate = parse_rational(stream.get("avg_frame_rate"))
     interlaced = _field_order(stream) in (FieldOrder.TOP_FIRST, FieldOrder.BOTTOM_FIRST)
@@ -359,11 +320,11 @@ def vfr_undecided(data: Mapping[str, Any]) -> list[int]:
 
 
 def vfr_from_timestamps(pts: Sequence[float]) -> bool | None:
-    """VFR from a sample of packet timestamps (seconds, any order); ``None`` if too few.
+    """VFR from a sample of packet timestamps in seconds (any order); ``None`` when there are
+    too few.
 
-    Matroska timestamps are rounded to milliseconds, so 23.976 fps shows 41 and 42 ms steps.
-    A step counts as different when it is more than max(2.5 ms, 10 %) away from the median
-    step; VFR when more than 5 % of the steps are different (one dropped frame is not VFR).
+    A step is different when it is more than max(2.5 ms, 10 %) away from the median step. VFR
+    when more than 5 % of the steps are different, so one dropped frame is not VFR.
     """
     ordered = sorted(pts)
     steps = [b - a for a, b in pairwise(ordered) if b - a > 0]
@@ -407,7 +368,6 @@ def _common(
         "codec_long": _text(stream.get("codec_long_name")),
         "profile": _text(stream.get("profile")),
         "language": _language(tags, warnings, index),
-        # MP4/MOV track titles come from the mov demuxer as "name" (testdata/README.md, C-7).
         "title": _text(tag_value(tags, "title")) or _text(tag_value(tags, "name")),
         "disposition": _disposition(stream.get("disposition")),
         "start_time": start,
@@ -416,9 +376,6 @@ def _common(
         "frame_count": _frame_count(stream, tags, ctx.stats.trusted(index)),
         "tags": tags,
     }
-
-
-# --------------------------------------------------------------------------- streams
 
 
 def _video(
@@ -532,9 +489,6 @@ def _data(stream: Mapping[str, Any]) -> DataStream:
     )
 
 
-# --------------------------------------------------------------------------- container
-
-
 def _creation_time(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -604,9 +558,6 @@ def layout_hash(source: MediaSource) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-# --------------------------------------------------------------------------- entry point
-
-
 def parse_ffprobe(
     data: Mapping[str, Any],
     path: Path,
@@ -623,8 +574,7 @@ def parse_ffprobe(
         data when the stream has none.
     :param warnings: problems found before parsing (for example "the frame side data could not
         be read"); the parser adds its own.
-    :raises pydantic.ValidationError: only for output that no ffprobe produces (the caller
-        turns it into a probe error).
+    :raises pydantic.ValidationError: only for output that no ffprobe produces.
     """
     notes: list[str] = list(warnings)
     fmt_raw = data.get("format")

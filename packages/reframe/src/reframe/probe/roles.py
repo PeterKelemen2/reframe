@@ -1,36 +1,8 @@
-"""Track roles (C-3, 03 §Audio "Role badges", 03 §Subtitles).
+"""Track roles from evidence: disposition flags, then title keywords, then a structural heuristic.
 
-Evidence, strongest first; a role is given once, by the strongest evidence that finds it:
-
-1. **flag**: disposition flags. Audio: ``comment`` → commentary, ``visual_impaired`` /
-   ``descriptions`` → description, ``clean_effects`` (music and effects, no dialogue) → music.
-   Subtitles: ``forced`` → forced, ``hearing_impaired`` / ``captions`` → SDH, ``comment`` →
-   commentary, ``descriptions`` → description.
-2. **title**: keywords in the track title, as whole words, case-insensitive (so ``AD`` does
-   not match ``Leader``). Exceptions: the two-letter acronyms ``AD`` and ``CC`` must be upper
-   case, because ``ad`` and ``cc`` are ordinary words or abbreviations in titles such as
-   ``Ad Astra``; Japanese keywords (no spaces between words) and German compound parts
-   (``kommentar`` in ``Audiokommentar``, ``deskription``, ``hörfilm``) match as substrings;
-   ``forced`` does not match after ``non``, ``non-`` or ``not`` (``Non-Forced``,
-   ``Full (not forced)``).
-3. **heuristic**: the structure of the file.
-
-   - Audio: an **untitled** track with at most 2 channels and a known bit rate ≤ 192 kb/s,
-     not ``default``, that comes after a multichannel track in the same language → possible
-     commentary. A titled track without a keyword is left alone: its title says what it is
-     (``English Stereo (compatibility)``, ``Original Mono Mix``).
-   - Subtitles: a track whose event count is ≤ 25 % of the largest event count of another
-     track in the same language → possible forced track (03: "a low count relative to other
-     tracks in the same language suggests a forced track"). A track with 0 events is empty,
-     not forced.
-
-Every audio or subtitle track without any of those roles gets ``main`` (a regular track; C-12
-selectors use ``roles=[main]``): evidence ``flag`` when it has the ``default`` disposition,
-else ``heuristic``.
-
-Languages are compared case-insensitively on the raw tags (``eng`` = ``ENG``); ``und`` and a
-missing tag never match. ``reframe.languages`` (C-6) is not used here: this module must not
-depend on it.
+A role is given once, by the strongest evidence that finds it. An audio or subtitle track without
+any role gets ``main``. Languages are compared case-insensitively; ``und`` and a missing tag never
+match. It must not import :mod:`reframe.languages`.
 """
 
 from __future__ import annotations
@@ -77,7 +49,7 @@ class Keyword:
     substring: bool = False
     """Match anywhere (Japanese, which has no spaces between words; German compounds)."""
     not_after: tuple[str, ...] = ()
-    """No match right after one of these (``("non", "non-", "not ")`` for ``forced``)."""
+    """No match right after one of these prefixes."""
 
     def pattern(self) -> re.Pattern[str]:
         body = r"[\s_.\-]+".join(re.escape(word) for word in self.text.split())
@@ -98,7 +70,7 @@ _COMMENTARY = [
         "kommentár",
     )
 ] + [
-    Keyword("kommentar", TrackRole.COMMENTARY, substring=True),  # Audiokommentar, Regie…
+    Keyword("kommentar", TrackRole.COMMENTARY, substring=True),
     Keyword("コメンタリー", TrackRole.COMMENTARY, substring=True),
 ]
 _NOT_FORCED = ("non", "non-", "non ", "not ", "not-")
@@ -109,8 +81,8 @@ AUDIO_KEYWORDS: Sequence[Keyword] = (
     Keyword("audio description", TrackRole.DESCRIPTION),
     Keyword("descriptive", TrackRole.DESCRIPTION),
     Keyword("described", TrackRole.DESCRIPTION),
-    Keyword("deskription", TrackRole.DESCRIPTION, substring=True),  # Audiodeskription
-    Keyword("hörfilm", TrackRole.DESCRIPTION, substring=True),  # Hörfilmfassung
+    Keyword("deskription", TrackRole.DESCRIPTION, substring=True),
+    Keyword("hörfilm", TrackRole.DESCRIPTION, substring=True),
     Keyword("AD", TrackRole.DESCRIPTION, case_sensitive=True),
     Keyword("music only", TrackRole.MUSIC),
     Keyword("isolated score", TrackRole.MUSIC),
@@ -136,9 +108,6 @@ def _pattern(keyword: Keyword) -> re.Pattern[str]:
     if pattern is None:
         pattern = _PATTERNS[keyword] = keyword.pattern()
     return pattern
-
-
-# --------------------------------------------------------------------------- evidence
 
 
 def audio_flag_roles(disposition: Disposition) -> list[TrackRoleInfo]:
@@ -222,9 +191,6 @@ def _main(disposition: Disposition, what: str) -> TrackRoleInfo:
     return TrackRoleInfo(
         role=TrackRole.MAIN, evidence=RoleEvidence.HEURISTIC, detail=f"no {what} evidence"
     )
-
-
-# --------------------------------------------------------------------------- assignment
 
 
 def assign_audio_roles(streams: Sequence[AudioStream]) -> None:

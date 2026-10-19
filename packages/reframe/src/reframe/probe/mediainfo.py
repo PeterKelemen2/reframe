@@ -1,29 +1,9 @@
-"""MediaInfo enrichment (C-3). Optional.
+"""MediaInfo enrichment, optional: bit rates, BCP 47 languages and CFR / VFR modes that ffprobe
+does not give. Without a loadable pymediainfo library nothing is added (``language_ietf`` stays
+``None``).
 
-What it adds to a probe:
-
-- **bit rates** that ffprobe and the statistics tags do not give (step 3 of the bitrate chain);
-- **``language_ietf``**: the BCP 47 language tag (Matroska ``LanguageIETF``), which ffprobe
-  does not show (after ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``, MediaInfo
-  ``pt-BR``);
-- **``FrameRate_Mode``** (``CFR`` / ``VFR``) for the Matroska streams whose VFR state
-  ffprobe's output cannot tell (:func:`reframe.probe.parse.vfr_undecided`).
-
-Probing uses the **pymediainfo library** (decision 0007): ``pymediainfo`` must import and its
-MediaInfo library must load (``MediaInfo.can_parse()``). The ``pymediainfo`` 7 wheels bundle
-``libmediainfo``, so with the ``[mediainfo]`` extra it works without a system MediaInfo. The
-``mediainfo`` entry of tool discovery (the CLI, ``REFRAME_MEDIAINFO``, Settings → Tools) is for
-diagnostics only; it does not change probing. Without the library, ``language_ietf`` stays
-``None`` and the other two steps are skipped.
-
-Tracks are matched to ffprobe streams by MediaInfo's ``StreamOrder`` (the stream's position in
-the file, the same number as ffprobe's ``index`` for Matroska and MP4) and the track type
-(``Video`` ↔ video, ``Audio`` ↔ audio, ``Text`` ↔ subtitle). A ``StreamOrder`` that is not a
-plain number of ASCII digits (MPEG-TS programs: ``0-1``; ``²``, Arabic-Indic ``٣`` or
-full-width ``\\uff13``, which ``str.isdigit()`` accepts) is not matched. A bit rate is read from
-ASCII digits only, too.
-
-The library call blocks, so :func:`read_mediainfo` is run in a worker thread by the caller.
+Tracks match ffprobe streams by ``StreamOrder`` (the same number as ffprobe's ``index``) and by
+track type.
 """
 
 from __future__ import annotations
@@ -45,6 +25,8 @@ __all__ = [
     "track_data",
 ]
 
+# [0-9], not \d: \d matches other scripts' digits too. MediaInfo writes ``0-1`` for MPEG-TS
+# programs, which no pattern here matches.
 _FIRST_INT = re.compile(r"[0-9]+")
 _STREAM_ORDER = re.compile(r"[0-9]+")
 _LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
@@ -95,7 +77,7 @@ def mediainfo_available() -> bool:
 
 
 def mediainfo_version() -> str | None:
-    """``pymediainfo 7.0.1, libmediainfo 25.04`` (part of the probe cache identity)."""
+    """The pymediainfo and libmediainfo versions, or ``None`` when MediaInfo is not available."""
     library = _library()
     return None if library is None else library[1]
 
@@ -139,10 +121,11 @@ def track_data(tracks: Iterable[MediaInfoTrack]) -> MediaInfoData:
 
 
 def read_mediainfo(path: Path) -> MediaInfoData:
-    """Parse ``path`` with MediaInfo (blocking). Empty when MediaInfo is not available.
+    """Parse ``path`` with MediaInfo. Empty when MediaInfo is not available.
 
-    :raises Exception: whatever the library raises for an unreadable file; the caller turns
-        it into a warning.
+    Blocking: run it in a worker thread, not on the event loop.
+
+    :raises Exception: whatever the library raises for an unreadable file.
     """
     library = _library()
     if library is None:

@@ -1,35 +1,5 @@
-"""HDR metadata from ffprobe side data (C-3).
-
-Sources, in order:
-
-1. The stream's ``side_data_list`` (``-show_streams``): Matroska ``Colour`` /
-   ``MasteringMetadata`` elements, the MP4 ``mdcv`` / ``clli`` boxes, and the Dolby Vision
-   configuration record (``dvcC`` / ``dvvC``, Matroska ``BlockAdditionMapping``).
-2. If the stream has no mastering display or content light level data, the **first frame's**
-   ``side_data_list`` (``-show_frames -read_intervals %+#1``): a single-pass x265 encode has
-   the HDR10 metadata only in SEI messages (testdata/README.md, "HDR10 with libx265").
-   HDR10+ dynamic metadata exists only per frame, so it is only found there.
-
-Side-data type names (``side_data_type``) and field names, confirmed by a byte search in the
-pinned n9.0.2 build (``testdata/probes/README.md``):
-
-- ``Mastering display metadata`` (libavcodec, libavutil): ``red_x`` … ``white_point_y``,
-  ``min_luminance``, ``max_luminance`` as ``"num/den"`` strings.
-- ``Content light level metadata``: ``max_content``, ``max_average`` (integers).
-- ``DOVI configuration record`` (libavcodec): ``dv_version_major``, ``dv_version_minor``,
-  ``dv_profile``, ``dv_level``, ``rpu_present_flag``, ``el_present_flag``,
-  ``bl_present_flag``, ``dv_bl_signal_compatibility_id``, ``dv_md_compression`` (ffprobe).
-- HDR10+: ``HDR Dynamic Metadata SMPTE2094-40 (HDR10+)`` (frame, libavutil) and
-  ``HDR10+ Dynamic Metadata (SMPTE 2094-40)`` (packet/stream, libavcodec).
-
-Format rules:
-
-- **HDR10**: transfer ``smpte2084`` (PQ), or no known transfer but static HDR metadata
-  (mastering display or content light level). Not for Dolby Vision profile 5 (no HDR10 base
-  layer).
-- **HLG**: transfer ``arib-std-b67``.
-- **HDR10+**: SMPTE 2094-40 side data.
-- **Dolby Vision**: a DOVI configuration record (the profile comes from it).
+"""HDR metadata from ffprobe side data, read from the stream and, where it has none, from the
+first frame.
 """
 
 from __future__ import annotations
@@ -83,7 +53,7 @@ _MASTERING_FIELDS = {
 
 
 def _number(value: Any) -> float | None:
-    """``"17/25"``, ``"1000/1"``, ``0.68``, ``1000`` → float; anything else → ``None``."""
+    """A number as ffprobe prints it: a plain number or a ``num/den`` string; else ``None``."""
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -122,7 +92,7 @@ def _mastering(entry: Mapping[str, Any] | None) -> MasteringDisplay | None:
     for field, key in _MASTERING_FIELDS.items():
         number = _number(entry.get(key))
         if number is None:
-            return None  # ffprobe prints all ten, or none if a part is missing
+            return None  # ffprobe prints all the fields, or none if a part is missing
         values[field] = number
     if values["min_luminance"] < 0 or values["max_luminance"] < 0:
         return None
@@ -164,7 +134,7 @@ def needs_frame_side_data(stream: Mapping[str, Any], bit_depth: int | None) -> b
     HDR metadata, or HDR10+ (only in frames) is possible.
 
     True for a PQ or HLG transfer, and for a 10-bit (or deeper) stream with BT.2020 primaries
-    or matrix whose transfer is unknown (one-pass x265 writes no transfer, only SEI).
+    or matrix whose transfer is unknown.
     """
     transfer = stream.get("color_transfer")
     if transfer == PQ:
@@ -181,9 +151,8 @@ def needs_frame_side_data(stream: Mapping[str, Any], bit_depth: int | None) -> b
 
 
 def parse_hdr(stream: Mapping[str, Any], frame: Mapping[str, Any] | None = None) -> HdrInfo | None:
-    """HDR info of one video stream (``None`` for SDR, even when the stream carries mastering
-    display or light level data with an SDR transfer: such metadata describes nothing that
-    Reframe acts on, and the model contract is "``None`` for SDR").
+    """HDR info of one video stream, or ``None`` for SDR (even with static metadata on an SDR
+    transfer).
 
     ``frame`` is the first frame of this stream from ``-show_frames`` (or ``None``). Static
     metadata comes from the stream when it has any, else from the frame (``source="frame"``).
@@ -217,7 +186,7 @@ def parse_hdr(stream: Mapping[str, Any], frame: Mapping[str, Any] | None = None)
     if dovi is not None:
         formats.append(HdrFormat.DOLBY_VISION)
 
-    if not formats:  # SDR: static metadata on an SDR transfer is ignored (contract: None)
+    if not formats:  # SDR: static metadata on an SDR transfer is ignored
         return None
     return HdrInfo(
         formats=formats,
