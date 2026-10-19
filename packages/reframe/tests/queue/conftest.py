@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -57,6 +57,29 @@ class RecordingBus(EventBus):
     def publish(self, event: Event) -> None:
         self.published.append(event)
         super().publish(event)
+
+
+def of_job(events: Iterable[Event], job_id: str) -> list[Event]:
+    return [e for e in events if getattr(e, "job_id", None) == job_id]
+
+
+def state_changes(events: Iterable[Event]) -> list[tuple[str | None, str]]:
+    """``(previous, state)`` of each ``job.state`` event."""
+    return [
+        (None if e.previous is None else e.previous.value, e.state.value)
+        for e in events
+        if e.type == "job.state"
+    ]
+
+
+def event_kinds(events: Iterable[Event]) -> list[str]:
+    """The event types with repeats of progress and log collapsed."""
+    kinds: list[str] = []
+    for event in events:
+        if kinds and kinds[-1] == event.type and event.type in ("job.progress", "job.log"):
+            continue
+        kinds.append(event.type)
+    return kinds
 
 
 async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
@@ -250,26 +273,16 @@ class Harness:
         return self.fake.kill_leftovers()
 
     def events_of(self, job_id: str) -> list[Event]:
-        return [e for e in self.events.published if getattr(e, "job_id", None) == job_id]
+        return of_job(self.events.published, job_id)
 
     def of_type(self, type_: str) -> list[Event]:
         return [e for e in self.events.published if e.type == type_]
 
     def states(self, job_id: str) -> list[tuple[str | None, str]]:
-        return [
-            (None if e.previous is None else e.previous.value, e.state.value)
-            for e in self.events_of(job_id)
-            if e.type == "job.state"
-        ]
+        return state_changes(self.events_of(job_id))
 
     def kinds(self, job_id: str) -> list[str]:
-        """The job's event types with repeats of progress and log collapsed."""
-        kinds: list[str] = []
-        for event in self.events_of(job_id):
-            if kinds and kinds[-1] == event.type and event.type in ("job.progress", "job.log"):
-                continue
-            kinds.append(event.type)
-        return kinds
+        return event_kinds(self.events_of(job_id))
 
     def log_text(self, job_id: str) -> str:
         return self.queue.log_path(job_id).read_text(encoding="utf-8")

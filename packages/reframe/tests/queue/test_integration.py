@@ -22,7 +22,7 @@ from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .conftest import draft, poll
+from .conftest import draft, event_kinds, of_job, poll, state_changes
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
@@ -59,21 +59,10 @@ class Real:
         return app
 
     def states(self, job_id: str) -> list[tuple[str | None, str]]:
-        return [
-            (None if e.previous is None else e.previous.value, e.state.value)
-            for e in self.published
-            if e.type == "job.state" and e.job_id == job_id
-        ]
+        return state_changes(of_job(self.published, job_id))
 
     def kinds(self, job_id: str) -> list[str]:
-        kinds: list[str] = []
-        for event in self.published:
-            if getattr(event, "job_id", None) != job_id:
-                continue
-            if kinds and kinds[-1] == event.type and event.type in ("job.progress", "job.log"):
-                continue
-            kinds.append(event.type)
-        return kinds
+        return event_kinds(of_job(self.published, job_id))
 
     async def until(self, condition: Callable[[], bool], limit: float = 60.0) -> None:
         await poll(condition, limit)
