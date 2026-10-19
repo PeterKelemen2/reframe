@@ -9,16 +9,19 @@ import asyncio
 import os
 import textwrap
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from reframe.models import JobState
 from reframe.queue import runner
+from reframe.queue.watchdog import StepWatch
+from reframe.tools import run_streaming
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule, tool_set
+from .conftest import Harness, encode_rule, queue_at, store_rows, tool_set
 from .test_in_place_scheduling import in_place_job
 
 pytestmark = pytest.mark.anyio
@@ -236,3 +239,179 @@ async def test_an_encode_is_still_killed_at_once(harness: Harness) -> None:
     assert ended.error is None
     assert "ended: stopped" in h.log_text(job.id)
     assert h.leftovers() == []
+
+
+class LateLimit(StepWatch):
+    """A step watch whose time limit fires only once :attr:`fire` is set (after the step's
+    process has exited)."""
+
+    fire = False
+
+    def tick(self, mono: float, cpu: float | None, *, paused: bool) -> Any:
+        if LateLimit.fire:
+            return "timeout"
+        return super().tick(mono, cpu, paused=paused)
+
+
+async def test_a_time_limit_after_the_edit_ended_does_not_cancel_the_job(
+    harness: Harness, gate: Gate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mkvpropedit exited 0; the step's time limit fires before the step's clean-up stops the
+    watchdog."""
+    h = harness
+    LateLimit.fire = False
+    monkeypatch.setattr(runner, "StepWatch", LateLimit)
+    real = run_streaming
+
+    async def late_limit(*args: Any, **kwargs: Any) -> Any:
+        result = await real(*args, **kwargs)
+        LateLimit.fire = True
+        await asyncio.sleep(0.3)  # several watchdog ticks (0.05 s) before the step's clean-up
+        return result
+
+    checked: list[bool] = []
+
+    def check(*args: Any, **kwargs: Any) -> list[str]:
+        checked.append(True)
+        return []
+
+    monkeypatch.setattr(runner, "run_streaming", late_limit)
+    monkeypatch.setattr(runner, "check_output", check)
+    gate.open()  # mkvpropedit ends at once, exit code 0
+    job = await h.queue.add(in_place_job(h))
+    h.queue.start()
+    [ended] = await h.queue.wait([job.id])
+    assert gate.finished.exists()
+    assert checked == [True]
+    assert (ended.state, ended.error) == (JobState.DONE, None)
+    assert ended.output_path == h.source_path
+    assert "Checking the edited source Movie.Source.mkv" in h.log_text(job.id)
+
+
+async def test_an_exit_0_that_came_with_the_time_limit_is_a_finished_edit(
+    harness: Harness, gate: Gate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``run_streaming`` reports ``cancelled`` when the token fired first, even if the process
+    then exited 0 on its own before the kill (``returncode`` 0): that edit is complete and is
+    checked."""
+    h = harness
+    real = run_streaming
+
+    async def raced(*args: Any, **kwargs: Any) -> Any:
+        result = await real(*args, **kwargs)
+        kwargs["cancel"].cancel("timeout")
+        return replace(result, cancelled=True)
+
+    monkeypatch.setattr(runner, "run_streaming", raced)
+    monkeypatch.setattr(runner, "check_output", lambda *args, **kwargs: [])
+    gate.open()
+    job = await h.queue.add(in_place_job(h))
+    h.queue.start()
+    [ended] = await h.queue.wait([job.id])
+    assert (ended.state, ended.error) == (JobState.DONE, None)
+    assert "ended: exit code 0" in h.log_text(job.id)
+
+
+def test_a_time_limit_is_never_reported_as_a_cancel(tmp_path: Path) -> None:
+    active = runner.ActiveJob(job_id="j")
+    active.stop("timeout")
+    plan: Any = None
+    outcome = runner._stopped_after_edit(active, tmp_path / "Show.mkv", plan, 1, 1)
+    assert outcome.state is JobState.FAILED
+    assert outcome.stop_reason == "timeout"
+    assert "when the job was cancelled" not in (outcome.error or "")
+    assert (outcome.error or "").startswith("The edit was already written to Show.mkv")
+    for reason, state in (("cancel", JobState.CANCELLED), ("close", JobState.INTERRUPTED)):
+        stopped = runner.ActiveJob(job_id="j")
+        stopped.stop(reason)  # type: ignore[arg-type]
+        assert runner._stopped_after_edit(stopped, tmp_path / "Show.mkv", plan, 1, 1).state is state
+
+
+async def test_an_event_loop_that_shuts_down_says_the_file_may_be_damaged(
+    harness: Harness, gate: Gate
+) -> None:
+    """What ``asyncio.run`` does when it ends with tasks left (a second Ctrl+C): it cancels
+    every task, the step's own run too, whose clean-up kills mkvpropedit."""
+    h = harness
+    job = await h.queue.add(in_place_job(h))
+    h.queue.start()
+    await h.wait_for(gate.started.exists)
+    await h.running_process(job.id)
+    me = asyncio.current_task()
+    others = [
+        task
+        for task in asyncio.all_tasks()
+        if task is not me and "TestRunner" not in getattr(task.get_coro(), "__qualname__", "")
+    ]
+    for task in others:
+        task.cancel()
+    await asyncio.gather(*others, return_exceptions=True)
+    gate.open()
+    damaged = (
+        "Reframe was shut down while mkvpropedit was editing Movie.Source.mkv in place: "
+        "mkvpropedit was stopped before it ended, so the file may be damaged."
+    )
+    log = h.log_text(job.id)
+    assert f"Step 1/1 ended: stopped. {damaged}" in log
+    assert "let finish" not in log
+    assert last_state(h, job.id) == ("interrupted", damaged)
+    assert not gate.finished.exists()  # it was killed
+
+
+async def test_a_restored_in_place_job_that_was_running_may_be_damaged(harness: Harness) -> None:
+    h = harness
+    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
+    edit = await h.queue.add(in_place_job(h))
+    encode = await h.queue.add(h.job("Encode"))
+    await h.queue.close()
+    rows = []
+    for added in (edit, encode):
+        stored = h.queue.get(added.id)
+        assert stored is not None
+        stored.state = JobState.RUNNING
+        stored.plan = h.plan(stored.settings)
+        rows.append(stored)
+    assert rows[0].plan is not None
+    assert rows[0].plan.job_type == "metadata_edit"
+    store_rows(h, *rows)
+    again = queue_at(h)
+    try:
+        errors = [job.error for job in again.list()]
+    finally:
+        await again.close()
+    assert errors == [
+        "Reframe stopped while the job was running. If mkvpropedit was editing "
+        "Movie.Source.mkv in place at that moment, the file may be damaged.",
+        "Reframe stopped while the job was running.",
+    ]
+
+
+def inhibit_held(h: Harness) -> bool:
+    return h.backend.held
+
+
+@pytest.mark.parametrize("stop", ["cancel", "close"])
+async def test_a_paused_edit_that_a_stop_resumes_is_shown_running(
+    harness: Harness, gate: Gate, stop: str
+) -> None:
+    h = harness
+    h.settings.queue.sleep_inhibit = True
+    job = await h.queue.add(in_place_job(h))
+    h.queue.start()
+    await h.wait_for(gate.started.exists)
+    process = await h.running_process(job.id)
+    await h.queue.pause(job.id)
+    assert h.queue.get(job.id).state is JobState.PAUSED  # type: ignore[union-attr]
+    assert not inhibit_held(h)
+    stopper = h.queue.cancel(job.id) if stop == "cancel" else h.queue.close()
+    stopping = asyncio.ensure_future(stopper)
+    await h.wait_for(lambda: stop_requested(h, job.id))
+    await h.wait_for(lambda: h.states(job.id)[-1] == ("paused", "running"))
+    assert process.status() != "stopped"  # it runs again …
+    assert inhibit_held(h)  # … and the machine does not sleep under it
+    gate.open()
+    await stopping
+    end = ("running", "cancelled") if stop == "cancel" else ("running", "interrupted")
+    assert h.states(job.id)[-3:] == [("running", "paused"), ("paused", "running"), end]
+    assert not inhibit_held(h)
+    assert gate.finished.exists()

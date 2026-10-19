@@ -18,13 +18,11 @@ from reframe.models import (
     QueueChangedEvent,
     QueueJob,
 )
-from reframe.platform.sleep import SleepInhibitor
-from reframe.queue import JobStateError, QueueService, UnknownJobError
-from reframe.queue.store import row_of
+from reframe.queue import JobStateError, UnknownJobError
 from reframe.service import ReframeClosedError
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule
+from .conftest import Harness, encode_rule, queue_at, store_rows
 
 pytestmark = pytest.mark.anyio
 
@@ -161,9 +159,8 @@ async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) ->
 
 async def test_pause_before_the_first_step(harness: Harness) -> None:
     h = harness
-    h.sources.delay = 0.2  # a slow probe: the job is still preparing
     added = await h.queue.add(h.job())
-    h.sources.delay = 0.2
+    h.sources.delay = 0.2  # a slow probe: the job is still preparing
     h.queue.start()
     await h.first_event(added.id, "job.state", state="running")
     await h.queue.pause()
@@ -307,7 +304,6 @@ async def test_cancel_all_cancels_waiting_jobs_too(harness: Harness) -> None:
     first = await h.queue.add(h.job("A"))
     third = await h.queue.add(h.job("C"))
     second = await h.queue.add(h.job("B"), position=2)
-    h.settings.queue.parallel_jobs = 2
     h.queue.start()
     await h.first_event(first.id, "job.progress", limit=20)
     await h.first_event(third.id, "job.progress", limit=20)
@@ -580,19 +576,6 @@ async def test_closed_queue(harness: Harness) -> None:
     assert await h.queue.wait() != []
 
 
-def queue_at(h: Harness) -> QueueService:
-    """A second queue on the same data folder (a restarted Reframe)."""
-    return QueueService(
-        h.events,
-        lambda: h.settings.model_copy(deep=True),
-        data_dir=h.tmp / "data",
-        tools=h.tools,
-        capabilities=h.caps,
-        sources=h.sources,
-        inhibitor=SleepInhibitor([], h.events),
-    )
-
-
 async def test_close_interrupts_running_jobs_and_restart_recovers(harness: Harness) -> None:
     h = harness
     job = h.job()
@@ -643,11 +626,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
     kept = h.queue.get(second.id)
     assert kept is not None
     kept.state = JobState.PAUSED
-    db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
-    for row in (row_of(stored), row_of(kept)):
-        db.execute(f"INSERT OR REPLACE INTO jobs VALUES ({', '.join('?' * len(row))})", row)
-    db.commit()
-    db.close()
+    store_rows(h, stored, kept)
     plan.output_tmp.write_text("half")
     for path in [*(f.path for f in plan.files), *plan.temp_files]:
         path.write_text("x")
@@ -663,9 +642,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
             if e.type == "job.state"
         ]
         assert restored == [("running", "interrupted"), ("paused", "interrupted")]
-        await asyncio.wait(again._background) if again._background else None
-        assert not plan.output_tmp.exists()
-        again.list()  # once only
+        await h.wait_for(lambda: not plan.output_tmp.exists())  # removed in the background
     finally:
         await again.close()
     db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
