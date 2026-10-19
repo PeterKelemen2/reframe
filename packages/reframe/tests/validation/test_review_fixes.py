@@ -194,9 +194,11 @@ def test_reserved_name_is_an_error_for_a_windows_path() -> None:
 
 def test_too_long_name_counts_the_partial_suffix() -> None:
     s = sc.base()
-    s.job.output.path = Path("/out") / ("é" * 124 + ".mkv")  # 248 bytes + .part.mkv
+    s.job.output.path = Path("/out") / ("é" * 124 + ".mkv")  # 252 bytes; .part.mkv: 257
     [issue] = [i for i in sc.check(s) if i.code == "output.name_too_long"]
     assert "partial file name" in issue.message
+    s.job.output.path = Path("/out") / ("é" * 123 + ".mkv")  # .part.mkv: 255 bytes
+    assert "output.name_too_long" not in codes(sc.check(s))
 
 
 @pytest.mark.parametrize("where", ["advanced", "filter"])
