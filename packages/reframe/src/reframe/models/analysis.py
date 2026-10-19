@@ -1,18 +1,8 @@
-"""Results of the analysis tasks (C-10): bitrate scan, subtitle scan, loudness measure.
+"""Results of the analysis tasks: a bitrate scan, a subtitle scan and a loudness measurement.
 
-Runtime models, never stored as documents. Each is the result of one background task
-(``Reframe.tasks.value(task_id)``; its JSON form is ``TaskInfo.result``):
-
-- ``Reframe.sources.bitrate_scan(path, stream_index)`` → :class:`BitrateScan` (the **Measure**
-  button of 03 §Audio);
-- ``Reframe.sources.subtitle_scan(path, stream_indexes)`` → :class:`SubtitleScan` (event
-  counts, forced events of PGS / VobSub);
-- ``Reframe.sources.loudness_scan(path, stream_index)`` → :class:`LoudnessMeasurement`.
-
-The measured values are also written into the probed source (``AudioStream.bitrate`` with
-``BitrateSource.MEASURED``; ``SubtitleStream.event_count`` with ``event_count_source=
-"measured"`` and ``forced_event_count``), in memory and in the probe cache, so later drafts and
-batch resolutions use them.
+Runtime models, never stored as documents. Each is the result of one background task (its
+JSON form is ``TaskInfo.result``). The measured values are also written into the probed
+source, so later drafts and batch resolutions use them.
 """
 
 from __future__ import annotations
@@ -28,7 +18,7 @@ __all__ = ["BitrateScan", "LoudnessMeasurement", "SubtitleScan", "SubtitleScanTr
 
 
 class BitrateScan(ReframeModel):
-    """A packet-size scan of one stream (05 §C-10: ``-show_entries packet=size``)."""
+    """A packet-size scan of one stream."""
 
     path: Path
     """The source file."""
@@ -51,13 +41,12 @@ class SubtitleScanTrack(ReframeModel):
     event_count: NonNegativeInt | None = None
     """Subtitle events (packets) in the track; ``None`` when it could not be counted."""
     forced_event_count: NonNegativeInt | None = None
-    """Events with the forced flag (a decode with ``forced_subs_only``): PGS and VobSub only;
-    ``None`` for other formats or when the decode failed."""
+    """Events with the forced flag: PGS and VobSub only; ``None`` for other formats or when the
+    decode failed."""
 
 
 class SubtitleScan(ReframeModel):
-    """Event counts of a source's subtitle tracks (03 §Subtitles: the *Events* column and the
-    forced-subtitle suggestion)."""
+    """Event counts of a source's subtitle tracks."""
 
     path: Path
     tracks: list[SubtitleScanTrack] = Field(default_factory=list)
@@ -66,8 +55,10 @@ class SubtitleScan(ReframeModel):
 
 
 class LoudnessMeasurement(ReframeModel):
-    """EBU R128 values of one audio track (``loudnorm=print_format=json``, the ``input_*``
-    keys). ``None`` where FFmpeg prints ``-inf`` / ``inf`` (a silent track)."""
+    """EBU R128 values of one audio track, measured by FFmpeg's ``loudnorm`` filter.
+
+    ``None`` where it prints ``-inf`` or ``inf`` (a silent track).
+    """
 
     path: Path
     stream_index: NonNegativeInt

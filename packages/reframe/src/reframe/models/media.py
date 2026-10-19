@@ -1,20 +1,9 @@
-"""A probed source file (C-3): container, streams, chapters, attachments.
+"""A probed source file: container, streams, chapters and attachments.
 
-``MediaSource`` is what ``reframe probe FILE --json`` prints and what the probe cache stores
-(so these are document models with ``schema_version``). C-3 fills it from
-``ffprobe -show_format -show_streams -show_chapters -show_programs`` plus enrichment.
-
-Conventions:
-
-- ``index`` is the **absolute stream index** in the file (ffprobe ``index``, the number in
-  ``-map 0:3``). ``type_index`` is the index among streams of the same type (``0:a:1``).
-- Times are seconds (float). Bit rates are bits per second.
-- ``start_time`` is ffprobe's raw ``start_time``: the timestamp of the stream's first packet
-  (an M2TS or a Blu-ray stream can start at 1.4 s or 600 s). ``delay`` is the start relative
-  to the main video stream (else the container start): this is the audio delay that the UI
-  shows, as mkvmerge and HandBrake do. Both are ``None`` when ffprobe does not say.
-- Attached pictures (cover art, ``disposition.attached_pic``) are **not** video tracks: they
-  are in :attr:`MediaSource.cover_art`, never in :attr:`MediaSource.video`.
+``MediaSource`` is what ``reframe probe FILE --json`` prints and what the probe cache stores; it
+has a ``schema_version``. Times are seconds and bit rates are bits per second. Attached
+pictures (cover art, ``disposition.attached_pic``) are not video tracks: they are in
+:attr:`MediaSource.cover_art`, never in :attr:`MediaSource.video`.
 """
 
 from __future__ import annotations
@@ -64,9 +53,6 @@ __all__ = [
 ]
 
 
-# --------------------------------------------------------------------------- source identity
-
-
 class SourceFingerprint(DocumentModel):
     """Identifies one version of a file: a change in size or mtime means "probe again".
 
@@ -89,15 +75,11 @@ class SourceRef(DocumentModel):
     """``None`` when the job was created without probing (for example from the CLI)."""
 
 
-# --------------------------------------------------------------------------- flags and roles
-
-
 class Disposition(DocumentModel):
-    """Every ffprobe disposition flag (FFmpeg n9.0.2 prints exactly these 19).
+    """Every ffprobe disposition flag.
 
-    Which flags survive a Matroska mux is recorded in ``testdata/README.md`` ("Verified tool
-    behaviour"): ``captions``, ``lyrics``, ``karaoke``, ``metadata``, ``dependent`` and
-    ``still_image`` are lost; ``descriptions`` only on subtitle tracks.
+    Matroska keeps only some of them; ``testdata/README.md`` ("Matroska muxer: dispositions")
+    records which.
     """
 
     default: bool = False
@@ -122,12 +104,7 @@ class Disposition(DocumentModel):
 
 
 class TrackRole(StrEnum):
-    """What a track is for. One vocabulary for audio and subtitles.
-
-    Reconciles the badges of 03 §Audio (``Main``, ``Commentary``, ``Audio description``,
-    ``Music only``) and 03 §Subtitles (``Forced``, ``SDH``, ``Signs & Songs``, ``Commentary``)
-    with 04's ``TrackSelector.roles`` (main, commentary, description, sdh, forced, signs).
-    """
+    """What a track is for. One vocabulary for audio and subtitles."""
 
     MAIN = "main"
     COMMENTARY = "commentary"
@@ -161,11 +138,8 @@ class TrackRoleInfo(DocumentModel):
     """For the tooltip: ``disposition comment``, ``title contains "Commentary"``…"""
 
 
-# --------------------------------------------------------------------------- bit rate
-
-
 class BitrateSource(StrEnum):
-    """Where a bit rate came from (C-3 bitrate chain, then a measurement on request)."""
+    """Where a bit rate came from."""
 
     STREAM = "stream"
     """ffprobe stream ``bit_rate``."""
@@ -173,13 +147,13 @@ class BitrateSource(StrEnum):
     """Matroska statistics tags (``BPS``, ``NUMBER_OF_BYTES`` / ``DURATION``)."""
     MEDIAINFO = "mediainfo"
     MEASURED = "measured"
-    """A packet-size scan (C-10)."""
+    """A packet-size scan."""
     UNKNOWN = "unknown"
 
 
 class BitrateInfo(DocumentModel):
     """A bit rate and its source. ``value`` is ``None`` exactly when ``source`` is ``unknown``
-    (C-12 treats an unknown bit rate as above every maximum)."""
+    (a rule treats an unknown bit rate as above every maximum)."""
 
     value: NonNegativeInt | None = None
     """Bits per second."""
@@ -190,9 +164,6 @@ class BitrateInfo(DocumentModel):
         if (self.value is None) != (self.source is BitrateSource.UNKNOWN):
             raise ValueError("value must be None exactly when source is 'unknown'")
         return self
-
-
-# --------------------------------------------------------------------------- colour and HDR
 
 
 class ColorInfo(DocumentModel):
@@ -257,10 +228,7 @@ class HdrInfo(DocumentModel):
     content_light: ContentLightLevel | None = None
     dolby_vision: DolbyVisionInfo | None = None
     source: Literal["stream", "frame"] = "stream"
-    """Where the side data was read: stream side data, or the first frame's (C-3 fallback)."""
-
-
-# --------------------------------------------------------------------------- streams
+    """Where the side data was read: stream side data, or the first frame's as a fallback."""
 
 
 class FieldOrder(StrEnum):
@@ -288,20 +256,18 @@ class _StreamBase(DocumentModel):
     """The language tag as ffprobe reports it (``eng``, ``hun``; for Matroska the legacy
     ISO 639-2 ``Language`` element); ``None`` if absent."""
     language_ietf: LanguageTag | None = None
-    """The BCP 47 tag of the file (``pt-BR``, ``zh-Hant``), which ffprobe does not show (after
-    ``mkvpropedit --set language=pt-BR`` ffprobe says ``por``). For a Matroska file whose
-    tracks Reframe's own reader reads and matches to the streams, it is the track's
-    ``LanguageIETF`` element, ``None`` when the track has no such element or its value is not a
-    language tag (decisions 0034, 0041). For other containers, and for a Matroska file whose
-    tracks the reader cannot read or match, it is MediaInfo's value when MediaInfo is
-    available, else ``None`` (decision 0007).
+    """The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
+    ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
+    Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
+    MediaInfo's value when MediaInfo is available. ``None`` when there is none.
 
-    The **effective language** (what C-12 track rules match) is ``language_ietf`` if set, else
+    The effective language, which track rules match, is ``language_ietf`` if set, else
     ``language``."""
     title: str | None = None
     disposition: Disposition = Field(default_factory=Disposition)
     start_time: float | None = None
-    """ffprobe's raw ``start_time`` in seconds (the first packet's timestamp)."""
+    """ffprobe's raw ``start_time`` in seconds: the timestamp of the first packet (an M2TS
+    stream can start at 600 s)."""
     delay: float | None = None
     """Seconds relative to the main video stream's ``start_time`` (or the container's
     ``start_time`` when there is no video); negative = starts earlier. The audio delay of the
@@ -330,8 +296,8 @@ class VideoStream(_StreamBase):
     avg_frame_rate: Rational | None = None
     """ffprobe ``avg_frame_rate``; ``None`` for ``0/0`` (Matroska written by FFmpeg)."""
     vfr: bool = False
-    """Variable frame rate: ``r_frame_rate`` ≠ ``avg_frame_rate`` (C-3 decides when the
-    average is unknown)."""
+    """Variable frame rate: ``r_frame_rate`` ≠ ``avg_frame_rate``. When the average is unknown,
+    the probe decides."""
     field_order: FieldOrder = FieldOrder.UNKNOWN
     rotation: Literal[0, 90, 180, 270] = 0
     """Clockwise rotation from the display matrix, normalised."""
@@ -346,7 +312,8 @@ class VideoStream(_StreamBase):
 class AudioStream(_StreamBase):
     kind: Literal["audio"] = "audio"
     display_codec: str | None = None
-    """Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``, ``AAC-LC``."""
+    """Commercial name: ``TrueHD Atmos``, ``DTS-HD MA``, ``DTS:X``, ``E-AC-3 Atmos``,
+    ``AAC-LC``."""
     channels: NonNegativeInt = 0
     channel_layout: str | None = None
     """ffprobe ``channel_layout`` (``5.1(side)``)."""
@@ -354,7 +321,7 @@ class AudioStream(_StreamBase):
     bit_depth: PositiveInt | None = None
     sample_fmt: str | None = None
     lossless: bool = False
-    """TrueHD, DTS-HD MA, FLAC, PCM, ALAC: encoded at the maximum by codec rules (03)."""
+    """TrueHD, DTS-HD MA, FLAC, PCM, ALAC: encoded at the maximum by codec rules."""
     bitrate: BitrateInfo = Field(default_factory=BitrateInfo)
     roles: list[TrackRoleInfo] = Field(default_factory=list)
 
@@ -374,7 +341,7 @@ class SubtitleStream(_StreamBase):
     """Number of subtitle events (``NUMBER_OF_FRAMES`` tag or a scan); ``None`` if unknown."""
     event_count_source: Literal["stats_tag", "measured"] | None = None
     forced_event_count: NonNegativeInt | None = None
-    """PGS: events with the forced flag (decode scan, C-10)."""
+    """PGS: events with the forced flag (from a decode scan)."""
     roles: list[TrackRoleInfo] = Field(default_factory=list)
 
 
@@ -442,8 +409,8 @@ class ContainerInfo(DocumentModel):
 class MediaSource(DocumentModel):
     """Everything Reframe knows about one source file.
 
-    Known gap: ``-show_programs`` output (the programs of a multi-program MPEG-TS) has no model
-    yet; C-3 reads streams across all programs.
+    Known gap: the programs of a multi-program MPEG-TS (``-show_programs``) have no model.
+    Streams are read across all programs.
     """
 
     schema_version: PositiveInt = 1
@@ -460,7 +427,7 @@ class MediaSource(DocumentModel):
     """Problems found while probing (missing duration, unreadable side data…)."""
     probed_at: AwareDatetime | None = None
     probe_tool: str | None = None
-    """The ffprobe version that produced it (``n9.0.2-17-g2a571b6068-20260930``)."""
+    """The ffprobe version that produced it."""
 
 
 #: Any stream of a source (audio, video, subtitle), discriminated by ``kind``.

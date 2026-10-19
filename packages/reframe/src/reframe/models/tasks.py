@@ -1,4 +1,4 @@
-"""Background tasks (02 §Events, C-10): folder probe, crop scan, bitrate scan, …
+"""Background tasks: long operations such as a folder probe or a bitrate scan.
 
 Every long operation is a task with an id; the API returns the id at once and reports
 progress with ``task.progress`` / ``task.done`` events.
@@ -26,7 +26,7 @@ class TaskState(StrEnum):
 
 
 class TaskInfo(ReframeModel):
-    """``TaskInfo(id, kind, state, progress, message)``."""
+    """A background task: its state, its progress and, when done, its result."""
 
     id: str
     kind: str

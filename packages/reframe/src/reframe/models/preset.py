@@ -1,4 +1,4 @@
-"""Presets (03 §Presets, C-9): a job template with an id, a name and a category.
+"""Presets: a job template with an id, a name and a category.
 
 Built-in presets ship as JSON inside the package (read-only); user presets are stored in
 ``<config>/presets.json`` as a :class:`PresetFile`. Export and import use the same format.
@@ -20,7 +20,7 @@ BUILT_IN_CATEGORIES = ("General", "Web", "Devices", "Matroska", "Hardware", "Pro
 
 
 class Preset(JobTemplate):
-    """``Preset`` = ``JobTemplate`` + id, name, category, description, built-in flag."""
+    """A job template saved as a preset."""
 
     id: Annotated[str, Field(min_length=1)]
     """Stable identifier (built-ins: a slug such as ``h265-mkv-1080p``; user presets: a
@@ -40,9 +40,8 @@ class PresetFile(DocumentModel):
 
 
 class FieldChange(ReframeModel):
-    """One difference between edited settings and the preset they started from: C-9's
-    ``diff(job_template, preset) -> list[FieldChange]`` for the *modified* marker (03
-    §Presets: "Hover it to see what changed")."""
+    """One difference between edited settings and the preset they started from, for the
+    *modified* marker."""
 
     path: str
     """Dotted field path, as in ``ValidationIssue.path``: ``video.encoder``,

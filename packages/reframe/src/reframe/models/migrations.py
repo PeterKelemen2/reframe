@@ -1,35 +1,29 @@
-"""Schema migrations for persisted documents (02 §Cross-cutting rules, rule 4; C-9).
+"""Schema migrations for persisted documents.
 
-Every persisted document has ``schema_version``. A migration function takes the raw JSON
-data of version *N* and returns the data of version *N + 1*; it is registered per document
-kind and version::
+Every persisted document has ``schema_version``; a document without one is version 1. A
+migration takes the raw JSON data of version *N* and returns the data of version *N + 1*. It is
+registered per document kind and version::
 
     @register_migration("settings", from_version=1)
     def _settings_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
         data["queue"]["parallel_jobs"] = data["queue"].pop("parallel", 1)
         return data
 
-:func:`migrate` runs the chain up to the current version (the ``schema_version`` default of
-the kind's model) and sets ``schema_version``. Migrations change only what they must, so
-unknown fields stay (the models keep them too). A document that has no ``schema_version``
-is version 1. A document **newer** than this Reframe raises
-:class:`UnsupportedSchemaVersion`: the caller (C-9) keeps the file untouched and reports it.
+:func:`migrate` runs the chain up to the current version and sets ``schema_version``.
+Migrations change only what they must, so unknown fields stay. A document newer than this
+Reframe raises :class:`UnsupportedSchemaVersion`, and the caller keeps the file untouched.
 
 Embedded documents (the presets inside a ``preset_file``, the ``JobSettings`` inside a queue
-row) carry their own ``schema_version``; a container's loader migrates them with their own
+row) carry their own ``schema_version``; their container's loader migrates them with their own
 kind.
 
-**Forward compatibility rules** (for everyone who changes a document model):
-
-- A new *field* needs nothing: older versions keep it unchanged (``extra="allow"``).
-- A new *value* of a persisted ``Literal`` or enum (for example a new ``WhenDone`` action,
-  a ``Container``, or a new ``kind`` / ``mode`` of the ``Range`` and ``SizeSettings``
-  unions) is **not** covered by that: an older Reframe rejects the whole file. Such a change
-  needs a ``schema_version`` bump of the document (with a migration, even an empty one), so
-  an older Reframe reports "newer file" (:class:`UnsupportedSchemaVersion`) and leaves the
-  file alone instead of failing on it. Add a down-level note to the migration's docstring:
-  which value is new and what an older version would have to do with it.
-- Removing or renaming a field or a value also needs a bump and a migration.
+Forward compatibility: a new field needs nothing, since older versions keep it
+(``extra="allow"``). A new value of a persisted ``Literal`` or enum, or a new ``kind`` or
+``mode`` of a union, makes an older Reframe reject the whole file. Such a change needs a
+``schema_version`` bump with a migration, even an empty one, so that an older Reframe reports
+a newer file (:class:`UnsupportedSchemaVersion`) and leaves it alone. The migration's docstring
+gets a down-level note: the new value, and what an older version does with it. Removals and
+renames need the same bump and migration.
 """
 
 from __future__ import annotations
@@ -152,7 +146,7 @@ def current_version(kind: str) -> int:
 
 
 def migrate(kind: str, data: dict[str, Any]) -> dict[str, Any]:
-    """``migrate(kind, data) -> data``: bring ``data`` to the current schema version."""
+    """Bring ``data`` to the current schema version of ``kind``."""
     return REGISTRY.migrate(kind, data)
 
 

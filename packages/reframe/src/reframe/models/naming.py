@@ -1,12 +1,12 @@
-"""Output naming (03 §Output naming; C-16): the options, and the result of naming one file.
+"""Output naming: the options, and the result of naming one file.
 
-The options (:class:`NamingOptions`) are a document model: their defaults live in Settings →
-Output, a preset can override them (``JobTemplate.naming``), and one job can use a manual name
-or its own template (``JobSettings.output.naming``).
+The options (:class:`NamingOptions`) are a document model: a preset can override them
+(``JobTemplate.naming``), and one job can use a manual name or its own template
+(``JobSettings.output.naming``).
 
 The result models (:class:`NameResult` and the models it holds) are runtime models: what
-:func:`reframe.naming.resolve_output_name` returns, what the naming preview of the UI shows
-(06 ``POST /api/naming/preview``), and what ``reframe name`` prints. They are never stored.
+:func:`reframe.naming.resolve_output_name` returns, what the naming preview of the UI shows, and
+what ``reframe name`` prints. They are never stored.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ OutputFolderMode = Literal["fixed", "same_as_source"]
 
 
 class NamingOptions(DocumentModel):
-    """The options table of 03 §Output naming, with its defaults."""
+    """The naming options, with their defaults."""
 
     movie_template: str = "{main_title}"
     episode_template: str = "{main_title}"
@@ -62,10 +62,8 @@ class NamingOptions(DocumentModel):
     """The fixed output folder (``output_folder_mode="fixed"``)."""
 
 
-# --------------------------------------------------------------------------- variables
-
 VariableGroup = Literal["handbrake", "name", "media"]
-"""``handbrake``: the 17 HandBrake variables. ``name``: parsed from the name source.
+"""``handbrake``: the HandBrake variables. ``name``: parsed from the name source.
 ``media``: the output media, from the job settings."""
 VariableKind = Literal["text", "number", "date"]
 """How a format spec applies: text (``:upper``, ``:lower``, ``:title``), a Python number
@@ -82,8 +80,6 @@ class NamingVariable(ReframeModel):
     description: str
 
 
-# --------------------------------------------------------------------------- parse results
-
 NameKind = Literal["file", "folder"]
 """Which candidate a name was parsed from: the file name or its folder name."""
 MediaKind = Literal["movie", "episode"]
@@ -98,17 +94,16 @@ class NameSpan(ReframeModel):
     naming editor). ``text`` is ``candidate.text[start:end]``."""
 
     field: str
-    """``name``, ``year``, ``episode_code``, ``sub_title``, ``resolution``, ``source_type``,
-    ``edition``, ``release_group``, ``hdr``, ``date``, or a guessit property name for other
-    release tags (``video_codec``, ``audio_codec``, ``language``, ``other``…)."""
+    """The ``ParsedName`` field the part belongs to, or a guessit property name for other
+    release tags."""
     start: NonNegativeInt
     end: NonNegativeInt
     text: str
 
 
 class ParsedName(ReframeModel):
-    """The name parts of 03 §Variables. Text keeps its original spelling and separators.
-    ``None``: not recognised."""
+    """The name parts of a file. Text keeps its original spelling and separators; ``None``
+    means not recognised."""
 
     kind: MediaKind = "movie"
     main_title: str | None = None
@@ -137,7 +132,7 @@ class ParsedName(ReframeModel):
 
 
 class NameCandidate(ReframeModel):
-    """The file name or the folder name, parsed and scored (03 §Where the name comes from)."""
+    """The file name or the folder name, parsed and scored."""
 
     kind: NameKind
     text: str
@@ -147,8 +142,7 @@ class NameCandidate(ReframeModel):
     score: int
     """+1 for each recognised field, +2 when the title has word separators."""
     recognised: list[str] = Field(default_factory=list)
-    """The scored fields found: ``title``, ``year``, ``resolution``, ``source``,
-    ``video_codec``, ``audio_codec``, ``hdr``, ``edition``, ``release_group``."""
+    """The scored fields found."""
     word_separators: bool = False
     """The title has word separators (``Hacksaw.Ridge``, not ``hacksawridge``)."""
     fields: ParsedName = Field(default_factory=ParsedName)

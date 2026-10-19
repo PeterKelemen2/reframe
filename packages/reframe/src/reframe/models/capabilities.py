@@ -1,4 +1,4 @@
-"""Encoder capabilities (C-4): the status of each encoder in this FFmpeg build.
+"""Encoder capabilities: the status of each encoder in this FFmpeg build.
 
 Detection runs in the background and never blocks the UI. States:
 ``unknown → checking → available | unavailable(reason) | error(reason)``.
@@ -28,7 +28,7 @@ class EncoderState(StrEnum):
 
 
 class EncoderStatus(ReframeModel):
-    """``EncoderStatus(id, state, reason, checked_at, supports_10bit, …)``."""
+    """The detection result of one encoder."""
 
     id: str
     """Encoder id as FFmpeg names it: ``libx265``, ``hevc_nvenc``."""
@@ -48,8 +48,8 @@ class EncoderStatus(ReframeModel):
     presets: list[str] = Field(default_factory=list)
     """Speed presets this build offers, if the encoder lists them."""
     pix_fmts: list[str] = Field(default_factory=list)
-    """Pixel formats the encoder accepts in this build (``Supported pixel formats`` of
-    ``ffmpeg -h encoder=<id>``; only ``vaapi`` for VAAPI encoders, which take hardware frames).
+    """Pixel formats the encoder accepts in this build (the ``Supported pixel formats`` line of
+    ``ffmpeg -h encoder=<id>``). VAAPI encoders list only ``vaapi``: they take hardware frames.
     Empty when not read."""
     reason_10bit: str | None = None
     """Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
@@ -57,27 +57,26 @@ class EncoderStatus(ReframeModel):
     device: str | None = None
     """The device the encoder works on, for encoders that need one: the VAAPI render node
     (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
-    Settings → Encoders forces (decision 0020). The command builder (C-7) uses it. ``None``
-    for encoders without a device choice and for encoders that are not available."""
+    Settings → Encoders forces. The command builder uses it. ``None`` for encoders without a
+    device choice and for encoders that are not available."""
 
 
 class CapabilitySnapshot(ReframeModel):
-    """Every known encoder's status at one moment (C-4), plus the filters of the build.
+    """Every known encoder's status at one moment, plus the filters of the build.
 
-    The ``caps`` argument of ``build_plan`` (C-7) and ``validate`` (C-8). The capability
-    service returns one at once (from the cache, or all ``unknown``) and never blocks; a
-    finished detection replaces it and publishes ``capabilities.changed``.
+    The capability service returns one at once (from the cache, or all ``unknown``) and never
+    blocks. A finished detection replaces it and publishes ``capabilities.changed``.
     """
 
     encoders: dict[str, EncoderStatus] = Field(default_factory=dict)
-    """By encoder id: every video and audio encoder of the definitions (C-6)."""
+    """By encoder id: every video and audio encoder of the definitions."""
     filters: list[str] | None = None
     """Filters in this FFmpeg build (``ffmpeg -filters``: ``libplacebo``, ``zscale``, …);
     ``None`` until the list was read."""
     filter_failures: dict[str, str] = Field(default_factory=dict)
     """Filters of the build whose run test failed, with the reason. ``libplacebo`` is listed
     by ``ffmpeg -filters`` but needs a working Vulkan device, so detection runs one frame
-    through it ("No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)")."""
+    through it."""
     untested_filters: list[str] = Field(default_factory=list)
     """Filters of the build that need a run test that has not passed or failed: while the
     detection runs, or when hardware tests are off (Settings → Encoders)."""
@@ -103,8 +102,8 @@ class CapabilitySnapshot(ReframeModel):
 
     def usable_filter(self, name: str) -> bool | None:
         """Can a job use the filter? ``False`` when it is not in the build or its run test
-        failed (:attr:`filter_failures`); ``None`` when not known (the filter list was not read,
-        or the run test has not finished: :attr:`untested_filters`); else ``True``."""
+        failed (:attr:`filter_failures`); ``None`` when not known (the filter list was not
+        read, or the run test has not finished: :attr:`untested_filters`); else ``True``."""
         if self.filters is None:
             return None
         if name not in self.filters or name in self.filter_failures:

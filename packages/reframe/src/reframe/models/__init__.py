@@ -1,16 +1,8 @@
-"""Pydantic models: the only schema of Reframe (02 §One contract).
+"""Pydantic models: the only schema of Reframe.
 
-Every public model is listed in ``__all__``, is JSON-serialisable and has a JSON Schema (a
-snapshot test covers them all). Persisted documents (``AppSettings``, ``PresetFile``,
-``Preset``, ``JobTemplate``, ``JobSettings``, ``MediaSource``) have ``schema_version``, keep
-unknown fields, and are migrated with :func:`migrate`.
-
-Modules: ``media`` (probe results), ``geometry`` (C-5), ``job`` (job settings), ``draft`` (a
-job drafted from a preset, C-15), ``defaults`` (audio/subtitle defaults), ``template``
-(templates and track rules), ``preset``, ``naming``, ``settings``, ``issues`` (validation
-issues and JSON patch operations), ``tools`` (C-1), ``capabilities`` (C-4), ``plan`` (C-7),
-``queue`` (C-11), ``tasks``, ``batch`` (season mode, C-12), ``analysis`` (scan results,
-C-10), ``preview`` (frames, crop detection, preview clips, C-10), ``events``, ``migrations``.
+Every public model is listed in ``__all__``, is JSON-serialisable and has a JSON Schema. The
+persisted documents (``DOCUMENT_MODELS``) have a ``schema_version``, keep unknown fields and
+are migrated with :func:`migrate`.
 """
 
 from reframe.models.analysis import (

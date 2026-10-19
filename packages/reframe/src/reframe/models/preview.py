@@ -1,16 +1,7 @@
-"""Preview results (C-10): sample frames, crop detection, preview clips.
+"""Preview results: sample frames, crop detection, preview clips.
 
-Runtime models, never stored as documents. Each is the result of one background task
-(``Reframe.tasks.value(task_id)``; its JSON form is ``TaskInfo.result``):
-
-- ``Reframe.sources.frames(path, …)`` → :class:`FrameSet` (source frames, and output frames
-  with the job's filter graph when a job is given);
-- ``Reframe.sources.cropdetect(path, …)`` → :class:`CropDetection`;
-- ``Reframe.jobs.preview_clip(job, start=…, seconds=…)`` → :class:`PreviewClip`.
-
-Frames and clips are files in the cache folder (``<cache dir>/frames``, ``<cache dir>/clips``);
-``Reframe.sources.frame(key)`` and ``Reframe.jobs.preview_clip_path(clip_id)`` find them again
-(``GET /api/preview/frames/{key}.png``, ``GET /api/preview/clips/{id}``).
+Runtime models, never stored as documents. Each is the result of one background task; its JSON
+form is ``TaskInfo.result``. Frames and clips are files in the cache folder.
 """
 
 from __future__ import annotations
@@ -69,24 +60,24 @@ class CropSample(ReframeModel):
 
 
 class CropDetection(ReframeModel):
-    """Crop detection over the sample frames (03 §Dimensions → Crop)."""
+    """Crop detection over the sample frames."""
 
     path: Path
     samples: list[CropSample] = Field(default_factory=list)
     auto: CropRect
-    """The most common result (``detect_crop_consensus(…, "auto")``)."""
+    """The most common result (the ``auto`` mode of :class:`CropSettings`)."""
     auto_frames: NonNegativeInt = 0
     """Samples that gave the automatic result: ``Detected … on 9 of 10 frames``."""
     conservative: CropRect
-    """Only what is black on every sample (``detect_crop_consensus(…, "conservative")``)."""
+    """Only what is black on every sample (the ``conservative`` mode)."""
     notes: list[str] = Field(default_factory=list)
 
 
 class PreviewClip(ReframeModel):
-    """An encoded preview clip in the cache (03 §Preview: live preview clip)."""
+    """An encoded preview clip in the cache."""
 
     id: str
-    """For ``Reframe.jobs.preview_clip_path(id)``."""
+    """The id of the clip in the cache."""
     path: Path
     """The clip file."""
     source: Path
