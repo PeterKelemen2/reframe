@@ -28,8 +28,6 @@ __all__ = [
     "planned_title",
 ]
 
-_NAMES = {"video": "video", "audio": "audio", "subtitle": "subtitle"}
-
 
 @dataclass(frozen=True, slots=True)
 class ExpectedStream:
@@ -165,7 +163,7 @@ def metadata_problems(
         if len(wanted) != len(have):
             continue  # the layout check names it
         for number, (want, got) in enumerate(zip(wanted, have, strict=True), start=1):
-            label = f"{_NAMES[kind]} track {number}"
+            label = f"{kind} track {number}"
             ietf_written = in_place or (fixup and needs_ietf(want.bcp47))
             tag = (
                 _bcp47(want.bcp47)
@@ -218,13 +216,11 @@ def check_output(
         wanted = [e.language for e in expected if e.kind == kind]
         have = [container_language(stream.language, container) for stream in found[kind]]
         if len(wanted) != len(have):
-            problems.append(f"{_plural(len(wanted), _NAMES[kind])} expected, {len(have)} found")
+            problems.append(f"{_plural(len(wanted), kind)} expected, {len(have)} found")
             continue
         for number, (want, got) in enumerate(zip(wanted, have, strict=True), start=1):
             if want != got:
-                problems.append(
-                    f"{_NAMES[kind]} track {number}: language {want} expected, {got} found"
-                )
+                problems.append(f"{kind} track {number}: language {want} expected, {got} found")
     if plan is not None:
         in_place = plan.job_type == "metadata_edit"
         fixup = not in_place and any(step.kind == "mkvpropedit" for step in plan.steps)
