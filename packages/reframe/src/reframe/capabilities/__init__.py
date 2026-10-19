@@ -1,16 +1,7 @@
-"""Encoder capabilities (C-4): which encoders this FFmpeg build and this computer can use.
+"""Encoder capabilities: which encoders this FFmpeg build and this computer can use.
 
-Detection runs in the background, has strict timeouts and returns statuses, never
-exceptions (it fixes the HandBrake freeze, 03 §Missing encoder behaviour).
-
-- :class:`CapabilityService` (``Reframe.capabilities``): the cached result at once, detection
-  in the background, ``capabilities.changed`` events, re-scan.
-- :func:`detect_capabilities`: one detection run (``-encoders``, ``-filters``,
-  ``-h encoder=<id>``, hardware test encodes on every VAAPI render node, the ``libplacebo``
-  run test).
-- :func:`closest_available` and :func:`encoder_issues` (pure): the fallback chain and the
-  ``encoder.*`` validation issues (C-8 registers them as its encoder rule).
-- :func:`explain_failure`: the reason mapping of decision 0008.
+Detection returns statuses, never exceptions, and every probe has a strict timeout, so a
+broken encoder cannot freeze the caller.
 """
 
 from reframe.capabilities.cache import CacheKey, CapabilityCache, cache_key

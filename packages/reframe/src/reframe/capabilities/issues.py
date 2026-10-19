@@ -1,34 +1,7 @@
-"""The closest available encoder and the encoder issues of a job or preset (C-4). Pure.
+"""The closest available encoder and the encoder issues of a job or preset. Pure.
 
-C-8 (validation) registers :func:`encoder_issues` as its encoder rule and adds the quality
-conversion of the fix (C-6 ``convert_quality``) and the 10-bit and option checks.
-
-Issue codes (03 §Missing encoder behaviour):
-
-========================  ========  ==========================================================
-code                      severity  when
-========================  ========  ==========================================================
-``encoder.unknown``       error     the id is not in the definitions
-``encoder.checking``      info      detection still runs (or has not run) for this encoder
-``encoder.untested``      warning   a hardware encoder in the build that was not tested,
-                                    because hardware test encodes are off
-``encoder.unavailable``   error     ``unavailable`` or ``error``: the reason is in the message;
-                                    the fix switches to :func:`closest_available` (video and
-                                    audio chains; no fix when nothing is available)
-========================  ========  ==========================================================
-
-``encoder.checking`` is ``info``, not an error: 03 says "a preset or job can be edited.
-Queueing waits until the encoder's status is known", and an error would block *Add to
-queue* (03 §Validation). It is not a warning either, because nothing is wrong yet. The queue
-(C-11) waits for ``CapabilityService.wait()`` before it starts a job whose encoder is still
-being checked.
-
-**A cached result that is checked again** (``from_cache`` and ``detecting``): a cached status
-that is not ``available`` is ``encoder.checking`` too, with the cached result in the message
-(decision 0008, follow-up). The cache can be stale: its GPU fingerprint does not see
-user-space drivers (AMF runtime, Mesa / libva, oneVPL), so a status that failed before can
-work now. A caller that waits for ``encoder.checking`` then gets the new result instead of
-failing on the old one. A cached ``available`` stays ``available``: the job does not wait.
+``encoder.checking`` is ``info``, not an error: an error would stop a job from being queued
+while its encoder is still being checked, and nothing is wrong yet.
 """
 
 from __future__ import annotations
@@ -48,9 +21,8 @@ def closest_available(
     encoder_id: str, caps: CapabilitySnapshot, definitions: Definitions
 ) -> str | None:
     """``encoder_id`` itself when it is available, else the first available encoder of its
-    fallback chain in the definitions: video (``hevc_nvenc → hevc_qsv → hevc_amf →
-    hevc_vaapi → libx265``) or audio (``libfdk_aac → aac``, decision 0020). ``None`` when
-    none is available or the encoder is not in the definitions."""
+    fallback chain in the definitions (video or audio). ``None`` when none is available or
+    the encoder is not in the definitions."""
     if caps.status(encoder_id).state is EncoderState.AVAILABLE:
         return encoder_id
     video = definitions.video_encoders.get(encoder_id)
@@ -83,7 +55,7 @@ def _label(encoder_id: str, definitions: Definitions) -> str:
 
 
 def _uses(subject: str | None, encoder_id: str, definitions: Definitions) -> str:
-    """``Preset "X" uses hevc_nvenc, which`` or ``hevc_nvenc (NVIDIA NVENC H.265)``."""
+    """``<subject> uses <id>, which``, or else ``<id> (<label>)``."""
     if subject:
         return f"{subject} uses {encoder_id}, which"
     return _label(encoder_id, definitions)
@@ -105,13 +77,13 @@ def encoder_issues(
     target: FixTarget = "job",
     subject: str | None = None,
 ) -> list[ValidationIssue]:
-    """The issues of using ``encoder_id`` now (see the module doc for the codes).
+    """The issues of using ``encoder_id`` now.
 
     :param path: the dotted field path of the encoder in the target document; the fix patch
         replaces the same field (``video.encoder`` → ``/video/encoder``).
     :param target: the document the fix patches (``job``; ``template`` for a preset).
-    :param subject: names the document in the message, for example ``Preset "H.265 NVENC
-        1080p"`` → "Preset "H.265 NVENC 1080p" uses hevc_nvenc, which is not available: …".
+    :param subject: the document that uses the encoder, named in the message
+        (``Preset "X" uses …``).
     """
     if not _known(encoder_id, definitions):
         message = f"Unknown encoder {encoder_id!r}: Reframe has no definition for it."
@@ -127,6 +99,8 @@ def encoder_issues(
     who = _uses(subject, encoder_id, definitions)
     if state is EncoderState.AVAILABLE:
         return []
+    # A cached failure may be stale: the GPU fingerprint does not see user-space drivers
+    # (AMF runtime, Mesa, oneVPL). While detection runs again, the job waits for the result.
     if caps.from_cache and caps.detecting and state is not EncoderState.CHECKING:
         last = f"{state.value}, {status.reason}" if status.reason else state.value
         message = (

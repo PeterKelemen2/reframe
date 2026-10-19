@@ -1,29 +1,7 @@
-"""The hardware test encode (05 §C-4): its command (pure) and one run.
+"""The hardware and filter test encodes: the command (pure) and one run of it.
 
-The command, as checked on real hardware (``testdata/README.md`` §Hardware setup of the
-encoder definitions and §Encoder detection)::
-
-    ffmpeg -hide_banner -nostdin [init_args] -f lavfi -i color=size=640x360 -frames:v 3
-           (-vf <filter_tail> | -pix_fmt <sw_pix_fmt>) -c:v <encoder> -f null -
-
-- ``init_args`` and ``filter_tail`` come from the encoder's ``hardware_setup``
-  (``-init_hw_device vaapi=va:{vaapi_device} -filter_hw_device va`` and
-  ``format={sw_pix_fmt},hwupload`` for VAAPI). Placeholders: ``{vaapi_device}`` (default
-  ``/dev/dri/renderD128``) and ``{sw_pix_fmt}`` (the encoder's ``pix_fmts`` for the bit depth).
-- Without a filter tail (NVENC, AMF: software frames), ``-pix_fmt <sw_pix_fmt>``.
-- The 10-bit test is the same command with ``pix_fmts["10"]``. Exit code 0 is not enough:
-  when the encoder does not take that format, FFmpeg warns "Incompatible pixel format
-  'p010le' for codec 'libx264', auto-selecting format 'yuv420p10le'", encodes with the format
-  it picked and exits 0 (checked with FFmpeg n9.0.2, ``test_real.py``). Such a 10-bit test
-  failed: the format the builder passes is not taken (decision 0008, follow-up).
-- VAAPI encoders (a hardware setup with ``{vaapi_device}``) are tested on every render node,
-  or on the node that Settings → Encoders forces (decision 0020): see
-  :mod:`reframe.capabilities.detect`.
-
-**Filter run tests.** ``libplacebo`` is listed by ``ffmpeg -filters`` but fails without a
-working Vulkan device, so one frame goes through it (:data:`FILTER_TESTS`)::
-
-    ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 1 -vf libplacebo -f null -
+The command lines and the FFmpeg output that the checks rely on are recorded in
+``testdata/README.md`` (section "Encoder detection").
 """
 
 from __future__ import annotations
@@ -60,9 +38,9 @@ __all__ = [
 DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
 TEST_SOURCE = "color=size=640x360"
 TEST_FRAMES = 3
-#: Seconds for one test encode (02 §Cross-cutting rules: "short timeout (10 s default)").
+#: Seconds for one test encode.
 TEST_TIMEOUT = 10.0
-#: Bytes of output kept from a test encode (a few kB in practice).
+#: Bytes of output kept from a test encode.
 TEST_MAX_OUTPUT = 2**20
 
 BitDepth = Literal["8", "10"]
@@ -80,8 +58,8 @@ FILTER_TESTS: Mapping[str, str] = {"libplacebo": "libplacebo"}
 
 
 class DefinitionError(ValueError):
-    """The encoder definition cannot make a test command (unknown placeholder, no pixel
-    format for the bit depth). The C-6 definitions linter should catch it first."""
+    """The encoder definition cannot make a test command: an unknown placeholder, or no pixel
+    format for the bit depth."""
 
 
 def resolve_placeholders(arg: str, values: Mapping[str, str]) -> str:

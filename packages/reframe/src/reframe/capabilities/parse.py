@@ -1,25 +1,8 @@
-"""Parse ``ffmpeg -encoders``, ``-filters`` and ``-h encoder=<name>`` (C-4). Pure.
+"""Parse ``ffmpeg -encoders``, ``-filters`` and ``-h encoder=<name>``. Pure.
 
-The formats are checked against real output of FFmpeg n9.0.2 (the pinned BtbN build and the
-Arch package), captured in ``testing/reframe_testing/fake_data/`` (``encoders.stdout.txt``,
-``filters.stdout.txt``, ``help_encoder/*.stdout.txt``):
-
-``-encoders``: a legend, a `` ------`` line, then one line per encoder::
-
-     V....D libx265              libx265 H.265 / HEVC (codec hevc)
-     A....D aac                  AAC (Advanced Audio Coding)
-
-``-filters``: a legend, a ``  ------`` line, then one line per filter. FFmpeg 9 prints two
-flag columns (``T.``, ``.S``); FFmpeg 7 printed three (``TSC``)::
-
-     .. libplacebo        N->V       Apply various GPU filters from libplacebo
-     .S zscale            V->V       Apply resizing, colorspace and bit depth conversion.
-
-``-h encoder=<name>``: a header, capability lines, then one or more ``… AVOptions:`` sections.
-An option is a line indented by two spaces (``  -preset   <int>  E..V…  … (from 0 to 9)``);
-its named values are indented by five spaces. ``-h encoder=<unknown>`` exits with 0 and prints
-``Codec '<name>' is not recognized by FFmpeg.``. FFmpeg 8 and 9 end the help with an empty
-line and ``Exiting with exit code 0`` on stdout; it is ignored.
+The formats are FFmpeg's real output, as captured in ``testing/reframe_testing/fake_data/``
+and recorded in ``testdata/README.md``. The help can end with an ``Exiting with exit code 0``
+line on stdout: the parser ignores it.
 """
 
 from __future__ import annotations
@@ -47,7 +30,7 @@ _HEADER = re.compile(r"^Encoder (?P<name>\S+) \[(?P<desc>.*)\]:\s*$")
 _OPTION = re.compile(r"^  -(?P<name>\S+)\s+<(?P<type>[^>]+)>\s+(?P<rest>.*)$")
 _CONSTANT = re.compile(r"^ {3,}(?P<name>\S+)\s+(?P<value>-?\d\S*)?\s+[E.][D.][F.][V.]")
 _RANGE = re.compile(r"\(from (?P<low>-?\d+) to (?P<high>-?\d+)\)")
-#: Integer presets (``libsvtav1``: "from -2 to 13") are listed one by one up to this many.
+#: An integer ``-preset`` range is listed value by value only when it is shorter than this.
 MAX_RANGE_PRESETS = 64
 
 
@@ -71,14 +54,13 @@ class EncoderHelp:
     private_options: list[str] = field(default_factory=list)
     """Every option of the ``AVOptions`` sections, in order, without the ``-``."""
     presets: list[str] = field(default_factory=list)
-    """The values of ``-preset``: its named constants (``p1`` … ``p7``, ``veryfast`` …), or
-    for an integer range without names the numbers (``libsvtav1``: ``-2`` … ``13``). Empty when
-    the encoder takes a free string (``libx264``, ``libx265``: FFmpeg does not list them)."""
+    """The values of ``-preset``: its named constants, or the numbers of an integer range
+    without names. Empty when FFmpeg lists none (the encoder takes a free string)."""
     pix_fmts: list[str] = field(default_factory=list)
     """``Supported pixel formats`` (``vaapi`` alone for VAAPI encoders, which take hardware
     frames)."""
     hardware_devices: list[str] = field(default_factory=list)
-    """``Supported hardware devices`` (``cuda``, ``vaapi``, ``qsv``, ``amf``), without repeats."""
+    """``Supported hardware devices``, without repeats."""
 
 
 def parse_encoders(text: str) -> dict[str, EncoderListing]:
@@ -119,7 +101,7 @@ def parse_filters(text: str) -> list[str]:
 
 def parse_encoder_help(text: str) -> EncoderHelp | None:
     """Parse ``ffmpeg -hide_banner -h encoder=<name>``; ``None`` when FFmpeg does not know the
-    encoder (``Codec '…' is not recognized by FFmpeg.``) or the text is not encoder help."""
+    encoder or the text is not encoder help."""
     help_name: str | None = None
     description = ""
     options: list[str] = []

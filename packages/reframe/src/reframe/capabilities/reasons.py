@@ -1,24 +1,12 @@
-"""Turn a failed hardware test encode into a plain-language reason (C-4). Pure.
-
-Decision 0008 replaces the reason-mapping bullet of 05 §C-4. What real FFmpeg prints (the
-texts are in ``testdata/README.md`` §Hardware encoder failures and §Encoder detection, and in
-``testing/reframe_testing/fake_data/hw_*.stderr.txt``):
-
-- The useful line is the one that the encoder or the hardware device logs:
-  ``[hevc_nvenc @ 0x…] Cannot load libcuda.so.1``, ``[VAAPI @ 0x…] No VA display found for
-  device /dev/dri/renderD999.``, ``[AMF @ 0x…] DLL libamfrt64.so.1 failed to open``.
-- The **last** line is generic (``Conversion failed!``, ``Nothing was written into output
-  file …``, ``Error parsing global options: …``), so it is never the reason.
-- ``MFX_ERR_UNSUPPORTED`` is not printed by FFmpeg (it is not even in the build); oneVPL errors
-  print a number: ``Error creating a MFX session: -9.``
-- When ``-init_hw_device qsv=hw`` fails, FFmpeg names no device, only
-  ``Device creation failed: -542398533.`` and ``Failed to set value 'qsv=hw' for option
-  'init_hw_device': …``: the reason comes from the encoder family.
+"""Turn a failed hardware test encode into a plain-language reason. Pure.
 
 A known text gives ``unavailable`` with its reason. Anything else gives ``error`` ("the check
 itself failed") with the most informative line (:func:`informative_line`). The same mapping
-explains a failed filter run test (``libplacebo`` without Vulkan: ``[libplacebo @ 0x…] Failed
-creating instance: VK_ERROR_INCOMPATIBLE_DRIVER``).
+explains a failed filter run test.
+
+The texts that FFmpeg prints are recorded in ``testdata/README.md`` ("Hardware encoder
+failures"). The last stderr line is generic, so the reason comes from an earlier line when
+there is one.
 """
 
 from __future__ import annotations
@@ -60,13 +48,13 @@ class TestContext:
     __test__ = False  # not a pytest test class
 
     encoder: str
-    """``hevc_nvenc``."""
+    """The encoder id (the filter name for a filter run test)."""
     family: str = "software"
-    """``nvenc``, ``qsv``, ``amf``, ``vaapi`` (``EncoderFamily`` of the definitions)."""
+    """The encoder family (``EncoderFamily`` of the definitions)."""
     codec_label: str = ""
-    """``H.265``: used in "No NVIDIA GPU that can encode H.265"."""
+    """The codec's display name, used in the reason texts."""
     device: str | None = None
-    """The device the test asked for (``/dev/dri/renderD128`` for VAAPI)."""
+    """The device the test asked for (VAAPI encoders)."""
 
 
 @dataclass(frozen=True)
@@ -249,14 +237,8 @@ def _split(line: str) -> tuple[str | None, str]:
 
 
 def informative_line(stderr: str, encoder: str) -> str | None:
-    """The line of a failed run that says the most (05 §C-4 as changed by decision 0008).
-
-    In order: the first line logged by the encoder itself (``[hevc_nvenc @ …]``); the first
-    line logged by a hardware device context (``[VAAPI @ …]``, ``[AMF @ …]``); the first
-    ``Device creation failed`` / ``Failed to set value`` line; the first line that is not
-    fftools bookkeeping; the last line. Pointer addresses are removed. ``None`` for an empty
-    stderr.
-    """
+    """The line of a failed run that says the most, without its pointer address. ``None`` for
+    an empty stderr."""
     top = _top_lines(stderr)
     if not top:
         rest = [raw.strip() for raw in stderr.splitlines() if raw.strip()]
