@@ -1,5 +1,4 @@
-"""M2 review findings on the CLI: warnings of the core are shown, and nothing ends in a
-traceback (not even a file name that is not valid UTF-8)."""
+"""The CLI prints the core's warnings; no traceback unless ``REFRAME_TRACEBACK`` is set."""
 
 from __future__ import annotations
 
@@ -66,7 +65,7 @@ def test_warnings_while_closing_are_printed(
     cli_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``reframe encoders`` (no preset lookup): a warning published while Reframe closes
-    (when-done, a failed queue write) is still printed."""
+    is still printed."""
     original = Reframe.close
 
     async def close(self: Reframe) -> None:
@@ -97,9 +96,6 @@ def test_start_up_problems_of_settings_and_presets(cli_env: ft.FakeTools, tmp_pa
     assert "settings" in lines[0].lower()
     assert lines[1].startswith("warning: ")
     assert "preset" in lines[1].lower()
-
-
-# --------------------------------------------------------------------------- never a traceback
 
 
 def test_an_unexpected_error_is_one_line(

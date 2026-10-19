@@ -1,18 +1,6 @@
-"""C-13 "Done when" and the M6 demo items 3 and 4, through the real queue and the facade, with
-the real mkvpropedit, on a copy of the ``multitrack`` fixture in ``tmp_path``:
-
-    05 §C-13: changing only languages and flags on an MKV fixture runs as ``metadata_edit``,
-    takes < 1 s, and the re-probe shows the new values.
-    08 §M6 demo 3: Set languages (``hu``, ``pt-BR``), names and flags (commentary, SDH,
-    original) → queue → the re-probe shows them all.
-    08 §M6 demo 4: Change only flags on an MKV → the job type is ``metadata_edit`` and finishes
-    in under a second.
-
-MediaInfo is switched off, so the BCP 47 languages that the re-probe shows come from Reframe's
-own Matroska reader. Also here: the post-mux fix-up of an encode (``pt-BR`` through
-mkvpropedit, checked before the rename), and what happens when mkvpropedit does nothing or
-fails (fake mkvpropedit scripts; POSIX only).
-"""
+"""Metadata edits and the post-mux fix-up through the real queue and mkvpropedit, on a copy of
+the ``multitrack`` fixture. MediaInfo is off, so the BCP 47 languages that the re-probe shows
+come from Reframe's own Matroska reader. Failures use fake mkvpropedit scripts (POSIX only)."""
 
 from __future__ import annotations
 
@@ -38,7 +26,7 @@ from reframe_testing import media
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
-#: The Done-when limit of 05 §C-13 and 08 §M6 demo 4.
+#: The time limit of a metadata edit, in seconds.
 LIMIT = 1.0
 
 
@@ -119,11 +107,7 @@ def mkvmerge(path: Path) -> list[dict[str, object]]:
     return [t["properties"] for t in json.loads(out.stdout)["tracks"]]
 
 
-# --------------------------------------------------------------------------- Done when, M6 demo
-
-
 async def test_done_when_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) -> None:
-    """05 §C-13 Done when."""
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)
@@ -236,9 +220,6 @@ async def test_nothing_to_change_is_done_without_running_mkvpropedit(env: Env) -
         await app.close()
 
 
-# --------------------------------------------------------------------------- post-mux fix-up
-
-
 async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env: Env) -> None:
     app = await env.app()
     try:
@@ -263,14 +244,11 @@ async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env:
         await app.close()
 
 
-# --------------------------------------------------------------------------- failures (fakes)
-
-
 FAKE_VERSION = "mkvpropedit v101.0 ('Time To Turn') 64-bit"
 
 
 def fake_mkvpropedit(folder: Path, body: str) -> Path:
-    """A POSIX shell mkvpropedit: ``--version`` like 101.0, anything else runs ``body``."""
+    """A POSIX shell mkvpropedit: ``--version`` prints the fake version, else runs ``body``."""
     script = folder / "mkvpropedit"
     folder.mkdir(parents=True, exist_ok=True)
     script.write_text(
@@ -354,11 +332,8 @@ async def test_a_read_only_source_is_a_validation_error(env: Env) -> None:
 async def test_cancelling_an_in_place_edit_lets_mkvpropedit_finish(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A cancel that comes while mkvpropedit edits the source does not kill it (R4-7 of the
-    core-complete review: a kill in its write phase can destroy the track headers). The
-    mkvpropedit here waits at a gate, then runs the real mkvpropedit with its arguments, so the
-    cancel comes while the step runs every time. The job ends ``cancelled`` and says that the
-    edit is written; the file has the edit and is sound."""
+    """A cancel does not stop mkvpropedit while it writes the source: a kill can destroy the
+    track headers. The fake waits at a gate, so the cancel always comes during the step."""
     real = shutil.which("mkvpropedit")
     assert real is not None
     gate, started = env.tmp / "gate", env.tmp / "started"

@@ -1,7 +1,6 @@
-"""``Reframe.jobs`` (C-15): draft, validate, plan and name, with stub services (no processes).
-
-The sources are recorded probes (``testdata/probes``) at paths under ``tmp_path``, so the
-output paths are real, writable folders and validation reads the real file system.
+"""``Reframe.jobs``: draft, validate, plan and name, with stub services (no processes). The
+sources are recorded probes (``testdata/probes``) at paths under ``tmp_path``, so the output
+paths are real, writable folders and validation reads the real file system.
 """
 
 from __future__ import annotations
@@ -69,9 +68,6 @@ def movie(tmp_path: Path) -> tuple[Stubs, Path]:
     return Stubs({file: recorded("truehd-atmos", file)}), file
 
 
-# --------------------------------------------------------------------------- draft
-
-
 async def test_draft_with_the_default_preset(movie: tuple[Stubs, Path]) -> None:
     stubs, file = movie
     draft = await service(stubs).draft(file)
@@ -89,22 +85,22 @@ async def test_draft_with_the_default_preset(movie: tuple[Stubs, Path]) -> None:
     )
     assert job.chapters.enabled == default.chapters.enabled
     assert job.tags == default.tags
-    # Tracks: C-12's draft (every audio track through the rules, every subtitle copied).
+    # Tracks: every audio track through the rules, every subtitle copied.
     tracks = draft_tracks(source, default)
     assert job.audio == tracks.audio
     assert job.subtitles == tracks.subtitles
     assert draft.decisions == tracks.decisions
     assert len(draft.decisions) == len(source.audio)
-    # The video track: source metadata and the default flag (decision 0024 item 5).
+    # The video track: source metadata and the default flag.
     assert job.video.metadata.default is True
     assert job.video.metadata == video_metadata(source.video[0])
-    # The name: the folder name wins over "movie" (C-16), next to the source.
+    # The name: the folder name wins over "movie", next to the source.
     assert draft.naming.source == "folder"
     assert job.output.path == file.parent / "Movie.mkv"
     assert draft.naming.path == job.output.path
     assert job.output.naming.mode == "template"
     assert errors(draft.issues) == []
-    assert "dimensions.crop_not_detected" in codes(draft.issues)  # info until M8
+    assert "dimensions.crop_not_detected" in codes(draft.issues)
 
 
 async def test_draft_with_another_preset_by_name_and_id(movie: tuple[Stubs, Path]) -> None:
@@ -135,8 +131,8 @@ async def test_unknown_preset_is_an_error_issue(movie: tuple[Stubs, Path]) -> No
 async def test_a_required_language_without_a_track_keeps_the_draft_out_of_the_queue(
     movie: tuple[Stubs, Path],
 ) -> None:
-    """C-12's track-stage error ("no listed language: take none") is a draft error (0031);
-    the subtitle decisions come with the draft too."""
+    """The track-stage error ("no listed language: take none") is a draft error; the
+    subtitle decisions come with the draft too."""
     stubs, file = movie
     chosen = preset("h265-mkv-1080p").model_copy(deep=True)
     chosen.audio_defaults.selection.languages = ["fre"]
@@ -231,7 +227,7 @@ async def test_a_name_that_is_the_source_gets_the_next_free_name(tmp_path: Path)
     stubs = Stubs({file: recorded("multitrack", file)})
     draft = await service(stubs).draft(file)
     assert isinstance(draft, JobDraft)
-    assert draft.naming.path == file  # C-16's name is the source itself
+    assert draft.naming.path == file  # the name is the source itself
     assert draft.job.output.path == folder / "multitrack (2).mkv"
     assert "source file itself" in draft.notes[0]
     assert "output.same_as_source" not in codes(draft.issues)
@@ -305,9 +301,6 @@ def test_generated_chapter_names(tmp_path: Path) -> None:
     job, _decisions, notes = job_from_preset(source, template)
     assert job.chapters.names == [f"Chapter {i}" for i in range(1, len(source.chapters) + 1)]
     assert notes
-
-
-# --------------------------------------------------------------------------- validate, plan
 
 
 async def test_unavailable_encoder_names_the_closest_one(movie: tuple[Stubs, Path]) -> None:
@@ -434,9 +427,6 @@ async def test_validate_uses_the_jobs_preset_naming(movie: tuple[Stubs, Path]) -
     assert "naming.unknown_variable" in codes(again)
 
 
-# --------------------------------------------------------------------------- name, files
-
-
 async def test_name_without_probing(tmp_path: Path) -> None:
     stubs = Stubs()
     folder = (
@@ -486,8 +476,8 @@ def test_partial_outputs() -> None:
 
 
 def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -> None:
-    """Review finding: deinterlace runs before the crop, so a deinterlacing job's crop is on
-    the progressive grid (as C-7 computes it): a 2-line manual crop stays 2 lines."""
+    """Deinterlace runs before the crop, so a deinterlacing job's crop is on the progressive
+    grid: a 2-line manual crop stays 2 lines."""
     from reframe.command import build_plan
     from reframe.models import CropRect, CropSettings, FilterConfig, SameAsSource
 

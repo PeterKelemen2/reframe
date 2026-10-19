@@ -1,11 +1,6 @@
-"""``reframe encode`` end to end on the real queue (C-11) and real FFmpeg (C-15 "Done when";
-M2 demo item 3): a fixture encoded and re-probed, a season folder named by the template,
-Ctrl+C as a real SIGINT to a subprocess, and foreign waiting jobs in the shared store left
-alone.
-
-Each test has its own config, data and cache folders; the tool paths come from the
-environment (``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, else discovery), as in CI.
-"""
+"""``reframe encode`` on the real queue and FFmpeg: foreign waiting jobs in the shared store
+are left alone. Each test has its own config, data and cache folders; the tool paths come
+from the environment (``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, else discovery), as in CI."""
 
 from __future__ import annotations
 
@@ -110,8 +105,8 @@ def test_encode_a_fixture(dirs: dict[str, Path], fixture_media: Media, tmp_path:
 def test_encode_a_season_folder(
     dirs: dict[str, Path], fixture_media: Media, tmp_path: Path
 ) -> None:
-    """05 §C-15 "Done when": a season folder encoded end to end, each output named by the
-    template (the file name: a season pack)."""
+    """A season folder encoded end to end, each output named by the template (the file name:
+    a season pack)."""
     episodes = sorted(fixture_media("season").glob("*.mkv"))[:3]
     folder = tmp_path / "media" / SEASON
     folder.mkdir(parents=True)
@@ -136,7 +131,6 @@ def test_encode_a_season_folder(
 
 
 def long_source(path: Path, seconds: int = 60) -> Path:
-    """A 720p source that takes x265 ``slow`` long enough to interrupt."""
     ffmpeg = media.find_ffmpeg()
     assert ffmpeg is not None
     subprocess.run(
@@ -168,8 +162,6 @@ def _default_sigint() -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT; Windows: the mocked tests")
 def test_ctrl_c_cancels_only_its_own_jobs(dirs: dict[str, Path], tmp_path: Path) -> None:
-    """M2 demo item 3: SIGINT once progress has started → exit 130, no ``.part`` file left,
-    and a foreign waiting job in the store is neither started nor cancelled."""
     folder = tmp_path / "media" / "Long.Movie.2020.720p-GRP"
     folder.mkdir(parents=True)
     source = long_source(folder / "long.mkv")
@@ -185,9 +177,8 @@ def test_ctrl_c_cancels_only_its_own_jobs(dirs: dict[str, Path], tmp_path: Path)
         env=env,
         text=True,
         encoding="utf-8",
-        # A suite started as a background job of a non-interactive shell (``pytest … &``)
-        # inherits SIGINT as ignored, and Python keeps an inherited "ignore" (as ``nohup``
-        # users expect). The command under test gets the default, as in a terminal.
+        # A background job (``pytest … &``) inherits SIGINT as ignored, and Python keeps an
+        # inherited "ignore". The command under test gets the default, as in a terminal.
         preexec_fn=_default_sigint,
     )
     lines: list[str] = []

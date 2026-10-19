@@ -1,4 +1,4 @@
-"""``reframe.metadata.remux_job`` (C-13): a drafted job turned into a remux-only job."""
+"""``reframe.metadata.remux_job``: a drafted job turned into a remux-only job."""
 
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ def recorded(name: str, path: Path) -> MediaSource:
 
 
 def drafted(source: MediaSource) -> JobSettings:
-    """A job as a preset drafts it: x265, every audio encoded, a range, tags, a new file."""
     return JobSettings(
         source=SourceRef(path=source.ref.path),
         output=OutputSettings(container="mp4", path=Path("/out/x.mp4"), passthru_metadata=False),

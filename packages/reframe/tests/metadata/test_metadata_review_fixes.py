@@ -1,14 +1,5 @@
-"""Core-complete review fixes of C-13 through the facade, the real queue and the real tools
-(decision 0034, follow-up of 2026-10-16):
-
-- R4-3: with MediaInfo on, the re-probe after the M6 demo-3 edit shows a BCP 47 tag only where
-  the file has a ``LanguageIETF`` element (MediaInfo derives ``en`` from ``eng``).
-- R4-4: a file whose ``LanguageIETF`` is not a language tag can be drafted and planned (before:
-  ``ValidationError`` out of ``draft``, "unexpected error" in ``reframe plan``).
-- R4-2: a file with a ``SeekHead`` position past 2^63 is probed, and its in-place edit ends
-  as data: mkvpropedit refuses the file (exit code 2, "no corresponding level 1 element"),
-  the runner reports it, and the file is not changed.
-"""
+"""Metadata edits of unusual files through the facade, the real queue and the real tools:
+MediaInfo's BCP 47 tags, an invalid ``LanguageIETF``, and a SeekHead position past 2^63."""
 
 from __future__ import annotations
 
@@ -45,8 +36,8 @@ def _header(data: bytes, pos: int) -> tuple[int, int, int]:
 
 
 def with_bogus_seek_entry(path: Path) -> None:
-    """A Seek entry ``Tracks → 2^64 - 1`` in front of the SeekHead's entries (the Void that
-    FFmpeg reserves after the SeekHead gives the room; no other position moves)."""
+    """A Seek entry ``Tracks → 2^64 - 1`` in front of the SeekHead's entries, in the Void
+    after it."""
     data = bytearray(path.read_bytes())
     _, ebml_size, ebml_header = _header(bytes(data), 0)
     seg = ebml_header + ebml_size
@@ -89,9 +80,7 @@ def with_bad_tag(path: Path, bad: bytes) -> None:
 async def test_demo_3_with_mediainfo_on_shows_only_the_files_bcp47_tags(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M6 demo 3 with MediaInfo on (the ``[mediainfo]`` extra of the dev environment): the
-    untouched tracks have no ``LanguageIETF`` (``mkvmerge -J``: none), so the re-probe shows
-    none (before: ``en``, which MediaInfo derives from ``eng``)."""
+    """Untouched tracks have no ``LanguageIETF``: MediaInfo would derive ``en`` from ``eng``."""
     if mediainfo._library() is None:
         pytest.skip("MediaInfo (pymediainfo) is not available")
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)  # env switched it off
@@ -140,8 +129,6 @@ async def test_a_file_with_an_invalid_language_ietf_can_be_drafted_and_planned(
 
 
 def with_long_names(path: Path, name: str) -> None:
-    """Names that do not fit where ``Tracks`` is: mkvpropedit moves it behind the clusters,
-    so only the ``SeekHead`` finds it."""
     tool = shutil.which("mkvpropedit")
     assert tool is not None
     names = [arg for n in (1, 2, 3) for arg in ("--edit", f"track:a{n}", "--set", f"name={name}")]

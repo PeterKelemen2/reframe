@@ -1,11 +1,5 @@
-"""``reframe encode`` and the when-done countdown (C-15 with C-14 / C-11; decision 0038).
-
-When Settings → Queue → When done is ``sleep`` or ``shutdown``, the queue starts the power
-service's 60 s countdown as the last job ends; ``reframe encode`` shows it and Ctrl+C cancels
-it. Here the queue is :class:`~.fake_queue.FakeQueue` and the power service is
-:class:`FakePower` (the ``PowerService`` contract, with a short tick): **no test can reach a
-real shutdown or suspend**, the fake only records what it would have done.
-"""
+"""``reframe encode`` and the when-done countdown. The fake power service only records the
+action: no test reaches a real shutdown or suspend."""
 
 from __future__ import annotations
 
@@ -42,7 +36,7 @@ EPISODES = [f"Show.S01E{n:02d}.1080p.BluRay.x264-GRP.mkv" for n in (1, 2)]
 
 
 class FakePower:
-    """``PowerService`` (C-14 contract): ``schedule`` → ``started``, a ``tick`` per step, then
+    """``PowerService`` contract: ``schedule`` → ``started``, a ``tick`` per step, then
     ``executing`` (recorded, never run) or ``cancelled``."""
 
     _ids = itertools.count(1)
@@ -212,7 +206,7 @@ def test_a_sleep_countdown(season: Path, setup: Setup, tmp_path: Path) -> None:
 
 
 def test_the_jobs_exit_code_stands(season: Path, setup: Setup, tmp_path: Path) -> None:
-    """A failed job: the queue still runs the when-done action (C-11), exit 1."""
+    """A failed job: the queue still runs the when-done action, exit 1."""
     when_done(tmp_path, "shutdown")
     setup.behaviour = lambda job: "fail" if "E02" in str(job.source.path) else "done"
     setup.power_options = {"seconds": 2}
@@ -265,7 +259,6 @@ def test_a_real_sigint_cancels_the_countdown(season: Path, setup: Setup, tmp_pat
 
 
 def test_a_countdown_cancelled_elsewhere(season: Path, setup: Setup, tmp_path: Path) -> None:
-    """Another front end (the web UI) cancels it: the command ends with the jobs' code."""
     when_done(tmp_path, "shutdown")
 
     def cancel_at_55(event: PowerCountdownEvent) -> None:
@@ -285,8 +278,8 @@ def test_a_countdown_cancelled_elsewhere(season: Path, setup: Setup, tmp_path: P
 def test_no_wait_for_other_settings(
     season: Path, setup: Setup, tmp_path: Path, setting: str
 ) -> None:
-    """``quit`` in a CLI: the command ends by itself (decision 0038); closing Reframe
-    cancels the countdown, so nothing waits and nothing is shown."""
+    """``quit`` in a CLI: the command ends by itself; closing Reframe cancels the countdown,
+    so nothing waits and nothing is shown."""
     when_done(tmp_path, setting)
     setup.action = "quit" if setting == "quit" else None
     started = time.monotonic()
@@ -303,16 +296,13 @@ def test_no_countdown_ends_after_the_start_wait(
     season: Path, setup: Setup, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Shutdown is set but no countdown starts (the power service is not available): the
-    command ends after the short start wait, as before."""
+    command ends after the short start wait."""
     monkeypatch.setattr(cli, "COUNTDOWN_START_WAIT", 0.2)
     when_done(tmp_path, "shutdown")
     setup.action = None
     result = invoke("encode", str(season))
     assert result.exit_code == EXIT_OK, result.output
     assert countdown_lines(result.stdout) == []
-
-
-# --------------------------------------------------------------------------- the view
 
 
 def _event(phase: str, left: int, action: PowerAction = "shutdown") -> PowerCountdownEvent:

@@ -1,7 +1,4 @@
-"""``reframe presets`` after the core-complete review (decision 0038 "Follow-up
-(core-complete review, 2026-10-16)"): R5-9 (names from an imported file carry terminal
-escapes) and the size cap of ``presets import`` (``/dev/zero``, a FIFO). Each test failed
-before its fix."""
+"""``reframe presets``: names with terminal escapes, and the size cap of ``presets import``."""
 
 from __future__ import annotations
 
@@ -37,9 +34,6 @@ def _no_controls(text: str) -> None:
     assert bad == [], repr(text)
 
 
-# --------------------------------------------------------------------------- R5-9
-
-
 def test_r5_9_printable_replaces_control_characters() -> None:
     assert printable(EVIL) == ("Evil�[31mRED�[0m�line2��2J�]0;title�")
     assert printable("Grain 1080p · ünïcödé") == "Grain 1080p · ünïcödé"
@@ -49,8 +43,6 @@ def test_r5_9_printable_replaces_control_characters() -> None:
 def test_r5_9_names_from_an_imported_file_reach_the_terminal_without_escapes(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
-    """``reframe presets import`` and ``list`` printed ``ESC [31m`` (``od -c``: ``033 [ 3 1
-    m``) from a hostile preset's name, category and id."""
     data = {
         "schema_version": 1,
         "presets": [_user_preset("u-\x1b[1mid", EVIL, category="Cat\x1b[5m")],
@@ -69,12 +61,8 @@ def test_r5_9_names_from_an_imported_file_reach_the_terminal_without_escapes(
     as_json = invoke("presets", "list", "--json")
     names = [p["name"] for p in json.loads(as_json.stdout)["presets"]]
     assert any(name.startswith("Evil\x1b[31mRED") for name in names), names
-    # An error that names the preset is one clean line too.
     missing = invoke("presets", "export", "Evil\x1b[31m")
     _no_controls(missing.stderr)
-
-
-# --------------------------------------------------------------------------- the size cap
 
 
 def _refused(result: dict[str, Any] | tuple[int, str]) -> tuple[int, str]:
@@ -95,10 +83,7 @@ def test_import_refuses_a_file_larger_than_the_cap(
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX devices and FIFOs")
 def test_import_never_reads_a_device_or_a_fifo(tmp_path: Path) -> None:
-    """A device was read until memory ran out; a FIFO blocked the command.
-
-    ``/dev/null`` stands in for ``/dev/zero``: the unfixed code ate all memory on the latter.
-    """
+    """``/dev/null`` stands in for ``/dev/zero``, which would exhaust memory on a regression."""
     code, message = _refused(read_preset_file(Path("/dev/null")))
     assert code == EXIT_NOT_FOUND
     assert "not a regular file" in message
@@ -109,7 +94,7 @@ def test_import_never_reads_a_device_or_a_fifo(tmp_path: Path) -> None:
         reader = threading.Thread(target=lambda: result.append(read_preset_file(fifo)), daemon=True)
         reader.start()
         reader.join(5)
-        if reader.is_alive():  # unblock the read of the unfixed code, then fail
+        if reader.is_alive():  # unblock the read, then fail
             with fifo.open("wb") as writer:
                 writer.write(b"{}")
             reader.join(5)
