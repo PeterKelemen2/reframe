@@ -23,7 +23,7 @@ describe('platform selector', () => {
     vi.stubEnv('VITE_PLATFORM', 'desktop')
     const platform = await loadPlatform()
     expect(platform.kind).toBe('desktop')
-    await expect(platform.backend()).rejects.toThrow('not implemented (D-4)')
+    await expect(platform.backend()).rejects.toThrow('not available in this build yet')
   })
 })
 

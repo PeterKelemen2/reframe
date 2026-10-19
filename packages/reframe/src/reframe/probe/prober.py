@@ -50,7 +50,7 @@ from reframe.probe.ffprobe import (
 )
 from reframe.probe.hdr import needs_frame_side_data
 from reframe.probe.parse import (
-    main_video_index,
+    main_video_stream,
     parse_ffprobe,
     vfr_from_timestamps,
     vfr_undecided,
@@ -314,12 +314,10 @@ class Prober:
         cancel: CancelToken,
         warnings: list[str],
     ) -> dict[str, Any] | ProbeError | None:
-        index = main_video_index(data)
-        if index is None:
+        main = main_video_stream(data)
+        if main is None:
             return None
-        stream = next(
-            s for s in data.get("streams", []) if isinstance(s, dict) and s.get("index") == index
-        )
+        index, stream = main
         if not needs_frame_side_data(stream, video_bit_depth(stream)):
             return None
         frames = await run_json(

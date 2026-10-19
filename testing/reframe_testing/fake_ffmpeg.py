@@ -1,10 +1,11 @@
 """Fake ``ffmpeg`` / ``ffprobe`` for fault-injection tests.
 
 The script uses only the standard library and runs with ``-I``. Its behaviour comes from a JSON
-scenario (the path is in ``REFRAME_FAKE_FFMPEG_SCENARIO``). Without a scenario, or when no rule
-matches, :func:`run_defaults` answers the discovery commands with output captured from a real
-FFmpeg (``fake_data/``). Each invocation is logged to the folder in ``REFRAME_FAKE_FFMPEG_LOG``
-when that is set, so a test can see the commands that ran.
+scenario (the path is in ``REFRAME_FAKE_FFMPEG_SCENARIO``), which tests write with
+:class:`reframe_testing.fake_tools.Scenario` and its action helpers. Without a scenario, or when
+no rule matches, :func:`run_defaults` answers the discovery commands with output captured from
+a real FFmpeg (``fake_data/``). Each invocation is logged to the folder in
+``REFRAME_FAKE_FFMPEG_LOG`` when that is set, so a test can see the commands that ran.
 """
 
 from __future__ import annotations

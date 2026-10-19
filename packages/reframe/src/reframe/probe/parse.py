@@ -50,6 +50,7 @@ __all__ = [
     "PARSER_VERSION",
     "layout_hash",
     "main_video_index",
+    "main_video_stream",
     "parse_ffprobe",
     "parse_rational",
     "vfr_from_timestamps",
@@ -205,11 +206,17 @@ def _is_cover_art(stream: Mapping[str, Any]) -> bool:
 
 def main_video_index(data: Mapping[str, Any]) -> int | None:
     """Absolute index of the first video stream that is not cover art."""
+    main = main_video_stream(data)
+    return None if main is None else main[0]
+
+
+def main_video_stream(data: Mapping[str, Any]) -> tuple[int, Mapping[str, Any]] | None:
+    """The first video stream that is not cover art, with its absolute index."""
     for stream in _streams(data):
         if stream.get("codec_type") == "video" and not _is_cover_art(stream):
             index = _int(stream.get("index"))
             if index is not None and index >= 0:
-                return index
+                return index, stream
     return None
 
 

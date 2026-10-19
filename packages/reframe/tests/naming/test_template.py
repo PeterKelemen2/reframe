@@ -230,7 +230,8 @@ def test_bad_format_spec() -> None:
     issues = check_template("{season:upper} {date:YYYY} {name:xyz}")
     assert [i.code for i in issues] == ["naming.bad_format_spec"] * 3
     assert all(i.severity is Severity.ERROR for i in issues)
-    assert issues[0].fixes[0].patch[0].value == "{season} {date:YYYY} {name:xyz}"  # type: ignore[union-attr]
+    patch = issues[0].fixes[0].patch[0]
+    assert patch.value == "{season} {date:YYYY} {name:xyz}"  # type: ignore[union-attr]
 
 
 #: A value of each kind that ``format`` takes a width or precision for.
