@@ -1,21 +1,9 @@
-"""**Copy HDR metadata from source** (03 §Advanced encoder options): the encoder's HDR options
-filled from the probe (mastering display, MaxCLL / MaxFALL). Pure.
+"""HDR10 metadata for an encoder's own options, made from the probe. Pure: no I/O.
 
-``Reframe.jobs.hdr_metadata`` turns the values into a JSON patch on ``/video/advanced``. The
-command builder (C-7) writes the same strings when the output stays HDR, so a copied value and
-the automatic one are identical.
-
-The formats, checked with the encoders (testdata/README.md "Advanced encoder options (C-6,
-complete option sets)"):
-
-- x265 ``master-display``: ``G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min)`` with chromaticities in
-  units of 0.00002 and luminance in units of 0.0001 cd/m² (SMPTE ST 2086 / the HEVC SEI);
-  ``max-cll``: ``MaxCLL,MaxFALL`` in cd/m².
-- SVT-AV1 ``mastering-display``: the same layout with plain numbers (``G(0.265,0.69)…
-  L(1000,0.0001)``); ``content-light``: ``MaxCLL,MaxFALL``.
-
-Other encoders have no such options: NVENC, QSV, AMF and VAAPI H.265 take the metadata from the
-frames' side data (VAAPI's ``-sei hdr`` is on by default); x264 and VP9 cannot carry it.
+The strings must match the ones the command builder writes for HDR output, so a copied value
+and the automatic one are identical. Other encoders take no such options. NVENC, QSV, AMF and
+VAAPI H.265 read the metadata from the frames' side data (VAAPI's ``-sei hdr`` is on by
+default), and x264 and VP9 cannot carry it.
 """
 
 from __future__ import annotations
@@ -35,7 +23,7 @@ __all__ = [
 
 
 def x265_master_display(md: MasteringDisplay) -> str:
-    """``G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)``."""
+    """x265 ``master-display``: chromaticity in units of 0.00002, luminance in 0.0001 cd/m²."""
 
     def c(v: float) -> int:
         return round(v * 50000)
@@ -58,7 +46,7 @@ def _plain(value: float) -> str:
 
 
 def svt_mastering_display(md: MasteringDisplay) -> str:
-    """``G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)``."""
+    """SVT-AV1 ``mastering-display``: plain numbers, not the x265 integer units."""
     f = _plain
     return (
         f"G({f(md.green_x)},{f(md.green_y)})B({f(md.blue_x)},{f(md.blue_y)})"
@@ -68,7 +56,6 @@ def svt_mastering_display(md: MasteringDisplay) -> str:
 
 
 def content_light_text(cll: ContentLightLevel) -> str:
-    """``1000,400`` (MaxCLL, MaxFALL)."""
     return f"{cll.max_cll},{cll.max_fall}"
 
 
@@ -97,11 +84,10 @@ _PARAMS: dict[str, Callable[[HdrInfo], str | None]] = {
 
 
 def hdr_options(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, OptionValue]:
-    """``VideoSettings.advanced`` values (option key → value) that carry ``stream``'s HDR10
-    metadata with ``encoder``'s own options (x265 ``master-display`` / ``max-cll``, SVT-AV1
-    ``mastering-display`` / ``content-light``). Empty when the stream has no HDR10 metadata or
-    the encoder has no such options. A mastering display without a peak luminance and a
-    content light level of ``0,0`` count as missing. Pure."""
+    """The ``VideoSettings.advanced`` values (option key → value) that carry the HDR10 metadata
+    of ``stream``. Empty when the stream has no HDR10 metadata or the encoder has no such
+    options. A mastering display without a peak luminance, and a content light level of
+    ``0,0``, count as missing."""
     hdr = stream.hdr
     if hdr is None:
         return {}

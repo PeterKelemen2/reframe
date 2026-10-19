@@ -1,15 +1,4 @@
-"""Load and validate ``definitions/data/*.toml`` (C-6). Pure: reads package data only.
-
-Files:
-
-- ``video_encoders.toml``: ``[encoder.<id>]`` tables. ``extends = "<base>"`` (or a list)
-  merges ``[base.<name>]`` tables under the encoder's own keys (tables merge key by key, other
-  values are replaced). ``option_sets = ["<set>", …]`` prepends the options of
-  ``options/<file>.toml`` ``[[set.<set>]]`` arrays to the encoder's own ``options``.
-- ``audio_encoders.toml``: ``[encoder.<id>]``, ``[mixdown.<id>]``, ``[passthru.<id>]``.
-- ``containers.toml``: ``[container.<id>]``, ``[flag.<id>]``.
-- ``filters.toml``: ``filter_order`` and ``[filter.<id>]``.
-"""
+"""Load and validate ``definitions/data/*.toml``. Reads package data only."""
 
 from __future__ import annotations
 
