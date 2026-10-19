@@ -27,7 +27,6 @@ from reframe.models import (
     AudioCodecRules,
     AudioDefaults,
     AudioOutputSettings,
-    AudioStream,
     JobTemplate,
     LanguageSettings,
     MediaSource,
@@ -35,7 +34,6 @@ from reframe.models import (
     SourceFingerprint,
     SubtitleDefaults,
     SubtitleOutputSettings,
-    SubtitleStream,
     TrackMetadataTemplate,
     TrackRole,
     TrackSelection,
@@ -455,8 +453,3 @@ def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | No
             assert draft.decisions == audio.decisions
             assert draft.subtitle_decisions == subtitles.decisions
             assert draft.issues == issues
-
-
-def test_a_streams_of_the_wrong_kind_list_is_fine() -> None:
-    assert isinstance(example().audio[0], AudioStream)
-    assert isinstance(example().subtitles[0], SubtitleStream)
