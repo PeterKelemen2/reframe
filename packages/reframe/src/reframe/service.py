@@ -1,24 +1,9 @@
-"""The ``Reframe`` facade (C-15): the one object that UIs (CLI, server, desktop) talk to.
-
-02 §Cross-cutting rules 5: UIs use this object and ``reframe.models``, never the internal
-modules. M1 wired the services of that milestone (tools, sources); C-4 adds ``capabilities``;
-C-11 adds ``queue``; the other M2 steps add theirs (presets, jobs, batch, settings) as
-attributes of :class:`Reframe`.
-
-Example::
-
-    async with await Reframe.create() as app:
-        outcome = await app.sources.probe("Show S01E01.mkv")
-        if isinstance(outcome, ProbeError):
-            print(outcome.message)
-        else:
-            print(outcome.audio[0].display_codec)
-
-Expected failures are values, never exceptions: :meth:`SourceService.probe` returns a
+"""The ``Reframe`` facade. The UIs use this object and ``reframe.models``, never the internal
+modules. Expected failures are values, never exceptions: :meth:`SourceService.probe` returns a
 :class:`ProbeError` for a missing file, a file that is not media, or an ffprobe that cannot be
-used; :meth:`ToolsService.status` returns a :class:`~reframe.models.ToolSet` whose entries say
-why a tool is missing. Using the facade after :meth:`Reframe.close` is a programming error
-(:class:`ReframeClosedError`).
+used, and :meth:`ToolsService.status` returns a :class:`~reframe.models.ToolSet` whose entries
+say why a tool is missing. Using the facade after :meth:`Reframe.close` raises
+:class:`ReframeClosedError`.
 """
 
 from __future__ import annotations
@@ -103,8 +88,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-#: Returns the current settings. Every service reads the settings through this one callable,
-#: so the settings store (C-9) plugs in without changing the services or their callers.
+#: Returns the current settings. Every service reads them through this one callable.
 SettingsGetter = Callable[[], AppSettings]
 
 #: Sources that :meth:`SourceService.get` keeps in memory (the disk cache keeps all).
@@ -121,21 +105,16 @@ class ReframeClosedError(RuntimeError):
 
 
 def tool_usable(info: ToolInfo) -> bool:
-    """A tool can be run: status ``found`` and a path. ``too_old`` and ``broken`` are not."""
+    """A tool can be run: its status is ``found`` and it has a path."""
     return info.status is ToolStatus.FOUND and info.path is not None
 
 
-# --------------------------------------------------------------------------- tools
-
-
 class ToolsService:
-    """Which ffmpeg, ffprobe, mkvpropedit and mediainfo Reframe uses (C-1), and re-scans.
+    """Which external tools Reframe uses, and re-scans.
 
-    Discovery runs in the background: :meth:`start` (called by :meth:`Reframe.create`) does
-    not wait. :meth:`status` waits for the running discovery; :attr:`current` does not.
-    Every finished discovery publishes ``tools.changed`` on the event bus. :meth:`fetch`
-    downloads the pinned FFmpeg build into ``<data dir>/tools/ffmpeg`` (``reframe tools
-    fetch``).
+    Discovery runs in the background: :meth:`start` returns at once, :meth:`status` waits for
+    it, :attr:`current` does not. Every finished discovery publishes ``tools.changed``.
+    :meth:`fetch` downloads the pinned FFmpeg build into ``<data dir>/tools/ffmpeg``.
     """
 
     def __init__(
@@ -165,7 +144,6 @@ class ToolsService:
 
     @property
     def discovering(self) -> bool:
-        """A discovery is running."""
         return self._task is not None and not self._task.done()
 
     def start(self) -> None:
@@ -192,15 +170,13 @@ class ToolsService:
                 self._task = None
 
     async def versions(self) -> dict[ToolName, str | None]:
-        """``{"ffmpeg": "n9.0.2", …}``; ``None`` for a tool that was not found."""
+        """The version of each tool; ``None`` for a tool that was not found."""
         tools = await self.status()
         return {name: tools.get(name).version for name in TOOL_NAMES}
 
     async def rescan(self) -> ToolSet:
-        """Run discovery again (after a Settings → Tools change, or *Check again*).
-
-        A discovery that is still running is cancelled first: its result would be stale.
-        """
+        """Run discovery again. A discovery that is still running is cancelled first: its
+        result would be stale."""
         if self._closed:
             raise ReframeClosedError
         old = self._task
@@ -216,11 +192,10 @@ class ToolsService:
         platform: str | None = None,
         manifest: Path | None = None,
     ) -> TaskInfo:
-        """Download the pinned FFmpeg build of the manifest (``build``, for ``platform``;
-        ``None``: this one), check it, install it as the bundled build in
-        ``<data dir>/tools/ffmpeg`` and run discovery again (task ``tools_fetch``, result
-        :class:`~reframe.models.ToolFetchResult`). Returns at once. ``manifest``: another
-        manifest file (tests)."""
+        """Download the FFmpeg build ``build`` of the manifest for ``platform`` (``None``: this
+        one), check it, install it as the bundled build in ``<data dir>/tools/ffmpeg`` and run
+        discovery again. Returns at once; the task result is
+        :class:`~reframe.models.ToolFetchResult`. ``manifest``: another manifest file."""
         if self._closed:
             raise ReframeClosedError
         if self._tasks is None or self._data_dir is None:
@@ -250,9 +225,9 @@ class ToolsService:
         return task
 
     async def _discover(self) -> ToolSet:
-        # discover_tools(), but locate_tools() runs in a thread (a network share can be slow
-        # to stat). The TaskGroup waits for every version check, so close() returns only
-        # after every child process is gone.
+        # Same steps as discover_tools(), but locate_tools() runs in a thread: a network share
+        # can be slow to stat. The TaskGroup waits for every version check, so close() returns
+        # only after every child process is gone.
         located = await asyncio.to_thread(
             locate_tools, self._settings().tools, bundled_roots=self._bundled_roots
         )
@@ -267,25 +242,22 @@ class ToolsService:
         return tools
 
 
-# --------------------------------------------------------------------------- sources
-
-
 class SourceService:
-    """Probing source files (C-3): one file, a folder (as a task), and the known sources; the
-    analysis and preview tasks of a source (C-10): bitrate and subtitle scans, loudness,
-    frames, crop detection.
+    """Probing source files: one file, a folder (as a task) and the known sources. Also the
+    analysis and preview tasks of a source: bitrate and subtitle scans, loudness, frames and
+    crop detection.
 
-    Results are cached in memory and on disk (``<cache dir>/probe``), keyed by path + size +
+    Results are cached in memory and on disk (``<cache dir>/probe``), keyed by path, size,
     mtime and the ffprobe build, so probing an unchanged file again is cheap. Measured values
     (a bitrate scan, subtitle event counts) are stored into the known source and the cache
     (:meth:`update`, :meth:`store`; one file at a time).
 
-    The C-10 methods need :attr:`media` (the facade sets it); they start a background task and
-    return its :class:`~reframe.models.TaskInfo` at once.
+    The analysis and preview methods need :attr:`media`, which the facade sets. They start a
+    background task and return its :class:`~reframe.models.TaskInfo` at once.
     """
 
     media: MediaTaskContext | None = None
-    """What the C-10 tasks need from the facade (set by :class:`Reframe`)."""
+    """What the analysis and preview tasks need from the facade (set by :class:`Reframe`)."""
 
     def __init__(
         self,
@@ -323,8 +295,7 @@ class SourceService:
 
         Never raises for problems with the file or the tool: a missing file is
         ``ProbeErrorKind.NOT_FOUND`` (also when ffprobe is missing too), an unusable ffprobe is
-        ``TOOL_FAILED`` (``detail`` is the tool's status reason; see :meth:`ToolsService.status`
-        for its origin), a file that is not media is ``FAILED``.
+        ``TOOL_FAILED``, a file that is not media is ``FAILED``.
         """
         self._check_open()
         token = cancel or CancelToken()
@@ -338,8 +309,7 @@ class SourceService:
                     ProbeErrorKind.CANCELLED,
                     "The probe was cancelled: Reframe is shutting down.",
                 )
-            # The file checks first (missing, not a file, unreadable), so an unreadable file is
-            # reported as such and not as an ffprobe failure.
+            # File checks first: an unreadable file is reported as such, not as an ffprobe failure.
             problem = await asyncio.to_thread(_check_file, path)
             if isinstance(prober, ToolInfo):
                 return problem or _tool_error(_absolute(path), prober)
@@ -359,13 +329,13 @@ class SourceService:
         recursive: bool = False,
         concurrency: int = DEFAULT_CONCURRENCY,
     ) -> TaskInfo:
-        """Probe every media file of a folder as a background task (kind ``probe_folder``).
+        """Probe every media file of a folder as a background task.
 
         Returns at once. Progress and the end come as ``task.progress`` / ``task.done``
-        events. ``TaskInfo.result`` is ``{"folder", "total", "probed": [paths], "errors":
-        [...]}``; the :class:`FolderProbeResult` (with the sources) is
-        ``Reframe.tasks.value(task_id)``, and every source is also returned by :meth:`get`.
-        An unusable ffprobe gives a result with one ``tool_failed`` error for the folder.
+        events. ``TaskInfo.result`` is the JSON form of the :class:`FolderProbeResult`;
+        ``Reframe.tasks.value(task_id)`` returns the object itself, and every source is also
+        returned by :meth:`get`. An unusable ffprobe gives a result with one error for the
+        folder.
         """
         self._check_open()
         if concurrency < 1:
@@ -373,7 +343,7 @@ class SourceService:
         root = _absolute(path)
 
         async def work(ctx: TaskContext) -> FolderProbeResult:
-            if has_nul(root):  # listing it would raise ValueError (final review RN)
+            if has_nul(root):  # listing it would raise ValueError
                 return FolderProbeResult(
                     root, errors=[ProbeError(root, ProbeErrorKind.NOT_FOUND, _NUL_PATH)]
                 )
@@ -494,7 +464,7 @@ class SourceService:
 
     async def _store(self, source: MediaSource) -> None:
         file = Path(source.ref.path)
-        if has_nul(file):  # a source sent through the API; os.stat would raise ValueError
+        if has_nul(file):  # a NUL character in the path: os.stat would raise ValueError
             return
         try:
             stat = await asyncio.to_thread(os.stat, file)
@@ -518,20 +488,18 @@ class SourceService:
                 options=prober.cache_options(),
             )
 
-    # ------------------------------------------------------------------ C-10 tasks
-
     def bitrate_scan(self, path: str | os.PathLike[str], stream_index: int) -> TaskInfo:
-        """Measure one stream's bit rate from its packet sizes (the **Measure** button;
-        task ``bitrate_scan``, result :class:`~reframe.models.BitrateScan`). When it is done,
-        the stream's bit rate is stored with the source ``measured`` (:meth:`store`)."""
+        """Measure one stream's bit rate from its packet sizes. The task result is
+        :class:`~reframe.models.BitrateScan`. When it is done, the bit rate is stored with the
+        source as measured (:meth:`store`)."""
         return analysis.start_bitrate_scan(self._media(), _absolute(path), stream_index)
 
     def subtitle_scan(
         self, path: str | os.PathLike[str], stream_indexes: Sequence[int] | None = None
     ) -> TaskInfo:
         """Count the events of the subtitle tracks (all when ``stream_indexes`` is ``None``)
-        and the forced events of PGS / VobSub tracks (task ``subtitle_scan``, result
-        :class:`~reframe.models.SubtitleScan`); the counts are stored (:meth:`store`)."""
+        and the forced events of PGS and VobSub tracks. The task result is
+        :class:`~reframe.models.SubtitleScan`; the counts are stored (:meth:`store`)."""
         return analysis.start_subtitle_scan(self._media(), _absolute(path), stream_indexes)
 
     def loudness_scan(
@@ -542,9 +510,9 @@ class SourceService:
         start: float | None = None,
         duration: float | None = None,
     ) -> TaskInfo:
-        """Measure an audio track's loudness (EBU R128, ``loudnorm``; task ``loudness``,
-        result :class:`~reframe.models.LoudnessMeasurement`): the whole track, or
-        ``duration`` seconds from ``start``."""
+        """Measure an audio track's loudness (EBU R128, ``loudnorm``): the whole track, or
+        ``duration`` seconds from ``start``. The task result is
+        :class:`~reframe.models.LoudnessMeasurement`."""
         return analysis.start_loudness_scan(
             self._media(), _absolute(path), stream_index, start=start, duration=duration
         )
@@ -557,9 +525,10 @@ class SourceService:
         timestamps: Sequence[float] | None = None,
         job: JobSettings | None = None,
     ) -> TaskInfo:
-        """PNG frames of the source (task ``frames``, result :class:`~reframe.models.FrameSet`):
-        at ``timestamps``, else ``count`` evenly spaced ones (``None``: Settings → Preview);
-        with ``job`` also the output frames (crop, scale, filters). Cached on disk."""
+        """PNG frames of the source, at ``timestamps``, else ``count`` evenly spaced ones
+        (``None``: the default from the settings). With ``job``, also the output frames (crop,
+        scale, filters). The task result is :class:`~reframe.models.FrameSet`. Cached on disk.
+        """
         return preview.start_frames(
             self._media(), _absolute(path), count=count, timestamps=timestamps, job=job
         )
@@ -569,17 +538,17 @@ class SourceService:
         return preview.frame_path(self._media(), key)
 
     async def preview_cache_size(self) -> int:
-        """Bytes of cached preview frames and clips (Settings → Preview)."""
+        """Bytes of cached preview frames and clips."""
         return await asyncio.to_thread(preview.cache_size, self._media())
 
     async def clear_preview_cache(self) -> int:
-        """Remove every cached preview frame and clip (Settings → Preview → *Clear cache*);
-        the bytes freed. Temporary files of running tasks stay."""
+        """Remove every cached preview frame and clip; return the bytes freed. Temporary files
+        of running tasks stay."""
         return await asyncio.to_thread(preview.clear_cache, self._media())
 
     def cropdetect(self, path: str | os.PathLike[str], *, count: int | None = None) -> TaskInfo:
-        """Crop detection on the sample frames (task ``cropdetect``, result
-        :class:`~reframe.models.CropDetection`: the automatic and the conservative crop)."""
+        """Crop detection on the sample frames. The task result is
+        :class:`~reframe.models.CropDetection`: the automatic and the conservative crop."""
         return preview.start_cropdetect(self._media(), _absolute(path), count=count)
 
     async def close(self, timeout: float = CLOSE_TIMEOUT) -> None:  # noqa: ASYNC109
@@ -588,8 +557,6 @@ class SourceService:
             token.cancel("shutting down")
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._idle.wait(), timeout)
-
-    # ------------------------------------------------------------------ internals
 
     def _check_open(self) -> None:
         if self._is_closed():
@@ -645,20 +612,18 @@ def _absolute(path: str | os.PathLike[str]) -> Path:
 
 
 def _same_version(a: MediaSource, b: MediaSource) -> bool:
-    """Both sources were probed from the same version of the file (size and mtime)."""
     fa, fb = a.ref.fingerprint, b.ref.fingerprint
     return fa is not None and fb is not None and (fa.size, fa.mtime) == (fb.size, fb.mtime)
 
 
-#: The ``ProbeError`` message of a path with a NUL character (only the API can send one).
+#: The ``ProbeError`` message of a path with a NUL character.
 _NUL_PATH = "The path has a NUL character, which no file system allows: no file can have this name."
 
 
 def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
-    """The file checks of :meth:`Prober.probe` (missing, not a file), plus a real open, because
-    ``stat()`` succeeds on a file without read permission. A path with a NUL character is
-    ``NOT_FOUND`` (``os.stat`` raises ``ValueError`` for it, not ``OSError``; final review
-    RN, decision 0016)."""
+    """The file checks of :meth:`Prober.probe` (missing, not a file), plus a real open. A path
+    with a NUL character is ``NOT_FOUND``: ``os.stat`` raises ``ValueError`` for it, not
+    ``OSError``."""
     file = _absolute(path)
     if has_nul(file):
         return ProbeError(file, ProbeErrorKind.NOT_FOUND, _NUL_PATH)
@@ -687,8 +652,6 @@ def _tool_error(path: Path, info: ToolInfo) -> ProbeError:
     )
 
 
-# --------------------------------------------------------------------------- settings
-
 #: Called after a settings change took effect: ``(old, new)``.
 SettingsListener = Callable[[AppSettings, AppSettings], None]
 
@@ -699,15 +662,14 @@ _PATCH_ADAPTER: TypeAdapter[list[JsonPatchOp]] = TypeAdapter(list[JsonPatchOp])
 
 
 class SettingsService:
-    """The application settings (C-9): ``<config>/settings.json`` through
+    """The application settings: ``<config>/settings.json`` through
     :class:`~reframe.settings.SettingsStore`.
 
     :meth:`get` is the one settings getter of every service (``Reframe.settings_snapshot``).
-    :meth:`update` applies a change, saves it and tells the facade, which re-runs tool
-    discovery when a tool path changed and encoder detection when ``encoders.hardware_tests``
-    or ``encoders.vaapi_device`` changed. :attr:`problems` keeps the ``app.warning`` events of
-    the start-up load (a damaged, newer or unreadable file), which were published before any
-    UI could subscribe.
+    :meth:`update` applies and saves a change; the facade then re-runs the discoveries that the
+    change affects (:meth:`Reframe._settings_changed`). :attr:`problems` keeps the
+    ``app.warning`` events of the start-up load (a damaged, newer or unreadable file), which
+    were published before any UI could subscribe.
     """
 
     def __init__(
@@ -744,16 +706,14 @@ class SettingsService:
     async def update(
         self, change: AppSettings | Sequence[JsonPatchOp | Mapping[str, object]]
     ) -> SettingsUpdate:
-        """Replace the settings (an :class:`AppSettings`) or change them with a JSON patch
-        (RFC 6902, as the ``target="settings"`` fixes carry: ``[{"op": "replace", "path":
-        "/queue/parallel_jobs", "value": 2}]``).
+        """Replace the settings (an :class:`AppSettings`), or change them with a JSON patch
+        (RFC 6902).
 
-        An invalid change is rejected (``issues``; nothing changes): a value the model rejects
-        or settings nested more than ``MAX_DEPTH`` levels deep (``settings.invalid``), or a
-        change of ``schema_version`` (``settings.schema_version``: Reframe sets it; a newer
-        number would make the next start treat the file as newer and use the defaults). A
-        valid one takes effect at once; when it cannot be saved, ``warnings`` says why
-        (``saved`` is ``False``).
+        An invalid change is rejected: nothing changes and ``issues`` says why. That is a value
+        the model rejects, settings nested more than ``MAX_DEPTH`` levels deep, or a change of
+        ``schema_version``: Reframe sets it, and a newer number would make the next start treat
+        the file as newer and use the defaults. A valid change takes effect at once; when it
+        cannot be saved, ``warnings`` says why (``saved`` is ``False``).
         """
         async with self._lock:
             old = self._settings
@@ -818,11 +778,8 @@ class SettingsService:
         )
 
 
-# --------------------------------------------------------------------------- presets
-
-
 class PresetService:
-    """Built-in and user presets (C-9) through :class:`~reframe.presets.PresetStore`.
+    """Built-in and user presets through :class:`~reframe.presets.PresetStore`.
 
     Reading is synchronous (the file is read once, at the first use). Changes are async: the
     file is written in a worker thread. Expected failures (a name clash, a built-in that
@@ -901,58 +858,23 @@ class PresetService:
         return await asyncio.to_thread(self._store.import_, file, on_conflict)
 
 
-# --------------------------------------------------------------------------- facade
-
-
 class Reframe:
-    """The Reframe core as one object (C-15). Create it with ``await Reframe.create()``.
+    """The Reframe core as one object. Create it with ``await Reframe.create()``, then use it
+    as an async context manager or call :meth:`close` at the end.
 
-    Services that exist now:
-
-    - :attr:`events` — the async event bus (``tools.changed``, ``capabilities.changed``,
-      ``task.progress``, ``task.done``).
-    - :attr:`tools` — :class:`ToolsService`: tool status, versions, re-scan (C-1).
-    - :attr:`capabilities` — :class:`~reframe.capabilities.CapabilityService`: encoder
-      statuses (``snapshot`` never waits, ``wait``, ``rescan``, ``closest_available``),
-      detected in the background with a cache under ``<cache dir>/capabilities`` (C-4).
-    - :attr:`sources` — :class:`SourceService`: ``probe``, ``probe_folder``, ``get`` (C-3);
-      ``bitrate_scan``, ``subtitle_scan``, ``loudness_scan``, ``frames``, ``frame``,
-      ``cropdetect`` (C-10 tasks), ``preview_cache_size``, ``clear_preview_cache``, ``store``
-      (measured values).
-    - :attr:`tasks` — the background task manager (``get``, ``list``, ``cancel``, ``wait``,
-      ``value``) for the tasks that the services start.
-    - :attr:`settings` — :class:`SettingsService`: ``get``, ``update``, ``problems`` (C-9).
-    - :attr:`presets` — :class:`PresetService`: built-in and user presets, the default,
-      export / import, ``diff`` (C-9).
-    - :attr:`jobs` — :class:`~reframe.jobs.JobService`: ``draft`` a job from a source and a
-      preset, ``validate`` it (waiting a bounded time for encoder detection), ``plan`` it,
-      ``name`` a path, ``media_files`` of files and folders (C-15).
-    - :attr:`queue` — :class:`~reframe.queue.QueueService`: the encode queue (``add``,
-      ``list``, ``start``, ``pause``, ``resume``, ``cancel``, ``retry``, ``wait``, logs),
-      saved in ``<data dir>/queue.sqlite3`` (C-11).
-    - :attr:`power` — :class:`~reframe.platform.power.PowerService`: the when-done power
-      actions with their 60 s countdown (``schedule``, ``cancel``, ``pending``; C-14).
-
-    - :attr:`batch` — :class:`~reframe.batch.service.BatchService`: season mode (``group``,
-      ``derive``, ``merge``, ``resolve``, ``save_preset``; C-12).
-
-    **Settings.** ``<config>/settings.json`` is read in :meth:`create` (a damaged, newer or
-    unreadable file gives an ``app.warning``, kept in ``settings.problems``). Every service
-    reads the settings through :meth:`settings_snapshot` (one :data:`SettingsGetter`). A
-    change through ``settings.update`` takes effect at once; a changed tool path re-runs tool
-    discovery, and a changed ``encoders.hardware_tests`` or ``encoders.vaapi_device`` re-runs
-    encoder detection, both in the background.
+    **Settings.** ``<config>/settings.json`` is read in :meth:`create`; a damaged, newer or
+    unreadable file gives an ``app.warning``, kept in ``settings.problems``. Every service reads
+    the settings through :meth:`settings_snapshot`. A change through ``settings.update`` takes
+    effect at once, and the facade re-runs the tool discovery or encoder detection that it
+    affects, in the background.
 
     **Queue.** The queue opens ``<data dir>/queue.sqlite3`` at its first use, not in
-    :meth:`create` (decision 0027): the process that takes the lock ``queue.lock`` owns the
-    saved queue and restores it (jobs that were running become ``interrupted``); another
-    process gets a private queue in memory and an ``app.warning``. The queue is not started
-    (``queue.start()``). :meth:`close` stops the running jobs first (they end
-    ``interrupted``, their ``.part`` files removed) and frees the lock.
-
-    Use ``async with await Reframe.create() as app:`` or call :meth:`close` at the end:
-    it stops the queue, cancels running tasks, probes and the encoder detection (killing their
-    processes) and closes the event bus.
+    :meth:`create`, so that a second command cannot interrupt a running encode. The process
+    that takes the lock ``queue.lock`` owns the saved queue and restores it (jobs that were
+    running become ``interrupted``); another process gets a private queue in memory and an
+    ``app.warning``. The queue is not started (``queue.start()``). :meth:`close` stops the
+    running jobs first (they end ``interrupted``, their ``.part`` files removed) and frees the
+    lock.
     """
 
     events: EventBus
@@ -1040,7 +962,7 @@ class Reframe:
         presets = self.presets
 
         def preset_naming(job: JobSettings) -> NamingOptions | None:
-            """The naming options of the job's preset (``None``: Settings → Output)."""
+            """The naming options of the job's preset (``None``: the output settings)."""
             preset = presets.get(job.preset_id) if job.preset_id is not None else None
             return preset.naming if preset is not None else None
 
@@ -1063,14 +985,12 @@ class Reframe:
         *,
         cache_dir: Path | None = None,
     ) -> Reframe:
-        """Create the facade and start tool discovery and encoder detection in the
-        background. Returns at once. The saved queue is not opened here: the queue opens it at
-        its first use (decision 0027).
+        """Create the facade and start tool discovery and encoder detection in the background.
+        Returns at once. The saved queue is not opened here: the queue opens it at its first use.
 
-        The folders default to :mod:`reframe.paths` (``REFRAME_CONFIG_DIR``,
-        ``REFRAME_DATA_DIR``, ``REFRAME_CACHE_DIR`` or the platform folders). ``data_dir``
-        also decides where the fetched tools are looked for (``<data dir>/tools``). Nothing is
-        created on disk until a service writes there.
+        The folders default to those of :mod:`reframe.paths`. ``data_dir`` also decides where
+        the fetched tools are looked for (``<data dir>/tools``). Nothing is created on disk
+        until a service writes there.
         """
         config = Path(config_dir) if config_dir is not None else paths.config_dir()
         data = Path(data_dir) if data_dir is not None else paths.data_dir()

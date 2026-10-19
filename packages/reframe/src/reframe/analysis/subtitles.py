@@ -1,45 +1,11 @@
-"""Subtitle scans (05 §C-10, 03 §Subtitles): event counts, and the forced events of PGS and
-VobSub tracks (the *Events* column and the foreign-audio-search suggestion).
-
-Up to three kinds of passes over the file, each one process (decision 0032):
-
-1. **Packet count** of the requested tracks that are not PGS: one ffprobe for all of them::
-
-       ffprobe -v error -select_streams s -show_entries packet=stream_index,pts_time,size \\
-           -of compact=p=0 -i <file>
-
-   One packet is one event (an SRT / ASS line, a VobSub subpicture), as mkvmerge's
-   ``NUMBER_OF_FRAMES`` statistics tag counts them. **MP4 / MOV text** (``mov_text``, the
-   ``tx3g`` / ``text`` samples) is different: a sample is a 16-bit text length, the text and
-   style boxes, and a text track has no gaps, so a muxer fills the time before the first cue
-   and between two cues with an **empty sample** (length 0: 2 bytes). FFmpeg's MP4 / MOV
-   muxer writes one for every gap (3 SRT cues with gaps: 6 samples of 2, 7, 2, 7, 2, 9 bytes);
-   a cue without text (empty, or ASS override tags only) gets no sample of its own. So a
-   ``mov_text`` packet of :data:`EMPTY_TEXT_SAMPLE` bytes or less is not an event (decision
-   0032 §2; ``testdata/README.md``).
-2. **PGS**: one ffmpeg copies every requested PGS track to a ``.sup`` file in a temporary
-   folder under ``<cache dir>/scans`` (``-map 0:<index> -c copy -f sup``), and
-   :func:`read_display_sets` reads the segment headers. The event count is the number of
-   display sets (in Matroska, one block per display set: the same as the packet count and
-   ``NUMBER_OF_FRAMES``; in M2TS every segment is a packet, so packets would count each event
-   about four times). A display set is **forced** when its presentation composition has a
-   composition object with the forced flag (``0x40``): the bit FFmpeg's PGS decoder checks.
-   A decode with ``forced_subs_only`` **cannot** count them: FFmpeg's ``pgssubdec`` still
-   returns every display set and only leaves the palette of a non-forced object empty
-   (checked with ffprobe n9.0.2: the same subtitles with and without the option;
-   ``testdata/README.md``). Every subtitle is two display sets (show, then clear), so the
-   event count of a PGS track is about twice its number of subtitles, and the forced count
-   counts the forced *show* display sets.
-3. **VobSub** forced events: one ffprobe per track decodes it with the decoder option
-   ``forced_subs_only``, which makes FFmpeg's ``dvdsubdec`` drop every subpicture that does not
-   start with the forced command::
-
-       ffprobe -v error -forced_subs_only 1 -select_streams <index> \\
-           -show_entries subtitle=pts_time -of compact=p=0 -i <file>
-
-   One line per forced event.
-
-**Progress** is the packet time against the duration, the passes one after the other.
+"""Subtitle scans: the event counts of the subtitle tracks, and the forced events of PGS and
+VobSub tracks. The passes run one after the other. Packets count the events of the tracks
+that are not PGS, one packet per event, except the empty filler samples of ``mov_text``
+tracks. PGS tracks are copied to ``.sup`` files and their display sets are counted: packets
+would count each PGS event twice (its show and its clear), and a decode with
+``forced_subs_only`` cannot count the forced PGS events, so the forced flag is read from the
+composition. VobSub forced events are counted by a decode with ``forced_subs_only``. Why each
+pass is what it is: ``testdata/README.md``, "Analysis scans".
 """
 
 from __future__ import annotations
@@ -299,8 +265,8 @@ async def _count_packets(
 
 
 async def _read_in_thread(out: Path, cancel: CancelToken) -> DisplaySets:
-    """:func:`read_display_sets` in a worker thread. On a cancel, wait for the thread (the
-    token stops it within a few segments), so the file is closed before it is removed."""
+    """:func:`read_display_sets` in a worker thread. On a cancel, wait for the thread (it checks
+    the token regularly), so the file is closed before it is removed."""
     reader = asyncio.ensure_future(asyncio.to_thread(_read_file, out, cancel))
     try:
         return await asyncio.shield(reader)
