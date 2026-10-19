@@ -1,18 +1,4 @@
-"""Shared helpers of the command builder tests (C-7).
-
-- :func:`recorded`: a ``MediaSource`` from the recorded ffprobe JSON (``testdata/probes``),
-  parsed as C-3 parses it, at a fixed path (``/media/<name>``) so plans do not depend on
-  the machine.
-- :func:`caps`: a capability snapshot where every encoder of the definitions is available
-  (VAAPI on ``/dev/dri/renderD128``) and the build has every filter.
-- :func:`tools`: a tool set with ffmpeg, ffprobe and mkvpropedit found (no paths: the
-  display shows the bare names).
-- :func:`draft`: a job like the M2 draft (decision 0018): every audio track (encoded or
-  passed through), every subtitle copied, the metadata of the source tracks.
-- :func:`run_plan`: runs a plan's steps with real tools, as the queue (C-11) will: writes
-  the plan files, parses the ``loudnorm`` measurements of ``analyse`` steps, resolves the
-  templates, renames the partial file.
-"""
+"""Helpers of the command builder tests: probes, capabilities, tools, drafts and plan runs."""
 
 from __future__ import annotations
 
@@ -55,8 +41,9 @@ OUT = Path("/out")
 
 
 def recorded(name: str, *, path: Path | None = None) -> MediaSource:
-    """``multitrack.mkv`` (a generated fixture) or ``truehd-atmos`` (a recorded probe, at its
-    recorded file name: ``/media/movie-truehd-atmos.mkv``)."""
+    """A ``MediaSource`` from a recorded ffprobe JSON in ``testdata/probes`` (``fixtures/``
+    first). ``path`` overrides the default ``/media/<recorded file name>``.
+    """
     probe = PROBES / "fixtures" / f"{name}.json"
     file_name = name
     if not probe.exists():
@@ -120,7 +107,7 @@ def tools(*, mkvpropedit: bool = True, paths: dict[ToolName, Path] | None = None
 
 
 def source_metadata(stream: Any) -> TrackMetadata:
-    """The flags of a source track (decision 0018: a draft keeps them)."""
+    """The flags of a source track, which a draft keeps."""
     d = stream.disposition
     return TrackMetadata(
         default=d.default,
@@ -142,7 +129,7 @@ def draft(
     subtitles: bool = True,
     **settings: Any,
 ) -> JobSettings:
-    """An M2-style draft job; ``settings`` are JobSettings fields (``video=…``)."""
+    """A draft job; ``settings`` are JobSettings fields (``video=…``)."""
     ext = {"mkv": ".mkv", "mp4": ".mp4", "webm": ".webm"}[container]
     path = output if output is not None else OUT / (source.ref.path.stem + ext)
     out = settings.pop("output_settings", {})
@@ -177,8 +164,6 @@ def draft(
     return job.model_copy(update=settings)
 
 
-# --------------------------------------------------------------------------- running plans
-
 _LOUDNORM = re.compile(r"\{[^{}]*\"input_i\"[^{}]*\}", re.S)
 
 
@@ -192,8 +177,7 @@ class RunResult:
 
 
 def run_plan(plan: EncodePlan, tool_paths: dict[str, str], *, cleanup: bool = True) -> RunResult:
-    """Run every step like the queue (C-11) will. Raises ``AssertionError`` when a step
-    fails (with its stderr)."""
+    """Run every step. Raises ``AssertionError`` when a step fails (with its stderr)."""
     result = RunResult(plan)
     for f in plan.files:
         f.path.write_text(f.content, encoding="utf-8", newline="\n")

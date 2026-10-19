@@ -165,7 +165,7 @@ AWKWARD = [
 
 @pytest.mark.parametrize("shell", ["bash", "zsh", "fish", "sh"])
 def test_posix_display_pastes_into_bash_zsh_and_fish(shell: str, tmp_path: Path) -> None:
-    """M2 review: a POSIX display with ``'`` or ``\\`` did not paste into fish (inside single
+    """A POSIX display with ``'`` or ``\\`` did not paste into fish (inside single
     quotes fish reads ``\\\\`` and ``\\'`` as escapes)."""
     program = shutil.which(shell)
     if program is None:

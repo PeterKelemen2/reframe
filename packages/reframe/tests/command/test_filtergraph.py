@@ -1,5 +1,4 @@
-"""The filter graph: escaping (a known source of bugs: 05 §C-7 asks for dedicated tests),
-Windows paths, the fixed filter order, colour tagging, HDR side data and burn-in."""
+"""The filter graph: escaping, Windows paths, filter order, colour, HDR side data and burn-in."""
 
 from __future__ import annotations
 
@@ -45,9 +44,6 @@ from reframe_testing import media
 from .conftest import caps, recorded
 
 DEFS = load_definitions()
-
-
-# --------------------------------------------------------------------------- escaping
 
 
 @pytest.mark.parametrize(
@@ -130,9 +126,6 @@ def test_subtitles_filter_opens_awkward_file_names(
     assert proc.stderr == ""
 
 
-# --------------------------------------------------------------------------- availability
-
-
 def test_libplacebo_counts_only_when_its_run_test_passed() -> None:
     assert filter_available(caps(libplacebo=True), DEFS)["libplacebo"] is True
     assert filter_available(caps(libplacebo=False), DEFS)["libplacebo"] is False
@@ -140,9 +133,6 @@ def test_libplacebo_counts_only_when_its_run_test_passed() -> None:
     unknown = filter_available(caps(filters=False), DEFS)
     assert unknown["zscale"] is True
     assert unknown["libplacebo"] is False
-
-
-# --------------------------------------------------------------------------- colour
 
 
 def stream(**kwargs: object) -> VideoStream:
@@ -166,9 +156,6 @@ def test_keeps_hdr() -> None:
     assert not keeps_hdr(hdr, {"tonemap": FilterConfig()}, 10)
     assert not keeps_hdr(hdr, {"colorspace": FilterConfig()}, 10)
     assert not keeps_hdr(stream(), {}, 10)
-
-
-# --------------------------------------------------------------------------- the graph
 
 
 def geometry_of(video: VideoStream, **settings: object) -> Geometry:
@@ -249,7 +236,7 @@ def test_a_deinterlacer_that_sends_fields_doubles_the_rate(
     ],
 )  # fmt: skip
 def test_detelecine_lowers_the_rate(filters: dict[str, FilterConfig], factor: Fraction) -> None:
-    """M2 review, second round: ``decimate`` drops one frame in five."""
+    """``decimate`` drops one frame in five."""
     g = build_video_graph(
         video=stream(), filters=filters, geometry=geometry_of(stream()), scaler="lanczos",
         tail=["format=yuv420p"], definitions=DEFS, available=filter_available(caps(), DEFS),
@@ -330,7 +317,7 @@ def test_the_default_preset_is_the_implementations_default() -> None:
         stream(), {"denoise": FilterConfig(implementation="hqdn3d")}
     )
     assert "zscale=p=bt709:t=bt709:m=bt709" in graph(stream(), {"colorspace": FilterConfig()})
-    # An unknown tune falls back to the preset's plain chain (C-6's FilterPreset.chain_for).
+    # An unknown tune falls back to the preset's plain chain.
     assert "nlmeans=s=2.1:p=7" in graph(stream(), {"denoise": FilterConfig(tune="nope")})
 
 
@@ -383,14 +370,11 @@ def test_bitmap_overlay_is_bottom_aligned_in_the_cropped_picture() -> None:
 def test_bitmap_overlay_keeps_more_than_8_bits(
     bit_depth: int | None, pix_fmt: str | None, expected: str | None
 ) -> None:
-    """M2 review, finding M3: ``overlay`` cut a 10-bit source to 8 bits."""
+    """``overlay`` cut a 10-bit source to 8 bits."""
     video = stream(bit_depth=bit_depth, pix_fmt=pix_fmt)
     assert overlay_format(video) == expected
     written = graph(video, {}, bitmap_burn=BitmapBurn(input_label="0:5", canvas=(1920, 1080)))
     assert ("overlay=eof_action=pass:format=" in written) is (expected is not None)
-
-
-# --------------------------------------------------------------------------- helpers for C-10
 
 
 def test_is_hdr() -> None:
@@ -412,7 +396,6 @@ def test_colour_params_is_the_graphs_setparams() -> None:
 @pytest.mark.parametrize("libplacebo", [True, False])
 @pytest.mark.parametrize("tagged", [True, False])
 def test_tonemap_filters_are_the_graphs(libplacebo: bool, tagged: bool) -> None:
-    """C-10 maps HDR frames for display with the same filters as the Tone mapping filter."""
     colour = ColorInfo(primaries="bt2020", transfer="smpte2084", matrix="bt2020nc")
     video = stream(hdr=HdrInfo(formats=[HdrFormat.HDR10]), color=colour if tagged else ColorInfo())
     available = filter_available(caps(libplacebo=libplacebo), DEFS)

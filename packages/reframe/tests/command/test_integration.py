@@ -1,11 +1,4 @@
-"""C-7 "Done when", part 2: plans run on fixture media with the real FFmpeg, and the outputs
-are probed again (``reframe.probe``) to check the stream layout, languages, titles and flags.
-
-Each test drafts a job for a generated fixture, builds the plan, runs every step as the
-queue will (:func:`conftest.run_plan`: plan files written first, ``ArgTemplate`` values
-taken from a real ``analyse`` step, ``.part`` renamed at the end) and checks the result.
-The hardware encodes are ``needs_gpu`` (VAAPI and AMF on the development machine).
-"""
+"""Plans run with the real FFmpeg on fixture media; the outputs are probed again."""
 
 from __future__ import annotations
 
@@ -164,9 +157,6 @@ def flags(stream: Any) -> set[str]:
     return {n for n in names if getattr(d, n)}
 
 
-# --------------------------------------------------------------------------- Matroska
-
-
 async def test_mkv_languages_titles_and_all_six_flags(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
@@ -224,9 +214,6 @@ async def test_single_stream_gets_its_default_flag(
     assert [flags(a) for a in out.audio] == [{"default"}]
 
 
-# --------------------------------------------------------------------------- MP4
-
-
 async def test_mp4_iso639_2t_mov_text_hvc1(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
@@ -258,16 +245,13 @@ async def test_mp4_iso639_2t_mov_text_hvc1(
     # MP4 track titles read back as "name" (FFmpeg's mov demuxer), not "title".
     assert streams[4]["tags"].get("name") == "Magyar"
     out = await probe(prober, tmp_path / "out.m4v")
-    assert out.subtitles[0].title == "Magyar"  # the probe reads "name" as the title (C-3)
+    assert out.subtitles[0].title == "Magyar"  # the probe reads "name" as the title
     assert [a.language for a in out.audio] == ["deu", "eng", "eng"]
     assert flags(out.audio[2]) >= {"comment"}
     # +faststart: the moov box comes before mdat.
     head = (tmp_path / "out.m4v").read_bytes()[:4096]
     assert head.find(b"moov") != -1
     assert head.find(b"moov") < max(head.find(b"mdat"), 4096)
-
-
-# --------------------------------------------------------------------------- 2-pass
 
 
 @pytest.mark.parametrize(
@@ -296,9 +280,6 @@ async def test_two_pass_and_its_log_files(
     out = await probe(prober, tmp_path / "2pass.mkv")
     assert len(out.video) == 1
     assert len(out.audio) == 3
-
-
-# --------------------------------------------------------------------------- loudness
 
 
 async def test_two_pass_loudnorm_reaches_the_target(
@@ -334,15 +315,11 @@ def measure_loudness(tool: str, path: Path, index: int) -> float:
     return float(proc.stderr.split('"input_i" : "')[1].split('"')[0])
 
 
-# --------------------------------------------------------------------------- audio snapping
-
-
 async def test_impossible_audio_values_are_snapped(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
-    """Decision 0024 item 4 on the multi-track fixture (AC-3 5.1, two AAC stereo tracks, all
-    48 kHz). Unsnapped, FFmpeg refuses AC-3 at 96 kHz, Opus at 44.1 kHz and Opus stereo at
-    600 kb/s (testdata/README.md, "Command builder (C-7)")."""
+    """The multi-track fixture (AC-3 5.1, two AAC stereo tracks, all 48 kHz). Unsnapped, FFmpeg
+    refuses AC-3 at 96 kHz, Opus at 44.1 kHz and Opus stereo at 600 kb/s."""
     src = await source_of(prober, fixture_media("multitrack"))
     job = draft(src, output=tmp_path / "snap.mkv", video=FAST_X264, subtitles=False)
     a0, a1, a2 = job.audio
@@ -362,7 +339,7 @@ async def test_impossible_audio_values_are_snapped(
     assert [a.bitrate.value for a in out.audio[:2]] == [640_000, 224_000]
 
 
-#: Source layout → the layout libopus gets (``reframe.command.audio``, M2 review finding M2).
+#: Source layout → the layout libopus gets (``reframe.command.audio``).
 OPUS_LAYOUTS = {
     "5.0(side)": ("5.0", 5),  # AC-3 3/2: side → back, a relabel
     "quad(side)": ("quad", 4),
@@ -475,9 +452,6 @@ async def test_71_source_gets_the_layout_the_encoder_can_make(
     assert rates == [pytest.approx(640_000, rel=0.001), pytest.approx(1_536_000, rel=0.001)]
 
 
-# --------------------------------------------------------------------------- ranges, chapters
-
-
 async def test_time_range_cuts_the_copied_chapters(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
@@ -517,8 +491,8 @@ async def test_chapter_range_with_renamed_chapters(
 async def test_chapter_range_end_after_the_last_chapter_is_clamped(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
-    """Chapters 3 to 9 of the 4-chapter fixture: the range ends with the last chapter
-    (decision 0026), so the output is chapters 3 and 4."""
+    """Chapters 3 to 9 of the 4-chapter fixture: the range ends with the last chapter, so the
+    output is chapters 3 and 4."""
     src = await source_of(prober, fixture_media("chapters"))
     assert len(src.chapters) == 4
     job = draft(src, output=tmp_path / "clamped.mkv", video=FAST_X264)
@@ -549,9 +523,6 @@ async def test_generated_chapters_and_tags(
     assert out.container.title == "multitrack (320x180)"
     assert tags["album_artist"] == "Somebody"
     assert tags["synopsis"] == "A plot"
-
-
-# --------------------------------------------------------------------------- burn-in
 
 
 def frame_hashes(tool: str, path: Path) -> list[str]:
@@ -641,8 +612,8 @@ async def test_bitmap_burn_in_keeps_10_bits(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
     """``overlay`` works in 8-bit YUV unless told otherwise: a 10-bit encode with burned
-    bitmap subtitles had no luma sample with its two low bits set (M2 review, finding M3).
-    Lossless x265, so that the encoder adds no low bits of its own."""
+    bitmap subtitles had no luma sample with its two low bits set. Lossless x265, so that the
+    encoder adds no low bits of its own."""
     combined = mux_video_and_subtitle(
         tool_paths["ffmpeg"], fixture_media("hdr10"), fixture_media("vobsub"),
         tmp_path / "hdr10-vobsub.mkv",
@@ -665,15 +636,11 @@ async def test_bitmap_burn_in_keeps_10_bits(
     )
     samples = video.width * video.height
     assert sum(1 for v in plain_y if v & 3) > samples // 4  # a real 10-bit picture
-    # Outside the subtitles the picture is untouched (8-bit: about 20 % of the samples were
-    # equal, and no sample had its two low bits set).
+    # Outside the subtitles the picture is untouched.
     same = sum(1 for a, b in zip(plain_y, burned_y, strict=True) if a == b)
     assert same > samples * 0.95, same
     out = await probe(prober, tmp_path / "burned.mkv")
     assert out.video[0].bit_depth == 10
-
-
-# --------------------------------------------------------------------------- HDR
 
 
 async def test_hdr10_metadata_passes_through_x265(
@@ -729,9 +696,6 @@ async def test_hdr_to_sdr_tone_mapping(
     assert v.pix_fmt == "yuv420p"
 
 
-# --------------------------------------------------------------------------- remux
-
-
 async def test_remux_mkv_to_mp4(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
@@ -747,9 +711,6 @@ async def test_remux_mkv_to_mp4(
     assert [a.codec for a in out.audio] == ["ac3", "aac", "aac"]
     assert [s.codec for s in out.subtitles] == ["mov_text"] * 3
     assert [a.language for a in out.audio] == ["jpn", "eng", "eng"]
-
-
-# --------------------------------------------------------------------------- external subtitles
 
 
 async def test_external_subtitles_with_offset_and_charset(
@@ -803,10 +764,8 @@ async def test_external_subtitle_with_a_range_starts_at_zero(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path,
     container: Container,
 ) -> None:  # fmt: skip
-    """M2 review, finding M4: chapters.mkv + an external SRT, range 1.2 to 3.7 s. The SRT's
-    first event (0.5 to 1.8 s) is on screen at the range start: it reached the muxer at -0.7 s,
-    so the Matroska muxer moved the video and audio to 0.7 s (the chapters stayed), and the
-    MP4 ``mov_text`` events got wrong times. The event before the range start is dropped."""
+    """chapters.mkv and an external SRT, range 1.2 to 3.7 s. The SRT's first event (0.5 to 1.8 s)
+    is on screen at the range start: it is dropped, and the streams start at 0."""
     src = await source_of(prober, fixture_media("chapters"))
     output = tmp_path / f"range.{container}"
     job = draft(src, output=output, container=container, video=FAST_X264, subtitles=False)
@@ -862,9 +821,6 @@ async def test_remux_with_a_negative_subtitle_offset_starts_at_zero(
     assert [c[0] for c in cues] == ["00:00:01,300 --> 00:00:02,900"]
 
 
-# --------------------------------------------------------------------------- LanguageIETF
-
-
 async def test_bcp47_language_goes_through_mkvpropedit(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
@@ -880,9 +836,6 @@ async def test_bcp47_language_goes_through_mkvpropedit(
     assert mkvmerge_languages(mkvmerge, tmp_path / "ietf.mkv")[2] == ("por", "pt-BR")
     out = await probe(prober, tmp_path / "ietf.mkv")
     assert out.audio[1].language == "por"
-
-
-# --------------------------------------------------------------------------- more plan shapes
 
 
 async def test_every_filter_on_an_untagged_interlaced_source(
@@ -949,7 +902,7 @@ async def test_detelecine_with_a_constant_same_as_source_rate_keeps_the_film_rat
     prober: Prober, tool_paths: dict[str, str], tmp_path: Path, container: Container
 ) -> None:
     """``decimate`` drops one frame in five (30000/1001 → 24000/1001); a constant "same as
-    source" rate of 30000/1001 made FFmpeg duplicate them back (M2 review, second round)."""
+    source" rate of 30000/1001 made FFmpeg duplicate them back."""
     src = await probe(prober, make_telecined_source(tool_paths["ffmpeg"], tmp_path / "tc.mkv"))
     assert (src.video[0].frame_count or 60, str(src.video[0].avg_frame_rate)) == (60, "30000/1001")
     output = tmp_path / f"film.{container}"
@@ -971,7 +924,7 @@ async def test_bob_with_a_constant_same_as_source_rate_keeps_every_field(
 ) -> None:
     """The interlaced fixture: 60 frames (120 fields) at 30000/1001. Bob makes 120 frames;
     the constant "same as source" rate must be 60000/1001, not the source's 30000/1001 (which
-    dropped every second frame; M2 review)."""
+    dropped every second frame)."""
     src = await source_of(prober, fixture_media("interlaced"))
     job = draft(src, output=tmp_path / "bob.mp4", container="mp4",
                 video={**FAST_X264, "framerate_mode": "constant"})  # fmt: skip
@@ -1037,7 +990,7 @@ async def test_encoder_options_are_accepted(
     settings: dict[str, Any],
 ) -> None:
     """The libraries do not fail on a bad parameter; they log it (testdata/README.md
-    "Encoder definitions (C-6)"). So the log must be clean."""
+    "Encoder definitions"). So the log must be clean."""
     src = await source_of(prober, fixture_media("multitrack"))
     job = draft(src, output=tmp_path / "opts.mkv", subtitles=False,
                 video={"encoder": encoder, **settings})  # fmt: skip
@@ -1066,11 +1019,8 @@ async def test_hdr10_metadata_passes_through_svtav1(
     assert v.hdr.content_light == src.video[0].hdr.content_light
 
 
-# --------------------------------------------------------------------------- hardware
-
-
 def hardware_works(tool: str, encoder: str, bit_depth: int) -> bool:
-    """The encoder's own test encode (C-4's command) runs on this machine."""
+    """The encoder's own test encode runs on this machine."""
     enc = load_definitions().video_encoders[encoder]
     pix_fmt = enc.pix_fmts[str(bit_depth)]  # type: ignore[index]
     setup = enc.hardware_setup

@@ -1,14 +1,5 @@
-"""C-7 "Done when", part 1: syrupy snapshots of ``EncodePlan`` for fixture jobs.
-
-Every encoder family (all 16 video encoders), every container, burn-in (text and bitmap,
-source and external), 2-pass, loudnorm, external subtitles, ranges (time, chapters, frames),
-HDR → SDR (libplacebo and zscale), HDR passthrough, remux, filters, chapters, tags and
-languages. The sources are the recorded probes of ``testdata/probes`` (the generated
-fixtures and the real-world recordings), so the plans do not depend on the machine.
-
-Update with ``uv run pytest packages/reframe/tests/command/test_snapshots.py
---snapshot-update`` and review the diff.
-"""
+"""Syrupy snapshots of ``EncodePlan`` for fixture jobs. The sources are recorded probes, so the
+plans do not depend on the machine. Update with ``--snapshot-update`` and review the diff."""
 
 from __future__ import annotations
 
@@ -76,9 +67,6 @@ def encoder_case(
     return plain(job, src)
 
 
-# --------------------------------------------------------------------------- every encoder
-
-
 @case
 def x264_mkv_multitrack_crf() -> Case:
     return encoder_case("libx264", preset="slow", tune="film", profile="high", level="4.1")
@@ -86,7 +74,6 @@ def x264_mkv_multitrack_crf() -> Case:
 
 @case
 def x265_mkv_1080p_multitrack() -> Case:
-    """The M2 demo: "H.265 MKV 1080p" on the multi-track fixture, all audio and subtitles."""
     return encoder_case("libx265", rate_control=ConstantQuality(value=22), preset="slow")
 
 
@@ -171,9 +158,6 @@ def av1_vaapi() -> Case:
     return encoder_case("av1_vaapi", "anamorphic.mkv")
 
 
-# --------------------------------------------------------------------------- containers
-
-
 @case
 def mp4_web_optimized_mov_text_ac3_passthru() -> Case:
     src = recorded("multitrack.mkv")
@@ -204,7 +188,7 @@ def webm_truehd_falls_back_to_opus() -> Case:
     src = recorded("truehd-atmos")
     job = draft(src, container="webm", audio="passthru", audio_encoder="libopus",
                 video={"encoder": "libsvtav1"})  # fmt: skip
-    job.audio[1].encoder = None  # no fallback named: AAC, which WebM cannot hold → see test
+    job.audio[1].encoder = None  # no fallback named: AAC, which WebM cannot hold
     job.audio[1].encoder = "libopus"
     return plain(job, src)
 
@@ -226,7 +210,6 @@ def mkv_dts_hd_passthru_and_mixdowns() -> Case:
 
 @case
 def audio_values_snapped_to_the_encoder() -> Case:
-    """Decision 0024 item 4: what the encoder cannot do is snapped with C-6's helpers."""
     src = recorded("multitrack.mkv")  # AC-3 5.1(side), AAC stereo, AAC stereo commentary
     job = draft(src, video={"encoder": "libx264"}, subtitles=False)
     a0, a1, a2 = job.audio
@@ -277,9 +260,6 @@ def audio_quality_flac_and_mp3() -> Case:
     return plain(job, src)
 
 
-# --------------------------------------------------------------------------- burn-in
-
-
 @case
 def burn_text_subtitle_from_source() -> Case:
     src = recorded("multitrack.mkv")
@@ -320,7 +300,7 @@ def burn_vobsub_bitmap() -> Case:
 @case
 def burn_external_srt_special_characters_windows_display() -> Case:
     """Every character the filter graph parser treats specially, in the subtitle's path; the
-    display quoted for Windows. (Windows paths themselves: ``test_filtergraph.py``.)"""
+    display quoted for Windows."""
     src = recorded("multitrack.mkv")
     job = draft(src, video={"encoder": "libx264"}, subtitles=False)
     ext = ExternalSubtitle(
@@ -339,9 +319,6 @@ def burn_external_sup_forced() -> Case:
     ext = ExternalSubtitle(path=Path("/media/forced.sup"), offset_ms=1000)
     job.subtitles = [SubtitleOutputTrack(source=ext, action="burn", forced_only=True)]
     return plain(job, src)
-
-
-# --------------------------------------------------------------------------- 2-pass
 
 
 @case
@@ -377,9 +354,6 @@ def x265_two_pass_stats_path_with_colon_windows_display() -> Case:
     return plain(job, src, shell="windows")
 
 
-# --------------------------------------------------------------------------- loudness
-
-
 @case
 def loudnorm_ebu_dpl2_gain() -> Case:
     src = recorded("multitrack.mkv")
@@ -392,7 +366,6 @@ def loudnorm_ebu_dpl2_gain() -> Case:
 
 @case
 def loudnorm_two_tracks_with_two_pass() -> Case:
-    """The 2-pass + loudnorm job of the report."""
     src = recorded("multitrack.mkv")
     job = draft(src, video={"encoder": "libx264",
                             "rate_control": AverageBitrate(kbps=1800, two_pass=True)})  # fmt: skip
@@ -400,9 +373,6 @@ def loudnorm_two_tracks_with_two_pass() -> Case:
     job.audio[1].loudness = "ebu_r128"
     job.range = TimeRange(start=0.5, end=3.5)
     return plain(job, src)
-
-
-# --------------------------------------------------------------------------- external subtitles
 
 
 @case
@@ -434,9 +404,6 @@ def external_srt_into_mp4_with_range() -> Case:
     ]  # fmt: skip
     job.range = TimeRange(start=2.0, end=3.0)
     return plain(job, src)
-
-
-# --------------------------------------------------------------------------- ranges and chapters
 
 
 @case
@@ -478,9 +445,6 @@ def chapters_off() -> Case:
     job = draft(src, video={"encoder": "libx264"})
     job.chapters = ChapterSettings(enabled=False)
     return plain(job, src)
-
-
-# --------------------------------------------------------------------------- HDR
 
 
 @case
@@ -526,9 +490,6 @@ def hdr10_sei_only_to_8bit_x264() -> Case:
     return encoder_case("libx264", "hdr10-sei-only")
 
 
-# --------------------------------------------------------------------------- remux
-
-
 @case
 def remux_mkv_to_mp4() -> Case:
     src = recorded("multitrack.mkv")
@@ -551,9 +512,6 @@ def video_passthrough_hevc_into_mp4_with_encoded_audio() -> Case:
     job = draft(src, container="mp4", audio="encode", audio_encoder="eac3")
     job.video.passthrough = True
     return plain(job, src)
-
-
-# --------------------------------------------------------------------------- dimensions, filters
 
 
 @case
@@ -634,9 +592,6 @@ def frame_rate_peak_30() -> Case:
     return plain(job, src)
 
 
-# --------------------------------------------------------------------------- metadata
-
-
 @case
 def languages_flags_and_ietf() -> Case:
     src = recorded("multitrack.mkv")
@@ -686,9 +641,6 @@ def eac3_atmos_without_mkvpropedit() -> Case:
     job = draft(src, audio="passthru", video={"encoder": "libx264"})
     job.subtitles[0].metadata = TrackMetadata(language="pt-BR")
     return plain(job, src, tools=tools(mkvpropedit=False))
-
-
-# --------------------------------------------------------------------------- metadata edit (C-13)
 
 
 def _in_place(path: Path = Path("/media/multitrack.mkv")) -> tuple[JobSettings, MediaSource]:
@@ -750,9 +702,6 @@ def posix_display_with_tool_paths() -> Case:
     job = draft(src, video={"encoder": "libx264"}, output=Path("/out/It's here (2024).mkv"))
     tool_paths = {"ffmpeg": Path("/opt/reframe/tools/ffmpeg/bin/ffmpeg")}
     return plain(job, src, tools=tools(paths=tool_paths))  # type: ignore[arg-type]
-
-
-# --------------------------------------------------------------------------- the snapshots
 
 
 def test_there_are_at_least_40_fixture_jobs() -> None:
