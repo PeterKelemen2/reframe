@@ -55,7 +55,7 @@ def test_qsv_command() -> None:
 
 #: The ``c4_*`` captures made with :func:`hardware_test_argv` (``c4_h264_amf_10bit`` is not:
 #: h264_amf has no 10-bit pixel format in the definitions).
-C4_CAPTURES = sorted(
+HARDWARE_CAPTURES = sorted(
     n
     for n in ft.captures()
     if n.startswith("c4_") and n != "c4_h264_amf_10bit" and "libplacebo" not in n
@@ -63,8 +63,8 @@ C4_CAPTURES = sorted(
 FILTER_CAPTURES = sorted(n for n in ft.captures() if n.startswith("c4_libplacebo"))
 
 
-def test_there_are_c4_captures() -> None:
-    assert len(C4_CAPTURES) == 9
+def test_there_are_hardware_and_filter_captures() -> None:
+    assert len(HARDWARE_CAPTURES) == 9
     assert FILTER_CAPTURES == ["c4_libplacebo_no_vulkan", "c4_libplacebo_ok"]
 
 
@@ -81,8 +81,8 @@ def test_filter_command() -> None:
     ]
 
 
-@pytest.mark.parametrize("name", C4_CAPTURES)
-def test_the_c4_captures_ran_the_current_command(name: str) -> None:
+@pytest.mark.parametrize("name", HARDWARE_CAPTURES)
+def test_the_hardware_captures_ran_the_current_command(name: str) -> None:
     """If a hardware setup in the definitions changes, capture again
     (``capture_fake_data.py --only c4_…``)."""
     capture = ft.captures()[name]
@@ -167,7 +167,7 @@ async def test_run_filter_test(fake_tools: ft.FakeTools) -> None:
     )
 
 
-async def test_run_missing_binary(tmp_path: object) -> None:
+async def test_run_missing_binary() -> None:
     outcome = await run_hardware_test("/nonexistent/ffmpeg", ENCODERS["hevc_amf"])
     assert outcome.failure is not None
     assert outcome.failure.state is EncoderState.ERROR
