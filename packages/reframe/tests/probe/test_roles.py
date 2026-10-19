@@ -209,18 +209,19 @@ def test_mono_commentary_and_case_insensitive_language() -> None:
 
 
 @pytest.mark.parametrize(
-    "stereo",
+    "stereo_kw",
     [
-        audio(2, kbps=224),  # not low
-        audio(2),  # bit rate unknown
-        audio(2, kbps=128, default=True),  # the default track
-        audio(2, kbps=128, lang="ger"),  # another language
-        audio(2, kbps=128, lang="und"),
-        audio(2, kbps=128, lang=None),
-        audio(2, kbps=128, channels=6),  # multichannel itself
+        pytest.param({"kbps": 224}, id="not low"),
+        pytest.param({}, id="bit rate unknown"),
+        pytest.param({"kbps": 128, "default": True}, id="the default track"),
+        pytest.param({"kbps": 128, "lang": "ger"}, id="another language"),
+        pytest.param({"kbps": 128, "lang": "und"}, id="und"),
+        pytest.param({"kbps": 128, "lang": None}, id="no language"),
+        pytest.param({"kbps": 128, "channels": 6}, id="multichannel itself"),
     ],
 )
-def test_no_commentary_heuristic(stereo: AudioStream) -> None:
+def test_no_commentary_heuristic(stereo_kw: dict[str, Any]) -> None:
+    stereo = audio(2, **stereo_kw)
     main = audio(1, channels=6, kbps=640)
     roles.assign_audio_roles([main, stereo])
     assert role_set(stereo) <= {
@@ -271,18 +272,19 @@ def test_forced_heuristic_adds_to_other_roles() -> None:
 
 
 @pytest.mark.parametrize(
-    "other",
+    "other_kw",
     [
-        sub(2, events=300),  # 33 %: not low
-        sub(2, events=None),  # unknown
-        sub(2, events=10, lang="hun"),  # another language
-        sub(2, events=10, lang="und"),
-        sub(2, events=10, forced=True),  # already forced (flag)
-        sub(2, events=10, title="Signs"),  # signs track
-        sub(2, events=0),  # an empty track
+        pytest.param({"events": 300}, id="33 % is not low"),
+        pytest.param({"events": None}, id="unknown"),
+        pytest.param({"events": 10, "lang": "hun"}, id="another language"),
+        pytest.param({"events": 10, "lang": "und"}, id="und"),
+        pytest.param({"events": 10, "forced": True}, id="already forced by flag"),
+        pytest.param({"events": 10, "title": "Signs"}, id="signs track"),
+        pytest.param({"events": 0}, id="an empty track"),
     ],
 )
-def test_no_forced_heuristic(other: SubtitleStream) -> None:
+def test_no_forced_heuristic(other_kw: dict[str, Any]) -> None:
+    other = sub(2, **other_kw)
     full = sub(1, events=900)
     roles.assign_subtitle_roles([full, other])
     assert (TrackRole.FORCED, RoleEvidence.HEURISTIC) not in role_set(other)

@@ -33,7 +33,6 @@ from .test_matroska import (
 _SEGMENT = 0x18538067
 _SEEK_HEAD = 0x114D9B74
 _TRACKS = 0x1654AE6B
-_INFO = 0x1549A966
 
 
 def seek(target: int, position: int, *, width: int = 8) -> bytes:

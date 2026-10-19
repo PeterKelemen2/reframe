@@ -198,7 +198,7 @@ def start_probe_folder(
     root = Path(os.path.abspath(folder))
 
     async def work(ctx: TaskContext) -> FolderProbeResult:
-        def report(done: int, total: int, path: Path) -> None:
+        def report(done: int, total: int, _path: Path) -> None:
             ctx.progress(done=done, total=total, message=f"{done}/{total} files")
 
         ctx.progress(0.0, "Listing files")

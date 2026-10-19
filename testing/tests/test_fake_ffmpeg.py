@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import psutil
@@ -38,8 +39,7 @@ def data(name: str) -> bytes:
     return (ft.DATA_DIR / name).read_bytes()
 
 
-def wait_for(predicate: object, timeout: float = 10.0) -> None:
-    assert callable(predicate)
+def wait_for(predicate: Callable[[], bool], timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -208,7 +208,7 @@ def test_captures_come_from_the_pinned_build() -> None:
     assert "configuration: --prefix=/ffbuild/prefix" in version
 
 
-def test_library_strings_confirm_the_c4_texts() -> None:
+def test_library_strings_confirm_the_hardware_error_texts() -> None:
     """Exact hardware error texts in the pinned build (see testdata/README.md)."""
     found = {text: {e["file"] for e in hits} for text, hits in ft.library_strings().items()}
     lib = "lib/libavcodec.so.63.1.102"

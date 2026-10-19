@@ -108,14 +108,17 @@ def test_every_enum_and_bool_value_encodes(encoder_id: str) -> None:
 
 def test_every_software_encoder_has_options_in_each_main_category() -> None:
     """VP9 has no colour options of its own (FFmpeg's colour tags apply)."""
-    for encoder_id in ("libx264", "libx265", "libsvtav1"):
-        categories = {o.category for o in DEFS.video_encoders[encoder_id].options}
-        assert {
-            "Rate control",
-            "Frame types / GOP",
-            "Psycho-visual",
-            "Loop filters",
-            "HDR / colour",
-            "Performance",
-        } <= categories, encoder_id
+    main = {
+        "Rate control",
+        "Frame types / GOP",
+        "Psycho-visual",
+        "Loop filters",
+        "HDR / colour",
+        "Performance",
+    }
+    software = {k: e for k, e in DEFS.video_encoders.items() if not e.hardware}
+    assert "libvpx-vp9" in software
+    for encoder_id, encoder in software.items():
+        expected = main - {"HDR / colour"} if encoder_id == "libvpx-vp9" else main
+        assert expected <= {o.category for o in encoder.options}, encoder_id
     assert "Motion / analysis" in {o.category for o in DEFS.video_encoders["libx265"].options}

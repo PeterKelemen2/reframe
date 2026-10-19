@@ -755,8 +755,9 @@ def _anime_recipe(season: int) -> Recipe:
     )
     return Recipe(
         f"anime-s{season:02d}",
-        f"04 §Example season {season}: {count} episodes of H.264 + jpn TrueHD 5.1 + eng DTS-HD "
-        f'MA 5.1 + eng ASS "{ANIME_SIGNS_TITLE}" (forced) + eng ASS "Full" (default){special}',
+        f"Anime season {season} for batch mode: {count} episodes of H.264 + jpn TrueHD 5.1 + "
+        f'eng DTS-HD MA 5.1 + eng ASS "{ANIME_SIGNS_TITLE}" (forced) + eng ASS "Full" '
+        f"(default){special}",
         tuple(outputs),
         tuple(steps),
     )
