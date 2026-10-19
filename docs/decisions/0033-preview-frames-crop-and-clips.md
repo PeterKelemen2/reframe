@@ -206,13 +206,13 @@ None: the plan's bullets are built as written; this record settles what they lea
 - **R3-3: renamed chapters gave the stale clip.** The clip id hashed the plan steps but not
   the plan files, and the chapter names are in the FFMETADATA file (the steps only name it).
   The id now covers the files too (path with the placeholder name, and content) (§6). Test:
-  `tests/preview/test_preview_review_fixes.py::test_renamed_chapters_give_a_new_clip`.
+  `tests/preview/test_clip.py::test_renamed_chapters_give_a_new_clip`.
 - **R3-4: an output chain that FFmpeg refuses lost the source frames.** Source and output frame
   come from one FFmpeg run; with a custom filter that the plan accepts and FFmpeg refuses
   (`eq=gamma=nonsense`), the run failed, no source frame was made and the task failed, against
   §2 and §4. Now a run that fails without the source frame is followed by a run of the source
   frame alone; the output failure is a note (§2, §4). Test:
-  `::test_a_bad_custom_filter_keeps_the_source_frames`.
+  `tests/preview/test_frames.py::test_a_bad_custom_filter_keeps_the_source_frames`.
 - **R3-5: the tone mapping before the detection** (wording only). §3 said that only "the first
   frames of a first start" use zscale. It happens on every start until the snapshot has a
   libplacebo result (short with a cached result, until the run test without one), and the
@@ -224,19 +224,20 @@ None: the plan's bullets are built as written; this record settles what they lea
   time whose key cannot hold it (`reframe.preview.cache.MAX_TIMESTAMP_MS`; checked before the
   rounding, so `1e308` does not overflow) with a message: `1e+10 is not a time in
   letterbox.mkv (frames can be taken up to 999999999.999 s).` Tests:
-  `::test_a_time_a_frame_key_cannot_hold`, `::test_the_last_time_a_frame_key_holds`,
-  `::test_a_time_far_after_the_end`.
+  `tests/preview/test_common.py::test_a_time_a_frame_key_cannot_hold`,
+  `::test_the_last_time_a_frame_key_holds`,
+  `tests/preview/test_frames.py::test_a_time_far_after_the_end`.
 - **R3-7: two runs of one clip wrote the same file.** The temporary file had a fixed name
   (`<id>.part.<ext>`), so two runs of the same clip at once wrote the same file and one failed
   at the rename. Each run now has its own names, and an existing clip is used when the rename
-  is refused (§6). Tests: `::test_two_identical_clips_at_once` (a 4K x265 clip twice with the
-  limit at 2), `::test_a_clip_made_meanwhile_by_another_run`.
+  is refused (§6). Tests: `tests/preview/test_clip.py::test_two_identical_clips_at_once` (a 4K x265
+  clip twice with the limit at 2), `::test_a_clip_made_meanwhile_by_another_run`.
 - **R3-8: documentation.** The `cropdetect` rounding example in `testdata/README.md` said the
   300x150 picture was at 9,13, but it was made with `pad`, which puts it at 8,12 on a 4:2:0
   picture (the chroma grid). With the picture really at 9,13 (`drawbox`) the results are
   `crop=298:148:10:14` (`round=2`) and `crop=288:144:16:16` (`round=1`); the README now has
   both and the exact rounding steps (pinned n9.0.2 and n8.1.3). §1 said that the facade does
   not expose the cache size and clear functions; it does. Test (tool behaviour):
-  `::test_cropdetect_rounding_example`.
+  `tests/preview/test_cropdetect.py::test_cropdetect_rounding_example`.
 
 No plan text changes: 05 §C-10 and 03 §Preview do not cover these details.

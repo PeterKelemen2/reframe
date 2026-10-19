@@ -335,7 +335,7 @@ Errors that cannot be provoked on this machine (old NVIDIA driver, NVIDIA GPU wi
 Intel GPU without support) were confirmed by a byte search for the exact text in the pinned
 build's files. `capture_fake_data.py` does this and writes
 `testing/reframe_testing/fake_data/library_strings.json` (asserted in
-`test_fake_ffmpeg.py::test_library_strings_confirm_the_c4_texts`). Command:
+`test_fake_ffmpeg.py::test_library_strings_confirm_the_hardware_error_texts`). Command:
 
 ```sh
 BIN=$(uv run --no-project python scripts/fetch-tools.py --platform linux-x64 | tail -n 1)
@@ -1491,7 +1491,7 @@ stream_index=1|pts_time=5.000000|duration_time=1.500000|size=9
   the same file has 4 packets: the ASS decoder keeps the empty events, the `mov_text` encoder
   drops them.
 - So the subtitle scan does not count a `mov_text` packet of 2 bytes or less: 3 events, not 6,
-  for the 3 cues (`tests/analysis/test_analysis_review_fixes.py`).
+  for the 3 cues (`tests/analysis/test_analysis_facade.py`).
 
 **PGS in Matroska.** The `sup` demuxer returns one packet per *segment*; the Matroska muxer
 merges the segments of a display set into one block (`pgs_frame_merge`, added by
@@ -1659,7 +1659,7 @@ $ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=
   `pad=320:181:9:13` instead, the picture is at **8,12** (`pad` puts it on the 4:2:0 chroma
   grid; at 9,13 only with a 4:4:4 input): `x1:8 x2:307 y1:12 y2:161`, `round=2` →
   `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`
-  (`tests/preview/test_preview_review_fixes.py::test_cropdetect_rounding_example`).
+  (`tests/preview/test_cropdetect.py::test_cropdetect_rounding_example`).
 
 **The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
 frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of
@@ -1768,7 +1768,7 @@ video; `mkvmerge -J` shows no `language_ietf` on any track). The re-probe check 
 canonical BCP 47 tags on both sides, so it is not fooled. Since the core-complete review
 (R4-3) the probe of a Matroska file takes `language_ietf` from Reframe's reader only, with
 MediaInfo on or off: after the M6 demo edit the probe shows `hun`/`hu`, `por`/`pt-BR`,
-`eng`/`None` (`test_metadata_review_fixes.py`, `test_matroska_review_fixes.py`).
+`eng`/`None` (`test_metadata_unusual_files.py`, `test_matroska_limits_and_ietf.py`).
 
 **An invalid `LanguageIETF`** (R4-4; mkvpropedit writes `language-ietf=en-US` on a1, then the
 five bytes are replaced in the file): ffprobe reads the file (a1 `language=jpn`), `mkvmerge -J`
@@ -1902,7 +1902,7 @@ FFmpeg's log level is.
 
 Checked with the same three builds (Arch n9.0.2, BtbN n9.0.2 and n8.1.3; the results are the
 same in all three), each encode with the target in a temporary folder and a temporary working
-folder. Tests: `tests/validation/test_custom_params_ffmpeg.py`, `test_dryrun_review_fixes.py`,
+folder. Tests: `tests/validation/test_custom_params_ffmpeg.py`, `test_dryrun_ffmpeg.py`,
 `test_option_formats_ffmpeg.py`, `test_levels_ffmpeg.py`.
 
 **Custom parameters that read or write files** (R5-1; the list is
@@ -1978,8 +1978,10 @@ exit 183 ("picture dimensions are out of range for specified level"); `ultrafast
 Checked with the pinned BtbN n9.0.2 (x264 core 165, x265 4.3+49, SVT-AV1 v4.2.0); the tests
 pass with Arch n9.0.2 and BtbN n8.1.3 too. Each encode ran in an empty temporary working
 folder, with an `LD_PRELOAD` logger of every `open` / `fopen`. Tests:
-`tests/validation/test_custom_params_ffmpeg.py` (`test_rc_1_*`),
-`test_custom_params_final_review.py`, `test_option_formats_ffmpeg.py` (`test_rc_2_*`).
+`tests/validation/test_custom_params_ffmpeg.py`
+(`test_x264_reads_and_applies_the_file_a_cqm_value_names`,
+`test_a_value_that_is_a_name_or_a_file_name`), `test_custom_params_cqm.py`,
+`test_option_formats_ffmpeg.py` (`test_signs_and_spaces_with_the_encoders`).
 
 **A value that is a name or a file name** (RC-1). The library reads the value after FFmpeg's
 quotes and escapes:

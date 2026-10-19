@@ -159,8 +159,8 @@ refuses is a validation error. 83 issue codes now (75 before).
 ## Follow-up (M2 review, 2026-10-14)
 
 The milestone review found these; each has a regression test
-(`tests/validation/test_review_fixes.py`, new rule cases in `test_rules.py`, new refusals in
-`test_command_agreement.py`). 88 issue codes now.
+(`tests/validation/test_paths.py`, `test_engine.py`, new rule cases in `test_rules.py`, new
+refusals in `test_command_agreement.py`). 88 issue codes now.
 
 1. **A file the job writes is the source** (finding B2, decision
    [0027](0027-one-process-owns-the-queue-store.md) item 5): `output.same_as_source` (error)
@@ -250,7 +250,9 @@ From the other agents' review fixes (C-4, C-6, C-7). 90 issue codes now.
   the padding is the job's `min-cu-size`, else the preset's default from C-6's per-preset table
   (`x265_min_cu_size`; `x265_level_fits` has a new keyword `min_cu`). Tests:
   `tests/validation/test_levels_ffmpeg.py::test_the_padding_follows_min_cu_size` (the real
-  x265 and validation, five cases) and `test_option_rules_review_fixes.py::test_r5_4_*`.
+  x265 and validation, five cases) and
+  `test_option_values.py::test_x265_level_with_min_cu_size_16_at_medium`,
+  `::test_x265_level_with_min_cu_size_8_at_ultrafast`.
 - New codes of the same review (recorded in [0035](0035-advanced-option-sets-and-dry-run.md)
   "Follow-up (core-complete review)"): `encoder.custom_param_file` and
   `encoder.custom_param_unknown` (errors: custom parameters that name a file, own options
