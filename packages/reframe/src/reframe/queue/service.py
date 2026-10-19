@@ -189,7 +189,6 @@ class QueueService:
         self._clock = clock or SystemClock()
         self._fs: FileSystemView = fs or LocalFileSystem()
         self._inhibitor = inhibitor if inhibitor is not None else create_sleep_inhibitor(events)
-        self._power = power
         self._store = QueueStore(data_dir / STORE_FILE, now=self._clock.now)
         self._owner = StoreLock(data_dir / LOCK_FILE, lock_backend)
         self._runner = JobRunner(
