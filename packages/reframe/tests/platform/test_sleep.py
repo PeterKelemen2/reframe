@@ -1,10 +1,4 @@
-"""reframe.platform.sleep: the counted inhibitor, backends held together, the warning event.
-
-The backends are replaced with fakes here; the logind, session and Windows backends have
-their own tests (``test_sleep_backends.py``), the D-Bus client ``test_sleep_dbus.py``,
-unexpected failures and cancellation ``test_sleep_failures.py``, and
-``test_sleep_real.py`` checks the real locks on a machine with logind and a desktop.
-"""
+"""reframe.platform.sleep: the counted inhibitor, backends held together, the warning event."""
 
 from __future__ import annotations
 

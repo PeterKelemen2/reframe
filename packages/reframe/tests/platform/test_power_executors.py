@@ -1,5 +1,4 @@
-"""The power executors (05 §C-14): the Linux ``systemctl`` argv and the Windows calls, every
-one with a fake command runner or mocked DLLs. Nothing here reaches the operating system."""
+"""The power executors: ``systemctl`` and the Windows calls, with fake runners or mocked DLLs."""
 
 from __future__ import annotations
 
@@ -63,9 +62,6 @@ class FakeRunner:
         return self.answer
 
 
-# --------------------------------------------------------------------------- Linux
-
-
 @pytest.mark.parametrize(("action", "verb"), [("shutdown", "poweroff"), ("sleep", "suspend")])
 async def test_systemctl_argv_and_success(action: power.OsAction, verb: str) -> None:
     run = FakeRunner()
@@ -92,7 +88,6 @@ async def test_systemctl_path_can_be_given() -> None:
             "systemctl poweroff failed (exit code 1): Call to PowerOff failed: Access denied",
         ),
         (
-            # polkit without --no-ask-password prompts; with it, systemctl says this
             result(1, stderr=b"\nCall to PowerOff failed: Interactive authentication required.\n"),
             "systemctl poweroff failed (exit code 1): "
             "Call to PowerOff failed: Interactive authentication required.",
@@ -119,9 +114,6 @@ async def test_systemctl_failures_are_strings(answer: RunResult, expected: str) 
     assert await SystemctlExecutor(run=FakeRunner(answer)).execute("shutdown") == expected
 
 
-# --------------------------------------------------------------------------- Windows: shut down
-
-
 async def test_windows_shutdown_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SYSTEMROOT", "D:\\Win")
     run = FakeRunner()
@@ -129,7 +121,7 @@ async def test_windows_shutdown_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     assert run.calls == [
         ["D:\\Win\\System32\\shutdown.exe", "/s", "/t", "60", "/c", WINDOWS_SHUTDOWN_COMMENT]
     ]
-    assert len(WINDOWS_SHUTDOWN_COMMENT) <= 512  # shutdown /c takes at most 512 characters
+    assert len(WINDOWS_SHUTDOWN_COMMENT) <= 512
 
 
 def test_windows_shutdown_exe_without_system_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,9 +147,6 @@ async def test_windows_shutdown_never_loads_the_dlls() -> None:
     run = FakeRunner()
     await WindowsExecutor(run=run, libraries=no_dlls, shutdown_exe="s.exe").execute("shutdown")
     assert len(run.calls) == 1
-
-
-# --------------------------------------------------------------------------- Windows: sleep
 
 
 class FakeWin32:
@@ -274,11 +263,10 @@ async def test_windows_sleep_enables_the_privilege_then_suspends_on_a_worker_thr
             None,
         ),
         ("CloseHandle", FakeWin32.TOKEN),
-        # sleep, not hibernate; bForce has no effect; wake events stay enabled
         ("SetSuspendState", False, False, False),
     ]
     assert win.threads != [threading.current_thread().name]  # never on the event loop
-    assert run.calls == []  # no shutdown.exe for sleep
+    assert run.calls == []
 
 
 @pytest.mark.parametrize(
@@ -360,9 +348,6 @@ async def test_windows_sleep_without_powrprof() -> None:
     assert detail == (
         "powrprof not available: [WinError 126] The specified module could not be found"
     )
-
-
-# --------------------------------------------------------------------------- per platform
 
 
 def test_default_executor_per_platform() -> None:

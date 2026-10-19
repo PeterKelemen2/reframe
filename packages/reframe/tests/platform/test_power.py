@@ -1,6 +1,4 @@
-"""The power-action countdown (05 §C-14): phases and their order, cancel, a second schedule,
-close, failures as ``app.warning``, quit. Every test uses a fake executor and a fake sleep
-(no test waits 60 real seconds; none reaches the operating system)."""
+"""The power-action countdown: phases, cancel, close and failure warnings."""
 
 from __future__ import annotations
 
@@ -193,7 +191,7 @@ async def test_cancel_without_id_stops_the_running_countdown() -> None:
     assert service.pending is None
     await settle()
     assert ticker.waiting == 0  # the countdown task ended
-    assert service.cancel() is False  # nothing runs any more
+    assert service.cancel() is False
     assert countdown_events(subscription) == []
     assert executor.actions == []
     await service.close()
@@ -222,7 +220,6 @@ async def test_cancel_right_away_has_the_full_time_left() -> None:
 
 
 async def test_cancel_wins_when_the_last_second_is_already_over() -> None:
-    """The last sleep has ended, but the task has not run yet: ``cancel`` still wins."""
     ticker = Ticker()
     service, subscription, executor = make(countdown=1, ticker=ticker)
     service.schedule("shutdown")
@@ -343,8 +340,6 @@ async def test_pending_stays_executing_until_the_action_returns() -> None:
 
 
 async def test_pending_is_executing_right_after_the_event() -> None:
-    """No gap: ``pending`` is the ``executing`` event as soon as it is published, before
-    the executor has even started."""
     executor = BlockingExecutor()
     events = EventBus()
     seen: list[PowerCountdownEvent | None] = []
@@ -369,7 +364,7 @@ async def test_close_during_execute_waits_and_never_cancels_it() -> None:
     await executor.started.wait()
     closing = asyncio.create_task(service.close())
     await settle()
-    assert not closing.done()  # close() waits for the action
+    assert not closing.done()
     assert not executor.cancelled
     executor.release.set()
     await asyncio.wait_for(closing, 5)
@@ -503,7 +498,7 @@ async def test_an_executor_that_raises_is_still_a_warning() -> None:
 
 
 async def test_the_default_sleep_counts_real_seconds() -> None:
-    """One short run on the real ``asyncio.sleep`` (1.5 s: one tick, then executing)."""
+    """One short run on the real ``asyncio.sleep``."""
     events = EventBus()
     subscription = events.subscribe()
     executor = FakeExecutor()

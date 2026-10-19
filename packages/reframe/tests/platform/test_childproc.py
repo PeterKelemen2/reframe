@@ -1,8 +1,4 @@
-"""reframe.platform.childproc: PDEATHSIG (Linux) and the Windows Job Object (mocked kernel32).
-
-The Windows code cannot run on Linux, so these tests replace ``kernel32`` with a mock and
-check the calls: which functions, in which order, with which flags.
-"""
+"""reframe.platform.childproc: PDEATHSIG (Linux) and the Windows Job Object (mocked kernel32)."""
 
 from __future__ import annotations
 
@@ -76,7 +72,7 @@ def test_job_assigns_reframe_itself_with_kill_on_close() -> None:
 
 
 def test_extended_limit_information_has_the_windows_layout() -> None:
-    # 64-bit layout of JOBOBJECT_EXTENDED_LIMIT_INFORMATION (winnt.h): 144 bytes.
+    # 64-bit layout of JOBOBJECT_EXTENDED_LIMIT_INFORMATION (winnt.h).
     if ctypes.sizeof(ctypes.c_void_p) == 8:
         assert ctypes.sizeof(childproc.JobObjectExtendedLimitInformation) == 144
         assert childproc._BasicLimitInformation.LimitFlags.offset == 16
@@ -211,9 +207,6 @@ def test_preexec_kills_itself_when_the_parent_is_already_gone(
     assert killed == [(os.getpid(), SIGKILL)]
 
 
-# --------------------------------------------------------------------------- user-facing programs
-
-
 class _FakePopen:
     """Records the arguments; ``wait`` returns at once (the reaper thread calls it)."""
 
@@ -300,7 +293,7 @@ def test_launch_detached_real_process() -> None:
     pid = childproc.launch_detached([sys.executable, "-c", code])
     try:
         assert psutil.Process(pid).is_running()
-        if sys.platform != "win32":  # its own session (Windows: checked with mocks above)
+        if sys.platform != "win32":  # its own session
             assert os.getsid(pid) == pid != os.getsid(0)
     finally:
         psutil.Process(pid).kill()
