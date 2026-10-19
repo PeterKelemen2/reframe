@@ -1,11 +1,4 @@
-"""The plan the HDR-to-8-bit warning (``filter.hdr_8bit``) describes, run with the real FFmpeg
-(testdata/README.md "Validation (C-8)").
-
-The ``hdr10`` fixture (HEVC 10-bit, BT.2020 PQ, mastering display and content light level)
-encoded to 8-bit without tone mapping: the command builder only changes the pixel format
-(``format=yuv420p``), and FFmpeg keeps the colour tags and the HDR10 side data, so the output
-is an 8-bit HDR10 file. Each fix of the warning gives what its label says.
-"""
+"""The HDR-to-8-bit warning (``filter.hdr_8bit``) and its fixes, run with the real FFmpeg."""
 
 from __future__ import annotations
 
@@ -90,8 +83,8 @@ def probe(path: Path) -> MediaSource:
 
 
 def encode(job: JobSettings, source: MediaSource, out: Path) -> VideoStream:
-    """Run the builder's plan of ``job`` (written to ``out``) as the queue will, and probe
-    the output's video stream."""
+    """Run the builder's plan of ``job`` (written to ``out``), and probe the output's video
+    stream."""
     job = job.model_copy(update={"output": OutputSettings(container="mkv", path=out)})
     plan = build_plan(job, source, CAPS, sc.make_tools())
     for step in plan.steps:

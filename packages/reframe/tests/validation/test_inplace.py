@@ -1,6 +1,5 @@
-"""Validation of in-place metadata edits beyond the rule table (C-13,
-``reframe.validation.inplace``): a clean in-place job has no issue at all (its output is the
-source by design), the file-system checks, and the new output path of the fix."""
+"""Validation of in-place metadata edits: a clean edit, the write-a-new-file fix and source
+writability."""
 
 from __future__ import annotations
 
@@ -60,7 +59,7 @@ def test_write_a_new_file_fix_takes_a_free_name_when_naming_gives_the_source() -
     [issue] = [i for i in s.validate() if i.code == "inplace.not_possible"]
     [fix] = issue.fixes
     assert fix.label == "Write a new file (Movie.2019.1080p.BluRay (1).mkv)"
-    assert sc.check(s) is not None  # every fix removes its issue and adds no error
+    assert sc.check(s) is not None
 
 
 def test_write_a_new_file_fix_without_a_name() -> None:

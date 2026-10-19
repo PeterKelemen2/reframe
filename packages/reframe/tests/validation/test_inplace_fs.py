@@ -1,7 +1,4 @@
-"""``writable_file`` of the file-system views (C-13 follow-up of decision 0034; part of
-``FileSystemView`` since the core-complete review): the real file system on POSIX and (mocked)
-on Windows, the queue's runner check, the test scenario's fake view, a fake view with Windows
-paths, and how ``inplace.source_writable`` and the ``tool.mkvpropedit_missing`` fix use it."""
+"""``writable_file`` of the file-system views, as validation and the queue's runner use it."""
 
 from __future__ import annotations
 
@@ -58,7 +55,7 @@ def test_local_writable_file_on_windows_opens_the_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """On Windows ``os.access`` sees only the read-only attribute, so the file is opened for
-    update instead (mocked: ``sys.platform`` and ``os.access`` that would say yes)."""
+    update instead."""
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(os, "access", lambda *a, **k: True)
     file = tmp_path / "a.mkv"
@@ -90,8 +87,6 @@ def test_source_writable_asks_the_view_with_windows_paths() -> None:
 
 
 def test_every_view_answers_writable_file() -> None:
-    """``writable_file`` is part of ``FileSystemView``: the scenario's fake view answers it from
-    its files and read-only set, so a validation test needs no extra attribute."""
     source = PurePath("/media/Show.mkv")
     fake: FileSystemView = sc.FakeFs(files=[source], readonly=[PurePath("/media/Locked.mkv")])
     assert fake.writable_file(source)
@@ -106,9 +101,7 @@ def test_every_view_answers_writable_file() -> None:
 
 @pytest.mark.skipif(root_user, reason="root can open a read-only file for writing")
 def test_runner_check_is_the_local_view(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The queue's run-time check (``reframe.queue.files.writable_file``) is the validation
-    view's test, also on Windows (mocked: ``os.access`` says yes, as it does for a file whose
-    ACL denies writing; the open for update fails)."""
+    """The queue's run-time check is the validation view's test, also on Windows."""
     file = tmp_path / "a.mkv"
     file.write_bytes(b"content")
     assert files.writable_file(file)

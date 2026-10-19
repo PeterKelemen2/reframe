@@ -1,6 +1,4 @@
-"""The validation engine: the registry and its order, a failing rule, the defaults, the encoder
-switch of the closest-match fix, the size estimate, sources without video, and the property
-that replaces the "odd sizes for 4:2:0" rule."""
+"""The validation engine: rule order, failing rules, defaults, encoder switches and estimates."""
 
 from __future__ import annotations
 
@@ -74,9 +72,6 @@ def context(scenario: Any) -> JobContext:
     )
 
 
-# --------------------------------------------------------------------------- engine
-
-
 def test_rules_run_area_by_area() -> None:
     areas = [rule.area for rule in ordered(JOB_RULES)]
     assert areas == sorted(areas, key=AREAS.index)
@@ -148,9 +143,6 @@ def test_video_passthrough_skips_picture_rules() -> None:
     assert context(s).output_size == (1920, 1080)
 
 
-# --------------------------------------------------------------------------- switching encoders
-
-
 def switch(video: VideoSettings, new: str) -> VideoSettings:
     ops, _ = switch_video_encoder(video, new, DEFS)
     job = JobSettings(source=sc.make_source().ref, video=video)
@@ -213,9 +205,6 @@ def test_switch_from_an_unknown_encoder_rounds_to_the_new_scale() -> None:
     assert switch(video, "libx265").rate_control == ConstantQuality(value=51.0)
 
 
-# --------------------------------------------------------------------------- estimate
-
-
 def test_estimate_bitrate_mode() -> None:
     s = sc.base()
     s.job.video.rate_control = AverageBitrate(kbps=6000)
@@ -268,9 +257,6 @@ def test_range_duration_and_frames() -> None:
     assert frame_count(context(s)) is None
 
 
-# --------------------------------------------------------------------------- odd sizes
-
-
 @settings(max_examples=300, deadline=None)
 @given(
     width=st.integers(16, 4096),
@@ -292,9 +278,7 @@ def test_no_odd_sizes(
     crop: tuple[int, int, int, int],
     size_mode: str,
 ) -> None:
-    """05 §C-8 "odd sizes for 4:2:0": C-5 rounds every size to a multiple of the modulus and
-    of the chroma step, so a 4:2:0 output is never odd and needs no rule. The cropped size is
-    on the chroma grid too (so FFmpeg's ``crop`` does not round it)."""
+    """Output sizes are even, and the cropped size is on the chroma grid too."""
     stream = VideoStream(
         index=0,
         width=width,

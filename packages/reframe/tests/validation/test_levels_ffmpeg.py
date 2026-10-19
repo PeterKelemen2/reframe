@@ -1,11 +1,4 @@
-"""``encoder.level_too_low``: the x265 level limits of validation agree with the real x265
-(testdata/README.md "Validation (C-8)").
-
-x265 refuses a level whose limits the picture exceeds ("picture dimensions are out of range
-for specified level", "frame rate is out of range for specified level"), measured on the
-picture padded to the minimum coding unit: ``min-cu-size``, else the preset's (16 for
-``ultrafast``, 8 otherwise; core-complete review R5-4).
-"""
+"""``encoder.level_too_low`` agrees with what the real x265 accepts."""
 
 from __future__ import annotations
 
@@ -89,10 +82,10 @@ def test_level_limits_match_x265(
 @pytest.mark.parametrize(
     ("preset", "min_cu", "accepted"),
     [
-        ("medium", 16, False),  # R5-4: validation said it fits (padded to 8)
+        ("medium", 16, False),
         ("medium", 32, False),
         ("medium", 8, True),
-        ("ultrafast", 8, True),  # R5-4: validation said it does not fit (padded to 16)
+        ("ultrafast", 8, True),
         ("ultrafast", 16, False),
     ],
 )

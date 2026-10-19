@@ -1,12 +1,5 @@
-"""A path with a NUL character in validation (final review RN, decision 0016 "Follow-up (final
-review, 2026-10-17)").
-
-Only the API can send such a path (JSON allows ``\\u0000``; argv cannot hold a NUL). ``os.stat``,
-``os.path.realpath`` and friends raise ``ValueError`` (not ``OSError``) for it, so
-``LocalFileSystem`` let it out and validation showed ``validation.rule_failed`` ("… Please
-report this."). Now no ``LocalFileSystem`` method raises for it (a NUL path names no file), and
-the output rule gives a plain ``output.not_writable`` error. Each test failed before the fix.
-"""
+"""A NUL character in a path: no ``LocalFileSystem`` method raises for it, and validation reports
+a clean error."""
 
 from __future__ import annotations
 
@@ -53,9 +46,9 @@ def _raises_value_error(call: Callable[[], object]) -> bool:
 
 
 def test_python_facts_behind_the_rule(tmp_path: Path) -> None:
-    """Recorded with the project's interpreter (CPython 3.14.7): the ``exists`` / ``is*``
-    tests answer ``False`` for a NUL path (since Python 3.8), every call that passes the path
-    to the OS raises ``ValueError``, and ``abspath`` takes it unchanged."""
+    """Recorded with the project's interpreter: the ``exists`` / ``is*`` tests answer ``False``
+    for a NUL path (since Python 3.8), every call that passes the path to the OS raises
+    ``ValueError``, and ``abspath`` takes it unchanged."""
     nul = tmp_path / "Mo\0vie.mkv"
     assert not os.path.exists(nul)
     assert not os.path.lexists(nul)
@@ -134,8 +127,6 @@ def _no_rule_failed(issues: list[ValidationIssue]) -> None:
 
 
 def test_a_nul_in_the_output_name_is_a_clean_error(tmp_path: Path) -> None:
-    """The reviewer's case: before, ``same_file`` raised and validation said
-    ``validation.rule_failed`` ("Validation could not check output … Please report this.")."""
     source = tmp_path / "Movie.mkv"
     source.write_bytes(b"x")
     output = tmp_path / "out" / "Mo\0vie.mkv"
@@ -150,7 +141,7 @@ def test_a_nul_in_the_output_name_is_a_clean_error(tmp_path: Path) -> None:
         f"The output path {shown} has a NUL character, which no file system allows: the file "
         "cannot be created. Correct the path."
     )
-    # The C-16 safe name drops the control character: the fix's path is a clean one.
+    # The safe name drops the control character: the fix's path is a clean one.
     [fix] = issue.fixes
     assert fix.label == "Save as Movie.mkv"
     assert [op.model_dump(mode="json") for op in fix.patch] == [
@@ -191,12 +182,6 @@ def test_output_path_issues_with_a_nul_asks_the_view_nothing() -> None:
 
 
 def test_a_nul_in_the_source_path_is_a_clean_error(tmp_path: Path) -> None:
-    """A job and its given source (a ``MediaSource`` sent through the API) whose path has a
-    NUL: before, ``same_file`` raised in the output rule and ``file_times`` in the naming
-    rule (two ``validation.rule_failed``). Now ``validate`` gives one ``source.path_unusable``
-    error before the rules, and no rule fails. (Without a given source,
-    ``Reframe.jobs.validate`` probes it and reports ``source.probe_failed``:
-    ``tests/test_service_nul_paths.py``.)"""
     source = tmp_path / "Mo\0vie.mkv"
     (tmp_path / "out").mkdir()
     issues = _issues(tmp_path / "out" / "Movie.mkv", source)
@@ -227,8 +212,7 @@ def test_a_nul_in_the_source_ref_of_the_given_source(tmp_path: Path) -> None:
 
 
 def test_a_nul_in_the_output_folder_of_the_naming_options(tmp_path: Path) -> None:
-    """Settings → Output → a fixed folder with a NUL (the settings come through the API too):
-    the naming rule lists the folder through the view (``list_files``), which raised."""
+    """The naming rule lists a fixed output folder through the view (``list_files``)."""
     source = tmp_path / "Movie.mkv"
     source.write_bytes(b"x")
     settings = AppSettings()
@@ -257,9 +241,7 @@ def test_an_in_place_edit_of_a_nul_source(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_the_dry_run_of_a_nul_source_does_not_start(tmp_path: Path) -> None:
-    """``Reframe.jobs.dry_run(job, source)`` with a given source whose path has a NUL: before,
-    ``reframe.tools.run`` raised ``ValueError`` ("embedded null byte") when it started FFmpeg.
-    Now the test encode is skipped with a warning (no process starts)."""
+    """The test encode of a NUL source path is skipped with a warning, so no process starts."""
     media = sc.make_source(tmp_path / "Mo\0vie.mkv")
     job = sc.make_job(media)
     job.output.path = tmp_path / "Movie.mkv"

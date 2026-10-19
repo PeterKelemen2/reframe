@@ -1,15 +1,5 @@
-"""C-8 x C-7: what the command builder refuses is a validation error, and the builder's
-fixture jobs validate without errors.
-
-- Decision 0013 (Consequences): "C-8 must report what the builder refuses (``PlanError``)".
-  :data:`REFUSALS` builds one job for every place in ``reframe.command`` that raises
-  ``PlanError`` from a job (``build_plan`` must raise, ``validate`` must give an error, with
-  the code named here). ``test_every_plan_error_is_covered`` reads the source of
-  ``reframe.command`` and fails when a new ``raise PlanError`` appears without a case here.
-- The snapshot jobs of C-7 (``tests/command/test_snapshots.py``, ``CASES``) are imported
-  as they are, and must validate without errors (:data:`KNOWN_ERRORS` lists the jobs that
-  test the builder with a job validation refuses on purpose).
-"""
+"""What the command builder refuses is a validation error, and the snapshot jobs validate
+without errors."""
 
 from __future__ import annotations
 
@@ -52,8 +42,8 @@ _COMMAND_TESTS = Path(__file__).resolve().parents[1] / "command"
 
 
 def _load_command_tests() -> tuple[ModuleType, ModuleType]:
-    """C-7's ``conftest`` and ``test_snapshots``, imported as a package of their own (they use
-    relative imports; pytest runs with ``--import-mode=importlib``)."""
+    """The ``tests/command`` conftest and ``test_snapshots``, imported as a package of their own
+    (they use relative imports; pytest runs with ``--import-mode=importlib``)."""
     name = "_reframe_c7_command_tests"
     if name not in sys.modules:
         spec = importlib.util.spec_from_file_location(
@@ -116,9 +106,6 @@ def run_validation(
 
 def errors(issues: list[ValidationIssue]) -> list[ValidationIssue]:
     return [i for i in issues if i.severity is Severity.ERROR]
-
-
-# --------------------------------------------------------------------------- refusals
 
 
 @dataclass(frozen=True)
@@ -206,7 +193,6 @@ def source_without_video() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
 
 
 def unknown_video_codec() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-    """Video passthrough of a source whose video codec ffprobe could not name, into MP4."""
     src = c7.recorded("multitrack.mkv")
     src.video[0].codec = None
     job = c7.draft(src, container="mp4", audio="passthru", subtitles=False)
@@ -215,7 +201,6 @@ def unknown_video_codec() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
 
 
 def zero_length_chapters() -> tuple[JobSettings, MediaSource, dict[str, Any]]:
-    """A chapter range made only of chapters without length."""
     src = c7.recorded("chapters.mkv")
     for chapter in src.chapters:
         chapter.end = chapter.start = 1.0
@@ -268,7 +253,6 @@ SRT, SRT2 = 4, 5
 BURN = SubtitleOutputTrack(source=SRT, action="burn")
 
 REFUSALS: list[Refusal] = [
-    # ---- builder.py
     Refusal("no output path", "output path is not set", "output.no_path",
             multitrack(setter(output__path=None))),
     Refusal("unknown container", "unknown container", "container.unknown",
@@ -297,10 +281,8 @@ REFUSALS: list[Refusal] = [
             multitrack(setter(range=TimeRange(start=2.0, end=1.0)))),
     Refusal("chapter range of zero-length chapters", "range is empty", "range.outside",
             zero_length_chapters),
-    # ---- metadata.py
     Refusal("chapter range outside the source", "not in the source", "range.outside",
             on("chapters.mkv", setter(range=ChapterRange(start=5, end=6)))),
-    # ---- audio.py
     Refusal("unknown audio encoder", "unknown audio encoder", "encoder.unknown",
             multitrack(setter(audio=[AudioOutputTrack(source_stream=1, encoder="vorbis")]))),
     Refusal("audio codec the container cannot hold", "AC-3 cannot be written into WebM",
@@ -312,7 +294,6 @@ REFUSALS: list[Refusal] = [
             "container.codec_unsupported",
             on("truehd-atmos", both(setter(video__encoder="libsvtav1"), subtitles()),
                container="webm", audio="passthru", audio_encoder=None)),
-    # ---- filtergraph.py
     Refusal("unknown filter", "unknown filter", "filter.unknown",
             multitrack(filters(vignette=FilterConfig()))),
     Refusal("unknown filter preset", "preset 'nope'", "filter.preset_unknown",
@@ -324,7 +305,6 @@ REFUSALS: list[Refusal] = [
             on("hdr10", filters(tonemap=FilterConfig(implementation="libplacebo")))),
     Refusal("filter preset that needs a tune", "cannot be used", "filter.tune_required",
             with_definitions(deblock_needs_tune, filters(deblock=FilterConfig(preset="medium")))),
-    # ---- subtitles.py
     Refusal("more than one burn-in", "only one", "subtitle.burn_multiple",
             multitrack(subtitles(BURN, SubtitleOutputTrack(source=SRT2, action="burn")))),
     Refusal("burn-in with video passthrough", "passed through", "subtitle.burn_passthrough",
@@ -348,7 +328,6 @@ REFUSALS: list[Refusal] = [
             "subtitle.external_unknown",
             multitrack(subtitles(SubtitleOutputTrack(
                 source=ExternalSubtitle(path=Path("/media/multitrack.idx")))))),
-    # ---- video.py
     Refusal("a choice the encoder does not have", "no level setting",
             "encoder.level_unsupported", multitrack(setter(video__encoder="h264_qsv",
                                                            video__level="4.1"))),
@@ -376,9 +355,8 @@ UNREACHABLE = {
 }
 
 
-#: Refusals where the builder and validation disagree (refusal id → reason); reported to
-#: the M2 lead, who decides which side changes. The cases fail (strict xfail) once the two
-#: agree. Empty since decision 0026 (C-7 clamps a chapter range's end).
+#: Refusals where the builder and validation disagree (refusal id → reason). The cases fail
+#: (strict xfail) once the two agree.
 DISAGREE: dict[str, str] = {}
 
 
@@ -406,8 +384,6 @@ def test_plan_errors_are_validation_errors(refusal: Refusal) -> None:
 
 
 def test_a_chapter_range_end_after_the_last_chapter_is_clamped() -> None:
-    """Decision 0026: chapters 4 to 5 of a 4-chapter source plan up to the end of chapter 4,
-    and validation warns (``range.end_beyond``) without an error."""
     job, source, kwargs = on("chapters.mkv", setter(range=ChapterRange(start=4, end=5)))()
     assert len(source.chapters) == 4
     caps = c7.caps(libplacebo=False)
@@ -421,8 +397,6 @@ def test_a_chapter_range_end_after_the_last_chapter_is_clamped() -> None:
 
 
 def _plan_error_messages() -> list[str]:
-    """The message of every ``raise PlanError(...)`` in ``reframe.command`` (the literal start
-    of its f-string)."""
     folder = Path(inspect.getfile(reframe.command)).parent
     found: list[str] = []
     for path in sorted(folder.glob("*.py")):
@@ -444,8 +418,6 @@ def _plan_error_messages() -> list[str]:
 
 
 def test_every_plan_error_is_covered() -> None:
-    """Each ``raise PlanError`` has a case: one of its literal pieces matches a case's
-    ``raises``, or it is listed as unreachable."""
     import re
 
     messages = _plan_error_messages()
@@ -472,8 +444,8 @@ def _example(refusal: Refusal) -> str:
 
 
 def _composite_parts() -> list[tuple[str, str, str | None]]:
-    """``(encoder, option key, speed preset)`` for every part of a composite x26x parameter
-    (``deblock=-1,-1``) of the shipped encoders, with every speed preset and none."""
+    """The parts of composite x26x parameters (``deblock=-1,-1``) of the shipped encoders,
+    with every speed preset and none."""
     cases: list[tuple[str, str, str | None]] = []
     for encoder in DEFS.video_encoders.values():
         presets = [None, *(c.value for c in encoder.presets.choices)] if encoder.presets else [None]
@@ -492,8 +464,6 @@ def test_composite_parts_have_defaults(encoder: str, key: str, preset: str | Non
     job = c7.draft(src, video={"encoder": encoder, "preset": preset, "advanced": {key: 1}})
     build_plan(job, src, c7.caps(), c7.tools())
 
-
-# --------------------------------------------------------------------------- snapshot jobs
 
 #: Snapshot jobs that test the builder with a value validation refuses on purpose:
 #: job → the error codes it has.
