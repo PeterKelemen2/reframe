@@ -154,7 +154,7 @@ def test_options_conditions_support_and_composites() -> None:
     assert out[-1] == "aq-mode=0:psy-rd=1.5:deblock=0,2"
     # 10-bit only: hdr10-opt requires bit_depth 10.
     assert "hdr10-opt" not in args("libx265", advanced={"hdr10-opt": True})[-1]
-    # A private option the build does not list is skipped (validation reports it).
+    # A private option the build does not list is skipped.
     status = EncoderStatus(id="hevc_nvenc", private_options=["preset", "tune"])
     nvenc = args("hevc_nvenc", advanced={"b_ref_mode": "middle", "bf": 2}, status=status)
     assert "-b_ref_mode:v:0" not in nvenc
@@ -162,8 +162,8 @@ def test_options_conditions_support_and_composites() -> None:
 
 
 def test_an_unknown_advanced_option_is_skipped() -> None:
-    """Validation refuses it (``encoder.option_unknown``, decision 0026); the builder still
-    never writes an option the encoder does not have: an unknown key, or another encoder's."""
+    """The builder never writes an option the encoder does not have: an unknown key, or
+    another encoder's."""
     advanced = {"psy-rd": 0.8, "bframes": 8}
     known = args("libx264", advanced=advanced)
     assert known[-1] == "bframes=8:psy-rd=0.8,0"
@@ -201,7 +201,7 @@ def test_custom_params_go_last_raw() -> None:
 
 def test_custom_params_of_an_encoder_without_a_params_argument() -> None:
     """NVENC, QSV, AMF, VAAPI and VP9 have no params argument: each ``key=value`` becomes the
-    encoder's own option, last (decision 0035); ``\\:`` keeps a colon, a bare key is a switch."""
+    encoder's own option, last; ``\\:`` keeps a colon, a bare key is a switch."""
     out = args("hevc_nvenc", custom_params="rc-lookahead=20:spatial-aq", advanced={"bf": 2})
     assert out[-6:] == ["-bf:v:0", "2", "-rc-lookahead:v:0", "20", "-spatial-aq:v:0", "1"]
     vp9 = args("libvpx-vp9", custom_params=" lag-in-frames=16 : :-arnr-strength=3 ")
@@ -287,8 +287,8 @@ def test_frame_rate_modes() -> None:
 
 
 def test_bob_deinterlace_doubles_the_same_as_source_rate() -> None:
-    """M2 review: Bob makes one frame of each field; a constant "same as source" rate is the
-    doubled rate, not the source's (which dropped every second frame)."""
+    """Bob makes one frame of each field; a constant "same as source" rate is the doubled rate,
+    not the source's."""
     ntsc = video_stream(avg_frame_rate=Rational(num=30000, den=1001))
     constant = VideoSettings(framerate_mode="constant")
     assert frame_rate_args(constant, ntsc, factor=2) == [
@@ -301,8 +301,8 @@ def test_bob_deinterlace_doubles_the_same_as_source_rate() -> None:
 
 
 def test_detelecine_lowers_the_same_as_source_rate() -> None:
-    """M2 review, second round: after ``decimate`` (4/5) a constant "same as source" rate is
-    the film rate; the telecined rate made FFmpeg duplicate the dropped frames back."""
+    """After ``decimate`` (4/5) a constant "same as source" rate is the film rate; the telecined
+    rate made FFmpeg duplicate the dropped frames back."""
     telecined = video_stream(avg_frame_rate=Rational(num=30000, den=1001))
     constant = VideoSettings(framerate_mode="constant")
     assert frame_rate_args(constant, telecined, factor=Fraction(4, 5)) == [

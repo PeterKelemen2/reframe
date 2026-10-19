@@ -1,5 +1,5 @@
-"""The option search, **Copy HDR metadata**, the option resolution helpers and the linter
-checks of the M9 option sets (C-6). Pure: no FFmpeg."""
+"""The option search, the HDR options, option resolution and the option linter checks. Pure: no
+FFmpeg."""
 
 from __future__ import annotations
 
@@ -45,11 +45,7 @@ def _keys(encoder_id: str, query: str) -> list[str]:
     return [o.key for o in search_options(DEFS.video_encoders[encoder_id].options, query)]
 
 
-# --------------------------------------------------------------------------- search
-
-
 def test_psy_finds_psy_rd_and_psy_rdoq_first() -> None:
-    """08 §M9 demo: search "psy" in the x265 set finds psy-rd and psy-rdoq."""
     assert _keys("libx265", "psy")[:2] == ["psy-rd", "psy-rdoq"]
     assert _keys("libx264", "psy")[:3] == ["psy", "psy-rd", "psy-trellis"]
 
@@ -62,7 +58,7 @@ def test_search_is_case_insensitive_and_ranks_exact_names_first() -> None:
 
 
 def test_search_covers_cli_names_choices_help_and_categories() -> None:
-    # The CLI name differs from the key: x264 psy-trellis writes psy-rd (part 1).
+    # The CLI name differs from the key: x264 psy-trellis writes psy-rd.
     assert "psy-trellis" in _keys("libx264", "psy-rd")
     # FFmpeg arguments without their dash; a leading dash in the query is ignored.
     assert _keys("hevc_nvenc", "-bf") == ["bf"]
@@ -84,8 +80,6 @@ def test_an_empty_query_lists_every_option_in_order() -> None:
     assert search_options(X265.options, "") == X265.options
     assert search_options(X265.options, "  -  ") == X265.options
 
-
-# --------------------------------------------------------------------------- HDR metadata
 
 HDR = VideoStream.model_validate(
     {
@@ -119,7 +113,7 @@ def test_hdr_options_per_encoder() -> None:
 
 
 def test_hdr_options_match_what_the_builder_writes() -> None:
-    """C-7 writes the same strings when the output stays HDR (one formatter)."""
+    """The builder writes the same strings when the output stays HDR (one formatter)."""
     for encoder in (X265, SVT):
         written = hdr_params(encoder, HDR)
         for key, value in hdr_options(encoder, HDR).items():
@@ -159,9 +153,6 @@ def test_hdr_formatters() -> None:
         "G(0.17,0.797)B(0.131,0.046)R(0.708,0.292)WP(0.3127,0.329)L(4000,0.005)"
     )
     assert content_light_text(ContentLightLevel(max_cll=4000, max_fall=1000)) == "4000,1000"
-
-
-# --------------------------------------------------------------------------- resolution
 
 
 def test_option_defaults_and_context() -> None:
@@ -209,9 +200,6 @@ def test_unmet_conditions_and_their_text() -> None:
     ]
     for condition, text in conditions:
         assert describe_condition(condition, X265) == text
-
-
-# --------------------------------------------------------------------------- linter
 
 
 def _lint_mutated(mutate: Callable[[dict[str, Any]], None]) -> list[str]:

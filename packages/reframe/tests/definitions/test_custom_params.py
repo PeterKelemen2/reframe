@@ -1,6 +1,4 @@
-"""Which custom encoder parameters Reframe passes to FFmpeg (C-6; decision 0035 "Follow-up
-(core-complete review, 2026-10-16)", R5-1). Pure: no FFmpeg (the behaviour of the real
-encoders is in ``tests/validation/test_custom_params_ffmpeg.py``)."""
+"""Custom encoder parameters: how they are split, matched and allowed. Pure: no FFmpeg runs."""
 
 from __future__ import annotations
 
@@ -24,7 +22,6 @@ from reframe.definitions.custom_params import (
 
 @given(st.text(alphabet=st.sampled_from(list("ab=:\\ -'\t")), max_size=24))
 def test_the_split_is_the_command_builders(text: str) -> None:
-    """Validation checks exactly the names the builder writes as ``-<name>:v:0``."""
     assert [(p.name, p.value) for p in split_custom_params(text)] == split_params(text)
 
 
@@ -69,11 +66,8 @@ def test_file_keys() -> None:
 
 
 def test_a_name_or_a_file_name_is_compared_as_the_library_compares_it() -> None:
-    """Final review RC-1 (decision 0035 "Follow-up (final review, 2026-10-17)"): x264 ``cqm``
-    reads every value as a file name unless it contains ``flat`` or ``jvt`` (``strstr``, case
-    sensitive); x265 ``scaling-list`` takes only the whole names ``default`` / ``off``
-    (``strcmp``); through a ``no`` prefix the library gets ``true`` / ``false``, a file name.
-    The real encoders: ``tests/validation/test_custom_params_ffmpeg.py``."""
+    """x264 ``cqm`` reads every value as a file name unless it contains ``flat`` or ``jvt``;
+    x265 ``scaling-list`` takes only the whole names ``default`` / ``off``."""
     file_named = [
         ("libx264", "cqm", "/home/u/secret.cfg"),
         ("libx264", "cqm", "FLAT"),

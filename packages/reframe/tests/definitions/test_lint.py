@@ -1,8 +1,4 @@
-"""The definitions linter (05 §C-6 "Done when").
-
-"A definitions linter test runs. It checks that every option has help text and a mapping,
-that ranges are consistent, and that every fallback chain ends in a software encoder."
-"""
+"""The definitions linter: the packaged data passes, and each broken rule is reported."""
 
 from __future__ import annotations
 
@@ -16,12 +12,10 @@ from reframe.definitions.loader import load_raw
 
 
 def test_the_packaged_definitions_are_clean() -> None:
-    """The Done-when test: the shipped data passes every check."""
     assert lint_definitions(load_definitions()) == []
 
 
 def test_every_option_has_help_and_a_mapping() -> None:
-    """The first criterion, stated directly on the data as well as through the linter."""
     for encoder in load_definitions().video_encoders.values():
         for option in encoder.options:
             assert len(option.help) >= 10, (encoder.id, option.key)
@@ -41,9 +35,6 @@ def _option(raw: dict[str, Any], encoder: str, key: str) -> dict[str, Any]:
 
 def _has(problems: list[str], *needles: str) -> bool:
     return any(all(n in p for n in needles) for p in problems)
-
-
-# --------------------------------------------------------------------------- options
 
 
 def test_missing_help_is_reported() -> None:
@@ -143,9 +134,6 @@ def test_bad_conditions_are_reported() -> None:
         "eq takes one value",
     ):
         assert _has(problems, "aq-strength", needle), needle
-
-
-# --------------------------------------------------------------------------- encoders
 
 
 def test_a_fallback_chain_ending_in_hardware_is_reported() -> None:
@@ -273,7 +261,7 @@ def test_choice_setting_problems_are_reported() -> None:
 @pytest.mark.parametrize(
     ("encoder", "values"),
     [
-        ("libsvtav1", ["0", "1", "2"]),  # the M2 review: SVT-AV1 listed slowest first
+        ("libsvtav1", ["0", "1", "2"]),  # SVT-AV1 listed slowest first
         ("libx264", ["medium", "fast"]),
         ("hevc_nvenc", ["p2", "p1"]),
         ("h264_amf", ["quality", "speed"]),
@@ -320,9 +308,6 @@ def test_derived_value_problems_are_reported() -> None:
     assert _has(problems, "av1_nvenc.rate_control.quality.derived.qp_b", "min must not")
 
 
-# --------------------------------------------------------------------------- audio
-
-
 def test_audio_problems_are_reported() -> None:
     def mutate(raw: dict[str, Any]) -> None:
         ac3 = raw["audio_encoders"]["ac3"]
@@ -354,9 +339,6 @@ def test_audio_problems_are_reported() -> None:
     assert _has(problems, "mixdowns: dpl2")
     assert _has(problems, "unknown mixdown dpl2")
     assert _has(problems, "passthru_codecs: dtshd")
-
-
-# --------------------------------------------------------------------------- containers
 
 
 def test_container_problems_are_reported() -> None:
@@ -404,9 +386,6 @@ def test_an_encoder_no_container_can_hold_is_reported() -> None:
             container["video"]["encode"] = [c for c in container["video"]["encode"] if c != "vp9"]
 
     assert _has(_lint_mutated(mutate), "libvpx-vp9", "no container can hold vp9")
-
-
-# --------------------------------------------------------------------------- filters
 
 
 def _impl(raw: dict[str, Any], filter_id: str, impl_id: str) -> dict[str, Any]:
@@ -461,9 +440,6 @@ def test_filter_problems_are_reported() -> None:
         "empty chain",
     ):
         assert _has(problems, needle), needle
-
-
-# --------------------------------------------------------------------------- audio fallback
 
 
 def test_the_audio_fallback_of_decision_0020() -> None:

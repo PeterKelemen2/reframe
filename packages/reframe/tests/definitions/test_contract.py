@@ -1,4 +1,4 @@
-"""The M2 definitions contract stub: the loader validates the data and C-4/C-16 fields exist."""
+"""The definitions loader: packaged encoders, strict fields and the encoder contract."""
 
 from __future__ import annotations
 
