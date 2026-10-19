@@ -2107,8 +2107,10 @@ async def run_name(
 _EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one of them cannot."
 _EXIT_HELP_TOOLS_FETCH = (
     "Exit codes: 0 installed, or already installed with every file intact; 1 the download, "
-    "the size or SHA-256 check, the archive or the version check failed; 2 usage error or "
-    "unknown build; 130 interrupted (Ctrl+C: nothing is installed)."
+    "the size or SHA-256 check, the archive or the version check failed, or no build is "
+    "pinned for this computer; 2 usage error, unknown build, or no archive for the platform; "
+    "130 interrupted (Ctrl+C: the download stops, and the last line says whether the build "
+    "was installed before the interrupt)."
 )
 #: The tools without which Reframe cannot probe or encode.
 REQUIRED_TOOLS: tuple[ToolName, ...] = ("ffmpeg", "ffprobe")
