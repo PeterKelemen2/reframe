@@ -38,9 +38,11 @@ routers are thin. Each handler calls one facade method and maps the result.
       `output_roots`, `static_dir`, `cors_origins`, `config_dir`, `data_dir`, and for
       [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
       `endpoint_file` (the path of `server.json`; on by default in every mode),
-      `idle_exit` (seconds; off by default) and `owner_only`.
+      `idle_exit` (seconds; off by default) and `owner_only`; and `allowed_hosts` (S-1).
 - [ ] Entry point: start uvicorn with **one worker**. In desktop mode, print one JSON line to
-      stdout when ready: `{"event":"ready","port":53817,"token":"…"}`.
+      stdout when ready: `{"event":"ready","port":53817}`. The token is `REFRAME_TOKEN` when it
+      is set (the desktop shell sets it), else a random one per run; `server.json` holds it
+      ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 4).
 
 Done when: `uv run reframe-server` starts and `GET /api/health` returns version info.
 
@@ -51,7 +53,11 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
     `<video>` URLs, a short-lived signed query parameter (`?sig=`) is used, because those
     elements cannot send headers. The WebSocket gets the token in its first message.
   - `password` (web, single user): login form → HTTP-only, SameSite=Strict session cookie.
-    The password hash is stored in settings (argon2 or scrypt).
+    The password hash (argon2 or scrypt) is **not** in the settings: it lives in
+    `<config dir>/auth.json` (mode `0600`), written by `reframe-server --set-password` and
+    `PUT /api/auth/password` (which needs the current password). `GET/PUT /api/settings`
+    never read or write it ([decision 0043](../decisions/0043-plan-review-before-m3.md)
+    item 3).
   - `none`: allowed only when bound to `127.0.0.1`. A startup warning says so.
   - **Local token** ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
     item 2): the random token in `<data>/server.json` (mode `0600`) is accepted as
@@ -61,12 +67,19 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
       follows symlinks) and must be inside `media_roots` (for reading) or `output_roots` (for
       writing). Web mode enforces this. Desktop mode allows the whole filesystem of the
       current user.
+- [ ] **Host check** (against DNS rebinding), in every mode: a request or WebSocket upgrade
+      whose `Host` is not a loopback name (`127.0.0.1`, `localhost`, `[::1]`, any port) or
+      in `allowed_hosts` is refused. `allowed_hosts` defaults to the loopback names, plus the
+      bound address and the machine's host name when the server binds another address; a
+      reverse proxy's name is added by hand. A WebSocket `Origin` must be the server's own or
+      a Tauri origin ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 3).
 - [ ] CORS: off in web mode (same origin). In desktop mode, allow only the Tauri origins
       (`tauri://localhost`, `http://tauri.localhost`).
 - [ ] Security headers on static responses (CSP, `X-Content-Type-Options`, frame-ancestors none).
 
 Done when: tests prove that `../` traversal, symlink escape, absolute paths outside the roots,
-and a missing or wrong token are all rejected.
+a missing or wrong token and a foreign `Host` are all rejected, that `GET /api/settings`
+holds no secret, and that a settings patch cannot change the password.
 
 ## S-2 REST API
 
@@ -79,26 +92,37 @@ progress arrives as events.
 | | `GET /api/system` | Tool statuses, versions, platform, mode |
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` | Capability statuses, re-detection |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only) |
+| | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
+| Tasks | `GET /api/tasks` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks, one task's state and result, cancel |
 | Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only) |
 | Sources | `POST /api/sources` `{paths}` → 202 | Probe files/folders (task) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
 | | `POST /api/sources/{id}/subtitle-scan` → 202 | Event counts, forced flags |
+| | `POST /api/sources/{id}/streams/{index}/loudness` `{start?, duration?}` → 202 | EBU R128 loudness of one track |
 | Preview | `POST /api/preview/frames` `{source_id, count \| timestamps}` | Frame list (timestamps + URLs) |
 | | `GET /api/preview/frames/{key}.png` | Frame image (cached, ETag) |
 | | `POST /api/preview/render` `{job, timestamp}` | Output frame with filters → URL |
 | | `POST /api/preview/cropdetect` `{source_id}` → 202 | Crop detection per sample |
 | | `POST /api/preview/clip` `{job, start, seconds}` → 202 | Encoded preview clip |
 | | `GET /api/preview/clips/{id}` | Clip file (HTTP Range support) |
+| | `GET /api/preview/cache` · `DELETE /api/preview/cache` | Size of the frame and clip cache; clear it |
 | Definitions | `GET /api/definitions` | Encoders, option schemas, filters, containers (cached, ETag) |
 | | `GET /api/languages` | Language list for the picker (cached) |
+| | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked) |
 | Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset |
 | | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]` |
 | | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type) |
 | | `POST /api/jobs/geometry` `{job}` | Pipeline header values |
+| | `POST /api/jobs/explain` `{source_id, template?, container?}` | Why each track was selected (`TrackDecision` with reasons) |
+| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux) |
+| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]` |
+| | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections}` | `JobTemplate` from a single-file job |
 | | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues |
+| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): groups, matrices, the name checks over every group, earlier outputs left out |
+| | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
 | Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD |
 | | `POST /api/presets/{id}/default` · `POST /api/presets/import` · `GET /api/presets/export` | |
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
@@ -109,13 +133,17 @@ progress arrives as events.
 | | `POST /api/queue/{start\|pause\|stop}` · `PUT /api/queue/order` | Global actions. `start` takes an optional `job_ids`: only those jobs start |
 | | `GET /api/queue/{id}/log?from=` | Log (incremental) |
 | | `PUT /api/queue/when-done` | When-done action |
+| Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown; cancel it |
 | Settings | `GET/PUT /api/settings` | App settings |
 
 - [ ] Stable `operationId`s (`sources_probe`, `jobs_validate`, …). The generated client uses
       them as function names.
 
 Done when: an httpx `AsyncClient` test suite covers every route against a facade that runs on
-fixture media and a fake FFmpeg.
+fixture media and a fake FFmpeg, and every public method of the facade
+([decision 0030](../decisions/0030-core-complete-contract.md)'s list, `Reframe.batch`,
+`Reframe.power`, `Reframe.tasks`) is reached by a route or listed here as not exposed, with
+the reason ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 2).
 
 ## S-3 Event WebSocket
 
@@ -167,8 +195,10 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
       run from a terminal. A Windows service wrapper comes later.
 - [ ] Reverse-proxy notes (WebSocket upgrade headers, body size, timeouts).
 
-Done when: `docker compose up` on a Linux host with an Intel iGPU shows `h264_vaapi`/`h264_qsv` as
-available and encodes a fixture file.
+Done when: `docker compose up` on a Linux host with a GPU (the owner's: AMD) shows its VAAPI
+encoders as available and encodes a fixture file. Intel QSV and NVIDIA NVENC in Docker are
+listed as not verified until such a host is available
+([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
 
 ## S-7 Local owner mode
 
@@ -276,6 +306,10 @@ oxfmt's output on a few `.vue` files with templates once before you commit to it
       uses `Field`.
 - [ ] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
       (commercial name + raw codec in the tooltip), `LanguageChip`.
+- [ ] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
+      check fails on literal text in a `<template>` (oxlint does not read templates; pick a
+      small script or a Vitest check here)
+      ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 
 Done when: a component sandbox page (dev only) shows every base component in both themes.
 
@@ -363,8 +397,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       button. Tool paths have a **Test** button.
 
 ### F-16 i18n and accessibility
-- [ ] All strings go through vue-i18n (English first). Full keyboard paths. Visible focus.
-      WCAG AA contrast in both themes. Respect `prefers-reduced-motion`.
+- [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
+      start in F-1). Full keyboard paths. Visible focus. WCAG AA contrast in both themes.
+      Respect `prefers-reduced-motion`.
 
 ### F-17 End-to-end tests
 - [ ] Playwright against `reframe-server` with fixture media and fake FFmpeg:
@@ -374,6 +409,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   3. A preset with an unavailable encoder → banner → use the fallback → queue.
   4. Manual crop → magnifier shows the crop lines → the command contains the matching
      `crop=` filter.
+- [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
+      flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
+      ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 
 ### F-18 Naming editor
 - [ ] Template field with `{` autocomplete and variable chips (current values, click to insert).

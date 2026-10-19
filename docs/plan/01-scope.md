@@ -112,3 +112,5 @@ Reframe v1 must cover these HandBrake features, unless "Changed" or "Dropped" sa
 | 2 | Licence for Reframe itself? | GPL-3.0-or-later (every build bundles a GPL FFmpeg with x264/x265; see [09](09-quality-and-release.md#licensing)) |
 | 3 | UI languages? | English first. The UI is i18n-ready (vue-i18n) |
 | 4 | Desktop framework: are you OK with Tauri 2 (Rust shell + shared Vue UI)? | Yes. See the alternatives in [07](07-desktop-app.md#alternatives-considered) |
+| 5 | How is Windows tested, since nothing is pushed? ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 1) | A Windows machine or VM that you provide runs the CI commands (`Q-1.4`). A push to a private remote only if you allow it |
+| 6 | Which release artefacts does v1 need, if v1 is for personal use only? ([0043](../decisions/0043-plan-review-before-m3.md) item 9) | All of [09 §Q-5](09-quality-and-release.md#q-5-release-process) and D-8 (signed NSIS + MSI, AppImage, deb, rpm, Docker amd64 + arm64, updater, PyPI wheel) |

@@ -172,6 +172,13 @@ The core has an async **event bus**. The server forwards it over one WebSocket
 | `job.progress` | percent, fps, speed, eta, output size | Queue |
 | `job.log` | log lines (batched, rate-limited) | Queue |
 | `queue.changed` | order / membership | Queue |
+| `tools.changed` | tool statuses | Tool discovery (a path changed, or *Check again*) |
+| `app.warning` | code, message, detail | Any service: a problem that stops nothing (a corrupt file replaced, sleep inhibit not available, `queue.store_busy`) |
+| `power.countdown` | action, phase, seconds left | The when-done power action (60 s, cancellable) |
+| `notification` | title, message, level, job id | Queue (job done or failed, queue finished) |
+| `resync` | reason, events lost | Event bus: events were dropped for a slow subscriber; read the snapshots again |
+
+The list is `reframe.models.events` ([decision 0043](../decisions/0043-plan-review-before-m3.md)).
 
 Every long operation is a **task** with an id. The task can be cancelled and reports
 progress. The API returns the task id at once and never waits for the result.

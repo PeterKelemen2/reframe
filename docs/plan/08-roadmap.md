@@ -2,8 +2,11 @@
 
 The milestones put the steps from [05](05-core.md), [06](06-web-app.md), [07](07-desktop-app.md)
 and [09](09-quality-and-release.md) in order. Each milestone ends with something you can
-**use or demo**. A milestone is done only when its demo works and CI is green on Linux and
-Windows. The current state of each milestone and step is in [../status.md](../status.md).
+**use or demo**. A milestone is done when its demo works and every CI command passes on Linux;
+[../status.md](../status.md) lists what has not run on Windows. M5 and M10 also need a Windows
+run (`Q-1.4`, [decision 0043](../decisions/0043-plan-review-before-m3.md)): nothing is pushed,
+so GitHub Actions does not run. The current state of each milestone and step is in
+[../status.md](../status.md).
 
 **Changed order ([decision 0029](../decisions/0029-core-before-the-ui-milestones.md)).** After
 M2, the core parts of M6–M9 (C-6, C-10, C-12, C-13, and the rest of C-11, C-14 and C-15) are
@@ -68,12 +71,12 @@ the `MediaSource` model.
 
 ## M3 — API and desktop spike
 
-| Steps | `S-0`, `S-1`, `S-2`, `S-3`, `S-5`, `D-0`, `Q-2.3` |
-|-------|----------------------------------------------------|
+| Steps | `S-0`, `S-1`, `S-2`, `S-3`, `S-5`, `D-0`, `Q-2.3`, `Q-1.4` |
+|-------|-------------------------------------------------------------|
 
 **Demo:** the OpenAPI docs page lists every route. The generated TypeScript types are committed.
 The WebSocket streams job progress. The desktop spike result is written to
-`docs/decisions/0001-desktop-shell.md`.
+`docs/decisions/0001-desktop-shell.md`. D-0's Windows part needs the Windows run (`Q-1.4`).
 
 ## M3b — Shared queue
 
@@ -96,7 +99,7 @@ way).
 
 ## M4 — Frontend MVP (web)
 
-| Steps | `F-1`–`F-6`, `F-9` (without advanced options), `F-10` (source tables + basic output tracks), `F-12`, `F-14`, `F-15` (basic), `F-18`, `S-4` |
+| Steps | `F-1`–`F-6`, `F-9` (without advanced options), `F-10` (source tables + basic output tracks), `F-12`, `F-14`, `F-15` (basic), `F-18`, `S-4`, `F-17` (Playwright set-up + flow 3) |
 |-------|---|
 
 **Demo:** in the browser: open a file from the server file browser → choose a preset → change
@@ -107,7 +110,7 @@ This is the **first usable GUI**.
 
 ## M5 — Desktop shell
 
-| Steps | `D-1`–`D-6` |
+| Steps | `D-1`–`D-6`, `Q-1.4` (a Windows run) |
 |-------|-------------|
 
 **Demo:** the M4 flow, as a desktop app on Linux and Windows, with native dialogs, drag-and-drop
@@ -115,7 +118,7 @@ from the file manager, notifications, taskbar progress, and a clean quit while a
 
 ## M6 — Tracks and metadata
 
-| Steps | `F-10` (complete), `C-10` (bitrate + subtitle scans, loudness), `C-12` (rule engine + audio/subtitle defaults only), `C-13`, `F-11` |
+| Steps | `F-10` (complete), `C-10` (bitrate + subtitle scans, loudness), `C-12` (rule engine + audio/subtitle defaults only), `C-13`, `F-11`, `F-17` (flow 1) |
 |-------|---|
 
 **Demo:**
@@ -130,7 +133,7 @@ from the file manager, notifications, taskbar progress, and a clean quit while a
 
 ## M7 — Batch / season mode
 
-| Steps | `C-12`, `F-13` |
+| Steps | `C-12`, `F-13`, `F-17` (flow 2) |
 |-------|----------------|
 
 **Demo:** the example in [04 §Example](04-batch-mode.md#example): open a season folder → one group
@@ -140,7 +143,7 @@ season 2 in one click.
 
 ## M8 — Picture: preview, crop, filters
 
-| Steps | `C-10` (frames, cropdetect, render, clips), `F-7`, `F-8` |
+| Steps | `C-10` (frames, cropdetect, render, clips), `F-7`, `F-8`, `F-17` (flow 4) |
 |-------|---|
 
 **Demo:**
@@ -164,15 +167,18 @@ validation error from the dry run.
 
 ## M10 — Hardening and v1.0 release
 
-| Steps | `S-6`, `D-7`, `D-8`, `D-9`, `F-16`, `F-17`, `Q-3`, `Q-4`, `Q-5` |
+| Steps | `S-6`, `D-7`, `D-8`, `D-9`, `F-16`, `F-17` (all four flows in Chromium and WebKit), `Q-1.4` (a Windows run), `Q-3`, `Q-4`, `Q-5` |
 |-------|---|
 
 **Release checklist:**
 
 - [ ] Every "Must-have for v1" item in [01-scope.md](01-scope.md#must-have-for-v1) is checked off
       against its demo.
-- [ ] Docker image published. The compose example works with VAAPI and NVENC.
-- [ ] Windows installer (signed) and Linux AppImage/deb/rpm attached to the release.
+- [ ] Docker image published. The compose example works with VAAPI, and with NVENC when an
+      NVIDIA host is available ([decision 0043](../decisions/0043-plan-review-before-m3.md)
+      item 7).
+- [ ] Windows installer (signed) and Linux AppImage/deb/rpm attached to the release (or the set
+      chosen in [01 open question 6](01-scope.md#open-questions-owner-to-decide)).
 - [ ] The updater picks up a test release.
 - [ ] Performance budgets ([09 §Q-3](09-quality-and-release.md#q-3-performance-budgets)) are met.
 - [ ] Third-party licence notices are bundled ([09 §Licensing](09-quality-and-release.md#licensing)).

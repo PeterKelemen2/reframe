@@ -12,6 +12,14 @@
       One extra job tests the override path with a different FFmpeg build.
 - [ ] **Q-1.3** Dependency updates (Renovate or Dependabot), `pip-audit`, `npm audit` (high
       severity fails the build).
+- [ ] **Q-1.4** Windows verification run
+      ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 1). Nothing is pushed,
+      so GitHub Actions does not run. The Python and frontend commands of `ci.yml` run on
+      Windows 10 or 11 by another route: by default a Windows machine or VM that the owner
+      provides; a push to a private remote only if the owner allows it (01 open question 5).
+      Done when: the commands pass on Windows, or each failure is fixed or recorded; the
+      date, the machine and the result are in `docs/status.md`. It runs in M3 (D-0 needs
+      Windows) and again before M5 and M10 are done.
 
 ## Q-2 Test strategy
 
@@ -23,7 +31,7 @@
 | Fault injection | **fake FFmpeg** | a small Python script in the place of `ffmpeg`/`ffprobe` that sleeps, hangs, crashes, or prints driver errors. Selected by env var | `C-1`, `C-4`, `C-11` |
 | API | httpx AsyncClient + WebSocket test client | every route, auth, path jail, event coalescing | `S-1`–`S-3` |
 | Frontend units | Vitest + Vue Test Utils | stores, `Field`, `CropMagnifier` maths, `LanguagePicker` search | `F-*` |
-| End-to-end | Playwright (Chromium + WebKit) | the 4 flows in `F-17` | `F-17` |
+| End-to-end | Playwright (Chromium + WebKit) | the 4 flows in `F-17`, each added in the milestone of its screens (M4, M6, M7, M8) | `F-17` |
 | Desktop smoke | tauri-driver | start, open, encode, quit with no orphan processes | `D-9` |
 | GPU | manual / self-hosted runner, `needs_gpu` marker | NVENC, QSV, VAAPI detection and short encodes | `C-4` |
 

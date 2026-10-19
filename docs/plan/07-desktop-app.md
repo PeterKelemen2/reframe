@@ -56,7 +56,7 @@ Reasons:
    one is found, use its address and token and start no sidecar. Otherwise spawn the sidecar
    from the resources directory. Pass
    `--mode desktop --port 0 --auth token --parent-pid <pid>`. The token is generated in Rust
-   and passed through an environment variable, not on the command line.
+   and passed in `REFRAME_TOKEN`, not on the command line (S-0).
 2. Read stdout until the ready line `{"event":"ready","port":…}` arrives (20 s timeout). On
    timeout or early exit, show an error screen with the sidecar log path and a **Retry** button.
 3. Keep `{baseUrl, token}` in Tauri managed state. The frontend gets it through
@@ -70,8 +70,8 @@ Reasons:
 5. **Sidecar crash**: the frontend shows a "Reconnecting…" overlay. Rust restarts the sidecar
    (max 3 attempts in 60 s). The queue restores from SQLite, and running jobs become
    `Interrupted`.
-6. **Quit while jobs run**: a dialog offers **Stop jobs and quit** · **Keep running in tray** ·
-   **Cancel**.
+6. **Quit while jobs run**: a dialog offers **Stop jobs and quit** · **Keep running in tray**
+   (only when the tray is on, D-6) · **Cancel**.
 
 ## Native integrations
 
@@ -185,10 +185,12 @@ or revisits this choice.
 
 ### D-7 Tool bundling
 - [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
-      [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on Intel (VAAPI + QSV),
-      AMD (VAAPI, AMF on Windows) and NVIDIA (NVENC) hosts, on Windows and on at least two
-      Linux distros (Debian/Ubuntu and Fedora or Arch). Record the result in
-      `docs/decisions/0002-bundled-ffmpeg.md`.
+      [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on the hosts that are
+      available, aiming at Intel (VAAPI + QSV), AMD (VAAPI, AMF on Windows) and NVIDIA
+      (NVENC), on Windows and on at least two Linux distros (Debian/Ubuntu and Fedora or
+      Arch). Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
+      list there the hosts that were not tested as not verified
+      ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
 - [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
       and puts them in `resources/tools/<os>/`. The same step feeds the .deb/.rpm layout.
 - [ ] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
