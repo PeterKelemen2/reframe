@@ -1,32 +1,6 @@
-"""``build_plan``: one job → an :class:`~reframe.models.EncodePlan` (05 §C-7).
-
-Argument order of every FFmpeg step (05 §C-7, decision 0013 for the additions)::
-
-    -hide_banner -nostdin -y -progress pipe:1 -nostats      global
-    -init_hw_device … -filter_hw_device …                    hardware init
-    -drc_scale:N … -forced_subs_only:N … -ss S -i SOURCE     input options (decoders, range seek)
-    -itsoffset … -ss S -sub_charenc … -i FILE                external subtitle inputs
-    -f ffmetadata -i CHAPTERS                                chapter metadata input
-    -map 0:0 -map 0:1 … -map 0:t?                            maps, absolute stream indexes
-    -ss 0 -t D                                               nothing before 0, range end
-    -filter:v:0 … | -filter_complex … ; -filter:a:N …        filter graphs
-    -c:v:0 … -c:a:N … -c:s:N …                               per-stream codec arguments
-    -map_metadata:s -1 -metadata:s:… -disposition:…          per-stream metadata and flags
-    -map_chapters 0|-1|N                                     chapters
-    -map_metadata 0 -metadata title=…                        global tags
-    -movflags +faststart -strict -2                          container flags
-    -f matroska OUTPUT.part.mkv                              output
-
-The range end is an output ``-t`` (not an input option): only then does FFmpeg cut the
-copied chapters at the end of the range. An output ``-ss 0`` (video encoded, a range start or
-a negative subtitle offset) drops what copied streams and external subtitle files have before
-0, which the muxers would otherwise move every stream for (:func:`_drops_before_start`).
-
-Steps, run in order by the queue (C-11): one ``analyse`` per track with loudness
-normalisation (``loudnorm`` prints one JSON block; blocks from one run cannot be told apart,
-so each track gets its own run), ``pass1`` + ``pass2`` (2-pass with two runs) or ``encode``,
-``mkvpropedit`` (Matroska ``LanguageIETF``), ``finalize`` (rename ``.part`` → final name).
-"""
+"""``build_plan``: one job becomes an :class:`~reframe.models.EncodePlan`. FFmpeg scopes options by
+position: input options come before their ``-i``, output options before the output file. The
+range end is an output ``-t``, the only form that cuts the copied chapters."""
 
 from __future__ import annotations
 
@@ -108,7 +82,7 @@ __all__ = [
 GLOBAL_ARGS = ("-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats")
 #: ``{vaapi_device}`` when the encoder status names no render node (the definitions' default).
 DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
-#: Relative progress weights (the runner normalises them; 05 §C-11: pass 1 = 40 %).
+#: Relative progress weights; the runner normalises them.
 STEP_WEIGHTS: dict[StepKind, float] = {
     "analyse": 0.05,
     "pass1": 0.4,
@@ -121,8 +95,8 @@ _NULL_OUTPUT = ("-f", "null", "-")
 
 
 def partial_path(final: Path, suffix: str = "") -> Path:
-    """``Movie.mkv`` → ``Movie.part.mkv`` (03 §Queue); with ``suffix`` (``.chapters.txt``,
-    ``.passlog``) → ``Movie.part.chapters.txt``."""
+    """``Movie.mkv`` → ``Movie.part.mkv``; with ``suffix`` (``.chapters.txt``, ``.passlog``) →
+    ``Movie.part.chapters.txt``."""
     stem = final.name[: -len(final.suffix)] if final.suffix else final.name
     return final.with_name(f"{stem}.part{suffix or final.suffix}")
 
@@ -302,8 +276,8 @@ def _audio_plan(
 
 
 def _drc_args(outs: list[AudioOut], only: int | None = None) -> list[str]:
-    """``-drc_scale:<source index> <value>`` once per decoded AC-3 / E-AC-3 source stream
-    (the first track that decodes it decides: one decoder per input stream)."""
+    """``-drc_scale:<index> <value>`` for each decoded AC-3 / E-AC-3 source stream. The first
+    track that decodes a stream decides its value: one decoder per input stream."""
     seen: dict[int, float] = {}
     for out in outs:
         if out.drc is None or out.stream.index in seen:
@@ -355,11 +329,11 @@ def build_plan(
 ) -> EncodePlan:
     """The exact commands for one job. Pure: no I/O, no clock, no environment reads.
 
-    The caller runs validation (C-8) first; a job that cannot be planned raises
-    :class:`PlanError`. ``job.output.path`` is the final output path (naming resolved it).
-    ``shell`` is the quoting style of :attr:`EncodePlan.display` (default: this OS's).
-    ``naming`` (the effective naming options) and ``now`` are used by tag values that hold
-    naming variables (``{date}`` is empty without ``now``).
+    The caller runs validation first; a job that cannot be planned raises :class:`PlanError`.
+    ``job.output.path`` is the final output path (naming resolved it). ``shell`` is the quoting
+    style of :attr:`EncodePlan.display` (default: this OS's). ``naming`` (the effective naming
+    options) and ``now`` are used by tag values that hold naming variables (``{date}`` is empty
+    without ``now``).
     """
     defs = definitions if definitions is not None else load_definitions()
     container = defs.containers.get(job.output.container)
@@ -511,9 +485,9 @@ def _fixup_step(
     tools: ToolSet,
     tmp: Path,
 ) -> PlanStep | None:
-    """The post-mux fix-up (05 §C-13): mkvpropedit on the ``.part`` file for what FFmpeg's
-    Matroska muxer does not write (``LanguageIETF``; flags of ``mkvpropedit_flags``). Only
-    for MKV and when mkvpropedit was found (validation warns about what is lost without it)."""
+    """The post-mux fix-up: mkvpropedit writes what FFmpeg's Matroska muxer does not (the BCP 47
+    languages and the track flags). Only for MKV, and only when mkvpropedit was found: validation
+    warns about what is lost without it."""
     if container.id != "mkv" or tools.mkvpropedit.status is not ToolStatus.FOUND:
         return None
     edits = fixup_edits(
@@ -553,9 +527,9 @@ def _in_place_plan(
     now: datetime | None,
     shell: Shell,
 ) -> EncodePlan:
-    """The plan of a ``metadata_edit`` job: one mkvpropedit step on the source itself (no
-    ``.part`` file, no rename; decision 0034). ``output_tmp`` and ``output_final`` are the
-    source. No step when the source already has every value."""
+    """The plan of a ``metadata_edit`` job: one mkvpropedit step on the source itself, with no
+    ``.part`` file and no rename. ``output_tmp`` and ``output_final`` are the source. No step
+    when the source already has every value."""
     target = Path(job.source.path)
     video = source.video[0]
 
@@ -589,15 +563,11 @@ def _in_place_plan(
 
 
 def _drops_before_start(job: JobSettings, rng: _Range) -> bool:
-    """Whether the output gets ``-ss 0``: nothing reaches the muxer before time 0.
+    """Whether the output gets ``-ss 0``, which drops the packets that copied streams and external
+    subtitles have before time 0.
 
-    A copied stream or an external subtitle file can have packets before the range start
-    (the source's seek lands on the keyframe before it; an event on screen at the range
-    start, or moved before 0 by a negative offset, gets a negative time). The muxers then
-    moved every stream (Matroska: video and audio started at 0.7 s, the chapters did not
-    move) or wrote wrong ``mov_text`` times. The output ``-ss 0`` drops them (M2 review,
-    0013 "Follow-up (M2 review)"). Not with a copied video: its first packets, the keyframe
-    before the range start or a negative decoding time, would be dropped with them.
+    Not with a copied video: its first packets, the keyframe before the range start, would be
+    dropped too.
     """
     if job.video.passthrough:
         return False

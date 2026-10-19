@@ -1,19 +1,6 @@
-"""The command builder (C-7): one job → the exact FFmpeg commands (an ``EncodePlan``).
+"""The command builder: one validated job becomes the exact FFmpeg commands (an ``EncodePlan``).
 
-Pure: no I/O, no clock, no subprocess, no environment reads. The queue (C-11) runs the
-plan's steps; the CLI (``reframe plan``) and the command preview show ``display``.
-
-- :func:`build_plan`: the plan of a validated job (:class:`PlanError` otherwise).
-- :func:`job_type`: ``encode``, ``remux`` or ``metadata_edit``, with the reason for the Summary
-  tab; :func:`in_place_blockers`: why a job cannot edit its source in place (C-13).
-- :func:`planned_audio`: what the plan writes for one audio track (copy, or the encoder with
-  the mixdown, bitrate and sample rate snapped to what it can do: decision 0024).
-
-Modules: ``builder`` (argument order, steps), ``filtergraph`` (fixed filter order,
-escaping, burn-in), ``video`` (encoder arguments, 2-pass, HDR), ``audio``, ``subtitles``,
-``metadata`` (languages, flags, chapters, tags), ``mkvpropedit`` (the in-place edit and the
-post-mux fix-up, C-13), ``jobtype``, ``quoting`` (``display``).
-Decision record 0013 has the choices the plan does not make.
+The builder is pure: no I/O, no clock, no subprocess, no environment reads.
 """
 
 from reframe.command.audio import PlannedAudio, planned_audio

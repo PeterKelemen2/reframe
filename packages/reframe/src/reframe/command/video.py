@@ -1,22 +1,9 @@
-"""Video encoder arguments (05 §C-7 "Video", decision 0013).
+"""Video encoder arguments, built from the encoder's definition.
 
-Everything comes from the encoder's definition (C-6): rate control (``{value}``, the
-``derived`` QP values, ``{kbps}``), the speed preset, tune, profile and level
-(:class:`~reframe.definitions.ChoiceSetting`), fast decode, the advanced options
-(:class:`~reframe.definitions.EncoderOption`), 2-pass (``{pass}`` / ``{passlog}``) and
-``extra_args``. Options are written with the output stream specifier (``-preset:v:0``);
-``x26x_param`` values go into the one params argument (``-x265-params a=1:b=2``), joined with
-``:`` in this order: rate control, 2-pass, choices, fast decode, colour and HDR metadata,
-advanced options, then the job's custom parameters as typed. Values are escaped for FFmpeg's
-dictionary parser (a path with ``:`` in ``stats=``). An encoder without a params argument gets
-the custom parameters as its own options, last (:func:`split_params`).
-
-When the output stays HDR (an HDR source, no tone mapping or colour conversion, 10-bit),
-the colour and the HDR10 metadata of the probe are written into the params of x265
-(``colorprim``, ``transfer``, ``colormatrix``, ``master-display``, ``max-cll``) and SVT-AV1
-(``color-primaries``, ``transfer-characteristics``, ``matrix-coefficients``,
-``mastering-display``, ``content-light``); x264 gets the colour only. An advanced option
-with the same name wins.
+Options get the output stream specifier (``-preset:v:0``). The ``x26x_param`` values share one
+params argument, which comes after the other options. When the output stays HDR,
+:func:`hdr_params` adds the colour and HDR10 metadata to it, and an advanced option of the same
+name wins.
 """
 
 from __future__ import annotations
@@ -149,9 +136,9 @@ class VideoArgs:
             self.args += [spec(mapping.arg, V0), value]
 
     def render(self, encoder: VideoEncoderDef) -> list[str]:
-        """The arguments with the params argument at the end. An encoder without a params
-        argument (NVENC, QSV, AMF, VAAPI, VP9) gets the custom parameters as its own options
-        (``rc-lookahead=20:spatial-aq=1`` → ``-rc-lookahead:v:0 20 -spatial-aq:v:0 1``)."""
+        """The arguments, with the params argument after them. An encoder without a params
+        argument takes the custom parameters as its own options (``rc-lookahead=20`` →
+        ``-rc-lookahead:v:0 20``)."""
         if encoder.params_arg is None:
             custom = [
                 arg
@@ -212,7 +199,7 @@ def _options(
 ) -> None:
     """The advanced options of the job. Options of another encoder or that this build does not
     support are skipped (validation reports them); so are options whose ``requires`` does not
-    hold (C-6 :func:`~reframe.definitions.option_context`, which validation uses too).
+    hold (:func:`~reframe.definitions.option_context`, which validation uses too).
     Parts of a composite value (``deblock=-1,-1``) are filled with their defaults."""
     context = option_context(encoder, video)
     preset = context.get("preset")
@@ -310,9 +297,8 @@ def hdr_params(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, str]:
 
 
 def pass_log_files(prefix: Path, *, stats_param: bool) -> list[Path]:
-    """The files a 2-pass encode writes next to ``prefix`` (checked with FFmpeg n9.0.2):
-    ``-passlogfile P`` gives ``P-0.log`` (x264 also ``P-0.log.mbtree``); x265's ``stats=P``
-    gives ``P`` and ``P.cutree``; each has a ``.temp`` twin while the pass runs."""
+    """The files a 2-pass encode writes next to ``prefix``. ``stats_param`` says whether the
+    encoder names its log with a ``stats=`` param (x265) rather than ``-passlogfile``."""
     if stats_param:
         names = ["", ".temp", ".cutree", ".cutree.temp"]
         return [prefix.with_name(prefix.name + n) for n in names]
@@ -373,10 +359,9 @@ def source_rate(stream: VideoStream) -> Rational | Fraction | None:
 def frame_rate_args(
     video: VideoSettings, stream: VideoStream, *, factor: Fraction | int = 1
 ) -> list[str]:
-    """``Same as source`` + variable: nothing. Constant: ``-r R -fps_mode cfr`` (``R`` = the
-    chosen rate, or the source's average times ``factor``, the rate after the filters: 2
-    after a Bob deinterlacer, 4/5 after detelecine). Peak (or variable with a chosen rate):
-    ``-fpsmax R`` (decision 0013: FFmpeg has no peak mode; a faster source becomes CFR R)."""
+    """Frame-rate options. Constant: ``-r R -fps_mode cfr``, where R is the chosen rate, else the
+    source's average times ``factor`` (the rate change of the filters). Otherwise a chosen rate
+    becomes ``-fpsmax R``: FFmpeg has no peak mode, so a faster source becomes CFR at R."""
     rate = video.framerate
     if video.framerate_mode == "constant":
         target: Rational | Fraction | None = rate

@@ -1,33 +1,7 @@
-"""The video filter graph (05 §C-7, 03 §Filters, decisions 0009, 0010, 0013).
+"""The video filter graph of one job, in the order of ``Definitions.filter_order``.
 
-**Order.** The fixed order of 03 §Filters (``Definitions.filter_order``), with the stages of
-C-5's geometry (decision 0009) and the burn-in of decision 0013::
-
-    detelecine → interlace detection → deinterlace → denoise → deblock
-    → crop [→ bitmap subtitle overlay] → transpose → hflip     ("crop" stage)
-    → custom → scale → setsar                                  ("scale" stage)
-    → tone mapping → colorspace [→ HDR side data removed]
-    → sharpen → chroma smooth → grayscale
-    [→ text subtitles burned in]
-    → format / hardware upload                                  ("format" stage)
-
-- ``setparams`` with the probed or assumed colour comes right before an implementation that
-  needs tagged input (``zscale``), when the source does not say its colour.
-- After tone mapping or a colour conversion of an HDR source, ``sidedata`` filters remove the
-  HDR metadata of the frames (mastering display, content light level, HDR10+, Dolby Vision):
-  otherwise the encoder writes the source's HDR10 metadata into the SDR output (FFmpeg
-  n9.0.2 does, see ``testdata/README.md`` "Command builder (C-7)").
-- The ``format`` stage is the encoder's software pixel format (``format=yuv420p10le``) or the
-  hardware encoder's filter tail (``format=nv12,hwupload``).
-
-**Escaping.** A filter graph is parsed twice: the graph parser splits filters at
-``[ ] , ;`` and the option parser splits ``key=value`` pairs at ``:``. Both understand
-backslash escapes and single quotes. :func:`quote_value` escapes a value for the option
-parser (``\\`` before ``\\ ' :``) and then quotes it for the graph parser (``'…'``, with a
-quote written as ``'\\''``), the form of the FFmpeg documentation:
-``subtitles=filename='C\\:/Movies/Film.srt'``. Windows paths are written with forward
-slashes (:func:`filter_path`). ``tests/command/test_filtergraph.py`` runs real FFmpeg on file
-names with every special character.
+A bitmap overlay sits between the crop and the rotation. Filter values pass two parsers (the
+option parser, then the graph parser): :func:`quote_value` quotes them for both.
 """
 
 from __future__ import annotations
@@ -83,7 +57,7 @@ _UNKNOWN_COLOUR = frozenset({"unknown", "unspecified", "reserved", ""})
 
 def escape_value(text: str) -> str:
     """Escape a value for FFmpeg's option parser (``av_get_token``): a backslash before
-    ``\\``, ``'`` and ``:``. Also the form for ``-x265-params`` / ``-svtav1-params`` values."""
+    ``\\``, ``'`` and ``:``."""
     return "".join("\\" + c if c in "\\':" else c for c in text)
 
 
@@ -94,8 +68,7 @@ def quote_value(text: str) -> str:
 
 
 def filter_path(path: PurePath) -> str:
-    """A path for a filter argument: Windows paths with forward slashes (``C:/Movies/x.srt``;
-    FFmpeg opens them on Windows), other paths unchanged."""
+    """A path for a filter argument: Windows paths with forward slashes, other paths unchanged."""
     if isinstance(path, PureWindowsPath):
         return path.as_posix()
     return str(path)
@@ -121,9 +94,9 @@ def filter_available(caps: CapabilitySnapshot, definitions: Definitions) -> dict
     """Which FFmpeg filters of the definitions this build can run, for
     :meth:`FilterDef.implementation_for`.
 
-    A filter that needs Vulkan (``libplacebo``) counts only when its run test passed
-    (``usable_filter`` is ``True``, decision 0021). Any other filter counts unless the build is
-    known not to have it (a filter list that was not read assumes it is there).
+    A filter that needs Vulkan (``libplacebo``) counts only when its run test passed. Any other
+    filter counts unless the build is known not to have it (a filter list that was not read
+    assumes it is there).
     """
     vulkan = {
         name
@@ -155,8 +128,7 @@ def _is_hdr(video: VideoStream) -> bool:
 
 def assumed_colour(video: VideoStream) -> tuple[str, str, str]:
     """``(primaries, transfer, matrix)``: the probed values, with what is unknown filled in by
-    the usual standard for the picture (HDR: BT.2020 PQ, or HLG; up to 480 lines: BT.601
-    NTSC; up to 576 lines: BT.601 PAL; else BT.709)."""
+    the usual standard for the picture (HDR, SD or HD)."""
     if _is_hdr(video):
         assert video.hdr is not None
         hlg = HdrFormat.HLG in video.hdr.formats
@@ -185,17 +157,13 @@ def _setparams(video: VideoStream) -> str | None:
 
 
 def is_hdr(video: VideoStream) -> bool:
-    """The source is HDR (PQ, HLG, HDR10+ or Dolby Vision: the probe found an HDR format): the
-    graph tone maps it only with the Tone mapping filter, and HDR side data is removed after a
-    tone mapping or a colour conversion."""
+    """Whether the probe found an HDR format for the source."""
     return _is_hdr(video)
 
 
 def colour_params(video: VideoStream) -> str | None:
-    """The ``setparams`` filter that the graph puts before an implementation that needs tagged
-    input (``zscale``) when the source does not say its colour (:func:`assumed_colour`);
-    ``None`` when the source says all three values. C-10's preview frames put it first, so
-    that the RGB conversion of a PNG uses the same colour as the graph."""
+    """The ``setparams`` filter that gives a source with unknown colour values its assumed colour
+    (:func:`assumed_colour`); ``None`` when the source says all three values."""
     return _setparams(video)
 
 
@@ -205,13 +173,9 @@ def tonemap_filters(
     available: Mapping[str, bool],
     config: FilterConfig | None = None,
 ) -> tuple[list[str], FilterImplementation]:
-    """The filters that the graph writes for the Tone mapping filter with ``config`` (default:
-    ``FilterConfig()``, the default preset of the default implementation), and that
-    implementation: ``libplacebo`` when it is ``available`` (its run test passed, decision
-    0021), else ``zscale`` + ``tonemap`` after the ``setparams`` of :func:`colour_params`.
-
-    C-10's preview frames map an HDR picture to SDR for display with these, so a source frame
-    looks like the output of a job that tone maps. Raises :class:`PlanError` when no
+    """The filters for the Tone mapping filter with ``config`` (default: ``FilterConfig()``), and
+    their implementation: ``libplacebo`` when it is ``available``, else ``zscale`` and ``tonemap``
+    after the ``setparams`` of :func:`colour_params`. Raises :class:`PlanError` when no
     implementation can run."""
     fdef = definitions.filters["tonemap"]
     impl, chain = _chain(fdef, config if config is not None else FilterConfig(), available)
@@ -224,8 +188,7 @@ def tonemap_filters(
 
 
 def keeps_hdr(video: VideoStream, filters: Mapping[str, FilterConfig], bit_depth: int) -> bool:
-    """The output stays HDR: an HDR source, no tone mapping, no colour conversion, 10-bit
-    (C-16's ``{hdr}`` uses the same rule, without the colour conversion)."""
+    """The output stays HDR: an HDR source with no tone mapping or colour conversion, at 10 bits."""
     return (
         _is_hdr(video) and "tonemap" not in filters and "colorspace" not in filters
         and bit_depth == 10
@@ -276,8 +239,7 @@ class VideoGraph:
     filters: list[str] = field(default_factory=list)
     """The filter ids used, in order (for descriptions and tests)."""
     rate_factor: Fraction = Fraction(1)
-    """How the filters change the frame rate (:func:`frame_rate_factor`): 2 after a Bob
-    deinterlacer, 4/5 after detelecine's ``decimate``."""
+    """How the filters change the frame rate (:func:`frame_rate_factor`)."""
 
     OUTPUT_LABEL = "[v]"
 
@@ -306,7 +268,7 @@ def _scale_stage(g: Geometry, scaler: str) -> list[str]:
 
 
 #: ``FilterConfig.preset``'s default. An implementation without a preset of that name uses its
-#: own ``default_preset`` (Denoise ``light``, Colorspace ``bt709``; decision 0013).
+#: own ``default_preset``.
 DEFAULT_PRESET = "default"
 
 
@@ -363,7 +325,7 @@ def build_video_graph(
     text_burn: TextBurn | None = None,
     bitmap_burn: BitmapBurn | None = None,
 ) -> VideoGraph:
-    """The video filters of one job in the fixed order (see the module doc).
+    """The video filters of one job, in the fixed order.
 
     ``tail`` is the format stage (``["format=yuv420p"]`` or a hardware filter tail).
     Unknown filter ids raise :class:`PlanError` (validation reports them).
@@ -382,7 +344,7 @@ def build_video_graph(
             return
         fdef = definitions.filters[filter_id]  # type: ignore[index]
         if filter_id == "tonemap" and not hdr_source:
-            return  # nothing to tone map: an SDR source stays as it is (decision 0013)
+            return  # nothing to tone map: an SDR source stays as it is
         impl, chain = _chain(fdef, config, available)
         if filter_id == "custom" and not chain.strip():
             return
@@ -425,8 +387,7 @@ def build_video_graph(
     return graph
 
 
-#: Deinterlacers whose ``mode`` can send one frame per field, and those modes (``yadif`` /
-#: ``bwdif``: 1 ``send_field``, 3 ``send_field_nospatial``).
+#: Deinterlacers whose ``mode`` can send one frame per field, and the modes that do.
 _FIELD_DEINTERLACERS = frozenset({"bwdif", "yadif", "bwdif_cuda", "yadif_cuda", "bwdif_vulkan"})
 _FIELD_MODES = frozenset({"1", "3", "send_field", "send_field_nospatial"})
 _TRUE = frozenset({"1", "true", "y", "yes", "on"})
@@ -443,11 +404,9 @@ def _option(options: str, name: str, position: int) -> str | None:
 
 
 def frame_rate_factor(chain: str) -> Fraction:
-    """How a filter chain changes the frame rate. The filters of the definitions that do:
-    a deinterlacer that makes a frame of each field (Bob: ``bwdif=mode=send_field``,
-    ``yadif=1``) doubles it; detelecine's ``decimate`` drops one frame of each ``cycle``
-    (default 5: 30000/1001 → 24000/1001), unless ``mixed`` (then the output is variable).
-    Other filters (also a custom chain's ``fps``) are not followed."""
+    """How a filter chain changes the frame rate. A deinterlacer that outputs one frame per field
+    doubles it; ``decimate`` drops a frame of each ``cycle``, unless ``mixed`` (the output is then
+    variable). Other filters, also a custom chain's ``fps``, are not followed."""
     factor = Fraction(1)
     for part in chain.split(","):
         name, _, options = part.strip().partition("=")
@@ -480,12 +439,11 @@ def _seconds(value: float) -> str:
 
 
 def overlay_format(video: VideoStream) -> str | None:
-    """The ``overlay`` ``format`` for a source of more than 8 bits, or ``None`` (the default).
+    """The ``overlay`` format for a source of more than 8 bits, or ``None`` for the default.
 
-    ``overlay`` works in 8-bit 4:2:0 by default: it cut a 10-bit source (and the HDR picture
-    that tone mapping reads after it) to 8 bits. ``auto`` is no answer: it picks BGRA, 8-bit
-    RGB for the whole picture. So a 10-bit format with the source's chroma subsampling
-    (testdata/README.md, "Bitmap burn-in").
+    The default (8-bit 4:2:0) and ``auto`` (8-bit RGB) both cut a 10-bit picture to 8 bits, and
+    the HDR picture that tone mapping reads comes after the overlay. So the format keeps the
+    source's chroma subsampling at 10 bits.
     """
     if video.bit_depth is None or video.bit_depth <= 8:
         return None
@@ -497,11 +455,9 @@ def overlay_format(video: VideoStream) -> str | None:
 def _overlay_graph(
     video: VideoStream, g: Geometry, before: list[str], after: list[str], burn: BitmapBurn
 ) -> str:
-    """``[0:v]…crop[base];[sub]…[subs];[base][subs]overlay=…,…[v]``.
-
-    The subtitle canvas covers the source picture. When the crop removes lines, the canvas
-    is aligned with the bottom of the cropped picture (decision 0013): subtitles placed in a
-    letterbox bar at the bottom move up into the picture instead of being cropped away.
+    """The subtitle canvas covers the source picture. When the crop removes lines, the canvas
+    is aligned with the bottom of the cropped picture: subtitles placed in a letterbox bar at the
+    bottom move up into the picture instead of being cropped away.
     """
     c = g.crop
     x = -c.left
