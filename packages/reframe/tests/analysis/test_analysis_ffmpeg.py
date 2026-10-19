@@ -53,12 +53,13 @@ def _copy(fixture_media: FixtureMedia, name: str, tmp_path: Path) -> Path:
     return target
 
 
-#: The exact bit rate of the fixture's DTS-HD MA track: every byte that the writer wrote, over
-#: the 4 s it lasts.
-DTS_BITRATE = len(dts.dts_hd_ma(media.DTS_HD_MA_SECONDS)) * 8 / media.DTS_HD_MA_SECONDS
+def _dts_bitrate() -> float:
+    """The exact bit rate of the fixture's DTS-HD MA track: every byte that the writer wrote,
+    over the time it lasts."""
+    return len(dts.dts_hd_ma(media.DTS_HD_MA_SECONDS)) * 8 / media.DTS_HD_MA_SECONDS
 
 
-async def test_m6_demo_1_measure_the_bit_rate_of_a_dts_hd_ma_track(
+async def test_measure_the_bit_rate_of_a_dts_hd_ma_track(
     tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
     path = _copy(fixture_media, "dts-hd-ma", tmp_path)
@@ -77,7 +78,7 @@ async def test_m6_demo_1_measure_the_bit_rate_of_a_dts_hd_ma_track(
         assert isinstance(scan, BitrateScan)
         assert scan.bitrate.source is BitrateSource.MEASURED
         assert scan.bitrate.value is not None
-        assert scan.bitrate.value == pytest.approx(DTS_BITRATE, rel=1e-3)
+        assert scan.bitrate.value == pytest.approx(_dts_bitrate(), rel=1e-3)
         assert scan.packets == dts.frame_count(media.DTS_HD_MA_SECONDS)
         assert scan.bytes == len(dts.dts_hd_ma(media.DTS_HD_MA_SECONDS))
         assert scan.duration == pytest.approx(4.0, abs=0.002)

@@ -90,7 +90,7 @@ def test_corpus_size_and_categories() -> None:
         assert {"category", "path", "main_title"} <= set(case), case
 
 
-def test_corpus_holds_the_examples_of_03() -> None:
+def test_corpus_holds_the_hacksaw_ridge_and_sopranos_examples() -> None:
     by_path = {case["path"]: case for case in CASES}
     hacksaw = by_path[
         "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC."

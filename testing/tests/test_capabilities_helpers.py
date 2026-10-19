@@ -42,7 +42,7 @@ def run(fake: ft.FakeTools, *args: str) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run([str(fake.ffmpeg), *args], capture_output=True, timeout=60, check=False)
 
 
-def test_c4_rule_replays_the_capture(fake_tools: ft.FakeTools) -> None:
+def test_the_test_encode_rule_replays_the_capture(fake_tools: ft.FakeTools) -> None:
     fake_tools.set_scenario(
         ft.Scenario(
             [
@@ -60,7 +60,7 @@ def test_c4_rule_replays_the_capture(fake_tools: ft.FakeTools) -> None:
     assert ten.returncode == 183
 
 
-def test_c4_captures_are_listed_with_their_files() -> None:
+def test_the_test_encode_captures_are_listed_with_their_files() -> None:
     captures = ft.captures()
     names = set(capture_fake_data.c4_captures())
     assert names <= set(captures)
