@@ -135,6 +135,7 @@ _LEVEL_TAG = re.compile(
     r"^(?P<contexts>(?:\[[^\]]* @ [^\]]*\] )*)"
     r"\[(?P<level>panic|fatal|error|warning|info|verbose|debug|trace)\] "
 )
+_ERROR_LEVELS = frozenset({"error", "fatal", "panic"})
 # x265 and SVT-AV1 write these lines themselves, without FFmpeg's level tag.
 _ENCODER_WARNING = re.compile(r"^(?:x26[45] \[warning\]:|Svt\[warn\]:)\s*(?P<text>.*)$")
 _ENCODER_ERROR = re.compile(r"^(?:x26[45] \[error\]:|Svt\[error\]:)\s*(?P<text>.*)$")
@@ -169,18 +170,22 @@ def control_names(control: str) -> list[str]:
 def failure_detail(stderr: str, encoder_id: str) -> str | None:
     """The line that says best why a dry run failed: the encoder library's own error, else a
     failure line the encoder logged (with libvpx's ``Additional information`` appended), else
+    the encoder's first line at the error level, else
     :func:`~reframe.capabilities.reasons.informative_line`. Without tags and addresses."""
-    lines = [line for _level, line in _log_lines(stderr)]
-    for raw in lines:
+    lines = _log_lines(stderr)
+    for _level, raw in lines:
         match = _ENCODER_ERROR.match(raw)
         if match is not None:
             return match["text"].strip()
     tag = f"[{encoder_id} @"
-    tagged = [_strip_tag(raw) for raw in lines if raw.startswith(tag)]
+    tagged = [(level, _strip_tag(raw)) for level, raw in lines if raw.startswith(tag)]
     info = "Additional information:"
-    extra = next((t.removeprefix(info).strip() for t in tagged if t.startswith(info)), None)
-    for text in tagged:
+    extra = next((t.removeprefix(info).strip() for _, t in tagged if t.startswith(info)), None)
+    for _level, text in tagged:
         if _FAILURE_WORDS.search(text) and not text.startswith(info):
+            return f"{text} ({extra})" if extra else text
+    for level, text in tagged:
+        if level in _ERROR_LEVELS and not text.startswith(info):
             return f"{text} ({extra})" if extra else text
     line = informative_line(_untagged(stderr), encoder_id)
     return _strip_tag(line) if line is not None else None

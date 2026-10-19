@@ -282,6 +282,20 @@ async def test_the_real_libvpx_codec_control_refusals(
     assert info in issues[0].message
 
 
+@pytest.mark.needs_ffmpeg
+async def test_the_real_libvpx_failure_says_what_libvpx_refused(
+    app: Reframe, fixture_media: FixtureMedia, tmp_path: Path
+) -> None:
+    try:
+        job = await _draft(app, fixture_media("multitrack"), tmp_path)
+        job.video = _vp9(custom_params="maxrate=100k").video
+        issues = await app.jobs.dry_run(job)
+    finally:
+        await app.close()
+    assert [(i.code, i.path) for i in issues] == [("encoder.dry_run_failed", "video.custom_params")]
+    assert issues[0].message.endswith("Rate control parameters set without a bitrate")
+
+
 VBV_MAXRATE = "video.advanced.vbv-maxrate"
 
 

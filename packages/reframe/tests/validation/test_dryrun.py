@@ -203,6 +203,24 @@ def test_level_tags_do_not_change_what_a_failure_says() -> None:
     assert parse_dry_run(_job(), untagged, 234) == issues
 
 
+VP9_NO_BITRATE = (
+    "[libvpx-vp9 @ 0x557fedcf0980] [info] v1.17.0\n"
+    "[libvpx-vp9 @ 0x557fedcf0980] [error] Rate control parameters set without a bitrate\n"
+    "[vost#0:0/libvpx-vp9 @ 0x557fedcd3040] [enc:libvpx-vp9 @ 0x557fedcd3500] [error] Error while "
+    "opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+    "[out#0/null @ 0x557fedc69200] [error] Nothing was written into output file, because at "
+    "least one of its streams received no packets.\n"
+    "[info] Conversion failed!\n"
+)
+
+
+def test_the_failure_detail_is_the_encoders_error_line() -> None:
+    """libvpx's message has none of the failure words; its first line is its version."""
+    assert failure_detail(VP9_NO_BITRATE, "libvpx-vp9") == (
+        "Rate control parameters set without a bitrate"
+    )
+
+
 def test_a_warning_that_validation_already_gives_is_left_out() -> None:
     defs = load_definitions()
     stderr = (
