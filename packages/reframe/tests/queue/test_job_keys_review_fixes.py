@@ -1,12 +1,4 @@
-"""The queue's job keys through links (core-complete review R4-1; decisions 0016 and 0034).
-
-One file reached through a symbolic link, a hard link or a linked folder is one file for the
-queue's rules: an encode never reads a file while it is edited in place, two in-place edits of
-one file run one after the other, and two jobs that write the same ``.part`` file never run at
-once. The keys are the paths with their links resolved; two keys are the same file when they
-are equal, equal without case, or ``os.path.samefile`` (hard links; on Windows ``os.stat``
-gives the volume serial number and the file index, mocked here).
-"""
+"""The queue's job keys: a file reached by a link, a hard link or a linked folder is one file."""
 
 from __future__ import annotations
 
@@ -34,20 +26,14 @@ needs_symlinks = pytest.mark.skipif(
 
 
 def _in_place_job_at(h: Harness, path: Path, name: str) -> JobSettings:
-    """An in-place edit of the harness source, spelled as ``path``."""
     source = h.sources.source.model_copy(update={"ref": SourceRef(path=path)}, deep=True)
     job = remux_job(JobSettings(source=SourceRef(path=path)), source)
     job.audio[0].metadata.name = name
     return job
 
 
-# --------------------------------------------------------------------------- the rule
-
-
 @needs_symlinks
 async def test_a_symlink_to_the_source_is_the_same_file(harness: Harness, tmp_path: Path) -> None:
-    """An encode that reads the source through a link must not run while the source is
-    edited in place (0034 follow-up: no job reads a file while it is edited in place)."""
     h = harness
     link = tmp_path / "media" / "link-to-source.mkv"
     link.symlink_to(h.source_path)
@@ -85,7 +71,7 @@ async def test_a_hard_link_to_the_source_is_the_same_file(harness: Harness, tmp_
 
 @needs_symlinks
 async def test_the_same_output_through_a_linked_folder(harness: Harness, tmp_path: Path) -> None:
-    """0016: two jobs with the same output never run at once (both write the same .part)."""
+    """Two jobs with the same output never run at once: both write the same .part file."""
     h = harness
     out = tmp_path / "out"  # the harness made it
     (tmp_path / "out-link").symlink_to(out, target_is_directory=True)
@@ -113,8 +99,6 @@ async def test_keys_differ_only_in_case_are_the_same_output(harness: Harness) ->
 
 
 def _one_file_index(monkeypatch: pytest.MonkeyPatch, *paths: Path) -> None:
-    """``os.stat`` of each of ``paths`` gives one ``(st_ino, st_dev)``: what Windows reports
-    (the file index and the volume serial number) for two hard links of one file."""
     real_stat = os.stat
     linked = {os.path.realpath(path) for path in paths}
 
@@ -132,9 +116,9 @@ def _one_file_index(monkeypatch: pytest.MonkeyPatch, *paths: Path) -> None:
 async def test_file_identity_is_what_os_stat_reports(
     harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two paths whose ``os.stat`` gives the same ``(st_dev, st_ino)`` are one file. On
-    Windows that pair is the volume serial number and the file index (a hard link there has
-    the same index); mocked, so it runs on every OS."""
+    """Two paths with the same ``(st_dev, st_ino)`` are one file. On Windows that pair is the
+    volume serial number and the file index, so a hard link has the same pair. Mocked, so it
+    runs on every OS."""
     h = harness
     other = tmp_path / "media" / "Other.Name.mkv"
     other.write_bytes(b"another file")
@@ -156,9 +140,6 @@ async def test_a_key_of_a_missing_file_is_its_resolved_path(
     job.settings.source = SourceRef(path=tmp_path / "media" / ".." / "media" / "gone.mkv")
     assert _source_key(job) == service._path_key(tmp_path / "media" / "gone.mkv")
     assert not _conflicts(job, [active_for(queued(in_place_job(h), "edit"))])
-
-
-# --------------------------------------------------------------------------- the queue
 
 
 @needs_symlinks

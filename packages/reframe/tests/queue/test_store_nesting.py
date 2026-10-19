@@ -1,7 +1,5 @@
-"""The queue store and JSON nested more than 64 levels deep (C-11, C-9's rule of decision
-0015; 0016 follow-up): a row that deep is a damaged row (kept untouched, ``queue.rows_skipped``),
-never a ``RecursionError`` at start or later, and a document that deep is never written
-(``queue.job_not_saved``; the job stays in the queue in memory)."""
+"""The queue store with JSON nested deeper than ``MAX_DEPTH``: a deep row is skipped and kept
+untouched, and a deep document is not written and never raises ``RecursionError``."""
 
 from __future__ import annotations
 
@@ -33,8 +31,7 @@ from .conftest import Harness
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
-#: Deep enough for CPython's ``json.loads`` to raise ``RecursionError`` on any thread (3.14:
-#: a C-stack check, about 52 000 levels on an 8 MB stack).
+#: Deep enough for ``json.loads`` to raise ``RecursionError`` on any thread.
 PARSER_DEPTH = 200_000
 
 
@@ -120,15 +117,7 @@ def new_store(tmp_path: Path) -> Path:
     return path
 
 
-# --------------------------------------------------------------------------- Python facts
-
-
 def test_python_facts_behind_the_rule() -> None:
-    """What failed without the guard (CPython 3.14, Pydantic 2): ``json.loads`` raises
-    ``RecursionError`` (not ``ValueError``) only far beyond the guard; ``copy.deepcopy`` (the
-    migrations) raises ``RecursionError`` at about 500 levels; Pydantic validates any depth
-    but ``model_dump`` raises ``ValueError`` past 255. ``RecursionError`` is a
-    ``RuntimeError``, so the store's ``ValueError`` handling did not catch it."""
     assert issubclass(RecursionError, RuntimeError)
     assert not issubclass(RecursionError, ValueError)
     assert json.loads(deep_text(1000)) == nested(1000)  # no recursion limit of 1000 here
@@ -154,14 +143,10 @@ def test_python_facts_behind_the_rule() -> None:
     assert JobSettings.model_validate(settings_of(255)).model_dump(mode="json")
 
 
-# --------------------------------------------------------------------------- loading
-
-
 @pytest.mark.parametrize("levels", [MAX_DEPTH + 1, 300, 1000, PARSER_DEPTH])
 def test_a_row_nested_too_deeply_is_skipped_and_kept_untouched(tmp_path: Path, levels: int) -> None:
-    """65 levels (the first one too deep), 300 (Pydantic's dump fails: the row would load,
-    then crash the start-up save of an interrupted job), 1000 (the migrations' ``deepcopy``)
-    and 200 000 (``json.loads``), in each of the three JSON columns."""
+    """The depths that break a reader (Pydantic's dump, the migrations' ``deepcopy``,
+    ``json.loads``), in each of the three JSON columns."""
     path = new_store(tmp_path)
     plain = row_of(job("x"))
     good_settings, good_issues = plain[3], plain[5]
@@ -218,8 +203,8 @@ def test_documents_of_64_levels_load(tmp_path: Path) -> None:
 
 
 def test_a_plan_of_64_levels_is_derived_data(tmp_path: Path) -> None:
-    """A ``plan_json`` of 64 levels is not too deep: an unknown plan is dropped as before (it
-    is planned again before a run), the row loads."""
+    """A ``plan_json`` of this depth is not too deep: an unknown plan is dropped (it is planned
+    again before a run), and the row loads."""
     path = new_store(tmp_path)
     plain = row_of(job("x"))
     put_rows(path, ("plan64", plain[3], json.dumps({"x": nested(MAX_DEPTH - 1)}), plain[5]))
@@ -232,8 +217,8 @@ def test_a_plan_of_64_levels_is_derived_data(tmp_path: Path) -> None:
 
 
 def test_settings_that_are_not_an_object_are_a_damaged_row(tmp_path: Path) -> None:
-    """Found on the way: a ``settings_json`` that is JSON but not an object raised
-    ``AttributeError`` from the migrations (a crash at start)."""
+    """A ``settings_json`` that is JSON but not an object is a damaged row, not a crash in the
+    migrations."""
     path = new_store(tmp_path)
     plain = row_of(job("x"))
     put_rows(path, ("list", "[1]", None, plain[5]), ("text", '"x"', None, plain[5]))
@@ -247,17 +232,13 @@ def test_settings_that_are_not_an_object_are_a_damaged_row(tmp_path: Path) -> No
     store.close()
 
 
-# --------------------------------------------------------------------------- writing
-
-
 @pytest.mark.parametrize(
     ("levels", "detail"),
     [(MAX_DEPTH + 1, TOO_DEEP), (300, "depth exceeded")],
 )
 def test_a_job_nested_too_deeply_is_never_written(tmp_path: Path, levels: int, detail: str) -> None:
-    """``row_of`` never raises (past 255 levels Pydantic's dump fails); ``upsert`` writes the
-    other rows, leaves the deep one out (the file keeps the job's earlier row) and warns once
-    per job."""
+    """``row_of`` never raises, and ``upsert`` leaves the deep row out: the file keeps the job's
+    earlier row."""
     path = tmp_path / "queue.sqlite3"
     store = store_at(path)
     early = job("deep")
@@ -308,9 +289,6 @@ def test_a_store_that_saves_nothing_gives_no_warning(tmp_path: Path) -> None:
     store.close()
 
 
-# --------------------------------------------------------------------------- the queue
-
-
 def queue_at(h: Harness) -> QueueService:
     """A second queue on the same data folder (a restarted Reframe)."""
     from reframe.platform.sleep import SleepInhibitor
@@ -332,9 +310,6 @@ def codes(h: Harness) -> list[str]:
 
 @pytest.mark.anyio
 async def test_the_queue_starts_with_a_deep_row_and_keeps_a_deep_job(harness: Harness) -> None:
-    """End to end: a deep job is added (``queue.job_not_saved``) and stays in the queue; a
-    deep row in the file is skipped at the next start (``queue.rows_skipped``), the other
-    jobs load, an interrupted job is saved again, and the deep row stays as it was."""
     h = harness
     data = h.job().model_dump(mode="json")
     data["from_the_future"] = nested(MAX_DEPTH)

@@ -1,6 +1,4 @@
-"""The queue's behaviour (C-11): the contract of ``QueueService``, pause and resume, cancel,
-parallel slots, when-done (without a power service; with one: ``test_when_done.py``), sleep
-inhibit, close and restart recovery, and the event order."""
+"""The queue service: pause, cancel, parallel slots, when done, close and restart."""
 
 from __future__ import annotations
 
@@ -30,7 +28,7 @@ from .conftest import Harness, encode_rule
 
 pytestmark = pytest.mark.anyio
 
-#: An encode that runs until it is cancelled (or for 50 s): a first block, then quiet.
+#: An encode that runs until it is cancelled: a first block, then quiet.
 LONG = encode_rule(ft.progress(blocks=1, end=False), ft.write_output(100), ft.hang())
 
 
@@ -61,9 +59,6 @@ def job_notifications(h: Harness) -> list[tuple[str | None, str]]:
         for e in h.events.published
         if isinstance(e, NotificationEvent) and e.job_id
     ]
-
-
-# --------------------------------------------------------------------------- one run
 
 
 async def test_a_run_and_its_events_in_order(harness: Harness) -> None:
@@ -120,9 +115,6 @@ async def test_job_log_events_are_rate_limited(harness: Harness) -> None:
     assert batch.dropped > 300
     assert batch.lines[-1].startswith("[")  # the newest lines are kept  # type: ignore[union-attr]
     assert "line 499" in h.log_text(ended.id)  # the file has them all
-
-
-# --------------------------------------------------------------------------- pause, resume
 
 
 async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) -> None:
@@ -185,8 +177,7 @@ async def test_pause_before_the_first_step(harness: Harness) -> None:
 async def test_pause_and_resume_at_the_same_time(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M2 review: ``gather(pause, resume)`` with a slow suspend left the job ``paused`` with
-    its process stopped, and ``resume()`` did nothing. One lock per job orders them."""
+    """``gather(pause, resume)`` with a slow suspend: one lock per job orders them."""
     from reframe.queue import process as tree
 
     h = harness
@@ -220,9 +211,6 @@ async def test_pause_and_resume_at_the_same_time(
 
 
 async def test_a_cancelled_resume_does_not_unbalance_the_sleep_inhibit(harness: Harness) -> None:
-    """M2 review: ``holds_inhibit`` was set before the awaited ``acquire()``. When the caller
-    of ``resume()`` was cancelled during the acquire, the job later released a count it did
-    not hold, which freed the lock of another running job."""
     h = harness
     h.settings.queue.parallel_jobs = 2
     h.scenario(LONG)
@@ -254,8 +242,7 @@ async def test_a_pause_before_the_run_takes_the_sleep_inhibit(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A pause that comes while the run saves its ``running`` state takes the job's lock
-    first; the run must then not acquire the sleep inhibit for a paused job (it did: the
-    count stayed 1 while the job was paused)."""
+    first; the run must then not acquire the sleep inhibit for a paused job."""
     h = harness
     h.scenario(LONG)
     original = h.queue._save
@@ -289,9 +276,6 @@ async def test_pause_and_resume_of_other_states_do_nothing(harness: Harness) -> 
     assert h.queue.get(added.id).state is JobState.WAITING  # type: ignore[union-attr]
 
 
-# --------------------------------------------------------------------------- cancel
-
-
 @pytest.mark.parametrize("paused", [False, True])
 async def test_cancel_a_running_job(harness: Harness, paused: bool) -> None:
     h = harness
@@ -317,8 +301,6 @@ async def test_cancel_a_running_job(harness: Harness, paused: bool) -> None:
 
 
 async def test_cancel_all_cancels_waiting_jobs_too(harness: Harness) -> None:
-    """``cancel()`` (the CLI's Ctrl+C): every running job is stopped with its ``.part`` file
-    removed, every waiting one is marked cancelled; it returns when they have ended."""
     h = harness
     h.settings.queue.parallel_jobs = 2
     h.scenario(LONG)
@@ -347,9 +329,6 @@ async def test_cancel_a_job_that_was_just_scheduled(harness: Harness) -> None:
     await h.queue.cancel(added.id)
     assert h.queue.get(added.id).state is JobState.CANCELLED  # type: ignore[union-attr]
     assert h.fake.calls("ffmpeg") == []
-
-
-# --------------------------------------------------------------------------- parallel
 
 
 async def test_parallel_slots_from_the_settings(harness: Harness) -> None:
@@ -405,9 +384,8 @@ async def test_stop_takes_no_new_jobs(harness: Harness) -> None:
 
 
 async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harness) -> None:
-    """``start(job_ids=…)`` (the CLI): two foreign jobs waiting in the shared store are not
-    started and keep their state and position; the runner goes idle when the given jobs
-    have ended, and ``when_done`` runs for them."""
+    """``start(job_ids=…)``: the foreign jobs waiting in the shared store are not started and keep
+    their state and position."""
     h = harness
     h.settings.queue.parallel_jobs = 4
     h.settings.queue.when_done = "notify"
@@ -428,7 +406,7 @@ async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harne
     assert all(h.states(job_id) == [(None, "waiting")] for job_id in foreign)
     [note] = queue_notifications(h)
     assert note.message == "2 jobs done."
-    h.queue.start()  # no ids: every waiting job, as the contract says
+    h.queue.start()  # no ids: every waiting job
     assert [j.state for j in await h.queue.wait(foreign)] == [JobState.DONE] * 2
 
 
@@ -469,9 +447,6 @@ async def test_start_and_stop_are_not_saved(harness: Harness) -> None:
         await again.close()
 
 
-# --------------------------------------------------------------------------- when done
-
-
 async def test_when_done_notify(harness: Harness) -> None:
     h = harness
     h.settings.queue.when_done = "notify"
@@ -499,9 +474,6 @@ async def test_when_done_nothing_and_sleep_inhibit_off(harness: Harness) -> None
     assert queue_notifications(h) == []
     assert job_notifications(h) == [(ended.id, "success")]  # the job's own
     assert h.backend.holds == []
-
-
-# --------------------------------------------------------------------------- the contract
 
 
 async def test_add_position_list_get_reorder_remove(harness: Harness) -> None:
@@ -608,9 +580,6 @@ async def test_closed_queue(harness: Harness) -> None:
     assert await h.queue.wait() != []
 
 
-# --------------------------------------------------------------------------- close, restart
-
-
 def queue_at(h: Harness) -> QueueService:
     """A second queue on the same data folder (a restarted Reframe)."""
     return QueueService(
@@ -660,8 +629,7 @@ async def test_close_interrupts_running_jobs_and_restart_recovers(harness: Harne
 
 
 async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> None:
-    """A crash: rows stay ``running`` / ``paused``. The restored queue marks them
-    ``interrupted`` and removes their leftover files (the ``.part`` file by the policy)."""
+    """A crash leaves the rows ``running`` or ``paused``."""
     h = harness
     job = h.job()
     plan = h.plan(job)
@@ -752,17 +720,13 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
     assert h.queue._store.path.parent.is_file()
 
 
-# --------------------------------------------------------------------------- file names
-
-
 @pytest.mark.skipif(sys.platform != "linux", reason="a file name that is not UTF-8 (Linux)")
 async def test_a_file_name_that_is_not_utf8(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M2 review: a source named ``bad\\xffname.mkv`` (byte 0xFF; Python's ``\\udcff``, PEP 383)
-    crashed ``add`` (``model_dump_json``: "surrogates not allowed"). The store keeps such a
-    path exactly; the log file and the events show it escaped; nothing raises. (Validation is
-    left out: its naming rule fails on such a name today, a C-16 / C-8 finding.)"""
+    """A source named ``bad\\xffname.mkv`` (byte 0xFF; Python's ``\\udcff``, PEP 383): the store
+    keeps the path exactly, the log file and the events show it escaped, and nothing raises.
+    Validation is left out: its naming rule fails on such a name."""
     from reframe.queue import runner
 
     from .conftest import draft, recorded
