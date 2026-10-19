@@ -161,9 +161,8 @@ async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) ->
 
 async def test_pause_before_the_first_step(harness: Harness) -> None:
     h = harness
-    h.sources.delay = 0.2  # a slow probe: the job is still preparing
     added = await h.queue.add(h.job())
-    h.sources.delay = 0.2
+    h.sources.delay = 0.2  # a slow probe: the job is still preparing
     h.queue.start()
     await h.first_event(added.id, "job.state", state="running")
     await h.queue.pause()
@@ -307,7 +306,6 @@ async def test_cancel_all_cancels_waiting_jobs_too(harness: Harness) -> None:
     first = await h.queue.add(h.job("A"))
     third = await h.queue.add(h.job("C"))
     second = await h.queue.add(h.job("B"), position=2)
-    h.settings.queue.parallel_jobs = 2
     h.queue.start()
     await h.first_event(first.id, "job.progress", limit=20)
     await h.first_event(third.id, "job.progress", limit=20)
@@ -663,9 +661,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
             if e.type == "job.state"
         ]
         assert restored == [("running", "interrupted"), ("paused", "interrupted")]
-        await asyncio.wait(again._background) if again._background else None
-        assert not plan.output_tmp.exists()
-        again.list()  # once only
+        await h.wait_for(lambda: not plan.output_tmp.exists())  # removed in the background
     finally:
         await again.close()
     db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
