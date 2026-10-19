@@ -15,14 +15,13 @@ import pytest
 
 from reframe import cli
 from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
-from reframe.models import JobSettings, MediaSource, QueueJob
+from reframe.models import MediaSource
 from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .conftest import invoke, media_file, replay
-from .fake_queue import Behaviour, FakeQueue
+from .conftest import Queues, invoke, media_file, replay
 
 
 def _load_anime() -> ModuleType:
@@ -38,33 +37,6 @@ def _load_anime() -> ModuleType:
 
 A = _load_anime()
 Media = Callable[[str], Path]
-
-
-class Queues:
-    """The fake queue as ``cli.get_queue``."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, log_dir: Path) -> None:
-        self.made: list[FakeQueue] = []
-        self.log_dir = log_dir
-        self.behaviour: Callable[[JobSettings], Behaviour] = lambda _job: "done"
-        self.on_running: Callable[[QueueJob], None] | None = None
-        monkeypatch.setattr(cli, "get_queue", self.make)
-
-    def make(self, app: Reframe) -> FakeQueue:
-        queue = FakeQueue(
-            app.events,
-            log_dir=self.log_dir,
-            validate=app.jobs.validate,
-            behaviour=self.behaviour,
-            on_running=self.on_running,
-        )
-        self.made.append(queue)
-        return queue
-
-
-@pytest.fixture
-def queues(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Queues:
-    return Queues(monkeypatch, tmp_path / "logs")
 
 
 def season_files(

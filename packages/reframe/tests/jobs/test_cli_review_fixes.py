@@ -31,8 +31,8 @@ from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .conftest import Stubs, invoke, media_file, preset, recorded, replay
-from .test_cli_batch import A, Queues, import_demo_preset, queues  # noqa: F401
+from .conftest import Queues, Stubs, invoke, media_file, preset, recorded, replay
+from .test_cli_batch import A, import_demo_preset
 from .test_cli_plan_dry_run import CUSTOM, DryRun, dry_run, movie  # noqa: F401
 
 Media = Callable[[str], Path]
@@ -72,7 +72,7 @@ def outputs_of(made: Queues) -> list[Path | None]:
 
 def test_batch_never_writes_a_file_of_another_group(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """With the collision setting *overwrite*, E01's job would otherwise replace that file."""
@@ -126,7 +126,7 @@ def test_batch_json_has_the_left_out_files(cli_env: ft.FakeTools, tmp_path: Path
 
 def test_encode_never_writes_another_file_of_the_command(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     write_settings(tmp_path, collision="overwrite")
@@ -144,7 +144,7 @@ def test_encode_never_writes_another_file_of_the_command(
 
 def test_encode_two_outputs_with_one_name(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """The second file is not queued: its output would replace the first's."""
@@ -160,7 +160,7 @@ def test_encode_two_outputs_with_one_name(
 
 def test_a_rerun_queues_only_the_episodes_not_done_yet(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """E01 and E02 were encoded by an earlier run (their outputs are in the season folder,

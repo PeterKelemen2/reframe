@@ -21,8 +21,7 @@ from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .conftest import invoke, media_file, probe_json, probe_rule, recorded, replay
-from .test_cli_batch import Queues, queues  # noqa: F401
+from .conftest import Queues, invoke, media_file, probe_json, probe_rule, recorded, replay
 from .test_cli_review_fixes import (
     E01,
     E01_OUT,
@@ -52,7 +51,7 @@ def linked(tmp_path: Path, folder: Path) -> Path:
 
 def test_ra1_encode_never_writes_a_source_given_through_a_linked_folder(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """The second file is named through a link to the folder. E01's output is that file by
@@ -74,7 +73,7 @@ def test_ra1_encode_never_writes_a_source_given_through_a_linked_folder(
 
 def test_ra1_batch_never_writes_a_source_given_through_a_linked_folder(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """``reframe batch``: the linked file is E01's planned output (left out as already encoded),
@@ -94,7 +93,7 @@ def test_ra1_batch_never_writes_a_source_given_through_a_linked_folder(
 
 def test_ra1_encode_never_writes_a_hard_linked_output_name(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """E01's output name is a hard link to another source of the command (in another folder,
@@ -116,7 +115,7 @@ def test_ra1_encode_never_writes_a_hard_linked_output_name(
 
 def test_ra1_batch_never_writes_a_hard_linked_output_name(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """``reframe batch`` of the same files: ``Other.mkv`` is E01's planned output (the same
@@ -172,7 +171,7 @@ def test_ra1_a_folder_given_through_two_spellings_is_taken_once(
 
 def test_ra1_encode_takes_a_file_named_through_a_link_once(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """``reframe encode link/E01 real/E01 real``: one job per file."""
@@ -210,7 +209,7 @@ class LoopSpy:
 
 def test_ra1_the_file_keys_are_computed_off_the_event_loop(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -260,7 +259,7 @@ def import_evil_preset(tmp_path: Path) -> None:
 
 def test_ra2_preset_line_of_batch_and_encode_has_no_control_characters(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """A preset named ``Evil ESC[31m RED`` (imported) in the ``Preset:`` line of
@@ -356,7 +355,7 @@ def test_ra2_reframe_probe_prints_titles_without_control_characters(
 
 def test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """With *overwrite*, E01's output is the other file of the folder."""
@@ -369,7 +368,7 @@ def test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
 
 def test_ra4_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """An existing output that is not a file of the command is replaced with *overwrite*, and
