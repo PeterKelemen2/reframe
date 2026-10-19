@@ -9,8 +9,9 @@ reserved name gets.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+
+from reframe.models.text import UNDECODABLE_REPLACEMENT, replace_undecodable
 
 __all__ = [
     "MAX_PART_BYTES",
@@ -47,11 +48,6 @@ RESERVED_NAMES = frozenset(
 )
 #: Template variables shortened (in this order) when a part is too long.
 SHORTEN_ORDER = ("sub_title", "main_title")
-#: What a byte that is not UTF-8 becomes (U+FFFD, the Unicode replacement character).
-UNDECODABLE_REPLACEMENT = "\ufffd"
-#: A lone surrogate: how Python holds a byte of a file name that is not UTF-8
-#: (``surrogateescape`` on POSIX: 0xFF → ``\udcff``; Windows: an unpaired UTF-16 surrogate).
-_SURROGATE = re.compile("[\ud800-\udfff]")
 _UNDECODABLE_CHANGE = f"bytes that are not UTF-8 → '{UNDECODABLE_REPLACEMENT}'"
 #: The note of a name in which bytes that are not UTF-8 were replaced.
 UNDECODABLE_NOTE = (
@@ -67,12 +63,6 @@ class Piece:
 
     text: str
     var: str | None = None
-
-
-def replace_undecodable(text: str) -> str:
-    """``text`` with every byte that is not UTF-8 (a lone surrogate) replaced with ``�``.
-    One code point becomes one code point, so positions in the text stay the same."""
-    return _SURROGATE.sub(UNDECODABLE_REPLACEMENT, text)
 
 
 def replace_forbidden(text: str) -> tuple[str, list[str]]:

@@ -20,6 +20,7 @@ from reframe.models.base import (
 )
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import AudioOutputTrack, LoudnessTarget, SubtitleOutputTrack
+from reframe.models.text import DisplayText
 
 __all__ = [
     "AudioCodecRule",
@@ -185,7 +186,7 @@ class TrackDecision(ReframeModel):
     kind: Literal["audio", "subtitle"] = "audio"
     selected: bool = True
     """Taken by the selection stage."""
-    selection: str | None = None
+    selection: DisplayText | None = None
     """Why it was taken or dropped, in one line: ``Hungarian: first matching track (best
     quality)``, ``Commentary: dropped``, ``No listed language: the default-flagged track``.
     ``None`` when no selection stage ran."""
@@ -196,11 +197,11 @@ class TrackDecision(ReframeModel):
     track was dropped or no rule matched."""
     subtitle_outputs: list[SubtitleOutputTrack] = Field(default_factory=list)
     """Subtitles: the output track of a selected subtitle track (copy or burn-in)."""
-    reason: str
+    reason: DisplayText
     """Why, in one line: ``AC-3, 5.1, 224 ≤ 320: passthru``,
     ``Lossless source → encode at the max``,
     ``Rule 2 needs 5.1 or more. Rule 3 matches, and the source fits``."""
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
     """Details that do not change the outcome: a snapped bitrate or sample rate, a downmix
     forced by the encoder, the extra outputs."""
     measure: bool = False

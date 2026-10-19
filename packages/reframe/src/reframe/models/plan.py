@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from reframe.models.base import NonNegativeFloat, ReframeModel
+from reframe.models.text import DisplayText
 
 __all__ = [
     "ArgTemplate",
@@ -67,7 +68,7 @@ class PlanStep(ReframeModel):
     """Arguments **after** the program (the runner prepends the discovered tool path)."""
     progress_weight: NonNegativeFloat = 1.0
     """Share of the job's progress bar (relative; the runner normalises the weights)."""
-    description: str = ""
+    description: DisplayText = ""
     measures: list[Measurement] = Field(default_factory=list)
 
 
@@ -78,7 +79,7 @@ class PlanFile(ReframeModel):
     """Where to write it: next to ``output_tmp`` (``<name>.part.chapters.txt``)."""
     content: str
     """The full text, written as UTF-8 with LF line ends."""
-    description: str = ""
+    description: DisplayText = ""
     """For the log: ``FFMETADATA chapters``."""
 
 
@@ -92,7 +93,7 @@ class EncodePlan(ReframeModel):
     output_final: Path
     expected_duration: NonNegativeFloat
     """Seconds, range-adjusted, for progress."""
-    display: str
+    display: DisplayText
     """Shell-quoted command preview (POSIX or Windows style); a measured value shows as
     ``<a0.input_i>``."""
     files: list[PlanFile] = Field(default_factory=list)

@@ -22,6 +22,7 @@ from reframe.models.base import (
     PositiveInt,
     Rational,
 )
+from reframe.models.text import DisplayText
 
 __all__ = [
     "AttachedPicture",
@@ -134,7 +135,7 @@ class RoleEvidence(StrEnum):
 class TrackRoleInfo(DocumentModel):
     role: TrackRole
     evidence: RoleEvidence
-    detail: str | None = None
+    detail: DisplayText | None = None
     """For the tooltip: ``disposition comment``, ``title contains "Commentary"``…"""
 
 
@@ -423,7 +424,7 @@ class MediaSource(DocumentModel):
     cover_art: list[AttachedPicture] = Field(default_factory=list)
     data: list[DataStream] = Field(default_factory=list)
     chapters: list[Chapter] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[DisplayText] = Field(default_factory=list)
     """Problems found while probing (missing duration, unreadable side data…)."""
     probed_at: AwareDatetime | None = None
     probe_tool: str | None = None
