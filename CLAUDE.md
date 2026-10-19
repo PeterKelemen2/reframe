@@ -78,6 +78,9 @@ commands on Ubuntu and Windows.
 - Never commit generated media. `scripts/make-testdata.py` creates the fixtures. The name
   corpus `testdata/names.toml` and recorded probe JSON in `testdata/probes/` are committed.
 - Use current stable dependency versions, pinned in `uv.lock` / `frontend/package-lock.json`.
+- Comments and docstrings follow the `code-comments` skill (`.claude/skills/code-comments/`):
+  a comment says why, about the code next to it. Never put step IDs, plan sections or history
+  in code. `/code-comments [paths]` trims existing comments.
 
 ## Persistence rules
 
