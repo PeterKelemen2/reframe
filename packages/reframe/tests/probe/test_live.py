@@ -178,7 +178,7 @@ async def test_probe_budgets(prober: Prober, fixture_media: Media, tmp_path: Pat
     cached_time = time.perf_counter() - started
 
     print(
-        f"\nQ-3 probe timing: one file {one * 1000:.0f} ms (budget 500 ms); "
+        f"\nProbe timing: one file {one * 1000:.0f} ms (budget 500 ms); "
         f"24-file folder {folder_time:.2f} s (budget 5 s); "
         f"cached folder {cached_time * 1000:.0f} ms"
     )
