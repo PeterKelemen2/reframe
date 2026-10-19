@@ -31,6 +31,7 @@ from reframe.models.migrations import (
 )
 from reframe.models.preset import FieldChange
 from reframe.models.settings import AppSettings
+from reframe.models.text import json_text
 
 __all__ = [
     "MAX_DEPTH",
@@ -177,7 +178,7 @@ class JsonDocumentFile:
             fd, name = tempfile.mkstemp(dir=folder, prefix=f".{target.name}.", suffix=".tmp")
             tmp = Path(name)
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                f.write(json_text(data, ensure_ascii=False, indent=2))
                 f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())
