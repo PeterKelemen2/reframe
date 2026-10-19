@@ -1,9 +1,4 @@
-"""C-3 role heuristic, core-complete review R1-6 (decision 0006, "Follow-up (core-complete
-review, 2026-10-16)"): a subtitle track with 0 events is empty, not a forced track.
-
-The real tools make such a track: FFmpeg muxes an SRT whose only event is after the end (``-t``)
-as a subtitle track without packets, and ``mkvpropedit --add-track-statistics-tags`` writes
-``NUMBER_OF_FRAMES=0`` for it, which the probe reads as ``event_count=0``."""
+"""A subtitle track with 0 events is empty, not a forced track, as real tools write it."""
 
 from __future__ import annotations
 
@@ -69,7 +64,6 @@ async def test_an_empty_subtitle_track_is_not_forced(tmp_path: Path) -> None:
         (2, 0, "stats_tag"),
     ]
     empty = source.subtitles[1]
-    # Before the fix: FORCED by heuristic ("0 events, 0 % of the 4 events of track #1").
     assert [(r.role, r.evidence) for r in empty.roles] == [(TrackRole.MAIN, RoleEvidence.HEURISTIC)]
     # The foreign audio search does not take the empty track either.
     found = foreign_audio_search(

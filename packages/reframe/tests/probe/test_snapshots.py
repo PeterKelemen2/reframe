@@ -1,14 +1,7 @@
-"""C-3 "Done when": snapshots of the parsed ``MediaSource`` for every recorded ffprobe JSON.
+"""Snapshots of the parsed ``MediaSource`` for every recorded ffprobe JSON.
 
-- ``testdata/probes/<name>.json``: the recorded real-world probes (Q-2.2; TrueHD Atmos,
-  DTS-HD MA, DTS:X, PGS, ASS with fonts, VFR, interlaced DVD, HDR10, DV profile 8, …).
-- ``testdata/probes/fixtures/<file>.json``: every generated fixture file, probed with the
-  pinned build, so the snapshots do not depend on the FFmpeg that runs the tests.
-
-``<name>.frames.json`` (the first frame, for HDR side data) is passed when it exists, as the
-prober does. Volatile fields are normalised: the path is the recorded name, the fingerprint is
-``size=0, mtime=0`` and ``probed_at`` is not set. Update with
-``uv run pytest packages/reframe/tests/probe/test_snapshots.py --snapshot-update``.
+The fixtures under ``testdata/probes/fixtures/`` were probed with the pinned build, so the
+snapshots do not depend on the FFmpeg that runs the tests.
 """
 
 from __future__ import annotations
@@ -26,7 +19,7 @@ from reframe.probe import parse_ffprobe
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
 NOT_PROBES = {"index.json", "confirmed_strings.json"}
 
-#: The plan's list (C-3 "Done when", Q-2.2): every one must have a recorded probe.
+#: Each of these must have a recorded probe.
 REQUIRED_PROBES = {
     "truehd-atmos",
     "dts-hd-ma",
@@ -66,8 +59,6 @@ def _parse(rel: str) -> MediaSource:
 
 
 def _media_name(rel: str, data: dict[str, Any]) -> str:
-    """The media file's (anonymised) name: ``format.filename`` for a recorded probe, the
-    fixture's relative path for a fixture."""
     if rel.startswith("fixtures/"):
         return rel.removeprefix("fixtures/").removesuffix(".json")
     return str(data["format"]["filename"])

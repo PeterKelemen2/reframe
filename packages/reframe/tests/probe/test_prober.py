@@ -1,5 +1,4 @@
-"""Probing one file through a fake ffprobe (C-3): success, cache, HDR frame fallback, and
-fault injection (hang → timeout, crash, garbage JSON, missing tool, cancel)."""
+"""Probing one file through a fake ffprobe: parsing, cache, extra reads, faults and cancel."""
 
 from __future__ import annotations
 
@@ -47,8 +46,7 @@ MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
 
 
 def probe_calls(fake: ft.FakeTools) -> list[tuple[str, ...]]:
-    """ffprobe calls without the packet-timestamp samples (the VFR check of Matroska files
-    without statistics tags when MediaInfo is off)."""
+    """ffprobe calls without the packet-timestamp samples (the VFR check)."""
     return [c for c in fake.calls("ffprobe") if "packet=pts_time" not in c]
 
 
@@ -119,7 +117,6 @@ async def test_cache_hit_runs_no_ffprobe(
     again = await make_prober(fake_tools, cache=ProbeCache(tmp_path / "cache")).probe(media_file)
     assert again == first
     assert len(probe_calls(fake_tools)) == 1
-    # use_cache=False probes again; a touched file is a miss.
     await prober.probe(media_file, use_cache=False)
     assert len(probe_calls(fake_tools)) == 2
     _append(media_file, b"more")
@@ -350,9 +347,6 @@ def test_cache_options_follow_mediainfo(monkeypatch: pytest.MonkeyPatch) -> None
     assert Prober("ffprobe", use_mediainfo=False).cache_options() == {"mediainfo": False, **reader}
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     assert Prober("ffprobe").cache_options() == {"mediainfo": False, **reader}
-
-
-# --------------------------------------------------------------------------- review fixes (M1)
 
 
 def _packets_json(tmp_path: Path, steps_ms: list[float]) -> Path:

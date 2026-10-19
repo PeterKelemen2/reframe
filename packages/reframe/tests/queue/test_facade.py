@@ -1,6 +1,4 @@
-"""``Reframe.queue`` (C-11 wiring in ``reframe.service``): built in ``__init__``, restored in
-``create()``, closed first in ``close()``, given ``Reframe.power`` for when done; with the
-fake tools behind the real services."""
+"""``Reframe``'s queue wiring, with the fake tools behind the real services."""
 
 from __future__ import annotations
 
@@ -117,7 +115,7 @@ async def test_the_when_done_action_goes_to_reframe_power(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``Reframe`` gives the queue its power service (here a fake that only records: no real
-    power call is possible); ``close()`` cancels the countdown and never runs it."""
+    power call is possible)."""
     made: list[FakePower] = []
 
     def create(events: EventBus) -> FakePower:
@@ -139,7 +137,7 @@ async def test_the_when_done_action_goes_to_reframe_power(
         [ended] = await app.queue.wait([added.id])
         assert ended.state is JobState.DONE, ended.error
         assert power.scheduled == [("countdown-1", "shutdown", "1 job done")]
-        assert power.pending is not None  # a front end can show it as soon as wait() returns
+        assert power.pending is not None
     finally:
         await app.close()
     assert power.closed

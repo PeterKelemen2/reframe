@@ -1,15 +1,5 @@
-"""C-11 "Done when" on real FFmpeg: the queue through the ``Reframe`` facade.
-
-    an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
-    cancel, a failure from a fake encoder error, and a restart with an interrupted job.
-    All expected events arrive in order.
-
-``REFRAME_FFMPEG`` points at the fake ffmpeg, whose last rule passes every call to the real
-ffmpeg (``exec``); a rule per job name puts in what that job needs (a first progress block to
-pause or cancel at, the fake encoder error, a hang until Reframe is closed). ffprobe is the
-real one, so the runner's output check and this test re-probe real files. Also here: two-pass
-loudness normalisation of a silent track (the ``-inf`` clamp) on real FFmpeg.
-"""
+"""The queue through the ``Reframe`` facade on real FFmpeg, with per-job faults. Also the
+two-pass loudness normalisation of a silent track (the ``-inf`` clamp)."""
 
 from __future__ import annotations
 
@@ -177,7 +167,6 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
         assert [j.state for j in app.queue.list()] == [JobState.WAITING] * 3
         app.queue.start()
 
-        # Pause Alpha at its first block: its process tree is suspended.
         def alpha_pids() -> list[int]:
             return [
                 i.pid
@@ -192,7 +181,6 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
         if sys.platform != "win32":
             await real.until(lambda: all(stopped(pid) for pid in alpha_pids()))
 
-        # Bravo fails from the fake encoder error; its slot goes to Charlie.
         await real.until(lambda: ("running", "failed") in real.states(bravo.id))
         failed = app.queue.get(bravo.id)
         assert failed is not None
@@ -201,14 +189,12 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
         )
         assert not (out / "Bravo.part.mkv").exists()
 
-        # Cancel Charlie: its tree is killed and its .part file removed.
         await real.until(lambda: real.progressed(charlie.id))
         await real.until((out / "Charlie.part.mkv").exists)
         await app.queue.cancel(charlie.id)
         assert app.queue.get(charlie.id).state is JobState.CANCELLED  # type: ignore[union-attr]
         assert not (out / "Charlie.part.mkv").exists()
 
-        # Alpha made no progress while paused; resume it and it finishes for real.
         paused_at = len(real.published)
         await asyncio.sleep(0.3)
         assert not [
@@ -230,7 +216,6 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
     assert not (out / "Delta.part.mkv").exists()
     assert real.fake.kill_leftovers() == []
 
-    # Restart: the queue comes back; Delta is retried and encodes for real.
     real.scenario()
     again = await real.create()
     try:
@@ -251,7 +236,6 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
     finally:
         await again.close()
 
-    # All expected events, in order.
     assert real.states(alpha.id) == [
         (None, "waiting"), ("waiting", "running"), ("running", "paused"),
         ("paused", "running"), ("running", "done"),
@@ -295,9 +279,6 @@ async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restar
             else:
                 active.discard(event.job_id)
             assert len(active) <= 2
-
-
-# --------------------------------------------------------------------------- loudness
 
 
 def make_silent_source(ffmpeg: str, path: Path, seconds: float = 5.0) -> Path:
@@ -372,10 +353,7 @@ async def test_two_pass_loudnorm_with_a_silent_track(plain: tuple[str, Path]) ->
 async def test_a_silent_track_shorter_than_3_seconds_fails_in_ffmpeg(
     plain: tuple[str, Path],
 ) -> None:
-    """loudnorm's first-frame path (an input shorter than 3 s) makes NaN samples from a silent
-    track, whatever the measured values (both n9.0.2 builds). The job fails with that
-    reason; ``testdata/README.md`` records it. (A 2 s *range* of a longer source is not
-    affected: loudnorm reads 3 s of input before the output limit stops it.)"""
+    """A silent track shorter than 3 s fails the loudnorm second pass (``testdata/README.md``)."""
     ffmpeg, tmp = plain
     source_path = make_silent_source(ffmpeg, tmp / "silent.mkv", seconds=2.0)
     async with await Reframe.create() as app:

@@ -1,6 +1,4 @@
-"""Fault injection (Q-2, 09 §Fault injection) for every failure path of the job runner (C-11),
-with the fake ffmpeg. Each test checks the state, the error text, the events, the log file,
-and what happens to the ``.part`` file, ``EncodePlan.files`` and ``temp_files``."""
+"""Fault injection for every failure path of the job runner, with the fake ffmpeg."""
 
 from __future__ import annotations
 
@@ -34,8 +32,8 @@ SILENT_BLOCK = (
 
 
 def chapters_and_two_pass(h: Harness, name: str = "Movie") -> tuple[object, Path, list[Path]]:
-    """A job with generated chapters (an FFMETADATA plan file) and 2-pass x264 (statistics
-    files). The statistics files are made here: the fake does not write them."""
+    """A job with generated chapters and 2-pass x264. The fake does not write the statistics
+    files, so they are made here."""
     job = h.job(name, rate_control=AverageBitrate(kbps=500, two_pass=True))
     job.chapters.generate_every = 0.02
     plan = h.plan(job)
@@ -56,9 +54,6 @@ def assert_failed_run(h: Harness, job_id: str, *, error_part: str) -> None:
     assert kinds[-1] == "job.state"
     assert "job.log" in kinds
     assert h.leftovers() == []
-
-
-# --------------------------------------------------------------------------- crash
 
 
 @pytest.mark.parametrize("policy", ["delete", "keep"])
@@ -156,9 +151,6 @@ async def test_tool_that_cannot_start(harness: Harness) -> None:
     assert ended.error.startswith("The encode could not start ffmpeg:")
 
 
-# --------------------------------------------------------------------------- watchdog
-
-
 async def test_hang_is_stopped_by_the_stall_watchdog(harness: Harness) -> None:
     h = harness
     h.queue._runner._stall_after = 0.4
@@ -186,9 +178,6 @@ async def test_a_slow_step_that_prints_is_not_stalled(harness: Harness) -> None:
     )
     ended = await h.run_one(h.job())
     assert ended.state is JobState.DONE
-
-
-# --------------------------------------------------------------------------- analyse
 
 
 async def test_failing_analyse_step(harness: Harness) -> None:
@@ -238,9 +227,6 @@ async def test_silent_track_values_are_clamped_for_the_encode(harness: Harness) 
     assert "measured_I=-99.00:measured_TP=-99.00:measured_LRA=0.00" in chain
     assert "measured_thresh=-70.00:offset=0.00:linear=true" in chain
     assert "values clamped into loudnorm's ranges" in h.log_text(ended.id)
-
-
-# --------------------------------------------------------------------------- mkvpropedit
 
 
 def ietf_job(h: Harness) -> object:
@@ -298,9 +284,6 @@ async def test_mkvpropedit_missing_at_run_time(harness: Harness) -> None:
     assert not any("--edit" in call for call in h.fake.calls("ffmpeg"))
 
 
-# --------------------------------------------------------------------------- output check
-
-
 async def test_reprobe_mismatch(harness: Harness) -> None:
     h = harness
     job = h.job()
@@ -327,9 +310,6 @@ async def test_reprobe_fails(harness: Harness) -> None:
     )
     ended = await h.run_one(h.job())
     assert ended.error == "The output cannot be read: ffprobe cannot read it. (Invalid data found)"
-
-
-# --------------------------------------------------------------------------- collisions
 
 
 async def test_collision_auto_rename(harness: Harness) -> None:
@@ -374,8 +354,7 @@ async def test_collision_ask_at_add_time(harness: Harness) -> None:
 
 
 async def test_collision_ask_when_the_name_is_taken_during_the_encode(harness: Harness) -> None:
-    """The name is free when the job starts and taken when it ends: the job fails with the
-    ``output.exists`` issue, and the complete encode is kept as the ``.part`` file."""
+    """The complete encode is kept as the ``.part`` file."""
     h = harness
     h.settings.output.collision = "ask"
     job = h.job()
@@ -398,9 +377,6 @@ async def test_collision_ask_when_the_name_is_taken_during_the_encode(harness: H
     assert "output.exists" in [i.code for i in ended.issues]
     assert part.stat().st_size == 1024
     assert (h.tmp / "out" / "Movie.mkv").read_text() == "appeared"
-
-
-# --------------------------------------------------------------------------- prepare
 
 
 async def test_source_that_cannot_be_probed(harness: Harness) -> None:
@@ -520,9 +496,6 @@ async def test_the_output_folder_is_created(harness: Harness) -> None:
     assert ended.output_path == h.tmp / "out" / "Season 1" / "Movie.mkv"
 
 
-# --------------------------------------------------------------------------- more paths
-
-
 @pytest.mark.parametrize(
     ("block", "error"),
     [
@@ -630,11 +603,8 @@ def test_durations_in_messages() -> None:
     assert _duration(None) == "0 seconds"
 
 
-# --------------------------------------------------------------------------- the source is safe
-
-
 def without_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The run-time guard is tested alone: validation (C-8) reports the same case on its own."""
+    """The run-time guard is tested alone: validation reports the same case on its own."""
     from reframe.queue import runner
 
     monkeypatch.setattr(runner, "validate", lambda *args, **kwargs: [])
@@ -655,9 +625,7 @@ def assert_untouched(h: Harness, ended: object, source: Path, content: bytes) ->
 async def test_a_source_named_like_the_part_file(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M2 review B2: ``reframe encode Foo.part.mkv -o Foo.mkv``. The ``.part`` file is the
-    source: FFmpeg refused it ("cannot edit existing files in-place") and the failure clean-up
-    removed the source."""
+    """The source is the job's ``.part`` file: the job must not write over or remove it."""
     from .conftest import draft, recorded
 
     h = harness
@@ -679,8 +647,8 @@ async def test_a_source_named_like_the_part_file(
 async def test_an_output_folder_that_links_to_the_source_folder(
     harness: Harness, monkeypatch: pytest.MonkeyPatch, which: str
 ) -> None:
-    """M2 review B2: the output folder is a link to the source's folder, so the output (or
-    the ``.part`` file) is the source under another path."""
+    """The output folder links to the source folder, so the output (or its ``.part`` file) is
+    the source under another path."""
     from .conftest import draft, recorded
 
     h = harness
