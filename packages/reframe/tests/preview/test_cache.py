@@ -1,5 +1,4 @@
-"""The preview cache (C-10): keys, file names that a key cannot escape, the LRU with a size
-limit (one budget for frames and clips), temporary files."""
+"""The preview cache: keys, file names a key cannot escape, and one LRU size limit."""
 
 from __future__ import annotations
 
@@ -30,9 +29,6 @@ def write(path: Path, size: int, used: float) -> Path:
     path.write_bytes(b"x" * size)
     os.utime(path, (used, used))
     return path
-
-
-# --------------------------------------------------------------------------- keys
 
 
 def test_digest_is_stable_and_covers_every_part() -> None:
@@ -105,9 +101,6 @@ def test_megabytes() -> None:
     assert megabytes(-1) == 0
 
 
-# --------------------------------------------------------------------------- names and lookups
-
-
 def test_layout(tmp_path: Path) -> None:
     cache = PreviewCache(tmp_path)
     assert cache.frame(KEY) == tmp_path / "frames" / f"{KEY}.png"
@@ -152,9 +145,6 @@ def test_find_clip(tmp_path: Path) -> None:
 
 def test_touch_a_missing_file(tmp_path: Path) -> None:
     assert not PreviewCache.touch(tmp_path / "nothing.png")
-
-
-# --------------------------------------------------------------------------- the LRU
 
 
 def test_entries_are_least_recently_used_first(tmp_path: Path) -> None:

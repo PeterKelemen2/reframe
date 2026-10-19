@@ -1,6 +1,4 @@
-"""The ``cropdetect`` task with the real FFmpeg (C-10, 03 §Dimensions → Crop): the sample
-frames, the automatic and the conservative crop, HDR / PQ black levels, black frames, the
-display matrix."""
+"""The ``cropdetect`` task with the real FFmpeg: sample frames, the crop and the black levels."""
 
 from __future__ import annotations
 
@@ -53,8 +51,7 @@ def made(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def pq_letterbox(made: Path) -> Path:
-    """640x360 10-bit HEVC, BT.2020 PQ, a 640x268 picture between black bars of 46 lines (the
-    PQ fixtures' way: ``format=yuv420p10le`` then ``setparams``)."""
+    """640x360 10-bit HEVC, BT.2020 PQ, a 640x268 picture between black bars of 46 lines."""
     out = made / "pq-letterbox.mkv"
     run_ffmpeg(
         "-f", "lavfi", "-i", "testsrc2=size=640x268:rate=24:duration=1",
@@ -79,13 +76,10 @@ def fade_in(made: Path) -> Path:
     return out
 
 
-# --------------------------------------------------------------------------- consensus
-
-
 async def test_automatic_and_conservative_differ_on_changing_aspect_ratios(
     tmp_path: Path, fixture_media: Media
 ) -> None:
-    """M8 demo 2 (core part): 2 s of 2.39:1 letterbox, then 2 s of 4:3 pillarbox."""
+    """2 s of 2.39:1 letterbox, then 2 s of 4:3 pillarbox."""
     src = fixture_media("letterbox")
     result = await detect(tmp_path / "cache", src)
     assert result.path == src
@@ -133,8 +127,8 @@ async def test_black_frames_do_not_vote(tmp_path: Path, fade_in: Path) -> None:
 
 
 async def test_an_anamorphic_crop_is_in_stored_pixels(tmp_path: Path) -> None:
-    """Decision 0009 / C-5: the rect counts the stored pixels of an anamorphic picture (720x480
-    at 32:27), and C-5's geometry takes it as it is."""
+    """The rect counts the stored pixels of an anamorphic picture, and the geometry takes it as
+    it is."""
     src = tmp_path / "anamorphic-letterbox.mkv"
     run_ffmpeg(
         "-f", "lavfi", "-i", "testsrc2=size=720x360:rate=25:duration=1",
@@ -172,7 +166,6 @@ async def test_all_black(tmp_path: Path) -> None:
 
 
 async def test_a_display_matrix_is_applied(tmp_path: Path, fixture_media: Media) -> None:
-    """Decision 0009: the crop is measured on the picture as FFmpeg decodes it."""
     rotated = tmp_path / "rotated.mp4"
     run_ffmpeg(
         "-display_rotation:v:0", "90", "-i", str(fixture_media("letterbox")),
@@ -183,9 +176,6 @@ async def test_a_display_matrix_is_applied(tmp_path: Path, fixture_media: Media)
         CropRect(left=22, right=24),
         CropRect(top=40, bottom=40),
     ]
-
-
-# --------------------------------------------------------------------------- HDR / PQ
 
 
 def cropdetect_line(path: Path, vf: str) -> str:
@@ -202,8 +192,6 @@ async def test_pq_black_bars_are_found(tmp_path: Path, pq_letterbox: Path) -> No
 
 
 def test_an_absolute_limit_finds_no_bars_in_10_bit(pq_letterbox: Path) -> None:
-    """FFmpeg n9.0.2 / n8.1.3: a limit below 1 is a fraction of the full range (96.3 at 10-bit);
-    an absolute ``limit=24`` (the old default) is below 10-bit black (64)."""
     ours = cropdetect_line(pq_letterbox, CROPDETECT)
     assert "limit:0.094118" in ours
     assert ours.endswith("crop=640:268:0:46")
@@ -214,7 +202,7 @@ def test_an_absolute_limit_finds_no_bars_in_10_bit(pq_letterbox: Path) -> None:
 def test_a_single_frame_needs_skip_0(fixture_media: Media) -> None:
     proc = run_ffmpeg("-loglevel", "info", "-ss", "1", "-i", str(fixture_media("letterbox")),
                       "-frames:v", "1", "-vf", "cropdetect=round=2", "-f", "null", "-")  # fmt: skip
-    assert "Parsed_cropdetect" not in proc.stderr  # the default skips the first 2 frames
+    assert "Parsed_cropdetect" not in proc.stderr
 
 
 def _y_average(path: Path, crop: str) -> float:
@@ -227,15 +215,10 @@ def _y_average(path: Path, crop: str) -> float:
 
 
 def test_black_levels(fixture_media: Media, pq_letterbox: Path) -> None:
-    """The bars' luma: limited-range black, 16 in 8-bit SDR and 64 in 10-bit PQ; the limit
-    (24 / 96.3) is the same distance above both."""
     sdr = _y_average(fixture_media("letterbox"), "crop=320:20:0:0")
     pq = _y_average(pq_letterbox, "crop=640:40:0:0")
     assert 15.5 < sdr < 17.0
     assert 63.0 < pq < 65.0
-
-
-# --------------------------------------------------------------------------- failures
 
 
 async def test_a_file_without_video(tmp_path: Path) -> None:
@@ -259,7 +242,6 @@ async def test_a_missing_file(tmp_path: Path) -> None:
 async def test_ffmpeg_that_fails_on_every_frame(
     tmp_path: Path, fixture_media: Media, fake_tools: ft.FakeTools
 ) -> None:
-    """A decoder error on every sample fails the task with the first reason."""
     fake_tools.set_scenario(
         ft.Scenario(
             [

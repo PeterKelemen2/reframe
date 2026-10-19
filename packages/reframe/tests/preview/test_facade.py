@@ -1,5 +1,4 @@
-"""The C-10 picture methods of the facade (``Reframe.sources.frames / frame / cropdetect``,
-``Reframe.jobs.preview_clip / preview_clip_path``) with the real tools."""
+"""The picture methods of the facade, with the real tools."""
 
 from __future__ import annotations
 

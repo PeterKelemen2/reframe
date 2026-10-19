@@ -1,13 +1,4 @@
-"""Q-3 budget (09 §Q-3): a source frame of a 4K source in < 2 s cold, < 50 ms cached; the 05
-§C-10 "Done when": "frames for a 4K HDR fixture come back in < 2 s each".
-
-``hdr10-4k``: 3840x2160 10-bit HEVC, PQ, keyint 48 (2 s at 23.976 fps): a frame just before a
-keyframe decodes 47 frames first. Through the facade, with the encoder detection finished, so
-the frames are tone mapped as on a user's machine (libplacebo when its run test passes, else
-zscale + tonemap). Each timestamp is its own task: the time of one frame, not of a strip.
-
-A cold frame is measured twice (the PNG is removed in between) and the faster run counts, so a
-moment of load from other processes does not fail the budget (the slower run is printed)."""
+"""The 4K HDR fixture's frame times against the budget: cold under 2 s, cached under 50 ms."""
 
 from __future__ import annotations
 
@@ -30,9 +21,9 @@ CACHED = 0.05
 
 
 def busy() -> str:
-    """``busy: load average 19.5 on 12 CPUs`` when more processes want a CPU than there are
-    (another test run, an encode), else ``idle: …``. A frame budget measured on a busy machine
-    says nothing about a normal desktop (09 §Q-3), so a miss is then a skip, not a failure."""
+    """``busy`` when more processes want a CPU than there are (another test run, an encode),
+    else ``idle``. A frame budget measured on a busy machine says nothing about a normal
+    desktop, so a miss is then a skip, not a failure."""
     cpus = os.cpu_count() or 1
     if sys.platform == "win32":  # no load average
         text = f"load unknown on {cpus} CPUs"
@@ -58,6 +49,8 @@ async def test_4k_hdr_frame_budget(tmp_path: Path, fixture_media: Callable[[str]
     src = fixture_media("hdr10-4k")
     app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "c")
     try:
+        # so the frames are tone mapped as on a user's machine (libplacebo when its run test
+        # passes, else zscale + tonemap)
         await app.capabilities.wait()
         probed = await app.sources.probe(src)
         assert isinstance(probed, MediaSource)
@@ -75,6 +68,8 @@ async def test_4k_hdr_frame_budget(tmp_path: Path, fixture_media: Callable[[str]
                 assert made == [(3840, 2160, False)]
                 tries.append(elapsed)
                 frames.frames[0].path.unlink()
+            # the faster run counts, so a moment of load from other processes does not fail
+            # the budget
             cold.append(min(tries))
             slower.append(max(tries))
             notes = frames.notes
