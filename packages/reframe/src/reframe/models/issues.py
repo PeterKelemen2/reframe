@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 from pydantic import Field, JsonValue
 
 from reframe.models.base import ReframeModel
+from reframe.models.text import DisplayText
 
 __all__ = [
     "AddOp",
@@ -108,7 +109,7 @@ FixTarget = Literal["job", "template", "settings"]
 class Fix(ReframeModel):
     """A fix action: a button label and the JSON patch that the button applies."""
 
-    label: str
+    label: DisplayText
     patch: JsonPatch
     target: FixTarget = "job"
 
@@ -125,5 +126,5 @@ class ValidationIssue(ReframeModel):
     severity: Severity
     code: Annotated[str, Field(min_length=1)]
     path: str = ""
-    message: str
+    message: DisplayText
     fixes: list[Fix] = Field(default_factory=list)

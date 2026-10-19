@@ -12,6 +12,7 @@ from typing import Annotated
 from pydantic import AwareDatetime, Field, JsonValue
 
 from reframe.models.base import ReframeModel
+from reframe.models.text import DisplayText
 
 __all__ = ["TaskInfo", "TaskState"]
 
@@ -34,9 +35,9 @@ class TaskInfo(ReframeModel):
     state: TaskState = TaskState.QUEUED
     progress: Annotated[float, Field(ge=0.0, le=100.0)] | None = None
     """Percent; ``None`` = indeterminate."""
-    message: str | None = None
+    message: DisplayText | None = None
     created_at: AwareDatetime | None = None
     finished_at: AwareDatetime | None = None
     result: JsonValue = None
     """The task's result when ``done`` (its shape depends on ``kind``)."""
-    error: str | None = None
+    error: DisplayText | None = None

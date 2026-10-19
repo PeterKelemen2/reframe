@@ -14,6 +14,7 @@ from pydantic import Field
 
 from reframe.models.base import ReframeModel
 from reframe.models.issues import Fix
+from reframe.models.text import DisplayText
 
 __all__ = ["ToolFetchResult", "ToolInfo", "ToolName", "ToolOrigin", "ToolSet", "ToolStatus"]
 
@@ -60,7 +61,7 @@ class ToolInfo(ReframeModel):
     """The binary that is (or would be) run. Set for a missing override too (the bad path)."""
     origin: ToolOrigin | None = None
     """``None`` when nothing was found."""
-    reason: str | None = None
+    reason: DisplayText | None = None
     """Why the status is not ``found``; for ``found`` an optional note (for example "version
     could not be read")."""
     version: str | None = None

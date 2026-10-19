@@ -19,6 +19,7 @@ from pydantic import Field
 from reframe.models.base import DocumentModel, NonNegativeInt, ReframeModel
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import NameSource
+from reframe.models.text import DisplayText
 
 __all__ = [
     "MediaKind",
@@ -154,7 +155,7 @@ class NameResult(ReframeModel):
 
     source: NameKind
     """The chosen name source."""
-    reason: str
+    reason: DisplayText
     """Why, for example ``Folder name: 8 fields recognised, title with word separators
     (10 points); file name: 3 fields recognised (3 points)``."""
     season_pack: bool = False
@@ -178,7 +179,7 @@ class NameResult(ReframeModel):
     """Without the dot: ``mkv``, ``mp4``, ``m4v``, ``webm``."""
     variables: dict[str, str] = Field(default_factory=dict)
     """Every variable's value for this file (default format), for the variable chips."""
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
     """What naming changed: skipped folders, merged fields, replaced characters, shortened
     parts, fallbacks."""
     issues: list[ValidationIssue] = Field(default_factory=list)

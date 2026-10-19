@@ -12,6 +12,7 @@ from pathlib import Path
 from pydantic import AwareDatetime, Field
 
 from reframe.models.base import ReframeModel
+from reframe.models.text import DisplayText
 
 __all__ = ["CapabilitySnapshot", "EncoderState", "EncoderStatus"]
 
@@ -33,9 +34,9 @@ class EncoderStatus(ReframeModel):
     id: str
     """Encoder id as FFmpeg names it: ``libx265``, ``hevc_nvenc``."""
     state: EncoderState = EncoderState.UNKNOWN
-    reason: str | None = None
+    reason: DisplayText | None = None
     """Plain-language reason for ``unavailable`` / ``error`` ("NVIDIA driver not found")."""
-    detail: str | None = None
+    detail: DisplayText | None = None
     """The FFmpeg line the reason was derived from (for the log and bug reports)."""
     checked_at: AwareDatetime | None = None
     hardware: bool = False
@@ -51,7 +52,7 @@ class EncoderStatus(ReframeModel):
     """Pixel formats the encoder accepts in this build (the ``Supported pixel formats`` line of
     ``ffmpeg -h encoder=<id>``). VAAPI encoders list only ``vaapi``: they take hardware frames.
     Empty when not read."""
-    reason_10bit: str | None = None
+    reason_10bit: DisplayText | None = None
     """Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
     supported by this encoder")."""
     device: str | None = None

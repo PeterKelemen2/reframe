@@ -19,6 +19,7 @@ from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings, TrackFlags
 from reframe.models.media import HdrFormat, TrackRole
 from reframe.models.naming import NameResult
+from reframe.models.text import DisplayText
 
 __all__ = [
     "BatchGroup",
@@ -67,7 +68,7 @@ class TrackDescriptor(ReframeModel):
     flags: TrackFlags = Field(default_factory=TrackFlags)
     bitrate: NonNegativeInt | None = None
     """Bits per second, when known."""
-    label: str = ""
+    label: DisplayText = ""
     """For messages: ``eng AC-3 2.0 "Commentary"``."""
 
 
@@ -88,7 +89,7 @@ class GroupMember(ReframeModel):
 
     path: Path
     match: Literal["exact", "near"] = "exact"
-    differences: list[str] = Field(default_factory=list)
+    differences: list[DisplayText] = Field(default_factory=list)
     """One line per difference: ``1 extra track (eng AC-3 2.0 "Commentary")``."""
     season: NonNegativeInt | None = None
     """The season number from the file name, when there is one."""
@@ -100,7 +101,7 @@ class BatchGroup(ReframeModel):
     """Files that share a fingerprint at ``level``."""
 
     id: str
-    name: str
+    name: DisplayText
     """``Show S01`` (from the parsed file names)."""
     level: MatchLevel
     representative: Path
@@ -137,7 +138,7 @@ class TrackMatch(ReframeModel):
     severity: Severity | None = None
     """``None`` for an exact match; warning (relaxed, ambiguous), error (missing, required),
     info (skipped)."""
-    message: str = ""
+    message: DisplayText = ""
     """``matched without title, profile``, ``2 candidates, picked #3 (source order)``."""
     defaults: bool = False
     """``True``: a rule compiled from the template's audio / subtitle defaults (the template
@@ -150,7 +151,7 @@ class MatrixColumn(ReframeModel):
     kind: Literal["video", "audio", "subtitle", "name"]
     rule: NonNegativeInt | None = None
     """The rule of an audio / subtitle column."""
-    label: str
+    label: DisplayText
     """``A1 jpn TrueHD→Opus 5.1``, ``S2 eng Full``, ``Output name``."""
     defaults: bool = False
     """``True``: the column of a rule compiled from the template's defaults (see
@@ -175,7 +176,7 @@ class Resolution(ReframeModel):
     and the reason (as ``JobDraft.decisions``)."""
     subtitle_decisions: list[TrackDecision] = Field(default_factory=list)
     """One per source subtitle track, in source order."""
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
     """What the resolution changed or left out, in one line each (generated chapter names,
     a crop that is detected per file, an output name that was the source itself)."""
 

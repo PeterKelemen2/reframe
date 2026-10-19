@@ -14,6 +14,7 @@ from reframe.models.defaults import TrackDecision
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.naming import NameResult
+from reframe.models.text import DisplayText
 
 __all__ = ["JobDraft"]
 
@@ -34,6 +35,6 @@ class JobDraft(ReframeModel):
     issues: list[ValidationIssue] = Field(default_factory=list)
     """Issues of the drafted job, and the errors of the track stage (no track for a required
     language: a template path); an ``error`` keeps it out of the queue."""
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
     """What the draft changed or left out, in one line each: an output name that was the
     source file itself, preset options the draft does not apply."""

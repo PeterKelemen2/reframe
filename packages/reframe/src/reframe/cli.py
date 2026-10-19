@@ -66,6 +66,7 @@ from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.tasks import TaskInfo, TaskState
+from reframe.models.text import json_text
 from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
 from reframe.presets import ConflictPolicy, ImportResult
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
@@ -734,14 +735,7 @@ def _print_list(
 
 
 def _write_json(source: MediaSource) -> None:
-    """``model_dump_json(indent=2)`` on stdout. If stdout cannot encode every character, the
-    JSON is written with ``\\uXXXX`` escapes instead (same value, valid JSON)."""
-    text = source.model_dump_json(indent=2)
-    encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
-    if encoding not in ("utf-8", "utf8"):
-        text = json.dumps(json.loads(text), indent=2, ensure_ascii=True)
-    sys.stdout.write(text + "\n")
-    sys.stdout.flush()
+    _write_json_value(source.model_dump(mode="json"))
 
 
 async def run_probe(file: Path, *, as_json: bool) -> int:
@@ -846,21 +840,14 @@ async def open_reframe() -> AsyncIterator[Reframe]:
 
 
 def _write_model_json(value: BaseModel | Sequence[BaseModel] | dict[str, BaseModel | None]) -> None:
-    """Models as JSON on stdout (``\\uXXXX`` escapes when stdout is not UTF-8)."""
+    """Models as JSON on stdout (:func:`_write_json_value`)."""
     if isinstance(value, BaseModel):
         data: object = value.model_dump(mode="json")
     elif isinstance(value, dict):
         data = {k: None if v is None else v.model_dump(mode="json") for k, v in value.items()}
     else:
         data = [item.model_dump(mode="json") for item in value]
-    encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
-    text = json.dumps(data, indent=2, ensure_ascii=encoding not in ("utf-8", "utf8"))
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:  # a file name that is not valid UTF-8: \udcff escapes
-        text = json.dumps(data, indent=2, ensure_ascii=True)
-    sys.stdout.write(text + "\n")
-    sys.stdout.flush()
+    _write_json_value(data)
 
 
 def find_preset(app: Reframe, name: str | None) -> Preset | str:
@@ -2458,13 +2445,10 @@ async def run_presets_list(*, as_json: bool) -> int:
 
 
 def _write_json_value(data: object) -> None:
-    """JSON on stdout (``\\uXXXX`` escapes when stdout is not UTF-8)."""
+    """JSON on stdout: ``\\uXXXX`` escapes for a byte of a file name that is not UTF-8, and
+    for every character that is not ASCII when stdout is not UTF-8."""
     encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
-    text = json.dumps(data, indent=2, ensure_ascii=encoding not in ("utf-8", "utf8"))
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:  # a lone surrogate (a name from a non-UTF-8 file name)
-        text = json.dumps(data, indent=2, ensure_ascii=True)
+    text = json_text(data, ensure_ascii=encoding not in ("utf-8", "utf8"), indent=2)
     sys.stdout.write(text + "\n")
     sys.stdout.flush()
 
@@ -2515,11 +2499,8 @@ async def run_presets_export(names: Sequence[str], *, output: Path | None) -> in
         _write_json_value(document)
         return EXIT_OK
     assert output is not None
-    text = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    text = json_text(document, ensure_ascii=False, indent=2) + "\n"
     try:
-        await asyncio.to_thread(write_text_file, output, text)
-    except UnicodeEncodeError:  # a lone surrogate: write it escaped
-        text = json.dumps(document, indent=2, ensure_ascii=True) + "\n"
         await asyncio.to_thread(write_text_file, output, text)
     except OSError as exc:
         _error(f"{display_path(output)} cannot be written: {exc.strerror or exc}.")
