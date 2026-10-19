@@ -1,29 +1,12 @@
-"""The ``loudnorm`` measurements of ``analyse`` steps (decision 0013, two-pass loudness).
+"""The ``loudnorm`` measurements of ``analyse`` steps.
 
-Each analyse step runs one ``loudnorm=…:print_format=json`` filter and prints one JSON block
-on stderr::
+Each analyse step prints one JSON block of measurements on stderr. Every key is stored as
+``<measurement id>.<key>``, for example ``a0.input_i``.
 
-    [Parsed_loudnorm_0 @ 0x…]
-    {
-        "input_i" : "-21.83",
-        "input_tp" : "-16.08",
-        ...
-        "target_offset" : "-0.04"
-    }
-
-Every key is stored as ``<measurement id>.<key>`` (``a0.input_i``); the encode step's
-:class:`~reframe.models.ArgTemplate` reads ``input_i``, ``input_tp``, ``input_lra``,
-``input_thresh`` and ``target_offset``.
-
-**Clamping** (decision 0016). A silent or almost silent track (all of it below loudnorm's
--70 LUFS gate) measures ``"input_i" : "-inf"`` and ``"target_offset" : "inf"`` (and
-``"input_tp" : "-inf"`` for digital silence), and the second pass refuses them ("Value -inf
-for parameter 'measured_I' out of range [-99 - 0]"). The values the second pass reads are put
-into the ranges of ``ffmpeg -h filter=loudnorm`` (n9.0.2: ``measured_I`` -99…0,
-``measured_TP`` -99…99, ``measured_LRA`` 0…99, ``measured_thresh`` -99…0, ``offset``
--99…99). A non-finite ``target_offset`` becomes **0**, not 99: checked with FFmpeg, ``offset=99``
-turns a -84 dBTP noise track into full-scale noise (-9.6 LUFS), ``offset=0`` keeps it as it
-was (``testdata/README.md`` "Queue and job runner (C-11)").
+A silent track measures ``-inf`` or ``inf``, and the second pass refuses those values. The
+clamping keeps each value in the range that loudnorm accepts. A non-finite ``target_offset``
+becomes 0, not the top of its range: ``offset=99`` turns a near-silent track into full-scale
+noise.
 """
 
 from __future__ import annotations
@@ -79,8 +62,8 @@ def _format(value: float) -> str:
 
 
 def clamp(block: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    """The block with the second-pass values put into loudnorm's ranges, and one note per
-    changed value (``input_i -inf → -99.00``)."""
+    """The block with the second-pass values put into loudnorm's ranges, and a note per
+    changed value."""
     result = dict(block)
     notes: list[str] = []
     for key, (low, high) in LIMITS.items():

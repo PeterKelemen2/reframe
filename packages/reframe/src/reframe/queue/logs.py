@@ -1,19 +1,8 @@
-"""Per-job logs (03 §Queue "Per-job log", 05 §C-11): the file ``<data dir>/logs/<job id>.log``
-and the rate-limited ``job.log`` events.
+"""Per-job logs: the file ``<data dir>/logs/<job id>.log`` and the ``job.log`` events.
 
-**The file** has everything: a header per run, then for each step its full command line (with
-the measured values filled in), every stderr line of the tool, and how it ended (exit code,
-seconds); at the end the outcome and the total time. A retried job appends a new run to the
-same file. It is UTF-8: a file name that is not (a lone surrogate) is written as an escape
-(``\\udcff``), as in the events. Progress blocks (stdout) are not written. If the file cannot
-be written (the data folder is full or read-only), the job goes on without it (one log
-warning).
-
-**Events.** Lines are batched: at most one ``job.log`` event per :data:`EVENT_INTERVAL`
-seconds per job, with at most :data:`EVENT_LINES` lines. When more lines arrive in one
-interval, the oldest of them are left out of the event and counted in
-``JobLogEvent.dropped`` (the file still has them). The last batch is sent when the run ends,
-before its final ``job.state`` event.
+The file gets every line of every run. Events are batched (see :data:`EVENT_INTERVAL` and
+:data:`EVENT_LINES`): a line that does not fit in an event is counted in ``JobLogEvent.dropped``
+and is still in the file. A file that cannot be written does not stop the job.
 """
 
 from __future__ import annotations
@@ -86,7 +75,7 @@ class JobLog:
                 self._to_event(line)
 
     def note(self, text: str) -> None:
-        """A line of Reframe's own, with the time (``12:00:05 Step 2/3: …``)."""
+        """A line of Reframe's own, with the local time in front."""
         stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
         self.write(f"[{stamp}] {text}")
 
@@ -108,8 +97,6 @@ class JobLog:
         if handle is not None:
             with contextlib.suppress(OSError):
                 handle.close()
-
-    # ------------------------------------------------------------------ internals
 
     def _to_file(self, line: str) -> None:
         if self._handle is None:

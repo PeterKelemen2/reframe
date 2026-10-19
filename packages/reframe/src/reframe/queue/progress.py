@@ -1,35 +1,10 @@
-"""Progress of a running job (05 §C-11): FFmpeg's ``-progress`` blocks, the percent weighted
-across the plan's steps, speed, frame rate and the ETA.
+"""Progress of a running job: ``-progress`` blocks, weighted percent, speed, frame rate and ETA.
 
-**Parser.** Every FFmpeg step of a plan runs with ``-progress pipe:1 -nostats``: stdout is a
-series of ``key=value`` blocks, each ending with ``progress=continue`` (or ``progress=end``
-for the last one). :class:`ProgressParser` turns lines into :class:`ProgressBlock` values.
-``N/A`` (before the first packet; ``total_size`` with ``-f null``) is ``None``; padded values
-(``speed= 4.3x``) are read; ``out_time_ms`` is ignored (it has the same value as
-``out_time_us``). See ``testdata/README.md`` "``-progress`` output".
-
-**Percent.** The steps' ``progress_weight`` values (analyse 0.05, pass 1 0.4, pass 2 0.6,
-encode 1, mkvpropedit 0.01, finalize 0; decision 0013) are normalised. Within a step the
-fraction is ``out_time / expected_duration`` (``progress=end`` is 1). The percent never goes
-back (a step that restarts its clock, or a block out of order, cannot make the bar jump back).
-
-**Speed, frame rate, ETA.** FFmpeg's own ``speed`` and ``fps`` are averages since the process
-started, measured on the wall clock, so they fall after a pause (checked: ``speed`` went from
-1.17x to 0.449x after a 3 s suspend; ``testdata/README.md`` "Queue and job runner (C-11)").
-The tracker computes its own values from the change between two blocks over **active time**
-only, smoothed with an exponential moving average (time constant :data:`SMOOTHING`):
-
-- The interval after :meth:`ProgressTracker.resume` (the job was paused) is not used: the
-  next block only sets the new reference point.
-- An interval in which the system slept is not used (decision 0020: the encode pauses with
-  the system). On Linux the monotonic clock stops during a suspend and the wall clock does
-  not, so a difference of more than :data:`SLEEP_GAP` seconds between the two says "the
-  system slept". On an OS whose monotonic clock counts the suspend, an interval longer than
-  :data:`MAX_INTERVAL` says the same: FFmpeg ≥ 7 prints a block every 0.5 s (``-stats_period``)
-  even while no frame comes out, so such a gap means that the process did not run.
-- The ETA is ``(100 - percent) / rate``, with ``rate`` the smoothed percent per active second.
-  It does not use elapsed time, so a pause or a sleep does not change it, and it never jumps
-  to zero or to "days" after a wake.
+The percent never goes back, even when a step restarts its clock or a block arrives out of
+order. FFmpeg's own speed and fps average since the process started, on the wall clock, so they
+fall after a pause. The tracker measures its own over active time only (no pause, no system
+sleep, no gap between blocks), and the ETA uses the same active time, so a pause or a sleep
+does not make it jump.
 """
 
 from __future__ import annotations
@@ -51,8 +26,8 @@ __all__ = [
     "ProgressTracker",
 ]
 
-#: Keys of a ``-progress`` block (FFmpeg n9.0.2; ``stream_<file>_<stream>_q`` per video
-#: output stream). A stdout line with another key is not progress.
+#: Keys of a ``-progress`` block (``stream_*`` keys are accepted too). A stdout line with
+#: another key is not progress.
 PROGRESS_KEYS = frozenset(
     {
         "frame",
@@ -71,7 +46,8 @@ PROGRESS_KEYS = frozenset(
 #: Seconds by which the wall clock may run ahead of the monotonic clock between two blocks
 #: before the interval counts as a system sleep (Linux: the monotonic clock stops).
 SLEEP_GAP = 2.0
-#: A longer interval between two blocks counts as a gap (the process did not run).
+#: A longer interval between two blocks counts as a gap: FFmpeg prints a block every
+#: ``-stats_period`` even when no frame comes out, so a longer gap means the process did not run.
 MAX_INTERVAL = 30.0
 #: Time constant (seconds of active time) of the smoothed speed, frame rate and rate.
 SMOOTHING = 8.0
@@ -161,7 +137,7 @@ def _smooth(old: float | None, new: float, interval: float) -> float:
 
 
 class ProgressTracker:
-    """Percent, speed, frame rate and ETA of one job run (see the module doc).
+    """Percent, speed, frame rate and ETA of one job run.
 
     Pure: the caller passes the clock readings (``mono``, ``wall``) with every block, so
     tests can make the clocks jump.

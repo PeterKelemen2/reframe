@@ -1,16 +1,8 @@
-"""Pause and resume a running step: psutil ``suspend()`` / ``resume()`` on the process tree
-(03 §Queue: "Pause suspends the FFmpeg process … works on both OSes").
+"""Pause and resume a running step: psutil ``suspend()`` and ``resume()`` on its process tree.
 
-psutil sends ``SIGSTOP`` / ``SIGCONT`` on POSIX and calls ``NtSuspendProcess`` /
-``NtResumeProcess`` on Windows, so the same code serves both. The tree matters: on Windows
-the fake tools and ``.cmd`` launchers run as ``cmd.exe → python``, and a wrapper may run the
-real FFmpeg as a child.
-
-Order: suspend the root first (so it cannot start a new child while the children are being
-suspended), then its descendants; resume the descendants first, then the root. A process that
-is already gone is skipped. The root is a ``psutil.Process`` made when the step started: psutil
-checks its start time before it sends a signal, so a pid that the OS gave to another process
-is never touched.
+The tree matters, because a wrapper such as a ``.cmd`` launcher may run FFmpeg as a child. The
+caller keeps the root's ``psutil.Process`` from the step's start: psutil checks its start time
+before it signals, so a pid that the OS gave to another process is never touched.
 """
 
 from __future__ import annotations
@@ -30,7 +22,8 @@ def _children(root: psutil.Process) -> list[psutil.Process]:
 
 
 def suspend_tree(root: psutil.Process) -> int:
-    """Suspend ``root`` and its descendants; returns how many processes were suspended."""
+    """Suspend ``root`` first, so it cannot start a child meanwhile, then its descendants.
+    Returns how many processes were suspended."""
     try:
         root.suspend()
     except psutil.Error:

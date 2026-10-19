@@ -1,20 +1,7 @@
-"""File operations of the job runner: plan files, the final rename, clean-up (blocking; the
-queue calls them in a worker thread).
+"""File operations of the job runner. They block, so call them from a worker thread.
 
-- :func:`rename_no_replace` gives the ``.part`` file its final name only when that name is
-  free: on Windows ``os.rename`` refuses an existing target (``FileExistsError``); on POSIX
-  ``os.rename`` would replace it, so a hard link plus an unlink is used (the link fails when
-  the name exists), with a check-then-rename fallback on file systems without hard links
-  (FAT, exFAT, some network shares).
-- :func:`replace_file` overwrites (collision policy ``overwrite``).
-- On Windows a file that another process holds open (a player showing the old output, an
-  antivirus scanner) gives ``PermissionError`` for a replace or a delete. Such a call is tried
-  again :data:`ATTEMPTS` times with a growing pause (about 1.5 s in all), as the settings
-  store does (decision 0015); on POSIX it is not retried.
-- **Which file a path is** (:func:`same_file`, and the queue's job keys): :func:`file_key`
-  reads it once (links resolved, ``(st_dev, st_ino)``; blocking), :func:`same_key` compares two
-  keys without any file-system call. None of them raises for a path that cannot be used (a
-  NUL character): such a path is compared as written (final review RB-2).
+A final name never replaces an existing file. On Windows, a call that hits a file that another
+process holds open is retried.
 """
 
 from __future__ import annotations
@@ -84,33 +71,28 @@ def write_plan_files(files: Iterable[PlanFile]) -> None:
 
 @dataclass(frozen=True, slots=True)
 class FileKey:
-    """Which file a path is, read once by :func:`file_key` (blocking) and compared by
-    :func:`same_key` without any file-system call. The queue keeps one per path of each job,
-    so it can decide which job may start on the event loop without waiting for a disk or a
-    network share (final review RB-1)."""
+    """Which file a path is. :func:`file_key` reads it once, and :func:`same_key` compares
+    keys without a file-system call, so the event loop never waits for a disk."""
 
     path: str
-    """The path with its links resolved (``realpath``; for a file that does not exist yet, the
-    existing part of its folder), in the OS's case (``normcase``). A path that cannot be
-    resolved (``realpath`` raises ``ValueError`` for a NUL character) is the path as written,
-    made absolute."""
+    """The path with its links resolved (for a file that does not exist yet, the existing part
+    of its folder) and the OS's case. A path that cannot be resolved (a NUL character) is kept
+    as written, made absolute."""
     identity: tuple[int, int] | None = None
-    """``(st_dev, st_ino)`` of the existing file the path leads to (a hard link has its file's
-    pair; on Windows the volume serial number and the file index). ``None`` when there is no
-    such file, it cannot be read, or the file system gives no file index (``st_ino`` 0, as on
-    some Windows volumes: every file there would have the same pair)."""
+    """``(st_dev, st_ino)`` of the existing file, or ``None`` when there is none, it cannot be
+    read, or the file system has no file index (``st_ino`` 0 on some Windows volumes: every file
+    would have the same pair)."""
 
 
 def file_key(path: str | os.PathLike[str]) -> FileKey:
-    """``path``'s :class:`FileKey` (blocking: an ``lstat`` per part of the path and a ``stat``;
-    never raises)."""
+    """``path``'s :class:`FileKey`. Blocking; never raises."""
     return FileKey(_resolved(path), _identity(path))
 
 
 def same_key(a: FileKey, b: FileKey | None) -> bool:
-    """``a`` and ``b`` name one file: the same resolved path, the same path without case
-    (Windows and macOS file systems ignore case; on Linux this errs on the safe side), or the
-    same ``(st_dev, st_ino)`` (a hard link). No file-system call."""
+    """``a`` and ``b`` name one file: the same resolved path, the same path without case, or the
+    same identity (a hard link). No file-system call. Case is ignored on Linux too, which errs
+    on the safe side."""
     if b is None:
         return False
     return (
@@ -121,26 +103,18 @@ def same_key(a: FileKey, b: FileKey | None) -> bool:
 
 
 def same_file(a: Path, b: Path) -> bool:
-    """``a`` and ``b`` are the same file: the same ``(st_dev, st_ino)`` when both exist (also
-    through a link or a hard link; not on a file system without file indexes), else the same
-    path after resolving links, compared without case (Windows and macOS file systems ignore
-    case; on Linux this errs on the safe side). Blocking; never raises (a path with a NUL
-    character is compared as written)."""
+    """Whether ``a`` and ``b`` name one file (see :func:`same_key`). Blocking; never raises."""
     return same_key(file_key(a), file_key(b))
 
 
 def writable_file(path: Path) -> bool:
-    """The existing file ``path`` can be opened for writing by this process: the same test as
-    validation's :meth:`~reframe.validation.LocalFileSystem.writable_file` (``os.access`` on
-    POSIX; on Windows the file is opened for update, which also sees the ACL and a file another
-    process holds without write sharing). An in-place metadata edit checks it before
-    mkvpropedit runs (decision 0034)."""
+    """The existing file ``path`` can be opened for writing by this process, by the test of
+    :meth:`~reframe.validation.LocalFileSystem.writable_file`. On Windows that opens the file for
+    update, which also sees the ACL and another process's lock without write sharing."""
     return LocalFileSystem().writable_file(path)
 
 
 def _path_key(path: str | os.PathLike[str]) -> str:
-    """The path with its links resolved, in the OS's case, without case (blocking; never
-    raises: see :attr:`FileKey.path`)."""
     return _resolved(path).casefold()
 
 
@@ -170,7 +144,7 @@ def _identity(path: str | os.PathLike[str]) -> tuple[int, int] | None:
 
 def remove_files(paths: Iterable[Path], *, keep: Path | None = None) -> list[str]:
     """Remove each file that exists; returns a message for each one that could not be removed.
-    ``keep`` (a job's source) is never removed, whatever spelling of it is in ``paths``.
+    ``keep`` (the source file) is never removed, whatever spelling of it is in ``paths``.
     Never raises for a path that cannot be used (a NUL character)."""
     problems: list[str] = []
     for path in paths:
@@ -194,7 +168,8 @@ def replace_file(source: Path, target: Path) -> None:
 
 
 def rename_no_replace(source: Path, target: Path) -> None:
-    """Rename ``source`` to ``target``; ``FileExistsError`` when ``target`` exists."""
+    """Rename ``source`` to ``target``; ``FileExistsError`` when ``target`` exists. On POSIX
+    ``os.rename`` would replace the target, so a hard link is made first."""
     if WINDOWS:
         _retry(partial(os.rename, source, target))
         return
