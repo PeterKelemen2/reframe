@@ -433,19 +433,19 @@ ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt
   -c:v hevc_amf -f null -
 ```
 
-The `c4_*` captures in `fake_data/` are exactly these commands
-(`capture_fake_data.py --only c4_…`; `test_hwtest.py` fails when the definitions change the
+The `detect_*` captures in `fake_data/` are exactly these commands
+(`capture_fake_data.py --only detect_…`; `test_hwtest.py` fails when the definitions change the
 command and the captures were not made again):
 
 | Capture | Exit code | Key stderr line | C-4 reason (state) |
 |---------|-----------|-----------------|--------------------|
-| `c4_h264_vaapi_ok`, `c4_hevc_vaapi_10bit_ok`, `c4_hevc_amf_ok`, `c4_hevc_amf_10bit_ok` | 0 | — | available |
-| `c4_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
-| `c4_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
-| `c4_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
-| `c4_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
-| `c4_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
-| `c4_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
+| `detect_h264_vaapi_ok`, `detect_hevc_vaapi_10bit_ok`, `detect_hevc_amf_ok`, `detect_hevc_amf_10bit_ok` | 0 | — | available |
+| `detect_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
+| `detect_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
+| `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
+| `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
+| `detect_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
 
 - **A missing AMF runtime can be provoked without root**: `LD_LIBRARY_PATH` pointing at a
   folder with an empty `libamfrt64.so.1` makes `dlopen` fail (the capture records the folder
@@ -465,7 +465,7 @@ command and the captures were not made again):
   (`TSC`). The pinned build has 562 filters, `libplacebo` and `zscale` among them.
 - **`libplacebo` needs a working Vulkan device.** `-filters` lists it whether Vulkan works or
   not, so detection runs one frame through it (checked 2026-10-13, both builds; the commands
-  are the `c4_libplacebo_*` captures):
+  are the `detect_libplacebo_*` captures):
 
   ```sh
   ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 1 -vf libplacebo -f null -
