@@ -32,6 +32,7 @@ from reframe.definitions.custom_params import (
     own_option_allowed,
     split_custom_params,
 )
+from reframe.definitions.options import effective_preset
 from reframe.definitions.quality import round_to_step
 from reframe.jsonpatch import format_pointer
 from reframe.models.capabilities import CapabilitySnapshot, EncoderStatus
@@ -622,7 +623,7 @@ def _option_value(
     assert isinstance(default, PresetDefault)
     if video.tune is not None and video.tune in default.tunes and not tune_known:
         return None, False
-    preset = video.preset or (encoder.presets.default if encoder.presets else None)
+    preset = effective_preset(encoder, video)
     return (default.values.get(preset) if preset is not None else None), False
 
 
