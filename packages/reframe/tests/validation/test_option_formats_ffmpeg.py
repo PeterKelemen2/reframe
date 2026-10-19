@@ -64,6 +64,8 @@ def test_r5_7_vbv_with_the_encoders(
          "ultrafast", *rc, f"-{encoder.removeprefix('lib')}-params", params, str(out)]
     )  # fmt: skip
     assert result.returncode == 0, result.stderr[-1500:]
+    dropped = "VBV maxrate specified, but no bufsize, ignored" in result.stderr
+    assert dropped is (advanced == {"vbv-maxrate": 5000}), result.stderr[-1500:]
     if encoder == "libx264":  # the settings SEI: "vbv_maxrate=… vbv_bufsize=…" when VBV is on
         sei = re.search(rb"options: ([ -~]+)", out.read_bytes())
         assert sei is not None

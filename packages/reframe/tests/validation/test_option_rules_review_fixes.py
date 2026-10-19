@@ -58,8 +58,7 @@ def test_r5_4_level_with_min_cu_size_8_at_ultrafast() -> None:
 
 @pytest.mark.parametrize("encoder", ["libx264", "libx265"])
 def test_r5_7_vbv_maxrate_without_a_buffer_is_inactive(encoder: str) -> None:
-    """x264 drops it without a word (SEI ``rc=crf``, no VBV); x265 logs "VBV maxrate
-    specified, but no bufsize, ignored"."""
+    """Both encoders drop it and log "VBV maxrate specified, but no bufsize, ignored"."""
     found = _found(encoder=encoder, advanced={"vbv-maxrate": 5000})
     assert ("encoder.option_inactive", "video.advanced.vbv-maxrate", Severity.WARNING) in found
     for rc in (ConstantQuality(value=22), AverageBitrate(kbps=2000)):
