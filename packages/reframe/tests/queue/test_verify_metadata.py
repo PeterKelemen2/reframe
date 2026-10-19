@@ -1,6 +1,4 @@
-"""The re-probe check after a metadata change (05 §C-13; ``reframe.queue.verify``): BCP 47
-languages, names, flags and the container title of an in-place edit and of a post-mux
-fix-up. Pure: the "re-probed" file is a changed copy of the recorded probe."""
+"""The re-probe check after a metadata change, on changed copies of recorded probes."""
 
 from __future__ import annotations
 
@@ -128,7 +126,7 @@ def test_fixup_checks_ietf_only_where_it_was_written() -> None:
     ]
     output.audio[0].language_ietf = "pt-BR"
     assert check_output(job, source, output, DEFS, plan=plan) == []
-    # MediaInfo reads every legacy code as BCP 47: "de" for "ger" is the same language.
+    # MediaInfo derives BCP 47 from the legacy code: "de" for "ger" is the same language.
     output.audio[1].language_ietf = "de"
     assert check_output(job, source, output, DEFS, plan=plan) == []
     # Without mkvpropedit the step is not planned and por is what is expected.

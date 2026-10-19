@@ -1,9 +1,4 @@
-"""Discovery against the real FFmpeg of this machine or CI job (C-1).
-
-Unlike ``test_discovery.py`` this keeps the real environment: in CI the main jobs install the
-pinned build into ``$REFRAME_DATA_DIR/tools/ffmpeg`` (origin ``bundled``), and the override
-job sets ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` (origin ``env``).
-"""
+"""Tool discovery against the real FFmpeg of this machine or of the CI job."""
 
 from __future__ import annotations
 

@@ -1,10 +1,4 @@
-"""When done (C-11 with C-14's power service) and the job notifications.
-
-Every test uses :class:`FakePower`, a stand-in with the ``PowerService`` contract whose
-countdown ends only when the test says so (:meth:`FakePower.run_out`) and which only records:
-nothing of the operating system is ever called. The encodes run on the fake ffmpeg. The
-rules are in :mod:`reframe.queue.whendone` and decision 0037.
-"""
+"""The queue's when-done actions and job notifications, with a fake power service."""
 
 from __future__ import annotations
 
@@ -45,9 +39,8 @@ LONG_BY_NAME = ft.Rule(
 
 
 class FakePower:
-    """C-14's ``PowerService`` contract (``schedule``, ``cancel``, ``pending``, ``close``) with
-    ``power.countdown`` events. The countdown ends only in :meth:`run_out`, and its action is
-    only recorded (:attr:`executed`): no test can reach a real power call through it."""
+    """A ``PowerService`` stand-in: the countdown ends only in :meth:`run_out`, and its action
+    is only recorded (:attr:`executed`)."""
 
     def __init__(self, events: EventBus) -> None:
         self.events = events
@@ -55,7 +48,7 @@ class FakePower:
         """``(countdown id, action, reason)`` of every ``schedule`` call."""
         self.cancel_calls: list[str | None] = []
         self.cancelled: list[str] = []
-        """The countdowns that were cancelled (by ``cancel``, a new ``schedule`` or ``close``)."""
+        """The ids of the countdowns that were cancelled."""
         self.executed: list[PowerAction] = []
         self.closed = False
         self._pending: PowerCountdownEvent | None = None
@@ -169,9 +162,6 @@ def end_state(h: Harness, job_id: str) -> Event:
     return [e for e in h.events_of(job_id) if e.type == "job.state"][-1]
 
 
-# --------------------------------------------------------------------------- the power actions
-
-
 @pytest.mark.parametrize("action", ["quit", "sleep", "shutdown"])
 async def test_each_power_action_runs_once_after_the_queue_empties(
     harness: Harness, power: FakePower, action: PowerAction
@@ -184,12 +174,11 @@ async def test_each_power_action_runs_once_after_the_queue_empties(
     h.queue.start()
     ended = await h.queue.wait()
     assert [j.state for j in ended] == [JobState.DONE, JobState.FAILED, JobState.DONE]
-    # Taken before wait() returned: a front end can show the countdown at once (C-15's CLI).
+    # Taken before wait() returned: a front end can show the countdown at once.
     assert power.scheduled == [("countdown-1", action, "2 jobs done, 1 failed")]
     assert power.pending is not None
     assert power.pending.action == action
     assert warnings(h, "queue.when_done_unavailable") == []
-    # The countdown starts after the last job's end state.
     [started] = [e for e in h.events.published if isinstance(e, PowerCountdownEvent)]
     last_end = max(index_of(h, end_state(h, job_id)) for job_id in ids)
     assert index_of(h, started) > last_end
@@ -227,7 +216,7 @@ def test_an_unknown_action_does_nothing(caplog: pytest.LogCaptureFixture) -> Non
 
 
 async def test_the_action_runs_when_the_last_job_failed(harness: Harness, power: FakePower) -> None:
-    """A failed job does not need the computer to stay on (decision 0037)."""
+    """A failed job does not need the computer to stay on."""
     h = harness
     h.settings.queue.when_done = "shutdown"
     h.scenario(BAD)
@@ -241,7 +230,7 @@ async def test_the_user_cancels_the_countdown(harness: Harness, power: FakePower
     h.settings.queue.when_done = "sleep"
     await h.run_one(h.job("First"))
     assert power.pending is not None
-    assert power.cancel() is True  # the countdown dialog's Cancel (Reframe.power.cancel())
+    assert power.cancel() is True
     assert power.run_out() is None
     assert power.executed == []
     assert len(power.scheduled) == 1  # the queue does not start it again
@@ -285,7 +274,6 @@ async def test_new_work_cancels_the_countdown(harness: Harness, power: FakePower
     assert power.cancelled == ["countdown-1"]  # when the runner took the job
     [ended] = await h.queue.wait([second.id])
     assert ended.state is JobState.DONE
-    # Cancelled before the job's run began.
     [cancelled] = [
         e
         for e in h.events.published
@@ -306,8 +294,8 @@ async def test_new_work_cancels_the_countdown(harness: Harness, power: FakePower
 async def test_a_job_added_to_an_idle_queue_leaves_the_countdown_alone(
     harness: Harness, power: FakePower
 ) -> None:
-    """``start(job_ids=…)`` (the CLI): the runner went idle. A job that is only added is not
-    new work yet; it is when it starts."""
+    """``start(job_ids=…)``: the runner went idle. A job that is only added is not new work
+    yet; it is when it starts."""
     h = harness
     h.settings.queue.when_done = "sleep"
     first = await h.queue.add(h.job("First"))
@@ -327,7 +315,7 @@ async def test_a_job_added_to_an_idle_queue_leaves_the_countdown_alone(
 async def test_a_settings_change_does_not_cancel_the_countdown(
     harness: Harness, power: FakePower
 ) -> None:
-    """The queue reads ``when_done`` when it empties; the countdown dialog cancels it."""
+    """The queue reads ``when_done`` when it empties."""
     h = harness
     h.settings.queue.when_done = "shutdown"
     await h.run_one(h.job())
@@ -469,14 +457,9 @@ async def test_nothing_and_notify_never_use_the_power_service(
     assert power.cancel_calls == []
 
 
-# --------------------------------------------------------------------------- notifications
-
-
 async def test_job_notifications(
     harness: Harness, power: FakePower, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Done: ``success`` with the output's name; failed: ``error`` with the source and the
-    reason; each when the run's files are handled, before its last log batch and end state."""
     h = harness
     h.scenario(BAD)
     good, bad = h.job("Good"), h.job("Bad")
@@ -584,9 +567,6 @@ async def test_no_notification_for_a_job_that_fails_when_it_is_added(
     assert power.scheduled == []  # it never ran: the queue did not empty after a run
 
 
-# --------------------------------------------------------------------------- C-14's service
-
-
 class RecordingExecutor:
     """A ``PowerExecutor`` that only records: the operating system is never asked."""
 
@@ -599,8 +579,7 @@ class RecordingExecutor:
 
 
 def real_power(events: EventBus, *, countdown: float) -> tuple[PowerService, RecordingExecutor]:
-    """C-14's ``PowerService`` with a recording executor and a short countdown. Skips the test
-    while the service is the contract stub (task 1f builds it in parallel)."""
+    """A ``PowerService`` with a recording executor and a short countdown."""
     executor = RecordingExecutor()
     service = PowerService(events, executor=executor, countdown=countdown)
     try:
