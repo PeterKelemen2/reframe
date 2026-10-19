@@ -229,7 +229,11 @@ async def test_name_collisions(app: Reframe, fixture_media: Media, tmp_path: Pat
     assert [r.status for r in resolution.rows] == ["error", "ok", "ok"]
     codes = [i.code for i in resolution.rows[0].issues]
     assert "output.renamed" in codes
-    assert "batch.output_exists" in codes
+    (exists,) = [i for i in resolution.rows[0].issues if i.code == "batch.output_exists"]
+    assert exists.message == (
+        "Anime Show - S02E01 - Return.mkv already exists. In a batch an existing output is an "
+        "error: remove it, or set the collision setting to overwrite."
+    )
 
 
 async def test_an_output_that_is_another_source(

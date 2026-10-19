@@ -537,7 +537,7 @@ def _collisions(
                 n,
                 "batch.output_exists",
                 f"{row.job.output.path.name} already exists. In a batch an existing output is an "
-                "error (04 §Output naming): remove it, or set the collision setting to overwrite.",
+                "error: remove it, or set the collision setting to overwrite.",
             )
     if not added:
         return rows, batch
