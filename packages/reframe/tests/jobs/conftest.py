@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner, Result
 
+from reframe import cli
 from reframe.cli import build_app
 from reframe.definitions import load_definitions
 from reframe.models import (
@@ -19,18 +20,24 @@ from reframe.models import (
     CapabilitySnapshot,
     EncoderState,
     EncoderStatus,
+    JobSettings,
     MediaSource,
     Preset,
+    QueueJob,
     SourceFingerprint,
     ToolInfo,
     ToolName,
     ToolSet,
     ToolStatus,
+    ValidationIssue,
 )
 from reframe.presets import builtin_presets
 from reframe.probe import ProbeError, ProbeErrorKind, mediainfo, parse_ffprobe
+from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
+
+from .fake_queue import Behaviour, FakeQueue
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBES = ROOT / "testdata" / "probes"
@@ -213,3 +220,37 @@ def media_file(folder: Path, name: str) -> Path:
 
 def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
     return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
+
+
+class Queues:
+    """Installs the fake queue as ``cli.get_queue`` and keeps the ones made."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, log_dir: Path) -> None:
+        self.made: list[FakeQueue] = []
+        self.log_dir = log_dir
+        self.behaviour: Callable[[JobSettings], Behaviour] = lambda _job: "done"
+        self.on_running: Callable[[QueueJob], None] | None = None
+        self.validator: Callable[[JobSettings], Awaitable[list[ValidationIssue]]] | None = None
+        """Replaces ``Reframe.jobs.validate`` as the queue's validation on ``add``."""
+        monkeypatch.setattr(cli, "get_queue", self.make)
+
+    def make(self, app: Reframe) -> FakeQueue:
+        queue = FakeQueue(
+            app.events,
+            log_dir=self.log_dir,
+            validate=self.validator or app.jobs.validate,
+            behaviour=self.behaviour,
+            on_running=self.on_running,
+        )
+        self.made.append(queue)
+        return queue
+
+    @property
+    def queue(self) -> FakeQueue:
+        assert len(self.made) == 1
+        return self.made[0]
+
+
+@pytest.fixture
+def queues(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Queues:
+    return Queues(monkeypatch, tmp_path / "logs")

@@ -1,4 +1,5 @@
-"""Regression tests for file identity, control characters, overwrite warnings and labels."""
+"""One file by any spelling (a link, a hard link, two paths): ``reframe encode`` and ``batch``
+never write a source, and take each file once."""
 
 from __future__ import annotations
 
@@ -21,9 +22,8 @@ from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .conftest import invoke, media_file, probe_json, probe_rule, recorded, replay
-from .test_cli_batch import Queues, queues  # noqa: F401
-from .test_cli_review_fixes import (
+from .conftest import Queues, invoke, media_file, recorded, replay
+from .test_cli_output_names import (
     E01,
     E01_OUT,
     S01,
@@ -36,7 +36,6 @@ from .test_cli_review_fixes import (
 )
 
 Media = Callable[[str], Path]
-ESC = "\x1b"
 
 
 def sha256(path: Path) -> str:
@@ -50,9 +49,9 @@ def linked(tmp_path: Path, folder: Path) -> Path:
     return link
 
 
-def test_ra1_encode_never_writes_a_source_given_through_a_linked_folder(
+def test_encode_never_writes_a_source_given_through_a_linked_folder(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """The second file is named through a link to the folder. E01's output is that file by
@@ -72,9 +71,9 @@ def test_ra1_encode_never_writes_a_source_given_through_a_linked_folder(
     assert out.splitlines()[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 1 not queued."
 
 
-def test_ra1_batch_never_writes_a_source_given_through_a_linked_folder(
+def test_batch_never_writes_a_source_given_through_a_linked_folder(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """``reframe batch``: the linked file is E01's planned output (left out as already encoded),
@@ -92,9 +91,9 @@ def test_ra1_batch_never_writes_a_source_given_through_a_linked_folder(
     assert "Nothing to encode." in out
 
 
-def test_ra1_encode_never_writes_a_hard_linked_output_name(
+def test_encode_never_writes_a_hard_linked_output_name(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """E01's output name is a hard link to another source of the command (in another folder,
@@ -114,9 +113,9 @@ def test_ra1_encode_never_writes_a_hard_linked_output_name(
     assert other.read_bytes() == b"placeholder"
 
 
-def test_ra1_batch_never_writes_a_hard_linked_output_name(
+def test_batch_never_writes_a_hard_linked_output_name(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """``reframe batch`` of the same files: ``Other.mkv`` is E01's planned output (the same
@@ -152,7 +151,7 @@ def season_pair(cli_env: ft.FakeTools, tmp_path: Path) -> Path:
     return folder
 
 
-def test_ra1_a_folder_given_through_two_spellings_is_taken_once(
+def test_a_folder_given_through_two_spellings_is_taken_once(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
     """``reframe batch real link --dry-run`` (``link`` → ``real``): every episode once, in the
@@ -170,9 +169,9 @@ def test_ra1_a_folder_given_through_two_spellings_is_taken_once(
     assert rows == [str(folder / media.anime_file_name(1, n)) for n in (1, 2)]
 
 
-def test_ra1_encode_takes_a_file_named_through_a_link_once(
+def test_encode_takes_a_file_named_through_a_link_once(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
 ) -> None:
     """``reframe encode link/E01 real/E01 real``: one job per file."""
@@ -208,9 +207,9 @@ class LoopSpy:
         monkeypatch.setattr(batch_service, "file_key", spy)
 
 
-def test_ra1_the_file_keys_are_computed_off_the_event_loop(
+def test_the_file_keys_are_computed_off_the_event_loop(
     cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
+    queues: Queues,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -226,7 +225,7 @@ def test_ra1_the_file_keys_are_computed_off_the_event_loop(
 
 
 @pytest.mark.anyio
-async def test_ra1_the_batch_service_keys_files_off_the_event_loop(
+async def test_the_batch_service_keys_files_off_the_event_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``Reframe.batch.resolve`` (with a group and overrides) and ``resolve_batch``: the keys
@@ -248,157 +247,8 @@ async def test_ra1_the_batch_service_keys_files_off_the_event_loop(
     assert set(spy.where) == {"thread"}
 
 
-def import_evil_preset(tmp_path: Path) -> None:
-    exported = tmp_path / "h265.json"
-    assert invoke("presets", "export", "H.265 MKV 1080p", "--output", str(exported)).exit_code == 0
-    data = json.loads(exported.read_text(encoding="utf-8"))
-    data["presets"][0].update(id="evil", name="Evil\x1b[31mRED", built_in=False)
-    data["default_preset_id"] = None
-    exported.write_text(json.dumps(data), encoding="utf-8")
-    assert invoke("presets", "import", str(exported)).exit_code == 0
-
-
-def test_ra2_preset_line_of_batch_and_encode_has_no_control_characters(
-    cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
-    tmp_path: Path,
-) -> None:
-    """A preset named ``Evil ESC[31m RED`` (imported) in the ``Preset:`` line of
-    ``reframe batch`` and ``reframe encode``."""
-    import_evil_preset(tmp_path)
-    folder, _e01, _copy = two_sources(cli_env, tmp_path, "Other.mkv")
-    batch = invoke("batch", str(folder), "--preset", "evil", "--dry-run")
-    encode = invoke("encode", str(folder), "--preset", "evil")
-    assert ESC not in batch.stdout, batch.stdout.splitlines()[0]
-    assert ESC not in encode.stdout, encode.stdout.splitlines()[0]
-    assert batch.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
-    assert encode.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
-
-
-def escaped_probe(tmp_path: Path, name: str, old: str, new: str) -> Path:
-    """The recorded probe ``name`` with the title ``old`` renamed ``new``."""
-    data = json.loads(probe_json(name).read_text(encoding="utf-8"))
-    for stream in data["streams"]:
-        if stream.get("tags", {}).get("title") == old:
-            stream["tags"]["title"] = new
-    path = tmp_path / "probes" / (Path(name).name + ".json")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data), encoding="utf-8")
-    return path
-
-
-def test_ra2_titles_and_file_names_in_the_batch_output_are_printable(
-    cli_env: ft.FakeTools, tmp_path: Path
-) -> None:
-    """A near member's difference names a track title with ESC (E05's commentary), two releases
-    of E01 are labelled by their file names (one with ESC), and the matrix shows that name
-    and its output name: no ESC on stdout."""
-    folder = tmp_path / "media" / S01
-    e01 = media_file(folder, E01)
-    evil = media_file(folder, "Anime.Show.S01E01.\x1b[31mRed.WEB.x264-GRP.mkv")
-    e05 = media_file(folder, media.anime_file_name(1, 5))
-    commentary = escaped_probe(tmp_path, anime(1, 5), "Commentary", "Comm\x1b[32mGreen")
-    cli_env.set_scenario(
-        ft.Scenario(
-            [
-                probe_rule(commentary, e05),
-                probe_rule(probe_json(anime(1, 1)), e01),
-                probe_rule(probe_json(anime(1, 1)), evil),
-            ]
-        )
-    )
-    result = invoke("batch", str(folder), "--dry-run")
-    assert result.exit_code == EXIT_OK, result.output
-    out = result.stdout
-    assert ESC not in out, out
-    assert 'extra track (eng AC-3 2.0 "Comm\ufffd[32mGreen")' in out
-    # The member list and the matrix row label.
-    assert out.count("Anime.Show.S01E01.\ufffd[31mRed.WEB.x264-GRP.mkv") == 2
-    assert "Anime.Show.S01E01.[31mRed.mkv" in out
-
-
-def test_ra2_reframe_probe_prints_titles_without_control_characters(
-    cli_env: ft.FakeTools, tmp_path: Path
-) -> None:
-    """``reframe probe``: a track title, the container title and a chapter title come from the
-    file; they are shown through ``printable`` too (``--json`` keeps them)."""
-    file = media_file(tmp_path / "media", "Movie\x1b[35m.mkv")
-    data = json.loads(probe_json(anime(1, 5)).read_text(encoding="utf-8"))
-    for stream in data["streams"]:
-        if stream.get("tags", {}).get("title") == "Commentary":
-            stream["tags"]["title"] = "Comm\x1b[32mGreen"
-    data["format"]["tags"]["title"] = "Movie\x1b]0;PWNED\x07"
-    path = tmp_path / "probe.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    cli_env.set_scenario(ft.Scenario([probe_rule(path)]))
-    result = invoke("probe", str(file))
-    assert result.exit_code == EXIT_OK, result.output
-    assert ESC not in result.stdout, result.stdout
-    assert "\x07" not in result.stdout
-    assert "Comm\ufffd[32mGreen" in result.stdout
-    assert "Movie\ufffd]0;PWNED\ufffd" in result.stdout
-    raw = json.loads(invoke("probe", str(file), "--json").stdout)
-    assert raw["container"]["title"] == "Movie\x1b]0;PWNED\x07"
-
-
-def test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
-    cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
-    tmp_path: Path,
-) -> None:
-    """With *overwrite*, E01's output is the other file of the folder."""
-    write_settings(tmp_path, collision="overwrite")
-    folder, _e01, _copy = two_sources(cli_env, tmp_path, E01_OUT)
-    result = invoke("encode", str(folder))
-    assert "[batch.output_is_source · output.path]" in result.stdout
-    assert "[output.overwrite" not in result.stdout, result.stdout
-
-
-def test_ra4_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command(
-    cli_env: ft.FakeTools,
-    queues: Queues,  # noqa: F811
-    tmp_path: Path,
-) -> None:
-    """An existing output that is not a file of the command is replaced with *overwrite*, and
-    ``output.overwrite`` warns about it."""
-    write_settings(tmp_path, collision="overwrite")
-    folder = tmp_path / "media" / S01
-    e01 = media_file(folder, E01)
-    media_file(folder, E01_OUT)
-    replay(cli_env, anime(1, 1))
-    result = invoke("encode", str(e01))
-    assert result.exit_code == EXIT_OK, result.output
-    assert "[output.overwrite · output.path]" in result.stdout
-
-
-def test_ra5_a_member_labelled_by_its_file_name_shows_the_name_once(
-    cli_env: ft.FakeTools, tmp_path: Path
-) -> None:
-    """Two releases of S02E01 are labelled by their file names: each member line shows the
-    name once; E02 keeps its label column."""
-    folder = tmp_path / "media" / media.anime_folder(2)
-    bluray = media.anime_file_name(2, 1)
-    web = "Anime.Show.S02E01.Return.WEB.x264-GRP.mkv"
-    e02 = media.anime_file_name(2, 2)
-    per_file = {
-        media_file(folder, bluray): anime(2, 1),
-        media_file(folder, web): anime(2, 1),
-        media_file(folder, e02): anime(2, 2),
-    }
-    replay(cli_env, anime(2, 1), per_file=per_file)
-    result = invoke("batch", str(folder), "--dry-run")
-    assert result.exit_code == EXIT_FAILED, result.output  # the two releases share a name
-    out = result.stdout.splitlines()
-    start = out.index("Group 1 of 1: Anime Show S02 · 3 files · standard match")
-    assert out[start + 1 : start + 4] == [
-        f"  {bluray} (representative)",
-        f"  {web}",
-        f"  E02  {e02}",
-    ]
-
-
 @pytest.mark.needs_ffmpeg
-def test_ra1_the_symlink_case_with_the_real_queue(
+def test_a_user_file_reached_through_a_link_is_never_overwritten_by_the_real_queue(
     fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``real/`` holds E01 and a user file named as E01's output (a copy of ``multitrack.mkv``),

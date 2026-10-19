@@ -7,6 +7,7 @@ import io
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -391,3 +392,55 @@ def test_human_output_survives_an_ascii_stdout(cli_env: ft.FakeTools, tmp_path: 
         sys.stdout = old
     text = buffer.getvalue().decode("ascii")
     assert "u-1" in text
+
+
+def _refused(result: dict[str, Any] | tuple[int, str]) -> tuple[int, str]:
+    assert isinstance(result, tuple), result
+    return result
+
+
+def test_import_refuses_a_file_larger_than_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "MAX_PRESET_FILE", 1000)
+    big = tmp_path / "big.json"
+    big.write_text(json.dumps({"schema_version": 1, "presets": [], "pad": "x" * 2000}))
+    code, message = _refused(read_preset_file(big))
+    assert code == EXIT_FAILED
+    assert "larger than" in message
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX devices and FIFOs")
+def test_import_never_reads_a_device_or_a_fifo(tmp_path: Path) -> None:
+    """``/dev/null`` stands in for ``/dev/zero``, which would exhaust memory on a regression."""
+    code, message = _refused(read_preset_file(Path("/dev/null")))
+    assert code == EXIT_NOT_FOUND
+    assert "not a regular file" in message
+    if sys.platform != "win32":  # mypy --platform win32 has no os.mkfifo (skipped there)
+        fifo = tmp_path / "fifo"
+        os.mkfifo(fifo)
+        result: list[dict[str, Any] | tuple[int, str]] = []
+        reader = threading.Thread(target=lambda: result.append(read_preset_file(fifo)), daemon=True)
+        reader.start()
+        reader.join(5)
+        if reader.is_alive():  # unblock the read, then fail
+            with fifo.open("wb") as writer:
+                writer.write(b"{}")
+            reader.join(5)
+            pytest.fail("reading the FIFO blocked")
+        code, message = _refused(result[0])
+        assert code == EXIT_NOT_FOUND
+        assert "not a regular file" in message
+
+
+def test_import_from_stdin_is_capped(
+    cli_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "MAX_PRESET_FILE", 1000)
+    from typer.testing import CliRunner
+
+    result = CliRunner().invoke(
+        cli.build_app(), ["presets", "import", "-"], input=b"{" + b" " * 5000 + b"}"
+    )
+    assert result.exit_code == EXIT_FAILED
+    assert "larger than" in result.stderr

@@ -130,3 +130,44 @@ def test_needs_dry_run() -> None:
     user = builtin.model_copy(update={"built_in": False, "id": "u"})
     job.video.custom_params = builtin.video.custom_params
     assert needs_dry_run(job, user)
+
+
+SKIPPED = ValidationIssue(
+    severity=Severity.WARNING,
+    code="encoder.dry_run_skipped",
+    path="video.encoder",
+    message="The test encode did not finish within 30 s.",
+)
+
+
+CHANGED = ValidationIssue(
+    severity=Severity.WARNING,
+    code="encoder.dry_run_warning",
+    path="video.custom_params",
+    message="The encoder changed a setting: limit-tu disabled",
+)
+
+
+def test_plan_shows_a_skipped_dry_run(movie: Path, dry_run: DryRun) -> None:
+    """A dry run that did not finish does not get the note that the parameters were checked."""
+    dry_run.issues = [SKIPPED]
+    result = invoke("plan", str(movie), "--preset", CUSTOM)
+    assert result.exit_code == EXIT_OK, result.output
+    out = result.stdout
+    assert "did not finish within 30 s" in out
+    assert "[encoder.dry_run_skipped · video.encoder]" in out
+    assert "Issues (0 errors, 1 warning, " in out
+    assert DRY_RUN_NOTE not in out
+    assert "Command (encode, " in out
+
+
+def test_plan_shows_the_dry_runs_warnings(movie: Path, dry_run: DryRun) -> None:
+    dry_run.issues = [CHANGED]
+    result = invoke("plan", str(movie), "--preset", CUSTOM)
+    assert result.exit_code == EXIT_OK, result.output
+    out = result.stdout
+    assert "The encoder changed a setting: limit-tu disabled" in out
+    assert f"  Note     {DRY_RUN_NOTE}" in out
+    data = json.loads(invoke("plan", str(movie), "--preset", CUSTOM, "--json").stdout)
+    assert "encoder.dry_run_warning" in [i["code"] for i in data["draft"]["issues"]]
+    assert data["plan"] is not None

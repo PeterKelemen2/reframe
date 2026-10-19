@@ -22,16 +22,18 @@ from reframe.jobs import (
     video_metadata,
 )
 from reframe.models import (
+    AudioCodecRule,
     EncodePlan,
     JobDraft,
     NamingOptions,
     Severity,
+    TrackDraft,
     TrackFlags,
     ValidationIssue,
 )
 from reframe.probe import ProbeError
 
-from .conftest import Stubs, caps, checking, preset, recorded
+from .conftest import Stubs, caps, checking, media_file, preset, recorded
 
 pytestmark = pytest.mark.anyio
 
@@ -498,3 +500,28 @@ def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -
     # Without deinterlacing, the crop snaps to the field grid (4 lines for 4:2:0).
     del job.filters.root["deinterlace"]
     assert output_size(job, source) != (stream.width, stream.height - 2)
+
+
+@pytest.mark.anyio
+async def test_a_codec_the_container_cannot_hold_is_one_issue(tmp_path: Path) -> None:
+    file = media_file(tmp_path / "Movie.2016.1080p.BluRay-GRP", "movie.mkv")
+    stubs = Stubs({file: recorded("multitrack", file)})
+    webm = preset("vp9-mkv-1080p").model_copy(deep=True)
+    webm.output.container = "webm"
+    webm.audio_defaults.codec_rules = [AudioCodecRule(codec="aac")]
+    jobs = JobService(
+        sources=stubs,
+        presets=stubs,
+        tools=stubs,
+        capabilities=stubs,
+        settings=lambda: stubs.settings,
+    )
+    draft = await jobs.draft(file, webm)
+    assert isinstance(draft, JobDraft)
+    codes = [issue.code for issue in draft.issues]
+    assert "container.codec_unsupported" in codes
+    assert "defaults.codec_not_in_container" not in codes
+    # The pure engine without validation still reports it.
+    explained = await jobs.explain(file, webm)
+    assert isinstance(explained, TrackDraft)
+    assert "defaults.codec_not_in_container" in [i.code for i in explained.issues]
