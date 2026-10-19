@@ -1,6 +1,4 @@
-"""Naming rules (C-16's issues): the job's name through ``resolve_output_name`` (template,
-manual name, per-file overrides, output folder), and a template's naming options through
-``check_template``."""
+"""Naming rules: the job's output name, and the naming options of a template."""
 
 from __future__ import annotations
 
@@ -36,9 +34,7 @@ def output_name(ctx: JobContext) -> list[ValidationIssue]:
 
 
 def _job_path(issue: ValidationIssue) -> ValidationIssue:
-    """C-16 names the naming options' field (``naming.output_folder``), which a job does not
-    have: its naming options are Settings → Output (or the preset's). For a job the issue is
-    about the output path that cannot be made."""
+    # A job has no naming.output_folder field: the issue is about its output path.
     if issue.code != "naming.no_output_folder":
         return issue
     return issue.model_copy(

@@ -1,12 +1,5 @@
-"""Subtitle rules (05 §C-8 "Subtitles", 03 §Subtitles → Output tracks): the source exists,
-one burn-in per job, bitmap subtitles the container cannot hold (PGS into MP4, decision 0010),
-conversions FFmpeg cannot do, and forced-only where the decoder cannot filter.
-
-Forced only is FFmpeg's ``forced_subs_only`` *decoder* option. In FFmpeg n9.0.2 only the
-``pgssub`` and ``dvdsub`` decoders have it, and a stream copy does not decode, so the option
-changes nothing there (testdata/README.md "Validation (C-8)"). It works only for a burned-in
-PGS or VobSub track.
-"""
+"""Subtitle rules. Forced only needs a burned-in PGS or VobSub track: a stream copy does not
+decode, so FFmpeg's ``forced_subs_only`` decoder option changes nothing there."""
 
 from __future__ import annotations
 
@@ -98,9 +91,8 @@ def burn_in(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 @job_rule("subtitles", "subtitle.bitmap_unsupported")
 def bitmap_copy(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A copied bitmap track the container cannot hold (PGS into MP4, any bitmap into WebM).
-    FFmpeg cannot turn bitmaps into text, so the fixes are burn in, another container, or
-    drop."""
+    """A copied bitmap track the container cannot hold. The fixes are burn in, another
+    container, or drop."""
     container = ctx.container
     if container is None:
         return

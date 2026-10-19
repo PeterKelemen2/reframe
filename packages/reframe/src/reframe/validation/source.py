@@ -1,6 +1,5 @@
-"""Source rules: what the source must have for a job. The command builder encodes or copies
-the source's first video stream, so a source without video cannot be planned (decision 0013:
-``build_plan`` refuses it)."""
+"""Source rules. The command builder encodes or copies the source's first video stream, so a
+source without video is an error."""
 
 from __future__ import annotations
 

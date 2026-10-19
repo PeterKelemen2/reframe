@@ -1,5 +1,5 @@
-"""Track metadata rules (03 §Track metadata & languages): a language that is not a known
-language or BCP 47 tag would be written as ``und``."""
+"""Track metadata rules: a language that is not a known language or BCP 47 tag would be
+written as ``und``."""
 
 from __future__ import annotations
 
@@ -24,8 +24,6 @@ def _blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
 
 
 def _written_languages(ctx: JobContext) -> Iterator[tuple[str, str | None]]:
-    """``(path, language)`` of every output track: the track's, else its source's (BCP 47
-    first), as the command builder writes it. A burned-in subtitle has no track."""
     stream = ctx.video_stream
     source = (stream.language_ietf or stream.language) if stream is not None else None
     yield "video.metadata", ctx.job.video.metadata.language or source
@@ -37,6 +35,7 @@ def _written_languages(ctx: JobContext) -> Iterator[tuple[str, str | None]]:
         yield f"audio[{index}].metadata", audio.metadata.language or source
     for index, subtitle in enumerate(ctx.job.subtitles):
         if subtitle.action == "burn":
+            # A burned-in subtitle has no track to write a language into.
             continue
         if isinstance(subtitle.source, int):
             sub = ctx.subtitle_streams.get(subtitle.source)
@@ -48,10 +47,9 @@ def _written_languages(ctx: JobContext) -> Iterator[tuple[str, str | None]]:
 
 @job_rule("metadata", "metadata.language_tag_lost")
 def language_tags(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A BCP 47 tag that ISO 639-2 cannot say (``pt-BR``, ``yue``) goes into Matroska's
-    ``LanguageIETF`` with an ``mkvpropedit`` step (FFmpeg never writes it, decision 0013).
-    Without mkvpropedit only the ISO 639-2 code is written: a warning, with a fix that
-    writes the code on purpose."""
+    """A BCP 47 tag that ISO 639-2 cannot say (``pt-BR``, ``yue``) needs mkvpropedit to write
+    Matroska's ``LanguageIETF``. Without it only the ISO 639-2 code is written: a warning,
+    with a fix that writes the code on purpose."""
     container = ctx.container
     if (
         container is None
