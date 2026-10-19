@@ -1,30 +1,6 @@
-"""Validation (C-8): every problem of a job or a preset as a :class:`ValidationIssue`.
+"""Validation: every problem of a job or a preset, as :class:`ValidationIssue` values.
 
-- :func:`validate` checks a job against its source, the encoder capabilities, the tools, the
-  file system (through a :class:`FileSystemView`) and the settings. It never raises for a bad
-  job: everything is an issue. ``error`` blocks *Add to queue*; ``warning`` and ``info`` do
-  not (03 §Validation and error display).
-- :func:`validate_template` checks what a preset alone can be checked for: encoder
-  availability (with the closest-match fix, quality converted), container ↔ codecs of the
-  video encoder and the audio codec rules, filters, the naming templates (M2 demo item 4), and
-  C-12's defaults lint (``reframe.batch.lint_defaults``). Its fixes target ``"template"``.
-- Each fix is a JSON patch (``Fix.patch``) on the document ``Fix.target`` names (``job``,
-  ``template``, or ``settings``); applied with :func:`reframe.jsonpatch.apply_patch`, it
-  removes its issue.
-
-The rules are small functions registered by area (:mod:`reframe.validation.registry`):
-``tools``, ``source``, ``encoder``, ``container``, ``dimensions``, ``filters``, ``audio``,
-``subtitles``, ``metadata``, ``range``, ``output``, ``naming``. Each rule declares the codes it
-can give; ``CASES`` in ``tests/validation/test_rules.py`` has a positive and a negative case
-for each.
-
-A rule that fails with an exception (a bug) does not stop the others: it gives a
-``validation.rule_failed`` error, so a job is never queued unchecked.
-
-A source path with a NUL character (only the API can send one; no file system allows it) is a
-``source.path_unusable`` error that :func:`validate` gives before the rules run (final review
-RN, decision 0016); the rules see it as a path that does not exist (:class:`LocalFileSystem`
-never raises for it). A NUL in the output path is the output rule's ``output.not_writable``.
+A rule that raises becomes a ``validation.rule_failed`` error, so a job is never queued unchecked.
 """
 
 from __future__ import annotations
@@ -114,13 +90,13 @@ def validate(
     naming: NamingOptions | None = None,
     rules: Iterable[Rule[JobContext]] | None = None,
 ) -> list[ValidationIssue]:
-    """Every issue of ``job`` (see the module doc).
+    """Every issue of ``job``. It never raises for a bad job: everything is an issue.
 
-    :param settings: the collision policy (``output.collision``) and the naming options;
-        ``None`` = ``AppSettings()`` defaults.
-    :param naming: the effective naming options when they differ from Settings → Output (a
-        preset's ``JobTemplate.naming``); ``None`` = ``settings.output.naming``.
-    :param rules: only these rules (tests); ``None`` = all of :data:`JOB_RULES`.
+    An ``error`` blocks queueing; ``warning`` and ``info`` do not.
+
+    :param settings: ``None`` means ``AppSettings()``.
+    :param naming: replaces ``settings.output.naming``, for a preset's ``JobTemplate.naming``.
+    :param rules: only these rules; ``None`` means all of :data:`JOB_RULES`.
     """
     settings = settings if settings is not None else AppSettings()
     context = JobContext(
@@ -167,8 +143,7 @@ def validate_template(
     """The issues a preset or batch template has without a source (fixes target
     ``"template"``).
 
-    :param subject: names the template in messages (``Preset "H.265 NVENC 1080p"``); for a
-        :class:`~reframe.models.Preset` the default is built from its name.
+    :param subject: the name used in messages; ``None`` names a preset by its own name.
     """
     if subject is None and isinstance(template, Preset):
         subject = f'Preset "{template.name}"'
@@ -176,8 +151,8 @@ def validate_template(
     context = TemplateContext(template=template, caps=caps, definitions=defs, subject=subject)
     issues = _run(TEMPLATE_RULES if rules is None else rules, context)
     if rules is None:
-        # C-12's defaults lint (shadowed and unreachable codec rules, bitrates out of range).
-        # C-8's container rule already reports a codec the container cannot hold.
+        # The lint finds shadowed or unreachable codec rules and bitrates out of range.
+        # The container rule reports codecs the container cannot hold, so the lint skips those.
         issues += lint_defaults(
             template.audio_defaults,
             container=template.output.container,

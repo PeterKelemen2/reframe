@@ -1,52 +1,8 @@
-"""The dry run of a job (03 §Advanced encoder options: custom parameters are "validated by a
-dry run (``-frames:v 1 -f null``)").
+"""The dry run of a job: FFmpeg encodes one frame, and what the encoder refuses becomes issues.
 
-Not a registered rule: it runs FFmpeg, so it is async and only runs on request
-(``Reframe.jobs.dry_run``, ``Reframe.jobs.plan(…, dry_run=True)``; ``reframe plan`` asks for
-it when a job has custom parameters).
-
-**Before FFmpeg starts**, the custom parameters go through validation's check
-(:func:`reframe.validation.video.video_custom_param_issues`): a parameter that names a file
-(x265 ``csv`` / ``analysis-save``, x264 ``dump-yuv``, FFmpeg's ``vstats_file`` …) or a name
-FFmpeg would read as one of its own options is an error, and the dry run does not run. FFmpeg
-runs with a new temporary working folder, removed afterwards (x264 / x265 ``pass=1`` would
-write their statistics into the working folder).
-
-What runs: C-7's plan of the job with only its video (no audio, subtitles, chapters or 2-pass;
-fast start off), with the output replaced by ``-frames:v 1 -f null -``, through
-:func:`reframe.tools.run` with a :data:`DRY_RUN_TIMEOUT` second timeout. The hardware setup,
-the filter chain, the rate control, the advanced options and the custom parameters are the
-job's own.
-
-What the encoders print (FFmpeg n9.0.2; testdata/README.md "Advanced encoder options (C-6,
-complete option sets)"; the real dry runs are in ``tests/validation/test_options_facade.py``
-and ``test_dryrun_review_fixes.py``):
-
-=========  ===========================================================  =========
-encoder    unknown key / bad value                                      exit code
-=========  ===========================================================  =========
-x264       ``Error parsing option 'bogus = 1'.``                        0
-x265       ``Unknown option: bogus.`` / ``Invalid value for me: foo.``  0
-SVT-AV1    ``Error parsing option bogus: 1.``                           0
-libvpx     ``Failed to set VP8E_SET_ARNR_MAXFRAMES codec control:       0
-           Invalid parameter`` (a value out of the control's range)
-others     ``Unrecognized option 'bogus:v:0'.`` (an FFmpeg option),     8, 234
-           ``Error setting option lag-in-frames to value abc.``
-=========  ===========================================================  =========
-
-x264, x265, SVT-AV1 and libvpx's codec controls go on without the parameter, so the exit code
-is not enough: such a line is an **error** (decision 0035: the parameter the user typed would
-be dropped without a word). A value the encoder refuses at start (x265 ``min CU size must be
-less than or equal to max CU size``, ``Svt[error]: …``, libvpx ``Failed to initialize
-encoder``) fails the run: an error with the encoder's most informative line. An encoder
-warning that names one of the job's parameters (x265 ``limit-tu disabled, requires
-tu-inter-depth > 1``) is a **warning**.
-
-Issues point at ``video.custom_params`` when the name is one of the custom parameters, at
-``video.advanced.<key>`` when it is an advanced option (by key or CLI name), and otherwise at
-``video.custom_params`` (when there are any), ``video.advanced`` or ``video.encoder``. A name
-in a log line is matched as a whole key: the key as typed (``--rd-refine``) before a looser
-form ("RD level"), then the first in the line. A fix removes the parameter.
+The dry run is async and not a registered rule, since it runs FFmpeg. x264, x265, SVT-AV1 and
+libvpx's codec controls go on without a refused parameter and exit 0, so the log line is what
+reports it.
 """
 
 from __future__ import annotations
@@ -99,18 +55,10 @@ DRY_RUN_CODES = (
     "encoder.dry_run_warning",
     "encoder.dry_run_skipped",
 )
-"""``custom_param_rejected`` / ``option_rejected`` / ``dry_run_failed`` are errors,
-``dry_run_warning`` and ``dry_run_skipped`` (no FFmpeg, a timeout) warnings."""
-
-
-# --------------------------------------------------------------------------- custom params
 
 
 def _without(params: list[CustomParam], dropped: CustomParam) -> str:
     return ":".join(p.raw for p in params if p is not dropped)
-
-
-# --------------------------------------------------------------------------- the command
 
 
 def dry_run_job(job: JobSettings) -> JobSettings:
@@ -154,22 +102,16 @@ def dry_run_argv(
     return [*argv[:-3], "-frames:v", "1", "-f", "null", "-"]
 
 
-# --------------------------------------------------------------------------- the log
-
+# The log lines that name a refused parameter, per encoder (recorded in testdata/README.md).
 _PARAM_PROBLEMS: tuple[re.Pattern[str], ...] = (
-    # x264: Error parsing option 'bogus = 1'.
     re.compile(r"Error parsing option '(?P<name>[^=']+?)\s*=\s*(?P<value>[^']*)'"),
-    # SVT-AV1: Error parsing option bogus: 1.
     re.compile(r"Error parsing option (?P<name>[^:\s]+): (?P<value>.*?)\.?$"),
-    # x265: Unknown option: bogus.  /  Invalid value for me: foo.
     re.compile(r"Unknown option: (?P<name>\S+?)\.?$"),
     re.compile(r"Invalid value for (?P<name>[^:\s]+): (?P<value>.*?)\.?$"),
-    # FFmpeg: Unrecognized option 'bogus:v:0'.  /  Error setting option x to value y.
     re.compile(r"Unrecognized option '(?P<name>[^']+)'"),
     re.compile(r"Error setting option (?P<name>\S+) to value (?P<value>.*?)\.?$"),
 )
-# libvpx: Failed to set VP8E_SET_ARNR_MAXFRAMES codec control: Invalid parameter (exit code 0;
-# the next line: "Additional information: arnr_max_frames out of range [0..15]").
+# libvpx refuses a codec control with exit code 0; the next line has the detail.
 _CODEC_CONTROL = re.compile(r"Failed to set (?P<ctrl>\w+) codec control")
 #: libvpx controls whose FFmpeg option has another name (FFmpeg's libvpxenc.c).
 _CONTROL_OPTIONS = {
@@ -214,10 +156,8 @@ def control_names(control: str) -> list[str]:
 
 
 def failure_detail(stderr: str, encoder_id: str) -> str | None:
-    """The line that says best why a dry run failed: the encoder library's own error
-    (``x265 [error]: …``, ``Svt[error]: …``), else a failure line the encoder logged
-    (``[libvpx-vp9 @ …] Failed to initialize encoder: Invalid parameter``, with libvpx's
-    ``Additional information: …``), else C-4's
+    """The line that says best why a dry run failed: the encoder library's own error, else a
+    failure line the encoder logged (with libvpx's ``Additional information`` appended), else
     :func:`~reframe.capabilities.reasons.informative_line`. Without tags and addresses."""
     lines = [raw.strip() for raw in stderr.splitlines() if raw.strip()]
     for raw in lines:
@@ -306,11 +246,9 @@ class _Attribution:
         return None
 
     def mentioned(self, text: str) -> _Target | None:
-        """The job parameter that ``text`` names, matched as a whole key (never ``rd`` inside
-        ``rd-refine``): a key as typed (``--rd-refine``, ``limit-tu``; ``_`` and ``-`` alike)
-        before a looser form (any case, words separated by spaces: "Hierarchical Levels" names
-        ``hierarchical-levels``, "RD level" names ``rd``); within each form, the first in the
-        text, then the longest."""
+        """The job parameter that ``text`` names, matched as a whole key. A key as typed (``_``
+        and ``-`` alike) is tried before a looser form (any case, words separated by spaces);
+        within each form the match that starts first wins, then the longest."""
         best: tuple[tuple[int, int, int], _Target] | None = None
         for name, target in self.names():
             if not name:
@@ -445,9 +383,6 @@ def parse_dry_run(
     return [i for i in issues if i.severity is Severity.ERROR or i.path not in failed_paths]
 
 
-# --------------------------------------------------------------------------- the run
-
-
 async def dry_run(
     job: JobSettings,
     source: MediaSource,
@@ -458,17 +393,15 @@ async def dry_run(
     cancel: CancelToken | None = None,
     work_dir: Path | None = None,
 ) -> list[ValidationIssue]:
-    """Encode one frame with the job's video settings (``-frames:v 1 -f null -``) and turn what
-    FFmpeg refuses (an unknown or invalid custom parameter, an option the encoder rejects)
-    into ``error`` issues with the path of the field (``video.custom_params``,
-    ``video.advanced.<key>``). Through ``reframe.tools.run`` with a short timeout. The caller
-    validates first; a job with errors is not dry-run. A passthrough job has nothing to test
-    (``[]``); a cancelled run gives ``[]`` as well.
+    """Encode one frame with the job's video settings, and turn what FFmpeg refuses into
+    ``error`` issues at the path of the field (``video.custom_params``, ``video.advanced.<key>``).
+    The caller validates first; a job with errors is not dry-run. A passthrough job and a
+    cancelled run give ``[]``.
 
-    Custom parameters that name a file or that FFmpeg would read as its own options are
+    Custom parameters that name a file, or that FFmpeg would read as its own options, are
     validation's errors (:func:`~reframe.validation.video.video_custom_param_issues`): they are
-    returned and FFmpeg does not start. FFmpeg runs in a new temporary working folder (made in
-    ``work_dir``, default the system's temporary folder), removed afterwards."""
+    returned, and FFmpeg does not start. The temporary working folder is made in ``work_dir``
+    (default: the system's temporary folder)."""
     defs = definitions if definitions is not None else load_definitions()
     if job.video.passthrough:
         return []
@@ -499,8 +432,8 @@ async def dry_run(
             )
         ]
     if any(has_nul(arg) for arg in argv):
-        # A source path with a NUL (only the API can send one): no process can take it
-        # (``reframe.tools.run`` raises ``ValueError``). Final review RN, decision 0016.
+        # A NUL in the source path (only the API can send one): no process can take it, and
+        # ``reframe.tools.run`` raises ``ValueError``.
         nul_source = has_nul(job.source.path) or has_nul(source.ref.path)
         what = "the source path" if nul_source else "a value of the job"
         return [
@@ -511,6 +444,7 @@ async def dry_run(
                 "system allows.",
             )
         ]
+    # An encoder writes its own files (statistics, csv) into the working folder.
     folder = Path(
         await asyncio.to_thread(tempfile.mkdtemp, prefix="reframe-dry-run-", dir=work_dir)
     )

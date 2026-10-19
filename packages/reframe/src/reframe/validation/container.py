@@ -1,10 +1,7 @@
-"""Container rules (05 §C-8 "Container"): a codec the container cannot hold (fixes: convert,
-switch container, drop the track), and track flags it cannot write.
+"""Container rules: a codec the container cannot hold, and track flags it cannot write.
 
-Bitmap subtitles the container cannot hold (PGS into MP4, decision 0010) are a subtitle rule
-(``subtitle.bitmap_unsupported``) with a burn-in fix. A passthru audio track whose codec the
-container cannot hold uses its fallback encoder (03 "auto passthru"): that is
-``audio.passthru_fallback`` (info), and only the fallback encoder's codec is checked here.
+A passthru audio track that the container cannot hold is encoded with the fallback encoder, so
+only that encoder's codec is checked here (``audio.passthru_fallback``, info).
 """
 
 from __future__ import annotations
@@ -102,9 +99,6 @@ def _audio_codec_issue(
             *fixes,
         )
     ]
-
-
-# --------------------------------------------------------------------------- job
 
 
 @job_rule("container", "container.unknown")
@@ -222,9 +216,8 @@ def _metadata_blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
 
 @job_rule("container", "container.flag_unsupported", "tool.mkvpropedit_missing")
 def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A flag the muxer cannot write: lost (``container.flag_unsupported``, warning), or
-    written by an ``mkvpropedit`` step that cannot run (``tool.mkvpropedit_missing``,
-    warning: 03 §Track metadata "a warning explains which flags will be lost")."""
+    """A flag the muxer cannot write is lost, so it is a warning. A flag that an ``mkvpropedit``
+    step sets after muxing is a warning only when mkvpropedit is missing."""
     container = ctx.container
     if container is None:
         return
@@ -258,9 +251,6 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
                 clear,
                 *switch_container(ctx, others),
             )
-
-
-# --------------------------------------------------------------------------- template
 
 
 @template_rule("container", UNSUPPORTED)

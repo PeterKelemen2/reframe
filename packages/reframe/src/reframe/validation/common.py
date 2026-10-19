@@ -40,8 +40,7 @@ __all__ = [
     "warning",
 ]
 
-#: The audio encoder used when a job track names none (``AudioOutputTrack.encoder`` ``None``
-#: means "the preset's fallback encoder", whose default is ``aac``: ``PassthruPolicy``).
+#: The audio encoder of a track whose ``encoder`` is ``None``.
 DEFAULT_AUDIO_ENCODER = "aac"
 
 
@@ -91,12 +90,12 @@ def switch_container_fixes(
     output: PurePath | None = None,
     holds: Callable[[ContainerDef], bool] | None = None,
 ) -> list[Fix]:
-    """ "Switch to MKV" fixes for the containers in ``allowed`` (other than ``current``).
+    """Fixes that switch to each container in ``allowed`` other than ``current``.
 
-    ``output``: the job's output path; its extension changes with the container (``.mkv``
-    → ``.mp4``), so the fix leaves no ``output.extension_mismatch`` behind. ``holds``: only
-    containers that can hold every other track of the job too (a job's
-    :func:`~reframe.validation.tracks.job_fits`), so the fix adds no new error.
+    ``output`` is the job's output path: its extension changes with the container, so the
+    fix leaves no ``output.extension_mismatch`` behind. ``holds`` keeps only the containers
+    that can hold the job's other tracks (:func:`~reframe.validation.tracks.job_fits`), so the
+    fix adds no error.
     """
     fixes: list[Fix] = []
     for container_id, container in definitions.containers.items():
@@ -119,8 +118,7 @@ def usable_encoder(encoder_id: str, caps: CapabilitySnapshot) -> bool:
 
 
 TrackKind = Literal["video", "audio", "subtitles"]
-#: Makes the "Switch to …" fixes for the containers that may hold a track (a job's version
-#: keeps every other track valid and changes the extension: ``tracks.switch_container``).
+#: Makes the "Switch to" fixes for the containers that may hold a track.
 type SwitchContainer = Callable[[Sequence[Container]], list[Fix]]
 
 

@@ -1,7 +1,7 @@
-"""Encoder rules (05 §C-8 "Encoder"): unknown, checking, unavailable (with the closest-match
-fix, quality converted), 10-bit, speed preset / tune / profile / level, advanced options
-this build does not support, rate control. For the video encoder and every audio encoder that
-runs."""
+"""Encoder rules: an encoder that is unknown or unavailable, and settings it cannot take.
+
+They cover the video encoder and every audio encoder that runs.
+"""
 
 from __future__ import annotations
 
@@ -62,8 +62,8 @@ def audio_encoder_issues(
     stream: AudioStream | None = None,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """C-4's issues for an audio encoder at ``path``; the closest-match fix (``libfdk_aac →
-    aac``, decision 0020) also snaps the job track's bitrate to the new encoder's values."""
+    """The encoder issues for an audio encoder at ``path``. The closest-match fix also snaps the
+    job track's bitrate to the new encoder's values."""
     result: list[ValidationIssue] = []
     for issue in encoder_issues(
         encoder_id, caps, ctx.definitions, path=path, target=target, subject=ctx.subject
@@ -76,16 +76,13 @@ def audio_encoder_issues(
                 if isinstance(first, ReplaceOp) and isinstance(first.value, str)
                 else None
             )
-            if new is None:  # pragma: no cover - C-4 makes only replace fixes
+            if new is None:  # pragma: no cover - encoder_issues makes only replace fixes
                 fixes.append(old)
                 continue
             ops = switch_audio_encoder(path, new, ctx.definitions, track=track, stream=stream)
             fixes.append(old.model_copy(update={"patch": ops}))
         result.append(issue.model_copy(update={"fixes": fixes}))
     return result
-
-
-# --------------------------------------------------------------------------- job
 
 
 @job_rule("encoder", *AVAILABILITY_CODES)
@@ -127,9 +124,6 @@ def audio_encoders(ctx: JobContext) -> Iterator[ValidationIssue]:
             stream=track_stream(ctx, track),
             target=ctx.target,
         )
-
-
-# --------------------------------------------------------------------------- template
 
 
 @template_rule("encoder", *AVAILABILITY_CODES)

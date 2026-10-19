@@ -1,19 +1,10 @@
-"""The file-system reads of validation, behind one interface that tests replace (C-8).
+"""The file-system reads of validation, behind one interface that tests replace.
 
-:func:`reframe.validation.validate` does no I/O except through a :class:`FileSystemView`, so
-the output rules (folder writable, output = source, collision, free space) and the naming rule
-run against a fake file system in tests, with Windows paths too.
-
+Validation does no I/O except through a :class:`FileSystemView`, so tests can run its rules
+against a fake file system, with Windows paths on Linux (:class:`~pathlib.PureWindowsPath`).
 Every method answers a question and never raises: a path that cannot be read is "does not
-exist" / "not writable" / ``None``. So is a path with a NUL character, which no file system
-allows (only the API can send one): ``os.stat`` and friends raise ``ValueError`` for it, not
-``OSError`` (final review RN, decision 0016).
-
-Paths are :class:`~pathlib.PurePath` so that tests can pass :class:`~pathlib.PureWindowsPath`
-on Linux; :class:`LocalFileSystem` uses them as ``os`` paths.
-
-The view extends :class:`reframe.naming.NamingFs` (the folder listing and file times of output
-naming), so the same object serves the naming rule.
+exist", "not writable" or ``None``. A path with a NUL character gets the same answers, since
+the ``os`` calls raise ``ValueError`` for it, not ``OSError``.
 """
 
 from __future__ import annotations
@@ -47,7 +38,7 @@ class FileSystemView(NamingFs, Protocol):
 
     def writable_file(self, path: PurePath) -> bool:
         """The existing file ``path`` can be opened for writing (an in-place metadata edit
-        writes its source, C-13). ``False`` when it does not exist or is a folder."""
+        writes its source). ``False`` when it does not exist or is a folder."""
         ...
 
     def free_bytes(self, path: PurePath) -> int | None:
@@ -132,8 +123,7 @@ class LocalFileSystem(RealNamingFs):
             if first.st_ino and second.st_ino:
                 return os.path.samestat(first, second)
             # A file system without file indexes (st_ino 0, some Windows volumes): every file
-            # would be "the same", so compare the paths with links resolved, as the queue does
-            # (reframe.queue.files.FileKey; final review).
+            # would be "the same", so compare the paths with links resolved.
             return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
         except OSError:
             return False

@@ -1,20 +1,8 @@
-"""Rules of remux-only and in-place metadata-edit jobs (03 §Remux-only jobs; 05 §C-13; decision
-0034).
+"""Rules for in-place metadata edits: mkvpropedit changes the track metadata of an MKV source.
 
-*Edit in place* (``output.edit_in_place``) asks for a ``metadata_edit`` job: mkvpropedit
-changes the source MKV's track metadata in seconds. The rules:
-
-- ``inplace.not_possible`` (error): edit in place is chosen, but the job changes more than
-  metadata, or the source or the output is not MKV (:func:`reframe.command.in_place_blockers`
-  names why). The fix writes a new file instead (edit in place off, and a new output path
-  when the path is the source).
-- ``inplace.source_not_writable`` (error): the source of a metadata edit cannot be written.
-- ``inplace.output_ignored`` (warning): a metadata edit with an output path that is not the
-  source: the path is not used.
-
-mkvpropedit missing for an in-place job is ``tool.mkvpropedit_missing`` of the tools rules.
-The output rules skip the path checks of a metadata edit: its output is the source by design
-(:func:`is_metadata_edit`).
+Edit in place (``output.edit_in_place``) needs a job that changes only metadata, with an MKV
+source and output. The output rules skip the path checks of a metadata edit, since its output
+is the source by design.
 """
 
 from __future__ import annotations
@@ -44,8 +32,8 @@ def _same(a: PurePath, b: PurePath, fs: FileSystemView) -> bool:
 
 
 def new_output_path(ctx: JobContext) -> PurePath:
-    """Where a job that stops editing in place writes its new file: C-16's name, else the
-    source's name with the container's extension; ``Name (1).mkv``… when that is the
+    """Where a job that stops editing in place writes its new file: the resolved output name,
+    else the source's name with the container's extension, or a free name when that is the
     source."""
     source = Path(ctx.job.source.path)
     candidate: PurePath | None = ctx.name.path
@@ -58,8 +46,8 @@ def new_output_path(ctx: JobContext) -> PurePath:
 
 
 def write_new_file_fix(ctx: JobContext) -> Fix:
-    """ "Write a new file": edit in place off and, when the output path is missing or is the
-    source, :func:`new_output_path` (so the fix never leaves ``output.same_as_source``)."""
+    """Edit in place off and, when the output path is missing or is the source,
+    :func:`new_output_path`, so the fix never leaves ``output.same_as_source``."""
     ops = [replace("output.edit_in_place", False)]
     path = ctx.job.output.path
     source = Path(ctx.job.source.path)

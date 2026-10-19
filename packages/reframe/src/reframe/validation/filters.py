@@ -1,12 +1,7 @@
-"""Filter rules (05 §C-8 "Filters", decision 0010): an unknown filter or implementation, a
-preset or tune the implementation does not have, an implementation this build cannot run,
-HDR → SDR conversion without tone mapping (warning, with a fix), and an HDR source encoded to
-8-bit without tone mapping (warning, with fixes).
-
-"Can run" follows the command builder: a filter is usable when
-``CapabilitySnapshot.usable_filter`` is ``True`` (libplacebo also needs its Vulkan run test,
-decision 0021). While the build's filter list has not been read, every filter counts as
-usable.
+"""Filter rules: unknown filters, implementations, presets and tunes, implementations this build
+cannot run, and HDR that the filter chain would mishandle. A filter is usable when
+``CapabilitySnapshot.usable_filter`` is ``True``; while the build's filter list is unread,
+every filter counts as usable.
 """
 
 from __future__ import annotations
@@ -252,12 +247,8 @@ def _transfer(stream: VideoStream) -> str:
 
 @job_rule("filters", "filter.hdr_without_tonemap")
 def hdr_to_sdr(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """03 §Filters → Colorspace: "Converts BT.2020 PQ (HDR10) to BT.709 SDR. Without tone
-    mapping, the picture will look washed out → [Enable tone mapping]".
-
-    Only with a Colorspace conversion to an SDR transfer (BT.709, BT.601 or BT.2020 with its
-    SDR transfer): the output is tagged SDR. Without a conversion the output stays tagged HDR:
-    that is ``filter.hdr_8bit`` when it is 8-bit, and HDR kept when it is 10-bit."""
+    """Only a Colorspace conversion to an SDR transfer tags the output SDR. Without one the
+    output stays HDR, which ``filter.hdr_8bit`` covers when the output is 8-bit."""
     stream = ctx.video_stream
     if ctx.job.video.passthrough or stream is None or not is_hdr(stream):
         return
@@ -281,12 +272,9 @@ def hdr_to_sdr(ctx: JobContext) -> Iterator[ValidationIssue]:
 def hdr_to_8bit(ctx: JobContext) -> Iterator[ValidationIssue]:
     """An HDR source encoded to 8-bit with neither tone mapping nor a Colorspace conversion.
 
-    The command builder then changes only the pixel format (``format=yuv420p``): FFmpeg keeps
-    the source's colour tags and HDR10 side data, so the output is 8-bit BT.2020 PQ (or HLG)
-    with the source's mastering display and light levels (checked with FFmpeg n9.0.2 for
-    x264, x265, SVT-AV1 and VP9: testdata/README.md "Validation (C-8)",
-    ``tests/validation/test_hdr_ffmpeg.py``). HDR needs 10 bits: gradients band. Fixes: tone
-    mapping (SDR output), or 10-bit (the builder keeps HDR) when the encoder can do it."""
+    The builder changes only the pixel format, so the output stays HDR, and 8 bits are too few
+    for it: gradients band. Fixes: tone mapping (SDR output), or 10-bit (the builder keeps HDR)
+    when the encoder can do it."""
     video = ctx.job.video
     stream = ctx.video_stream
     if video.passthrough or video.bit_depth == 10 or stream is None or not is_hdr(stream):
