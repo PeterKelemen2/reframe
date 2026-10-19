@@ -1,5 +1,4 @@
-"""The ``Reframe`` facade (C-15, M1 part): ``create()`` returns at once, tools in the background,
-probing through the facade, folder probe tasks and events, ``get``, ``close``."""
+"""The ``Reframe`` facade: ``create()`` returns at once; tools are discovered in the background."""
 
 from __future__ import annotations
 

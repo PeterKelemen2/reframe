@@ -1,14 +1,4 @@
-"""``reframe probe`` (C-15, M1 demo) and ``reframe version``.
-
-- The generated fixtures through the real ffprobe: every track with its commercial codec name,
-  channels, rate, bitrate and source, language, title, role badges and flags (the M1 demo).
-  These compare the human output with the ``--json`` output of the same file, so they hold for
-  the pinned n9.0.2 build and the CI override build n8.1.3 alike.
-- Snapshots of the human output for every recorded probe in ``testdata/probes/``, replayed by
-  the fake ffprobe (no real FFmpeg, so the same on every build and platform). Update with
-  ``uv run pytest packages/reframe/tests/test_cli.py --snapshot-update``.
-- Error paths with their exit codes, colour and encoding handling.
-"""
+"""``reframe probe`` and ``reframe version``: human and ``--json`` output, and error exits."""
 
 from __future__ import annotations
 
@@ -146,8 +136,6 @@ def roles_and_flags(roles: list[TrackRoleInfo], flags: list[str]) -> str:
 
 
 def assert_every_track(output: str, source: MediaSource) -> None:
-    """Every audio and subtitle track is a table row with the expected cells, and every role
-    has its evidence line."""
     rows = table_rows(output)
     for a in source.audio:
         delay = (
@@ -187,7 +175,7 @@ def assert_every_track(output: str, source: MediaSource) -> None:
 
 @pytest.fixture
 def cache_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """A private probe cache; the tool settings of the environment stay (CI's override)."""
+    """A private probe cache; the environment's tool settings (CI's override) stay."""
     monkeypatch.setenv("REFRAME_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("REFRAME_CONFIG_DIR", str(tmp_path / "config"))
     return tmp_path
@@ -197,8 +185,7 @@ def cache_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def fake_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
 ) -> ft.FakeTools:
-    """The fake ffmpeg/ffprobe through ``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, MediaInfo off,
-    private folders."""
+    """The fake ffmpeg and ffprobe, MediaInfo off, and private folders."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
@@ -245,9 +232,6 @@ def without_path_row(output: str) -> str:
     return "\n".join(lines[:start] + lines[end:]) + "\n"
 
 
-# --------------------------------------------------------------------------- the M1 demo
-
-
 @pytest.mark.needs_ffmpeg
 @pytest.mark.parametrize(
     "fixture", ["season-e01", "multitrack", "hdr10", "vobsub", "text-subs", "chapters"]
@@ -279,7 +263,6 @@ def test_probe_fixture_lists_every_track(
 
 @pytest.mark.needs_ffmpeg
 def test_demo_season_episode(cache_env: Path, fixture_media: Media) -> None:
-    """The M1 demo, spelled out for ``Show S01E01``."""
     path = fixture_media("season") / "Show.S01E01.Title.mkv"
     out = invoke("probe", str(path)).stdout
     assert "Show - S01E01" in out
@@ -338,9 +321,7 @@ def test_garbage_file_real_ffprobe(cache_env: Path) -> None:
     assert "ffprobe could not read the file" in line
 
 
-# --------------------------------------------------------------------------- snapshots
-
-
+# Refresh with --snapshot-update.
 @pytest.mark.parametrize("name", sorted(INDEX))
 def test_recorded_probe_snapshot(
     fake_env: ft.FakeTools, tmp_path: Path, name: str, snapshot: SnapshotAssertion
@@ -356,8 +337,6 @@ def test_recorded_probe_snapshot(
 
 
 def test_recorded_badges_and_bitrate_sources(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    """Commercial names, stats-tag bit rates and title/heuristic badges, which the generated
-    fixtures do not have."""
     out = invoke("probe", str(recorded_file(tmp_path, "truehd-atmos", fake_env))).stdout
     rows = table_rows(out)
     codecs = {row[3] for row in rows.values()}
@@ -377,9 +356,6 @@ def test_recorded_badges_and_bitrate_sources(fake_env: ft.FakeTools, tmp_path: P
 
     out = invoke("probe", str(recorded_file(tmp_path, "dv-p8", fake_env))).stdout
     assert "Dolby Vision 8.1" in out
-
-
-# --------------------------------------------------------------------------- errors
 
 
 def test_missing_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
@@ -534,9 +510,6 @@ def test_origin_text() -> None:
     )
 
 
-# --------------------------------------------------------------------------- output handling
-
-
 def test_json_is_only_the_model(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     path = recorded_file(tmp_path, "ass-fonts", fake_env)
     result = invoke("probe", "--json", str(path))
@@ -645,9 +618,6 @@ def test_main_runs_the_app(
     assert capsys.readouterr().out.strip() == __version__
 
 
-# --------------------------------------------------------------------------- formatting
-
-
 def test_number_formats() -> None:
     assert fmt_bps(2_104_000) == "2 104 kb/s"
     assert fmt_bps(192_000) == "192 kb/s"
@@ -736,7 +706,6 @@ def test_role_badges_and_events() -> None:
 
 
 def test_render_edge_cases() -> None:
-    """No streams, unknown values, warnings, many chapters, cover art, data streams."""
     source = MediaSource(
         ref=SourceRef(path=Path("/m/odd.m4a")),
         container=ContainerInfo(format_name="mov,mp4,m4a,3gp,3g2,mj2"),

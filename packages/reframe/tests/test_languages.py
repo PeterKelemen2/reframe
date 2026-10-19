@@ -1,9 +1,4 @@
-"""Tests for ``reframe.languages`` (C-6): normalisation, Matroska/MP4 codes, names, search.
-
-Table tests for every conversion, hypothesis property tests over the language list, and
-``needs_ffmpeg`` tests that record what FFmpeg, ffprobe and mkvpropedit do with language tags
-(see the module docstring, "Verified tool behaviour").
-"""
+"""``reframe.languages``: normalisation, container codes, names, search and real-tool checks."""
 
 from __future__ import annotations
 
@@ -70,9 +65,6 @@ B_T_PAIRS = [
 ]
 
 
-# --------------------------------------------------------------------------- normalisation
-
-
 @pytest.mark.parametrize(("b", "t", "two"), [p for p in B_T_PAIRS if p[0] in ("chi", "fre", "ger")])
 def test_bibliographic_and_terminology_pairs(b: str, t: str, two: str) -> None:
     for code in (b, t, two, b.upper(), t.title()):
@@ -88,8 +80,8 @@ def test_exactly_twenty_codes_differ_between_b_and_t() -> None:
 
 
 def test_every_iso639_2_code_keeps_its_meaning() -> None:
-    """All 418 /T codes and the 20 /B codes map back to themselves (only tgl needed an
-    override: langcodes alone turns it into fil)."""
+    """Each /T code and each /B code of ``B_T_PAIRS`` maps back to itself. Only ``tgl`` needs an
+    override."""
     assert len(languages._ISO639_2T) == 418
     for code in languages._ISO639_2T:
         assert normalize(code) is not None, code
@@ -168,7 +160,7 @@ def test_special_code_names() -> None:
         ("en-US-US", "not a valid language tag (BCP 47)"),
         ("en-a-bbb-a-ccc", "not a valid language tag (BCP 47)"),
         ("a" + " " * 40 + "1", "not a known language name or code"),
-        ("A\x00:¿", "not a known language name or code"),  # crashes langcodes' name lookup
+        ("A\x00:¿", "not a known language name or code"),
         ("Ger\x01man", "not a known language name or code"),
         ("G" * 101, "not a known language name or code"),
         ("en--US", "not a known language name or code"),
@@ -195,9 +187,6 @@ def test_validate_reports_script_and_region() -> None:
     assert validate("de-Abcd") == "'de-Abcd': 'Abcd' is not a known script."
     assert validate("de-AB") == "'de-AB': 'AB' is not a known region."
     assert validate("de-1234") == "'de-1234': '1234' is not a known variant."
-
-
-# --------------------------------------------------------------------------- container codes
 
 
 @pytest.mark.parametrize(
@@ -242,9 +231,6 @@ def test_base_language() -> None:
     assert base_language(None) == "und"
 
 
-# --------------------------------------------------------------------------- display
-
-
 @pytest.mark.parametrize(
     ("value", "english", "native"),
     [
@@ -263,7 +249,7 @@ def test_names(value: str, english: str, native: str) -> None:
 
 
 def test_native_name_capitalised_for_templates() -> None:
-    assert native_name("hu", capitalize=True) == "Magyar"  # {lang_native} {channels}
+    assert native_name("hu", capitalize=True) == "Magyar"
     assert native_name("pt-BR", capitalize=True) == "Português (Brasil)"
     assert native_name("ja", capitalize=True) == "日本語"
     assert native_name("de", capitalize=True) == "Deutsch"
@@ -287,9 +273,6 @@ def test_picker_label() -> None:
     assert picker_label("sh") == "Serbo-Croatian · und (ISO 639-2) · sh (BCP 47)"
 
 
-# --------------------------------------------------------------------------- language list
-
-
 def test_language_list_scope_and_order() -> None:
     items = language_list()
     assert items is language_list()  # cached
@@ -298,7 +281,7 @@ def test_language_list_scope_and_order() -> None:
     names = [item.english_name for item in items]
     assert len(names) == len(set(names))
     assert [languages._fold(n) for n in names] == sorted(languages._fold(n) for n in names)
-    # ISO 639-2 languages (418 codes; tgl and fil stay apart) + 11 variants
+    # ISO 639-2 codes, then the common variants
     assert len(items) == 418 + len(COMMON_VARIANTS)
     assert set(COMMON_VARIANTS) <= set(tags)
     assert set(SPECIAL_CODES) <= set(tags)
@@ -345,9 +328,6 @@ def test_entry_outside_the_list() -> None:
     sh = entry("sh")
     assert sh is not None
     assert (sh.iso639_1, sh.iso639_2b, sh.iso639_3) == ("sh", "und", "hbs")
-
-
-# --------------------------------------------------------------------------- search
 
 
 def tags_of(result: list[LanguageEntry]) -> list[str]:
@@ -421,9 +401,6 @@ def test_search_finds_tags_and_names_outside_the_list() -> None:
     assert "eee" not in tags_of(search("e"))
 
 
-# --------------------------------------------------------------------------- rule matching
-
-
 @pytest.mark.parametrize(
     ("a", "b", "same"),
     [
@@ -470,8 +447,6 @@ def test_matches(rule: str | None, track: str | None, result: bool) -> None:
     assert matches(rule, track) is result
 
 
-# --------------------------------------------------------------------------- properties
-
 entries = st.sampled_from(language_list())
 
 
@@ -503,9 +478,9 @@ def test_every_name_in_the_list_normalizes() -> None:
 
 
 def _search_keys(item: LanguageEntry) -> list[str]:
-    """The English name and the codes that must find ``item`` first. Variants share their
-    ISO codes with the base language, so only their tag and name count. A name that is also
-    a code of another language (gaa "Ga" vs Irish ``ga``) counts as that code."""
+    """The keys that must find ``item`` first: its tag, its ISO codes (a variant shares them
+    with its base language, so it has none) and its English name, unless that name is another
+    language's code (gaa "Ga" is Irish ``ga``)."""
     keys = [item.tag]
     if not item.variant:
         keys += [c for c in (item.iso639_1, item.iso639_2b, item.iso639_2t, item.iso639_3) if c]
@@ -561,9 +536,6 @@ def test_property_normalize_variants_of_an_entry(item: LanguageEntry, form: str)
         assert tag == item.tag
     if form == "code" and not item.variant:
         assert tag == base_language(item.tag)
-
-
-# --------------------------------------------------------------------------- real tools
 
 
 def _tool(name: str) -> str:
@@ -629,12 +601,10 @@ def _probe_language(ffprobe: str, path: Path) -> str | None:
 @pytest.mark.parametrize(
     ("container", "written", "read_back"),
     [
-        # Matroska: FFmpeg writes the string verbatim into the legacy Language element.
         ("mkv", "ger", "ger"),
         ("mkv", "de", "de"),
         ("mkv", "pt-BR", "pt-BR"),
-        ("mkv", "und", None),  # ffprobe hides und
-        # MP4: 3-letter codes kept as given, other forms silently dropped.
+        ("mkv", "und", None),
         ("mp4", "deu", "deu"),
         ("mp4", "ger", "ger"),
         ("mp4", "de", None),
@@ -653,7 +623,6 @@ def test_ffmpeg_writes_language_verbatim(
 
 @pytest.mark.needs_ffmpeg
 def test_ffmpeg_gets_container_codes_right(tmp_path: Path) -> None:
-    """What C-7 passes: to_matroska_legacy for MKV, to_mp4 for MP4."""
     ffmpeg, ffprobe = _ffmpeg_tools()
     for tag in ("de", "pt-BR", "zh-Hans"):
         mkv, mp4 = tmp_path / "a.mkv", tmp_path / "a.mp4"
@@ -689,7 +658,6 @@ def test_ffprobe_does_not_show_language_ietf(tmp_path: Path) -> None:
     _mux(ffmpeg, path, "por")
     _propedit(mkvpropedit, path, "language-ietf=pt-BR")
     assert _probe_language(ffprobe, path) == "por"
-    # language-ietf alone leaves the legacy element as it was, even when it disagrees
     _propedit(mkvpropedit, path, "language-ietf=fr")
     assert _probe_language(ffprobe, path) == "por"
     # language= writes both elements (legacy closest ISO 639-2/B)
@@ -697,7 +665,7 @@ def test_ffprobe_does_not_show_language_ietf(tmp_path: Path) -> None:
     assert _probe_language(ffprobe, path) == "chi"
 
 
-#: Tags for the mkvpropedit cross-check (all accepted by mkvpropedit 101.0).
+#: Tags for the mkvpropedit cross-check (all accepted by mkvpropedit).
 MKVTOOLNIX_TAGS = [
     "pt-BR",
     "yue",
@@ -751,8 +719,8 @@ def test_mkvpropedit_agrees_with_our_matroska_codes(tmp_path: Path) -> None:
         assert _mkvmerge_language(mkvmerge, path) == expected, tag
 
 
-#: Tags where ``mkvpropedit --set language=<tag>`` (101.0) writes another legacy code than
-#: Reframe; the IETF tag is the same.
+#: Tags where ``mkvpropedit --set language=<tag>`` writes another legacy code than Reframe;
+#: the IETF tag is the same.
 MKVTOOLNIX_DIFFERENT_LEGACY = {
     "ase": ("sgn", "und"),
     "bfi": ("sgn", "und"),
@@ -769,8 +737,8 @@ MKVTOOLNIX_DIFFERENT_LEGACY = {
 
 @pytest.mark.needs_ffmpeg
 def test_mkvpropedit_legacy_differences_and_explicit_pairs(tmp_path: Path) -> None:
-    """Why C-13 passes language= and language-ietf= explicitly: for these tags mkvpropedit's
-    own legacy code differs from Reframe's; with both values given, Reframe's are written."""
+    """For these tags mkvpropedit's own legacy code differs from ours. With both values given,
+    ours are written."""
     ffmpeg, _ = _ffmpeg_tools()
     mkvpropedit, mkvmerge = _tool("mkvpropedit"), _tool("mkvmerge")
     source = tmp_path / "source.mkv"
