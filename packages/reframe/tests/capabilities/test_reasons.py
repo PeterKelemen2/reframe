@@ -1,4 +1,4 @@
-"""Reason mapping. The stderr texts are real captures (``fake_data/c4_*`` and ``hw_*``, from the
+"""Reason mapping. The stderr texts are real captures (``fake_data/detect_*`` and ``hw_*``, from the
 pinned build); errors that cannot be provoked there use the exact strings of that build
 (``library_strings.json``, asserted below).
 """
@@ -33,7 +33,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
     ("capture", "encoder", "device", "state", "reason", "detail"),
     [
         (
-            "c4_hevc_nvenc_no_driver",
+            "detect_hevc_nvenc_no_driver",
             "hevc_nvenc",
             None,
             UNAVAILABLE,
@@ -49,7 +49,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[h264_nvenc] Cannot load libcuda.so.1",
         ),
         (
-            "c4_hevc_qsv_no_device",
+            "detect_hevc_qsv_no_device",
             "hevc_qsv",
             None,
             UNAVAILABLE,
@@ -67,7 +67,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[hevc_qsv] Error creating a MFX session: -9.",
         ),
         (
-            "c4_h264_vaapi_bad_device",
+            "detect_h264_vaapi_bad_device",
             "h264_vaapi",
             "/dev/dri/renderD999",
             UNAVAILABLE,
@@ -75,7 +75,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[VAAPI] No VA display found for device /dev/dri/renderD999.",
         ),
         (
-            "c4_h264_vaapi_no_driver",
+            "detect_h264_vaapi_no_driver",
             "h264_vaapi",
             None,
             UNAVAILABLE,
@@ -92,7 +92,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "Generic error in an external library",
         ),
         (
-            "c4_hevc_amf_no_runtime",
+            "detect_hevc_amf_no_runtime",
             "hevc_amf",
             None,
             UNAVAILABLE,
@@ -100,7 +100,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[AMF] DLL libamfrt64.so.1 failed to open",
         ),
         (
-            "c4_h264_amf_10bit",
+            "detect_h264_amf_10bit",
             "h264_amf",
             None,
             UNAVAILABLE,
@@ -136,7 +136,7 @@ def test_real_failures(
 
 
 def test_the_last_line_is_never_the_reason() -> None:
-    text = stderr("c4_hevc_nvenc_no_driver")
+    text = stderr("detect_hevc_nvenc_no_driver")
     assert text.strip().splitlines()[-1] == "Conversion failed!"
     assert "Conversion failed" not in explain_failure(text, ctx("hevc_nvenc")).reason
 
@@ -296,7 +296,7 @@ FILTER = TestContext(encoder="libplacebo", family="filter")
 
 
 def test_libplacebo_without_vulkan_real() -> None:
-    failure = explain_failure(stderr("c4_libplacebo_no_vulkan"), FILTER, returncode=187)
+    failure = explain_failure(stderr("detect_libplacebo_no_vulkan"), FILTER, returncode=187)
     assert (failure.state, failure.reason, failure.detail) == (
         UNAVAILABLE,
         "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)",

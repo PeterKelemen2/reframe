@@ -14,6 +14,7 @@ from reframe.models.base import NonNegativeInt, ReframeModel
 from reframe.models.capabilities import EncoderStatus
 from reframe.models.queue import JobProgress, JobState
 from reframe.models.tasks import TaskInfo
+from reframe.models.text import DisplayText
 from reframe.models.tools import ToolSet
 
 __all__ = [
@@ -61,7 +62,7 @@ class JobStateEvent(ReframeModel):
     job_id: str
     state: JobState
     previous: JobState | None = None
-    error: str | None = None
+    error: DisplayText | None = None
 
 
 class JobProgressEvent(ReframeModel):
@@ -75,7 +76,7 @@ class JobLogEvent(ReframeModel):
 
     type: Literal["job.log"] = "job.log"
     job_id: str
-    lines: list[str]
+    lines: list[DisplayText]
     dropped: NonNegativeInt = 0
     """Lines left out by the rate limit since the previous event."""
 
@@ -105,8 +106,8 @@ class AppWarningEvent(ReframeModel):
     type: Literal["app.warning"] = "app.warning"
     code: str
     """A stable code for the warning, such as ``settings.corrupt``."""
-    message: str
-    detail: str | None = None
+    message: DisplayText
+    detail: DisplayText | None = None
 
 
 PowerAction = Literal["shutdown", "sleep", "quit"]
@@ -131,8 +132,8 @@ class NotificationEvent(ReframeModel):
     """A notification for the UI to show."""
 
     type: Literal["notification"] = "notification"
-    title: str
-    message: str = ""
+    title: DisplayText
+    message: DisplayText = ""
     level: Literal["info", "success", "warning", "error"] = "info"
     job_id: str | None = None
 

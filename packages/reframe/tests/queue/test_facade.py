@@ -126,7 +126,6 @@ async def test_the_when_done_action_goes_to_reframe_power(
     app = await Reframe.create()
     try:
         [power] = made
-        assert app.queue._power is app.power
         assert app.power is cast(object, power)
         await app.settings.update(
             [{"op": "replace", "path": "/queue/when_done", "value": "shutdown"}]

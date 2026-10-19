@@ -47,6 +47,14 @@ async def until(condition: Callable[[], bool], limit: float = 15.0) -> None:
         await asyncio.sleep(0.02)
 
 
+def running_detections() -> list[asyncio.Task[Any]]:
+    return [
+        t
+        for t in asyncio.all_tasks()
+        if t.get_name() == "reframe-encoder-detection" and not t.done()
+    ]
+
+
 def drain(subscription: Subscription) -> list[Event]:
     events = []
     while (event := subscription.get_nowait()) is not None:
@@ -181,7 +189,7 @@ async def test_a_new_ffmpeg_starts_a_new_detection(
                 [
                     ft.Rule(
                         argv_has=["-c:v", "hevc_amf"],
-                        actions=[ft.stderr_data("c4_hevc_amf_no_runtime.stderr.txt")],
+                        actions=[ft.stderr_data("detect_hevc_amf_no_runtime.stderr.txt")],
                         exit_code=171,
                     )
                 ]
@@ -261,7 +269,7 @@ async def test_a_changed_status_is_published(harness: Harness, fake_tools: ft.Fa
             [
                 ft.Rule(
                     argv_has=["-c:v", "hevc_amf"],
-                    actions=[ft.stderr_data("c4_hevc_amf_no_runtime.stderr.txt")],
+                    actions=[ft.stderr_data("detect_hevc_amf_no_runtime.stderr.txt")],
                     exit_code=171,
                 )
             ]
@@ -340,12 +348,12 @@ async def test_closest_available(harness: Harness, fake_tools: ft.FakeTools) -> 
             [
                 ft.Rule(
                     argv_has=["-c:v", "hevc_nvenc"],
-                    actions=[ft.stderr_data("c4_hevc_nvenc_no_driver.stderr.txt")],
+                    actions=[ft.stderr_data("detect_hevc_nvenc_no_driver.stderr.txt")],
                     exit_code=255,
                 ),
                 ft.Rule(
                     argv_has=["-c:v", "hevc_qsv"],
-                    actions=[ft.stderr_data("c4_hevc_qsv_no_device.stderr.txt")],
+                    actions=[ft.stderr_data("detect_hevc_qsv_no_device.stderr.txt")],
                     exit_code=187,
                 ),
             ]
@@ -536,8 +544,7 @@ async def test_a_new_detection_waits_for_the_last_cache_write(
     harness.service.start()
     try:
         await until(started.is_set)
-        first = harness.service._task
-        assert first is not None
+        (first,) = running_detections()
         rescan = asyncio.ensure_future(harness.service.rescan())
         await until(first.done)  # cancelled during its cache write ...
         await asyncio.sleep(0)
@@ -593,14 +600,6 @@ async def test_tool_discovery_closed_under_the_detection(harness: Harness) -> No
     assert harness.fake.calls() == []
 
 
-def running_detections() -> list[asyncio.Task[Any]]:
-    return [
-        t
-        for t in asyncio.all_tasks()
-        if t.get_name() == "reframe-encoder-detection" and not t.done()
-    ]
-
-
 async def test_close_waits_for_a_replaced_detection(
     harness: Harness, fake_tools: ft.FakeTools
 ) -> None:
@@ -623,7 +622,7 @@ async def test_a_new_ffmpeg_does_not_show_the_old_filter_results(
 ) -> None:
     """A re-scan of the same ffmpeg keeps the last filter results until the new ones are in;
     another ffmpeg starts without them."""
-    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
         ft.Scenario(
@@ -680,7 +679,7 @@ async def test_a_failing_tool_discovery_ends_the_detection(harness: Harness) -> 
 
 def no_driver_on(node: str) -> ft.Rule:
     """The real "no VA driver" failure for every VAAPI test encode on ``node``."""
-    capture = ft.captures()["c4_h264_vaapi_no_driver"]
+    capture = ft.captures()["detect_h264_vaapi_no_driver"]
     assert capture.stderr is not None
     return ft.Rule(
         actions=[ft.stderr_data(capture.stderr)],
@@ -745,7 +744,7 @@ async def test_the_setting_and_the_nodes_are_in_the_cache_key(
 async def test_libplacebo_result_is_in_the_snapshot(
     harness: Harness, fake_tools: ft.FakeTools
 ) -> None:
-    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
         ft.Scenario(

@@ -1,7 +1,7 @@
 import type { Platform } from './types'
 
-function notImplemented(step: string): Error {
-  return new Error(`not implemented (${step})`)
+function notAvailable(): Error {
+  return new Error('not available in this build yet')
 }
 
 /** Browser implementation. The server serves the UI, so the backend is the page's origin. */
@@ -16,15 +16,15 @@ export function createWebPlatform(): Platform {
     },
 
     pickFiles() {
-      return Promise.reject(notImplemented('F-5'))
+      return Promise.reject(notAvailable())
     },
 
     pickFolder() {
-      return Promise.reject(notImplemented('F-5'))
+      return Promise.reject(notAvailable())
     },
 
     pickSavePath() {
-      return Promise.reject(notImplemented('F-5'))
+      return Promise.reject(notAvailable())
     },
 
     onFilesDropped() {

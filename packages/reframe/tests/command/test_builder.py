@@ -90,12 +90,13 @@ def test_refusals() -> None:
     src = recorded("multitrack.mkv")
 
     def refuses(match: str, **change: Any) -> None:
-        job = draft(src, video={"encoder": "libx264"})
+        source = change.pop("_source", src)
+        job = draft(source, video={"encoder": "libx264"})
         for key, value in change.items():
             target, _, attr = key.partition("__")
             setattr(getattr(job, target) if attr else job, attr or target, value)
         with pytest.raises(PlanError, match=match):
-            plan_of(job, change.pop("_source", src))
+            plan_of(job, source)
 
     refuses("output path is not set", output__path=None)
     refuses("unknown container", output__container="avi")

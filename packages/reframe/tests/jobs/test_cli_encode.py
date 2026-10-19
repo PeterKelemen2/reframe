@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import signal
-from collections.abc import Awaitable, Callable
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -23,48 +23,13 @@ from reframe.cli import (
 )
 from reframe.models import JobProgress, JobSettings, JobState, QueueJob, Severity
 from reframe.models import ValidationIssue as Issue
-from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 
-from .conftest import invoke, media_file, replay
-from .fake_queue import Behaviour, FakeQueue
+from .conftest import Queues, invoke, media_file, replay
+from .fake_queue import FakeQueue
 
 SEASON = "Show.S01.1080p.BluRay.x264-GRP"
 EPISODES = [f"Show.S01E{n:02d}.Title.{n}.1080p.BluRay.x264-GRP.mkv" for n in (1, 2, 10)]
-
-
-class Queues:
-    """Installs the fake queue as ``cli.get_queue`` and keeps the one made."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, log_dir: Path) -> None:
-        self.made: list[FakeQueue] = []
-        self.log_dir = log_dir
-        self.behaviour: Callable[[JobSettings], Behaviour] = lambda _job: "done"
-        self.on_running: Callable[[QueueJob], None] | None = None
-        self.validator: Callable[[JobSettings], Awaitable[list[Issue]]] | None = None
-        """Replaces ``Reframe.jobs.validate`` as the queue's validation on ``add``."""
-        monkeypatch.setattr(cli, "get_queue", self.make)
-
-    def make(self, app: Reframe) -> FakeQueue:
-        queue = FakeQueue(
-            app.events,
-            log_dir=self.log_dir,
-            validate=self.validator or app.jobs.validate,
-            behaviour=self.behaviour,
-            on_running=self.on_running,
-        )
-        self.made.append(queue)
-        return queue
-
-    @property
-    def queue(self) -> FakeQueue:
-        assert len(self.made) == 1
-        return self.made[0]
-
-
-@pytest.fixture
-def queues(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Queues:
-    return Queues(monkeypatch, tmp_path / "logs")
 
 
 @pytest.fixture
@@ -387,7 +352,7 @@ async def test_follow_rereads_the_queue_after_a_resync(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_cancel_wait_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class Stuck(FakeQueue):
-        async def wait(self, job_ids: object = None) -> list[QueueJob]:
+        async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]:
             await asyncio.Event().wait()
             return []
 

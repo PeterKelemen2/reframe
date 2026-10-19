@@ -1,11 +1,9 @@
-# Filters (C-6, 03 §Filters). Table key = the filter id of `reframe.models.job.FilterSettings`.
+# Filters. Table key = the filter id of `reframe.models.job.FilterSettings`.
 #
 # Each filter has one or more FFmpeg implementations (FilterConfig.implementation; the first
 # is the default), each with its own presets and tunes (HandBrake's names: NLMeans / HQDN3D,
-# Bwdif / Yadif, …), and the help panel text of 03 §Filters. A chain is the text of one `-vf`
-# segment; `{custom}` is FilterConfig.custom. Every chain was run with
-# FFmpeg n9.0.2 (both builds) on `-f lavfi -i testsrc2=size=320x240 … -frames:v 2 -f null -`
-# (colour filters on the HDR10 fixture); tests/definitions/test_tools.py repeats it.
+# Bwdif / Yadif, …), and the help panel text. A chain is the text of one `-vf` segment;
+# `{custom}` is FilterConfig.custom. tests/definitions/test_tools.py runs every chain.
 #
 # HandBrake parity: preset and tune values come from HandBrake 1.11.2 libhb/param.c; each
 # preset's `handbrake` field quotes the values it maps from. The mappings:
@@ -57,8 +55,6 @@ filter_order = [
     "format",
 ]
 
-# --------------------------------------------------------------------------- detelecine
-
 [filter.detelecine]
 label = "Detelecine"
 
@@ -86,8 +82,6 @@ id = "custom"
 label = "Custom"
 custom = true
 chain = "fieldmatch={custom},decimate"
-
-# --------------------------------------------------------------------------- interlace detection
 
 [filter.interlace_detection]
 label = "Interlace detection"
@@ -129,8 +123,6 @@ id = "custom"
 label = "Custom"
 custom = true
 chain = "idet={custom}"
-
-# --------------------------------------------------------------------------- deinterlace
 
 [filter.deinterlace]
 label = "Deinterlace"
@@ -199,8 +191,6 @@ id = "custom"
 label = "Custom"
 custom = true
 chain = "yadif={custom}"
-
-# --------------------------------------------------------------------------- denoise
 
 [filter.denoise]
 label = "Denoise"
@@ -298,8 +288,6 @@ label = "Custom"
 custom = true
 chain = "hqdn3d={custom}"
 
-# --------------------------------------------------------------------------- deblock
-
 [filter.deblock]
 label = "Deblock"
 
@@ -369,8 +357,6 @@ label = "Custom"
 custom = true
 chain = "deblock={custom}"
 
-# --------------------------------------------------------------------------- custom
-
 [filter.custom]
 label = "Custom filter"
 
@@ -392,8 +378,6 @@ id = "default"
 label = "Custom"
 custom = true
 chain = "{custom}"
-
-# --------------------------------------------------------------------------- tone mapping
 
 [filter.tonemap]
 label = "HDR → SDR tone mapping"
@@ -451,8 +435,6 @@ label = "On"
 handbrake = "tonemap=hable:desat=0 (HandBrake's colorspace filter)"
 chain = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv"
 tune_chains = { hable = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv", mobius = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv", reinhard = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=reinhard:desat=0,zscale=t=bt709:m=bt709:r=tv" }
-
-# --------------------------------------------------------------------------- colorspace
 
 [filter.colorspace]
 label = "Colorspace"
@@ -539,8 +521,6 @@ id = "custom"
 label = "Custom"
 custom = true
 chain = "libplacebo={custom}"
-
-# --------------------------------------------------------------------------- sharpen
 
 [filter.sharpen]
 label = "Sharpen"
@@ -642,8 +622,6 @@ label = "Custom"
 custom = true
 chain = "cas={custom}"
 
-# --------------------------------------------------------------------------- chroma smooth
-
 [filter.chroma_smooth]
 label = "Chroma smooth"
 
@@ -715,8 +693,6 @@ id = "custom"
 label = "Custom"
 custom = true
 chain = "unsharp={custom}"
-
-# --------------------------------------------------------------------------- grayscale
 
 [filter.grayscale]
 label = "Grayscale"

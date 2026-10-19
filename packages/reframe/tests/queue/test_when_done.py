@@ -581,12 +581,7 @@ class RecordingExecutor:
 def real_power(events: EventBus, *, countdown: float) -> tuple[PowerService, RecordingExecutor]:
     """A ``PowerService`` with a recording executor and a short countdown."""
     executor = RecordingExecutor()
-    service = PowerService(events, executor=executor, countdown=countdown)
-    try:
-        service.cancel()
-    except NotImplementedError:
-        pytest.skip("C-14's PowerService is the contract stub in this branch (task 1f)")
-    return service, executor
+    return PowerService(events, executor=executor, countdown=countdown), executor
 
 
 async def test_with_the_power_service_the_action_runs_after_the_countdown(

@@ -177,7 +177,8 @@ the output `multitrack.mkv`, next to the source: the source file itself.
     shows the traceback.` line and exit code 1. `REFRAME_TRACEBACK=1` re-raises it.
 24. **File names that are not valid UTF-8** (POSIX bytes, kept by `os.fsdecode` as lone
     surrogates) are shown with U+FFFD in the human output; `--json` writes them as `\udcXX`
-    escapes. The command preview shows them the same way, so a pasted command does not name
+    escapes (from 0044 also `probe --json`, which crashed on them, and with the other
+    characters as they are on a UTF-8 stdout). The command preview shows them the same way, so a pasted command does not name
     that file; the queue runs the argv, not the preview.
 
 ### Exit codes (all commands)

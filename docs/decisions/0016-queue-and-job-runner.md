@@ -325,6 +325,17 @@ Each test failed before its fix and passes after it.
   `validation.rule_failed`), and a `QueueJob` or `JobSettings` with such a path still cannot
   go through `model_dump_json()` (the server will need `model_dump(mode="json")` plus an ASCII
   JSON encoder, as the store does).
+  - Follow-up, 2026-10-19: the naming rule and validation's `name_issues` now count a name's
+    bytes as the file system writes them (`\udcff` is one byte). A manual output name with
+    such a byte gets `output.name_not_portable` (a warning on POSIX, an error for a Windows
+    path; 0012 points 3 and 5), and `tests/queue/test_queue.py` runs that job with real
+    validation. The `model_dump_json()` limit stands, and an issue message that quotes such
+    a path has it too.
+  - Follow-up, 2026-10-20 ([0044](0044-code-review-follow-ups.md)): display text in the models
+    (issue messages, fix labels, event and task text) shows such a byte as `�`; paths and
+    patch values keep it, and `reframe.models.json_text` writes them with `\udcXX` escapes
+    (the store, the CLI's `--json` output, the settings and preset files). The queue's own
+    `printable` still writes the escape text in job errors and log lines (point 5).
 
 ### Plan changes
 
@@ -402,7 +413,7 @@ None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue
   for a job to start (a share that does not answer blocks it as long). *Superseded by RB-1 of
   the final review (below): the keys are read once, in a worker thread, and compared without
   a file-system call.* Tests:
-  `tests/queue/test_job_keys_review_fixes.py`, among them
+  `tests/queue/test_job_keys.py`, among them
   `test_the_same_output_through_a_linked_folder` (also a folder below the link that does not
   exist yet) and `test_file_identity_is_what_os_stat_reports` (mocked, the Windows path).
 
@@ -411,7 +422,7 @@ None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue
 A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) found two majors
 in the R4-1 keys above, a minor in the R4-7 stop path (decision 0034) and a suspected Windows
 case. Each test below failed on 5dbf152 and passes now
-(`tests/queue/test_queue_final_review.py`).
+(`tests/queue/test_job_keys.py`; RB-5's test in `tests/queue/test_in_place_stop.py`).
 
 - **RB-1 (major): the R4-1 keys read the disk on the event loop.** `realpath` is an `lstat`
   per part of the path, `samefile` two `stat` calls, and the queue called them in `_schedule`,
@@ -463,7 +474,7 @@ case. Each test below failed on 5dbf152 and passes now
   only `OSError`. Such a job was added as `failed` (validation's "Validation could not check
   output … Please report this."); `retry()` made it `waiting` and raised from `_schedule`, and
   from then on every `add()`, `start()` and job end raised: no job started. Now `file_key`,
-  `same_file`, `_path_key` and `remove_files` never raise for such a path: a path that cannot
+  `same_file` and `remove_files` never raise for such a path: a path that cannot
   be resolved is compared as written (absolute, in the OS's case), and has no identity; a file
   name that cannot be removed is a clean-up message. A job whose source or output path has a
   NUL character fails with the new error issue `queue.path_unusable` ("The output path
@@ -529,7 +540,7 @@ case. Each test below failed on 5dbf152 and passes now
     with that one error (before, the task failed with the `ValueError`).
 
   No persisted `Literal` or enum changes. Tests (each failed before):
-  `tests/validation/test_nul_paths_final_review.py` (`LocalFileSystem` on POSIX and, mocked,
+  `tests/validation/test_nul_paths.py` (`LocalFileSystem` on POSIX and, mocked,
   Windows; the output name and folder; the source path given; an in-place edit; the dry run;
   `test_python_facts_behind_the_rule`) and `tests/test_service_nul_paths.py` (probe, `get` /
   `store` / `update`, the folder probe, and `jobs.validate` / `plan` / `dry_run` / `draft`

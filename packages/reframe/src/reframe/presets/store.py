@@ -1,7 +1,8 @@
 """User presets (``<config>/presets.json``) and the read-only built-ins, as one list.
 
-Names are compared without case and repeated spaces. Two presets that this Reframe reads never
-share a name, except when a newer Reframe adds a built-in with the name of a user preset.
+Names are compared without case and repeated spaces. No two presets share a name, the presets
+of a newer Reframe included, except when a newer Reframe adds a built-in with the name of a user
+preset.
 """
 
 from __future__ import annotations
@@ -466,14 +467,16 @@ class PresetStore:
 
     def _name_owner(
         self, name: str, exclude_id: str | None, entries: Sequence[_Entry] | None = None
-    ) -> Preset | None:
+    ) -> _Entry | None:
+        """The preset named ``name``, also one of a newer Reframe (its raw JSON)."""
         key = normalise_name(name)
-        users = [e for e in (self._entries or []) if isinstance(e, Preset)]
-        if entries is not None:
-            users = [e for e in entries if isinstance(e, Preset)]
-        for preset in [*self._builtins, *users]:
-            if preset.id != exclude_id and normalise_name(preset.name) == key:
-                return preset
+        users = (self._entries or []) if entries is None else entries
+        for entry in [*self._builtins, *users]:
+            entry_name = _name_of(entry)
+            if entry_name is None or _id_of(entry) == exclude_id:
+                continue
+            if normalise_name(entry_name) == key:
+                return entry
         return None
 
     def _user_preset(self, preset_id: str) -> Preset | ValidationIssue:
@@ -492,10 +495,10 @@ class PresetStore:
         if owner is None:
             return None
         suggestion = self.unique_name(name, exclude_id=preset_id)
-        kind = "built-in preset" if owner.built_in else "preset"
+        kind = "built-in preset" if isinstance(owner, Preset) and owner.built_in else "preset"
         return _issue(
             "preset.name_conflict",
-            f"A {kind} named “{owner.name}” already exists.",
+            f"A {kind} named “{_name_of(owner)}” already exists.",
             "name",
             [
                 Fix(
@@ -630,7 +633,8 @@ class PresetStore:
         target: int | None = None
         if on_conflict == "replace":
             target = same_id
-            if target is None and owner is not None and not owner.built_in:
+            # A preset of a newer Reframe is never replaced: the imported one is renamed.
+            if target is None and isinstance(owner, Preset) and not owner.built_in:
                 target = next(
                     i for i, e in enumerate(entries) if isinstance(e, Preset) and e.id == owner.id
                 )
@@ -820,6 +824,15 @@ class PresetStore:
 
 def _is(entry: _Entry, preset_id: str) -> bool:
     return isinstance(entry, Preset) and entry.id == preset_id
+
+
+def _id_of(entry: _Entry) -> object:
+    return entry.id if isinstance(entry, Preset) else entry.get("id")
+
+
+def _name_of(entry: _Entry) -> str | None:
+    name = entry.name if isinstance(entry, Preset) else entry.get("name")
+    return name if isinstance(name, str) else None
 
 
 def _without_deep_presets(

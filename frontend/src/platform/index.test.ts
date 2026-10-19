@@ -23,7 +23,7 @@ describe('platform selector', () => {
     vi.stubEnv('VITE_PLATFORM', 'desktop')
     const platform = await loadPlatform()
     expect(platform.kind).toBe('desktop')
-    await expect(platform.backend()).rejects.toThrow('not implemented (D-4)')
+    await expect(platform.backend()).rejects.toThrow('not available in this build yet')
   })
 })
 
@@ -35,5 +35,13 @@ describe('web platform', () => {
     expect(document.title).toBe('42% · Reframe')
     platform.setTaskbarProgress(null)
     expect(document.title).toBe('Reframe')
+  })
+
+  it('rejects the pickers it does not have yet', async () => {
+    const platform = await loadPlatform()
+    const message = 'not available in this build yet'
+    await expect(platform.pickFiles({ multiple: true })).rejects.toThrow(message)
+    await expect(platform.pickFolder()).rejects.toThrow(message)
+    await expect(platform.pickSavePath({ defaultPath: 'out.mkv' })).rejects.toThrow(message)
   })
 })

@@ -949,12 +949,16 @@ def test_svtav1_option_defaults_in_the_log() -> None:
     boost = _ffmpeg(
         [*_encode_args(enc, ["-preset", "10"], {"enable-variance-boost": "1"}), "-f", "null", "-"]
     ).stderr
-    assert re.search(r"strength / octile / curve\s*:\s*2 / 2 / 5 / 0", boost)
+    assert re.search(
+        r"AQ mode / Variance Boost strength / octile / curve\s*:\s*2 / 2 / 5 / 0", boost
+    )
     defaults = {o.key: o.default for o in enc.options}
     assert defaults["aq-mode"].kind == "fixed"
     assert defaults["aq-mode"].value == "2"
     assert defaults["irefresh-type"].value == "2"  # type: ignore[union-attr]
+    assert defaults["variance-boost-strength"].value == 2  # type: ignore[union-attr]
     assert defaults["variance-octile"].value == 5  # type: ignore[union-attr]
+    assert defaults["variance-boost-curve"].value == "0"  # type: ignore[union-attr]
 
 
 #: Other options to set with an option at the end of its range, where x265 has a rule across

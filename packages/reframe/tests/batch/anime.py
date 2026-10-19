@@ -36,7 +36,7 @@ EXAMPLE_NAMING = NamingOptions(
     word_separator="space",
 )
 #: The name of the user preset that :func:`preset_document` writes.
-PRESET_NAME = "Anime Season (04 example)"
+PRESET_NAME = "Anime Season (example)"
 #: The preset file that the ``__main__`` block writes and the tests import.
 PRESET_FILE = Path(__file__).with_name("data") / "anime-season.preset.json"
 
@@ -111,11 +111,23 @@ def example_template(e01: MediaSource | None = None) -> JobTemplate:
     return template.model_copy(update={"naming": EXAMPLE_NAMING})
 
 
+def japanese_template() -> JobTemplate:
+    """The default preset with Japanese as the audio defaults' language and other languages
+    kept: its defaults compile to the columns "A1 jpn", "A2 no listed language" and "A3 other
+    languages"."""
+    base: JobTemplate = builtin("h265-mkv-1080p")
+    selection = base.audio_defaults.selection.model_copy(
+        update={"languages": ["jpn"], "other_languages": "keep_all"}
+    )
+    defaults = base.audio_defaults.model_copy(update={"selection": selection})
+    return base.model_copy(update={"audio_defaults": defaults})
+
+
 #: The id of the preset in :data:`PRESET_FILE`. Fixed, so rewriting the file changes nothing.
 PRESET_ID = "5f0c1d3e-04e0-4a7e-9b1a-0000000000c7"
 
 
-def demo_template() -> JobTemplate:
+def optional_dub_template() -> JobTemplate:
     """:func:`example_template` with the fix that E11's missing track offers, so that every
     episode can be queued."""
     template = example_template()
@@ -129,15 +141,15 @@ def demo_template() -> JobTemplate:
 
 
 def preset_document() -> dict[str, object]:
-    """The :func:`demo_template` as the user preset :data:`PRESET_NAME`, in the format that
+    """The :func:`optional_dub_template` as the user preset :data:`PRESET_NAME`, in the format that
     ``reframe presets export`` writes."""
-    data = demo_template().model_dump(mode="json", exclude={"schema_version"})
+    data = optional_dub_template().model_dump(mode="json", exclude={"schema_version"})
     data.update(
         id=PRESET_ID,
         name=PRESET_NAME,
         category="Custom",
-        description="04 §Example: jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: "
-        "E11 has no dub), Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
+        description="jpn TrueHD → Opus 5.1, eng DTS-HD MA → AC-3 5.1 (optional: E11 has no dub), "
+        "Signs & Songs (forced), Full (default); Show - S01E01 - Title.mkv",
         built_in=False,
     )
     preset = Preset.model_validate(data)

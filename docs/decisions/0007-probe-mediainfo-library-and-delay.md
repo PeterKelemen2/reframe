@@ -125,7 +125,7 @@ element itself, and the review found two faults in how the values met:
   or `None`; MediaInfo's value is kept for other containers (MP4) and when the reader cannot
   read or match the tracks. Item 2 now reads: `language_ietf` is the file's BCP 47 tag
   (Matroska: Reframe's track reader; other containers: MediaInfo), `None` when the file has
-  none. Tests: `tests/probe/test_matroska_review_fixes.py`
+  none. Tests: `tests/probe/test_matroska_limits_and_ietf.py`
   (`test_probe_with_mediainfo_on_keeps_only_the_files_bcp47_tags`,
   `test_real_mediainfo_derives_a_bcp47_tag_from_the_legacy_language`).
 - **R4-4 (major).** Values were assigned without validation (`MediaSource` does not validate
@@ -162,7 +162,7 @@ C-2 / C-3:
   parser fingerprint, without `matroska.py`; a change to the reader (which fills
   `language_ietf`) kept the old entries unless `MATROSKA_READER` was raised by hand. It is
   listed now, so entries made before this change are misses once. Test:
-  `tests/probe/test_cache_final_review.py::test_a_change_to_a_reader_changes_the_fingerprint`
+  `tests/probe/test_cache_fingerprint.py::test_a_change_to_a_reader_changes_the_fingerprint`
   (a copy of the probe sources with one module changed; `matroska.py` failed on 5dbf152).
   `MATROSKA_READER` stays in the cache options; a change to the reader no longer needs it
   raised.

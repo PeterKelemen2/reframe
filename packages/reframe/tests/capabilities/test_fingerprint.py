@@ -1,5 +1,5 @@
-"""The GPU fingerprint: Linux sysfs (a fake tree) and the Windows registry (a fake registry;
-the Windows code is not run on Windows here)."""
+"""The GPU fingerprint: Linux sysfs (a fake tree) and the Windows registry (a fake ``winreg``,
+also on Windows: no test reads the real registry)."""
 
 from __future__ import annotations
 

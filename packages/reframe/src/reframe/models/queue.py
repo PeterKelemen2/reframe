@@ -16,6 +16,7 @@ from reframe.models.base import NonNegativeFloat, NonNegativeInt, ReframeModel
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.plan import EncodePlan, StepKind
+from reframe.models.text import DisplayText
 
 __all__ = ["JobProgress", "JobState", "QueueJob"]
 
@@ -66,6 +67,6 @@ class QueueJob(ReframeModel):
     finished_at: AwareDatetime | None = None
     output_path: Path | None = None
     log_path: Path | None = None
-    error: str | None = None
+    error: DisplayText | None = None
     progress: JobProgress | None = None
     """Live progress while running (not a database column)."""

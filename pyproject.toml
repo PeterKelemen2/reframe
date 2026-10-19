@@ -98,7 +98,7 @@ markers = [
     "slow: long-running test (seconds, not milliseconds)",
     "needs_ffmpeg: needs a real ffmpeg/ffprobe (and the generated fixtures in testdata/media)",
     "needs_gpu: needs a real GPU encoder; never run in CI",
-    "benchmark: performance budget check (09 Q-3); runs in the non-blocking CI benchmark job",
+    "benchmark: performance budget check; runs in the non-blocking CI benchmark job",
 ]
 filterwarnings = ["error"]
 

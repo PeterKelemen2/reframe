@@ -29,7 +29,7 @@ from reframe.probe import mediainfo
 from reframe.tools import ENV_VARS
 from reframe.tools import fetch as fetch_module
 from reframe.tools.__main__ import status_lines
-from reframe.tools.fetch import host_platform, install_dir_for
+from reframe.tools.fetch import host_platform, install_dir_for, installed_build
 from reframe_testing import fake_tools as ft
 
 from .fetch_server import (
@@ -96,7 +96,6 @@ def use_manifest(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> None:
 
 
 def test_status_prints_the_lines_of_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
-    """Demo 8: ``reframe tools status``."""
     result = invoke("tools", "status")
     assert result.exit_code == EXIT_OK, result.output
     lines = result.stdout.splitlines()
@@ -199,8 +198,9 @@ def test_fetch_installs_the_build_that_discovery_then_uses(
     assert f"Installed FFmpeg {FAKE_VERSION} into {install}." in out
     assert f"ffmpeg       found    bundled  {install / 'bin' / 'ffmpeg'}  {FAKE_VERSION}" in out
     assert f"ffprobe      found    bundled  {install / 'bin' / 'ffprobe'}  {FAKE_VERSION}" in out
-    # Plain lines (not a terminal).
-    assert "Reading the manifest" in result.stdout or "Downloading" in result.stdout
+    # Plain lines (not a terminal). Earlier steps may be coalesced away, never the last one.
+    installed = out.index(f"Installed FFmpeg {FAKE_VERSION} into {install}.")
+    assert out[installed - 1] == "Running tool discovery (99%)"
     assert result.stderr == ""
     assert route.requests == 1
 
@@ -325,11 +325,15 @@ def test_an_unsupported_host_without_platform(env: Path, monkeypatch: pytest.Mon
 
 @pytest.mark.anyio
 async def test_ctrl_c_stops_the_download(
-    env: Path, server: LocalServer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    env: Path,
+    server: LocalServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Cancelling the task is what asyncio.run does on Ctrl+C."""
     other = foreign_platform()
-    ext = "zip" if other == "windows-x64" else "tar.xz"
+    ext = _ext(other)
     data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)
     route = server.add(f"/a.{ext}", data, delay=0.05)
     use_manifest(
@@ -348,6 +352,42 @@ async def test_ctrl_c_stops_the_download(
     assert await asyncio.wait_for(task, 60) == EXIT_INTERRUPTED
     tools = env / "tools"
     assert list(tools.iterdir()) == []
+    assert "Nothing was installed." in capsys.readouterr().err
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+async def test_the_cli_says_what_was_installed_after_an_interrupt(
+    env: Path,
+    server: LocalServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    server.add("/a.tar.xz", data)
+    use_manifest(
+        monkeypatch,
+        write_manifest(
+            tmp_path / "m.toml", {"default": [Archive(server.url("/a.tar.xz"), data, "linux-x64")]}
+        ),
+    )
+    loop = asyncio.get_running_loop()
+    command: list[asyncio.Task[int]] = []
+    swap = fetch_module._swap_into_place
+
+    def swap_then_interrupt(new: Path, install_dir: Path, aside: Path) -> None:
+        swap(new, install_dir, aside)
+        loop.call_soon_threadsafe(command[0].cancel)  # what asyncio.run does on Ctrl+C
+
+    monkeypatch.setattr(fetch_module, "_swap_into_place", swap_then_interrupt)
+    command.append(asyncio.create_task(cli.run_tools_fetch(build="default", platform=None)))
+    assert await asyncio.wait_for(command[0], 60) == EXIT_INTERRUPTED
+    err = capsys.readouterr().err
+    install = env / "tools" / "ffmpeg"
+    assert installed_build(install) is not None
+    assert "Nothing was installed." not in err
+    assert f"was installed into {install} before the interrupt." in err
 
 
 def test_fetch_help() -> None:

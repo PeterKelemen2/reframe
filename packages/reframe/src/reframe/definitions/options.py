@@ -15,6 +15,7 @@ from reframe.models.job import AverageBitrate, OptionValue, VideoSettings
 __all__ = [
     "describe_condition",
     "effective_option",
+    "effective_preset",
     "option_context",
     "option_default",
     "unmet_conditions",
@@ -33,11 +34,16 @@ def option_default(option: EncoderOption, preset: str | None) -> OptionValue | N
     return None
 
 
+def effective_preset(encoder: VideoEncoderDef, video: VideoSettings) -> str | None:
+    """The job's speed preset, else the encoder's default; ``None`` when it has no presets."""
+    return video.preset or (encoder.presets.default if encoder.presets else None)
+
+
 def option_context(encoder: VideoEncoderDef, video: VideoSettings) -> dict[str, OptionValue | None]:
     """The values that the ``requires`` conditions read. ``preset`` falls back to the encoder's
     default preset, and each ``option:<key>`` falls back to :func:`option_default`."""
     rc = video.rate_control
-    preset = video.preset or (encoder.presets.default if encoder.presets else None)
+    preset = effective_preset(encoder, video)
     context: dict[str, OptionValue | None] = {
         "rate_control": rc.mode,
         "two_pass": isinstance(rc, AverageBitrate) and rc.two_pass,
@@ -63,8 +69,7 @@ def effective_option(
         return None
     if key in video.advanced:
         return video.advanced[key]
-    preset = video.preset or (encoder.presets.default if encoder.presets else None)
-    return option_default(option, preset)
+    return option_default(option, effective_preset(encoder, video))
 
 
 def unmet_conditions(

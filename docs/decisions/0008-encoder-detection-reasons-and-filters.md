@@ -13,7 +13,7 @@
 
 Real FFmpeg n9.0.2 (the pinned BtbN build and the Arch package) shows that this cannot work
 (`testdata/README.md` §Hardware encoder failures and §Encoder detection; the stderr texts are
-in `testing/reframe_testing/fake_data/c4_*.stderr.txt` and `hw_*.stderr.txt`):
+in `testing/reframe_testing/fake_data/detect_*.stderr.txt` and `hw_*.stderr.txt`):
 
 1. **`MFX_ERR_UNSUPPORTED` is never printed.** The string is not in the build at all
    (`library_strings.json`). oneVPL errors print a number: `[hevc_qsv @ 0x…] Error creating a
@@ -69,7 +69,7 @@ The first rule that matches any line wins; a match gives the state `unavailable`
 | `Failed to create  hardware device context (AMF) : E` | AMD AMF could not start (E) |
 | `Failed to set value 'V' for option 'init_hw_device'` (or `vaapi_device`), no line above | QSV: No Intel QSV device …; VAAPI: No VAAPI device (X) |
 
-Every text in the table is either provoked on the capture machine (`c4_*` / `hw_*` captures)
+Every text in the table is either provoked on the capture machine (`detect_*` / `hw_*` captures)
 or found byte for byte in the pinned build (`library_strings.json`, asserted in tests).
 
 Anything else gives the state `error` ("the check itself failed", as `EncoderState` says) with

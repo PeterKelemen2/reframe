@@ -15,6 +15,7 @@ from reframe.models.base import NonNegativeFloat, NonNegativeInt, PositiveInt, R
 from reframe.models.geometry import CropRect
 from reframe.models.job import Container
 from reframe.models.plan import JobType
+from reframe.models.text import DisplayText
 
 __all__ = ["CropDetection", "CropSample", "FrameKind", "FrameSet", "PreviewClip", "PreviewFrame"]
 
@@ -46,7 +47,7 @@ class FrameSet(ReframeModel):
     path: Path
     """The source file."""
     frames: list[PreviewFrame] = Field(default_factory=list)
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
     """How the frames were made, one line each (for example how an HDR picture was mapped
     for display)."""
 
@@ -70,7 +71,7 @@ class CropDetection(ReframeModel):
     """Samples that gave the automatic result: ``Detected … on 9 of 10 frames``."""
     conservative: CropRect
     """Only what is black on every sample (the ``conservative`` mode)."""
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
 
 
 class PreviewClip(ReframeModel):

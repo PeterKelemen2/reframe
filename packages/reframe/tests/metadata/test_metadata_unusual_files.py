@@ -77,7 +77,7 @@ def with_bad_tag(path: Path, bad: bytes) -> None:
     path.write_bytes(bytes(data))
 
 
-async def test_demo_3_with_mediainfo_on_shows_only_the_files_bcp47_tags(
+async def test_with_mediainfo_on_the_reprobe_shows_only_the_files_bcp47_tags(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Untouched tracks have no ``LanguageIETF``: MediaInfo would derive ``en`` from ``eng``."""

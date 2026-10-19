@@ -388,7 +388,7 @@ them.
 | Source channels | Any · Mono · Stereo or less · 5.1 or more · 7.1 or more. This is a condition on the **source** track |
 | Codec | Any audio encoder, or Passthru |
 | Mixdown | Keep source · Up to 5.1 (only downmixes 7.1) · 5.1 · Stereo · Dolby Pro Logic II · Mono. A mixdown never upmixes: a source with fewer channels keeps its layout, because FFmpeg's upmix only adds silent channels ([0019](../decisions/0019-audio-codec-rule-details.md)) |
-| Max bitrate | The target bitrate. It snaps to the encoder's allowed values (AC-3 and E-AC-3 use fixed steps). A note shows any snap |
+| Max bitrate | The target bitrate. It snaps down to the encoder's next allowed value (AC-3 and E-AC-3 use fixed steps; [0025](../decisions/0025-audio-bitrate-snaps-down.md)). A note shows any snap |
 | If the source already fits | Passthru · Re-encode |
 
 Expand a row for the optional settings: sample rate, gain, DRC, loudness normalisation, name
@@ -496,7 +496,7 @@ block:
 |-------|---------|------------|
 | Language | Language picker (below) | MKV: `language` (ISO 639-2/B) + `LanguageIETF` (BCP 47). MP4: ISO 639-2/T |
 | Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus` | `title` |
-| Default | Toggle (only one track per type can be default, unless you override this) | disposition / FlagDefault |
+| Default | Toggle. Usually one track per type is default; more than one is allowed, with a warning that offers to keep only the first ([0044](../decisions/0044-code-review-follow-ups.md)) | disposition / FlagDefault |
 | Forced | Toggle | FlagForced |
 | Commentary | Toggle | FlagCommentary |
 | Hearing impaired | Toggle | FlagHearingImpaired |
@@ -678,7 +678,7 @@ Output to MKV at 1080p:
   → `-`; `"` → `'`; `< > ? *` and control characters are removed), reserved names (`CON`,
   `NUL`, …) get a `_`, and trailing dots and spaces are removed.
 - A byte of a source name that is not UTF-8 (a POSIX name such as `bad\xffname.mkv`) becomes
-  `�` (U+FFFD) in the output name: such a name cannot be written on Windows or in JSON.
+  `�` (U+FFFD) in the output name: such a name cannot be written on Windows.
 - Each path part has a limit of 255 bytes. The file name (with its extension) keeps room for
   the `.part` of the partial file, so it has 250 bytes. `{sub_title}` is shortened first,
   then `{main_title}`. The limit holds after every rule (the `_` of a reserved name too). An

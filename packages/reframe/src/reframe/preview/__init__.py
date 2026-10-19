@@ -56,7 +56,7 @@ def start_frames(
 def frame_path(ctx: MediaTaskContext, key: str) -> Path | None:
     """The cached PNG of ``PreviewFrame.key``, ``None`` when it is not (or no longer) cached.
     Only a key of the frame-key form is looked up (a key from a URL never names another
-    file); a hit counts as a use for the LRU."""
+    file); a hit counts as a use for the LRU. Blocking, like :func:`clear_cache`."""
     return PreviewCache(ctx.cache_dir).find_frame(key)
 
 
@@ -85,7 +85,8 @@ def start_preview_clip(
 
 
 def clip_path(ctx: MediaTaskContext, clip_id: str) -> Path | None:
-    """The cached clip of ``PreviewClip.id``, ``None`` when it is not (or no longer) cached."""
+    """The cached clip of ``PreviewClip.id``, ``None`` when it is not (or no longer) cached;
+    a hit counts as a use for the LRU. Blocking, like :func:`clear_cache`."""
     return PreviewCache(ctx.cache_dir).find_clip(clip_id)
 
 

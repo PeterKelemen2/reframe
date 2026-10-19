@@ -193,7 +193,8 @@ class CapabilityService:
         if self._subscription is not None:
             self._subscription.close()
         for task in tasks:
-            task.cancel()  # a replaced detection was cancelled when it was replaced
+            task.cancel()
+        # A replaced detection was cancelled when it was replaced: wait for it, do not cancel it.
         pending = {*tasks, *self._detections}
         if pending:
             await asyncio.wait(pending)

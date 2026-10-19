@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from reframe.models import CropDetection, CropRect, FrameSet, PreviewClip, TaskState
+from reframe.preview.cache import PreviewCache
 from reframe.service import Reframe
 
-from .helpers import job_for
+from .helpers import file_reads_on_this_thread, job_for
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
@@ -38,8 +39,8 @@ async def test_frames_and_a_frame_by_key(
     assert len(frames.frames) == 2
     for frame in frames.frames:
         assert frame.path.parent == tmp_path / "cache" / "frames"
-        assert app.sources.frame(frame.key) == frame.path
-    assert app.sources.frame("nothing") is None
+        assert await app.sources.frame(frame.key) == frame.path
+    assert await app.sources.frame("nothing") is None
     job = job_for(src)
     job.dimensions.crop.mode = "manual"
     job.dimensions.crop.rect = CropRect(top=22, bottom=24)
@@ -69,11 +70,30 @@ async def test_a_preview_clip_and_its_frames(app: Reframe, fixture_media: Media)
     assert done.state is TaskState.DONE, done.error
     clip = app.tasks.value(info.id)
     assert isinstance(clip, PreviewClip)
-    assert app.jobs.preview_clip_path(clip.id) == clip.path
-    assert app.jobs.preview_clip_path("0" * 32) is None
+    assert await app.jobs.preview_clip_path(clip.id) == clip.path
+    assert await app.jobs.preview_clip_path("0" * 32) is None
     info = app.sources.frames(clip.path, timestamps=[0.5])
     done = await app.tasks.wait(info.id)
     assert done.state is TaskState.DONE, done.error
     frames = app.tasks.value(info.id)
     assert isinstance(frames, FrameSet)
     assert len(frames.frames) == 1
+
+
+async def test_the_cache_lookups_read_no_file_on_the_event_loop(
+    app: Reframe, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = PreviewCache(tmp_path / "cache")
+    key, other = "0123456789abcdef-1500-0123456789abcdef", "0123456789abcdef-2500-0123456789abcdef"
+    png, mkv = cache.frame(key), cache.clip("1" * 32, ".mkv")
+    for made in (png, mkv):
+        made.parent.mkdir(parents=True, exist_ok=True)
+        made.write_bytes(b"x")
+    # Only the preview folders: detection writes into the cache folder in the background.
+    frames = file_reads_on_this_thread(monkeypatch, cache.frames)
+    clips = file_reads_on_this_thread(monkeypatch, cache.clips)
+    assert await app.sources.frame(key) == png
+    assert await app.sources.frame(other) is None
+    assert await app.jobs.preview_clip_path("1" * 32) == mkv
+    assert await app.jobs.preview_clip_path("2" * 32) is None
+    assert frames + clips == [], frames + clips

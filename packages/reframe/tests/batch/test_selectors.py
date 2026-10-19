@@ -349,8 +349,8 @@ def test_relaxing_never_takes_a_track_another_rule_matches_exactly() -> None:
     second = sel(languages=["en"], codecs=["ac3"], channels=6, roles=[TrackRole.MAIN])
     picks, _ = run(rule(first), rule(second))
     assert picks[1].match.streams == [4]
-    # Without the title, #4 is taken: channels go next (#6 is undetermined, not English),
-    # then the codec: #2 (DTS-HD MA).
+    # Without the title only #4 matches, and rule 2 took it; without the channels too, still
+    # only #4 (#3 is a commentary, #6 is not English); without the codec: #2 (DTS-HD MA).
     assert picks[0].match.status == "relaxed"
     assert picks[0].match.streams == [2]
     assert picks[0].match.relaxed == ["title_pattern", "channels", "codecs"]

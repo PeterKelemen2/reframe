@@ -1,4 +1,4 @@
-# Pinned FFmpeg builds (02-architecture.md "Bundled FFmpeg", 09 Q-1.2, 07 D-7).
+# Pinned FFmpeg builds.
 #
 # CI and every package use this file, so the tests run against the binaries that ship.
 # `scripts/fetch-tools.py` downloads a build, verifies the SHA-256 before it extracts anything,
@@ -6,8 +6,7 @@
 # See tools/README.md for how to update a pin.
 #
 # Source of the builds: BtbN/FFmpeg-Builds, release-branch "gpl-shared" variant (`ffmpeg` and
-# `ffprobe` share one set of libav* libraries). This is the first candidate from the plan;
-# D-7 confirms the final choice in docs/decisions/0002-bundled-ffmpeg.md.
+# `ffprobe` share one set of libav* libraries). The choice of build source is not final yet.
 #
 # Retention (BtbN README, "Release Retention Policy", checked 2026-10-11): the last build of
 # each month is kept for two years, only the last 14 daily builds are kept, and "latest" floats.
@@ -17,7 +16,6 @@
 
 schema_version = 1
 
-# ---------------------------------------------------------------------------------------------
 # The build that ships and that the main CI jobs test against.
 [builds.default]
 description = "Shipped build: BtbN FFmpeg-Builds, release/9.0, GPL, shared libraries"
@@ -25,7 +23,7 @@ description = "Shipped build: BtbN FFmpeg-Builds, release/9.0, GPL, shared libra
 # "ffmpeg version " / "ffprobe version ": the describe string of the source commit plus the
 # build date that BtbN adds with --extra-version. fetch-tools.py checks it after every fetch.
 version = "n9.0.2-17-g2a571b6068-20260930"
-# The upstream release the build is based on (for the minimum-version check, C-1: >= 7.0).
+# The upstream release the build is based on (for the minimum-version check, >= 7.0).
 release_version = "9.0.2"
 release_tag = "autobuild-2026-09-30-13-08"
 release_url = "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08"
@@ -34,7 +32,7 @@ variant = "gpl-shared"
 # Built with --enable-gpl --enable-version3, so the binaries are GPL-3.0-or-later.
 license = "GPL-3.0-or-later"
 license_file = "LICENSE.txt"
-# Corresponding source (GPL obligations, 09 "Licensing"): the FFmpeg commit, plus the BtbN
+# Corresponding source (GPL obligations): the FFmpeg commit, plus the BtbN
 # build scripts at the commit of the release tag, which pin the source of every dependency.
 source_repository = "https://github.com/FFmpeg/FFmpeg"
 source_branch = "release/9.0"
@@ -65,10 +63,9 @@ bin_dir = "bin"
 ffmpeg = "bin/ffmpeg.exe"
 ffprobe = "bin/ffprobe.exe"
 
-# ---------------------------------------------------------------------------------------------
-# A different build for the CI job that tests the path override (Q-1.2): REFRAME_FFMPEG and
+# A different build for the CI job that tests the path override: REFRAME_FFMPEG and
 # REFRAME_FFPROBE point to it. It is older than the shipped build but above the minimum
-# FFmpeg version (7.0, C-1). It is never shipped.
+# FFmpeg version (7.0). It is never shipped.
 [builds.override-test]
 description = "Override-path test build: BtbN FFmpeg-Builds, release/8.1, GPL, shared libraries"
 version = "n8.1.3-9-g29e619e767-20260930"

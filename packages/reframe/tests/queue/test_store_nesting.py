@@ -64,12 +64,12 @@ def run[T](store: QueueStore, call: Callable[[], T]) -> T:
     return store.submit(call).result()
 
 
-def job(job_id: str, position: int = 0, *, extra: object = None, **fields: object) -> QueueJob:
+def job(job_id: str, position: int = 0, *, extra: object = None, **fields: Any) -> QueueJob:
     data = JobSettings(source=SourceRef(path=Path("/media/a.mkv"))).model_dump(mode="json")
     if extra is not None:
         data["from_the_future"] = extra
     settings = JobSettings.model_validate(data)
-    return QueueJob(id=job_id, position=position, settings=settings, created_at=NOW, **fields)  # type: ignore[arg-type]
+    return QueueJob(id=job_id, position=position, settings=settings, created_at=NOW, **fields)
 
 
 def settings_of(levels: int) -> dict[str, Any]:

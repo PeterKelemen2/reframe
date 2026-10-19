@@ -1,4 +1,4 @@
-# x265 advanced options (C-6: 03 §Advanced's coverage list, completed in M9).
+# x265 advanced options.
 #
 # Every option goes into `-x265-params` (x26x_param); booleans are written `name=1` /
 # `name=0`. The per-preset defaults are what x265 writes into the stream (the "x265 … options:"
@@ -97,7 +97,7 @@ step = 1
 unit = "frames"
 # x265 4.3: a value at or below the B-frames stops the encoder ("Lookahead depth must be
 # greater than the max consecutive bframe count"); 0 works only with bframes=0. A rule across
-# two options: validation (C-8) checks it.
+# two options: validation checks it.
 help = "Frames analysed ahead for CU-tree and frame types. More is better and uses more memory. Must be more than the B-frames (x265 stops otherwise)."
 mapping = { kind = "x26x_param", name = "rc-lookahead" }
 default = { kind = "preset", tunes = ["zerolatency"], values = { ultrafast = 5, superfast = 10, veryfast = 15, faster = 15, fast = 15, medium = 20, slow = 25, slower = 40, veryslow = 40, placebo = 60 } }
@@ -358,8 +358,6 @@ help = "Writes the stream headers before every keyframe (needed for some streami
 mapping = { kind = "x26x_param", name = "repeat-headers" }
 default = { kind = "encoder", note = "FFmpeg's libx265 wrapper turns it on for formats without global headers" }
 
-# --------------------------------------------------------------------------- M9 additions
-#
 # Per-preset tables as above (the stream's settings SEI for every preset and every tune;
 # x265 writes the colour options there as code points: colorprim=9 is bt2020).
 
@@ -540,7 +538,7 @@ choices = [
     { value = "8", label = "8×8" },
 ]
 # x265 4.3: a size above the CTU size logs "QGSize should be less than or equal to
-# maxCUSize, setting QGSize = …"; validation (C-8) warns.
+# maxCUSize, setting QGSize = …"; validation warns.
 help = "The smallest block size whose quantiser adaptive quantisation can change. Smaller is finer and slightly slower; not above the CTU size."
 mapping = { kind = "x26x_param", name = "qg-size" }
 default = { kind = "preset", tunes = ["grain"], values = { ultrafast = "32", superfast = "32", veryfast = "32", faster = "32", fast = "32", medium = "32", slow = "32", slower = "32", veryslow = "32", placebo = "32" } }
@@ -633,7 +631,7 @@ choices = [
     { value = "32", label = "32×32" },
 ]
 # x265 4.3: a minimum above the CTU size stops the encoder ("min CU size must be less than or
-# equal to max CU size"); validation (C-8) reports it.
+# equal to max CU size"); validation reports it.
 help = "The smallest coding unit. Larger is faster and loses fine detail; not above the CTU size."
 mapping = { kind = "x26x_param", name = "min-cu-size" }
 default = { kind = "preset", values = { ultrafast = "16", superfast = "8", veryfast = "8", faster = "8", fast = "8", medium = "8", slow = "8", slower = "8", veryslow = "8", placebo = "8" } }
@@ -650,7 +648,7 @@ choices = [
     { value = "32", label = "32×32" },
 ]
 # x265 4.3: a size above the CTU size logs "Max TU size should be less than or equal to max
-# CU size, setting max TU size = …"; validation (C-8) warns.
+# CU size, setting max TU size = …"; validation warns.
 help = "The largest transform unit. Smaller can help detail and costs compression in flat areas; not above the CTU size."
 mapping = { kind = "x26x_param", name = "max-tu-size" }
 default = { kind = "fixed", value = "32" }
@@ -973,7 +971,7 @@ label = "Parallel mode analysis"
 category = "Performance"
 type = "bool"
 # x265 4.3: "Limit reference options 2 and 3 are not supported with pmode. Disabling limit
-# reference"; validation (C-8) warns about a limit-refs 2 or 3 the job sets.
+# reference"; validation warns about a limit-refs 2 or 3 the job sets.
 help = "Analyses the modes of a CU in parallel. Helps only on many cores with few frames in flight; usually slower. Turns limit references 2 and 3 off."
 mapping = { kind = "x26x_param", name = "pmode" }
 default = { kind = "fixed", value = false }

@@ -1,4 +1,5 @@
-"""Lint of the audio defaults; every fix removes its issue and adds no error."""
+"""Lint of the audio defaults and the track rules; every fix removes its issue and adds no
+error."""
 
 from __future__ import annotations
 
@@ -12,11 +13,13 @@ from typing import Any
 import pytest
 
 from reframe.batch import draft_tracks, lint_defaults
-from reframe.batch.lint import CODES, describe_rule, lint_rules, rule_covers
+from reframe.batch.lint import CODES, describe_rule, lint_rules, lint_track_rules, rule_covers
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioCodecRule,
+    AudioCodecRules,
     AudioDefaults,
+    AudioOutputSettings,
     AudioRuleExtras,
     AudioStream,
     Container,
@@ -24,11 +27,17 @@ from reframe.models import (
     JobTemplate,
     MediaSource,
     OutputOptions,
+    OutputTrackRule,
     PassthruPolicy,
+    PresetFile,
     RemoveOp,
     Severity,
     SourceChannels,
+    SubtitleOutputSettings,
+    TrackMetadataTemplate,
+    TrackRuleSettings,
     TrackSelection,
+    TrackSelector,
     ValidationIssue,
 )
 from reframe.presets import builtin_presets
@@ -236,7 +245,8 @@ def test_a_rule_for_a_language_the_selection_never_takes() -> None:
         ),
         (
             # A stereo rule is checked for the sources it downmixes: a mono source keeps its
-            # layout (no upmix) and gets AAC Mono's maximum, which its own decision notes.
+            # layout (no upmix), and its snap to AAC Mono's maximum is a note on that track's
+            # decision, not a lint issue.
             rule(None, "stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=600),
             "audio_defaults.codec_rules[0].max_bitrate",
             "AAC Stereo goes up to 512 kb/s: 600 → 512 kb/s.",
@@ -387,3 +397,127 @@ def test_describe_rule() -> None:
     limited = rule(["hu"], extras=AudioRuleExtras(first_track_of_language_only=True))
     assert describe_rule(limited) == "Hungarian, any channels, the first track of a language"
     assert lint_rules(AudioDefaults(), used=set()) == []
+
+
+def track_rule(
+    default: bool | None,
+    *,
+    kind: Any = "audio",
+    multiple: bool = False,
+    settings: TrackRuleSettings | None = None,
+    **selector: Any,
+) -> OutputTrackRule:
+    if settings is None:
+        settings = AudioOutputSettings() if kind == "audio" else SubtitleOutputSettings()
+    return OutputTrackRule(
+        selector=TrackSelector(kind=kind, **({"languages": ["en"]} | selector)),
+        multiple=multiple,
+        settings=settings,
+        metadata=TrackMetadataTemplate(default=default),
+    )
+
+
+def subtitle_rule(default: bool | None, **fields: Any) -> OutputTrackRule:
+    return track_rule(default, kind="subtitle", **fields)
+
+
+def check_track_fixes(template: JobTemplate) -> list[ValidationIssue]:
+    """Apply every fix of every track rule issue: its issue is gone."""
+    issues = lint_track_rules(template)
+    for issue in issues:
+        assert issue.code in CODES
+        for fix in issue.fixes:
+            assert fix.target == "template"
+            data = apply_patch(template.model_dump(mode="json"), fix.patch)
+            after = lint_track_rules(JobTemplate.model_validate(data))
+            assert (issue.code, issue.path) not in found(after), (fix.label, after)
+    return issues
+
+
+def test_a_multiple_rule_that_sets_default_marks_every_track() -> None:
+    template = JobTemplate(audio_rules=[track_rule(True, multiple=True)])
+    [issue] = check_track_fixes(template)
+    assert (issue.code, issue.path) == (
+        "metadata.several_defaults",
+        "audio_rules[0].metadata.default",
+    )
+    assert issue.severity is Severity.WARNING
+    assert issue.message == "Rule A1 takes every matching audio track and marks each one default."
+    [fix] = issue.fixes
+    assert fix.label == "Take the default flag from the source (one track at most)"
+    fixed = JobTemplate.model_validate(apply_patch(template.model_dump(mode="json"), fix.patch))
+    assert fixed.audio_rules[0].metadata.default is None
+
+
+def test_rules_of_one_kind_that_all_set_default() -> None:
+    template = JobTemplate(
+        audio_rules=[track_rule(True, settings=AudioCodecRules()), track_rule(True)],
+        subtitle_rules=[subtitle_rule(True), subtitle_rule(None), subtitle_rule(True)] * 2,
+    )
+    issues = check_track_fixes(template)
+    assert found(issues) == [
+        ("metadata.several_defaults", "audio_rules[1].metadata.default"),
+        ("metadata.several_defaults", "subtitle_rules[2].metadata.default"),
+    ]
+    audio_issue, subtitle_issue = issues
+    assert audio_issue.message == (
+        "Rules A1 and A2 both set default: every audio track they make is marked default."
+    )
+    assert audio_issue.fixes[0].label == "Mark only the tracks of rule A1 default"
+    assert subtitle_issue.message == (
+        "Rules S1, S3, S4 and S6 all set default: every subtitle track they make is marked default."
+    )
+    data = apply_patch(template.model_dump(mode="json"), subtitle_issue.fixes[0].patch)
+    flags = [r.metadata.default for r in JobTemplate.model_validate(data).subtitle_rules]
+    assert flags == [True, None, False, False, None, False]
+
+
+def test_a_multiple_rule_among_rules_that_set_default() -> None:
+    template = JobTemplate(audio_rules=[track_rule(True), track_rule(True, multiple=True)])
+    assert found(check_track_fixes(template)) == [
+        ("metadata.several_defaults", "audio_rules[1].metadata.default"),
+        ("metadata.several_defaults", "audio_rules[1].metadata.default"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "rules",
+    [
+        pytest.param([track_rule(True), track_rule(False), track_rule(None, multiple=True)],
+                     id="one explicit default"),
+        pytest.param([track_rule(True), track_rule(True, languages=[])],
+                     id="a rule that takes no track"),
+        pytest.param([track_rule(True), track_rule(True, settings=SubtitleOutputSettings())],
+                     id="subtitle settings in an audio rule"),
+        pytest.param([track_rule(True),
+                      track_rule(True, kind="subtitle", settings=AudioOutputSettings())],
+                     id="a subtitle selector in an audio rule"),
+        pytest.param([track_rule(True, multiple=True, stream=3)],
+                     id="a hand pick takes one track"),
+    ],
+)  # fmt: skip
+def test_audio_rules_with_one_default_track(rules: list[OutputTrackRule]) -> None:
+    assert lint_track_rules(JobTemplate(audio_rules=rules)) == []
+
+
+def test_a_hand_pick_takes_its_track_with_any_languages() -> None:
+    template = JobTemplate(audio_rules=[track_rule(True, languages=[], stream=3), track_rule(True)])
+    assert found(lint_track_rules(template)) == [
+        ("metadata.several_defaults", "audio_rules[1].metadata.default")
+    ]
+
+
+def test_a_burned_in_subtitle_is_never_default() -> None:
+    burn = SubtitleOutputSettings(action="burn")
+    template = JobTemplate(
+        subtitle_rules=[subtitle_rule(True), subtitle_rule(True, settings=burn, multiple=True)]
+    )
+    assert lint_track_rules(template) == []
+
+
+def test_the_anime_example_has_one_default_track_per_kind() -> None:
+    document = Path(__file__).with_name("data") / "anime-season.preset.json"
+    [preset] = PresetFile.model_validate_json(document.read_text(encoding="utf-8")).presets
+    assert any(r.metadata.default for r in preset.audio_rules)
+    assert any(r.metadata.default for r in preset.subtitle_rules)
+    assert lint_track_rules(preset) == []

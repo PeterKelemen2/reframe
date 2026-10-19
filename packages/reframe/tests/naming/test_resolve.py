@@ -62,14 +62,15 @@ EXAMPLES = [
     (
         "{source}-{title}",
         "keep",
-        "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson-1.mkv",
+        "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC."
+        "HUN-HenDerson-1.mkv",
         "The.Sopranos.S03E02.Proshai.Livushka.1080p.BluRay.REMUX-Kataklysm-1.mkv",
     ),
 ]
 
 
 @pytest.mark.parametrize(("template", "separator", "hacksaw", "sopranos"), EXAMPLES)
-def test_examples_of_03(
+def test_template_examples(
     template: str, separator: Any, hacksaw: str, sopranos: str, empty_fs: Any, now: datetime
 ) -> None:
     options = NamingOptions(

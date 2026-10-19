@@ -84,6 +84,17 @@ def test_save_then_load_round_trip_keeps_unknown_fields(tmp_path: Path) -> None:
     assert loaded.model_dump(mode="json") == settings.model_dump(mode="json")
 
 
+def test_a_path_that_is_not_utf8_is_saved_and_loaded_back(tmp_path: Path) -> None:
+    """A tool path with a byte that is not UTF-8 (Python's ``\\udcff``, PEP 383) is written as
+    the escape ``\\udcff``; the rest of the file stays readable UTF-8."""
+    store = SettingsStore(tmp_path)
+    settings = AppSettings.model_validate({"tools": {"ffmpeg": "/opt/Amélie/bad\udcff/ffmpeg"}})
+    assert store.write(settings) is None
+    text = (tmp_path / "settings.json").read_text("utf-8")
+    assert "Amélie/bad\\udcff/ffmpeg" in text
+    assert SettingsStore(tmp_path).load() == settings
+
+
 def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     write_json(tmp_path / "settings.json", OLD_SETTINGS_V1)
     store = SettingsStore(tmp_path, registry=registry_v2())

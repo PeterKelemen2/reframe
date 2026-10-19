@@ -66,6 +66,7 @@ from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.tasks import TaskInfo, TaskState
+from reframe.models.text import json_text
 from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
 from reframe.presets import ConflictPolicy, ImportResult
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
@@ -158,7 +159,9 @@ _EXIT_HELP_ENCODE = (
     "error, unknown preset, or -o with several files; 3 a path does not exist, or no media "
     "files; 130 interrupted (Ctrl+C: the jobs are cancelled first)."
 )
-_EXIT_HELP_NAME = "Exit codes: 0 named; 1 a name has errors; 2 usage error or a bad template."
+_EXIT_HELP_NAME = (
+    "Exit codes: 0 named; 1 a name has errors; 2 usage error or a bad template; 3 no media files."
+)
 _EXIT_HELP_BATCH = (
     "Exit codes: 0 every file resolved without errors (--dry-run) or every job done; 1 a file "
     "has errors, cannot be read, or a job failed, was cancelled or was not queued; 2 usage "
@@ -369,7 +372,7 @@ def fmt_color(color: ColorInfo) -> str | None:
 
 
 def video_line(stream: VideoStream) -> str:
-    """03 §Summary: ``HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ``."""  # noqa: RUF002
+    """The stream as one line: ``HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ``."""  # noqa: RUF002
     parts = [stream.display_codec or stream.codec or "unknown codec"]
     parts.append(f"{stream.width}{TIMES}{stream.height}")
     avg, base = stream.avg_frame_rate, stream.frame_rate
@@ -732,14 +735,7 @@ def _print_list(
 
 
 def _write_json(source: MediaSource) -> None:
-    """``model_dump_json(indent=2)`` on stdout. If stdout cannot encode every character, the
-    JSON is written with ``\\uXXXX`` escapes instead (same value, valid JSON)."""
-    text = source.model_dump_json(indent=2)
-    encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
-    if encoding not in ("utf-8", "utf8"):
-        text = json.dumps(json.loads(text), indent=2, ensure_ascii=True)
-    sys.stdout.write(text + "\n")
-    sys.stdout.flush()
+    _write_json_value(source.model_dump(mode="json"))
 
 
 async def run_probe(file: Path, *, as_json: bool) -> int:
@@ -844,21 +840,14 @@ async def open_reframe() -> AsyncIterator[Reframe]:
 
 
 def _write_model_json(value: BaseModel | Sequence[BaseModel] | dict[str, BaseModel | None]) -> None:
-    """Models as JSON on stdout (``\\uXXXX`` escapes when stdout is not UTF-8)."""
+    """Models as JSON on stdout (:func:`_write_json_value`)."""
     if isinstance(value, BaseModel):
         data: object = value.model_dump(mode="json")
     elif isinstance(value, dict):
         data = {k: None if v is None else v.model_dump(mode="json") for k, v in value.items()}
     else:
         data = [item.model_dump(mode="json") for item in value]
-    encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
-    text = json.dumps(data, indent=2, ensure_ascii=encoding not in ("utf-8", "utf8"))
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:  # a file name that is not valid UTF-8: \udcff escapes
-        text = json.dumps(data, indent=2, ensure_ascii=True)
-    sys.stdout.write(text + "\n")
-    sys.stdout.flush()
+    _write_json_value(data)
 
 
 def find_preset(app: Reframe, name: str | None) -> Preset | str:
@@ -2083,7 +2072,10 @@ async def run_name(
         for file, root, exists in await asyncio.to_thread(name_targets, paths):
             result = await app.jobs.name(file, preset=chosen, template=template, root=root)
             named.append((file, result, exists))
-    if template is not None and named:
+    if not named:
+        _error("no media files to name.")
+        return EXIT_NOT_FOUND
+    if template is not None:
         bad = [
             issue
             for issue in named[0][1].issues
@@ -2101,14 +2093,16 @@ async def run_name(
                 console.print()
             render_name(console, file, result, exists=exists)
     has_error = any(has_errors(result.issues) for _, result, _ in named)
-    return EXIT_FAILED if has_error or not named else EXIT_OK
+    return EXIT_FAILED if has_error else EXIT_OK
 
 
 _EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one of them cannot."
 _EXIT_HELP_TOOLS_FETCH = (
     "Exit codes: 0 installed, or already installed with every file intact; 1 the download, "
-    "the size or SHA-256 check, the archive or the version check failed; 2 usage error or "
-    "unknown build; 130 interrupted (Ctrl+C: nothing is installed)."
+    "the size or SHA-256 check, the archive or the version check failed, or no build is "
+    "pinned for this computer; 2 usage error, unknown build, or no archive for the platform; "
+    "130 interrupted (Ctrl+C: the download stops, and the last line says whether the build "
+    "was installed before the interrupt)."
 )
 #: The tools without which Reframe cannot probe or encode.
 REQUIRED_TOOLS: tuple[ToolName, ...] = ("ffmpeg", "ffprobe")
@@ -2451,13 +2445,10 @@ async def run_presets_list(*, as_json: bool) -> int:
 
 
 def _write_json_value(data: object) -> None:
-    """JSON on stdout (``\\uXXXX`` escapes when stdout is not UTF-8)."""
+    """JSON on stdout: ``\\uXXXX`` escapes for a byte of a file name that is not UTF-8, and
+    for every character that is not ASCII when stdout is not UTF-8."""
     encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().replace("_", "-")
-    text = json.dumps(data, indent=2, ensure_ascii=encoding not in ("utf-8", "utf8"))
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:  # a lone surrogate (a name from a non-UTF-8 file name)
-        text = json.dumps(data, indent=2, ensure_ascii=True)
+    text = json_text(data, ensure_ascii=encoding not in ("utf-8", "utf8"), indent=2)
     sys.stdout.write(text + "\n")
     sys.stdout.flush()
 
@@ -2508,11 +2499,8 @@ async def run_presets_export(names: Sequence[str], *, output: Path | None) -> in
         _write_json_value(document)
         return EXIT_OK
     assert output is not None
-    text = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    text = json_text(document, ensure_ascii=False, indent=2) + "\n"
     try:
-        await asyncio.to_thread(write_text_file, output, text)
-    except UnicodeEncodeError:  # a lone surrogate: write it escaped
-        text = json.dumps(document, indent=2, ensure_ascii=True) + "\n"
         await asyncio.to_thread(write_text_file, output, text)
     except OSError as exc:
         _error(f"{display_path(output)} cannot be written: {exc.strerror or exc}.")

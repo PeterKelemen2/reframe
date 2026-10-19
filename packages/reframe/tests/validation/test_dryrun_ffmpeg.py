@@ -100,7 +100,7 @@ def _source() -> MediaSource:
     ],
     ids=["analysis-save", "csv", "dump-yuv", "vstats_file", "not-an-option"],
 )
-async def test_r5_1_a_refused_parameter_never_starts_ffmpeg(
+async def test_a_refused_parameter_never_starts_ffmpeg(
     job: JobSettings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def no_run(*args: Any, **kwargs: Any) -> RunResult:
@@ -113,7 +113,7 @@ async def test_r5_1_a_refused_parameter_never_starts_ffmpeg(
     assert len(issues[0].fixes) == 1
 
 
-async def test_r5_1_ffmpeg_runs_in_a_temporary_folder_that_is_removed(
+async def test_ffmpeg_runs_in_a_temporary_folder_that_is_removed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """x264 / x265 ``pass=1`` write ``x26?_2pass.log`` into the working folder: the dry run
@@ -143,7 +143,7 @@ async def test_r5_1_ffmpeg_runs_in_a_temporary_folder_that_is_removed(
     assert await asyncio.to_thread(lambda: [p.name for p in tmp_path.iterdir()]) == ["work"]
 
 
-async def test_r5_1_a_relative_source_is_given_to_ffmpeg_as_an_absolute_path(
+async def test_a_relative_source_is_given_to_ffmpeg_as_an_absolute_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     argvs: list[list[str]] = []
@@ -185,7 +185,7 @@ async def _draft(app: Reframe, path: Path, tmp_path: Path) -> JobSettings:
         ("libvpx-vp9", "vstats_file={victim}"),
     ],
 )
-async def test_r5_1_planning_with_a_shared_preset_leaves_the_users_file_alone(
+async def test_planning_with_a_shared_preset_leaves_the_users_file_alone(
     app: Reframe,
     fixture_media: FixtureMedia,
     tmp_path: Path,
@@ -237,7 +237,7 @@ ARNR_STDERR = (
 )
 
 
-def test_r5_3_a_value_libvpx_refuses_through_a_codec_control_is_an_error() -> None:
+def test_a_value_libvpx_refuses_through_a_codec_control_is_an_error() -> None:
     job = _vp9(custom_params="lag-in-frames=16:arnr-maxframes=16")
     issues = parse_dry_run(job, ARNR_STDERR, 0)
     assert [(i.severity, i.code, i.path) for i in issues] == [
@@ -249,7 +249,7 @@ def test_r5_3_a_value_libvpx_refuses_through_a_codec_control_is_an_error() -> No
     assert fixed.video.custom_params == "lag-in-frames=16"
 
 
-def test_r5_3_a_control_that_names_no_parameter() -> None:
+def test_a_control_that_names_no_parameter() -> None:
     stderr = "[libvpx-vp9 @ 0x1] Failed to set VP9E_SET_COLOR_SPACE codec control: Invalid\n"
     issues = parse_dry_run(_vp9(custom_params="lag-in-frames=16"), stderr, 0)
     assert [(i.code, i.path) for i in issues] == [("encoder.dry_run_failed", "video.custom_params")]
@@ -266,7 +266,7 @@ def test_r5_3_a_control_that_names_no_parameter() -> None:
         ("min-gf-interval=40", "min_gf_interval out of range"),
     ],
 )
-async def test_r5_3_the_real_libvpx(
+async def test_the_real_libvpx_codec_control_refusals(
     app: Reframe, fixture_media: FixtureMedia, tmp_path: Path, custom: str, info: str
 ) -> None:
     try:
@@ -280,6 +280,75 @@ async def test_r5_3_the_real_libvpx(
         ("encoder.custom_param_rejected", "video.custom_params")
     ]
     assert info in issues[0].message
+
+
+@pytest.mark.needs_ffmpeg
+async def test_the_real_libvpx_failure_says_what_libvpx_refused(
+    app: Reframe, fixture_media: FixtureMedia, tmp_path: Path
+) -> None:
+    try:
+        job = await _draft(app, fixture_media("multitrack"), tmp_path)
+        job.video = _vp9(custom_params="maxrate=100k").video
+        issues = await app.jobs.dry_run(job)
+    finally:
+        await app.close()
+    assert [(i.code, i.path) for i in issues] == [("encoder.dry_run_failed", "video.custom_params")]
+    assert issues[0].message.endswith("Rate control parameters set without a bitrate")
+
+
+VBV_MAXRATE = "video.advanced.vbv-maxrate"
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.parametrize(
+    ("encoder", "custom", "advanced", "validation_says", "dry_run_says"),
+    [
+        (
+            "libx264",
+            "vbv-maxrate=1000",
+            {},
+            [],
+            [("encoder.dry_run_warning", "video.custom_params")],
+        ),
+        ("libx264", "", {"vbv-maxrate": 1000}, [("encoder.option_inactive", VBV_MAXRATE)], []),
+        ("libx265", "", {"vbv-maxrate": 1000}, [("encoder.option_inactive", VBV_MAXRATE)], []),
+        (
+            "libx265",
+            "",
+            {"limit-refs": "2", "pmode": True},
+            [("encoder.option_ignored", "video.advanced.limit-refs")],
+            [],
+        ),
+    ],
+    ids=["x264-custom", "x264-advanced", "x265-advanced", "x265-limit-refs-pmode"],
+)
+async def test_each_real_encoder_warning_is_one_issue(
+    app: Reframe,
+    fixture_media: FixtureMedia,
+    tmp_path: Path,
+    encoder: str,
+    custom: str,
+    advanced: dict[str, Any],
+    validation_says: list[tuple[str, str]],
+    dry_run_says: list[tuple[str, str]],
+) -> None:
+    try:
+        job = await _draft(app, fixture_media("multitrack"), tmp_path)
+        job.video.encoder = encoder
+        job.video.preset = None
+        job.video.tune = None
+        job.video.profile = None
+        job.video.level = None
+        job.video.custom_params = custom
+        job.video.advanced = advanced
+        validated = await app.jobs.validate(job)
+        issues = await app.jobs.dry_run(job)
+    finally:
+        await app.close()
+    assert [(i.code, i.path) for i in validated if i.code.startswith("encoder.")] == (
+        validation_says
+    )
+    assert [(i.code, i.path) for i in issues] == dry_run_says
 
 
 RD_REFINE = (

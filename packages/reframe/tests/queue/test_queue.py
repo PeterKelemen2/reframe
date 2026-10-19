@@ -17,14 +17,13 @@ from reframe.models import (
     NotificationEvent,
     QueueChangedEvent,
     QueueJob,
+    Severity,
 )
-from reframe.platform.sleep import SleepInhibitor
-from reframe.queue import JobStateError, QueueService, UnknownJobError
-from reframe.queue.store import row_of
+from reframe.queue import JobStateError, UnknownJobError
 from reframe.service import ReframeClosedError
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule
+from .conftest import Harness, encode_rule, queue_at, store_rows
 
 pytestmark = pytest.mark.anyio
 
@@ -161,9 +160,8 @@ async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) ->
 
 async def test_pause_before_the_first_step(harness: Harness) -> None:
     h = harness
-    h.sources.delay = 0.2  # a slow probe: the job is still preparing
     added = await h.queue.add(h.job())
-    h.sources.delay = 0.2
+    h.sources.delay = 0.2  # a slow probe: the job is still preparing
     h.queue.start()
     await h.first_event(added.id, "job.state", state="running")
     await h.queue.pause()
@@ -307,7 +305,6 @@ async def test_cancel_all_cancels_waiting_jobs_too(harness: Harness) -> None:
     first = await h.queue.add(h.job("A"))
     third = await h.queue.add(h.job("C"))
     second = await h.queue.add(h.job("B"), position=2)
-    h.settings.queue.parallel_jobs = 2
     h.queue.start()
     await h.first_event(first.id, "job.progress", limit=20)
     await h.first_event(third.id, "job.progress", limit=20)
@@ -580,19 +577,6 @@ async def test_closed_queue(harness: Harness) -> None:
     assert await h.queue.wait() != []
 
 
-def queue_at(h: Harness) -> QueueService:
-    """A second queue on the same data folder (a restarted Reframe)."""
-    return QueueService(
-        h.events,
-        lambda: h.settings.model_copy(deep=True),
-        data_dir=h.tmp / "data",
-        tools=h.tools,
-        capabilities=h.caps,
-        sources=h.sources,
-        inhibitor=SleepInhibitor([], h.events),
-    )
-
-
 async def test_close_interrupts_running_jobs_and_restart_recovers(harness: Harness) -> None:
     h = harness
     job = h.job()
@@ -643,11 +627,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
     kept = h.queue.get(second.id)
     assert kept is not None
     kept.state = JobState.PAUSED
-    db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
-    for row in (row_of(stored), row_of(kept)):
-        db.execute(f"INSERT OR REPLACE INTO jobs VALUES ({', '.join('?' * len(row))})", row)
-    db.commit()
-    db.close()
+    store_rows(h, stored, kept)
     plan.output_tmp.write_text("half")
     for path in [*(f.path for f in plan.files), *plan.temp_files]:
         path.write_text("x")
@@ -663,9 +643,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
             if e.type == "job.state"
         ]
         assert restored == [("running", "interrupted"), ("paused", "interrupted")]
-        await asyncio.wait(again._background) if again._background else None
-        assert not plan.output_tmp.exists()
-        again.list()  # once only
+        await h.wait_for(lambda: not plan.output_tmp.exists())  # removed in the background
     finally:
         await again.close()
     db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
@@ -721,17 +699,11 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a file name that is not UTF-8 (Linux)")
-async def test_a_file_name_that_is_not_utf8(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_file_name_that_is_not_utf8(harness: Harness) -> None:
     """A source named ``bad\\xffname.mkv`` (byte 0xFF; Python's ``\\udcff``, PEP 383): the store
-    keeps the path exactly, the log file and the events show it escaped, and nothing raises.
-    Validation is left out: its naming rule fails on such a name."""
-    from reframe.queue import runner
-
+    keeps the path exactly, the log file and the events show it escaped, and nothing raises."""
     from .conftest import draft, recorded
 
-    monkeypatch.setattr(runner, "validate", lambda *args, **kwargs: [])
     h = harness
     source = h.tmp / "media" / "bad\udcffname.mkv"
     source.write_bytes(b"not really matroska")
@@ -740,6 +712,9 @@ async def test_a_file_name_that_is_not_utf8(
     output = h.tmp / "out" / "bad\udcffname.mkv"
     ended = await h.run_one(draft(h.sources.source, output))
     assert ended.state is JobState.DONE, ended.error
+    assert [i.code for i in ended.issues if i.severity is not Severity.INFO] == [
+        "output.name_not_portable"
+    ]
     assert ended.output_path == output
     assert os.fsencode(ended.output_path).endswith(b"bad\xffname.mkv")
     log = h.log_text(ended.id)  # valid UTF-8, the byte written as an escape

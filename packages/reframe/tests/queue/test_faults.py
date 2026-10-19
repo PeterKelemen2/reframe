@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.models import AverageBitrate, JobState, Severity
+from reframe.models import AverageBitrate, JobSettings, JobState, QueueJob, Severity
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe_testing import fake_tools as ft
 
@@ -31,7 +31,7 @@ SILENT_BLOCK = (
 )
 
 
-def chapters_and_two_pass(h: Harness, name: str = "Movie") -> tuple[object, Path, list[Path]]:
+def chapters_and_two_pass(h: Harness, name: str = "Movie") -> tuple[JobSettings, Path, list[Path]]:
     """A job with generated chapters and 2-pass x264. The fake does not write the statistics
     files, so they are made here."""
     job = h.job(name, rate_control=AverageBitrate(kbps=500, two_pass=True))
@@ -71,7 +71,7 @@ async def test_crash_mid_encode(harness: Harness, policy: str) -> None:
             ft.crash(signal="SIGSEGV"),
         ),
     )
-    ended = await h.run_one(job)  # type: ignore[arg-type]
+    ended = await h.run_one(job)
     assert ended.state is JobState.FAILED
     if POSIX:
         assert ended.error == "ffmpeg crashed during pass 2 (signal 11 (SIGSEGV))."
@@ -169,13 +169,8 @@ async def test_hang_is_stopped_by_the_stall_watchdog(harness: Harness) -> None:
 async def test_a_slow_step_that_prints_is_not_stalled(harness: Harness) -> None:
     h = harness
     h.queue._runner._stall_after = 0.3
-    h.scenario(
-        encode_rule(
-            *[ft.stderr(f"frame {n}\n") for n in range(1)],
-            ft.progress(blocks=12, interval=0.1),
-            ft.write_output(100),
-        )
-    )
+    # A block every 0.1 s for 1.2 s: four times the stall limit.
+    h.scenario(encode_rule(ft.progress(blocks=12, interval=0.1), ft.write_output(100)))
     ended = await h.run_one(h.job())
     assert ended.state is JobState.DONE
 
@@ -229,7 +224,7 @@ async def test_silent_track_values_are_clamped_for_the_encode(harness: Harness) 
     assert "values clamped into loudnorm's ranges" in h.log_text(ended.id)
 
 
-def ietf_job(h: Harness) -> object:
+def ietf_job(h: Harness) -> JobSettings:
     job = h.job()
     job.audio[1].metadata.language = "pt-BR"  # needs Matroska LanguageIETF: mkvpropedit
     return job
@@ -239,7 +234,7 @@ async def test_failing_mkvpropedit_step(harness: Harness) -> None:
     h = harness
     h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     job = ietf_job(h)
-    part = h.plan(job).output_tmp  # type: ignore[arg-type]
+    part = h.plan(job).output_tmp
     h.scenario(
         ft.Rule(
             tool="ffmpeg",
@@ -248,7 +243,7 @@ async def test_failing_mkvpropedit_step(harness: Harness) -> None:
             exit_code=2,
         )
     )
-    ended = await h.run_one(job)  # type: ignore[arg-type]
+    ended = await h.run_one(job)
     assert ended.error == (
         "mkvpropedit failed (exit code 2): Error: The file could not be opened for reading and "
         "writing."
@@ -264,7 +259,7 @@ async def test_hanging_mkvpropedit_hits_its_time_limit(harness: Harness) -> None
     h.queue._runner._step_time_limit = 0.3
     h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     h.scenario(ft.Rule(tool="ffmpeg", argv_has=["--edit"], actions=[ft.hang()]))
-    ended = await h.run_one(ietf_job(h))  # type: ignore[arg-type]
+    ended = await h.run_one(ietf_job(h))
     assert ended.error == "A step did not finish within 0.3 seconds and was stopped."
     assert h.leftovers() == []
 
@@ -276,7 +271,7 @@ async def test_mkvpropedit_missing_at_run_time(harness: Harness) -> None:
     portuguese = h.sources.source.model_copy(deep=True)
     portuguese.audio[1].language = "por"
     h.sources.output = lambda path: portuguese
-    added = await h.queue.add(job)  # type: ignore[arg-type]
+    added = await h.queue.add(job)
     h.tools.tools = tool_set(h.fake.ffmpeg)  # gone before the run: the plan has no such step
     h.queue.start()
     [ended] = await h.queue.wait([added.id])
@@ -610,10 +605,7 @@ def without_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner, "validate", lambda *args, **kwargs: [])
 
 
-def assert_untouched(h: Harness, ended: object, source: Path, content: bytes) -> None:
-    from reframe.models import QueueJob
-
-    assert isinstance(ended, QueueJob)
+def assert_untouched(h: Harness, ended: QueueJob, source: Path, content: bytes) -> None:
     assert ended.state is JobState.FAILED
     assert "queue.writes_source" in [i.code for i in ended.issues]
     assert ended.error is not None

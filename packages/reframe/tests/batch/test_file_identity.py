@@ -1,8 +1,5 @@
-"""Batch checks that compare files by identity, and overrides that keep the compiled columns.
-
-A link or a hard link is the same file as its target. An override that changes the rules the
-defaults compile to is invalid, so each cell stays under its column.
-"""
+"""Batch checks compare files, not spellings: a link or a hard link is the same file as its
+target."""
 
 from __future__ import annotations
 
@@ -19,15 +16,11 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter
 
-from reframe.batch import group_sources, matrix_columns, resolve, resolve_group
 from reframe.batch.report import matrix_lines
 from reframe.jobs import OutputClaims, file_key, find_media_files
 from reframe.models import (
-    BatchResolution,
     JobSettings,
-    JobTemplate,
     JsonPatchOp,
-    LanguageSettings,
     Severity,
     ValidationIssue,
 )
@@ -73,7 +66,7 @@ def tree(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(real=real, a=a, b=b, link=link, a_link=a_link, hard=hard)
 
 
-def test_ra1_file_key_compares_files(tree: SimpleNamespace) -> None:
+def test_file_key_compares_files(tree: SimpleNamespace) -> None:
     a = file_key(tree.a)
     assert file_key(tree.a_link) == a
     assert file_key(tree.link / "a.mkv") == a
@@ -88,7 +81,7 @@ def test_ra1_file_key_compares_files(tree: SimpleNamespace) -> None:
     assert file_key(tree.link / "NEW.mkv") == new
 
 
-def test_ra1_file_key_agrees_with_the_queue(tree: SimpleNamespace) -> None:
+def test_file_key_agrees_with_the_queue(tree: SimpleNamespace) -> None:
     pairs = [
         (tree.a, tree.a_link),
         (tree.a, tree.link / "a.mkv"),
@@ -106,7 +99,7 @@ def _stat(dev: int, ino: int) -> os.stat_result:
     return os.stat_result((0o100644, ino, dev, 1, 0, 0, 0, 0, 0, 0))
 
 
-def test_ra1_file_key_on_windows_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_key_on_windows_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
     """On Windows, ``realpath`` gives a mapped drive's UNC path (``GetFinalPathNameByHandle``)."""
     files = {
         "z:\\show\\e01.mkv": _stat(0x1234, 77),
@@ -149,7 +142,7 @@ def _codes(issues: list[ValidationIssue]) -> list[str]:
     return [issue.code for issue in issues]
 
 
-def test_ra1_output_claims_compare_files(tree: SimpleNamespace) -> None:
+def test_output_claims_compare_files(tree: SimpleNamespace) -> None:
     claims = OutputClaims({tree.a: "[1/2] a.mkv", tree.link / "b.mkv": "[2/2] b.mkv"})
     (issue,) = claims.check(_job(tree.a, tree.real / "b.mkv"), "[1/2] a.mkv")
     assert issue.code == "batch.output_is_source"
@@ -166,7 +159,7 @@ def test_ra1_output_claims_compare_files(tree: SimpleNamespace) -> None:
     ]
 
 
-def test_ra1_find_media_files_takes_a_file_once(tree: SimpleNamespace) -> None:
+def test_find_media_files_takes_a_file_once(tree: SimpleNamespace) -> None:
     """Each file once, in the spelling it was first given."""
     found = find_media_files([tree.link, tree.real, tree.a_link, tree.hard])
     assert found.files == [tree.link / "a.mkv", tree.link / "b.mkv"]
@@ -174,7 +167,7 @@ def test_ra1_find_media_files_takes_a_file_once(tree: SimpleNamespace) -> None:
     assert found.empty == []
 
 
-def test_ra1_find_media_files_keeps_two_files_whose_names_differ_in_case(
+def test_find_media_files_keeps_two_files_whose_names_differ_in_case(
     tmp_path: Path,
 ) -> None:
     upper = tmp_path / "E01.mkv"
@@ -186,7 +179,7 @@ def test_ra1_find_media_files_keeps_two_files_whose_names_differ_in_case(
     assert find_media_files([upper, lower]).files == [upper, lower]
 
 
-def test_ra1_file_key_never_raises_for_a_bad_path(tmp_path: Path) -> None:
+def test_file_key_never_raises_for_a_bad_path(tmp_path: Path) -> None:
     """A NUL character makes ``os.stat`` and ``realpath`` raise: the key uses the absolute path."""
     bad = str(tmp_path / "a\x00b.mkv")
     assert file_key(bad) == "path:" + os.path.normcase(os.path.abspath(bad)).casefold()
@@ -196,99 +189,8 @@ def test_ra1_file_key_never_raises_for_a_bad_path(tmp_path: Path) -> None:
     assert claims.check(_job(source, Path(bad)), "[1/1] a.mkv") == []
 
 
-def _jpn_template() -> JobTemplate:
-    base: JobTemplate = A.builtin("h265-mkv-1080p")
-    selection = base.audio_defaults.selection.model_copy(
-        update={"languages": ["jpn"], "other_languages": "keep_all"}
-    )
-    defaults = base.audio_defaults.model_copy(update={"selection": selection})
-    return base.model_copy(update={"audio_defaults": defaults})
-
-
 def _replace(path: str, value: object) -> list[JsonPatchOp]:
     return OPS.validate_python([{"op": "replace", "path": path, "value": value}])
-
-
-def test_ra3_an_override_that_changes_the_compiled_rules_is_invalid() -> None:
-    """The override changes what the compiled audio columns mean, so it is invalid: the English
-    dub would land under "A1 jpn"."""
-    template = _jpn_template()
-    sources = A.season(1)[:2]
-    (group,) = group_sources(sources, "standard")
-    columns = matrix_columns(template)
-    assert [c.label for c in columns if c.kind == "audio"] == [
-        "A1 jpn (defaults)",
-        "A2 no listed language (defaults)",
-        "A3 other languages (defaults)",
-    ]
-    override = _replace("/audio_defaults/selection/languages", ["eng", "jpn"])
-    rows = resolve_group(group, template, sources, {str(A.path(1, 2)): override})
-    e01, e02 = rows
-    (invalid,) = [i for i in e02.issues if i.code == "batch.override_invalid"]
-    assert invalid.path == "audio_defaults.selection"
-    assert "A1 jpn, A2 no listed language, A3 other languages → A1 eng, A2 jpn, A3 no" in (
-        invalid.message
-    )
-    assert e02.status == "error"
-    audio = [(m.rule, m.status, m.streams) for m in e02.matches if m.kind == "audio"]
-    assert audio == [(m.rule, m.status, m.streams) for m in e01.matches if m.kind == "audio"]
-    assert audio[0] == (0, "exact", [1])  # A1 jpn: the Japanese track, not the dub
-    assert e02.job is not None
-    assert e01.job is not None
-    assert [a.source_stream for a in e02.job.audio] == [a.source_stream for a in e01.job.audio]
-    lines = matrix_lines(BatchResolution(group=group, columns=columns, rows=rows))
-    a1 = lines[0].index("A1")
-    assert lines[2][a1:].startswith("✓ #1")
-    assert lines[3][a1:].startswith("✓ #1")
-
-
-def test_ra3_an_override_inside_the_compiled_rules_is_applied() -> None:
-    """A language override that keeps the structure is applied: here the A1 rule takes the dub."""
-    template = _jpn_template()
-    e02 = A.recorded(1, 2)
-    swapped = resolve(template, e02, _replace("/audio_defaults/selection/languages", ["eng"]))
-    assert "batch.override_invalid" not in _codes(swapped.issues)
-    assert next((m.rule, m.streams) for m in swapped.matches if m.kind == "audio") == (0, [2])
-    codec = resolve(
-        template,
-        e02,
-        OPS.validate_python(
-            [
-                {
-                    "op": "add",
-                    "path": "/audio_defaults/codec_rules/0",
-                    "value": {"codec": "libopus", "max_bitrate": 96},
-                }
-            ]
-        ),
-    )
-    assert "batch.override_invalid" not in _codes(codec.issues)
-    assert codec.job is not None
-    assert {(a.encoder, a.bitrate) for a in codec.job.audio} == {("libopus", 96)}
-    explicit = A.example_template()
-    row = resolve(
-        explicit, e02, _replace("/audio_defaults/selection/languages", ["eng", "jpn", "fre"])
-    )
-    assert "batch.override_invalid" not in _codes(row.issues)
-
-
-def test_ra3_preferred_languages_count() -> None:
-    """An empty language list compiles to the preferred languages: another number of them is
-    invalid."""
-    base = A.builtin("h265-mkv-1080p")
-    e02 = A.recorded(1, 2)
-    languages = LanguageSettings(preferred_audio=["jpn"])
-    same = resolve(
-        base, e02, _replace("/audio_defaults/selection/languages", ["jpn"]), languages=languages
-    )
-    assert "batch.override_invalid" not in _codes(same.issues)
-    more = resolve(
-        base,
-        e02,
-        _replace("/audio_defaults/selection/languages", ["jpn", "eng"]),
-        languages=languages,
-    )
-    assert "batch.override_invalid" in _codes(more.issues)
 
 
 @pytest.fixture
@@ -313,7 +215,7 @@ def _real_and_link(fixture_media: Media, tmp_path: Path) -> tuple[Path, Path]:
 
 @pytest.mark.anyio
 @pytest.mark.needs_ffmpeg
-async def test_ra3_through_reframe_batch_resolve(
+async def test_an_override_is_found_through_a_linked_folder(
     app: Reframe, fixture_media: Media, tmp_path: Path
 ) -> None:
     """E02's override is found through a linked folder and is invalid, so the "A1 jpn" column
@@ -321,7 +223,7 @@ async def test_ra3_through_reframe_batch_resolve(
     real, link = _real_and_link(fixture_media, tmp_path)
     override = _replace("/audio_defaults/selection/languages", ["eng", "jpn"])
     resolution = await app.batch.resolve(
-        _jpn_template(), [real / E01, real / E02], overrides={str(link / E02): override}
+        A.japanese_template(), [real / E01, real / E02], overrides={str(link / E02): override}
     )
     e01, e02 = resolution.rows
     assert "batch.override_invalid" in _codes(e02.issues)
@@ -334,7 +236,7 @@ async def test_ra3_through_reframe_batch_resolve(
 
 @pytest.mark.anyio
 @pytest.mark.needs_ffmpeg
-async def test_ra1_resolve_batch_through_a_linked_folder(
+async def test_resolve_batch_through_a_linked_folder(
     app: Reframe, fixture_media: Media, tmp_path: Path
 ) -> None:
     real, link = _real_and_link(fixture_media, tmp_path)

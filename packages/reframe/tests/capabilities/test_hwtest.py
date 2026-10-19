@@ -15,7 +15,7 @@ from reframe.capabilities.hwtest import BitDepth, DefinitionError
 from reframe.definitions import HardwareSetup, VideoEncoderDef, load_definitions
 from reframe.models import EncoderState, ToolInfo
 from reframe_testing import fake_tools as ft
-from reframe_testing.capabilities import c4_rule
+from reframe_testing.capabilities import detect_rule
 
 pytestmark = pytest.mark.anyio
 
@@ -53,19 +53,19 @@ def test_qsv_command() -> None:
     assert argv[argv.index("-vf") + 1] == "format=nv12,hwupload=extra_hw_frames=64,format=qsv"
 
 
-#: The ``c4_*`` captures made with :func:`hardware_test_argv` (``c4_h264_amf_10bit`` is not:
+#: The ``detect_*`` captures made with :func:`hardware_test_argv` (``detect_h264_amf_10bit`` is not:
 #: h264_amf has no 10-bit pixel format in the definitions).
-C4_CAPTURES = sorted(
+HARDWARE_CAPTURES = sorted(
     n
     for n in ft.captures()
-    if n.startswith("c4_") and n != "c4_h264_amf_10bit" and "libplacebo" not in n
+    if n.startswith("detect_") and n != "detect_h264_amf_10bit" and "libplacebo" not in n
 )
-FILTER_CAPTURES = sorted(n for n in ft.captures() if n.startswith("c4_libplacebo"))
+FILTER_CAPTURES = sorted(n for n in ft.captures() if n.startswith("detect_libplacebo"))
 
 
-def test_there_are_c4_captures() -> None:
-    assert len(C4_CAPTURES) == 9
-    assert FILTER_CAPTURES == ["c4_libplacebo_no_vulkan", "c4_libplacebo_ok"]
+def test_there_are_hardware_and_filter_captures() -> None:
+    assert len(HARDWARE_CAPTURES) == 9
+    assert FILTER_CAPTURES == ["detect_libplacebo_no_vulkan", "detect_libplacebo_ok"]
 
 
 @pytest.mark.parametrize("name", FILTER_CAPTURES)
@@ -81,10 +81,10 @@ def test_filter_command() -> None:
     ]
 
 
-@pytest.mark.parametrize("name", C4_CAPTURES)
-def test_the_c4_captures_ran_the_current_command(name: str) -> None:
+@pytest.mark.parametrize("name", HARDWARE_CAPTURES)
+def test_the_hardware_captures_ran_the_current_command(name: str) -> None:
     """If a hardware setup in the definitions changes, capture again
-    (``capture_fake_data.py --only c4_…``)."""
+    (``capture_fake_data.py --only detect_…``)."""
     capture = ft.captures()[name]
     command = list(capture.command)
     encoder = ENCODERS[command[command.index("-c:v") + 1]]
@@ -115,7 +115,7 @@ async def test_run_ok(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
 
 
 async def test_run_known_failure(fake_tools: ft.FakeTools) -> None:
-    fake_tools.set_scenario(ft.Scenario([c4_rule("c4_h264_vaapi_no_driver")]))
+    fake_tools.set_scenario(ft.Scenario([detect_rule("detect_h264_vaapi_no_driver")]))
     outcome = await run_hardware_test(fake_tools.ffmpeg, ENCODERS["h264_vaapi"])
     assert not outcome.ok
     assert outcome.failure is not None
@@ -145,7 +145,7 @@ async def test_run_definition_error_is_data(fake_tools: ft.FakeTools) -> None:
 async def test_run_filter_test(fake_tools: ft.FakeTools) -> None:
     ok = await run_filter_test(fake_tools.ffmpeg, "libplacebo")
     assert ok.ok
-    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
         ft.Scenario(
@@ -167,7 +167,7 @@ async def test_run_filter_test(fake_tools: ft.FakeTools) -> None:
     )
 
 
-async def test_run_missing_binary(tmp_path: object) -> None:
+async def test_run_missing_binary() -> None:
     outcome = await run_hardware_test("/nonexistent/ffmpeg", ENCODERS["hevc_amf"])
     assert outcome.failure is not None
     assert outcome.failure.state is EncoderState.ERROR

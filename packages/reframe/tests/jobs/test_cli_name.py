@@ -1,4 +1,4 @@
-"""``reframe name`` on the two demo cases of ``testdata/names.toml``: the folder name wins for
+"""``reframe name`` on two cases of ``testdata/names.toml``: the folder name wins for
 Hacksaw Ridge, the file name for a Sopranos season pack."""
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.cli import EXIT_OK, EXIT_USAGE, output_name, parsed_fields
+from reframe.cli import EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, output_name, parsed_fields
 from reframe.models import NameResult
 from reframe_testing import fake_tools as ft
 
@@ -113,8 +113,9 @@ def test_a_path_that_does_not_exist_is_named_from_its_text(
 
 def test_empty_folder(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     result = invoke("name", str(tmp_path))
-    assert result.exit_code == 1
+    assert result.exit_code == EXIT_NOT_FOUND
     assert "no media files in this folder" in result.stderr
+    assert result.stderr.splitlines()[-1] == "error: no media files to name."
 
 
 def test_json(library: Path) -> None:

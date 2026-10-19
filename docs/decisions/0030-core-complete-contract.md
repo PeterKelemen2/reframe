@@ -1,6 +1,6 @@
 # 0030 — The core-complete contract: facade methods, task context, new models
 
-- Status: accepted
+- Status: accepted; superseded in part by [0044](0044-code-review-follow-ups.md) (`sources.frame` and `jobs.preview_clip_path` are async)
 - Date: 2026-10-15
 - Steps: C-15 (facade), C-10, C-12, C-13, C-6, C-14, C-11
 

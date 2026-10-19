@@ -178,12 +178,12 @@ def bitrate_scan(path, stream_index: int) -> TaskInfo                         # 
 def subtitle_scan(path, stream_indexes: Sequence[int] | None = None) -> TaskInfo  # → analysis.start_subtitle_scan
 def loudness_scan(path, stream_index: int, *, start=None, duration=None) -> TaskInfo  # → analysis.start_loudness_scan
 def frames(path, *, count=None, timestamps=None, job: JobSettings | None = None) -> TaskInfo  # → preview.start_frames
-def frame(key: str) -> Path | None                                             # → preview.frame_path
+async def frame(key: str) -> Path | None                                       # → preview.frame_path (0044)
 def cropdetect(path, *, count=None) -> TaskInfo                                # → preview.start_cropdetect
 async def store(source: MediaSource) -> None                                   # lead: memory + probe cache
 # Reframe.jobs (JobService)
 def preview_clip(job, *, start: float, seconds: float) -> TaskInfo             # → preview.start_preview_clip
-def preview_clip_path(clip_id: str) -> Path | None                             # → preview.clip_path
+async def preview_clip_path(clip_id: str) -> Path | None                       # → preview.clip_path (0044)
 async def explain(source, template: JobTemplate | str | None = None, *, container=None) -> TrackDraft | ProbeError
 async def draft_remux(source, preset=None, *, edit_in_place=True) -> JobDraft | ProbeError  # → metadata.remux_job
 def search_options(encoder_id: str, query: str) -> list[EncoderOption]          # → definitions.search_options

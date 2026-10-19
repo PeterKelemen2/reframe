@@ -245,12 +245,14 @@ Error opening output files: Invalid argument
 
 Relevant to `C-7`/`C-8`: "convert" from text to VobSub/PGS is impossible with FFmpeg.
 
-### FFmpeg 9 prints "Exiting with exit code 0" on stdout
+### FFmpeg 8.1 and later print "Exiting with exit code 0" on stdout
 
-After `ffmpeg -version` and `ffmpeg -h …` (also `-h encoder=<name>`), FFmpeg n9.0.2 prints an
-empty line and `Exiting with exit code 0` **to stdout**. `-encoders`, `-filters`,
-`-hwaccels` and `ffprobe -version` do not (both builds; see the files in
-`testing/reframe_testing/fake_data/`):
+After `ffmpeg -version` and `ffmpeg -h …` (also `-h encoder=<name>`), FFmpeg n8.1.3 and n9.0.2
+print an empty line and `Exiting with exit code 0` **to stdout**, even with `-v quiet`. n7.1
+and n6.1.2 do not (the recorded `-version` outputs in `packages/reframe/tests/tools/data/`).
+`-encoders`, `-filters`, `-hwaccels` and `ffprobe -version` do not (both builds; see the files
+in `testing/reframe_testing/fake_data/`). After an encode the line goes to stderr, and only at
+`-v verbose` or above:
 
 ```
 $ ffmpeg -hide_banner -h encoder=reframe_nonexistent
@@ -333,7 +335,7 @@ Errors that cannot be provoked on this machine (old NVIDIA driver, NVIDIA GPU wi
 Intel GPU without support) were confirmed by a byte search for the exact text in the pinned
 build's files. `capture_fake_data.py` does this and writes
 `testing/reframe_testing/fake_data/library_strings.json` (asserted in
-`test_fake_ffmpeg.py::test_library_strings_confirm_the_c4_texts`). Command:
+`test_fake_ffmpeg.py::test_library_strings_confirm_the_hardware_error_texts`). Command:
 
 ```sh
 BIN=$(uv run --no-project python scripts/fetch-tools.py --platform linux-x64 | tail -n 1)
@@ -431,19 +433,19 @@ ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt
   -c:v hevc_amf -f null -
 ```
 
-The `c4_*` captures in `fake_data/` are exactly these commands
-(`capture_fake_data.py --only c4_…`; `test_hwtest.py` fails when the definitions change the
+The `detect_*` captures in `fake_data/` are exactly these commands
+(`capture_fake_data.py --only detect_…`; `test_hwtest.py` fails when the definitions change the
 command and the captures were not made again):
 
 | Capture | Exit code | Key stderr line | C-4 reason (state) |
 |---------|-----------|-----------------|--------------------|
-| `c4_h264_vaapi_ok`, `c4_hevc_vaapi_10bit_ok`, `c4_hevc_amf_ok`, `c4_hevc_amf_10bit_ok` | 0 | — | available |
-| `c4_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
-| `c4_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
-| `c4_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
-| `c4_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
-| `c4_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
-| `c4_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
+| `detect_h264_vaapi_ok`, `detect_hevc_vaapi_10bit_ok`, `detect_hevc_amf_ok`, `detect_hevc_amf_10bit_ok` | 0 | — | available |
+| `detect_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
+| `detect_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
+| `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
+| `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
+| `detect_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
 
 - **A missing AMF runtime can be provoked without root**: `LD_LIBRARY_PATH` pointing at a
   folder with an empty `libamfrt64.so.1` makes `dlopen` fail (the capture records the folder
@@ -463,7 +465,7 @@ command and the captures were not made again):
   (`TSC`). The pinned build has 562 filters, `libplacebo` and `zscale` among them.
 - **`libplacebo` needs a working Vulkan device.** `-filters` lists it whether Vulkan works or
   not, so detection runs one frame through it (checked 2026-10-13, both builds; the commands
-  are the `c4_libplacebo_*` captures):
+  are the `detect_libplacebo_*` captures):
 
   ```sh
   ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 1 -vf libplacebo -f null -
@@ -1399,7 +1401,11 @@ review follow-up of decision [0012](../docs/decisions/0012-output-naming-rules.m
   `model_validate_json` (a `\udcff` escape in JSON is "lone leading surrogate"). Pydantic's
   `model_dump(mode="json")` and `model_validate` (Python objects) keep the surrogate, and
   `json.dumps(…, ensure_ascii=True)` / `json.loads` give it back exactly, which the probe cache
-  uses (C-3).
+  uses (C-3). JavaScript (node v26.10.0): `JSON.parse('"\\udcff"')` is one UTF-16 unit,
+  U+DCFF, and `JSON.stringify` writes it back as `"\udcff"` (`reframe.models.json_text`,
+  0044). The float spellings differ: `json.dumps(1e-05)` is `1e-05`, pydantic-core 2.50.0's
+  `to_json(1e-05)` is `0.00001` (the same value); `1e+16`, `1.5e+300`, `5e-324` and
+  `23.976023976023978` are spelled the same.
 
 ### Audio and subtitle defaults (C-12, selection stage)
 
@@ -1489,7 +1495,7 @@ stream_index=1|pts_time=5.000000|duration_time=1.500000|size=9
   the same file has 4 packets: the ASS decoder keeps the empty events, the `mov_text` encoder
   drops them.
 - So the subtitle scan does not count a `mov_text` packet of 2 bytes or less: 3 events, not 6,
-  for the 3 cues (`tests/analysis/test_analysis_review_fixes.py`).
+  for the 3 cues (`tests/analysis/test_analysis_facade.py`).
 
 **PGS in Matroska.** The `sup` demuxer returns one packet per *segment*; the Matroska muxer
 merges the segments of a display set into one block (`pgs_frame_merge`, added by
@@ -1657,7 +1663,7 @@ $ ffmpeg -loglevel info -ss 1 -i letterbox.mkv -frames:v 1 -vf cropdetect=round=
   `pad=320:181:9:13` instead, the picture is at **8,12** (`pad` puts it on the 4:2:0 chroma
   grid; at 9,13 only with a 4:4:4 input): `x1:8 x2:307 y1:12 y2:161`, `round=2` →
   `crop=300:150:8:12`, `round=1` → `crop=288:144:14:16`
-  (`tests/preview/test_preview_review_fixes.py::test_cropdetect_rounding_example`).
+  (`tests/preview/test_cropdetect.py::test_cropdetect_rounding_example`).
 
 **The Q-3 frame budget** (`test_benchmark.py`: `hdr10-4k` through the facade, libplacebo, one
 frame per task at the 10 sample times and at 2.0 s, 47 frames after a keyframe; the faster of
@@ -1766,7 +1772,7 @@ video; `mkvmerge -J` shows no `language_ietf` on any track). The re-probe check 
 canonical BCP 47 tags on both sides, so it is not fooled. Since the core-complete review
 (R4-3) the probe of a Matroska file takes `language_ietf` from Reframe's reader only, with
 MediaInfo on or off: after the M6 demo edit the probe shows `hun`/`hu`, `por`/`pt-BR`,
-`eng`/`None` (`test_metadata_review_fixes.py`, `test_matroska_review_fixes.py`).
+`eng`/`None` (`test_metadata_unusual_files.py`, `test_matroska_limits_and_ietf.py`).
 
 **An invalid `LanguageIETF`** (R4-4; mkvpropedit writes `language-ietf=en-US` on a1, then the
 five bytes are replaced in the file): ffprobe reads the file (a1 `language=jpn`), `mkvmerge -J`
@@ -1896,11 +1902,34 @@ log, not the exit code, for three encoders:
 x265 and SVT-AV1 print their own messages (`x265 [warning]: …`, `Svt[warn]: …`) whatever
 FFmpeg's log level is.
 
+**Level tags** (n9.0.2, the dry run's argv with `-loglevel +level+info`): FFmpeg tags each
+line it logs after the line's contexts: `[libx264 @ 0x…] [warning] VBV maxrate specified, but
+no bufsize, ignored`, `[info] Stream mapping:`, `[vost#0:0/libx265 @ 0x…] [enc:libx265 @ 0x…]
+[error] …`. The second line of a message has no tag, and neither do x265's and SVT-AV1's own
+lines. With the tags removed the log is the same as without the flag. `level+info` (no
+leading `+`) resets the other flags: repeated lines are no longer folded into "Last message
+repeated N times". Without the flag, x264's warnings through FFmpeg have no level word and
+look like its info lines (`using SAR=1/1`). x264 logs `Error parsing option '…'` at the
+warning level, and libvpx logs its configuration at the warning level when it cannot start.
+`av1_vaapi` (radeonsi) `tile_groups=3`: `[warning] Invalid tile groups number 3, correct to 1.`
+
+x264 warnings that name a parameter (custom parameters, dry-run argv): `VBV maxrate specified,
+but no bufsize, ignored`, `VBV bufsize set but maxrate unspecified, ignored`, `NAL HRD
+parameters require VBV parameters`, `b-pyramid normal + intra-refresh is not supported`,
+`ref > 1 + intra-refresh is not supported`, `intra-refresh is not compatible with open-gop`,
+`interlace + weightp is not implemented`, `subme=0 + direct=temporal is not supported`,
+`ignoring unknown frame packing value`, `max bitrate less than average bitrate, assuming
+CBR`, and the level limits (`frame MB size (20x12) > level limit (99)`, `DPB size …`, `MB rate
+…`, `VBV bitrate …`, `VBV buffer …`). x264 clamps these without a word: `keyint=-5`,
+`ref=0`, `crf=-20`, `crf=70`, `qp=100`, `b-adapt=5`, `bframes=20`, `rc-lookahead=300`,
+`qpmin=60:qpmax=20`, `aq-mode=9`, `merange=2`, `keyint=10:min-keyint=20`, `threads=200`,
+`qcomp=2`, `ipratio=0.5`, `nr=20000`, `deadzone-inter=40`, `slices=200`, `crf-max=10`.
+
 #### Core-complete review (2026-10-16)
 
 Checked with the same three builds (Arch n9.0.2, BtbN n9.0.2 and n8.1.3; the results are the
 same in all three), each encode with the target in a temporary folder and a temporary working
-folder. Tests: `tests/validation/test_custom_params_ffmpeg.py`, `test_dryrun_review_fixes.py`,
+folder. Tests: `tests/validation/test_custom_params_ffmpeg.py`, `test_dryrun_ffmpeg.py`,
 `test_option_formats_ffmpeg.py`, `test_levels_ffmpeg.py`.
 
 **Custom parameters that read or write files** (R5-1; the list is
@@ -1976,8 +2005,10 @@ exit 183 ("picture dimensions are out of range for specified level"); `ultrafast
 Checked with the pinned BtbN n9.0.2 (x264 core 165, x265 4.3+49, SVT-AV1 v4.2.0); the tests
 pass with Arch n9.0.2 and BtbN n8.1.3 too. Each encode ran in an empty temporary working
 folder, with an `LD_PRELOAD` logger of every `open` / `fopen`. Tests:
-`tests/validation/test_custom_params_ffmpeg.py` (`test_rc_1_*`),
-`test_custom_params_final_review.py`, `test_option_formats_ffmpeg.py` (`test_rc_2_*`).
+`tests/validation/test_custom_params_ffmpeg.py`
+(`test_x264_reads_and_applies_the_file_a_cqm_value_names`,
+`test_a_value_that_is_a_name_or_a_file_name`), `test_custom_params_cqm.py`,
+`test_option_formats_ffmpeg.py` (`test_signs_and_spaces_with_the_encoders`).
 
 **A value that is a name or a file name** (RC-1). The library reads the value after FFmpeg's
 quotes and escapes:

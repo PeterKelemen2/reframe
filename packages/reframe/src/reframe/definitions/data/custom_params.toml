@@ -1,4 +1,4 @@
-# Custom encoder parameters (C-6; decision 0035 "Follow-up (core-complete review, 2026-10-16)").
+# Custom encoder parameters.
 #
 # `VideoSettings.custom_params` reaches FFmpeg in two ways (reframe.command.video):
 #
@@ -12,10 +12,8 @@
 #    list from encoder detection, else [private_options] below) and the generic encoder options
 #    of [ffmpeg].codec_options. Anything else is `encoder.custom_param_unknown`.
 #
-# Checked with FFmpeg n9.0.2 (BtbN and Arch builds: x264 core 165, x265 4.3, SVT-AV1 v4.2.0,
-# libvpx 1.17.0) and n8.1.3 (BtbN), each key encoding with a path in a temporary folder and
-# the temporary folder as working folder: testdata/README.md "Advanced encoder options (C-6,
-# complete option sets)", tests/validation/test_custom_params_ffmpeg.py.
+# Each key was checked by encoding with a path in a temporary folder, with that folder as the
+# working folder: testdata/README.md, tests/validation/test_custom_params_ffmpeg.py.
 #
 # Key names are compared the way the libraries read them: without leading `-`, `_` as `-`,
 # in lower case, and also without a `no-` / `no` prefix (x264 and x265 read `nostats=x` as
@@ -24,9 +22,7 @@
 # A key whose value is a name *or* a file name (x265 `scaling-list`, x264 `cqm`) has its names
 # in [value_exceptions], compared as the library compares them ([value_match]); every other
 # value is a file. Through a `no` prefix the library gets `true` / `false` (a file of that name),
-# so the names never apply there (decision 0035 "Follow-up (final review, 2026-10-17)").
-
-# --------------------------------------------------------------------------- params argument
+# so the names never apply there.
 
 [file_keys.libx264]
 # Written (checked): the file appears.
@@ -89,7 +85,7 @@ output = "an output file"
 
 [value_exceptions]
 # Values that do not name a file, as the library sees the value (after FFmpeg's quotes and
-# escapes; checked with x264 core 165 and x265 4.3, testdata/README.md C-6 "Final review").
+# escapes; testdata/README.md).
 # x265 `scaling-list`: the whole value, case-sensitive ("DEFAULT", "./default", "default "
 # and "flat" are opened as files).
 scaling-list = ["default", "off"]
@@ -102,8 +98,6 @@ cqm = ["flat", "jvt"]
 # How the library compares a value with [value_exceptions]: "whole" (strcmp, the default) or
 # "contains" (strstr: x264's `cqm`).
 cqm = "contains"
-
-# --------------------------------------------------------------------------- own options
 
 [ffmpeg]
 # AVCodecContext options with the encoding and video flags (`ffmpeg -h full`, "AVCodecContext

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import shutil
 import subprocess
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import psutil
+import pytest
 
 from reframe.definitions import load_definitions
 from reframe.events import EventBus
@@ -236,6 +239,28 @@ def rgb_pixels(png: Path) -> bytes:
         check=True,
     )  # fmt: skip
     return proc.stdout
+
+
+def file_reads_on_this_thread(monkeypatch: pytest.MonkeyPatch, root: Path) -> list[str]:
+    """Record each read of a file under ``root`` (``stat``, ``utime``, a listing, ``open``)
+    that is made on the calling thread: call it on the event loop, before the task starts."""
+    thread = threading.get_ident()
+    prefix = str(root)
+    calls: list[str] = []
+
+    def recorded(name: str, real: Callable[..., Any]) -> Callable[..., Any]:
+        def call(path: Any, *args: Any, **kwargs: Any) -> Any:
+            text = os.fspath(path) if isinstance(path, (str, os.PathLike)) else ""
+            if threading.get_ident() == thread and str(text).startswith(prefix):
+                calls.append(f"{name}({Path(text).name})")
+            return real(path, *args, **kwargs)
+
+        return call
+
+    for name in ("stat", "lstat", "utime", "listdir", "scandir"):
+        monkeypatch.setattr(os, name, recorded(name, getattr(os, name)))
+    monkeypatch.setattr(builtins, "open", recorded("open", builtins.open))
+    return calls
 
 
 def ffmpeg_children(predicate: Callable[[list[str]], bool] | None = None) -> list[psutil.Process]:

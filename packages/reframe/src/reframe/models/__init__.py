@@ -236,6 +236,7 @@ from reframe.models.template import (
     TrackRuleSettings,
     TrackSelector,
 )
+from reframe.models.text import json_text
 from reframe.models.tools import (
     ToolFetchResult,
     ToolInfo,
@@ -457,6 +458,7 @@ __all__ = [
     "WhenDone",
     "WordSeparator",
     "current_version",
+    "json_text",
     "load_document",
     "migrate",
     "register_migration",

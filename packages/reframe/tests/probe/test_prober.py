@@ -247,6 +247,17 @@ async def test_garbage_output(
     assert (result.kind, result.message) == (ProbeErrorKind.INVALID_OUTPUT, message)
 
 
+async def test_a_stream_index_given_as_a_string_is_read(
+    fake_tools: ft.FakeTools, media_file: Path
+) -> None:
+    video = {"index": "0", "codec_type": "video", "codec_name": "hevc", "width": 64, "height": 64}
+    output = json.dumps({"streams": [video], "format": {"format_name": "matroska,webm"}})
+    fake_tools.set_scenario(ft.Scenario([streams_rule(ft.stdout(output))]))
+    result = await make_prober(fake_tools).probe(media_file)
+    assert isinstance(result, MediaSource)
+    assert [v.index for v in result.video] == [0]
+
+
 async def test_truncated_output(
     fake_tools: ft.FakeTools, media_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

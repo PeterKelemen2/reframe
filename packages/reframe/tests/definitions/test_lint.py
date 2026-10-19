@@ -442,7 +442,7 @@ def test_filter_problems_are_reported() -> None:
         assert _has(problems, needle), needle
 
 
-def test_the_audio_fallback_of_decision_0020() -> None:
+def test_only_audio_encoders_missing_from_gpl_builds_fall_back() -> None:
     audio = load_definitions().audio_encoders
     assert audio["libfdk_aac"].fallback == ["aac"]
     assert audio["aac"].in_gpl_builds

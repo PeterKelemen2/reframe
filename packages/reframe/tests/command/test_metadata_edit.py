@@ -38,8 +38,8 @@ from .conftest import caps, draft, recorded, tools
 DEFS = load_definitions()
 
 
-def in_place(path: Path = Path("/media/multitrack.mkv")) -> tuple[JobSettings, MediaSource]:
-    src = recorded("multitrack.mkv", path=path)
+def in_place() -> tuple[JobSettings, MediaSource]:
+    src = recorded("multitrack.mkv")
     return remux_job(draft(src), src, edit_in_place=True), src
 
 
@@ -61,12 +61,6 @@ def test_without_edit_in_place_the_same_job_is_a_remux() -> None:
     job.output.path = Path("/out/multitrack.mkv")
     assert job_type(job, src)[0] == "remux"
     assert job_type(job, src)[1].startswith("Remux: ")
-
-
-def _blocked(job: JobSettings, src: MediaSource) -> str:
-    kind, reason = job_type(job, src)
-    assert kind != "metadata_edit"
-    return reason
 
 
 @pytest.mark.parametrize(
@@ -108,10 +102,10 @@ def test_why_a_job_is_not_a_metadata_edit(change: object, kind: str, why: str) -
 
 
 def test_chapter_changes_are_not_a_metadata_edit() -> None:
-    job, src = in_place(Path("/media/chapters.mkv"))
     src = recorded("chapters.mkv")
-    job = remux_job(draft(src), src)
+    job = remux_job(draft(src), src, edit_in_place=True)
     assert in_place_blockers(job, src) == []
+    assert job_type(job, src)[0] == "metadata_edit"
     job.chapters = ChapterSettings(enabled=False)
     assert in_place_blockers(job, src) == ["the chapters are removed"]
     job.chapters = ChapterSettings(names=["A"])

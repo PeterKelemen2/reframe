@@ -11,7 +11,13 @@ from typing import Any, Literal
 
 import pytest
 
-from reframe.batch import draft_tracks, explain, explain_subtitles, foreign_audio_search
+from reframe.batch import (
+    draft_tracks,
+    effective_language,
+    explain,
+    explain_subtitles,
+    foreign_audio_search,
+)
 from reframe.batch.explain import audio_language, forced_evidence, subtitle_stage
 from reframe.batch.selection import KEEP_EVERYTHING
 from reframe.jsonpatch import apply_patch
@@ -120,7 +126,7 @@ EXAMPLE_ROWS = [
 ]  # fmt: skip
 
 
-def test_example_of_03_row_by_row_through_draft_and_explain() -> None:
+def test_the_codec_rules_example_row_by_row_through_draft_and_explain() -> None:
     template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
     draft = draft_tracks(EXAMPLE_SOURCE, template)
     decisions = explain(EXAMPLE_DEFAULTS, EXAMPLE_SOURCE)
@@ -141,7 +147,7 @@ def test_example_of_03_row_by_row_through_draft_and_explain() -> None:
     assert draft.issues == []
 
 
-def test_m6_demo_item_5() -> None:
+def test_each_preview_row_has_its_rule_outputs_and_a_reason() -> None:
     media = source(
         [
             audio(1, "hun", "dts", 6, 2104, lossless=True),
@@ -169,7 +175,7 @@ def test_m6_demo_item_5() -> None:
 
 
 @pytest.mark.anyio
-async def test_m6_demo_item_5_through_the_facade(tmp_path: Path) -> None:
+async def test_explain_through_the_facade_with_the_settings_languages(tmp_path: Path) -> None:
     """``Reframe.jobs.explain`` with the languages of Settings (the selection has none)."""
     app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "c")
     try:
@@ -692,3 +698,39 @@ def test_undetermined_subtitles_are_written_as_the_first_language() -> None:
     assert stage.decisions[0].notes == [
         "Undetermined language: treated and written as Hungarian, the first listed language"
     ]
+
+
+def test_an_empty_subtitle_track_is_not_the_forced_track() -> None:
+    """A subtitle track with 0 events (an empty track) is not "few events"."""
+    full, empty = subtitle(2, "eng", events=900), subtitle(3, "eng", events=0)
+    assert forced_evidence(empty, [full]) is None
+    found = foreign_audio_search(
+        [full, empty], audio_language="en", user_language="en", can_burn=False
+    )
+    assert found.searched
+    assert found.track is None
+    # A real low count is still found.
+    few = subtitle(4, "eng", events=20)
+    assert forced_evidence(few, [full, empty]) == (
+        3,
+        "20 events, 2 % of the 900 events of track #2",
+    )
+
+
+@pytest.mark.parametrize("broken", ["xx", "abcdefgh", "hu-Latn-ZZ9", "hu-XY-1"])
+def test_an_invalid_language_ietf_falls_back_to_the_language(broken: str) -> None:
+    """A broken ``LanguageIETF`` (right shape, not a language) falls back to ``language``."""
+    track = audio(1, "hun", ietf=broken)
+    assert effective_language(track) == "hu"
+    assert effective_language(subtitle(2, "eng", ietf=broken)) == "en"
+    draft = draft_tracks(
+        source([track]),
+        JobTemplate(audio_defaults=AudioDefaults(selection=TrackSelection(languages=["hu"]))),
+    )
+    assert [(t.source_stream, t.metadata.language) for t in draft.audio] == [(1, "hu")]
+    assert draft.decisions[0].selection == "Hungarian: the first matching track"
+    # A valid tag still wins, and a track with nothing valid keeps its raw tag.
+    assert effective_language(audio(1, "hun", ietf="hu-HU")) == "hu-HU"
+    assert effective_language(audio(1, "zzz", ietf=broken)) == broken
+    assert effective_language(audio(1, "zzz")) == "zzz"
+    assert effective_language(audio(1, None)) is None

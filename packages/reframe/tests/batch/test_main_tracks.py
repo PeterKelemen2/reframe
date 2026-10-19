@@ -1,4 +1,8 @@
-"""Regression tests for the audio and subtitle track selection."""
+"""Main and extra tracks (commentary, description, music only) in the selection stage.
+
+Only main tracks count for the no-listed-language rule, the default track and the
+foreign-audio burn-in.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +15,8 @@ from typing import Literal
 
 import pytest
 
-from reframe.batch import draft_tracks, effective_language, foreign_audio_search, select_tracks
-from reframe.batch.explain import forced_evidence, subtitle_stage
+from reframe.batch import draft_tracks, select_tracks
+from reframe.batch.explain import subtitle_stage
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioDefaults,
@@ -60,7 +64,7 @@ def builtin(name: str) -> Preset:
     return next(p for p in builtin_presets() if p.name == name)
 
 
-def test_r1_1_a_listed_audio_description_is_not_a_listed_language_found() -> None:
+def test_a_listed_audio_description_is_not_a_listed_language_found() -> None:
     """A French main track and an English audio description; English is preferred."""
     media = source(
         [
@@ -78,18 +82,18 @@ def test_r1_1_a_listed_audio_description_is_not_a_listed_language_found() -> Non
     assert errors(draft.issues) == []
 
 
-def test_r1_1_no_listed_language_counts_main_tracks_only() -> None:
+def test_no_listed_language_counts_main_tracks_only() -> None:
     streams = [audio(1, "jpn"), audio(2, "hun", comment=True)]
     found = select_tracks(streams, TrackSelection(languages=["hu"], no_match="first_track"))
     assert found.no_listed_language
     assert [p.stream.index for p in found.selected] == [1]
-    # A listed main track is found as before; a source of extras only has no main track.
+    # A listed main track is found; a source of extras only has no main track.
     assert not select_tracks([audio(1, "hun")], TrackSelection(languages=["hu"])).no_listed_language
     only_extras = select_tracks([audio(1, "hun", comment=True)], TrackSelection(languages=["hu"]))
     assert not only_extras.no_listed_language
 
 
-def test_r1_1_the_kept_commentary_comes_after_the_no_match_track() -> None:
+def test_the_kept_commentary_comes_after_the_no_match_track() -> None:
     streams = [audio(1, "jpn", default=True), audio(2, "eng"), audio(3, "hun", comment=True)]
     selection = select_tracks(
         streams, TrackSelection(languages=["hu"], commentary="keep_after_main")
@@ -100,7 +104,7 @@ def test_r1_1_the_kept_commentary_comes_after_the_no_match_track() -> None:
     ]
 
 
-def test_r1_1_subtitles_use_the_same_rule() -> None:
+def test_a_listed_commentary_subtitle_does_not_count_as_found() -> None:
     """The subtitle defaults use the same track selection as audio, so a listed-language
     commentary subtitle does not stop the no-match rule either."""
     streams = [subtitle(1, "eng", default=True), subtitle(2, "hun", comment=True)]
@@ -112,7 +116,7 @@ def test_r1_1_subtitles_use_the_same_rule() -> None:
 
 
 @pytest.mark.parametrize("commentary", ["drop", "keep_after_main"])
-def test_r1_1_take_none_with_only_a_listed_commentary_is_an_error(
+def test_take_none_with_only_a_listed_commentary_is_an_error(
     commentary: Literal["drop", "keep_after_main"],
 ) -> None:
     """Take none with only a listed commentary: no main track, so the no-match error."""
@@ -140,7 +144,7 @@ def test_r1_1_take_none_with_only_a_listed_commentary_is_an_error(
 
 @pytest.mark.needs_ffmpeg
 @pytest.mark.anyio
-async def test_r1_1_and_r1_2_through_the_facade(
+async def test_no_listed_language_through_the_facade(
     fixture_media: Callable[[str], Path], tmp_path: Path
 ) -> None:
     """Drafts through the facade on the real fixtures (``Reframe.jobs.draft``)."""
@@ -153,7 +157,8 @@ async def test_r1_1_and_r1_2_through_the_facade(
             data["audio_defaults"] = AudioDefaults(
                 selection=selection, codec_rules=base.audio_defaults.codec_rules
             ).model_dump()
-            return Preset.model_validate({**data, "id": "r1", "name": "R1", "built_in": False})
+            custom = {**data, "id": "custom", "name": "Custom", "built_in": False}
+            return Preset.model_validate(custom)
 
         # multitrack.mkv without its English main track: Japanese 5.1 (default) and
         # the English director's commentary; English listed.
@@ -165,7 +170,7 @@ async def test_r1_1_and_r1_2_through_the_facade(
             (3, "eng", "Director's Commentary"),
         ]
         draft = await app.jobs.draft(
-            media, preset(TrackSelection(languages=["en"])), output=tmp_path / "r1-1.mkv"
+            media, preset(TrackSelection(languages=["en"])), output=tmp_path / "commentary.mkv"
         )
         assert not isinstance(draft, ProbeError)
         assert [a.source_stream for a in draft.job.audio] == [1]
@@ -174,7 +179,7 @@ async def test_r1_1_and_r1_2_through_the_facade(
         draft = await app.jobs.draft(
             fixture_media("dts-hd-ma"),
             preset(TrackSelection(languages=["de"], no_match="none", other_languages="keep_first")),
-            output=tmp_path / "r1-2.mkv",
+            output=tmp_path / "keep-first.mkv",
         )
         assert not isinstance(draft, ProbeError)
         assert [a.source_stream for a in draft.job.audio] == [1]
@@ -186,7 +191,7 @@ async def test_r1_1_and_r1_2_through_the_facade(
 @pytest.mark.parametrize(
     ("other", "expected"), [("keep_first", [1]), ("keep_all", [1, 2]), ("drop", [])]
 )
-def test_r1_2_take_none_is_an_error_only_when_no_track_is_taken(
+def test_take_none_is_an_error_only_when_no_main_track_is_taken(
     other: Literal["drop", "keep_first", "keep_all"], expected: list[int]
 ) -> None:
     media = source([audio(1, "jpn", "ac3", 6, 448, default=True), audio(2, "fre", "ac3", 2, 192)])
@@ -231,7 +236,7 @@ def _extras_template(
     )
 
 
-def test_r1_3_a_kept_commentary_is_never_the_first_language_default_audio() -> None:
+def test_a_kept_commentary_is_never_the_first_language_default_audio() -> None:
     """``first_in_first_language`` skips the Hungarian commentary, which is not a main track."""
     draft = draft_tracks(EXTRAS, _extras_template("first_in_first_language"))
     assert [(t.source_stream, t.metadata.commentary, t.metadata.default) for t in draft.audio] == [
@@ -244,7 +249,7 @@ def test_r1_3_a_kept_commentary_is_never_the_first_language_default_audio() -> N
     assert draft.decisions[1].notes == []
 
 
-def test_r1_3_a_commentary_subtitle_is_never_burned_in_for_foreign_audio() -> None:
+def test_a_commentary_subtitle_is_never_burned_in_for_foreign_audio() -> None:
     """English audio, Hungarian viewer, burn-in ``foreign_audio``: the only Hungarian subtitle
     is a commentary, which is not "the Hungarian subtitles for the English audio"."""
     draft = draft_tracks(EXTRAS, _extras_template("first_output"))
@@ -253,13 +258,13 @@ def test_r1_3_a_commentary_subtitle_is_never_burned_in_for_foreign_audio() -> No
     assert not row.reason.startswith("Burn in")
 
 
-def test_r1_3_foreign_audio_burn_in_takes_the_main_subtitle() -> None:
+def test_foreign_audio_burn_in_takes_the_main_subtitle() -> None:
     media = EXTRAS.model_copy(update={"subtitles": [*EXTRAS.subtitles, subtitle(5, "hun")]})
     draft = draft_tracks(media, _extras_template("first_output"))
     assert [(t.source, t.action) for t in draft.subtitles] == [(5, "burn"), (3, "copy")]
 
 
-def test_r1_3_a_commentary_subtitle_is_never_the_first_language_default() -> None:
+def test_a_commentary_subtitle_is_never_the_first_language_default() -> None:
     """Subtitle ``first_in_first_language``: the Hungarian commentary is skipped, and with no
     Hungarian main subtitle the default is the first copied track."""
     defaults = SubtitleDefaults(
@@ -272,39 +277,3 @@ def test_r1_3_a_commentary_subtitle_is_never_the_first_language_default() -> Non
     )
     stage = subtitle_stage(defaults, EXTRAS)
     assert [(t.source, t.metadata.default) for t in stage.outputs] == [(4, True), (3, False)]
-
-
-def test_r1_6_an_empty_subtitle_track_is_not_the_forced_track() -> None:
-    """A subtitle track with 0 events (an empty track) is not "few events"."""
-    full, empty = subtitle(2, "eng", events=900), subtitle(3, "eng", events=0)
-    assert forced_evidence(empty, [full]) is None
-    found = foreign_audio_search(
-        [full, empty], audio_language="en", user_language="en", can_burn=False
-    )
-    assert found.searched
-    assert found.track is None
-    # A real low count is still found.
-    few = subtitle(4, "eng", events=20)
-    assert forced_evidence(few, [full, empty]) == (
-        3,
-        "20 events, 2 % of the 900 events of track #2",
-    )
-
-
-@pytest.mark.parametrize("broken", ["xx", "abcdefgh", "hu-Latn-ZZ9", "hu-XY-1"])
-def test_an_invalid_language_ietf_falls_back_to_the_language(broken: str) -> None:
-    """A broken ``LanguageIETF`` (right shape, not a language) falls back to ``language``."""
-    track = audio(1, "hun", ietf=broken)
-    assert effective_language(track) == "hu"
-    assert effective_language(subtitle(2, "eng", ietf=broken)) == "en"
-    draft = draft_tracks(
-        source([track]),
-        JobTemplate(audio_defaults=AudioDefaults(selection=TrackSelection(languages=["hu"]))),
-    )
-    assert [(t.source_stream, t.metadata.language) for t in draft.audio] == [(1, "hu")]
-    assert draft.decisions[0].selection == "Hungarian: the first matching track"
-    # A valid tag still wins, and a track with nothing valid keeps its raw tag.
-    assert effective_language(audio(1, "hun", ietf="hu-HU")) == "hu-HU"
-    assert effective_language(audio(1, "zzz", ietf=broken)) == broken
-    assert effective_language(audio(1, "zzz")) == "zzz"
-    assert effective_language(audio(1, None)) is None

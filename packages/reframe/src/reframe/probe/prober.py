@@ -33,6 +33,7 @@ from reframe.models.media import (
     SubtitleStream,
     VideoStream,
 )
+from reframe.models.text import replace_undecodable
 from reframe.models.tools import ToolInfo
 from reframe.probe import matroska, mediainfo, roles
 from reframe.probe.cache import CacheKey, ProbeCache
@@ -50,7 +51,7 @@ from reframe.probe.ffprobe import (
 )
 from reframe.probe.hdr import needs_frame_side_data
 from reframe.probe.parse import (
-    main_video_index,
+    main_video_stream,
     parse_ffprobe,
     vfr_from_timestamps,
     vfr_undecided,
@@ -303,6 +304,8 @@ class Prober:
                 if isinstance(vfr, ProbeError):
                     return vfr  # cancelled
                 stream.vfr = bool(vfr)
+        # Warnings added after validation can quote the path: show it as the cached copy does.
+        source.warnings = [replace_undecodable(text) for text in source.warnings]
         if self.cache is not None:
             await asyncio.to_thread(self.cache.put, key, source, tool=identity, options=options)
         return source
@@ -314,12 +317,10 @@ class Prober:
         cancel: CancelToken,
         warnings: list[str],
     ) -> dict[str, Any] | ProbeError | None:
-        index = main_video_index(data)
-        if index is None:
+        main = main_video_stream(data)
+        if main is None:
             return None
-        stream = next(
-            s for s in data.get("streams", []) if isinstance(s, dict) and s.get("index") == index
-        )
+        index, stream = main
         if not needs_frame_side_data(stream, video_bit_depth(stream)):
             return None
         frames = await run_json(

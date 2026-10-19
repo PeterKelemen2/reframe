@@ -101,7 +101,8 @@ Differences from HandBrake, on purpose:
 ### 2. Preset store rules
 
 - Ids: built-ins have stable slugs; user presets get a UUID. Names are unique among all
-  presets (built-in and user), compared without case and repeated spaces. A clash is a
+  presets (built-in and user, and the presets of a newer Reframe that are kept as raw JSON;
+  the store checked those only from 2026-10-19), compared without case and repeated spaces. A clash is a
   `ValidationIssue` `preset.name_conflict` with a fix that sets the next free name
   (`Name (2)`). Built-ins cannot be changed, renamed or deleted (`preset.built_in`);
   duplicating one makes a user preset in the `Custom` category.
@@ -176,8 +177,9 @@ Reframe is kept"):
 3. Deeply nested JSON raised from `load()`. For `settings.json` that happens in
    `Reframe.__init__`, so the app did not start. Measured on Python 3.14.7 with the locked
    Pydantic: `json.loads` parses 3000 levels, but the migrations' `copy.deepcopy` raises
-   `RecursionError` at about 600 levels, and `model_dump` raises `ValueError` ("Circular
-   reference detected (depth exceeded)") at 400. A settings patch with a 1000-level value
+   `RecursionError` at about 500 levels, and `model_dump` raises `ValueError` ("Circular
+   reference detected (depth exceeded)") at 256 (measured again on 2026-10-19 with
+   `migrate("settings", …)` and `AppSettings.model_dump`: 498 and 256; this said 600 and 400). A settings patch with a 1000-level value
    is a Pydantic "Recursion error". A document of 100 000 levels fails in `json.loads`.
 4. A `settings.json` or `presets.json` that is a symbolic link (into a dotfiles folder) was
    replaced by a regular file on save: `os.replace` replaces the link, not its target.

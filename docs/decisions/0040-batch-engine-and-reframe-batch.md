@@ -315,18 +315,18 @@ matrix with "A2 ✗ none" (the snapshot test, and a CLI test with the dub requir
   setting (a file of the batch is never overwritten). `reframe encode FILE|DIR…` had the same
   hole (each file drafted alone): `reframe.jobs.OutputClaims` now refuses a job whose output is
   another file of the command or the output of an earlier job of the command. Tests:
-  `tests/jobs/test_cli_review_fixes.py` (`test_batch_never_writes_a_file_of_another_group`,
+  `tests/jobs/test_cli_output_names.py` (`test_batch_never_writes_a_file_of_another_group`,
   `test_batch_two_outputs_with_one_name_in_two_groups`, `test_resolve_batch_checks_every_group`,
   `test_encode_never_writes_another_file_of_the_command`, `test_encode_two_outputs_with_one_name`,
-  and `test_the_leads_reproduction_with_the_real_queue` with the real queue and FFmpeg: the
-  copy's SHA-256 changed before the fix).
+  and `test_batch_never_overwrites_a_file_named_as_an_output_with_the_real_queue` with the
+  real queue and FFmpeg: the copy's SHA-256 changed before the fix).
 - **R2-2 (major): heuristic roles are informational.** Fingerprints and derived selectors used
   every C-3 role, also the ones inferred from per-episode statistics, and roles are never
   relaxed: a signs track with 22 % of the full track's events in E01 and 27 % in E02 split the
   season (E02 a near member) and the S1 rule derived from E01 was "✗ none" in E02.
   `descriptors.stream_roles` now keeps the roles with flag or title evidence (§3); an untitled,
   unflagged signs track can then only be told from the full track by order (its rule is "≈ 2
-  candidates", in every file). Tests: `tests/batch/test_batch_review_fixes.py`
+  candidates", in every file). Tests: `tests/batch/test_descriptors.py`
   (`test_heuristic_roles_neither_split_a_season_nor_break_a_derived_rule`,
   `test_descriptor_roles_have_flag_or_title_evidence`).
 - **R2-3: an override that changes the rule lists is invalid.** Cells are keyed by the rule's
@@ -412,7 +412,7 @@ A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) foun
     review) falls back to `normcase(abspath(…))`: the key never raises.
 
   The key is a string of `reframe.jobs` (dictionaries of a whole batch need a hashable key;
-  `queue/` is not changed) and follows the queue's rule; `test_ra1_file_key_agrees_with_the_queue`
+  `queue/` is not changed) and follows the queue's rule; `test_file_key_agrees_with_the_queue`
   checks it against `reframe.queue.files.same_file`. It differs on purpose in one case: two existing
   files whose names differ only in case on Linux are two files here (the queue's case-folded
   fallback takes them as one, the safe side for running jobs; for "taken once" both must be
@@ -439,22 +439,23 @@ A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) foun
   of another file by identity (a hard link with another name) is left out as already encoded;
   the message then names the planned output ("`Other.mkv` is the planned output of `…E01…`
   with this preset (the same file as `Anime.Show.S01E01.Pilot.mkv`)"). Tests:
-  `tests/jobs/test_cli_final_review.py` (`test_ra1_encode_never_writes_a_source_given_through_a_linked_folder`
-  and `test_ra1_batch_never_writes_a_source_given_through_a_linked_folder`, the reviewer's
-  tests; `test_ra1_encode_never_writes_a_hard_linked_output_name`,
-  `test_ra1_batch_never_writes_a_hard_linked_output_name`,
-  `test_ra1_a_folder_given_through_two_spellings_is_taken_once`,
-  `test_ra1_encode_takes_a_file_named_through_a_link_once`,
-  `test_ra1_the_file_keys_are_computed_off_the_event_loop`,
-  `test_ra1_the_batch_service_keys_files_off_the_event_loop`, and
-  `test_ra1_the_symlink_case_with_the_real_queue`: the real FFmpeg and queue, `encode` and
-  `batch`, the user file's SHA-256 unchanged) and `tests/batch/test_batch_final_review.py`
-  (`test_ra1_file_key_compares_files`, `test_ra1_file_key_agrees_with_the_queue`,
-  `test_ra1_file_key_on_windows_mocked` (the Windows rule with mocked `stat`, `realpath` and
+  `tests/jobs/test_cli_file_identity.py` (`test_encode_never_writes_a_source_given_through_a_linked_folder`
+  and `test_batch_never_writes_a_source_given_through_a_linked_folder`, the reviewer's
+  tests; `test_encode_never_writes_a_hard_linked_output_name`,
+  `test_batch_never_writes_a_hard_linked_output_name`,
+  `test_a_folder_given_through_two_spellings_is_taken_once`,
+  `test_encode_takes_a_file_named_through_a_link_once`,
+  `test_the_file_keys_are_computed_off_the_event_loop`,
+  `test_the_batch_service_keys_files_off_the_event_loop`, and
+  `test_a_user_file_reached_through_a_link_is_never_overwritten_by_the_real_queue`: the real
+  FFmpeg and queue, `encode` and `batch`, the user file's SHA-256 unchanged) and
+  `tests/batch/test_file_identity.py`
+  (`test_file_key_compares_files`, `test_file_key_agrees_with_the_queue`,
+  `test_file_key_on_windows_mocked` (the Windows rule with mocked `stat`, `realpath` and
   `ntpath.normcase`: a mapped drive and its UNC path, case, a file index 0),
-  `test_ra1_output_claims_compare_files`, `test_ra1_find_media_files_takes_a_file_once`,
-  `test_ra1_find_media_files_keeps_two_files_whose_names_differ_in_case`,
-  `test_ra1_file_key_never_raises_for_a_bad_path`, `test_ra1_resolve_batch_through_a_linked_folder`).
+  `test_output_claims_compare_files`, `test_find_media_files_takes_a_file_once`,
+  `test_find_media_files_keeps_two_files_whose_names_differ_in_case`,
+  `test_file_key_never_raises_for_a_bad_path`, `test_resolve_batch_through_a_linked_folder`).
   Known limit: on Windows, two **new** outputs named through a mapped drive and through its UNC
   path are one key only when `realpath` resolves the drive (it does through
   `GetFinalPathNameByHandle`; a network redirector that does not support it leaves the drive
@@ -477,24 +478,25 @@ A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) foun
   as a change inside an explicit rule is (the column label is then the template's, as for an
   explicit rule whose languages a file changes). A kind with explicit rules is not checked (its
   defaults are not used). Not chosen: keying cells by the compiled rule's identity (a file's
-  extra rules would have no column). Tests: `tests/batch/test_batch_final_review.py`
-  (`test_ra3_an_override_that_changes_the_compiled_rules_is_invalid`,
-  `test_ra3_an_override_inside_the_compiled_rules_is_applied`,
-  `test_ra3_preferred_languages_count`, `test_ra3_through_reframe_batch_resolve`: the
+  extra rules would have no column). Tests: `tests/batch/test_resolve.py`
+  (`test_an_override_that_changes_the_compiled_rules_is_invalid`,
+  `test_an_override_inside_the_compiled_rules_is_applied`,
+  `test_another_number_of_preferred_languages_is_an_invalid_override`) and
+  `tests/batch/test_file_identity.py::test_an_override_is_found_through_a_linked_folder` (the
   reviewer's case through `Reframe.batch.resolve` with the real ffprobe, the override found
   through a linked folder).
 - **RA-4: `reframe encode` no longer says "will be replaced" next to "never overwritten".**
   `OutputClaims`' `batch.output_is_source` error was added to the draft's issues with C-8's
   `output.overwrite` warning still there; the batch path already left it out. The CLI now
   leaves `output.overwrite` out of that job's issues (`cli._with_claims`). Tests:
-  `test_ra4_encode_does_not_say_will_be_replaced_next_to_never_overwritten` (the reviewer's),
-  `test_ra4_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command`.
+  `test_encode_does_not_say_will_be_replaced_next_to_never_overwritten` (the reviewer's),
+  `test_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command`.
 - **RA-5: a member labelled by its file name shows the name once.** For two releases of one
   episode `episode_labels` gives the file name, and `render_group` printed the label column
   and the name (`Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv  Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv
   (representative)`). The label column is printed only when the label differs from the file
   name (its width is that of the other labels). Test:
-  `test_ra5_a_member_labelled_by_its_file_name_shows_the_name_once`.
+  `test_a_member_labelled_by_its_file_name_shows_the_name_once`.
 - RA-2 (control characters in the batch and encode output) is in
   [0038](0038-cli-tools-presets-and-when-done.md)'s follow-up of the same date.
 - Plan text changed with this follow-up: [04](../plan/04-batch-mode.md) §Per-file overrides

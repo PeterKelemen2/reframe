@@ -21,7 +21,7 @@ from reframe.definitions import load_definitions
 from reframe.models import EncoderState, EncoderStatus, ToolInfo, ToolStatus
 from reframe.tools import CancelToken, RunResult, run
 from reframe_testing import fake_tools as ft
-from reframe_testing.capabilities import c4_rule, ffmpeg_info
+from reframe_testing.capabilities import detect_rule, ffmpeg_info
 
 pytestmark = pytest.mark.anyio
 
@@ -109,13 +109,13 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     fake_tools.set_scenario(
         ft.Scenario(
             [
-                c4_rule("c4_hevc_nvenc_no_driver"),
-                c4_rule("c4_hevc_nvenc_no_driver", encoder="h264_nvenc"),
-                c4_rule("c4_hevc_qsv_no_device"),
-                c4_rule("c4_h264_vaapi_no_driver"),
-                c4_rule("c4_h264_vaapi_bad_device", encoder="hevc_vaapi"),
-                c4_rule("c4_hevc_amf_no_runtime"),
-                c4_rule("c4_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
+                detect_rule("detect_hevc_nvenc_no_driver"),
+                detect_rule("detect_hevc_nvenc_no_driver", encoder="h264_nvenc"),
+                detect_rule("detect_hevc_qsv_no_device"),
+                detect_rule("detect_h264_vaapi_no_driver"),
+                detect_rule("detect_h264_vaapi_bad_device", encoder="hevc_vaapi"),
+                detect_rule("detect_hevc_amf_no_runtime"),
+                detect_rule("detect_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
             ]
         )
     )
@@ -399,7 +399,7 @@ def vaapi_calls(fake: ft.FakeTools, encoder: str) -> list[tuple[str, str]]:
 
 def node_rule(capture: str, node: str, encoder: str | None = None) -> ft.Rule:
     """Replay ``capture`` for the VAAPI test encodes on ``node`` only."""
-    rule = c4_rule(capture, encoder=encoder)
+    rule = detect_rule(capture, encoder=encoder)
     return ft.Rule(
         actions=rule.actions,
         exit_code=rule.exit_code,
@@ -413,7 +413,7 @@ async def test_vaapi_uses_the_first_node_that_works(
 ) -> None:
     """Two render nodes; the encoder fails on the first one (no VA driver)."""
     fake_tools.set_scenario(
-        ft.Scenario([node_rule("c4_h264_vaapi_no_driver", NODE, encoder="hevc_vaapi")])
+        ft.Scenario([node_rule("detect_h264_vaapi_no_driver", NODE, encoder="hevc_vaapi")])
     )
     options = linux(render_nodes=(NODE, OTHER_NODE))
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
@@ -437,8 +437,8 @@ async def test_vaapi_fails_on_every_node(fake_tools: ft.FakeTools, fake_ffmpeg: 
     fake_tools.set_scenario(
         ft.Scenario(
             [
-                node_rule("c4_h264_vaapi_no_driver", NODE),
-                node_rule("c4_h264_vaapi_bad_device", OTHER_NODE),
+                node_rule("detect_h264_vaapi_no_driver", NODE),
+                node_rule("detect_h264_vaapi_bad_device", OTHER_NODE),
             ]
         )
     )
@@ -468,7 +468,7 @@ async def test_vaapi_without_a_render_node(fake_tools: ft.FakeTools, fake_ffmpeg
 async def test_a_forced_vaapi_device_is_the_only_one_tested(
     fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
 ) -> None:
-    fake_tools.set_scenario(ft.Scenario([node_rule("c4_h264_vaapi_no_driver", OTHER_NODE)]))
+    fake_tools.set_scenario(ft.Scenario([node_rule("detect_h264_vaapi_no_driver", OTHER_NODE)]))
     options = linux(render_nodes=(NODE, OTHER_NODE), vaapi_device=OTHER_NODE)
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
     status = snap.status("h264_vaapi")
@@ -497,7 +497,7 @@ async def test_libplacebo_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo)
 
 
 async def test_libplacebo_without_vulkan(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
-    capture = ft.captures()["c4_libplacebo_no_vulkan"]
+    capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
     fake_tools.set_scenario(
         ft.Scenario(

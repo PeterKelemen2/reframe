@@ -11,7 +11,8 @@ import math
 from collections.abc import Iterator
 from fractions import Fraction
 
-from reframe.definitions import VideoEncoderDef, option_default
+from reframe.definitions import VideoEncoderDef, effective_option
+from reframe.definitions.options import effective_preset
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import VideoSettings
 from reframe.validation.common import error, fix, replace
@@ -53,13 +54,7 @@ def x265_min_cu_size(video: VideoSettings, encoder: VideoEncoderDef | None) -> i
     speed preset's default; ``None`` when not known."""
     if encoder is None:
         return None
-    option = encoder.option("min-cu-size")
-    if option is None:
-        return None
-    value = video.advanced.get("min-cu-size")
-    if value is None:
-        preset = video.preset or (encoder.presets.default if encoder.presets else None)
-        value = option_default(option, preset)
+    value = effective_option(encoder, video, "min-cu-size")
     if isinstance(value, bool) or value is None:
         return None
     try:
@@ -116,9 +111,9 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
         return
     encoder = ctx.definitions.video_encoders.get(video.encoder)
     levels = encoder.levels if encoder is not None else None
-    if levels is None or levels.get(video.level) is None:
+    if encoder is None or levels is None or levels.get(video.level) is None:
         return  # encoder.level_unsupported
-    preset = video.preset or (encoder.presets.default if encoder and encoder.presets else None)
+    preset = effective_preset(encoder, video)
     min_cu = x265_min_cu_size(video, encoder)
     rate = _rate(ctx)
     width, height = size

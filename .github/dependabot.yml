@@ -1,6 +1,6 @@
-# Dependency updates (Q-1.3). Weekly; minor and patch updates are grouped into one PR per
+# Dependency updates. Weekly; minor and patch updates are grouped into one PR per
 # ecosystem, major updates come as separate PRs.
-# Cargo (desktop/src-tauri) is added with D-1, when the Tauri crate exists.
+# Cargo (desktop/src-tauri) is added when the Tauri crate exists.
 version: 2
 updates:
   # uv workspace: pyproject.toml files + uv.lock at the repository root.

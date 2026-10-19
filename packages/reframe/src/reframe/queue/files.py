@@ -114,10 +114,6 @@ def writable_file(path: Path) -> bool:
     return LocalFileSystem().writable_file(path)
 
 
-def _path_key(path: str | os.PathLike[str]) -> str:
-    return _resolved(path).casefold()
-
-
 def _resolved(path: str | os.PathLike[str]) -> str:
     try:
         resolved = os.path.realpath(path)

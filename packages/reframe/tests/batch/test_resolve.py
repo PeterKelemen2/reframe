@@ -10,8 +10,10 @@ from types import ModuleType
 from pydantic import TypeAdapter
 
 from reframe.batch import build_job, group_sources, matrix_columns, resolve, resolve_group
+from reframe.batch.report import matrix_lines
 from reframe.batch.resolve import row_status
 from reframe.models import (
+    BatchResolution,
     ChapterOptions,
     CropRect,
     CropSettings,
@@ -173,3 +175,134 @@ def test_the_columns() -> None:
     assert [c.kind for c in explicit] == ["video", "audio", "audio", "subtitle", "subtitle", "name"]
     assert [c.rule for c in explicit] == [None, 0, 1, 0, 1, None]
     assert not any(c.defaults for c in explicit)
+
+
+def test_an_override_that_changes_the_rule_lists_is_invalid() -> None:
+    """A change to the rule list would put this file's cells under other rules' columns."""
+    template = A.example_template()
+    sources = A.season(1)[:3]
+    (group,) = group_sources(sources, "standard")
+    e02 = str(A.path(1, 2))
+    plain = resolve(template, sources[1])
+    signs = template.subtitle_rules[0].model_dump(mode="json")
+    for ops in (
+        [{"op": "remove", "path": "/audio_rules/0"}],
+        [{"op": "add", "path": "/subtitle_rules/-", "value": signs}],
+        [{"op": "move", "from": "/audio_rules/1", "path": "/audio_rules/0"}],
+        [{"op": "replace", "path": "/audio_rules", "value": []}],
+        [
+            {"op": "replace", "path": "/video/preset", "value": "slow"},
+            {"op": "copy", "from": "/audio_rules/0", "path": "/audio_rules/1"},
+        ],
+    ):
+        patch = OPS.validate_python(ops)
+        rows = resolve_group(group, template, sources, {e02: patch})
+        row = rows[1]
+        assert "batch.override_invalid" in [i.code for i in row.issues], ops
+        assert row.job is not None
+        assert plain.job is not None
+        assert row.job.audio == plain.job.audio, ops
+        assert row.job.video.preset == plain.job.video.preset  # the whole template part
+        assert row.matches == plain.matches
+        resolution = BatchResolution(group=group, columns=matrix_columns(template), rows=rows)
+        lines = matrix_lines(resolution)
+        a1 = lines[0].index("A1")
+        assert lines[3][a1:].startswith("✓ #1"), lines[3]
+    # A change inside a rule is fine: it keeps its column.
+    bitrate = OPS.validate_python(
+        [{"op": "replace", "path": "/audio_rules/1/settings/bitrate", "value": 448}]
+    )
+    row = resolve_group(group, template, sources, {e02: bitrate})[1]
+    assert row.job is not None
+    assert [a.bitrate for a in row.job.audio] == [448, 448]
+    assert all(i.severity.value != "error" for i in row.issues)
+
+
+def _codes(issues: list[ValidationIssue]) -> list[str]:
+    return [issue.code for issue in issues]
+
+
+def _replace(path: str, value: object) -> list[JsonPatchOp]:
+    return OPS.validate_python([{"op": "replace", "path": path, "value": value}])
+
+
+def test_an_override_that_changes_the_compiled_rules_is_invalid() -> None:
+    """The override changes what the compiled audio columns mean, so it is invalid: the English
+    dub would land under "A1 jpn"."""
+    template = A.japanese_template()
+    sources = A.season(1)[:2]
+    (group,) = group_sources(sources, "standard")
+    columns = matrix_columns(template)
+    assert [c.label for c in columns if c.kind == "audio"] == [
+        "A1 jpn (defaults)",
+        "A2 no listed language (defaults)",
+        "A3 other languages (defaults)",
+    ]
+    override = _replace("/audio_defaults/selection/languages", ["eng", "jpn"])
+    rows = resolve_group(group, template, sources, {str(A.path(1, 2)): override})
+    e01, e02 = rows
+    (invalid,) = [i for i in e02.issues if i.code == "batch.override_invalid"]
+    assert invalid.path == "audio_defaults.selection"
+    assert "A1 jpn, A2 no listed language, A3 other languages → A1 eng, A2 jpn, A3 no" in (
+        invalid.message
+    )
+    assert e02.status == "error"
+    audio = [(m.rule, m.status, m.streams) for m in e02.matches if m.kind == "audio"]
+    assert audio == [(m.rule, m.status, m.streams) for m in e01.matches if m.kind == "audio"]
+    assert audio[0] == (0, "exact", [1])  # A1 jpn: the Japanese track, not the dub
+    assert e02.job is not None
+    assert e01.job is not None
+    assert [a.source_stream for a in e02.job.audio] == [a.source_stream for a in e01.job.audio]
+    lines = matrix_lines(BatchResolution(group=group, columns=columns, rows=rows))
+    a1 = lines[0].index("A1")
+    assert lines[2][a1:].startswith("✓ #1")
+    assert lines[3][a1:].startswith("✓ #1")
+
+
+def test_an_override_inside_the_compiled_rules_is_applied() -> None:
+    """A language override that keeps the structure is applied: here the A1 rule takes the dub."""
+    template = A.japanese_template()
+    e02 = A.recorded(1, 2)
+    swapped = resolve(template, e02, _replace("/audio_defaults/selection/languages", ["eng"]))
+    assert "batch.override_invalid" not in _codes(swapped.issues)
+    assert next((m.rule, m.streams) for m in swapped.matches if m.kind == "audio") == (0, [2])
+    codec = resolve(
+        template,
+        e02,
+        OPS.validate_python(
+            [
+                {
+                    "op": "add",
+                    "path": "/audio_defaults/codec_rules/0",
+                    "value": {"codec": "libopus", "max_bitrate": 96},
+                }
+            ]
+        ),
+    )
+    assert "batch.override_invalid" not in _codes(codec.issues)
+    assert codec.job is not None
+    assert {(a.encoder, a.bitrate) for a in codec.job.audio} == {("libopus", 96)}
+    explicit = A.example_template()
+    row = resolve(
+        explicit, e02, _replace("/audio_defaults/selection/languages", ["eng", "jpn", "fre"])
+    )
+    assert "batch.override_invalid" not in _codes(row.issues)
+
+
+def test_another_number_of_preferred_languages_is_an_invalid_override() -> None:
+    """An empty language list compiles to the preferred languages: another number of them is
+    invalid."""
+    base = A.builtin("h265-mkv-1080p")
+    e02 = A.recorded(1, 2)
+    languages = LanguageSettings(preferred_audio=["jpn"])
+    same = resolve(
+        base, e02, _replace("/audio_defaults/selection/languages", ["jpn"]), languages=languages
+    )
+    assert "batch.override_invalid" not in _codes(same.issues)
+    more = resolve(
+        base,
+        e02,
+        _replace("/audio_defaults/selection/languages", ["jpn", "eng"]),
+        languages=languages,
+    )
+    assert "batch.override_invalid" in _codes(more.issues)

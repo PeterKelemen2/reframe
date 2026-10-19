@@ -85,7 +85,7 @@ async def test_an_in_place_edit_waits_for_an_encode_of_its_source(harness: Harne
     await h.queue.wait([encode.id, edit.id])
     assert ended_before_started(h, encode.id, edit.id)
     assert h.source_path.exists()
-    h.leftovers()
+    assert h.leftovers() == []
 
 
 async def test_an_encode_waits_for_an_in_place_edit_of_its_source(harness: Harness) -> None:

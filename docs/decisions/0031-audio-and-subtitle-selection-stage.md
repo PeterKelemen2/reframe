@@ -221,7 +221,7 @@ keep-everything mode the audio reasons are exactly M2's, so the CLI output does 
 ## Follow-up (core-complete review, 2026-10-16)
 
 Review R1 of `core-complete` found defects in the selection stage; each fix has a test that
-fails before it (`tests/batch/test_selection_review_fixes.py` unless named otherwise).
+fails before it (`tests/batch/test_main_tracks.py` unless named otherwise).
 
 - **R1-1 (blocker): "no listed language found" counted the extra tracks.** It was computed
   over every track, so a commentary or audio description in a listed language "found" the
@@ -237,8 +237,13 @@ fails before it (`tests/batch/test_selection_review_fixes.py` unless named other
   whose every track is an extra has no main track, so `no_listed_language` stays false there;
   with `commentary = drop` such a source still gets no audio track and no issue, as before
   (**open**: the no-match rule takes only main tracks).
-  Tests: `test_r1_1_*` (the reviewer's case with the built-in preset; subtitles; the facade on
-  the real `multitrack` fixture); the test that pinned the old behaviour is now
+  Tests: `test_a_listed_audio_description_is_not_a_listed_language_found`,
+  `test_no_listed_language_counts_main_tracks_only`,
+  `test_the_kept_commentary_comes_after_the_no_match_track`,
+  `test_a_listed_commentary_subtitle_does_not_count_as_found`,
+  `test_take_none_with_only_a_listed_commentary_is_an_error`,
+  `test_no_listed_language_through_the_facade` (the reviewer's case with the built-in preset;
+  subtitles; the facade on the real `multitrack` fixture); the test that pinned the old behaviour is now
   `test_selection.py::test_a_listed_commentary_does_not_count_as_found`.
 - **R1-2: `no_match = none` was an error even when other languages were kept.** With
   `other_languages` `keep_first` / `keep_all` the selection takes the other-language tracks,
@@ -248,8 +253,8 @@ fails before it (`tests/batch/test_selection_review_fixes.py` unless named other
   not count as a main track, so "take none" with only a listed-language commentary is still
   the error, with the message "no main audio track in Hungarian (only commentary,
   description or music-only tracks)"; both fixes then take the main track. Tests:
-  `test_r1_2_take_none_is_an_error_only_when_no_track_is_taken`,
-  `test_r1_1_take_none_with_only_a_listed_commentary_is_an_error`, the new case in
+  `test_take_none_is_an_error_only_when_no_main_track_is_taken`,
+  `test_take_none_with_only_a_listed_commentary_is_an_error`, the new case in
   `test_explain.py::test_no_listed_language_take_none_is_an_error_with_fixes`, and the facade
   test on the real `dts-hd-ma` fixture.
 - **R1-3: a kept commentary could be the default track or the burned-in subtitle.** The
@@ -259,7 +264,10 @@ fails before it (`tests/batch/test_selection_review_fixes.py` unless named other
   the three choices skip extra tracks (`explain._main_in_first_language`, and the subtitle
   default checks the pick's group) and fall back as sections 4 and 5 say: the first output /
   the first copied track, no foreign-audio burn-in. Sections 4 and 5 are corrected. Tests:
-  `test_r1_3_*`.
+  `test_a_kept_commentary_is_never_the_first_language_default_audio`,
+  `test_a_commentary_subtitle_is_never_burned_in_for_foreign_audio`,
+  `test_foreign_audio_burn_in_takes_the_main_subtitle`,
+  `test_a_commentary_subtitle_is_never_the_first_language_default`.
 - **R1-5 (docs): stale lines.** Section 6 said `validate_template` reports a codec twice
   "until the lead passes `container_codecs=False`", and Consequences said `JobService.draft`
   "still drops" `TrackDraft.issues` and the subtitle decisions. Both were done before this
@@ -272,14 +280,14 @@ fails before it (`tests/batch/test_selection_review_fixes.py` unless named other
   at least one event. The real tools make such tracks: an SRT muxed by FFmpeg with no event
   inside `-t`, then `mkvpropedit --add-track-statistics-tags`, gives `NUMBER_OF_FRAMES=0`,
   which the probe reads as `event_count=0`. C-3's heuristic had the same gap (decision 0006
-  follow-up). Tests: `test_r1_6_an_empty_subtitle_track_is_not_the_forced_track`,
-  `tests/probe/test_roles_review_fixes.py` (real FFmpeg and mkvpropedit).
+  follow-up). Tests: `test_explain.py::test_an_empty_subtitle_track_is_not_the_forced_track`,
+  `tests/probe/test_roles_empty_subtitles.py` (real FFmpeg and mkvpropedit).
 - **A broken `LanguageIETF` made a track undetermined** (suspected by the lead, confirmed):
   `batch.metadata.effective_language` took `language_ietf` whenever it was set, so a track
   with a valid `language` (`hun`) and a tag of the right shape that is not a language
   (`hu-Latn-ZZ9`, `xx`) was undetermined and dropped. Now a `language_ietf` that
   `reframe.languages.normalize` rejects is passed over for a valid `language`; when neither
   is valid the raw tag is kept, as before. (The probe drops such tags too; this is the batch
-  engine's side.) Test: `test_an_invalid_language_ietf_falls_back_to_the_language`.
+  engine's side.) Test: `test_explain.py::test_an_invalid_language_ietf_falls_back_to_the_language`.
 
 No plan text changes: 03 gives these settings without the details corrected here.

@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from reframe.models.base import DocumentModel, NonNegativeInt, PositiveInt, Rational, ReframeModel
+from reframe.models.text import DisplayText
 
 __all__ = [
     "CropMode",
@@ -149,7 +150,7 @@ class Geometry(ReframeModel):
     rotation: Rotation = 0
     """Total rotation applied (source + job)."""
     upscaled: bool = False
-    notes: list[str] = Field(default_factory=list)
+    notes: list[DisplayText] = Field(default_factory=list)
     filter_rotation: Rotation = 0
     """Clockwise rotation that the filter graph applies after the crop: the job's ``rotate``.
     FFmpeg's automatic rotation has already applied the source's display matrix before the

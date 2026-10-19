@@ -1,5 +1,5 @@
-"""The audio defaults lint: problems of the codec rules, each with fixes that are JSON patches
-on the template. Pure: no I/O.
+"""The lint of a template's rules: problems of the audio defaults' codec rules and of the track
+rules, each with fixes that are JSON patches on the template. Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from reframe.batch.audio_rules import (
     snap_note,
 )
 from reframe.batch.explain import audio_stage
-from reframe.batch.selection import language_label
+from reframe.batch.selection import TrackKind, language_label
 from reframe.definitions import AudioEncoderDef, Definitions, load_definitions
 from reframe.languages import matches
 from reframe.models.defaults import (
@@ -34,8 +34,16 @@ from reframe.models.issues import (
 )
 from reframe.models.job import Container, Mixdown
 from reframe.models.media import AudioStream, MediaSource
+from reframe.models.template import JobTemplate, OutputTrackRule, SubtitleOutputSettings
 
-__all__ = ["CODES", "describe_rule", "lint_defaults", "lint_rules", "rule_covers"]
+__all__ = [
+    "CODES",
+    "describe_rule",
+    "lint_defaults",
+    "lint_rules",
+    "lint_track_rules",
+    "rule_covers",
+]
 
 #: Every code the lint gives.
 CODES = (
@@ -44,6 +52,7 @@ CODES = (
     "defaults.bitrate_snapped",
     "defaults.codec_not_in_container",
     "defaults.rule_unused",
+    "metadata.several_defaults",
 )
 
 #: Encoders a "use another encoder" fix tries, in order (HandBrake's defaults first).
@@ -181,6 +190,7 @@ def _reachability(defaults: AudioDefaults, index: int) -> ValidationIssue | None
     path = _rules_path(index)
     base = "/audio_defaults/codec_rules"
     if rule.languages is not None and not rule.languages:
+        # Never the last rule: the model keeps the catch-all there, so the removal is safe.
         # "Any language" is not offered when it would make a rule that takes every track, which
         # hides every later rule.
         anything = rule.model_copy(update={"languages": None})
@@ -450,3 +460,72 @@ def lint_defaults(
         used=used,
         container_codecs=container_codecs,
     )
+
+
+def _may_be_default(rule: OutputTrackRule, kind: TrackKind) -> bool:
+    """The rule makes output tracks that its ``default`` applies to: a selector or settings of
+    the other kind, or an empty language list, take no track; a burned-in subtitle is none."""
+    selector = rule.selector
+    if selector.kind != kind or (selector.languages == [] and selector.stream is None):
+        return False
+    if kind == "audio":
+        return not isinstance(rule.settings, SubtitleOutputSettings)
+    return isinstance(rule.settings, SubtitleOutputSettings) and rule.settings.action != "burn"
+
+
+def lint_track_rules(template: JobTemplate) -> list[ValidationIssue]:
+    """Track rules that mark several output tracks of one kind default: a ``multiple`` rule
+    with ``default: true`` marks every track it takes, and every rule with ``default: true``
+    marks its own (a warning: allowed, but usually one track is the default)."""
+    issues: list[ValidationIssue] = []
+    lists: tuple[tuple[str, TrackKind, Sequence[OutputTrackRule]], ...] = (
+        ("audio_rules", "audio", template.audio_rules),
+        ("subtitle_rules", "subtitle", template.subtitle_rules),
+    )
+    for field, kind, rules in lists:
+        prefix = "A" if kind == "audio" else "S"
+        marking = [
+            n
+            for n, rule in enumerate(rules)
+            if rule.metadata.default is True and _may_be_default(rule, kind)
+        ]
+        for n in marking:
+            # A hand pick (``stream``) takes one track, even in a ``multiple`` rule.
+            if not rules[n].multiple or rules[n].selector.stream is not None:
+                continue
+            path = f"{field}[{n}].metadata.default"
+            issues.append(
+                _issue(
+                    Severity.WARNING,
+                    "metadata.several_defaults",
+                    path,
+                    f"Rule {prefix}{n + 1} takes every matching {kind} track and marks each one "
+                    "default.",
+                    _fix(
+                        "Take the default flag from the source (one track at most)",
+                        ReplaceOp(path=_pointer(path), value=None),
+                    ),
+                )
+            )
+        if len(marking) < 2:
+            continue
+        first, *others = marking
+        numbers = [f"{prefix}{n + 1}" for n in marking]
+        names = ", ".join(numbers[:-1]) + " and " + numbers[-1]
+        issues.append(
+            _issue(
+                Severity.WARNING,
+                "metadata.several_defaults",
+                f"{field}[{others[0]}].metadata.default",
+                f"Rules {names} {'both' if len(marking) == 2 else 'all'} set default: every "
+                f"{kind} track they make is marked default.",
+                _fix(
+                    f"Mark only the tracks of rule {prefix}{first + 1} default",
+                    *(
+                        ReplaceOp(path=_pointer(f"{field}[{n}].metadata.default"), value=False)
+                        for n in others
+                    ),
+                ),
+            )
+        )
+    return issues

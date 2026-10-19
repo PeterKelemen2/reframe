@@ -89,7 +89,9 @@ async def example_template(app: Reframe, e01: Path) -> tuple[JobTemplate, MediaS
     return template, source
 
 
-async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -> None:
+async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
     files = season(fixture_media, tmp_path, 1)
     grouping = await app.batch.group(list(reversed(files)))
     assert grouping.issues == []
@@ -150,7 +152,7 @@ async def test_the_m7_demo(app: Reframe, fixture_media: Media, tmp_path: Path) -
         "Anime Show - S01E11 - Static.mkv"
     )
 
-    saved = await app.batch.save_preset(template, "Anime Show", description="04 example")
+    saved = await app.batch.save_preset(template, "Anime Show", description="The example season")
     assert isinstance(saved, Preset)
     assert (saved.category, saved.audio_rules) == ("Custom", template.audio_rules)
     s02 = season(fixture_media, tmp_path, 2)
@@ -229,7 +231,11 @@ async def test_name_collisions(app: Reframe, fixture_media: Media, tmp_path: Pat
     assert [r.status for r in resolution.rows] == ["error", "ok", "ok"]
     codes = [i.code for i in resolution.rows[0].issues]
     assert "output.renamed" in codes
-    assert "batch.output_exists" in codes
+    (exists,) = [i for i in resolution.rows[0].issues if i.code == "batch.output_exists"]
+    assert exists.message == (
+        "Anime Show - S02E01 - Return.mkv already exists. In a batch an existing output is an "
+        "error: remove it, or set the collision setting to overwrite."
+    )
 
 
 async def test_an_output_that_is_another_source(

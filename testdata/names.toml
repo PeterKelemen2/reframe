@@ -1,4 +1,4 @@
-# Name corpus for output naming (C-16; 05 §C-16 "Done when").
+# Name corpus for output naming.
 #
 # Names only, no media: `tests/naming/test_corpus.py` resolves each `path` with the real
 # guessit and the default naming options, and compares the result with the expectations.
@@ -18,7 +18,7 @@
 #             A field that is not listed is not checked; `""` means "not recognised".
 #   output    Optional: the expected file name with the default template {main_title}.
 
-# --------------------------------------------------------------------------- 03 §Examples
+# --------------------------------------------------------------------------- reference examples
 
 [[case]]
 category = "movie-folder"

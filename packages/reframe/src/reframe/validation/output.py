@@ -22,6 +22,7 @@ from reframe.naming.sanitize import (
     Piece,
     is_reserved,
     replace_forbidden,
+    replace_undecodable,
     sanitize_segments,
 )
 from reframe.validation.common import error, fix, info, replace, warning
@@ -126,20 +127,30 @@ def _safe_name(path: PurePath) -> str:
     return parts[-1]
 
 
+def _name_bytes(name: str) -> int:
+    """The bytes of ``name`` as the file system writes it: a byte that is not UTF-8 (POSIX
+    ``\\udcff``) is one byte."""
+    try:
+        return len(name.encode("utf-8", "surrogateescape"))
+    except UnicodeEncodeError:  # a lone UTF-16 surrogate of a Windows name
+        return len(name.encode("utf-8", "surrogatepass"))
+
+
 def name_issues(path: PurePath, *, target: FixTarget = "job") -> list[ValidationIssue]:
     """A manual output path checked against the file-name rules of :mod:`reframe.naming`: a
     folder name or the partial file name over 255 bytes is an error on every OS; a reserved
-    Windows name (``CON.mkv``) or a character Windows does not allow is an error for a Windows
-    path and a warning elsewhere (the file may move)."""
+    Windows name (``CON.mkv``), a character Windows does not allow or a byte that is not UTF-8
+    is an error for a Windows path and a warning elsewhere (the file may move)."""
     issues: list[ValidationIssue] = []
     safe = _safe_name(path)
     fixes = [
         fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
     ]
     partial = partial_path(cast(Path, path)).name
-    too_long = [p for p in path.parent.parts if len(p.encode("utf-8")) > MAX_PART_BYTES]
-    if too_long or len(partial.encode("utf-8")) > MAX_PART_BYTES:
-        what = "a folder name" if too_long else f"the partial file name {partial}"
+    too_long = [p for p in path.parent.parts if _name_bytes(p) > MAX_PART_BYTES]
+    if too_long or _name_bytes(partial) > MAX_PART_BYTES:
+        shown = replace_undecodable(partial)
+        what = "a folder name" if too_long else f"the partial file name {shown}"
         issues.append(
             error(
                 "output.name_too_long",
@@ -150,19 +161,21 @@ def name_issues(path: PurePath, *, target: FixTarget = "job") -> list[Validation
             )
         )
         return issues
+    shown = replace_undecodable(path.name)
     forbidden = replace_forbidden(path.name)[0] != path.name
     if is_reserved(path.name) or forbidden:
-        why = (
-            "a reserved device name on Windows"
-            if is_reserved(path.name)
-            else "characters that Windows does not allow"
-        )
+        if is_reserved(path.name):
+            why = "a reserved device name on Windows"
+        elif shown != path.name:
+            why = "bytes that are not UTF-8, which Windows and JSON cannot hold"
+        else:
+            why = "characters that Windows does not allow"
         make = error if isinstance(path, PureWindowsPath) else warning
         issues.append(
             make(
                 "output.name_not_portable",
                 "output.path",
-                f"The file name {path.name} has {why}.",
+                f"The file name {shown} has {why}.",
                 *fixes,
             )
         )
