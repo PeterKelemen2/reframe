@@ -1,27 +1,9 @@
-"""Search in the advanced encoder options (03 §Advanced encoder options: "Search covers labels,
-CLI names and help text across all categories"). Pure.
+"""Search of the advanced encoder options. Pure.
 
-``Reframe.jobs.search_options`` calls :func:`search_options` with the encoder's options.
-
-Ranking (case-insensitive; each word of the query must match somewhere; an option's score is
-the sum of its words' best scores, ties keep the definition order):
-
-=====  ====================================================================
-score  where the word matches
-=====  ====================================================================
-100    the key or the CLI name, exactly (``psy-rd``)
- 80    the start of the key or the CLI name (``psy`` → ``psy-rd``, ``psy-rdoq``)
- 70    the start of a word of the label (``psy`` → "Psy-RD strength")
- 60    inside the key or the CLI name
- 50    inside the label
- 30    a choice (its value or label: ``umh``, "Hexagon")
- 20    the help text
- 10    the category ("loop" → every loop filter)
-=====  ====================================================================
-
-The CLI name is what the mapping writes: the params name (``psy-rd``), the private option
-(``b_ref_mode``) or the FFmpeg argument without its dash (``bf``). A leading dash in the query
-is ignored, so ``-bf`` finds ``bf``.
+Matching is case-insensitive, and each word of the query must match. An option's score is the sum
+of its words' best scores; ties keep the definition order. Scores, highest first: exact key or
+CLI name, name prefix, label word prefix, name part, label part, choice, help text, category.
+A leading dash in the query is ignored.
 """
 
 from __future__ import annotations
@@ -70,9 +52,8 @@ def _word_score(option: EncoderOption, word: str) -> int:
 
 
 def search_options(options: Sequence[EncoderOption], query: str) -> list[EncoderOption]:
-    """The options whose label, key, CLI name (the mapping's parameter or argument name) or
-    help text matches ``query`` (case-insensitive), best matches first. An empty query gives
-    every option in definition order. Pure."""
+    """The options whose label, key, CLI name or help text matches ``query``, best matches
+    first. An empty query gives every option in definition order."""
     words = [w.lstrip("-") for w in query.casefold().split()]
     words = [w for w in words if w]
     if not words:

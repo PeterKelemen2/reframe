@@ -1,22 +1,10 @@
-"""Which custom encoder parameters Reframe passes to FFmpeg (C-6; decision 0035 "Follow-up
-(core-complete review, 2026-10-16)"). Pure: package data only.
+"""Custom encoder parameters that name files, and the checks that refuse them.
 
-``VideoSettings.custom_params`` reaches FFmpeg in two ways (:mod:`reframe.command.video`):
-
-- **A params argument** (x264, x265, SVT-AV1): the text as typed, at the end of
-  ``-x265-params``. FFmpeg splits it like ``av_dict_parse_string`` (:func:`dict_pairs`) and the
-  library reads every key. A key that names a file (x265 ``csv`` / ``analysis-save``, x264
-  ``dump-yuv`` / ``stats``, …) would make the encoder read or write any file the user can, so
-  :func:`file_key` names them (``data/custom_params.toml`` ``[file_keys]``, each checked with
-  the encoder).
-- **Own options** (every other encoder): each entry becomes ``-<name>:v:0 <value>``. FFmpeg
-  reads such a name as one of its own options first (``-vstats_file``, ``-progress``,
-  ``-passlogfile``, ``-/filter`` read or write files), so only an allow-list is safe
-  (:func:`own_option_allowed`): the encoder's private options (``ffmpeg -h encoder=<id>``) and
-  the generic encoder options (AVCodecContext, flags ``E..V``).
-
-Validation (C-8, ``reframe.validation.video.video_custom_param_issues``) reports both, and the
-dry run never runs with such a parameter.
+``VideoSettings.custom_params`` reaches FFmpeg either as an encoder params argument (x264,
+x265, SVT-AV1), where a key that names a file makes the encoder read or write that file, or
+as an own option ``-<name>:v:0`` (every other encoder). Own options are an allow-list, because
+FFmpeg reads a name as one of its own options first. The file keys and the allowed options
+are in ``data/custom_params.toml``.
 """
 
 from __future__ import annotations
@@ -40,9 +28,8 @@ __all__ = [
     "split_custom_params",
 ]
 
-#: What an own option's name may look like: FFmpeg option names (``rc-lookahead``,
-#: ``init_qpB``, ``2pass``). Refuses ``/filter`` (FFmpeg reads the value from a file), ``:``
-#: (a stream specifier) and every other character.
+#: An own option's name: letters, digits, ``_`` and ``-``. Refuses ``/filter`` (FFmpeg reads
+#: its value from a file) and ``:`` (a stream specifier).
 OWN_OPTION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 _WHITESPACE = " \n\t\r"
@@ -53,24 +40,20 @@ class CustomParamRules:
     """``data/custom_params.toml``."""
 
     file_keys: Mapping[str, Mapping[str, str]]
-    """Encoder id → key (as :func:`library_key_forms` writes it) → what the encoder does with
-    the file."""
+    """Encoder id → folded key → what the encoder does with the file."""
     value_exceptions: Mapping[str, frozenset[str]]
-    """Key → values that do not name a file (x265 ``scaling-list=default``, x264
-    ``cqm=flat``)."""
+    """Key → values the library takes as a name, not as a file."""
     value_contains: frozenset[str]
-    """Keys of :attr:`value_exceptions` whose library takes every value that *contains* one of
-    the names (x264 ``cqm``: ``strstr``); the others compare the whole value (x265
-    ``scaling-list``: ``strcmp``)."""
+    """Keys of :attr:`value_exceptions` that the library matches against a part of the value;
+    the others match the whole value."""
     codec_options: frozenset[str]
-    """The generic encoder options (AVCodecContext, ``E..V``)."""
+    """The generic encoder options (AVCodecContext)."""
     file_options: frozenset[str]
     """FFmpeg's own options that read or write a file: never passed."""
     unchecked_options: frozenset[str]
     """Private options that pass text to a library Reframe cannot check: never passed."""
     private_options: Mapping[str, frozenset[str]]
-    """Encoder id → its private options as recorded (when detection has not read the build's
-    list)."""
+    """Encoder id → its recorded private options, for when the build's list is not known."""
 
 
 @cache
@@ -99,14 +82,10 @@ def custom_param_rules() -> CustomParamRules:
     )
 
 
-# --------------------------------------------------------------------------- the typed text
-
-
 @dataclass(frozen=True, slots=True)
 class CustomParam:
     """One entry of ``VideoSettings.custom_params``: ``name`` and ``value`` as the command
-    builder writes them (:func:`reframe.command.video.split_params`), ``raw`` as typed (a fix
-    drops one entry and keeps the others' text)."""
+    builder writes them, ``raw`` as typed."""
 
     name: str
     value: str
@@ -115,9 +94,7 @@ class CustomParam:
 
 def split_custom_params(text: str) -> list[CustomParam]:
     """The entries of a custom parameter string, split at an unescaped ``:``; ``\\`` escapes
-    the next character (``\\:`` keeps a colon); an entry without ``=`` is ``name=1``; empty
-    entries are dropped. The builder's :func:`~reframe.command.video.split_params` rule
-    exactly (a test keeps them equal)."""
+    the next character. An entry without ``=`` is ``name=1``; empty entries are dropped."""
     segments: list[tuple[str, str]] = []
     typed: list[str] = []
     plain: list[str] = []
@@ -150,9 +127,6 @@ def split_custom_params(text: str) -> list[CustomParam]:
 
 
 def _get_token(text: str, start: int, term: str) -> tuple[str, int]:
-    """FFmpeg's ``av_get_token``: leading whitespace skipped, ``\\`` escapes a character,
-    ``'…'`` quotes, trailing whitespace (outside quotes and escapes) dropped; stops at a
-    character of ``term``. The token and the index where it stopped."""
     i = start
     while i < len(text) and text[i] in _WHITESPACE:
         i += 1
@@ -181,9 +155,9 @@ def _get_token(text: str, start: int, term: str) -> tuple[str, int]:
 
 def dict_pairs(text: str) -> list[tuple[str, str]]:
     """The ``(key, value)`` pairs FFmpeg reads from a dictionary option such as
-    ``-x265-params`` (``av_dict_parse_string(…, "=", ":")``, which applies the whole text or
-    nothing). Pairs are returned up to the first one FFmpeg refuses (no ``=``, an empty key or
-    value): enough to find every key a library could see."""
+    ``-x265-params`` (``av_dict_parse_string`` with ``=`` and ``:``). FFmpeg applies the whole
+    text or none of it. The pairs are returned up to the first one FFmpeg refuses (no ``=``, an
+    empty key or value), which is enough to find every key a library could see."""
     pairs: list[tuple[str, str]] = []
     i = 0
     while i < len(text):
@@ -199,19 +173,16 @@ def dict_pairs(text: str) -> list[tuple[str, str]]:
     return pairs
 
 
-# --------------------------------------------------------------------------- the checks
-
-
 def _fold(name: str) -> str:
-    """``--Analysis_Save`` → ``analysis-save`` (x264 and x265 read ``_`` as ``-``; quotes and
-    escapes are FFmpeg's)."""
+    """The key as x264 and x265 read it: quotes and escapes removed, leading ``-`` dropped,
+    ``_`` read as ``-``."""
     text = name.replace("'", "").replace("\\", "").strip().lstrip("-")
     return text.casefold().replace("_", "-")
 
 
 def library_key_forms(name: str) -> set[str]:
-    """The keys a library may read for ``name``: folded (:func:`_fold`), and without a ``no-``
-    or ``no`` prefix (x264 and x265 read ``nocsv`` / ``no-csv`` as ``csv``)."""
+    """The keys a library may read for ``name``: the folded key, and the key without a ``no-``
+    or ``no`` prefix (x264 and x265 read ``nocsv`` as ``csv``)."""
     key = _fold(name)
     forms = {key}
     prefix = "no-" if key.startswith("no-") else "no"
@@ -221,27 +192,22 @@ def library_key_forms(name: str) -> set[str]:
 
 
 def _names_no_file(rules: CustomParamRules, key: str, value: str) -> bool:
-    """Whether the library takes ``value`` of the file key ``key`` as a name, not as a file
-    name, compared as the library compares it (a C string: up to a NUL)."""
     names = rules.value_exceptions.get(key)
     if not names:
         return False
-    text = value.partition("\0")[0]
+    text = value.partition("\0")[0]  # the library reads a C string: up to a NUL
     if key in rules.value_contains:
         return any(name in text for name in names)
     return text in names
 
 
 def file_key(encoder_id: str, name: str, value: str = "") -> str | None:
-    """What the encoder does with the file that the params-argument key ``name`` names
-    (``None``: not a file key of ``encoder_id``, or a value the library takes as a name).
+    """What the encoder does with the file that the params key ``name`` names, or ``None``.
 
-    ``value`` is the value as the library reads it (after FFmpeg's quotes and escapes:
-    :func:`dict_pairs`), compared as the library compares it: the whole value (x265
-    ``scaling-list`` takes ``default`` and ``off``, and opens ``DEFAULT`` or ``default `` as a
-    file) or a part of it (x264 ``cqm`` takes any value that contains ``flat`` or ``jvt``, and
-    opens ``FLAT`` or ``/x/matrix.cfg``). Through a ``no`` prefix the library gets ``true`` or
-    ``false`` (x264 ``nocqm=flat`` opens a file named ``true``), so no name applies there."""
+    ``None`` when ``encoder_id`` has no such file key, or when the library takes ``value`` as a
+    name. ``value`` is as the library reads it (after :func:`dict_pairs`), and the match is the
+    one the library makes: the whole value, or a part of it (see ``value_match`` in the data
+    file). A ``no`` prefix gives the library ``true`` or ``false``, so no name applies there."""
     rules = custom_param_rules()
     keys = rules.file_keys.get(encoder_id, {})
     typed = _fold(name)
@@ -256,10 +222,11 @@ def file_key(encoder_id: str, name: str, value: str = "") -> str | None:
 
 
 def own_option_allowed(encoder_id: str, name: str, build_options: Collection[str] = ()) -> bool:
-    """Whether ``-<name>:v:0`` may be written for an encoder without a params argument: a
-    private option of the encoder (``build_options``: this build's list from encoder detection;
-    empty: the recorded list) or a generic encoder option, and never one of FFmpeg's own options
-    that read or write a file."""
+    """Whether ``-<name>:v:0`` may be written for an encoder with no params argument.
+
+    Allowed: a private option of the encoder (``build_options``: this build's list from encoder
+    detection; empty: the recorded list), or a generic encoder option. Never an FFmpeg option
+    that reads or writes a file."""
     rules = custom_param_rules()
     if OWN_OPTION_NAME.match(name) is None:
         return False

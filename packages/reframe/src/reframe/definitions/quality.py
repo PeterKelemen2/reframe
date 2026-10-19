@@ -1,10 +1,8 @@
-"""Quality conversion between encoders (C-6; used by C-8's "use the closest encoder" fix).
+"""Quality conversion between encoders, through the x264 RF scale. Pure.
 
-Each encoder's :class:`~reframe.definitions.models.QualityMode` has a ``scale``: points
-``(value, x264 RF equivalent)``. A value is mapped to the common scale through the source
-encoder's points and back through the target encoder's points (piecewise linear), then
-clamped to the target range and rounded to its step. The result is approximate
-(03 §Missing encoder behaviour: "a note says that the result is approximate").
+Each encoder's ``QualityMode.scale`` maps its values to that scale. A value goes through the
+source scale and back through the target scale (piecewise linear), then is clamped to the target
+range and rounded to its step. The result is approximate.
 """
 
 from __future__ import annotations
@@ -16,8 +14,8 @@ __all__ = ["convert_quality", "round_to_step"]
 
 
 def round_to_step(value: float, mode: QualityMode) -> float:
-    """``value`` clamped to ``mode``'s range and rounded to its step, a half step up (x264 RF
-    23 is 26.5 on the QSV, AMF and VAAPI scales: 27 for all three, whatever their minimum)."""
+    """``value`` clamped to ``mode``'s range and rounded to its step; a half step rounds up
+    whatever the scale's minimum."""
     clamped = min(max(value, mode.min), mode.max)
     steps = round_half_up((clamped - mode.min) / mode.step)
     result = mode.min + steps * mode.step

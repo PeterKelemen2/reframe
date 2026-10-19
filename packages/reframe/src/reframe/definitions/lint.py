@@ -1,9 +1,7 @@
-"""The definitions linter (05 §C-6 "Done when").
+"""Consistency checks that Pydantic cannot make, across the definitions tables.
 
-``lint_definitions`` checks what Pydantic cannot: that every option has help text and a
-mapping, that ranges, defaults and choice lists are consistent, that every fallback chain
-ends in a software encoder, and that encoders, containers and filters refer to each other
-correctly. It returns problems as text (empty = clean); a test keeps the packaged data clean.
+:func:`lint_definitions` returns the problems as text, and an empty list when the definitions
+are clean. A test keeps the packaged data clean.
 """
 
 from __future__ import annotations
@@ -42,7 +40,7 @@ _FILTER_NAME = re.compile(r"^([A-Za-z0-9_]+)")
 _HELPER_FILTERS = frozenset({"format"})
 #: Placeholders of ``HardwareSetup`` (filled in by the command builder).
 _HARDWARE_PLACEHOLDERS = frozenset({"vaapi_device", "sw_pix_fmt"})
-#: Preset names by speed, fastest first: x264 / x265 (QSV and VP9 use a part of it), AMF.
+#: Speed-ordered preset names, one tuple per scale, fastest first.
 _PRESET_SPEED_WORDS: tuple[tuple[str, ...], ...] = (
     (
         "ultrafast",
@@ -68,9 +66,6 @@ def lint_definitions(defs: Definitions) -> list[str]:
     problems += _lint_containers(defs)
     problems += _lint_filters(defs)
     return problems
-
-
-# =========================================================================== video
 
 
 def _lint_video(defs: Definitions) -> list[str]:
@@ -149,7 +144,7 @@ def _placeholders(texts: list[str]) -> set[str]:
 
 
 def _lint_hardware_setup(where: str, enc: VideoEncoderDef) -> list[str]:
-    """Only the placeholders the command builder fills in (``models`` docstring)."""
+    """The placeholders must be ones the command builder fills in."""
     setup = enc.hardware_setup
     if setup is None:
         return []
@@ -163,9 +158,8 @@ def _lint_hardware_setup(where: str, enc: VideoEncoderDef) -> list[str]:
 
 
 def _preset_speed_rank(value: str) -> float | None:
-    """Where a preset value sits on its encoder's speed scale: lower is faster. ``None`` for
-    a value the linter does not know (it then reports it, so a new encoder's presets get a
-    rank here)."""
+    """Speed rank of a preset value: lower is faster. ``None`` for a value the linter does not
+    know; the linter reports it, so a new encoder's presets need a rank here."""
     for words in _PRESET_SPEED_WORDS:
         if value in words:
             return float(words.index(value))
@@ -177,8 +171,7 @@ def _preset_speed_rank(value: str) -> float | None:
 
 
 def _lint_preset_order(w: str, presets: ChoiceSetting) -> list[str]:
-    """Speed presets are listed fastest first (``VideoEncoderDef.presets``: the slider
-    order)."""
+    """Presets are listed fastest first, which is the order of the slider."""
     ranks: list[float] = []
     for choice in presets.choices:
         rank = _preset_speed_rank(choice.value)
@@ -361,8 +354,9 @@ def _lint_options(where: str, enc: VideoEncoderDef) -> list[str]:
 
 
 def _option_target(opt: EncoderOption) -> str | None:
-    """What an option writes, comparable across mapping kinds: ``-bf`` for ``ffmpeg_arg`` and
-    ``private_opt``, ``params:psy-rd`` for an ``x26x_param`` (``None`` for a composite part)."""
+    """The key of what an option writes, so that mapping kinds compare: the argument (``-bf``),
+    ``-<name>`` for a private option, ``params:<name>`` for an ``x26x_param`` (``None`` for a
+    composite part)."""
     mapping = opt.mapping
     if mapping.kind == "x26x_param":
         return None if mapping.part is not None else f"params:{mapping.name}"
@@ -372,9 +366,8 @@ def _option_target(opt: EncoderOption) -> str | None:
 
 
 def _setting_targets(enc: VideoEncoderDef) -> dict[str, tuple[str, str | None]]:
-    """Arguments and params the encoder's other settings write (rate control, 2-pass,
-    preset / tune / profile / level, fast decode, ``extra_args``): target → (setting, the
-    rate-control mode it belongs to or ``None``)."""
+    """What the encoder's settings other than the options write: target → (setting, the
+    rate-control mode it belongs to, or ``None``)."""
     found: dict[str, tuple[str, str | None]] = {}
 
     def args(what: str, values: list[str], mode: str | None = None) -> None:
@@ -416,10 +409,9 @@ def _setting_targets(enc: VideoEncoderDef) -> dict[str, tuple[str, str | None]]:
 
 
 def _lint_option_targets(where: str, enc: VideoEncoderDef) -> list[str]:
-    """Two options, or an option and another setting, that write the same argument or
-    parameter: the command would carry it twice and the last one would win. An option that
-    ``requires`` one rate-control mode may share an argument with the other mode (NVENC
-    ``-multipass``: the option for constant quality, 2-pass for average bitrate)."""
+    """Two options, or an option and another setting, that write the same argument or parameter:
+    the command would carry it twice and the last one would win. An option that ``requires`` one
+    rate-control mode may share an argument with the other mode (NVENC ``-multipass``)."""
     out: list[str] = []
     settings = _setting_targets(enc)
     owners: dict[str, str] = {}
@@ -532,9 +524,6 @@ def _lint_condition(
     return []
 
 
-# =========================================================================== audio
-
-
 def _lint_audio(defs: Definitions) -> list[str]:
     out: list[str] = []
     for mixdown in get_args(Mixdown):
@@ -551,8 +540,8 @@ def _lint_audio(defs: Definitions) -> list[str]:
 def _lint_audio_fallback(
     w: str, enc: AudioEncoderDef, encoders: dict[str, AudioEncoderDef]
 ) -> list[str]:
-    """Audio chains like the video chains: known encoders, never the encoder itself, no
-    duplicates, and the last one is in every GPL build (decision 0020)."""
+    """Audio chains like the video chains (known encoders, no duplicates, not the encoder
+    itself), and the last one must be in every GPL build."""
     if not enc.fallback:
         if not enc.in_gpl_builds:
             return [f"{w}.fallback: an encoder that GPL builds lack needs a fallback chain"]
@@ -622,9 +611,6 @@ def _lint_audio_encoder(w: str, enc: AudioEncoderDef, defs: Definitions) -> list
     return out
 
 
-# =========================================================================== containers
-
-
 def _lint_containers(defs: Definitions) -> list[str]:
     out: list[str] = []
     containers = defs.containers
@@ -687,9 +673,6 @@ def _lint_container(w: str, cont: ContainerDef, audio_codecs: set[str]) -> list[
     return out
 
 
-# =========================================================================== filters
-
-
 def _lint_filters(defs: Definitions) -> list[str]:
     out: list[str] = []
     if not defs.filters:
@@ -734,8 +717,8 @@ def _lint_filter(w: str, f: FilterDef) -> list[str]:
 
 
 def _lint_implementation(w: str, impl: FilterImplementation) -> list[str]:
-    """One implementation's presets are complete: a default, every preset with a chain (and
-    one per tune when the implementation has tunes), chains that use only its filters."""
+    """Presets are complete: a default, a chain per preset (and per tune, when there are tunes),
+    and chains that use only the implementation's filters."""
     out: list[str] = []
     if not impl.label:
         out.append(f"{w}: needs a label")

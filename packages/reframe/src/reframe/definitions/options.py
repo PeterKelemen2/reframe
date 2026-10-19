@@ -1,9 +1,8 @@
-"""How the advanced options of a job resolve (C-6): defaults, the condition context, and which
-options the command builder writes. Pure.
+"""How the advanced options of a job resolve: defaults, the condition context, and which options
+are written. Pure.
 
-The command builder (C-7, ``reframe.command.video``) and validation (C-8,
-``reframe.validation.video``) both use these functions, so an option that validation calls
-inactive is exactly an option that the builder leaves out (decision 0026: they agree).
+The command builder and validation both use these functions, so an option that validation calls
+inactive is one that the builder leaves out.
 """
 
 from __future__ import annotations
@@ -35,10 +34,8 @@ def option_default(option: EncoderOption, preset: str | None) -> OptionValue | N
 
 
 def option_context(encoder: VideoEncoderDef, video: VideoSettings) -> dict[str, OptionValue | None]:
-    """The values that :class:`~reframe.definitions.Condition` fields name: ``rate_control``,
-    ``two_pass``, ``bit_depth``, ``preset`` (the encoder's default preset when the job has
-    none), ``tune``, and ``option:<key>`` for every option of the encoder (the job's value,
-    else :func:`option_default`)."""
+    """The values that the ``requires`` conditions read. ``preset`` falls back to the encoder's
+    default preset, and each ``option:<key>`` falls back to :func:`option_default`."""
     rc = video.rate_control
     preset = video.preset or (encoder.presets.default if encoder.presets else None)
     context: dict[str, OptionValue | None] = {
@@ -100,8 +97,7 @@ _RATE_CONTROL = {"quality": "constant quality", "bitrate": "average bitrate"}
 
 
 def describe_condition(condition: Condition, encoder: VideoEncoderDef) -> str:
-    """``"SAO (sao) on"``, ``"the rate control average bitrate"``, ``"RD level (rd) 5 or 6"``,
-    ``"VBV maximum rate (vbv-maxrate) not 0"``: what the condition asks for, for messages."""
+    """What the condition asks for, in words, for messages (``"SAO (sao) on"``)."""
     other: EncoderOption | None = None
     if condition.field.startswith("option:"):
         key = condition.field.removeprefix("option:")

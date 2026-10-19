@@ -1,28 +1,8 @@
-"""Definition schemas (C-6), validated by Pydantic when the TOML data is loaded.
+"""Definition schemas, validated by Pydantic when the TOML data is loaded.
 
-The M2 contract fields (written by the lead before M2 wave 1, ``docs/m2-breakdown.md``) keep
-their names, types and meaning; C-6 only adds:
-
-- C-4 reads ``VideoEncoderDef`` (``id``, ``hardware``, ``family``, ``vendor``,
-  ``platforms``, ``pix_fmts``, ``hardware_setup``, ``fallback``) and the ids of
-  ``AudioEncoderDef``.
-- C-16 reads ``codec_label`` (``{codec}``) and ``handbrake_key`` (``{encoder}``), and the
-  audio ``label`` (``{acodec}``).
-- C-7 (command builder) and C-8 (validation) read everything else. ``reframe.definitions``
-  (the package docstring) explains how they use it.
-
-**Placeholders** in argument lists are ``{name}`` strings that the caller resolves:
-
-- ``{vaapi_device}`` (default ``/dev/dri/renderD128``) and ``{sw_pix_fmt}`` (the software
-  pixel format uploaded to a hardware encoder): ``HardwareSetup``.
-- ``{value}`` (the quality value) and the names of :attr:`QualityMode.derived`: rate control.
-- ``{kbps}`` (average bitrate in kb/s): :class:`BitrateMode`.
-- ``{pass}`` (``1`` or ``2``) and ``{passlog}`` (the stats file prefix): :class:`TwoPassDef`.
-- ``{custom}`` (the user's parameter string): filter presets with ``custom = true``.
-
-**Stream specifiers**: ``ffmpeg_arg`` and ``private_opt`` mappings and argument lists name
-the bare option (``-bf``, ``-preset``, ``-b:v``). The command builder adds the output stream
-specifier (``-bf:v:0``) when it writes them; every FFmpeg codec option accepts one.
+Other modules read these fields by name: keep their names, types and meanings. Argument lists
+hold ``{name}`` placeholders that the caller resolves. Option mappings name the bare FFmpeg
+option (``-bf``); the command builder adds the output stream specifier (``-bf:v:0``).
 """
 
 from __future__ import annotations
@@ -95,7 +75,7 @@ __all__ = [
 ]
 
 EncoderFamily = Literal["software", "nvenc", "qsv", "amf", "vaapi"]
-"""Picker group (03 §Video): Software, NVIDIA NVENC, Intel QSV, AMD AMF, VAAPI."""
+"""The picker group of an encoder. Only ``software`` is not hardware."""
 Vendor = Literal["nvidia", "intel", "amd"]
 VideoCodec = Literal["h264", "hevc", "av1", "vp9", "mpeg2", "mpeg4"]
 AudioCodec = Literal["aac", "ac3", "eac3", "opus", "flac", "mp3"]
@@ -115,13 +95,13 @@ OPTION_CATEGORIES: tuple[str, ...] = (
     "HDR / colour",
     "Performance",
 )
-"""The categories of the advanced panel (03 §Advanced encoder options), in panel order.
-``Custom parameters`` is the free-form field (``VideoSettings.custom_params``), not an option."""
+"""The categories of the advanced panel, in panel order. Custom parameters are not one of them:
+they are ``VideoSettings.custom_params``."""
 SpeedCost = Literal["low", "medium", "high"]
 TrackFlag = Literal[
     "default", "forced", "commentary", "hearing_impaired", "visual_impaired", "original"
 ]
-"""The six flags of 03 §Track metadata (the fields of ``reframe.models.job.TrackFlags``)."""
+"""The track flags, the same names as the fields of ``reframe.models.job.TrackFlags``."""
 TRACK_FLAGS: tuple[TrackFlag, ...] = get_args(TrackFlag)
 
 FilterId = Literal[
@@ -140,17 +120,14 @@ FilterId = Literal[
 """Filter ids, as the keys of ``reframe.models.job.FilterSettings``."""
 FILTER_IDS: tuple[FilterId, ...] = get_args(FilterId)
 FILTER_STAGES = ("crop", "scale", "format")
-"""Steps of the fixed filter order that are not filters of the definitions: crop and scale
-(C-5 geometry) and the final pixel format / hardware upload (``HardwareSetup.filter_tail``)."""
+"""Stages of the fixed filter order that are not filters: crop, scale and the final pixel format
+(``HardwareSetup.filter_tail`` adds the hardware upload)."""
 
 BITRATE_PLACEHOLDER = "{kbps}"
 
 
-# =========================================================================== shared pieces
-
-
 class Choice(ReframeModel):
-    """One value of a choice list (preset, tune, profile, level, enum option)."""
+    """One value of a choice list (preset, tune, profile, level or enum option)."""
 
     value: str
     """The stored id (``slow``, ``p5``, ``4.1``, ``main10``)."""
@@ -168,12 +145,12 @@ class Choice(ReframeModel):
 
 
 class X26xParam(ReframeModel):
-    """Written into the encoder's params argument (``-x264-params``, ``-x265-params``,
-    ``-svtav1-params``: :attr:`VideoEncoderDef.params_arg`) as ``name=value``.
+    """Written into the params argument of the encoder (:attr:`VideoEncoderDef.params_arg`) as
+    ``name=value``.
 
-    ``part`` makes the option one part of a composite value: the builder joins the parts of
-    every option with the same ``name`` with ``,`` in part order (``deblock=-1,-1``,
-    ``psy-rd=1.00,0.15``), filling a part the user did not change with that option's default.
+    ``part`` makes the option one part of a composite value. The command builder joins the parts
+    of the options with the same ``name`` with ``,``, in part order, and fills a part the user
+    did not change with that option's default.
     """
 
     kind: Literal["x26x_param"] = "x26x_param"
@@ -182,7 +159,7 @@ class X26xParam(ReframeModel):
 
 
 class FfmpegArg(ReframeModel):
-    """A generic FFmpeg codec option (``-bf``, ``-refs``, ``-g``): every encoder has it."""
+    """A generic FFmpeg codec option, such as ``-bf``. Every encoder has it."""
 
     kind: Literal["ffmpeg_arg"] = "ffmpeg_arg"
     arg: str
@@ -192,7 +169,7 @@ class FfmpegArg(ReframeModel):
 class PrivateOpt(ReframeModel):
     """A private option of this encoder (``ffmpeg -h encoder=<id>``), written ``-<name>``.
 
-    Hidden by :func:`reframe.definitions.supported_options` when the build does not list it.
+    A build that does not list it leaves it out.
     """
 
     kind: Literal["private_opt"] = "private_opt"
@@ -201,7 +178,7 @@ class PrivateOpt(ReframeModel):
 
 
 OptionMapping = Annotated[X26xParam | FfmpegArg | PrivateOpt, Field(discriminator="kind")]
-"""How a value reaches FFmpeg (05 §C-6): ``x26x_param`` | ``ffmpeg_arg`` | ``private_opt``."""
+"""How a value reaches FFmpeg: one of the three mapping kinds."""
 
 
 class ChoiceSetting(ReframeModel):
@@ -209,10 +186,9 @@ class ChoiceSetting(ReframeModel):
 
     choices: list[Choice]
     default: str | None = None
-    """The value the encoder uses when none is given (shown as "default"); ``None`` = the
-    encoder decides (auto)."""
+    """The value used when none is given. ``None``: the encoder decides."""
     default_by_depth: dict[BitDepth, str] = Field(default_factory=dict)
-    """Overrides ``default`` per bit depth (profiles: ``main`` / ``main10``)."""
+    """Overrides ``default`` per bit depth, keyed by ``"8"`` or ``"10"``."""
     mapping: OptionMapping
     help: str = ""
 
@@ -232,30 +208,25 @@ class ChoiceSetting(ReframeModel):
         return self.default_by_depth.get(key, self.default)
 
 
-# =========================================================================== options
-
-
 class FixedDefault(ReframeModel):
     kind: Literal["fixed"] = "fixed"
     value: OptionValue
 
 
 class PresetDefault(ReframeModel):
-    """The default depends on the speed preset (x264 / x265 preset tables).
+    """The default depends on the speed preset.
 
-    A preset that is missing from ``values`` does not use the option (x264 ``ultrafast`` has
-    no B-frames, so no ``b-adapt``).
+    A preset that is missing from ``values`` does not use the option.
     """
 
     kind: Literal["preset"] = "preset"
     values: dict[str, OptionValue]
     tunes: list[str] = Field(default_factory=list)
-    """Tunes that change this option (the placeholder then says "depends on the tune")."""
+    """Tunes that change this option's default."""
 
 
 class EncoderDefault(ReframeModel):
-    """The encoder decides (the value depends on the content, the hardware or other
-    settings)."""
+    """The encoder decides: the value depends on the content, the hardware or other settings."""
 
     kind: Literal["encoder"] = "encoder"
     note: str = ""
@@ -266,8 +237,8 @@ OptionDefault = Annotated[
 ]
 
 ConditionField = str
-"""``rate_control`` (``quality`` / ``bitrate``), ``two_pass``, ``bit_depth``, ``preset``,
-``tune``, or ``option:<key>`` (the value of another option of the same encoder)."""
+"""The field a condition reads: a name from ``CONDITION_FIELDS``, or ``option:<key>`` for another
+option of the same encoder."""
 CONDITION_FIELDS = ("rate_control", "two_pass", "bit_depth", "preset", "tune")
 
 
@@ -289,15 +260,13 @@ class Condition(ReframeModel):
 
 
 class EncoderOption(ReframeModel):
-    """One advanced encoder option (05 §C-6, StaxRip style)."""
+    """One advanced encoder option."""
 
     key: str
     """The key in ``VideoSettings.advanced`` (``bframes``)."""
     label: str
     category: str
-    """One of :data:`OPTION_CATEGORIES` (``Rate control``, ``Frame types / GOP``, ``Motion /
-    analysis``, ``Psycho-visual``, ``Loop filters``, ``HDR / colour``, ``Performance``, or
-    ``Basic`` for a tier); the linter checks it."""
+    """One of :data:`OPTION_CATEGORIES`: the panel group of this option."""
     type: OptionType
     min: float | None = None
     max: float | None = None
@@ -305,23 +274,19 @@ class EncoderOption(ReframeModel):
     choices: list[Choice] | None = None
     default: OptionDefault
     help: str
-    """What it does, the typical range, and the quality / speed effect."""
+    """What it does, the typical range, and the quality and speed effect."""
     mapping: OptionMapping
     requires: list[Condition] = Field(default_factory=list)
     unit: str | None = None
     """``frames``, ``kb/s``."""
 
 
-# =========================================================================== rate control
-
-
 class DerivedValue(ReframeModel):
-    """A value computed from the quality value (HandBrake's QP offsets for P/B frames).
+    """A value computed from the quality value (HandBrake's QP offsets for P and B frames).
 
-    ``value · factor + offset``; when ``ramp_below`` is set and the value is at or below it,
-    the offset is scaled by ``value / ramp_below``. Clamped to ``min`` / ``max``; ``integer``
-    rounds (half up). ``factor`` puts the value on another scale: ``av1_nvenc`` takes ``-cq``
-    from 0 to 63 but ``-init_qp*`` from 0 to 255 (``ffmpeg -h encoder=av1_nvenc``).
+    ``value · factor + offset``; when ``ramp_below`` is set and the value is at or below it, the
+    offset is scaled by ``value / ramp_below``. Clamped to ``min`` and ``max``; ``integer`` rounds
+    (half up). ``factor`` converts to the scale of another FFmpeg option.
     """
 
     factor: float = 1.0
@@ -344,7 +309,7 @@ class DerivedValue(ReframeModel):
 
 
 class QualityBand(ReframeModel):
-    """A recommended quality range for outputs up to ``max_height`` lines (03 §Video)."""
+    """A recommended quality range for outputs up to ``max_height`` lines."""
 
     max_height: int
     low: float
@@ -352,16 +317,16 @@ class QualityBand(ReframeModel):
 
 
 class QualityMode(ReframeModel):
-    """Constant quality (``ConstantQuality.value``), on the encoder's own scale."""
+    """Constant quality, on the encoder's own scale (``ConstantQuality.value``)."""
 
     kind: Literal["crf", "cq", "qp", "icq"]
     label: str
-    """``RF``, ``CQ``, ``QP``, ``ICQ`` (HandBrake's names where it has them)."""
+    """The name shown for the scale (HandBrake's name where it has one)."""
     min: float
     max: float
     step: float
     default: float
-    """Reframe's suggested start value (HandBrake's 1080p presets where they exist)."""
+    """The suggested starting value."""
     direction: Literal["lower_is_better", "higher_is_better"] = "lower_is_better"
     args: list[str] = Field(default_factory=list)
     """FFmpeg arguments; placeholders ``{value}`` and the ``derived`` names."""
@@ -369,41 +334,41 @@ class QualityMode(ReframeModel):
     """Entries for the params argument (same placeholders)."""
     derived: dict[str, DerivedValue] = Field(default_factory=dict)
     scale: list[tuple[float, float]]
-    """Quality conversion table: ``(value, x264 RF equivalent)`` points, increasing in both
-    (piecewise linear). Approximate by nature (03 §Missing encoder behaviour)."""
+    """Conversion table to the x264 RF scale: ``(value, RF equivalent)`` points, increasing in
+    both and joined piecewise linearly. The conversion is approximate."""
     recommended: list[QualityBand] = Field(default_factory=list)
     help: str = ""
 
 
 class TwoPassDef(ReframeModel):
-    """2-pass average bitrate (``AverageBitrate.two_pass``).
+    """Two-pass average bitrate.
 
-    ``two_runs``: FFmpeg runs twice; pass 1 writes to the null muxer. ``single_run``: the
-    encoder does both passes internally (NVENC ``-multipass``), in one FFmpeg run.
+    ``two_runs``: FFmpeg runs twice; pass 1 writes to the null muxer. ``single_run``: the encoder
+    does both passes in one FFmpeg run (NVENC ``-multipass``).
     """
 
     mode: Literal["two_runs", "single_run"]
     args: list[str] = Field(default_factory=list)
-    """Every pass; placeholders ``{pass}``, ``{passlog}``."""
+    """Every pass; placeholders ``{pass}`` and ``{passlog}``."""
     params: dict[str, str] = Field(default_factory=dict)
     turbo_args: list[str] = Field(default_factory=list)
     """Pass 1 (``two_runs``) or the run (``single_run``) when ``turbo_first_pass`` is on."""
     turbo_params: dict[str, str] = Field(default_factory=dict)
     full_args: list[str] = Field(default_factory=list)
-    """Pass 1 / the run when ``turbo_first_pass`` is off."""
+    """Pass 1, or the run, when ``turbo_first_pass`` is off."""
     full_params: dict[str, str] = Field(default_factory=dict)
 
 
 class BitrateMode(ReframeModel):
-    """Average bitrate (``AverageBitrate.kbps``)."""
+    """Average bitrate, in kb/s."""
 
     min_kbps: int = 100
     max_kbps: int = 200_000
     args: list[str]
-    """Placeholder ``{kbps}``: ``["-b:v", "{kbps}k"]``."""
+    """Placeholder ``{kbps}``: the bitrate in kb/s."""
     params: dict[str, str] = Field(default_factory=dict)
     two_pass: TwoPassDef | None = None
-    """``None``: no 2-pass for this encoder (validation reports a 2-pass job)."""
+    """``None``: this encoder has no 2-pass; validation reports a 2-pass job."""
     help: str = ""
 
 
@@ -413,28 +378,23 @@ class RateControlDef(ReframeModel):
 
 
 class FastDecodeDef(ReframeModel):
-    """``VideoSettings.fast_decode``: a tune value, or arguments."""
+    """The fast-decode setting: a tune value, or arguments."""
 
     tune: str | None = None
     """Written as (part of) the tune: ``fastdecode``."""
     combines_with_tune: bool = False
-    """x264 accepts ``-tune film,fastdecode``; x265 takes only one tune."""
+    """x264 accepts ``fastdecode`` next to another tune; x265 takes only one tune."""
     args: list[str] = Field(default_factory=list)
     params: dict[str, str] = Field(default_factory=dict)
-
-
-# =========================================================================== video encoders
 
 
 class HardwareSetup(ReframeModel):
     """How to drive a hardware encoder from FFmpeg."""
 
     init_args: list[str] = Field(default_factory=list)
-    """Global arguments before ``-i``, e.g. ``["-init_hw_device", "vaapi=va:{vaapi_device}",
-    "-filter_hw_device", "va"]``."""
+    """Global arguments before ``-i``."""
     filter_tail: list[str] = Field(default_factory=list)
-    """Filters appended at the end of the video filter chain, e.g.
-    ``["format={sw_pix_fmt}", "hwupload"]``."""
+    """Filters appended to the end of the video filter chain."""
 
 
 class VideoEncoderDef(ReframeModel):
@@ -443,12 +403,12 @@ class VideoEncoderDef(ReframeModel):
     id: str
     """The FFmpeg encoder name: ``libx265``, ``hevc_nvenc``."""
     label: str
-    """Display name: ``x265``, ``NVIDIA NVENC H.265``."""
+    """The display name."""
     codec: VideoCodec
     codec_label: str
-    """Video format for ``{codec}``: ``H.265``."""
+    """The video format name for the ``{codec}`` placeholder of labels."""
     handbrake_key: str
-    """HandBrake-style short key for ``{encoder}``: ``x265``, ``nvenc_h265``, ``svt_av1``."""
+    """The short key for the ``{encoder}`` placeholder, in HandBrake's style."""
     family: EncoderFamily
     hardware: bool
     vendor: Vendor | None = None
@@ -458,14 +418,13 @@ class VideoEncoderDef(ReframeModel):
     means the encoder does not support that bit depth."""
     hardware_setup: HardwareSetup | None = None
     fallback: list[str] = Field(default_factory=list)
-    """Encoder ids to try, in order, when this one is unavailable. Ends with a software
-    encoder (the C-6 linter checks it)."""
+    """Encoder ids to try, in order, when this one is unavailable. The chain ends with a software
+    encoder."""
 
-    # ---- C-6 additions
     help: str = ""
     params_arg: str | None = None
-    """``-x264-params`` / ``-x265-params`` / ``-svtav1-params``: where ``x26x_param`` options
-    go (joined with ``:``). ``None``: the encoder has no params argument."""
+    """The FFmpeg option that carries the ``x26x_param`` options (for example ``-x265-params``),
+    joined with ``:``. ``None``: the encoder has no params argument."""
     rate_control: RateControlDef = Field(default_factory=RateControlDef)
     presets: ChoiceSetting | None = None
     """Speed presets, fastest first (the slider order)."""
@@ -474,15 +433,11 @@ class VideoEncoderDef(ReframeModel):
     levels: ChoiceSetting | None = None
     fast_decode: FastDecodeDef | None = None
     extra_args: list[str] = Field(default_factory=list)
-    """Always written after the codec (``-row-mt 1`` for VP9)."""
+    """Always written after the codec."""
     options: list[EncoderOption] = Field(default_factory=list)
-    """Advanced options (05 §C-6): the complete sets of 03 §Advanced (M9)."""
 
     def option(self, key: str) -> EncoderOption | None:
         return next((o for o in self.options if o.key == key), None)
-
-
-# =========================================================================== audio
 
 
 class BitrateLimits(ReframeModel):
@@ -492,12 +447,12 @@ class BitrateLimits(ReframeModel):
 
 
 class AudioBitrateDef(ReframeModel):
-    """Bitrates in kb/s for 44.1 / 48 kHz output (the ranges shrink at low sample rates)."""
+    """Bitrates in kb/s, for 44.1 and 48 kHz output; the ranges shrink at lower sample rates."""
 
     by_mixdown: dict[Mixdown, BitrateLimits]
     """Missing mixdown = the encoder cannot produce that layout."""
     allowed: list[int] | None = None
-    """Fixed steps (AC-3, E-AC-3, MP3); ``None`` = any value from ``min`` to ``max``."""
+    """Fixed steps in kb/s; ``None``: any value from ``min`` to ``max``."""
 
     def snap(
         self, kbps: int, mixdown: Mixdown, direction: Literal["down", "up"] = "down"
@@ -505,9 +460,8 @@ class AudioBitrateDef(ReframeModel):
         """A valid bitrate for ``mixdown`` near ``kbps``, clamped to the range; ``None`` when
         the mixdown is not supported.
 
-        ``down`` (a maximum bitrate, as HandBrake snaps): the largest allowed value at or
-        below ``kbps``. ``up`` (03 §Audio: "the smallest allowed bitrate that is at or above
-        the source bitrate"): the smallest allowed value at or above it.
+        ``down`` takes the largest allowed value at or below ``kbps`` (a maximum bitrate, as
+        HandBrake snaps); ``up`` takes the smallest allowed value at or above it.
         """
         limits = self.by_mixdown.get(mixdown)
         if limits is None:
@@ -531,7 +485,7 @@ class AudioBitrateDef(ReframeModel):
 
 
 class AudioQualityDef(ReframeModel):
-    """VBR quality (``AudioOutputTrack.quality``)."""
+    """VBR quality of an audio encoder."""
 
     arg: str
     """``-q:a``; the builder adds the output stream index (``-q:a:0``)."""
@@ -549,10 +503,9 @@ class AudioEncoderDef(ReframeModel):
     id: str
     """The FFmpeg encoder name: ``aac``, ``libopus``."""
     label: str
-    """Display name and ``{acodec}``: ``AAC``, ``AC-3``, ``Opus``."""
+    """The display name, also used for the ``{acodec}`` placeholder."""
     codec: AudioCodec
 
-    # ---- C-6 additions
     help: str = ""
     lossless: bool = False
     max_channels: int = 2
@@ -563,16 +516,12 @@ class AudioEncoderDef(ReframeModel):
     """``None`` for lossless encoders."""
     quality: AudioQualityDef | None = None
     passthru: PassthruCodec | None = None
-    """The passthru codec this encoder's output is (``ac3`` → ``ac3``), for "the source
-    already fits"."""
+    """The passthru codec that this encoder's output is, for when the source already fits."""
     in_gpl_builds: bool = True
-    """``libfdk_aac`` is not in GPL builds (the bundled FFmpeg)."""
+    """Whether every GPL build has this encoder (``libfdk_aac`` does not)."""
     fallback: list[str] = Field(default_factory=list)
-    """Audio encoder ids to try, in order, when this one is unavailable (decision 0020:
-    ``libfdk_aac → aac``). Ends with an encoder that every GPL build has (the linter checks
-    it); empty for encoders that are always there."""
-
-    # ---- snapping (decision 0024: the builder snaps, validation shows an info note)
+    """Audio encoder ids to try, in order, when this one is unavailable. The chain ends with an
+    encoder that every GPL build has; it is empty for encoders that are always there."""
 
     def snap_mixdown(
         self,
@@ -580,23 +529,12 @@ class AudioEncoderDef(ReframeModel):
         source_channels: int,
         mixdowns: Mapping[Mixdown, MixdownDef],
     ) -> Mixdown | None:
-        """The layout this encoder really produces; ``None`` = the source layout stays.
+        """The layout this encoder really produces; ``None`` keeps the source layout.
 
-        ``requested`` is the track's mixdown (``None`` = keep the source layout);
-        ``source_channels`` the source track's channel count (0 = unknown); ``mixdowns`` is
-        ``Definitions.mixdowns``. Rules, in order:
-
-        1. **Never an upmix** (decision 0019 item 3): a requested layout with more channels
-           than a known source is treated as "keep the source layout". Dolby Pro Logic II on
-           a source with two channels or fewer keeps it too (there is nothing to
-           matrix-encode).
-        2. A requested layout the encoder can make is returned as it is.
-        3. "Keep" with a source the encoder takes (``source_channels <= max_channels``, or
-           unknown) returns ``None``.
-        4. Otherwise the encoder's largest layout below the wanted channel count (never Dolby
-           Pro Logic II, which is a matrix encoding, not a channel count): AC-3 / E-AC-3 make
-           5.1 of 7.1, MP3 makes stereo of 5.1. If the encoder has nothing that small, its
-           smallest layout (but the source layout stays when that would be an upmix).
+        ``requested`` is the track's mixdown (``None``: keep the source layout), and
+        ``source_channels`` the source track's channel count (0: unknown). Never an upmix of a
+        known source. Dolby Pro Logic II is a matrix encoding, not a channel count, so it is
+        never a fallback layout.
         """
         if requested is not None and source_channels > 0:
             wanted = mixdowns[requested].channels
@@ -622,11 +560,11 @@ class AudioEncoderDef(ReframeModel):
         return smallest
 
     def snap_samplerate(self, rate: int | None, source_rate: int | None = None) -> int | None:
-        """The output sample rate in Hz: ``rate`` (``None`` = the same as the source,
-        ``source_rate``), moved to the nearest rate in :attr:`samplerates`. A tie goes to the
-        higher rate (20 000 Hz, halfway between Opus's 16 000 and 24 000, becomes 24 000), as
-        C-7, C-8 and C-12 did. An encoder that lists no rates keeps the rate. ``None`` when
-        neither rate is known (FFmpeg then picks one itself)."""
+        """The output sample rate in Hz: ``rate``, or ``source_rate`` when ``rate`` is ``None``,
+        moved to the nearest rate in :attr:`samplerates`. A tie goes to the higher rate. An
+        encoder that lists no rates keeps the rate. ``None`` when neither rate is known (FFmpeg
+        then picks one itself).
+        """
         wanted = rate if rate is not None else source_rate
         if wanted is None or not self.samplerates or wanted in self.samplerates:
             return wanted
@@ -634,45 +572,41 @@ class AudioEncoderDef(ReframeModel):
 
 
 class MixdownDef(ReframeModel):
-    """How a ``Mixdown`` is produced (03 §Audio)."""
+    """How a mixdown is produced."""
 
     label: str
     channels: int
     lfe: int = 0
     layout: str
-    """FFmpeg channel layout: ``stereo``, ``5.1``."""
+    """FFmpeg channel layout, such as ``stereo``."""
     matrix_encoding: str | None = None
-    """``dplii`` for Dolby Pro Logic II (``aresample=matrix_encoding=dplii``)."""
+    """FFmpeg matrix encoding (``dplii``, Dolby Pro Logic II), or ``None``."""
 
 
 class PassthruCodecDef(ReframeModel):
-    """A codec of 03 §Audio defaults part 3, matched on the source track."""
+    """A codec that a source track can be passed through as, matched on the source track."""
 
     label: str
     codec_name: str
     """ffprobe ``codec_name``."""
     profiles: list[str] | None = None
-    """Only these ffprobe profiles (DTS-HD); ``None`` = any."""
+    """Only these ffprobe profiles; ``None``: any."""
     exclude_profiles: list[str] = Field(default_factory=list)
-
-
-# =========================================================================== containers
 
 
 class CodecSupport(ReframeModel):
     """What a container holds for one track type."""
 
     copy_codecs: list[str] = Field(default_factory=list, alias="copy")
-    """ffprobe codec names that can be stream-copied in; ``["*"]`` = any but
+    """ffprobe codec names that can be stream-copied in; ``["*"]`` means any codec except
     :attr:`copy_except`."""
     copy_except: list[str] = Field(default_factory=list)
-    """With ``copy = ["*"]``: codecs the muxer refuses (Matroska: ``pcm_bluray``, ``pcm_dvd``,
-    ``s302m`` … "No wav codec tag found"). They are encoded instead of copied."""
+    """With ``copy = ["*"]``: codecs the muxer refuses. They are encoded instead of copied."""
     encode: list[str] = Field(default_factory=list)
-    """Video / audio codecs (``VideoCodec`` / ``AudioCodec``) or subtitle formats
-    (``SubtitleFormat``) that can be encoded into it."""
+    """Codecs (``VideoCodec``, ``AudioCodec``) or subtitle formats (``SubtitleFormat``) that can
+    be encoded into the container."""
     copy_args: dict[str, list[str]] = Field(default_factory=dict)
-    """Extra arguments to copy a codec (``truehd`` in MP4: ``-strict -2``)."""
+    """Extra arguments needed to copy a codec, by codec name."""
 
     def can_copy(self, codec_name: str) -> bool:
         if codec_name in self.copy_except:
@@ -688,22 +622,22 @@ class TrackFlagDef(ReframeModel):
 
 
 class ContainerDef(ReframeModel):
-    """One output container (``reframe.models.job.Container``)."""
+    """One output container."""
 
     id: Container
     label: str
     muxer: str
-    """FFmpeg muxer name (``-f``): ``matroska``, ``mp4``, ``webm``."""
+    """The FFmpeg muxer name, as passed to ``-f``."""
     extensions: list[str]
-    """The first is the default (``.mkv``)."""
+    """The first extension is the default one."""
     video: CodecSupport
     audio: CodecSupport
     subtitles: CodecSupport
     text_subtitle_target: SubtitleFormat | None = None
-    """A copied text subtitle that the container cannot hold is converted to this
-    (MP4: ``mov_text``); ``None`` = the container takes the text formats it lists."""
+    """The format a text subtitle is converted to when the container cannot hold it. ``None``:
+    the container takes the text formats it lists."""
     codec_tags: dict[str, str] = Field(default_factory=dict)
-    """``-tag:v`` per codec (MP4 H.265: ``hvc1``, as HandBrake writes it)."""
+    """The ``-tag:v`` value per codec, as HandBrake writes it."""
     chapters: bool
     attachments: bool
     flags: list[TrackFlag]
@@ -713,17 +647,14 @@ class ContainerDef(ReframeModel):
     default_always_set: bool = False
     """MP4: when no track of a type is default, the muxer marks the first one default."""
     language_format: Literal["iso639_2b", "iso639_2t"]
-    """MKV: ISO 639-2/B (``to_matroska_legacy``); MP4: ISO 639-2/T (``to_mp4``)."""
+    """The language tag format: ISO 639-2/B for MKV, ISO 639-2/T for MP4."""
     format_flags: dict[str, list[str]] = Field(default_factory=dict)
     """Arguments for output options: ``web_optimized`` → ``-movflags +faststart``."""
     help: str = ""
 
 
-# =========================================================================== filters
-
-
 class FilterHelp(ReframeModel):
-    """The help panel of 03 §Filters."""
+    """The help panel of a filter."""
 
     what: str
     use_when: str
@@ -740,7 +671,7 @@ class FilterTune(ReframeModel):
 
 
 class FilterPreset(ReframeModel):
-    """A preset of one implementation (HandBrake's preset names where HandBrake has them)."""
+    """A preset of one implementation. Names follow HandBrake where HandBrake has a preset."""
 
     id: str
     label: str
@@ -752,19 +683,18 @@ class FilterPreset(ReframeModel):
     custom: bool = False
     """The chain contains ``{custom}`` (``FilterConfig.custom``)."""
     handbrake: str | None = None
-    """The HandBrake settings this preset maps from (documentation of the mapping)."""
+    """The HandBrake setting this preset maps from, for reference."""
 
     def chain_for(self, tune: str | None = None) -> str | None:
-        """The chain for ``tune`` (``None`` or a tune without its own chain: the plain
-        chain)."""
+        """The chain for ``tune``, or the plain chain when ``tune`` is ``None`` or has no chain
+        of its own."""
         if tune is not None and tune in self.tune_chains:
             return self.tune_chains[tune]
         return self.chain
 
 
 class FilterImplementation(ReframeModel):
-    """An FFmpeg implementation of a filter, with its own presets and tunes
-    (``FilterConfig.implementation``; HandBrake: NLMeans or HQDN3D, Yadif or Bwdif …)."""
+    """An FFmpeg implementation of a filter, with its own presets and tunes."""
 
     id: str
     label: str
@@ -773,15 +703,13 @@ class FilterImplementation(ReframeModel):
     note: str = ""
     requires_tagged_input: bool = False
     """The filter needs the input's colour properties (primaries, transfer, matrix). For an
-    untagged source the builder prepends ``setparams`` with the probed or assumed values
-    (``zscale`` fails with "no path between colorspaces" otherwise)."""
+    untagged source the builder prepends ``setparams`` with the probed or assumed values."""
     combed_only: str | None = None
-    """Option appended to the chain when interlace detection is on, so that only the frames
-    it flags as interlaced are processed (``deint=interlaced``)."""
+    """Option appended to the chain when interlace detection is on, so that only the frames it
+    flags are processed (``deint=interlaced``)."""
     needs_vulkan: bool = False
-    """The filter is in the build but fails without a working Vulkan driver (libplacebo:
-    "Error initializing filters … Generic error in an external library"). Being listed by
-    ``ffmpeg -filters`` is not enough: check it with a test run before choosing it."""
+    """Listed by ``ffmpeg -filters``, but it fails without a working Vulkan driver. Check it with
+    a test run before choosing it."""
     presets: list[FilterPreset]
     tunes: list[FilterTune] = Field(default_factory=list)
     default_preset: str
@@ -790,22 +718,21 @@ class FilterImplementation(ReframeModel):
         return next((p for p in self.presets if p.id == preset_id), None)
 
     def runs_with(self, available: Mapping[str, bool] | None) -> bool:
-        """All of ``filters`` are ``available`` (``None`` = assume they are)."""
+        """All of ``filters`` are ``available`` (``None``: assume they are)."""
         return available is None or all(available.get(f, False) for f in self.filters)
 
 
 class FilterDef(ReframeModel):
-    """One filter of 03 §Filters."""
+    """One filter, with its implementations and help text."""
 
     id: FilterId
     label: str
     position: int = 0
-    """Index in the fixed filter order (``Definitions.filter_order``), set by the loader."""
+    """Index in ``Definitions.filter_order``; set when the definitions are validated."""
     analysis: bool = False
-    """Interlace detection: it marks frames for deinterlace and changes no pixels."""
+    """Interlace detection: it marks frames for deinterlacing and changes no pixels."""
     implementations: list[FilterImplementation]
-    """In order of preference: the first is the default (``FilterConfig.implementation``
-    ``None``)."""
+    """In order of preference: the first is the default when no implementation is chosen."""
     help: FilterHelp
 
     def implementation(self, implementation_id: str) -> FilterImplementation | None:
@@ -814,12 +741,11 @@ class FilterDef(ReframeModel):
     def implementation_for(
         self, config: FilterConfig | None = None, available: Mapping[str, bool] | None = None
     ) -> FilterImplementation | None:
-        """The implementation a filter config uses.
+        """The implementation that ``config`` uses.
 
-        ``config.implementation`` set: that implementation, if it is known and its filters
-        are ``available`` (``None`` = assume all are). Not set: the first implementation that
-        runs and has ``config.preset``. ``None`` when nothing fits (the validation reports
-        it).
+        With ``config.implementation`` set, that implementation, if it is known and its filters
+        are ``available`` (``None``: assume all are). Otherwise the first implementation that
+        runs and has ``config.preset``. ``None`` when nothing fits.
         """
         if config is not None and config.implementation is not None:
             impl = self.implementation(config.implementation)
@@ -834,8 +760,8 @@ class FilterDef(ReframeModel):
     def chain_for(
         self, config: FilterConfig, available: Mapping[str, bool] | None = None
     ) -> str | None:
-        """The FFmpeg chain for ``config``, with ``{custom}`` filled in (``None`` when the
-        implementation, preset or tune does not resolve). ``combed_only`` is not added."""
+        """The FFmpeg chain for ``config``, with ``{custom}`` filled in. ``None`` when the
+        implementation, preset or tune does not resolve. ``combed_only`` is not added."""
         impl = self.implementation_for(config, available)
         preset = impl.preset(config.preset) if impl is not None else None
         if preset is None:
@@ -846,24 +772,19 @@ class FilterDef(ReframeModel):
         return chain.replace("{custom}", config.custom or "") if preset.custom else chain
 
 
-# =========================================================================== everything
-
-
 class Definitions(ReframeModel):
     """Everything in ``definitions/data``."""
 
     video_encoders: dict[str, VideoEncoderDef] = Field(default_factory=dict)
     audio_encoders: dict[str, AudioEncoderDef] = Field(default_factory=dict)
 
-    # ---- C-6 additions
     mixdowns: dict[Mixdown, MixdownDef] = Field(default_factory=dict)
     passthru_codecs: dict[PassthruCodec, PassthruCodecDef] = Field(default_factory=dict)
     containers: dict[Container, ContainerDef] = Field(default_factory=dict)
     track_flags: dict[TrackFlag, TrackFlagDef] = Field(default_factory=dict)
     filters: dict[FilterId, FilterDef] = Field(default_factory=dict)
     filter_order: list[str] = Field(default_factory=list)
-    """The fixed order of 03 §Filters: filter ids plus the stages ``crop``, ``scale`` and
-    ``format`` (:data:`FILTER_STAGES`)."""
+    """The fixed filter order: the filter ids plus :data:`FILTER_STAGES`."""
 
     @model_validator(mode="after")
     def _filter_positions(self) -> Definitions:
@@ -877,8 +798,8 @@ class Definitions(ReframeModel):
 
 
 def interpolate(points: list[tuple[float, float]], x: float) -> float:
-    """Piecewise-linear interpolation through increasing ``points``; extrapolates with the
-    end segments (callers clamp)."""
+    """Piecewise-linear interpolation through increasing ``points``; extrapolates with the end
+    segments (callers clamp)."""
     if len(points) < 2:
         raise ValueError("need at least two points")
     for (x0, y0), (x1, y1) in itertools.pairwise(points):
@@ -890,9 +811,8 @@ def interpolate(points: list[tuple[float, float]], x: float) -> float:
 
 
 def round_half_up(value: float) -> int:
-    """``value`` rounded to the nearest integer, a half away from minus infinity (``26.5`` →
-    ``27``), not to the even neighbour as :func:`round` does. Float noise below 1e-9 is
-    ignored (``223.49999999999997`` counts as ``223.5``)."""
+    """``value`` rounded to the nearest integer, with halves rounded up (``26.5`` → ``27``).
+    Unlike :func:`round`, which rounds halves to even. Float noise below 1e-9 is ignored."""
     return math.floor(round(value, 9) + 0.5)
 
 

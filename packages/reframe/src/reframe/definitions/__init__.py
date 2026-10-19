@@ -1,43 +1,7 @@
-"""Declarative definitions (C-6): encoders, options, filters, containers.
+"""Declarative definitions: encoders, options, filters and containers.
 
-The data lives in ``definitions/data/*.toml`` and is validated by Pydantic at load time
-(``load_definitions()``, cached). Pure: package data only.
-
-How the other steps use it:
-
-- **Video (C-7)**: ``Definitions.video_encoders[id]`` (:class:`VideoEncoderDef`).
-  Rate control: ``rate_control.quality`` (:class:`QualityMode`: ``args`` / ``params`` with
-  ``{value}`` and the ``derived`` names, :meth:`DerivedValue.compute`) or
-  ``rate_control.bitrate`` (:class:`BitrateMode`: ``{kbps}``; ``two_pass`` with
-  ``{pass}`` / ``{passlog}`` and the turbo / full first-pass arguments). Speed preset, tune,
-  profile and level: :class:`ChoiceSetting` (``mapping`` + ``Choice.written``). Advanced
-  options: ``options`` (:class:`EncoderOption`, ``mapping``). ``x26x_param`` values are
-  joined with ``:`` into ``params_arg`` (composite parts with ``,``). ``extra_args`` are
-  always written. The builder adds stream specifiers (``-preset:v:0``).
-- **Audio (C-7 / C-12)**: ``audio_encoders[id]`` (:class:`AudioEncoderDef`):
-  ``bitrate.by_mixdown`` limits and :meth:`AudioBitrateDef.snap`, ``quality.arg``,
-  :meth:`AudioEncoderDef.snap_mixdown`, :meth:`AudioEncoderDef.snap_samplerate` and
-  :func:`channels_mixdown` (decision 0024: one snapping rule for C-7, C-8 and C-12),
-  ``samplerates``, ``mixdowns``; ``Definitions.mixdowns`` (layout, ``matrix_encoding``);
-  ``Definitions.passthru_codecs`` (source matching).
-- **Containers (C-7 / C-8)**: ``containers[id]`` (:class:`ContainerDef`):
-  ``video`` / ``audio`` / ``subtitles`` (:meth:`CodecSupport.can_copy`, which honours
-  ``copy_except``; ``encode``, ``copy_args``), ``text_subtitle_target``, ``flags`` /
-  ``mkvpropedit_flags`` with ``Definitions.track_flags`` (disposition and mkvpropedit
-  names), ``codec_tags``, ``format_flags`` (``web_optimized``), ``language_format``,
-  ``chapters``, ``attachments``.
-- **Filters (C-7)**: ``filters[id]`` (:class:`FilterDef`) in ``filter_order``;
-  :meth:`FilterDef.implementation_for` resolves ``FilterConfig.implementation`` (``None``:
-  the first implementation the build runs that has the preset), and
-  :meth:`FilterDef.chain_for` gives the chain with ``{custom}`` = ``FilterConfig.custom``
-  filled in; each :class:`FilterImplementation` has its own presets and tunes.
-- **Audio fallback (C-4)**: ``AudioEncoderDef.fallback`` (``libfdk_aac → aac``).
-- :func:`convert_quality`, :func:`supported_options`, :func:`lint_definitions`;
-  :func:`search_options` (the option search) and :func:`hdr_options` (**Copy HDR metadata**).
-- **Option resolution (C-7 / C-8)**: :func:`option_context` (the values ``requires``
-  conditions read: the job's options, else their defaults), :func:`option_default`,
-  :func:`effective_option`, :func:`unmet_conditions` (an option the builder leaves out) and
-  :func:`describe_condition`; the categories of the panel are :data:`OPTION_CATEGORIES`.
+The data lives in ``definitions/data/*.toml``. Pydantic validates it when
+:func:`load_definitions` loads it (cached). Only package data is read.
 """
 
 from reframe.definitions.hdr import hdr_options
