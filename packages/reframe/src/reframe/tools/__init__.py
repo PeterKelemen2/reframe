@@ -1,8 +1,7 @@
-"""Running and finding external tools (C-1).
+"""Running and finding external tools.
 
 Every subprocess in Reframe goes through :func:`run` or :func:`run_streaming` (timeout,
-cancel, output limit, process-tree kill). :func:`discover_tools` finds ffmpeg, ffprobe,
-mkvpropedit and mediainfo and checks their versions.
+cancel, output limit, process-tree kill).
 """
 
 from reframe.tools.discovery import (

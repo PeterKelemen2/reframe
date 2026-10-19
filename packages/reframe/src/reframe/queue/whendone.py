@@ -1,41 +1,15 @@
-"""When done (C-11; 03 §Queue → When done) and the job notifications (C-14's hook).
+"""The job notifications of a run and the when-done action of the queue.
 
-The queue (:class:`~reframe.queue.QueueService`) owns one :class:`WhenDoneActions`. When the
-action runs is decision 0016 §9; the other choices are decision 0037.
+The queue owns one :class:`WhenDoneActions`. A run that ended on its own (done or failed)
+gets one notification when the ``notifications`` setting is on. Only such a run counts for the
+when-done action.
+The batch is the jobs that ended since the queue last emptied. When the queue empties after
+a batch whose last run ended on its own, the action runs once, whether that job was done or
+failed. A cancelled last run starts a new batch and runs nothing.
 
-**Job notifications** (``settings.queue.notifications``, read when a run ends). A job that
-ended on its own gets one ``notification`` event with its ``job_id``: ``done`` → "Job done"
-(level ``success``, the output's file name); ``failed`` → "Job failed" (level ``error``, the
-source's file name and the reason). A job cancelled by the user or stopped by ``close()``
-gets none, and so does a job that is added as ``failed`` (it never ran). The notification
-comes when the run's files are handled (the output has its final name), before the run's
-last ``job.log`` batch and its end ``job.state``: the end state stays the last event of a run
-(0016 §10).
-
-**When the queue empties** after a job ended on its own (0016 §9: nothing runs and nothing is
-left that the runner would take; not when the user cancelled the last job or the queue was
-closed), ``settings.queue.when_done`` is read and runs once, for the jobs that ended since the
-queue last emptied (the *batch*):
-
-- ``nothing``.
-- ``notify``: one ``notification`` "Queue finished" ("3 jobs done, 1 failed.", level
-  ``success``, or ``warning`` when a job failed), whatever ``notifications`` says. It is left
-  out when the batch was one job whose own notification was sent: it would say the same.
-- ``quit``, ``sleep``, ``shutdown``: ``PowerService.schedule(action, reason="3 jobs done, 1
-  failed")`` (C-14), which publishes the 60 s countdown (``power.countdown``) and runs the
-  action at its end. Without a power service: ``app.warning`` ``queue.when_done_unavailable``;
-  when the power service cannot start the countdown: ``queue.when_done_failed``. Both say
-  that nothing was done.
-
-The action runs whether the last job was done or failed: a failed job does not need the
-computer to stay on (its log and the queue are kept). When the queue empties after the user
-cancelled its last job, no action runs and a new batch starts.
-
-**The countdown** that the queue started is cancelled when new work starts (the runner takes a
-job: one added or retried while the queue runs, or :meth:`~reframe.queue.QueueService.start`)
-and when the queue is closed. A change of the when-done setting does not cancel it (the queue
-reads the setting only when it empties): the user cancels it through ``Reframe.power.cancel()``
-(the countdown dialog). The queue cancels only its own countdown, by its id.
+The countdown that the queue started is cancelled when new work starts and when the queue is
+closed. A change of the when-done setting does not cancel it, because the setting is read
+only when the queue empties. The queue cancels only its own countdown, by its id.
 """
 
 from __future__ import annotations
@@ -66,7 +40,7 @@ _ENDED_ON_ITS_OWN = frozenset({JobState.DONE, JobState.FAILED})
 
 
 def summary(done: int, failed: int) -> str:
-    """``"3 jobs done, 1 failed"`` (the failed part only when a job failed; no full stop)."""
+    """The batch summary: the failed part only when a job failed; no full stop."""
     text = f"{done} job{'s' if done != 1 else ''} done"
     if failed:
         text += f", {failed} failed"
@@ -88,8 +62,6 @@ class WhenDoneActions:
         self._notified = 0
         self.countdown: str | None = None
         """The id of the countdown that the queue started, until the queue cancels it."""
-
-    # ------------------------------------------------------------------ a run ended
 
     def job_ended(
         self,
@@ -131,8 +103,6 @@ class WhenDoneActions:
             self._done += 1
         elif state is JobState.FAILED:
             self._failed += 1
-
-    # ------------------------------------------------------------------ the queue emptied
 
     def emptied(self, last: JobState, action: WhenDone) -> None:
         """The queue emptied; ``last`` is the end state of the run that ended last and
@@ -176,8 +146,6 @@ class WhenDoneActions:
                 "so nothing was done.",
                 printable(f"{type(exc).__name__}: {exc}"),
             )
-
-    # ------------------------------------------------------------------ the countdown
 
     def work_started(self) -> None:
         """The runner took a job: cancel the countdown that the queue started."""

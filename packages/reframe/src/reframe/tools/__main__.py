@@ -1,13 +1,4 @@
-"""``python -m reframe.tools``: print which tools discovery picks (a diagnostic for CI).
-
-Options:
-
-- ``--json``: print the ``ToolSet`` as JSON instead of one line per tool.
-- ``--require ffmpeg,ffprobe``: exit with 1 unless these tools have the status ``found``.
-- ``--expect-origin bundled``: exit with 1 unless every required tool has this origin.
-
-``reframe tools status`` (C-15) prints the same lines (:func:`status_lines`).
-"""
+"""Print which external tools discovery picks, and why: a diagnostic for CI."""
 
 from __future__ import annotations
 
@@ -22,7 +13,7 @@ __all__ = ["main", "status_line", "status_lines"]
 
 
 def status_line(info: ToolInfo) -> str:
-    """``ffmpeg       found    bundled  /path/bin/ffmpeg  n9.0.2-…  (reason)``."""
+    """One line: name, status, origin and path, then the version and the reason when known."""
     origin = info.origin.value if info.origin else "-"
     line = f"{info.name:12} {info.status.value:8} {origin:8} {info.path or '-'}"
     if info.version:
