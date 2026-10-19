@@ -1,7 +1,5 @@
-"""C-13 in the command builder: the ``metadata_edit`` job type with its reason, why a job cannot
-be edited in place, the mkvpropedit arguments of the in-place edit and of the post-mux fix-up,
-and the plan of a ``metadata_edit`` job (pure; the real tools are in
-``tests/metadata/test_metadata_edit_real.py``)."""
+"""The ``metadata_edit`` job type, its blockers and its mkvpropedit plan (pure; the real tools
+are tested in ``tests/metadata/test_metadata_edit_real.py``)."""
 
 from __future__ import annotations
 
@@ -43,9 +41,6 @@ DEFS = load_definitions()
 def in_place(path: Path = Path("/media/multitrack.mkv")) -> tuple[JobSettings, MediaSource]:
     src = recorded("multitrack.mkv", path=path)
     return remux_job(draft(src), src, edit_in_place=True), src
-
-
-# --------------------------------------------------------------------------- job type
 
 
 def test_a_remux_job_of_an_mkv_edited_in_place_is_a_metadata_edit() -> None:
@@ -151,9 +146,6 @@ def test_an_audio_codec_the_container_cannot_copy_blocks() -> None:
     assert in_place_blockers(job, src) == ["subtitle track 1 cannot be copied into Matroska (MKV)"]
 
 
-# --------------------------------------------------------------------------- mkvpropedit args
-
-
 def test_track_edit_arguments() -> None:
     assert track_selector("a", 2) == "track:a2"
     assert language_pair("pt-BR") == ("por", "pt-BR")
@@ -238,9 +230,6 @@ def test_fixup_writes_ietf_and_the_flags_the_muxer_cannot() -> None:
         ["--edit", "track:a1", "--set", "language=por", "--set", "language-ietf=pt-BR"],
         ["--edit", "track:a2", "--set", "flag-original=1"],
     ]
-
-
-# --------------------------------------------------------------------------- plans
 
 
 def test_metadata_edit_plan_edits_the_source() -> None:

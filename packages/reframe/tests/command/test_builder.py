@@ -47,9 +47,9 @@ def output_options(plan: EncodePlan) -> list[str]:
 
 
 def test_nothing_reaches_the_muxer_before_zero() -> None:
-    """M2 review, finding M4: ``-ss 0`` as an output option when the video is encoded and a
-    range starts after 0 or an external subtitle has a negative offset; the copied external
-    track of a remux drops its own early events instead."""
+    """``-ss 0`` as an output option when the video is encoded and a range starts after 0 or
+    an external subtitle has a negative offset; the copied external track of a remux drops
+    its own early events instead."""
     src = recorded("multitrack.mkv")
     ext = SubtitleOutputTrack(source=ExternalSubtitle(path=Path("/m/a.srt"), offset_ms=-700))
     job = draft(src, subtitles=False)
@@ -86,9 +86,6 @@ def test_partial_path() -> None:
     assert partial_path(Path("/o/noext")) == Path("/o/noext.part")
 
 
-# --------------------------------------------------------------------------- refusals
-
-
 def test_refusals() -> None:
     src = recorded("multitrack.mkv")
 
@@ -122,9 +119,6 @@ def test_refusals() -> None:
     job.range = FrameRange(start=1, end=5)
     with pytest.raises(PlanError, match="frame rate"):
         plan_of(job, no_rate)
-
-
-# --------------------------------------------------------------------------- order and steps
 
 
 def test_argument_order() -> None:
@@ -230,9 +224,6 @@ def test_attachments_only_with_a_copied_ass_track_in_matroska() -> None:
     assert "0:t?" not in argv(plan_of(mp4, src).steps[0])
 
 
-# --------------------------------------------------------------------------- ranges
-
-
 def test_ranges() -> None:
     src = recorded("multitrack.mkv")
     job = draft(src)
@@ -246,8 +237,8 @@ def test_ranges() -> None:
     assert plan.expected_duration == 2.5
     job.range = FrameRange(start=25)
     assert plan_of(job, src).expected_duration == pytest.approx(3.021)
-    # A chapter range that ends after the last chapter ends with it (decision 0026).
-    chapters = recorded("chapters.mkv")  # 4 chapters; the last is 4.0 to 5.0 s, the file 5.021
+    # A chapter range that ends after the last chapter ends with it.
+    chapters = recorded("chapters.mkv")
     clamped = draft(chapters)
     clamped.range = ChapterRange(start=4, end=5)
     plan = plan_of(clamped, chapters)
