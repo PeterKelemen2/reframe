@@ -338,13 +338,15 @@ def kill_leftovers(
     platform = sys.platform if platform is None else platform
     killed: list[psutil.Process] = []
     if platform != "win32":
+        # Looked up when called: Windows has neither, so a test there stands them in.
+        getpgid: Callable[[int], int] = getattr(os, "getpgid")  # noqa: B009
+        killpg: Callable[[int, int], None] = getattr(os, "killpg")  # noqa: B009
         for candidate in psutil.process_iter():
             with contextlib.suppress(psutil.Error, OSError):
-                if sys.platform != "win32" and os.getpgid(candidate.pid) == pid:
+                if getpgid(candidate.pid) == pid:
                     killed.append(candidate)
-        if sys.platform != "win32":
-            with contextlib.suppress(OSError):
-                os.killpg(pid, signal.SIGKILL)
+        with contextlib.suppress(OSError):
+            killpg(pid, int(getattr(signal, "SIGKILL", 9)))
         return killed
     for candidate in psutil.process_iter(["ppid", "create_time"]):
         info = candidate.info
