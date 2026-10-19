@@ -9,7 +9,7 @@ import { installPlugins } from '@/setup'
 
 let app: VueApp | undefined
 
-// Mounts the real app with the same plugin setup as main.ts (memory history instead of the URL).
+// Mounts the real app, with memory history instead of the URL.
 async function mountApp(path: string) {
   const router = createAppRouter(createMemoryHistory())
   const host = document.createElement('div')

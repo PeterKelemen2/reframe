@@ -1,10 +1,7 @@
 import { definePreset } from '@primeuix/themes'
 import Aura from '@primeuix/themes/aura'
 
-/**
- * Reframe's PrimeVue preset: Aura with our own tokens on top (styled mode).
- * F-1 adds the full colour, spacing, radius and typography tokens and the density modes.
- */
+/** Reframe's PrimeVue preset: Aura with our own tokens on top (styled mode). */
 export const ReframePreset = definePreset(Aura, {
   semantic: {
     primary: {
@@ -23,5 +20,5 @@ export const ReframePreset = definePreset(Aura, {
   },
 })
 
-/** CSS class on `<html>` that switches to the dark colour scheme (the theme switch is F-1). */
+/** CSS class on `<html>` that switches to the dark colour scheme. */
 export const DARK_MODE_CLASS = 'reframe-dark'

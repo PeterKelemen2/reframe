@@ -5,7 +5,6 @@ import { useI18n } from 'vue-i18n'
 
 import { platform } from '@/platform'
 
-// Placeholder until F-3 (app shell) and F-5 (sources panel).
 const { t } = useI18n()
 </script>
 

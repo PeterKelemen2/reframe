@@ -1,13 +1,10 @@
-/**
- * The only place where the web and desktop builds differ (06 §Platform adapter).
- * `web.ts` and `desktop.ts` implement it. The build picks one with `VITE_PLATFORM`.
- */
+/** The only place where the web and desktop builds differ. */
 export type PlatformKind = 'web' | 'desktop'
 
 export interface Platform {
   kind: PlatformKind
   backend(): Promise<{ baseUrl: string; token?: string }>
-  /** Web: the server file-browser dialog (F-5). Desktop: the native dialog. */
+  /** Web: the server file-browser dialog. Desktop: the native dialog. */
   pickFiles(opts: { multiple: boolean; filters?: string[] }): Promise<string[]>
   pickFolder(opts?: { title?: string }): Promise<string | null>
   pickSavePath(opts: { defaultPath: string }): Promise<string | null>

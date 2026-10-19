@@ -1,7 +1,6 @@
 import type { Platform } from './types'
 
-// D-4 implements this with the Tauri plugins. Until then it imports nothing from Tauri, and
-// every call fails loudly.
+// Imports nothing from Tauri; every call fails loudly.
 const MESSAGE = 'not implemented (D-4)'
 
 function reject(): Promise<never> {

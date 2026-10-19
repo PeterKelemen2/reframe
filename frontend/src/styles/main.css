@@ -1,4 +1,3 @@
-/* Global base styles. Design tokens live in the PrimeVue preset (theme.ts); F-1 extends both. */
 html,
 body {
   height: 100%;

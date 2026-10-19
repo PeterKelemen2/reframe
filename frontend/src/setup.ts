@@ -6,7 +6,6 @@ import type { Router } from 'vue-router'
 import { createAppI18n } from '@/i18n'
 import { DARK_MODE_CLASS, ReframePreset } from '@/styles/theme'
 
-/** Installs the app-wide plugins. `main.ts` and the tests share it, so tests mount the real app. */
 export function installPlugins(app: App, router: Router): App {
   return app
     .use(createPinia())
