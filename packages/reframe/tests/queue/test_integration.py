@@ -129,9 +129,7 @@ def stopped(pid: int) -> bool:
         return False
 
 
-async def test_done_when_three_jobs_two_slots_pause_resume_cancel_failure_restart(
-    real: Real,
-) -> None:
+async def test_three_jobs_two_slots_pause_resume_cancel_failure_restart(real: Real) -> None:
     out = real.tmp / "out"
     real.scenario(
         # Alpha: a first block to pause at, then the real encode.

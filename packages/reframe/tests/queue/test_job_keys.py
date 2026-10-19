@@ -1,9 +1,14 @@
-"""The queue's job keys: a file reached by a link, a hard link or a linked folder is one file."""
+"""The queue's job keys: a file reached by a link, a hard link or a linked folder is one file,
+the keys are read off the event loop, and a path with a NUL character fails only its job."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -11,11 +16,11 @@ import pytest
 
 from reframe.metadata import remux_job
 from reframe.models import JobSettings, JobState, SourceRef
-from reframe.queue import service
+from reframe.queue import files, runner, service
 from reframe.queue.service import _conflicts, _output_key, _source_key
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule, tool_set
+from .conftest import Harness, encode_rule, queue_at, store_rows, tool_set
 from .test_in_place_scheduling import active_for, ended_before_started, in_place_job, queued
 
 pytestmark = pytest.mark.anyio
@@ -179,3 +184,265 @@ async def test_an_encode_of_a_hard_link_waits_for_the_in_place_edit(
     h.queue.start()
     await h.queue.wait([edit.id, encode.id])
     assert ended_before_started(h, edit.id, encode.id)
+
+
+DONE_QUICKLY = encode_rule(ft.progress(blocks=2, interval=0.01), ft.write_output())
+
+
+#: How long a ``stat`` / ``lstat`` of the share takes on the event-loop thread: longer than
+#: any pause the loop takes on its own, so one such call shows in the heartbeat.
+LOOP_DELAY = 0.3
+#: The same in a worker thread (the share is slow there too, but that waits only the caller).
+THREAD_DELAY = 0.01
+
+
+def slow_share(monkeypatch: pytest.MonkeyPatch, share: Path, loop_thread: int) -> list[str]:
+    """``os.stat`` and ``os.lstat`` of a path under ``share`` are slow; each call made on the
+    event-loop thread is recorded (the list returned)."""
+    on_loop: list[str] = []
+    prefix = str(share)
+
+    def slow(real: Callable[..., os.stat_result]) -> Callable[..., os.stat_result]:
+        def call(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+            text = os.fspath(path) if isinstance(path, (str, os.PathLike)) else None
+            if isinstance(text, str) and text.startswith(prefix):
+                if threading.get_ident() == loop_thread:
+                    on_loop.append(f"{real.__name__}({text})")
+                    time.sleep(LOOP_DELAY)
+                else:
+                    time.sleep(THREAD_DELAY)
+            return real(path, *args, **kwargs)
+
+        return call
+
+    monkeypatch.setattr(os, "stat", slow(os.stat))
+    monkeypatch.setattr(os, "lstat", slow(os.lstat))
+    return on_loop
+
+
+async def test_choosing_a_job_never_reads_a_slow_share_on_the_event_loop(
+    harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a slow share and ``parallel_jobs`` 2, ``add``, ``start``, ``retry``, ``reorder`` and
+    every job end must not ``stat`` the share on the event loop."""
+    h = harness
+    h.settings.queue.parallel_jobs = 2
+    h.scenario(DONE_QUICKLY)
+    share = tmp_path / "share"
+    (share / "deep").mkdir(parents=True)
+    on_loop = slow_share(monkeypatch, share, threading.get_ident())
+    gaps: list[float] = []
+    beating = True
+
+    async def heartbeat() -> None:
+        last = time.monotonic()
+        while beating:
+            await asyncio.sleep(0.01)
+            now = time.monotonic()
+            gaps.append(now - last)
+            last = now
+
+    beat = asyncio.ensure_future(heartbeat())
+    ids: list[str] = []
+    for name in ("S0", "S1", "S2"):
+        job = h.job(name)
+        job.output.path = share / "deep" / "er" / f"{name}.mkv"
+        ids.append((await h.queue.add(job)).id)
+    later = h.job("Later")
+    later.output.path = share / "deep" / "Later.mkv"
+    retried = await h.queue.add(later)
+    await h.queue.cancel(retried.id)  # waiting → cancelled; retried below, while jobs run
+    await h.queue.reorder(list(reversed(ids)))
+    began = time.monotonic()
+    h.queue.start()
+    start_took = time.monotonic() - began
+    await h.queue.retry(retried.id)
+    ended = await h.queue.wait([*ids, retried.id])
+    beating = False
+    await beat
+    monkeypatch.undo()
+    print(f"start() took {start_took:.3f} s; the longest event-loop pause {max(gaps):.3f} s")
+    assert on_loop == []
+    assert start_took < LOOP_DELAY
+    assert max(gaps) < LOOP_DELAY
+    assert [job.state for job in ended] == [JobState.DONE] * 4
+
+
+async def test_a_restored_job_gets_its_keys_off_the_event_loop(
+    harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restored waiting job has no keys yet: they are read in the background when the store
+    is opened, and the job runs once they are there."""
+    h = harness
+    h.scenario(DONE_QUICKLY)
+    share = tmp_path / "share"
+    share.mkdir()
+    job = h.job("Restored")
+    job.output.path = share / "Restored.mkv"
+    waiting = await h.queue.add(job)
+    await h.queue.close()
+    on_loop = slow_share(monkeypatch, share, threading.get_ident())
+    again = queue_at(h)
+    try:
+        assert [j.state for j in again.list()] == [JobState.WAITING]  # opens the store
+        again.start()
+        [ended] = await again.wait([waiting.id])
+    finally:
+        await again.close()
+    monkeypatch.undo()
+    assert on_loop == []
+    assert ended.state is JobState.DONE
+
+
+async def test_the_keys_are_what_the_rule_compares(harness: Harness, tmp_path: Path) -> None:
+    """``_conflicts`` with the keys the queue keeps gives what it gives with keys read now, and
+    the keys of an in-place edit are its source."""
+    h = harness
+    edit = queued(in_place_job(h), "edit")
+    encode = queued(h.job("Encode"), "encode")
+    other = queued(h.job("Other"), "other")
+    other.settings.source = SourceRef(path=tmp_path / "media" / "Another.mkv")
+    job_keys = service._job_keys
+    keys = job_keys(edit)
+    assert keys.output == keys.source == _source_key(edit) == _output_key(edit)
+    for job, expected in ((encode, True), (other, False)):
+        assert _conflicts(job, [active_for(edit)], job_keys(job)) is expected
+        assert _conflicts(job, [active_for(edit)]) is expected
+
+
+NUL_MESSAGE = "has a NUL character, which no file system allows, so the job cannot run"
+
+
+def test_python_facts_behind_the_rule(tmp_path: Path) -> None:
+    """``abspath`` takes a NUL character; ``stat`` and, on POSIX, ``realpath`` raise
+    ``ValueError``, not ``OSError``."""
+    bad = tmp_path / "Mo\0vie.mkv"
+    assert "\0" in os.path.abspath(bad)
+    with pytest.raises(ValueError, match="embedded null"):
+        os.stat(bad)
+    if os.name != "nt":
+        with pytest.raises(ValueError, match="embedded null"):
+            os.path.realpath(bad)
+
+
+def test_no_key_function_raises_for_a_path_with_a_nul(tmp_path: Path) -> None:
+    bad = tmp_path / "Mo\0vie.mkv"
+    assert files.same_file(bad, bad)
+    assert not files.same_file(bad, tmp_path / "Movie.mkv")
+    assert files.remove_files([bad]) == [f"{os.fspath(bad)!r} could not be removed: " + _nul(bad)]
+    key = files.file_key(bad)
+    assert key.identity is None
+
+
+def _nul(path: Path) -> str:
+    try:
+        path.unlink(missing_ok=True)
+    except ValueError as exc:
+        return str(exc)
+    raise AssertionError("unlink accepted a NUL character")
+
+
+async def test_a_nul_in_a_path_fails_its_job_and_the_queue_goes_on(harness: Harness) -> None:
+    h = harness
+    h.scenario(DONE_QUICKLY)
+    bad = await h.queue.add(h.job("Mo\0vie"))
+    assert bad.state is JobState.FAILED
+    assert [issue.code for issue in bad.issues] == ["queue.path_unusable"]
+    assert NUL_MESSAGE in (bad.error or "")
+    h.queue.start()
+    assert (await h.queue.retry(bad.id)).state is JobState.WAITING
+    good = await h.queue.add(h.job("Good"))
+    h.queue.start()
+    ended = {job.id: job for job in await h.queue.wait([bad.id, good.id])}
+    assert ended[good.id].state is JobState.DONE
+    assert ended[bad.id].state is JobState.FAILED
+    assert "The output path" in (ended[bad.id].error or "")
+    assert NUL_MESSAGE in (ended[bad.id].error or "")
+
+
+async def test_a_nul_in_the_source_path_is_a_clean_failure(harness: Harness) -> None:
+    h = harness
+    job = h.job("Movie")
+    job.source = SourceRef(path=Path(f"{h.source_path}\0x"))
+    added = await h.queue.add(job)
+    assert added.state is JobState.FAILED
+    assert [issue.code for issue in added.issues] == ["queue.path_unusable"]
+    assert (added.error or "").startswith("The job has errors: The source path")
+
+
+async def test_a_restored_job_with_a_nul_in_its_path(harness: Harness) -> None:
+    h = harness
+    h.scenario(DONE_QUICKLY)
+    bad = await h.queue.add(h.job("Mo\0vie"))
+    await h.queue.retry(bad.id)  # waiting: the queue was never started
+    crashed = await h.queue.add(h.job("Cr\0shed"))
+    good = await h.queue.add(h.job("Good"))
+    await h.queue.close()
+    stored = h.queue.get(crashed.id)
+    assert stored is not None
+    stored.state = JobState.RUNNING
+    stored.plan = h.plan(h.job("Cr\0shed"))
+    assert "\0" in str(stored.plan.output_tmp)
+    store_rows(h, stored)
+    again = queue_at(h)
+    try:
+        states = {job.id: job.state for job in again.list()}  # opens the store
+        assert states == {
+            bad.id: JobState.WAITING,
+            crashed.id: JobState.INTERRUPTED,
+            good.id: JobState.WAITING,
+        }
+        restored = again.get(crashed.id)
+        assert restored is not None
+        again._remove_leftovers([restored])  # what the background clean-up runs
+        again.start()
+        ended = {job.id: job for job in await again.wait([bad.id, good.id])}
+    finally:
+        await again.close()
+    assert ended[good.id].state is JobState.DONE
+    assert ended[bad.id].state is JobState.FAILED
+    assert NUL_MESSAGE in (ended[bad.id].error or "")
+
+
+async def test_the_conflict_rule_takes_a_nul_path(harness: Harness) -> None:
+    h = harness
+    bad = queued(h.job("Mo\0vie"), "bad")
+    other = queued(h.job("Mo\0vie"), "other")
+    assert _conflicts(bad, [active_for(other)])  # the same path, as written
+    assert not _conflicts(bad, [active_for(queued(h.job("Good"), "good"))])
+
+
+def zero_file_index(monkeypatch: pytest.MonkeyPatch, volume: Path) -> None:
+    real_stat = os.stat
+    prefix = str(volume)
+
+    def stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        result = real_stat(path, *args, **kwargs)
+        if isinstance(path, (str, os.PathLike)) and os.fspath(path).startswith(prefix):
+            fields = list(result)
+            fields[1], fields[2] = 0, 7  # st_ino, st_dev
+            return os.stat_result(fields)
+        return result
+
+    monkeypatch.setattr(os, "stat", stat)
+
+
+async def test_a_zero_file_index_is_no_identity(
+    harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness
+    other = tmp_path / "media" / "Other.mkv"
+    other.write_bytes(b"another file")
+    part = tmp_path / "out" / "Movie.part.mkv"
+    part.write_bytes(b"part")
+    edit = queued(in_place_job(h), "edit")
+    encode = queued(h.job("Encode"), "encode")
+    encode.settings.source = SourceRef(path=other)
+    zero_file_index(monkeypatch, tmp_path)
+    assert not _conflicts(encode, [active_for(edit)])
+    assert not files.same_file(other, h.source_path)
+    assert runner._writes_source(h.plan(h.job("Movie")), h.source_path) is None
+    assert files.remove_files([part], keep=h.source_path) == []
+    assert not part.exists()
+    assert files.same_file(h.source_path, h.source_path)  # the path still decides
+    assert files.file_key(other).identity is None

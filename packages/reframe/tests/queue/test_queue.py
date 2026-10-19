@@ -18,13 +18,11 @@ from reframe.models import (
     QueueChangedEvent,
     QueueJob,
 )
-from reframe.platform.sleep import SleepInhibitor
-from reframe.queue import JobStateError, QueueService, UnknownJobError
-from reframe.queue.store import row_of
+from reframe.queue import JobStateError, UnknownJobError
 from reframe.service import ReframeClosedError
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule
+from .conftest import Harness, encode_rule, queue_at, store_rows
 
 pytestmark = pytest.mark.anyio
 
@@ -578,19 +576,6 @@ async def test_closed_queue(harness: Harness) -> None:
     assert await h.queue.wait() != []
 
 
-def queue_at(h: Harness) -> QueueService:
-    """A second queue on the same data folder (a restarted Reframe)."""
-    return QueueService(
-        h.events,
-        lambda: h.settings.model_copy(deep=True),
-        data_dir=h.tmp / "data",
-        tools=h.tools,
-        capabilities=h.caps,
-        sources=h.sources,
-        inhibitor=SleepInhibitor([], h.events),
-    )
-
-
 async def test_close_interrupts_running_jobs_and_restart_recovers(harness: Harness) -> None:
     h = harness
     job = h.job()
@@ -641,11 +626,7 @@ async def test_restore_turns_running_rows_into_interrupted(harness: Harness) -> 
     kept = h.queue.get(second.id)
     assert kept is not None
     kept.state = JobState.PAUSED
-    db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
-    for row in (row_of(stored), row_of(kept)):
-        db.execute(f"INSERT OR REPLACE INTO jobs VALUES ({', '.join('?' * len(row))})", row)
-    db.commit()
-    db.close()
+    store_rows(h, stored, kept)
     plan.output_tmp.write_text("half")
     for path in [*(f.path for f in plan.files), *plan.temp_files]:
         path.write_text("x")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sqlite3
 import time
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ from reframe.models import (
 from reframe.platform.sleep import SleepInhibitor
 from reframe.probe import ProbeError, ProbeErrorKind, parse_ffprobe
 from reframe.queue import QueueService
+from reframe.queue.store import row_of
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 
@@ -316,6 +318,32 @@ class Harness:
         found = find()
         assert found is not None
         return found
+
+
+def queue_at(h: Harness, **options: Any) -> QueueService:
+    """A second queue on the harness's data folder (a restarted Reframe)."""
+    return QueueService(
+        h.events,
+        lambda: h.settings.model_copy(deep=True),
+        data_dir=h.tmp / "data",
+        tools=h.tools,
+        capabilities=h.caps,
+        sources=h.sources,
+        inhibitor=SleepInhibitor([], h.events),
+        stall_after=None,
+        watchdog_tick=0.05,
+        log_interval=0.02,
+        **options,
+    )
+
+
+def store_rows(h: Harness, *jobs: QueueJob) -> None:
+    db = sqlite3.connect(h.tmp / "data" / "queue.sqlite3")
+    for job in jobs:
+        row = row_of(job)
+        db.execute(f"INSERT OR REPLACE INTO jobs VALUES ({', '.join('?' * len(row))})", row)
+    db.commit()
+    db.close()
 
 
 @pytest.fixture
