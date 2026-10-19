@@ -1,24 +1,11 @@
-"""Shared plumbing of the C-10 tasks: scans, loudness, frames, crop detection, preview clips.
+"""Shared plumbing of the background tasks: scans, loudness, frames, crop detection, preview clips.
 
-05 §C-10: every preview and analysis operation runs as a background **task** (:mod:`reframe.tasks`)
-with an id, progress, cancel and a concurrency limit per kind. The facade (``Reframe.sources``,
-``Reframe.jobs``) hands one :class:`MediaTaskContext` to the functions of
-:mod:`reframe.analysis` and :mod:`reframe.preview`; each starts its work with
-``ctx.tasks.start(kind, fn, …)`` and returns the :class:`~reframe.models.TaskInfo` at once.
-
-Inside a task function:
-
-- :func:`require_tool` and :func:`require_source` give a usable ffmpeg / ffprobe and the probed
-  source, or raise :class:`TaskFailed` with a message for the user. The task then ends
-  ``failed`` with that message as ``TaskInfo.error``: expected failures are data, never an
-  exception for the caller.
-- Every subprocess goes through ``reframe.tools.run*`` with ``ctx.cancel`` of the
-  :class:`~reframe.tasks.TaskContext`, so :meth:`TaskManager.cancel` kills its process tree at
-  once (C-10 "Done when": FFmpeg stops within 1 s).
-- :func:`sample_timestamps` gives the sample frames' timestamps (frames and crop detection use
-  the same ones, so the crop overlay matches the frame strip).
-
-Task kinds and their default concurrency limits are in ``reframe.tasks.DEFAULT_LIMITS``.
+Each operation runs as a task (:mod:`reframe.tasks`, concurrency limits per kind in
+``DEFAULT_LIMITS``) and returns its :class:`~reframe.models.TaskInfo` at once. Inside a task,
+:func:`require_tool` and :func:`require_source` raise :class:`TaskFailed` with a message for the
+user; the task then ends ``failed``, so expected failures are data, never an exception for the
+caller. Every subprocess takes the task's cancel token, so cancelling the task kills its process
+tree.
 """
 
 from __future__ import annotations
@@ -53,8 +40,7 @@ __all__ = [
     "sample_timestamps",
 ]
 
-#: Share of the duration left out at each end when sampling frames (05 §C-10: "skip the first
-#: and last 5 %").
+#: Share of the duration left out at each end when sampling frames.
 SAMPLE_MARGIN = 0.05
 
 
@@ -102,25 +88,28 @@ class CapabilitiesLookup(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class MediaTaskContext:
-    """What the C-10 tasks get from the facade."""
+    """What the background tasks get from the facade."""
 
     tasks: TaskManager
     tools: ToolsLookup
     sources: SourceAccess
     capabilities: CapabilitiesLookup
     settings: Callable[[], AppSettings]
-    """The current settings (``preview.sample_frames``, ``preview.cache_size_mb``, …)."""
+    """The current settings."""
     events: EventBus
     cache_dir: Path
-    """``<cache dir>``: frames go to ``<cache dir>/frames``, preview clips to
-    ``<cache dir>/clips``."""
+    """Root of the cache for frames and preview clips."""
     definitions: Callable[[], Definitions]
 
 
 def sample_timestamps(duration: float | None, count: int) -> list[float]:
     """``count`` evenly spaced timestamps (seconds, rounded to milliseconds) between 5 % and
-    95 % of ``duration``: the first at 5 %, the last at 95 %, one sample in the middle. Empty
-    for an unknown or zero duration or ``count < 1``."""
+    95 % of ``duration``; one sample goes in the middle. Empty for an unknown or zero duration
+    or ``count < 1``.
+
+    Frames and crop detection use the same timestamps, so a detected crop matches the frames
+    shown.
+    """
     if duration is None or duration <= 0 or count < 1:
         return []
     low = duration * SAMPLE_MARGIN
@@ -145,8 +134,8 @@ async def require_tool(ctx: MediaTaskContext, name: ToolName) -> ToolInfo:
 async def require_source(
     ctx: MediaTaskContext, path: str | os.PathLike[str], *, cancel: CancelToken | None = None
 ) -> MediaSource:
-    """The probed source of ``path`` (the probe cache makes this cheap), else
-    :class:`TaskFailed` with the probe error's message."""
+    """The probed source of ``path``, else :class:`TaskFailed` with the probe error's
+    message."""
     outcome = await ctx.sources.probe(path, cancel=cancel)
     if isinstance(outcome, MediaSource):
         return outcome

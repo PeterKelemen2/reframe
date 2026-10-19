@@ -1,18 +1,5 @@
 """RFC 6902 JSON Patch and RFC 6901 JSON Pointer, in plain Python (no dependency).
 
-Validation fixes (C-8) and batch overrides (C-12) are JSON patches. The client applies them
-in TypeScript; the core applies them with :func:`apply_patch`, for example to check that a
-fix removes its issue.
-
-- Operations: ``add``, ``remove``, ``replace``, ``move``, ``copy``, ``test``.
-- Pointers: ``""`` is the whole document; ``~1`` is ``/`` and ``~0`` is ``~`` in a token;
-  ``-`` is the end of an array (only for ``add``, and as a ``move``/``copy`` target).
-- A patch is atomic: :func:`apply_patch` works on a deep copy and returns it; the input is
-  never changed, also when an operation fails.
-- ``test`` compares with JSON semantics: ``1`` equals ``1.0``, but ``true`` does not equal
-  ``1`` (Python's ``True == 1`` is not used).
-- Unknown members of an operation are ignored (RFC 6902 §4).
-
 Errors raise :class:`JsonPatchError` (or a subclass): a patch that does not apply is a
 programming error in the caller or a conflict that the caller reports.
 """
@@ -68,12 +55,12 @@ def escape_token(token: str) -> str:
 
 
 def format_pointer(tokens: Iterable[str | int]) -> str:
-    """Build a pointer from tokens: ``["a/b", 0]`` → ``"/a~1b/0"``."""
+    """Build a pointer from tokens, escaping each one."""
     return "".join("/" + escape_token(str(t)) for t in tokens)
 
 
 def parse_pointer(pointer: str) -> list[str]:
-    """Split a pointer into unescaped tokens (``"/a~1b/0"`` → ``["a/b", "0"]``)."""
+    """Split a pointer into unescaped tokens."""
     if not isinstance(pointer, str):
         raise JsonPointerError(f"a JSON Pointer must be a string, got {pointer!r}")
     if pointer == "":
@@ -132,7 +119,10 @@ def _parent(document: Any, pointer: str) -> tuple[Any, str]:
 
 
 def json_equal(a: Any, b: Any) -> bool:
-    """Equality with JSON semantics (RFC 6902 §4.6)."""
+    """Equality with JSON semantics (RFC 6902 §4.6).
+
+    ``1`` equals ``1.0``, but ``true`` does not equal ``1``.
+    """
     if isinstance(a, bool) or isinstance(b, bool):
         return isinstance(a, bool) and isinstance(b, bool) and a is b
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
@@ -250,7 +240,9 @@ def _as_mapping(op: Any, number: int) -> Mapping[str, Any]:
 def apply_patch(document: Any, patch: Iterable[Mapping[str, Any] | BaseModel]) -> Any:
     """Apply an RFC 6902 patch to a JSON-like value; return the patched **copy**.
 
-    ``patch`` items may be dicts or :class:`reframe.models.JsonPatchOp` models. The document
+    The input is never changed, also when an operation fails. Unknown members of an operation
+    are ignored (RFC 6902 §4). ``patch`` items may be dicts or
+    :class:`reframe.models.JsonPatchOp` models. The document
     must be made of ``dict``, ``list``, ``str``, ``int``, ``float``, ``bool`` and ``None``
     (``model.model_dump(mode="json")`` gives that).
     """

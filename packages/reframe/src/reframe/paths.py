@@ -1,29 +1,8 @@
-"""Where Reframe keeps its files, and where it looks for the bundled tools.
-
-User folders (platformdirs), each overridable by an environment variable — the same names
-that the server's ``ServerConfig`` reads with its ``REFRAME_`` prefix (06 §S-0):
-
-- config: ``REFRAME_CONFIG_DIR``; default ``~/.config/reframe`` (Linux),
-  ``%LOCALAPPDATA%\\Reframe`` (Windows).
-- data: ``REFRAME_DATA_DIR``; default ``~/.local/share/reframe``, ``%LOCALAPPDATA%\\Reframe``.
-- cache: ``REFRAME_CACHE_DIR``; default ``~/.cache/reframe``, ``%LOCALAPPDATA%\\Reframe\\Cache``.
-
-(The platformdirs defaults also follow ``XDG_*`` variables on Linux.) An empty variable counts
-as unset; a relative path is made absolute. These functions do not create the folders.
-
-**Bundled tools** (02 §Bundled FFmpeg, 07 §Tool bundling). :func:`bundled_tool_roots`
-returns the ``tools`` folders that may hold a bundled build, in this order:
-
-1. Frozen app (PyInstaller sidecar, Tauri), relative to ``sys.executable``:
-   ``<exe dir>/tools`` (Windows installer, AppImage) and ``<exe dir>/../tools`` (the Tauri
-   layout ``resources/sidecar/reframe-server`` next to ``resources/tools``).
-2. Linux: ``/usr/lib/reframe/tools`` (.deb / .rpm) and ``/opt/reframe/tools`` (Docker).
-3. ``<data dir>/tools``: where ``reframe tools fetch`` installs the pinned build (06 §S-6),
-   and where CI installs it.
-
-Inside a root, FFmpeg is in ``ffmpeg/`` (``tools/ffmpeg/bin/ffmpeg``), mkvpropedit in
-``mkvtoolnix/`` and mediainfo in ``mediainfo/`` (:data:`BUNDLED_SUBDIRS`). Discovery looks in
-``<root>/<subdir>/bin`` and then ``<root>/<subdir>``.
+"""Where Reframe keeps its files, and where it looks for the bundled tools. Each user folder
+(config, data, cache) is the platformdirs default unless its environment variable (the
+``*_DIR_ENV`` constants) is set; an empty variable counts as unset, and a relative path is made
+absolute. These functions create no folders. The folders that may hold a bundled build are
+listed by :func:`bundled_tool_roots`; each tool's sub-folder is in :data:`BUNDLED_SUBDIRS`.
 """
 
 from __future__ import annotations
@@ -100,7 +79,9 @@ def bundled_tool_roots(
     frozen: bool | None = None,
     platform: str | None = None,
 ) -> list[Path]:
-    """The ``tools`` folders to search for a bundled build, in order (see the module doc).
+    """The ``tools`` folders to search for a bundled build, in order: the app's own folder when
+    frozen (installers, the Tauri sidecar layout), then the Linux system folders (packages,
+    Docker), then the data folder (``reframe tools fetch``, CI).
 
     The keyword arguments exist for tests: by default they come from ``os.environ``,
     ``sys.executable``, ``sys.frozen`` and ``sys.platform``.

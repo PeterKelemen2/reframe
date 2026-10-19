@@ -1,90 +1,9 @@
-"""Language tags: normalisation, search, Matroska/MP4 codes and display names (C-6).
+"""Language tags: normalisation, search, Matroska/MP4 codes and display names.
 
-Pure module built on ``langcodes`` (+ ``language_data``). The only I/O is reading the data
-that these two packages ship (the IANA subtag registry, for macrolanguages), once, cached.
-
-Canonical form
---------------
-Every function accepts what appears in files and what users type: Matroska legacy ISO 639-2/B
-(``ger``), ISO 639-2/T (``deu``), ISO 639-1 (``de``), ISO 639-3 (``yue``), BCP 47 with script
-and region (``pt-BR``, ``es-419``, ``zh-Hans``, ``sr-Latn``) in any case (``PT-br``) or with
-underscores (``pt_BR``), the special codes ``und``, ``mul``, ``zxx``, ``mis``, and English or
-native language names (``German``, ``magyar``). :func:`normalize` turns this into **one
-canonical BCP 47 tag** (``de``, ``pt-BR``) - the form stored in ``TrackMetadata.language`` and
-the settings - or ``None`` for invalid input. :func:`validate` gives the reason.
-
-The canonical tag is langcodes' standardised tag (CLDR normalisation: deprecated ``iw`` →
-``he``, ``in`` → ``id``, ``jw`` → ``jv``, ``mo`` → ``ro``, ``ji`` → ``yi``; 3-letter codes →
-the 2-letter code when there is one), with :data:`OVERRIDES` applied first.
-
-Overrides (where langcodes is wrong for Matroska)
--------------------------------------------------
-langcodes follows CLDR and maps ``tl``/``tgl`` (Tagalog) to ``fil`` (Filipino) and
-``sh``/``hbs`` (Serbo-Croatian) to ``sr-Latn``. ISO 639 and mkvtoolnix keep them apart:
-``tgl`` and ``fil`` are two ISO 639-2 codes, and ``mkvpropedit --set language=tl`` writes
-``tgl`` + ``tl``, ``--set language=sh`` writes ``und`` + ``sh`` (legacy + ``LanguageIETF``).
-So :data:`OVERRIDES` keeps ``tl`` (Matroska ``tgl``) and ``sh`` (Matroska ``und``:
-Serbo-Croatian has no ISO 639-2 code). Every other ISO 639-2 code keeps its meaning in
-langcodes 3.5.1 (a test checks all 438 /B and /T codes).
-
-Matroska and MP4 codes
-----------------------
-- :func:`to_matroska_legacy`: the Matroska ``Language`` element, ISO 639-2/**B** (``ger``,
-  ``fre``, ``chi``). A language without an ISO 639-2 code gets its macrolanguage's code if
-  that has one (``yue``, ``cmn`` → ``chi``; ``arb`` → ``ara``), else ``und``.
-- :func:`to_matroska_ietf`: the Matroska ``LanguageIETF`` (BCP 47) element: the canonical tag.
-- :func:`to_mp4`: ISO 639-2/**T** (``deu``) for the MP4 ``mdhd`` language, same fallbacks.
-
-``mkvpropedit --set language=<tag>`` writes the same legacy + IETF pair as
-``to_matroska_legacy(tag)`` + ``to_matroska_ietf(tag)`` for the ~35 tags that a
-``needs_ffmpeg`` test compares (including ``pt-BR``, ``yue``, ``sh``, ``tl``, ``arb``, ``zsm``,
-``qaa``), but **not for every tag**. mkvpropedit 101.0 writes the legacy code ``sgn`` for the
-sign languages ``ase``, ``bfi``, ``fsl``, ``gsg`` (Reframe: ``und``), and ``und`` for ``pes``,
-``ekk``, ``kmr``, ``ckb``, ``azb``, ``bcc`` (Reframe: the macrolanguage codes ``per``,
-``est``, ``kur``, ``kur``, ``aze``, ``bal``, which tell a legacy player more). The IETF tag is
-the same in all these cases. So C-13 must always pass **both** ``--set language=<legacy>`` and
-``--set language-ietf=<tag>`` explicitly, never ``language=<BCP 47 tag>`` alone.
-
-Verified tool behaviour (FFmpeg n9.0.2, mkvtoolnix 101.0, Linux; ``needs_ffmpeg`` tests)
------------------------------------------------------------------------------------------
-- FFmpeg's Matroska muxer writes ``-metadata:s:a:0 language=X`` **verbatim** into the legacy
-  ``Language`` element and never writes ``LanguageIETF``: ``language=de`` stores ``de`` and
-  ``language=pt-BR`` stores ``pt-BR`` (both invalid there). ffprobe reads the string back
-  verbatim, except ``und``: then ffprobe shows no ``language`` tag. So C-7 passes
-  :func:`to_matroska_legacy` to FFmpeg for MKV, and ``LanguageIETF`` needs the
-  ``mkvpropedit`` fix-up (C-13).
-- FFmpeg's MP4 muxer keeps a 3-letter code as given (``ger`` and ``deu`` both read back
-  unchanged) and **silently drops** a 2-letter code or a BCP 47 tag (``de``, ``pt-BR``: no
-  ``language`` tag on read-back, no warning). So C-7 passes :func:`to_mp4` for MP4.
-- ``mkvpropedit --set language-ietf=X`` changes only ``LanguageIETF``: on a ``ger`` track,
-  ``language-ietf=fr`` leaves ``Language`` = ``ger`` (an inconsistent track). ``--set
-  language=X`` accepts a BCP 47 tag or ISO 639 code and writes **both** elements
-  (``language=pt-BR`` → ``por`` + ``pt-BR``; ``language=deu`` → ``ger`` + ``de``). It
-  rejects deprecated codes (``in``, ``jw``, ``mo``, ``ji``) and ``pt_BR``: pass
-  :func:`to_matroska_ietf` (or ``language=`` + ``language-ietf=`` from this module).
-- **ffprobe never shows ``LanguageIETF``**: after ``language-ietf=pt-BR`` it still shows the
-  legacy ``language=ger``/``por``. The probe (C-3) gets only the legacy code from ffprobe;
-  ``pt-BR`` or ``yue`` needs ``mkvmerge -J`` (``language_ietf``) or MediaInfo, and a C-13
-  re-probe with ffprobe cannot see a ``LanguageIETF`` change.
-
-Language list scope (``GET /api/languages``)
---------------------------------------------
-:func:`language_list` has one entry per ISO 639-2 individual language or macrolanguage (which
-includes every ISO 639-1 language), plus the special codes ``und``, ``mul``, ``zxx``, ``mis``,
-plus :data:`COMMON_VARIANTS` (``pt-BR``, ``zh-Hans``, ...). Not included: ISO 639-2
-collective codes (``afa``, ``sla``), the local-use range ``qaa``-``qtz``, and languages that
-only ISO 639-3 has (``yue``, ``cmn``). :func:`search` still finds any valid tag or a name that
-langcodes knows (``yue``, ``Cantonese``, ``de-AT``) and returns an entry for it.
-
-Rule matching
--------------
-:func:`same_language` compares base languages: ``ger`` = ``de``, ``pt-BR`` = ``pt`` =
-``pt-PT``. :func:`matches` is the one-way check for preset rules: a rule for ``pt`` matches a
-``pt-BR`` track, a rule for ``pt-BR`` does not match a ``pt`` or ``pt-PT`` track. Both treat a
-dominant language and its macrolanguage as the same language (CLDR: ``cmn`` = ``zh``,
-``arb`` = ``ar``) and a missing or invalid language as ``und``.
-
-Invalid input never raises: the conversion and display functions treat it as ``und``.
+Pure module built on ``langcodes`` and ``language_data``. Its only I/O is reading the data these
+packages ship, once, cached. :func:`normalize` turns any code, tag or name into one canonical
+BCP 47 tag (or ``None``); the conversion and display functions treat invalid input as ``und``
+and never raise.
 """
 
 from __future__ import annotations
@@ -131,8 +50,8 @@ UNDETERMINED: Final = "und"
 #: ISO 639-2 special codes: undetermined, multiple, no linguistic content, uncoded.
 SPECIAL_CODES: Final = ("und", "mul", "zxx", "mis")
 
-#: Primary language subtags where langcodes' CLDR normalisation changes the language (see the
-#: module docstring). Input primary subtag (lower case) → canonical primary subtag.
+#: Primary language subtags that langcodes maps to another language (CLDR). ISO 639 and
+#: mkvtoolnix keep them apart. Input primary subtag (lower case) → canonical primary subtag.
 OVERRIDES: Final[dict[str, str]] = {"tl": "tl", "tgl": "tl", "sh": "sh", "hbs": "sh"}
 
 #: Region and script variants offered by the picker next to the base languages.
@@ -160,9 +79,9 @@ def _code_set(text: str) -> frozenset[str]:
     return frozenset(text.split())
 
 
-#: ISO 639-2 individual languages, macrolanguages and special codes, as the /T code (the /B
-#: code differs for 20 of them; langcodes knows those). 418 codes, from the ISO 639-3 code
-#: table (``Part2T`` where ``Part2B`` is set; SIL, as shipped by babelfish 0.6.1).
+#: ISO 639-2 individual languages, macrolanguages and special codes, as the /T code (langcodes
+#: knows the /B code of the ones that differ). From the ISO 639-3 code table: Part2T, where
+#: Part2B is set.
 _ISO639_2T: Final = _code_set(
     """
     aar abk ace ach ada ady afh afr ain aka akk ale alt amh ang anp ara arc arg arn arp arw asm
@@ -188,7 +107,7 @@ _ISO639_2T: Final = _code_set(
 )
 
 #: ISO 639-2 collective codes (not in the picker list, but valid Matroska/MP4 codes): the
-#: collections in the IANA registry added with ISO 639-2 (2005-10-16), ``bh`` as ``bih``.
+#: collections in the IANA registry, ``bh`` as ``bih``.
 _ISO639_2_COLLECTIVE: Final = _code_set(
     """
     afa alg apa art ath aus bad bai bat ber bih bnt btk cai cau cel cmc cpe cpf cpp crp cus day
@@ -282,9 +201,9 @@ def _normalize_code(text: str) -> str | None:
 
 
 def _looks_like_name(text: str) -> bool:
-    """Starts with a letter, at most 100 characters, no digit, ``_`` or control character
-    (names: ``N'Ko``, full-width brackets, ``རྫོང་ཁ``). langcodes' name lookup crashes on a NUL
-    character (``SystemError`` from its trie), so this check also protects it."""
+    """Starts with a letter, at most 100 characters, no digit, ``_`` or control character.
+    langcodes' name lookup crashes on a NUL character (``SystemError`` from its trie), so this
+    check also protects it."""
     text = unicodedata.normalize("NFKC", text)
     return (
         len(text) <= _MAX_NAME_LENGTH
@@ -320,8 +239,7 @@ def _normalize_name(text: str) -> str | None:
 def normalize(value: str | None) -> str | None:
     """The canonical BCP 47 tag for a code, tag or language name, or ``None`` if invalid.
 
-    ``ger``/``deu``/``de``/``German``/``Deutsch`` → ``de``; ``PT_br`` → ``pt-BR``; ``iw`` →
-    ``he``; ``und`` → ``und``. Idempotent: ``normalize(normalize(x)) == normalize(x)``.
+    Idempotent: ``normalize(normalize(x)) == normalize(x)``.
     """
     if value is None or not value.strip():
         return None
@@ -360,8 +278,8 @@ def _language_or_und(value: str | None) -> Language:
 
 
 def base_language(value: str | None) -> str:
-    """The primary language subtag of the canonical tag: ``pt-BR`` → ``pt``, ``ger`` →
-    ``de``, ``sr-Latn`` → ``sr``. ``und`` for ``und`` and for invalid input."""
+    """The primary language subtag of the canonical tag. ``und`` for ``und`` and for invalid
+    input."""
     return _language_or_und(value).language or UNDETERMINED
 
 
@@ -385,19 +303,19 @@ def _iso639_2(value: str | None, variant: str) -> str:
 
 
 def to_matroska_legacy(value: str | None) -> str:
-    """ISO 639-2/B for the Matroska ``Language`` element: ``de`` → ``ger``, ``zh-Hans`` →
-    ``chi``, ``pt-BR`` → ``por``, ``yue`` → ``chi`` (macrolanguage); ``und`` if unknown."""
+    """ISO 639-2/B for the Matroska ``Language`` element. A language without a code of its own
+    gets its macrolanguage's (``yue`` → ``chi``); ``und`` if unknown."""
     return _iso639_2(value, "B")
 
 
 def to_mp4(value: str | None) -> str:
-    """ISO 639-2/T for the MP4 ``mdhd`` language: ``de`` → ``deu``; ``und`` if unknown."""
+    """ISO 639-2/T for the MP4 ``mdhd`` language; ``und`` if unknown."""
     return _iso639_2(value, "T")
 
 
 def to_matroska_ietf(value: str | None) -> str:
-    """BCP 47 for the Matroska ``LanguageIETF`` element: the canonical tag (``und`` if
-    invalid). ``ger`` → ``de``, ``pt_br`` → ``pt-BR``."""
+    """BCP 47 for the Matroska ``LanguageIETF`` element: the canonical tag, ``und`` if
+    invalid."""
     return normalize(value) or UNDETERMINED
 
 
@@ -405,8 +323,7 @@ def to_matroska_ietf(value: str | None) -> str:
 
 
 def english_name(value: str | None) -> str:
-    """English display name: ``hu`` → ``Hungarian``, ``pt-BR`` → ``Portuguese (Brazil)``,
-    ``zh-Hans`` → ``Chinese (Simplified)``, ``und``/invalid → ``Undetermined``."""
+    """English display name; ``Undetermined`` for ``und`` and for invalid input."""
     lang = _language_or_und(value)
     tag = lang.to_tag()
     if tag in _NAME_OVERRIDES:
@@ -415,11 +332,10 @@ def english_name(value: str | None) -> str:
 
 
 def native_name(value: str | None, *, capitalize: bool = False) -> str:
-    """The language's name in itself (CLDR autonym): ``hu`` → ``magyar``, ``pt-BR`` →
-    ``português (Brasil)``. English name when CLDR has none (and for ``und``, ``mul``, ...).
+    """The language's name in itself (CLDR autonym), or the English name when CLDR has none
+    (and for ``und``, ``mul``, ...).
 
-    ``capitalize=True`` upper-cases the first letter (``Magyar``): the form for name templates
-    (``{lang_native}``). It does not change the rest (``Português (Brasil)``).
+    ``capitalize=True`` upper-cases only the first letter.
     """
     lang = _language_or_und(value)
     if lang.language is None or lang.language in SPECIAL_CODES:
@@ -430,20 +346,20 @@ def native_name(value: str | None, *, capitalize: bool = False) -> str:
 
 
 def short_code(value: str | None) -> str:
-    """Upper-case ISO 639-2/B code for file names (``{audio_langs}``): ``hu`` → ``HUN``,
-    ``de`` → ``GER``, ``pt-BR`` → ``POR``, invalid → ``UND``."""
+    """Upper-case ISO 639-2/B code for file names; ``UND`` for invalid input."""
     return to_matroska_legacy(value).upper()
 
 
 def join_short_codes(values: Iterable[str | None], sep: str = "-") -> str:
-    """:func:`short_code` of each value, duplicates removed, in order: ``HUN-ENG``."""
+    """:func:`short_code` of each value, duplicates removed, in order."""
     return sep.join(dict.fromkeys(short_code(v) for v in values))
 
 
 def picker_label(value: str | None, *, container: Container = "mkv") -> str:
-    """What the picker shows will be written: ``Hungarian · hun (ISO 639-2) · hu (BCP 47)``.
+    """What the picker shows for a language: the English name, the ISO 639-2 code as the
+    container writes it, and the BCP 47 tag.
 
-    The ISO 639-2 code is /B for MKV and WebM (``ger``) and /T for MP4 (``deu``).
+    The ISO 639-2 code is /B for MKV and WebM and /T for MP4.
     """
     code = to_mp4(value) if container == "mp4" else to_matroska_legacy(value)
     return f"{english_name(value)} · {code} (ISO 639-2) · {to_matroska_ietf(value)} (BCP 47)"
@@ -505,7 +421,9 @@ def _sort_key(item: LanguageEntry) -> tuple[str, str]:
 
 @functools.cache
 def language_list() -> tuple[LanguageEntry, ...]:
-    """Every picker language (scope: module docstring), ordered by English name."""
+    """The picker languages, ordered by English name: the ISO 639-2 individual languages and
+    macrolanguages, the special codes and :data:`COMMON_VARIANTS`. Collective codes and the
+    languages that only ISO 639-3 has are left out (:func:`search` still finds them)."""
     variants = (tag for tag in (_normalize_code(v) for v in COMMON_VARIANTS) if tag is not None)
     tags = dict.fromkeys([*_canonical_639_2(), *variants])
     return tuple(sorted((_make_entry(tag) for tag in tags), key=_sort_key))
@@ -588,12 +506,11 @@ def search(
     """Picker search, best match first.
 
     Matches the BCP 47 tag, ISO 639-1/2B/2T/3 codes, English and native names (case- and
-    accent-insensitive). Order: exact tag or code (``ger`` finds German), exact name, name
-    prefix, word prefix, substring; ties by English name, base languages before variants.
-    Matching ``favourites`` (any form, ``Settings.languages.favourites``) come first. A valid
-    tag or a name langcodes knows that is not in :func:`language_list` (``yue``,
-    ``Cantonese``, ``de-AT``) adds an entry for it. An empty query returns the favourites,
-    then the whole list.
+    accent-insensitive). Order: exact tag or code, exact name, name prefix, word prefix,
+    substring; ties by English name, base languages before variants. Matching ``favourites``
+    (any form, ``Settings.languages.favourites``) come first. A valid tag or a name langcodes
+    knows that is not in :func:`language_list` adds an entry for it. An empty query returns
+    the favourites, then the whole list.
     """
     fav_tags = list(dict.fromkeys(t for t in (normalize(f) for f in favourites) if t))
     fav_rank = {tag: i for i, tag in enumerate(fav_tags)}
@@ -653,8 +570,8 @@ def _match_language(lang: Language) -> str:
 
 
 def same_language(a: str | None, b: str | None) -> bool:
-    """Same base language: ``ger`` = ``de``, ``pt-BR`` = ``pt`` = ``pt-PT``, ``cmn`` =
-    ``zh``. Missing or invalid values count as ``und`` (so ``und`` = ``None``)."""
+    """Same base language, with a macrolanguage and its dominant language equal (``cmn`` and
+    ``zh``). Missing or invalid values count as ``und``, so ``und`` and ``None`` are equal."""
     return _match_language(_language_or_und(a)) == _match_language(_language_or_und(b))
 
 

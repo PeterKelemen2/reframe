@@ -1,33 +1,8 @@
-"""The async event bus of the core (02 §Events).
-
-- :meth:`EventBus.publish` is synchronous and never waits: it can be called from coroutines,
-  callbacks and other threads (for example a progress parser in a worker thread).
-- :meth:`EventBus.subscribe` returns a :class:`Subscription`: an async iterator with a
-  bounded queue, so a slow subscriber never slows down the publishers.
-- :meth:`EventBus.close` ends every subscription: iteration stops after the events that are
-  already queued.
-
-**What a subscriber that falls behind gets** (S-3 does the same over the WebSocket):
-
-1. *Coalescing.* A new ``task.progress`` replaces the queued one of the same task, and a new
-   ``job.progress`` the queued one of the same job (the old one is removed, the new one goes
-   to the end). Only the latest progress matters, so this loses nothing.
-2. *Dropping.* When the queue is full, the oldest **lossy** event is dropped: progress and
-   ``job.log`` (the full log is in the log file). State and terminal events (``task.done``,
-   ``job.state``, ``queue.changed``, ``tools.changed``, …) are never dropped. Where events
-   were dropped, the stream gets one :class:`~reframe.models.ResyncEvent` (``reason=
-   "dropped"``, with the count), so the subscriber knows to re-read the snapshots.
-3. *Growing, then overflow.* When the queue is full of events that must not be dropped, it
-   grows up to ``hard_limit`` (default 4 x ``max_queue``). Beyond that the subscription is
-   closed: its last event is a ``ResyncEvent`` with ``reason="overflow"`` and it is
-   removed from the bus; the subscriber must subscribe again and re-read the snapshots.
-
-Example::
-
-    bus = EventBus()
-    async with bus.subscribe(types={"job.progress"}) as events:
-        async for event in events:
-            print(event)
+"""The async event bus of the core. :meth:`EventBus.publish` never waits, so a slow subscriber
+never slows its publishers. A subscriber that falls behind loses progress and ``job.log``
+events (coalesced or dropped, with a :class:`~reframe.models.ResyncEvent` where events were
+dropped). State and terminal events are never dropped: the queue grows up to a hard limit,
+and beyond it the subscription closes.
 """
 
 from __future__ import annotations
@@ -82,7 +57,6 @@ class Subscription:
         self._types = types
         self._queue: deque[Event] = deque()
         self._marker: ResyncEvent | None = None
-        """The ``ResyncEvent`` still in the queue (at most one), updated while it waits."""
         self._lock = threading.Lock()
         self._closed = False
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -268,7 +242,7 @@ class EventBus:
         """A new subscription.
 
         :param max_queue: queue length before lossy events are dropped (default: the bus's).
-        :param types: only these event types (``{"job.state"}``); ``resync`` always comes.
+        :param types: only these event types; ``resync`` always comes.
         :param hard_limit: queue length at which the subscription overflows and closes
             (default 4 x ``max_queue``).
         """

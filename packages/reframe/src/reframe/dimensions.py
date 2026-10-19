@@ -1,44 +1,7 @@
-"""Picture geometry maths (C-5): crop, rotation, output size, pixel aspect. Pure: no I/O.
+"""Picture geometry maths: crop, rotation, output size and pixel aspect. Pure: no I/O.
 
-Conventions (decision record 0009):
-
-- **Orientation.** A :class:`~reframe.models.CropRect` is in the source picture as FFmpeg
-  decodes it: FFmpeg's automatic rotation has applied the source's display matrix, and the
-  job's ``rotate`` and ``flip_horizontal`` have not been applied yet. This is the picture that
-  ``cropdetect`` sees and that the preview frames show. For a file without a display matrix
-  (nearly every film) it is simply the stored frame.
-- **The filter chain** that the command builder (C-7) makes from a :class:`Geometry`, with
-  FFmpeg's default automatic rotation left on::
-
-      crop=cropped_width:cropped_height:crop.left:crop.top     (only if a crop is applied)
-      transpose for filter_rotation (90 = clock, 180 = hflip,vflip, 270 = cclock)
-      hflip                                                    (if flip_horizontal)
-      scale=scaled_width:scaled_height
-      setsar=output_sar
-
-  FFmpeg's ``scale`` changes the SAR to keep the display aspect, so ``setsar`` is always
-  needed after it. ``tests/dimensions/test_ffmpeg.py`` runs this chain on real files.
-- **Crop grid.** FFmpeg's ``crop`` silently rounds x, y, width and height down to the chroma
-  grid of the frame (also for ``crop=iw:ih`` on an odd-sized 4:2:0 frame). So the crop snaps
-  every edge down to the grid here ("Crop left 141 → 140 for 4:2:0": less is cropped), and on
-  a frame whose size is not on the grid the right or bottom edge grows so the cropped size is.
-  Interlaced sources double the vertical step (both fields keep their chroma and their order).
-- **Output size.** The size modes give a target size for the stored output frame in the
-  output orientation (after the rotation). "Fit within W x H" turns the box to the shape of
-  that frame (decision 0020): a frame taller than wide fits with the box's long side
-  vertical, a wider one with it horizontal, a square one inside the box as written. Exact
-  width and exact height are never turned. The *natural size* is the cropped picture's display
-  size (the stretched axis of an anamorphic picture is expanded: DVD 16:9 is 853.3 x 480),
-  converted to the output pixel aspect. "No upscaling" means: the output is not one pixel or
-  more larger than the natural size on either axis (DVD 16:9 → 854 x 480 is not upscaling).
-- **Modulus rounding.** Width and height are multiples of the modulus, and of the source's
-  chroma step on that axis. Among those sizes inside the limits (fit box, no upscaling), the
-  one closest to the target whose display aspect error is < 0.5 % or < 1 px wins; when no
-  size meets that, the one with the smallest error.
-- **Corners.** A fit box or a picture smaller than one modulus step gives one modulus step on
-  that axis (outside the box, or upscaled). An invalid crop on one axis (it leaves nothing) is
-  not applied on that axis. Automatic and conservative crop without a detected ``rect`` apply
-  no crop. Every snap, limit and fallback adds a plain-English note.
+A crop is measured on the picture as FFmpeg decodes it, with the display matrix applied and
+before the job's rotate and flip.
 """
 
 from __future__ import annotations
@@ -83,7 +46,7 @@ __all__ = [
     "source_geometry",
 ]
 
-#: The multiplication sign (U+00D7) of the sizes in notes, as in the pipeline header.
+#: The multiplication sign (U+00D7) of the sizes in notes.
 TIMES = "\u00d7"
 #: Display aspect error that modulus rounding accepts (0.5 %).
 MAX_ASPECT_ERROR = Fraction(1, 200)
@@ -94,8 +57,8 @@ MAX_PIXEL_ERROR = Fraction(1)
 #: for the rare 4:1:1 / 4:1:0 formats.
 ASSUMED_CHROMA_STEPS = (2, 2)
 
-#: Upper bound on the short-side lengths the modulus search looks at (one per modulus step).
-#: It is reached only for absurd inputs; the search normally stops after a few steps.
+#: Upper bound on the short-side steps the modulus search tries. The search normally stops
+#: after a few steps; this is reached only for absurd inputs.
 _SEARCH_STEPS = 8192
 
 # --------------------------------------------------------------------------- source
@@ -111,7 +74,7 @@ _SUBSAMPLING_STEPS: dict[str, tuple[int, int]] = {
 }
 _SUBSAMPLING_NAMES = {steps: f"{n[0]}:{n[1]}:{n[2]}" for n, steps in _SUBSAMPLING_STEPS.items()}
 #: Semi-planar and packed formats whose names do not carry the subsampling digits.
-_P_FORMAT_RE = re.compile(r"^p([024])1[0-9]")  # p010 (4:2:0), p210 (4:2:2), p410 (4:4:4)
+_P_FORMAT_RE = re.compile(r"^p([024])1[0-9]")
 _PACKED_444_RE = re.compile(r"^(?:y41[0-9]|xv[0-9]{2}|v30x|vuy[ax]|ayuv|uyva)")
 _PACKED_422_RE = re.compile(r"^(?:y21[0-9]|v210)")
 _NV_STEPS = {
@@ -145,11 +108,9 @@ _NO_SUBSAMPLING_PREFIXES = (
 
 
 def chroma_steps(pix_fmt: str | None) -> tuple[int, int] | None:
-    """The chroma grid of an FFmpeg pixel format: ``(horizontal, vertical)`` step in pixels.
+    """The chroma grid of an FFmpeg pixel format as ``(horizontal, vertical)`` steps in pixels.
 
-    ``yuv420p`` → (2, 2), ``yuv422p10le`` → (2, 1), ``yuv444p`` / RGB / gray → (1, 1),
-    ``yuv411p`` (DV NTSC) → (4, 1). ``None`` for an unknown name (hardware and Bayer formats
-    too). The table is checked against FFmpeg's ``crop`` for every pixel format of the build.
+    ``None`` for an unknown name (hardware and Bayer formats too).
     """
     if not pix_fmt:
         return None
@@ -176,13 +137,10 @@ def _reduced(value: Fraction) -> Rational:
 def source_geometry(stream: VideoStream) -> SourceGeometry:
     """What :func:`compute_geometry` needs to know about a probed video stream.
 
-    - SAR: the stream's, reduced; unknown (``None``) or not positive → 1:1.
-    - Rotation: the display matrix rotation (clockwise) from the probe.
-    - Chroma steps: from ``pix_fmt`` (:func:`chroma_steps`); an unknown or missing format is
-      assumed to be 4:2:0 (``chroma_assumed``).
-    - Interlaced: ``field_order`` is top or bottom field first. ``unknown`` counts as
-      progressive. A caller whose job deinterlaces (deinterlace runs before crop) passes a
-      copy with ``interlaced=False``.
+    Unknown or invalid values fall back to square pixels and to 4:2:0 chroma
+    (``chroma_assumed``). The rotation is the display matrix's, clockwise. An ``unknown``
+    field order counts as progressive. A job that deinterlaces before the crop passes a copy
+    with ``interlaced=False``.
     """
     steps = chroma_steps(stream.pix_fmt)
     step_x, step_y = steps if steps is not None else ASSUMED_CHROMA_STEPS
@@ -213,11 +171,10 @@ def _edges(rect: CropRect) -> tuple[int, int, int, int]:
 def detect_crop_consensus(
     samples: Sequence[CropRect], mode: Literal["auto", "conservative"]
 ) -> CropRect:
-    """One crop from the ``cropdetect`` results of the sample frames (C-10 runs them).
+    """One crop from the ``cropdetect`` results of the sample frames.
 
     - ``auto``: the most common result. A tie goes to the result that removes the fewest
-      pixels from the edges (the safer one), then to the smallest edges in the order top,
-      bottom, left, right.
+      pixels from the edges, then to the smallest edges in the order top, bottom, left, right.
     - ``conservative``: per edge the smallest crop of all samples, so only what is black on
       every sample is removed (safe for films whose aspect ratio changes).
 
@@ -239,8 +196,7 @@ def detect_crop_consensus(
 
 
 def crop_agreement(samples: Sequence[CropRect], rect: CropRect) -> int:
-    """How many samples detected exactly ``rect`` (03: "Detected 0 / 0 / 140 / 140 on 9 of
-    10 frames")."""
+    """How many samples detected exactly ``rect``."""
     wanted = _edges(rect)
     return sum(1 for s in samples if _edges(s) == wanted)
 
@@ -249,9 +205,8 @@ def rotate_crop(rect: CropRect, rotation: Rotation, *, flip_horizontal: bool = F
     """The same crop after the picture is rotated clockwise by ``rotation`` (and then mirrored
     left to right when ``flip_horizontal``).
 
-    For example 90° moves the left edge to the top. Use it to map a crop between the stored
-    frame and the displayed picture (``rotate_crop(stored, source.rotation)``) or into the
-    output orientation.
+    Use it to map a crop between the stored frame and the displayed picture
+    (``rotate_crop(stored, source.rotation)``) or into the output orientation.
     """
     top, bottom, left, right = _edges(rect)
     if rotation == 90:
@@ -302,8 +257,8 @@ class _Axis:
     step: int
     near_name: str
     far_name: str
-    size_name: str  # "width" / "height"
-    direction: str  # "horizontal" / "vertical"
+    size_name: str
+    direction: str
 
 
 def _check_axis(axis: _Axis, near: int, far: int, notes: list[str]) -> tuple[int, int]:
@@ -332,7 +287,7 @@ def _crop(
     label: str,
     notes: list[str],
 ) -> CropRect:
-    """The crop that FFmpeg's ``crop`` filter applies exactly as given (see the module notes)."""
+    """The crop, snapped so that FFmpeg's ``crop`` filter applies it exactly."""
     top, bottom, left, right = edges
     axes = (
         _Axis(width, steps[0], "left", "right", "width", "horizontal"),
@@ -351,8 +306,8 @@ def _crop(
             new = requested[index] = (0, 0)
         snapped.append(new)
     active = any(snapped[0] + snapped[1])
-    # A crop filter rounds the size of both axes down to the grid: an off-grid frame size needs
-    # one more pixel or so of crop at the right or the bottom.
+    # A crop filter rounds both sizes down to the grid, so an off-grid frame needs a pixel or
+    # so more crop at the right or the bottom.
     final: list[tuple[int, int]] = []
     for axis, (near, far) in zip(axes, snapped, strict=True):
         grid_far = _on_grid(axis, near, far) if active else far
@@ -396,10 +351,10 @@ class _Candidate:
 def aspect_errors(width: int, height: int, ratio: Fraction) -> tuple[Fraction, Fraction]:
     """How far ``width`` x ``height`` is from the storage aspect ``ratio`` (width / height).
 
-    Returns ``(relative error, pixel error)``: ``|width / (height x ratio) - 1|`` (the display
-    aspect error, as the pixel aspect is the same on both sides), and the distance in pixels
-    to the nearest size with the exact aspect that keeps one side
-    (``min(|height - width / ratio|, |width - height x ratio|)``).
+    Returns ``(relative error, pixel error)``. The relative error is the display aspect error,
+    ``|width / (height x ratio) - 1|``, as the pixel aspect is the same on both sides. The
+    pixel error is the distance in pixels to the nearest size with the exact aspect that keeps
+    one side.
     """
     rel = abs(Fraction(width) / (height * ratio) - 1)
     px = min(abs(height - width / ratio), abs(width - height * ratio))
@@ -412,12 +367,10 @@ def _candidate(width: int, height: int, ratio: Fraction) -> _Candidate:
 
 
 def _span(b: int, per_minor: Fraction, major_is_width: bool) -> tuple[Fraction, Fraction]:
-    """The open interval of long-side lengths ``a`` for which ``a`` x ``b`` (long x short side)
-    meets the tolerance: pixel error < 1 or display aspect error < 0.5 %.
+    """The open interval of long sides ``a`` for which ``a`` x ``b`` meets the tolerance.
 
-    With ``per_minor`` = long / short side (>= 1), the pixel error is below 1 exactly when
-    ``|a - b x per_minor| < per_minor``; the relative error is measured as width / (height x
-    ratio), so its interval depends on which side is the width.
+    The relative error is measured as width / (height x ratio), so the interval depends on
+    which side is the width.
     """
     center = b * per_minor
     half = MAX_PIXEL_ERROR * per_minor
@@ -434,7 +387,7 @@ def _snap_size(
     mods: tuple[int, int],
     limits: tuple[int | None, int | None],
 ) -> _Candidate:
-    """The size on the modulus grid for ``target`` (see the module notes).
+    """The size on the modulus grid for ``target``.
 
     The winner is the acceptable size whose long side is closest to the target's (a tie goes
     to the shorter one, then to the smaller error); if no size is acceptable, the one with the
@@ -483,10 +436,8 @@ def _snap_size(
             else:
                 down = 0
             continue
-        # The best error for this short side (for the fallback) ...
         center = b * per_minor / mod_major
         options = {multiple(math.floor(center)), multiple(math.ceil(center))}
-        # ... and the acceptable long sides closest to the goal.
         m_low, m_high = math.floor(lo / mod_major) + 1, math.ceil(hi / mod_major) - 1
         if m_max is not None:
             m_high = min(m_high, m_max)
@@ -549,11 +500,11 @@ def _min_limit(a: int, b: int | None) -> int:
 
 
 def oriented_box(width: int, height: int, ratio: Fraction) -> tuple[int, int]:
-    """The fit box ``width`` x ``height`` turned to the shape of the output frame (storage
-    aspect ``ratio`` = width / height, decision 0020).
+    """The fit box ``width`` x ``height`` turned to the shape of the output frame.
 
-    Taller than wide → the box's long side is vertical; wider → horizontal; square → the box
-    as written. So "Fit within 1920x1080" keeps a 1080x1920 phone video at 1080x1920.
+    ``ratio`` is the storage aspect (width / height). A picture taller than wide gets the box's
+    long side vertical, a wider one gets it horizontal, a square one keeps the box as written.
+    So a portrait phone video is not shrunk to fit a landscape box.
     """
     long_side, short_side = max(width, height), min(width, height)
     if ratio < 1:
@@ -681,12 +632,12 @@ def _effective_mods(
 
 
 def compute_geometry(src: SourceGeometry, settings: DimensionSettings) -> Geometry:
-    """Crop, rotation, output size and pixel aspect for one source (see the module notes).
+    """Crop, rotation, output size and pixel aspect for one source.
 
     Never raises for settings that do not fit the source: it returns a valid geometry and
-    explains every change in ``notes`` (C-8 turns the problems into validation issues).
-    ``cropped_width`` x ``cropped_height`` is the crop filter's output (before the job's
-    rotation); ``scaled_width`` x ``scaled_height`` is the final frame (after it).
+    explains every change in ``notes``. ``cropped_width`` x ``cropped_height`` is the crop
+    filter's output (before the job's rotation); ``scaled_width`` x ``scaled_height`` is the
+    final frame (after it).
     """
     notes: list[str] = []
     odd_source = src.rotation in (90, 270)
