@@ -262,7 +262,7 @@ def test_probe_fixture_lists_every_track(
 
 
 @pytest.mark.needs_ffmpeg
-def test_demo_season_episode(cache_env: Path, fixture_media: Media) -> None:
+def test_probe_of_a_season_episode_shows_every_track(cache_env: Path, fixture_media: Media) -> None:
     path = fixture_media("season") / "Show.S01E01.Title.mkv"
     out = invoke("probe", str(path)).stdout
     assert "Show - S01E01" in out

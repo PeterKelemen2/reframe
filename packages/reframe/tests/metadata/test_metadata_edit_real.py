@@ -107,7 +107,7 @@ def mkvmerge(path: Path) -> list[dict[str, object]]:
     return [t["properties"] for t in json.loads(out.stdout)["tracks"]]
 
 
-async def test_done_when_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) -> None:
+async def test_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) -> None:
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)
@@ -136,7 +136,7 @@ async def test_done_when_languages_and_flags_are_a_metadata_edit_under_a_second(
         await app.close()
 
 
-async def test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all(env: Env) -> None:
+async def test_languages_names_and_flags_the_reprobe_shows_them_all(env: Env) -> None:
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)
@@ -180,7 +180,7 @@ async def test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all(en
         await app.close()
 
 
-async def test_m6_demo_4_only_flags_is_a_metadata_edit_under_a_second(env: Env) -> None:
+async def test_only_flags_is_a_metadata_edit_under_a_second(env: Env) -> None:
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)

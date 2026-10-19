@@ -14,26 +14,22 @@ import pytest
 from reframe.batch import service as batch_service
 from reframe.batch.grouping import episode_key
 from reframe.batch.service import BatchService
-from reframe.cli import DRY_RUN_NOTE, EXIT_FAILED, EXIT_OK
+from reframe.cli import EXIT_FAILED, EXIT_OK
 from reframe.jobs import JobService
 from reframe.models import (
     AppSettings,
-    AudioCodecRule,
-    JobDraft,
     JobTemplate,
     Preset,
     Resolution,
     Severity,
-    TrackDraft,
     ValidationIssue,
 )
 from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .conftest import Queues, Stubs, invoke, media_file, preset, recorded, replay
+from .conftest import Queues, Stubs, invoke, media_file, recorded, replay
 from .test_cli_batch import A, import_demo_preset
-from .test_cli_plan_dry_run import CUSTOM, DryRun, dry_run, movie  # noqa: F401
 
 Media = Callable[[str], Path]
 S01 = media.anime_folder(1)
@@ -234,70 +230,6 @@ def test_plan_with_a_group_preset_shows_the_track_rule_warnings(
     assert "[batch.track_skipped · audio_rules[1]]" in out
 
 
-@pytest.mark.anyio
-async def test_a_codec_the_container_cannot_hold_is_one_issue(tmp_path: Path) -> None:
-    file = media_file(tmp_path / "Movie.2016.1080p.BluRay-GRP", "movie.mkv")
-    stubs = Stubs({file: recorded("multitrack", file)})
-    webm = preset("vp9-mkv-1080p").model_copy(deep=True)
-    webm.output.container = "webm"
-    webm.audio_defaults.codec_rules = [AudioCodecRule(codec="aac")]
-    jobs = JobService(
-        sources=stubs,
-        presets=stubs,
-        tools=stubs,
-        capabilities=stubs,
-        settings=lambda: stubs.settings,
-    )
-    draft = await jobs.draft(file, webm)
-    assert isinstance(draft, JobDraft)
-    codes = [issue.code for issue in draft.issues]
-    assert "container.codec_unsupported" in codes
-    assert "defaults.codec_not_in_container" not in codes
-    # The pure engine without validation still reports it.
-    explained = await jobs.explain(file, webm)
-    assert isinstance(explained, TrackDraft)
-    assert "defaults.codec_not_in_container" in [i.code for i in explained.issues]
-
-
-SKIPPED = ValidationIssue(
-    severity=Severity.WARNING,
-    code="encoder.dry_run_skipped",
-    path="video.encoder",
-    message="The test encode did not finish within 30 s.",
-)
-CHANGED = ValidationIssue(
-    severity=Severity.WARNING,
-    code="encoder.dry_run_warning",
-    path="video.custom_params",
-    message="The encoder changed a setting: limit-tu disabled",
-)
-
-
-def test_plan_shows_a_skipped_dry_run(movie: Path, dry_run: DryRun) -> None:  # noqa: F811
-    """A dry run that did not finish does not get the note that the parameters were checked."""
-    dry_run.issues = [SKIPPED]
-    result = invoke("plan", str(movie), "--preset", CUSTOM)
-    assert result.exit_code == EXIT_OK, result.output
-    out = result.stdout
-    assert "did not finish within 30 s" in out
-    assert "[encoder.dry_run_skipped · video.encoder]" in out
-    assert "Issues (0 errors, 1 warning, " in out
-    assert DRY_RUN_NOTE not in out
-    assert "Command (encode, " in out
-
-
-def test_plan_shows_the_dry_runs_warnings(movie: Path, dry_run: DryRun) -> None:  # noqa: F811
-    dry_run.issues = [CHANGED]
-    result = invoke("plan", str(movie), "--preset", CUSTOM)
-    assert result.exit_code == EXIT_OK, result.output
-    out = result.stdout
-    assert "The encoder changed a setting: limit-tu disabled" in out
-    assert f"  Note     {DRY_RUN_NOTE}" in out
-    data = json.loads(invoke("plan", str(movie), "--preset", CUSTOM, "--json").stdout)
-    assert "encoder.dry_run_warning" in [i["code"] for i in data["draft"]["issues"]]
-    assert data["plan"] is not None
-
-
 class BatchStubs(Stubs):
     """:class:`~.conftest.Stubs` as ``Reframe.presets`` for the batch service too."""
 
@@ -380,7 +312,7 @@ async def test_the_row_order_is_computed_off_the_event_loop(
 
 
 @pytest.mark.needs_ffmpeg
-def test_the_leads_reproduction_with_the_real_queue(
+def test_batch_never_overwrites_a_file_named_as_an_output_with_the_real_queue(
     fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """E01 of ``anime-s01`` and ``multitrack.mkv`` copied as ``Anime.Show.S01E01.Pilot.mkv``,
@@ -400,3 +332,59 @@ def test_the_leads_reproduction_with_the_real_queue(
     assert result.exit_code == EXIT_FAILED, result.output
     assert "Nothing to encode." in result.stdout
     assert sorted(p.name for p in folder.iterdir()) == sorted([E01, E01_OUT])
+
+
+def test_a_member_labelled_by_its_file_name_shows_the_name_once(
+    cli_env: ft.FakeTools, tmp_path: Path
+) -> None:
+    """Two releases of S02E01 are labelled by their file names: each member line shows the
+    name once; E02 keeps its label column."""
+    folder = tmp_path / "media" / media.anime_folder(2)
+    bluray = media.anime_file_name(2, 1)
+    web = "Anime.Show.S02E01.Return.WEB.x264-GRP.mkv"
+    e02 = media.anime_file_name(2, 2)
+    per_file = {
+        media_file(folder, bluray): anime(2, 1),
+        media_file(folder, web): anime(2, 1),
+        media_file(folder, e02): anime(2, 2),
+    }
+    replay(cli_env, anime(2, 1), per_file=per_file)
+    result = invoke("batch", str(folder), "--dry-run")
+    assert result.exit_code == EXIT_FAILED, result.output  # the two releases share a name
+    out = result.stdout.splitlines()
+    start = out.index("Group 1 of 1: Anime Show S02 · 3 files · standard match")
+    assert out[start + 1 : start + 4] == [
+        f"  {bluray} (representative)",
+        f"  {web}",
+        f"  E02  {e02}",
+    ]
+
+
+def test_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
+    cli_env: ft.FakeTools,
+    queues: Queues,
+    tmp_path: Path,
+) -> None:
+    """With *overwrite*, E01's output is the other file of the folder."""
+    write_settings(tmp_path, collision="overwrite")
+    folder, _e01, _copy = two_sources(cli_env, tmp_path, E01_OUT)
+    result = invoke("encode", str(folder))
+    assert "[batch.output_is_source · output.path]" in result.stdout
+    assert "[output.overwrite" not in result.stdout, result.stdout
+
+
+def test_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command(
+    cli_env: ft.FakeTools,
+    queues: Queues,
+    tmp_path: Path,
+) -> None:
+    """An existing output that is not a file of the command is replaced with *overwrite*, and
+    ``output.overwrite`` warns about it."""
+    write_settings(tmp_path, collision="overwrite")
+    folder = tmp_path / "media" / S01
+    e01 = media_file(folder, E01)
+    media_file(folder, E01_OUT)
+    replay(cli_env, anime(1, 1))
+    result = invoke("encode", str(e01))
+    assert result.exit_code == EXIT_OK, result.output
+    assert "[output.overwrite · output.path]" in result.stdout

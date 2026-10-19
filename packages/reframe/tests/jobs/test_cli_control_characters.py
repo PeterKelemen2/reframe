@@ -1,22 +1,19 @@
-"""``reframe presets``: names with terminal escapes, and the size cap of ``presets import``."""
+"""Control characters from files and imported presets never reach the terminal (``printable``)."""
 
 from __future__ import annotations
 
 import json
-import os
-import sys
-import threading
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from reframe import cli
-from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, printable, read_preset_file
+from reframe.cli import EXIT_OK, printable
 from reframe.presets import builtin_presets
 from reframe_testing import fake_tools as ft
+from reframe_testing import media
 
-from .conftest import invoke
+from .conftest import Queues, invoke, media_file, probe_json, probe_rule
+from .test_cli_output_names import E01, S01, anime, two_sources
 
 EVIL = "Evil\x1b[31mRED\x1b[0m\nline2\x07\x9b2J\x1b]0;title\x07"
 
@@ -34,13 +31,13 @@ def _no_controls(text: str) -> None:
     assert bad == [], repr(text)
 
 
-def test_r5_9_printable_replaces_control_characters() -> None:
+def test_printable_replaces_control_characters() -> None:
     assert printable(EVIL) == ("Evil�[31mRED�[0m�line2��2J�]0;title�")
     assert printable("Grain 1080p · ünïcödé") == "Grain 1080p · ünïcödé"
     assert cli._one_line("error:\n  two\tlines\x1b[2J") == "error: two lines�[2J"
 
 
-def test_r5_9_names_from_an_imported_file_reach_the_terminal_without_escapes(
+def test_names_from_an_imported_file_reach_the_terminal_without_escapes(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
     data = {
@@ -65,53 +62,110 @@ def test_r5_9_names_from_an_imported_file_reach_the_terminal_without_escapes(
     _no_controls(missing.stderr)
 
 
-def _refused(result: dict[str, Any] | tuple[int, str]) -> tuple[int, str]:
-    assert isinstance(result, tuple), result
-    return result
+ESC = "\x1b"
 
 
-def test_import_refuses_a_file_larger_than_the_cap(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def import_evil_preset(tmp_path: Path) -> None:
+    exported = tmp_path / "h265.json"
+    assert invoke("presets", "export", "H.265 MKV 1080p", "--output", str(exported)).exit_code == 0
+    data = json.loads(exported.read_text(encoding="utf-8"))
+    data["presets"][0].update(id="evil", name="Evil\x1b[31mRED", built_in=False)
+    data["default_preset_id"] = None
+    exported.write_text(json.dumps(data), encoding="utf-8")
+    assert invoke("presets", "import", str(exported)).exit_code == 0
+
+
+def test_preset_line_of_batch_and_encode_has_no_control_characters(
+    cli_env: ft.FakeTools,
+    queues: Queues,
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(cli, "MAX_PRESET_FILE", 1000)
-    big = tmp_path / "big.json"
-    big.write_text(json.dumps({"schema_version": 1, "presets": [], "pad": "x" * 2000}))
-    code, message = _refused(read_preset_file(big))
-    assert code == EXIT_FAILED
-    assert "larger than" in message
+    """A preset named ``Evil ESC[31m RED`` (imported) in the ``Preset:`` line of
+    ``reframe batch`` and ``reframe encode``."""
+    import_evil_preset(tmp_path)
+    folder, _e01, _copy = two_sources(cli_env, tmp_path, "Other.mkv")
+    batch = invoke("batch", str(folder), "--preset", "evil", "--dry-run")
+    encode = invoke("encode", str(folder), "--preset", "evil")
+    assert ESC not in batch.stdout, batch.stdout.splitlines()[0]
+    assert ESC not in encode.stdout, encode.stdout.splitlines()[0]
+    assert batch.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
+    assert encode.stdout.splitlines()[0] == "Preset: Evil\ufffd[31mRED"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX devices and FIFOs")
-def test_import_never_reads_a_device_or_a_fifo(tmp_path: Path) -> None:
-    """``/dev/null`` stands in for ``/dev/zero``, which would exhaust memory on a regression."""
-    code, message = _refused(read_preset_file(Path("/dev/null")))
-    assert code == EXIT_NOT_FOUND
-    assert "not a regular file" in message
-    if sys.platform != "win32":  # mypy --platform win32 has no os.mkfifo (skipped there)
-        fifo = tmp_path / "fifo"
-        os.mkfifo(fifo)
-        result: list[dict[str, Any] | tuple[int, str]] = []
-        reader = threading.Thread(target=lambda: result.append(read_preset_file(fifo)), daemon=True)
-        reader.start()
-        reader.join(5)
-        if reader.is_alive():  # unblock the read, then fail
-            with fifo.open("wb") as writer:
-                writer.write(b"{}")
-            reader.join(5)
-            pytest.fail("reading the FIFO blocked")
-        code, message = _refused(result[0])
-        assert code == EXIT_NOT_FOUND
-        assert "not a regular file" in message
+def escaped_probe(tmp_path: Path, name: str, old: str, new: str) -> Path:
+    """The recorded probe ``name`` with the title ``old`` renamed ``new``."""
+    data = json.loads(probe_json(name).read_text(encoding="utf-8"))
+    for stream in data["streams"]:
+        if stream.get("tags", {}).get("title") == old:
+            stream["tags"]["title"] = new
+    path = tmp_path / "probes" / (Path(name).name + ".json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
 
 
-def test_import_from_stdin_is_capped(
-    cli_env: ft.FakeTools, monkeypatch: pytest.MonkeyPatch
+def test_titles_and_file_names_in_the_batch_output_are_printable(
+    cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(cli, "MAX_PRESET_FILE", 1000)
-    from typer.testing import CliRunner
-
-    result = CliRunner().invoke(
-        cli.build_app(), ["presets", "import", "-"], input=b"{" + b" " * 5000 + b"}"
+    """A near member's difference names a track title with ESC (E05's commentary), two releases
+    of E01 are labelled by their file names (one with ESC), and the matrix shows that name
+    and its output name: no ESC on stdout."""
+    folder = tmp_path / "media" / S01
+    e01 = media_file(folder, E01)
+    evil = media_file(folder, "Anime.Show.S01E01.\x1b[31mRed.WEB.x264-GRP.mkv")
+    e05 = media_file(folder, media.anime_file_name(1, 5))
+    commentary = escaped_probe(tmp_path, anime(1, 5), "Commentary", "Comm\x1b[32mGreen")
+    cli_env.set_scenario(
+        ft.Scenario(
+            [
+                probe_rule(commentary, e05),
+                probe_rule(probe_json(anime(1, 1)), e01),
+                probe_rule(probe_json(anime(1, 1)), evil),
+            ]
+        )
     )
-    assert result.exit_code == EXIT_FAILED
-    assert "larger than" in result.stderr
+    result = invoke("batch", str(folder), "--dry-run")
+    assert result.exit_code == EXIT_OK, result.output
+    out = result.stdout
+    assert ESC not in out, out
+    assert 'extra track (eng AC-3 2.0 "Comm\ufffd[32mGreen")' in out
+    # The member list and the matrix row label.
+    assert out.count("Anime.Show.S01E01.\ufffd[31mRed.WEB.x264-GRP.mkv") == 2
+    assert "Anime.Show.S01E01.[31mRed.mkv" in out
+
+
+def test_reframe_probe_prints_titles_without_control_characters(
+    cli_env: ft.FakeTools, tmp_path: Path
+) -> None:
+    """``reframe probe``: a track title, the container title and a chapter title come from the
+    file; they are shown through ``printable`` too (``--json`` keeps them)."""
+    file = media_file(tmp_path / "media", "Movie\x1b[35m.mkv")
+    data = json.loads(probe_json(anime(1, 5)).read_text(encoding="utf-8"))
+    for stream in data["streams"]:
+        if stream.get("tags", {}).get("title") == "Commentary":
+            stream["tags"]["title"] = "Comm\x1b[32mGreen"
+    data["format"]["tags"]["title"] = "Movie\x1b]0;PWNED\x07"
+    data["chapters"] = [
+        {
+            "id": 1,
+            "time_base": "1/1000",
+            "start": 0,
+            "start_time": "0.000000",
+            "end": 1000,
+            "end_time": "1.000000",
+            "tags": {"title": "Open\x1b[2Jing\nNext"},
+        }
+    ]
+    path = tmp_path / "probe.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    cli_env.set_scenario(ft.Scenario([probe_rule(path)]))
+    result = invoke("probe", str(file))
+    assert result.exit_code == EXIT_OK, result.output
+    assert ESC not in result.stdout, result.stdout
+    assert "\x07" not in result.stdout
+    assert "Comm\ufffd[32mGreen" in result.stdout
+    assert "Movie\ufffd]0;PWNED\ufffd" in result.stdout
+    assert "   1  0:00:00.000  Open\ufffd[2Jing\ufffdNext" in result.stdout.splitlines()
+    raw = json.loads(invoke("probe", str(file), "--json").stdout)
+    assert raw["container"]["title"] == "Movie\x1b]0;PWNED\x07"
+    assert raw["chapters"][0]["title"] == "Open\x1b[2Jing\nNext"
