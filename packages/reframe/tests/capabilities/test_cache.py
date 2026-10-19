@@ -173,10 +173,22 @@ def test_prune_keeps_the_newest(tmp_path: Path, binary: Path) -> None:
         cache.put(key, snapshot(binary))
         path = folder / f"{key.digest()[:32]}.json"
         os.utime(path, (1_000_000 + n, 1_000_000 + n))
-    (folder / ".tmp-left-behind.json").write_text("x", encoding="utf-8")
+    left_behind = folder / ".tmp-left-behind.json"
+    left_behind.write_text("x", encoding="utf-8")
+    os.utime(left_behind, (1_000_000, 1_000_000))
     cache.prune()
     assert [cache.get(key) is not None for key in keys] == [False, False, True, True]
-    assert not (folder / ".tmp-left-behind.json").exists()
+    assert not left_behind.exists()
+
+
+def test_prune_keeps_the_temporary_file_of_a_running_write(tmp_path: Path, binary: Path) -> None:
+    """Another process (the CLI next to the server) may be writing its entry right now."""
+    folder = tmp_path / "caps"
+    folder.mkdir()
+    writing = folder / ".tmp-another-process.json"
+    writing.write_text("{", encoding="utf-8")
+    CapabilityCache(folder).put(key_for(binary), snapshot(binary))
+    assert writing.exists()
 
 
 def test_unwritable_cache_is_ignored(tmp_path: Path, binary: Path) -> None:

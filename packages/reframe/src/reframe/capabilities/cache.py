@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,9 @@ CACHE_FORMAT = 1
 MAX_ENTRIES = 8
 #: The modules whose source decides what a detection produces.
 _DETECTOR_MODULES = ("parse.py", "reasons.py", "hwtest.py", "detect.py", "devices.py")
+#: Seconds after which a temporary file is left over: a younger one may be the write of another
+#: process that shares the folder (the CLI next to the server).
+_TEMP_AGE = 60.0
 
 
 @functools.cache
@@ -186,7 +190,7 @@ class CapabilityCache:
         self.prune()
 
     def prune(self) -> None:
-        """Keep the newest :attr:`max_entries` entries; remove temporary files."""
+        """Keep the newest :attr:`max_entries` entries; remove left-over temporary files."""
         try:
             entries = [p for p in self.folder.iterdir() if p.suffix == ".json"]
         except OSError:
@@ -198,8 +202,10 @@ class CapabilityCache:
             except OSError:
                 return 0.0
 
-        entries.sort(key=mtime, reverse=True)
-        stale = [p for p in entries if p.name.startswith(".tmp-")]
+        times = {path: mtime(path) for path in entries}
+        entries.sort(key=times.__getitem__, reverse=True)
+        now = time.time()
+        stale = [p for p in entries if p.name.startswith(".tmp-") and now - times[p] > _TEMP_AGE]
         kept = [p for p in entries if not p.name.startswith(".tmp-")]
         for path in [*stale, *kept[self.max_entries :]]:
             with contextlib.suppress(OSError):
