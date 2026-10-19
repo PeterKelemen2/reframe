@@ -1,16 +1,5 @@
-"""``diff(template, preset)`` for the *modified* marker (03 §Presets, C-9).
-
-The two documents are compared as JSON (``model_dump(mode="json")``), field by field:
-
-- Only the fields of :class:`~reframe.models.JobTemplate` count. The preset's identity (id,
-  name, category, description, built-in flag), ``schema_version`` and unknown fields do not.
-- Objects are compared key by key; a key that only one side has is ``added`` (only the edited
-  template has it) or ``removed`` (only the preset has it). Filters are an object keyed by
-  filter id, so a filter switched on is ``filters.denoise`` ``added``.
-- Lists are compared item by item (``audio_defaults.codec_rules[1].max_bitrate``); extra items
-  at the end are ``added`` / ``removed``.
-- A union member that changed its kind (rate control ``quality`` → ``bitrate``, size ``fit`` →
-  ``source``) is **one** change of the whole object, not a list of its fields.
+"""Field-by-field JSON diff of two templates, for the *modified* marker. Only ``JobTemplate``
+fields count, and a union member that changes its kind is one change of the whole object.
 """
 
 from __future__ import annotations
@@ -46,7 +35,7 @@ def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]:
 
 
 def diff_documents(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[FieldChange]:
-    """The same comparison for any two JSON objects (used for settings changes)."""
+    """The same comparison for any two JSON objects."""
     changes: list[FieldChange] = []
     _walk_object("", before, after, changes)
     return changes

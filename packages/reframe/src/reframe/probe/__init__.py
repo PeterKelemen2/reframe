@@ -1,19 +1,7 @@
-"""Probe and track analysis (C-3).
+"""Probing media files with ffprobe: one file, a folder, and the cache of the results.
 
-Entry points:
-
-- :class:`Prober` / :func:`probe_file`: one file → :class:`~reframe.models.MediaSource` or a
-  :class:`ProbeError` (never an exception for file or tool problems).
-- :func:`probe_folder` / :func:`start_probe_folder`: every media file of a folder, 4 at a time,
-  directly or as a background task (:mod:`reframe.tasks`).
-- :class:`ProbeCache`: memory + JSON files in ``<cache dir>/probe/``, keyed by path + size +
-  mtime and the ffprobe build.
-- :func:`parse_ffprobe`: the pure parser (ffprobe JSON → ``MediaSource``), used by the
-  snapshot tests with the recorded JSON in ``testdata/probes/``.
-
-Modules: ``ffprobe`` (commands, errors), ``parse``, ``hdr``, ``names`` (commercial codec
-names), ``bitrate`` (the bitrate chain), ``mediainfo`` (optional chain step), ``roles`` (role
-heuristics), ``cache``, ``prober``, ``folder``.
+A file or tool problem is reported as a :class:`ProbeError` by :class:`Prober` and
+:func:`probe_file`, not raised as an exception.
 """
 
 from reframe.probe.cache import CacheKey, ProbeCache

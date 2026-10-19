@@ -1,17 +1,8 @@
-"""The ``frames`` task (05 §C-10, 03 §Preview): PNG frames of a source, and of a job's output.
+"""The ``frames`` task: PNG frames of a source, and of a job's output.
 
-For each timestamp (:func:`~reframe.preview.common.sample_times`) the task looks up the source
-frame and, with a job, the output frame in the cache (:mod:`reframe.preview.cache`); the kinds
-that are missing are made by **one** FFmpeg run (:func:`~reframe.preview.graph.frame_argv`),
-:data:`WORKERS` timestamps at a time. Each run goes through :func:`reframe.tools.run` with the
-task's cancel token, so a cancel kills it at once.
-
-**A timestamp without a picture** (after the last frame, a decoding error) is left out with a
-note; the task fails only when no source frame at all could be made (decision 0033). Output
-frames that cannot be made are left out with a note, the source frames are still made: when
-the job cannot be planned, only the source frames are rendered; when the job's chain fails in
-FFmpeg (a custom filter that the plan accepts and FFmpeg refuses) and takes the source frame
-of the same run with it, the source frame is made again alone.
+A timestamp without a picture is left out with a note, and the task fails only when no source
+frame at all could be made. Output frames that cannot be made are left out with a note too,
+and never cost the source frames.
 """
 
 from __future__ import annotations
@@ -41,8 +32,7 @@ from reframe.tools import run
 
 __all__ = ["RUN_TIMEOUT", "WORKERS", "make_frames"]
 
-#: FFmpeg runs of one task at a time (measured on 10 frames of the 4K HDR fixture: 5.0 s one
-#: at a time, 4.0 s two at a time, 3.7 s three at a time; decision 0033).
+#: FFmpeg runs of one task at a time: more than two gain little (measured on the 4K fixture).
 WORKERS = 2
 #: Seconds one frame run may take (a damaged file must not hang the task).
 RUN_TIMEOUT = 300.0
@@ -75,7 +65,8 @@ async def make_frames(
     timestamps: list[float] | None,
     job: JobSettings | None,
 ) -> FrameSet:
-    """The body of the ``frames`` task (see the module doc)."""
+    """Make the source frames of ``path`` and, with ``job``, its output frames. Cached
+    frames are reused."""
     ffmpeg = await require_tool(ctx, "ffmpeg")
     source = await require_source(ctx, path, cancel=tctx.cancel)
     if not source.video:
@@ -144,7 +135,7 @@ async def make_frames(
                 own = [i for i in missing if i.recipe.kind == "source"]
                 if failed and own and len(missing) > 1 and png_size(own[0].path) is None:
                     # FFmpeg refused the run (the output chain, most likely): the source frame
-                    # alone, so that only the output frame is lost (0033 §2, §4).
+                    # alone, so that only the output frame is lost.
                     alone, _ = await _render(tctx, ffmpeg, path, video.index, timestamp, own)
                     if alone is not None:
                         error = alone
@@ -242,8 +233,7 @@ async def _render(
 
 async def _place(temp: Path, final: Path) -> bool:
     """Rename a complete PNG to its key's name. When that fails because another task has just
-    made the same frame (Windows refuses to replace a file that a reader has open), its file
-    is as good as ours."""
+    made the same frame, its file is as good as ours."""
     try:
         await asyncio.to_thread(os.replace, temp, final)
     except OSError:

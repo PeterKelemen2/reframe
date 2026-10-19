@@ -1,28 +1,6 @@
-"""The ``cropdetect`` task (05 §C-10, 03 §Dimensions → Crop): FFmpeg ``cropdetect`` on each
-sample frame, then C-5's consensus.
+"""The ``cropdetect`` task: FFmpeg ``cropdetect`` on each sample frame, then the crop consensus.
 
-**Samples.** The timestamps of the frame strip (:func:`~reframe.preview.common.sample_times`
-with the same count): ``-ss T`` before ``-i`` and one decoded frame through
-:data:`CROPDETECT`, so each sample is exactly the picture of the strip at that time.
-
-**The filter** (``testdata/README.md`` "Preview frames, crop detection and clips (C-10)",
-decision 0033):
-
-- ``skip=0``: the default skips the first 2 frames, so one frame gives no result.
-- ``limit=0.094118`` (24 / 255) as a fraction of the full range: FFmpeg scales a limit below 1
-  by the bit depth, so it is 24 for 8-bit and 96.3 for 10-bit. Black is code 16 (8-bit) and
-  64 (10-bit) in limited range, PQ and HLG included, so the limit is the same distance above
-  black in every bit depth (about 0.03 nits in PQ). An absolute ``limit=24`` (FFmpeg's old
-  default) finds no bars at all in a 10-bit PQ picture.
-- ``round=2``: the crop keeps the 4:2:0 grid (``cropdetect`` rounds x and y up to even and
-  shrinks the size to a multiple of 2); ``compute_geometry`` snaps it to the source's grid.
-
-**Results.** ``crop=w:h:x:y`` of the first (the sample) frame becomes a
-:class:`~reframe.models.CropRect` on the picture as FFmpeg decodes it (decision 0009: the
-display matrix applied): top ``y``, left ``x``, right ``W - x - w``, bottom ``H - y - h``. A
-black frame (``w`` or ``h`` not positive) or a frame that could not be decoded gives ``None``
-and no vote. :func:`~reframe.dimensions.detect_crop_consensus` gives the automatic (most common)
-and the conservative (black on every sample) crop of the other samples.
+A black frame, or one that could not be decoded, does not vote.
 """
 
 from __future__ import annotations
@@ -76,7 +54,8 @@ def _edges(rect: CropRect) -> str:
 async def detect_crop(
     tctx: TaskContext, ctx: MediaTaskContext, path: Path, *, count: int | None
 ) -> CropDetection:
-    """The body of the ``cropdetect`` task (see the module doc)."""
+    """Detect the crop of ``path`` from its sample frames; expected failures raise
+    :class:`TaskFailed`."""
     ffmpeg = await require_tool(ctx, "ffmpeg")
     assert ffmpeg.path is not None
     source = await require_source(ctx, path, cancel=tctx.cancel)

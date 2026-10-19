@@ -1,28 +1,8 @@
-"""The bitrate chain (C-3, 03 §Audio "Bitrate").
+"""The bitrate of a probed stream: the first source that gives a value wins.
 
-In order, the first that gives a value wins:
-
-1. ffprobe's stream ``bit_rate`` (``BitrateSource.STREAM``). In ``-of json`` output a missing
-   bit rate is a missing key, not ``"N/A"`` (testdata/README.md).
-2. Matroska statistics tags written by mkvmerge or ``mkvpropedit
-   --add-track-statistics-tags`` (``BitrateSource.STATS_TAG``): ``BPS``, else
-   8 * ``NUMBER_OF_BYTES`` / ``DURATION``. ffprobe appends the tag language when it is not
-   ``und`` (``BPS-eng``, written by older mkvmerge versions). FFmpeg's own Matroska muxer
-   writes only ``DURATION``, so a file written by FFmpeg has no statistics tags.
-
-   **Stale tags.** FFmpeg copies stream tags when it re-encodes, so a re-encoded file can
-   carry the statistics of its source (a 200 kb/s re-encode that says ``BPS=1858881``).
-   :func:`check_stats_tags` therefore checks the tags against the container first; tags that
-   fail are not used (for the bit rate, the frame count, the subtitle event count or the VFR
-   check) and the probe gets a warning. Checks: the tracks' ``NUMBER_OF_BYTES`` add up to at
-   most the file size; a track's ``BPS`` is at most the container bit rate (+5 %); a track's
-   ``DURATION`` is at most the container duration (+5 % + 1 s). (The container's ``ENCODER``
-   tag cannot tell who wrote the file: mkvmerge copies a source's global ``ENCODER=Lavf…``
-   tag, so a check of ``_STATISTICS_WRITING_APP`` against it would reject good tags.)
-3. MediaInfo (``BitrateSource.MEDIAINFO``), if ``pymediainfo`` and its library load:
-   :mod:`reframe.probe.mediainfo`, applied by :func:`reframe.probe.probe_file` because it
-   needs the file.
-4. ``BitrateSource.UNKNOWN`` (C-12 treats it as above every maximum).
+The order is ffprobe's stream ``bit_rate``, then the Matroska statistics tags, then MediaInfo
+(applied by :func:`reframe.probe.probe_file`, since it needs the file). When none gives one,
+the bitrate is unknown, and the audio rules treat unknown as above every maximum.
 """
 
 from __future__ import annotations
@@ -102,7 +82,8 @@ def stats_tag_bitrate(tags: Mapping[str, Any] | None) -> int | None:
 
 
 def stream_bitrate(stream: Mapping[str, Any], *, trust_stats: bool = True) -> BitrateInfo:
-    """Steps 1, 2 and 4 of the chain for one ffprobe stream (step 2 only if ``trust_stats``)."""
+    """The bit rate of one ffprobe stream: ``bit_rate``, else its statistics tags when
+    ``trust_stats``; unknown otherwise."""
     value = positive_int(stream.get("bit_rate"))
     if value is not None:
         return BitrateInfo(value=value, source=BitrateSource.STREAM)
@@ -157,7 +138,12 @@ def _finite(value: Any) -> float | None:
 
 
 def check_stats_tags(data: Mapping[str, Any]) -> StatsCheck:
-    """Check every stream's Matroska statistics tags against the container (module doc)."""
+    """Check every stream's statistics tags against the container.
+
+    A re-encode can leave stale tags, since FFmpeg copies stream tags, so a re-encoded file
+    can carry its source's statistics. The ``ENCODER`` tag cannot tell who wrote the file
+    (mkvmerge copies a source's), so it is no test.
+    """
     raw = data.get("streams")
     streams = [s for s in raw if isinstance(s, Mapping)] if isinstance(raw, list) else []
     fmt = _mapping(data.get("format"))

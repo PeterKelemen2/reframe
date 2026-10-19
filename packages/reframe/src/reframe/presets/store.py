@@ -1,45 +1,7 @@
-"""User presets: ``<config>/presets.json`` (a :class:`~reframe.models.PresetFile`), plus the
-built-ins (read-only) in one list.
+"""User presets (``<config>/presets.json``) and the read-only built-ins, as one list.
 
-**Rules**
-
-- Ids: built-ins have stable slugs (``h265-mkv-1080p``); user presets get a UUID. A user
-  preset never has the id of a built-in, and never has ``built_in = True``.
-- Names are unique among *all* presets (built-in and user), compared without case and
-  repeated spaces: ``find("h.265 mkv 1080p")`` is never ambiguous. A clash is a
-  ``preset.name_conflict`` issue whose fix sets the next free name (``Fast 1080p30 (2)``).
-  If a newer Reframe adds a built-in with the name of an existing user preset, both stay;
-  :meth:`PresetStore.find` returns the user's preset first.
-- Built-ins cannot be changed, renamed or deleted (``preset.built_in``); duplicate one
-  instead (the copy is a user preset in the ``Custom`` category).
-- The default preset is the user's choice (``default_preset_id``) or, when none is set or it
-  was deleted, the built-in default (:data:`~reframe.presets.builtin.DEFAULT_BUILTIN_ID`).
-- Import: name and id clashes are handled by ``on_conflict``: ``rename`` (the default: a new
-  id and the next free name), ``replace`` (overwrite the user preset with the same id or name,
-  keeping its id; a built-in is never replaced, the imported one is renamed instead) or
-  ``skip``. Export → import into an empty store gives the same presets, ids and default.
-
-**File handling** is that of the settings store (``reframe.settings``): migrations, atomic
-writes, unknown fields kept. A corrupt file is backed up (``presets.corrupt-<time>.json``) and
-replaced by an empty preset list, with an ``app.warning`` (``presets.corrupt``). When only some
-presets in it are damaged (or two share an id), the file is backed up, the damaged ones are
-left out and the others are kept; a preset nested more than ``MAX_DEPTH`` levels deep is
-damaged. A whole file that is newer (or unreadable) is not touched at all
-(``presets.newer_version`` / ``presets.unreadable``: changes are refused with
-``presets.read_only``). A symbolic link at ``presets.json`` stays a link (its target is
-written).
-
-**Presets of a newer Reframe** (a ``schema_version`` above ours) are never lost:
-
-- in ``presets.json`` they are kept verbatim and written back unchanged (they are not in
-  :meth:`PresetStore.list`, which holds :class:`Preset` models of this Reframe);
-- ``save``, ``create`` and ``import_`` refuse them (``preset.newer_version``: it needs a
-  newer Reframe), and never give another preset the id of one;
-- ``export`` puts them in the export file unchanged (:meth:`PresetExport.document`) and
-  says so (a ``preset.newer_version`` warning: only that newer Reframe can import them).
-
-Expected failures are values: every changing method returns the preset or a
-:class:`~reframe.models.ValidationIssue`. The file is read at the first use, not at start.
+Names are compared without case and repeated spaces. Two presets that this Reframe reads never
+share a name, except when a newer Reframe adds a built-in with the name of a user preset.
 """
 
 from __future__ import annotations
@@ -126,11 +88,10 @@ class ImportResult:
 class PresetExport:
     """What :meth:`PresetStore.export` gives.
 
-    ``file``: the presets this Reframe reads, as a :class:`PresetFile` (its
-    ``default_preset_id`` is set when the default is among them). ``newer``: the chosen
-    presets that a newer Reframe wrote, as their JSON, unchanged. ``default_preset_id``: the
-    default when it is among all exported presets (``newer`` too). ``issues``: one
-    ``preset.newer_version`` warning for each preset in ``newer``.
+    ``file`` holds the presets this Reframe reads (its ``default_preset_id`` is set when the
+    default is among them). ``newer`` holds the chosen presets that a newer Reframe wrote, as
+    JSON, unchanged. ``default_preset_id`` is the default when it is among all of them.
+    ``issues`` has one ``preset.newer_version`` warning for each entry of ``newer``.
 
     :meth:`document` is the export file: write it, or pass the export to
     :meth:`PresetStore.import_` as it is.
@@ -142,8 +103,7 @@ class PresetExport:
     issues: list[ValidationIssue] = field(default_factory=list)
 
     def document(self) -> dict[str, Any]:
-        """The JSON object of the export file: every exported preset, the newer ones
-        unchanged after the others."""
+        """The export file as JSON: the newer presets come last, unchanged."""
         data = self.file.model_dump(mode="json")
         data["presets"].extend(copy.deepcopy(self.newer))
         data["default_preset_id"] = self.default_preset_id
@@ -177,7 +137,12 @@ def _newer_issue(
 
 
 class PresetStore:
-    """Built-in and user presets (see the module doc)."""
+    """Built-in and user presets. Expected failures are values, not exceptions.
+
+    Presets that a newer Reframe wrote are kept as raw JSON and written back unchanged. They
+    are not in :meth:`list`, and this Reframe cannot change them. The file is read at the first
+    use, not at start.
+    """
 
     def __init__(
         self,
@@ -378,7 +343,7 @@ class PresetStore:
 
     def duplicate(self, preset_id: str, name: str | None = None) -> Preset | ValidationIssue:
         """Copy any preset (built-in or user) as a new user preset. Without ``name``: the next
-        free name after the original's (``Fast 1080p30 (2)``)."""
+        free name after the original's."""
         with self._lock:
             self._ensure()
             original = self._by_id(preset_id)
@@ -453,7 +418,12 @@ class PresetStore:
         """Import presets (a :class:`PresetFile`, a :class:`PresetExport`, or the raw JSON
         object of an export file). All three go through the checks of the file: migrations,
         nesting, and presets of a newer Reframe, which are not imported
-        (``preset.newer_version``). See the module doc for ``on_conflict``."""
+        (``preset.newer_version``).
+
+        ``on_conflict``: ``rename`` (the default) gives a clashing id or name a new one;
+        ``replace`` overwrites the user preset with the same id or name and keeps its id;
+        ``skip`` leaves the clashing preset out. A built-in is never replaced: the imported
+        preset gets a new id or name instead."""
         result = ImportResult()
         incoming, default_id = self._incoming(file, result)
         with self._lock:
