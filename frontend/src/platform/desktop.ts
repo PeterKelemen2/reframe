@@ -1,7 +1,7 @@
 import type { Platform } from './types'
 
 // Imports nothing from Tauri; every call fails loudly.
-const MESSAGE = 'not implemented (D-4)'
+const MESSAGE = 'not available in this build yet'
 
 function reject(): Promise<never> {
   return Promise.reject(new Error(MESSAGE))
