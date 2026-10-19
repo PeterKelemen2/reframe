@@ -31,8 +31,9 @@ from .test_facade import PROBE, env  # noqa: F401  (the fixture)
 
 pytestmark = pytest.mark.anyio
 
-#: A second Reframe process: ``create()`` and ``close()`` only, or a whole encode of the job
-#: given as JSON. It prints one JSON line: the end state and the ``app.warning`` codes.
+#: A second Reframe process. ``create``: ``create()`` and ``close()`` only; ``encode``: a whole
+#: encode of the job given as JSON. Both print one JSON line: the end state and the
+#: ``app.warning`` events. ``hold``: it starts the job, prints ``running`` and waits to be killed.
 CHILD = """
 import asyncio, json, sys
 from reframe.probe import mediainfo
