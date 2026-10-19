@@ -1,55 +1,9 @@
-"""Child-process safety: FFmpeg must die when Reframe dies (C-1).
+"""Child-process safety: a tool process dies with Reframe, and a user-facing program does not.
 
-:func:`spawn_options` returns the extra ``subprocess`` / ``asyncio.create_subprocess_exec``
-keyword arguments for a tool process, and :func:`after_spawn` must be called with the pid of
-every new child. ``reframe.tools.run`` does both; nothing else starts processes.
-
-Linux
-    ``PR_SET_PDEATHSIG = SIGKILL`` through ``prctl(2)`` in ``preexec_fn``: the kernel kills the
-    child when its parent dies, also when the parent is killed with ``SIGKILL``. If the parent
-    died between ``fork()`` and the ``prctl`` call, the child sees a new parent pid and kills
-    itself. Notes:
-
-    - The death signal follows the parent **thread** that forked, not the process. asyncio
-      forks from the thread that runs the event loop, so children die if that thread ends. A
-      loop thread ends only when its loop is gone, and then nothing waits for the children.
-    - The child also gets its own session (``start_new_session=True``): a Ctrl+C in the
-      terminal reaches Reframe only, and Reframe stops its children itself (tree kill), so
-      FFmpeg does not stop half-way through writing a file on its own.
-    - ``libc`` is loaded before the fork; the child only makes two system calls.
-
-Other POSIX systems
-    Only ``start_new_session``. (Reframe ships for Linux and Windows.)
-
-Windows
-    A **Job Object** with ``JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE``: when the last handle to the
-    job closes (Reframe exits or crashes), Windows kills every process in the job. Processes
-    get ``CREATE_NO_WINDOW``, so no console window flashes.
-
-    Assigning a child to the job *after* it started is racy: the child (for example the
-    ``cmd.exe`` of a ``.cmd`` launcher) may start a grandchild before the assignment, and that
-    grandchild is then outside the job. So Reframe puts **its own process** into the job, the
-    first time it starts a tool: every child inherits the job at creation, with no window.
-    The job handle is never closed: it closes when the process ends.
-
-    **Side effect:** every process that Reframe starts is in the job, so it is killed when
-    Reframe exits, also a video player or the file manager (``os.startfile`` and
-    ``webbrowser`` start their programs as children of Reframe). User-facing programs must
-    therefore be started with :func:`launch_detached` (or :func:`spawn_options` with
-    ``user_facing=True``): ``CREATE_BREAKAWAY_FROM_JOB`` (the job allows it with
-    ``JOB_OBJECT_LIMIT_BREAKAWAY_OK``), no ``CREATE_NO_WINDOW``. To open a file or folder
-    with its default program on Windows, launch ``explorer.exe <path>`` this way. If an
-    outer job that Reframe did not create forbids breakaway, the launch is retried without
-    it (then the program ends with that outer job, for example the Tauri shell).
-
-    Since Windows 8, a process can be in several (nested) jobs, so this works when Reframe
-    already runs inside a job (Tauri puts the sidecar in its own job, CI runners use jobs). If
-    the assignment fails anyway, Reframe falls back to assigning each child after it starts
-    (:meth:`KillOnCloseJob.adopt`): racy for grandchildren, but better than nothing. The
-    tree kill on timeout and cancel (psutil) does not depend on the job.
-
-    This Windows code is unit-tested with a mocked ``kernel32`` on Linux; it has not been run
-    on Windows yet.
+:func:`spawn_options` gives the extra ``subprocess`` keyword arguments for a tool process, and
+:func:`after_spawn` is called with the pid of every new child. ``reframe.tools.run`` does both.
+On Windows every child is in Reframe's job, so a program that must outlive Reframe (a player,
+the file manager) starts with :func:`launch_detached`.
 """
 
 from __future__ import annotations
@@ -77,8 +31,6 @@ __all__ = [
     "windows_job",
 ]
 
-# --------------------------------------------------------------------------- constants
-
 PR_SET_PDEATHSIG = 1
 
 CREATE_NO_WINDOW = 0x08000000
@@ -89,9 +41,6 @@ JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9  # JobObjectExtendedLimitInformation
 PROCESS_TERMINATE = 0x0001
 PROCESS_SET_QUOTA = 0x0100
-
-
-# --------------------------------------------------------------------------- Linux
 
 
 def _load_prctl() -> Callable[..., int] | None:
@@ -114,7 +63,9 @@ def linux_preexec(
 ) -> Callable[[], None]:
     """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child.
 
-    ``prctl`` is loaded here, in the parent, never in the forked child.
+    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal
+    follows the thread that forked, not the process, so the fork must happen on a thread that
+    lives as long as its children.
     """
     global _prctl
     if prctl is None:
@@ -134,9 +85,6 @@ def linux_preexec(
             os.kill(os.getpid(), sigkill)
 
     return preexec
-
-
-# --------------------------------------------------------------------------- Windows
 
 
 class _IoCounters(ctypes.Structure):
@@ -223,12 +171,13 @@ JobMode = Literal["process", "per_child", "unavailable"]
 
 
 class KillOnCloseJob:
-    """A Windows Job Object with ``KILL_ON_JOB_CLOSE`` that holds Reframe and its children.
+    """A Windows Job Object with ``KILL_ON_JOB_CLOSE`` for Reframe and its children.
 
-    :meth:`setup` creates the job and assigns the current process to it (``mode`` becomes
-    ``"process"``). If that assignment fails, ``mode`` is ``"per_child"`` and :meth:`adopt`
-    assigns each child after it started. If the job cannot be created at all, ``mode`` is
-    ``"unavailable"`` and :attr:`error` says why.
+    Joining before the first child starts (``mode == "process"``) is the race-free way: a child
+    assigned later may already have started a grandchild, which then stays outside the job. If
+    Reframe cannot join (an older Windows without nested jobs), ``mode`` is ``"per_child"`` and
+    :meth:`adopt` assigns each child after it starts. ``"unavailable"`` means the job could not
+    be created at all; :attr:`error` says why.
     """
 
     def __init__(
@@ -323,15 +272,11 @@ def windows_job() -> KillOnCloseJob:
     return _job
 
 
-# --------------------------------------------------------------------------- public API
-
-
 def spawn_options(platform: str | None = None, *, user_facing: bool = False) -> dict[str, Any]:
     """Extra keyword arguments for ``asyncio.create_subprocess_exec`` / ``subprocess.Popen``.
 
-    ``user_facing=True``: for a program that the user sees and that must outlive Reframe (a
-    player, the file manager). Windows: ``CREATE_BREAKAWAY_FROM_JOB`` and a new process group,
-    no ``CREATE_NO_WINDOW``. POSIX: a new session and no death signal.
+    ``user_facing=True`` is for a program that the user sees and that must outlive Reframe: on
+    Windows it breaks away from the job, on POSIX it gets no death signal.
     """
     platform = sys.platform if platform is None else platform
     if user_facing:
@@ -364,10 +309,10 @@ def launch_detached(
 ) -> int:
     """Start a user-facing program that must outlive Reframe; return its pid.
 
-    This is the one exception to "every subprocess goes through ``reframe.tools.run``": the
-    program is not a tool, it is not waited for, it has no timeout, and it is not killed with
-    Reframe (see the module doc). Its stdin, stdout and stderr are the null device. A daemon
-    thread reaps it when it exits. Raises ``OSError`` if it cannot be started.
+    This is the one exception to "every subprocess goes through reframe.tools.run": the program
+    is not a tool, it has no timeout and it is not waited for. It must survive Reframe's exit,
+    see :func:`spawn_options`. Its stdio is the null device. A daemon thread reaps it when it
+    exits. Raises ``OSError`` if it cannot be started.
     """
     platform = sys.platform if platform is None else platform
     options = spawn_options(platform, user_facing=True)

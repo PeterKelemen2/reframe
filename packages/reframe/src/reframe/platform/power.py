@@ -1,46 +1,11 @@
-"""Power actions (05 §C-14; 03 §Queue → When done): shut down, sleep, quit, always after a
-cancellable 60 s countdown (decision 0036).
+"""Power actions: shut down, sleep or quit after a cancellable countdown.
 
-:class:`PowerService` runs the countdown and publishes :class:`~reframe.models.PowerCountdownEvent`
-(``power.countdown``): ``started`` once (with the ``deadline``), a ``tick`` every second with
-``seconds_left``, then ``cancelled`` (by :meth:`~PowerService.cancel`, a new
-:meth:`~PowerService.schedule` or :meth:`~PowerService.close`) or ``executing``. After
-``executing``, ``shutdown`` and ``sleep`` run through a :class:`PowerExecutor`; ``quit`` is
-not an operating-system action: the UI layer quits when it sees ``executing``. A failure is
-data: one ``app.warning`` (code ``power.failed``) with the detail, never an exception.
-
-Once ``executing`` is published, the action runs to its end: ``cancel`` returns ``False``,
-:attr:`~PowerService.pending` stays the ``executing`` event until the executor returns, and
-:meth:`~PowerService.close` waits for it (bounded) instead of cancelling it. Cancelling
-``systemctl`` or ``shutdown.exe`` half-way would kill the process that is asking the system.
-
-The countdown counts ticks, not wall-clock time: each tick is a sleep of one second, so a
-system sleep or a blocked event loop in the middle never makes the action fire early (after
-a wake the countdown goes on where it was). ``deadline`` is the wall-clock estimate made at
-the start; ``seconds_left`` is what counts.
-
-Executors (:func:`default_executor` picks the one of this operating system)
-    Linux (:class:`SystemctlExecutor`)
-        ``systemctl --no-ask-password poweroff`` / ``… suspend`` through
-        :func:`reframe.tools.run`. systemctl asks logind (``PowerOff`` / ``Suspend`` with
-        ``interactive=false``); polkit allows both for the active local session and refuses
-        them without a password elsewhere (another user logged in, a system service), which
-        becomes ``power.failed``. Both return once the action is queued (``man systemctl``).
-    Windows (:class:`WindowsExecutor`)
-        Shut down: ``%SystemRoot%\\System32\\shutdown.exe /s /t 60 /c "…"``: Windows shows its
-        own one-minute warning, ``shutdown /a`` cancels it, and a time-out above 0 implies
-        ``/f`` (apps are closed without asking). Sleep: ``SetSuspendState(FALSE, FALSE,
-        FALSE)`` from ``powrprof`` after enabling ``SeShutdownPrivilege`` in the process token
-        (``AdjustTokenPrivileges``), on a worker thread. Mock-tested on Linux only.
-    Anything else (:class:`UnsupportedExecutor`)
-        Every action fails with a reason.
-
-**Safety.** Exactly two functions reach the operating system: :func:`_run_command` (the only
-place a power command process starts) and :func:`_load_win32` (the only way to the Windows
-DLLs). Both refuse while ``PYTEST_CURRENT_TEST`` or ``REFRAME_POWER_DRY_RUN`` is set
-(:func:`refusal`). On top of that, the shared pytest plugin replaces both with functions that
-fail the test (``reframe_testing.pytest_plugin``), so no test can shut down or suspend the
-machine that runs it. Tests give the service a fake :class:`PowerExecutor`.
+:class:`PowerService` runs the countdown and publishes
+:class:`~reframe.models.PowerCountdownEvent` events. Once ``executing`` is published the action
+runs to its end and nothing cancels it. A failure is data (one ``app.warning``), never an
+exception. Exactly two functions reach the operating system, :func:`_run_command` and
+:func:`_load_win32`; both refuse while :func:`refusal` says so, and the shared pytest plugin
+replaces both, so no test can shut down or suspend the machine that runs it.
 """
 
 from __future__ import annotations
@@ -89,10 +54,10 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-#: The countdown before every power action (05 §C-14).
+#: The countdown before every power action.
 COUNTDOWN_SECONDS = 60.0
 
-#: The actions the operating system runs (``quit`` is done by the UI layer).
+#: The actions the operating system runs; ``quit`` is not one of them.
 OsAction = Literal["shutdown", "sleep"]
 
 #: The ``app.warning`` code of a power action that did not run.
@@ -102,18 +67,18 @@ WARNING_CODE = "power.failed"
 #: action and return.
 COMMAND_TIMEOUT = 30.0
 
-#: When set (to anything but empty, ``0``, ``false``, ``no``), no power action reaches the
-#: operating system: it fails with a reason instead (for manual tests of the UI).
+#: When set to a true value, no power action reaches the operating system: it fails with a
+#: reason instead.
 DRY_RUN_ENV = "REFRAME_POWER_DRY_RUN"
 
 #: ``systemctl`` verbs per action.
 SYSTEMCTL_VERBS: dict[OsAction, str] = {"shutdown": "poweroff", "sleep": "suspend"}
 
-#: The ``/t`` of ``shutdown /s`` (05 §C-14: Windows' own one-minute warning after Reframe's
-#: countdown; decision 0036).
+#: The ``/t`` of ``shutdown /s``: Windows shows its own warning for this long after Reframe's
+#: countdown.
 WINDOWS_SHUTDOWN_DELAY = 60
 
-#: The ``/c`` comment Windows shows in its shutdown warning (at most 512 characters).
+#: The ``/c`` comment that Windows shows in its shutdown warning.
 WINDOWS_SHUTDOWN_COMMENT = "Reframe: the queue is done. Run 'shutdown /a' to cancel."
 
 #: Seconds :meth:`PowerService.close` waits for an action that is ``executing`` (it is never
@@ -128,9 +93,6 @@ _FAILED_MESSAGE: dict[OsAction, str] = {
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
-
-
-# --------------------------------------------------------------------------- the safety gate
 
 
 def refusal() -> str | None:
@@ -184,9 +146,6 @@ def _describe_failure(name: str, result: RunResult) -> str | None:
     return f"{name} failed (exit code {result.returncode}){message}"
 
 
-# --------------------------------------------------------------------------- executors
-
-
 class PowerExecutor(Protocol):
     """Runs a power action of the operating system."""
 
@@ -197,13 +156,13 @@ class PowerExecutor(Protocol):
 
 
 def systemctl_argv(action: OsAction, systemctl: str = "systemctl") -> list[str]:
-    """``systemctl --no-ask-password poweroff|suspend``: never a password prompt (a polkit
-    agent dialog nobody answers would keep the machine on; it fails instead)."""
+    """``systemctl --no-ask-password`` with the verb of ``action``: never a password prompt
+    (a polkit agent dialog nobody answers would keep the machine on; it fails instead)."""
     return [systemctl, "--no-ask-password", SYSTEMCTL_VERBS[action]]
 
 
 class SystemctlExecutor:
-    """Linux: ``systemctl poweroff`` / ``systemctl suspend`` (05 §C-14)."""
+    """Linux: ``systemctl poweroff`` and ``systemctl suspend``."""
 
     def __init__(self, *, run: CommandRunner | None = None, systemctl: str = "systemctl") -> None:
         self._run = run
@@ -224,7 +183,8 @@ def _shutdown_exe() -> str:
 
 
 def windows_shutdown_argv(shutdown_exe: str | None = None) -> list[str]:
-    """``shutdown.exe /s /t 60 /c "…"`` (05 §C-14; decision 0036)."""
+    """``shutdown.exe /s`` with :data:`WINDOWS_SHUTDOWN_DELAY` and
+    :data:`WINDOWS_SHUTDOWN_COMMENT`."""
     exe = _shutdown_exe() if shutdown_exe is None else shutdown_exe
     return [exe, "/s", "/t", str(WINDOWS_SHUTDOWN_DELAY), "/c", WINDOWS_SHUTDOWN_COMMENT]
 
@@ -381,7 +341,7 @@ def _suspend(libs: Win32Libraries) -> str | None:
 
 
 class WindowsExecutor:
-    """Windows: ``shutdown /s /t 60`` and ``SetSuspendState`` (05 §C-14)."""
+    """Windows: ``shutdown.exe /s`` and ``SetSuspendState``."""
 
     def __init__(
         self,
@@ -429,9 +389,6 @@ def default_executor(platform: str | None = None) -> PowerExecutor:
     if platform.startswith("linux"):
         return SystemctlExecutor()
     return UnsupportedExecutor(f"power actions are not supported on {platform!r}")
-
-
-# --------------------------------------------------------------------------- the service
 
 
 @dataclass(slots=True, eq=False)
@@ -504,7 +461,7 @@ class PowerService:
         then ``cancelled`` or ``executing``; ``shutdown`` and ``sleep`` then run through the
         executor (a failure is an ``app.warning``). A running countdown is cancelled first;
         an action that is already executing is not touched (it runs to its end) and the new
-        countdown starts beside it (decision 0036, follow-up).
+        countdown starts beside it.
 
         Needs a running event loop (``RuntimeError`` otherwise: a programming error). After
         :meth:`close` nothing starts: the id gets one ``cancelled`` event.
@@ -594,8 +551,6 @@ class PowerService:
                 self._execute_wait,
             )
 
-    # ------------------------------------------------------------------ internals
-
     def _publish(
         self,
         countdown: _Countdown,
@@ -614,8 +569,8 @@ class PowerService:
         return event
 
     async def _run(self, countdown: _Countdown) -> None:
-        # Count ticks, not wall-clock time (see the module doc): the first step reaches the
-        # next whole second left, then one second per tick.
+        # Ticks, not wall-clock time: the first step lands on a whole second, then one second
+        # each.
         remaining = countdown.length
         while remaining > 0:
             step = remaining - (math.ceil(remaining) - 1)

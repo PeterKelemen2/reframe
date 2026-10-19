@@ -1,64 +1,9 @@
-"""Sleep inhibit while the queue runs (C-14, 03 §Queue; decisions 0011 and 0020).
+"""Sleep inhibit while the queue runs: only automatic (idle) sleep is stopped.
 
-Only **automatic** (idle) sleep is stopped. The user's own Sleep (menu), the power button
-and the lid always work at once; the encode then pauses with the system and continues after
-wake (decision 0020). The screen may still dim, turn off and lock (as on Windows, where
-``ES_DISPLAY_REQUIRED`` is not used).
-
-:class:`SleepInhibitor` is a counted lock: the first :meth:`~SleepInhibitor.acquire` takes
-the operating-system locks, the last :meth:`~SleepInhibitor.release` frees them, and
-:meth:`~SleepInhibitor.close` frees them whatever the count. :func:`create_sleep_inhibitor`
-picks the backends for the platform. The backends are tried in order and every one that
-applies is held: the inhibitor is ``active`` when at least one holds, and says what is not
-stopped when one fails (:attr:`~SleepInhibitor.not_stopped`, and a log warning). A backend
-that does not apply returns :class:`Skipped` (logged, not a failure).
-
-Linux (verified on KDE Plasma 6, systemd 262; ``testdata/README.md`` "Sleep inhibit (C-14)")
-    1. **The desktop session's inhibit** on the session bus, on a connection that stays open
-       while the lock is held (the desktop drops the inhibit when the connection closes):
-       ``org.freedesktop.PowerManagement.Inhibit.Inhibit("Reframe", why)`` (KDE PowerDevil,
-       Xfce), else the XDG desktop portal ``org.freedesktop.portal.Inhibit.Inhibit("", 4,
-       {"reason": why})`` (flag 4 = suspend; GNOME and others). On KDE either one becomes
-       PowerDevil's "sleep" inhibition about 5 s after the call: the automatic suspend on
-       idle is skipped, the screen still dims and locks, and ``CanSuspend`` stays ``yes``
-       (the user's own suspend works). The portal's ``idle`` flag (8) is not used: on KDE it
-       becomes an "idle" inhibition, which also keeps the screen on. No session bus (a
-       headless server, a system service) is :class:`Skipped`.
-    2. **logind** ``org.freedesktop.login1.Manager.Inhibit("idle", "Reframe", why, "block")``
-       on the system bus, for logind's own ``IdleAction=`` (``suspend``, ``poweroff``, …).
-       It returns a file descriptor; the lock lasts while the descriptor is open (it is
-       close-on-exec, so no child keeps it alive). ``CanSuspend`` stays ``yes``. polkit
-       allows an ``idle`` block lock for every caller. It is taken only where it is needed:
-       when the session inhibit is not held, or when ``IdleAction`` is not ``ignore``. The
-       reason: KDE PowerDevil mirrors logind locks (after about 5 s), and a logind ``idle``
-       lock becomes an "idle" inhibition that keeps the screen from dimming and locking.
-       Never a ``sleep`` lock (it refuses the user's own suspend; decision 0020).
-
-    ``systemd-inhibit`` is not used any more: with only the ``idle`` lock it reaches the same
-    logind with the same permission as the direct call, so it adds a process and no
-    coverage, and it cannot take the session inhibit.
-
-Windows
-    ``SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`` while held,
-    ``SetThreadExecutionState(ES_CONTINUOUS)`` on release
-    (https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate:
-    it stops the idle timer and "cannot be used to prevent the user from putting the
-    computer to sleep"). The execution state belongs to the **calling thread**, so both calls
-    run on one dedicated thread that lives exactly as long as the lock is held (never on an
-    asyncio worker thread, which may end or be reused). This code is unit-tested with a
-    mocked ``kernel32`` on Linux; it has not been run on Windows yet.
-
-When no backend holds, the inhibitor publishes one ``app.warning`` event (code
-``sleep_inhibit.unavailable``) and goes on: :attr:`~SleepInhibitor.state` is
-``unavailable`` and the queue runs anyway. Sleep inhibit never raises (decision 0011 item
-7): every failure of a backend, also an unexpected one (a malformed bus address, garbage
-from the bus, a bug), means "this backend is unavailable"; its socket is closed and the
-encode goes on. No call ever asks for a password.
-
-Cancellation: a blocking D-Bus call runs in a worker thread that is never abandoned with a
-socket or a file descriptor open (see :func:`_in_thread`); ``release`` and ``close`` always
-finish, also when their caller is cancelled; a cancelled ``acquire`` leaves no count behind
-(see :meth:`SleepInhibitor.acquire`).
+The user's own Sleep, the power button and the lid still work: only the idle action is
+inhibited. Every backend that applies is held together. The inhibitor is ``active`` when at
+least one holds, and :attr:`~SleepInhibitor.not_stopped` names what the failed ones would have
+stopped. Sleep inhibit never raises, and no call ever asks for a password.
 """
 
 from __future__ import annotations
@@ -106,7 +51,7 @@ log = logging.getLogger(__name__)
 WHO = "Reframe"
 WHAT = "idle"
 """Only ``idle`` (logind's automatic idle action). Never ``sleep``: a ``sleep`` block lock
-also refuses the user's own suspend (``CanSuspend`` becomes ``inhibited``; decision 0020)."""
+also refuses the user's own suspend."""
 MODE = "block"
 """``delay`` exists only for ``sleep`` and ``shutdown``; ``block`` is the only mode for
 ``idle`` that lasts."""
@@ -124,8 +69,8 @@ PORTAL_DESTINATION = "org.freedesktop.portal.Desktop"
 PORTAL_PATH = "/org/freedesktop/portal/desktop"
 PORTAL_INTERFACE = "org.freedesktop.portal.Inhibit"
 PORTAL_INHIBIT_SUSPEND = 4
-"""The portal's flags: 1 logout, 2 user switch, 4 suspend, 8 idle. Only suspend (see the
-module doc for why not idle)."""
+"""The portal's suspend flag. Its idle flag (8) is not used: on KDE it also keeps the screen
+on."""
 
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
@@ -212,9 +157,6 @@ class InhibitBackend(Protocol):
         ...
 
 
-# --------------------------------------------------------------------------- logind
-
-
 DBusCall = Callable[..., dbus.Reply]
 
 
@@ -223,9 +165,9 @@ class LogindBackend:
 
     ``unless`` (optional): a check made before the lock is taken. When it is true **and**
     logind's ``IdleAction`` is ``ignore`` (logind itself does nothing on idle), the lock is
-    :class:`Skipped`. The Linux default passes "the desktop session's inhibit is held":
-    KDE turns a logind ``idle`` lock into its own "idle" inhibition, which also keeps the
-    screen from dimming and locking, so the lock is taken only where it is needed.
+    :class:`Skipped`. The Linux default passes "the desktop session's inhibit is held": KDE
+    shows a logind ``idle`` lock as its own "idle" inhibition, which keeps the screen on, so
+    the lock is taken only where it is needed.
     """
 
     name = "logind"
@@ -330,9 +272,6 @@ def _close_fds(fds: Sequence[int]) -> None:
 
 def _discard_reply(reply: dbus.Reply) -> None:
     _close_fds(reply.fds)
-
-
-# --------------------------------------------------------------------------- desktop session
 
 
 class _BusConnection(Protocol):
@@ -442,10 +381,9 @@ class SessionInhibitBackend:
     Tries ``org.freedesktop.PowerManagement.Inhibit`` first (it shows "Reframe" and the
     reason in KDE's battery applet), then the XDG desktop portal with the suspend flag
     (``interfaces`` changes the list). The inhibit lasts while the connection is open.
-    :meth:`free` ends it explicitly (``UnInhibit(cookie)`` or ``Request.Close()``) and then
-    closes the connection; on KDE either one alone ends it within a second. No session bus
-    (a headless server, a system service) is :class:`Skipped`: there is no desktop that
-    could suspend on idle.
+    :meth:`free` ends it explicitly, then closes the connection. No session bus (a headless
+    server, a system service) is :class:`Skipped`: there is no desktop that could suspend on
+    idle.
     """
 
     name = "session"
@@ -551,9 +489,6 @@ class SessionInhibitBackend:
 
 def _ignore(_: object) -> None:
     pass
-
-
-# --------------------------------------------------------------------------- Windows
 
 
 class Kernel32(Protocol):
@@ -681,9 +616,6 @@ class WindowsExecutionStateBackend:
                 log.warning("SetThreadExecutionState(ES_CONTINUOUS) failed (error %s)", error)
         finally:
             state_thread.stop()  # the thread ends after the clearing call
-
-
-# --------------------------------------------------------------------------- the inhibitor
 
 
 class _Ticket:
@@ -916,7 +848,7 @@ def create_sleep_inhibitor(
     platform: str | None = None,
     backends: Sequence[InhibitBackend] | None = None,
 ) -> SleepInhibitor:
-    """A :class:`SleepInhibitor` with the backends of the platform (see the module doc)."""
+    """A :class:`SleepInhibitor` with the backends of the platform (:func:`default_backends`)."""
     platform = sys.platform if platform is None else platform
     chosen = default_backends(platform) if backends is None else list(backends)
     unsupported = None if chosen else f"no sleep inhibit backend for platform {platform!r}"

@@ -1,36 +1,21 @@
-"""A minimal, blocking D-Bus client for the sleep inhibit calls (C-14).
+"""A minimal, blocking D-Bus client for the sleep inhibit calls.
 
-Reframe needs a few D-Bus calls: logind's ``Inhibit`` on the system bus (it returns a file
-descriptor; the lock lasts while the descriptor is open) and the desktop session's inhibit
-on the session bus (``org.freedesktop.PowerManagement.Inhibit`` or the XDG desktop portal;
-these last while the caller's bus connection stays open). This module implements the small
-part of the D-Bus specification (https://dbus.freedesktop.org/doc/dbus-specification.html)
-that these calls need, with the standard library only (decision record 0011):
+It uses the standard library only: the calls need a small, fixed subset of the protocol
+(https://dbus.freedesktop.org/doc/dbus-specification.html), so no D-Bus library is needed. It
+connects to a ``unix:`` bus, authenticates with ``EXTERNAL``, negotiates file descriptors and
+sends method calls with simple arguments. Received descriptors are close-on-exec
+(``MSG_CMSG_CLOEXEC``): a child process must never inherit a duplicate that keeps a lock alive.
 
-- connect to a ``unix:path=`` or ``unix:abstract=`` bus address,
-- SASL ``EXTERNAL`` authentication with the process uid, then ``NEGOTIATE_UNIX_FD``,
-- ``Hello``, then method calls with simple arguments (``s``, ``o``, ``u``, ``h`` and an
-  ``a{sv}`` of strings),
-- read messages until the reply (``METHOD_RETURN`` or ``ERROR``) arrives; file descriptors
-  come as ``SCM_RIGHTS`` ancillary data and are received with ``MSG_CMSG_CLOEXEC``, so a
-  child process never inherits a duplicate (a duplicate would keep the lock alive).
+No message sets ``ALLOW_INTERACTIVE_AUTHORIZATION``: a background queue must never make polkit
+ask the user for a password.
 
-:func:`call` opens a connection, makes one call and closes it. :class:`Connection` stays
-open until :meth:`Connection.close` (for an inhibit that lasts as long as the connection).
+Errors: :class:`DBusError` for an error reply, ``OSError`` (``TimeoutError`` included) when the
+bus cannot be reached or closes the connection, :class:`DBusProtocolError` for anything this
+client does not understand, and ``ValueError`` for a malformed address or an argument that
+cannot be sent. Nothing else is raised, and the socket is closed whenever
+:meth:`Connection.open` or :func:`call` raises.
 
-No message sets ``ALLOW_INTERACTIVE_AUTHORIZATION``: a background queue must never make
-polkit ask the user for a password.
-
-Errors: :class:`DBusError` for an error reply of the remote side (``name`` is the D-Bus
-error name, for example ``org.freedesktop.DBus.Error.AccessDenied``); ``OSError`` (incl.
-``TimeoutError``) when the bus cannot be reached or closes the connection;
-:class:`DBusProtocolError` for anything the bus sends that this client does not understand
-(also garbage bytes and header fields of the wrong type); ``ValueError`` for a malformed bus
-address or an argument that cannot be sent (a string with a NUL). Nothing else, and the
-socket is closed whenever :meth:`Connection.open` or :func:`call` raises. The callers turn
-all of them into data.
-
-Linux only (the module imports on Windows, but connecting raises ``OSError`` there).
+Linux only: the module imports on Windows, but connecting raises ``OSError`` there.
 """
 
 from __future__ import annotations
@@ -126,9 +111,6 @@ class Reply:
     fds: list[int] = field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- addresses
-
-
 def system_bus_address() -> str:
     """``DBUS_SYSTEM_BUS_ADDRESS`` if set, else the default system bus socket."""
     return os.environ.get("DBUS_SYSTEM_BUS_ADDRESS") or DEFAULT_SYSTEM_BUS
@@ -149,10 +131,9 @@ def session_bus_address() -> str | None:
 def parse_address(address: str) -> list[str | bytes]:
     """The socket addresses of a D-Bus address list that this client can use.
 
-    ``unix:path=/x`` gives ``"/x"``; ``unix:abstract=x`` gives ``b"\\0x"``. Other
-    transports (``tcp:``, ``unixexec:``, ``unix:runtime=``) are skipped. Raises
-    ``ValueError`` ("malformed D-Bus address") for a ``%`` that is not followed by two hex
-    digits, an escaped value that is not UTF-8, or a path with a NUL.
+    ``unix:path=/x`` gives ``"/x"``; ``unix:abstract=x`` gives ``b"\\0x"``. Other transports
+    are skipped. Raises ``ValueError`` ("malformed D-Bus address") for a ``%`` that is not
+    followed by two hex digits, an escaped value that is not UTF-8, or a path with a NUL.
     """
     result: list[str | bytes] = []
     for entry in address.split(";"):
@@ -195,9 +176,6 @@ def _unescape(value: str) -> str:
         return out.decode()
     except UnicodeDecodeError:
         raise ValueError("an escaped value is not UTF-8") from None
-
-
-# --------------------------------------------------------------------------- marshalling
 
 
 class _Writer:
@@ -415,10 +393,9 @@ def _endian(flag: bytes) -> str:
 def decode_message(data: bytes, fds: list[int]) -> Message:
     """Parse one complete message. Takes ``UNIX_FDS`` descriptors from the front of ``fds``.
 
-    Bodies are parsed only for simple signatures (``s``, ``o``, ``g``, ``u``, ``h``, ``i``,
-    ``b``, ``y``, and ``v`` holding one of these); other bodies are left empty (this client
-    never needs them). Raises only :class:`DBusProtocolError` (and then closes the message's
-    descriptors), whatever the bytes are.
+    Bodies that use other types are left empty (this client never needs them). Raises only
+    :class:`DBusProtocolError` (and then closes the message's descriptors), whatever the bytes
+    are.
     """
     try:
         return _decode_message(data, fds)
@@ -474,9 +451,6 @@ def _close_all(fds: Sequence[int]) -> None:
     for fd in fds:
         with contextlib.suppress(OSError):
             os.close(fd)
-
-
-# --------------------------------------------------------------------------- connection
 
 
 class _Connection:
