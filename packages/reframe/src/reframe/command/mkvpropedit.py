@@ -1,33 +1,8 @@
-"""The ``mkvpropedit`` arguments of a plan (05 §C-13; decision 0034). Pure.
+"""The ``mkvpropedit`` arguments of a plan. Pure.
 
-Two kinds of edits use them:
-
-- the **in-place metadata edit** of a ``metadata_edit`` job (:func:`in_place_edits`): the
-  source MKV's track headers (languages, names, the six flags) and the segment title are
-  changed where they differ from the probed source; nothing else of the file is touched;
-- the **post-mux fix-up** of every other MKV job (:func:`fixup_edits`): after FFmpeg, on the
-  ``.part`` file, what FFmpeg's Matroska muxer does not write. With FFmpeg n8.1.3 and n9.0.2
-  that is only the ``LanguageIETF`` element (BCP 47); the six flags are all written by the
-  muxer (``testdata/README.md`` "Metadata edit (C-13)"). Flags listed in a container's
-  ``mkvpropedit_flags`` would be set here too.
-
-Property names (``mkvpropedit --list-property-names``, MKVToolNix 101.0): ``language``,
-``language-ietf``, ``name``, ``flag-default``, ``flag-forced``, ``flag-commentary``,
-``flag-hearing-impaired``, ``flag-visual-impaired``, ``flag-original`` (the flags' names come
-from the definitions, ``[flag.*].mkvpropedit``), and ``title`` of ``--edit info``.
-
-**Languages** are always written as a pair, ``--set language=<ISO 639-2/B> --set
-language-ietf=<BCP 47>``, in that order: ``--set language=X`` alone writes both elements with
-MKVToolNix's own legacy code (which differs from Reframe's for some tags, ``pes`` → ``und``
-instead of ``per``), and a later ``--set language=`` overwrites an earlier
-``language-ietf``.
-
-**Track selectors.** ``track:a2`` is the second audio track in the order of the file's
-``TrackEntry`` elements, whatever their ``TrackNumber``; attachments (fonts, cover art) are not
-tracks. FFmpeg makes one stream per track in the same order, so the n-th audio stream of the
-probe is ``track:a<n>`` (checked with a file whose tracks were reordered and whose track
-numbers do not follow that order). The queue checks that the Matroska tracks match the probe
-before it edits a source in place (:mod:`reframe.probe.matroska`).
+:func:`in_place_edits` writes only the track headers and the title that differ from the probed
+source. :func:`fixup_edits` writes what FFmpeg's Matroska muxer does not write, on the ``.part``
+file.
 """
 
 from __future__ import annotations
@@ -86,7 +61,7 @@ class TrackEdit:
     delete_name: bool = False
     """Remove the track name (the job writes none)."""
     flags: tuple[tuple[str, bool], ...] = field(default_factory=tuple)
-    """``(mkvpropedit property, value)`` in the order of the six flags."""
+    """``(mkvpropedit property, value)`` in the order of ``TRACK_FLAGS``."""
 
     @property
     def empty(self) -> bool:
@@ -101,6 +76,7 @@ class TrackEdit:
         out = ["--edit", self.selector]
         if self.language is not None:
             legacy, ietf = self.language
+            # Both, in this order: a later ``--set language`` overwrites ``language-ietf``.
             out += ["--set", f"language={legacy}", "--set", f"language-ietf={ietf}"]
         if self.delete_name:
             out += ["--delete", "name"]
@@ -240,7 +216,7 @@ def fixup_edits(
 ) -> list[TrackEdit]:
     """What FFmpeg's muxer did not write into the output: ``LanguageIETF`` for a language that
     ISO 639-2 cannot say (``pt-BR``, ``yue``), and the set flags of
-    ``container.mkvpropedit_flags`` (none for MKV with FFmpeg 7.0 and later)."""
+    ``container.mkvpropedit_flags``."""
     edits: list[TrackEdit] = []
     for track in tracks:
         pair = language_pair(track.language) if needs_ietf(track.language) else None

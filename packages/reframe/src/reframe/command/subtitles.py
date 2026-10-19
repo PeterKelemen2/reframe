@@ -1,21 +1,7 @@
-"""Subtitle output tracks (05 §C-7 "Subtitles", 03 §Subtitles → Output tracks).
+"""Subtitle output tracks: copies, conversions and at most one burned-in track.
 
-- **Copy**: ``-c:s:N copy`` when the container holds the codec; a text track it does not hold
-  is converted to the container's text format (MP4 ``mov_text``, WebM ``webvtt``, MKV
-  ``srt`` for ``mov_text``). An external text file with a character encoding is decoded and
-  written again (``-sub_charenc`` works only when FFmpeg decodes the file).
-- **Convert**: text to SRT, ASS, WebVTT or mov_text.
-- **Burn in** (one track): text with the ``subtitles`` filter, bitmap with ``overlay``
-  (:mod:`reframe.command.filtergraph`); **forced only** is the bitmap decoder option
-  ``forced_subs_only`` (PGS and VobSub).
-- **External files** are inputs after the source: ``-itsoffset`` (the track's offset),
-  ``-ss`` (the range start: the source's seek does not move other inputs, checked with FFmpeg
-  n9.0.2) and ``-sub_charenc``, then ``-i``. An event on screen at the range start, or moved
-  before 0 by a negative offset, gets a negative time: the builder's output ``-ss 0`` drops
-  it (the video is encoded), or ``-copypriorss:s:N 0`` (the video is copied and the track
-  too, no range). A copied video with a range keeps them: the muxer moves every stream by
-  the same amount, as it does for the video's own packets before the range start
-  (decision 0013, "Follow-up (M2 review)").
+External subtitle files are inputs after the source. Each gets its own ``-itsoffset`` and
+``-ss``, since the source's seek does not move another input.
 """
 
 from __future__ import annotations
@@ -111,7 +97,7 @@ class SubtitlePlan:
     @property
     def copies_ass(self) -> bool:
         """An ASS track of the source is in the output: its fonts (the source's attachments)
-        must go with it (05 §C-7)."""
+        must go with it."""
         return any(o.ass and o.map.startswith("0:") for o in self.outputs)
 
 
@@ -202,6 +188,7 @@ def plan_subtitles(
             if track.action == "burn":
                 plan.bitmap_burn = BitmapBurn(input_label=label)
                 continue
+            # -sub_charenc only takes effect when FFmpeg decodes the file, so it is written again.
             recode = bool(ext.charset) and not bitmap
             out_codec = _output_codec(track, codec, container, recode=recode)
             plan.outputs.append(

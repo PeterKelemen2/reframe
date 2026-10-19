@@ -1,33 +1,8 @@
-"""Track metadata, chapters and tags (05 §C-7 "Metadata", "Chapters", tags; 03 §Track metadata,
-§Chapters, §Tags; decision 0013).
+"""Track metadata, chapters and tags of the plan.
 
-**Track metadata.** The source's stream tags are not copied (``-map_metadata:s -1``): FFmpeg
-would copy stale mkvmerge statistics (``BPS``, ``NUMBER_OF_FRAMES`` …) into an encoded
-stream. Every output track gets its language and title explicitly
-(``-metadata:s:a:0 language=ger``) and all its flags (``-disposition:a:0 default+comment``,
-``0`` for none: FFmpeg would otherwise copy the source's dispositions, and its Matroska muxer
-sets no default flag on a single stream of a type). Languages are written in the container's
-form: ISO 639-2/B for Matroska and WebM, ISO 639-2/T for MP4 (``reframe.languages``; FFmpeg
-writes the code verbatim). The source's attachments keep their ``filename`` / ``mimetype``
-tags (``-map_metadata:s:t:N 0:s:t:N``), which the Matroska muxer needs.
-
-A BCP 47 tag that ISO 639-2 cannot express (``pt-BR``, ``zh-Hant``, ``yue``) goes into the
-Matroska ``LanguageIETF`` element with an ``mkvpropedit`` step after the encode (FFmpeg never
-writes it): ``--edit track:a2 --set language=pt-BR`` writes both elements.
-
-**Chapters.** ``-map_chapters 0`` copies the source's chapters (FFmpeg shifts them by the
-range start and cuts them at the output ``-t``); ``-map_chapters -1`` writes none. Renamed
-or generated chapters come from an FFMETADATA file (:class:`~reframe.models.PlanFile`) that is
-an input of its own. So do the source's chapters when the range starts or ends on a chapter
-boundary (every chapter range does): FFmpeg's copy keeps the chapter that ends at the range
-start and the one that starts at the range end, as empty chapters (decision 0013, follow-up
-of decision 0026).
-
-**Tags** (HandBrake's eight) map to the FFmpeg keys that Matroska, MP4 and WebM all write
-(``title``, ``artist``, ``album_artist``, ``date``, ``comment``, ``genre``, ``description``,
-``synopsis``; HandBrake's Director is its ``AlbumArtist``). ``passthru_metadata`` copies the
-source's global tags first (``-map_metadata 0``), else none are copied
-(``-map_metadata:g -1``). Tag values may use the naming variables (C-16's templates).
+Stream tags are never copied: every output track gets its language, title and flags written
+explicitly. A BCP 47 tag that ISO 639-2 cannot express is written to Matroska ``LanguageIETF``
+by an mkvpropedit step, since FFmpeg never writes that element.
 """
 
 from __future__ import annotations
@@ -71,8 +46,7 @@ __all__ = [
 
 StreamType = Literal["v", "a", "s"]
 
-#: TagSettings field → FFmpeg metadata key (HandBrake's mapping; all written by the MKV, MP4
-#: and WebM muxers, checked with FFmpeg n9.0.2).
+#: TagSettings field → FFmpeg metadata key (HandBrake's mapping).
 TAG_KEYS: dict[str, str] = {
     "title": "title",
     "actors": "artist",
@@ -224,8 +198,8 @@ def _renamed(
     return out
 
 
-#: A generated last chapter shorter than this part of the interval is merged into the one
-#: before it (decision 0013): no 0.5 s chapter at the end of a 60.01-minute film.
+#: A generated last chapter shorter than this share of the interval is merged into the one
+#: before it, so that no tiny chapter ends the film.
 GENERATED_TAIL = 0.25
 
 
@@ -275,9 +249,9 @@ def chapter_plan(
 def chapter_range(source: MediaSource, job_range: ChapterRange) -> tuple[float, float]:
     """``(start, end)`` seconds of a chapter range (1-based, inclusive).
 
-    An end after the last chapter is clamped to the last chapter, as a time or frame range
-    is clamped to the source (decision 0026; validation warns ``range.end_beyond``). A range
-    that starts after the last chapter, or ends before it starts, cannot be planned.
+    An end after the last chapter is clamped to the last chapter, as a time or frame range is
+    clamped to the source. A range that starts after the last chapter, or ends before it starts,
+    cannot be planned.
     """
     chapters = source.chapters
     if not 1 <= job_range.start <= min(job_range.end, len(chapters)):
@@ -302,10 +276,10 @@ def render_tag(
     now: datetime | None,
     definitions: Definitions,
 ) -> str:
-    """A tag value with the naming variables filled in: C-16's public
-    :func:`reframe.naming.render_value` with no file-system reads. Without ``now``,
-    ``{date}`` and ``{time}`` are empty; ``{modification-date}`` is always empty (it needs the
-    file system). A template with errors is written as typed."""
+    """A tag value with the naming variables filled in, through :func:`reframe.naming.render_value`
+    with no file-system reads. Without ``now``, ``{date}`` and ``{time}`` are empty;
+    ``{modification-date}`` is always empty (it needs the file system). A template with errors is
+    written as typed."""
     return render_value(
         template, job, source, options=options, output_size=output_size, now=now,
         definitions=definitions,

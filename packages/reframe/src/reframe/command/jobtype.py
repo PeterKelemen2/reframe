@@ -1,20 +1,7 @@
-"""Job type detection (03 §Remux-only jobs; 05 §C-13 bullet 1), with the reason for the
-Summary tab.
+"""Job type detection: ``metadata_edit``, ``remux`` or ``encode``, each with the reason.
 
-- **metadata_edit**: the source is an MKV file, the output is MKV, *Edit in place* is chosen
-  (``output.edit_in_place``), and the job keeps the file as it is but for metadata: the
-  whole source (no range), the video passed through, every source audio and subtitle track
-  in source order and copied, the source's chapters and tags as they are. What may change:
-  each track's language, name and six flags, and the container title (``tags.title``).
-  mkvpropedit edits the source in place in seconds (decision 0034).
-- **remux**: video passthrough, and every output audio track is copied (passthru that the
-  container can hold) and every output subtitle track has the action ``copy`` (a text track
-  that the container cannot hold is still converted to its text format: MP4 ``mov_text``).
-  Nothing is decoded but those subtitles, so it runs at disk speed (FFmpeg ``-c copy``).
-- **encode**: anything else.
-
-:func:`in_place_blockers` says why a job cannot be a metadata edit (validation shows the
-first one when *Edit in place* is chosen).
+A job is a metadata edit only when *Edit in place* is chosen and :func:`in_place_blockers`
+finds nothing.
 """
 
 from __future__ import annotations
@@ -50,7 +37,7 @@ def is_matroska_source(source: MediaSource) -> bool:
     return "matroska" in formats and suffix != ".webm"
 
 
-#: The tags an in-place edit cannot set (the title can: ``--edit info --set title=``).
+#: The tags an in-place edit cannot set (the title can be set).
 OTHER_TAGS = ("actors", "director", "release_date", "comment", "genre", "description", "plot")
 
 
@@ -131,7 +118,7 @@ def in_place_blockers(
 
 
 def _copy_type(job: JobSettings, source: MediaSource, defs: Definitions) -> tuple[JobType, str]:
-    """``encode`` or ``remux`` (the M2 rules), with the reason."""
+    """``encode`` or ``remux``, with the reason."""
     if not job.video.passthrough:
         encoder = defs.video_encoders.get(job.video.encoder)
         label = encoder.label if encoder is not None else job.video.encoder
@@ -161,8 +148,8 @@ def _copy_type(job: JobSettings, source: MediaSource, defs: Definitions) -> tupl
 def job_type(
     job: JobSettings, source: MediaSource, *, definitions: Definitions | None = None
 ) -> tuple[JobType, str]:
-    """The job type and why, in one sentence for the Summary tab (two when *Edit in place*
-    is chosen but not possible: the second says why)."""
+    """The job type and why, in one sentence (two when *Edit in place* is chosen but not
+    possible: the second says why)."""
     defs = definitions if definitions is not None else load_definitions()
     if job.output.edit_in_place:
         blockers = in_place_blockers(job, source, definitions=defs)

@@ -1,44 +1,8 @@
-"""Audio output tracks (05 §C-7 "Audio", 03 §Audio → Output tracks, decision 0013).
+"""Audio output tracks: a copy, or an encoder with its bitrate, sample rate and one filter chain.
 
-**Passthru** copies the source track (``-c:a:N copy``, plus the container's ``copy_args``:
-``-strict -2`` for TrueHD in MP4). Nothing is snapped. When the container cannot hold the
-codec, the track is encoded with the track's encoder (HandBrake's auto passthru; ``None`` =
-AAC), like any encoded track.
-
-**Encode**: ``-c:a:N <encoder>``, the bitrate (``-b:a:N``) or the VBR quality (``-q:a:N``),
-the sample rate (``-ar:a:N``, always when a rate is known: FFmpeg silently picks a rate when
-none is given, and ``loudnorm`` outputs 192 kHz), and one filter chain (``-filter:a:N``) in
-this order:
-
-1. the layout: ``aresample=[matrix_encoding=dplii:]out_chlayout=<layout>``
-   (:attr:`PlannedAudio.layout`): the layout of the mixdown definition. When the source
-   layout stays, libopus gets a layout it accepts (:data:`ENCODER_LAYOUTS`: side → back, else
-   a downmix), and any other encoder the source layout, relabelled only where that is
-   lossless (``5.1(side)`` → ``5.1``); see :func:`_kept_layout`;
-2. the gain: ``volume=<gain>dB``;
-3. loudness normalisation: two-pass ``loudnorm`` with the values measured by the track's
-   ``analyse`` step (:class:`~reframe.models.ArgTemplate`), ``linear=true``.
-
-The mixdown is in the chain, not ``-ac``, so that ``loudnorm`` measures and corrects the
-audio that is encoded. **DRC** (HandBrake's dynamic range compression, 0 = off) is the AC-3
-and E-AC-3 decoder option ``-drc_scale`` (an input option for the source stream; FFmpeg's
-default is 1, HandBrake's 0).
-
-**Snapping** (decision 0024 item 4, 0013 "Follow-up (M2 wave 2b)"): a mixdown, bitrate or
-sample rate that the encoder cannot do is replaced by one it can do, with C-6's helpers, so
-that the builder (C-7), validation (C-8) and the codec rules (C-12) give the same answer
-(:func:`planned_audio`):
-
-- mixdown: :meth:`~reframe.definitions.AudioEncoderDef.snap_mixdown`. Never an upmix
-  (decision 0019 item 3: a 5.1 mixdown on a stereo source keeps the stereo; Dolby Pro Logic
-  II on two channels or fewer keeps the source layout); a layout the encoder cannot make
-  becomes its largest layout below (AC-3 and E-AC-3 make 5.1 of 7.1, MP3 stereo of 5.1);
-- bitrate: :meth:`~reframe.definitions.AudioBitrateDef.snap` (down, as HandBrake does)
-  in the table of the effective mixdown: the snapped mixdown, or
-  :func:`~reframe.definitions.channels_mixdown` of the source when its layout stays. With
-  no bitrate and no VBR quality, the table's default;
-- sample rate: :meth:`~reframe.definitions.AudioEncoderDef.snap_samplerate` of the track's
-  rate, or of the source's (a tie goes to the higher rate).
+The chain is the layout, the gain, then ``loudnorm``. The mixdown is in the chain, not ``-ac``,
+so that ``loudnorm`` measures the audio that is encoded. :func:`planned_audio` holds the snapped
+values, so the builder and validation agree.
 """
 
 from __future__ import annotations
@@ -81,8 +45,8 @@ __all__ = [
     "planned_audio",
 ]
 
-#: The encoder of a passthru track that the container cannot hold when the track names none
-#: (HandBrake's default fallback, ``AudioEncoderFallback: aac``).
+#: The encoder of a passthru track that the container cannot hold, when the track names none
+#: (HandBrake's default fallback).
 FALLBACK_ENCODER = "aac"
 #: Source codecs whose decoder applies dynamic range compression (``-drc_scale``).
 DRC_CODECS = frozenset({"ac3", "eac3"})
@@ -90,8 +54,7 @@ DRC_CODECS = frozenset({"ac3", "eac3"})
 
 @dataclass(frozen=True, slots=True)
 class LoudnessSpec:
-    """``loudnorm`` targets: integrated loudness (LUFS), true peak (dBTP), loudness range
-    (LU). The plan sets only the loudness (03 §Audio); TP and LRA are decision 0013."""
+    """``loudnorm`` targets: integrated loudness (LUFS), true peak (dBTP), loudness range (LU)."""
 
     integrated: float
     true_peak: float
@@ -109,7 +72,7 @@ LOUDNESS: dict[LoudnessTarget, LoudnessSpec] = {
     "streaming": LoudnessSpec(integrated=-16, true_peak=-1, lra=20),
 }
 
-#: The keys of ``loudnorm``'s JSON block that the second pass needs (option ← key).
+#: The second pass's ``loudnorm`` options, as (option, key in the first pass's JSON block).
 _MEASURED = (
     ("measured_I", "input_i"),
     ("measured_TP", "input_tp"),
@@ -118,9 +81,8 @@ _MEASURED = (
     ("offset", "target_offset"),
 )
 
-#: The channels of FFmpeg's named layouts up to eight channels (``ffmpeg -layouts``,
-#: n9.0.2; the most any encoder of the definitions takes). A layout without a name reads
-#: ``N channels (A+B+…)``: :func:`layout_channels`.
+#: The channels of FFmpeg's named layouts (``ffmpeg -layouts``). A layout without a name is read
+#: by :func:`layout_channels`.
 LAYOUT_CHANNELS: dict[str, tuple[str, ...]] = {
     "mono": ("FC",),
     "stereo": ("FL", "FR"),
@@ -156,12 +118,8 @@ LAYOUT_CHANNELS: dict[str, tuple[str, ...]] = {
     "downmix": ("DL", "DR"),
 }
 
-#: Encoders that refuse every layout but these, largest last. FFmpeg lists no layouts for
-#: them (``ffmpeg -h encoder=libopus``), so it does not convert a layout for them by itself:
-#: libopus takes only the Vorbis channel orders of mapping family -1 and fails on any other
-#: ("Invalid channel layout 5.0(side) for specified mapping family -1", exit 234). The other
-#: encoders take every layout (aac, flac), or FFmpeg converts it to one they list (ac3,
-#: eac3, libmp3lame). Checked with both n9.0.2 builds (testdata/README.md).
+#: Encoders that refuse every layout but these, largest last. FFmpeg lists no layouts for them,
+#: so it does not convert one for them: libopus fails on any other (mapping family -1).
 ENCODER_LAYOUTS: dict[str, tuple[str, ...]] = {
     "libopus": ("mono", "stereo", "3.0", "quad", "5.0", "5.1", "6.1", "7.1"),
 }
@@ -171,8 +129,8 @@ _UNNAMED_LAYOUT = re.compile(r"\d+ channels \(([A-Za-z0-9]+(?:\+[A-Za-z0-9]+)*)\
 
 
 def layout_channels(layout: str | None) -> tuple[str, ...] | None:
-    """The channels of an ffprobe ``channel_layout`` (``5.1(side)``, ``3 channels
-    (FL+FR+LFE)``); ``None`` when not known."""
+    """The channels of an ffprobe ``channel_layout``: named, or ``N channels (A+B+…)``; ``None``
+    when not known."""
     if layout is None:
         return None
     named = LAYOUT_CHANNELS.get(layout)
@@ -183,8 +141,8 @@ def layout_channels(layout: str | None) -> tuple[str, ...] | None:
 
 
 def _side_to_back(channels: tuple[str, ...]) -> frozenset[str] | None:
-    """The channels with the side pair renamed to the back pair (``5.1(side)`` → ``5.1``),
-    when the layout has a side pair and no back pair; else ``None``."""
+    """The channels with the side pair renamed to the back pair, or ``None`` unless the layout
+    has a side pair and no back pair."""
     have = set(channels)
     if not {"SL", "SR"} <= have or have & {"BL", "BR"}:
         return None
@@ -194,14 +152,14 @@ def _side_to_back(channels: tuple[str, ...]) -> frozenset[str] | None:
 def _kept_layout(
     stream: AudioStream, encoder: AudioEncoderDef, table: Mixdown, defs: Definitions
 ) -> str | None:
-    """The ``out_chlayout`` written when the source layout stays (no mixdown), or ``None``.
+    """The ``out_chlayout`` for a source layout that stays (no mixdown), or ``None`` to leave
+    it to FFmpeg.
 
-    - An encoder of :data:`ENCODER_LAYOUTS` gets a layout it accepts: the source's, else the
-      side → back relabel of it (lossless: the same PCM), else the largest accepted layout
-      made of the source's channels (a downmix: ``2.1`` → ``stereo``, ``6.0`` → ``5.0``).
-    - Any other encoder gets the source layout. Only ``5.1(side)`` and the like are relabelled
-      to the layout of the bitrate table (``5.1``), which is lossless; ``6.0`` or
-      ``7.1(wide)`` are not remixed to ``5.1`` / ``7.1``.
+    An encoder in :data:`ENCODER_LAYOUTS` keeps the source layout when it accepts it. Else it
+    gets the side → back relabel when that is accepted, or else the largest accepted layout of
+    the source's channels (a downmix). Any other encoder gets the source's layout, relabelled
+    to the bitrate table's layout only when that is lossless: a 6.0 or 7.1(wide) source is not
+    remixed to 5.1 or 7.1.
     """
     channels = layout_channels(stream.channel_layout)
     if channels is None:
@@ -231,9 +189,7 @@ class PlannedAudio:
     """What the builder writes for one output audio track (:func:`planned_audio`).
 
     A copy has only ``copy = True``. An encoded track has its encoder and the snapped values
-    (decision 0024 item 4) that go into its arguments: ``mixdown`` → the ``aresample`` layout
-    of ``-filter:a:N``, ``bitrate`` → ``-b:a:N``, ``quality`` → the VBR option (``-q:a:N``),
-    ``samplerate`` → ``-ar:a:N``.
+    that go into its arguments.
     """
 
     copy: bool
@@ -246,11 +202,10 @@ class PlannedAudio:
     """The snapped mixdown (:meth:`~reframe.definitions.AudioEncoderDef.snap_mixdown`);
     ``None`` = the source layout stays (see :attr:`layout`)."""
     layout: str | None = None
-    """The ``out_chlayout`` of the ``aresample`` in ``-filter:a:N`` (with
-    ``matrix_encoding=dplii`` for Dolby Pro Logic II); ``None`` = the encoder gets the source
-    layout. With a mixdown, its layout (unless the source has it already); without one, a
-    lossless relabel (``5.1(side)`` → ``5.1``) or, for libopus, the layout it accepts
-    (:data:`ENCODER_LAYOUTS`: ``2.1`` → ``stereo``)."""
+    """The ``out_chlayout`` of the ``aresample`` in ``-filter:a:N``; ``None`` = the encoder gets
+    the source layout. With a mixdown, that is its layout unless the source has it already.
+    Without one, a lossless relabel or, for an encoder of :data:`ENCODER_LAYOUTS`, a layout
+    it accepts."""
     bitrate_mixdown: Mixdown | None = None
     """The bitrate table the track uses: ``mixdown``, else
     :func:`~reframe.definitions.channels_mixdown` of the output channels (the source's, or
@@ -276,14 +231,15 @@ def _container(container: ContainerDef | Container, defs: Definitions) -> Contai
 def _bitrate(
     track: AudioOutputTrack, encoder: AudioEncoderDef, table: Mixdown
 ) -> tuple[int | None, float | None]:
-    """``(bitrate, quality)`` of an encoded track (decision 0013 §4, snapped by 0024)."""
+    """``(bitrate, quality)`` of an encoded track: a set bitrate, else a VBR quality, else the
+    table's default."""
     rates = encoder.bitrate
     if rates is None:
         return None, None  # lossless (FLAC)
     if track.bitrate is not None:
         snapped = rates.snap(track.bitrate, table)
-        # ``None``: the encoder has no table for this layout (no defined encoder; the
-        # linter checks that every mixdown has one): FFmpeg gets the value as it is.
+        # ``None``: the encoder has no table for this layout. The linter checks that every
+        # mixdown has one; FFmpeg gets the value as it is.
         return (snapped if snapped is not None else track.bitrate), None
     if track.quality is not None and encoder.quality is not None:
         return None, track.quality
@@ -386,7 +342,6 @@ def _loudnorm_template(measurement: str, loudness: LoudnessSpec) -> list[str | V
 
 
 def _layout_filter(planned: PlannedAudio, definitions: Definitions) -> str | None:
-    """``aresample=[matrix_encoding=dplii:]out_chlayout=…`` for :attr:`PlannedAudio.layout`."""
     if planned.layout is None:
         return None
     mixdown = definitions.mixdowns[planned.mixdown] if planned.mixdown is not None else None
