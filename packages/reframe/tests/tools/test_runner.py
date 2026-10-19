@@ -206,9 +206,14 @@ async def test_cancel_from_another_thread_reacts_quickly(fake_tools: ft.FakeTool
     _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.stdout("ready\n"), ft.hang()]))
     token = CancelToken()
     cancelled_at: list[float] = []
+    returned = threading.Event()
 
     def cancel_later() -> None:
+        deadline = time.monotonic() + 30.0
         while not fake_tools.pids():
+            if returned.is_set() or time.monotonic() > deadline:
+                token.cancel()  # never started: let run() return, the assert below fails
+                return
             time.sleep(0.01)
         time.sleep(0.2)
         cancelled_at.append(time.monotonic())
@@ -216,9 +221,13 @@ async def test_cancel_from_another_thread_reacts_quickly(fake_tools: ft.FakeTool
 
     thread = threading.Thread(target=cancel_later)
     thread.start()
-    result = await run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token)
-    returned_at = time.monotonic()
-    thread.join()
+    try:
+        result = await run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token)
+        returned_at = time.monotonic()
+    finally:
+        returned.set()
+        thread.join()
+    assert cancelled_at, f"the fake ffmpeg never started: {result.error or result.stderr_text}"
     assert result.cancelled
     latency = returned_at - cancelled_at[0]
     # The token wakes the loop at once; the rest is the kill and the reap.
