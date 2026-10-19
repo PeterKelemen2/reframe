@@ -85,7 +85,7 @@ async def test_4k_hdr_frame_budget(tmp_path: Path, fixture_media: Callable[[str]
         await app.close()
     load = busy()
     print(
-        f"\nQ-3 4K HDR frame ({notes[0] if notes else 'no note'}; {load}):\n"
+        f"\nPreview benchmark, 4K HDR frame ({notes[0] if notes else 'no note'}; {load}):\n"
         f"  cold   max {max(cold) * 1000:.0f} ms, mean {sum(cold) / len(cold) * 1000:.0f} ms "
         f"(budget {COLD * 1000:.0f} ms): {', '.join(f'{t * 1000:.0f}' for t in cold)}\n"
         f"  cold, the slower try: {', '.join(f'{t * 1000:.0f}' for t in slower)}\n"
