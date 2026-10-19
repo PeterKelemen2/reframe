@@ -1,5 +1,4 @@
-"""Helpers of the C-10 picture tests: a :class:`MediaTaskContext` with the real FFmpeg and a
-fixed capability snapshot, recorded probes, jobs, PNG pixels, and FFmpeg processes."""
+"""Helpers of the picture tests: contexts with real FFmpeg, probes, jobs and FFmpeg processes."""
 
 from __future__ import annotations
 
@@ -96,7 +95,7 @@ class Tools:
 
 
 class Sources:
-    """Probes with the real ffprobe (memoised, like the facade's probe cache)."""
+    """Probes with the real ffprobe, memoised by path."""
 
     def __init__(self, ffprobe: str) -> None:
         self.prober = Prober(ffprobe, use_mediainfo=False)
@@ -151,8 +150,6 @@ class Caps:
 
 @dataclass
 class Env:
-    """A context and its parts."""
-
     ctx: MediaTaskContext
     tasks: TaskManager
     caps: Caps
@@ -195,8 +192,7 @@ def make_env(
 
 
 def job_for(path: Path, *, container: str = "mkv", **video: Any) -> JobSettings:
-    """A job of ``path`` without audio and subtitles; ``video`` are VideoSettings fields
-    (default: libx264 8-bit, ultrafast)."""
+    """A job of ``path`` without audio and subtitles; ``video`` are VideoSettings fields."""
     settings: dict[str, Any] = {
         "encoder": "libx264",
         "bit_depth": 8,

@@ -1,5 +1,4 @@
-"""How a preview frame is made (C-10): the source and output chains, the agreement of the output
-graph with C-7's builder, and the FFmpeg command of one timestamp. Pure."""
+"""The frame recipes of the preview: its output graph is the command builder's filter. Pure."""
 
 from __future__ import annotations
 
@@ -61,9 +60,6 @@ def stream(**kwargs: object) -> VideoStream:
 TAGGED = ColorInfo(primaries="bt709", transfer="bt709", matrix="bt709")
 
 
-# --------------------------------------------------------------------------- source frames
-
-
 def test_a_tagged_sdr_source_is_only_converted_to_rgb() -> None:
     recipe = source_recipe(stream(color=TAGGED), caps(), DEFS)
     assert recipe == FrameRecipe(kind="source", chain=list(DISPLAY_TAIL))
@@ -102,7 +98,7 @@ def test_an_untagged_hlg_source() -> None:
     recipe = source_recipe(video, caps(), DEFS)
     setparams = "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc"
     assert recipe.prefix == [setparams]
-    assert recipe.chain[0] == setparams  # zscale's own tagging, as in C-7's graph
+    assert recipe.chain[0] == setparams  # zscale's own tagging
     assert "HLG, Dolby Vision" in recipe.notes[0]
 
 
@@ -142,8 +138,6 @@ def test_no_tone_mapper_in_the_build() -> None:
         "FFmpeg build has neither zscale nor a working libplacebo, like the source frames."
     ]
 
-
-# --------------------------------------------------------------------------- output frames
 
 AGREEMENT: list[tuple[str, dict[str, Any]]] = [
     ("letterbox.mkv", {}),
@@ -193,7 +187,7 @@ AGREEMENT_CASES = [(name, fields, False) for name, fields in AGREEMENT] + [
 def test_the_output_graph_is_the_builders(
     name: str, fields: dict[str, Any], libplacebo: bool
 ) -> None:
-    """The preview's output graph is C-7's video filter, up to the format stage."""
+    """The preview's output graph is the command builder's video filter, up to the format stage."""
     source = recorded(name)
     j = job(source, **fields)
     graph = job_video_graph(j, source, caps(libplacebo=libplacebo), DEFS)
@@ -291,9 +285,6 @@ def test_an_unusable_filter_fails() -> None:
         output_recipe(
             job(source, filters={"denoise": {"implementation": "nlmeans"}}), source, snapshot, DEFS
         )
-
-
-# --------------------------------------------------------------------------- the command
 
 
 def test_one_kind_needs_no_split() -> None:

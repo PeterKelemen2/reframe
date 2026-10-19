@@ -1,5 +1,4 @@
-"""The ``frames`` task with the real FFmpeg (C-10): sample frames, the cache, fast seek, output
-frames of a job, HDR for display, colour, rotation, missing pictures."""
+"""The ``frames`` task with the real FFmpeg: source and output frames, and the cache."""
 
 from __future__ import annotations
 
@@ -48,9 +47,6 @@ async def frames_of(env_cache: Path, path: Path, **kwargs: object) -> tuple[obje
     assert done.state is TaskState.DONE, done.error
     assert isinstance(value, FrameSet)
     return done, value
-
-
-# --------------------------------------------------------------------------- source frames
 
 
 async def test_sample_frames_and_the_cache(tmp_path: Path, fixture_media: Media) -> None:
@@ -109,8 +105,6 @@ async def test_the_default_count_comes_from_the_settings(
 async def test_fast_seek_gives_the_frame_of_a_slow_seek(
     tmp_path: Path, fixture_media: Media
 ) -> None:
-    """``-ss`` before ``-i`` decodes from the keyframe before T and starts at the first frame
-    at or after T: the same picture as decoding everything (``-ss`` after ``-i``)."""
     src = fixture_media("letterbox")
     _, fs = await frames_of(tmp_path / "cache", src, timestamps=[0.2, 1.52, 2.0, 3.96])
     env = make_env(tmp_path / "other")
@@ -223,9 +217,6 @@ async def test_the_cache_keeps_its_size_limit(tmp_path: Path, fixture_media: Med
     assert all(f.path.exists() for f in fs.frames)  # the task's own results stay
 
 
-# --------------------------------------------------------------------------- output frames
-
-
 async def test_output_frames_follow_the_job(tmp_path: Path, fixture_media: Media) -> None:
     src = fixture_media("letterbox")
     _, plain = await frames_of(tmp_path / "cache", src, count=2)
@@ -289,9 +280,6 @@ async def test_a_job_of_another_file(tmp_path: Path, fixture_media: Media) -> No
     assert done.error.endswith("The job is for another file (anamorphic.mkv).")
 
 
-# --------------------------------------------------------------------------- picture
-
-
 async def test_an_anamorphic_frame_keeps_the_source_pixels(
     tmp_path: Path, fixture_media: Media
 ) -> None:
@@ -328,9 +316,7 @@ async def test_hdr_frames_with_libplacebo(tmp_path: Path, fixture_media: Media) 
 
 
 async def test_an_untagged_hd_source_is_shown_with_bt709(tmp_path: Path) -> None:
-    """FFmpeg converts an untagged frame to RGB with BT.601; a player (and C-7's graph)
-    assumes BT.709 for HD, so the frames are tagged first, and converted by an explicit
-    ``scale`` after the tagging."""
+    """A player assumes BT.709 for HD, so the frames are tagged first."""
     src = tmp_path / "untagged.mkv"
     run_ffmpeg(
         "-f", "lavfi", "-i", "color=c=0x3080C0:size=1280x720:duration=1:rate=25",
@@ -350,7 +336,6 @@ async def test_an_untagged_hd_source_is_shown_with_bt709(tmp_path: Path) -> None
     assert ours == as709
     assert ours != as601
     assert pixel("untagged", f"scale={flags},format=rgb24") == as601
-    # FFmpeg n9.0.2: after an input seek, the automatic conversion comes before setparams.
     tagged_late = "setparams=colorspace=bt709,format=rgb24"
     assert pixel("seek", tagged_late, "-ss", "0.5") != pixel("noseek", tagged_late)
 
@@ -367,8 +352,6 @@ def rotated(tmp_path: Path, fixture_media: Media) -> Path:
 
 
 async def test_a_display_matrix_is_applied(tmp_path: Path, rotated: Path) -> None:
-    """Decision 0009: frames (and crop detection) see the picture with the display matrix
-    applied by FFmpeg's automatic rotation."""
     _, fs = await frames_of(tmp_path / "cache", rotated, count=1)
     assert [(f.width, f.height) for f in fs.frames] == [(180, 320)]
 
@@ -385,7 +368,6 @@ async def test_a_source_in_a_folder_with_special_characters(
 
 
 async def test_clear_the_cache(tmp_path: Path, fixture_media: Media) -> None:
-    """Settings → Preview: the cache size and Clear cache."""
     env = make_env(tmp_path / "cache")
     done, fs = await env.finish(
         start_frames(env.ctx, fixture_media("letterbox"), count=2, timestamps=None, job=None)

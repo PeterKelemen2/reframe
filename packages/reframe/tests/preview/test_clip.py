@@ -1,5 +1,4 @@
-"""The ``preview_clip`` task with the real FFmpeg (C-10, 03 §Preview → Live preview clip): the
-job's full plan on a range, into the cache; the encoded frame compare."""
+"""The ``preview_clip`` task with the real FFmpeg: a job's full plan on a range, into the cache."""
 
 from __future__ import annotations
 
@@ -73,9 +72,6 @@ def no_leftovers(clips: Path) -> list[str]:
     return sorted(p.name for p in clips.iterdir() if ".part" in p.name or p.name.startswith("."))
 
 
-# --------------------------------------------------------------------------- the clip
-
-
 async def test_a_clip_with_the_jobs_plan(tmp_path: Path, fixture_media: Media) -> None:
     src = fixture_media("letterbox")
     env = make_env(tmp_path / "cache")
@@ -122,8 +118,8 @@ async def test_the_same_request_gives_the_cached_clip(
 async def test_the_encoded_frames_are_the_output_frames(
     tmp_path: Path, fixture_media: Media
 ) -> None:
-    """03 §Preview, encoded frame compare: frames from the clip. With a lossless encode, the
-    clip's frame at t is exactly the output frame of the job at start + t."""
+    """With a lossless encode, the clip's frame at t is exactly the output frame of the job at
+    start + t."""
     src = fixture_media("letterbox")
     env = make_env(tmp_path / "cache")
     job = lossless(src)
@@ -221,9 +217,6 @@ async def test_loudness_and_languages(tmp_path: Path, fixture_media: Media) -> N
     assert streams[1]["tags"]["language"] == "por"
 
 
-# --------------------------------------------------------------------------- failures
-
-
 @pytest.mark.parametrize(
     ("start", "seconds", "error"),
     [
@@ -259,8 +252,6 @@ async def test_a_job_with_errors(tmp_path: Path, fixture_media: Media) -> None:
 async def test_an_encode_that_fails(
     tmp_path: Path, fixture_media: Media, fake_tools: ft.FakeTools
 ) -> None:
-    """The encode fails at run time: the task fails with FFmpeg's reason and leaves nothing
-    behind (the partial output is written first, then FFmpeg fails)."""
     fake_tools.set_scenario(
         ft.Scenario(
             [
@@ -291,8 +282,8 @@ async def test_an_encode_that_fails(
 async def test_validation_waits_for_an_encoder_being_checked(
     tmp_path: Path, fixture_media: Media
 ) -> None:
-    """Like the queue: an ``encoder.checking`` issue waits for the detection, then validates
-    again with its result."""
+    """An ``encoder.checking`` issue waits for the detection, then validates again with its
+    result."""
     checking = caps()
     checking.encoders["libx264"] = EncoderStatus(id="libx264", state=EncoderState.CHECKING)
     env = make_env(tmp_path / "cache", snapshot=checking)

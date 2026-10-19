@@ -1,4 +1,4 @@
-"""Shared helpers of the preview tasks (C-10) and the ``cropdetect`` log parser. Pure."""
+"""Shared helpers of the preview tasks and the ``cropdetect`` log parser. Pure."""
 
 from __future__ import annotations
 
@@ -23,8 +23,6 @@ from reframe.preview.crop import parse_cropdetect
 from reframe.tools import RunResult
 
 from .helpers import recorded
-
-# --------------------------------------------------------------------------- timestamps
 
 
 def source_of(duration: float | None, video_duration: float | None = None) -> MediaSource:
@@ -86,9 +84,6 @@ def test_an_unknown_duration_needs_timestamps() -> None:
         sample_times(src, src.video[0], count=10)
 
 
-# --------------------------------------------------------------------------- tools and runs
-
-
 def test_tool_identity() -> None:
     info = ToolInfo(
         name="ffmpeg",
@@ -133,9 +128,6 @@ def test_failure_text_of_given_lines() -> None:
     )
 
 
-# --------------------------------------------------------------------------- PNG and sizes
-
-
 def png(width: int, height: int) -> bytes:
     def chunk(kind: bytes, data: bytes) -> bytes:
         body = kind + data
@@ -167,9 +159,6 @@ def test_displayed_size_follows_the_display_matrix() -> None:
     assert displayed_size(video.model_copy(update={"rotation": 270})) == (1080, 1920)
 
 
-# --------------------------------------------------------------------------- cropdetect
-
-
 def line(crop: str, n: int = 0) -> str:
     return (
         f"[Parsed_cropdetect_0 @ 0x7f8758003440] x1:0 x2:319 y1:22 y2:155 w:320 h:134 x:0 "
@@ -178,8 +167,8 @@ def line(crop: str, n: int = 0) -> str:
 
 
 def test_parse_the_first_result() -> None:
-    """The real log lines of ``letterbox.mkv`` (FFmpeg n9.0.2): one frame through the filter
-    can print two lines; the first is the sample frame."""
+    """The real log lines of ``letterbox.mkv``: one frame through the filter can print two
+    lines; the first is the sample frame."""
     log = "\n".join(["Input #0, matroska", line("320:134:0:22"), line("320:180:0:0", 40)])
     assert parse_cropdetect(log, 320, 180) == (True, CropRect(top=22, bottom=24))
 

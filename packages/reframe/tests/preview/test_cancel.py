@@ -1,6 +1,4 @@
-"""Cancelling a preview task stops its FFmpeg process within 1 s (05 §C-10 "Done when"), with
-a real FFmpeg on work that runs long enough: a 4K output frame through a slow denoiser, crop
-detection on many 4K HDR samples, a 4K x265 preview clip."""
+"""Cancelling a preview task stops its FFmpeg process within 1 s, on work that runs long enough."""
 
 from __future__ import annotations
 
@@ -20,7 +18,6 @@ from .helpers import Env, ffmpeg_children, job_for, make_env
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg, pytest.mark.slow]
 
 Media = Callable[[str], Path]
-#: 05 §C-10: "cancelling a scan stops its FFmpeg process within 1 s".
 LIMIT = 1.0
 
 

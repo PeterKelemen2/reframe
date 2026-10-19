@@ -1,11 +1,4 @@
-"""Fixes of the core-complete review (R3) for the C-10 picture tasks, with the real FFmpeg.
-
-- R3-3: the clip id covers the plan's files (the FFMETADATA chapter file holds the names).
-- R3-4: an output chain that fails when FFmpeg runs it keeps the source frames (0033 §2, §4).
-- R3-6: a timestamp that a frame key cannot hold fails the task with a message.
-- R3-7: two runs of the same clip at once each write their own temporary files.
-- R3-8: the ``cropdetect`` rounding example of ``testdata/README.md``.
-"""
+"""Regression tests of the picture tasks, with the real FFmpeg."""
 
 from __future__ import annotations
 
@@ -54,9 +47,6 @@ def leftovers(clips: Path) -> list[str]:
     return sorted(p.name for p in clips.iterdir() if ".part" in p.name or p.name.startswith("."))
 
 
-# --------------------------------------------------------------------------- R3-3
-
-
 @pytest.mark.needs_ffmpeg
 async def test_renamed_chapters_give_a_new_clip(tmp_path: Path, fixture_media: Media) -> None:
     src = fixture_media("chapters")
@@ -74,15 +64,11 @@ async def test_renamed_chapters_give_a_new_clip(tmp_path: Path, fixture_media: M
     assert (again.id, again.path) == (first.id, first.path)
 
 
-# --------------------------------------------------------------------------- R3-4
-
-
 @pytest.mark.needs_ffmpeg
 async def test_a_bad_custom_filter_keeps_the_source_frames(
     tmp_path: Path, fixture_media: Media
 ) -> None:
-    """0033 §4: the output frames that cannot be made are left out with a note, the source
-    frames are still made. Here the plan accepts the chain and FFmpeg refuses it when it runs
+    """Here the plan accepts the chain and FFmpeg refuses it when it runs
     (``eq=gamma=nonsense``)."""
     src = fixture_media("letterbox")
     env = make_env(tmp_path / "cache")
@@ -104,9 +90,6 @@ async def test_a_bad_custom_filter_keeps_the_source_frames(
     assert sorted(p.name for p in (tmp_path / "cache" / "frames").iterdir()) == sorted(
         f.path.name for f in value.frames
     )  # no temporary file is left
-
-
-# --------------------------------------------------------------------------- R3-6
 
 
 @pytest.mark.parametrize("value", [1e9, 1e10, 1e308, 999_999_999.9996])
@@ -134,9 +117,6 @@ async def test_a_time_far_after_the_end(tmp_path: Path, fixture_media: Media) ->
     assert done.error == (
         "1e+10 is not a time in letterbox.mkv (frames can be taken up to 999999999.999 s)."
     )
-
-
-# --------------------------------------------------------------------------- R3-7
 
 
 @pytest.mark.needs_ffmpeg
@@ -188,9 +168,6 @@ async def test_a_clip_made_meanwhile_by_another_run(
     assert leftovers(tmp_path / "cache" / "clips") == []
 
 
-# --------------------------------------------------------------------------- R3-8
-
-
 def _cropdetect(chain: str, size: str, round_to: int) -> str:
     """The first ``cropdetect`` line of FFmpeg's log (with its ``[Parsed_cropdetect_0 @ …]``
     prefix)."""
@@ -206,8 +183,6 @@ def _cropdetect(chain: str, size: str, round_to: int) -> str:
 
 @pytest.mark.needs_ffmpeg
 def test_cropdetect_rounding_example() -> None:
-    """``testdata/README.md``: a 300x150 picture at 9,13 in 320x181. ``drawbox`` puts it there;
-    ``pad`` on 4:2:0 puts it at 8,12 (the chroma grid)."""
     box = "drawbox=x=9:y=13:w=300:h=150:color=white:t=fill"
     at_9_13 = _cropdetect(box, "320x181", 2)
     assert "] x1:9 x2:308 y1:13 y2:162 w:298 h:148 x:10 y:14 " in at_9_13
