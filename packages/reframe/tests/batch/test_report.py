@@ -1,4 +1,4 @@
-"""C-12 M7: the match report as text (04 §Resolving rules, §Resolution matrix)."""
+"""The batch match report as text."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""C-12 M7: per-file overrides as JSON patches (04 §Per-file overrides)."""
+"""Per-file overrides as JSON patches, split and applied to a template or a job."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def test_a_template_override() -> None:
     assert issues == []
     assert patched.video.encoder == "libx264"
     assert patched.subtitle_rules[0].selector.stream == 4
-    assert template().video.encoder == "libx265"  # the input is not changed
+    assert template().video.encoder == "libx265"
 
 
 def test_an_operation_whose_path_vanished_is_skipped() -> None:

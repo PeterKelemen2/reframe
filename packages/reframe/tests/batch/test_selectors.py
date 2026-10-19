@@ -1,5 +1,4 @@
-"""C-12 M7: track selectors, the relaxation order and every result row (04 §Track rules,
-§Resolving rules in another file)."""
+"""Track selectors, the relaxation order and the result rows of rule matching."""
 
 from __future__ import annotations
 
@@ -38,8 +37,6 @@ def subtitle(index: int, **kw: Any) -> SubtitleStream:
     return SubtitleStream.model_validate({"index": index, "codec": "ass", "language": "eng", **kw})
 
 
-#: A source's audio: jpn TrueHD 5.1, eng DTS-HD MA 5.1 "English Dub", eng AC-3 2.0
-#: "Commentary" (comment), eng AC-3 5.1, hun AAC 2.0 (no title), und AC-3 2.0.
 STREAMS = [
     audio(1, codec="truehd", language="jpn", title="Japanese", display_codec="TrueHD Atmos",
           profile="Dolby TrueHD + Dolby Atmos", lossless=True),
@@ -96,7 +93,7 @@ def test_sorting() -> None:
     english = {"languages": ["en"], "exclude_roles": [TrackRole.COMMENTARY]}
     assert picked(sel(**english)) == [2, 4]
     assert picked(sel(**english, sort="most_channels", channels=None)) == [2, 4]
-    # Highest bit rate = decision 0031's best quality: lossless first.
+    # The highest bit rate is the best quality: lossless first.
     assert picked(sel(languages=["en"], sort="highest_bitrate")) == [2, 4, 3]
     two = describe_kind([audio(1, channels=2), audio(2, channels=6), audio(3, channels=8)])
     assert picked(sel(sort="most_channels"), two) == [3, 2, 1]
@@ -107,7 +104,7 @@ def test_sorting() -> None:
             audio(3, bitrate={"value": 640_000, "source": "stream"}),
         ]
     )
-    # An unknown bit rate comes after every known one (0031).
+    # An unknown bit rate comes after every known one.
     assert picked(sel(sort="highest_bitrate"), rates) == [3, 2, 1]
 
 
@@ -130,12 +127,9 @@ def test_a_bad_title_pattern() -> None:
     assert not selector_matches(sel(title_pattern="x"), TRACKS[0], None)
 
 
-# --------------------------------------------------------------------------- relaxation
-
-
 def test_the_relaxation_order() -> None:
-    """04: drop title, then profiles (DTS-HD MA → any DTS), then channels, then codecs; never
-    the language or the role."""
+    """Drop the title, then the profiles (DTS-HD MA → any DTS), then channels, then codecs;
+    never the language or the role."""
     assert RELAX_ORDER == ("title_pattern", "profiles", "channels", "codecs")
     full = sel(
         languages=["en"],
@@ -193,8 +187,8 @@ DUB = sel(
     title_pattern="^English Dub$",
 )
 
-#: Every result row of 04 §Resolving rules: (selector, multiple, required) → status, streams,
-#: relaxed fields, severity, message.
+#: Every result row: (selector, multiple, required) → status, streams, relaxed fields, severity,
+#: message.
 RESULTS = [
     ("exact", DUB, False, True, "exact", [2], [], None, ""),
     (
@@ -355,8 +349,8 @@ def test_relaxing_never_takes_a_track_another_rule_matches_exactly() -> None:
     second = sel(languages=["en"], codecs=["ac3"], channels=6, roles=[TrackRole.MAIN])
     picks, _ = run(rule(first), rule(second))
     assert picks[1].match.streams == [4]
-    # Without title and profile the first rule still finds only #4 (taken): channels go next,
-    # then #6? No: #6 is undetermined, not English. So the codec goes: #2 (DTS-HD MA).
+    # Without the title, #4 is taken: channels go next (#6 is undetermined, not English),
+    # then the codec: #2 (DTS-HD MA).
     assert picks[0].match.status == "relaxed"
     assert picks[0].match.streams == [2]
     assert picks[0].match.relaxed == ["title_pattern", "channels", "codecs"]
