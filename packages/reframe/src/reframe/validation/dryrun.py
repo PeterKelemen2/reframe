@@ -11,6 +11,7 @@ import asyncio
 import re
 import shutil
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, EncoderOption, VideoEncoderDef, load_definitions
 from reframe.definitions.custom_params import CustomParam, split_custom_params
 from reframe.definitions.search import cli_name
-from reframe.jsonpatch import format_pointer
+from reframe.jsonpatch import format_pointer, parse_pointer
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, RemoveOp, Severity, ValidationIssue
 from reframe.models.job import AverageBitrate, JobSettings
@@ -29,7 +30,7 @@ from reframe.models.tools import ToolSet, ToolStatus
 from reframe.tools import CancelToken, run
 from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.fs import has_nul
-from reframe.validation.video import video_custom_param_issues
+from reframe.validation.video import video_custom_param_issues, video_option_rule_issues
 
 __all__ = [
     "DRY_RUN_CODES",
@@ -55,6 +56,10 @@ DRY_RUN_CODES = (
     "encoder.dry_run_warning",
     "encoder.dry_run_skipped",
 )
+
+# ``+level`` tags each line with its level: x264's warnings through FFmpeg have no other mark.
+# The ``+`` keeps FFmpeg's other log flags (``level+info`` would stop folding repeated lines).
+_LOG_LEVEL = ("-loglevel", "+level+info")
 
 
 def _without(params: list[CustomParam], dropped: CustomParam) -> str:
@@ -99,7 +104,7 @@ def dry_run_argv(
     output = str(plan.output_tmp)
     if len(argv) < 3 or argv[-1] != output or argv[-3] != "-f":  # pragma: no cover
         raise PlanError("the encode step does not end with its output")
-    return [*argv[:-3], "-frames:v", "1", "-f", "null", "-"]
+    return [*_LOG_LEVEL, *argv[:-3], "-frames:v", "1", "-f", "null", "-"]
 
 
 # The log lines that name a refused parameter, per encoder (recorded in testdata/README.md).
@@ -125,6 +130,13 @@ _CONTROL_OPTIONS = {
     "TUNING": "tune",
 }
 _ADDITIONAL = "Additional information:"
+#: The level tag of ``-loglevel +level``, after the line's log contexts.
+_LEVEL_TAG = re.compile(
+    r"^(?P<contexts>(?:\[[^\]]* @ [^\]]*\] )*)"
+    r"\[(?P<level>panic|fatal|error|warning|info|verbose|debug|trace)\] "
+)
+_ERROR_LEVELS = frozenset({"error", "fatal", "panic"})
+# x265 and SVT-AV1 write these lines themselves, without FFmpeg's level tag.
 _ENCODER_WARNING = re.compile(r"^(?:x26[45] \[warning\]:|Svt\[warn\]:)\s*(?P<text>.*)$")
 _ENCODER_ERROR = re.compile(r"^(?:x26[45] \[error\]:|Svt\[error\]:)\s*(?P<text>.*)$")
 _FAILURE_WORDS = re.compile(
@@ -158,20 +170,24 @@ def control_names(control: str) -> list[str]:
 def failure_detail(stderr: str, encoder_id: str) -> str | None:
     """The line that says best why a dry run failed: the encoder library's own error, else a
     failure line the encoder logged (with libvpx's ``Additional information`` appended), else
+    the encoder's first line at the error level, else
     :func:`~reframe.capabilities.reasons.informative_line`. Without tags and addresses."""
-    lines = [raw.strip() for raw in stderr.splitlines() if raw.strip()]
-    for raw in lines:
+    lines = _log_lines(stderr)
+    for _level, raw in lines:
         match = _ENCODER_ERROR.match(raw)
         if match is not None:
             return match["text"].strip()
     tag = f"[{encoder_id} @"
-    tagged = [_strip_tag(raw) for raw in lines if raw.startswith(tag)]
+    tagged = [(level, _strip_tag(raw)) for level, raw in lines if raw.startswith(tag)]
     info = "Additional information:"
-    extra = next((t.removeprefix(info).strip() for t in tagged if t.startswith(info)), None)
-    for text in tagged:
+    extra = next((t.removeprefix(info).strip() for _, t in tagged if t.startswith(info)), None)
+    for _level, text in tagged:
         if _FAILURE_WORDS.search(text) and not text.startswith(info):
             return f"{text} ({extra})" if extra else text
-    line = informative_line(stderr, encoder_id)
+    for level, text in tagged:
+        if level in _ERROR_LEVELS and not text.startswith(info):
+            return f"{text} ({extra})" if extra else text
+    line = informative_line(_untagged(stderr), encoder_id)
     return _strip_tag(line) if line is not None else None
 
 
@@ -179,6 +195,47 @@ def _strip_tag(line: str) -> str:
     """``[libx265 @ 0x…] Unknown option: x.`` → ``Unknown option: x.``."""
     text = normalise_line(line)
     return re.sub(r"^(?:\[[^\]]+\]\s*)+", "", text).strip()
+
+
+def _untag(line: str) -> tuple[str | None, str]:
+    """``[libx264 @ 0x…] [warning] text`` → ``("warning", "[libx264 @ 0x…] text")``. The level
+    is ``None`` on a line without a tag (the second line of a message)."""
+    match = _LEVEL_TAG.match(line)
+    if match is None:
+        return None, line
+    return match["level"], match["contexts"] + line[match.end() :]
+
+
+def _log_lines(stderr: str) -> list[tuple[str | None, str]]:
+    """The non-empty lines of ``stderr`` as ``(level, line without the level tag)``."""
+    lines = (_untag(raw.strip()) for raw in stderr.splitlines())
+    return [(level, line.strip()) for level, line in lines if line.strip()]
+
+
+def _untagged(stderr: str) -> str:
+    """``stderr`` as FFmpeg writes it without ``+level`` (indented lines stay indented)."""
+    return "\n".join(_untag(raw)[1] for raw in stderr.splitlines())
+
+
+def _warning_text(level: str | None, line: str, encoder_id: str) -> str | None:
+    """The text of a warning of the encoder: x265's and SVT-AV1's own lines, or a line the
+    encoder logs through FFmpeg at the warning level (x264, libvpx, the hardware encoders)."""
+    text = _strip_tag(line)
+    own = _ENCODER_WARNING.match(text)
+    if own is not None:
+        return own["text"]
+    if level == "warning" and line.startswith(f"[{encoder_id} @"):
+        return text
+    return None
+
+
+def _covered(known: Sequence[ValidationIssue]) -> set[str]:
+    """The fields that ``known`` is about: each issue's path and the fields its fixes change."""
+    paths = {issue.path for issue in known}
+    for issue in known:
+        for one in issue.fixes:
+            paths.update(".".join(parse_pointer(op.path)) for op in one.patch)
+    return paths
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,11 +339,15 @@ def parse_dry_run(
     returncode: int | None,
     *,
     encoder: VideoEncoderDef | None = None,
+    known: Sequence[ValidationIssue] = (),
 ) -> list[ValidationIssue]:
     """The issues of a finished dry run (``stderr`` and the exit code of FFmpeg). ``encoder``
-    defaults to the job's encoder in the packaged definitions. Pure."""
+    defaults to the job's encoder in the packaged definitions. ``known``: validation's issues;
+    a warning about a field they are about (an issue's path, or a field its fix changes) is
+    left out. Pure."""
     if encoder is None:
         encoder = load_definitions().video_encoders.get(job.video.encoder)
+    encoder_id = encoder.id if encoder is not None else job.video.encoder
     who = _Attribution(job, encoder)
     issues: list[ValidationIssue] = []
     seen: set[tuple[str, str]] = set()
@@ -297,8 +358,9 @@ def parse_dry_run(
             seen.add(key)
             issues.append(issue)
 
-    lines = [raw.strip() for raw in stderr.splitlines() if raw.strip()]
-    for index, raw in enumerate(lines):
+    entries = _log_lines(stderr)
+    lines = [line for _level, line in entries]
+    for index, (level, raw) in enumerate(entries):
         text = _strip_tag(raw)
         control = _CODEC_CONTROL.search(text)
         if control is not None:
@@ -344,21 +406,20 @@ def parse_dry_run(
                 )
             break
         else:
-            warned = _ENCODER_WARNING.match(text)
+            warned = _warning_text(level, raw, encoder_id)
             if warned is not None:
-                target = who.mentioned(warned["text"])
+                target = who.mentioned(warned)
                 if target is not None:
                     add(
                         warning(
                             "encoder.dry_run_warning",
                             target.path,
-                            f"The encoder changed a setting: {warned['text']}",
+                            f"The encoder changed a setting: {warned}",
                             *target.fixes,
                         )
                     )
     failed = returncode != 0 or any(_START_FAILED.search(line) for line in lines)
     if failed and not any(i.severity is Severity.ERROR for i in issues):
-        encoder_id = encoder.id if encoder is not None else job.video.encoder
         detail = failure_detail(stderr, encoder_id) or f"exit code {returncode}"
         target = who.mentioned(detail)
         if target is not None:
@@ -378,9 +439,10 @@ def parse_dry_run(
                     f"The test encode of one frame failed: {detail}",
                 )
             )
-    # A warning about a field that already has an error says nothing new.
-    failed_paths = {i.path for i in issues if i.severity is Severity.ERROR}
-    return [i for i in issues if i.severity is Severity.ERROR or i.path not in failed_paths]
+    # A warning about a field that already has an error, or that validation reports, says
+    # nothing new.
+    quiet = {i.path for i in issues if i.severity is Severity.ERROR} | _covered(known)
+    return [i for i in issues if i.severity is Severity.ERROR or i.path not in quiet]
 
 
 async def dry_run(
@@ -395,7 +457,8 @@ async def dry_run(
 ) -> list[ValidationIssue]:
     """Encode one frame with the job's video settings, and turn what FFmpeg refuses into
     ``error`` issues at the path of the field (``video.custom_params``, ``video.advanced.<key>``).
-    The caller validates first; a job with errors is not dry-run. A passthrough job and a
+    The caller validates first; a job with errors is not dry-run. An encoder warning about a
+    field that validation's option rules already report is left out. A passthrough job and a
     cancelled run give ``[]``.
 
     Custom parameters that name a file, or that FFmpeg would read as its own options, are
@@ -477,4 +540,5 @@ async def dry_run(
             )
         ]
     encoder = defs.video_encoders.get(job.video.encoder)
-    return parse_dry_run(job, result.stderr_text, result.returncode, encoder=encoder)
+    known = video_option_rule_issues(job.video, caps, defs)
+    return parse_dry_run(job, result.stderr_text, result.returncode, encoder=encoder, known=known)

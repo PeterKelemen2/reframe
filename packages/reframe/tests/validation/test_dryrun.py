@@ -10,6 +10,7 @@ from types import ModuleType
 
 import pytest
 
+from reframe.definitions import load_definitions
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AverageBitrate,
@@ -33,6 +34,7 @@ from reframe.validation.dryrun import (
     parse_dry_run,
     split_custom_params,
 )
+from reframe.validation.video import video_option_rule_issues
 
 pytestmark = pytest.mark.anyio
 
@@ -139,6 +141,117 @@ def test_an_encoder_warning_that_names_a_parameter() -> None:
     assert parse_dry_run(_job(custom_params="ref=3"), stderr, 0) == []
 
 
+X264_VBV = (
+    "[info] Stream mapping:\n"
+    "[info]   Stream #0:0 -> #0:0 (h264 (native) -> h264 (libx264))\n"
+    "[libx264 @ 0x55ac74c24880] [warning] VBV maxrate specified, but no bufsize, ignored\n"
+    "[libx264 @ 0x55ac74c24880] [info] using SAR=1/1\n"
+    "[libx264 @ 0x55ac74c24880] [info] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX\n"
+    "[libx264 @ 0x55ac74c24880] [info] profile High 10, level 1.2, 4:2:0, 10-bit\n"
+)
+
+
+def test_an_x264_warning_is_told_by_its_level_tag() -> None:
+    job = _job(encoder="libx264", custom_params="ref=3:vbv-maxrate=1000")
+    issues = parse_dry_run(job, X264_VBV, 0)
+    assert _codes(issues) == [("encoder.dry_run_warning", "video.custom_params", Severity.WARNING)]
+    assert issues[0].message.endswith("VBV maxrate specified, but no bufsize, ignored")
+    assert [f.label for f in issues[0].fixes] == [
+        "Remove vbv-maxrate=1000 from the custom parameters"
+    ]
+    # An info line that names a parameter ("level 1.2") is not a warning.
+    assert parse_dry_run(_job(encoder="libx264", custom_params="level=1.2"), X264_VBV, 0) == []
+
+
+def test_only_the_encoders_own_warnings_count() -> None:
+    stderr = (
+        "[swscaler @ 0x5] [warning] deprecated pixel format used, make sure you did set range "
+        "correctly\n"
+        "[vost#0:0/libx265 @ 0x6] [enc:libx265 @ 0x7] [warning] range is odd\n"
+    )
+    assert parse_dry_run(_job(custom_params="range=full"), stderr, 0) == []
+
+
+def test_a_hardware_encoders_warning_that_names_a_parameter() -> None:
+    stderr = "[av1_vaapi @ 0x55899a836640] [warning] Invalid tile groups number 3, correct to 1.\n"
+    issues = parse_dry_run(_job(encoder="av1_vaapi", custom_params="tile_groups=3"), stderr, 0)
+    assert _codes(issues) == [("encoder.dry_run_warning", "video.custom_params", Severity.WARNING)]
+    assert issues[0].message.endswith("Invalid tile groups number 3, correct to 1.")
+
+
+#: A filter that fails before the encoder opens, as FFmpeg logs it with ``-loglevel +level``.
+SCALE_FAILED = (
+    "[info] Input #0, matroska,webm, from '/media/in.mkv':\n"
+    "[info]   Duration: 00:00:04.02, start: 0.000000, bitrate: 753 kb/s\n"
+    "[info]   Stream #0:0: Video: h264 (Constrained Baseline), yuv420p(tv, progressive), 320x180\n"
+    "[Parsed_scale_0 @ 0x558ba7a97940] [Eval @ 0x7fff4aea37c0] [error] Undefined constant or "
+    "missing '(' in 'abc'\n"
+    "[Parsed_scale_0 @ 0x558ba7a97940] [error] Cannot parse expression for width: 'abc'\n"
+    "[AVFilterGraph @ 0x558ba7a91140] [error] Error initializing filters\n"
+    "[error] Error opening output file -.\n"
+    "[fatal] Error opening output files: Invalid argument\n"
+)
+
+
+def test_level_tags_do_not_change_what_a_failure_says() -> None:
+    issues = parse_dry_run(_job(), SCALE_FAILED, 234)
+    assert _codes(issues) == [("encoder.dry_run_failed", "video.encoder", Severity.ERROR)]
+    assert issues[0].message == (
+        "The test encode of one frame failed: Undefined constant or missing '(' in 'abc'"
+    )
+    untagged = SCALE_FAILED.replace("[info] ", "").replace("[error] ", "").replace("[fatal] ", "")
+    assert parse_dry_run(_job(), untagged, 234) == issues
+
+
+VP9_NO_BITRATE = (
+    "[libvpx-vp9 @ 0x557fedcf0980] [info] v1.17.0\n"
+    "[libvpx-vp9 @ 0x557fedcf0980] [error] Rate control parameters set without a bitrate\n"
+    "[vost#0:0/libvpx-vp9 @ 0x557fedcd3040] [enc:libvpx-vp9 @ 0x557fedcd3500] [error] Error while "
+    "opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+    "[out#0/null @ 0x557fedc69200] [error] Nothing was written into output file, because at "
+    "least one of its streams received no packets.\n"
+    "[info] Conversion failed!\n"
+)
+
+
+def test_the_failure_detail_is_the_encoders_error_line() -> None:
+    """libvpx's message has none of the failure words; its first line is its version."""
+    assert failure_detail(VP9_NO_BITRATE, "libvpx-vp9") == (
+        "Rate control parameters set without a bitrate"
+    )
+
+
+def test_a_warning_that_validation_already_gives_is_left_out() -> None:
+    defs = load_definitions()
+    stderr = (
+        "x265 [warning]: --rd-refine disabled, requires RD level > 4 and adaptive quant\n"
+        "x265 [warning]: VBV maxrate specified, but no bufsize, ignored\n"
+    )
+    job = _job(advanced={"vbv-maxrate": 1000}, custom_params="rd-refine=1")
+    known = video_option_rule_issues(job.video, CapabilitySnapshot(), defs)
+    assert [(i.code, i.path) for i in known] == [
+        ("encoder.option_inactive", "video.advanced.vbv-maxrate")
+    ]
+    assert [i.path for i in parse_dry_run(job, stderr, 0)] == [
+        "video.custom_params",
+        "video.advanced.vbv-maxrate",
+    ]
+    assert [i.path for i in parse_dry_run(job, stderr, 0, known=known)] == ["video.custom_params"]
+    # The warning names pmode; validation's issue is on limit-refs, and one of its fixes turns
+    # pmode off.
+    stderr = (
+        "x265 [warning]: Limit reference options 2 and 3 are not supported with pmode. Disabling "
+        "limit reference\n"
+    )
+    job = _job(advanced={"limit-refs": "2", "pmode": True})
+    known = video_option_rule_issues(job.video, CapabilitySnapshot(), defs)
+    assert [(i.code, i.path) for i in known] == [
+        ("encoder.option_ignored", "video.advanced.limit-refs")
+    ]
+    assert [i.path for i in parse_dry_run(job, stderr, 0)] == ["video.advanced.pmode"]
+    assert parse_dry_run(job, stderr, 0, known=known) == []
+
+
 def test_a_failed_start_with_the_encoders_own_message() -> None:
     stderr = (
         "x265 [error]: min CU size must be less than or equal to max CU size\n"
@@ -242,6 +355,8 @@ def test_the_command_ends_with_one_frame_to_null() -> None:
     job = _job(custom_params="ref=3")
     job.output.path = Path("/out/x.mkv")
     argv = dry_run_argv(job, _source(), CapabilitySnapshot(), found)
+    assert argv[:2] == ["-loglevel", "+level+info"]
+    assert argv.count("-loglevel") == 1
     assert argv[-5:] == ["-frames:v", "1", "-f", "null", "-"]
     assert "/out/x.part.mkv" not in argv
     assert argv[argv.index("-x265-params:v:0") + 1] == "ref=3"
