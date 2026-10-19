@@ -7,6 +7,7 @@ import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,9 +29,9 @@ def store_at(path: Path) -> QueueStore:
     return QueueStore(path, now=lambda: NOW)
 
 
-def job(job_id: str, position: int = 0, **fields: object) -> QueueJob:
+def job(job_id: str, position: int = 0, **fields: Any) -> QueueJob:
     settings = JobSettings(source=SourceRef(path=Path("/media/a.mkv")))
-    return QueueJob(id=job_id, position=position, settings=settings, created_at=NOW, **fields)  # type: ignore[arg-type]
+    return QueueJob(id=job_id, position=position, settings=settings, created_at=NOW, **fields)
 
 
 def run[T](store: QueueStore, call: Callable[[], T]) -> T:
