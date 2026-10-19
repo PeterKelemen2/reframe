@@ -1,10 +1,5 @@
-"""Fixes of the core-complete review (R3) for the C-10 scans, with the real ffmpeg / ffprobe
-through the facade.
-
-- R3-1: two scans of one file at the same time keep both measured values (each scan applies
-  its own values to the latest known source, serialised per file: ``SourceService.update``).
-- R3-2: an MP4 / MOV text track (``mov_text``) is counted without the empty samples that
-  FFmpeg's muxer writes for the gaps between cues (decision 0032 §2, ``testdata/README.md``).
+"""The analysis scans through the facade, with the real FFmpeg: concurrent updates of one source
+keep each value, and ``mov_text`` tracks count their cues, not the muxer's empty samples.
 """
 
 from __future__ import annotations
@@ -63,9 +58,6 @@ def _ffmpeg(cwd: Path, *args: str) -> None:
     subprocess.run(
         [ffmpeg, "-v", "error", "-y", *args], cwd=cwd, check=True, capture_output=True, timeout=60
     )
-
-
-# --------------------------------------------------------------------------- R3-1
 
 
 async def test_two_bitrate_scans_keep_both_measurements(
@@ -165,8 +157,6 @@ async def test_update_after_the_file_changed_stores_nothing(
     assert known.audio[0].bitrate == new.audio[0].bitrate
 
 
-# --------------------------------------------------------------------------- R3-2
-
 CUES = [(1.0, 2.0, "Hello"), (3.0, 4.0, "World"), (5.0, 6.5, "Goodbye")]
 
 
@@ -211,8 +201,8 @@ Dialogue: 0,0:00:05.00,0:00:06.00,Default,,0,0,0,,{\\i1}Styled{\\i0}
 
 async def test_mov_text_cues_without_text_are_not_events(app: Reframe, tmp_path: Path) -> None:
     """A cue with empty text, or with override tags only, gets no sample of its own in MP4:
-    its time is covered by an empty 2-byte sample (n9.0.2, n8.1.3). A styled cue has style
-    boxes after its text (30 bytes) and counts."""
+    its time is covered by an empty 2-byte sample. A styled cue has style boxes after its
+    text and counts."""
     (tmp_path / "cues.ass").write_text(EMPTY_CUES_ASS, encoding="utf-8")
     _ffmpeg(tmp_path, "-i", "cues.ass", "-c:s", "mov_text", "-f", "mp4", "cues.mp4")
     done = await _finish(app, app.sources.subtitle_scan(tmp_path / "cues.mp4"))

@@ -1,11 +1,5 @@
-"""A path with a NUL character at the facade's path entry points (final review RN, decision 0016
-"Follow-up (final review, 2026-10-17)").
-
-Only the API can send such a path (JSON allows ``\\u0000``; argv cannot hold a NUL). ``os.stat``
-raises ``ValueError`` for it, not ``OSError``: ``Reframe.sources.probe`` raised (the CLI / API
-showed "unexpected error"), and so did ``get``, ``store``, ``update`` and the folder probe task.
-Now a NUL path is a ``ProbeError`` (``not_found``: no file can have this name) or "nothing
-known", and ``Reframe.jobs.validate`` gives a clean error. Each test failed before the fix.
+"""A path with a NUL character at the facade's entry points is an expected error, never an
+exception. Only the API can send one: argv cannot hold a NUL, and JSON can (``\\u0000``).
 """
 
 from __future__ import annotations
@@ -75,7 +69,6 @@ def _nul_error(outcome: object, path: Path) -> None:
 
 
 async def test_probe_of_a_nul_path_is_a_probe_error(fake: ft.FakeTools, env: Path) -> None:
-    """The reviewer's case: before, ``_check_file``'s ``os.stat`` raised ``ValueError``."""
     nul = env / "Mo\0vie.mkv"
     async with await Reframe.create() as app:
         _nul_error(await app.sources.probe(nul), nul)
@@ -99,8 +92,6 @@ async def test_probe_of_a_nul_path_without_ffprobe(
 async def test_get_store_and_update_of_a_nul_path(
     fake: ft.FakeTools, env: Path, media: Path
 ) -> None:
-    """Nothing is known of a NUL path, and nothing is stored for it (a ``MediaSource`` sent
-    through the API)."""
     nul = env / "Mo\0vie.mkv"
     async with await Reframe.create() as app:
         probed = await app.sources.probe(media)
@@ -114,7 +105,6 @@ async def test_get_store_and_update_of_a_nul_path(
 
 
 async def test_folder_probe_of_a_nul_path_is_one_error(fake: ft.FakeTools, env: Path) -> None:
-    """Before, listing the folder raised ``ValueError`` and the task failed with it."""
     nul = env / "Sea\0son"
     async with await Reframe.create() as app:
         info = app.sources.probe_folder(nul)
@@ -149,9 +139,6 @@ async def _job(app: Reframe, media: Path) -> JobSettings:
 async def test_validate_a_job_with_a_nul_in_its_output_path(
     fake: ft.FakeTools, env: Path, media: Path
 ) -> None:
-    """Before: ``validation.rule_failed`` ("Validation could not check output … Please report
-    this.") from ``LocalFileSystem.same_file``. Now one plain ``output.path`` error, from
-    ``validate`` and from ``plan`` (``reframe plan`` of a job built through the API)."""
     async with await Reframe.create() as app:
         job = await _job(app, media)
         (env / "out").mkdir()
@@ -173,9 +160,6 @@ async def test_validate_a_job_with_a_nul_in_its_output_path(
 async def test_validate_a_job_with_a_nul_in_its_source_path(
     fake: ft.FakeTools, env: Path, media: Path
 ) -> None:
-    """Before: ``Reframe.jobs.validate`` raised ``ValueError`` from the source's probe. Now
-    the probe's error is the job's ``source.probe_failed`` issue (``validate``, ``plan``,
-    ``dry_run``), and ``draft`` returns the ``ProbeError``."""
     nul = env / "Mo\0vie.mkv"
     async with await Reframe.create() as app:
         job = await _job(app, media)
@@ -194,10 +178,6 @@ async def test_validate_a_job_with_a_nul_in_its_source_path(
 async def test_validate_and_plan_with_a_given_source_with_a_nul(
     fake: ft.FakeTools, env: Path, media: Path
 ) -> None:
-    """A ``MediaSource`` sent with the job (the API's ``validate(job, source)``) whose path has
-    a NUL: before, ``validate`` gave two ``validation.rule_failed`` and ``plan`` returned a
-    plan that reads the NUL path (``dry_run`` alone raised from ``reframe.tools.run``). Now
-    ``validate`` and ``plan`` give ``source.path_unusable`` and the dry run is skipped."""
     nul = env / "Mo\0vie.mkv"
     async with await Reframe.create() as app:
         probed = await app.sources.probe(media)

@@ -1,5 +1,4 @@
-"""The pure parts of the analysis tasks (C-10): ffprobe packet lines, the covered time of a
-packet listing, PGS display sets, loudnorm blocks, command lines, throttled progress."""
+"""The pure parts of the analysis scans: parsing, command lines and the progress throttle."""
 
 from __future__ import annotations
 
@@ -23,8 +22,6 @@ from reframe.models import (
 from reframe.queue.loudnorm import MeasureError
 from reframe.tools import CancelToken, RunResult
 from reframe_testing import pgs
-
-# --------------------------------------------------------------------------- common
 
 
 def _source() -> MediaSource:
@@ -114,9 +111,6 @@ def test_progress_reporter_throttles() -> None:
     assert calls == [(0.1, "a"), (1.2, "a"), (1.6, "b"), (100.0, "c")]
 
 
-# --------------------------------------------------------------------------- bitrate
-
-
 def test_parse_packet() -> None:
     line = "pts_time=0.011000|dts_time=0.011000|duration_time=0.010000|size=3140"
     assert bitrate.parse_packet(line) == bitrate.Packet(0.011, 0.01, 3140)
@@ -197,9 +191,6 @@ def test_bitrate_argv() -> None:
         "-i",
         str(Path("/m/a b.mkv")),
     ]
-
-
-# --------------------------------------------------------------------------- subtitles
 
 
 def _events(*forced: bool) -> list[pgs.Event]:
@@ -289,8 +280,6 @@ def test_subtitle_argv() -> None:
     assert extract[extract.index("-progress") + 1] == "pipe:1"
     assert extract.index("-i") < extract.index("-map")
 
-
-# --------------------------------------------------------------------------- loudness
 
 BLOCK = """[Parsed_loudnorm_0 @ 0x55d1c2a3f900]
 {

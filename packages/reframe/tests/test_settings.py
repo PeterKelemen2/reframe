@@ -1,12 +1,4 @@
-"""C-9 settings store: ``<config>/settings.json`` with migrations, atomic writes and the
-damaged / newer / unreadable file handling.
-
-"Done when" (05 §C-9) parts proved here: an old-schema settings file loads after migration
-(:func:`test_old_schema_fixture_loads_after_migration`, with a test registry, and
-:func:`test_real_loader_runs_the_migration_registry` for the real ``migrate()``), and a corrupt
-file is backed up and replaced with defaults plus a warning event
-(:func:`test_corrupt_file_is_backed_up_and_replaced_with_defaults`).
-"""
+"""The settings store: migrations, atomic writes, damaged, newer and unreadable files."""
 
 from __future__ import annotations
 
@@ -32,9 +24,8 @@ from reframe.settings import (
     replace_file,
 )
 
-#: settings.json as a (made-up) schema version 1 wrote it: the queue setting was called
-#: ``parallel``; version 2 renamed it to ``parallel_jobs``. Plus a field this Reframe does not
-#: know, which must survive.
+#: A made-up settings.json at schema version 1. Its ``from_the_future`` field is unknown to
+#: this Reframe and must survive a load and a save.
 OLD_SETTINGS_V1: dict[str, Any] = {
     "schema_version": 1,
     "tools": {"ffmpeg": "/opt/ffmpeg/bin/ffmpeg"},
@@ -69,9 +60,6 @@ def drain(subscription: Subscription) -> list[Event]:
 def write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
-
-
-# --------------------------------------------------------------------------- loading
 
 
 def test_missing_file_gives_defaults_and_writes_nothing(tmp_path: Path) -> None:
@@ -119,8 +107,7 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
 def test_real_loader_runs_the_migration_registry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without ``registry=`` the store uses ``reframe.models.migrations.migrate`` (the real
-    registry): swap that registry and the same fixture migrates."""
+    """Without ``registry=`` the store migrates with ``REGISTRY``, which this test swaps."""
     monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
     write_json(tmp_path / "settings.json", OLD_SETTINGS_V1)
     settings = SettingsStore(tmp_path).load()
@@ -293,9 +280,6 @@ def test_utf8_bom_is_accepted(tmp_path: Path) -> None:
     assert store.problems == []
 
 
-# --------------------------------------------------------------------------- writing
-
-
 def test_write_is_atomic_and_leaves_no_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -421,9 +405,6 @@ def test_backup_names_do_not_collide(tmp_path: Path, monkeypatch: pytest.MonkeyP
     ]
 
 
-# --------------------------------------------------------------------------- M2 review fixes
-
-
 def nested(depth: int) -> list[Any]:
     """A list nested ``depth`` levels deep (built without recursion)."""
     value: list[Any] = []
@@ -434,8 +415,6 @@ def nested(depth: int) -> list[Any]:
 
 @pytest.mark.parametrize("depth", [100, 600, 100_000])
 def test_deeply_nested_file_is_corrupt_not_a_crash(tmp_path: Path, depth: int) -> None:
-    """A deeply nested settings.json raised ``RecursionError`` from ``load()`` (in
-    ``Reframe.__init__``, so the app did not start). It is a damaged file now."""
     path = tmp_path / "settings.json"
     text = '{"x": ' + "[" * depth + "]" * depth + "}"
     path.write_text(text, encoding="utf-8")
@@ -460,8 +439,7 @@ def test_nesting_up_to_the_limit_is_fine(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("depth", [100, 400])
 def test_too_deep_settings_are_not_saved_and_no_exception(tmp_path: Path, depth: int) -> None:
-    """A document the loader would reject as damaged is never written (400 levels also made
-    Pydantic's ``model_dump`` raise)."""
+    """A document the loader would reject as damaged is never written."""
     store = SettingsStore(tmp_path)
     store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     before = (tmp_path / "settings.json").read_bytes()
@@ -479,9 +457,7 @@ def test_too_deep_counts_levels_without_recursion() -> None:
 
 
 def test_the_store_writes_the_current_schema_version(tmp_path: Path) -> None:
-    """A settings object labelled with another version is written as the current version:
-    the content is what this Reframe's model holds, and a newer label would make the next
-    start treat the file as newer and use the defaults."""
+    """A newer label would make the next start read the file as newer and use the defaults."""
     store = SettingsStore(tmp_path)
     assert store.write(AppSettings.model_validate({"schema_version": 7})) is None
     saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
@@ -502,8 +478,6 @@ def symlink_or_skip(link: Path, target: Path) -> None:
 
 
 def test_a_linked_settings_file_is_written_through_the_link(tmp_path: Path) -> None:
-    """``os.replace`` onto the link replaced the link with a regular file. The new content
-    goes to the link's target now, and the link stays."""
     dotfiles = tmp_path / "dotfiles"
     dotfiles.mkdir()
     real = dotfiles / "reframe-settings.json"
@@ -571,9 +545,6 @@ def test_a_link_loop_is_unreadable_and_never_written(tmp_path: Path) -> None:
 def test_windows_link_target_is_written_mock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The Windows path, with mocks (no symbolic link needed): the read, the backup and the
-    write go to the link's target (as ``os.path.realpath`` gives it), never onto the link,
-    and the sharing-violation retry still works there."""
     config = tmp_path / "config"
     config.mkdir()
     real = tmp_path / "OneDrive" / "settings.json"

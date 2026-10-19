@@ -1,6 +1,6 @@
-"""The analysis tasks (C-10) with a fake task context and fake ffmpeg / ffprobe: expected
-failures end the task ``failed`` with a message, results are stored with the source, and the
-roles that depend on measured values are worked out again."""
+"""The analysis tasks with a fake task context and fake ffmpeg / ffprobe: expected failures end the
+task ``failed`` with a message, results are stored with the source, and the roles that depend on
+measured values are worked out again."""
 
 from __future__ import annotations
 
@@ -160,9 +160,6 @@ def _failed_with(done: TaskInfo, message: str) -> None:
     assert message in done.error
 
 
-# --------------------------------------------------------------------------- expected failures
-
-
 @pytest.mark.parametrize(
     ("index", "message"),
     [
@@ -260,8 +257,6 @@ async def test_loudness_with_wrong_arguments_fails(
     _failed_with(await _finish(ctx, info), message)
 
 
-# --------------------------------------------------------------------------- fake ffprobe output
-
 PACKETS = "".join(
     f"pts_time={i * 0.5:.6f}|dts_time={i * 0.5:.6f}|duration_time=0.500000|size=8000\n"
     for i in range(8)
@@ -314,7 +309,7 @@ async def test_bitrate_scan_stores_the_measured_bit_rate(
     assert stored.audio[1].bitrate == scan.bitrate
     assert stored.audio[0].bitrate == BitrateInfo()
     # With a known bit rate, the untitled stereo track after the 5.1 track is a commentary
-    # candidate (the role heuristic of C-3 runs again).
+    # candidate (the role heuristic runs again).
     assert [r.role for r in stored.audio[1].roles] == [TrackRole.COMMENTARY]
     assert progress[:2] == [None, 0.0]  # waiting for the probe, then reading
     assert progress[-1] == pytest.approx(87.5)  # the start of the last packet
@@ -467,14 +462,11 @@ async def test_loudness_without_a_measurement_fails(
     _failed_with(await _finish(ctx, info), message)
 
 
-# --------------------------------------------------------------------------- the tool environment
-
-
 async def test_the_scans_run_their_tools_with_the_tool_environment(
     tmp_path: Path, fake_tools: FakeTools, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every process of a scan gets ``ToolInfo.env`` (the bundled FFmpeg's environment, for
-    example ``LIBVA_DRIVERS_PATH``), as the probe, the preview tasks and the queue do."""
+    example ``LIBVA_DRIVERS_PATH``)."""
     seen: list[tuple[str, Mapping[str, str] | None]] = []
 
     async def spy(argv: Sequence[str], **kwargs: Any) -> RunResult:
