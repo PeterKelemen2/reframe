@@ -59,7 +59,7 @@ def test_write_a_new_file_fix_takes_a_free_name_when_naming_gives_the_source() -
     [issue] = [i for i in s.validate() if i.code == "inplace.not_possible"]
     [fix] = issue.fixes
     assert fix.label == "Write a new file (Movie.2019.1080p.BluRay (1).mkv)"
-    assert sc.check(s) is not None
+    assert issue in sc.check(s)  # check() asserts that each fix removes its issue
 
 
 def test_write_a_new_file_fix_without_a_name() -> None:
