@@ -123,8 +123,8 @@ async def make_frames(
             for key in [frame_key(fingerprint, timestamp, hashes[r.kind])]
         ]
         missing: list[_Wanted] = []
-        for item in wanted:
-            size = png_size(item.path) if cache.touch(item.path) else None
+        sizes = await asyncio.to_thread(_cached_sizes, [item.path for item in wanted])
+        for item, size in zip(wanted, sizes, strict=True):
             if size is None:
                 missing.append(item)
             else:
@@ -133,14 +133,15 @@ async def make_frames(
             async with gate:
                 error, failed = await _render(tctx, ffmpeg, path, video.index, timestamp, missing)
                 own = [i for i in missing if i.recipe.kind == "source"]
-                if failed and own and len(missing) > 1 and png_size(own[0].path) is None:
+                retry = bool(failed and own and len(missing) > 1)
+                if retry and await asyncio.to_thread(png_size, own[0].path) is None:
                     # FFmpeg refused the run (the output chain, most likely): the source frame
                     # alone, so that only the output frame is lost.
                     alone, _ = await _render(tctx, ffmpeg, path, video.index, timestamp, own)
                     if alone is not None:
                         error = alone
-            for item in missing:
-                size = png_size(item.path)
+            sizes = await asyncio.to_thread(_png_sizes, [item.path for item in missing])
+            for item, size in zip(missing, sizes, strict=True):
                 if size is not None:
                     made[item.recipe.kind, timestamp] = _frame(item, timestamp, size, cached=False)
             if error is not None:
@@ -172,6 +173,15 @@ async def make_frames(
     limit = megabytes(settings.preview.cache_size_mb)
     await asyncio.to_thread(cache.trim, limit, protect=[f.path for f in frames])
     return FrameSet(path=path, frames=frames, notes=notes)
+
+
+def _cached_sizes(paths: list[Path]) -> list[tuple[int, int] | None]:
+    """The size of each cached PNG (marked as used), ``None`` when it is not cached. Blocking."""
+    return [png_size(path) if PreviewCache.touch(path) else None for path in paths]
+
+
+def _png_sizes(paths: list[Path]) -> list[tuple[int, int] | None]:
+    return [png_size(path) for path in paths]
 
 
 def _frame(item: _Wanted, timestamp: float, size: tuple[int, int], *, cached: bool) -> PreviewFrame:
@@ -220,7 +230,9 @@ async def _render(
             raise asyncio.CancelledError
         complete = 0
         for item, temp in zip(missing, temps, strict=True):
-            if result.ok and png_size(temp) is not None and await _place(temp, item.path):
+            if not result.ok or await asyncio.to_thread(png_size, temp) is None:
+                continue
+            if await _place(temp, item.path):
                 complete += 1
         if complete == len(missing):
             return None, False
@@ -237,5 +249,5 @@ async def _place(temp: Path, final: Path) -> bool:
     try:
         await asyncio.to_thread(os.replace, temp, final)
     except OSError:
-        return png_size(final) is not None
+        return await asyncio.to_thread(png_size, final) is not None
     return True

@@ -29,7 +29,18 @@ from reframe.tools import RunResult, run_streaming
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .helpers import Env, caps, ffmpeg, job_for, make_env, real_tools, rgb_pixels, run_ffmpeg, tool
+from .helpers import (
+    Env,
+    caps,
+    ffmpeg,
+    file_reads_on_this_thread,
+    job_for,
+    make_env,
+    real_tools,
+    rgb_pixels,
+    run_ffmpeg,
+    tool,
+)
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
@@ -113,6 +124,19 @@ async def test_the_same_request_gives_the_cached_clip(
     monkeypatch.undo()
     changed = await clip(env, other, start=0.5, seconds=1.0)
     assert changed.id != first.id
+
+
+async def test_the_clip_cache_is_read_off_the_event_loop(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache folder may be slow (a network share, a disk that spins up)."""
+    src = fixture_media("letterbox")
+    env = make_env(tmp_path / "cache")
+    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
+    first = await clip(env, lossless(src), start=0.5, seconds=1.0)
+    again = await clip(env, lossless(src), start=0.5, seconds=1.0)
+    assert again == first
+    assert on_loop == [], on_loop
 
 
 async def test_the_encoded_frames_are_the_output_frames(

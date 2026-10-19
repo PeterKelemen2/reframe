@@ -26,7 +26,15 @@ from reframe.preview import cache_size, clear_cache, frame_path, start_frames
 from reframe.preview.cache import PreviewCache, is_frame_key
 from reframe.preview.graph import source_recipe
 
-from .helpers import DEFS, caps, job_for, make_env, rgb_pixels, run_ffmpeg
+from .helpers import (
+    DEFS,
+    caps,
+    file_reads_on_this_thread,
+    job_for,
+    make_env,
+    rgb_pixels,
+    run_ffmpeg,
+)
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
@@ -244,6 +252,22 @@ async def test_output_frames_follow_the_job(tmp_path: Path, fixture_media: Media
     assert {f.key for f in new_outputs}.isdisjoint({f.key for f in outputs})
     assert [(f.width, f.height) for f in new_outputs] == [(240, 180)] * 2
     assert [f.key for f in other.frames if f.kind == "source"] == [f.key for f in sources]
+
+
+async def test_the_frame_cache_is_read_off_the_event_loop(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache folder may be slow (a network share, a disk that spins up)."""
+    src = fixture_media("letterbox")
+    job = job_for(src)
+    job.dimensions.crop.mode = "manual"
+    job.dimensions.crop.rect = CropRect(top=22, bottom=24)
+    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
+    _, made = await frames_of(tmp_path / "cache", src, count=2, job=job)
+    _, cached = await frames_of(tmp_path / "cache", src, count=2, job=job)
+    assert [f.cached for f in made.frames] == [False] * 4
+    assert [f.cached for f in cached.frames] == [True] * 4
+    assert on_loop == [], on_loop
 
 
 async def test_a_copied_video_reuses_the_source_frames(
