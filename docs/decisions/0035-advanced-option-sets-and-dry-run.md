@@ -201,9 +201,12 @@ section "Core-complete review".
   3. Every refusal has a fix that removes the entry (all custom parameters when only FFmpeg's
      quote handling finds the key).
   Tests: `tests/validation/test_custom_params_rules.py`, `test_custom_params_ffmpeg.py`,
-  `test_dryrun_review_fixes.py` (`test_r5_1_*`: the reviewer's reproduction through
-  `Reframe.jobs.plan(…, dry_run=True)` leaves the file unchanged), `cases_options.py`,
-  `tests/definitions/test_custom_params.py`. Not changed: the command builder still writes
+  `test_dryrun_ffmpeg.py` (`test_a_refused_parameter_never_starts_ffmpeg`,
+  `test_ffmpeg_runs_in_a_temporary_folder_that_is_removed`,
+  `test_a_relative_source_is_given_to_ffmpeg_as_an_absolute_path`,
+  `test_planning_with_a_shared_preset_leaves_the_users_file_alone`: the reviewer's
+  reproduction through `Reframe.jobs.plan(…, dry_run=True)` leaves the file unchanged),
+  `cases_options.py`, `tests/definitions/test_custom_params.py`. Not changed: the command builder still writes
   what it is given (validation runs before every plan, every queue run and every preview
   clip); a guard there would change the builder tests of another task (a suggestion for the
   lead).
@@ -213,14 +216,19 @@ section "Core-complete review".
   without the value; the dry run passed. Now such a line is an error: attributed to the
   parameter when the control maps to one (`ARNR_MAXFRAMES` → `arnr-maxframes`; FFmpeg's
   other names, such as `CPUUSED` → `cpu-used`, are listed), else `encoder.dry_run_failed` on
-  `video.custom_params`. Tests: `test_r5_3_*` (recorded log and the real libvpx).
+  `video.custom_params`. Tests:
+  `test_dryrun_ffmpeg.py::test_a_value_libvpx_refuses_through_a_codec_control_is_an_error`,
+  `::test_a_control_that_names_no_parameter` (recorded log) and
+  `::test_the_real_libvpx_codec_control_refusals` (the real libvpx).
 - **R5-7: VBV without both values.** x264 and x265 drop `vbv-maxrate` without `vbv-bufsize`
   (both log "VBV maxrate specified, but no bufsize, ignored"; corrected 2026-10-19, this said
   x264 is silent), and `vbv-bufsize` without `vbv-maxrate` at a constant quality. Now
   `encoder.option_inactive` (warning) for each, with a fix that removes it. A buffer alone
   with an average bitrate is used (the encoders make it constant bitrate, with a log line)
-  and is not reported. Tests: `test_option_rules_review_fixes.py::test_r5_7_*`,
-  `test_option_formats_ffmpeg.py::test_r5_7_vbv_with_the_encoders` (x264's SEI, x265's log).
+  and is not reported. Tests:
+  `test_option_values.py::test_vbv_maxrate_without_a_buffer_is_inactive`,
+  `::test_a_vbv_buffer_without_a_maximum_rate`,
+  `test_option_formats_ffmpeg.py::test_vbv_with_the_encoders` (x264's SEI, x265's log).
 - **R5-8: the HDR texts.** `master-display`, `max-cll` (x265) and `mastering-display`,
   `content-light` (SVT-AV1) took any text; x265 with `master-display=garbage` writes no
   mastering display (exit 0), and SVT-AV1 with text after the tags never ends. Now each has a
@@ -231,12 +239,14 @@ section "Core-complete review".
   the PQ maximum of 10000 cd/m²: above about 8.4 million it overflows), and `MaxCLL,MaxFALL`
   with two whole numbers up to 65535 for both. Texts that the encoders accept but change
   (a value that wraps or is clipped, trailing text x265 ignores) are refused as well. The
-  values Copy HDR metadata writes pass the check (a test). Tests: `test_r5_8_*` in
-  `test_option_rules_review_fixes.py` and `test_option_formats_ffmpeg.py` (the side data that
-  the encoders write).
+  values Copy HDR metadata writes pass the check (a test). Tests:
+  `test_option_values.py::test_the_hdr_text_options_are_checked`,
+  `::test_copy_hdr_metadata_writes_valid_text`,
+  `test_option_formats_ffmpeg.py::test_what_the_encoders_write_for_the_hdr_texts` (the side
+  data that the encoders write), `::test_svt_av1_never_ends_with_text_after_the_tags`.
 - **R5-10: references.** `validation/dryrun.py` and `tests/validation/test_dryrun.py` named a
-  `test_dryrun_ffmpeg.py` that does not exist; they now name `test_options_facade.py` and
-  `test_dryrun_review_fixes.py`.
+  `test_dryrun_ffmpeg.py` that did not exist then; they now name `test_options_facade.py`
+  and the review's dry-run tests (now `tests/validation/test_dryrun_ffmpeg.py`).
 - **Attribution of a log line to a whole key** (suspected in the review, real): an encoder
   warning was given to the first job parameter whose name appeared as a word, so x265's
   "--rd-refine disabled, requires RD level > 4" went to `rd` ("RD level"), because the `--` in
@@ -251,7 +261,7 @@ no error (a plan carries no issues), and `reframe plan` used it. The dry run its
 unchanged; `reframe plan` now calls `JobService.dry_run` and shows all of its issues with the
 draft's, and says the parameters were checked only when the test encode ran (decision 0038,
 follow-up). `JobService.plan`'s docstring says that its plan carries no warnings.
-Tests: `tests/jobs/test_cli_review_fixes.py` (`test_plan_shows_a_skipped_dry_run`,
+Tests: `tests/jobs/test_cli_plan_dry_run.py` (`test_plan_shows_a_skipped_dry_run`,
 `test_plan_shows_the_dry_runs_warnings`).
 
 Plan change: [03-features.md §Advanced encoder options](../plan/03-features.md#advanced-encoder-options),
@@ -305,10 +315,10 @@ section "Final review". Every test named here failed on 5dbf152.
   Tests: `tests/validation/test_custom_params_rules.py` (`cqm=<path>`, `cqm=FLAT`,
   `nocqm=flat`, `scaling-list=default\ `, `no-scaling-list=default` are refused; `cqm=flat`,
   `cqm=jvt`, `cqm='jvt '` pass); `test_custom_params_ffmpeg.py`
-  (`test_rc_1_x264_reads_and_applies_the_file_a_cqm_value_names`;
-  `test_rc_1_a_value_that_is_a_name_or_a_file_name`: validation refuses exactly the values
+  (`test_x264_reads_and_applies_the_file_a_cqm_value_names`;
+  `test_a_value_that_is_a_name_or_a_file_name`: validation refuses exactly the values
   that x264 / x265 open; `cqm` in the keys that libx264 takes);
-  `test_custom_params_final_review.py` (the dry run does not start FFmpeg; the reviewer's
+  `test_custom_params_cqm.py` (the dry run does not start FFmpeg; the reviewer's
   reproduction through `Reframe.jobs.plan(…, dry_run=True)`, `dry_run` and `validate`);
   `tests/definitions/test_custom_params.py`.
 - **RC-2 (minor): signs and spaces in the HDR texts.** The R5-8 formats refused a leading
@@ -323,8 +333,8 @@ section "Final review". Every test named here failed on 5dbf152.
   the text and SVT-AV1 never ends). Now the space before a number is C's white space
   (`isspace`), the digits are ASCII, and the text is stripped as FFmpeg strips it
   (`validation/video.py`). Tests:
-  `test_option_rules_review_fixes.py::test_rc_2_signs_and_spaces_as_the_encoders_read_them`,
-  `test_option_formats_ffmpeg.py::test_rc_2_signs_and_spaces_with_the_encoders` (validation
+  `test_option_values.py::test_signs_and_spaces_as_the_encoders_read_them`,
+  `test_option_formats_ffmpeg.py::test_signs_and_spaces_with_the_encoders` (validation
   accepts a text exactly when the encoder writes the same side data as for the plain text).
 - **RC-3 (minor, found during the search; a known limit, not fixed).** The first note here
   blamed the text `deblock=abc`. The cause is the picture width with the deblocking filter off:

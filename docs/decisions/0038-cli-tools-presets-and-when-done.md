@@ -166,7 +166,7 @@ draft's issues (human output and `--json`), plans only when the dry run has no e
 prints the note only when the test encode ran (no `encoder.dry_run_skipped`). Checked with the
 real FFmpeg n9.0.2 and a user preset with `limit-tu=2`: `Issues (0 errors, 1 warning, …)`,
 `warning  The encoder changed a setting: limit-tu disabled, requires tu-inter-depth > 1`, the
-note and the command. Tests: `tests/jobs/test_cli_review_fixes.py`
+note and the command. Tests: `tests/jobs/test_cli_plan_dry_run.py`
 (`test_plan_shows_a_skipped_dry_run`, `test_plan_shows_the_dry_runs_warnings`).
 
 **R5-9 (control characters of preset names).** `reframe presets import` and `presets list`
@@ -177,7 +177,8 @@ C0 control character (the line break and the tab too), DEL and each C1 control c
 U+FFFD; `_one_line` (the `error:` / `warning:` lines) first joins white space into one space.
 `--json` keeps the names unchanged (JSON escapes them). Text with line breaks of its own is
 printed line by line, so nothing that the CLI writes on purpose changes. Tests:
-`tests/jobs/test_cli_presets_review_fixes.py` (`test_r5_9_*`).
+`tests/jobs/test_cli_control_characters.py` (`test_printable_replaces_control_characters`,
+`test_names_from_an_imported_file_reach_the_terminal_without_escapes`).
 
 **The size of `presets import`** (suspected in the review, real). The file was read whole:
 `reframe presets import /dev/zero` read until memory ran out, and a FIFO blocked the command.
@@ -196,7 +197,10 @@ runs to its end; the task still ends `cancelled` (the task manager sees the toke
 message "Installed FFmpeg <version> into <folder> before the cancel". The CLI compares the
 install marker before and after (a new marker file with the build's SHA-256) and says "FFmpeg
 <version> was installed into <folder> before the interrupt." A cancel before the swap installs
-nothing, as before. Tests: `tests/tools/test_fetch_review_fixes.py` (`test_r5_5_*`).
+nothing, as before. Tests:
+`tests/tools/test_fetch.py::test_a_cancel_after_the_swap_finishes_and_says_so`,
+`tests/tools/test_fetch_cli.py::test_the_cli_says_what_was_installed_after_an_interrupt` and
+`::test_ctrl_c_stops_the_download` (a cancel before the swap).
 
 **R5-6 (the test's step messages).** `test_fetch_installs_the_build_and_skips_an_intact_install`
 read the step messages from an event subscription, which keeps only the newest
@@ -242,11 +246,11 @@ replaced undecodable bytes). Looking for other places, the human output of `refr
 evidence) and of `reframe encoders` (FFmpeg's path, reasons from FFmpeg's output) did not go
 through it either. Now all of them do; a matrix line goes through `printable` whole (each
 control character becomes one U+FFFD, so the columns stay aligned). `--json` keeps the text
-unchanged. Tests: `tests/jobs/test_cli_final_review.py`
-(`test_ra2_preset_line_of_batch_and_encode_has_no_control_characters`, the reviewer's;
-`test_ra2_titles_and_file_names_in_the_batch_output_are_printable`: a commentary title with ESC
+unchanged. Tests: `tests/jobs/test_cli_control_characters.py`
+(`test_preset_line_of_batch_and_encode_has_no_control_characters`, the reviewer's;
+`test_titles_and_file_names_in_the_batch_output_are_printable`: a commentary title with ESC
 in a near member's difference, a file name with ESC as a member label and in the matrix;
-`test_ra2_reframe_probe_prints_titles_without_control_characters`).
+`test_reframe_probe_prints_titles_without_control_characters`).
 
 ## Plan changes
 

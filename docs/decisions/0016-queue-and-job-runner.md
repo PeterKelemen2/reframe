@@ -408,7 +408,7 @@ None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue
   for a job to start (a share that does not answer blocks it as long). *Superseded by RB-1 of
   the final review (below): the keys are read once, in a worker thread, and compared without
   a file-system call.* Tests:
-  `tests/queue/test_job_keys_review_fixes.py`, among them
+  `tests/queue/test_job_keys.py`, among them
   `test_the_same_output_through_a_linked_folder` (also a folder below the link that does not
   exist yet) and `test_file_identity_is_what_os_stat_reports` (mocked, the Windows path).
 
@@ -417,7 +417,7 @@ None: 05 §C-11 does not describe damaged rows; the module doc of `reframe.queue
 A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) found two majors
 in the R4-1 keys above, a minor in the R4-7 stop path (decision 0034) and a suspected Windows
 case. Each test below failed on 5dbf152 and passes now
-(`tests/queue/test_queue_final_review.py`).
+(`tests/queue/test_job_keys.py`; RB-5's test in `tests/queue/test_in_place_stop.py`).
 
 - **RB-1 (major): the R4-1 keys read the disk on the event loop.** `realpath` is an `lstat`
   per part of the path, `samefile` two `stat` calls, and the queue called them in `_schedule`,
@@ -469,7 +469,7 @@ case. Each test below failed on 5dbf152 and passes now
   only `OSError`. Such a job was added as `failed` (validation's "Validation could not check
   output … Please report this."); `retry()` made it `waiting` and raised from `_schedule`, and
   from then on every `add()`, `start()` and job end raised: no job started. Now `file_key`,
-  `same_file`, `_path_key` and `remove_files` never raise for such a path: a path that cannot
+  `same_file` and `remove_files` never raise for such a path: a path that cannot
   be resolved is compared as written (absolute, in the OS's case), and has no identity; a file
   name that cannot be removed is a clean-up message. A job whose source or output path has a
   NUL character fails with the new error issue `queue.path_unusable` ("The output path
@@ -535,7 +535,7 @@ case. Each test below failed on 5dbf152 and passes now
     with that one error (before, the task failed with the `ValueError`).
 
   No persisted `Literal` or enum changes. Tests (each failed before):
-  `tests/validation/test_nul_paths_final_review.py` (`LocalFileSystem` on POSIX and, mocked,
+  `tests/validation/test_nul_paths.py` (`LocalFileSystem` on POSIX and, mocked,
   Windows; the output name and folder; the source path given; an in-place edit; the dry run;
   `test_python_facts_behind_the_rule`) and `tests/test_service_nul_paths.py` (probe, `get` /
   `store` / `update`, the folder probe, and `jobs.validate` / `plan` / `dry_run` / `draft`

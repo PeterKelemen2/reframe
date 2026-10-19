@@ -187,7 +187,7 @@ disposition and 2 forced events. ffprobe reads both as `hdmv_pgs_subtitle`, 12 a
   that sets only their own values and works the roles out again on the source it gets. When
   the known source is another version of the file (it changed after the scan probed it), or the
   file has changed, nothing is stored. Tests:
-  `tests/analysis/test_analysis_review_fixes.py::test_two_bitrate_scans_keep_both_measurements`,
+  `tests/analysis/test_analysis_facade.py::test_two_bitrate_scans_keep_both_measurements`,
   `::test_subtitle_scan_and_bitrate_scan_keep_both`, `::test_concurrent_updates_are_serialised`,
   `::test_update_after_the_file_changed_stores_nothing`.
 - **R3-2: MP4 / MOV text tracks counted about twice.** FFmpeg's MP4 and MOV muxers fill the
@@ -198,7 +198,7 @@ disposition and 2 forced events. ffprobe reads both as `hdmv_pgs_subtitle`, 12 a
   an empty sample. The packet count now also reads `size` and does not count a `mov_text`
   packet of 2 bytes or less (`subtitles.EMPTY_TEXT_SAMPLE`). A sample with text length 0 and
   style boxes (more than 2 bytes) would still count; FFmpeg does not write one. Facts in
-  `testdata/README.md` ("Analysis scans"). Tests: `test_analysis_review_fixes.py::
+  `testdata/README.md` ("Analysis scans"). Tests: `test_analysis_facade.py::
   test_mov_text_event_count[mp4|mov]` (3, not 6) and
   `::test_mov_text_cues_without_text_are_not_events` (2 of 4 cues).
 - **The tool environment** (suspected in the review): the scans ran ffprobe / ffmpeg without

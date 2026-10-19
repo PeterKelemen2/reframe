@@ -79,5 +79,5 @@ file here (no such files), and C-3 lists MediaInfo only in the bitrate chain.
   packets, and `mkvpropedit --add-track-statistics-tags` writes `NUMBER_OF_FRAMES=0` for it,
   which the probe reads as `event_count=0`. A track with 0 events is now empty, not forced: the
   heuristic needs at least one event, and the track gets `main`. C-12's foreign audio search has
-  the same rule (decision 0031 follow-up). Tests: `tests/probe/test_roles_review_fixes.py`
+  the same rule (decision 0031 follow-up). Tests: `tests/probe/test_roles_empty_subtitles.py`
   (real FFmpeg and mkvpropedit), the new case of `test_roles.py::test_no_forced_heuristic`.

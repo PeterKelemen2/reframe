@@ -199,7 +199,7 @@ its fix and passes after it):
   compares two keys as files: equal, equal without case, or `os.path.samefile` (a hard link;
   on Windows `os.stat` gives the volume serial number and the file index), the rule of
   `files.same_file`. These are a few `stat` calls per running job in the event loop, each
-  time the queue looks for a job to start. Tests: `tests/queue/test_job_keys_review_fixes.py`
+  time the queue looks for a job to start. Tests: `tests/queue/test_job_keys.py`
   (symbolic link, hard link, linked output folder, case, a mocked `os.stat` identity, and the
   real queue with the fake tools: two edits through a link, and an encode of a hard link,
   run one after the other). Also in 0016.
@@ -213,9 +213,9 @@ its fix and passes after it):
   an empty track list). The runner's catch (`MatroskaError`, `OSError`) needed no change: an
   in-place edit of such a file now reaches mkvpropedit, which refuses the file itself ("no
   corresponding level 1 element was found", exit code 2, the file unchanged), and the job
-  fails with that message. Tests: `tests/probe/test_matroska_review_fixes.py` (in-memory
+  fails with that message. Tests: `tests/probe/test_matroska_limits_and_ietf.py` (in-memory
   files; the reviewer's `make_hostile.py` file built from the fixture with the real ffprobe),
-  `tests/metadata/test_metadata_review_fixes.py` (the in-place edit through the queue).
+  `tests/metadata/test_metadata_unusual_files.py` (the in-place edit through the queue).
 - **R4-3 (major): with MediaInfo on, `language_ietf` was MediaInfo's `Language`**, which
   MediaInfo derives from the legacy element when there is no `LanguageIETF` (`jpn` → `ja`,
   `eng` → `en`; pymediainfo 7.0.1, libmediainfo 24.12), and `apply_matroska` overwrote it only
@@ -228,7 +228,7 @@ its fix and passes after it):
   `test_probe_with_mediainfo_on_keeps_only_the_files_bcp47_tags` (MediaInfo faked, MP4 keeps
   its value), `test_real_mediainfo_derives_a_bcp47_tag_from_the_legacy_language`, and the M6
   demo 3 with the real MediaInfo
-  (`test_demo_3_with_mediainfo_on_shows_only_the_files_bcp47_tags`). Also in 0007.
+  (`test_with_mediainfo_on_the_reprobe_shows_only_the_files_bcp47_tags`). Also in 0007.
 - **R4-4 (major): an invalid `LanguageIETF` was stored unchecked** (`stream.language_ietf =
   …` does not validate): `en_US` or `j\na;x` made `remux_job` / `draft` fail with a
   `ValidationError` ("unexpected error" in `reframe plan`). ffprobe reads such a file (legacy
@@ -263,7 +263,7 @@ its fix and passes after it):
   4096 top-level elements") is extended by these limits.
 - **R4-6 (minor): the M6 demo-3 test** did not check the job type or the 1 s limit. It now
   asserts `metadata_edit` and `seconds(ended) < 1`
-  (`test_m6_demo_3_languages_names_and_flags_the_reprobe_shows_them_all`). A test gap only:
+  (`test_languages_names_and_flags_the_reprobe_shows_them_all`). A test gap only:
   the new assertions pass on the code before the fixes too.
 - **R4-7 (blocker, found as the review's doc item): Reframe killed mkvpropedit while it wrote
   the source.** Reframe's cancel, `close()` and the 5-minute step limit ended a running
@@ -344,7 +344,7 @@ its fix and passes after it):
 A final review of the fix rounds (reviewer R-B, on `core-complete` 5dbf152) ran 1080 stop runs
 of real in-place edits (cancel, cancel-all, close, pause + cancel, pause + close): no damaged
 file. It found two minors in the R4-7 stop path (and RB-5, in decision 0016's follow-up). Each
-test below failed on 5dbf152 and passes now (`tests/queue/test_queue_final_review.py`).
+test below failed on 5dbf152 and passes now (`tests/queue/test_in_place_stop.py`).
 
 - **RB-3: a late step time limit made a finished edit "cancelled".** The watchdog stopped the
   whole job (`active.stop("timeout")`) as well as the in-place step. When the limit fired after
