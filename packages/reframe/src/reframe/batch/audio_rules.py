@@ -1,47 +1,10 @@
-"""The codec-rule stage of the audio defaults (03 §Audio defaults part 2 and 3; 05 §C-12).
-
-For each selected source audio track, the codec rules are checked from top to bottom; **the
-first matching rule wins**. A rule matches on its languages (``None`` = any) and on a
-condition on the **source** channels. The matched rule then decides passthru or encode with
-the bitrate rules of 03 ("Reframe never makes a track bigger than its source"):
-
-=================================================  ========================================
-Source                                             Result
-=================================================  ========================================
-The source **fits**                                Passthru (or re-encode if the rule says
-                                                   so)
-Lossless above the max or unknown, or a source     Encode at the max (snapped to the
-that does not fit above the max                    encoder's allowed values)
-At or below the max, but it does not fit           Encode at the smallest allowed value at
-                                                   or above the source bit rate
-Bit rate unknown, lossless or does not fit         As above the max; the preview offers
-                                                   **Measure**
-=================================================  ========================================
-
-The source fits when its codec is on the passthru list and allowed by the
-:class:`~reframe.models.PassthruPolicy`, the container can hold it, its channels are within
-the rule's mixdown, and the rule changes nothing that needs a decode (gain, DRC, loudness,
-sample rate). A **lossy** source that fits is passed through at any bit rate, also an unknown
-one (re-encoding it would only add a generation loss, decision 0023); a **lossless** source
-fits only when its known bit rate is at or below the max. The max applies when the track is
-encoded. A lossy rule without a max uses the encoder's default for the layout as its max
-(decision 0019 item 5), also for the lossless check; a ``passthru`` rule without a max passes
-anything that fits. A rule whose codec is ``passthru`` encodes with the policy's fallback
-encoder when the source does not fit.
-
-Interpretations of the plan (decision 0019): a mixdown never upmixes; a lossless source with
-a known bit rate at or below the max is treated like any other source.
-
-The encoder's limits are C-6's shared snapping helpers (decision 0024), so the command builder
-(C-7), validation (C-8) and the codec rules give the same answer for the same track:
-:meth:`AudioEncoderDef.snap_mixdown <reframe.definitions.AudioEncoderDef.snap_mixdown>` (the
-layout the encoder makes), :meth:`AudioEncoderDef.snap_samplerate
-<reframe.definitions.AudioEncoderDef.snap_samplerate>`, :meth:`AudioBitrateDef.snap
-<reframe.definitions.AudioBitrateDef.snap>` and :func:`~reframe.definitions.channels_mixdown`
-(the bit-rate table of a kept source layout). Only the rule's own mixdown
-(:func:`requested_mixdown`) is decided here.
-
-Pure: no I/O.
+"""Codec rules of the audio defaults. The first matching rule wins. A source passes through
+only when its codec is allowed, the container can hold it, its channels fit the rule's
+mixdown, and the rule changes nothing that needs a decode. A lossy source that fits passes
+through at any bit rate, since a re-encode only loses quality; a lossless one fits only at or
+below the max. Reframe never makes a track bigger than its source. Bit rates, layouts and
+sample rates snap with the encoder's helpers, so the command builder, validation and these
+rules agree on the same track. Pure: no I/O.
 """
 
 from __future__ import annotations
@@ -87,10 +50,10 @@ __all__ = [
     "snap_note",
 ]
 
-#: ``AudioCodecRule.codec`` / ``ExtraAudioOutput.codec`` value for "Passthru".
+#: The codec value that means passthru in a rule or an extra output.
 PASSTHRU = "passthru"
 
-#: The words for a rule's source-channels condition (``Rule 2 needs 5.1 or more``).
+#: The reason text of each source-channels condition.
 CHANNEL_CONDITIONS: dict[SourceChannels, str] = {
     "any": "any channels",
     "mono": "mono",
@@ -99,13 +62,10 @@ CHANNEL_CONDITIONS: dict[SourceChannels, str] = {
     "7.1_or_more": "7.1 or more",
 }
 
-#: Added to the reason of a lossy source that is passed through above the max (decision 0023).
+#: Appended to the reason of a lossy source that is kept above the max.
 _KEPT_ABOVE = " (a lossy source is kept above the max)"
 
 BitrateState = Literal["no_max", "within", "above", "lossless", "unknown"]
-
-
-# --------------------------------------------------------------------------- matching
 
 
 def channels_match(condition: SourceChannels, channels: int) -> bool:
@@ -136,9 +96,8 @@ def language_matches(rule_languages: list[str] | None, stream: AudioStream) -> b
 
 
 def passthru_codec(stream: AudioStream, definitions: Definitions) -> PassthruCodec | None:
-    """The passthru codec of the source track (``Definitions.passthru_codecs``, matched on the
-    ffprobe codec name and profile: DTS-HD MA is ``dtshd``, a DTS core ``dts``), or ``None``
-    when the codec cannot be passed through (PCM, Vorbis, ALAC…)."""
+    """The passthru codec key of the source track, matched on the ffprobe codec name and profile
+    (``Definitions.passthru_codecs``), or ``None`` when the codec cannot be passed through."""
     for key, codec in definitions.passthru_codecs.items():
         if stream.codec != codec.codec_name:
             continue
@@ -153,19 +112,13 @@ def passthru_codec(stream: AudioStream, definitions: Definitions) -> PassthruCod
 def requested_mixdown(
     rule_mixdown: RuleMixdown, source_channels: int, definitions: Definitions
 ) -> Mixdown | None:
-    """The output layout a rule asks for; ``None`` = keep the source layout.
+    """The output layout a rule asks for; ``None`` = keep the source layout. A mixdown never
+    upmixes: FFmpeg's upmix adds silent channels, so a source with fewer channels keeps its
+    layout. With the same channel count, ``up_to_5.1`` and ``dpl2`` keep the source layout and
+    the other mixdowns name it. An unknown channel count (0) gets the rule's layout.
 
-    ``keep`` keeps it; ``up_to_5.1`` makes 5.1 of a source with more channels and keeps the
-    others; ``5.1``, ``stereo`` and ``mono`` downmix a source with more channels and name
-    the layout of a source with as many; ``dpl2`` matrix-encodes a source with more than two
-    channels. A mixdown never upmixes (decision 0019): FFmpeg's upmix only adds silent
-    channels, so a source with fewer channels keeps its layout. An unknown channel count
-    (0) gets the rule's layout.
-
-    This is the rule's request; :meth:`AudioEncoderDef.snap_mixdown
-    <reframe.definitions.AudioEncoderDef.snap_mixdown>` (decision 0024) then gives the layout
-    the encoder really makes. It applies the same no-upmix rule, so the two cannot disagree;
-    only ``up_to_5.1`` keeping a 5.1 source's own layout is the rule's.
+    The encoder's ``snap_mixdown`` then gives the layout it really makes. It applies the same
+    no-upmix rule, so the two cannot disagree.
     """
     target = _target_mixdown(rule_mixdown)
     if target is None:
@@ -189,11 +142,7 @@ def _target_mixdown(rule_mixdown: RuleMixdown) -> Mixdown | None:
             return rule_mixdown
 
 
-# --------------------------------------------------------------------------- formatting
-
-
 def _kbps(bits_per_second: int) -> str:
-    """``224000`` → ``224``, ``128453`` → ``128.5``."""
     value = bits_per_second / 1000
     return str(int(value)) if value.is_integer() else f"{value:.1f}".rstrip("0").rstrip(".")
 
@@ -203,12 +152,10 @@ def _source_layout(stream: AudioStream) -> str:
 
 
 def _mixdown_label(mixdown: Mixdown, definitions: Definitions) -> str:
-    """``5.1``, ``7.1``, ``Stereo``, ``Mono``, ``Dolby Pro Logic II``."""
     return definitions.mixdowns[mixdown].label
 
 
 def _layout_label(mixdown: Mixdown, definitions: Definitions) -> str:
-    """The channel layout of a mixdown for names: ``5.1``, ``2.0``, ``1.0``."""
     mix = definitions.mixdowns[mixdown]
     return f"{mix.channels - mix.lfe}.{mix.lfe}"
 
@@ -223,9 +170,6 @@ def _source_label(stream: AudioStream, key: PassthruCodec | None, defs: Definiti
 
 def _sentence(text: str) -> str:
     return text[:1].upper() + text[1:]
-
-
-# --------------------------------------------------------------------------- one output
 
 
 @dataclass(slots=True)
@@ -248,7 +192,7 @@ class _Outcome:
     notes: list[str] = field(default_factory=list)
     measure: bool = False
     kept_above: bool = False
-    """A lossy source passed through above the max (decision 0023)."""
+    """A lossy source passed through above the max."""
     name_values: dict[str, Value] = field(default_factory=dict)
 
 
@@ -356,9 +300,9 @@ def _output_mixdown(
 def _samplerate(
     ctx: _Context, request: _Request, encoder: AudioEncoderDef | None, notes: list[str]
 ) -> int | None:
-    """The rule's sample rate (``None`` = the source's), snapped to the encoder (decision
-    0024). ``None`` stays when the encoder takes the source's own rate; a source rate the
-    encoder lacks becomes the snapped rate, as the command builder writes it."""
+    """The rule's sample rate (``None`` = the source's), snapped to the encoder. ``None`` stays
+    when the encoder takes the source's own rate; a source rate the encoder lacks becomes the
+    snapped rate, as the command builder writes it."""
     rate = request.extras.samplerate
     if encoder is None:
         return rate
@@ -374,22 +318,22 @@ def _samplerate(
 
 @dataclass(frozen=True, slots=True)
 class _Written:
-    """The layout the command builder writes for an encoded track (C-7's
-    :func:`~reframe.command.planned_audio`)."""
+    """The layout the command builder writes for an encoded track
+    (:func:`~reframe.command.planned_audio`)."""
 
     table: Mixdown
     """The bitrate table: the mixdown, else :func:`channels_mixdown` of the written
     channels."""
     layout: str | None = None
-    """The ``out_chlayout`` when the source layout stays but is converted (a lossless
-    relabel ``5.1(side)`` → ``5.1``, or a layout libopus takes: ``2.1`` → ``stereo``)."""
+    """The ``out_chlayout`` when the source layout stays but is converted, such as a lossless
+    relabel or a layout the encoder takes instead of the source's."""
     channels: int = 0
     """The channel count of :attr:`layout` (0 without one)."""
 
 
 def _written(ctx: _Context, encoder: AudioEncoderDef, mixdown: Mixdown | None) -> _Written:
-    """What C-7 writes for ``encoder`` and the snapped ``mixdown``, so that the codec rules
-    cap the bitrate with the same table as the builder and validation (decision 0024)."""
+    """What the command builder writes for ``encoder`` and the snapped ``mixdown``, so that the
+    codec rules cap the bitrate with the same table as the builder and validation."""
     track = AudioOutputTrack(action="encode", encoder=encoder.id, mixdown=mixdown)
     try:
         planned = planned_audio(track, ctx.stream, ctx.container, definitions=ctx.defs)
@@ -436,7 +380,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
     if written is not None and written.layout is not None:
         channels_label = audio_channels_label(written.channels, written.layout)
         if written.channels < stream.channels:
-            # libopus refuses the source layout; C-7 writes one it takes (decision 0024).
+            # libopus refuses the source layout; the command builder writes one it takes.
             assert encoder is not None
             sentences.append(f"Downmix {_source_layout(stream)} → {channels_label}")
             notes.append(f"{encoder.label} cannot take {stream.channel_layout}: {channels_label}")
@@ -483,7 +427,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
                     sentences.append(f"Lossless source → {at_max}")
                     measure = value is None
                 elif effective == "unknown":
-                    # A lossy source only gets here when it does not fit (decision 0023).
+                    # A lossy source only gets here when it does not fit.
                     if why:
                         sentences.append(_sentence(why))
                     sentences.append("Bitrate unknown: treated as above the max; Measure")
@@ -523,9 +467,8 @@ def bitrate_table(
     definitions: Definitions,
 ) -> Mixdown:
     """The bit-rate table (a mixdown of ``encoder.bitrate.by_mixdown``) that a rule with
-    ``rule_mixdown`` and ``encoder`` uses for ``stream``: the layout the command builder
-    writes (C-7's ``planned_audio``), the same table :func:`apply_codec_rules` caps with. The
-    defaults lint (``reframe.batch.lint``) checks a rule's max against it."""
+    ``rule_mixdown`` and ``encoder`` uses for ``stream``: the layout the command builder writes
+    (``planned_audio``), the same table :func:`apply_codec_rules` caps with."""
     ctx = _Context(
         stream=stream,
         policy=PassthruPolicy(),
@@ -542,8 +485,7 @@ def bitrate_table(
 def snap_note(
     wanted: int, got: int, encoder: AudioEncoderDef, key: Mixdown, definitions: Definitions
 ) -> str:
-    """``AC-3 5.1 goes up to 640 kb/s: 700 → 640 kb/s``: why a bit rate snapped, and to
-    what."""
+    """The note that says why a bit rate snapped, and to what."""
     return _snap_note(wanted, got, encoder, key, definitions)
 
 
@@ -563,10 +505,9 @@ def _snap_note(
 
 
 def _default_max(ctx: _Context, request: _Request) -> int | None:
-    """The max of a lossy rule without one (decision 0019 item 5): the encoder's default
-    bit rate for the layout it would encode (the same layout and table as :func:`_encode`).
-    ``None`` for a ``passthru`` rule (no max = anything that fits passes), a lossless or
-    unknown encoder."""
+    """The max of a lossy rule without one: the encoder's default bit rate for the layout it
+    would encode (the same layout and table as :func:`_encode`). ``None`` for a ``passthru``
+    rule (anything that fits passes), a lossless or unknown encoder."""
     if request.max_bitrate is not None or request.codec == PASSTHRU:
         return request.max_bitrate
     encoder = ctx.defs.audio_encoders.get(request.codec)
@@ -584,21 +525,19 @@ def _resolve(ctx: _Context, request: _Request) -> _Outcome:
     state = _bitrate_state(ctx.stream, request.max_bitrate)
     maximum = request.max_bitrate
     if state == "no_max" and ctx.stream.lossless:
-        # A lossless source is compared with the encoder's default when the rule has no
-        # max (decisions 0019 item 5 and 0023); a lossy one still fits at any bit rate.
+        # A lossless source is compared with the encoder's default when the rule has no max;
+        # a lossy one still fits at any bit rate.
         maximum = _default_max(ctx, request)
         state = _bitrate_state(ctx.stream, maximum)
     wants_passthru = request.codec == PASSTHRU or request.if_fits == "passthru"
-    # Decision 0023: a lossy source fits at any bit rate; a lossless one only at or below
-    # the max (``_bitrate_state`` calls a lossless source above the max or unknown
-    # "lossless").
+    # A lossy source fits at any bit rate; a lossless one only at or below the max
+    # (``_bitrate_state`` calls a lossless source above the max or unknown "lossless").
     if wants_passthru and not blockers and state != "lossless":
         return _passthru(ctx, request, state, maximum)
     return _encode(ctx, request, state, blockers)
 
 
 def _describe(track: AudioOutputTrack, defs: Definitions) -> str:
-    """``AC-3 5.1 · 320 kb/s``, ``AAC Stereo``, ``Passthru``."""
     if track.action == "passthru":
         return "Passthru"
     encoder = defs.audio_encoders.get(track.encoder or "")
@@ -634,9 +573,6 @@ def _finish(
     return outcome.track.model_copy(update={"metadata": metadata})
 
 
-# --------------------------------------------------------------------------- the stage
-
-
 def apply_codec_rules(
     stream: AudioStream,
     defaults: AudioDefaults,
@@ -648,14 +584,12 @@ def apply_codec_rules(
     """The output track(s) for one selected source audio track, and the decision with its
     reason. The first matching codec rule wins; its extra outputs follow its output.
 
-    ``first_of_language``: whether this track is the first selected track of its language,
-    for rules with ``first_track_of_language_only``: the selection stage passes "first in the
-    output order" (:func:`reframe.batch.explain.audio_stage`; when no language is set and
-    every track is kept, that is the source order, as in M2). A rule limited to the first
-    track does not match the others; the next rule is checked.
+    ``first_of_language``: whether this track is the first selected track of its language (first
+    in the output order), for rules with ``first_track_of_language_only``. A rule limited to the
+    first track does not match the others; the next rule is checked.
 
-    No rule matching (only possible when the catch-all is limited to the first track) is
-    data: no output, and the decision says why.
+    No rule matching (only possible when the catch-all is limited to the first track) is data: no
+    output, and the decision says why.
     """
     defs = definitions or load_definitions()
     key = passthru_codec(stream, defs)

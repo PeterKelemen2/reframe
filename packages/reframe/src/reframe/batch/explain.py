@@ -1,43 +1,11 @@
-"""What the audio and subtitle defaults do with a source, track by track (05 §C-12
-``explain``; 03 §Audio defaults → Live preview, §Subtitles; decision 0031).
+"""The audio and subtitle defaults applied to one source, track by track: selection, codec
+rules, default track, foreign audio search and burn-in. Each source track gets one
+:class:`~reframe.models.TrackDecision`, in source order.
 
-One :class:`~reframe.models.TrackDecision` per source track, in source order: the row of the
-live preview ``source track → selected? (why) → rule # → output → reason``.
-
-**Audio** (:func:`audio_stage`, :func:`explain`): the selection stage
-(:func:`~reframe.batch.selection.select_tracks`), then the codec rules
-(:func:`~reframe.batch.apply_codec_rules`, unchanged) for every selected track in the output
-order (``first_track_of_language_only`` = the first selected track of its language in that
-order), then the default-track setting: ``first_output``, ``first_in_first_language`` (the
-first main track in that language, never a kept commentary, description or music-only track;
-none: the first output), ``forced`` (the first output from a forced source track, else none)
-or ``none``. Only the ``default`` flag is overridden; the other five flags, the language and
-the title come from the source track (an undetermined track treated as the first listed
-language gets that language). Extra outputs are never the default track. ``no_match =
-"none"`` with no listed language found is a ``defaults.no_listed_language`` error when the
-selection takes no main track (other languages kept are main tracks).
-
-**Subtitles** (:func:`subtitle_stage`, :func:`explain_subtitles`): the same selection, then
-
-- **foreign audio search** (HandBrake parity, decision 0031): when the audio (the default
-  audio output, else the first) is in the first subtitle language (the viewer's language),
-  the forced subtitle track in that language is taken, put first and flagged forced. The
-  evidence, best first: the forced flag or a ``Forced`` / ``Foreign`` title; every event
-  forced (a C-10 scan); a Signs & Songs track; few events (C-3's heuristic: at most 25 % of
-  another track's events in the same language); some forced events in a full PGS / VobSub
-  track (only when it is burned in, with forced-only).
-- **burn-in**: ``foreign_audio`` burns the foreign audio search track, or, when the audio is
-  not in the viewer's language, the first selected main subtitle in that language (never a
-  commentary or description; HandBrake's "foreign audio subtitle"); ``first`` burns the first
-  subtitle output;
-  ``foreign_audio_then_first`` the first of them that exists. At most one track is burned in.
-- the default-track policy on the copied tracks: ``none``, ``first_output``, ``forced`` (the
-  first copied track flagged forced) or ``first_in_first_language`` (a main track; none: the
-  first copied track).
-
-**Keep everything** (decision 0031): a kind with no language set at all keeps every track in
-source order with its source flags (at most one default track per kind), as M2 did (decision
-0018); for subtitles that means every track copied, no foreign audio search and no burn-in.
+An audio output keeps the source track's title and flags; the policy sets only its default
+flag, and extra outputs are never the default track. At most one subtitle track is burned in.
+With no language set for a kind, every track of that kind is kept with its source flags (at
+most one default), and subtitles get no foreign audio search or burn-in.
 
 Pure: no I/O.
 """
@@ -94,7 +62,7 @@ __all__ = [
     "subtitle_stage",
 ]
 
-#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only`` (PGS, VobSub; decision 0014).
+#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only`` (PGS, VobSub).
 FORCED_ONLY_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
 
 
@@ -106,11 +74,7 @@ def _with_default[T: (AudioOutputTrack, SubtitleOutputTrack)](track: T, value: b
 
 
 def _track(stream: SubtitleStream) -> str:
-    """``#6``: the absolute stream index (as ``reframe plan`` and C-3's role details)."""
     return f"#{stream.index}"
-
-
-# =========================================================================== audio
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +137,7 @@ def audio_stage(
     definitions: Definitions | None = None,
 ) -> AudioStage:
     """The selection stage, the codec rules and the default track for the audio of
-    ``source``. ``preferred_languages``: Settings → preferred audio languages."""
+    ``source``. ``preferred_languages``: the preferred audio languages, from Settings."""
     defs = definitions or load_definitions()
     selection = select_tracks(
         source.audio, defaults.selection, preferred_languages=preferred_languages, kind="audio"
@@ -295,9 +259,9 @@ def explain(
     definitions: Definitions | None = None,
 ) -> list[TrackDecision]:
     """One decision per source audio track, in source order: selected or not and why
-    (``selection``), the codec rule, the output(s) with their flags, and the reason
-    (03 §Audio defaults → Live preview). ``preferred_languages``: Settings → preferred audio
-    languages (used when ``defaults.selection.languages`` is empty)."""
+    (``selection``), the codec rule, the output(s) with their flags, and the reason.
+    ``preferred_languages``: the preferred audio languages, used when
+    ``defaults.selection.languages`` is empty."""
     return audio_stage(
         defaults,
         source,
@@ -307,12 +271,9 @@ def explain(
     ).decisions
 
 
-# =========================================================================== subtitles
-
-
 @dataclass(frozen=True, slots=True)
 class ForeignAudio:
-    """The outcome of the foreign audio search (HandBrake parity, decision 0031)."""
+    """The outcome of the foreign audio search, which copies HandBrake's behaviour."""
 
     audio_language: str | None
     user_language: str | None
@@ -324,7 +285,7 @@ class ForeignAudio:
     forced_only: bool = False
     """Only the forced events of a full PGS / VobSub track: usable only burned in."""
     note: str = ""
-    """One line for the preview."""
+    """A one-line summary of the search."""
 
 
 def forced_evidence(
@@ -332,17 +293,12 @@ def forced_evidence(
 ) -> tuple[int, str] | None:
     """Why ``stream`` looks like the forced subtitles of its language, as ``(rank, words)``
     (0 is the strongest), or ``None``. ``peers``: the other subtitle tracks in the same
-    language (for the event counts).
+    language, for the event counts.
 
-    0. The forced flag, or C-3's ``forced`` role from a flag or a title (``Forced``,
-       ``Foreign``).
-    1. Every event is forced (``forced_event_count`` of a C-10 scan).
-    2. A Signs & Songs track (title).
-    3. Few events: C-3's heuristic role, or at most 25 % of the events of another track in
-       the same language (``reframe.probe.roles.FORCED_MAX_RATIO``; counts measured later
-       are compared here too).
-    4. Some forced events in a full PGS or VobSub track: usable only burned in, with
-       forced-only (``forced_subs_only``).
+    The first rule that holds sets the rank: a forced flag or a forced title, every event
+    forced, a Signs & Songs title, a forced role from the heuristics or few events compared
+    with a peer (``FORCED_MAX_RATIO``; counts measured later are compared too), and last some
+    forced events in a full PGS or VobSub track, which only a burn-in can show.
     """
     if stream.disposition.forced:
         return 0, "forced flag"
@@ -379,10 +335,10 @@ def foreign_audio_search(
     user_language: str | None,
     can_burn: bool,
 ) -> ForeignAudio:
-    """HandBrake's "Foreign Audio Search" without a scan pass: when the audio is in the
-    viewer's language (``user_language``, the first subtitle language), find the subtitle
-    track in that language that translates the foreign parts (:func:`forced_evidence`; ties
-    in source order). ``can_burn``: the burn-in behaviour would burn it (rank 4 needs it)."""
+    """Find the forced subtitle track that translates the foreign parts, as HandBrake's Foreign
+    Audio Search does, without a scan pass. It runs only when the audio is in the viewer's
+    language (``user_language``, the first subtitle language); ties go to the earlier track.
+    ``can_burn``: the burn-in behaviour would burn the track, which a rank-4 track needs."""
     if is_undetermined(audio_language) or user_language is None:
         return ForeignAudio(
             audio_language, user_language, False, note="Foreign audio search: no audio language"
@@ -475,8 +431,7 @@ class SubtitleStage:
 
 
 def _container_notes(stream: SubtitleStream, container: ContainerDef | None) -> list[str]:
-    """What the container does with a copied track (03 §Subtitles; the builder converts and
-    validation reports, this only says so)."""
+    """The note for a copied track that the container converts or cannot hold."""
     if container is None or stream.codec is None or container.subtitles.can_copy(stream.codec):
         return []
     shown = stream.display_codec or stream.codec
@@ -650,7 +605,7 @@ def subtitle_stage(
 def _keep_every_subtitle(
     selection: Selection[SubtitleStream], holder: ContainerDef | None
 ) -> SubtitleStage:
-    """Every subtitle copied with its source flags (at most one default), as M2 did."""
+    """Every subtitle copied with its source flags (at most one default)."""
     picks = selection.picks
     chosen = next((p for p, pick in enumerate(picks) if pick.stream.disposition.default), None)
     outputs: list[SubtitleOutputTrack] = []
@@ -684,9 +639,8 @@ def explain_subtitles(
 ) -> list[TrackDecision]:
     """One decision per source subtitle track, in source order (``kind="subtitle"``): selected
     or not and why, and the output (copy or burn-in, with its flags) with the reason.
-    ``preferred_languages``: Settings → preferred subtitle languages. ``audio``: the drafted
-    audio outputs, for the foreign audio search (without them: the source's default audio
-    track)."""
+    ``preferred_languages``: the preferred subtitle languages. ``audio``: the drafted audio
+    outputs, for the foreign audio search (without them: the source's default audio track)."""
     return subtitle_stage(
         defaults,
         source,
