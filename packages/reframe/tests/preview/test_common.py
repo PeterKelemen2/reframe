@@ -10,6 +10,7 @@ import pytest
 
 from reframe.mediatask import TaskFailed
 from reframe.models import ContainerInfo, CropRect, MediaSource, ToolInfo, ToolStatus, VideoStream
+from reframe.preview.cache import MAX_TIMESTAMP_MS, frame_key, is_frame_key
 from reframe.preview.common import (
     MAX_FRAMES,
     displayed_size,
@@ -82,6 +83,20 @@ def test_an_unknown_duration_needs_timestamps() -> None:
     src = source_of(None)
     with pytest.raises(TaskFailed, match=r"duration of letterbox\.mkv is not known"):
         sample_times(src, src.video[0], count=10)
+
+
+@pytest.mark.parametrize("value", [1e9, 1e10, 1e308, 999_999_999.9996])
+def test_a_time_a_frame_key_cannot_hold(value: float) -> None:
+    src = recorded("letterbox.mkv")
+    with pytest.raises(TaskFailed, match=r"is not a time in letterbox\.mkv \(frames can be"):
+        sample_times(src, src.video[0], count=1, timestamps=[1.0, value])
+
+
+def test_the_last_time_a_frame_key_holds() -> None:
+    src = recorded("letterbox.mkv")
+    assert MAX_TIMESTAMP_MS == 999_999_999_999  # 12 digits, the key's limit
+    (time,) = sample_times(src, src.video[0], count=1, timestamps=[999_999_999.999])
+    assert is_frame_key(frame_key("0" * 16, time, "f" * 16))
 
 
 def test_tool_identity() -> None:

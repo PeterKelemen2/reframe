@@ -47,6 +47,14 @@ async def until(condition: Callable[[], bool], limit: float = 15.0) -> None:
         await asyncio.sleep(0.02)
 
 
+def running_detections() -> list[asyncio.Task[Any]]:
+    return [
+        t
+        for t in asyncio.all_tasks()
+        if t.get_name() == "reframe-encoder-detection" and not t.done()
+    ]
+
+
 def drain(subscription: Subscription) -> list[Event]:
     events = []
     while (event := subscription.get_nowait()) is not None:
@@ -536,8 +544,7 @@ async def test_a_new_detection_waits_for_the_last_cache_write(
     harness.service.start()
     try:
         await until(started.is_set)
-        first = harness.service._task
-        assert first is not None
+        (first,) = running_detections()
         rescan = asyncio.ensure_future(harness.service.rescan())
         await until(first.done)  # cancelled during its cache write ...
         await asyncio.sleep(0)
@@ -591,14 +598,6 @@ async def test_tool_discovery_closed_under_the_detection(harness: Harness) -> No
     snapshot = await harness.service.wait()
     assert {s.state for s in snapshot.encoders.values()} == {UNKNOWN}
     assert harness.fake.calls() == []
-
-
-def running_detections() -> list[asyncio.Task[Any]]:
-    return [
-        t
-        for t in asyncio.all_tasks()
-        if t.get_name() == "reframe-encoder-detection" and not t.done()
-    ]
 
 
 async def test_close_waits_for_a_replaced_detection(

@@ -175,10 +175,10 @@ async def make_clip(
             size=size,
         )
 
-    cached = cache.find_clip(clip_id)
+    cached = await asyncio.to_thread(_cached_clip, cache, clip_id)
     if cached is not None:
         tctx.progress(100.0, "The clip is in the cache")
-        return result(cached, cached.stat().st_size)
+        return result(*cached)
 
     final = cache.clip(clip_id, extension)
     own = PreviewCache.temporary(final)  # this run's own file: no other run writes it
@@ -196,6 +196,17 @@ async def make_clip(
     limit = megabytes(ctx.settings().preview.cache_size_mb)
     await asyncio.to_thread(cache.trim, limit, protect=[final])
     return result(final, size)
+
+
+def _cached_clip(cache: PreviewCache, clip_id: str) -> tuple[Path, int] | None:
+    """The cached clip (marked as used) and its size. Blocking."""
+    path = cache.find_clip(clip_id)
+    if path is None:
+        return None
+    try:
+        return path, path.stat().st_size
+    except OSError:  # trimmed meanwhile: made again
+        return None
 
 
 async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None:

@@ -17,6 +17,7 @@ from reframe.mediatask import sample_timestamps
 from reframe.models import (
     AppSettings,
     CropRect,
+    FilterConfig,
     FrameSet,
     MediaSource,
     PreviewSettings,
@@ -26,7 +27,15 @@ from reframe.preview import cache_size, clear_cache, frame_path, start_frames
 from reframe.preview.cache import PreviewCache, is_frame_key
 from reframe.preview.graph import source_recipe
 
-from .helpers import DEFS, caps, job_for, make_env, rgb_pixels, run_ffmpeg
+from .helpers import (
+    DEFS,
+    caps,
+    file_reads_on_this_thread,
+    job_for,
+    make_env,
+    rgb_pixels,
+    run_ffmpeg,
+)
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
@@ -151,6 +160,16 @@ async def test_a_bad_request_fails_the_task(tmp_path: Path, fixture_media: Media
     assert done.error.endswith("-1.0 is not a time in letterbox.mkv (seconds from 0).")
 
 
+async def test_a_time_far_after_the_end(tmp_path: Path, fixture_media: Media) -> None:
+    env = make_env(tmp_path / "cache")
+    src = fixture_media("letterbox")
+    done, _ = await env.finish(start_frames(env.ctx, src, count=None, timestamps=[1e10], job=None))
+    assert done.state is TaskState.FAILED
+    assert done.error == (
+        "1e+10 is not a time in letterbox.mkv (frames can be taken up to 999999999.999 s)."
+    )
+
+
 async def test_a_file_that_is_not_media(tmp_path: Path) -> None:
     bad = tmp_path / "bad.mkv"
     bad.write_bytes(b"not a video" * 100)
@@ -246,6 +265,22 @@ async def test_output_frames_follow_the_job(tmp_path: Path, fixture_media: Media
     assert [f.key for f in other.frames if f.kind == "source"] == [f.key for f in sources]
 
 
+async def test_the_frame_cache_is_read_off_the_event_loop(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache folder may be slow (a network share, a disk that spins up)."""
+    src = fixture_media("letterbox")
+    job = job_for(src)
+    job.dimensions.crop.mode = "manual"
+    job.dimensions.crop.rect = CropRect(top=22, bottom=24)
+    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
+    _, made = await frames_of(tmp_path / "cache", src, count=2, job=job)
+    _, cached = await frames_of(tmp_path / "cache", src, count=2, job=job)
+    assert [f.cached for f in made.frames] == [False] * 4
+    assert [f.cached for f in cached.frames] == [True] * 4
+    assert on_loop == [], on_loop
+
+
 async def test_a_copied_video_reuses_the_source_frames(
     tmp_path: Path, fixture_media: Media
 ) -> None:
@@ -267,6 +302,33 @@ async def test_a_job_that_cannot_be_planned_gives_source_frames(
         "No output frames: the job's filters cannot be applied (unknown video encoder 'nope' "
         "(validation reports it))."
     ]
+
+
+async def test_a_bad_custom_filter_keeps_the_source_frames(
+    tmp_path: Path, fixture_media: Media
+) -> None:
+    """Here the plan accepts the chain and FFmpeg refuses it when it runs
+    (``eq=gamma=nonsense``)."""
+    src = fixture_media("letterbox")
+    env = make_env(tmp_path / "cache")
+    job = job_for(src)
+    job.filters.root["custom"] = FilterConfig.model_validate({"custom": "eq=gamma=nonsense"})
+    done, value = await env.finish(
+        start_frames(env.ctx, src, count=None, timestamps=[1.0, 3.0], job=job)
+    )
+    assert done.state is TaskState.DONE, done.error
+    assert isinstance(value, FrameSet)
+    assert [(f.kind, f.timestamp) for f in value.frames] == [("source", 1.0), ("source", 3.0)]
+    assert all(f.path.is_file() for f in value.frames)
+    output_notes = [n for n in value.notes if n.startswith("No output frame at ")]
+    assert [n.split(":")[0] for n in output_notes] == [
+        "No output frame at 1.000 s",
+        "No output frame at 3.000 s",
+    ]
+    assert all("FFmpeg failed" in n for n in output_notes), output_notes
+    assert sorted(p.name for p in (tmp_path / "cache" / "frames").iterdir()) == sorted(
+        f.path.name for f in value.frames
+    )  # no temporary file is left
 
 
 async def test_a_job_of_another_file(tmp_path: Path, fixture_media: Media) -> None:

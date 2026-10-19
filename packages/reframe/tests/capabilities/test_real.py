@@ -1,11 +1,14 @@
-"""Encoder detection with the real FFmpeg. ``needs_ffmpeg`` tests run in CI with hardware tests
-off; ``needs_gpu`` tests never run there and expect what this machine's PCI ids and drivers give.
+"""Encoder detection with the real FFmpeg. CI runs the ``needs_ffmpeg`` tests, which test no GPU
+encoder; ``needs_gpu`` tests never run there and expect what this machine's PCI ids and drivers
+give.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -37,6 +40,17 @@ async def real_ffmpeg() -> ToolInfo:
     return tools.ffmpeg
 
 
+def listed_filter(ffmpeg: ToolInfo, name: str) -> bool:
+    """Whether ``ffmpeg -filters`` lists ``name``, read without the parser under test (not every
+    build has every filter)."""
+    assert ffmpeg.path is not None
+    out = subprocess.run(
+        [str(ffmpeg.path), "-hide_banner", "-filters"],
+        capture_output=True, text=True, check=True, timeout=60, env={**os.environ, **ffmpeg.env},
+    )  # fmt: skip
+    return any(line.split()[1:2] == [name] for line in out.stdout.splitlines())
+
+
 async def test_real_detection_without_hardware_tests() -> None:
     ffmpeg = await real_ffmpeg()
     snap = await detect_capabilities(ffmpeg, DEFS, DetectionOptions(hardware_tests=False))
@@ -47,7 +61,7 @@ async def test_real_detection_without_hardware_tests() -> None:
     assert x265.supports_10bit is True
     assert snap.status("libsvtav1").presets  # the integer range of -preset
     assert snap.has_filter("scale") is True
-    assert snap.has_filter("zscale") is not None
+    assert snap.has_filter("zscale") is listed_filter(ffmpeg, "zscale")
     # hardware tests off: libplacebo is not run, so it is not known to work
     if snap.has_filter("libplacebo"):
         assert snap.usable_filter("libplacebo") is None

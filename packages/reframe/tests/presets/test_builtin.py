@@ -96,12 +96,12 @@ def test_every_category_has_presets() -> None:
     assert {p.category for p in PRESETS} == set(BUILT_IN_CATEGORIES)
 
 
-def test_presets_of_the_m2_demo_exist() -> None:
-    demo = by_id("h265-mkv-1080p")
-    assert demo.name == "H.265 MKV 1080p"
-    assert demo.video.encoder == "libx265"
-    assert demo.output.container == "mkv"
-    assert demo.dimensions.size == FitWithin(width=1920, height=1080)
+def test_the_h265_mkv_and_nvenc_1080p_presets() -> None:
+    mkv = by_id("h265-mkv-1080p")
+    assert mkv.name == "H.265 MKV 1080p"
+    assert mkv.video.encoder == "libx265"
+    assert mkv.output.container == "mkv"
+    assert mkv.dimensions.size == FitWithin(width=1920, height=1080)
     nvenc = by_id("h265-nvenc-1080p")
     assert nvenc.name == "H.265 NVENC 1080p"
     assert nvenc.video.encoder == "hevc_nvenc"
@@ -530,7 +530,7 @@ AC3_PASSTHRU = [(1, "passthru", "ac3", None), *AAC]
         ("h265-nvenc-1080p", AAC),
     ],
 )
-def test_m2_draft_of_the_multitrack_fixture(
+def test_the_audio_draft_of_the_multitrack_fixture(
     preset_id: str, expected: list[tuple[int, str, str, int | None]]
 ) -> None:
     """What ``draft_tracks`` does with the audio of the ``multitrack`` fixture: HandBrake

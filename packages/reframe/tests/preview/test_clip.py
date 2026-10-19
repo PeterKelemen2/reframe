@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +22,7 @@ from reframe.models import (
     JobSettings,
     PreviewClip,
     TaskState,
+    ToolStatus,
     TrackMetadata,
 )
 from reframe.preview import clip_path, start_frames, start_preview_clip
@@ -29,7 +31,18 @@ from reframe.tools import RunResult, run_streaming
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
-from .helpers import Env, caps, ffmpeg, job_for, make_env, real_tools, rgb_pixels, run_ffmpeg, tool
+from .helpers import (
+    Env,
+    caps,
+    ffmpeg,
+    file_reads_on_this_thread,
+    job_for,
+    make_env,
+    real_tools,
+    rgb_pixels,
+    run_ffmpeg,
+    tool,
+)
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
@@ -48,6 +61,16 @@ def probe(path: Path) -> dict[str, Any]:
     )
     data: dict[str, Any] = json.loads(out.stdout)
     return data
+
+
+def chapter_titles(path: Path) -> list[str]:
+    ffprobe = media.find_ffprobe()
+    assert ffprobe
+    out = subprocess.run(
+        [ffprobe, "-v", "error", "-of", "json", "-show_chapters", str(path)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    return [c.get("tags", {}).get("title", "") for c in json.loads(out.stdout)["chapters"]]
 
 
 async def clip(env: Env, job: JobSettings, start: float, seconds: float) -> PreviewClip:
@@ -113,6 +136,82 @@ async def test_the_same_request_gives_the_cached_clip(
     monkeypatch.undo()
     changed = await clip(env, other, start=0.5, seconds=1.0)
     assert changed.id != first.id
+
+
+async def test_renamed_chapters_give_a_new_clip(tmp_path: Path, fixture_media: Media) -> None:
+    src = fixture_media("chapters")
+    env = make_env(tmp_path / "cache")
+    first_job = job_for(src)
+    first_job.chapters.names = ["Old A", "Old B", "Old C", "Old D", "Old E"]
+    first = await clip(env, first_job, start=0.0, seconds=5.0)
+    assert chapter_titles(first.path)[0] == "Old A"
+    second_job = job_for(src)
+    second_job.chapters.names = ["New A", "New B", "New C", "New D", "New E"]
+    second = await clip(env, second_job, start=0.0, seconds=5.0)
+    assert second.id != first.id
+    assert chapter_titles(second.path)[0] == "New A"
+    again = await clip(env, first_job, start=0.0, seconds=5.0)  # still cached
+    assert (again.id, again.path) == (first.id, first.path)
+
+
+async def test_two_identical_clips_at_once(tmp_path: Path, fixture_media: Media) -> None:
+    """Two runs of the same clip id at once (a raised limit, or two processes on one cache)."""
+    env = make_env(tmp_path / "cache")
+    env.tasks.set_limit("preview_clip", 2)
+    src = fixture_media("hdr10-4k")
+    job = job_for(src, encoder="libx265", bit_depth=10, preset="ultrafast")
+    a = start_preview_clip(env.ctx, job, start=0.0, seconds=3.0)
+    b = start_preview_clip(env.ctx, job, start=0.0, seconds=3.0)
+    (done_a, clip_a), (done_b, clip_b) = await env.finish(a), await env.finish(b)
+    assert done_a.state is TaskState.DONE, done_a.error
+    assert done_b.state is TaskState.DONE, done_b.error
+    assert isinstance(clip_a, PreviewClip)
+    assert isinstance(clip_b, PreviewClip)
+    assert clip_a.id == clip_b.id
+    assert clip_a.path == clip_b.path
+    clips = tmp_path / "cache" / "clips"
+    assert sorted(p.name for p in clips.iterdir()) == [clip_a.path.name]
+    assert clip_a.path.stat().st_size == clip_b.size
+
+
+async def test_a_clip_made_meanwhile_by_another_run(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses to replace a clip that a reader has open: when another run has just
+    made the same clip, its file is used and ours is removed."""
+    env = make_env(tmp_path / "cache")
+    src = fixture_media("letterbox")
+    job = job_for(src)
+    first = await clip(env, job, start=0.0, seconds=1.0)
+    replace = os.replace
+    refused: list[str] = []
+
+    def refuse_existing(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+        if Path(target) == first.path:
+            refused.append(Path(source).name)
+            raise PermissionError(target)
+        replace(source, target)
+
+    monkeypatch.setattr("reframe.preview.cache.PreviewCache.find_clip", lambda *_: None)
+    monkeypatch.setattr("reframe.preview.clip.os.replace", refuse_existing)
+    again = await clip(env, job, start=0.0, seconds=1.0)
+    assert (again.id, again.path) == (first.id, first.path)
+    assert len(refused) == 1
+    assert refused[0].startswith(".tmp-")
+    assert no_leftovers(tmp_path / "cache" / "clips") == []
+
+
+async def test_the_clip_cache_is_read_off_the_event_loop(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache folder may be slow (a network share, a disk that spins up)."""
+    src = fixture_media("letterbox")
+    env = make_env(tmp_path / "cache")
+    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
+    first = await clip(env, lossless(src), start=0.5, seconds=1.0)
+    again = await clip(env, lossless(src), start=0.5, seconds=1.0)
+    assert again == first
+    assert on_loop == [], on_loop
 
 
 async def test_the_encoded_frames_are_the_output_frames(
@@ -197,11 +296,17 @@ async def test_two_pass_runs_both_passes(
     assert no_leftovers(tmp_path / "cache" / "clips") == []
 
 
-async def test_loudness_and_languages(tmp_path: Path, fixture_media: Media) -> None:
-    """The analyse step measures, the encode uses the values; mkvpropedit writes the BCP 47
-    language when it is installed."""
+@pytest.mark.parametrize("mkvpropedit", [True, False])
+async def test_loudness_and_languages(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch, mkvpropedit: bool
+) -> None:
+    """The analyse step measures, the encode uses the values. FFmpeg writes the ISO 639-2
+    language, and mkvpropedit (when it is installed) the BCP 47 one, which ffprobe never
+    shows."""
     src = fixture_media("multitrack")
-    env = make_env(tmp_path / "cache")
+    tools = real_tools(mkvpropedit=mkvpropedit)
+    env = make_env(tmp_path / "cache", tools=tools)
+    runs = record_runs(monkeypatch)
     job = job_for(src)
     job.audio = [
         AudioOutputTrack(
@@ -215,6 +320,8 @@ async def test_loudness_and_languages(tmp_path: Path, fixture_media: Media) -> N
     streams = probe(result.path)["streams"]
     assert [s["codec_type"] for s in streams] == ["video", "audio"]
     assert streams[1]["tags"]["language"] == "por"
+    ietf = [run for run in runs if "language-ietf=pt-BR" in run]
+    assert len(ietf) == (1 if tools.mkvpropedit.status is ToolStatus.FOUND else 0)
 
 
 @pytest.mark.parametrize(
