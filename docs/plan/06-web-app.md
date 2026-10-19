@@ -35,7 +35,10 @@ routers are thin. Each handler calls one facade method and maps the result.
       `await Reframe.create(...)` and `await reframe.close()`.
 - [ ] `ServerConfig`: `host` (default `127.0.0.1`), `port` (0 = random free port), `mode`
       (`web` | `desktop`), `auth` (`none` | `token` | `password`), `token`, `media_roots`,
-      `output_roots`, `static_dir`, `cors_origins`, `config_dir`, `data_dir`.
+      `output_roots`, `static_dir`, `cors_origins`, `config_dir`, `data_dir`, and for
+      [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
+      `endpoint_file` (the path of `server.json`; on by default in every mode),
+      `idle_exit` (seconds; off by default) and `owner_only`.
 - [ ] Entry point: start uvicorn with **one worker**. In desktop mode, print one JSON line to
       stdout when ready: `{"event":"ready","port":53817,"token":"…"}`.
 
@@ -50,6 +53,10 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
   - `password` (web, single user): login form → HTTP-only, SameSite=Strict session cookie.
     The password hash is stored in settings (argon2 or scrypt).
   - `none`: allowed only when bound to `127.0.0.1`. A startup warning says so.
+  - **Local token** ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
+    item 2): the random token in `<data>/server.json` (mode `0600`) is accepted as
+    `Authorization: Bearer` in every mode, next to the mode's own login. A CLI on the same
+    machine (also through `docker exec`) uses it.
 - [ ] **Path jail**: every path from the client is resolved (`Path.resolve(strict=False)`, which
       follows symlinks) and must be inside `media_roots` (for reading) or `output_roots` (for
       writing). Web mode enforces this. Desktop mode allows the whole filesystem of the
@@ -68,7 +75,7 @@ progress arrives as events.
 
 | Area | Method & path | Purpose |
 |------|---------------|---------|
-| System | `GET /api/health` | Version, uptime |
+| System | `GET /api/health` | Version, `api_version`, `instance` (random id of this run), uptime |
 | | `GET /api/system` | Tool statuses, versions, platform, mode |
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` | Capability statuses, re-detection |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only) |
@@ -97,9 +104,9 @@ progress arrives as events.
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
 | | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids}` | Track decisions with reasons, for the live preview |
 | Naming | `POST /api/naming/preview` `{naming, source_ids, job?}` | Name source + reason, parsed fields with positions, rendered output paths, issues. The variable list comes with `GET /api/definitions` |
-| Queue | `GET /api/queue` · `POST /api/queue` `{jobs}` | Snapshot, add (server validates again) |
+| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot, add (server validates again). `attach`: a client id; the jobs follow that client's event connection (S-7) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
-| | `POST /api/queue/{start\|pause\|stop}` · `PUT /api/queue/order` | Global actions |
+| | `POST /api/queue/{start\|pause\|stop}` · `PUT /api/queue/order` | Global actions. `start` takes an optional `job_ids`: only those jobs start |
 | | `GET /api/queue/{id}/log?from=` | Log (incremental) |
 | | `PUT /api/queue/when-done` | When-done action |
 | Settings | `GET/PUT /api/settings` | App settings |
@@ -150,7 +157,11 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
       REFRAME_FFMPEG=/opt/custom-ffmpeg/bin/ffmpeg`.
 - [ ] `docker/compose.example.yml` with variants for Intel/AMD (`/dev/dri`) and NVIDIA
       (`deploy.resources.reservations.devices`), and a commented-out override example.
-- [ ] Bare metal: `uv tool install reframe-server`, plus a systemd user unit example. The wheels
+- [ ] Bare metal: `uv tool install 'reframe[cli]' --with reframe-server
+      --with-executables-from reframe-server` (one environment, so `reframe` and
+      `reframe-server` have the same version;
+      [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11),
+      plus a systemd user unit example. The wheels
       do not contain FFmpeg. `reframe tools fetch` downloads the pinned build from the manifest
       (checksum verified) into the data dir, where it counts as the bundled build. On Windows:
       run from a terminal. A Windows service wrapper comes later.
@@ -158,6 +169,32 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
 
 Done when: `docker compose up` on a Linux host with an Intel iGPU shows `h264_vaapi`/`h264_qsv` as
 available and encodes a fixture file.
+
+## S-7 Local owner mode
+
+Implements [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md). Needs
+S-2 and S-3. Milestone M3b, with C-17 ([05](05-core.md#c-17-remote-queue-and-queue-commands)).
+
+- [ ] **Endpoint file** (`endpoint_file`): when the server holds `queue.lock` (it opens the
+      queue at start-up) and listens, it writes `server.json` (atomic, mode `0600` on POSIX)
+      with `pid`, `instance`, `port`, `token`, `version`, `api_version`, `started_at`, and
+      removes it at close. A server that cannot take the lock writes nothing and keeps 0027's
+      private queue with `queue.store_busy`; with `owner_only` it exits with code 75.
+- [ ] **Idle exit** (`idle_exit`): exit after N seconds with no running job, no job that a
+      `start` still targets, no event connection and no pending when-done countdown.
+- [ ] **Attachments**: after a client authenticates on `WS /api/events`, the server answers
+      with a `client_id`. `POST /api/queue` with `attach: <client_id>` is refused (409)
+      unless that connection is open. A connection that ends without a `detach` message
+      cancels its attached jobs that have not ended, as a cancel does. Not persisted.
+- [ ] `POST /api/queue/start` with `job_ids` starts only those jobs; other waiting jobs are
+      neither started nor cancelled.
+
+Done when: httpx tests show that the file is written after the server listens and removed at
+close, that a stale file left by `kill -9` is replaced, that `owner_only` exits with 75 on a
+busy lock, that idle exit waits for a running job, that a closed connection cancels its
+attached jobs (and a `detach` does not), that `attach` with the id of a closed connection is
+refused, that the local token works in `password` mode, and that `start` with `job_ids` leaves
+other waiting jobs alone.
 
 ---
 

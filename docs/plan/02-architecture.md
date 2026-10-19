@@ -191,4 +191,5 @@ progress. The API returns the task id at once and never waits for the result.
 5. **Core API is a facade.** UIs talk to the `Reframe` service object (see
    [05-core.md §C-15](05-core.md#c-15-service-facade-and-cli)), not to the internal modules.
 6. **The server runs one worker process.** Queue state lives in that process. Uvicorn must not
-   run with multiple workers.
+   run with multiple workers. One process owns the saved queue and runs every job; CLI commands
+   that use the queue are clients of it ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).

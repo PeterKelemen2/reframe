@@ -17,7 +17,8 @@ M0 Foundations
  └─► M1 Read media (core)
       └─► M2 Encode from the CLI (core)
            └─► M3 API + desktop spike
-                └─► M4 Frontend MVP (web) ──► M5 Desktop shell
+                ├─► M3b Shared queue (before M5)
+                └─► M4 Frontend MVP (web) ──► M5 Desktop shell (also needs M3b)
                      ├─► M6 Tracks & metadata ──► M7 Batch / season
                      ├─► M8 Picture: preview, crop, filters
                      └─► M9 Advanced encoder options
@@ -73,6 +74,25 @@ the `MediaSource` model.
 **Demo:** the OpenAPI docs page lists every route. The generated TypeScript types are committed.
 The WebSocket streams job progress. The desktop spike result is written to
 `docs/decisions/0001-desktop-shell.md`.
+
+## M3b — Shared queue
+
+| Steps | `S-7`, `C-17` |
+|-------|---------------|
+
+[Decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md): one process runs
+every job, and the CLI hands its jobs to it. Built after M3 (it needs S-2 and S-3), beside or
+after M4 (the frontend does not need it), and done before M5 (D-3 finds the owner the same
+way).
+
+**Demo:**
+1. Two `reframe encode` runs in two terminals both encode, share one `parallel_jobs` limit, and
+   show in `reframe queue list` from a third terminal. Ctrl+C in one cancels only its own
+   jobs.
+2. `kill -9` of one of them: its jobs are cancelled and their `.part` files removed. The other
+   run goes on.
+3. A job whose output another waiting job already claims is added `failed` with
+   `queue.output_claimed`.
 
 ## M4 — Frontend MVP (web)
 

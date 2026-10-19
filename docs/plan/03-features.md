@@ -745,14 +745,21 @@ Same behaviour as HandBrake:
 - **Pause** suspends the FFmpeg process (psutil suspend/resume, works on both OSes).
 - **Parallel jobs**: setting, default 1.
 - **Persistence**: the queue survives restarts. Running jobs become `Interrupted` and can be
-  restarted. One Reframe process owns the saved queue at a time; another process (a second
-  CLI command, for example) runs its jobs in a private queue that is not kept
-  ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
+  restarted. One Reframe process owns the saved queue and runs every job: the server (the
+  desktop app starts it, or a CLI command starts it on demand). A CLI command hands its jobs
+  to that owner, so several commands and the UI share one queue, one `parallel_jobs` limit and
+  one set of output-conflict checks
+  ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)). Without the
+  server package, or with `--in-process`, a second process runs its jobs in a private queue
+  that is not kept ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)).
 - Output safety: Reframe writes to `<name>.part.<ext>`, probes it again and checks its tracks
   and languages, and renames it on success. A failed job removes its partial file
   (configurable). File name collisions follow the setting: ask, auto-rename, or overwrite.
   When the name is taken at the end and the setting is "ask", the job fails and the finished
-  `.part` file is kept ([decision 0016](../decisions/0016-queue-and-job-runner.md)).
+  `.part` file is kept ([decision 0016](../decisions/0016-queue-and-job-runner.md)). A job
+  whose output is the output or the source of another waiting or running job is added as
+  failed (`queue.output_claimed`,
+  [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).
 - **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
 - **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux the desktop
   session's inhibit and logind over D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the

@@ -470,7 +470,10 @@ cancelling a scan stops its FFmpeg process within 1 s.
 - [ ] Runner loop: when a slot is free (parallel limit), take the next `Waiting` job →
       **validate again** (capabilities can change; wait for encoder detection when an encoder
       is still being checked) → build the plan → run the steps. Two jobs with the same output
-      path never run at once (0016).
+      path never run at once (0016). `add` and `retry` fail a job whose output is the output
+      or the source of another waiting, running or paused job (`queue.output_claimed`,
+      [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 6;
+      built in C-17).
 - [ ] **Progress parser** for `-progress` blocks (`out_time_us`, `fps`, `speed`, `total_size`,
       `progress=end`). Weighted across steps (pass 1 = 40 %, …). ETA from a smoothed rate over
       active time: paused time and a system sleep do not count (FFmpeg's own `speed` and `fps`
@@ -489,7 +492,9 @@ cancelling a scan stops its FFmpeg process within 1 s.
 - [ ] Restart recovery: `Running` → `Interrupted`. `close()` stops running jobs as
       `Interrupted` (0016). The store is opened on first use under an exclusive lock
       (`<data>/queue.lock`): only the owner restores it and runs its jobs; another
-      process gets a private queue that is not kept. No file that a job writes or removes may
+      process hands its jobs to the owner's server, or, when it cannot, gets a private queue
+      that is not kept ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).
+      No file that a job writes or removes may
       be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)),
       except the source of a `metadata_edit` job, which only mkvpropedit edits and nothing
       removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
@@ -631,3 +636,47 @@ anime with absolute numbers, a year in the show name such as `Doctor.Who.2005`, 
 separators such as `hacksawridge`, season-pack and movie-folder layouts) and passes, including
 the Hacksaw Ridge and Sopranos examples from 03. Every HandBrake variable has a test, and the
 Windows sanitising rules have tests on Linux too.
+
+## C-17 Remote queue and queue commands
+
+Implements [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md): one
+scheduler process, and the CLI hands its jobs to it. Needs S-2 (queue routes), S-3 (events)
+and S-7. Milestone M3b.
+
+- [ ] `reframe.queue.QueueLike` (a `Protocol`): the methods of `QueueService` that the CLI
+      calls (`add`, `list`, `get`, `start(job_ids=…)`, `wait`, `cancel`, `pause`, `resume`,
+      `retry`, `remove`, `reorder`, `log_path`). `QueueService` implements it unchanged.
+      `reframe encode` and `reframe batch` use only `QueueLike`.
+- [ ] `reframe.remote`: `RemoteQueue(QueueLike)` over the server's REST and WebSocket
+      (`httpx`, `websockets` in the `[cli]` extra), and finding the owner (0042 item 3):
+      `<data>/server.json` with the same `instance` and `api_version`; else start one with
+      `sys.executable -m reframe_server --owner-only --idle-exit 30` through
+      `launch_detached` and wait at most 10 s; else 0027's in-process queue with
+      `queue.store_busy` and the reason.
+- [ ] Client mode: probe and draft locally, validate with `POST /api/jobs/validate`, show the
+      owner's encoder statuses, and run no encoder detection of its own (0042 item 4).
+- [ ] Attached jobs (the default: the event connection first, then `attach` with its
+      `client_id`) and `--detach` for `encode` and `batch`; `--in-process`. The CLI adds its
+      jobs at the end of the queue (0042 item 5).
+- [ ] Output claims in `QueueService.add` and `retry`: `queue.output_claimed` when the job's
+      output is the output or the source of another waiting, running or paused job, compared
+      as files (0042 item 6).
+- [ ] `reframe queue list [--json]` · `log ID [-f]` · `pause|resume|cancel [ID…|--all]` ·
+      `retry ID` · `remove ID`. With no owner, `list` and `log` open the store read-only: no
+      restore, no lock.
+
+Done when, with real processes (the real `reframe-server` and `reframe` CLI, fixture media
+or the fake FFmpeg):
+
+1. Two `reframe encode` runs at once both finish, each shows its own progress, and
+   `queue.parallel_jobs` holds across both.
+2. SIGINT in one cancels only its own jobs.
+3. `kill -9` of a client cancels its attached jobs and removes their `.part` files. A
+   `--detach` job runs on.
+4. `kill -9` of the server in the middle of a job: the client reports `interrupted`; the next
+   command starts a new owner that restores the queue.
+5. Ten clients that add jobs at the same time lose none and duplicate none.
+6. A job whose output is the output of another client's waiting job is added `failed` with
+   `queue.output_claimed`.
+7. A server of another `api_version` is not used: the client falls back and says why.
+8. The queue contract test suite passes against `QueueService` and `RemoteQueue`.

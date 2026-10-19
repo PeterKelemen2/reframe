@@ -1,6 +1,7 @@
 # 0017 — Jobs service and the M2 CLI: drafts, bounded waits, output formats, exit codes
 
 - Status: accepted; item 16 superseded in part by [0027](0027-one-process-owns-the-queue-store.md)
+  and [0042](0042-one-scheduler-process-and-cli-clients.md)
 - Date: 2026-10-14
 - Steps: C-15
 

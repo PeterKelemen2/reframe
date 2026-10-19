@@ -34,7 +34,7 @@ Reasons:
 ## Runtime architecture
 
 ```
-┌──────────────────────── Reframe.exe / reframe (Tauri, Rust) ────────────────────────┐
+┌──────────────────── Reframe.exe / reframe-desktop (Tauri, Rust) ────────────────────┐
 │ main window (webview: Vue, VITE_PLATFORM=desktop)    preview window (optional)       │
 │        │ invoke('backend_info') → {baseUrl, token}                                   │
 │        │ HTTP + WS → 127.0.0.1:<port>                                                │
@@ -51,7 +51,10 @@ Reasons:
 
 ## Sidecar lifecycle
 
-1. In the Tauri `setup` hook, spawn the sidecar from the resources directory. Pass
+1. In the Tauri `setup` hook, first look for a running owner of the queue (D-3,
+   [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3). When
+   one is found, use its address and token and start no sidecar. Otherwise spawn the sidecar
+   from the resources directory. Pass
    `--mode desktop --port 0 --auth token --parent-pid <pid>`. The token is generated in Rust
    and passed through an environment variable, not on the command line.
 2. Read stdout until the ready line `{"event":"ready","port":…}` arrives (20 s timeout). On
@@ -142,6 +145,10 @@ or revisits this choice.
 - [ ] `desktop/sidecar/build.py`: PyInstaller onedir build of `reframe_server.__main__`. It
       includes the `reframe/definitions/data` and built-in preset files and stamps the version.
 - [ ] Output to `desktop/src-tauri/resources/sidecar/`. It is listed under `bundle.resources`.
+- [ ] The same build makes the frozen `reframe` CLI in the same folder (one set of
+      libraries). The `.deb` and `.rpm` link it as `/usr/bin/reframe`; the Windows installer
+      offers to add the folder to the user's `PATH`; the AppImage does not put it on `PATH`
+      ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
 - [ ] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
       line.
 
@@ -151,6 +158,15 @@ or revisits this choice.
 - [ ] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
       sidecar to it (`windows` crate).
 - [ ] The quit flow with the running-jobs dialog.
+- [ ] **Find the owner first**
+      ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3),
+      in Rust: read `<data>/server.json`; when `GET /api/health` answers with the same
+      `instance` and `api_version`, use that server: no sidecar, no restart policy, and
+      **Stop jobs and quit** cancels the jobs through the API. The app's event connection
+      keeps that owner from exiting when idle. When it ends, run the order again (a new
+      sidecar restores the queue). Otherwise start the sidecar; it publishes `server.json`
+      (S-7), so a CLI hands its jobs to the app. The running-jobs dialog counts the CLI's
+      jobs too.
 
 ### D-4 Desktop platform adapter
 - [ ] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
@@ -158,8 +174,9 @@ or revisits this choice.
       (reveal, tray settings, when-done power actions).
 
 ### D-5 Single instance, open-with, CLI arguments
-- [ ] `reframe file1.mkv folder/` opens the app (or focuses the running one) and probes the
-      paths.
+- [ ] `reframe-desktop file1.mkv folder/` (`Reframe.exe …` on Windows) opens the app (or
+      focuses the running one) and probes the paths. `reframe` is always the CLI
+      ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
 - [ ] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
 
 ### D-6 Windows and comfort

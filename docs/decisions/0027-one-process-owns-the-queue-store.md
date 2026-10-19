@@ -1,6 +1,6 @@
 # 0027 — One Reframe process owns the queue store; another process gets a private queue
 
-- Status: accepted
+- Status: accepted; item 4 superseded in part by [0042](0042-one-scheduler-process-and-cli-clients.md)
 - Date: 2026-10-14
 - Steps: C-11, C-15 (affects every front end: S-x, D-x)
 - Supersedes in part: [0016](0016-queue-and-job-runner.md) (restore in `Reframe.create()`;
