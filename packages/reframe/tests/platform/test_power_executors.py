@@ -152,7 +152,8 @@ async def test_windows_shutdown_never_loads_the_dlls() -> None:
 class FakeWin32:
     """Mocked ``powrprof`` / ``advapi32`` / ``kernel32`` with the Win32 call semantics."""
 
-    PROCESS = 0xFFFF  # GetCurrentProcess's pseudo handle
+    # GetCurrentProcess's (HANDLE)-1, which a HANDLE restype returns unsigned.
+    PROCESS = 2 ** (8 * ctypes.sizeof(ctypes.c_void_p)) - 1
     TOKEN = 0x1234
     SHUTDOWN_LUID = 19
 
