@@ -1,12 +1,13 @@
 """Track metadata rules: a language that is not a known language or BCP 47 tag would be
-written as ``und``."""
+written as ``und``, and several output tracks of one kind marked default."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
 from reframe import languages
-from reframe.command.metadata import needs_ietf
+from reframe.command.metadata import dispositions, needs_ietf
+from reframe.definitions import ContainerDef
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import TrackMetadata
 from reframe.models.tools import ToolStatus
@@ -88,6 +89,56 @@ def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 "Keep the source language",
                 replace(f"{prefix}.language", None),
+                target=ctx.target,
+            ),
+        )
+
+
+def _written_default(ctx: JobContext, container: ContainerDef, metadata: TrackMetadata) -> bool:
+    """The default flag as the plan writes it: an FFmpeg disposition, else the mkvpropedit
+    step after muxing."""
+    if not metadata.default:
+        return False
+    disposition = ctx.definitions.track_flags["default"].disposition
+    if disposition in dispositions(metadata, container, ctx.definitions).split("+"):
+        return True
+    return (
+        "default" in container.mkvpropedit_flags
+        and ctx.tools.mkvpropedit.status is ToolStatus.FOUND
+    )
+
+
+@job_rule("metadata", "metadata.several_defaults")
+def default_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """More than one output track of a kind marked default is allowed, so a warning, with a fix
+    that keeps only the first one default. A burned-in subtitle is not an output track."""
+    container = ctx.container
+    if container is None:
+        return
+    audio = [
+        index
+        for index, track in enumerate(ctx.job.audio)
+        if _written_default(ctx, container, track.metadata)
+    ]
+    subtitles = [
+        index
+        for index, sub in enumerate(ctx.job.subtitles)
+        if sub.action != "burn" and _written_default(ctx, container, sub.metadata)
+    ]
+    for field, kind, marked in (("audio", "audio", audio), ("subtitles", "subtitle", subtitles)):
+        if len(marked) < 2:
+            continue
+        first, *others = marked
+        numbers = [str(index + 1) for index in marked]
+        names = ", ".join(numbers[:-1]) + " and " + numbers[-1]
+        yield warning(
+            "metadata.several_defaults",
+            f"{field}[{others[0]}].metadata.default",
+            f"{kind.capitalize()} tracks {names} are {'both' if len(marked) == 2 else 'all'} "
+            f"marked default; usually only one {kind} track is.",
+            fix(
+                f"Keep only {kind} track {first + 1} default",
+                *(replace(f"{field}[{index}].metadata.default", False) for index in others),
                 target=ctx.target,
             ),
         )
