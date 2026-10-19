@@ -1,5 +1,4 @@
-"""C-12 M7: deriving rules from a manual selection, *Apply to group…* and merging templates
-(04 §Three ways to edit, §Deriving rules from a manual selection)."""
+"""Deriving a template from a job and merging templates into a base."""
 
 from __future__ import annotations
 
@@ -55,9 +54,6 @@ A = _load("anime")
 
 
 def test_the_most_specific_selector_of_04() -> None:
-    """04: "E01 track #2: eng · DTS-HD MA · 5.1 · role=main · title "English Dub" →
-    selector: languages=[eng], codecs=[dts], profiles=["DTS-HD MA"], channels=6,
-    roles=[main], title_pattern="^English Dub$", nth=0"."""
     e01 = A.recorded(1, 1)
     selector = derive_selector(e01.audio[1], e01)
     assert selector == TrackSelector(
@@ -125,10 +121,8 @@ def test_apply_audio_and_subtitles_to_the_group() -> None:
     assert (s1.metadata.forced, s1.metadata.default) == (True, False)
     assert s1.metadata.name_template is None  # unchanged: each file keeps its own title
     assert (s2.metadata.default, s2.selector.title_pattern) == (True, "^Full$")
-    # The other sections stay the base's.
     assert template.video == base.video
     assert template.audio_defaults == base.audio_defaults
-    # The template resolves on its own file to the same tracks as the job.
     tracks = resolve_tracks(template, e01).draft
     assert tracks.audio == job.audio
     assert tracks.subtitles == job.subtitles
@@ -231,8 +225,8 @@ def test_merge_takes_only_the_sections() -> None:
 
 
 def test_a_job_without_tracks_of_a_kind() -> None:
-    """An empty rule list means "the template's defaults": a job without audio derives one
-    optional rule that takes no track, so the group gets no audio either (decision 0040)."""
+    """An empty rule list means "the template's defaults", so a job without audio gets one
+    optional rule that takes no track."""
     e01 = A.recorded(1, 1)
     job = A.example_job(e01)
     job.audio = []

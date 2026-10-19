@@ -1,10 +1,4 @@
-"""C-12 M2 track drafts (decision 0018): every audio track through the codec rules, every
-subtitle copied, metadata from the source.
-
-The sources are the recorded probes of the generated fixtures (``testdata/probes/fixtures``,
-pinned FFmpeg build), so the result does not depend on the FFmpeg that runs the tests; one
-test probes the generated ``multitrack`` file with the real ffprobe.
-"""
+"""Track drafts from recorded probes, so the result does not depend on the local FFmpeg."""
 
 from __future__ import annotations
 
@@ -48,9 +42,8 @@ def flags(**on: bool) -> dict[str, bool]:
     return {name: on.get(name, False) for name in TrackFlags.model_fields}
 
 
-#: ``draft_tracks(multitrack, JobTemplate())``: the default catch-all rule (AAC, up to 5.1,
-#: 256 kb/s, passthru when the source fits). The AAC tracks have no bit rate in an
-#: FFmpeg-made MKV; a lossy source fits at any bit rate (decision 0023), so they pass through.
+#: The default catch-all rule (AAC, up to 5.1, 256 kb/s) passes these through: a lossy
+#: source fits at any bit rate.
 MULTITRACK_AUDIO = [
     AudioOutputTrack(
         action="passthru",
@@ -122,8 +115,6 @@ async def test_multitrack_probed_live(fixture_media: Callable[[str], Path]) -> N
 
 
 def test_season() -> None:
-    """Every episode: one output per audio track in source order, every subtitle copied.
-    E05 has an extra commentary track, E09 lacks the commentary (``scripts/make-testdata.py``)."""
     assert len(SEASON) == 12
     counts = []
     for path in SEASON:
@@ -147,8 +138,7 @@ def test_season() -> None:
 
 
 def test_container_and_rules_of_the_template() -> None:
-    """The template's container and audio defaults are used: in WebM an AC-3 track cannot
-    pass through; a rule for English takes the English tracks."""
+    """In WebM an AC-3 track cannot pass through; a rule for English takes the English tracks."""
     source = recorded("multitrack.mkv.json")
     template = JobTemplate(
         output=OutputOptions(container="webm"),
@@ -170,8 +160,7 @@ def test_container_and_rules_of_the_template() -> None:
         "192 ≤ 256, but WebM cannot hold AC-3 → encode at 192 kb/s, the smallest allowed value"
         " ≥ 192"
     )
-    # Subtitles are copied whatever the container (the builder and validation apply 03's
-    # container rules).
+    # Subtitles are copied whatever the container.
     assert [s.action for s in draft.subtitles] == ["copy", "copy", "copy"]
 
 

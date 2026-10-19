@@ -1,8 +1,4 @@
-"""C-12 defaults on a real file (decision 0031; testdata/README.md "Audio and subtitle
-defaults (C-12, selection stage)"): mkvmerge adds a forced SRT track to the ``multitrack``
-fixture, the real ffprobe reads its forced flag and event count, and the foreign audio search
-takes it. mkvmerge also marks the new track default, so the file has two default subtitles;
-the keep-everything draft keeps only the first."""
+"""Foreign audio search and default tracks on a ``multitrack`` file that mkvmerge has changed."""
 
 from __future__ import annotations
 
@@ -69,10 +65,9 @@ async def test_foreign_audio_search_on_an_mkvmerge_file(
     # What the selection relies on: ffprobe's forced flag and mkvmerge's NUMBER_OF_FRAMES.
     assert (forced.index, forced.title, forced.disposition.forced) == (7, "Forced", True)
     assert (forced.event_count, forced.event_count_source) == (1, "stats_tag")
-    assert forced.disposition.default  # mkvmerge's default for a new track
+    assert forced.disposition.default
     assert [s.disposition.default for s in source.subtitles] == [True, False, False, True]
 
-    # No language set: every subtitle copied, only the first default flag kept.
     plain = draft_tracks(source, JobTemplate())
     assert [(t.source, t.metadata.default) for t in plain.subtitles] == [
         (4, True),
