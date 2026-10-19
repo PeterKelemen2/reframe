@@ -21,6 +21,7 @@ from reframe.models import (
     JobSettings,
     PreviewClip,
     TaskState,
+    ToolStatus,
     TrackMetadata,
 )
 from reframe.preview import clip_path, start_frames, start_preview_clip
@@ -221,11 +222,17 @@ async def test_two_pass_runs_both_passes(
     assert no_leftovers(tmp_path / "cache" / "clips") == []
 
 
-async def test_loudness_and_languages(tmp_path: Path, fixture_media: Media) -> None:
-    """The analyse step measures, the encode uses the values; mkvpropedit writes the BCP 47
-    language when it is installed."""
+@pytest.mark.parametrize("mkvpropedit", [True, False])
+async def test_loudness_and_languages(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch, mkvpropedit: bool
+) -> None:
+    """The analyse step measures, the encode uses the values. FFmpeg writes the ISO 639-2
+    language, and mkvpropedit (when it is installed) the BCP 47 one, which ffprobe never
+    shows."""
     src = fixture_media("multitrack")
-    env = make_env(tmp_path / "cache")
+    tools = real_tools(mkvpropedit=mkvpropedit)
+    env = make_env(tmp_path / "cache", tools=tools)
+    runs = record_runs(monkeypatch)
     job = job_for(src)
     job.audio = [
         AudioOutputTrack(
@@ -239,6 +246,8 @@ async def test_loudness_and_languages(tmp_path: Path, fixture_media: Media) -> N
     streams = probe(result.path)["streams"]
     assert [s["codec_type"] for s in streams] == ["video", "audio"]
     assert streams[1]["tags"]["language"] == "por"
+    ietf = [run for run in runs if "language-ietf=pt-BR" in run]
+    assert len(ietf) == (1 if tools.mkvpropedit.status is ToolStatus.FOUND else 0)
 
 
 @pytest.mark.parametrize(
