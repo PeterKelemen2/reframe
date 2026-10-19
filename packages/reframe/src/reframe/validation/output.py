@@ -1,16 +1,6 @@
-"""Output rules (05 §C-8 "Output"): no output path, folder not writable, output = source, name
-collision (03 §Queue: ask, auto-rename or overwrite), extension, and free disk space.
-
-The path checks (:func:`output_path_issues`) work on :class:`~pathlib.PurePath`, so they are
-tested with Windows paths (drive roots, a case-insensitive file system) on Linux. Every read
-goes through the :class:`~reframe.validation.fs.FileSystemView`.
-
-Free disk space is estimated only when the size is known in advance: average bitrate, and
-video passthrough (03: "estimate in bitrate mode"). Constant quality has no estimate.
-
-A metadata edit in place (job type ``metadata_edit``, C-13) writes no new file: its output is
-the source by design, so the path and disk-space rules do not apply to it
-(:func:`is_metadata_edit`; its own rules are in :mod:`reframe.validation.inplace`).
+"""Output path and free-disk-space rules. Every file-system read goes through
+:class:`~reframe.validation.fs.FileSystemView`. A metadata edit in place writes no new file,
+so these rules skip it (:func:`is_metadata_edit`).
 """
 
 from __future__ import annotations
@@ -72,8 +62,7 @@ CODES = (
 
 
 def next_free_path[P: PurePath](path: P, fs: FileSystemView, *, limit: int = 9999) -> P:
-    """``Name (1).mkv``, ``Name (2).mkv``, … : the first name that does not exist. (The queue's
-    auto-rename, C-11, should use the same scheme.)"""
+    """``Name (1).mkv``, ``Name (2).mkv``, … : the first name that does not exist."""
     for number in range(1, limit + 1):
         candidate = path.with_name(f"{path.stem} ({number}){path.suffix}")
         if not fs.exists(candidate):
@@ -95,10 +84,8 @@ def existing_ancestor(path: PurePath, fs: FileSystemView) -> PurePath | None:
 
 
 def written_paths[P: PurePath](path: P) -> list[P]:
-    """Every file a job with the output ``path`` writes, and the queue renames or removes:
-    the output, the partial file (``Movie.part.mkv``), the FFMETADATA chapters file, and the
-    2-pass statistics files of x264 and x265. Named by the command builder's own functions
-    (decision 0027 item 5)."""
+    """Every file a job with the output ``path`` writes, which the queue renames or removes.
+    Named by the command builder's functions, so the names match what it writes."""
     final = cast(Path, path)
     found = [final, partial_path(final), partial_path(final, ".chapters.txt")]
     passlog = partial_path(final, ".passlog")
@@ -108,18 +95,14 @@ def written_paths[P: PurePath](path: P) -> list[P]:
 
 
 def _same_name(a: PurePath, b: PurePath) -> bool:
-    """The same path after ``.``/``..`` and separators are normalised; Windows paths also
-    ignore case. (A case-insensitive POSIX file system, APFS, is found by ``fs.same_file``:
-    a clashing name always exists, as it is the source.)"""
     if isinstance(a, PureWindowsPath):
         return ntpath.normcase(ntpath.normpath(str(a))) == ntpath.normcase(ntpath.normpath(str(b)))
     return posixpath.normpath(str(a)) == posixpath.normpath(str(b))
 
 
 def source_clash(path: PurePath, source: PurePath, fs: FileSystemView) -> PurePath | None:
-    """The first file the job writes (:func:`written_paths`) that is the source: the same
-    file through a link or another spelling (``fs.same_file``), or the same normalised
-    name."""
+    """The first file the job writes (:func:`written_paths`) that is the source, by name or
+    through a link."""
     for candidate in written_paths(path):
         if _same_name(candidate, source) or fs.same_file(candidate, source):
             return candidate
@@ -137,8 +120,6 @@ def free_of_source(path: PurePath, source: PurePath, fs: FileSystemView) -> Pure
 
 
 def _safe_name(path: PurePath) -> str:
-    """C-16's safe form of the file name (forbidden characters, reserved names, the 255-byte
-    limit with room for ``.part``)."""
     extension = path.suffix.lstrip(".")
     stem = path.name[: -len(path.suffix)] if path.suffix else path.name
     parts, _ = sanitize_segments([[Piece(stem)]], extension=extension, fallback=stem)
@@ -146,10 +127,10 @@ def _safe_name(path: PurePath) -> str:
 
 
 def name_issues(path: PurePath, *, target: FixTarget = "job") -> list[ValidationIssue]:
-    """A manual output path checked against C-16's file-name rules (``reframe.naming``):
-    a path part longer than 255 bytes (the file name with the ``.part`` the queue adds) is an
-    error on every OS; a reserved Windows name (``CON.mkv``) or a character Windows does not
-    allow is an error for a Windows path and a warning elsewhere (the file may move)."""
+    """A manual output path checked against the file-name rules of :mod:`reframe.naming`: a
+    folder name or the partial file name over 255 bytes is an error on every OS; a reserved
+    Windows name (``CON.mkv``) or a character Windows does not allow is an error for a Windows
+    path and a warning elsewhere (the file may move)."""
     issues: list[ValidationIssue] = []
     safe = _safe_name(path)
     fixes = [
@@ -194,13 +175,10 @@ def _size(value: float) -> str:
 
 
 def _nul_issue(path: PurePath, target: FixTarget) -> ValidationIssue:
-    """``output.not_writable`` for a path with a NUL character (only the API can send one):
-    no file system allows it, so no other check applies (final review RN, decision 0016).
-    A NUL in the file name gets C-16's safe name as a fix; one in a folder name gets none
-    (without it the path names another folder)."""
     shown = str(path).replace("\0", "\\0")
     fixes: list[Fix] = []
     safe = _safe_name(path)
+    # A NUL in a folder name has no fix: a replacement would name another folder.
     if not has_nul(path.parent) and safe and not has_nul(safe):
         fixes.append(
             fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
@@ -223,8 +201,8 @@ def output_path_issues(
     collision: CollisionPolicy,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """The checks of one output path (see the module doc). A path with a NUL character is
-    one error and no file-system read."""
+    """The checks of one output path. A path with a NUL character is one error and no
+    file-system read."""
     issues: list[ValidationIssue] = []
 
     def save_as(candidate: PurePath) -> Fix:
@@ -358,7 +336,7 @@ def output_path_issues(
 
 
 def estimate_output_bytes(ctx: JobContext) -> int | None:
-    """The output size, when it can be known before the encode (see the module doc)."""
+    """The output size in bytes, or ``None`` when it cannot be known before the encode."""
     seconds = range_duration(ctx)
     if not seconds:
         return None
@@ -393,7 +371,7 @@ def estimate_output_bytes(ctx: JobContext) -> int | None:
 
 
 def is_metadata_edit(ctx: JobContext) -> bool:
-    """The job edits its source in place (job type ``metadata_edit``, C-13)."""
+    """The job edits its source in place (job type ``metadata_edit``)."""
     if not ctx.job.output.edit_in_place:
         return False
     return job_type(ctx.job, ctx.source, definitions=ctx.definitions)[0] == "metadata_edit"

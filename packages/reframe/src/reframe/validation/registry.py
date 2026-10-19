@@ -1,11 +1,7 @@
-"""The rule registry (05 §C-8: "small functions in a registry, grouped by area").
-
-A rule is a function from a context (:class:`~reframe.validation.context.JobContext` or
-:class:`~reframe.validation.context.TemplateContext`) to issues. The decorators
-:func:`job_rule` and :func:`template_rule` register it with its area and the issue codes it
-can produce (the codes are documentation, and the tests check that each one has a positive
-and a negative case). Rules run area by area, in :data:`AREAS` order, then in the order they
-were registered.
+"""The rule registry. A rule is a function from a :class:`~reframe.validation.context.JobContext`
+or :class:`~reframe.validation.context.TemplateContext` to issues. :func:`job_rule` and
+:func:`template_rule` register it with its area and the issue codes it can produce. Rules run
+area by area, in :data:`AREAS` order, then in registration order.
 """
 
 from __future__ import annotations

@@ -1,14 +1,5 @@
-"""Range rules (05 §C-8 "Range is outside the duration").
-
-- A range that starts at or after the end of the source, or that is empty (end ≤ start), or a
-  chapter range on a source without chapters: ``range.outside`` (error). The fix encodes the
-  whole source.
-- A frame range on a source without a known frame rate: ``range.no_frame_rate`` (error;
-  the command builder cannot convert frames to time).
-- A range that ends after the source ends: ``range.end_beyond`` (warning). The encode stops at
-  the end of the source anyway; the fix sets the end to "the end".
-
-Nothing is checked when the duration (or, for frames, the frame count) is not known.
+"""Range rules. The checks against the end of the source need the duration (for frames, the
+frame count), and are skipped without it.
 """
 
 from __future__ import annotations
@@ -68,8 +59,8 @@ def range_duration(ctx: JobContext) -> float | None:
 
 
 def has_frame_rate(ctx: JobContext) -> bool:
-    """The command builder can turn frames into time: the main video stream has an average
-    frame rate, a frame count and a duration, or a frame rate (``source_rate`` of C-7)."""
+    """The command builder can turn frames into time: the main video stream needs a frame rate,
+    or a frame count and a duration."""
     stream = ctx.video_stream
     if stream is None:
         return False

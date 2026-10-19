@@ -1,13 +1,5 @@
-"""Tool rules (05 §C-8 "Tools"): ffmpeg missing, too old or broken; mkvpropedit needed but
-missing.
-
-The ffmpeg issues carry C-1's fixes ("Use bundled FFmpeg": a patch on ``AppSettings``, target
-``settings``). Tool discovery reads Settings, so such a fix works when discovery runs again;
-it is not a change of the job. mkvpropedit is needed to edit an MKV in place (03 §Remux-only
-jobs) and to write flags the muxer cannot (``container.mkvpropedit_flags``; the flag case is a
-warning of the container rule ``track_flags``). The in-place case's fix writes a new file: edit
-in place off and, when the output path is the source, a new path
-(:func:`reframe.validation.inplace.write_new_file_fix`).
+"""Tool rules. The FFmpeg fixes change Settings, not the job, and take effect when tool
+discovery runs again. mkvpropedit is needed to edit an MKV in place.
 """
 
 from __future__ import annotations

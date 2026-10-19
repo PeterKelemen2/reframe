@@ -1,8 +1,5 @@
-"""Checks of ``VideoSettings`` against the encoder definitions and this FFmpeg build.
-
-Shared by the job rules and the template rules (a preset's ``video`` is the same model). Pure
-helpers; ``encoder.py`` and ``container.py`` register them.
-"""
+"""Checks of ``VideoSettings`` against the encoder definitions and this FFmpeg build. Pure
+helpers."""
 
 from __future__ import annotations
 
@@ -105,9 +102,6 @@ def _num(value: float) -> str:
     return f"{value:g}"
 
 
-# --------------------------------------------------------------------------- switching
-
-
 def switch_video_encoder(
     video: VideoSettings,
     new_id: str,
@@ -116,12 +110,8 @@ def switch_video_encoder(
 ) -> tuple[list[JsonPatchOp], str | None]:
     """The patch that switches ``video`` to the encoder ``new_id``, and a note on the quality.
 
-    Besides the encoder it converts a constant-quality value to the new encoder's scale (C-6
-    ``convert_quality``: approximate, 03 §Missing encoder behaviour), keeps the bitrate inside
-    the new encoder's range, turns off 2-pass and 10-bit where the new encoder has none, resets
-    a speed preset, tune, profile or level that the new encoder does not have, and drops
-    advanced options it does not know or whose value it does not take (x264's colour matrix
-    ``GBR`` is x265's ``gbr``). So the fix does not leave new errors behind.
+    Each value the new encoder does not have is converted, moved into its range or dropped,
+    so the fix leaves no new error behind.
     """
     old = definitions.video_encoders.get(video.encoder)
     new = definitions.video_encoders[new_id]
@@ -196,14 +186,10 @@ def _switch_fix(
     closest: bool = False,
     caps: CapabilitySnapshot | None = None,
 ) -> Fix:
-    """ "Use libx265 (closest match; quality CQ 27 → RF 23.6, approximate)"."""
     ops, note = switch_video_encoder(video, new_id, definitions, caps)
     details = [text for text in ("closest match" if closest else None, note) if text]
     label = f"Use {new_id}" + (f" ({'; '.join(details)})" if details else "")
     return fix(label, *ops, target=target)
-
-
-# --------------------------------------------------------------------------- availability
 
 
 def video_availability_issues(
@@ -214,8 +200,8 @@ def video_availability_issues(
     target: FixTarget = "job",
     subject: str | None = None,
 ) -> list[ValidationIssue]:
-    """C-4's ``encoder_issues`` for the video encoder; the closest-match fix also converts
-    the quality (and the rest, :func:`switch_video_encoder`)."""
+    """The availability issues of the video encoder. The closest-match fix also converts the
+    quality and the rest (:func:`switch_video_encoder`)."""
     issues = encoder_issues(
         video.encoder, caps, definitions, path="video.encoder", target=target, subject=subject
     )
@@ -228,17 +214,14 @@ def video_availability_issues(
                 fixes.append(
                     _switch_fix(video, first.value, definitions, target, closest=True, caps=caps)
                 )
-            else:  # pragma: no cover - C-4 makes only replace fixes
+            else:  # pragma: no cover - encoder_issues makes only replace fixes
                 fixes.append(old_fix)
         result.append(issue.model_copy(update={"fixes": fixes}))
     return result
 
 
-# --------------------------------------------------------------------------- 10-bit
-
-
 def _rechecking(caps: CapabilitySnapshot | None) -> bool:
-    """A cached snapshot that detection is checking again (C-4): its results are not final."""
+    """A cached snapshot that detection is checking again: its results are not final."""
     return caps is not None and caps.from_cache and caps.detecting
 
 
@@ -286,8 +269,8 @@ def video_bit_depth_issues(
     """``encoder.no_10bit``: 10-bit output with an encoder (or a GPU) that cannot do it.
 
     A cached "no 10-bit" that detection is checking again (``from_cache`` and ``detecting``)
-    is not final: ``encoder.checking`` (info), as C-4 does for the encoder status, so a
-    caller waits for the new result before the job starts."""
+    is not final: ``encoder.checking`` (info), so a caller waits for the new result before the
+    job starts."""
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None or video.bit_depth != 10:
         return []
@@ -315,9 +298,6 @@ def video_bit_depth_issues(
             fix("Use 8-bit", *ops, target=target),
         )
     ]
-
-
-# --------------------------------------------------------------------------- choices
 
 
 def video_choice_issues(
@@ -366,17 +346,10 @@ def video_choice_issues(
     return issues
 
 
-# --------------------------------------------------------------------------- options
-
-
-#: What FFmpeg drops around a params-argument value (``av_get_token``): the HDR texts reach the
-#: encoder without these, and with any other character kept (x265 cannot parse a text that
-#: starts with a vertical tab, and SVT-AV1 never ends).
+#: What FFmpeg drops around a params-argument value (``av_get_token``).
 _FFMPEG_SPACE = " \n\t\r"
-#: A number as x265 (``sscanf`` ``%hu`` / ``%u``) and SVT-AV1 read it: C white space (not a
-#: no-break space), an optional sign, ASCII digits. ``+5`` is written as ``5`` and ``-0`` as
-#: ``0``; another negative number wraps (x265 ``-1`` → 65535) or is changed (SVT-AV1 ``-0.265``
-#: → 0.735), so the checks refuse it (decision 0035, final review RC-2).
+#: A number as x265 and SVT-AV1 read it: C white space, an optional sign, ASCII digits. A
+#: negative number wraps or changes in them, so the checks refuse it.
 _C_SPACE = "[ \t\n\v\f\r]*"
 _UINT = rf"{_C_SPACE}([-+]?[0-9]+)"
 _REAL = rf"{_C_SPACE}([-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)"
@@ -386,15 +359,12 @@ _X265_MASTER_DISPLAY = re.compile(
 _SVT_DISPLAY_TAG = re.compile(rf"(G|B|R|WP|L)\({_REAL},{_REAL}\)")
 _LIGHT_LEVEL = re.compile(rf"{_UINT},{_UINT}")
 _U16, _U32 = 0xFFFF, 0xFFFFFFFF
-#: SVT-AV1 keeps the luminance in fixed point (24.8 / 18.14): beyond the PQ maximum of
-#: 10000 cd/m² it overflows (L(10000000,1) was read as -1734967296/256).
+#: The PQ maximum luminance in cd/m²: SVT-AV1 overflows above it.
 _PQ_MAX = 10000.0
 
 
 def _x265_master_display_problem(text: str) -> str | None:
-    """x265 4.3 parses ``G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min)`` with ``%hu`` and ``%u``: any
-    other text writes no mastering display ("unable to parse mastering display color volume
-    info", exit 0), and a number above 65535 wraps (70000 → 4464)."""
+    """x265 reads the numbers with ``%hu`` and ``%u``, so a number that would wrap is refused."""
     found = _X265_MASTER_DISPLAY.fullmatch(text.strip(_FFMPEG_SPACE))
     expected = (
         "must be G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) with whole numbers: chromaticities in "
@@ -411,9 +381,7 @@ def _x265_master_display_problem(text: str) -> str | None:
 
 
 def _svt_mastering_display_problem(text: str) -> str | None:
-    """SVT-AV1 v4.2 reads the tags in any order; with other text FFmpeg never ends (any
-    letters before or after the tags: checked, 15 s), without a tag it writes no mastering
-    display, a chromaticity above 1 is clipped and a luminance above 8388607 cd/m² overflows."""
+    """SVT-AV1 reads the tags in any order. Other text makes FFmpeg never end, so it is refused."""
     expected = (
         "must be G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) with plain numbers: chromaticities from 0 "
         "to 1, luminance in cd/m² up to 10000"
@@ -434,16 +402,14 @@ def _svt_mastering_display_problem(text: str) -> str | None:
 
 
 def _light_level_problem(text: str) -> str | None:
-    """x265 (``%hu,%hu``) and SVT-AV1: ``MaxCLL,MaxFALL``. x265 with one number writes MaxFALL
-    0 ("Invalid value"), SVT-AV1 refuses one or three numbers ("Invalid cll provided"); a
-    number above 65535 wraps (x265) or is clipped (SVT-AV1)."""
+    """``MaxCLL,MaxFALL``: two whole numbers up to 65535."""
     found = _LIGHT_LEVEL.fullmatch(text.strip(_FFMPEG_SPACE))
     if found is None or any(not 0 <= int(n) <= _U16 for n in found.groups()):
         return "must be MaxCLL,MaxFALL: two whole numbers in cd/m² up to 65535"
     return None
 
 
-#: Text options with a format the encoder parses (core-complete review R5-8, decision 0035).
+#: Text options with a format the encoder parses.
 _TEXT_FORMATS = {
     ("libx265", "master-display"): _x265_master_display_problem,
     ("libx265", "max-cll"): _light_level_problem,
@@ -486,9 +452,8 @@ def video_option_issues(
     *,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """Advanced options: unknown to the encoder, not supported by this build (C-6
-    ``supported_options``), or a bad value. The fix removes the option (back to the
-    default)."""
+    """Advanced options: unknown to the encoder, not supported by this build, or a bad value.
+    The fix removes the option (back to the default)."""
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None:
         return []
@@ -532,9 +497,6 @@ def video_option_issues(
                     )
                 )
     return issues
-
-
-# --------------------------------------------------------------------------- rate control
 
 
 def video_rate_control_issues(
@@ -647,7 +609,7 @@ def _option_value(
     video: VideoSettings, encoder: VideoEncoderDef, key: str, *, tune_known: bool = False
 ) -> tuple[OptionValue | None, bool]:
     """The value x264 / x265 use for the advanced option ``key``, and whether the job sets
-    it: the job's value, else the speed preset's default (C-6's per-preset tables; the
+    it: the job's value, else the speed preset's default (the per-preset tables; the
     encoder's default preset when none is set). ``None`` when the default depends on the
     job's tune (the table does not say) or is not known; ``tune_known``: the caller applies
     the tune itself and gets the preset's value."""
@@ -673,18 +635,9 @@ def _set_option(key: str, value: OptionValue, target: FixTarget, label: str) -> 
 def video_x26x_rule_issues(
     video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
 ) -> list[ValidationIssue]:
-    """Rules across two advanced options, checked with the real encoders
-    (testdata/README.md "Validation (C-8)"):
-
-    - ``encoder.lookahead_too_short`` (error): x265 stops with "Lookahead depth must be
-      greater than the max consecutive bframe count" when ``rc-lookahead`` is not above
-      ``bframes`` (0 works only with ``bframes`` 0). The ``animation`` tune adds 2 to the
-      preset's B-frames and ``zerolatency`` sets both to 0; options the job sets win over
-      the tune.
-    - ``encoder.subme_needs_trellis`` (warning): x264 uses ``subme`` 9 instead of 10 or 11
-      unless ``trellis`` is 2 (also the ``veryslow`` / ``placebo`` presets with trellis 0
-      or 1), without a message.
-    """
+    """Rules across two advanced options. The ``animation`` tune adds 2 to the B-frames, and
+    ``zerolatency`` sets them and the lookahead to 0, unless the job sets them. x264 uses
+    ``subme`` 9 instead of 10 or 11 unless ``trellis`` is 2, without a message."""
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None:
         return []
@@ -741,10 +694,8 @@ def video_x26x_rule_issues(
 def video_fast_decode_issues(
     video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
 ) -> list[ValidationIssue]:
-    """``encoder.fast_decode_unsupported`` (warning): the setting would be ignored.
-    ``encoder.fast_decode_tune_conflict`` (error): fast decode is a tune of an encoder that
-    takes one tune only (x265), and the job sets another tune; the command builder refuses
-    it (decision 0013)."""
+    """Fast decode is a tune of an encoder that takes one tune only (x265): another tune with
+    it is a conflict, which the command builder refuses."""
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None or not video.fast_decode:
         return []
@@ -771,8 +722,6 @@ def video_fast_decode_issues(
         )
     ]
 
-
-# --------------------------------------------------------------------------- option rules (M9)
 
 OPTION_RULE_CODES = (
     "encoder.option_inactive",
@@ -801,8 +750,8 @@ def _value_label(option: EncoderOption, value: OptionValue) -> str:
 
 
 def _condition_fix(condition: Condition, encoder: VideoEncoderDef, target: FixTarget) -> Fix | None:
-    """ "Set SAO on": a fix that makes an ``option:<key>`` condition hold (``eq`` or ``in``);
-    ``None`` for the other conditions (rate control, bit depth, "not …")."""
+    """A fix that makes an ``option:<key>`` condition hold (``eq`` or ``in``); ``None`` for the
+    others."""
     if not condition.field.startswith("option:") or condition.op not in ("eq", "in"):
         return None
     key = condition.field.removeprefix("option:")
@@ -823,9 +772,9 @@ def _int(value: OptionValue | None) -> int | None:
 
 
 class _Options:
-    """The advanced options of a job as the command builder writes them (C-7 skips an option
-    of another encoder, one the build lacks, a bad value and an option whose ``requires``
-    does not hold)."""
+    """The advanced options of a job as the command builder writes them: it skips an option of
+    another encoder, one this build lacks, a bad value and one whose ``requires`` does not
+    hold."""
 
     def __init__(
         self, video: VideoSettings, encoder: VideoEncoderDef, status: EncoderStatus | None
@@ -882,12 +831,6 @@ def _inactive_issues(opts: _Options, target: FixTarget) -> list[ValidationIssue]
 
 
 def _vbv_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[ValidationIssue]:
-    """x264 core 165 and x265 4.3 use VBV only with a maximum rate and a buffer size: a
-    maximum rate alone is dropped ("VBV maxrate specified, but no bufsize, ignored"; x264 with
-    constant quality writes ``rc=crf`` and no VBV in its SEI), and so is a buffer alone with
-    constant quality ("VBV bufsize set but maxrate unspecified, ignored"). With an average
-    bitrate a buffer alone is used: the encoder takes the bitrate as the maximum ("VBV maxrate
-    unspecified, assuming CBR"), so that is not reported."""
     maxrate, bufsize = (_int(opts.written.get(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize"))
     used_max, used_buf = (_int(opts.effective(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize"))
     name = opts.encoder.label
@@ -901,6 +844,8 @@ def _vbv_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[
                 _remove_option("vbv-maxrate", target),
             )
         )
+    # At an average bitrate the encoder takes the bitrate as the VBV maximum, so a buffer alone
+    # is used.
     if bufsize > 0 and used_max == 0 and isinstance(video.rate_control, ConstantQuality):
         issues.append(
             warning(
@@ -915,7 +860,7 @@ def _vbv_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[
 
 
 def _x264_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
-    """x264 core 165 lowers these with ``bluray-compat`` on, without a message."""
+    """x264 lowers these with ``bluray-compat`` on, without a message."""
     if opts.effective("bluray-compat") is not True:
         return []
     limits: tuple[tuple[str, OptionValue, bool], ...] = (
@@ -945,9 +890,6 @@ def _x264_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
 
 
 def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
-    """x265 4.3: a minimum CU above the CTU stops the encoder; a TU size or quantisation
-    group above the CTU is lowered to the CTU size with a warning; pmode turns limit-refs 2
-    and 3 off with a warning."""
     ctu = _int(opts.effective("ctu"))
     if ctu is None:
         return []
@@ -993,8 +935,6 @@ def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
 
 
 def _svt_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
-    """SVT-AV1 v4.2: forward keyframes (``irefresh-type=1``) force hierarchical levels 4
-    ("Fwd key frame is only supported for hierarchical levels 4 at this point")."""
     levels = opts.written.get("hierarchical-levels")
     if opts.effective("irefresh-type") != "1" or levels is None or levels == "4":
         return []
@@ -1041,8 +981,7 @@ def _min_max_conflict(
 
 
 def _vp9_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[ValidationIssue]:
-    """libvpx: ``qmin`` above ``qmax`` fails, and so does a CQ value outside them ("CQ level 30
-    must be between minimum and maximum quantizer value (0-29)")."""
+    """libvpx: ``qmin`` above ``qmax`` fails, and so does a CQ value outside them."""
     issues = _min_max_conflict(
         opts,
         "qmin",
@@ -1081,23 +1020,9 @@ def video_option_rule_issues(
     *,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """Rules of the advanced options (C-6, M9), each checked with the encoder
-    (testdata/README.md "Advanced encoder options (C-6, complete option sets)"):
-
-    - ``encoder.option_inactive`` (warning): the job sets an option whose ``requires`` does
-      not hold, so the command builder leaves it out (x264 ``nal-hrd`` without VBV, x265
-      ``amp`` without ``rect``, ``limit-tu`` with TU inter depth 1, ``rd-refine`` below RD 5,
-      AMF pre-analysis options without pre-analysis …). The encoders ignore these too. Also
-      x264 / x265 ``vbv-maxrate`` without ``vbv-bufsize``, and a buffer without a maximum rate
-      at a constant quality: the builder writes them, and the encoders drop them.
-    - ``encoder.option_ignored`` (warning): the encoder silently changes a value the job sets:
-      x264 with Blu-ray compatibility (B-frames above 3, smart weighted P-frames, a normal
-      B-pyramid); x265 ``max-tu-size`` or ``qg-size`` above the CTU size, ``limit-refs`` 2
-      or 3 with ``pmode``; SVT-AV1 hierarchical levels other than 4 with forward keyframes.
-    - ``encoder.option_conflict`` (error): the encoder refuses to start: x265 ``min-cu-size``
-      above the CTU size; SVT-AV1 ``min-qp`` above ``max-qp`` or ``qm-min`` above ``qm-max``;
-      libvpx ``qmin`` above ``qmax`` or a CQ value outside them.
-    """
+    """Rules of the advanced options, each checked with the encoder. An option the builder
+    leaves out is inactive; a value the encoder silently changes is ignored; a combination it
+    refuses is a conflict."""
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is None or video.passthrough:
         return []
@@ -1129,8 +1054,6 @@ def video_option_rule_issues(
         issues += _vp9_rules(video, opts, target)
     return issues
 
-
-# --------------------------------------------------------------------------- custom parameters
 
 CUSTOM_PARAM_CODES = ("encoder.custom_param_file", "encoder.custom_param_unknown")
 """The codes of :func:`video_custom_param_issues` (registered in ``validation/levels.py``)."""
@@ -1230,20 +1153,10 @@ def video_custom_param_issues(
     *,
     target: FixTarget = "job",
 ) -> list[ValidationIssue]:
-    """Custom parameters that Reframe does not pass to FFmpeg (C-6; decision 0035 "Follow-up
-    (core-complete review)"), each with a fix that removes the entry:
-
-    - ``encoder.custom_param_file`` (error): a key that makes x264, x265 or SVT-AV1 read or
-      write a file (x265 ``csv`` / ``analysis-save``, x264 ``dump-yuv`` / ``stats``, …, as the
-      library reads keys: ``_`` as ``-``, a ``no`` prefix, FFmpeg's quotes), or, for an
-      encoder without a params argument, one of FFmpeg's own options that reads or writes a
-      file (``vstats_file``, ``passlogfile``, ``progress``, a ``/`` name).
-    - ``encoder.custom_param_unknown`` (error): for an encoder without a params argument, a
-      name that is neither a private option of the encoder (this build's list from encoder
-      detection, else the recorded one) nor a generic encoder option. FFmpeg would read it as
-      any of its own options, so only these are passed.
-
-    The dry run checks the same before it starts FFmpeg."""
+    """Custom parameters that Reframe does not pass to FFmpeg, each with a fix that removes the
+    entry: a key that makes the encoder read or write a file, and, for an encoder without a
+    params argument, a name that is neither a private option of the encoder nor a generic
+    encoder option. The dry run checks the same before it starts FFmpeg."""
     if video.passthrough or not video.custom_params.strip():
         return []
     encoder = definitions.video_encoders.get(video.encoder)
@@ -1252,9 +1165,6 @@ def video_custom_param_issues(
     if encoder.params_arg is not None:
         return _param_file_issues(encoder, video, target)
     return _own_option_issues(encoder, video, _status(caps, encoder.id), target)
-
-
-# --------------------------------------------------------------------------- container
 
 
 def _convert_candidates(
@@ -1291,8 +1201,8 @@ def _encode_fix(
     definitions: Definitions,
     target: FixTarget,
 ) -> Fix:
-    """ "Encode the video": turn off passthrough, and switch to an encoder the container
-    holds when the job's encoder cannot go into it."""
+    """Turn off passthrough, and switch to an encoder the container holds when the job's encoder
+    cannot go into it."""
     ops: list[JsonPatchOp] = [replace("video.passthrough", False)]
     encoder = definitions.video_encoders.get(video.encoder)
     if encoder is not None and encoder.codec not in container.video.encode:

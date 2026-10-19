@@ -32,12 +32,10 @@ __all__ = [
 
 #: ffprobe codec names of bitmap subtitles.
 BITMAP_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
-#: Subtitle decoders that have ``forced_subs_only`` in FFmpeg n9.0.2 (``ffmpeg -h
-#: decoder=pgssub``, ``decoder=dvdsub``; not ``dvbsub`` and no text decoder;
-#: testdata/README.md "Validation (C-8)").
+#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only``.
 FORCED_ONLY_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
 #: External subtitle files by extension: (ffprobe codec name, kind). The command builder reads
-#: these (``reframe.command.subtitles.EXTERNAL_CODECS``); any other file is refused.
+#: these too; any other file is refused.
 EXTERNAL_FORMATS: dict[str, tuple[str, SubtitleKind]] = {
     ".srt": ("subrip", "text"),
     ".ass": ("ass", "text"),
@@ -49,10 +47,8 @@ EXTERNAL_FORMATS: dict[str, tuple[str, SubtitleKind]] = {
 
 @dataclass(frozen=True, slots=True)
 class EncodedAudio:
-    """What the command builder writes for an encoded audio track: C-7's
-    :func:`~reframe.command.planned_audio` (decision 0024: the builder snaps every value the
-    encoder cannot do with C-6's helpers), so an issue text names the value that is really
-    written."""
+    """What the command builder writes for an encoded audio track: the values snapped to what the
+    encoder can do, so an issue names the value that is really written."""
 
     encoder: AudioEncoderDef
     source_channels: int
@@ -62,14 +58,14 @@ class EncodedAudio:
     layout stays (see :attr:`layout`)."""
     layout: str | None
     """The ``out_chlayout`` written (``PlannedAudio.layout``): a mixdown's layout, a lossless
-    relabel, or the layout an encoder that refuses the source's makes of it (libopus:
-    ``2.1`` → ``stereo``); ``None`` = the source layout as it is."""
+    relabel or, when the encoder refuses the source layout, the layout it is made into;
+    ``None`` = the source layout as it is."""
     table: Mixdown
     """The mixdown whose bitrate range applies (``PlannedAudio.bitrate_mixdown``): the
     written layout's."""
     bitrate: int | None
-    """The track's bitrate snapped down (decision 0025); ``None`` when the track sets none
-    or the encoder is lossless."""
+    """The track's bitrate, snapped down; ``None`` when the track sets none or the encoder is
+    lossless."""
     samplerate: int | None
     """:meth:`AudioEncoderDef.snap_samplerate` of the track's rate (or the source's)."""
 
@@ -82,13 +78,12 @@ def encoded_audio(
 ) -> EncodedAudio:
     """The values the builder writes for ``track`` encoded with ``encoder``
     (:func:`~reframe.command.planned_audio`). The snapped values do not depend on the
-    container, so a container that holds the encoder is used (a container that cannot is
-    ``container.codec_unsupported``)."""
+    container, so the first container that holds the encoder is used."""
     container = next(
         (c for c in definitions.containers.values() if encoder.codec in c.audio.encode), None
     )
     encode = track.model_copy(update={"action": "encode", "encoder": encoder.id})
-    if container is None:  # pragma: no cover - the C-6 linter: every encoder has a container
+    if container is None:  # pragma: no cover - every encoder has a container
         raise ValueError(f"no container holds {encoder.id}")
     planned = planned_audio(encode, stream, container, definitions=definitions)
     assert planned.bitrate_mixdown is not None  # an encoded track always has a table
@@ -182,11 +177,9 @@ def subtitle_input(ctx: JobContext, track: SubtitleOutputTrack) -> SubtitleInput
 
 
 def job_fits(ctx: JobContext, container: ContainerDef) -> bool:
-    """``container`` can hold every track of the job as it is: the video (encoded, or the
-    source codec copied), every audio track (copied or encoded), every subtitle that is not
-    burned in (copied, converted, or a text track the container converts automatically).
-    Unknown encoders and missing streams count as fitting (other rules report them). For
-    "Switch container" fixes, which must not add an error."""
+    """``container`` can hold every track of the job as it is. Unknown encoders and missing
+    streams count as fitting (other rules report them): a "Switch to" fix must not add an
+    error."""
     job = ctx.job
     stream = ctx.video_stream
     if job.video.passthrough:
