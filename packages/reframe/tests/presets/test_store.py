@@ -26,7 +26,7 @@ from reframe.models import (
 )
 from reframe.models import migrations as migrations_module
 from reframe.models.migrations import MigrationRegistry
-from reframe.presets import DEFAULT_BUILTIN_ID, PresetStore, builtin_presets
+from reframe.presets import DEFAULT_BUILTIN_ID, PresetStore, builtin_presets, normalise_name
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -753,6 +753,32 @@ def test_save_and_import_never_take_the_id_of_a_newer_preset(tmp_path: Path) -> 
     saved = json.loads((tmp_path / "presets.json").read_text("utf-8"))
     assert saved["presets"][0] == FUTURE
     assert [p["id"] for p in saved["presets"]] == ["f", "m", imported.id]
+
+
+def test_the_name_of_a_newer_preset_is_taken(tmp_path: Path) -> None:
+    """Otherwise the newer Reframe would read two presets with one name."""
+    with_future(tmp_path)
+    store = PresetStore(tmp_path)
+    clash = store.create(template(), "future")
+    assert isinstance(clash, ValidationIssue)
+    assert clash.code == "preset.name_conflict"
+    assert clash.message == "A preset named “Future” already exists."
+    assert store.unique_name("Future") == "Future (2)"
+    refused = store.rename("m", "FUTURE")
+    assert isinstance(refused, ValidationIssue)
+    assert refused.code == "preset.name_conflict"
+    renamed = store.import_(PresetFile(presets=[Preset(id="r", name="Future")]), "rename")
+    assert [p.name for p in renamed.imported] == ["Future (2)"]
+    replacing = store.import_(PresetFile(presets=[Preset(id="p", name="Future")]), "replace")
+    assert [p.name for p in replacing.imported] == ["Future (3)"]
+    assert replacing.replaced == []
+    skipped = store.import_(PresetFile(presets=[Preset(id="s", name="Future")]), "skip")
+    assert skipped.skipped == ["Future"]
+    newer = PresetStore(tmp_path, registry=registry_v5())
+    names = [normalise_name(p.name) for p in newer.user_presets()]
+    assert sorted(names) == ["future", "future (2)", "future (3)", "mine"]
+    saved = json.loads((tmp_path / "presets.json").read_text("utf-8"))
+    assert saved["presets"][0] == FUTURE
 
 
 def test_export_all_keeps_newer_presets_unchanged(tmp_path: Path) -> None:
