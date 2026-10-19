@@ -21,8 +21,6 @@ _WITH_QUALITY = sorted(
     e.id for e in load_definitions().video_encoders.values() if e.rate_control.quality is not None
 )
 
-# --------------------------------------------------------------------------- convert_quality
-
 
 def test_same_scale_encoders_keep_the_value() -> None:
     assert convert_quality(22, "libx264", "libx265") == 22
@@ -32,8 +30,6 @@ def test_same_scale_encoders_keep_the_value() -> None:
 
 
 def test_a_half_step_rounds_up_on_every_scale() -> None:
-    """M2 review: x264 23 is 26.5 on the QSV, AMF and VAAPI scales. Banker's rounding gave
-    QSV (min 1) 27 but AMF and VAAPI (min 0) 26."""
     assert {
         e: convert_quality(23, "libx264", e)
         for e in ("hevc_qsv", "hevc_amf", "h264_amf", "hevc_vaapi", "h264_vaapi")
@@ -44,9 +40,8 @@ def test_a_half_step_rounds_up_on_every_scale() -> None:
     "encoder", ["libsvtav1", "av1_amf", "h264_vaapi", "hevc_vaapi", "av1_vaapi"]
 )
 def test_quality_zero_is_not_offered_where_the_encoder_ignores_it(encoder: str) -> None:
-    """M2 review: SVT-AV1 `-crf 0`, VAAPI `-global_quality 0` and AMF AV1 QP 0 give the
-    encoder's default quality (test_tools.py `test_quality_range_ends_are_honoured`), so the
-    best end of the range is 1 and a converted 0 lands there."""
+    """SVT-AV1 `-crf 0`, VAAPI `-global_quality 0` and AMF AV1 QP 0 give the encoder's default
+    quality."""
     mode = load_definitions().video_encoders[encoder].rate_control.quality
     assert mode is not None
     assert mode.min == 1
@@ -63,8 +58,7 @@ def test_h264_and_hevc_vaapi_stop_at_51() -> None:
 
 @pytest.mark.parametrize("encoder", _WITH_QUALITY)
 def test_defaults_sit_on_the_conversion_scale(encoder: str) -> None:
-    """Every default is what x264 RF 22 (HandBrake's 1080p presets) converts to. The M2 review
-    found h264_vaapi at 20 (x264 17.6) and av1_qsv at 24 (x264 24, the 2160p value)."""
+    """Every default is what x264 RF 22 (HandBrake's 1080p presets) converts to."""
     mode = load_definitions().video_encoders[encoder].rate_control.quality
     assert mode is not None
     assert mode.default == convert_quality(22, "libx264", encoder)
@@ -113,9 +107,6 @@ def test_conversion_is_monotonic_and_in_range(src: str, dst: str, a: float, b: f
     assert target.min <= x <= y <= target.max
 
 
-# --------------------------------------------------------------------------- supported_options
-
-
 def test_none_status_hides_nothing() -> None:
     enc = load_definitions().video_encoders["hevc_nvenc"]
     assert supported_options(enc, None) == enc.options
@@ -151,9 +142,6 @@ def test_supported_presets() -> None:
     defs = load_definitions().model_copy(deep=True)
     defs.video_encoders["libx264"].presets = None
     assert supported_presets(defs.video_encoders["libx264"], None) == []
-
-
-# --------------------------------------------------------------------------- loader
 
 
 def _raw() -> dict[str, Any]:

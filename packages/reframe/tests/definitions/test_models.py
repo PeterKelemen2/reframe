@@ -1,4 +1,4 @@
-"""Helpers on the definition models and the shape of the packaged data that C-7 / C-8 rely on."""
+"""Helpers on the definition models and the shape of the packaged data."""
 
 from __future__ import annotations
 
@@ -28,8 +28,6 @@ def test_derived_values_follow_handbrake_offsets() -> None:
 
 
 def test_av1_nvenc_initial_qps_are_on_the_qindex_scale() -> None:
-    """M2 review: av1_nvenc takes `-cq` 0-63 but `-init_qp*` 0-255 (`ffmpeg -h
-    encoder=av1_nvenc`, n8.1.3 and n9.0.2); the initial QPs were written on the 0-63 scale."""
     mode = load_definitions().video_encoders["av1_nvenc"].rate_control.quality
     assert mode is not None
     derived = mode.derived
@@ -41,8 +39,6 @@ def test_av1_nvenc_initial_qps_are_on_the_qindex_scale() -> None:
 
 
 def test_a_copy_deny_list_wins_over_the_wildcard() -> None:
-    """M2 review: Matroska took `copy = ["*"]` for audio, so pcm_bluray was planned as a copy
-    that FFmpeg then refused ("No wav codec tag found for codec pcm_bluray")."""
     mkv = load_definitions().containers["mkv"]
     for codec in ("pcm_bluray", "pcm_dvd", "s302m", "pcm_s8", "pcm_u16le", "dsd_lsbf_planar"):
         assert not mkv.audio.can_copy(codec), codec
@@ -130,8 +126,6 @@ def test_filter_ids_match_the_job_model() -> None:
 
 
 def test_filter_order_is_the_plan_order() -> None:
-    """03 §Filters: detelecine → deinterlace → denoise → deblock → crop → scale → tone map /
-    colorspace → sharpen → chroma smooth → grayscale → format/upload."""
     order = load_definitions().filter_order
     plan = [
         "detelecine",

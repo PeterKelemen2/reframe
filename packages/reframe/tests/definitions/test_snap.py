@@ -1,5 +1,4 @@
-"""The audio snapping helpers (decision 0024): the command builder (C-7), validation (C-8) and
-the codec rules (C-12) compute the same mixdown, sample rate and bitrate through them."""
+"""The audio snapping helpers: mixdown, sample rate and channel count."""
 
 from __future__ import annotations
 
@@ -25,7 +24,6 @@ from reframe.models.job import Mixdown
         ("aac", "5.1", 2, None),
         ("ac3", "7.1", 6, None),
         ("libmp3lame", "stereo", 1, None),
-        # Dolby Pro Logic II needs more than two channels to encode.
         ("aac", "dpl2", 6, "dpl2"),
         ("aac", "dpl2", 2, None),
         # Unknown source channels: the request stands (snapped to the encoder).

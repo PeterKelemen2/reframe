@@ -50,9 +50,6 @@ def audio(**kwargs: Any) -> AudioStream:
     return AudioStream.model_validate({"index": 1, "codec": "ac3", "channels": 6, **kwargs})
 
 
-# --------------------------------------------------------------------------- audio
-
-
 def planned(encoder: str, stream: AudioStream, **track: Any) -> PlannedAudio:
     output = AudioOutputTrack.model_validate({"encoder": encoder, **track})
     return planned_audio(output, stream, "mkv", definitions=DEFS)
@@ -61,16 +58,15 @@ def planned(encoder: str, stream: AudioStream, **track: Any) -> PlannedAudio:
 @pytest.mark.parametrize(
     ("encoder", "channels", "mixdown", "expected", "table"),
     [
-        # A layout the encoder cannot make: its largest layout below (decision 0024 item 4).
+        # A layout the encoder cannot make: its largest layout below.
         ("ac3", 8, "7.1", "5.1", "5.1"),
         ("libmp3lame", 6, "5.1", "stereo", "stereo"),
         ("ac3", 8, None, "5.1", "5.1"),
-        # Never an upmix (decision 0019 item 3): the source layout stays.
+        # Never an upmix: the source layout stays.
         ("ac3", 6, "7.1", None, "5.1"),
         ("aac", 2, "5.1", None, "stereo"),
         ("libopus", 1, "stereo", None, "mono"),
         ("aac", 5, "5.1", None, "5.1"),
-        # Dolby Pro Logic II only from more than two channels.
         ("aac", 2, "dpl2", None, "stereo"),
         ("aac", 6, "dpl2", "dpl2", "dpl2"),
         # A layout the encoder makes, from at least as many channels; keep.
@@ -99,7 +95,7 @@ def test_mixdown_is_snapped(
         ("ac3", 8, {"mixdown": "7.1", "bitrate": 700}, 640),  # in the 5.1 table
         ("libmp3lame", 6, {"bitrate": 330}, 320),
         ("aac", 2, {"mixdown": "5.1", "bitrate": 700}, 512),  # stereo table: no upmix
-        ("libopus", 2, {"bitrate": 600}, 512),  # libopus refuses 600 kb/s stereo
+        ("libopus", 2, {"bitrate": 600}, 512),
         # No bitrate, no quality: the default of the effective mixdown.
         ("aac", 2, {"mixdown": "5.1"}, 160),
         ("ac3", 8, {"mixdown": "7.1"}, 640),
@@ -239,7 +235,7 @@ def _check_written(
 def test_every_written_value_is_one_the_encoder_can_do() -> None:
     """Every encoder, source layout, requested mixdown, bitrate and sample rate: the
     arguments say what :func:`planned_audio` says, and that is a layout, bitrate and sample
-    rate the encoder can do, never an upmix (decisions 0019 item 3, 0024 item 4)."""
+    rate the encoder can do, never an upmix."""
     combinations = itertools.product(
         DEFS.audio_encoders.values(), _LAYOUTS, [None, *DEFS.mixdowns], _BITRATES, _RATES
     )
@@ -261,7 +257,7 @@ def test_passthru_copies_or_falls_back() -> None:
     assert out.copy
     assert out.args == ["-c:a:0", "copy"]
     assert out.global_args == ["-strict", "-2"]
-    # The default fallback is AAC, which WebM cannot hold (validation reports it).
+    # The default fallback is AAC, which WebM cannot hold.
     with pytest.raises(PlanError, match="cannot be written into WebM"):
         audio_output(2, AudioOutputTrack(action="passthru", encoder=None), audio(codec="dts"),
                      WEBM, DEFS)  # fmt: skip
@@ -352,8 +348,7 @@ def test_opus_gets_a_layout_it_accepts(
     layout: str | None, channels: int, written: str | None, table: str
 ) -> None:
     """libopus lists no layouts, so FFmpeg does not convert for it, and it refuses all but
-    the eight of :data:`ENCODER_LAYOUTS` ("Invalid channel layout 5.0(side) for specified
-    mapping family -1"; testdata/README.md)."""
+    the eight of :data:`ENCODER_LAYOUTS`."""
     stream = audio(channels=channels, channel_layout=layout)
     got = planned("libopus", stream)
     assert (got.mixdown, got.layout, got.bitrate_mixdown) == (None, written, table)
@@ -399,9 +394,6 @@ def test_loudnorm_template() -> None:
     assert refs == ["a1.input_i", "a1.input_tp", "a1.input_lra", "a1.input_thresh",
                     "a1.target_offset"]  # fmt: skip
     assert LOUDNESS["ebu_r128"].targets() == "I=-23:TP=-1:LRA=20"
-
-
-# --------------------------------------------------------------------------- subtitles
 
 
 def test_subtitle_plan_errors() -> None:
@@ -452,9 +444,6 @@ def test_subtitle_conversions_and_externals() -> None:
     webm = plan_subtitles(tracks[1:2], src, WEBM, start=0, first_input=1, passthrough=False)
     assert webm.outputs[0].codec == "copy"
     assert not webm.copies_ass
-
-
-# --------------------------------------------------------------------------- metadata
 
 
 def test_languages_and_ietf() -> None:
@@ -541,7 +530,7 @@ def test_chapter_plans() -> None:
 def test_chapter_range_bounds() -> None:
     chapters = recorded("chapters.mkv")  # 4 chapters: 0-1, 1-2.5, 2.5-4, 4-5 s
     assert chapter_range(chapters, ChapterRange(start=2, end=3)) == (1.0, 4.0)
-    # An end after the last chapter is clamped to it (decision 0026).
+    # An end after the last chapter is clamped to it.
     assert chapter_range(chapters, ChapterRange(start=4, end=5)) == (4.0, 5.0)
     assert chapter_range(chapters, ChapterRange(start=2, end=99)) == (1.0, 5.0)
     # A start after the last chapter, an end before the start, no chapters: not plannable.
@@ -577,9 +566,6 @@ def test_tag_args() -> None:
         "-map_metadata", "0", "-metadata", "title=T", "-metadata", "synopsis=",
     ]  # fmt: skip
     assert tag_args(TagSettings(), passthru=False, render_value=str) == ["-map_metadata:g", "-1"]
-
-
-# --------------------------------------------------------------------------- job type
 
 
 def test_job_type_reasons() -> None:

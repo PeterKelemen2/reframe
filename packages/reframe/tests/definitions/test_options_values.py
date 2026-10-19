@@ -1,11 +1,5 @@
 """Every value of every enum and bool option of the software encoders reaches the encoder
-without an error (C-6, M9: "every name … checked against the real encoders").
-
-x264, x265 and SVT-AV1 log a bad params entry and encode on, libvpx and FFmpeg refuse a bad
-private option value; both are failures here. The number options are checked at both ends of
-their range in ``test_tools.py::test_option_range_ends_encode``; the hardware options (AMF,
-VAAPI) in ``test_tools.py::test_hardware_choices_rate_control_and_options_encode``.
-"""
+without an error."""
 
 from __future__ import annotations
 
@@ -30,7 +24,6 @@ _REFUSED = re.compile(
 )
 #: Values that need another value to be accepted (they are tested together).
 _COMPANIONS: dict[tuple[str, str, str], dict[str, str]] = {
-    # "Recommended Settings for HDR10-opt: colour primaries should be BT.2020" (x265 4.3).
     ("libx265", "hdr10-opt", "1"): {
         "colorprim": "bt2020",
         "transfer": "smpte2084",
@@ -114,9 +107,7 @@ def test_every_enum_and_bool_value_encodes(encoder_id: str) -> None:
 
 
 def test_every_software_encoder_has_options_in_each_main_category() -> None:
-    """03 §Advanced: the categories of the panel. x264, x265 and SVT-AV1 fill rate control,
-    frame types, analysis / psycho-visual, loop filters, colour and performance; VP9 has no
-    colour options of its own (FFmpeg's colour tags apply)."""
+    """VP9 has no colour options of its own (FFmpeg's colour tags apply)."""
     for encoder_id in ("libx264", "libx265", "libsvtav1"):
         categories = {o.category for o in DEFS.video_encoders[encoder_id].options}
         assert {
