@@ -52,7 +52,7 @@ _UNDECODABLE_CHANGE = f"bytes that are not UTF-8 → '{UNDECODABLE_REPLACEMENT}'
 #: The note of a name in which bytes that are not UTF-8 were replaced.
 UNDECODABLE_NOTE = (
     f"Replaced bytes that are not UTF-8 with '{UNDECODABLE_REPLACEMENT}' (such a name cannot "
-    "be written on Windows or in JSON)."
+    "be written on Windows)."
 )
 
 

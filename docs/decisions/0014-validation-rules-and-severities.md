@@ -71,6 +71,7 @@ queue*. Building them showed four things the plan does not settle.
    | `audio.bitrate_out_of_range`, `audio.mixdown_unsupported`, `audio.samplerate_unsupported` | ~~error~~ **info**, with a snap fix ([0024](0024-m2-wave-2-product-decisions.md) item 4: C-7 snaps) | the plan does not say whether C-7 snaps silently |
    | `audio.passthru_fallback` | info | 03: passthru *falls back* to the encoder |
    | `encoder.fast_decode_unsupported`, `metadata.language_invalid` | warning | the value would be ignored / written as `und` |
+   | `metadata.several_defaults` | warning | 03 §Track metadata: one default track per type "unless you override this"; the fix keeps only the first (added by [0044](0044-code-review-follow-ups.md)) |
    | `subtitle.forced_only_unsupported`, `subtitle.convert_target_missing` | error | the output would differ from what was asked |
    | `range.outside` (starts after the end, empty, no chapters) | error | |
    | `range.end_beyond` | warning | the encode stops at the end of the source anyway |

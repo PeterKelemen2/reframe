@@ -331,6 +331,11 @@ Each test failed before its fix and passes after it.
     path; 0012 points 3 and 5), and `tests/queue/test_queue.py` runs that job with real
     validation. The `model_dump_json()` limit stands, and an issue message that quotes such
     a path has it too.
+  - Follow-up, 2026-10-20 ([0044](0044-code-review-follow-ups.md)): display text in the models
+    (issue messages, fix labels, event and task text) shows such a byte as `�`; paths and
+    patch values keep it, and `reframe.models.json_text` writes them with `\udcXX` escapes
+    (the store, the CLI's `--json` output, the settings and preset files). The queue's own
+    `printable` still writes the escape text in job errors and log lines (point 5).
 
 ### Plan changes
 

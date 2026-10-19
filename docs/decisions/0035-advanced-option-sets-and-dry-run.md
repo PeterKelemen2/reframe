@@ -1,6 +1,6 @@
 # 0035 — The complete option sets, option rules, custom parameters and the dry run
 
-- Status: accepted
+- Status: accepted; superseded in part by [0044](0044-code-review-follow-ups.md) (§5: which log lines are encoder warnings; a warning that validation gives is not repeated)
 - Date: 2026-10-15
 - Steps: C-6 (M9 core part); affects C-7, C-8, C-15 (`reframe plan`), F-9
 

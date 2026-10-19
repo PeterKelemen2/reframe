@@ -86,6 +86,11 @@ holds no secret, and that a settings patch cannot change the password.
 Errors use `application/problem+json`. Long operations return `202 {task_id}`. Their
 progress arrives as events.
 
+Responses and WebSocket events are written with `reframe.models.json_text`, and request
+bodies are read with `json.loads` + `model_validate`: a path with a byte that is not UTF-8 is
+a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_json` refuses
+([0044](../decisions/0044-code-review-follow-ups.md)).
+
 | Area | Method & path | Purpose |
 |------|---------------|---------|
 | System | `GET /api/health` | Version, `api_version`, `instance` (random id of this run), uptime |

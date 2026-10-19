@@ -191,8 +191,7 @@ def test_bytes_that_are_not_utf8_become_the_replacement_character() -> None:
     part, notes = _one(name)
     assert part == "bad�name.mkv"
     assert notes == [
-        "Replaced bytes that are not UTF-8 with '�' (such a name cannot be written on "
-        "Windows or in JSON)."
+        "Replaced bytes that are not UTF-8 with '�' (such a name cannot be written on Windows)."
     ]
     assert replace_undecodable("a\udcff\ud800b") == "a��b"
     # A run of them is one replacement character each, and each counts 3 bytes.

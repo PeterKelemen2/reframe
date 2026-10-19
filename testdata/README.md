@@ -1401,7 +1401,11 @@ review follow-up of decision [0012](../docs/decisions/0012-output-naming-rules.m
   `model_validate_json` (a `\udcff` escape in JSON is "lone leading surrogate"). Pydantic's
   `model_dump(mode="json")` and `model_validate` (Python objects) keep the surrogate, and
   `json.dumps(…, ensure_ascii=True)` / `json.loads` give it back exactly, which the probe cache
-  uses (C-3).
+  uses (C-3). JavaScript (node v26.10.0): `JSON.parse('"\\udcff"')` is one UTF-16 unit,
+  U+DCFF, and `JSON.stringify` writes it back as `"\udcff"` (`reframe.models.json_text`,
+  0044). The float spellings differ: `json.dumps(1e-05)` is `1e-05`, pydantic-core 2.50.0's
+  `to_json(1e-05)` is `0.00001` (the same value); `1e+16`, `1.5e+300`, `5e-324` and
+  `23.976023976023978` are spelled the same.
 
 ### Audio and subtitle defaults (C-12, selection stage)
 
@@ -1897,6 +1901,29 @@ log, not the exit code, for three encoders:
 
 x265 and SVT-AV1 print their own messages (`x265 [warning]: …`, `Svt[warn]: …`) whatever
 FFmpeg's log level is.
+
+**Level tags** (n9.0.2, the dry run's argv with `-loglevel +level+info`): FFmpeg tags each
+line it logs after the line's contexts: `[libx264 @ 0x…] [warning] VBV maxrate specified, but
+no bufsize, ignored`, `[info] Stream mapping:`, `[vost#0:0/libx265 @ 0x…] [enc:libx265 @ 0x…]
+[error] …`. The second line of a message has no tag, and neither do x265's and SVT-AV1's own
+lines. With the tags removed the log is the same as without the flag. `level+info` (no
+leading `+`) resets the other flags: repeated lines are no longer folded into "Last message
+repeated N times". Without the flag, x264's warnings through FFmpeg have no level word and
+look like its info lines (`using SAR=1/1`). x264 logs `Error parsing option '…'` at the
+warning level, and libvpx logs its configuration at the warning level when it cannot start.
+`av1_vaapi` (radeonsi) `tile_groups=3`: `[warning] Invalid tile groups number 3, correct to 1.`
+
+x264 warnings that name a parameter (custom parameters, dry-run argv): `VBV maxrate specified,
+but no bufsize, ignored`, `VBV bufsize set but maxrate unspecified, ignored`, `NAL HRD
+parameters require VBV parameters`, `b-pyramid normal + intra-refresh is not supported`,
+`ref > 1 + intra-refresh is not supported`, `intra-refresh is not compatible with open-gop`,
+`interlace + weightp is not implemented`, `subme=0 + direct=temporal is not supported`,
+`ignoring unknown frame packing value`, `max bitrate less than average bitrate, assuming
+CBR`, and the level limits (`frame MB size (20x12) > level limit (99)`, `DPB size …`, `MB rate
+…`, `VBV bitrate …`, `VBV buffer …`). x264 clamps these without a word: `keyint=-5`,
+`ref=0`, `crf=-20`, `crf=70`, `qp=100`, `b-adapt=5`, `bframes=20`, `rc-lookahead=300`,
+`qpmin=60:qpmax=20`, `aq-mode=9`, `merange=2`, `keyint=10:min-keyint=20`, `threads=200`,
+`qcomp=2`, `ipratio=0.5`, `nr=20000`, `deadzone-inter=40`, `slices=200`, `crf-max=10`.
 
 #### Core-complete review (2026-10-16)
 
