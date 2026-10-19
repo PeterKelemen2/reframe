@@ -1,68 +1,7 @@
-"""Command-line entry point (``reframe``, C-15). Needs the ``[cli]`` extra (typer; rich comes
-with it).
-
-Commands:
-
-- ``reframe probe FILE [--json]``: every track of a file (M1).
-- ``reframe encoders [--json]``: the encoder statuses: the cached result at once (or
-  "checking…" without a cache), then each status that detection changes, then a summary.
-- ``reframe plan FILE [--preset NAME] [-o OUT] [--json]``: the job drafted from the preset,
-  its issues (errors, warnings, info, with their fixes), then the FFmpeg command.
-- ``reframe encode FILE|DIR… [--preset NAME] [-o OUT] [-r]``: one job per media file
-  (decision 0018), queued and run with progress and ETA. Ctrl+C cancels the jobs.
-- ``reframe name PATH… [--template T] [--preset NAME] [--json]``: the name source and why,
-  the parsed fields and the output name of each path.
-- ``reframe batch DIR… [--preset NAME] [--level strict|standard|loose] [--dry-run] [-r]
-  [--json]``: season mode (04, decision 0040): the files grouped by their track layout, the
-  preset resolved in each file of each group (the resolution matrix: one row per file, one
-  column per track rule, the output name); without ``--dry-run`` the files without errors are
-  queued in episode order and encoded as ``encode`` does.
-- ``reframe tools status [--json]``: which ffmpeg / ffprobe / mkvpropedit / mediainfo is used
-  (the lines of ``python -m reframe.tools``) and the fetched build.
-- ``reframe tools fetch [--build NAME] [--platform P]``: the pinned FFmpeg build of the
-  manifest, checked and installed as the bundled build in ``<data dir>/tools/ffmpeg``.
-- ``reframe presets list [--json]``, ``reframe presets export [NAME…] [-o FILE]``,
-  ``reframe presets import FILE [--on-conflict rename|replace|skip]``.
-- ``reframe version``.
-
-``plan`` runs the one-frame dry run when the job has custom encoder parameters; ``encode``
-shows the when-done countdown (sleep, shut down) that the queue starts after its jobs, and
-Ctrl+C cancels it. Decision 0038.
-
-No ``--preset``: the default preset (Settings, else *H.265 MKV 1080p*, decision 0024). Output
-formats, exit codes and the other CLI choices: decision 0017.
-
-Exit codes:
-
-- ``0``: success (``plan``: no validation errors; ``encode``, ``batch``: every job done;
-  ``batch --dry-run``: no file has errors).
-- ``1``: failure: ffprobe could not read the file (``probe``, ``plan``); the job has
-  validation errors (``plan``); a job failed, was cancelled or was not queued (``encode``,
-  ``batch``); a file has errors or cannot be read (``batch --dry-run``); a name has errors
-  (``name``).
-- ``2``: wrong command-line usage: typer/click errors, an unknown preset, ``-o`` with more
-  than one file, a template with errors (``name --template``).
-- ``3``: a file or folder does not exist, is not a file, or cannot be read; no media files
-  in the given folders (``encode``).
-- ``4``: no usable ffprobe (``probe``, ``plan``) or ffmpeg (``encoders``); ffmpeg or ffprobe
-  cannot be used (``tools status``).
-- ``130``: interrupted (Ctrl+C). ``encode`` first cancels its running and waiting jobs
-  through the queue, which removes their partial files, or the when-done countdown;
-  ``tools fetch`` stops the download and installs nothing.
-
-``tools fetch``: ``1`` the download, the checksum, the archive or the version check failed;
-``2`` an unknown build or a platform the build has no archive for. ``presets export``: ``1``
-FILE cannot be written; ``2`` an unknown preset. ``presets import``: ``1`` the file is not a
-preset file (also one larger than 16 MiB) or a preset was not imported (an ``error`` issue);
-``3`` FILE does not exist, cannot be read or is not a regular file (a device, a FIFO).
-
-Errors are one line on stderr, never a traceback (an unexpected error is one ``error:`` line
-and exit code 1; ``REFRAME_TRACEBACK=1`` shows the traceback). The core's warnings
-(``app.warning``: a damaged settings file, a queue store used by another process, …) are
-``warning:`` lines on stderr. ``--json`` prints only JSON on stdout. The
-human output uses rich: no colour when stdout is not a terminal or ``NO_COLOR`` is set, ASCII
-table borders when stdout cannot encode box-drawing characters, and characters that stdout
-cannot encode are replaced (never a ``UnicodeEncodeError``).
+"""Command-line entry point (needs the ``[cli]`` extra: typer, with rich). Each command runs
+the core and prints its result for people, or as JSON with ``--json`` (JSON only on stdout).
+A command's error is one ``error:`` line on stderr, never a traceback;
+``REFRAME_TRACEBACK=1`` shows the traceback of an unexpected error.
 """
 
 from __future__ import annotations
@@ -192,7 +131,7 @@ __all__ = [
 
 EXIT_OK = 0
 EXIT_PROBE_FAILED = 1
-#: The same code for every command: something failed (see the module doc).
+#: What a command returns when something failed (its epilog lists the codes).
 EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_NOT_FOUND = 3
@@ -238,7 +177,7 @@ _EXIT_BY_KIND = {
 
 #: The dash for "no value".
 NONE = "—"
-#: Between width and height (03 §Summary).
+#: Between width and height.
 TIMES = "\N{MULTIPLICATION SIGN}"
 
 _BITRATE_SOURCE = {
@@ -323,7 +262,7 @@ ROLE_LEGEND = "[Role] = set by a flag in the file; (Role?) = guessed from the ti
 
 
 def fmt_int(value: int) -> str:
-    """``3912345`` → ``3 912 345`` (space as the thousands separator, as in 03)."""
+    """``3912345`` → ``3 912 345`` (space as the thousands separator)."""
     return f"{value:,}".replace(",", " ")
 
 
@@ -495,7 +434,7 @@ def video_details(stream: VideoStream) -> str:
 
 def role_badge(role: TrackRoleInfo) -> str:
     """``[Commentary]`` when a disposition flag sets the role, ``(Commentary?)`` when a title
-    keyword or the track layout suggests it (03: solid vs outlined badge)."""
+    keyword or the track layout suggests it."""
     name = _ROLE_NAMES.get(role.role.value, role.role.value)
     return f"[{name}]" if role.evidence is RoleEvidence.FLAG else f"({name}?)"
 
@@ -539,8 +478,7 @@ def printable(text: str) -> str:
     (``os.fsdecode`` keeps them as lone surrogates, U+DCFF) and every control character (C0
     with the line break and the tab, DEL, C1) shown as U+FFFD. A UTF-8 stream cannot take a
     lone surrogate, and a control character from a file or a name (``ESC [31m``, ``ESC ]0;``,
-    a line break in a preset name) would change the terminal or the layout (core-complete
-    review R5-9). Text with line breaks of its own is printed line by line."""
+    a line break in a preset name) would change the terminal or the layout."""
     try:
         text = text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
     except UnicodeEncodeError:  # other lone surrogates (a broken UTF-16 name on Windows)
@@ -660,7 +598,7 @@ def _subtitle_table(streams: Sequence[SubtitleStream]) -> Table:
 
 
 def _evidence_lines(streams: Sequence[AudioStream | SubtitleStream]) -> list[Text]:
-    """``#3  [Commentary]  disposition comment``: the tooltip of each badge (03)."""
+    """``#3  [Commentary]  disposition comment``: the tooltip of each badge."""
     lines = []
     for s in streams:
         for role in s.roles:
@@ -890,7 +828,7 @@ class WarningPrinter:
                 self.show(event)
 
     async def finish(self) -> None:
-        """After ``Reframe.close()``: print what is still queued, then stop."""
+        """After ``Reframe.close()``: print the warnings published while it closed, then stop."""
         try:
             async with asyncio.timeout(5):
                 await asyncio.shield(self._task)
@@ -985,7 +923,7 @@ def render_issues(
     indent: int = _INDENT,
 ) -> None:
     """Each issue: ``error    <message>``, then ``[code · path]`` and one ``fix:`` line per
-    fix, errors first (03 §Validation and error display)."""
+    fix, errors first."""
     wanted = set(severities)
     shown = sorted(
         (issue for issue in issues if issue.severity in wanted),
@@ -1016,7 +954,7 @@ def _labelled(console: Console, label: str, style: str, line: Text, lead: int) -
 
 
 def encoder_text(status: EncoderStatus) -> str:
-    """``hevc_nvenc — unavailable: NVIDIA driver not found`` (M2 demo item 1)."""
+    """``hevc_nvenc — unavailable: NVIDIA driver not found``."""
     state = status.state
     if state is EncoderState.AVAILABLE:
         text = "available"
@@ -1182,7 +1120,7 @@ def _draft_header(console: Console, draft: JobDraft, source_name: str) -> None:
             number = f"#{d.source_stream}"
             rows.append((key if i == 0 else "", f"{number}  {d.reason}"))
             if d.selected and d.selection:
-                # Why the track was taken (C-12's selection stage or track rule).
+                # Why the track was taken: the selection stage or the track rule.
                 rows.append(("", f"{'':{len(number)}}  selected: {d.selection}"))
     for key, value in rows:
         _indented(console, Text(printable(value)), _INDENT + 9, first=f"{'':{_INDENT}}{key:<8} ")
@@ -1210,12 +1148,12 @@ DRY_RUN_SKIPPED = "encoder.dry_run_skipped"
 
 
 def needs_dry_run(job: JobSettings, preset: Preset | None = None) -> bool:
-    """``reframe plan`` runs the one-frame dry run (C-6) when the job has custom encoder
-    parameters that are used (not with video passthrough): validation cannot check them.
+    """``reframe plan`` runs the one-frame dry run when the job has custom encoder parameters
+    that are used (not with video passthrough): validation cannot check them.
 
-    Not for the unchanged parameters of a built-in preset (decision 0038): Reframe's own
-    tests check those against the pinned FFmpeg build, and most built-in x265 / SVT-AV1
-    presets have some, so every ``reframe plan`` would encode a frame."""
+    Not for the unchanged parameters of a built-in preset: Reframe's own tests check those
+    against the pinned FFmpeg build, and most built-in x265 / SVT-AV1 presets have some, so
+    every ``reframe plan`` would encode a frame."""
     video = job.video
     if video.passthrough or not video.custom_params.strip():
         return False
@@ -1240,9 +1178,9 @@ async def run_plan(file: Path, *, preset: str | None, output: Path | None, as_js
             return await _probe_failed(app, draft)
         plan: EncodePlan | None = None
         if not has_errors(draft.issues):
-            # The dry run (C-6) is run here, not by plan(dry_run=True): plan() returns only
-            # the plan when the dry run has no error, and its warnings (a setting the encoder
-            # changed, a test encode that did not run) belong with the other issues.
+            # The dry run is run here, not by plan(dry_run=True): plan() returns only the plan
+            # when the dry run has no error, and its warnings (a setting the encoder changed, a
+            # test encode that did not run) belong with the other issues.
             dry_run = needs_dry_run(draft.job, chosen)
             checked = await app.jobs.dry_run(draft.job, source) if dry_run else []
             if checked:
@@ -1276,8 +1214,8 @@ async def _probe_failed(app: Reframe, error: ProbeError) -> int:
 
 
 class QueueLike(Protocol):
-    """The part of C-11's ``QueueService`` (``reframe.queue``, decision 0016) that
-    ``reframe encode`` uses; the tests give it a fake with the same contract."""
+    """The part of ``QueueService`` (``reframe.queue``) that ``reframe encode`` uses; the
+    tests give it a fake with the same contract."""
 
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob: ...
 
@@ -1295,7 +1233,7 @@ class QueueLike(Protocol):
 
 
 def get_queue(app: Reframe) -> QueueLike:
-    """The queue of ``app`` (``Reframe.queue``, C-11): the one place where the CLI gets it.
+    """The queue of ``app`` (``Reframe.queue``): the one place where the CLI gets it.
     Tests of the CLI's own logic replace it with a fake that follows the same contract."""
     return app.queue
 
@@ -1531,7 +1469,7 @@ async def _draft_files(
     width = len(str(total))
     console.print(Text(printable(f"Preset: {preset.name}")), soft_wrap=True)
     labels = [f"[{number:>{width}}/{total}]" for number in range(1, total + 1)]
-    # OutputClaims stats the files (links, hard links: final review RA-1): in a worker thread.
+    # OutputClaims stats the files (links, hard links): in a worker thread.
     claims = await asyncio.to_thread(
         OutputClaims,
         {file: f"{label} {file.name}" for file, label in zip(files, labels, strict=True)},
@@ -1585,9 +1523,8 @@ def _with_claims(
     issues: Sequence[ValidationIssue], conflicts: Sequence[ValidationIssue]
 ) -> list[ValidationIssue]:
     """A draft's issues with :class:`~reframe.jobs.OutputClaims`' errors. An output that is a
-    source of the command is never overwritten: C-8's ``output.overwrite`` warning ("will be
-    replaced") would say the opposite and is left out, as ``reframe batch`` does (final
-    review RA-4)."""
+    source of the command is never overwritten: the ``output.overwrite`` warning ("will be
+    replaced") would say the opposite and is left out, as ``reframe batch`` does."""
     if any(conflict.code == "batch.output_is_source" for conflict in conflicts):
         issues = [issue for issue in issues if issue.code != "output.overwrite"]
     return [*issues, *conflicts]
@@ -1623,7 +1560,7 @@ async def _queue_jobs(
         console.print(Text(f"Queued {_plural(len(ids), 'job')}."), soft_wrap=True)
         view = EncodeView(console, labels)
         # Only our jobs: the store is shared, and other front ends' waiting jobs stay as
-        # they are (C-11 ``start(job_ids=…)``; the runner goes idle when ours have ended).
+        # they are (``start(job_ids=…)``; the runner goes idle when ours have ended).
         queue.start(job_ids=ids)
         await _follow_jobs(queue, ids, subscription, view)
         # The queue decides on its when-done action before wait() returns for the last job.
@@ -1754,7 +1691,7 @@ def render_group(console: Console, group: BatchGroup, number: int, total: int) -
     console.print(Text(printable(head), style="bold"), soft_wrap=True)
     warn = ROW_MARKS["warning"] if _unicode(console) else ROW_ASCII["warning"]
     # A member labelled by its file name (no episode, two releases of one episode) shows the
-    # name once, without a label column (final review RA-5).
+    # name once, without a label column.
     labels = [
         None if label == member.path.name else printable(label)
         for label, member in zip(
@@ -1767,7 +1704,7 @@ def render_group(console: Console, group: BatchGroup, number: int, total: int) -
         if member.path == group.representative:
             line.append(" (representative)", style="dim")
         if member.match == "near":
-            # The differences name track titles from the file (final review RA-2).
+            # The differences name track titles from the file.
             line.append(printable(f"  {warn} {'; '.join(member.differences)}"), style="yellow")
         if label is None:
             _indented(console, line)
@@ -1787,8 +1724,8 @@ def render_matrix(console: Console, resolution: BatchResolution) -> None:
         short, _, rest = column.label.partition(" ")
         _indented(console, Text(printable(rest)), _INDENT + 4, first=f"{'':{_INDENT}}{short:<3} ")
     console.print()
-    # Row labels and output names come from file names (final review RA-2); printable keeps
-    # the columns: each control character becomes one U+FFFD.
+    # Row labels and output names come from file names; printable keeps the columns: each
+    # control character becomes one U+FFFD.
     for line in matrix_lines(resolution, unicode=unicode):
         console.print(Text(printable(line)), soft_wrap=True, crop=False)
     # The matrix's row labels (with the season when the rows span seasons).
@@ -1923,7 +1860,7 @@ async def run_batch(
 
 
 class PowerLike(Protocol):
-    """The part of C-14's ``PowerService`` (``Reframe.power``) that ``reframe encode`` uses."""
+    """The part of ``PowerService`` (``Reframe.power``) that ``reframe encode`` uses."""
 
     @property
     def pending(self) -> PowerCountdownEvent | None: ...
@@ -1940,7 +1877,7 @@ COUNTDOWN_EXECUTE_WAIT = 30.0
 #: Lines mode: a countdown line every this many seconds.
 COUNTDOWN_LINE_STEP = 10
 #: The when-done actions that ``reframe encode`` waits for. ``quit`` is not one: the command
-#: ends by itself when its jobs end (decision 0038), and closing Reframe cancels it.
+#: ends by itself when its jobs end, and closing Reframe cancels it.
 WAITED_ACTIONS = frozenset({"sleep", "shutdown"})
 
 _COUNTDOWN_VERB = {"shutdown": "Shutting down", "sleep": "Going to sleep"}
@@ -2376,7 +2313,7 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             replaced = _marker_identity(install_dir) != before
             if ended.state is TaskState.DONE or (
                 # The interrupt came after the swap (tool discovery, the clean-up): the new
-                # build is in place (core-complete review R5-5).
+                # build is in place.
                 replaced and marker is not None and marker.get("sha256") == archive.sha256
             ):
                 print(
@@ -2465,7 +2402,7 @@ _EXIT_HELP_PRESETS_IMPORT = (
 
 
 class LevelChoice(StrEnum):
-    """``reframe batch --level`` (04 §Grouping)."""
+    """The ``--level`` choices of ``reframe batch``."""
 
     STRICT = "strict"
     STANDARD = "standard"
@@ -2473,7 +2410,7 @@ class LevelChoice(StrEnum):
 
 
 class ConflictChoice(StrEnum):
-    """``--on-conflict`` of ``reframe presets import`` (C-9's ``ConflictPolicy``)."""
+    """``--on-conflict`` of ``reframe presets import``."""
 
     RENAME = "rename"
     REPLACE = "replace"
@@ -2571,7 +2508,7 @@ def write_text_file(path: Path, text: str) -> None:
 
 async def run_presets_export(names: Sequence[str], *, output: Path | None) -> int:
     """``reframe presets export``: the named presets (none named: every user preset) as the
-    export file (decision 0028: presets of a newer Reframe are kept), on stdout or in FILE."""
+    export file, on stdout or in FILE."""
     to_stdout = output is None or str(output) == "-"
     if output is not None and not to_stdout and await asyncio.to_thread(output.is_dir):
         _error(f"{display_path(output)} is a folder: -o needs a file name.")
@@ -3016,7 +2953,7 @@ def build_app() -> typer.Typer:
 class _ExpectedTaskFailure(logging.Filter):
     """Drops the task manager's log record (with a traceback) of a task that ended with
     :class:`~reframe.mediatask.TaskFailed`: an expected failure that the command reports as
-    one ``error:`` line (decision 0017 item 23)."""
+    one ``error:`` line."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         error = record.exc_info[1] if record.exc_info else None
