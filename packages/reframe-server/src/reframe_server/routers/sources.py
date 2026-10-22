@@ -13,6 +13,7 @@ from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.tasks import TaskContext
 from reframe_server import security
 from reframe_server.api import JsonTextResponse, TaskAccepted, accepted, api_router
+from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, ReframeDep, SourcesDep
 from reframe_server.errors import ProblemError
 
@@ -46,8 +47,9 @@ class ProbeFailure(BaseModel):
 
     path: Path
     code: str
-    """``probe.<kind>`` (``probe.not_found``, ``probe.failed``, …) or ``sources.no_media``
-    (a folder without media files)."""
+    """``probe.<kind>`` (``probe.not_found``, ``probe.failed``, …), ``sources.no_media`` (a
+    folder without media files) or ``path.outside_roots`` (a file in a folder that is a link
+    out of the allowed folders; it is not probed)."""
     message: str
     detail: str | None = None
 
@@ -92,11 +94,12 @@ async def probe(
 ) -> JsonTextResponse:
     """Probe files and folders as a task whose result is a :class:`ProbeSummary`; each source
     gets an id."""
-    paths = [security.jail_read(config, path) for path in body.paths]
+    paths = await asyncio.to_thread(lambda: [security.jail_read(config, p) for p in body.paths])
 
     async def work(ctx: TaskContext) -> ProbeSummary:
         found = await reframe.jobs.media_files(paths, recursive=body.recursive)
-        total = len(found.files)
+        files, refused = await asyncio.to_thread(_jailed, config, found.files)
+        total = len(files)
         outcomes: dict[int, MediaSource | ProbeError] = {}
         gate = asyncio.Semaphore(PROBES_AT_ONCE)
         done = 0
@@ -109,7 +112,7 @@ async def probe(
             ctx.progress(done=done, total=total, message=f"{done}/{total} files")
 
         async with asyncio.TaskGroup() as group:
-            for position, file in enumerate(found.files):
+            for position, file in enumerate(files):
                 group.create_task(one(position, file))
         errors = [
             _failure(ProbeError(path, ProbeErrorKind.NOT_FOUND, "The file does not exist."))
@@ -120,6 +123,7 @@ async def probe(
             )
             for path in found.empty
         ]
+        errors += refused
         sources: list[ProbedSource] = []
         for _, outcome in sorted(outcomes.items()):
             if isinstance(outcome, MediaSource):
@@ -132,6 +136,24 @@ async def probe(
     count = len(paths)
     message = f"Probing {paths[0].name}" if count == 1 else f"Probing {count} paths"
     return accepted(reframe.tasks.start("probe_sources", work, message=message))
+
+
+def _jailed(config: ServerConfig, files: list[Path]) -> tuple[list[Path], list[ProbeFailure]]:
+    """The files that pass the read jail, resolved, and a failure for each other one: a file
+    found in a folder can be a link out of the roots. Blocking."""
+    allowed: list[Path] = []
+    refused: list[ProbeFailure] = []
+    for file in files:
+        try:
+            allowed.append(security.jail_read(config, file))
+        except ProblemError as error:
+            problem = error.problem
+            refused.append(
+                ProbeFailure(
+                    path=file, code=problem.code, message=problem.title, detail=problem.detail
+                )
+            )
+    return allowed, refused
 
 
 def _failure(error: ProbeError) -> ProbeFailure:

@@ -1,14 +1,14 @@
-"""App settings. In web mode a client cannot choose which programs the server runs, and a
-folder it sets must be below an output root."""
+"""App settings. In web mode a client cannot choose which programs the server runs or pass
+options to a hardware device, and a folder it sets must be below an output root."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from reframe.jsonpatch import apply_patch
 from reframe.models import AppSettings, AppWarningEvent, FieldChange, JsonPatch, ToolPaths
 from reframe_server import security
 from reframe_server.api import api_router
@@ -17,6 +17,10 @@ from reframe_server.deps import ConfigDep, ReframeDep
 from reframe_server.errors import ProblemError
 
 router = api_router("settings")
+
+# FFmpeg reads device options after a comma in the device text (`driver=` makes libva load
+# a library by a relative name), so a web client may name only a render node.
+_RENDER_NODE = re.compile(r"/dev/dri/renderD[0-9]+")
 
 
 class SettingsChange(BaseModel):
@@ -42,11 +46,7 @@ async def read(reframe: ReframeDep) -> AppSettings:
 async def change(patch: JsonPatch, reframe: ReframeDep, config: ConfigDep) -> SettingsChange:
     """Change the settings with a JSON patch (RFC 6902), all or nothing. An invalid change is
     a 422 problem whose ``issues`` say why; nothing changes then."""
-    current = reframe.settings.get()
-    patched = _patched(current, patch)
-    if patched is not None:
-        _check(config, current, patched)
-    update = await reframe.settings.update(patch)
+    update = await reframe.settings.update(patch, check=lambda old, new: _check(config, old, new))
     if update.issues:
         first = update.issues[0]
         raise ProblemError(422, first.code, first.message, issues=update.issues)
@@ -58,23 +58,26 @@ async def change(patch: JsonPatch, reframe: ReframeDep, config: ConfigDep) -> Se
     )
 
 
-def _patched(current: AppSettings, patch: JsonPatch) -> AppSettings | None:
-    """The settings ``patch`` would give, to check before the update; ``None`` when it is not
-    valid (the update then refuses it with the reason)."""
-    try:
-        return AppSettings.model_validate(apply_patch(current.model_dump(mode="json"), patch))
-    except (RecursionError, ValueError):  # a bad op, a bad value, or nested far too deep
-        return None
-
-
 def _check(config: ServerConfig, old: AppSettings, new: AppSettings) -> None:
-    if config.mode == "web" and _sets_a_program(old.tools, new.tools):
-        raise ProblemError(
-            403,
-            "settings.tools_forbidden",
-            "A web client cannot choose the programs the server runs",
-            "Set REFRAME_FFMPEG / REFRAME_FFPROBE on the server instead.",
-        )
+    """Runs under the store's lock on the settings the patch was applied to, so a concurrent
+    change cannot slip a patch past it. A value the patch does not change is not checked."""
+    if config.mode == "web":
+        if _sets_a_program(old.tools, new.tools):
+            raise ProblemError(
+                403,
+                "settings.tools_forbidden",
+                "A web client cannot choose the programs the server runs",
+                "Set REFRAME_FFMPEG / REFRAME_FFPROBE on the server instead.",
+            )
+        device = (new.encoders.vaapi_device or "").strip()
+        changed = new.encoders.vaapi_device != old.encoders.vaapi_device
+        if changed and device and not _RENDER_NODE.fullmatch(device):
+            raise ProblemError(
+                403,
+                "settings.vaapi_device_forbidden",
+                "A web client can only choose a VAAPI render node",
+                "Name a render node such as /dev/dri/renderD128, or none to test every node.",
+            )
     before = dict(_folders(old))
     for where, folder in _folders(new):
         if before.get(where) != folder:

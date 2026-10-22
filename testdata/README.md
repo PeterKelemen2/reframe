@@ -2230,3 +2230,24 @@ hold a file name, a URL, a device or a plugin. In the pinned build, for example:
 (network); `frei0r` `filter_name` (a plugin); `lv2` `plugin`; `arnndn` `model`; `hwupload` /
 `hwmap` `derive_device`. No filter of the allow-list (`ALLOWED_FILTERS`) has such an option,
 in either build.
+
+### VAAPI device text (S-2, web-mode settings)
+
+Checked on 2026-10-22 with the pinned build (n9.0.2, libva 1.24, Intel iHD driver) and
+`LIBVA_MESSAGING_LEVEL=2`:
+
+```sh
+ffmpeg -hide_banner -v verbose -init_hw_device "vaapi=va:<device>" -f lavfi -i testsrc=d=0.1 -frames:v 1 -f null -
+```
+
+| `<device>` | What happens |
+|------------|--------------|
+| `/dev/dri/renderD128` | libva opens `/usr/lib/dri/iHD_drv_video.so`; the run works |
+| `/dev/dri/renderD128,driver=../../../../../tmp/…/evil` | the text after the comma is a device option: `libva: User requested driver '…'`, `Trying to open /usr/lib/dri/../../../../../tmp/…/evil_drv_video.so`, so a library named by the client is loaded (here it does not exist: `Device creation failed: -5`) |
+| `/dev/dri/renderD128,kernel_driver=i915` | accepted, the run works |
+| `/etc/passwd`, a folder | `Failed to open … as DRM device node.`, `Cannot open X11 display …`: FFmpeg opens the path, then tries it as an X11 display name |
+| `:0` | tried as an X11 display (`Cannot open X11 display :0.`) |
+| `/dev/dri/card1` | `vaGetDriverNames() failed`: a primary node does not work for VAAPI here |
+
+So web mode accepts only `/dev/dri/renderD<n>` (or empty: automatic). Asserted by
+`packages/reframe-server/tests/test_settings.py::test_a_web_client_can_only_choose_a_vaapi_render_node`.

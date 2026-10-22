@@ -2,30 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-import os
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
+from reframe.models import AppSettings
+from reframe.service import SettingsUpdate
 from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
 
-FOLDER = "/output/naming/output_folder"
-
-
-def _refuse(config: ServerConfig, path: str | os.PathLike[str]) -> Path:
-    raise ProblemError(403, "path.outside_roots", "Outside the roots")
+VAAPI = "/encoders/vaapi_device"
+WITH_OPTIONS = "/dev/dri/renderD128,driver=../../tmp/x"
 
 
 def _start_with(tmp_path: Path, settings: dict[str, Any]) -> None:
     file = tmp_path / "config" / "settings.json"
     file.write_text(json.dumps(json.loads(file.read_text("utf-8")) | settings), encoding="utf-8")
+
+
+async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
+    deadline = time.monotonic() + limit
+    while not check():
+        if time.monotonic() > deadline:
+            raise TimeoutError("condition not met in time")
+        await asyncio.sleep(0.01)
 
 
 async def test_get_answers_the_settings_in_effect(api: Api) -> None:
@@ -59,14 +66,53 @@ async def test_an_invalid_patch_is_a_problem_with_its_issues(api: Api) -> None:
     [
         [{"op": "add", "path": "/tools/ffmpeg", "value": "/bin/sh"}],
         [{"op": "add", "path": "/tools/extra", "value": "/bin/sh"}],
-        [{"op": "replace", "path": "", "value": {"tools": {"ffprobe": "/bin/sh"}}}],
     ],
-    ids=["a tool", "an unknown tool key", "the whole document"],
+    ids=["a tool", "an unknown tool key"],
 )
 async def test_a_web_client_cannot_choose_a_program(api: Api, patch: list[dict[str, Any]]) -> None:
     response = await api.client.put("/api/settings", json=patch)
     assert (response.status_code, response.json()["code"]) == (403, "settings.tools_forbidden")
     assert api.reframe.settings.get().tools.model_dump(exclude_none=True) == {}
+
+
+async def test_a_concurrent_change_cannot_slip_a_program_past_the_check(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second patch applies only once the first is in: the check must see the settings
+    the patch is applied to, not the ones before the first change."""
+    service = api.reframe.settings
+    store = service._store
+    entered, release = threading.Event(), threading.Event()
+    real_write = store.write
+
+    def slow_write(settings: AppSettings) -> Any:
+        entered.set()
+        release.wait(10)
+        return real_write(settings)
+
+    calls: list[object] = []
+    real_update = service.update
+
+    async def update(change: Any, **options: Any) -> SettingsUpdate:
+        calls.append(change)
+        return await real_update(change, **options)
+
+    monkeypatch.setattr(store, "write", slow_write)
+    monkeypatch.setattr(service, "update", update)
+    frames = [{"op": "replace", "path": "/preview/sample_frames", "value": 4}]
+    first = asyncio.ensure_future(api.client.put("/api/settings", json=frames))
+    await _until(entered.is_set)
+    program = [
+        {"op": "test", "path": "/preview/sample_frames", "value": 4},
+        {"op": "add", "path": "/tools/ffmpeg", "value": "/bin/sh"},
+    ]
+    second = asyncio.ensure_future(api.client.put("/api/settings", json=program))
+    await _until(lambda: len(calls) == 2)  # the second request waits for the store's lock
+    release.set()
+    assert (await first).status_code == 200
+    response = await second
+    assert (response.status_code, response.json()["code"]) == (403, "settings.tools_forbidden")
+    assert service.get().tools.ffmpeg is None
 
 
 async def test_a_web_client_may_remove_a_tool_override(
@@ -81,37 +127,53 @@ async def test_a_web_client_may_remove_a_tool_override(
     assert response.json()["settings"]["tools"]["ffmpeg"] is None
 
 
-async def test_a_desktop_client_may_choose_a_program(make_api: ApiFactory) -> None:
+@pytest.mark.parametrize(
+    ("device", "status"),
+    [("/dev/dri/renderD129", 200), (None, 200), (WITH_OPTIONS, 403)],
+    ids=["a render node", "automatic", "device options"],
+)
+async def test_a_web_client_can_only_choose_a_vaapi_render_node(
+    make_api: ApiFactory, tmp_path: Path, device: str | None, status: int
+) -> None:
+    """FFmpeg passes the options after a comma to libva (``driver=`` loads a library)."""
+    _start_with(tmp_path, {"encoders": {"hardware_tests": False, "vaapi_device": "/dev/dri/x"}})
+    async with make_api() as api:
+        patch = [{"op": "replace", "path": VAAPI, "value": device}]
+        response = await api.client.put("/api/settings", json=patch)
+        now = api.reframe.settings.get().encoders.vaapi_device
+    assert response.status_code == status
+    if status == 403:
+        assert response.json()["code"] == "settings.vaapi_device_forbidden"
+    assert now == (device if status == 200 else "/dev/dri/x")
+
+
+async def test_a_desktop_client_may_choose_a_program_and_any_device(
+    make_api: ApiFactory,
+) -> None:
     async with make_api(mode="desktop") as api:
-        patch = [{"op": "add", "path": "/tools/mediainfo", "value": "/opt/mediainfo"}]
+        patch = [
+            {"op": "add", "path": "/tools/mediainfo", "value": "/opt/mediainfo"},
+            {"op": "replace", "path": VAAPI, "value": WITH_OPTIONS},
+        ]
         response = await api.client.put("/api/settings", json=patch)
     assert response.status_code == 200
-    assert response.json()["settings"]["tools"]["mediainfo"] == "/opt/mediainfo"
+    settings = response.json()["settings"]
+    assert settings["tools"]["mediainfo"] == "/opt/mediainfo"
+    assert settings["encoders"]["vaapi_device"] == WITH_OPTIONS
 
 
-async def test_a_new_folder_goes_through_the_write_jail(
-    api: Api, monkeypatch: pytest.MonkeyPatch
+async def test_a_value_the_patch_does_not_change_is_not_checked_again(
+    make_api: ApiFactory, tmp_path: Path
 ) -> None:
-    asked: list[Path] = []
-
-    def write(config: ServerConfig, path: str | os.PathLike[str]) -> Path:
-        asked.append(Path(path))
-        return _refuse(config, path)
-
-    monkeypatch.setattr(security, "jail_write", write)
-    patch = [{"op": "replace", "path": FOLDER, "value": str(api.output / "Movies")}]
-    response = await api.client.put("/api/settings", json=patch)
-    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
-    assert asked == [api.output / "Movies"]
-    assert api.reframe.settings.get().output.naming.output_folder is None
-
-
-async def test_a_folder_the_patch_does_not_change_is_not_checked_again(
-    make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A folder saved before the roots changed does not block every other change."""
-    _start_with(tmp_path, {"output": {"naming": {"output_folder": str(tmp_path / "old")}}})
-    monkeypatch.setattr(security, "jail_write", _refuse)
+    """A folder saved before the roots changed, or a device the server's owner set, does not
+    block every other change."""
+    _start_with(
+        tmp_path,
+        {
+            "output": {"naming": {"output_folder": str(tmp_path / "old")}},
+            "encoders": {"hardware_tests": False, "vaapi_device": WITH_OPTIONS},
+        },
+    )
     async with make_api() as api:
         patch = [{"op": "replace", "path": "/preview/sample_frames", "value": 3}]
         response = await api.client.put("/api/settings", json=patch)

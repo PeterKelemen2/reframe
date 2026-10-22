@@ -22,6 +22,7 @@ router = api_router("preview")
 
 CHUNK = 256 * 1024
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+_MAX_DIGITS = 19  # a file size has at most 19 digits (below 2**63)
 _VIDEO_TYPES = {
     ".mp4": "video/mp4",
     ".m4v": "video/mp4",
@@ -116,12 +117,13 @@ def _byte_range(header: str | None, size: int) -> tuple[int, int] | None:
         return None
     first, last = match.groups()
     if first == "":
-        start, end = max(size - int(last), 0), size - 1
-        satisfiable = int(last) > 0 and size > 0
+        suffix = _offset(last)
+        start, end = max(size - suffix, 0), size - 1
+        satisfiable = suffix > 0 and size > 0
     else:
-        start = int(first)
-        end = size - 1 if last == "" else min(int(last), size - 1)
-        if last != "" and int(last) < start:
+        start = _offset(first)
+        end = size - 1 if last == "" else min(_offset(last), size - 1)
+        if last != "" and _offset(last) < start:
             return None
         satisfiable = start < size
     if not satisfiable:
@@ -132,6 +134,13 @@ def _byte_range(header: str | None, size: int) -> tuple[int, int] | None:
             headers={"Content-Range": f"bytes */{size}"},
         )
     return start, end
+
+
+def _offset(digits: str) -> int:
+    """A byte offset of a ``Range`` header. ``int()`` refuses a number of thousands of digits;
+    one longer than any file size counts as past every file's end."""
+    digits = digits.lstrip("0") or "0"
+    return int(digits) if len(digits) <= _MAX_DIGITS else 10**_MAX_DIGITS
 
 
 async def _chunks(file: BinaryIO, start: int, length: int) -> AsyncIterator[bytes]:

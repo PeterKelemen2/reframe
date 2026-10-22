@@ -122,7 +122,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
 | Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
-| Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error) |
+| Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error). Every file found in a folder passes the read jail too: a link out of the roots is an error, never probed ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md#follow-up-review-2026-10-22)) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
 | | `POST /api/sources/{id}/subtitle-scan` → 202 | Event counts, forced flags |
@@ -170,8 +170,9 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
       identifier; a request validation error names the field, never its value. A `source_id`
       is a hash of the absolute path; the server keeps the probed sources in memory, so the
       client probes again after a restart. In web mode a settings patch cannot name a
-      program (`/tools/…`; removing one is allowed), and a folder in it must be below an
-      output root ([decision 0045](../decisions/0045-m3-server-order-and-contract.md),
+      program (`/tools/…`; removing one is allowed), `encoders.vaapi_device` may only be a
+      render node (`/dev/dri/renderD<n>`) or empty, and a folder in it must be below an
+      output root; the checks run under the settings store's lock ([decision 0045](../decisions/0045-m3-server-order-and-contract.md),
       [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)).
 
 Done when: an httpx `AsyncClient` test suite covers every route against a facade that runs on
