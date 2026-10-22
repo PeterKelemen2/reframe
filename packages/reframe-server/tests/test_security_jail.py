@@ -3,6 +3,7 @@ output roots (write) after links and ``..`` are resolved; desktop mode allows ev
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -94,12 +95,14 @@ def test_reading_and_writing_have_their_own_roots(roots: Roots) -> None:
     assert _refused(security.jail_read, config, roots.output / "a.mkv").problem.status == 403
 
 
-@pytest.mark.parametrize(("mode", "path"), [("web", "relative/a.mkv"), ("desktop", "/m/a\0.mkv")])
+@pytest.mark.parametrize(("mode", "case"), [("web", "relative"), ("desktop", "NUL")])
 def test_a_path_that_is_not_absolute_or_holds_a_nul_is_a_bad_request(
-    roots: Roots, mode: ServerMode, path: str
+    roots: Roots, mode: ServerMode, case: str
 ) -> None:
+    path = "relative/a.mkv" if case == "relative" else f"{roots.media}{os.sep}a\0.mkv"
     problem = _refused(security.jail_read, roots.config(mode), path).problem
     assert (problem.status, problem.code) == (400, "path.invalid")
+    assert ("not absolute" in (problem.detail or "")) is (case == "relative")
 
 
 def test_desktop_mode_allows_the_whole_file_system(roots: Roots) -> None:

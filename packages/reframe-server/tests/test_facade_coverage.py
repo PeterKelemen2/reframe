@@ -8,6 +8,7 @@ the server code the handler calls; which routes the tests call comes from their 
 from __future__ import annotations
 
 import ast
+import asyncio
 import functools
 import importlib
 import inspect
@@ -18,6 +19,7 @@ import textwrap
 import types
 import typing
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +29,8 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 import reframe_server.routers
 from reframe.service import Reframe
 from reframe_server.api import operation_id
-from reframe_testing.server import ROOT, Api
-
-pytestmark = pytest.mark.anyio
+from reframe_testing.fake_tools import make_fake_tools
+from reframe_testing.server import ROOT, make_api_factory
 
 SERVICES = (
     "tools",
@@ -126,8 +127,8 @@ class Reach:
     """The facade members one function reaches, directly or through the server code it
     calls. A variable's class comes from its annotation (or the variable it was assigned)."""
 
-    def __init__(self, reframe: Reframe) -> None:
-        self.services: dict[type, str] = {type(getattr(reframe, s)): s for s in SERVICES}
+    def __init__(self, services: dict[type, str]) -> None:
+        self.services = services
         self.found: set[str] = set()
         self._seen: set[object] = set()
 
@@ -213,13 +214,13 @@ def routes() -> Iterator[tuple[str, Callable[..., Any]]]:
                 yield f"{module.router.tags[0]}_{route.name}", route.endpoint
 
 
-def reached_by_routes(reframe: Reframe, served: set[str]) -> dict[str, set[str]]:
+def reached_by_routes(services: dict[type, str], served: set[str]) -> dict[str, set[str]]:
     """Facade member → the operationIds of the served routes that reach it."""
     by_member: dict[str, set[str]] = {}
     for op, handler in routes():
         if op not in served:
             continue
-        reach = Reach(reframe)
+        reach = Reach(services)
         reach.function(handler)
         for member in reach.found:
             by_member.setdefault(member, set()).add(op)
@@ -231,21 +232,50 @@ def served_operations(document: dict[str, Any]) -> set[str]:
     return ops | {"events_stream"}
 
 
-async def test_every_public_facade_member_is_reached_by_a_route_or_listed_as_not_exposed(
-    api: Api,
+@dataclass(frozen=True)
+class Server:
+    document: dict[str, Any]
+    members: set[str]
+    """The facade's public members (:func:`public_members`)."""
+    reached: dict[str, set[str]]
+    """Facade member → the operationIds of the routes that reach it."""
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory: pytest.TempPathFactory) -> Server:
+    """Read once from a running server: instance attributes are members too."""
+    folder = tmp_path_factory.mktemp("server")
+    fake = make_fake_tools(folder / "fake-tools")
+
+    async def read() -> Server:
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            async with make_api_factory(folder, fake, monkeypatch)() as api:
+                services = {type(getattr(api.reframe, s)): s for s in SERVICES}
+                document = api.app.openapi()
+                return Server(
+                    document,
+                    public_members(api.reframe),
+                    reached_by_routes(services, served_operations(document)),
+                )
+
+    try:
+        return asyncio.run(read())
+    finally:
+        fake.kill_leftovers()
+
+
+def test_every_public_facade_member_is_reached_by_a_route_or_listed_as_not_exposed(
+    server: Server,
 ) -> None:
-    document = api.app.openapi()
-    reached = reached_by_routes(api.reframe, served_operations(document))
-    missing = public_members(api.reframe) - reached.keys() - not_exposed().keys()
+    missing = server.members - server.reached.keys() - not_exposed().keys()
     assert sorted(missing) == [], "no route reaches these, and the Not exposed table lacks them"
 
 
-async def test_the_not_exposed_list_names_public_members_that_no_route_reaches(api: Api) -> None:
+def test_the_not_exposed_list_names_public_members_that_no_route_reaches(server: Server) -> None:
     listed = not_exposed()
     assert listed, "the plan has no Not exposed table"
-    reached = reached_by_routes(api.reframe, served_operations(api.app.openapi()))
-    assert {name: sorted(reached[name]) for name in listed if name in reached} == {}
-    assert sorted(listed.keys() - public_members(api.reframe)) == []
+    assert {name: sorted(server.reached[name]) for name in listed if name in server.reached} == {}
+    assert sorted(listed.keys() - server.members) == []
 
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch"}
@@ -351,17 +381,16 @@ def _template(path: str) -> re.Pattern[str]:
     return re.compile("".join("[^/]+" if p.startswith("{") else re.escape(p) for p in parts))
 
 
-async def test_every_route_is_called_by_a_route_test(api: Api) -> None:
+def test_every_route_is_called_by_a_route_test(server: Server) -> None:
     calls = {
         call
         for file in sorted(TESTS.glob("test_*.py"))
         if file.name not in SWEEPS
         for call in called_routes(file)
     }
-    document = api.app.openapi()
     uncalled = [
         operation["operationId"]
-        for path, item in document["paths"].items()
+        for path, item in server.document["paths"].items()
         for method, operation in item.items()
         if not any(verb == method and _template(path).fullmatch(url) for verb, url in calls)
     ]

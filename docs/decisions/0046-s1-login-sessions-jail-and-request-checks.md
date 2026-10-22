@@ -242,3 +242,81 @@ Read in `reframe.command` (`filtergraph.py`, `video.py`, `audio.py`, `subtitles.
 ### Plan changes
 
 - [06](../plan/06-web-app.md) §S-1, path jail item: free filter text in web mode.
+
+## Follow-up (review), 2026-10-22
+
+The M3 review ([0052](0052-m3-server-review.md)) found three faults in this step: R-1, R-6
+and R-8. Each was reproduced first with the reviewer's scripts (output in the fix report),
+then fixed; each fix has a test that fails without it.
+
+### R-1 (blocker): an option name with a leading `/` reads a file
+
+**What was checked.** The ffmpeg tool reads an option's value from the file the value names
+when the option's name starts with `/` (`man ffmpeg-filters`, "Filtergraph syntax": "A special
+syntax implemented in the ffmpeg CLI tool allows loading option values from files"). With both
+builds (n9.0.2) and a file that holds `SECRET-CONTENT-123`, 30 spellings were run with `-vf`
+and `-filter_complex` (the table in `testdata/README.md`, "Option values read from a file"):
+any option of any filter reads the file, also an option of a child object
+(`scale=/sws_flags=`) and the timeline option (`/enable=`). The options lose one level of
+quoting and escaping (FFmpeg's `av_get_token`) before they are split at `:`, so
+`'/contrast'`, `\/contrast`, `brightness='0:/contrast=…'` and `brightness=0\:/contrast=…` all
+read the file; spaces before the name are skipped. A second level of quoting or escaping
+(`'0\:/contrast=…'`, `\'/contrast\'`) makes it a value, and a value that starts with `/` is
+only a value. Since every allowed filter has options, web-mode free text could read any file
+the server can read; its contents came back in the errors of `preview/render` and the job log.
+
+**Other ways to a file.** FFmpeg's expression evaluator has no function that touches a file
+(`man ffmpeg-utils`, "Expression Evaluation"; `print()` only logs). The tool's other file
+syntax, `-/option FILE`, is a command-line option that free filter text cannot reach (and
+the core already refuses a `custom_params` name with `/`). The string options of the allowed
+filters were checked in the first follow-up. Nothing else was found.
+
+**Fix.** `filtertext` keeps each filter's options after the first level of unquoting (as
+FFmpeg's option parser gets them) and refuses a `/` at the start of the options or after a
+`:`, spaces allowed between (403 `filter.not_allowed`, "an option name of 'eq' starts with
+'/'"). This refuses a little more than FFmpeg reads (the second-level rows above and a value
+that starts with `/`), which no allowed filter needs: when in doubt, refuse. A `/` inside a
+value (`scale=iw/2:ih/2`) passes. The test runs the real ffmpeg on four spellings (plain,
+quoted, after an escaped `:` and a space, a `custom` preset text) and checks that it reads the
+file, then that `jail_job` refuses each.
+
+### R-6 (major): the body was read before the credentials were checked
+
+FastAPI reads and parses a request body before it runs the route's dependencies, so
+`require_auth` came too late: an anonymous 54 MB body cost about 1 GB of memory before the
+401, and broken JSON from an anonymous client got 422. **Fix**: a middleware of
+`security.install` (inside CORS, so a 401 keeps its CORS headers) checks the credentials of
+every request that has a body (a `Content-Length` other than 0, or `Transfer-Encoding`)
+before the app sees it, and answers 401 (`auth.required` / `auth.invalid`, with
+`WWW-Authenticate`) without reading it. A request without a body goes on to the route's own
+check. The only route that takes a body without credentials is `POST /api/auth/login`: its
+body may have at most 64 KiB without credentials (Starlette's `RequestBodyLimitMiddleware`,
+413), so an anonymous client cannot make the server read a large body there either. The
+middleware does not look up the route: FastAPI 0.159 keeps an included router as one entry,
+and its route context is private. So a body sent to a path that needs no credentials (an
+anonymous logout with a body) is also a 401; no client sends one. After the fix the
+reviewer's script answers 401 for broken JSON and for the 54 MB body in 0.0 s.
+
+### R-8 (minor): a 500 carried no security headers
+
+Starlette's `ServerErrorMiddleware` is the outermost layer and sends the 500 answer itself,
+so the headers middleware (a user middleware, inside it) never saw that answer. **Fix**:
+`security.install` wraps `app.build_middleware_stack`, so the headers middleware is built
+around the whole stack, the error middleware included. Every HTTP answer, the 500 too,
+carries the CSP, `nosniff`, `X-Frame-Options` and `Referrer-Policy`.
+
+### Tests
+
+Gaps closed (each killed by the reviewer's mutation): the `Origin` check for `PUT`, `PATCH`
+and `DELETE`; a wrong current password in `PUT /api/auth/password` counts toward the rate
+limit; token mode does not accept a session cookie (`PUT /api/auth/password` hands one out
+there too when the caller sends a cookie). Deleted: the `operationId` pin of the auth
+routes, the facade-level settings tests that have route versions, a free-text row that
+followed the path of another, and the token row of "the token is accepted in every mode"
+(every other test uses the token in token mode). The NUL row of the jail test is an absolute
+path on every platform and checks that the NUL, not the relative path, is refused.
+
+### Plan changes
+
+- [06](../plan/06-web-app.md) §S-1: credentials before a body is read (64 KiB for an
+  anonymous login), the `/` option names in free filter text, the headers on a 500.

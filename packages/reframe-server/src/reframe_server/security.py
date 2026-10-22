@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Request, WebSocket
 from pydantic import BaseModel
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -54,6 +55,9 @@ TAURI_ORIGINS = ("tauri://localhost", "http://tauri.localhost")
 SESSION_COOKIE = "reframe_session"
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+LOGIN_PATH = "/api/auth/login"
+ANONYMOUS_BODY_LIMIT = 64 * 1024
+"""Bytes of request body a caller without credentials may send (to the login route only)."""
 _CHALLENGE = {"WWW-Authenticate": 'Bearer realm="reframe"'}
 
 APP_CSP = (
@@ -73,9 +77,10 @@ fastapi.tiangolo.com, and starts with an inline script."""
 
 
 def install(app: FastAPI, config: ServerConfig) -> None:
-    """Add the middleware (the ``Host`` and ``Origin`` check, CORS, the security headers) and
-    the login service, and warn when nobody needs to log in or password login cannot work.
-    Called once by ``create_app``."""
+    """Add the middleware (the ``Host`` and ``Origin`` check, CORS, credentials before a body
+    is read, the security headers on every answer, a 500 included) and the login service, and
+    warn when nobody needs to log in or password login cannot work. Called once by
+    ``create_app``."""
     app.state.login = login.LoginService(login.auth_path(config.config_dir))
     if config.auth_mode == "none":
         log.warning(
@@ -89,6 +94,7 @@ def install(app: FastAPI, config: ServerConfig) -> None:
                 "password login is not possible: %s",
                 record or "no password is set (reframe-server --set-password sets one)",
             )
+    app.add_middleware(_CredentialsFirst)
     origins = [*(TAURI_ORIGINS if config.mode == "desktop" else ()), *config.cors_origins]
     if origins:
         app.add_middleware(
@@ -99,8 +105,14 @@ def install(app: FastAPI, config: ServerConfig) -> None:
             expose_headers=["Location", "Retry-After"],
         )
     app.add_middleware(_RequestGuard, config=config)
-    docs = {path for path in (app.docs_url, app.swagger_ui_oauth2_redirect_url) if path}
-    app.add_middleware(_SecurityHeaders, docs_paths=frozenset(docs))
+    docs = frozenset(path for path in (app.docs_url, app.swagger_ui_oauth2_redirect_url) if path)
+    build_stack = app.build_middleware_stack
+
+    def build_stack_with_headers() -> ASGIApp:
+        # Outside Starlette's error middleware, which sends the 500 answer itself.
+        return _SecurityHeaders(build_stack(), docs)
+
+    app.build_middleware_stack = build_stack_with_headers  # type: ignore[method-assign]
 
 
 class _RequestGuard:
@@ -136,6 +148,39 @@ class _RequestGuard:
             await send({"type": "websocket.close", "code": 1008})  # uvicorn answers 403
         else:
             await problem_response(refusal.problem)(scope, receive, send)
+
+
+class _CredentialsFirst:
+    """Checks the credentials before a request body is read: FastAPI reads and parses the
+    body before it runs :func:`require_auth`. Without credentials, only a login may send a
+    body, of at most :data:`ANONYMOUS_BODY_LIMIT` bytes (else 413)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        self.limited = RequestBodyLimitMiddleware(app, max_body_size=ANONYMOUS_BODY_LIMIT)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not _has_body(scope):
+            await self.app(scope, receive, send)
+            return
+        result = _credentials(HTTPConnection(scope))
+        if result == "ok":
+            await self.app(scope, receive, send)
+        elif scope["method"] == "POST" and _route_path(scope) == LOGIN_PATH:
+            await self.limited(scope, receive, send)
+        else:
+            refusal = _unauthorized(result)
+            await problem_response(refusal.problem, refusal.headers)(scope, receive, send)
+
+
+def _has_body(scope: Scope) -> bool:
+    headers = Headers(scope=scope)
+    return "transfer-encoding" in headers or headers.get("content-length", "0").strip() != "0"
+
+
+def _route_path(scope: Scope) -> str:
+    path: str = scope["path"]
+    return path.removeprefix(scope.get("root_path", ""))
 
 
 class _SecurityHeaders:

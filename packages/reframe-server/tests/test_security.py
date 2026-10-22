@@ -7,10 +7,12 @@ import json
 import logging
 import re
 import socket
+from collections.abc import AsyncIterator
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 from fastapi import Depends, FastAPI, WebSocket
 from websockets.asyncio.client import connect
@@ -36,9 +38,17 @@ def mount_probe_routes(app: FastAPI) -> None:
     async def media(name: str) -> dict[str, str]:
         return {"name": name}
 
-    @router.post("/change")
+    @router.post("/private", dependencies=[Depends(security.require_auth)])
+    async def private_change(body: dict[str, int]) -> dict[str, int]:
+        return body
+
+    @router.api_route("/change", methods=["POST", "PUT", "PATCH", "DELETE"])
     async def change() -> dict[str, bool]:
         return {"changed": True}
+
+    @router.get("/fail")
+    async def fail() -> None:
+        raise RuntimeError("a bug")
 
     @router.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
@@ -88,11 +98,8 @@ async def test_a_missing_or_wrong_token_is_refused(
     assert response.headers["www-authenticate"].startswith("Bearer")
 
 
-@pytest.mark.parametrize("auth", ["token", "password"])
-async def test_the_runs_token_is_accepted_in_every_mode(
-    make_api: ApiFactory, auth: AuthMode
-) -> None:
-    async with make_api(auth=auth) as api:
+async def test_the_runs_token_is_accepted_in_password_mode(make_api: ApiFactory) -> None:
+    async with make_api(auth="password") as api:
         mount_probe_routes(api.app)
         assert (await api.client.get("/t/private")).json() == {"ok": True}
 
@@ -163,6 +170,9 @@ async def test_a_page_of_an_allowed_host_behind_a_proxy(
     ("method", "origin", "status"),
     [
         ("POST", "http://evil.example", 403),
+        ("PUT", "http://evil.example", 403),
+        ("PATCH", "http://evil.example", 403),
+        ("DELETE", "http://evil.example", 403),
         ("POST", "http://127.0.0.1", 200),
         ("GET", "http://evil.example", 200),
     ],
@@ -171,7 +181,7 @@ async def test_a_state_change_from_another_sites_page_is_refused(
     guarded: Api, method: str, origin: str, status: int
 ) -> None:
     """With ``auth none`` or a session cookie, a page elsewhere could send a form here."""
-    path = "/t/change" if method == "POST" else "/api/health"
+    path = "/api/health" if method == "GET" else "/t/change"
     response = await guarded.anonymous.request(method, path, headers={"Origin": origin})
     assert response.status_code == status
     if status == 403:
@@ -214,12 +224,15 @@ async def test_cors(
 
 
 async def test_every_answer_carries_the_security_headers(guarded: Api) -> None:
-    answers = [
-        await guarded.anonymous.get("/api/health"),
-        await guarded.anonymous.get("/t/private"),
-        await guarded.anonymous.get("/api/health", headers={"Host": "evil.example"}),
-    ]
-    assert [answer.status_code for answer in answers] == [200, 401, 400]
+    transport = httpx.ASGITransport(app=guarded.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as plain:
+        answers = [
+            await plain.get("/api/health"),
+            await plain.get("/t/private"),
+            await plain.get("/api/health", headers={"Host": "evil.example"}),
+            await plain.get("/t/fail"),
+        ]
+    assert [answer.status_code for answer in answers] == [200, 401, 400, 500]
     for answer in answers:
         assert answer.headers["x-content-type-options"] == "nosniff"
         assert "frame-ancestors 'none'" in answer.headers["content-security-policy"]
@@ -309,6 +322,28 @@ def test_a_media_url_of_another_run_is_refused() -> None:
     assert sig is not None
     assert security.verify_media_sig(first, "/api/preview/frames/a.png", exp[1], sig[1])
     assert not security.verify_media_sig(second, "/api/preview/frames/a.png", exp[1], sig[1])
+
+
+async def _chunks(sent: list[bytes]) -> AsyncIterator[bytes]:
+    for chunk in (b'{"a": ', b"1}"):
+        sent.append(chunk)
+        yield chunk
+
+
+@pytest.mark.parametrize("framing", ["content-length", "chunked"])
+async def test_a_body_without_credentials_is_refused_before_it_is_read(
+    guarded: Api, framing: str
+) -> None:
+    """Else an anonymous client makes the server read and parse any body it sends."""
+    sent: list[bytes] = []
+    content = b"{not json" if framing == "content-length" else _chunks(sent)
+    json_type = {"Content-Type": "application/json"}
+    response = await guarded.anonymous.post("/t/private", content=content, headers=json_type)
+    assert (response.status_code, response.json()["code"]) == (401, "auth.required")
+    assert response.headers["www-authenticate"].startswith("Bearer")
+    assert sent == []
+    accepted = await guarded.client.post("/t/private", content=_chunks([]), headers=json_type)
+    assert accepted.json() == {"a": 1}
 
 
 @pytest.mark.parametrize(

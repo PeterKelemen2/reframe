@@ -130,3 +130,76 @@ Behaviour checked on 2026-10-22 (FastAPI 0.159.1, Starlette 1.9.0, uvicorn 0.54.
 
 - [06](../plan/06-web-app.md) §S-2: the rows of System, Files, Sources and Preview (rescan
   answers, `recursive`, the clip link, what a web client may browse and change).
+
+## Follow-up (review), 2026-10-22
+
+The review of [0052](0052-m3-server-review.md) found four defects in these routes. Each fix
+has a test that fails on the code before it.
+
+- **R-2 (major): the files found in a folder were not jailed.** `POST /api/sources` jailed the
+  paths the client named, then probed every file that `jobs.media_files` found in a folder:
+  a link below a media root that points outside became a source (frames, crop detection and
+  scans of the outside file). Now every file found passes `security.jail_read` (in a worker
+  thread) before it is probed, and the resolved path is probed and registered, so a link that
+  is swapped after the check is not followed again. A refused file is an entry of the task's
+  `errors`: its path as found in the folder (the link, not its target), `code`
+  `path.outside_roots`, the jail's title and detail (which name only the link). The paths the
+  client names are jailed in a worker thread as well. Links to folders: a folder the client
+  names is resolved by the jail (a link out of the roots is a 403 for the whole request); a
+  linked folder met by a recursive expansion is not entered (`os.walk` does not follow links),
+  and its files would be refused one by one if it were. Test:
+  `test_sources.py::test_a_link_in_a_folder_that_points_outside_the_roots_is_not_probed`
+  (a link to a file and a link to a folder, `recursive`).
+- **R-3 (major): the web-mode check ran outside the store's lock.** `PUT /api/settings` applied
+  the patch to a copy read before the update and skipped the check when the patch did not
+  apply to that copy; a patch whose `test` op passes only after a concurrent change set
+  `tools.ffmpeg`. The handler now passes its check to `SettingsService.update(…, check=)`
+  (2b76fab): it runs under the store's lock on the settings the patch is applied to, every
+  time the patch applies; a refusal propagates and nothing changes. The router no longer
+  applies the patch itself. Test: `test_a_concurrent_change_cannot_slip_a_program_past_the_check`
+  (the first request is held in the store's write while the second waits for the lock).
+  The check is synchronous, so `jail_write` of a changed folder resolves the path on the
+  event loop (as before); an awaitable `check` in the core would move it to a worker thread.
+- **R-4 (major): any `encoders.vaapi_device` text.** The text reaches FFmpeg as
+  `-init_hw_device vaapi=va:<text>`. Checked with the pinned FFmpeg (`testdata/README.md`,
+  "VAAPI device text"): the text after a comma is a device option, and `driver=` makes libva
+  `dlopen` `/usr/lib/dri/<driver>_drv_video.so` with the client's text in the path (`../`
+  included); other text is opened as a file, then tried as an X11 display. **Rule:** web mode
+  accepts a value that, stripped, is `/dev/dri/renderD<digits>`, or an empty value
+  (automatic: every render node is tested); anything else is a `403
+  settings.vaapi_device_forbidden`. A plain render node stays settable because a server with
+  two GPUs needs it, and it carries no option. Like a folder, a value the patch does not
+  change is not checked (the server's owner may have set it in the file); desktop mode
+  accepts any text.
+- **R-9 (minor): a `Range` number of more than 4300 digits was a 500** (Python's limit for
+  `int()` of a string). Offsets are read by a helper: a number of more than 19 significant
+  digits (no file is that large) counts as past every file's end, so the answer is the one a
+  smaller number past the end gets: `bytes=<huge>-` is a 416, `bytes=0-<huge>` and
+  `bytes=-<huge>` are a 206 to the end of the file, as RFC 9110 reads a last position or
+  suffix beyond the end.
+
+Tests deleted or rewritten (the rules of [m3-breakdown.md](../m3-breakdown.md)):
+
+- Deleted, the jail sweep (`test_jail_sweep.py`) sends the same input to the same route
+  through the real jail: `test_fs.py::test_list_passes_the_path_to_the_jail` (`fs_list.path`),
+  `test_sources.py::test_probe_passes_each_path_to_the_jail` (`sources_probe.paths`; its
+  extra assertion "no task is started" moves to the sweep),
+  `test_settings.py::test_a_new_folder_goes_through_the_write_jail`
+  (`settings_update.patch`, `/output/naming/output_folder`; its extra assertion "the folder
+  setting is unchanged" moves to the sweep; a nested folder, such as a replace of `/output`,
+  follows the same code: the check compares the resulting settings, not the patch's ops),
+  `test_preview.py::test_a_job_route_passes_the_job_to_the_jail` (`preview_render.job`,
+  `preview_clip.job`; its extra assertion "no `frames` or `preview_clip` task is started"
+  moves to the sweep).
+- Rewritten on the real jail: `test_fs.py::test_a_folder_below_an_output_root_can_be_listed`
+  and `test_settings.py::test_a_value_the_patch_does_not_change_is_not_checked_again` (which
+  now also covers an unchanged VAAPI device text). No fake-jail test is left.
+- `test_preview.py::test_frames_at_the_given_timestamps` runs on the fake tools: it checks that
+  the frame run seeks to the asked timestamp.
+- Deleted as covered by another test: the `operationId` pin in `test_system.py` (the rule
+  test of `test_openapi.py` and the Q-2.3 diff of `schema.d.ts`);
+  `test_fs.py::test_a_root_has_no_parent_in_web_mode` (the link-root test lists a root and
+  checks the same `parent`); the "whole document" row of the tool-path test (the check compares
+  the resulting settings, the same path as the `/tools/ffmpeg` row); the `settings` key row of
+  the frame 404 test (the key form is the core's check, tested there). The range table's
+  `bytes=990-2000` row became `bytes=990-<5000 digits>` (the same clamp, plus the long number).

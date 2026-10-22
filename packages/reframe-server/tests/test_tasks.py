@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -14,13 +16,6 @@ pytestmark = pytest.mark.anyio
 
 async def _done(_ctx: TaskContext) -> dict[str, int]:
     return {"files": 2}
-
-
-async def test_the_routes_have_stable_operation_ids(api: Api) -> None:
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    assert paths["/api/tasks"]["get"]["operationId"] == "tasks_snapshot"
-    assert paths["/api/tasks/{task_id}"]["get"]["operationId"] == "tasks_get"
-    assert paths["/api/tasks/{task_id}/cancel"]["post"]["operationId"] == "tasks_cancel"
 
 
 async def test_a_finished_task_is_listed_with_its_result(api: Api) -> None:
@@ -64,3 +59,34 @@ async def test_an_unknown_task_is_404(api: Api, method: str, path: str) -> None:
     assert response.status_code == 404
     assert response.headers["content-type"] == "application/problem+json"
     assert response.json()["code"] == "tasks.unknown"
+
+
+@pytest.mark.needs_ffmpeg
+async def test_a_task_answer_names_no_server_folder(
+    api: Api, fixture_media: Callable[[str], Path]
+) -> None:
+    """A frames task names its PNGs in the cache; a client gets them by signed URLs."""
+    task = api.reframe.sources.frames(api.add_fixture("multitrack", fixture_media), count=1)
+    await api.reframe.tasks.wait(task.id)
+    cache = str(api.reframe.cache_dir)
+    one = await api.client.get(f"/api/tasks/{task.id}")
+    [frame] = one.json()["result"]["frames"]
+    assert frame["path"].startswith("<cache>")
+    listed = await api.client.get("/api/tasks")
+    assert task.id in listed.text
+    assert (cache in one.text, cache in listed.text) == (False, False)
+
+
+async def test_only_the_server_folders_are_hidden(api: Api) -> None:
+    """A path that only shares a server folder's text is another path and comes back whole."""
+    data = api.reframe.data_dir
+    own = [f"{data}2/film.mkv", f"/mnt{data}/film.mkv"]
+
+    async def fetch(_ctx: TaskContext) -> dict[str, object]:
+        return {"own": own, "by_path": {f"{data}/tools": 1}}
+
+    task = api.reframe.tasks.start("tools_fetch", fetch, message=f"Checking {data} first")
+    await api.reframe.tasks.wait(task.id)
+    answer = (await api.client.get(f"/api/tasks/{task.id}")).json()
+    assert answer["message"] == "Checking <data> first"
+    assert answer["result"] == {"own": own, "by_path": {"<data>/tools": 1}}

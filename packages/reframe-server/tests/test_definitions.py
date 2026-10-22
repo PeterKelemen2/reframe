@@ -9,13 +9,6 @@ from reframe_testing.server import Api
 pytestmark = pytest.mark.anyio
 
 
-async def test_operation_ids(api: Api) -> None:
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    assert paths["/api/definitions"]["get"]["operationId"] == "definitions_get"
-    options = paths["/api/definitions/encoders/{encoder_id}/options"]["get"]
-    assert options["operationId"] == "definitions_search_options"
-
-
 async def test_definitions_hold_what_the_editor_needs(api: Api) -> None:
     response = await api.client.get("/api/definitions")
     assert response.status_code == 200

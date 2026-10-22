@@ -9,17 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
 from reframe_server.routers import fs
 from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
-
-
-def _refuse(config: ServerConfig, path: str | os.PathLike[str]) -> Path:
-    raise ProblemError(403, "path.outside_roots", "Outside the roots")
 
 
 def _names(body: dict[str, list[dict[str, str]]]) -> list[str]:
@@ -81,11 +74,6 @@ async def test_list_shows_folders_then_media_files_in_natural_order(api: Api) ->
     assert Path(body["parent"]) == api.media.resolve()
 
 
-async def test_a_root_has_no_parent_in_web_mode(api: Api) -> None:
-    body = (await api.client.get("/api/fs/list", params={"path": str(api.media)})).json()
-    assert body["parent"] is None
-
-
 async def test_in_desktop_mode_the_parent_goes_up_to_the_file_system_root(
     make_api: ApiFactory,
 ) -> None:
@@ -97,31 +85,12 @@ async def test_in_desktop_mode_the_parent_goes_up_to_the_file_system_root(
     assert root["parent"] is None
 
 
-async def test_list_passes_the_path_to_the_jail(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(security, "jail_read", _refuse)
-    monkeypatch.setattr(security, "jail_write", _refuse)
-    response = await api.client.get("/api/fs/list", params={"path": str(api.media)})
-    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
-
-
-async def test_a_folder_below_an_output_root_can_be_listed(
-    api: Api, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_folder_below_an_output_root_can_be_listed(api: Api) -> None:
     """The output folder picker browses below the output roots."""
-    asked: list[Path] = []
-    real_write: Callable[[ServerConfig, str | os.PathLike[str]], Path] = security.jail_write
-
-    def write(config: ServerConfig, path: str | os.PathLike[str]) -> Path:
-        asked.append(Path(path))
-        return real_write(config, path)
-
-    monkeypatch.setattr(security, "jail_read", _refuse)
-    monkeypatch.setattr(security, "jail_write", write)
     (api.output / "Movies").mkdir()
     response = await api.client.get("/api/fs/list", params={"path": str(api.output)})
     assert response.status_code == 200
     assert _names(response.json()) == ["Movies"]
-    assert asked == [api.output]
 
 
 @pytest.mark.parametrize(

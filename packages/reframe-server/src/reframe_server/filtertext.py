@@ -5,6 +5,7 @@ the server's rights."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
@@ -39,6 +40,10 @@ ALLOWED_FILTERS = frozenset(
 
 _SPACE = " \n\t\r"
 _CUSTOM = "{custom}"
+_FILE_KEY = re.compile(f"(?:^|:)[{_SPACE}]*/")
+"""An option name that starts with ``/``: the ffmpeg tool reads that option's value from the
+file the value names. A ``:`` the option parser reads as quoted matches too: when in doubt,
+refuse."""
 
 
 class GraphSyntaxError(ValueError):
@@ -52,6 +57,8 @@ class GraphFilter:
     """Without the ``@instance`` suffix."""
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
+    options: str = ""
+    """After FFmpeg's first level of unquoting, as the filter's option parser gets them."""
 
 
 def _skip(text: str, i: int) -> int:
@@ -106,10 +113,11 @@ def _filter(text: str, i: int) -> tuple[GraphFilter, int]:
     name = name.partition("@")[0]
     if not name:
         raise GraphSyntaxError("a filter has no name")
+    options = ""
     if i < len(text) and text[i] == "=":
-        _options, i = _token(text, i + 1, "[],;")
+        options, i = _token(text, i + 1, "[],;")
     outputs, i = _labels(text, i)
-    return GraphFilter(name, inputs, outputs), i
+    return GraphFilter(name, inputs, outputs, options), i
 
 
 def parse_graph(text: str) -> list[list[GraphFilter]]:
@@ -185,6 +193,11 @@ def _chain_problem(template: str, text: str) -> str | None:
             return "link labels ([…]) are not allowed"
         if found.name not in ALLOWED_FILTERS:
             return f"the FFmpeg filter {found.name!r} is not allowed"
+        if _FILE_KEY.search(found.options):
+            return (
+                f"an option name of {found.name!r} starts with '/' (FFmpeg then reads the "
+                "value from a file)"
+            )
     return None
 
 

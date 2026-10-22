@@ -1,5 +1,6 @@
 """The job queue: the snapshot, adding jobs, the actions on one job or on the whole queue, the
-job log and the when-done setting. Every job passes the path jail before the queue sees it."""
+job log and the when-done setting. Every job passes the path jail before the queue sees it; no
+answer names a folder of the server's own."""
 
 from __future__ import annotations
 
@@ -9,15 +10,17 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Body, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from reframe.models import JobSettings, QueueJob, WhenDone
 from reframe.queue.errors import UnknownJobError
+from reframe.service import Reframe
 from reframe_server import security
-from reframe_server.api import api_router
+from reframe_server.api import JsonTextResponse, api_router
 from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, HubDep, ReframeDep
 from reframe_server.errors import ProblemError
+from reframe_server.folders import hide_server_folders
 
 router = api_router("queue")
 
@@ -98,14 +101,24 @@ def _check(config: ServerConfig, job: JobSettings, which: str) -> None:
     security.jail_job(config, job)
 
 
-@router.get("/queue")
-async def snapshot(reframe: ReframeDep) -> QueueSnapshot:
+def _public(reframe: Reframe, job: QueueJob) -> JsonValue:
+    # The settings come back as the client sent them: it may load them into its editor again.
+    return {
+        key: value if key == "settings" else hide_server_folders(reframe, value)
+        for key, value in job.model_dump(mode="json").items()
+    }
+
+
+@router.get("/queue", response_model=QueueSnapshot)
+async def snapshot(reframe: ReframeDep) -> JsonTextResponse:
     """Every job in queue order."""
-    return QueueSnapshot(jobs=reframe.queue.list())
+    return JsonTextResponse({"jobs": [_public(reframe, job) for job in reframe.queue.list()]})
 
 
-@router.post("/queue", status_code=201)
-async def add(body: AddJobs, reframe: ReframeDep, config: ConfigDep, hub: HubDep) -> list[QueueJob]:
+@router.post("/queue", status_code=201, response_model=list[QueueJob])
+async def add(
+    body: AddJobs, reframe: ReframeDep, config: ConfigDep, hub: HubDep
+) -> JsonTextResponse:
     """Add jobs; the answer holds them in order. The queue validates each job again: one with
     errors is added ``failed`` with its issues. A refused request adds no job."""
     if body.attach is not None and not hub.client_open(body.attach):
@@ -114,11 +127,11 @@ async def add(body: AddJobs, reframe: ReframeDep, config: ConfigDep, hub: HubDep
         )
     for index, job in enumerate(body.jobs):
         _check(config, job, f"jobs[{index}]")
-    added: list[QueueJob] = []
+    added: list[JsonValue] = []
     for index, job in enumerate(body.jobs):
         position = None if body.position is None else body.position + index
-        added.append(await reframe.queue.add(job, position=position))
-    return added
+        added.append(_public(reframe, await reframe.queue.add(job, position=position)))
+    return JsonTextResponse(added, status_code=201)
 
 
 @router.post("/queue/start", status_code=204)
@@ -189,22 +202,23 @@ async def cancel_job(job_id: str, reframe: ReframeDep) -> None:
     await reframe.queue.cancel(job_id)
 
 
-@router.post("/queue/{job_id}/retry")
-async def retry(job_id: str, reframe: ReframeDep) -> QueueJob:
+@router.post("/queue/{job_id}/retry", response_model=QueueJob)
+async def retry(job_id: str, reframe: ReframeDep) -> JsonTextResponse:
     """Make a failed, cancelled or interrupted job wait again (409 for a running, paused or
     done job)."""
-    return await reframe.queue.retry(job_id)
+    return JsonTextResponse(_public(reframe, await reframe.queue.retry(job_id)))
 
 
-@router.post("/queue/{job_id}/duplicate", status_code=201)
-async def duplicate(job_id: str, reframe: ReframeDep, config: ConfigDep) -> QueueJob:
+@router.post("/queue/{job_id}/duplicate", status_code=201, response_model=QueueJob)
+async def duplicate(job_id: str, reframe: ReframeDep, config: ConfigDep) -> JsonTextResponse:
     """Add a copy of the job's settings right after it."""
     job = reframe.queue.get(job_id)
     if job is None:
         raise UnknownJobError(job_id)
     # Checked again: the saved queue may hold a job from a run with other roots.
     _check(config, job.settings, "the job")
-    return await reframe.queue.add(job.settings, position=job.position + 1)
+    copy = await reframe.queue.add(job.settings, position=job.position + 1)
+    return JsonTextResponse(_public(reframe, copy), status_code=201)
 
 
 @router.delete("/queue/{job_id}", status_code=204)

@@ -1,15 +1,16 @@
 """Background tasks: the list, one task's state and result, cancel. Routes that start a long
-operation answer with its task id."""
+operation answer with its task id. No answer names a folder of the server's own."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from reframe.models import TaskInfo
 from reframe.service import Reframe
-from reframe_server.api import api_router
+from reframe_server.api import JsonTextResponse, api_router
 from reframe_server.deps import ReframeDep
 from reframe_server.errors import ProblemError
+from reframe_server.folders import hide_server_folders
 
 router = api_router("tasks")
 
@@ -28,16 +29,18 @@ def _task(reframe: Reframe, task_id: str) -> TaskInfo:
     return info
 
 
-@router.get("/tasks")
-async def snapshot(reframe: ReframeDep, kind: str | None = None) -> list[TaskInfo]:
+@router.get("/tasks", response_model=list[TaskInfo])
+async def snapshot(reframe: ReframeDep, kind: str | None = None) -> JsonTextResponse:
     """Running and recently finished tasks, oldest first; ``kind`` keeps one kind."""
-    return reframe.tasks.list(kind)
+    tasks: JsonValue = [info.model_dump(mode="json") for info in reframe.tasks.list(kind)]
+    return JsonTextResponse(hide_server_folders(reframe, tasks))
 
 
-@router.get("/tasks/{task_id}")
-async def get(task_id: str, reframe: ReframeDep) -> TaskInfo:
+@router.get("/tasks/{task_id}", response_model=TaskInfo)
+async def get(task_id: str, reframe: ReframeDep) -> JsonTextResponse:
     """One task's state, progress and, when done, its result."""
-    return _task(reframe, task_id)
+    info: JsonValue = _task(reframe, task_id).model_dump(mode="json")
+    return JsonTextResponse(hide_server_folders(reframe, info))
 
 
 @router.post("/tasks/{task_id}/cancel")

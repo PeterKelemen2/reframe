@@ -73,6 +73,9 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
     authenticated}`: the frontend's choice between a login form and the token),
     `POST /api/auth/login`, `POST /api/auth/logout`, `PUT /api/auth/password` (credentials
     and the current password) ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
+  - Credentials are checked **before a request body is read** (FastAPI reads and parses the
+    body before its dependencies run): a body without credentials is a 401, except a login,
+    whose body may have at most 64 KiB (else 413) (0046 "Follow-up (review)").
 - [ ] **Path jail**: every path from the client is resolved (`Path.resolve(strict=False)`, which
       follows symlinks) and must be inside `media_roots` (for reading) or `output_roots` (for
       writing). Web mode enforces this. Desktop mode allows the whole filesystem of the
@@ -81,8 +84,10 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
       and an in-place edit also writes its source
       ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)). Web mode also
       refuses a job whose free filter text (`filters.*.custom`) names a filter outside an
-      allow-list, has a `;` or a link label, cannot be read safely, or, in a `custom` preset,
-      would start another filter (403 `filter.not_allowed`; 0046 "Follow-up").
+      allow-list, has a `;` or a link label, cannot be read safely, in a `custom` preset
+      would start another filter, or has an option name that starts with `/` (the ffmpeg
+      tool then reads the value from a file) (403 `filter.not_allowed`; 0046 "Follow-up" and
+      "Follow-up (review)").
 - [ ] **Host check** (against DNS rebinding), in every mode: a request or WebSocket upgrade
       whose `Host` is not a loopback name (`127.0.0.1`, `localhost`, `[::1]`, any port) or
       in `allowed_hosts` is refused. `allowed_hosts` defaults to the loopback names, plus the
@@ -96,8 +101,8 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
 - [ ] CORS: off in web mode (same origin) unless `cors_origins` names origins. In desktop mode,
       allow the Tauri origins (`tauri://localhost`, `http://tauri.localhost`) and
       `cors_origins`.
-- [ ] Security headers on every response (CSP, `X-Content-Type-Options`, frame-ancestors none).
-      The docs page `/api/docs` gets a CSP that allows its CDN script and style.
+- [ ] Security headers on every response, a 500 included (CSP, `X-Content-Type-Options`,
+      frame-ancestors none). The docs page `/api/docs` gets a CSP that allows its CDN script and style.
 
 Done when: tests prove that `../` traversal, symlink escape, absolute paths outside the roots,
 a missing or wrong token and a foreign `Host` are all rejected, that `GET /api/settings`
@@ -120,9 +125,9 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` → 202 | Capability statuses, re-detection (a task: hardware test encodes take seconds; [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)) |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
-| Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
+| Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown`. The server's config, data and cache folders show as `<config>`, `<data>`, `<cache>` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
-| Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error) |
+| Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error). Every file found in a folder passes the read jail too: a link out of the roots is an error, never probed ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md#follow-up-review-2026-10-22)) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
 | | `POST /api/sources/{id}/subtitle-scan` → 202 | Event counts, forced flags |
@@ -139,24 +144,24 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `GET /api/languages` | Language list for the picker (cached, ETag) |
 | | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked); an unknown encoder is `404` |
 | Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset. Web mode: an output outside the output roots adds `output.folder_required` |
-| | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]`. Web mode: an output outside the output roots is the error `output.folder_required` (fixes: a fixed output folder in the settings; with one output root, the job's output moved into it), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-2026-10-22-web-mode-output-folder-and-override-jail)) |
+| | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]`. Web mode: an output outside the output roots is the error `output.folder_required` (fixes: a fixed output folder in the settings; with one output root, the job's output moved into it), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-2026-10-22-web-mode-output-folder-and-override-jail)). An in-place edit of a source the server may not write is the error `inplace.not_allowed` (fix: write a new file in the first output root), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-review-2026-10-22)) |
 | | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type); a job with errors is `422 jobs.invalid` with the issues ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md)) |
 | | `POST /api/jobs/geometry` `{job}` | Pipeline header values: `{source, geometry}` (`geometry` `null` for a copied video) |
 | | `POST /api/jobs/explain` `{source_id, template?, container?}` | Why each track was selected (`TrackDecision` with reasons) |
-| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft` |
-| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]`; an output outside the output roots is `422 jobs.invalid` (as `plan`) |
+| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft`; an in-place edit in web mode gets `inplace.not_allowed` instead (as `validate`) |
+| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]`; an output outside the output roots or a refused in-place edit is `422 jobs.invalid` (as `plan`) |
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
-| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail first. A row whose output is outside the output roots gets `output.folder_required` |
+| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail inside the batch service, before it is named or validated. A row whose output is outside the output roots gets `output.folder_required` |
 | | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out; overrides and rows as `resolve` |
 | | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
-| Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue |
+| Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue (web mode: the store's failures name no server folder) |
 | | `POST /api/presets/{id}/default` · `POST /api/presets/import?on_conflict=` · `GET /api/presets/export?ids=` | Import: the export file as the body (at most 4 MiB), a report with the issues. Export: `{document, issues}` |
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
 | | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source |
 | Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues (web mode: `output.folder_required` with the settings fix). The variable list comes with `GET /api/definitions` |
-| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
+| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open. Outside a job's `settings`, the server's folders show as in the task answers (`log_path`: `<data>/…`) ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
 | | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
 | | `GET /api/queue/{id}/log?from=` | Log (incremental, by byte offset: `{text, next, more}`) |
@@ -170,8 +175,9 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
       identifier; a request validation error names the field, never its value. A `source_id`
       is a hash of the absolute path; the server keeps the probed sources in memory, so the
       client probes again after a restart. In web mode a settings patch cannot name a
-      program (`/tools/…`; removing one is allowed), and a folder in it must be below an
-      output root ([decision 0045](../decisions/0045-m3-server-order-and-contract.md),
+      program (`/tools/…`; removing one is allowed), `encoders.vaapi_device` may only be a
+      render node (`/dev/dri/renderD<n>`) or empty, and a folder in it must be below an
+      output root; the checks run under the settings store's lock ([decision 0045](../decisions/0045-m3-server-order-and-contract.md),
       [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)).
 
 Done when: an httpx `AsyncClient` test suite covers every route against a facade that runs on
@@ -192,13 +198,14 @@ row whose member a route reaches or that no longer exists
 |--------|-------------------------|
 | `Reframe.create`, `Reframe.close`, `queue.close`, `power.close`, `tasks.close`, `tools.close`, `capabilities.close`, `sources.close`, `events.close` | The app's lifespan creates and closes the facade; a desktop client stops the server with `POST /api/system/shutdown` |
 | `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `power.closed`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
-| `Reframe.config_dir`, `Reframe.data_dir`, `Reframe.cache_dir`, `settings.path` | Server folders: a client cannot use them, and an answer must not show them |
+| `settings.path` | A server folder: a client cannot use it, and an answer must not show it (the queue and task routes read `Reframe.config_dir`, `data_dir` and `cache_dir` only to write them as `<config>`, `<data>`, `<cache>`) |
 | `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
 | `batch.definitions`, `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
 | `jobs.detection_wait` | A setting of the service: how long validation waits for encoder detection |
 | `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
 | `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
 | `capabilities.closest_available` | Validation uses it inside the core |
+| `presets.find` | The routes take ids; `jobs/draft`, `explain` and the batch routes accept a name or an id through the facade's own lookup |
 | `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
 | `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
