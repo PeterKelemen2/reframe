@@ -271,12 +271,18 @@ class BatchService:
         *,
         overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
         group: BatchGroup | None = None,
+        check: Callable[[JobSettings], None] | None = None,
     ) -> BatchResolution:
         """The resolution matrix of ``template`` (a template, a preset name or id; ``None``:
         the default preset) in every file: one :class:`~reframe.models.Resolution` per file
         in episode order (the job with its output name, the track matches, the issues), the
         columns, and the batch-level issues (name collisions). ``overrides``: per-file JSON
-        patches, keyed by the file's path as a string (any spelling of the file)."""
+        patches, keyed by the file's path as a string (any spelling of the file).
+
+        ``check(job)`` runs on each file's job as resolved (overrides applied), in a worker
+        thread, before the job is named or validated: an exception from it propagates and the
+        resolution stops. The server jails the paths a patch brings in with it, on the template
+        this resolution uses."""
         chosen, template_issues = self._template(template)
         settings = self._settings()
         naming = chosen.naming if chosen.naming is not None else settings.output.naming
@@ -297,7 +303,7 @@ class BatchService:
             first = list(template_issues)
             if key in near:
                 first.append(_near_issue(near[key]))
-            rows.append(await self._row(chosen, found, patches.get(key), naming, first))
+            rows.append(await self._row(chosen, found, patches.get(key), naming, first, check))
         rows, batch_issues = await asyncio.to_thread(_collisions, rows)
         columns = await asyncio.to_thread(
             matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
@@ -316,10 +322,11 @@ class BatchService:
         *,
         level: MatchLevel = "standard",
         overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
+        check: Callable[[JobSettings], None] | None = None,
     ) -> tuple[BatchGrouping, list[BatchResolution]]:
         """A whole batch (``reframe batch``): every file resolved with ``template`` (as
         :meth:`resolve`), the files grouped at ``level`` (as :meth:`group`), and one resolution
-        matrix per group, in the grouping's order.
+        matrix per group, in the grouping's order. ``check``: as in :meth:`resolve`.
 
         A file that is the planned output of another file of the batch is left out: an earlier
         run's output is not grouped, resolved or queued. The batch-level name checks run over the
@@ -337,7 +344,7 @@ class BatchService:
         for key, _path, found in keyed:
             if isinstance(found, MediaSource):
                 rows[key] = await self._row(
-                    chosen, found, patches.get(key), naming, template_issues
+                    chosen, found, patches.get(key), naming, template_issues, check
                 )
         # An earlier run's output is not encoded again: it is a planned output of another file.
         outputs = await asyncio.to_thread(_output_keys, rows)
@@ -402,19 +409,27 @@ class BatchService:
         override: Sequence[JsonPatchOp] | None,
         naming: NamingOptions,
         template_issues: Sequence[ValidationIssue],
+        check: Callable[[JobSettings], None] | None = None,
     ) -> Resolution:
-        """One file: the pure resolution, then its name and validation."""
-        resolution = await asyncio.to_thread(
-            resolve,
-            template,
-            source,
-            override,
-            definitions=self.definitions,
-            languages=self._settings().languages,
-            container_codecs=False,  # the validation below reports the codecs
-        )
-        assert resolution.job is not None  # resolve always makes a job
-        job, name, notes = await self._jobs.name_job(resolution.job, source, naming=naming)
+        """One file: the pure resolution, ``check`` on its job, then its name and validation."""
+        languages = self._settings().languages
+
+        def resolved() -> tuple[Resolution, JobSettings]:
+            resolution = resolve(
+                template,
+                source,
+                override,
+                definitions=self.definitions,
+                languages=languages,
+                container_codecs=False,  # the validation below reports the codecs
+            )
+            assert resolution.job is not None  # resolve always makes a job
+            if check is not None:
+                check(resolution.job)
+            return resolution, resolution.job
+
+        resolution, resolved_job = await asyncio.to_thread(resolved)
+        job, name, notes = await self._jobs.name_job(resolved_job, source, naming=naming)
         checks = await self._jobs.validate(job, source, naming=naming)
         issues = [*template_issues, *resolution.issues, *checks]
         return resolution.model_copy(
