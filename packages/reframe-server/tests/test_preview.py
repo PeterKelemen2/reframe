@@ -53,15 +53,6 @@ async def _job(api: Api, file: Path) -> dict[str, Any]:
     return draft.job.model_dump(mode="json")
 
 
-def _multitrack(api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The real fixture with the real tools. ``use_real_tools`` finds the tools through the
-    environment, which points at the fake: without it the fake would run itself."""
-    with monkeypatch.context() as env:
-        env.delenv("REFRAME_FFMPEG")
-        env.delenv("REFRAME_FFPROBE")
-        return api.add_fixture("multitrack", fixture_media)
-
-
 def _frames_hang(api: Api) -> None:
     api.fake.set_scenario(
         ft.Scenario([ft.Rule(tool="ffmpeg", argv_has=FRAME_RUN, actions=[ft.hang()]), PROBE_RULE])
@@ -78,7 +69,7 @@ async def test_frames_answer_signed_urls_that_serve_the_pngs(
     api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(security, "sign_media_url", _signed)
-    sid = await _source(api, _multitrack(api, fixture_media, monkeypatch))
+    sid = await _source(api, api.add_fixture("multitrack", fixture_media))
     response = await api.client.post("/api/preview/frames", json={"source_id": sid, "count": 2})
     assert response.status_code == 200
     frames = response.json()["frames"]
@@ -92,10 +83,8 @@ async def test_frames_answer_signed_urls_that_serve_the_pngs(
 
 
 @pytest.mark.needs_ffmpeg
-async def test_frames_at_the_given_timestamps(
-    api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    sid = await _source(api, _multitrack(api, fixture_media, monkeypatch))
+async def test_frames_at_the_given_timestamps(api: Api, fixture_media: FixtureMedia) -> None:
+    sid = await _source(api, api.add_fixture("multitrack", fixture_media))
     body = {"source_id": sid, "timestamps": [1.0]}
     frames = (await api.client.post("/api/preview/frames", json=body)).json()["frames"]
     assert [frame["timestamp"] for frame in frames] == [1.0]
@@ -109,9 +98,9 @@ async def test_frames_take_a_count_or_timestamps_not_both(api: Api) -> None:
 
 @pytest.mark.needs_ffmpeg
 async def test_render_answers_the_source_and_the_output_frame(
-    api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch
+    api: Api, fixture_media: FixtureMedia
 ) -> None:
-    file = _multitrack(api, fixture_media, monkeypatch)
+    file = api.add_fixture("multitrack", fixture_media)
     await _source(api, file)
     body = {"job": await _job(api, file), "timestamp": 1.0}
     response = await api.client.post("/api/preview/render", json=body)
@@ -252,7 +241,7 @@ async def test_a_clip_task_result_leads_to_a_playable_url(
     api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(security, "sign_media_url", _signed)
-    file = _multitrack(api, fixture_media, monkeypatch)
+    file = api.add_fixture("multitrack", fixture_media)
     await _source(api, file)
     body = {"job": await _job(api, file), "start": 0.0, "seconds": 1.0}
     response = await api.client.post("/api/preview/clip", json=body)

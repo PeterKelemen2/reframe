@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import secrets
 import shutil
 from collections.abc import AsyncIterator, Callable
@@ -81,6 +80,8 @@ class Api:
     """An output root (web mode writes only below it)."""
     outside: Path
     """A folder outside every root."""
+    real_tools: tuple[str | None, str | None]
+    """The real ffmpeg and ffprobe, found before the environment points at the fake."""
 
     @property
     def reframe(self) -> Reframe:
@@ -101,20 +102,17 @@ class Api:
         return path
 
     def add_fixture(self, name: str, fixture_media: Callable[[str], Path]) -> Path:
-        """A real fixture file (``fixture_media("multitrack")``) as a regular file below the
-        media root; probes and encodes then go to the real tools (needs ffmpeg)."""
+        """A copy of a real fixture file (``fixture_media("multitrack")``) below the media
+        root; probes and encodes then go to the real tools (needs ffmpeg)."""
         source = fixture_media(name)
         target = self.media / source.name
-        try:
-            os.link(source, target)
-        except OSError:
-            shutil.copy2(source, target)
+        shutil.copyfile(source, target)  # a copy: a link would let a test write the shared fixture
         self.use_real_tools()
         return target
 
     def use_real_tools(self) -> None:
         """Pass every ffmpeg / ffprobe call to the real tools."""
-        ffmpeg, ffprobe = media.find_ffmpeg(), media.find_ffprobe()
+        ffmpeg, ffprobe = self.real_tools
         assert ffmpeg is not None
         assert ffprobe is not None
         self.fake.set_scenario(
@@ -153,6 +151,7 @@ def make_api_factory(
 ) -> ApiFactory:
     """``async with make_api(mode="web", auth="token", **config) as api``. Folders, tools and
     settings are the test's own: no variable of the developer's shell reaches the server."""
+    real_tools = (media.find_ffmpeg(), media.find_ffprobe())
     for name in ServerConfig.model_fields:
         monkeypatch.delenv(f"REFRAME_{name.upper()}", raising=False)
     for var in ENV_VARS.values():
@@ -203,6 +202,7 @@ def make_api_factory(
                 media=roots["media"],
                 output=roots["output"],
                 outside=roots["outside"],
+                real_tools=real_tools,
             )
 
     return factory
