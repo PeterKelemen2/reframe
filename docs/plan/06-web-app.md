@@ -162,12 +162,21 @@ the reason ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 2).
 
 ## S-3 Event WebSocket
 
-- [ ] `WS /api/events`. The client authenticates in its first message and then receives
-      events as JSON.
+- [ ] `WS /api/events`. The client authenticates in its first message
+      (`{"type": "auth", "token": …}`; in password mode the session cookie may stand in for the
+      token). A wrong first message, or none within 5 s, closes the connection with 4401. The
+      server answers `{"type": "hello", "instance", "heartbeat"}` and then sends each event as
+      JSON: `{"type": "event", "seq": n, "event": {…}}`
+      ([decision 0047](../decisions/0047-event-websocket.md)).
 - [ ] **Coalescing**: `job.progress` and `task.progress` are coalesced per id (only the latest
-      is kept, max 4 per second). `job.log` lines are batched every 250 ms.
-- [ ] Heartbeat ping every 15 s. Each event has a sequence number. After a reconnect, the
-      client calls the `GET` snapshots (`/api/queue`, `/api/system/encoders`) to resync.
+      is kept, max 4 per second). `job.log` lines are batched every 250 ms. What is held back
+      for a job or task goes out before the event that ends it.
+- [ ] Heartbeat every 15 s: a `{"type": "heartbeat"}` message (a browser cannot see WebSocket
+      pings). Each event has a sequence number (from 1 on each connection, no gaps). After a
+      reconnect, or a `resync` event, the client calls the `GET` snapshots (`/api/queue`,
+      `/api/system/encoders`) to resync.
+- [ ] A client that cannot keep up gets a `resync` and stays connected. Shutdown closes every
+      connection with 1001 within about 1 s, also one whose client does not read.
 
 Done when: a test with a slow consumer shows bounded memory and latest-value delivery.
 
