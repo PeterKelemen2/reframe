@@ -189,9 +189,24 @@ Audit of `tests/test_events.py` against the test rules: no test or table row fol
 of another one (22 mutations of `events.py`, at least one per test function, were each caught
 by the test written for that branch), so none is deleted.
 
-**Change needed from the lead** (`__main__.py`): `_SHUTDOWN_GRACE = 2` and
-`timeout_graceful_shutdown=_SHUTDOWN_GRACE` in `uvicorn.Config`, and the `xfail` marker of
-`test_the_server_stops_while_a_client_does_not_read` removed in the same commit.
+**The server's folders in task events** (R-11, [0048](0048-queue-power-and-task-routes.md)):
+`GET /api/tasks*` writes the server's config, data and cache folders as `<config>`, `<data>`
+and `<cache>` (`reframe_server.folders.hide_server_folders`), but `task.progress` and
+`task.done` carried the raw `TaskInfo`. `EventHub` takes a keyword-only `hide` (a function of a
+JSON value; default: the value unchanged) and applies it to the `message`, `error` and
+`result` of a task event's `TaskInfo` when it sends the event (a progress value held by the
+throttle is hidden when it goes out). Other events are sent unchanged. Test:
+`test_a_task_event_names_the_cache_folder_by_its_label` (a real hub made with
+`hide=functools.partial(hide_server_folders, reframe)`; fails when any of the three fields,
+or either event type, is left out).
+
+**Changes needed from the lead**:
+
+- `__main__.py`: `_SHUTDOWN_GRACE = 2` and `timeout_graceful_shutdown=_SHUTDOWN_GRACE` in
+  `uvicorn.Config`, and the `xfail` marker of
+  `test_the_server_stops_while_a_client_does_not_read` removed in the same commit.
+- `app.py`: `EventHub(reframe.events, config, hide=functools.partial(hide_server_folders,
+  reframe))`.
 
 Plan change: [06 §S-3](../plan/06-web-app.md#s-3-event-websocket) says that the process stops
 within the 2 s limit plus the lifespan's close, also with a client that does not read.

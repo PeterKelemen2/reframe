@@ -4,6 +4,7 @@ batches, the heartbeat, slow and stuck clients, and shutdown."""
 from __future__ import annotations
 
 import asyncio
+import functools
 import itertools
 import json
 import logging
@@ -42,6 +43,7 @@ from reframe_server import security
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 from reframe_server.events import EventHub
+from reframe_server.folders import hide_server_folders
 from reframe_testing.server import Api, LiveServer, receive_json
 
 pytestmark = pytest.mark.anyio
@@ -431,6 +433,33 @@ async def test_an_idle_connection_gets_heartbeats(api: Api) -> None:
                 beats += (await client.message())["type"] == "heartbeat"
         api.reframe.events.publish(NotificationEvent(title="after"))
         await client.events_until(lambda event: event.get("title") == "after")
+
+
+async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> None:
+    """A task's message, error and result can name files in the server's cache folder: the
+    client gets ``<cache>`` in their place in ``task.progress`` and ``task.done``, never where
+    the server keeps its files."""
+    cache = str(api.reframe.cache_dir)
+    frame = str(api.reframe.cache_dir / "frames" / "f.png")
+    shown = frame.replace(cache, "<cache>")
+    task = TaskInfo(
+        id="task-1",
+        kind="frames",
+        state=TaskState.DONE,
+        message=f"wrote {frame}",
+        error=f"kept {frame}",
+        result={"frames": [frame]},
+    )
+    hide = functools.partial(hide_server_folders, api.reframe)
+    running = TaskInfo(id="task-1", kind="frames", state=TaskState.RUNNING, message=frame)
+    async with serving(api, hide=hide) as server, signed_in(server, api) as client:
+        api.reframe.events.publish(TaskProgressEvent(task=running))
+        api.reframe.events.publish(TaskDoneEvent(task=task))
+        events = await client.events_until(lambda event: event["type"] == "task.done")
+    assert [e["task"]["message"] for e in events if e["type"] == "task.progress"] == [shown]
+    sent = events[-1]["task"]
+    assert (sent["message"], sent["error"]) == (f"wrote {shown}", f"kept {shown}")
+    assert sent["result"] == {"frames": [shown]}
 
 
 async def test_a_reconnect_starts_a_new_sequence(api: Api) -> None:

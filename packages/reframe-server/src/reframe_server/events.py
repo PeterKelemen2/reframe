@@ -10,11 +10,12 @@ import asyncio
 import contextlib
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import WebSocket
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 from starlette.websockets import WebSocketDisconnect, WebSocketDisconnected
 
 from reframe.events import EventBus, Subscription, coalesce_key
@@ -24,6 +25,7 @@ from reframe.models import (
     JobStateEvent,
     ResyncEvent,
     TaskDoneEvent,
+    TaskProgressEvent,
     json_text,
 )
 from reframe_server import security
@@ -104,11 +106,13 @@ class EventHub:
         close_timeout: float = 1.0,
         max_queue: int = 256,
         max_log_lines: int = 1000,
+        hide: Callable[[JsonValue], JsonValue] = lambda value: value,
     ) -> None:
         """Times are in seconds. ``progress_rate``: progress messages per second per job or
         task at most. ``max_queue``: the subscription queue of each connection
         (:meth:`EventBus.subscribe`). ``max_log_lines``: lines per ``job.log`` message; older
-        ones are counted in its ``dropped``."""
+        ones are counted in its ``dropped``. ``hide``: applied to the message, error and result of a
+        task event before it is sent (the server's own folders)."""
         self._bus = bus
         self._config = config
         self._log_interval = log_interval
@@ -118,6 +122,7 @@ class EventHub:
         self._close_timeout = close_timeout
         self._max_queue = max_queue
         self._max_log_lines = max_log_lines
+        self._hide = hide
         self._running: set[asyncio.Task[None]] = set()
         self._authenticated: set[_Connection] = set()
         self._closed = False
@@ -302,6 +307,14 @@ class _Stream:
             await self._send_event(event)
 
     async def _send_event(self, event: Event) -> None:
+        if isinstance(event, TaskProgressEvent | TaskDoneEvent):
+            task, hide = event.task, self._hub._hide
+            shown = {
+                "message": hide(task.message),
+                "error": hide(task.error),
+                "result": hide(task.result),
+            }
+            event = event.model_copy(update={"task": task.model_copy(update=shown)})
         self._seq += 1
         await self.send(EventMessage(seq=self._seq, event=event))
 
