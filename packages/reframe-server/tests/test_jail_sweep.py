@@ -383,7 +383,6 @@ async def test_a_link_out_of_a_root_is_refused_and_changes_nothing(
     assert state(api, escape) == before
 
 
-@pytest.mark.xfail(strict=True, reason="R-2, task 1d")
 async def test_a_link_out_of_a_root_in_a_probed_folder_is_not_probed(
     api: Api, outside_film: Path
 ) -> None:

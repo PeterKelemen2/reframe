@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import json
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -13,19 +13,12 @@ import pytest
 
 from reframe.models import TaskInfo, TaskState
 from reframe.tasks import TaskContext
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
 from reframe_server.routers.sources import ProbeSummary
 from reframe_server.sources import source_id
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api
 
 pytestmark = pytest.mark.anyio
-
-
-def _refuse(config: ServerConfig, path: str | os.PathLike[str]) -> Path:
-    raise ProblemError(403, "path.outside_roots", "Outside the roots")
 
 
 async def _probe(api: Api, *paths: Path, recursive: bool = False) -> TaskInfo:
@@ -85,13 +78,24 @@ async def test_folders_missing_paths_and_failed_probes_are_in_the_result(api: Ap
     assert [item["id"] for item in listed] == [source_id(episode), source_id(nested)]
 
 
-async def test_probe_passes_each_path_to_the_jail(
-    api: Api, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(security, "jail_read", _refuse)
-    response = await api.client.post("/api/sources", json={"paths": [str(api.media_file())]})
-    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
-    assert api.reframe.tasks.list() == []
+async def test_a_link_in_a_folder_that_points_outside_the_roots_is_not_probed(api: Api) -> None:
+    secret = api.outside / "secret.mkv"
+    secret.write_bytes(b"x")
+    (api.outside / "Hidden").mkdir()
+    (api.outside / "Hidden" / "other.mkv").write_bytes(b"x")
+    film = api.media_file("Show/film.mkv")
+    link = film.parent / "link.mkv"
+    try:
+        link.symlink_to(secret)
+        (film.parent / "linked").symlink_to(api.outside / "Hidden", target_is_directory=True)
+    except OSError as exc:  # Windows without the symlink privilege
+        pytest.skip(f"cannot make a symbolic link: {exc}")
+    info = await _probe(api, film.parent, recursive=True)
+    summary = ProbeSummary.model_validate(info.result)
+    assert [item.path for item in summary.sources] == [film.resolve()]
+    assert [(item.path, item.code) for item in summary.errors] == [(link, "path.outside_roots")]
+    assert str(api.outside) not in json.dumps(info.result)
+    assert not any(str(api.outside) in " ".join(call) for call in api.fake.calls("ffprobe"))
 
 
 async def test_cancelling_the_probe_task_stops_its_ffprobe(api: Api) -> None:

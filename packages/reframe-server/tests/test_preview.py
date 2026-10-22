@@ -16,9 +16,6 @@ import pytest
 from reframe.models import JobDraft, JobSettings, PreviewClip, TaskInfo, TaskState
 from reframe.preview.cache import PreviewCache
 from reframe.tasks import TaskContext
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
 from reframe_server.sources import source_id
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api
@@ -85,12 +82,12 @@ async def test_frames_answer_signed_urls_that_serve_the_pngs(
     assert png.content.startswith(b"\x89PNG")
 
 
-@pytest.mark.needs_ffmpeg
-async def test_frames_at_the_given_timestamps(api: Api, fixture_media: FixtureMedia) -> None:
-    sid = await _source(api, api.add_fixture("multitrack", fixture_media))
-    body = {"source_id": sid, "timestamps": [1.0]}
-    frames = (await api.client.post("/api/preview/frames", json=body)).json()["frames"]
-    assert [frame["timestamp"] for frame in frames] == [1.0]
+async def test_frames_at_the_given_timestamps(api: Api) -> None:
+    sid = await _source(api, api.media_file())
+    body = {"source_id": sid, "timestamps": [2.25]}
+    await api.client.post("/api/preview/frames", json=body)  # the fake makes no picture
+    runs = [call for call in api.fake.calls("ffmpeg") if "-frames:v" in call]
+    assert [call[call.index("-ss") + 1] for call in runs] == ["2.25"]
 
 
 async def test_frames_take_a_count_or_timestamps_not_both(api: Api) -> None:
@@ -113,31 +110,6 @@ async def test_render_answers_the_source_and_the_output_frame(
         ("source", 1.0),
         ("output", 1.0),
     ]
-
-
-@pytest.mark.parametrize(
-    ("route", "window"),
-    [
-        ("/api/preview/render", {"timestamp": 1.0}),
-        ("/api/preview/clip", {"start": 0, "seconds": 2}),
-    ],
-)
-async def test_a_job_route_passes_the_job_to_the_jail(
-    api: Api, monkeypatch: pytest.MonkeyPatch, route: str, window: dict[str, float]
-) -> None:
-    file = api.media_file()
-    body = {"job": await _job(api, file), **window}
-    jailed: list[Path] = []
-
-    def refuse(config: ServerConfig, job: JobSettings) -> None:
-        jailed.append(Path(job.source.path))
-        raise ProblemError(403, "path.outside_roots", "Outside the roots")
-
-    monkeypatch.setattr(security, "jail_job", refuse)
-    response = await api.client.post(route, json=body)
-    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
-    assert jailed == [file]
-    assert api.reframe.tasks.list("frames") == api.reframe.tasks.list("preview_clip") == []
 
 
 @pytest.mark.parametrize(

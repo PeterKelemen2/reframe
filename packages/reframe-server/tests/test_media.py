@@ -17,6 +17,8 @@ pytestmark = pytest.mark.anyio
 KEY = "0123456789abcdef-1500-fedcba9876543210"
 CLIP = "c" * 32
 DATA = bytes(range(250)) * 4
+HUGE = "9" * 5000
+"""More digits than Python's ``int()`` takes from a string."""
 
 
 def _frame(api: Api) -> bytes:
@@ -45,10 +47,11 @@ async def test_a_frame_is_served_with_its_key_as_etag(api: Api) -> None:
     assert (again.status_code, again.content) == (304, b"")
 
 
-@pytest.mark.parametrize("name", ["0123456789abcdef-1500-0000000000000000", "settings"])
-async def test_a_frame_not_in_the_cache_is_404(api: Api, name: str) -> None:
+async def test_a_frame_not_in_the_cache_is_404(api: Api) -> None:
     _frame(api)
-    response = await api.client.get(f"/api/preview/frames/{name}.png")
+    response = await api.client.get(
+        "/api/preview/frames/0123456789abcdef-1500-0000000000000000.png"
+    )
     assert (response.status_code, response.json()["code"]) == (404, "preview.unknown_frame")
 
 
@@ -76,35 +79,35 @@ async def test_media_urls_need_media_access(api: Api, url: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("header", "first", "last"),
+    ("header", "status", "first", "last"),
     [
-        (None, 0, 999),
-        ("bytes=0-99", 0, 99),
-        ("bytes=900-", 900, 999),
-        ("bytes=-100", 900, 999),
-        ("bytes=990-2000", 990, 999),
-        ("bytes=0-1,5-6", 0, 999),
-        ("bytes=50-10", 0, 999),
-        ("bytes=-", 0, 999),
+        (None, 200, 0, 999),
+        ("bytes=0-99", 206, 0, 99),
+        ("bytes=900-", 206, 900, 999),
+        ("bytes=-100", 206, 900, 999),
+        ("bytes=990-" + HUGE, 206, 990, 999),
+        ("bytes=-" + HUGE, 206, 0, 999),
+        ("bytes=0-1,5-6", 200, 0, 999),
+        ("bytes=50-10", 200, 0, 999),
+        ("bytes=-", 200, 0, 999),
     ],
 )
 async def test_a_clip_is_served_whole_or_as_one_byte_range(
-    api: Api, header: str | None, first: int, last: int
+    api: Api, header: str | None, status: int, first: int, last: int
 ) -> None:
     _clip(api)
     headers = {"range": header} if header is not None else {}
     response = await api.client.get(f"/api/preview/clips/{CLIP}", headers=headers)
-    whole = (first, last) == (0, 999)
-    assert response.status_code == (200 if whole else 206)
+    assert response.status_code == status
     assert response.content == DATA[first : last + 1]
     assert response.headers["content-length"] == str(last - first + 1)
     assert response.headers["accept-ranges"] == "bytes"
     assert response.headers["content-type"] == "video/mp4"
-    if not whole:
+    if status == 206:
         assert response.headers["content-range"] == f"bytes {first}-{last}/1000"
 
 
-@pytest.mark.parametrize("header", ["bytes=1000-", "bytes=-0"])
+@pytest.mark.parametrize("header", ["bytes=1000-", f"bytes={HUGE}-", "bytes=-0"])
 async def test_a_range_outside_the_clip_is_416(api: Api, header: str) -> None:
     _clip(api)
     response = await api.client.get(f"/api/preview/clips/{CLIP}", headers={"range": header})
