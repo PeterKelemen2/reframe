@@ -21,6 +21,7 @@ dev = [
     "ruff>=0.17.0",
     "syrupy>=6.1.1",
     "types-psutil>=7.2.2.20260906",
+    "httpx>=0.28.1",
 ]
 
 [tool.uv]

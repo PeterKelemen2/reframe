@@ -1,13 +1,14 @@
 # Implementation status
 
-Last updated: 2026-10-19. Milestones M0, M1 and M2 are done and merged into `main`. M2's
+Last updated: 2026-10-22. Milestones M0, M1 and M2 are done and merged into `main`. M2's
 task breakdown and contracts are in [m2-breakdown.md](m2-breakdown.md). The core parts of
 M6–M9 are built and merged into `main` with the branch `core-complete`
 ([decision 0029](decisions/0029-core-before-the-ui-milestones.md)): every open `C-x` step is
 done, two reviews' findings are fixed or recorded ([0041](decisions/0041-core-complete-review.md)),
 and the core demos pass. The breakdown, contracts and progress are in
 [core-breakdown.md](core-breakdown.md). M6–M9 stay open until their UI parts are built. M3 is
-next.
+next; its server part is in progress on the branch `m3-api-spike`
+([m3-breakdown.md](m3-breakdown.md)).
 
 This file says which parts of the plan (`docs/plan/`) are built. Update it in the same commit
 as each step that lands.
@@ -29,7 +30,7 @@ Nothing has run on Windows, macOS or GitHub Actions yet: the branches were never
 | M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
 | M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
 | M2 Encode from the CLI | **Done** | Merged into `main`. Demo (run for real on Linux, 2026-10-14): `reframe encoders` (cached at once, then updated; `hevc_nvenc — unavailable: NVIDIA driver not found`), `reframe plan FILE --preset "H.265 MKV 1080p"`, `reframe encode FILE\|DIR…` with progress and ETA (Ctrl+C cancels and removes the `.part` file), a preset with an unavailable encoder names the closest one, `reframe name` (`Hacksaw.Ridge`, `The.Sopranos.S03E02.Proshai.Livushka`). A fresh review found 2 blockers and 9 major defects; all are fixed ([0025](decisions/0025-audio-bitrate-snaps-down.md) – [0028](decisions/0028-preset-export-keeps-newer-presets.md)) |
-| M3 API and desktop spike | Not started | The next milestone ([0029](decisions/0029-core-before-the-ui-milestones.md)). The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)): M3 also has `Q-1.4` (a Windows run), and D-0's Windows part waits for it |
+| M3 API and desktop spike | **In progress** (server part on `m3-api-spike`, [m3-breakdown.md](m3-breakdown.md)) | The next milestone ([0029](decisions/0029-core-before-the-ui-milestones.md)). The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)): M3 also has `Q-1.4` (a Windows run), and D-0's Windows part waits for it |
 | M3b Shared queue | Not started | S-7 and C-17 ([0042](decisions/0042-one-scheduler-process-and-cli-clients.md)): after M3, beside or after M4, before M5 |
 | M4, M5 | Not started | |
 | M6 – M9 | Core parts **done**; UI parts not started | The core-complete steps (C-12, C-10, C-13, C-6, C-14, C-11, C-15) are merged into `main` with `core-complete` (2026-10-17, [0029](decisions/0029-core-before-the-ui-milestones.md)). Two reviews: 4 blockers, 12 majors and 22 minors, then 1 blocker, 3 majors and 10 minors (plus what the fix agents found); all fixed or recorded as known limits ([0041](decisions/0041-core-complete-review.md)). The 8 core demos of [core-breakdown.md](core-breakdown.md#demos-run-for-real-by-the-lead-after-wave-3-output-in-the-final-report) pass (run for real on Linux, 2026-10-17). Each milestone stays open until its UI parts (F-10, F-11, F-13, F-7, F-8, F-9) are built and its full demo passes |
@@ -64,7 +65,17 @@ Nothing has run on Windows, macOS or GitHub Actions yet: the branches were never
 
 | Step | Status | Notes |
 |------|--------|-------|
-| S-0 … S-7 | Not started | Only the empty package from C-0 exists. S-7 (local owner mode: endpoint file, idle exit, attachments; milestone M3b) is new in [0042](decisions/0042-one-scheduler-process-and-cli-clients.md) |
+| S-0 Package skeleton | **Done** | Branch `m3-api-spike` ([0045](decisions/0045-m3-server-order-and-contract.md), [m3-breakdown.md](m3-breakdown.md)): FastAPI 0.159, uvicorn 0.54, websockets 17.3, pydantic-settings 2.16 (httpx 0.28 for tests). `ServerConfig` (every S-0 field; desktop mode always `token`, `auth: none` only on loopback, the token `REFRAME_TOKEN` or random per run, a `SecretStr`), `create_app` (the lifespan opens and closes the facade and the event hub; every router mounted, `require_auth` on all but health, auth, events and the media URLs), `reframe-server` (one uvicorn worker, logs on stderr, the desktop ready line, SIGINT → 130, a bad option → 2), `GET /api/health` (no credentials), problem+json for every error (a request body is never echoed), JSON written with `json_text` (a path that is not UTF-8 goes in and out), `operationId` `<tag>_<handler>`, the `202 {task_id}` answer, the `source_id` registry. "Done when" passes: a test starts `reframe-server` in desktop mode, reads the port from the ready line and gets `GET /api/health` |
+| S-1 Security | Not started | Stubs with their final signatures in `security.py` (every check lets the request in). Task 1a |
+| S-2 REST API (queue, power, tasks) | Not started | Task 1c |
+| S-2 REST API (system, fs, settings, sources, preview) | Not started | Task 1d |
+| S-2 REST API (definitions, languages, jobs, naming, batch, presets) | Not started | Task 1e |
+| S-2 facade coverage | Not started | Task 2a: every public facade method reached by a route or listed as not exposed |
+| S-3 Event WebSocket | Not started | `EventHub` stub (`events.py`); `WS /api/events` is routed to it. Task 1b |
+| S-4 Static frontend | Not started | M4 |
+| S-5 OpenAPI → TypeScript | Not started | Task 2a |
+| S-6 Deployment | Not started | M10 |
+| S-7 Local owner mode | Not started | M3b ([0042](decisions/0042-one-scheduler-process-and-cli-clients.md)). `ServerConfig` has its fields (`endpoint_file`, `idle_exit`, `owner_only`); they do nothing yet |
 
 ### Frontend (`frontend/`, 06-web-app.md Part B)
 

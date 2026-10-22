@@ -44,6 +44,10 @@ routers are thin. Each handler calls one facade method and maps the result.
       is set (the desktop shell sets it), else a random one per run; `server.json` holds it
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 4).
 
+- [ ] Logs go to stderr (stdout holds only the ready line). SIGINT ends with exit code 130,
+      an invalid option or configuration with 2. `GET /api/health` needs no credentials
+      ([decision 0045](../decisions/0045-m3-server-order-and-contract.md)).
+
 Done when: `uv run reframe-server` starts and `GET /api/health` returns version info.
 
 ## S-1 Security
@@ -141,8 +145,14 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown; cancel it |
 | Settings | `GET/PUT /api/settings` | App settings |
 
-- [ ] Stable `operationId`s (`sources_probe`, `jobs_validate`, …). The generated client uses
-      them as function names.
+- [ ] Stable `operationId`s (`sources_probe`, `jobs_validate`, …): `<tag>_<handler name>`. The
+      generated client uses them as function names.
+- [ ] Errors: `{type, title, status, detail, code, issues, errors}`; `code` is a stable dotted
+      identifier; a request validation error names the field, never its value. A `source_id`
+      is a hash of the absolute path; the server keeps the probed sources in memory, so the
+      client probes again after a restart. In web mode a settings patch cannot name a
+      program (`/tools/…`), and a folder in it must be below an output root
+      ([decision 0045](../decisions/0045-m3-server-order-and-contract.md)).
 
 Done when: an httpx `AsyncClient` test suite covers every route against a facade that runs on
 fixture media and a fake FFmpeg, and every public method of the facade
