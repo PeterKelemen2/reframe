@@ -23,6 +23,7 @@ pytestmark = pytest.mark.anyio
 
 NO_SOURCE = "0" * 24
 """A source id the server never gave: the jail must refuse the request before the lookup."""
+FOLDER = "/output/naming/output_folder"
 
 
 @dataclass(frozen=True)
@@ -43,10 +44,11 @@ class PathInput:
     name: str
     root: Literal["media", "output"]
     """The root the path belongs below: reading from media, writing to output."""
-    request: Callable[[Api, str, str], Request]
-    """``(api, path, source_id)`` → the request with ``path`` in this place."""
+    request: Callable[[Api, str, list[str]], Request]
+    """``(api, path, source_ids)`` → the request with ``path`` in this place. In a list, an
+    entry the jail allows goes before ``path``, so a route that checks only the first fails."""
     source: bool = False
-    """``source_id`` names a probed source, else :data:`NO_SOURCE`."""
+    """``source_ids`` names two probed sources, else it is empty."""
 
 
 def job(api: Api, source: str) -> dict[str, Any]:
@@ -65,10 +67,14 @@ def single_job(operation: str, url: str) -> PathInput:
 
 
 def override(operation: str, url: str) -> PathInput:
-    def request(api: Api, path: str, sid: str) -> Request:
-        subtitle = {"source": {"path": path.removesuffix(".mkv") + ".srt"}}
-        ops = [{"op": "add", "path": "/job/subtitles/-", "value": subtitle}]
-        return Request("post", url, {"source_ids": [sid], "overrides": {sid: ops}})
+    def request(api: Api, path: str, sids: list[str]) -> Request:
+        def ops(subtitle: str) -> list[dict[str, Any]]:
+            value = {"source": {"path": subtitle}}
+            return [{"op": "add", "path": "/job/subtitles/-", "value": value}]
+
+        allowed, hostile = str(api.media / "a.srt"), path.removesuffix(".mkv") + ".srt"
+        overrides = {sids[0]: ops(allowed), sids[1]: ops(hostile)}
+        return Request("post", url, {"source_ids": sids, "overrides": overrides})
 
     return PathInput(operation, "overrides", "media", request, source=True)
 
@@ -84,7 +90,7 @@ INPUTS = [
         "sources_probe",
         "paths",
         "media",
-        lambda _, p, __: Request("post", "/api/sources", {"paths": [p]}),
+        lambda api, p, _: Request("post", "/api/sources", {"paths": [str(api.media), p]}),
     ),
     PathInput(
         "preview_render",
@@ -210,10 +216,15 @@ INPUTS = [
         "presets_import",
         "file",
         "output",
-        lambda _, p, __: Request(
+        lambda api, p, _: Request(
             "post",
             "/api/presets/import",
-            {"presets": [{"id": "mine", "name": "Mine", "naming": naming(p)}]},
+            {
+                "presets": [
+                    {"id": "ours", "name": "Ours", "naming": naming(str(api.output / "Shows"))},
+                    {"id": "mine", "name": "Mine", "naming": naming(p)},
+                ]
+            },
             raw=True,
         ),
     ),
@@ -221,7 +232,6 @@ INPUTS = [
         "queue_add",
         "jobs",
         "media",
-        # A job the jail allows goes first: a refused request adds neither.
         lambda api, p, _: Request(
             "post", "/api/queue", {"jobs": [job(api, str(api.media / "a.mkv")), job(api, p)]}
         ),
@@ -230,10 +240,13 @@ INPUTS = [
         "settings_update",
         "patch",
         "output",
-        lambda _, p, __: Request(
+        lambda api, p, _: Request(
             "put",
             "/api/settings",
-            [{"op": "replace", "path": "/output/naming/output_folder", "value": p}],
+            [
+                {"op": "replace", "path": FOLDER, "value": str(api.output / "Shows")},
+                {"op": "replace", "path": FOLDER, "value": p},
+            ],
         ),
     ),
 ]
@@ -310,11 +323,13 @@ def symlink(link: Path, target: Path) -> None:
         pytest.skip(f"cannot make a symbolic link: {exc}")
 
 
-async def probed_source(api: Api) -> str:
-    path = api.media_file()
-    assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-    sid: str = api.app.state.sources.add(path)
-    return sid
+async def probed_sources(api: Api) -> list[str]:
+    ids = []
+    for name in ("Show S01E01.mkv", "Show S01E02.mkv"):
+        path = api.media_file(name)
+        assert isinstance(await api.reframe.sources.probe(path), MediaSource)
+        ids.append(api.app.state.sources.add(path))
+    return ids
 
 
 async def send(api: Api, request: Request) -> Any:
@@ -328,13 +343,17 @@ async def send(api: Api, request: Request) -> Any:
 
 
 def state(api: Api, escape: Path) -> dict[str, Any]:
-    """What a request could change: tool runs on a path through ``escape``, tasks, the queue,
-    presets, settings, and the files below the output root, the outside folder and the config
-    folder. Tool runs on other paths are the server's own (the capability checks)."""
+    """What a request could change: tool runs on a path through ``escape`` or in the outside
+    folder, tasks, the queue, presets, settings, and the files below the output root, the
+    outside folder and the config folder. Tool runs on other paths are the server's own (the
+    capability checks)."""
     assert api.config.config_dir is not None
     folders = (api.output, api.outside, api.config.config_dir)
+    named = (str(escape), str(api.outside), str(api.outside.resolve()))
     return {
-        "tool runs": [call for call in api.fake.calls() if any(str(escape) in a for a in call)],
+        "tool runs": [
+            call for call in api.fake.calls() if any(n in a for a in call for n in named)
+        ],
         "tasks": [task.id for task in api.reframe.tasks.list()],
         "queue": [queued.id for queued in api.reframe.queue.list()],
         "presets": [preset.model_dump(mode="json") for preset in api.reframe.presets.list()],
@@ -352,12 +371,12 @@ def state(api: Api, escape: Path) -> dict[str, Any]:
 async def test_a_link_out_of_a_root_is_refused_and_changes_nothing(
     api: Api, outside_film: Path, item: PathInput
 ) -> None:
-    sid = await probed_source(api) if item.source else NO_SOURCE
+    sids = await probed_sources(api) if item.source else []
     escape = (api.media if item.root == "media" else api.output) / "escape"
     symlink(escape, api.outside)
     path = escape / outside_film.name
     before = state(api, escape)
-    response = await send(api, item.request(api, str(path), sid))
+    response = await send(api, item.request(api, str(path), sids))
     body = response.json()
     code = body.get("code") if isinstance(body, dict) else None
     assert (response.status_code, code) == (403, "path.outside_roots")
@@ -373,7 +392,8 @@ async def test_a_link_out_of_a_root_in_a_probed_folder_is_not_probed(
     response = await api.client.post("/api/sources", json={"paths": [str(api.media)]})
     if response.status_code == 202:
         await api.reframe.tasks.wait(response.json()["task_id"])
-    named = {str(link), str(outside_film)}
-    assert [call for call in api.fake.calls("ffprobe") if named & set(call)] == []
+    named = (str(link), str(api.outside), str(api.outside.resolve()))
+    probed = api.fake.calls("ffprobe")
+    assert [call for call in probed if any(n in a for a in call for n in named)] == []
     listed = (await api.client.get("/api/sources")).json()
-    assert [source["path"] for source in listed if source["path"] in named] == []
+    assert [s["path"] for s in listed if any(n in s["path"] for n in named)] == []

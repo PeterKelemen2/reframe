@@ -124,11 +124,14 @@ same input to the same route.
    that each route uses the jail. Of the three, a link is the escape that a check of its own
    in a route (the path normalised, then compared with the roots) would also let through.
 2. **A refused request changes nothing.** Each row compares, before and after the request:
-   the tool runs whose arguments name a path through the link (the capability checks of the
-   server's start run at the same time, so other runs are not the request's), the task list,
-   the queue, the presets, the settings, and the files below the output root, the outside
-   folder and the config folder. The `queue_add` row sends a job the jail allows before the
-   refused one, so a route that queued jobs one by one fails it.
+   the tool runs whose arguments name the link or anything in the outside folder (so a route
+   that resolves the link and runs a tool on its target fails too; the capability checks of
+   the server's start run at the same time, so other runs are not the request's), the task
+   list, the queue, the presets, the settings, and the files below the output root, the
+   outside folder and the config folder. Every input that is a list (`sources_probe.paths`,
+   `queue_add.jobs`, the presets of `presets_import`, the per-source `overrides` of the batch
+   routes, the operations of `settings_update`) has an entry the jail allows before the link,
+   so a route that checks only the first entry, or queues jobs one by one, fails it.
 3. **The per-router foreign-`Host` rows are deleted**: one middleware refuses the host; S-1's
    tests cover HTTP and the WebSocket.
 4. **The link skip of `test_security_jail.py`**: a platform or user that cannot make links
