@@ -79,7 +79,10 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
       current user. In every mode a path that is not absolute or holds a NUL is a 400. A
       job's paths are found by walking the model: `output.*` is written, the rest is read,
       and an in-place edit also writes its source
-      ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
+      ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)). Web mode also
+      refuses a job whose free filter text (`filters.*.custom`) names a filter outside an
+      allow-list, has a `;` or a link label, cannot be read safely, or, in a `custom` preset,
+      would start another filter (403 `filter.not_allowed`; 0046 "Follow-up").
 - [ ] **Host check** (against DNS rebinding), in every mode: a request or WebSocket upgrade
       whose `Host` is not a loopback name (`127.0.0.1`, `localhost`, `[::1]`, any port) or
       in `allowed_hosts` is refused. `allowed_hosts` defaults to the loopback names, plus the

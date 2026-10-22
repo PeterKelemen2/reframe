@@ -164,3 +164,81 @@ scratchpad, the results are asserted by the tests named here):
   and `auth.json`, sessions and the rate limit, the `Origin` check for HTTP, the
   `allowed_hosts` defaults and the wildcard bind, CORS with `cors_origins`, the headers on every
   answer and the docs page, the jail's rules (absolute paths, `edit_in_place`).
+
+## Follow-up (2026-10-22): free filter text in web mode
+
+The owner decided on the open risk above: **web mode accepts free filter text only through an
+allow-list of filters**. Desktop mode does not change.
+
+### Where free text reaches a filtergraph
+
+Read in `reframe.command` (`filtergraph.py`, `video.py`, `audio.py`, `subtitles.py`,
+`builder.py`) and `reframe.definitions`:
+
+- `FilterConfig.custom`, put into a chain as it is wherever the chain has `{custom}`: the
+  Custom filter's whole chain (`{custom}`), and the `custom` presets of detelecine
+  (`fieldmatch={custom},decimate`), interlace detection (`idet=`), deinterlace (`bwdif=`,
+  `yadif=`), denoise (`nlmeans=`, `hqdn3d=`), deblock (`deblock=`), colorspace (`zscale=`,
+  `libplacebo=`), sharpen (`unsharp=`, `cas=`) and chroma smooth (`unsharp=`).
+- Nothing else. The external subtitle path and `charset` of a burn-in are quoted with
+  `quote_value` (the core runs real FFmpeg on file names with every special character);
+  `preset`, `tune` and `implementation` must name an entry of the definitions (otherwise the
+  planner refuses the job); the audio chain is built from numbers and `Literal` values
+  (`aresample`, `volume`, `loudnorm`); `dimensions.scaler` is a `Literal`;
+  `custom_params` is an encoder argument, not a filter (validation refuses its file keys).
+  Outside the job: the setting `encoders.vaapi_device` reaches `-init_hw_device` as text (a
+  device path); it is a settings matter (S-2 settings route), not a filtergraph.
+
+### Decision
+
+1. `security.jail_job`, web mode only, refuses a job whose free filter text is not safe: 403
+   `filter.not_allowed`, with a detail that names the job's filter and the reason (the FFmpeg
+   filter that is not allowed, a `;`, a label, a quote left open, …). Every route that takes
+   a job already calls the jail.
+2. **The parser** (`reframe_server.filtertext.parse_graph`) is a port of FFmpeg's
+   `avfilter_graph_segment_parse` and `av_get_token`: chains split at `;`, filters at `,`,
+   `[label]`s before and after a filter, `name@instance=options`, `'…'` quoting and `\`
+   escapes outside quotes, spaces trimmed. It was checked against the real ffmpeg with
+   `-print_graphs_file` (the table under "Filtergraph syntax and free filter text" in
+   `testdata/README.md`, and a test). It refuses what FFmpeg reads in a way the check cannot
+   follow: a quote that is not closed (FFmpeg takes the rest of the text as one value) and a
+   backslash at the end.
+3. **The rules for a text**: it must parse; one chain only (no `;`); no link labels (they can
+   reach other inputs in `-filter_complex`); every filter it names on the allow-list. A text
+   that goes after a filter's `=` (a `custom` preset) must also not end that filter's
+   options: no `,`, `;`, `[` or `]` outside quotes and escapes, and no backslash at the end (it
+   would escape the template's next `,`). The text is checked against every chain of the
+   filter that has `{custom}`, in the chosen implementation or, with none chosen, in every
+   implementation (which one runs depends on the FFmpeg build); the preset and tune are not
+   followed, so leftover text of a preset that does not use it is checked too (when in doubt,
+   refuse). So a custom colorspace text needs `implementation: "zscale"` in web mode, since
+   the libplacebo chain is not allowed.
+4. **The allow-list** (`filtertext.ALLOWED_FILTERS`, 107 video filters): the filters of the
+   definitions except `libplacebo` (its `lut`, `shader_cache`, `custom_shader_path` and
+   `extra_opts` name files or pass unchecked options), plus common video filters with one
+   input and one output. Each was checked with `ffmpeg -h filter=<name>` on the pinned build
+   (and the Arch package): every option of type `string`, `dictionary` or `binary` was read,
+   and a filter with any option that names a file, a directory, a URL, a network address, a
+   device, a font, a model, a shader, a plugin or a codec is left out — for example `curves`
+   (`psfile`, and `plot` writes), `nnedi` (`weights`), `deshake` (writes `filename`),
+   `uspp` (`codec`), `drawtext`, `metadata`, `lut3d`, `zmq`, `frei0r`, `hwupload`. Also left
+   out: source filters (no input), filters with a second input (`hysteresis`, `bm3d`,
+   `haldclut`) and hardware filters (they need a device). No audio filter: free text reaches
+   only the video graph. A test runs `-h filter=` on every entry and fails when an option
+   that names a file appears (it also checks that the pattern finds the file options of
+   `movie`, `drawtext`, `libplacebo` and `curves`). Expressions (`eq`, `lut`, `setpts`, …)
+   use FFmpeg's evaluator, which reads no files.
+
+### Consequences
+
+- In web mode a client cannot read a file or load a plugin through free filter text; a
+  chain of allowed filters still runs (a test renders a preview frame with one).
+- A useful filter that is missing can be added after the same check of its options.
+- A job stored in the queue before (for example by a desktop-mode server on the same data
+  folder) is not checked again when a web-mode server runs it.
+- Presets are not checked when they are saved: a preset does not run FFmpeg, and a job made
+  from it passes the jail before it runs.
+
+### Plan changes
+
+- [06](../plan/06-web-app.md) §S-1, path jail item: free filter text in web mode.
