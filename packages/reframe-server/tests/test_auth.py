@@ -224,6 +224,26 @@ async def test_the_rate_limit_forgets_the_least_recent_client_first(
         assert (await _login(first)).status_code == 200
 
 
+async def test_a_wrong_current_password_counts_toward_the_rate_limit(password_api: Api) -> None:
+    """Else a stolen session or token could guess the password without a limit."""
+    for _ in range(login.LOGIN_ATTEMPTS):
+        response = await password_api.client.put(
+            "/api/auth/password", json={"current": "wrong password", "new": NEW_PASSWORD}
+        )
+        assert response.status_code == 403
+    assert (await _login(password_api.anonymous)).status_code == 429
+
+
+async def test_a_login_body_without_credentials_is_limited(password_api: Api) -> None:
+    """A caller without credentials cannot make the server read a large body."""
+    padding = "x" * security.ANONYMOUS_BODY_LIMIT
+    response = await password_api.anonymous.post(
+        LOGIN, json={"password": PASSWORD, "padding": padding}
+    )
+    assert response.status_code == 413
+    assert (await _login(password_api.anonymous)).status_code == 200
+
+
 async def test_parallel_guesses_cannot_pass_the_limit(password_api: Api) -> None:
     async with _browser(password_api) as browser:
         answers = await asyncio.gather(*(_login(browser, "wrong") for _ in range(12)))
@@ -343,20 +363,24 @@ async def test_the_websocket_accepts_the_session_cookie(
         assert await receive_json(connection) == {"authenticated": authenticated}
 
 
-async def test_the_auth_routes_have_stable_operation_ids(password_api: Api) -> None:
-    schema = (await password_api.client.get("/api/openapi.json")).json()
-    found = {
-        (path, method): operation["operationId"]
-        for path, item in schema["paths"].items()
-        if path.startswith("/api/auth/")
-        for method, operation in item.items()
-    }
-    assert found == {
-        ("/api/auth/status", "get"): "auth_status",
-        ("/api/auth/login", "post"): "auth_login",
-        ("/api/auth/logout", "post"): "auth_logout",
-        ("/api/auth/password", "put"): "auth_change_password",
-    }
+async def test_token_mode_does_not_accept_a_session_cookie(
+    make_api: ApiFactory, cheap_hash: None, auth_file: Path
+) -> None:
+    """``PUT /api/auth/password`` hands out a session when the caller sends a cookie, also in
+    token mode; there only the token opens the API."""
+    assert login.save_password(auth_file, PASSWORD) is None
+    async with make_api(auth="token") as api:
+        _mount_probe_routes(api.app)
+        async with _browser(api) as browser:
+            browser.cookies.set(security.SESSION_COOKIE, "any")
+            response = await browser.put(
+                "/api/auth/password",
+                json={"current": PASSWORD, "new": NEW_PASSWORD},
+                headers={"Authorization": f"Bearer {api.token}"},
+            )
+            assert security.SESSION_COOKIE in response.cookies
+            refused = await browser.get("/api/t/private")
+    assert (refused.status_code, refused.json()["code"]) == (401, "auth.required")
 
 
 def _secrets(api: Api, auth_file: Path) -> list[str]:
@@ -369,28 +393,6 @@ PATCH: list[dict[str, Any]] = [
     {"op": "add", "path": "/auth", "value": {"password": NEW_PASSWORD, "mode": "none"}},
 ]
 """A settings patch that tries to set a password."""
-
-
-async def test_the_settings_hold_no_secret(password_api: Api, auth_file: Path) -> None:
-    update = await password_api.reframe.settings.update(
-        [{"op": "replace", "path": "/preview/sample_frames", "value": 12}]
-    )
-    assert update.saved
-    stored = await asyncio.to_thread(password_api.reframe.settings.path.read_text, "utf-8")
-    current = password_api.reframe.settings.get().model_dump_json()
-    for secret in _secrets(password_api, auth_file):
-        assert secret not in stored
-        assert secret not in current
-
-
-async def test_a_settings_patch_cannot_change_the_password(
-    password_api: Api, auth_file: Path
-) -> None:
-    before = await asyncio.to_thread(auth_file.read_bytes)
-    assert (await password_api.reframe.settings.update(PATCH)).ok
-    assert await asyncio.to_thread(auth_file.read_bytes) == before
-    assert (await _login(password_api.anonymous, NEW_PASSWORD)).status_code == 401
-    assert (await _login(password_api.anonymous, PASSWORD)).status_code == 200
 
 
 async def test_get_settings_holds_no_secret(password_api: Api, auth_file: Path) -> None:

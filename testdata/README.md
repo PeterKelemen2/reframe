@@ -2230,3 +2230,29 @@ hold a file name, a URL, a device or a plugin. In the pinned build, for example:
 (network); `frei0r` `filter_name` (a plugin); `lv2` `plugin`; `arnndn` `model`; `hwupload` /
 `hwmap` `derive_device`. No filter of the allow-list (`ALLOWED_FILTERS`) has such an option,
 in either build.
+
+**Option values read from a file.** The ffmpeg tool (not libavfilter) reads an option's value
+from a file when the option's name starts with `/`: `eq=/contrast=FILE` sets `contrast` to
+the file's contents (`-vf` and `-filter_complex` alike; the file's text appears in the error
+`Error when parsing the expression '…' for contrast`). Checked on 2026-10-22 with both builds
+(n9.0.2), a file holding `SECRET-CONTENT-123`:
+
+| Graph | Reads the file |
+|-------|----------------|
+| `eq=/contrast=F`, `lutyuv=/y=F`, `setpts=/expr=F`, `unsharp=/lx=F`, `hue=/s=F`, `drawbox=/color=F`, `scale=/w=F`, `scale=/sws_flags=F` (an option of a child object), `eq=/enable=F` (the timeline option) | yes: any option of any filter |
+| `eq='/contrast'=F`, `eq='/'contrast=F`, `eq=\/contrast=F` | yes: the options lose one level of quoting and escaping first |
+| `eq=brightness=0:/contrast=F`, `eq=1:/contrast=F` (after a value without a name), `eq= /contrast=F`, `eq=brightness=0: /contrast=F`, `eq=brightness=0:<tab>/contrast=F`, `eq=/contrast =F` | yes: spaces around the name are skipped |
+| `eq=brightness='0:/contrast=F'`, `eq=brightness=0\:/contrast=F` | yes: that quote and escape are gone before the options are split at `:` |
+| `eq@x=/contrast=F`, `eq=/contrast='F'`, `hflip,eq=/contrast=F` | yes |
+| `eq=brightness='0\:/contrast=F'`, `eq=brightness=0\\:/contrast=F` | no: the second level escapes the `:`, so `brightness` is `0:/contrast=F` |
+| `eq=\'/contrast\'=F` | no: a quote is not a name character, so the text is a value |
+| `eq=//contrast=F` | no: `Error applying option '//contrast' to filter 'eq': Option not found` |
+| `eq=contrast=/F`, `eq=enable=/F`, `eq=F` | no: a value that starts with `/` is a value |
+
+So a name with a leading `/` can only start at the beginning of the options or after a `:`
+(after the first level of unquoting), then spaces. `filtertext` refuses every `/` there, also
+in the "no" rows of the second level and `eq=//contrast`, `eq=F` (when in doubt, refuse).
+FFmpeg's expression evaluator has no function that reads a file (`man ffmpeg-utils`,
+"Expression Evaluation"); the tool's other file syntax, `-/option FILE`, is a command-line
+option, which free filter text cannot reach. Asserted by
+`packages/reframe-server/tests/test_security_filtertext.py`.

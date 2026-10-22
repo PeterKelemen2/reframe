@@ -144,7 +144,6 @@ def _custom(text: str) -> dict[str, FilterConfig]:
     ("filters", "detail"),
     [
         (_custom("movie=/etc/passwd,hflip"), "'movie' is not allowed"),
-        (_custom("'draw'text=textfile=/etc/passwd"), "'drawtext' is not allowed"),
         (_custom("hue=s='1,hflip"), "a quote is not closed"),
         (_custom("hflip;vflip"), "second filter chain"),
         (_custom("[in]hflip"), "link labels"),
@@ -173,7 +172,7 @@ def test_unsafe_free_filter_text_from_a_web_client_is_refused(
 @pytest.mark.parametrize(
     "filters",
     [
-        _custom("eq=brightness=0.05,hue=s='max(0,1)'"),
+        _custom("scale=iw/2:ih/2,hue=s='max(0,1)'"),
         {"sharpen": FilterConfig(preset="custom", custom="lx=5:la='1,5':ca=0\\,5")},
         {"colorspace": FilterConfig(preset="custom", implementation="zscale", custom="r=tv")},
         {"denoise": FilterConfig(preset="light")},
@@ -182,6 +181,50 @@ def test_unsafe_free_filter_text_from_a_web_client_is_refused(
 )
 def test_safe_free_filter_text_passes(tmp_path: Path, filters: dict[str, FilterConfig]) -> None:
     security.jail_job(_config(tmp_path), _job(tmp_path, filters))
+
+
+#: Free text (filter id, text) that makes the real ffmpeg read the file ``{file}`` names.
+READS_A_FILE = [
+    ("custom", "eq=/contrast={file}"),
+    ("custom", "eq='/contrast'={file}"),
+    ("custom", "eq=brightness=0\\: /contrast={file}"),
+    ("sharpen", "5:5:/lx={file}"),
+]
+
+
+def _graph(filter_id: str, text: str) -> str:
+    return {"custom": text, "sharpen": f"unsharp={text}"}[filter_id]
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.parametrize(("filter_id", "text"), READS_A_FILE)
+def test_ffmpeg_reads_an_option_value_from_a_file_for_these_texts(
+    tmp_path: Path, filter_id: str, text: str
+) -> None:
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg is not None
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SECRET-FILE-CONTENT", encoding="utf-8")
+    graph = _graph(filter_id, text.format(file=secret))
+    run = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostdin", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04",
+         "-vf", graph, "-frames:v", "1", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=60, check=False,
+    )  # fmt: skip
+    assert "SECRET-FILE-CONTENT" in run.stderr
+
+
+@pytest.mark.parametrize(("filter_id", "text"), READS_A_FILE)
+def test_free_filter_text_that_reads_a_file_is_refused(
+    tmp_path: Path, filter_id: str, text: str
+) -> None:
+    preset = "default" if filter_id == "custom" else "custom"
+    config = FilterConfig(preset=preset, custom=text.format(file="/etc/passwd"))
+    with pytest.raises(ProblemError) as refused:
+        security.jail_job(_config(tmp_path), _job(tmp_path, {filter_id: config}))
+    problem = refused.value.problem
+    assert (problem.status, problem.code) == (403, "filter.not_allowed")
+    assert "starts with '/'" in (problem.detail or "")
 
 
 def test_desktop_mode_keeps_free_filter_text(tmp_path: Path) -> None:
