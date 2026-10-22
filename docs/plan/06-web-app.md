@@ -99,22 +99,23 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 |------|---------------|---------|
 | System | `GET /api/health` | Version, `api_version`, `instance` (random id of this run), uptime |
 | | `GET /api/system` | Tool statuses, versions, platform, mode |
-| | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` | Capability statuses, re-detection |
-| | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only) |
+| | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` → 202 | Capability statuses, re-detection (a task: hardware test encodes take seconds; [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)) |
+| | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
 | Tasks | `GET /api/tasks` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks, one task's state and result, cancel |
-| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only) |
-| Sources | `POST /api/sources` `{paths}` → 202 | Probe files/folders (task) |
+| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
+| Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
 | | `POST /api/sources/{id}/subtitle-scan` → 202 | Event counts, forced flags |
 | | `POST /api/sources/{id}/streams/{index}/loudness` `{start?, duration?}` → 202 | EBU R128 loudness of one track |
-| Preview | `POST /api/preview/frames` `{source_id, count \| timestamps}` | Frame list (timestamps + URLs) |
+| Preview | `POST /api/preview/frames` `{source_id, count \| timestamps}` | Frame list (timestamps + signed URLs; the request waits for the frames, a client that goes away cancels them) |
 | | `GET /api/preview/frames/{key}.png` | Frame image (cached, ETag) |
 | | `POST /api/preview/render` `{job, timestamp}` | Output frame with filters → URL |
 | | `POST /api/preview/cropdetect` `{source_id}` → 202 | Crop detection per sample |
 | | `POST /api/preview/clip` `{job, start, seconds}` → 202 | Encoded preview clip |
-| | `GET /api/preview/clips/{id}` | Clip file (HTTP Range support) |
+| | `GET /api/preview/clips/{id}/link` | A signed clip URL for `<video>` (one hour) |
+| | `GET /api/preview/clips/{id}` | Clip file (HTTP Range: one range → 206, outside the file → 416) |
 | | `GET /api/preview/cache` · `DELETE /api/preview/cache` | Size of the frame and clip cache; clear it |
 | Definitions | `GET /api/definitions` | Encoders, option schemas, filters, containers (cached, ETag) |
 | | `GET /api/languages` | Language list for the picker (cached) |
@@ -151,8 +152,9 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
       identifier; a request validation error names the field, never its value. A `source_id`
       is a hash of the absolute path; the server keeps the probed sources in memory, so the
       client probes again after a restart. In web mode a settings patch cannot name a
-      program (`/tools/…`), and a folder in it must be below an output root
-      ([decision 0045](../decisions/0045-m3-server-order-and-contract.md)).
+      program (`/tools/…`; removing one is allowed), and a folder in it must be below an
+      output root ([decision 0045](../decisions/0045-m3-server-order-and-contract.md),
+      [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)).
 
 Done when: an httpx `AsyncClient` test suite covers every route against a facade that runs on
 fixture media and a fake FFmpeg, and every public method of the facade
