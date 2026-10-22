@@ -18,7 +18,6 @@ from typing import Any
 import httpx
 import pytest
 from fastapi import Depends, FastAPI, WebSocket
-from fastapi.routing import APIRoute
 
 from reframe_server import login, security
 from reframe_server.__main__ import main
@@ -365,13 +364,6 @@ def _secrets(api: Api, auth_file: Path) -> list[str]:
     return [api.token, PASSWORD, entry["hash"], entry["salt"]]
 
 
-def _route(app: FastAPI, method: str, path: str) -> bool:
-    return any(
-        isinstance(route, APIRoute) and route.path == path and method in (route.methods or ())
-        for route in app.routes
-    )
-
-
 PATCH: list[dict[str, Any]] = [
     {"op": "add", "path": "/password", "value": NEW_PASSWORD},
     {"op": "add", "path": "/auth", "value": {"password": NEW_PASSWORD, "mode": "none"}},
@@ -402,8 +394,6 @@ async def test_a_settings_patch_cannot_change_the_password(
 
 
 async def test_get_settings_holds_no_secret(password_api: Api, auth_file: Path) -> None:
-    if not _route(password_api.app, "GET", "/api/settings"):
-        pytest.skip("GET /api/settings is not built in this branch")
     response = await password_api.client.get("/api/settings")
     assert response.status_code == 200
     for secret in _secrets(password_api, auth_file):
@@ -411,8 +401,6 @@ async def test_get_settings_holds_no_secret(password_api: Api, auth_file: Path) 
 
 
 async def test_put_settings_cannot_change_the_password(password_api: Api, auth_file: Path) -> None:
-    if not _route(password_api.app, "PUT", "/api/settings"):
-        pytest.skip("PUT /api/settings is not built in this branch")
     before = await asyncio.to_thread(auth_file.read_bytes)
     await password_api.client.put("/api/settings", json=PATCH)
     assert await asyncio.to_thread(auth_file.read_bytes) == before

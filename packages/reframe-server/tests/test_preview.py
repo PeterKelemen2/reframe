@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -28,8 +29,11 @@ FixtureMedia = Callable[[str], Path]
 FRAME_RUN = ["-frames:v"]
 
 
-def _signed(config: ServerConfig, url_path: str, *, ttl: float = 300.0) -> str:
-    return f"{url_path}?ttl={ttl:g}"
+def _lifetime(url: str, path: str) -> float:
+    """Seconds the signed ``url`` of ``path`` stays valid."""
+    parts = urlsplit(url)
+    assert parts.path == path
+    return int(parse_qs(parts.query)["exp"][0]) - time.time()
 
 
 async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
@@ -66,9 +70,8 @@ def _frames_task(api: Api) -> TaskInfo | None:
 
 @pytest.mark.needs_ffmpeg
 async def test_frames_answer_signed_urls_that_serve_the_pngs(
-    api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch
+    api: Api, fixture_media: FixtureMedia
 ) -> None:
-    monkeypatch.setattr(security, "sign_media_url", _signed)
     sid = await _source(api, api.add_fixture("multitrack", fixture_media))
     response = await api.client.post("/api/preview/frames", json={"source_id": sid, "count": 2})
     assert response.status_code == 200
@@ -76,7 +79,7 @@ async def test_frames_answer_signed_urls_that_serve_the_pngs(
     assert [frame["kind"] for frame in frames] == ["source", "source"]
     assert str(api.reframe.cache_dir) not in response.text
     url = frames[0]["url"]
-    assert url == f"/api/preview/frames/{frames[0]['key']}.png?ttl=300"
+    assert 290 < _lifetime(url, f"/api/preview/frames/{frames[0]['key']}.png") <= 300
     png = await api.anonymous.get(url)
     assert png.status_code == 200
     assert png.content.startswith(b"\x89PNG")
@@ -238,9 +241,8 @@ async def test_clip_starts_the_task_with_the_job_and_window(
 
 @pytest.mark.needs_ffmpeg
 async def test_a_clip_task_result_leads_to_a_playable_url(
-    api: Api, fixture_media: FixtureMedia, monkeypatch: pytest.MonkeyPatch
+    api: Api, fixture_media: FixtureMedia
 ) -> None:
-    monkeypatch.setattr(security, "sign_media_url", _signed)
     file = api.add_fixture("multitrack", fixture_media)
     await _source(api, file)
     body = {"job": await _job(api, file), "start": 0.0, "seconds": 1.0}
@@ -252,7 +254,7 @@ async def test_a_clip_task_result_leads_to_a_playable_url(
     assert link.status_code == 200
     assert str(api.reframe.cache_dir) not in link.text
     url = link.json()["url"]
-    assert url == f"/api/preview/clips/{clip_id}?ttl=3600"
+    assert 3590 < _lifetime(url, f"/api/preview/clips/{clip_id}") <= 3600
     part = await api.anonymous.get(url, headers={"range": "bytes=0-9"})
     assert (part.status_code, len(part.content)) == (206, 10)
 
