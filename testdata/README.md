@@ -2189,3 +2189,44 @@ the pinned BtbN build) and MKVToolNix 101.0.
   the re-probe shows `opus` 6 channels "Japanese 5.1" (default) and `ac3` 6 channels at
   640 000 b/s "English 5.1"; the ASS tracks are copied with `forced` on "Signs & Songs" and
   `default` on "Full".
+
+### Filtergraph syntax and free filter text (S-1)
+
+Checked on 2026-10-22 with the pinned build and the Arch Linux package (both n9.0.2). The real
+ffmpeg writes the filters it parsed with `-print_graphs_file g.json -print_graphs_format json`
+(FFmpeg 8 and later); `-v debug` shows each option value (`Setting 's' to value 'max(0,1)'`).
+
+```sh
+ffmpeg -v error -f lavfi -i nullsrc=s=64x64:d=0.04 -filter_complex "<graph>" \
+  -print_graphs_file g.json -print_graphs_format json -f null -
+```
+
+| Graph | Filters FFmpeg makes |
+|-------|----------------------|
+| `hue=s='max(0,1)',hflip` | `hue` (`s` = `max(0,1)`), `hflip`: a quoted comma is not a split |
+| `hue=s=max(0\,1),hflip` | `hue` (`s` = `max(0,1)`), `hflip`: nor is an escaped comma |
+| ` eq =brightness=0.1 , hflip , ` | `eq`, `hflip`: spaces around names and separators go; a trailing `,` or `;` is accepted |
+| `null@x,'hf'l\ip` | `null` (instance `x`), `hflip`: a name loses its quotes and escapes too |
+| `[0:v]hflip [a];[a] vflip;` | `hflip`, `vflip`: labels, also after a space |
+| `hflip, [a]vflip` | the label after `, ` is read (the run then fails: `[a]` has no source) |
+| `metadata=mode=add:key=k:value='x,hflip` | `metadata` only, with `value` = `x,hflip`: a quote that is not closed takes the rest of the text, without an error |
+| `hflip\` | error `No such filter: 'hflip\'`: a backslash at the end is kept |
+| `,hflip`, `hflip,,vflip` | error `No such filter: ''` |
+| `hue=s=1]` | error `Error parsing filterchain 'hue=s=1]' around: ]` |
+| `sws_flags=bicubic;hflip` | `hflip`: a leading `sws_flags=…;` sets the scaler flags, it is not a filter |
+
+`reframe_server.filtertext.parse_graph` follows these rules. It refuses a quote that is not
+closed and a backslash at the end (FFmpeg reads them in a way the check cannot follow), and
+reads a leading `sws_flags` as a filter (which is not allowed). Asserted by
+`packages/reframe-server/tests/test_security_filtertext.py`.
+
+`ffmpeg -h filter=<name>`: only options of type `<string>`, `<dictionary>` and `<binary>` can
+hold a file name, a URL, a device or a plugin. In the pinned build, for example: `movie` /
+`amovie` `filename`; `drawtext` `fontfile`, `textfile`; `libplacebo` `lut`, `shader_cache`,
+`custom_shader_path`, `extra_opts`; `curves` `psfile`, `plot` (writes); `nnedi` `weights`;
+`deshake` `filename` (writes); `subtitles` / `ass` `filename`, `fontsdir`; `lut3d` `file`;
+`metadata` `file` (writes); `psnr` / `ssim` `stats_file` (writes); `vidstabdetect` `result`
+(writes); `signature` `filename` (writes); `sendcmd` `filename`; `zmq` `bind_address`
+(network); `frei0r` `filter_name` (a plugin); `lv2` `plugin`; `arnndn` `model`; `hwupload` /
+`hwmap` `derive_device`. No filter of the allow-list (`ALLOWED_FILTERS`) has such an option,
+in either build.

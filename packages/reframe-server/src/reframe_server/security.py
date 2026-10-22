@@ -25,8 +25,9 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from reframe.definitions import load_definitions
 from reframe.models import JobSettings
-from reframe_server import login
+from reframe_server import filtertext, login
 from reframe_server.config import ServerConfig, is_loopback
 from reframe_server.errors import ProblemError, problem_response
 
@@ -350,7 +351,10 @@ def _paths(
 def jail_job(config: ServerConfig, job: JobSettings) -> None:
     """Every path ``job`` reads must pass :func:`jail_read`, every path it writes
     :func:`jail_write`; raises the first failure. Every ``Path`` in the model counts: those
-    under ``output`` are written, the others read; an in-place edit also writes its source."""
+    under ``output`` are written, the others read; an in-place edit also writes its source.
+
+    Web mode: free filter text (``filters.*.custom``) may name only allowed filters, else a
+    403 ``filter.not_allowed``."""
     for where, path in _paths(job, ()):
         if where[0] == "output":
             jail_write(config, path)
@@ -358,6 +362,12 @@ def jail_job(config: ServerConfig, job: JobSettings) -> None:
             jail_read(config, path)
             if job.output.edit_in_place and where == ("source", "path"):
                 jail_write(config, path)
+    if config.mode == "web":
+        problem = filtertext.free_text_problem(job.filters.root, load_definitions())
+        if problem is not None:
+            raise ProblemError(
+                403, "filter.not_allowed", "The free filter text is not allowed", problem
+            )
 
 
 def _media_key(config: ServerConfig) -> bytes:
