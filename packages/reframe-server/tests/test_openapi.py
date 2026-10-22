@@ -8,6 +8,7 @@ import os
 import pkgutil
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 from fastapi.routing import APIRoute
@@ -15,19 +16,21 @@ from fastapi.routing import APIRoute
 import reframe_server.routers
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
-from reframe_testing.server import ROOT, Api
-
-pytestmark = pytest.mark.anyio
+from reframe_testing.server import ROOT
 
 EXPORT = ROOT / "scripts" / "export-openapi.py"
+
+
+@pytest.fixture(scope="module")
+def document() -> dict[str, Any]:
+    return create_app(ServerConfig(host="127.0.0.1", mode="web", auth="none")).openapi()
 
 
 def _ref(name: str) -> dict[str, str]:
     return {"$ref": f"#/components/schemas/{name}"}
 
 
-async def test_the_event_websocket_messages_are_in_the_components(api: Api) -> None:
-    document = (await api.client.get("/api/openapi.json")).json()
+def test_the_event_websocket_messages_are_in_the_components(document: dict[str, Any]) -> None:
     schemas = document["components"]["schemas"]
     assert schemas["ServerMessage"]["discriminator"]["mapping"] == {
         "hello": _ref("Hello")["$ref"],
@@ -41,7 +44,9 @@ async def test_the_event_websocket_messages_are_in_the_components(api: Api) -> N
     assert not [path for path in document["paths"] if path.startswith("/api/events")]
 
 
-async def test_operation_ids_are_unique_and_follow_tag_and_handler_name(api: Api) -> None:
+def test_operation_ids_are_unique_and_follow_tag_and_handler_name(
+    document: dict[str, Any],
+) -> None:
     handlers = {}
     for info in pkgutil.iter_modules(reframe_server.routers.__path__):
         module = importlib.import_module(f"reframe_server.routers.{info.name}")
@@ -51,7 +56,7 @@ async def test_operation_ids_are_unique_and_follow_tag_and_handler_name(api: Api
                     handlers[("/api" + route.path, method.lower())] = route.name
     operations = [
         (operation["operationId"], operation["tags"], handlers[(path, method)])
-        for path, item in api.app.openapi()["paths"].items()
+        for path, item in document["paths"].items()
         for method, operation in item.items()
     ]
     ids = [op for op, _, _ in operations]
@@ -61,27 +66,24 @@ async def test_operation_ids_are_unique_and_follow_tag_and_handler_name(api: Api
     ] == []
 
 
-def _export(**env: str) -> str:
+def test_the_export_is_the_served_document_whatever_the_process_and_its_environment(
+    document: dict[str, Any],
+) -> None:
+    """The committed types stay comparable: the same document, in the same order, from a
+    process with another hash seed and the developer's ``REFRAME_*`` variables (this host
+    would need an auth mode)."""
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith("REFRAME_")
     }
-    result = subprocess.run(
+    seed = "1" if os.environ.get("PYTHONHASHSEED") == "0" else "0"
+    exported = subprocess.run(
         [sys.executable, str(EXPORT)],
-        env=environment | env,
+        env=environment | {"PYTHONHASHSEED": seed, "REFRAME_HOST": "0.0.0.0"},
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=True,
         timeout=60,
-    )
-    return result.stdout
-
-
-def test_the_export_is_the_served_document_whatever_the_process_and_its_environment() -> None:
-    """The committed types stay comparable: the same bytes in every run, whatever the
-    developer's ``REFRAME_*`` variables (this host would need an auth mode)."""
-    first = _export(PYTHONHASHSEED="1")
-    second = _export(PYTHONHASHSEED="2", REFRAME_HOST="0.0.0.0")
-    assert first == second
-    served = create_app(ServerConfig(host="127.0.0.1", mode="web", auth="none")).openapi()
-    assert json.loads(first) == served
+    ).stdout
+    # Compared as text so that the order of the keys counts.
+    assert json.dumps(json.loads(exported)) == json.dumps(document)

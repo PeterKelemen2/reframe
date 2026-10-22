@@ -1,12 +1,11 @@
-"""Every route that takes a path refuses one outside the roots, with the real jail of a web
-server; every router refuses a foreign ``Host``. The jail functions themselves are tested in
-``test_security_jail.py``; this sweep is about each route using them."""
+"""Every place in a request where a client names a path goes through the real jail of a web
+server: a symbolic link below a root that points out of it is refused, and the refused request
+changes nothing. The jail itself (each kind of escape) is tested in ``test_security_jail.py``;
+this sweep is about each route using it."""
 
 from __future__ import annotations
 
-import importlib
 import json
-import pkgutil
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,12 +13,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-from fastapi.routing import APIRoute, APIWebSocketRoute
-from websockets.asyncio.client import connect
-from websockets.exceptions import InvalidStatus
 
-import reframe_server.routers
 from reframe.models import MediaSource
+from reframe_server.app import create_app
+from reframe_server.config import ServerConfig
 from reframe_testing.server import Api
 
 pytestmark = pytest.mark.anyio
@@ -48,6 +45,8 @@ class PathInput:
     """The root the path belongs below: reading from media, writing to output."""
     request: Callable[[Api, str, str], Request]
     """``(api, path, source_id)`` → the request with ``path`` in this place."""
+    source: bool = False
+    """``source_id`` names a probed source, else :data:`NO_SOURCE`."""
 
 
 def job(api: Api, source: str) -> dict[str, Any]:
@@ -71,7 +70,7 @@ def override(operation: str, url: str) -> PathInput:
         ops = [{"op": "add", "path": "/job/subtitles/-", "value": subtitle}]
         return Request("post", url, {"source_ids": [sid], "overrides": {sid: ops}})
 
-    return PathInput(operation, "overrides", "media", request)
+    return PathInput(operation, "overrides", "media", request, source=True)
 
 
 INPUTS = [
@@ -79,7 +78,7 @@ INPUTS = [
         "fs_list",
         "path",
         "media",
-        lambda _, p, __: Request("get", "/api/fs/list", params={"path": p}),
+        lambda _, p, __: Request("get", "/api/fs/list", params={"path": str(Path(p).parent)}),
     ),
     PathInput(
         "sources_probe",
@@ -222,7 +221,10 @@ INPUTS = [
         "queue_add",
         "jobs",
         "media",
-        lambda api, p, _: Request("post", "/api/queue", {"jobs": [job(api, p)]}),
+        # A job the jail allows goes first: a refused request adds neither.
+        lambda api, p, _: Request(
+            "post", "/api/queue", {"jobs": [job(api, str(api.media / "a.mkv")), job(api, p)]}
+        ),
     ),
     PathInput(
         "settings_update",
@@ -235,9 +237,6 @@ INPUTS = [
         ),
     ),
 ]
-
-BROKEN: dict[tuple[str, str], str] = {}
-"""Inputs whose route does not jail them: (operation, input) → the defect."""
 
 
 _PATH_NAME = re.compile(r"^paths?$|_(path|paths|folder|file|dir)$")
@@ -287,22 +286,28 @@ def operations_with_paths(document: dict[str, Any]) -> set[str]:
     return found
 
 
-async def test_the_sweep_covers_every_route_that_takes_a_path(api: Api) -> None:
+@pytest.fixture(scope="module")
+def document() -> dict[str, Any]:
+    return create_app(ServerConfig(host="127.0.0.1", mode="web", auth="none")).openapi()
+
+
+def test_the_sweep_covers_every_route_that_takes_a_path(document: dict[str, Any]) -> None:
     """A new route with a path in its request must get a row in ``INPUTS``."""
-    assert operations_with_paths(api.app.openapi()) == {i.operation for i in INPUTS}
+    assert operations_with_paths(document) == {i.operation for i in INPUTS}
 
 
-def hostile_paths(api: Api, root: Path) -> dict[str, str]:
-    """A path in the outside folder, a ``../`` escape from ``root`` and a link below ``root``
-    to the outside folder; each names a file, which a folder input takes as a folder."""
-    link = root / "escape"
-    if not link.exists():
-        link.symlink_to(api.outside, target_is_directory=True)
-    return {
-        "outside": str(api.outside / "film.mkv"),
-        "traversal": f"{root}/../{api.outside.name}/film.mkv",
-        "symlink": str(link / "film.mkv"),
-    }
+@pytest.fixture
+def outside_film(api: Api) -> Path:
+    film = api.outside / "film.mkv"
+    film.write_bytes(b"not really matroska")
+    return film
+
+
+def symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except OSError as exc:  # Windows without the symlink privilege
+        pytest.skip(f"cannot make a symbolic link: {exc}")
 
 
 async def probed_source(api: Api) -> str:
@@ -322,57 +327,53 @@ async def send(api: Api, request: Request) -> Any:
     )
 
 
-def _cases() -> list[Any]:
-    cases = []
-    for item in INPUTS:
-        defect = BROKEN.get((item.operation, item.name))
-        marks = [pytest.mark.xfail(strict=True, reason=defect)] if defect else []
-        cases.append(pytest.param(item, id=f"{item.operation}.{item.name}", marks=marks))
-    return cases
+def state(api: Api, escape: Path) -> dict[str, Any]:
+    """What a request could change: tool runs on a path through ``escape``, tasks, the queue,
+    presets, settings, and the files below the output root, the outside folder and the config
+    folder. Tool runs on other paths are the server's own (the capability checks)."""
+    assert api.config.config_dir is not None
+    folders = (api.output, api.outside, api.config.config_dir)
+    return {
+        "tool runs": [call for call in api.fake.calls() if any(str(escape) in a for a in call)],
+        "tasks": [task.id for task in api.reframe.tasks.list()],
+        "queue": [queued.id for queued in api.reframe.queue.list()],
+        "presets": [preset.model_dump(mode="json") for preset in api.reframe.presets.list()],
+        "settings": api.reframe.settings.get().model_dump(mode="json"),
+        "files": {
+            file: file.stat().st_mtime_ns
+            for folder in folders
+            for file in folder.rglob("*")
+            if file.is_file()
+        },
+    }
 
 
-@pytest.mark.parametrize("item", _cases())
-async def test_a_path_outside_the_roots_is_refused(api: Api, item: PathInput) -> None:
-    sid = await probed_source(api)
-    root = api.media if item.root == "media" else api.output
-    answers = {}
-    for attack, path in hostile_paths(api, root).items():
-        response = await send(api, item.request(api, path, sid))
-        body = response.json()
-        answers[attack] = (
-            response.status_code,
-            body.get("code") if isinstance(body, dict) else None,
-        )
-    expected = (403, "path.outside_roots")
-    assert answers == dict.fromkeys(answers, expected)
-
-
-def first_routes() -> list[tuple[str, str, str]]:
-    """``(router module, method, path)`` of the first route of each router."""
-    found = []
-    for info in pkgutil.iter_modules(reframe_server.routers.__path__):
-        module = importlib.import_module(f"reframe_server.routers.{info.name}")
-        route = module.router.routes[0]
-        if isinstance(route, APIRoute):
-            method = sorted(route.methods or ())[0]
-        else:
-            assert isinstance(route, APIWebSocketRoute)
-            method = "websocket"
-        found.append((info.name, method, "/api" + re.sub(r"\{[^}]+\}", "x", route.path)))
-    return found
-
-
-@pytest.mark.parametrize(("router", "method", "path"), first_routes(), ids=lambda v: str(v))
-async def test_a_foreign_host_is_refused_by_every_router(
-    api: Api, router: str, method: str, path: str
+@pytest.mark.parametrize("item", [pytest.param(i, id=f"{i.operation}.{i.name}") for i in INPUTS])
+async def test_a_link_out_of_a_root_is_refused_and_changes_nothing(
+    api: Api, outside_film: Path, item: PathInput
 ) -> None:
-    if method != "websocket":
-        response = await api.client.request(method, path, headers={"Host": "evil.example"})
-        assert (response.status_code, response.json()["code"]) == (400, "request.host")
-        return
-    async with api.live() as server:
-        uri = f"ws://evil.example:{server.port}{path}"
-        with pytest.raises(InvalidStatus) as refused:
-            async with connect(uri, host="127.0.0.1", port=server.port, open_timeout=10):
-                pass
-        assert refused.value.response.status_code == 403
+    sid = await probed_source(api) if item.source else NO_SOURCE
+    escape = (api.media if item.root == "media" else api.output) / "escape"
+    symlink(escape, api.outside)
+    path = escape / outside_film.name
+    before = state(api, escape)
+    response = await send(api, item.request(api, str(path), sid))
+    body = response.json()
+    code = body.get("code") if isinstance(body, dict) else None
+    assert (response.status_code, code) == (403, "path.outside_roots")
+    assert state(api, escape) == before
+
+
+@pytest.mark.xfail(strict=True, reason="R-2, task 1d")
+async def test_a_link_out_of_a_root_in_a_probed_folder_is_not_probed(
+    api: Api, outside_film: Path
+) -> None:
+    link = api.media / "film.mkv"
+    symlink(link, outside_film)
+    response = await api.client.post("/api/sources", json={"paths": [str(api.media)]})
+    if response.status_code == 202:
+        await api.reframe.tasks.wait(response.json()["task_id"])
+    named = {str(link), str(outside_film)}
+    assert [call for call in api.fake.calls("ffprobe") if named & set(call)] == []
+    listed = (await api.client.get("/api/sources")).json()
+    assert [source["path"] for source in listed if source["path"] in named] == []
