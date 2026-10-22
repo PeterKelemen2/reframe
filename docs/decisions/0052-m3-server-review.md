@@ -60,3 +60,38 @@ Test quality (the rules of [m3-breakdown.md](../m3-breakdown.md)):
 ## Plan changes
 
 None by this record; the fixes record their own.
+
+## Outcome (2026-10-22)
+
+Every finding is fixed on `m3-api-spike`, each with a test that fails without its fix, and each
+reproduced as fixed by the lead with the reviewer's script (or, for R-5, with the real
+`reframe-server` process: the reviewer's script builds its own uvicorn configuration).
+
+| Id | Fix | Record |
+|----|-----|--------|
+| R-1 | free filter text is refused when an option name starts with `/`, as FFmpeg's option parser gets it (one level of quoting removed); 30 spellings checked against both builds (`testdata/README.md`) | 0046 |
+| R-2 | each file found by expanding a folder passes the read jail before it is probed; a refused one is an `errors` entry `path.outside_roots` naming only the link | 0049 |
+| R-3 | `PUT /api/settings` passes its web-mode rule as `check=` (C-9, 2b76fab): it runs under the store's lock on the settings the patch is applied to | 0049 |
+| R-4 | web mode accepts only `/dev/dri/renderD<n>` (or none) as `encoders.vaapi_device`; FFmpeg's behaviour with device options checked and recorded | 0049 |
+| R-5 | uvicorn waits at most 2 s for open connections (`timeout_graceful_shutdown`, `__main__.py`); SIGINT and `POST /api/system/shutdown` end the process in about 3 s with a client that does not read, the lifespan closed | 0047 |
+| R-6 | a middleware checks the credentials of a request with a body before it is read; an anonymous login body is limited to 64 KiB | 0046 |
+| R-7 | `BatchService.resolve` / `resolve_batch` take `check=` (C-12, 35e0aa1), run on each job the service resolved, before it is named or validated; the routes pass the jail | 0050 |
+| R-8 | the security headers wrap the whole middleware stack, Starlette's error middleware included | 0046 |
+| R-9 | a `Range` number longer than any file size counts as past the end (416, or 206 to the end) | 0049 |
+| R-10 | web mode: an in-place edit of a source the server may not write is the issue `inplace.not_allowed` with a fix that writes a new file; `validate` answers 200 with it | 0050 |
+| R-11 | task and queue answers and task events write the config, data and cache folders as `<config>`, `<data>`, `<cache>` (`folders.py`, every mode; a job's settings come back as sent) | 0048, 0047 |
+| R-12 | in web mode the preset store's refusals do not name the presets file | 0050 |
+
+Tests, as the table above said: the `operationId` pins of each route file, the fake-jail
+route tests (their "nothing happened" assertions are now the sweep's state check, which also
+counts tool runs on the link's target and sends an allowed entry before the link in every
+list), the per-router foreign-`Host` rows, the facade-level settings tests and rows that
+repeat another test's path are deleted; the sweep, the export test, the token test and the
+frames-at-timestamps test are rewritten. Windows: the SIGINT subprocess test and the `chmod`
+preset test are skipped there, the non-UTF-8 echo route takes a `str`, the NUL row is
+absolute everywhere, `test_batch.py` uses `Path(...).name`, the sweep skips links without the
+privilege; the stalled event client uses a fixed receive buffer (not run on Windows: Q-1.4).
+The two surviving mutations of the review (the `Origin` check for PUT / PATCH / DELETE, a
+wrong current password and the rate limit) and a third (a session cookie in token mode) have
+tests. Known limits left: [status.md](../status.md) "Known limits left from the M3 server
+review".

@@ -45,7 +45,9 @@ routers are thin. Each handler calls one facade method and maps the result.
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 4).
 
 - [ ] Logs go to stderr (stdout holds only the ready line). SIGINT ends with exit code 130,
-      an invalid option or configuration with 2. `GET /api/health` needs no credentials
+      an invalid option or configuration with 2. uvicorn waits at most 2 s for open
+      connections before the lifespan closes the facade
+      ([decision 0047](../decisions/0047-event-websocket.md) "Follow-up (review)"). `GET /api/health` needs no credentials
       ([decision 0045](../decisions/0045-m3-server-order-and-contract.md)).
 
 Done when: `uv run reframe-server` starts and `GET /api/health` returns version info.

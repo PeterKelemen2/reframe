@@ -30,7 +30,7 @@ Nothing has run on Windows, macOS or GitHub Actions yet: the branches were never
 | M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
 | M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
 | M2 Encode from the CLI | **Done** | Merged into `main`. Demo (run for real on Linux, 2026-10-14): `reframe encoders` (cached at once, then updated; `hevc_nvenc — unavailable: NVIDIA driver not found`), `reframe plan FILE --preset "H.265 MKV 1080p"`, `reframe encode FILE\|DIR…` with progress and ETA (Ctrl+C cancels and removes the `.part` file), a preset with an unavailable encoder names the closest one, `reframe name` (`Hacksaw.Ridge`, `The.Sopranos.S03E02.Proshai.Livushka`). A fresh review found 2 blockers and 9 major defects; all are fixed ([0025](decisions/0025-audio-bitrate-snaps-down.md) – [0028](decisions/0028-preset-export-keeps-newer-presets.md)) |
-| M3 API and desktop spike | **In progress** (server part on `m3-api-spike`, [m3-breakdown.md](m3-breakdown.md)) | The next milestone ([0029](decisions/0029-core-before-the-ui-milestones.md)). The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)): M3 also has `Q-1.4` (a Windows run), and D-0's Windows part waits for it |
+| M3 API and desktop spike | **In progress** (server part done on `m3-api-spike`, reviewed and fixed: [0052](decisions/0052-m3-server-review.md), [m3-breakdown.md](m3-breakdown.md); open: D-0, Q-1.4) | The next milestone ([0029](decisions/0029-core-before-the-ui-milestones.md)). The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)): M3 also has `Q-1.4` (a Windows run), and D-0's Windows part waits for it |
 | M3b Shared queue | Not started | S-7 and C-17 ([0042](decisions/0042-one-scheduler-process-and-cli-clients.md)): after M3, beside or after M4, before M5 |
 | M4, M5 | Not started | |
 | M6 – M9 | Core parts **done**; UI parts not started | The core-complete steps (C-12, C-10, C-13, C-6, C-14, C-11, C-15) are merged into `main` with `core-complete` (2026-10-17, [0029](decisions/0029-core-before-the-ui-milestones.md)). Two reviews: 4 blockers, 12 majors and 22 minors, then 1 blocker, 3 majors and 10 minors (plus what the fix agents found); all fixed or recorded as known limits ([0041](decisions/0041-core-complete-review.md)). The 8 core demos of [core-breakdown.md](core-breakdown.md#demos-run-for-real-by-the-lead-after-wave-3-output-in-the-final-report) pass (run for real on Linux, 2026-10-17). Each milestone stays open until its UI parts (F-10, F-11, F-13, F-7, F-8, F-9) are built and its full demo passes |
@@ -124,9 +124,9 @@ the parity table) to what exists. No feature has a user interface yet.
 | Audio and subtitle output tracks, audio defaults, track rules | **Partial** | Core: the audio and subtitle defaults (C-12, [0031](decisions/0031-audio-and-subtitle-selection-stage.md)): the selection stage (languages, tracks per language, tie-break, `und`, other languages, no match, commentary, order, default track), the codec rules with a reason per track, foreign audio search, burn-in and the subtitle default track, `explain` / `explain_subtitles` (the rows of the live preview) and the defaults lint; with no language set, every track is kept as in M2. Output tracks in the command builder (C-7: passthru with fallback, mixdowns, sample rate, bitrate (each snapped to what the encoder can do), gain, DRC, two-pass loudness normalisation; subtitle copy / convert / burn-in, external files). Track rules and batch resolution (C-12 M7, [0040](decisions/0040-batch-engine-and-reframe-batch.md)): explicit `OutputTrackRule`s with selectors and relaxation, the one rule engine of presets and batch mode (a preset's defaults compile into rules), per-file overrides. Missing: the Audio and Subtitles tabs and the defaults dialog with its live preview (F-x) |
 | Track metadata editing, remux-only and metadata-edit jobs | **Partial** | Core done (C-7, C-13): languages, names and all six flags written for every track, BCP 47 through the post-mux `mkvpropedit` fix-up, remux and `metadata_edit` job types with the reason, `Reframe.jobs.draft_remux`, in-place edits with mkvpropedit and the re-probe check ([0034](decisions/0034-metadata-edit-in-place.md)); a cancel or closing Reframe lets a running in-place edit finish (stopping mkvpropedit while it writes can damage the file). Missing: the UI (Summary tab job type, language picker, bulk edit) |
 | Chapters, tags | **Partial** | Chapters are probed. Core (C-7): chapters copied, renamed or generated (FFMETADATA), the eight tags with naming variables. Missing: chapter import / export, the UI |
-| Output naming (variables, release-name parsing, templates) | **Partial** | Core done (C-16). CLI (C-15): `reframe name` (demo cases: `Hacksaw.Ridge`, `The.Sopranos.S03E02.Proshai.Livushka`) and the template name of `reframe plan` / `encode`. Queue (C-11): a name collision is renamed (`Name (1).mkv`), overwritten or fails, by the collision setting (validation reports it, C-8). Missing: `POST /api/naming/preview` and the variable list in `GET /api/definitions` (S-2), the naming editor (F-18) |
+| Output naming (variables, release-name parsing, templates) | **Partial** | Core done (C-16). CLI (C-15): `reframe name` (demo cases: `Hacksaw.Ridge`, `The.Sopranos.S03E02.Proshai.Livushka`) and the template name of `reframe plan` / `encode`. Queue (C-11): a name collision is renamed (`Name (1).mkv`), overwritten or fails, by the collision setting (validation reports it, C-8). API (S-2, branch `m3-api-spike`, [0050](decisions/0050-s2-jobs-batch-presets-routes.md)): `POST /api/naming/preview` and the naming variables in `GET /api/definitions`; in web mode an output outside the output roots is `output.folder_required` with fixes. Missing: the naming editor (F-18) |
 | Queue, logs, when done, sleep inhibit | **Partial** | Core done (C-11): persistent queue, logs, pause / resume / cancel, retry, restart recovery, parallel jobs, sleep inhibit while encoding, when done `nothing` / `notify` / `quit` / `sleep` / `shutdown` (the power actions after C-14's cancellable 60 s countdown; new work and closing cancel it), job notifications (done, failed) as `notification` events ([0037](decisions/0037-when-done-power-actions-and-job-notifications.md)). Missing: the queue API and WebSocket (S-x), the queue UI with duplicate / edit / open folder and the when-done selector, the countdown dialog and the notifications on screen (F-x, D-x) |
-| Batch / season mode | **Partial** (core done) | Core (C-12 M7, [0040](decisions/0040-batch-engine-and-reframe-batch.md)): grouping at three strictness levels with near matches, track rules with relaxation (one rule engine with the presets' defaults), *Apply to group* (rule derivation, merge), the resolution matrix with per-file overrides as JSON patches, name collisions over every group of a run (a file of the batch is never overwritten, also when it is named through a link or a hard link; an earlier run's outputs are left out), save the group as a preset (`Reframe.batch`). CLI (C-15): `reframe encode SEASON_DIR --preset …` (one preset, [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) and `reframe batch SEASON_DIR --preset … [--dry-run]` (the groups and the matrix; encodes the files without errors). The M7 core demo runs as tests (the 04 §Example season and a second season with the saved preset). Missing: `POST /api/batch/*` (S-2), the batch UI (F-13) |
+| Batch / season mode | **Partial** (core done) | Core (C-12 M7, [0040](decisions/0040-batch-engine-and-reframe-batch.md)): grouping at three strictness levels with near matches, track rules with relaxation (one rule engine with the presets' defaults), *Apply to group* (rule derivation, merge), the resolution matrix with per-file overrides as JSON patches, name collisions over every group of a run (a file of the batch is never overwritten, also when it is named through a link or a hard link; an earlier run's outputs are left out), save the group as a preset (`Reframe.batch`). CLI (C-15): `reframe encode SEASON_DIR --preset …` (one preset, [0018](decisions/0018-m2-draft-tracks-and-multi-file-encode.md)) and `reframe batch SEASON_DIR --preset … [--dry-run]` (the groups and the matrix; encodes the files without errors). The M7 core demo runs as tests (the 04 §Example season and a second season with the saved preset). API (S-2, branch `m3-api-spike`, [0050](decisions/0050-s2-jobs-batch-presets-routes.md)): `POST /api/batch/group\|derive\|resolve\|resolve-run\|save-preset`; the per-file overrides are jailed inside the batch service, on the job it resolved (`check=`, C-12). Missing: the batch UI (F-13) |
 | Crop preview, filter preview, live preview clip | **Partial** | Core done (C-10, [0033](decisions/0033-preview-frames-crop-and-clips.md)): the frame strip (N sample frames from Settings → Preview, or any timestamp), source and output frames (crop, scale, filters as the encode does them; HDR mapped for display), full-resolution PNGs for the crop magnifier, crop detection on the strip's frames (`Detected … on N of M frames`), the live preview clip with the full job (10 / 15 / 30 / 60 s or any length) and frames from it (encoded frame compare), the cache by source fingerprint + timestamp + settings hash with its size limit and clear. API (S-2, [0049](decisions/0049-s2-system-fs-settings-sources-preview.md)): frames and output frames with signed URLs, crop detection, clips with a signed `<video>` link and byte ranges, the cache size and clear. Missing: the UI (F-7, F-8), burned-in subtitles on output frames (a clip shows them) |
 | Web app | Not started | Frontend scaffold only |
 | Desktop app | Not started | |
@@ -149,7 +149,9 @@ uv run reframe presets export [NAME…] [-o FILE]   # no names: every user prese
 uv run reframe presets import FILE|- [--on-conflict rename|replace|skip]   # - reads stdin
 uv run python scripts/make-testdata.py
 uv run --no-project python scripts/fetch-tools.py
-uv run pytest                        # about 6 500 tests (26 more with -m needs_gpu)
+uv run pytest                        # about 7 000 tests (26 more with -m needs_gpu)
+uv run reframe-server --mode web --auth token --media-root DIR --output-root DIR   # the API on loopback; docs at /api/docs
+scripts/gen-api.sh [--check]         # OpenAPI → frontend/src/api/schema.d.ts (--check: fail on a diff)
 cd frontend && npm run dev:web       # placeholder page only
 ```
 
@@ -173,6 +175,12 @@ that in M3b: a CLI hands its jobs to the owning server (C-17, S-7). Not built ye
   index). The Windows cases (a mapped drive and its UNC path, a file system that ignores case,
   as macOS has too) are tested with mocks only, and so is a volume that reports `st_ino` 0 for
   every file (no identity: the path decides). Nothing has run on macOS at all.
+- **The server on Windows** (M3, Q-1.4): no server test has run there. Skipped there by
+  design: the `reframe-server` subprocess test (SIGINT, `select()` on a pipe) and the preset
+  store test that makes the config folder read-only with `chmod`. Not checked there: the
+  event tests' stalled client (a fixed `SO_RCVBUF`), the folder masks of task and queue
+  answers (the cache folder inside the data folder), the symbolic-link rows of the jail tests
+  (skipped without the privilege).
 - **GitHub Actions**: no workflow has run, because nothing was pushed. CI does not run the
   mkvpropedit, libplacebo and GPU integration tests.
 - **GPU encoders**: detection and real encodes are checked on one Linux machine (AMD RX 7600:
@@ -196,6 +204,25 @@ that in M3b: a CLI hands its jobs to the owning server (C-17, S-7). Not built ye
   The API (S-2) writes responses and WebSocket events with `reframe.models.json_text`
   (`\udcXX` escapes for a byte that is not UTF-8) and reads request bodies with `json.loads` +
   `model_validate` ([0044](decisions/0044-code-review-follow-ups.md)).
+- **Known limits left from the M3 server review** ([0052](decisions/0052-m3-server-review.md);
+  each recorded in its task's record):
+  - S-1 ([0046](decisions/0046-s1-login-sessions-jail-and-request-checks.md)): an FFmpeg
+    expression in allowed filter text can loop (`while()`), so a logged-in web client can keep
+    a CPU busy; an anonymous request with a body is a 401 on every path but the login, also
+    on a route that needs no credentials (today only a logout sent with a body).
+  - S-2 ([0048](decisions/0048-queue-power-and-task-routes.md),
+    [0049](decisions/0049-s2-system-fs-settings-sources-preview.md),
+    [0050](decisions/0050-s2-jobs-batch-presets-routes.md)): job logs and `job.state` errors
+    are sent as written (a log's command line names the tool, which `GET /api/system` shows
+    anyway); a file found in a folder is registered by its resolved path, so a link inside a
+    root to another file inside a root is listed under its target; `preview/render` and
+    `preview/clip` refuse an in-place draft in web mode with 403 (the draft carries
+    `inplace.not_allowed`).
+  - S-3 ([0047](decisions/0047-event-websocket.md)): at shutdown uvicorn waits at most 2 s for
+    open connections, an HTTP request still running then included.
+  - Core, seen while checking: `preview/test_benchmark.py::test_4k_hdr_frame_budget` misses its
+    2 s cold budget on this machine at a load of about 3 on 8 CPUs, on `main` too (timing, not
+    a change of this work); `queue/test_in_place_stop.py` fails now and then (M3 progress table).
 - **Known limits left from the M2 review** (each recorded in its step's decision record):
   - C-7 ([0013](decisions/0013-command-builder-details.md)): an external subtitle event that
     is on screen at the range start is dropped, not shortened; with an encoded video and a
