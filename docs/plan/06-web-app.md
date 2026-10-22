@@ -102,7 +102,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` | Capability statuses, re-detection |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
-| Tasks | `GET /api/tasks` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks, one task's state and result, cancel |
+| Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only) |
 | Sources | `POST /api/sources` `{paths}` → 202 | Probe files/folders (task) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
@@ -137,12 +137,12 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
 | | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids}` | Track decisions with reasons, for the live preview |
 | Naming | `POST /api/naming/preview` `{naming, source_ids, job?}` | Name source + reason, parsed fields with positions, rendered output paths, issues. The variable list comes with `GET /api/definitions` |
-| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot, add (server validates again). `attach`: a client id; the jobs follow that client's event connection (S-7) |
+| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
-| | `POST /api/queue/{start\|pause\|stop}` · `PUT /api/queue/order` | Global actions. `start` takes an optional `job_ids`: only those jobs start |
-| | `GET /api/queue/{id}/log?from=` | Log (incremental) |
-| | `PUT /api/queue/when-done` | When-done action |
-| Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown; cancel it |
+| | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
+| | `GET /api/queue/{id}/log?from=` | Log (incremental, by byte offset: `{text, next, more}`) |
+| | `PUT /api/queue/when-done` | When-done action. A running countdown for another action is cancelled |
+| Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown (`{pending}`); cancel it (`{cancelled}`). Only the queue starts one |
 | Settings | `GET/PUT /api/settings` | App settings |
 
 - [ ] Stable `operationId`s (`sources_probe`, `jobs_validate`, …): `<tag>_<handler name>`. The
