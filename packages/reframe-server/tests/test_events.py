@@ -582,10 +582,6 @@ async def test_the_facade_closing_ends_the_connection_with_1001(api: Api) -> Non
         await wait_until(lambda: hub(api).connections == 0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="needs timeout_graceful_shutdown in reframe_server.__main__.serve (lead's change)",
-)
 @pytest.mark.usefixtures("make_api")  # the harness's folders, settings and fake tools
 async def test_the_server_stops_while_a_client_does_not_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

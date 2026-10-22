@@ -3,6 +3,7 @@ event hub and closes them; handlers reach both through :mod:`reframe_server.deps
 
 from __future__ import annotations
 
+import functools
 import logging
 import secrets
 import time
@@ -17,6 +18,7 @@ from reframe_server.api import JsonTextResponse, operation_id
 from reframe_server.config import ServerConfig
 from reframe_server.errors import install_error_handlers
 from reframe_server.events import EventHub
+from reframe_server.folders import hide_server_folders
 from reframe_server.routers import (
     auth,
     batch,
@@ -68,7 +70,7 @@ first message and the media URLs accept a signature."""
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     config: ServerConfig = app.state.config
     reframe = await Reframe.create(config.config_dir, config.data_dir)
-    hub = EventHub(reframe.events, config)
+    hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
     app.state.reframe, app.state.hub = reframe, hub
     try:
         yield

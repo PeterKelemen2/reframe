@@ -22,6 +22,10 @@ from reframe_server.config import ServerConfig
 
 __all__ = ["main", "ready_line", "serve"]
 
+_SHUTDOWN_GRACE = 2
+"""Seconds uvicorn waits for open connections at shutdown before the lifespan closes the
+facade anyway. The desktop shell kills the server 5 s after it asked it to stop."""
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -58,7 +62,15 @@ async def serve(config: ServerConfig) -> int:
     """Run the server until it is stopped. Returns the exit code (1: it never started)."""
     app = create_app(config)
     server = uvicorn.Server(
-        uvicorn.Config(app, host=config.host, port=config.port, log_config=_log_config())
+        uvicorn.Config(
+            app,
+            host=config.host,
+            port=config.port,
+            log_config=_log_config(),
+            # uvicorn waits for every connection to close before the lifespan runs, and a
+            # client that does not read never lets its connection close.
+            timeout_graceful_shutdown=_SHUTDOWN_GRACE,
+        )
     )
 
     def request_shutdown() -> None:
