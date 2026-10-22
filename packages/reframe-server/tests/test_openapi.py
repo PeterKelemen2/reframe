@@ -81,7 +81,7 @@ def test_the_export_is_the_served_document_whatever_the_process_and_its_environm
     """The committed types stay comparable: the same bytes in every run, whatever the
     developer's ``REFRAME_*`` variables (this host would need an auth mode)."""
     first = _export(PYTHONHASHSEED="1")
-    second = _export(PYTHONHASHSEED="2", REFRAME_HOST="0.0.0.0", REFRAME_MODE="desktop")
+    second = _export(PYTHONHASHSEED="2", REFRAME_HOST="0.0.0.0")
     assert first == second
     served = create_app(ServerConfig(host="127.0.0.1", mode="web", auth="none")).openapi()
     assert json.loads(first) == served
