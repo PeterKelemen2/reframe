@@ -20,7 +20,7 @@ from reframe_server.api import JsonTextResponse, api_router
 from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, HubDep, ReframeDep
 from reframe_server.errors import ProblemError
-from reframe_server.routers.tasks import hide_server_folders
+from reframe_server.folders import hide_server_folders
 
 router = api_router("queue")
 

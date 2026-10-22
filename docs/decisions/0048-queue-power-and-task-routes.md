@@ -148,7 +148,7 @@ result holds each PNG's path in the cache folder, a `preview_clip` result the cl
 **Decision**
 
 1. **The rule lives where an answer leaves the server**, not in each task that makes a result.
-   `hide_server_folders(reframe, value)` (in `routers/tasks.py`) writes the facade's config,
+   `hide_server_folders(reframe, value)` (`reframe_server/folders.py`, for every answer and, later, the event hub) writes the facade's config,
    data and cache folders as `<config>`, `<data>` and `<cache>` in every string of a JSON value,
    object keys too. The longest folder is matched first (on Windows the cache folder is inside
    the data folder), and a folder's text inside a longer name (`/srv/data2`, `/mnt/srv/data`) is
