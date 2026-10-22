@@ -184,10 +184,11 @@ result holds each PNG's path in the cache folder, a `preview_clip` result the cl
   paths in a server folder come back as sent (desktop mode).
 - Deleted: the `operationId` pins of `test_queue.py`, `test_tasks.py` and `test_power.py` (the
   rule test in `test_openapi.py` and the diff of `schema.d.ts` catch a renamed id). The two
-  fake-jail tests: "every job goes through the jail" becomes a real-jail test with the second
-  job outside the roots (the sweep sends one job per request, so it cannot show that a refused
-  second job adds none); "duplicate goes through the jail" becomes a real-jail test with a
-  saved job outside the roots (the sweep cannot send it: the path comes from the saved queue).
+  fake-jail tests: "every job goes through the jail" goes, because the jail sweep sends
+  `queue_add` with an allowed job before the refused one and checks that neither is added;
+  "duplicate goes through the jail" becomes a real-jail test with a saved job whose source is a
+  link out of the media root (the sweep cannot send it: the request names no path, the path
+  comes from the saved queue).
   Also deleted as covered elsewhere: an invalid job added `failed` (the core's queue tests);
   cancel all (the pause and resume test ends with it); a duplicate without an output path (the
   same check as the add test, and the duplicate jail test shows the check runs); five rows of

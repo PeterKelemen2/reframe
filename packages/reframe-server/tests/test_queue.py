@@ -96,14 +96,6 @@ async def test_jobs_are_added_in_order_at_the_position(api: Api) -> None:
     ]
 
 
-async def test_a_refused_second_job_adds_none_of_the_request(api: Api) -> None:
-    good, bad = await draft_job(api, "Good.mkv"), await draft_job(api, "Bad.mkv")
-    bad["source"]["path"] = str(api.outside / "Bad.mkv")
-    response = await api.client.post("/api/queue", json={"jobs": [good, bad]})
-    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
-    assert await snapshot(api) == []
-
-
 async def test_a_job_without_an_output_path_is_refused(api: Api) -> None:
     """The jail cannot check an output that the queue would name later."""
     named, unnamed = await draft_job(api, "Named.mkv"), await draft_job(api, "Unnamed.mkv")
@@ -177,8 +169,13 @@ async def test_duplicate_adds_a_copy_right_after_the_job(api: Api) -> None:
 
 async def test_duplicate_checks_the_saved_job_against_the_roots(api: Api) -> None:
     """The saved queue may hold a job from a run with other roots."""
+    link = api.media / "escape"
+    try:
+        link.symlink_to(api.outside, target_is_directory=True)
+    except OSError as exc:  # Windows without the symlink privilege
+        pytest.skip(f"cannot make a symbolic link: {exc}")
     job = JobSettings.model_validate(await draft_job(api))
-    job.source.path = api.outside / "Show.mkv"
+    job.source.path = link / "Show.mkv"
     saved = await api.reframe.queue.add(job)
     response = await api.client.post(f"/api/queue/{saved.id}/duplicate")
     assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
