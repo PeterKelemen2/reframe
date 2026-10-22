@@ -3,11 +3,14 @@ save a group template as a preset."""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 
 from fastapi import Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from reframe.batch.resolve import resolve as resolve_one
+from reframe.batch.resolve import row_status
 from reframe.models import (
     BatchGrouping,
     BatchResolution,
@@ -24,8 +27,7 @@ from reframe_server import security
 from reframe_server.api import api_router
 from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, ReframeDep, SourcesDep
-from reframe_server.errors import ProblemError
-from reframe_server.routers.jobs import jail_template, sources_of
+from reframe_server.routers.jobs import folder_issue, jail_job, jail_template, sources_of
 from reframe_server.routers.presets import created
 from reframe_server.sources import SourceRegistry
 
@@ -85,16 +87,36 @@ class BatchSavePresetRequest(BaseModel):
     description: str = ""
 
 
-def _by_path(
-    registry: SourceRegistry, overrides: Mapping[str, Sequence[JsonPatchOp]]
+def _chosen(reframe: Reframe, template: JobTemplate | str | None) -> JobTemplate:
+    """The template the batch service resolves with: a preset name or id, else the default."""
+    if isinstance(template, JobTemplate):
+        return template
+    found = reframe.presets.find(template) if template is not None else None
+    return found if found is not None else reframe.presets.default()
+
+
+async def _jailed_overrides(
+    reframe: Reframe,
+    registry: SourceRegistry,
+    config: ServerConfig,
+    template: JobTemplate | str | None,
+    overrides: Mapping[str, Sequence[JsonPatchOp]],
 ) -> dict[str, Sequence[JsonPatchOp]]:
-    """The overrides keyed by file path, as the core finds them."""
+    """The overrides keyed by file path, as the core finds them. A patch can bring in any path
+    (an external subtitle, the source, the output), so each is applied here as the batch
+    service applies it, and the job it makes passes the jail before the service sees it."""
     keyed: dict[str, Sequence[JsonPatchOp]] = {}
+    chosen = _chosen(reframe, template)
+    languages = reframe.settings.get().languages
+    definitions = reframe.jobs.definitions
     for sid, ops in overrides.items():
-        path = registry.path(sid)
-        if path is None:
-            raise ProblemError(404, "source.unknown", f"No source {sid}")
-        keyed[str(path)] = ops
+        source = await registry.get(reframe, sid)
+        resolution = await asyncio.to_thread(
+            resolve_one, chosen, source, ops, definitions=definitions, languages=languages
+        )
+        assert resolution.job is not None  # resolve always makes a job
+        security.jail_job(config, resolution.job)
+        keyed[str(source.ref.path)] = ops
     return keyed
 
 
@@ -102,8 +124,22 @@ async def _inputs(
     reframe: Reframe, registry: SourceRegistry, config: ServerConfig, body: BatchResolveRequest
 ) -> tuple[list[MediaSource], dict[str, Sequence[JsonPatchOp]]]:
     jail_template(config, body.template)
-    overrides = _by_path(registry, body.overrides)
+    overrides = await _jailed_overrides(reframe, registry, config, body.template, body.overrides)
     return await sources_of(reframe, registry, body.source_ids), overrides
+
+
+def _checked(config: ServerConfig, resolution: BatchResolution) -> BatchResolution:
+    """Each row whose output is outside the output roots gets ``output.folder_required``."""
+    rows = []
+    for row in resolution.rows:
+        issue = folder_issue(config, row.job.output.path if row.job is not None else None)
+        if issue is not None:
+            issues = [*row.issues, issue]
+            row = row.model_copy(
+                update={"issues": issues, "status": row_status(row.matches, issues)}
+            )
+        rows.append(row)
+    return resolution.model_copy(update={"rows": rows})
 
 
 @router.post("/batch/group")
@@ -121,7 +157,7 @@ async def derive(
     body: BatchDeriveRequest, reframe: ReframeDep, registry: SourcesDep, config: ConfigDep
 ) -> JobTemplate:
     """*Apply to group*: the template of the job's ``sections``, merged into ``base``."""
-    security.jail_job(config, body.job)
+    jail_job(config, body.job)
     jail_template(config, body.base)
     source = await registry.get(reframe, body.source_id)
     return reframe.batch.derive(body.job, source, body.sections, base=body.base)
@@ -135,7 +171,8 @@ async def resolve(
     order (the job with its output name, the track matches, the issues), and the name
     collisions."""
     sources, overrides = await _inputs(reframe, registry, config, body)
-    return await reframe.batch.resolve(body.template, sources, overrides=overrides)
+    resolution = await reframe.batch.resolve(body.template, sources, overrides=overrides)
+    return _checked(config, resolution)
 
 
 @router.post("/batch/resolve-run")
@@ -148,7 +185,7 @@ async def resolve_run(
     grouping, resolutions = await reframe.batch.resolve_batch(
         body.template, sources, level=body.level, overrides=overrides
     )
-    return BatchRun(grouping=grouping, resolutions=resolutions)
+    return BatchRun(grouping=grouping, resolutions=[_checked(config, one) for one in resolutions])
 
 
 @router.post("/batch/save-preset", status_code=201)

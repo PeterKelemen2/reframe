@@ -193,3 +193,81 @@ async def test_a_templates_naming_folder_passes_the_jail(
     assert response.status_code == 403
     assert seen == [folder]
     assert (await api.client.get("/api/presets")).json()["presets"][-1]["built_in"] is True
+
+
+@pytest.mark.parametrize("route", ["resolve", "resolve-run"])
+async def test_a_row_saved_outside_the_output_roots_is_an_error(api: Api, route: str) -> None:
+    ids = await add_sources(api)
+    response = await api.client.post(f"/api/batch/{route}", json={"source_ids": ids})
+    assert response.status_code == 200
+    body = response.json()
+    rows = body["rows"] if route == "resolve" else body["resolutions"][0]["rows"]
+    assert len(rows) == 2
+    for row in rows:
+        assert row["issues"][-1]["code"] == "output.folder_required"
+        assert row["status"] == "error"
+
+
+async def test_a_row_saved_in_an_output_root_has_no_folder_issue(api: Api) -> None:
+    ids = await add_sources(api, 1)
+    template = {"naming": {"output_folder_mode": "fixed", "output_folder": str(api.output)}}
+    response = await api.client.post(
+        "/api/batch/resolve", json={"template": template, "source_ids": ids}
+    )
+    [row] = response.json()["rows"]
+    assert row["job"]["output"]["path"] == str(api.output / "Show S01E01.mkv")
+    assert "output.folder_required" not in [issue["code"] for issue in row["issues"]]
+
+
+@pytest.mark.parametrize(
+    ("template", "encoder"),
+    [
+        ({"video": {"encoder": "libx264"}}, "libx264"),
+        ("H.264 MKV 1080p", "libx264"),
+        ("No Such Preset", "libx265"),
+        (None, "libx265"),
+    ],
+)
+async def test_an_override_is_jailed_as_the_template_applies_it(
+    api: Api, template: object, encoder: str
+) -> None:
+    """The patch adds a file outside the roots only when its test op passes, that is with the
+    template the batch service uses."""
+    [sid] = await add_sources(api, 1)
+    ops = [
+        {"op": "test", "path": "/job/video/encoder", "value": encoder},
+        {
+            "op": "add",
+            "path": "/job/subtitles/-",
+            "value": {"source": {"path": str(api.outside / "x.srt")}},
+        },
+    ]
+    for route in ("resolve", "resolve-run"):
+        response = await api.client.post(
+            f"/api/batch/{route}",
+            json={"template": template, "source_ids": [sid], "overrides": {sid: ops}},
+        )
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "path.outside_roots"
+
+
+async def test_an_override_of_the_source_is_jailed(api: Api) -> None:
+    [sid] = await add_sources(api, 1)
+    ops = [{"op": "replace", "path": "/job/source/path", "value": str(api.outside / "x.mkv")}]
+    response = await api.client.post(
+        "/api/batch/resolve", json={"source_ids": [sid], "overrides": {sid: ops}}
+    )
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "path.outside_roots"
+
+
+async def test_derive_takes_a_job_saved_outside_the_output_roots(api: Api) -> None:
+    [sid] = await add_sources(api, 1)
+    job = {
+        "source": {"path": str(api.media / "Show S01E01.mkv")},
+        "output": {"path": str(api.media / "Show S01E01 (1).mkv")},
+    }
+    response = await api.client.post(
+        "/api/batch/derive", json={"job": job, "source_id": sid, "sections": ["video"]}
+    )
+    assert response.status_code == 200

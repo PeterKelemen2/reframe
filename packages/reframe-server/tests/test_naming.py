@@ -104,3 +104,20 @@ async def test_the_naming_folder_and_the_job_pass_the_jail(
         assert [str(j.source.path) for j in seen if isinstance(j, JobSettings)] == [
             job["source"]["path"]
         ]
+
+
+@pytest.mark.parametrize("with_job", [False, True])
+async def test_a_name_beside_the_source_has_the_settings_fix(api: Api, with_job: bool) -> None:
+    sid = await add_source(api, "Show S01E01.mkv")
+    body: dict[str, Any] = {"source_ids": [sid]}
+    if with_job:
+        body["job"] = {
+            "source": {"path": str(api.media / "Show S01E01.mkv")},
+            "output": {"path": str(api.media / "Show S01E01 (1).mkv")},
+        }
+    response = await api.client.post("/api/naming/preview", json=body)
+    assert response.status_code == 200
+    [name] = response.json()
+    assert name["path"].startswith(str(api.media))
+    [issue] = [i for i in name["issues"] if i["code"] == "output.folder_required"]
+    assert [fix["target"] for fix in issue["fixes"]] == ["settings"]
