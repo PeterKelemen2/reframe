@@ -1,5 +1,6 @@
-"""Web mode: an output outside the output roots is the ``output.folder_required`` issue, with
-fixes, wherever a job is drafted or checked."""
+"""Web mode: an output outside the output roots is the ``output.folder_required`` issue, an
+in-place edit of a source in a media root ``inplace.not_allowed``, with fixes, wherever a job is
+drafted or checked."""
 
 from __future__ import annotations
 
@@ -25,18 +26,24 @@ async def add_source(api: Api) -> str:
     return sid
 
 
-async def drafted(api: Api, route: str = "draft") -> dict[str, Any]:
+async def drafted(api: Api, route: str = "draft", **request: Any) -> dict[str, Any]:
     response = await api.client.post(
-        f"/api/jobs/{route}", json={"source_id": await add_source(api)}
+        f"/api/jobs/{route}", json={"source_id": await add_source(api), **request}
     )
     assert response.status_code == 200
     body: dict[str, Any] = response.json()
     return body
 
 
-def folder_issue(issues: list[dict[str, Any]]) -> dict[str, Any]:
-    [issue] = [i for i in issues if i["code"] == "output.folder_required"]
+def folder_issue(
+    issues: list[dict[str, Any]], code: str = "output.folder_required"
+) -> dict[str, Any]:
+    [issue] = [i for i in issues if i["code"] == code]
     return issue
+
+
+def codes(issues: list[dict[str, Any]]) -> list[str]:
+    return [issue["code"] for issue in issues]
 
 
 async def test_a_draft_beside_the_source_has_the_issue_with_both_fixes(api: Api) -> None:
@@ -95,10 +102,32 @@ async def test_plan_and_dry_run_refuse_the_outside_output(api: Api, route: str) 
     assert api.fake.calls("ffmpeg") == []
 
 
-async def test_a_remux_draft_has_the_issue(api: Api) -> None:
-    draft = await drafted(api, "draft-remux")
-    assert draft["job"]["output"]["path"] == str(api.media / "Show S01E01.mkv")
+async def test_a_remux_draft_that_writes_a_new_file_has_the_issue(api: Api) -> None:
+    draft = await drafted(api, "draft-remux", edit_in_place=False)
+    assert draft["job"]["output"]["path"] == str(api.media / DRAFTED)
     folder_issue(draft["issues"])
+
+
+async def test_an_in_place_edit_is_an_issue_whose_fix_writes_a_new_file(api: Api) -> None:
+    """The naming fixes cannot move an in-place edit: it writes its source."""
+    draft = await drafted(api, "draft-remux")
+    job = draft["job"]
+    assert job["output"]["edit_in_place"] is True
+    assert "output.folder_required" not in codes(draft["issues"])
+    issue = folder_issue(draft["issues"], "inplace.not_allowed")
+    assert (issue["severity"], issue["path"]) == ("error", "output.edit_in_place")
+    validated = await api.client.post("/api/jobs/validate", json={"job": job})
+    assert validated.status_code == 200
+    assert "inplace.not_allowed" in codes(validated.json())
+    [fix] = issue["fixes"]
+    assert fix["patch"] == [
+        {"op": "replace", "path": "/output/edit_in_place", "value": False},
+        {"op": "replace", "path": "/output/path", "value": str(api.output / "Show S01E01.mkv")},
+    ]
+    again = await api.client.post(
+        "/api/jobs/validate", json={"job": apply_patch(job, fix["patch"])}
+    )
+    assert {"inplace.not_allowed", "output.folder_required"}.isdisjoint(codes(again.json()))
 
 
 @pytest.mark.parametrize("route", ["geometry", "hdr-metadata"])
@@ -131,9 +160,14 @@ async def test_the_fixes_depend_on_the_output_roots(
     folders = [tmp_path / f"out{n}" for n in range(roots)]
     async with make_api(output_roots=folders) as api:
         issue = folder_issue((await drafted(api))["issues"])
+        in_place = folder_issue(
+            (await drafted(api, "draft-remux"))["issues"], "inplace.not_allowed"
+        )
     assert [fix["target"] for fix in issue["fixes"]] == targets
+    assert len(in_place["fixes"]) == len(targets)
     if folders:
         assert issue["fixes"][0]["patch"][1]["value"] == str(folders[0])
+        assert in_place["fixes"][0]["patch"][1]["value"] == str(folders[0] / "Show S01E01.mkv")
 
 
 async def test_desktop_mode_drafts_beside_the_source(make_api: ApiFactory) -> None:
@@ -141,6 +175,8 @@ async def test_desktop_mode_drafts_beside_the_source(make_api: ApiFactory) -> No
         draft = await drafted(api)
         job = draft["job"]
         validated = await api.client.post("/api/jobs/validate", json={"job": job})
+        in_place = await drafted(api, "draft-remux")
     assert job["output"]["path"] == str(api.media / DRAFTED)
-    assert "output.folder_required" not in [i["code"] for i in draft["issues"]]
-    assert "output.folder_required" not in [i["code"] for i in validated.json()]
+    assert "output.folder_required" not in codes(draft["issues"])
+    assert "output.folder_required" not in codes(validated.json())
+    assert "inplace.not_allowed" not in codes(in_place["issues"])

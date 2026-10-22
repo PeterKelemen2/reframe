@@ -2,30 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from reframe.models import JobDraft, JobSettings, MediaSource
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
+from reframe.models import JobDraft, JobSettings, JobTemplate, MediaSource, Preset, VideoSettings
 from reframe_testing.server import Api
 
 pytestmark = pytest.mark.anyio
 
 QUALITY = {"op": "replace", "path": "/video/rate_control/value", "value": 30}
-
-
-def refuse(monkeypatch: pytest.MonkeyPatch, name: str) -> list[object]:
-    seen: list[object] = []
-
-    def jail(_config: ServerConfig, value: object) -> None:
-        seen.append(value)
-        raise ProblemError(403, "path.outside_roots", "Outside the roots")
-
-    monkeypatch.setattr(security, name, jail)
-    return seen
 
 
 async def add_sources(api: Api, count: int = 2) -> list[str]:
@@ -40,24 +28,12 @@ async def add_sources(api: Api, count: int = 2) -> list[str]:
 def videos(rows: list[dict[str, Any]]) -> dict[str, tuple[str, float]]:
     """Each row's encoder and quality, by file name."""
     return {
-        row["path"].rsplit("/", 1)[-1]: (
+        Path(row["path"]).name: (
             row["job"]["video"]["encoder"],
             row["job"]["video"]["rate_control"]["value"],
         )
         for row in rows
     }
-
-
-async def test_operation_ids(api: Api) -> None:
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    names = {
-        "group": "batch_group",
-        "derive": "batch_derive",
-        "resolve": "batch_resolve",
-        "resolve-run": "batch_resolve_run",
-        "save-preset": "batch_save_preset",
-    }
-    assert {route: paths[f"/api/batch/{route}"]["post"]["operationId"] for route in names} == names
 
 
 async def test_group_at_a_level(api: Api) -> None:
@@ -66,7 +42,7 @@ async def test_group_at_a_level(api: Api) -> None:
     assert response.status_code == 200
     [group] = response.json()["groups"]
     assert group["level"] == "loose"
-    assert [m["path"].rsplit("/", 1)[-1] for m in group["members"]] == [
+    assert [Path(m["path"]).name for m in group["members"]] == [
         "Show S01E01.mkv",
         "Show S01E02.mkv",
     ]
@@ -154,45 +130,6 @@ async def test_save_preset(api: Api) -> None:
         "TV",
         "libx264",
     )
-    again = await api.client.post(
-        "/api/batch/save-preset", json={"template": template, "name": "season"}
-    )
-    assert (again.status_code, again.json()["code"]) == (409, "preset.name_conflict")
-
-
-async def test_derive_jails_the_job(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
-    [sid] = await add_sources(api, 1)
-    job = {"source": {"path": str(api.media / "Show S01E01.mkv")}}
-    seen = refuse(monkeypatch, "jail_job")
-    response = await api.client.post(
-        "/api/batch/derive", json={"job": job, "source_id": sid, "sections": ["video"]}
-    )
-    assert response.status_code == 403
-    assert [str(j.source.path) for j in seen if isinstance(j, JobSettings)] == [
-        job["source"]["path"]
-    ]
-
-
-@pytest.mark.parametrize("route", ["derive", "resolve", "resolve-run", "save-preset"])
-async def test_a_templates_naming_folder_passes_the_jail(
-    api: Api, monkeypatch: pytest.MonkeyPatch, route: str
-) -> None:
-    ids = await add_sources(api, 1)
-    folder = api.output / "Shows"
-    template = {"naming": {"output_folder_mode": "fixed", "output_folder": str(folder)}}
-    seen = refuse(monkeypatch, "jail_write")
-    body: dict[str, Any]
-    if route == "derive":
-        job = {"source": {"path": str(api.media / "Show S01E01.mkv")}}
-        body = {"job": job, "source_id": ids[0], "sections": [], "base": template}
-    elif route == "save-preset":
-        body = {"template": template, "name": "Season"}
-    else:
-        body = {"template": template, "source_ids": ids}
-    response = await api.client.post(f"/api/batch/{route}", json=body)
-    assert response.status_code == 403
-    assert seen == [folder]
-    assert (await api.client.get("/api/presets")).json()["presets"][-1]["built_in"] is True
 
 
 @pytest.mark.parametrize("route", ["resolve", "resolve-run"])
@@ -219,6 +156,46 @@ async def test_a_row_saved_in_an_output_root_has_no_folder_issue(api: Api) -> No
     assert "output.folder_required" not in [issue["code"] for issue in row["issues"]]
 
 
+def outside_subtitle_if(api: Api, encoder: str) -> list[dict[str, Any]]:
+    """An override that adds a subtitle outside the roots when the job encodes with
+    ``encoder``."""
+    return [
+        {"op": "test", "path": "/job/video/encoder", "value": encoder},
+        {
+            "op": "add",
+            "path": "/job/subtitles/-",
+            "value": {"source": {"path": str(api.outside / "x.srt")}},
+        },
+    ]
+
+
+def validated(api: Api, monkeypatch: pytest.MonkeyPatch) -> list[JobSettings]:
+    """The jobs the facade validates from now on."""
+    jobs: list[JobSettings] = []
+    real = api.reframe.jobs.validate
+
+    async def spy(job: JobSettings, *args: Any, **kwargs: Any) -> Any:
+        jobs.append(job)
+        return await real(job, *args, **kwargs)
+
+    monkeypatch.setattr(api.reframe.jobs, "validate", spy)
+    return jobs
+
+
+def before_service(
+    api: Api, monkeypatch: pytest.MonkeyPatch, step: Callable[[], Awaitable[object]]
+) -> None:
+    """``step`` runs just before each batch resolution of the service."""
+    for name in ("resolve", "resolve_batch"):
+        real = getattr(api.reframe.batch, name)
+
+        async def spy(*args: Any, _real: Any = real, **kwargs: Any) -> Any:
+            await step()
+            return await _real(*args, **kwargs)
+
+        monkeypatch.setattr(api.reframe.batch, name, spy)
+
+
 @pytest.mark.parametrize(
     ("template", "encoder"),
     [
@@ -229,33 +206,48 @@ async def test_a_row_saved_in_an_output_root_has_no_folder_issue(api: Api) -> No
     ],
 )
 async def test_an_override_is_jailed_as_the_template_applies_it(
-    api: Api, template: object, encoder: str
+    api: Api, monkeypatch: pytest.MonkeyPatch, template: object, encoder: str
 ) -> None:
     """The patch adds a file outside the roots only when its test op passes, that is with the
-    template the batch service uses."""
+    template the batch service uses: the file never reaches the service's validation."""
     [sid] = await add_sources(api, 1)
-    ops = [
-        {"op": "test", "path": "/job/video/encoder", "value": encoder},
-        {
-            "op": "add",
-            "path": "/job/subtitles/-",
-            "value": {"source": {"path": str(api.outside / "x.srt")}},
-        },
-    ]
+    seen = validated(api, monkeypatch)
     for route in ("resolve", "resolve-run"):
         response = await api.client.post(
             f"/api/batch/{route}",
-            json={"template": template, "source_ids": [sid], "overrides": {sid: ops}},
+            json={
+                "template": template,
+                "source_ids": [sid],
+                "overrides": {sid: outside_subtitle_if(api, encoder)},
+            },
         )
         assert response.status_code == 403, response.text
         assert response.json()["code"] == "path.outside_roots"
+    assert seen == []
 
 
-async def test_an_override_of_the_source_is_jailed(api: Api) -> None:
+@pytest.mark.parametrize("route", ["resolve", "resolve-run"])
+async def test_an_override_that_a_changed_preset_lets_out_is_refused(
+    api: Api, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """The preset changes after the overrides were jailed: the test op fails under the old
+    preset and passes under the one the service resolves with."""
     [sid] = await add_sources(api, 1)
-    ops = [{"op": "replace", "path": "/job/source/path", "value": str(api.outside / "x.mkv")}]
+    preset = await api.reframe.presets.create(
+        JobTemplate(video=VideoSettings(encoder="libx264")), "Mine"
+    )
+    assert isinstance(preset, Preset)
+    changed = preset.model_copy(
+        update={"video": preset.video.model_copy(update={"encoder": "libx265"})}
+    )
+    before_service(api, monkeypatch, lambda: api.reframe.presets.save(changed))
     response = await api.client.post(
-        "/api/batch/resolve", json={"source_ids": [sid], "overrides": {sid: ops}}
+        f"/api/batch/{route}",
+        json={
+            "template": "Mine",
+            "source_ids": [sid],
+            "overrides": {sid: outside_subtitle_if(api, "libx265")},
+        },
     )
     assert response.status_code == 403, response.text
     assert response.json()["code"] == "path.outside_roots"

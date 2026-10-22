@@ -41,20 +41,39 @@ _ISSUE_STATUS = {
 }
 
 
-def preset_problem(issue: ValidationIssue) -> ProblemError:
+_STORE_MESSAGES = {
+    "presets.read_only": (
+        "The presets were not saved: the presets file of this server cannot be changed (it "
+        "is damaged, unreadable or from a newer Reframe)."
+    ),
+    "presets.write_failed": "The presets could not be saved: this server cannot write them.",
+}
+"""Messages for the store's refusals, whose own messages name the server's presets file."""
+
+
+def shown(config: ServerConfig, issue: ValidationIssue) -> ValidationIssue:
+    """``issue`` without the server's folders in web mode; the desktop user is shown where
+    the file is."""
+    message = _STORE_MESSAGES.get(issue.code)
+    if config.mode != "web" or message is None:
+        return issue
+    return issue.model_copy(update={"message": message})
+
+
+def preset_problem(config: ServerConfig, issue: ValidationIssue) -> ProblemError:
     """A preset change the store refused; anything not listed is a 422."""
-    return issue_problem(issue, _ISSUE_STATUS.get(issue.code, 422))
+    return issue_problem(shown(config, issue), _ISSUE_STATUS.get(issue.code, 422))
 
 
-def stored(result: Preset | ValidationIssue) -> Preset:
+def stored(config: ServerConfig, result: Preset | ValidationIssue) -> Preset:
     if isinstance(result, ValidationIssue):
-        raise preset_problem(result)
+        raise preset_problem(config, result)
     return result
 
 
-def created(response: Response, result: Preset | ValidationIssue) -> Preset:
+def created(config: ServerConfig, response: Response, result: Preset | ValidationIssue) -> Preset:
     """A new preset, with its URL in ``Location``."""
-    preset = stored(result)
+    preset = stored(config, result)
     response.headers["Location"] = f"/api/presets/{preset.id}"
     return preset
 
@@ -141,7 +160,7 @@ async def create(
     result = await reframe.presets.create(
         body.template, body.name, category=body.category, description=body.description
     )
-    return created(response, result)
+    return created(config, response, result)
 
 
 @router.get("/presets/export")
@@ -181,7 +200,7 @@ async def import_presets(
         renamed=[RenamedPreset(name=old, new_name=new) for old, new in result.renamed],
         replaced=result.replaced,
         skipped=result.skipped,
-        issues=result.issues,
+        issues=[shown(config, issue) for issue in result.issues],
     )
 
 
@@ -228,20 +247,20 @@ async def save(preset_id: str, body: Preset, reframe: ReframeDep, config: Config
     if body.id != preset_id:
         raise ProblemError(422, "presets.id_mismatch", "The preset's id is not the one in the URL")
     jail_template(config, body)
-    return stored(await reframe.presets.save(body))
+    return stored(config, await reframe.presets.save(body))
 
 
 @router.delete("/presets/{preset_id}")
-async def delete(preset_id: str, reframe: ReframeDep) -> Preset:
+async def delete(preset_id: str, reframe: ReframeDep, config: ConfigDep) -> Preset:
     """Delete a user preset; the answer is the deleted preset. When it was the default, the
     built-in default is the default again."""
-    return stored(await reframe.presets.delete(preset_id))
+    return stored(config, await reframe.presets.delete(preset_id))
 
 
 @router.post("/presets/{preset_id}/default")
-async def set_default(preset_id: str, reframe: ReframeDep) -> Preset:
+async def set_default(preset_id: str, reframe: ReframeDep, config: ConfigDep) -> Preset:
     """Make the preset the default; the answer is the default now in effect."""
-    return stored(await reframe.presets.set_default(preset_id))
+    return stored(config, await reframe.presets.set_default(preset_id))
 
 
 async def _read_limited(request: Request) -> bytes:

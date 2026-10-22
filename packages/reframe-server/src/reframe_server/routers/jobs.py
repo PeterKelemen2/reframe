@@ -38,6 +38,18 @@ from reframe_server.sources import SourceRegistry
 router = api_router("jobs")
 
 FOLDER_REQUIRED = "output.folder_required"
+IN_PLACE_NOT_ALLOWED = "inplace.not_allowed"
+
+
+def _outside(config: ServerConfig, path: Path) -> bool:
+    """The write jail refuses ``path`` as outside the roots; another refusal is raised."""
+    try:
+        security.jail_write(config, path)
+    except ProblemError as exc:
+        if exc.problem.code != "path.outside_roots":
+            raise
+        return True
+    return False
 
 
 def folder_issue(
@@ -46,14 +58,7 @@ def folder_issue(
     """``output.folder_required`` when the output path is outside every output root (web
     mode), with a settings fix and, with ``job_fix`` and one output root, a fix that moves the
     job's output into it. Another refusal of the write jail is raised."""
-    if output is None:
-        return None
-    try:
-        security.jail_write(config, output)
-    except ProblemError as exc:
-        if exc.problem.code != "path.outside_roots":
-            raise
-    else:
+    if output is None or not _outside(config, output):
         return None
     fixes: list[Fix] = []
     if config.output_roots:
@@ -87,16 +92,60 @@ def folder_issue(
     )
 
 
+def in_place_issue(config: ServerConfig, job: JobSettings) -> ValidationIssue | None:
+    """``inplace.not_allowed`` when ``job`` edits a source that the write jail refuses (web
+    mode: a media root outside the output roots), with a fix that writes a new file into the
+    first output root. The naming options cannot help: an in-place edit writes its source."""
+    if not job.output.edit_in_place or not _outside(config, job.source.path):
+        return None
+    source = job.source.path
+    fixes: list[Fix] = []
+    if config.output_roots:
+        root = config.output_roots[0]
+        fixes.append(
+            Fix(
+                label=f"Write a new file in {root}",
+                patch=[
+                    ReplaceOp(path="/output/edit_in_place", value=False),
+                    ReplaceOp(path="/output/path", value=str(root / source.name)),
+                ],
+            )
+        )
+    return ValidationIssue(
+        severity=Severity.ERROR,
+        code=IN_PLACE_NOT_ALLOWED,
+        path="output.edit_in_place",
+        message=(
+            f"{source.name} is in a folder that this server may only read, so it cannot be "
+            "edited in place. Write a new file into an output folder instead."
+        ),
+        fixes=fixes,
+    )
+
+
+def job_issue(config: ServerConfig, job: JobSettings) -> ValidationIssue | None:
+    """What keeps this server from writing the job's output, as an issue; an in-place edit
+    writes its source, so its output path does not count."""
+    return in_place_issue(config, job) or folder_issue(config, job.output.path)
+
+
 def without_output(job: JobSettings) -> JobSettings:
     return job.model_copy(update={"output": job.output.model_copy(update={"path": None})})
 
 
-def jail_job(config: ServerConfig, job: JobSettings) -> ValidationIssue | None:
-    """:func:`security.jail_job`, except that an output path outside the output roots is the
-    returned :func:`folder_issue` instead of a 403."""
-    issue = folder_issue(config, job.output.path)
-    security.jail_job(config, without_output(job))
-    return issue
+def jail_job(config: ServerConfig, job: JobSettings) -> tuple[ValidationIssue | None, JobSettings]:
+    """:func:`security.jail_job`, except that an output the server may not write is the
+    returned :func:`job_issue` instead of a 403. Also returns the job the facade may look at:
+    without the refused output, and not in place when the in-place edit is refused."""
+    issue = job_issue(config, job)
+    seen = job
+    if issue is not None:
+        output: dict[str, object] = {"path": None}
+        if issue.code == IN_PLACE_NOT_ALLOWED:
+            output["edit_in_place"] = False
+        seen = job.model_copy(update={"output": job.output.model_copy(update=output)})
+    security.jail_job(config, seen)
+    return issue, seen
 
 
 def jail_naming(config: ServerConfig, naming: NamingOptions | None) -> None:
@@ -188,12 +237,13 @@ async def validate(
     body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep
 ) -> list[ValidationIssue]:
     """Every issue of the job. A source that cannot be probed is a ``source.probe_failed``
-    issue; in web mode an output outside the output roots is ``output.folder_required``."""
-    issue = jail_job(config, body.job)
+    issue; in web mode an output outside the output roots is ``output.folder_required``, an
+    in-place edit of a source in a media root ``inplace.not_allowed``."""
+    issue, seen = jail_job(config, body.job)
+    issues = await reframe.jobs.validate(seen)
     if issue is None:
-        return await reframe.jobs.validate(body.job)
-    # The output outside the roots is not looked at; validation reports it as not set.
-    issues = await reframe.jobs.validate(without_output(body.job))
+        return issues
+    # The refused output is not looked at; validation reports it as not set.
     return [*(i for i in issues if i.code != "output.no_path"), issue]
 
 
@@ -201,7 +251,7 @@ async def validate(
 async def plan(body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep) -> EncodePlan:
     """The command preview and job type. A job with errors is a 422 ``jobs.invalid`` problem
     with the issues."""
-    _refuse(jail_job(config, body.job))
+    _refuse(jail_job(config, body.job)[0])
     result = await reframe.jobs.plan(body.job)
     if isinstance(result, EncodePlan):
         return result
@@ -254,8 +304,8 @@ async def dry_run(
 ) -> list[ValidationIssue]:
     """Encode one frame with the job's video settings: what FFmpeg refuses (custom encoder
     parameters) comes back as ``error`` issues. Validate the job first. An output outside the
-    output roots is a 422 ``jobs.invalid`` problem."""
-    _refuse(jail_job(config, body.job))
+    output roots, or a refused in-place edit, is a 422 ``jobs.invalid`` problem."""
+    _refuse(jail_job(config, body.job)[0])
     return await reframe.jobs.dry_run(body.job)
 
 
@@ -280,7 +330,7 @@ def _refuse(issue: ValidationIssue | None) -> None:
 
 
 def _checked(config: ServerConfig, draft: JobDraft) -> JobDraft:
-    issue = folder_issue(config, draft.job.output.path)
+    issue = job_issue(config, draft.job)
     if issue is None:
         return draft
     return draft.model_copy(update={"issues": [*draft.issues, issue]})

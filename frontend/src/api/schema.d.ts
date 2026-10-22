@@ -698,7 +698,8 @@ export interface paths {
         /**
          * Validate
          * @description Every issue of the job. A source that cannot be probed is a ``source.probe_failed``
-         *     issue; in web mode an output outside the output roots is ``output.folder_required``.
+         *     issue; in web mode an output outside the output roots is ``output.folder_required``, an
+         *     in-place edit of a source in a media root ``inplace.not_allowed``.
          */
         post: operations["jobs_validate"];
         delete?: never;
@@ -801,7 +802,7 @@ export interface paths {
          * Dry Run
          * @description Encode one frame with the job's video settings: what FFmpeg refuses (custom encoder
          *     parameters) comes back as ``error`` issues. Validate the job first. An output outside the
-         *     output roots is a 422 ``jobs.invalid`` problem.
+         *     output roots, or a refused in-place edit, is a 422 ``jobs.invalid`` problem.
          */
         post: operations["jobs_dry_run"];
         delete?: never;
