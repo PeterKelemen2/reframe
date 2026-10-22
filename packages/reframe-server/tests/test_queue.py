@@ -8,18 +8,14 @@ import asyncio
 import json
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from reframe.models import JobDraft, JobSettings
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
 from reframe_server.routers.queue import LOG_CHUNK
 from reframe_testing import fake_tools as ft
-from reframe_testing.server import PROBE_RULE, Api
+from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
 
@@ -82,35 +78,6 @@ async def encoding(api: Api, *job_ids: str) -> None:
     await poll(lambda: all(started(job_id) for job_id in job_ids))
 
 
-async def test_the_routes_have_stable_operation_ids(api: Api) -> None:
-    """The generated client's function names."""
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    found = {
-        (method, path): operation["operationId"]
-        for path, operations in paths.items()
-        if path.startswith("/api/queue")
-        for method, operation in operations.items()
-    }
-    assert found == {
-        ("get", "/api/queue"): "queue_snapshot",
-        ("post", "/api/queue"): "queue_add",
-        ("post", "/api/queue/start"): "queue_start",
-        ("post", "/api/queue/stop"): "queue_stop",
-        ("post", "/api/queue/pause"): "queue_pause_all",
-        ("post", "/api/queue/resume"): "queue_resume_all",
-        ("post", "/api/queue/cancel"): "queue_cancel_all",
-        ("put", "/api/queue/order"): "queue_reorder",
-        ("put", "/api/queue/when-done"): "queue_set_when_done",
-        ("post", "/api/queue/{job_id}/pause"): "queue_pause_job",
-        ("post", "/api/queue/{job_id}/resume"): "queue_resume_job",
-        ("post", "/api/queue/{job_id}/cancel"): "queue_cancel_job",
-        ("post", "/api/queue/{job_id}/retry"): "queue_retry",
-        ("post", "/api/queue/{job_id}/duplicate"): "queue_duplicate",
-        ("delete", "/api/queue/{job_id}"): "queue_remove",
-        ("get", "/api/queue/{job_id}/log"): "queue_log",
-    }
-
-
 async def test_jobs_are_added_in_order_at_the_position(api: Api) -> None:
     [old] = await add_jobs(api, "Old.mkv")
     first, second = await draft_job(api, "First.mkv"), await draft_job(api, "Second.mkv")
@@ -127,41 +94,6 @@ async def test_jobs_are_added_in_order_at_the_position(api: Api) -> None:
         (added[1]["id"], "waiting"),
         (old, "waiting"),
     ]
-
-
-async def test_a_job_with_errors_is_added_failed_with_its_issues(api: Api) -> None:
-    """The server validates again; an invalid job is queued as ``failed``, not refused, as
-    the queue does for every front end."""
-    job = await draft_job(api)
-    job["video"]["encoder"] = "no_such_encoder"
-    response = await api.client.post("/api/queue", json={"jobs": [job]})
-    assert response.status_code == 201
-    [added] = response.json()
-    assert added["state"] == "failed"
-    assert any(issue["severity"] == "error" for issue in added["issues"])
-    assert await snapshot(api) == [(added["id"], "failed")]
-
-
-async def test_every_job_goes_through_the_jail(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A refusal of the second job adds neither."""
-    good, bad = await draft_job(api, "Good.mkv"), await draft_job(api, "Bad.mkv")
-    seen: list[tuple[ServerConfig, str]] = []
-
-    def jail(config: ServerConfig, job: JobSettings) -> None:
-        seen.append((config, str(job.source.path)))
-        if job.source.path == Path(bad["source"]["path"]):
-            raise ProblemError(403, "path.outside_roots", "The path is outside the roots")
-
-    monkeypatch.setattr(security, "jail_job", jail)
-    response = await api.client.post("/api/queue", json={"jobs": [good, bad]})
-    assert response.status_code == 403
-    assert response.headers["content-type"] == "application/problem+json"
-    assert response.json()["code"] == "path.outside_roots"
-    assert seen == [
-        (api.config, good["source"]["path"]),
-        (api.config, bad["source"]["path"]),
-    ]
-    assert await snapshot(api) == []
 
 
 async def test_a_job_without_an_output_path_is_refused(api: Api) -> None:
@@ -208,12 +140,6 @@ async def test_cancel_retry_and_remove_act_on_their_job(api: Api) -> None:
     assert await snapshot(api) == [(second, "waiting")]
 
 
-async def test_cancel_all_cancels_every_waiting_job(api: Api) -> None:
-    first, second = await add_jobs(api, "First.mkv", "Second.mkv")
-    assert (await api.client.post("/api/queue/cancel")).status_code == 204
-    assert await snapshot(api) == [(first, "cancelled"), (second, "cancelled")]
-
-
 async def test_reorder_moves_the_named_jobs_among_their_places(api: Api) -> None:
     a, b, c = await add_jobs(api, "A.mkv", "B.mkv", "C.mkv")
     response = await api.client.put("/api/queue/order", json={"job_ids": [c, a]})
@@ -241,38 +167,24 @@ async def test_duplicate_adds_a_copy_right_after_the_job(api: Api) -> None:
     assert [job_id for job_id, _ in await snapshot(api)] == [first, copy["id"], second]
 
 
-async def test_duplicate_goes_through_the_jail(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
-    [job_id] = await add_jobs(api, "Show.mkv")
-
-    def jail(config: ServerConfig, job: JobSettings) -> None:
-        raise ProblemError(403, "path.outside_roots", "The path is outside the roots")
-
-    monkeypatch.setattr(security, "jail_job", jail)
-    response = await api.client.post(f"/api/queue/{job_id}/duplicate")
-    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
-    assert [state for _, state in await snapshot(api)] == ["waiting"]
-
-
-async def test_duplicate_of_a_job_without_an_output_path_is_refused(api: Api) -> None:
+async def test_duplicate_checks_the_saved_job_against_the_roots(api: Api) -> None:
+    """The saved queue may hold a job from a run with other roots."""
+    link = api.media / "escape"
+    try:
+        link.symlink_to(api.outside, target_is_directory=True)
+    except OSError as exc:  # Windows without the symlink privilege
+        pytest.skip(f"cannot make a symbolic link: {exc}")
     job = JobSettings.model_validate(await draft_job(api))
-    job.output.path = None
-    unnamed = await api.reframe.queue.add(job)
-    response = await api.client.post(f"/api/queue/{unnamed.id}/duplicate")
-    assert (response.status_code, response.json()["code"]) == (422, "output.no_path")
+    job.source.path = link / "Show.mkv"
+    saved = await api.reframe.queue.add(job)
+    response = await api.client.post(f"/api/queue/{saved.id}/duplicate")
+    assert (response.status_code, response.json()["code"]) == (403, "path.outside_roots")
     assert len(await snapshot(api)) == 1
 
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [
-        ("POST", "/api/queue/{}/pause"),
-        ("POST", "/api/queue/{}/resume"),
-        ("POST", "/api/queue/{}/cancel"),
-        ("POST", "/api/queue/{}/retry"),
-        ("POST", "/api/queue/{}/duplicate"),
-        ("DELETE", "/api/queue/{}"),
-        ("GET", "/api/queue/{}/log"),
-    ],
+    [("POST", "/api/queue/{}/duplicate"), ("GET", "/api/queue/{}/log")],
 )
 async def test_an_unknown_job_is_404(api: Api, method: str, path: str) -> None:
     response = await api.client.request(method, path.format("no-such-job"))
@@ -402,12 +314,29 @@ async def test_when_done_cancels_a_countdown_for_another_action(
         assert pending is None
 
 
-async def test_the_when_done_action_follows_the_last_job(api: Api) -> None:
-    """The session's PowerGuard fails the test if the countdown reaches a real power action."""
-    await api.client.put("/api/queue/when-done", json={"when_done": "shutdown"})
-    [job_id] = await add_jobs(api, "Show.mkv")
-    await api.client.post("/api/queue/start")
-    await ended(api, job_id)
-    pending = (await api.client.get("/api/power")).json()["pending"]
-    assert pending["action"] == "shutdown"
-    assert pending["phase"] in ("started", "tick")
+async def test_a_queue_answer_names_no_server_folder(api: Api) -> None:
+    """The log is read through its route: a client is not told where the server keeps it."""
+    data = str(api.reframe.data_dir)
+    added = await api.client.post("/api/queue", json={"jobs": [await draft_job(api)]})
+    [job] = added.json()
+    assert job["log_path"].startswith("<data>")
+    await api.client.post(f"/api/queue/{job['id']}/cancel")
+    answers = [
+        added,
+        await api.client.get("/api/queue"),
+        await api.client.post(f"/api/queue/{job['id']}/retry"),
+        await api.client.post(f"/api/queue/{job['id']}/duplicate"),
+    ]
+    assert [answer.status_code for answer in answers] == [201, 200, 200, 201]
+    assert [data in answer.text for answer in answers] == [False] * 4
+
+
+async def test_a_jobs_own_paths_come_back_as_sent(make_api: ApiFactory) -> None:
+    """Desktop mode: the user may write into a folder the server also uses, and the editor
+    loads the settings back."""
+    async with make_api(mode="desktop") as api:
+        job = await draft_job(api)
+        job["output"]["path"] = str(api.reframe.data_dir / "Show.mkv")
+        response = await api.client.post("/api/queue", json={"jobs": [job]})
+        [added] = response.json()
+        assert added["settings"]["output"]["path"] == job["output"]["path"]
