@@ -704,7 +704,10 @@ class SettingsService:
         return self._settings.model_copy(deep=True)
 
     async def update(
-        self, change: AppSettings | Sequence[JsonPatchOp | Mapping[str, object]]
+        self,
+        change: AppSettings | Sequence[JsonPatchOp | Mapping[str, object]],
+        *,
+        check: Callable[[AppSettings, AppSettings], None] | None = None,
     ) -> SettingsUpdate:
         """Replace the settings (an :class:`AppSettings`), or change them with a JSON patch
         (RFC 6902).
@@ -714,12 +717,17 @@ class SettingsService:
         ``schema_version``: Reframe sets it, and a newer number would make the next start treat
         the file as newer and use the defaults. A valid change takes effect at once; when it
         cannot be saved, ``warnings`` says why (``saved`` is ``False``).
+
+        ``check(old, new)`` runs under the same lock, on the settings the change was applied
+        to, before anything is written: an exception from it propagates and nothing changes.
         """
         async with self._lock:
             old = self._settings
             new = self._apply(old, change)
             if isinstance(new, ValidationIssue):
                 return SettingsUpdate(settings=old.model_copy(deep=True), issues=[new])
+            if check is not None:
+                check(old.model_copy(deep=True), new.model_copy(deep=True))
             if new.schema_version != old.schema_version:
                 issue = ValidationIssue(
                     severity=Severity.ERROR,
