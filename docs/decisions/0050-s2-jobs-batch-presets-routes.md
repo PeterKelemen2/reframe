@@ -122,3 +122,70 @@ facade showed what the table leaves open:
 - [06](../plan/06-web-app.md) §S-2: the rows of `jobs/plan`, `jobs/geometry`, `batch/derive`,
   `batch/resolve-run`, the presets, `presets/defaults/preview`, `naming/preview`, `definitions`
   and `languages` give the answers and the added fields above.
+
+## Follow-up 2026-10-22: web-mode output folder and override jail
+
+### Context
+
+1. With the default naming (`output_folder_mode: same_as_source`), a web-mode draft saves its
+   output beside the source, in a media root. The real write jail (S-1,
+   [0046](0046-s1-login-sessions-jail-and-request-checks.md)) refuses that job with a 403 in `validate`, `plan` and the queue:
+   the client sees a refusal, not what to do. The owner decided: **web mode refuses "same as
+   source"**; the user sets a fixed output folder inside an output root (Settings → Output), and
+   validation says so with a fix.
+2. Task 2a's jail sweep found that `batch/resolve` and `batch/resolve-run` passed the per-file
+   overrides to the facade unjailed. An override `add /job/subtitles/-` with an external subtitle
+   outside the roots was resolved and validated, and `subtitle.external_missing` told whether that
+   file exists; a `/job/source/path` override made a job that reads outside the roots.
+
+### Decision
+
+1. **`output.folder_required`** (error, path `output.path`): in web mode, an output path that the
+   write jail refuses as outside the roots is this issue instead of a 403. Its fixes: target
+   `settings`, `add /output/naming/output_folder_mode "fixed"` and `add
+   /output/naming/output_folder <first output root>` (no settings fix when the server has no
+   output root); and, when there is exactly one output root, target `job`, `replace /output/path
+   <root>/<file name>`. Any other refusal of the jail (a relative path: `400 path.invalid`) is
+   still raised. Desktop mode never has the issue (its jail allows every path).
+2. Where it shows:
+   - `jobs/validate`: `200` with the issue. The facade validates the job **without** its output
+     path (an outside file is never looked at: an existing one would otherwise give an overwrite
+     or rename issue, which tells that it exists); the `output.no_path` this gives is replaced by
+     the folder issue.
+   - `jobs/plan`, `jobs/dry-run`: `422 jobs.invalid` with the issue; the facade is not called.
+   - `jobs/draft`, `jobs/draft-remux`: the issue is added to the draft's issues.
+   - `batch/resolve`, `batch/resolve-run`: added to each row concerned, whose `status` becomes
+     `error`.
+   - `naming/preview`: added to each `NameResult` whose `path` is outside, **with the settings fix
+     only**: the preview is where the naming options are edited, and a `job` fix has no job there.
+   - `jobs/geometry`, `jobs/hdr-metadata`, `batch/derive` and `naming/preview` with a job take
+     such a job (they write nothing and do not use its output path).
+   Every other path of the job still passes `security.jail_job` (a source outside the media roots
+   stays `403`). The queue route keeps the jail's 403: nothing outside is queued.
+3. **Overrides.** Before the facade sees them, the router applies each override as the batch
+   service will: `reframe.batch.resolve.resolve` (pure) with the template the service picks (the
+   given template, else the preset of that name or id, else the default; the same lookup as
+   `BatchService._template`), the settings' languages and the definitions; then
+   `security.jail_job` on the job it makes. This is airtight because it is the same function on
+   the same input: a JSON patch can put a path in any field of the job (an external subtitle, the
+   source, the output, a field added later), and `jail_job` walks every `Path` of the model. A walk
+   over the patch values instead would have to know which strings become paths, and a `test` op
+   can make a patch apply under one template and fail under another. The cost: each override is
+   resolved twice (once here, once in the service; pure, in a worker thread). An override of an id
+   that is not among `source_ids` is jailed too (by its own source).
+
+### Consequences
+
+- A web client sees `output.folder_required` with a button instead of a 403 until the owner sets
+  the output folder. `GET /api/system` could report the missing folder at start-up (task 1d's
+  route; for the lead).
+- `preview/render` and `preview/clip` (task 1d) still jail the whole job: a draft whose
+  output is outside the roots gets a 403 there, although the preview writes only into the cache.
+- `presets.find` is now reached (the override jail looks a template up as the service does): it
+  left 06's "Not exposed" table.
+
+### Plan changes
+
+- [06](../plan/06-web-app.md) §S-2: the rows of `jobs/draft`, `validate`, `dry-run`,
+  `draft-remux`, `batch/resolve`, `resolve-run` and `naming/preview`; `presets.find` left the
+  "Not exposed" table.

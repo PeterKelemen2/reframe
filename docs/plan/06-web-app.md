@@ -138,24 +138,24 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Definitions | `GET /api/definitions` | `{definitions, naming_variables}`: encoders, option schemas, filters, containers, the naming variables (cached, ETag; `304` on `If-None-Match`) |
 | | `GET /api/languages` | Language list for the picker (cached, ETag) |
 | | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked); an unknown encoder is `404` |
-| Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset |
-| | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]` |
+| Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset. Web mode: an output outside the output roots adds `output.folder_required` |
+| | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]`. Web mode: an output outside the output roots is the error `output.folder_required` (fixes: a fixed output folder in the settings; with one output root, the job's output moved into it), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-2026-10-22-web-mode-output-folder-and-override-jail)) |
 | | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type); a job with errors is `422 jobs.invalid` with the issues ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md)) |
 | | `POST /api/jobs/geometry` `{job}` | Pipeline header values: `{source, geometry}` (`geometry` `null` for a copied video) |
 | | `POST /api/jobs/explain` `{source_id, template?, container?}` | Why each track was selected (`TrackDecision` with reasons) |
-| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux) |
-| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]` |
+| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft` |
+| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]`; an output outside the output roots is `422 jobs.invalid` (as `plan`) |
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
-| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id` |
-| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out |
+| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail first. A row whose output is outside the output roots gets `output.folder_required` |
+| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out; overrides and rows as `resolve` |
 | | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
 | Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue |
 | | `POST /api/presets/{id}/default` · `POST /api/presets/import?on_conflict=` · `GET /api/presets/export?ids=` | Import: the export file as the body (at most 4 MiB), a report with the issues. Export: `{document, issues}` |
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
 | | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source |
-| Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues. The variable list comes with `GET /api/definitions` |
+| Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues (web mode: `output.folder_required` with the settings fix). The variable list comes with `GET /api/definitions` |
 | Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
 | | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
@@ -210,7 +210,6 @@ row whose member a route reaches or that no longer exists
 | `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
 | `presets.rename` | `PUT /api/presets/{id}` with the new name |
 | `presets.duplicate` | `GET /api/presets/{id}`, then `POST /api/presets` |
-| `presets.find` | The routes take ids; `jobs/draft`, `jobs/explain` and the batch routes accept a name through the facade's own lookup |
 
 ## S-3 Event WebSocket
 

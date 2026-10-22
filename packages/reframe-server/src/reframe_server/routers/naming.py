@@ -5,10 +5,10 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 from reframe.models import Container, JobSettings, NameResult, NamingOptions, OutputOptions, Preset
-from reframe_server import security
 from reframe_server.api import api_router
+from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, ReframeDep, SourcesDep
-from reframe_server.routers.jobs import jail_naming, sources_of
+from reframe_server.routers.jobs import folder_issue, jail_job, jail_naming, sources_of
 
 router = api_router("naming")
 
@@ -33,15 +33,17 @@ async def preview(
     body: NamingPreviewRequest, reframe: ReframeDep, registry: SourcesDep, config: ConfigDep
 ) -> list[NameResult]:
     """Each source's output name, in the order of ``source_ids``: the name source and why, the
-    parsed fields with their positions, the rendered path, and the template's issues."""
+    parsed fields with their positions, the rendered path, and the template's issues. In web
+    mode a path outside the output roots adds ``output.folder_required``."""
     jail_naming(config, body.naming)
     if body.job is not None:
-        security.jail_job(config, body.job)
+        jail_job(config, body.job)
     sources = await sources_of(reframe, registry, body.source_ids)
     if body.job is not None:
         job = body.job
         return [
-            (await reframe.jobs.name_job(job, source, naming=body.naming))[1] for source in sources
+            _checked(config, (await reframe.jobs.name_job(job, source, naming=body.naming))[1])
+            for source in sources
         ]
     # Reframe.jobs.name takes naming options and a container only as a preset's.
     preset = Preset(
@@ -50,4 +52,14 @@ async def preview(
         naming=body.naming,
         output=OutputOptions(container=body.container),
     )
-    return [await reframe.jobs.name(source.ref.path, preset=preset) for source in sources]
+    return [
+        _checked(config, await reframe.jobs.name(source.ref.path, preset=preset))
+        for source in sources
+    ]
+
+
+def _checked(config: ServerConfig, name: NameResult) -> NameResult:
+    issue = folder_issue(config, name.path, job_fix=False)
+    if issue is None:
+        return name
+    return name.model_copy(update={"issues": [*name.issues, issue]})

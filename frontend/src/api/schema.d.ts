@@ -698,7 +698,7 @@ export interface paths {
         /**
          * Validate
          * @description Every issue of the job. A source that cannot be probed is a ``source.probe_failed``
-         *     issue.
+         *     issue; in web mode an output outside the output roots is ``output.folder_required``.
          */
         post: operations["jobs_validate"];
         delete?: never;
@@ -800,7 +800,8 @@ export interface paths {
         /**
          * Dry Run
          * @description Encode one frame with the job's video settings: what FFmpeg refuses (custom encoder
-         *     parameters) comes back as ``error`` issues. Validate the job first.
+         *     parameters) comes back as ``error`` issues. Validate the job first. An output outside the
+         *     output roots is a 422 ``jobs.invalid`` problem.
          */
         post: operations["jobs_dry_run"];
         delete?: never;
@@ -842,7 +843,8 @@ export interface paths {
         /**
          * Preview
          * @description Each source's output name, in the order of ``source_ids``: the name source and why, the
-         *     parsed fields with their positions, the rendered path, and the template's issues.
+         *     parsed fields with their positions, the rendered path, and the template's issues. In web
+         *     mode a path outside the output roots adds ``output.folder_required``.
          */
         post: operations["naming_preview"];
         delete?: never;

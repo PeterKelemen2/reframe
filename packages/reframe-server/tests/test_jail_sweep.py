@@ -236,14 +236,7 @@ INPUTS = [
     ),
 ]
 
-_UNJAILED_OVERRIDES = (
-    "the per-file overrides are not jailed: an override adds an external subtitle file outside "
-    "the media roots, and the answer tells whether that file exists (subtitle.external_missing)"
-)
-BROKEN = {
-    ("batch_resolve", "overrides"): _UNJAILED_OVERRIDES,
-    ("batch_resolve_run", "overrides"): _UNJAILED_OVERRIDES,
-}
+BROKEN: dict[tuple[str, str], str] = {}
 """Inputs whose route does not jail them: (operation, input) → the defect."""
 
 
