@@ -230,8 +230,8 @@ async def test_an_override_is_jailed_as_the_template_applies_it(
 async def test_an_override_that_a_changed_preset_lets_out_is_refused(
     api: Api, monkeypatch: pytest.MonkeyPatch, route: str
 ) -> None:
-    """The preset changes after the overrides were jailed: the test op fails under the old
-    preset and passes under the one the service resolves with."""
+    """The preset changes just before the service resolves: the test op fails under the old
+    preset and passes under the new one, and the outside file never reaches validation."""
     [sid] = await add_sources(api, 1)
     preset = await api.reframe.presets.create(
         JobTemplate(video=VideoSettings(encoder="libx264")), "Mine"
@@ -241,6 +241,7 @@ async def test_an_override_that_a_changed_preset_lets_out_is_refused(
         update={"video": preset.video.model_copy(update={"encoder": "libx265"})}
     )
     before_service(api, monkeypatch, lambda: api.reframe.presets.save(changed))
+    seen = validated(api, monkeypatch)
     response = await api.client.post(
         f"/api/batch/{route}",
         json={
@@ -251,6 +252,7 @@ async def test_an_override_that_a_changed_preset_lets_out_is_refused(
     )
     assert response.status_code == 403, response.text
     assert response.json()["code"] == "path.outside_roots"
+    assert seen == []
 
 
 async def test_derive_takes_a_job_saved_outside_the_output_roots(api: Api) -> None:

@@ -289,3 +289,14 @@ Deleted:
 
 `test_batch.py` named files with `rsplit("/")`, which fails on Windows; it uses
 `Path(...).name` now.
+
+### One resolution (with the core hook)
+
+The lead added the hook (C-12): `BatchService.resolve` and `resolve_batch` take
+`check(job)`, run on each file's job as resolved, in the worker thread, before it is named or
+validated. The routes pass `security.jail_job` as the check and drop their own jails of the
+overrides (the resolve before the service and the jail of each row after it). The jail now
+checks exactly the job the service uses, so an outside file no longer reaches naming or
+validation, also when a preset or the languages change during the request; the race test also
+asserts that nothing was validated. `presets.find` is reached by no route again and is back in
+06's "Not exposed" table.
