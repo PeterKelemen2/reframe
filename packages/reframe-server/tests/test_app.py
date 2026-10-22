@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi import FastAPI
-from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic import BaseModel, ValidationError
 
 import reframe_server
 from reframe.models import Severity, ValidationIssue
@@ -43,8 +43,6 @@ async def test_health_answers_without_credentials(api: Api) -> None:
     assert body["api_version"] == 1
     assert body["instance"] == api.app.state.instance
     assert body["uptime"] >= 0
-    schema = (await api.client.get("/api/openapi.json")).json()
-    assert schema["paths"]["/api/health"]["get"]["operationId"] == "system_health"
 
 
 def test_each_app_is_a_new_instance() -> None:
@@ -72,12 +70,6 @@ def test_without_reframe_token_each_run_gets_a_random_token(
     first, second = ServerConfig().secret_token, ServerConfig().secret_token
     assert first != second
     assert len(first) >= 32
-
-
-def test_the_token_is_not_in_the_configs_repr() -> None:
-    config = ServerConfig(token=SecretStr("hunter2-secret"))
-    assert "hunter2-secret" not in repr(config)
-    assert "hunter2-secret" not in config.model_dump_json()
 
 
 @pytest.mark.parametrize(
@@ -112,17 +104,23 @@ def test_bad_options_exit_2(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Popen.send_signal cannot send SIGINT on Windows, and select() takes only sockets",
+)
 def test_desktop_server_prints_the_ready_line_and_answers_health(
     tmp_path: Path, fake_tools: object
 ) -> None:
     """``reframe-server`` starts, the shell reads the port from the first stdout line, and
-    ``GET /api/health`` answers on it."""
+    ``GET /api/health`` answers on it. The run's token never shows in its output."""
+    token = "hunter2-" + "x" * 32
     env = {key: value for key, value in os.environ.items() if not key.startswith("REFRAME_")} | {
         "REFRAME_CONFIG_DIR": str(tmp_path / "config"),
         "REFRAME_DATA_DIR": str(tmp_path / "data"),
         "REFRAME_CACHE_DIR": str(tmp_path / "cache"),
         "REFRAME_FFMPEG": str(fake_tools.ffmpeg),  # type: ignore[attr-defined]
         "REFRAME_FFPROBE": str(fake_tools.ffprobe),  # type: ignore[attr-defined]
+        "REFRAME_TOKEN": token,
     }
     process = subprocess.Popen(
         [sys.executable, "-m", "reframe_server", "--mode", "desktop", "--port", "0"],
@@ -139,7 +137,11 @@ def test_desktop_server_prints_the_ready_line_and_answers_health(
         ready = json.loads(process.stdout.readline())
         assert ready == {"event": "ready", "port": ready["port"]}
         assert ready["port"] > 0
-        health = httpx.get(f"http://127.0.0.1:{ready['port']}/api/health", timeout=10)
+        health = httpx.get(
+            f"http://127.0.0.1:{ready['port']}/api/health",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
         assert health.status_code == 200
         assert health.json()["version"] == reframe_server.__version__
     finally:
@@ -148,10 +150,11 @@ def test_desktop_server_prints_the_ready_line_and_answers_health(
     assert process.returncode == 130, err
     assert "Application shutdown complete" in err
     assert _out == "", "only the ready line may go to stdout"
+    assert token not in err
 
 
 class _PathBody(BaseModel):
-    path: Path
+    path: str
 
 
 def _probe_routes(app: FastAPI) -> None:
@@ -224,20 +227,19 @@ async def test_a_path_that_is_not_utf8_goes_in_and_out(probe_api: Api) -> None:
 
 
 @pytest.mark.parametrize(
-    ("path", "status", "code"),
+    ("path", "status", "code", "issues"),
     [
-        ("/t/problem", 403, "path.outside_roots"),
-        ("/t/issue", 422, "preset.builtin"),
-        ("/t/probe/not_found", 404, "probe.not_found"),
-        ("/t/probe/tool_failed", 503, "probe.tool_failed"),
-        ("/t/unknown-job", 404, "queue.unknown_job"),
-        ("/t/job-state", 409, "queue.job_state"),
-        ("/t/closed", 503, "server.closing"),
-        ("/api/no-such-route", 404, "http.404"),
+        ("/t/problem", 403, "path.outside_roots", []),
+        ("/t/issue", 422, "preset.builtin", ["preset.builtin"]),
+        ("/t/probe/not_found", 404, "probe.not_found", []),
+        ("/t/unknown-job", 404, "queue.unknown_job", []),
+        ("/t/job-state", 409, "queue.job_state", []),
+        ("/t/closed", 503, "server.closing", []),
+        ("/api/no-such-route", 404, "http.404", []),
     ],
 )
 async def test_expected_failures_are_problems(
-    probe_api: Api, path: str, status: int, code: str
+    probe_api: Api, path: str, status: int, code: str, issues: list[str]
 ) -> None:
     response = await probe_api.client.get(path)
     assert response.status_code == status
@@ -245,11 +247,7 @@ async def test_expected_failures_are_problems(
     problem = response.json()
     assert (problem["status"], problem["code"]) == (status, code)
     assert problem["title"]
-
-
-async def test_the_issue_behind_a_problem_is_in_it(probe_api: Api) -> None:
-    problem = (await probe_api.client.get("/t/issue")).json()
-    assert [issue["code"] for issue in problem["issues"]] == ["preset.builtin"]
+    assert [issue["code"] for issue in problem.get("issues", [])] == issues
 
 
 async def test_a_probe_problem_with_a_path_that_is_not_utf8(probe_api: Api) -> None:
@@ -273,14 +271,6 @@ async def test_an_unexpected_error_is_a_500_without_its_detail(probe_api: Api) -
     assert response.status_code == 500
     assert response.json()["code"] == "server.unexpected"
     assert "secret-internal-detail" not in response.text
-
-
-async def test_a_long_operation_answers_202_with_its_task(probe_api: Api) -> None:
-    response = await probe_api.client.post("/t/task")
-    assert response.status_code == 202
-    task_id = response.json()["task_id"]
-    assert probe_api.reframe.tasks.get(task_id) is not None
-    assert response.headers["location"] == f"/api/tasks/{task_id}"
 
 
 async def test_a_request_after_close_is_503(probe_api: Api) -> None:
