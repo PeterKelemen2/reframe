@@ -177,6 +177,38 @@ fixture media and a fake FFmpeg, and every public method of the facade
 `Reframe.power`, `Reframe.tasks`) is reached by a route or listed here as not exposed, with
 the reason ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 2).
 
+### Not exposed
+
+Every other public member of the facade is reached by a route.
+`tests/test_facade_coverage.py` reads which members each route reaches from the router code,
+and fails on a public member that no route reaches and this table does not list, and on a
+row whose member a route reaches or that no longer exists
+([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
+
+| Member | Why no route reaches it |
+|--------|-------------------------|
+| `Reframe.create`, `Reframe.close`, `queue.close`, `power.close`, `tasks.close`, `tools.close`, `capabilities.close`, `sources.close`, `events.close` | The app's lifespan creates and closes the facade; a desktop client stops the server with `POST /api/system/shutdown` |
+| `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `power.closed`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
+| `Reframe.config_dir`, `Reframe.data_dir`, `Reframe.cache_dir`, `settings.path` | Server folders: a client cannot use them, and an answer must not show them |
+| `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
+| `batch.definitions`, `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
+| `jobs.detection_wait` | A setting of the service: how long validation waits for encoder detection |
+| `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
+| `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
+| `capabilities.closest_available` | Validation uses it inside the core |
+| `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
+| `sources.store`, `sources.update` | The scans store what they measured themselves |
+| `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
+| `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |
+| `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
+| `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
+| `power.countdown`, `power.executor` | The countdown's length and end are in `pending.seconds_left` and `pending.deadline`; the executor is the operating system's mechanism |
+| `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
+| `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
+| `presets.rename` | `PUT /api/presets/{id}` with the new name |
+| `presets.duplicate` | `GET /api/presets/{id}`, then `POST /api/presets` |
+| `presets.find` | The routes take ids; `jobs/draft`, `jobs/explain` and the batch routes accept a name through the facade's own lookup |
+
 ## S-3 Event WebSocket
 
 - [ ] `WS /api/events`. The client authenticates in its first message
@@ -205,9 +237,17 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
 
 ## S-5 OpenAPI → TypeScript
 
-- [ ] `scripts/gen-api.sh`: export `openapi.json` from `create_app()` without starting a server,
-      then run `openapi-typescript` → `frontend/src/api/schema.d.ts`.
-- [ ] CI check: regenerate and fail on any diff (`Q-2.3`).
+- [x] `scripts/gen-api.sh` (`npm run gen:api` in `frontend/`): export `openapi.json` from
+      `create_app()` without starting a server (`scripts/export-openapi.py`; the shell's
+      `REFRAME_*` variables are ignored), then run `openapi-typescript` (pinned in
+      `frontend/package.json`) → `frontend/src/api/schema.d.ts`, committed and left out of
+      `oxfmt`. The same input gives the same bytes.
+- [x] The document's components also hold the `WS /api/events` messages: `AuthMessage` (the
+      client's first message) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by
+      `type`), with every core event model. OpenAPI has no WebSocket operation, so there is no
+      path for it ([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
+- [x] CI check: `scripts/gen-api.sh --check` regenerates into a temporary folder and fails with
+      the diff (`Q-2.3`, the `api-contract` job on Ubuntu).
 
 ## S-6 Deployment
 
