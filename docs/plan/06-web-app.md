@@ -73,6 +73,9 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
     authenticated}`: the frontend's choice between a login form and the token),
     `POST /api/auth/login`, `POST /api/auth/logout`, `PUT /api/auth/password` (credentials
     and the current password) ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
+  - Credentials are checked **before a request body is read** (FastAPI reads and parses the
+    body before its dependencies run): a body without credentials is a 401, except a login,
+    whose body may have at most 64 KiB (else 413) (0046 "Follow-up (review)").
 - [ ] **Path jail**: every path from the client is resolved (`Path.resolve(strict=False)`, which
       follows symlinks) and must be inside `media_roots` (for reading) or `output_roots` (for
       writing). Web mode enforces this. Desktop mode allows the whole filesystem of the
@@ -81,8 +84,10 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
       and an in-place edit also writes its source
       ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)). Web mode also
       refuses a job whose free filter text (`filters.*.custom`) names a filter outside an
-      allow-list, has a `;` or a link label, cannot be read safely, or, in a `custom` preset,
-      would start another filter (403 `filter.not_allowed`; 0046 "Follow-up").
+      allow-list, has a `;` or a link label, cannot be read safely, in a `custom` preset
+      would start another filter, or has an option name that starts with `/` (the ffmpeg
+      tool then reads the value from a file) (403 `filter.not_allowed`; 0046 "Follow-up" and
+      "Follow-up (review)").
 - [ ] **Host check** (against DNS rebinding), in every mode: a request or WebSocket upgrade
       whose `Host` is not a loopback name (`127.0.0.1`, `localhost`, `[::1]`, any port) or
       in `allowed_hosts` is refused. `allowed_hosts` defaults to the loopback names, plus the
@@ -96,8 +101,8 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
 - [ ] CORS: off in web mode (same origin) unless `cors_origins` names origins. In desktop mode,
       allow the Tauri origins (`tauri://localhost`, `http://tauri.localhost`) and
       `cors_origins`.
-- [ ] Security headers on every response (CSP, `X-Content-Type-Options`, frame-ancestors none).
-      The docs page `/api/docs` gets a CSP that allows its CDN script and style.
+- [ ] Security headers on every response, a 500 included (CSP, `X-Content-Type-Options`,
+      frame-ancestors none). The docs page `/api/docs` gets a CSP that allows its CDN script and style.
 
 Done when: tests prove that `../` traversal, symlink escape, absolute paths outside the roots,
 a missing or wrong token and a foreign `Host` are all rejected, that `GET /api/settings`
