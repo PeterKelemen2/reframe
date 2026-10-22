@@ -4,12 +4,11 @@ save a group template as a preset."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Sequence
 
 from fastapi import Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from reframe.batch.resolve import resolve as resolve_one
 from reframe.batch.resolve import row_status
 from reframe.models import (
     BatchGrouping,
@@ -32,7 +31,6 @@ from reframe_server.routers.jobs import (
     jail_job,
     jail_template,
     sources_of,
-    without_output,
 )
 from reframe_server.routers.presets import created
 from reframe_server.sources import SourceRegistry
@@ -93,56 +91,28 @@ class BatchSavePresetRequest(BaseModel):
     description: str = ""
 
 
-def _chosen(reframe: Reframe, template: JobTemplate | str | None) -> JobTemplate:
-    """The template the batch service resolves with: a preset name or id, else the default."""
-    if isinstance(template, JobTemplate):
-        return template
-    found = reframe.presets.find(template) if template is not None else None
-    return found if found is not None else reframe.presets.default()
-
-
-async def _jailed_overrides(
-    reframe: Reframe,
-    registry: SourceRegistry,
-    config: ServerConfig,
-    template: JobTemplate | str | None,
-    overrides: Mapping[str, Sequence[JsonPatchOp]],
-) -> dict[str, Sequence[JsonPatchOp]]:
-    """The overrides keyed by file path, as the core finds them. A patch can bring in any path
-    (an external subtitle, the source, the output), so each is applied here as the batch
-    service applies it, and the job it makes passes the jail before the service sees it."""
-    keyed: dict[str, Sequence[JsonPatchOp]] = {}
-    chosen = _chosen(reframe, template)
-    languages = reframe.settings.get().languages
-    definitions = reframe.jobs.definitions
-    for sid, ops in overrides.items():
-        source = await registry.get(reframe, sid)
-        resolution = await asyncio.to_thread(
-            resolve_one, chosen, source, ops, definitions=definitions, languages=languages
-        )
-        assert resolution.job is not None  # resolve always makes a job
-        security.jail_job(config, resolution.job)
-        keyed[str(source.ref.path)] = ops
-    return keyed
-
-
 async def _inputs(
     reframe: Reframe, registry: SourceRegistry, config: ServerConfig, body: BatchResolveRequest
 ) -> tuple[list[MediaSource], dict[str, Sequence[JsonPatchOp]]]:
+    """The sources and the overrides keyed by file path, as the core finds them."""
     jail_template(config, body.template)
-    overrides = await _jailed_overrides(reframe, registry, config, body.template, body.overrides)
+    overrides: dict[str, Sequence[JsonPatchOp]] = {}
+    for sid, ops in body.overrides.items():
+        overrides[str((await registry.get(reframe, sid)).ref.path)] = ops
     return await sources_of(reframe, registry, body.source_ids), overrides
 
 
+def _jail(config: ServerConfig) -> Callable[[JobSettings], None]:
+    """The service's check of each file's job: a patch can bring in any path (an external
+    subtitle, the source, the output), and the job it makes is jailed before anything reads it."""
+    return lambda job: security.jail_job(config, job)
+
+
 def _checked(config: ServerConfig, resolution: BatchResolution) -> BatchResolution:
-    """Each row's job passes the jail again, as the service made it: a preset or the
-    languages may have changed since the overrides were jailed, which changes what a patch
-    does. A row whose output is outside the output roots gets ``output.folder_required``.
+    """Each row whose output is outside the output roots gets ``output.folder_required``.
     Blocking."""
     rows = []
     for row in resolution.rows:
-        if row.job is not None:
-            security.jail_job(config, without_output(row.job))
         issue = folder_issue(config, row.job.output.path if row.job is not None else None)
         if issue is not None:
             issues = [*row.issues, issue]
@@ -182,7 +152,9 @@ async def resolve(
     order (the job with its output name, the track matches, the issues), and the name
     collisions."""
     sources, overrides = await _inputs(reframe, registry, config, body)
-    resolution = await reframe.batch.resolve(body.template, sources, overrides=overrides)
+    resolution = await reframe.batch.resolve(
+        body.template, sources, overrides=overrides, check=_jail(config)
+    )
     return await asyncio.to_thread(_checked, config, resolution)
 
 
@@ -194,7 +166,7 @@ async def resolve_run(
     checks over every group. A source that is the planned output of another is left out."""
     sources, overrides = await _inputs(reframe, registry, config, body)
     grouping, resolutions = await reframe.batch.resolve_batch(
-        body.template, sources, level=body.level, overrides=overrides
+        body.template, sources, level=body.level, overrides=overrides, check=_jail(config)
     )
     checked = await asyncio.to_thread(lambda: [_checked(config, one) for one in resolutions])
     return BatchRun(grouping=grouping, resolutions=checked)

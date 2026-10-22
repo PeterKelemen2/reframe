@@ -96,7 +96,10 @@ async def test_a_refused_save_is_a_problem_with_the_issue(
     assert [issue["code"] for issue in body["issues"]] == [code]
 
 
-@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="POSIX permissions")
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="chmod does not keep Windows or root from writing the folder",
+)
 @pytest.mark.parametrize("mode", ["web", "desktop"])
 async def test_presets_that_cannot_be_written_name_the_folder_only_on_the_desktop(
     make_api: ApiFactory, mode: ServerMode

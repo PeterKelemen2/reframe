@@ -148,7 +148,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
-| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail first, and each row's job passes it again as the service made it. A row whose output is outside the output roots gets `output.folder_required` |
+| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail inside the batch service, before it is named or validated. A row whose output is outside the output roots gets `output.folder_required` |
 | | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out; overrides and rows as `resolve` |
 | | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
 | Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue (web mode: the store's failures name no server folder) |
@@ -199,6 +199,7 @@ row whose member a route reaches or that no longer exists
 | `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
 | `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
 | `capabilities.closest_available` | Validation uses it inside the core |
+| `presets.find` | The routes take ids; `jobs/draft`, `explain` and the batch routes accept a name or an id through the facade's own lookup |
 | `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
 | `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
