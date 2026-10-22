@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 
 from reframe.service import Reframe
-from reframe_server import __version__, security
+from reframe_server import __version__, openapi, security
 from reframe_server.api import JsonTextResponse, operation_id
 from reframe_server.config import ServerConfig
 from reframe_server.errors import install_error_handlers
@@ -108,6 +108,7 @@ def create_app(config: ServerConfig) -> FastAPI:
     app.state.request_shutdown = _no_shutdown
     install_error_handlers(app)
     security.install(app, config)
+    openapi.install(app)
     for module in (health, auth, events, media):
         app.include_router(module.router, prefix="/api")
     for module in _AUTHENTICATED:

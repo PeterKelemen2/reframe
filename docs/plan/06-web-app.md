@@ -205,9 +205,17 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
 
 ## S-5 OpenAPI → TypeScript
 
-- [ ] `scripts/gen-api.sh`: export `openapi.json` from `create_app()` without starting a server,
-      then run `openapi-typescript` → `frontend/src/api/schema.d.ts`.
-- [ ] CI check: regenerate and fail on any diff (`Q-2.3`).
+- [x] `scripts/gen-api.sh` (`npm run gen:api` in `frontend/`): export `openapi.json` from
+      `create_app()` without starting a server (`scripts/export-openapi.py`; the shell's
+      `REFRAME_*` variables are ignored), then run `openapi-typescript` (pinned in
+      `frontend/package.json`) → `frontend/src/api/schema.d.ts`, committed and left out of
+      `oxfmt`. The same input gives the same bytes.
+- [x] The document's components also hold the `WS /api/events` messages: `AuthMessage` (the
+      client's first message) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by
+      `type`), with every core event model. OpenAPI has no WebSocket operation, so there is no
+      path for it ([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
+- [x] CI check: `scripts/gen-api.sh --check` regenerates into a temporary folder and fails with
+      the diff (`Q-2.3`, the `api-contract` job on Ubuntu).
 
 ## S-6 Deployment
 
