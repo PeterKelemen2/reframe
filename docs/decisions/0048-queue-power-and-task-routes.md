@@ -135,3 +135,62 @@ cancel" and for an unknown id.
 - [06](../plan/06-web-app.md) §S-2: the Queue rows (global resume and cancel, the snapshot
   object, the log offsets, the when-done countdown rule), the Power row (the answer shapes),
   the Tasks row (`?kind=`, 404 `tasks.unknown`).
+
+## Follow-up (review), 2026-10-22
+
+**Finding** (R-11 of [0052](0052-m3-server-review.md)): task answers (`GET /api/tasks`,
+`GET /api/tasks/{id}`) and queue answers named the server's own folders. A `frames` task's
+result holds each PNG's path in the cache folder, a `preview_clip` result the clip's, and every
+`QueueJob` its `log_path` in the data folder. Checked while fixing: the plan's file paths
+(chapters, 2-pass statistics) lie next to the output, not in the data folder, so the note in
+"Consequences" above is wrong on that point.
+
+**Decision**
+
+1. **The rule lives where an answer leaves the server**, not in each task that makes a result.
+   `hide_server_folders(reframe, value)` (in `routers/tasks.py`) writes the facade's config,
+   data and cache folders as `<config>`, `<data>` and `<cache>` in every string of a JSON value,
+   object keys too. The longest folder is matched first (on Windows the cache folder is inside
+   the data folder), and a folder's text inside a longer name (`/srv/data2`, `/mnt/srv/data`) is
+   another path and is kept. Why here: many places start tasks (the core's preview and fetch
+   tasks, the routers' own), a result is free JSON, and the message and error texts name folders
+   too (`tools_fetch` reports "Checking the build in <the data folder>…"; an unexpected
+   exception's text can name any file). One rule at the answer also covers tasks added later.
+   The answer keeps its shape (a path field still holds a string), and an administrator still
+   sees where below the folder a file lies.
+2. **Where it applies**: the whole `TaskInfo` of both task routes (message, error, result), and
+   every `QueueJob` answer (snapshot, add, retry, duplicate) except the job's `settings`. They
+   come back as the client sent them, because its editor loads them again, and desktop mode
+   allows any folder. `log_path` reads `<data>/logs/<id>.log`; a client reads the log with
+   `GET /api/queue/{id}/log`. The handlers keep their response models, so the OpenAPI document
+   does not change.
+3. **Every mode**, desktop too: one code path, and no client needs the folders (reveal in folder
+   uses `output_path`).
+4. **Not covered here**, for the lead:
+   - The `task.progress` and `task.done` events carry the same `TaskInfo` (the event hub of
+     [0047](0047-event-websocket.md) sends them unchanged). The hub needs the same function.
+   - The job log's text is sent as written. Its command lines name the tool's path, which is in
+     the data folder when FFmpeg was fetched there. `GET /api/system` and the `tools.changed`
+     event show the same tool paths, so hiding them in the log alone would hide nothing.
+   - 06's "Not exposed" table lists `Reframe.config_dir`, `data_dir` and `cache_dir`, and the
+     facade coverage test fails when a route reaches a listed member. The queue and task routes
+     now read them, only to hide them: the row changes with the lead.
+
+**Tests** (rules of [m3-breakdown.md](../m3-breakdown.md), 0052's test-quality table):
+
+- Added: a real `frames` task (FFmpeg) whose result names no cache path in either task route;
+  a task whose message and result name the data folder next to paths that only share its text;
+  the queue answers (add, snapshot, retry, duplicate) without the data folder; a job's own
+  paths in a server folder come back as sent (desktop mode).
+- Deleted: the `operationId` pins of `test_queue.py`, `test_tasks.py` and `test_power.py` (the
+  rule test in `test_openapi.py` and the diff of `schema.d.ts` catch a renamed id). The two
+  fake-jail tests: "every job goes through the jail" becomes a real-jail test with the second
+  job outside the roots (the sweep sends one job per request, so it cannot show that a refused
+  second job adds none); "duplicate goes through the jail" becomes a real-jail test with a
+  saved job outside the roots (the sweep cannot send it: the path comes from the saved queue).
+  Also deleted as covered elsewhere: an invalid job added `failed` (the core's queue tests);
+  cancel all (the pause and resume test ends with it); a duplicate without an output path (the
+  same check as the add test, and the duplicate jail test shows the check runs); five rows of
+  the unknown-job table whose 404 is the core's error and the handler of `test_app.py` (the
+  duplicate and log rows stay: those routes look the job up themselves); the when-done action
+  after the last job (the core's when-done tests; the route's part is the saved setting).

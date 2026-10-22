@@ -9,12 +9,6 @@ from reframe_testing.server import Api
 pytestmark = pytest.mark.anyio
 
 
-async def test_the_routes_have_stable_operation_ids(api: Api) -> None:
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    assert paths["/api/power"]["get"]["operationId"] == "power_pending"
-    assert paths["/api/power/cancel"]["post"]["operationId"] == "power_cancel"
-
-
 async def test_the_pending_countdown_is_shown_and_cancelled(api: Api) -> None:
     assert (await api.client.get("/api/power")).json() == {"pending": None}
     countdown = api.reframe.power.schedule("sleep", reason="2 jobs done")
