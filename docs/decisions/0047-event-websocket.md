@@ -118,3 +118,95 @@ relies on 1 to 5):
 
 - [06 §S-3](../plan/06-web-app.md#s-3-event-websocket): the message shapes, 4401, the
   heartbeat message, the slow-client and close rules, and a link to this record.
+
+## Follow-up (review), 2026-10-22
+
+**Finding R-5** ([0052](0052-m3-server-review.md)): the server process did not stop (SIGINT,
+`POST /api/system/shutdown`, also a second SIGINT) while an event client did not read, and the
+lifespan never closed the hub and the facade. Reproduced with the reviewer's script and with a
+real `reframe-server` process: still running after 15 s.
+
+What uvicorn 0.54.0 does (read in `uvicorn/server.py` and
+`uvicorn/protocols/websockets/websockets_sansio_impl.py`, checked with a server whose client
+paused reading; CPython 3.14 `asyncio`):
+
+1. `Server.shutdown()` closes the listeners, then calls `shutdown()` on every connection. For a
+   WebSocket after its handshake that puts `websocket.disconnect` (1012) in the app's queue,
+   writes a close frame and calls `transport.close()`. The hub's connection then ends at once
+   (its listener reads the disconnect; the waiting send is cancelled): 1 s later uvicorn had no
+   task left and `hub.connections` was 0.
+2. `transport.close()` is not `abort()`: asyncio closes the socket and calls
+   `connection_lost` only once the write buffer is empty (selector and proactor transports
+   alike). A client that does not read never empties it (150 KB were left), and uvicorn removes
+   a connection from `server_state.connections` only in `connection_lost`.
+3. `_wait_tasks_to_complete` loops while there are connections, then awaits
+   `Server.wait_closed()`, which since Python 3.12 also waits for every connection. Only
+   `timeout_graceful_shutdown` (default `None`: no limit) bounds that wait. When it runs out,
+   uvicorn cancels the remaining ASGI tasks (it logs `Cancel 0 running task(s), timeout
+   graceful shutdown exceeded` at ERROR) and then runs the lifespan's shutdown.
+4. The lifespan's shutdown comes only after that wait. A second SIGINT sets `force_exit`, which
+   ends the loops but not `wait_closed()`, and skips the lifespan's shutdown.
+5. uvicorn's own close timer (10 s after the app's `websocket.close`) and its ping timeout call
+   `transport.close()` too, so neither frees such a connection.
+
+An ASGI app cannot reach the transport, so the hub cannot end such a connection. The fix is in
+`reframe_server.__main__.serve` (the lead's file): `timeout_graceful_shutdown=2`. The desktop
+shell kills the server 5 s after it asked it to stop ([07](../plan/07-desktop-app.md)), so 2 s
+leaves 3 s for the lifespan to close the hub and the facade. In-flight HTTP requests get the
+same 2 s (a download to a client that does not read would hold up the shutdown the same way).
+After the limit, the stuck connection stays open until the process exits. Checked with the
+change applied: the real `reframe-server` stopped 2.5 s after SIGINT (exit 130) and 2.6 s
+after `POST /api/system/shutdown` (exit 0), the lifespan done; the reviewer's script with the
+same `uvicorn.Config` stopped after 2.2 s.
+
+Tests (`tests/test_events.py`):
+
+- `test_the_server_stops_while_a_client_does_not_read` runs `__main__.serve()` with real
+  uvicorn, stalls an event client, asks for the shutdown over HTTP and requires the server to
+  end within 5 s with the facade closed. It fails without the change (still running after 5
+  s) and passes with it (3.7 s). Until the lead applies the change it is marked
+  `xfail(strict=True)`; the marker goes in the same commit as the change. SIGINT is not a
+  second case: uvicorn's handler sets the same `should_exit` as `request_shutdown`, and the
+  path after it is the same.
+- `stall()`, Windows (0052): it does not depend on a buffer size. It publishes 128 KiB
+  warnings until the hub's subscription keeps a backlog for 0.2 s, which happens only while
+  the hub's send waits, that is while uvicorn's transport is above its high-water mark: a
+  selector transport counts its buffer, a proactor transport (Windows) also the send in flight
+  (CPython's `_ProactorBaseWritePipeTransport`). `pause_reading()` holds on the proactor loop:
+  the read in flight completes, its data is kept for `resume_reading()`, and no new read is
+  posted. The test client does not read either way (websockets pauses its transport itself
+  beyond 16 queued messages). What depends on the OS is how much the kernel takes in before
+  the hub waits; the client's part is now fixed: its socket gets an 8 KiB receive buffer
+  before it connects, and Linux does not auto-tune a buffer that was set (16 KB stayed
+  16 KB; one left alone grew from 128 KB to 1 MB). The server's send buffer is still
+  auto-tuned (on Linux up to 4 MB; the hub waited after 19 messages, about 2.5 MB). Whether
+  Windows also leaves a set `SO_RCVBUF` alone was not checked; the stall publishes up to 400
+  messages (52 MB), far more than either side's buffer. Not run on Windows: the Windows run
+  (D-0 / Q-1.4) shows whether it holds there; no skip, because nothing found here makes it
+  fail.
+
+Audit of `tests/test_events.py` against the test rules: no test or table row follows the path
+of another one (22 mutations of `events.py`, at least one per test function, were each caught
+by the test written for that branch), so none is deleted.
+
+**The server's folders in task events** (R-11, [0048](0048-queue-power-and-task-routes.md)):
+`GET /api/tasks*` writes the server's config, data and cache folders as `<config>`, `<data>`
+and `<cache>` (`reframe_server.folders.hide_server_folders`), but `task.progress` and
+`task.done` carried the raw `TaskInfo`. `EventHub` takes a keyword-only `hide` (a function of a
+JSON value; default: the value unchanged) and applies it to the `message`, `error` and
+`result` of a task event's `TaskInfo` when it sends the event (a progress value held by the
+throttle is hidden when it goes out). Other events are sent unchanged. Test:
+`test_a_task_event_names_the_cache_folder_by_its_label` (a real hub made with
+`hide=functools.partial(hide_server_folders, reframe)`; fails when any of the three fields,
+or either event type, is left out).
+
+**Changes needed from the lead**:
+
+- `__main__.py`: `_SHUTDOWN_GRACE = 2` and `timeout_graceful_shutdown=_SHUTDOWN_GRACE` in
+  `uvicorn.Config`, and the `xfail` marker of
+  `test_the_server_stops_while_a_client_does_not_read` removed in the same commit.
+- `app.py`: `EventHub(reframe.events, config, hide=functools.partial(hide_server_folders,
+  reframe))`.
+
+Plan change: [06 §S-3](../plan/06-web-app.md#s-3-event-websocket) says that the process stops
+within the 2 s limit plus the lifespan's close, also with a client that does not read.
