@@ -8,17 +8,21 @@ import itertools
 import json
 import logging
 import secrets
+import socket
 import time
 import tracemalloc
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
-from websockets.asyncio.client import ClientConnection
+from fastapi import FastAPI
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
-from reframe.events import Subscription
+from reframe.events import EventBus, Subscription
 from reframe.models import (
     AppWarningEvent,
     JobLogEvent,
@@ -33,7 +37,9 @@ from reframe.models import (
     TaskProgressEvent,
     TaskState,
 )
+from reframe_server import __main__ as entry
 from reframe_server import security
+from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 from reframe_server.events import EventHub
 from reframe_testing.server import Api, LiveServer, receive_json
@@ -55,14 +61,18 @@ class _Errors(logging.Handler):
 @pytest.fixture
 def subscriptions(api: Api, monkeypatch: pytest.MonkeyPatch) -> list[Subscription]:
     """Every subscription the hub makes from now on."""
+    return spy_subscriptions(api.reframe.events, monkeypatch)
+
+
+def spy_subscriptions(bus: EventBus, monkeypatch: pytest.MonkeyPatch) -> list[Subscription]:
     made: list[Subscription] = []
-    subscribe = api.reframe.events.subscribe
+    subscribe = bus.subscribe
 
     def spy(**options: Any) -> Subscription:
         made.append(subscribe(**options))
         return made[-1]
 
-    monkeypatch.setattr(api.reframe.events, "subscribe", spy)
+    monkeypatch.setattr(bus, "subscribe", spy)
     return made
 
 
@@ -119,10 +129,29 @@ class Client:
         return events
 
 
+def small_window(port: int) -> socket.socket:
+    """A connected socket whose receive buffer is set before it connects, so Linux does not
+    auto-tune it: a client that stops reading then holds up the server once the server's own
+    send buffer is full, not after however much more the client's kernel chose to take in."""
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)
+    sock.connect(("127.0.0.1", port))
+    sock.setblocking(False)
+    return sock
+
+
 @asynccontextmanager
 async def signed_in(server: LiveServer, api: Api) -> AsyncIterator[Client]:
-    async with server.connect(compression=None) as connection:
-        await connection.send(json.dumps({"type": "auth", "token": api.token}))
+    async with sign_in(
+        server.connect(compression=None, sock=small_window(server.port)), api.token
+    ) as client:
+        yield client
+
+
+@asynccontextmanager
+async def sign_in(connecting: connect, token: str) -> AsyncIterator[Client]:
+    async with connecting as connection:
+        await connection.send(json.dumps({"type": "auth", "token": token}))
         hello = await receive_json(connection)
         assert hello["type"] == "hello"
         yield Client(connection, hello)
@@ -148,15 +177,13 @@ async def wait_until(condition: Callable[[], bool], limit: float = 10.0) -> None
             await asyncio.sleep(0.01)
 
 
-async def stall(api: Api, client: Client, subscription: Subscription) -> int:
+async def stall(bus: EventBus, client: Client, subscription: Subscription) -> int:
     """Stop reading on ``client``, then publish large warnings until the hub cannot send to it
     and its subscription keeps a backlog. Returns the number of warnings published."""
     client.connection.transport.pause_reading()
     published = 0
     while published < 400:
-        api.reframe.events.publish(
-            AppWarningEvent(code="test.stall", message=secrets.token_hex(64 * 1024))
-        )
+        bus.publish(AppWarningEvent(code="test.stall", message=secrets.token_hex(64 * 1024)))
         published += 1
         await asyncio.sleep(0.05)
         if subscription.pending():
@@ -201,7 +228,7 @@ async def test_a_slow_consumer_costs_bounded_memory_and_gets_the_latest_values(
         serving(api, max_queue=32, progress_rate=20, log_interval=0.05) as server,
         signed_in(server, api) as client,
     ):
-        stalled = await stall(api, client, subscriptions[0])
+        stalled = await stall(api.reframe.events, client, subscriptions[0])
         tracemalloc.start()
         try:
             for i in range(count):
@@ -233,7 +260,7 @@ async def test_a_client_that_overflows_gets_a_resync_and_stays_subscribed(
     bus = api.reframe.events
     before = bus.subscriber_count
     async with serving(api, max_queue=4) as server, signed_in(server, api) as client:
-        await stall(api, client, subscriptions[0])
+        await stall(bus, client, subscriptions[0])
         for i in range(40):
             bus.publish(QueueChangedEvent(job_ids=[f"job-{i}"]))
         assert subscriptions[0].overflowed
@@ -477,7 +504,7 @@ async def test_a_client_that_drops_while_the_hub_waits_to_send(
     bus = api.reframe.events
     before = bus.subscriber_count
     async with serving(api) as server, signed_in(server, api) as client:
-        await stall(api, client, subscriptions[0])
+        await stall(bus, client, subscriptions[0])
         client.connection.transport.abort()
         await wait_until(lambda: (hub(api).connections, bus.subscriber_count) == (0, before))
 
@@ -502,7 +529,7 @@ async def test_close_while_events_flow_ends_every_connection_also_a_stuck_one(
         signed_in(server, api) as reading,
     ):
         reader = asyncio.create_task(closed(reading.connection))
-        await stall(api, stuck, subscriptions[0])
+        await stall(bus, stuck, subscriptions[0])
         publisher = asyncio.create_task(publish_forever())
         try:
             await asyncio.sleep(0.2)
@@ -524,3 +551,51 @@ async def test_the_facade_closing_ends_the_connection_with_1001(api: Api) -> Non
         await api.reframe.close()
         assert (await closed(client.connection))[0] == 1001
         await wait_until(lambda: hub(api).connections == 0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="needs timeout_graceful_shutdown in reframe_server.__main__.serve (lead's change)",
+)
+@pytest.mark.usefixtures("make_api")  # the harness's folders, settings and fake tools
+async def test_the_server_stops_while_a_client_does_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The desktop shell's quit (``POST /api/system/shutdown``) with an event client that does
+    not read: ``reframe-server``'s server ends before the shell kills it (5 s), and its
+    lifespan has closed the hub and the facade."""
+    apps: list[FastAPI] = []
+
+    def recorded(config: ServerConfig) -> FastAPI:
+        apps.append(create_app(config))
+        return apps[-1]
+
+    monkeypatch.setattr(entry, "create_app", recorded)
+    config = ServerConfig(
+        mode="desktop", port=0, config_dir=tmp_path / "config", data_dir=tmp_path / "data"
+    )
+    running = asyncio.create_task(entry.serve(config))
+    async with asyncio.timeout(10):
+        while not (out := capsys.readouterr().out):  # noqa: ASYNC110 - stdout has no event
+            await asyncio.sleep(0.01)
+    port = json.loads(out.splitlines()[0])["port"]
+    app = apps[0]
+    reframe = app.state.reframe
+    made = spy_subscriptions(reframe.events, monkeypatch)
+    url = f"ws://127.0.0.1:{port}/api/events"
+    token = config.secret_token
+    async with sign_in(connect(url, sock=small_window(port), compression=None), token) as client:
+        await stall(reframe.events, client, made[0])
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+            answer = await http.post(
+                "/api/system/shutdown", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert answer.status_code == 204
+        done, _ = await asyncio.wait((running,), timeout=5)
+        # Reading again lets the server flush and close the connection, so it ends either way.
+        client.connection.transport.resume_reading()
+        await closed(client.connection)
+    await asyncio.wait_for(running, 10)
+    assert done, "the server still ran 5 s after it was asked to stop"
+    assert app.state.reframe is None
+    assert reframe.closed

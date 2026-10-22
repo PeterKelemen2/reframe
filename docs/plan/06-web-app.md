@@ -227,7 +227,10 @@ row whose member a route reaches or that no longer exists
       reconnect, or a `resync` event, the client calls the `GET` snapshots (`/api/queue`,
       `/api/system/encoders`) to resync.
 - [ ] A client that cannot keep up gets a `resync` and stays connected. Shutdown closes every
-      connection with 1001 within about 1 s, also one whose client does not read.
+      connection with 1001 within about 1 s, also one whose client does not read. The server
+      process stops (SIGINT, `POST /api/system/shutdown`) within uvicorn's graceful-shutdown
+      limit of 2 s plus the lifespan's close, also while such a client is connected
+      ([decision 0047](../decisions/0047-event-websocket.md), follow-up).
 
 Done when: a test with a slow consumer shows bounded memory and latest-value delivery.
 

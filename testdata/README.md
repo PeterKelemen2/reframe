@@ -2230,3 +2230,20 @@ hold a file name, a URL, a device or a plugin. In the pinned build, for example:
 (network); `frei0r` `filter_name` (a plugin); `lv2` `plugin`; `arnndn` `model`; `hwupload` /
 `hwmap` `derive_device`. No filter of the allow-list (`ALLOWED_FILTERS`) has such an option,
 in either build.
+
+### uvicorn shutdown with a WebSocket client that does not read (S-3)
+
+Checked on 2026-10-22 with uvicorn 0.54.0 (`ws="auto"`: websockets-sansio), websockets 17.3 and
+Python 3.14 on Linux: a server whose event client paused reading after 200 messages of
+128 KiB. At shutdown uvicorn gives the app `websocket.disconnect` (1012), writes a close frame
+and calls `transport.close()`; the socket stays open while its write buffer is not empty (150 KB
+here), so the connection stays in `server_state.connections` and uvicorn waits for it without
+a limit. A second SIGINT does not help (`Server.wait_closed()` waits for every connection).
+With `timeout_graceful_shutdown=2` uvicorn stops waiting after 2 s, logs `Cancel 0 running
+task(s), timeout graceful shutdown exceeded` (ERROR) and runs the lifespan's shutdown; the
+real `reframe-server` exited 2.5 s after SIGINT. Asserted by
+`packages/reframe-server/tests/test_events.py::test_the_server_stops_while_a_client_does_not_read`.
+
+A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive buffer; one
+left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
+2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
