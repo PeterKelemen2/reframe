@@ -189,3 +189,103 @@ facade showed what the table leaves open:
 - [06](../plan/06-web-app.md) §S-2: the rows of `jobs/draft`, `validate`, `dry-run`,
   `draft-remux`, `batch/resolve`, `resolve-run` and `naming/preview`; `presets.find` left the
   "Not exposed" table.
+
+## Follow-up (review), 2026-10-22
+
+The review of M3 ([0052](0052-m3-server-review.md)) found three defects in these routes (R-7,
+R-10, R-12) and asked for a test clean-up.
+
+### R-7: the batch override jail and the service resolve twice
+
+**Finding.** `batch/resolve` and `resolve-run` applied each override to the template as it was
+when the router ran (decision 3 of the first follow-up), then the batch service resolved the
+template again. A preset changed in between (or the preferred languages, which change the
+track selection) makes a patch apply differently: an override whose `test` op fails under the
+old preset and passes under the new one added a subtitle outside the roots that only the
+service saw. The review's script got `200` with the outside file in the row's job and its
+validation issues.
+
+**Fix (in the router).** After the service answers, the job of every row, as the service made
+it, passes `security.jail_job` again (without its named output path, which gets
+`output.folder_required` as before), in a worker thread; one refusal makes the whole answer
+the jail's `403`. The jail before the service stays: it keeps an outside file from the service
+in every case but the race.
+
+**What a router alone cannot close.** In the race the service has already named and validated
+the job with the outside file (a stat, a probe) when the router refuses the answer. Nothing of
+it reaches the client, but it was looked at. The router cannot make the service use the
+template and languages it jailed with: a preset name is looked up again, the languages are read
+again per row, and passing the resolved template instead of the name would lose the
+`preset.not_found` issue. One resolution needs a core hook: `BatchService.resolve` /
+`resolve_batch(…, check: Callable[[JobSettings], None] | None = None)`, called on each file's
+job right after the pure resolution, before naming and validation (given to the lead with its
+diff; with it the router passes `check=` and drops both of its own jails of the overrides, and
+`presets.find` goes back to the "Not exposed" table).
+
+### R-10: an in-place edit in web mode
+
+**Finding.** `draft-remux` drafts an in-place edit by default (`edit_in_place: true`): its
+output is its source, in a media root. Web mode offered `output.folder_required` with "save
+outputs in the output root" and "save it in the output root"; neither can work, since an
+in-place edit writes its source whatever its naming or output path. `validate` then answered
+the write jail's `403`.
+
+**Rule.** In web mode, an in-place edit whose source the write jail refuses (a media root that
+is not inside an output root) is the error `inplace.not_allowed` (path
+`output.edit_in_place`), wherever a job is drafted or checked, as for the output folder: added
+to `jobs/draft` and `draft-remux`, `200` with the issue from `validate` (the facade validates
+the job as a new file without an output path, so the source is never treated as a write
+target, and its `output.no_path` is left out), `422 jobs.invalid` from `plan` and `dry-run`;
+`geometry`, `hdr-metadata`, `naming/preview` and `batch/derive` take such a job. It replaces
+`output.folder_required` for that job. Its one fix (target `job`, when the server has an output
+root): "Write a new file in <first output root>", `replace /output/edit_in_place false` and
+`replace /output/path <first output root>/<source name>` — the first root also when there are
+several, since no settings fix helps here. A media root inside an output root allows in-place
+edits; desktop mode never has the issue; the queue keeps the jail's `403`.
+
+Rejected: `draft-remux` silently drafting a new file in web mode. The client asked for an
+in-place edit; the issue says why it cannot be done, and its fix is one click.
+
+### R-12: the presets file in an answer
+
+**Finding.** `presets.write_failed` (a `503` problem, and an issue of the import report) and
+`presets.read_only` (`409`, and the import report) carried the core's message, which names the
+server's presets file and the OS error with the temporary file's path.
+
+**Rule.** In web mode these two issues get a message without a path (the problem's `title` and
+the issue's `message`); the code, status and the rest of the issue stay. Desktop mode keeps the
+core's message: the folder is the user's own, and they need it to repair the file. No other
+preset issue names a server path.
+
+### Tests
+
+New, each failing before its fix: `test_an_override_that_a_changed_preset_lets_out_is_refused`
+(`test_batch.py`: the preset changes just before the service runs; `200` with the outside
+subtitle before, `403` after), `test_an_in_place_edit_is_an_issue_whose_fix_writes_a_new_file`
+(`test_jobs_output_folder.py`), `test_presets_that_cannot_be_written_name_the_folder_only_on_the_desktop`
+(`test_presets.py`, replaces the `503` test). The override test asserts that the outside file
+never reaches the service's validation, so it keeps proving the jail before the service.
+
+Deleted:
+
+- The `operationId` pins (`test_operation_ids` of `test_definitions.py`, `test_jobs.py`,
+  `test_batch.py`, `test_presets.py`, `test_operation_id` of `test_naming.py`, the
+  `operationId` line of `test_languages.py`): the rule test of `test_openapi.py` and the
+  `schema.d.ts` diff catch a renamed id.
+- The fake-jail tests, whose input the jail sweep sends through the real jail to the same
+  route: `test_the_job_passes_the_jail_before_any_file_is_read` and
+  `test_explain_jails_the_templates_naming_folder` (`test_jobs.py`),
+  `test_the_naming_folder_and_the_job_pass_the_jail` (`test_naming.py`),
+  `test_derive_jails_the_job` and `test_a_templates_naming_folder_passes_the_jail`
+  (`test_batch.py`), `test_import_jails_each_naming_folder` and
+  `test_a_templates_naming_folder_passes_the_jail` (`test_presets.py`). Their extra
+  assertions move to the sweep: no FFmpeg or ffprobe call for the refused `jobs/*` routes, no
+  preset saved or changed for `presets_create`, `presets_save`, `batch_save_preset`.
+- Paths another test covers: `test_an_unknown_source_id_is_404` (`test_jobs.py`; the
+  registry's `404` is tested in `test_sources.py`), `test_an_override_of_the_source_is_jailed`
+  (`test_batch.py`; the same jail of the override's job as the sweep's subtitle override), the
+  name-conflict half of `test_save_preset` (`test_batch.py`; the same `preset_problem` as the
+  `409` rows of `test_presets.py`).
+
+`test_batch.py` named files with `rsplit("/")`, which fails on Windows; it uses
+`Path(...).name` now.

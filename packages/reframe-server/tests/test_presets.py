@@ -6,32 +6,18 @@ import json
 import os
 import sys
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from reframe.models import MediaSource
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
+from reframe_server.config import ServerMode
 from reframe_server.routers import presets
-from reframe_testing.server import Api
+from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
 
 BUILT_IN = "h265-mkv-1080p"
-
-
-def refuse(monkeypatch: pytest.MonkeyPatch, name: str) -> list[object]:
-    seen: list[object] = []
-
-    def jail(_config: ServerConfig, value: object) -> None:
-        seen.append(value)
-        raise ProblemError(403, "path.outside_roots", "Outside the roots")
-
-    monkeypatch.setattr(security, name, jail)
-    return seen
 
 
 async def add_source(api: Api, name: str = "Show S01E01.mkv") -> str:
@@ -46,28 +32,6 @@ async def create(api: Api, name: str = "Mine", **template: Any) -> dict[str, Any
     assert response.status_code == 201, response.text
     preset: dict[str, Any] = response.json()
     return preset
-
-
-async def test_operation_ids(api: Api) -> None:
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    found = {
-        (method, path): operation["operationId"]
-        for path, item in paths.items()
-        if path.startswith("/api/presets")
-        for method, operation in item.items()
-    }
-    assert found == {
-        ("get", "/api/presets"): "presets_list",
-        ("post", "/api/presets"): "presets_create",
-        ("get", "/api/presets/export"): "presets_export",
-        ("post", "/api/presets/import"): "presets_import",
-        ("post", "/api/presets/diff"): "presets_diff",
-        ("post", "/api/presets/defaults/preview"): "presets_preview_defaults",
-        ("get", "/api/presets/{preset_id}"): "presets_get",
-        ("put", "/api/presets/{preset_id}"): "presets_save",
-        ("delete", "/api/presets/{preset_id}"): "presets_delete",
-        ("post", "/api/presets/{preset_id}/default"): "presets_set_default",
-    }
 
 
 async def test_a_created_preset_is_listed_and_found(api: Api) -> None:
@@ -133,16 +97,24 @@ async def test_a_refused_save_is_a_problem_with_the_issue(
 
 
 @pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="POSIX permissions")
-async def test_a_preset_that_cannot_be_written_is_503(api: Api) -> None:
-    config = api.config.config_dir
-    assert config is not None
-    os.chmod(config, 0o500)
-    try:
-        response = await api.client.post("/api/presets", json={"template": {}, "name": "Mine"})
-    finally:
-        os.chmod(config, 0o700)
-    assert response.status_code == 503
-    assert response.json()["code"] == "presets.write_failed"
+@pytest.mark.parametrize("mode", ["web", "desktop"])
+async def test_presets_that_cannot_be_written_name_the_folder_only_on_the_desktop(
+    make_api: ApiFactory, mode: ServerMode
+) -> None:
+    document = {"schema_version": 1, "presets": [{"id": "x", "name": "X"}]}
+    async with make_api(mode=mode) as api:
+        config = api.config.config_dir
+        assert config is not None
+        os.chmod(config, 0o500)
+        try:
+            created = await api.client.post("/api/presets", json={"template": {}, "name": "Mine"})
+            imported = await api.client.post("/api/presets/import", content=json.dumps(document))
+        finally:
+            os.chmod(config, 0o700)
+    assert (created.status_code, created.json()["code"]) == (503, "presets.write_failed")
+    assert [issue["code"] for issue in imported.json()["issues"]] == ["presets.write_failed"]
+    for answer in (created, imported):
+        assert (str(config) in answer.text) is (mode == "desktop")
 
 
 async def test_delete_answers_with_the_deleted_preset(api: Api) -> None:
@@ -219,18 +191,6 @@ async def test_a_damaged_import_file_is_reported(api: Api, entries: object) -> N
     assert report["issues"]
 
 
-async def test_import_jails_each_naming_folder(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
-    folder = str(api.output / "Shows")
-    preset = (await api.client.get(f"/api/presets/{BUILT_IN}")).json()
-    preset |= {"id": "x", "name": "Mine", "built_in": False}
-    preset["naming"] = {"output_folder_mode": "fixed", "output_folder": folder}
-    document = {"schema_version": 1, "presets": [preset]}
-    seen = refuse(monkeypatch, "jail_write")
-    response = await api.client.post("/api/presets/import", content=json.dumps(document))
-    assert response.status_code == 403
-    assert seen == [folder]
-
-
 async def test_diff_against_a_preset(api: Api) -> None:
     template = (await api.client.get(f"/api/presets/{BUILT_IN}")).json()
     template["video"]["custom_params"] = "aq-mode=3"
@@ -262,27 +222,3 @@ async def test_defaults_preview_explains_each_source(api: Api) -> None:
     for draft in drafts:
         assert [track["source_stream"] for track in draft["audio"]] == [1]
         assert "defaults.codec_not_in_container" in [i["code"] for i in draft["issues"]]
-
-
-@pytest.mark.parametrize("route", ["create", "save", "diff"])
-async def test_a_templates_naming_folder_passes_the_jail(
-    api: Api, monkeypatch: pytest.MonkeyPatch, route: str
-) -> None:
-    folder = Path(api.output / "Shows")
-    preset = await create(api)
-    preset["naming"] = {"output_folder_mode": "fixed", "output_folder": str(folder)}
-    seen = refuse(monkeypatch, "jail_write")
-    if route == "create":
-        response = await api.client.post(
-            "/api/presets", json={"template": preset, "name": "Another"}
-        )
-    elif route == "save":
-        response = await api.client.put(f"/api/presets/{preset['id']}", json=preset)
-    else:
-        response = await api.client.post(
-            "/api/presets/diff", json={"template": preset, "preset_id": preset["id"]}
-        )
-    assert response.status_code == 403
-    assert seen == [folder]
-    stored = (await api.client.get(f"/api/presets/{preset['id']}")).json()
-    assert stored["naming"] is None

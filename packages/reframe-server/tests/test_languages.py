@@ -20,8 +20,6 @@ async def test_the_language_list(api: Api) -> None:
         "magyar",
     )
     assert languages["pt-BR"]["variant"] is True
-    schema = (await api.client.get("/api/openapi.json")).json()
-    assert schema["paths"]["/api/languages"]["get"]["operationId"] == "languages_list"
 
 
 async def test_a_client_with_the_current_list_gets_304(api: Api) -> None:

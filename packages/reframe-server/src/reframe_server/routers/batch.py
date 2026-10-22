@@ -27,7 +27,13 @@ from reframe_server import security
 from reframe_server.api import api_router
 from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, ReframeDep, SourcesDep
-from reframe_server.routers.jobs import folder_issue, jail_job, jail_template, sources_of
+from reframe_server.routers.jobs import (
+    folder_issue,
+    jail_job,
+    jail_template,
+    sources_of,
+    without_output,
+)
 from reframe_server.routers.presets import created
 from reframe_server.sources import SourceRegistry
 
@@ -129,9 +135,14 @@ async def _inputs(
 
 
 def _checked(config: ServerConfig, resolution: BatchResolution) -> BatchResolution:
-    """Each row whose output is outside the output roots gets ``output.folder_required``."""
+    """Each row's job passes the jail again, as the service made it: a preset or the
+    languages may have changed since the overrides were jailed, which changes what a patch
+    does. A row whose output is outside the output roots gets ``output.folder_required``.
+    Blocking."""
     rows = []
     for row in resolution.rows:
+        if row.job is not None:
+            security.jail_job(config, without_output(row.job))
         issue = folder_issue(config, row.job.output.path if row.job is not None else None)
         if issue is not None:
             issues = [*row.issues, issue]
@@ -172,7 +183,7 @@ async def resolve(
     collisions."""
     sources, overrides = await _inputs(reframe, registry, config, body)
     resolution = await reframe.batch.resolve(body.template, sources, overrides=overrides)
-    return _checked(config, resolution)
+    return await asyncio.to_thread(_checked, config, resolution)
 
 
 @router.post("/batch/resolve-run")
@@ -185,7 +196,8 @@ async def resolve_run(
     grouping, resolutions = await reframe.batch.resolve_batch(
         body.template, sources, level=body.level, overrides=overrides
     )
-    return BatchRun(grouping=grouping, resolutions=[_checked(config, one) for one in resolutions])
+    checked = await asyncio.to_thread(lambda: [_checked(config, one) for one in resolutions])
+    return BatchRun(grouping=grouping, resolutions=checked)
 
 
 @router.post("/batch/save-preset", status_code=201)
@@ -197,4 +209,4 @@ async def save_preset(
     result = await reframe.batch.save_preset(
         body.template, body.name, category=body.category, description=body.description
     )
-    return created(response, result)
+    return created(config, response, result)

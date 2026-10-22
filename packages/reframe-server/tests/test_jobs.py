@@ -9,9 +9,6 @@ from typing import Any
 import pytest
 
 from reframe.models import JobDraft, JobSettings, MediaSource
-from reframe_server import security
-from reframe_server.config import ServerConfig
-from reframe_server.errors import ProblemError
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, ROOT, Api
 
@@ -58,33 +55,6 @@ async def job_of(api: Api, path: Path, preset: str | None = None) -> dict[str, A
     return job
 
 
-def refuse(monkeypatch: pytest.MonkeyPatch, name: str) -> list[object]:
-    """Replace ``security.<name>`` with a jail that refuses every path; returns what it got."""
-    seen: list[object] = []
-
-    def jail(_config: ServerConfig, value: object) -> None:
-        seen.append(value)
-        raise ProblemError(403, "path.outside_roots", "Outside the roots")
-
-    monkeypatch.setattr(security, name, jail)
-    return seen
-
-
-async def test_operation_ids(api: Api) -> None:
-    paths = (await api.client.get("/api/openapi.json")).json()["paths"]
-    names = {
-        "draft": "jobs_draft",
-        "validate": "jobs_validate",
-        "plan": "jobs_plan",
-        "geometry": "jobs_geometry",
-        "explain": "jobs_explain",
-        "draft-remux": "jobs_draft_remux",
-        "dry-run": "jobs_dry_run",
-        "hdr-metadata": "jobs_hdr_metadata",
-    }
-    assert {route: paths[f"/api/jobs/{route}"]["post"]["operationId"] for route in names} == names
-
-
 async def test_draft_uses_the_source_and_the_preset(api: Api) -> None:
     sid, path = await add_source(api)
     response = await api.client.post(
@@ -96,12 +66,6 @@ async def test_draft_uses_the_source_and_the_preset(api: Api) -> None:
     assert job["preset_id"] == "h264-mkv-1080p"
     assert job["video"]["encoder"] == "libx264"
     assert response.json()["naming"]["relative_path"] == "Show S01E01.mkv"
-
-
-async def test_an_unknown_source_id_is_404(api: Api) -> None:
-    response = await api.client.post("/api/jobs/draft", json={"source_id": "f00d"})
-    assert response.status_code == 404
-    assert response.json()["code"] == "source.unknown"
 
 
 async def test_validate_answers_200_with_the_issues(api: Api) -> None:
@@ -245,35 +209,3 @@ async def test_hdr_metadata_is_a_patch_from_the_source(api: Api) -> None:
     patch = {op["path"]: op["value"] for op in response.json()}
     assert patch["/video/advanced/max-cll"] == "1000,400"
     assert "/video/advanced/master-display" in patch
-
-
-@pytest.mark.parametrize("route", ["validate", "plan", "geometry", "dry-run", "hdr-metadata"])
-async def test_the_job_passes_the_jail_before_any_file_is_read(
-    api: Api, monkeypatch: pytest.MonkeyPatch, route: str
-) -> None:
-    _, path = await add_source(api)
-    job = await job_of(api, path)
-    job["source"]["path"] = str(api.media_file("Not Probed.mkv"))
-    seen = refuse(monkeypatch, "jail_job")
-    api.fake.clear_log()
-    response = await api.client.post(f"/api/jobs/{route}", json={"job": job})
-    assert response.status_code == 403
-    assert response.json()["code"] == "path.outside_roots"
-    assert [str(j.source.path) for j in seen if isinstance(j, JobSettings)] == [
-        job["source"]["path"]
-    ]
-    assert api.fake.calls() == []
-
-
-async def test_explain_jails_the_templates_naming_folder(
-    api: Api, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    sid, _ = await add_source(api)
-    seen = refuse(monkeypatch, "jail_write")
-    folder = str(api.output / "Shows")
-    template = {"naming": {"output_folder_mode": "fixed", "output_folder": folder}}
-    response = await api.client.post(
-        "/api/jobs/explain", json={"source_id": sid, "template": template}
-    )
-    assert response.status_code == 403
-    assert [str(value) for value in seen] == [folder]
