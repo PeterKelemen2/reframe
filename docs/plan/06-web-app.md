@@ -57,29 +57,44 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
     `<video>` URLs, a short-lived signed query parameter (`?sig=`) is used, because those
     elements cannot send headers. The WebSocket gets the token in its first message.
   - `password` (web, single user): login form → HTTP-only, SameSite=Strict session cookie.
-    The password hash (argon2 or scrypt) is **not** in the settings: it lives in
+    The password hash (stdlib scrypt, [decision 0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md))
+    is **not** in the settings: it lives in
     `<config dir>/auth.json` (mode `0600`), written by `reframe-server --set-password` and
     `PUT /api/auth/password` (which needs the current password). `GET/PUT /api/settings`
     never read or write it ([decision 0043](../decisions/0043-plan-review-before-m3.md)
-    item 3).
+    item 3). Sessions live in memory (30 days; a restart ends them); wrong passwords are
+    limited to 5 per client (IPv4 address or IPv6 /64) per minute, then 429.
   - `none`: allowed only when bound to `127.0.0.1`. A startup warning says so.
   - **Local token** ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
     item 2): the random token in `<data>/server.json` (mode `0600`) is accepted as
     `Authorization: Bearer` in every mode, next to the mode's own login. A CLI on the same
     machine (also through `docker exec`) uses it.
+  - Routes (no credentials needed but where named): `GET /api/auth/status` (`{mode,
+    authenticated}`: the frontend's choice between a login form and the token),
+    `POST /api/auth/login`, `POST /api/auth/logout`, `PUT /api/auth/password` (credentials
+    and the current password) ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
 - [ ] **Path jail**: every path from the client is resolved (`Path.resolve(strict=False)`, which
       follows symlinks) and must be inside `media_roots` (for reading) or `output_roots` (for
       writing). Web mode enforces this. Desktop mode allows the whole filesystem of the
-      current user.
+      current user. In every mode a path that is not absolute or holds a NUL is a 400. A
+      job's paths are found by walking the model: `output.*` is written, the rest is read,
+      and an in-place edit also writes its source
+      ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
 - [ ] **Host check** (against DNS rebinding), in every mode: a request or WebSocket upgrade
       whose `Host` is not a loopback name (`127.0.0.1`, `localhost`, `[::1]`, any port) or
       in `allowed_hosts` is refused. `allowed_hosts` defaults to the loopback names, plus the
-      bound address and the machine's host name when the server binds another address; a
-      reverse proxy's name is added by hand. A WebSocket `Origin` must be the server's own or
-      a Tauri origin ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 3).
-- [ ] CORS: off in web mode (same origin). In desktop mode, allow only the Tauri origins
-      (`tauri://localhost`, `http://tauri.localhost`).
-- [ ] Security headers on static responses (CSP, `X-Content-Type-Options`, frame-ancestors none).
+      bound address and the machine's host name when the server binds another address (on a
+      wildcard bind, `0.0.0.0` or `::`, every IP address); a reverse proxy's name is added by
+      hand, and a list that is set replaces these defaults. A WebSocket `Origin` must be the
+      server's own or a Tauri origin ([decision 0043](../decisions/0043-plan-review-before-m3.md)
+      item 3); so must the `Origin` of a `POST`, `PUT`, `PATCH` or `DELETE` that has one
+      (`cors_origins` and pages of `allowed_hosts` names count too;
+      [0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
+- [ ] CORS: off in web mode (same origin) unless `cors_origins` names origins. In desktop mode,
+      allow the Tauri origins (`tauri://localhost`, `http://tauri.localhost`) and
+      `cors_origins`.
+- [ ] Security headers on every response (CSP, `X-Content-Type-Options`, frame-ancestors none).
+      The docs page `/api/docs` gets a CSP that allows its CDN script and style.
 
 Done when: tests prove that `../` traversal, symlink escape, absolute paths outside the roots,
 a missing or wrong token and a foreign `Host` are all rejected, that `GET /api/settings`
