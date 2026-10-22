@@ -116,27 +116,27 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/preview/clip` `{job, start, seconds}` → 202 | Encoded preview clip |
 | | `GET /api/preview/clips/{id}` | Clip file (HTTP Range support) |
 | | `GET /api/preview/cache` · `DELETE /api/preview/cache` | Size of the frame and clip cache; clear it |
-| Definitions | `GET /api/definitions` | Encoders, option schemas, filters, containers (cached, ETag) |
-| | `GET /api/languages` | Language list for the picker (cached) |
-| | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked) |
+| Definitions | `GET /api/definitions` | `{definitions, naming_variables}`: encoders, option schemas, filters, containers, the naming variables (cached, ETag; `304` on `If-None-Match`) |
+| | `GET /api/languages` | Language list for the picker (cached, ETag) |
+| | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked); an unknown encoder is `404` |
 | Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset |
 | | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]` |
-| | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type) |
-| | `POST /api/jobs/geometry` `{job}` | Pipeline header values |
+| | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type); a job with errors is `422 jobs.invalid` with the issues ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md)) |
+| | `POST /api/jobs/geometry` `{job}` | Pipeline header values: `{source, geometry}` (`geometry` `null` for a copied video) |
 | | `POST /api/jobs/explain` `{source_id, template?, container?}` | Why each track was selected (`TrackDecision` with reasons) |
 | | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux) |
 | | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]` |
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
-| | `POST /api/batch/derive` `{job, source_id, sections}` | `JobTemplate` from a single-file job |
-| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues |
-| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): groups, matrices, the name checks over every group, earlier outputs left out |
+| | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
+| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id` |
+| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out |
 | | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
-| Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD |
-| | `POST /api/presets/{id}/default` · `POST /api/presets/import` · `GET /api/presets/export` | |
+| Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue |
+| | `POST /api/presets/{id}/default` · `POST /api/presets/import?on_conflict=` · `GET /api/presets/export?ids=` | Import: the export file as the body (at most 4 MiB), a report with the issues. Export: `{document, issues}` |
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
-| | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids}` | Track decisions with reasons, for the live preview |
-| Naming | `POST /api/naming/preview` `{naming, source_ids, job?}` | Name source + reason, parsed fields with positions, rendered output paths, issues. The variable list comes with `GET /api/definitions` |
+| | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source |
+| Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues. The variable list comes with `GET /api/definitions` |
 | Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
 | | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
