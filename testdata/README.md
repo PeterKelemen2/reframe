@@ -2294,3 +2294,42 @@ real `reframe-server` exited 2.5 s after SIGINT. Asserted by
 A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive buffer; one
 left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
 2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
+
+### D-0 (4a)
+
+Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,
+PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12.4), tokio
+1.54.1, util-linux 2.42.4. The spike and its scripts: `desktop/spike/README.md`.
+
+- **`PR_SET_PDEATHSIG` follows the thread that forked**, not the process: a child forked by a
+  thread that then ended got SIGTERM at once (return code -15) while the process lived on; a
+  child forked by the main thread kept running. The spike shell forks on its main thread
+  (tokio's `Command::spawn` forks on the calling thread; the shell logs `gettid()` = pid).
+- **pidfd and a reused pid**: `pidfd_open` of a process that has ended and was reaped raises
+  `ProcessLookupError`; a pidfd becomes readable when its process ends.
+  `/proc/<pid>/stat` field 22 is the start time in clock ticks (100 per second here), the same
+  unit for every process. Asserted by
+  `packages/reframe-server/tests/test_parent.py::test_the_server_and_its_encode_stop_when_the_parent_is_killed`
+  and `::test_a_process_younger_than_the_server_is_not_its_parent`.
+- **uvicorn and SIGTERM**: uvicorn 0.54 handles SIGTERM like `should_exit`: the run of the spike
+  with the death signal alone (no `--parent-pid`) ended with the job `interrupted` and its
+  `.part` file removed.
+- **PyInstaller onedir**: the bootloader runs Python in its own process (no child process;
+  `/proc/<pid>/exe` is the frozen binary). The hooks of pydantic, uvicorn, websockets and
+  langcodes collect what they need; babelfish, language_data, guessit, the `reframe` data and
+  pymediainfo need options (the table in `desktop/spike/README.md`, each with its error). The
+  pymediainfo hook's default library patterns miss the wheel's `libmediainfo.so.0`. Asserted by
+  `packages/reframe-server/tests/test_frozen_sidecar.py` (skipped without the build).
+- **guessit 4.4.0** reads `guessit/config/options.json` at its first call; without it every call
+  raises (`FileNotFoundError`), and the core reads that as "no match".
+- **Tauri**: `npx tauri build` runs `cargo build --bins --features tauri/custom-protocol
+  --release`; without that feature tauri's `build.rs` sets `cfg(dev)` and the app loads
+  `devUrl`. `generate_context!()` fails without `icons/icon.png` (`failed to open icon …`).
+  The page's origin on Linux is `tauri://localhost` (in the server's desktop CORS list).
+  `AppHandle::exit(0)` and a closed last window both reach `RunEvent::Exit`
+  (`xdotool windowquit` under XWayland).
+- **Page cache without root**: `posix_fadvise(POSIX_FADV_DONTNEED)` on every file of the onedir
+  took its cached bytes from 38 MB to 0 (`fincore`). Pages that a running process maps stay
+  (the `uv` binary of a running `uv run`, 17.9 MB). `fincore` 2.42 uses `cachestat`, which
+  refuses files the user cannot write: `fincore: failed to do cachestat:
+  /usr/lib/python3.14/os.py: Operation not permitted`.

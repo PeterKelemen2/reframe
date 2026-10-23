@@ -13,3 +13,5 @@ SIDECAR_ONEDIR = SIDECAR_DIST / "reframe-server"
 FROZEN_SERVER = SIDECAR_ONEDIR / "reframe-server"
 """The frozen ``reframe-server`` of the onedir build (the tests also accept
 ``REFRAME_FROZEN_SERVER``)."""
+APP = TAURI / "target" / "release" / "reframe-spike"
+"""The spike app of ``npx tauri build --no-bundle``."""
