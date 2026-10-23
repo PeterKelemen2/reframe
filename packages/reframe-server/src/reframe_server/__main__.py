@@ -16,7 +16,7 @@ from typing import Any
 import uvicorn
 from pydantic import ValidationError
 
-from reframe_server import __version__, security
+from reframe_server import __version__, parent, security
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 
@@ -41,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", dest="output_roots", action="append", type=Path)
     parser.add_argument("--owner-only", action="store_true", default=None)
     parser.add_argument("--idle-exit", type=float, metavar="SECONDS")
+    parser.add_argument("--parent-pid", type=int, metavar="PID")
     parser.add_argument(
         "--set-password", action="store_true", help="set the login password and exit"
     )
@@ -77,13 +78,27 @@ async def serve(config: ServerConfig) -> int:
         server.should_exit = True
 
     app.state.request_shutdown = request_shutdown
-    running = asyncio.create_task(server.serve())
-    while not server.started and not running.done():  # noqa: ASYNC110 - uvicorn has no event
-        await asyncio.sleep(0.02)
-    if server.started and config.mode == "desktop":
-        port = server.servers[0].sockets[0].getsockname()[1]
-        print(ready_line(port), flush=True)
-    await running
+    watch = None
+    if config.parent_pid is not None:
+        loop = asyncio.get_running_loop()
+        watch = parent.watch_parent(config.parent_pid, request_shutdown, loop)
+        if watch is None:
+            print(
+                f"reframe-server: the parent process {config.parent_pid} is not running",
+                file=sys.stderr,
+            )
+            return 1
+    try:
+        running = asyncio.create_task(server.serve())
+        while not server.started and not running.done():  # noqa: ASYNC110 - uvicorn has no event
+            await asyncio.sleep(0.02)
+        if server.started and config.mode == "desktop":
+            port = server.servers[0].sockets[0].getsockname()[1]
+            print(ready_line(port), flush=True)
+        await running
+    finally:
+        if watch is not None:
+            watch.close()
     return 0 if server.started else 1
 
 

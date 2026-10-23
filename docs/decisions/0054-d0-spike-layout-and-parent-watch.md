@@ -88,3 +88,55 @@ D-0. D-6 (tray) checks it again. No Chromium is installed; `sudo` needs a passwo
 - [07 §D-0](../plan/07-desktop-app.md#d-0-spike-do-this-before-the-frontend-is-far-along):
   where the spike lives.
 - [../m3-breakdown.md](../m3-breakdown.md): waves 4 to 6.
+
+## Follow-up (4a), 2026-10-23
+
+The parent watch is `reframe_server/parent.py`; `serve` starts it before uvicorn when
+`parent_pid` is set. Tests: `packages/reframe-server/tests/test_parent.py`.
+
+1. **Linux mechanism: a pidfd and the start time.** The watch opens `pidfd_open(pid)`, then
+   reads the start time of `pid` (field 22 of `/proc/<pid>/stat`) and of its own process. A
+   parent starts before its child, so a process with that pid that started later has a reused
+   pid: the parent is gone. The start time is read after the pidfd is open, so when the check
+   passes the pidfd is the parent's; a pidfd stays with its process when the pid is reused
+   later. A daemon thread waits until the pidfd is readable (the process has ended). The thread
+   does not need the event loop: it also works when the loop is blocked. The start-time check
+   also accepts a parent that is not the direct parent (for example the app above
+   `uv run reframe-server`).
+2. **Windows mechanism** (written to the plan, mock-tested on Linux only, [0053](0053-linux-first-windows-testing-phase.md)):
+   `OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION)`; the creation times of both
+   processes from `GetProcessTimes` (the parent must not be younger); `WaitForSingleObject(…,
+   INFINITE)` on the thread. Windows does not reuse a pid while a handle to the process is
+   open. A failed `OpenProcess` counts as "not running"; a failed `GetProcessTimes` closes the
+   handle and raises `OSError` (the server does not start).
+3. **A parent that is already gone at start-up** (no such pid, or the pid of a younger
+   process): `serve` returns **1** before uvicorn starts, prints
+   `reframe-server: the parent process <pid> is not running` on stderr and no ready line. The
+   shell that started the server is gone, so nobody would use it. (A pid ≤ 0 is an invalid
+   option: exit 2.)
+4. **When the parent ends**: the thread logs `The parent process <pid> ended: the server stops`
+   (WARNING) and calls `request_shutdown()` on the event loop, the same call as
+   `POST /api/system/shutdown`. A graceful stop ends with exit code **0**, as after the
+   shutdown request: running jobs end `interrupted` and their `.part` files are removed.
+5. **The hard exit**: if the process still lives **5 s** (`STOP_LIMIT`) after the stop request,
+   the thread calls `os._exit(70)` (`EX_SOFTWARE`). The 5 s are the time the desktop shell
+   gives a normal quit before it kills the server (uvicorn's 2 s connection grace, then the
+   facade's close); the countdown also covers a process that hangs after uvicorn returned
+   (`asyncio.run` waits for the default executor's threads). The FFmpeg children die with the
+   server at a hard exit: the core gives them `PR_SET_PDEATHSIG = SIGKILL` (Linux) or puts them
+   in its kill-on-close job (Windows). After a normal stop, `serve` closes the watch, so a
+   parent that ends later changes nothing; a countdown that has started still runs until the
+   process ends.
+6. **Measured** (frozen sidecar in the spike app, an x265 encode of `hdr10-4k.mkv` running,
+   `desktop/spike/scripts/cleanup.py`): after `kill -9` of the app, the sidecar and its FFmpeg
+   were gone in 0.26 s with both the death signal and the watch, 0.57 s with the watch alone,
+   0.18 s with the death signal alone; with neither, the sidecar ran on and finished the
+   encode as an orphan. In every case with a mechanism the job was `interrupted` and its
+   `.part` file was removed before the process ended. In the test (unfrozen server, a
+   stand-in parent killed by SIGKILL during a real encode) the server ended 0.52 s after the
+   kill, exit code 0, in three runs out of three.
+7. **The shell's death signal is SIGTERM**, not SIGKILL: uvicorn handles SIGTERM like the
+   shutdown request, so the server stops gracefully (the run with the death signal alone
+   above). The watch then is the second line, and its hard exit covers a stop that hangs. The
+   shell forks on its main thread: the death signal follows the thread that forked, not the
+   process (checked; `testdata/README.md` "D-0 (4a)").

@@ -64,6 +64,8 @@ class ServerConfig(BaseSettings):
     """Exit with code 75 when another process owns the queue."""
     allowed_hosts: list[str] | None = None
     """``Host`` names accepted besides the loopback names. ``None``: the defaults."""
+    parent_pid: int | None = Field(default=None, gt=0)
+    """Stop when this process ends (the desktop shell's pid). ``None``: no watch."""
 
     @model_validator(mode="after")
     def _resolve(self) -> Self:
