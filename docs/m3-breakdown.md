@@ -1,7 +1,7 @@
 # M3 server task breakdown
 
-Working notes of the lead for the server part of milestone M3: S-0, S-1, S-2, S-3, S-5 and
-Q-2.3. The plan ([plan/06-web-app.md](plan/06-web-app.md) Part A, [plan/08-roadmap.md](plan/08-roadmap.md)
+Working notes of the lead for milestone M3: the server part (S-0, S-1, S-2, S-3, S-5 and
+Q-2.3, waves 0 to 3) and the desktop spike D-0 on Linux (waves 4 to 6). The plan ([plan/06-web-app.md](plan/06-web-app.md) Part A, [plan/08-roadmap.md](plan/08-roadmap.md)
 M3, [plan/09-quality-and-release.md](plan/09-quality-and-release.md) Q-2.3) is the spec; this
 file says who builds which part, in which order, and what each part must offer to the
 others. Status: [status.md](status.md). Decisions: [0042](decisions/0042-one-scheduler-process-and-cli-clients.md),
@@ -19,9 +19,10 @@ this file and `status.md` are the source of truth.
 | S-3 | `WS /api/events`: first-message auth, coalescing, log batching, ping, sequence numbers | 06 §S-3 |
 | S-5 | `scripts/gen-api.sh` → `frontend/src/api/schema.d.ts` (committed) | 06 §S-5 |
 | Q-2.3 | CI regenerates the types and fails on a diff | 09 §Q-2.3 |
+| D-0 | the desktop spike on Linux (Tauri 2 shell, onedir sidecar, cold start, cleanup, WebKitGTK checks) and `--parent-pid` (S-0); waves 4 to 6 | 07 §D-0, 06 §S-0, [0054](decisions/0054-d0-spike-layout-and-parent-watch.md) |
 
 **Out of scope** (write down what a scope step needs from them; do not build it): S-4 (M4), S-6
-(M10), S-7 + C-17 (M3b), D-0 (the desktop spike), Q-1.4 (a Windows run; M10 since
+(M10), S-7 + C-17 (M3b), D-1 to D-9, Q-1.4 (a Windows run; M10 since
 [0053](decisions/0053-linux-first-windows-testing-phase.md)), every F-x.
 
 **Branch**: `m3-api-spike`, made from `main` (origin's branch of that name is already in
@@ -38,6 +39,7 @@ merged into `main` in this work: M3 also needs D-0 (on Linux,
 | 1 | 1a S-1 security · 1b S-3 events · 1c S-2 queue, power, tasks · 1d S-2 system, fs, settings, sources, preview · 1e S-2 definitions, languages, jobs, naming, batch, presets | the contract |
 | 2 | 2a S-5, Q-2.3, the S-2 facade coverage test, the jail sweep over every path route | wave 1 merged |
 | 3 | review (a fresh agent, given the code, not the lead's conclusions) of `git diff main...m3-api-spike`: correctness, security and test quality. Fixes go to the task that wrote the step (effort `high`) | wave 2 |
+| 4–6 | D-0 on Linux: 4a the shell and the sidecar, 4b the WebKitGTK checks, then a review ([D-0: waves 4 to 6](#d-0-waves-4-to-6)) | wave 3 fixes merged |
 
 ### Effort and model
 
@@ -371,6 +373,158 @@ of tests this project already deleted as meaningless. Do not write them again.
   the plan, the decision record, every file touched outside the owned list, and what S-7 or
   another out-of-scope step will need from this work.
 
+## D-0: waves 4 to 6
+
+The desktop spike, on Linux only ([0053](decisions/0053-linux-first-windows-testing-phase.md)).
+Its Windows items (the sidecar on Windows, a kill from Task Manager, WebView2 rendering and
+drag-and-drop paths) wait for the Windows testing phase of M10. D-1 to D-9 are not built
+here. Layout, checks, versions and the parent watch:
+[0054](decisions/0054-d0-spike-layout-and-parent-watch.md).
+
+### The plan for D-0 (07 §D-0, word for word)
+
+- [ ] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
+      endpoint, on Linux. On Windows: *(Windows testing phase)*.
+- [ ] Measure cold start to "ready" (target < 2 s from SSD).
+- [ ] Prove cleanup: `kill -9` the Tauri process, then check that no sidecar or FFmpeg process
+      remains. The same with a kill from Task Manager: *(Windows testing phase)*.
+- [ ] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
+      WebKitGTK.
+- [ ] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+
+Done when: a short written result for Linux goes into `docs/decisions/0001-desktop-shell.md`
+and confirms or revisits this choice. It lists the Windows items as not verified.
+
+The `--parent-pid` addition to S-0 (06 §S-0, from 0054): `parent_pid` (`--parent-pid`; off by
+default): the server watches that process and, when it ends, stops as
+`POST /api/system/shutdown` does, with a hard exit when the stop does not end in time. A
+reused pid is not taken for the parent.
+
+The lead writes `0001-desktop-shell.md` from the reports of 4a and 4b, after checking their
+numbers, and runs the M3 demo.
+
+### Waves
+
+| Wave | Task | Builds on |
+|------|------|-----------|
+| 4 | **4a** the shell and the sidecar: the Tauri app, the onedir build, `--parent-pid`, cold start, cleanup, hidden imports, the smoke test | `m3-api-spike` after the lead's commit of 0054 |
+| 5 | **4b** the WebKitGTK checks in the 4a shell: drag-and-drop paths, PrimeVue rendering, the canvas magnifier | 4a merged |
+| 6 | review (a fresh agent, given the code and the reports, not the lead's conclusions) of the D-0 work in `git diff main...m3-api-spike`, and a check that the M3 demo holds. Fixes go to the task that wrote the code (effort `high`, `SendMessage`), or to a new `high` agent | 4b merged |
+
+Effort: 4a `xhigh`, 4b `high`, the review `xhigh`, fixes `high`. Every agent: `model: "opus"`,
+`isolation: "worktree"`. Only one agent runs at a time in waves 4 to 6, so timing numbers are
+not taken under the load of other agents; the lead runs nothing heavy while 4a measures.
+
+### Who owns which files
+
+| Task | Owns | Must not touch |
+|------|------|----------------|
+| **4a** | `desktop/spike/**` (except what 4b gets below), `packages/reframe-server/src/reframe_server/parent.py` (new), in `config.py` only the `parent_pid` field, in `__main__.py` only the `--parent-pid` option and starting the watch in `serve`, `packages/reframe-server/tests/test_parent*.py`, `packages/reframe-server/tests/test_frozen*.py`, a section "Follow-up (4a)" at the end of 0054, a heading "D-0 (4a)" in `testdata/README.md`, the S-0 row and the D-0 row of `docs/status.md` | every other server file, the core (`packages/reframe/`; a needed change goes to the lead), `frontend/`, `pyproject.toml` and `uv.lock` (ask the lead), `.github/`, `desktop/src-tauri/` and `desktop/sidecar/` (D-1, D-2) |
+| **4b** | `desktop/spike/ui/**`, `desktop/spike/src-tauri/src/**` (the drag-and-drop event and what the check pages need; the sidecar code of 4a stays as it is unless a check needs a change, said in the report), `desktop/spike/package.json` + `package-lock.json` (dev dependencies for the checks, for example Playwright), new files in `desktop/spike/scripts/` and `desktop/spike/results/` (screenshots and measurement output, small PNG and JSON only), a section "WebKitGTK checks" in `desktop/spike/README.md`, a heading "D-0 (4b)" in `testdata/README.md`, the D-0 row of `docs/status.md` | 4a's build and measurement scripts, every server and core file, `frontend/` (no F-x components), `pyproject.toml`, `uv.lock` |
+
+`docs/decisions/0001-desktop-shell.md` is the lead's. So are `pyproject.toml`, `uv.lock`,
+`.gitignore`, the plan files and this file.
+
+### Decision record numbers
+
+| 0054 | 0001 |
+|------|------|
+| lead (layout, checks, parent watch; 4a adds a "Follow-up (4a)" section) | lead (the D-0 result) |
+
+4b writes no record: its findings go into its report and `desktop/spike/README.md`, and the
+lead puts them into 0001.
+
+### Contracts
+
+**Versions** (0054 item 3): crates `tauri` 2.12.5, `tauri-build` 2.7.4 (with `serde`,
+`serde_json`, `tokio`, `libc` at their current stable versions), `Cargo.lock` committed; npm
+`@tauri-apps/cli` 2.12.4, `@tauri-apps/api` 2.12.4, `package-lock.json` committed; Vue 3.5.43,
+PrimeVue 4.5.5, `@primeuix/themes` 2.0.3, Vite 8.3.4, `@vitejs/plugin-vue` 6.0.10 (the
+frontend's pins); PyInstaller 6.22.3 (in `uv.lock` already, root `dev` group). No
+`tauri-plugin-shell`. A change of version is a question to the lead.
+
+**Paths**: `desktop/spike/scripts/spike_paths.py` (in the lead's commit): `SPIKE`, `REPO`,
+`TAURI`, `SIDECAR_DIST`, `SIDECAR_ONEDIR`, `FROZEN_SERVER`
+(`desktop/spike/dist/reframe-server/reframe-server`). The tests also take the frozen binary
+from `REFRAME_FROZEN_SERVER`.
+
+**Isolation**: every sidecar that a script or a test starts gets its own temporary
+`REFRAME_CONFIG_DIR`, `REFRAME_DATA_DIR` and cache folder. Nothing in this work reads or writes
+the owner's real Reframe settings, queue or cache.
+
+**4a, server** (06 §S-0 with 0054 item 4): `ServerConfig.parent_pid: int | None = None`
+(`REFRAME_PARENT_PID`), `reframe-server --parent-pid PID`. `parent.py` watches the process
+(a reused pid is not the parent: check the process start time, or a pidfd on Linux); when it
+ends, `serve` stops as `request_shutdown()` does; if the server has not stopped within a fixed
+time, the process exits hard. A parent that is already gone at start-up, the exit code and the
+times are 4a's choices, recorded in "Follow-up (4a)". The Windows path is written and
+mock-tested. Tests: a real `reframe-server` with `--parent-pid` of a stand-in parent; the
+stand-in is killed with SIGKILL while a real encode runs; the server and its FFmpeg end within
+the time the record gives; and a reused pid is not the parent.
+
+**4a, shell** (07 §Sidecar lifecycle, the parts D-0 needs): the Tauri app spawns the sidecar
+(the frozen onedir by default; an environment variable may point it at
+`uv run reframe-server` for a comparison) with `--mode desktop --port 0 --auth token
+--parent-pid <its pid>`, a token made in Rust in `REFRAME_TOKEN`, and on Linux
+`PR_SET_PDEATHSIG` in `pre_exec` (say which signal and why). It reads stdout until the ready
+line (20 s timeout), keeps `{baseUrl, token}` in managed state, offers `backend_info`, and the
+page shows `GET /api/health`. An early exit or a timeout of the sidecar shows an error on the
+page (no restart: D-3). Normal quit: `POST /api/system/shutdown`, wait up to 5 s, then kill.
+The sidecar's stderr goes to a log file in its temporary data folder.
+
+**4a, measurements and proofs** (each repeatable from `desktop/spike/scripts/` and described
+in `desktop/spike/README.md`):
+
+- The onedir build script, with each hidden import, collected package and data file next to
+  the error it fixed (`reframe/definitions/data`, the built-in presets, `language_data` /
+  `langcodes`, pydantic, uvicorn's loops and protocols, anything else).
+- Cold start: at least 10 runs each, the median and the worst, (a) the sidecar alone, spawn to
+  the ready line, and (b) the app, process start to the page showing `/api/health`; each with a
+  warm page cache and with the onedir's pages evicted. `sudo` is not available: evict with
+  `posix_fadvise(POSIX_FADV_DONTNEED)` on every file of the onedir and show with `fincore`
+  that the pages are gone; say what this does not evict (the system libraries, WebKitGTK).
+  Target < 2 s from SSD.
+- Cleanup, three cases, each with a real encode running through the sidecar's API and the
+  `ps` / `pgrep` output before and after: `kill -9` of the Tauri process; `kill -9` of the
+  sidecar alone (and what the app shows); a normal quit. Say how long each took, and what
+  became of the job and its `.part` file.
+- Smoke test `tests/test_frozen_sidecar.py`: the frozen binary prints the ready line and
+  answers `GET /api/health`; its cleanup case (kill the parent, nothing left). It is skipped
+  with a reason when the frozen build is not there (CI does not build it).
+
+**4b** (in the 4a shell, against the frozen sidecar):
+
+- Drag-and-drop from Dolphin: the paths that arrive (Tauri's drag-drop event; also what the
+  DOM `drop` event gives), for a file name with spaces, one with non-ASCII characters (for
+  example `Ünnepi film – 2.mkv`, `日本語.mkv`), several files at once, and a folder. Native
+  Wayland first; XWayland (`GDK_BACKEND=x11`) as a second case. A drag needs a real pointer:
+  try to automate it; if that is not possible, build a page that logs every drop to a file and
+  write the exact steps for the owner, then report to the lead, who asks the owner.
+- PrimeVue 4 rendering: one spike page with DataTable (200 rows), Dialog, Select, Slider, Tabs
+  and Toast, in the light and the dark theme (the preset the frontend will use), screenshots of
+  each, and anything that renders differently from Firefox and Chromium.
+- Canvas crop magnifier prototype (06 §F-7 describes the real one): a real 4K frame from the
+  sidecar's preview API (`hdr10-4k.mkv`), four edge strips at 4× with
+  `imageSmoothingEnabled = false` and a cursor loupe, redrawn on pointer movement; frame times
+  (median, 95th percentile, worst; dropped frames) under pointer movement in WebKitGTK and the
+  same page in Chromium. No Chromium is installed and `sudo` is not available: Playwright's own
+  Chromium download needs no `sudo`. Say how the pointer movement was made (synthetic events
+  or a real pointer) and what that does not measure.
+
+### Every agent prompt for waves 4 to 6 includes
+
+The items of §"Every agent prompt includes", adapted: the D-0 plan above and the S-0
+`--parent-pid` text word for word, the owned and forbidden files, these contracts, the
+isolation rule, and §"Test rules" word for word with "server" read as "server or spike" (the
+coverage command stays for the server code). Also:
+
+- Every claim about Tauri, PyInstaller, WebKitGTK or process behaviour is checked on the real
+  tools, and the report gives the command and its output. Nothing is taken from memory.
+- The Rust code passes `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`; the
+  spike UI builds with `vite build`.
+- No `sudo`. A step that needs `sudo` or a GUI action by the owner goes back to the lead.
+- Nothing runs on Windows; the Windows code paths are written and mock-tested only.
+
 ## For later steps (recorded, not built)
 
 - S-7: `server.json` (`endpoint_file`), idle exit (`hub.connections`, the queue, the power
@@ -378,8 +532,7 @@ of tests this project already deleted as meaningless. Do not write them again.
   `POST /api/queue`, `--owner-only` exit 75, the queue opened at start-up.
 - S-4: static files and the SPA fallback (`static_dir`); the security headers of 1a apply
   to them.
-- D-0: the desktop spike, on Linux. Q-1.4: a Windows run of the server tests, in the Windows
-  testing phase of M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)).
+- Q-1.4: a Windows run of the server tests, in the Windows testing phase of M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)).
 
 ## Progress
 
@@ -400,3 +553,4 @@ of tests this project already deleted as meaningless. Do not write them again.
 | 2026-10-22 | **Review** (fresh agent, `xhigh`) on 191c4f7: 1 blocker, 6 majors, 5 minors and the test-quality table; the reviewer was stopped by an API error before its full report, the lead reran each of its experiments and reproduced every finding. List and decisions: [0052](decisions/0052-m3-server-review.md). Lead core change 2b76fab (C-9): `SettingsService.update(…, check=)` runs the caller's check under the store's lock (for R-3), with a test that fails when the check is not called. Fix round: six fresh agents (`high`), one per task (1a, 1b, 1c, 1d, 1e, 2a) |
 | 2026-10-22 | **Fix round of 0052 done.** Merged, each after the lead's read of the report and the test diff, the lead's own mutations and the reviewer's script for each finding: 2a (509cc64: the sweep sends one link per input, an allowed entry first in every list, and checks that a refused request changes nothing; the lead's first check found two gaps, fixed before the merge), 1e (13f2798, 755eadd: R-7, R-10, R-12), 1a (1bf8ab2: R-1, R-6, R-8), 1d (63e6c9e: R-2, R-3, R-4, R-9; the sweep's R-2 case loses its xfail mark), 1c (20d82aa: R-11; `folders.py`), 1b (2f310c7: R-5, the stall's fixed client buffer, task events hide the folders). Lead commits: f7e68b0 (the `test_app.py` items), 35e0aa1 (C-12: `BatchService.resolve(…, check=)`, for R-7: the router could only refuse after the service had looked at the file), 1c2371a (`timeout_graceful_shutdown=2` in `__main__.serve`, the hub's `hide=` in `create_app`, a test over the real server for it). Checks on 1c2371a: ruff, format, mypy (both platforms), the frontend commands, `gen-api.sh --check` green; full suite in six chunks 614 + 256 + 1700 + 1607 + 736 + 2086: 6998 passed, 2 skipped, 1 failed (`preview/test_benchmark.py::test_4k_hdr_frame_budget`: fails on `main` too on this machine, timing). Server: 412 tests in 264 s (about 432 before the round). The demo (`reframe-server` in web mode with the 4K fixture: health, OpenAPI, the committed types, probe, draft, encode with progress over `WS /api/events`, exit 130) passes. Open for M3: D-0, Q-1.4 |
 | 2026-10-23 | Decision 0053 (the owner): Linux first. Q-1.4 and D-0's Windows items move to the Windows testing phase of M10; M3 is done when D-0 passes on Linux |
+| 2026-10-23 | Waves 4 to 6 planned (D-0 on Linux), decision 0054 (the spike in `desktop/spike/`, its checks, the pins, `--parent-pid` in S-0). Prerequisites checked against the Tauri 2 page: rustc / cargo 1.99.1, `webkit2gtk-4.1` 2.54.1 and the rest present; `libappindicator-gtk3` is `libappindicator` in Arch now, `libayatana-appindicator` 0.6.1 installed (no tray in the spike). PyInstaller 6.22.3 added to the `dev` group |

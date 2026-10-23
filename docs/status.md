@@ -92,7 +92,8 @@ for them.
 
 | Step | Status | Notes |
 |------|--------|-------|
-| D-0 … D-9 | Not started | `docs/decisions/0001-desktop-shell.md` and `0002-bundled-ffmpeg.md` are still to be written (D-0, D-7) |
+| D-0 Spike | In progress | On Linux only ([0053](decisions/0053-linux-first-windows-testing-phase.md)); branch `m3-api-spike`, waves 4 to 6 of [m3-breakdown.md](m3-breakdown.md). The spike lives in `desktop/spike/` ([0054](decisions/0054-d0-spike-layout-and-parent-watch.md)); `0001-desktop-shell.md` is still to be written |
+| D-1 … D-9 | Not started | `docs/decisions/0002-bundled-ffmpeg.md` is still to be written (D-7) |
 
 ### Quality and release (09-quality-and-release.md)
 

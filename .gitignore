@@ -24,6 +24,8 @@ desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/src-tauri/resources/sidecar/
 desktop/src-tauri/resources/tools/
+desktop/spike/src-tauri/target/
+desktop/spike/src-tauri/gen/
 
 # --- Generated test media (scripts/make-testdata.py). Never commit media.
 testdata/media/

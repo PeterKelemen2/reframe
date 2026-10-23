@@ -126,6 +126,9 @@ on Linux; its parts marked *(Windows testing phase)* are checked in the
 [Windows testing phase](08-roadmap.md#windows-testing-phase) of M10.
 
 ### D-0 Spike (do this before the frontend is far along)
+The spike lives in `desktop/spike/`, committed and not built by CI; D-1 and D-2 may reuse
+or delete it ([decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch.md)).
+
 - [ ] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
       endpoint, on Linux. On Windows: *(Windows testing phase)*.
 - [ ] Measure cold start to "ready" (target < 2 s from SSD).

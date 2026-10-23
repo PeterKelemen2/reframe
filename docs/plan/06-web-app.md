@@ -39,6 +39,11 @@ routers are thin. Each handler calls one facade method and maps the result.
       [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
       `endpoint_file` (the path of `server.json`; on by default in every mode),
       `idle_exit` (seconds; off by default) and `owner_only`; and `allowed_hosts` (S-1).
+- [ ] `parent_pid` (`--parent-pid`; off by default): the server watches that process and,
+      when it ends, stops as `POST /api/system/shutdown` does, with a hard exit when the stop
+      does not end in time. A reused pid is not taken for the parent. The desktop shell
+      passes it ([07 §Sidecar lifecycle](07-desktop-app.md#sidecar-lifecycle),
+      [decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch.md)).
 - [ ] Entry point: start uvicorn with **one worker**. In desktop mode, print one JSON line to
       stdout when ready: `{"event":"ready","port":53817}`. The token is `REFRAME_TOKEN` when it
       is set (the desktop shell sets it), else a random one per run; `server.json` holds it

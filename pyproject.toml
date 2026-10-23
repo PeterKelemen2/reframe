@@ -16,6 +16,7 @@ dev = [
     "hypothesis>=6.169.0",
     "mypy>=2.4.0",
     "pip-audit>=2.10.1",
+    "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.17.0",
@@ -32,8 +33,8 @@ default-groups = ["dev"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["packages/reframe/src", "packages/reframe-server/src", "testing", "scripts"]
-extend-exclude = ["frontend", "desktop", "docs", "*.md"]
+src = ["packages/reframe/src", "packages/reframe-server/src", "testing", "scripts", "desktop/spike/scripts"]
+extend-exclude = ["frontend", "desktop/spike/src-tauri", "desktop/spike/ui", "docs", "*.md"]
 
 [tool.ruff.lint]
 select = [
@@ -70,6 +71,7 @@ files = [
     "packages/reframe-server/tests",
     "testing",
     "scripts",
+    "desktop/spike/scripts",
 ]
 
 [tool.pydantic-mypy]
