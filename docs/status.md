@@ -92,7 +92,7 @@ for them.
 
 | Step | Status | Notes |
 |------|--------|-------|
-| D-0 Spike | In progress | On Linux only ([0053](decisions/0053-linux-first-windows-testing-phase.md)); branch `m3-api-spike`, waves 4 to 6 of [m3-breakdown.md](m3-breakdown.md). The spike lives in `desktop/spike/` ([0054](decisions/0054-d0-spike-layout-and-parent-watch.md)); `0001-desktop-shell.md` is still to be written |
+| D-0 Spike | In progress | On Linux only ([0053](decisions/0053-linux-first-windows-testing-phase.md)); branch `m3-api-spike`, waves 4 to 6 of [m3-breakdown.md](m3-breakdown.md). The spike lives in `desktop/spike/` ([0054](decisions/0054-d0-spike-layout-and-parent-watch.md), its README). **4a done**: the Tauri 2.12.5 shell (the sidecar started on the main thread before the window, `PR_SET_PDEATHSIG` SIGTERM, `--parent-pid`, the token in `REFRAME_TOKEN`, the 20 s ready line, an error page without restart, quit = shutdown request, 5 s, kill), the PyInstaller onedir build with every option it needs and the error each one fixes, cold start to the page showing `/api/health` under 2 s warm and with the onedir's page cache dropped, the cleanup proofs (`kill -9` of the app or the sidecar, a normal quit, during a real encode), the smoke test `test_frozen_sidecar.py` (skipped in CI). Open: 4b (drag-and-drop paths, PrimeVue rendering, the canvas magnifier on WebKitGTK), the review, `0001-desktop-shell.md`. Not verified: Windows (testing phase) |
 | D-1 … D-9 | Not started | `docs/decisions/0002-bundled-ffmpeg.md` is still to be written (D-7) |
 
 ### Quality and release (09-quality-and-release.md)
