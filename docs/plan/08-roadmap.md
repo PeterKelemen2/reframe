@@ -3,10 +3,14 @@
 The milestones put the steps from [05](05-core.md), [06](06-web-app.md), [07](07-desktop-app.md)
 and [09](09-quality-and-release.md) in order. Each milestone ends with something you can
 **use or demo**. A milestone is done when its demo works and every CI command passes on Linux;
-[../status.md](../status.md) lists what has not run on Windows. M5 and M10 also need a Windows
-run (`Q-1.4`, [decision 0043](../decisions/0043-plan-review-before-m3.md)): nothing is pushed,
-so GitHub Actions does not run. The current state of each milestone and step is in
-[../status.md](../status.md).
+[../status.md](../status.md) lists what has not run on Windows. The current state of each
+milestone and step is in [../status.md](../status.md).
+
+**Linux first ([decision 0053](../decisions/0053-linux-first-windows-testing-phase.md)).**
+Linux is the primary platform. Windows stays a v1 target, but no milestone before M10 waits
+for it: Windows code paths are written to the plan and mock-tested on Linux, and everything
+else that needs Windows is checked once, in the [Windows testing phase](#windows-testing-phase)
+at the start of M10 (`Q-1.4`). Nothing is pushed, so GitHub Actions does not run.
 
 **Changed order ([decision 0029](../decisions/0029-core-before-the-ui-milestones.md)).** After
 M2, the core parts of M6–M9 (C-6, C-10, C-12, C-13, and the rest of C-11, C-14 and C-15) are
@@ -25,7 +29,7 @@ M0 Foundations
                      ├─► M6 Tracks & metadata ──► M7 Batch / season
                      ├─► M8 Picture: preview, crop, filters
                      └─► M9 Advanced encoder options
-                                   all ──► M10 Hardening & v1.0 release
+                                   all ──► M10 Windows testing phase, hardening & v1.0 release
 ```
 
 M6, M8 and M9 do not depend on each other. The order below puts your biggest pain points
@@ -71,12 +75,13 @@ the `MediaSource` model.
 
 ## M3 — API and desktop spike
 
-| Steps | `S-0`, `S-1`, `S-2`, `S-3`, `S-5`, `D-0`, `Q-2.3`, `Q-1.4` |
-|-------|-------------------------------------------------------------|
+| Steps | `S-0`, `S-1`, `S-2`, `S-3`, `S-5`, `D-0` (Linux), `Q-2.3` |
+|-------|-----------------------------------------------------------|
 
 **Demo:** the OpenAPI docs page lists every route. The generated TypeScript types are committed.
 The WebSocket streams job progress. The desktop spike result is written to
-`docs/decisions/0001-desktop-shell.md`. D-0's Windows part needs the Windows run (`Q-1.4`).
+`docs/decisions/0001-desktop-shell.md`. The spike runs on Linux; its Windows items wait for
+the [Windows testing phase](#windows-testing-phase).
 
 ## M3b — Shared queue
 
@@ -110,11 +115,12 @@ This is the **first usable GUI**.
 
 ## M5 — Desktop shell
 
-| Steps | `D-1`–`D-6`, `Q-1.4` (a Windows run) |
+| Steps | `D-1`–`D-6` |
 |-------|-------------|
 
-**Demo:** the M4 flow, as a desktop app on Linux and Windows, with native dialogs, drag-and-drop
-from the file manager, notifications, taskbar progress, and a clean quit while a job runs.
+**Demo:** the M4 flow, as a desktop app on Linux, with native dialogs, drag-and-drop from the
+file manager, notifications, taskbar progress, and a clean quit while a job runs. The same
+demo on Windows is part of the [Windows testing phase](#windows-testing-phase).
 
 ## M6 — Tracks and metadata
 
@@ -167,10 +173,27 @@ validation error from the dry run.
 
 ## M10 — Hardening and v1.0 release
 
-| Steps | `S-6`, `D-7`, `D-8`, `D-9`, `F-16`, `F-17` (all four flows in Chromium and WebKit), `Q-1.4` (a Windows run), `Q-3`, `Q-4`, `Q-5` |
+| Steps | `Q-1.4` (the Windows testing phase), `S-6`, `D-7`, `D-8`, `D-9`, `F-16`, `F-17` (all four flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5` |
 |-------|---|
 
-**Release checklist:**
+### Windows testing phase
+
+The first part of M10 ([decision 0053](../decisions/0053-linux-first-windows-testing-phase.md)).
+On Windows 10 or 11 (how: [01 open question 5](01-scope.md#open-questions-owner-to-decide)):
+
+1. The Python and frontend commands of `ci.yml` pass (`Q-1.4`).
+2. D-0's Windows items: the sidecar starts, a kill from Task Manager leaves no sidecar or
+   FFmpeg process, WebView2 renders the UI, and drag-and-drop gives correct paths.
+3. The M5 demo works.
+4. The Windows parts of D-3 (Job Object), D-7 (the bundled tools on the Windows hosts that are
+   available), D-8 (the NSIS installer, the MSI) and D-9 (the smoke tests) pass.
+5. Each Windows item of [Not verified](../status.md#not-verified) is checked.
+
+A failure is fixed in the phase or recorded as a known limit in `docs/status.md`. A problem
+that changes the desktop shell gets a new decision record that supersedes 0001. The release
+checklist below is done only after this phase.
+
+### Release checklist
 
 - [ ] Every "Must-have for v1" item in [01-scope.md](01-scope.md#must-have-for-v1) is checked off
       against its demo.

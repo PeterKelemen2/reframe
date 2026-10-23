@@ -1,6 +1,6 @@
 # Implementation status
 
-Last updated: 2026-10-22. Milestones M0, M1 and M2 are done and merged into `main`. M2's
+Last updated: 2026-10-23. Milestones M0, M1 and M2 are done and merged into `main`. M2's
 task breakdown and contracts are in [m2-breakdown.md](m2-breakdown.md). The core parts of
 M6–M9 are built and merged into `main` with the branch `core-complete`
 ([decision 0029](decisions/0029-core-before-the-ui-milestones.md)): every open `C-x` step is
@@ -8,7 +8,9 @@ done, two reviews' findings are fixed or recorded ([0041](decisions/0041-core-co
 and the core demos pass. The breakdown, contracts and progress are in
 [core-breakdown.md](core-breakdown.md). M6–M9 stay open until their UI parts are built. M3 is
 next; its server part is in progress on the branch `m3-api-spike`
-([m3-breakdown.md](m3-breakdown.md)).
+([m3-breakdown.md](m3-breakdown.md)). Linux is the primary platform: Windows is checked once,
+in the Windows testing phase at the start of M10
+([decision 0053](decisions/0053-linux-first-windows-testing-phase.md)).
 
 This file says which parts of the plan (`docs/plan/`) are built. Update it in the same commit
 as each step that lands.
@@ -21,7 +23,9 @@ Status values:
   `reframe.models` (C-2), but no behaviour.
 
 Nothing has run on Windows, macOS or GitHub Actions yet: the branches were never pushed. See
-[Not verified](#not-verified).
+[Not verified](#not-verified). The Windows items there wait for the Windows testing phase of
+M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)); no earlier milestone waits
+for them.
 
 ## Milestones
 
@@ -30,7 +34,7 @@ Nothing has run on Windows, macOS or GitHub Actions yet: the branches were never
 | M0 Foundations | **Done** | Merged into `main`. Every CI step passes when run locally on Linux |
 | M1 Read media | **Done** | Merged into `main`. Demo: `reframe probe FILE [--json]` |
 | M2 Encode from the CLI | **Done** | Merged into `main`. Demo (run for real on Linux, 2026-10-14): `reframe encoders` (cached at once, then updated; `hevc_nvenc — unavailable: NVIDIA driver not found`), `reframe plan FILE --preset "H.265 MKV 1080p"`, `reframe encode FILE\|DIR…` with progress and ETA (Ctrl+C cancels and removes the `.part` file), a preset with an unavailable encoder names the closest one, `reframe name` (`Hacksaw.Ridge`, `The.Sopranos.S03E02.Proshai.Livushka`). A fresh review found 2 blockers and 9 major defects; all are fixed ([0025](decisions/0025-audio-bitrate-snaps-down.md) – [0028](decisions/0028-preset-export-keeps-newer-presets.md)) |
-| M3 API and desktop spike | **In progress** (server part done on `m3-api-spike`, reviewed and fixed: [0052](decisions/0052-m3-server-review.md), [m3-breakdown.md](m3-breakdown.md); open: D-0, Q-1.4) | The next milestone ([0029](decisions/0029-core-before-the-ui-milestones.md)). The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)): M3 also has `Q-1.4` (a Windows run), and D-0's Windows part waits for it |
+| M3 API and desktop spike | **In progress** (server part done on `m3-api-spike`, reviewed and fixed: [0052](decisions/0052-m3-server-review.md), [m3-breakdown.md](m3-breakdown.md); open: D-0 on Linux) | The next milestone ([0029](decisions/0029-core-before-the-ui-milestones.md)). The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)). `Q-1.4` (a Windows run) and D-0's Windows items moved to the Windows testing phase of M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)) |
 | M3b Shared queue | Not started | S-7 and C-17 ([0042](decisions/0042-one-scheduler-process-and-cli-clients.md)): after M3, beside or after M4, before M5 |
 | M4, M5 | Not started | |
 | M6 – M9 | Core parts **done**; UI parts not started | The core-complete steps (C-12, C-10, C-13, C-6, C-14, C-11, C-15) are merged into `main` with `core-complete` (2026-10-17, [0029](decisions/0029-core-before-the-ui-milestones.md)). Two reviews: 4 blockers, 12 majors and 22 minors, then 1 blocker, 3 majors and 10 minors (plus what the fix agents found); all fixed or recorded as known limits ([0041](decisions/0041-core-complete-review.md)). The 8 core demos of [core-breakdown.md](core-breakdown.md#demos-run-for-real-by-the-lead-after-wave-3-output-in-the-final-report) pass (run for real on Linux, 2026-10-17). Each milestone stays open until its UI parts (F-10, F-11, F-13, F-7, F-8, F-9) are built and its full demo passes |
@@ -97,7 +101,7 @@ Nothing has run on Windows, macOS or GitHub Actions yet: the branches were never
 | Q-1.1 CI matrix | **Done, never run** | `.github/workflows/ci.yml`: Python (Ubuntu + Windows, plus Python 3.13 on Ubuntu), frontend, override job, non-blocking benchmark job. Checked with actionlint and by running every Linux step locally |
 | Q-1.2 Pinned FFmpeg in CI | **Done, never run** | `tools/ffmpeg.toml` pins BtbN `autobuild-2026-09-30` (n9.0.2; override test n8.1.3). `scripts/fetch-tools.py` checks the SHA-256. BtbN keeps month-end builds for 2 years, so re-pin or mirror before about 2028-09 |
 | Q-1.3 Dependency updates and audits | **Done, never run** | Dependabot (uv, npm, GitHub Actions), `pip-audit`, `npm audit --audit-level=high` |
-| Q-1.4 Windows verification run | Not started | New in [0043](decisions/0043-plan-review-before-m3.md): the CI commands on a Windows machine or VM, since nothing is pushed. In M3, again before M5 and M10. How: 01 open question 5 |
+| Q-1.4 Windows verification run | Not started | New in [0043](decisions/0043-plan-review-before-m3.md): the CI commands on a Windows machine or VM, since nothing is pushed. Runs once, in the Windows testing phase at the start of M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)). How: 01 open question 5 |
 | Q-2.1 Fixtures and fake FFmpeg | **Done** | `scripts/make-testdata.py` (all rows of the test media table) and the fake ffmpeg / ffprobe in `testing/reframe_testing/` ([0004](decisions/0004-shared-testing-package.md)). Core-complete: a real DTS-HD MA 5.1 track (lossless XLL, no core) with no bit rate in the file (`dts-hd-ma`, written by `reframe_testing/dts.py` and decoded losslessly by FFmpeg) and PGS tracks with forced and non-forced events (`pgs`, written by `reframe_testing/pgs.py`), both with recorded probes and snapshots ([0032](decisions/0032-analysis-scans-and-their-fixtures.md)) |
 | Q-2.2 Recorded probes | **Done** | `testdata/probes/`. The TrueHD Atmos, DTS-HD MA, DTS:X, PGS and DV probes are **synthesised from real output**, not recorded from real files ([0006](decisions/0006-probe-recordings-and-roles.md)). Replace them with real recordings when you can |
 | Q-2.3 API contract check | **Done** | The `api-contract` CI job (Ubuntu) runs `scripts/gen-api.sh --check` after `uv sync --frozen` and `npm ci` ([0051](decisions/0051-openapi-types-and-route-coverage.md)) |
@@ -175,7 +179,7 @@ that in M3b: a CLI hands its jobs to the owning server (C-17, S-7). Not built ye
   index). The Windows cases (a mapped drive and its UNC path, a file system that ignores case,
   as macOS has too) are tested with mocks only, and so is a volume that reports `st_ino` 0 for
   every file (no identity: the path decides). Nothing has run on macOS at all.
-- **The server on Windows** (M3, Q-1.4): no server test has run there. Skipped there by
+- **The server on Windows** (Q-1.4, the Windows testing phase of M10): no server test has run there. Skipped there by
   design: the `reframe-server` subprocess test (SIGINT, `select()` on a pipe) and the preset
   store test that makes the config folder read-only with `chmod`. Not checked there: the
   event tests' stalled client (a fixed `SO_RCVBUF`), the folder masks of task and queue

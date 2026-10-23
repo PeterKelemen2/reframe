@@ -21,12 +21,14 @@ this file and `status.md` are the source of truth.
 | Q-2.3 | CI regenerates the types and fails on a diff | 09 §Q-2.3 |
 
 **Out of scope** (write down what a scope step needs from them; do not build it): S-4 (M4), S-6
-(M10), S-7 + C-17 (M3b), D-0 and Q-1.4 (the desktop / a Windows run), every F-x.
+(M10), S-7 + C-17 (M3b), D-0 (the desktop spike), Q-1.4 (a Windows run; M10 since
+[0053](decisions/0053-linux-first-windows-testing-phase.md)), every F-x.
 
 **Branch**: `m3-api-spike`, made from `main` (origin's branch of that name is already in
 `main`). Each task works in its own worktree branch made from `m3-api-spike`; the lead merges
 it with `--no-ff` after every check passes, including the test rules. `m3-api-spike` is not
-merged into `main` in this work: M3 also needs D-0 and Q-1.4. Never push.
+merged into `main` in this work: M3 also needs D-0 (on Linux,
+[0053](decisions/0053-linux-first-windows-testing-phase.md)). Never push.
 
 ## Waves
 
@@ -376,7 +378,8 @@ of tests this project already deleted as meaningless. Do not write them again.
   `POST /api/queue`, `--owner-only` exit 75, the queue opened at start-up.
 - S-4: static files and the SPA fallback (`static_dir`); the security headers of 1a apply
   to them.
-- D-0 / Q-1.4: the desktop spike and a Windows run of the server tests.
+- D-0: the desktop spike, on Linux. Q-1.4: a Windows run of the server tests, in the Windows
+  testing phase of M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)).
 
 ## Progress
 
@@ -396,3 +399,4 @@ of tests this project already deleted as meaningless. Do not write them again.
 | 2026-10-22 | **Wave 3 started**: a fresh review agent (`xhigh`) on `git diff main...m3-api-spike` (7ba9263) |
 | 2026-10-22 | **Review** (fresh agent, `xhigh`) on 191c4f7: 1 blocker, 6 majors, 5 minors and the test-quality table; the reviewer was stopped by an API error before its full report, the lead reran each of its experiments and reproduced every finding. List and decisions: [0052](decisions/0052-m3-server-review.md). Lead core change 2b76fab (C-9): `SettingsService.update(…, check=)` runs the caller's check under the store's lock (for R-3), with a test that fails when the check is not called. Fix round: six fresh agents (`high`), one per task (1a, 1b, 1c, 1d, 1e, 2a) |
 | 2026-10-22 | **Fix round of 0052 done.** Merged, each after the lead's read of the report and the test diff, the lead's own mutations and the reviewer's script for each finding: 2a (509cc64: the sweep sends one link per input, an allowed entry first in every list, and checks that a refused request changes nothing; the lead's first check found two gaps, fixed before the merge), 1e (13f2798, 755eadd: R-7, R-10, R-12), 1a (1bf8ab2: R-1, R-6, R-8), 1d (63e6c9e: R-2, R-3, R-4, R-9; the sweep's R-2 case loses its xfail mark), 1c (20d82aa: R-11; `folders.py`), 1b (2f310c7: R-5, the stall's fixed client buffer, task events hide the folders). Lead commits: f7e68b0 (the `test_app.py` items), 35e0aa1 (C-12: `BatchService.resolve(…, check=)`, for R-7: the router could only refuse after the service had looked at the file), 1c2371a (`timeout_graceful_shutdown=2` in `__main__.serve`, the hub's `hide=` in `create_app`, a test over the real server for it). Checks on 1c2371a: ruff, format, mypy (both platforms), the frontend commands, `gen-api.sh --check` green; full suite in six chunks 614 + 256 + 1700 + 1607 + 736 + 2086: 6998 passed, 2 skipped, 1 failed (`preview/test_benchmark.py::test_4k_hdr_frame_budget`: fails on `main` too on this machine, timing). Server: 412 tests in 264 s (about 432 before the round). The demo (`reframe-server` in web mode with the 4K fixture: health, OpenAPI, the committed types, probe, draft, encode with progress over `WS /api/events`, exit 130) passes. Open for M3: D-0, Q-1.4 |
+| 2026-10-23 | Decision 0053 (the owner): Linux first. Q-1.4 and D-0's Windows items move to the Windows testing phase of M10; M3 is done when D-0 passes on Linux |

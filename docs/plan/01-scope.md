@@ -38,6 +38,13 @@ adds the following on top:
 | Web server (Docker / bare) | ✅ | ✅ (bare) | — |
 | Desktop app | ✅ (x86_64) | ✅ (x86_64, Windows 10/11) | Out of scope for v1 |
 
+Linux is the **primary** platform: the work is built and checked there, and a milestone is
+done when it passes on Linux. Windows is **secondary**: it stays a v1 target, its code paths
+are written to the plan and mock-tested on Linux, and it is checked once, in the Windows
+testing phase at the start of M10
+([decision 0053](../decisions/0053-linux-first-windows-testing-phase.md),
+[08 §Windows testing phase](08-roadmap.md#windows-testing-phase)).
+
 ## Feature parity baseline (HandBrake)
 
 Reframe v1 must cover these HandBrake features, unless "Changed" or "Dropped" says otherwise:
@@ -112,5 +119,5 @@ Reframe v1 must cover these HandBrake features, unless "Changed" or "Dropped" sa
 | 2 | Licence for Reframe itself? | GPL-3.0-or-later (every build bundles a GPL FFmpeg with x264/x265; see [09](09-quality-and-release.md#licensing)) |
 | 3 | UI languages? | English first. The UI is i18n-ready (vue-i18n) |
 | 4 | Desktop framework: are you OK with Tauri 2 (Rust shell + shared Vue UI)? | Yes. See the alternatives in [07](07-desktop-app.md#alternatives-considered) |
-| 5 | How is Windows tested, since nothing is pushed? ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 1) | A Windows machine or VM that you provide runs the CI commands (`Q-1.4`). A push to a private remote only if you allow it |
+| 5 | How is Windows tested, since nothing is pushed? ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 1, [0053](../decisions/0053-linux-first-windows-testing-phase.md)) | In the Windows testing phase of M10: a Windows machine or VM that you provide runs the CI commands (`Q-1.4`). A push to a private remote only if you allow it |
 | 6 | Which release artefacts does v1 need, if v1 is for personal use only? ([0043](../decisions/0043-plan-review-before-m3.md) item 9) | All of [09 §Q-5](09-quality-and-release.md#q-5-release-process) and D-8 (signed NSIS + MSI, AppImage, deb, rpm, Docker amd64 + arm64, updater, PyPI wheel) |
