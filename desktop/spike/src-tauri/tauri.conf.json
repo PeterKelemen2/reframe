@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Reframe spike",
         "width": 900,
         "height": 680

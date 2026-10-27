@@ -1,4 +1,5 @@
-//! The D-0 spike: a Tauri 2 window whose page shows `GET /api/health` of its sidecar.
+//! The D-0 spike: a Tauri 2 window whose page shows `GET /api/health` of its sidecar, or a
+//! check page (`REFRAME_SPIKE_PAGE`, see `checks.rs`).
 //!
 //! For the measurement scripts it prints JSON lines on stdout and quits (as a closed window
 //! does) when stdin gives the line `quit`.
@@ -6,13 +7,14 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("The D-0 spike runs on Linux only.");
 
+mod checks;
 mod sidecar;
 
 use std::io::BufRead;
 use std::time::Instant;
 
 use serde_json::json;
-use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow};
 
 use crate::sidecar::{BackendInfo, Sidecar};
 
@@ -48,6 +50,18 @@ fn page_failed(started: State<'_, Started>, message: String) {
     sidecar::report("page_failed", started.0, json!({ "message": message }));
 }
 
+/// A record of a check page, printed as one JSON line on stdout.
+#[tauri::command]
+fn spike_log(started: State<'_, Started>, record: serde_json::Value) {
+    println!("{}", checks::log_line(started.0, record));
+}
+
+/// A PNG of the web view (see `checks::snapshot`).
+#[tauri::command]
+async fn snapshot(window: WebviewWindow, path: String) -> Result<serde_json::Value, String> {
+    checks::snapshot(window, path).await
+}
+
 fn quit_on_stdin(app: AppHandle) {
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
@@ -74,12 +88,23 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             backend_info,
             page_ready,
-            page_failed
+            page_failed,
+            spike_log,
+            snapshot
         ])
+        .on_window_event(move |_, event| checks::on_window_event(started, event))
         .setup(move |app| {
+            // In setup, the sidecar starts after the window, as it would after a window of
+            // the configuration (Tauri creates those before the setup hook).
+            if in_setup {
+                checks::create_window(app.handle())?;
+            }
             let sidecar = early.unwrap_or_else(|| sidecar::spawn(started));
             sidecar.attach(app.handle().clone());
             app.manage(sidecar);
+            if !in_setup {
+                checks::create_window(app.handle())?;
+            }
             quit_on_stdin(app.handle().clone());
             Ok(())
         })

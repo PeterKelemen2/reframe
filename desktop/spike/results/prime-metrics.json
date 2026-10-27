@@ -1,0 +1,3936 @@
+{
+ "viewport": [
+  1280,
+  800,
+  1
+ ],
+ "runs": {
+  "webkitgtk": {
+   "window": {
+    "pid": 108010,
+    "class": "reframe-spike",
+    "added": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      320,
+      126,
+      1280,
+      828
+     ]
+    },
+    "placed": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      40,
+      40,
+      1280,
+      828
+     ]
+    },
+    "shown": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      40,
+      40,
+      1280,
+      828
+     ]
+    },
+    "read_back": [
+     40,
+     40,
+     1280,
+     828
+    ]
+   },
+   "focus": [
+    {
+     "event": "loaded",
+     "script": 1,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 2,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "active",
+     "script": 2,
+     "window": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "kept_active",
+     "script": 2,
+     "by": {
+      "id": "{1fe730a9-f78c-48e6-850d-5646bb222fff}",
+      "cls": "reframe-spike",
+      "output": "HDMI-A-1"
+     },
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    }
+   ],
+   "scripts_loaded_after": {
+    "reframe-spike-42474cdc361d-1": false,
+    "reframe-spike-42474cdc361d-2": false
+   },
+   "exit": 0,
+   "states": [
+    {
+     "theme": "light",
+     "state": "base",
+     "metrics": {
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "dialog": null,
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "header": [
+       38,
+       117,
+       79.31,
+       35
+      ],
+      "lastRowTop": 7000,
+      "option": null,
+      "overlay": null,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "rows": 200,
+      "scrollbar": 0,
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "tab": [
+       20,
+       52,
+       78.72,
+       51
+      ],
+      "tabFont": "600 13px/normal Noto Sans",
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+      "viewport": [
+       1280,
+       800,
+       1
+      ]
+     },
+     "snapshot": {
+      "height": 800,
+      "ok": true,
+      "path": "/home/peti/Programming/reframe/.claude/worktrees/agent-a86b571a26b84c277/desktop/spike/results/prime/webkitgtk-light-base.png",
+      "width": 1280
+     }
+    },
+    {
+     "theme": "light",
+     "state": "select",
+     "metrics": {
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "dialog": null,
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "header": [
+       38,
+       117,
+       79.31,
+       35
+      ],
+      "lastRowTop": 7000,
+      "option": [
+       220.7,
+       59,
+       290.31,
+       38
+      ],
+      "overlay": [
+       215.7,
+       54,
+       300.31,
+       226
+      ],
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "rows": 200,
+      "scrollbar": 0,
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "tab": [
+       20,
+       52,
+       78.72,
+       51
+      ],
+      "tabFont": "600 13px/normal Noto Sans",
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+      "viewport": [
+       1280,
+       800,
+       1
+      ]
+     },
+     "snapshot": {
+      "height": 800,
+      "ok": true,
+      "path": "/home/peti/Programming/reframe/.claude/worktrees/agent-a86b571a26b84c277/desktop/spike/results/prime/webkitgtk-light-select.png",
+      "width": 1280
+     }
+    },
+    {
+     "theme": "light",
+     "state": "dialog",
+     "metrics": {
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "dialog": [
+       416,
+       302,
+       448,
+       196
+      ],
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "header": [
+       38,
+       117,
+       79.31,
+       35
+      ],
+      "lastRowTop": 7000,
+      "option": null,
+      "overlay": null,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "rows": 200,
+      "scrollbar": 0,
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "tab": [
+       20,
+       52,
+       78.72,
+       51
+      ],
+      "tabFont": "600 13px/normal Noto Sans",
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+      "viewport": [
+       1280,
+       800,
+       1
+      ]
+     },
+     "snapshot": {
+      "height": 800,
+      "ok": true,
+      "path": "/home/peti/Programming/reframe/.claude/worktrees/agent-a86b571a26b84c277/desktop/spike/results/prime/webkitgtk-light-dialog.png",
+      "width": 1280
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "base",
+     "metrics": {
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "dialog": null,
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "header": [
+       38,
+       117,
+       79.31,
+       35
+      ],
+      "lastRowTop": 7000,
+      "option": null,
+      "overlay": null,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "rows": 200,
+      "scrollbar": 0,
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "tab": [
+       20,
+       52,
+       78.72,
+       51
+      ],
+      "tabFont": "600 13px/normal Noto Sans",
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+      "viewport": [
+       1280,
+       800,
+       1
+      ]
+     },
+     "snapshot": {
+      "height": 800,
+      "ok": true,
+      "path": "/home/peti/Programming/reframe/.claude/worktrees/agent-a86b571a26b84c277/desktop/spike/results/prime/webkitgtk-dark-base.png",
+      "width": 1280
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "select",
+     "metrics": {
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "dialog": null,
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "header": [
+       38,
+       117,
+       79.31,
+       35
+      ],
+      "lastRowTop": 7000,
+      "option": [
+       220.7,
+       59,
+       290.31,
+       38
+      ],
+      "overlay": [
+       215.7,
+       54,
+       300.31,
+       226
+      ],
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "rows": 200,
+      "scrollbar": 0,
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "tab": [
+       20,
+       52,
+       78.72,
+       51
+      ],
+      "tabFont": "600 13px/normal Noto Sans",
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+      "viewport": [
+       1280,
+       800,
+       1
+      ]
+     },
+     "snapshot": {
+      "height": 800,
+      "ok": true,
+      "path": "/home/peti/Programming/reframe/.claude/worktrees/agent-a86b571a26b84c277/desktop/spike/results/prime/webkitgtk-dark-select.png",
+      "width": 1280
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "dialog",
+     "metrics": {
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "dialog": [
+       416,
+       302,
+       448,
+       196
+      ],
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "header": [
+       38,
+       117,
+       79.31,
+       35
+      ],
+      "lastRowTop": 7000,
+      "option": null,
+      "overlay": null,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "rows": 200,
+      "scrollbar": 0,
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "tab": [
+       20,
+       52,
+       78.72,
+       51
+      ],
+      "tabFont": "600 13px/normal Noto Sans",
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+      "viewport": [
+       1280,
+       800,
+       1
+      ]
+     },
+     "snapshot": {
+      "height": 800,
+      "ok": true,
+      "path": "/home/peti/Programming/reframe/.claude/worktrees/agent-a86b571a26b84c277/desktop/spike/results/prime/webkitgtk-dark-dialog.png",
+      "width": 1280
+     }
+    }
+   ],
+   "csp": [
+    {
+     "blocked": "eval",
+     "check": "csp",
+     "directive": "script-src",
+     "disposition": "enforce",
+     "event": "spike_log",
+     "line": 3275,
+     "ms": 1825.529327,
+     "policy": "default-src 'self'; img-src 'self' data: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-Ay3ohBwQFl9rylou9E3LniyxV9tlVFKefvwO9QkFcDk=' 'sha256-TaqXIefu84zY+wKxXw5giRLaXG1a93lZD/scMuxv+/Q=' 'sha256-iD2CCCyHAbSdLKW67hBF/wuAitGmatQVDT7SPO8Pl6c=' 'sha256-xPJPw4lXnVOMlpfWynLHHtT1oiLsyWhiasUBywIQ5TA='; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*",
+     "sample": "",
+     "source": "tauri://localhost/assets/PrimePage-ym2yEMt5.js"
+    }
+   ],
+   "csp_probe": "eval refused: EvalError",
+   "logs": [
+    {
+     "check": "prime",
+     "event": "spike_log",
+     "ms": 1825.369095,
+     "probe": "eval refused: EvalError",
+     "type": "csp_probe"
+    },
+    {
+     "check": "prime",
+     "event": "spike_log",
+     "languages": 40,
+     "ms": 1825.692756,
+     "type": "ready"
+    },
+    {
+     "check": "prime",
+     "csp": [
+      {
+       "blocked": "eval",
+       "directive": "script-src",
+       "disposition": "enforce",
+       "line": 3275,
+       "policy": "default-src 'self'; img-src 'self' data: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-Ay3ohBwQFl9rylou9E3LniyxV9tlVFKefvwO9QkFcDk=' 'sha256-TaqXIefu84zY+wKxXw5giRLaXG1a93lZD/scMuxv+/Q=' 'sha256-iD2CCCyHAbSdLKW67hBF/wuAitGmatQVDT7SPO8Pl6c=' 'sha256-xPJPw4lXnVOMlpfWynLHHtT1oiLsyWhiasUBywIQ5TA='; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*",
+       "sample": "",
+       "source": "tauri://localhost/assets/PrimePage-ym2yEMt5.js"
+      }
+     ],
+     "event": "spike_log",
+     "ms": 7228.552198,
+     "type": "done"
+    }
+   ]
+  },
+  "chromium": {
+   "version": "156.0.8078.4",
+   "states": [
+    {
+     "theme": "light",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       79.3,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "light",
+     "state": "select",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       79.3,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": [
+       215.7,
+       54,
+       300.31,
+       226
+      ],
+      "option": [
+       220.7,
+       59,
+       290.31,
+       38
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "light",
+     "state": "dialog",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       79.3,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": [
+       416,
+       302,
+       448,
+       196
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       79.3,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "select",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       79.3,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": [
+       215.7,
+       54,
+       300.31,
+       226
+      ],
+      "option": [
+       220.7,
+       59,
+       290.31,
+       38
+      ],
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "dialog",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       79.3,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": [
+       416,
+       302,
+       448,
+       196
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    }
+   ],
+   "csp": [
+    {
+     "check": "csp",
+     "directive": "script-src",
+     "blocked": "eval",
+     "source": "http://127.0.0.1:42065/assets/PrimePage-ym2yEMt5.js",
+     "line": 3275,
+     "sample": "",
+     "disposition": "enforce",
+     "policy": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'",
+     "event": "spike_log",
+     "ms": 1492.2999999998137
+    }
+   ],
+   "csp_probe": "eval refused: EvalError",
+   "logs": [
+    {
+     "check": "prime",
+     "type": "csp_probe",
+     "probe": "eval refused: EvalError",
+     "event": "spike_log",
+     "ms": 1491.7000000001863
+    },
+    {
+     "check": "prime",
+     "type": "ready",
+     "languages": 40,
+     "event": "spike_log",
+     "ms": 1493.7999999998137
+    }
+   ]
+  },
+  "firefox": {
+   "version": "157.0",
+   "states": [
+    {
+     "theme": "light",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal sans-serif",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "light",
+     "state": "select",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal sans-serif",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": [
+       215.67,
+       54,
+       300.33,
+       226
+      ],
+      "option": [
+       220.67,
+       59,
+       290.33,
+       38
+      ],
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "light",
+     "state": "dialog",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal sans-serif",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": [
+       416,
+       302,
+       448,
+       196
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal sans-serif",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "select",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal sans-serif",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": [
+       215.67,
+       54,
+       300.33,
+       226
+      ],
+      "option": [
+       220.67,
+       59,
+       290.33,
+       38
+      ],
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "dialog",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal sans-serif",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": [
+       416,
+       302,
+       448,
+       196
+      ],
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    }
+   ],
+   "csp": [
+    {
+     "check": "csp",
+     "directive": "script-src",
+     "blocked": "eval",
+     "source": "http://127.0.0.1:42065/assets/PrimePage-ym2yEMt5.js",
+     "line": 3275,
+     "sample": "",
+     "disposition": "enforce",
+     "policy": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'",
+     "event": "spike_log",
+     "ms": 1807
+    }
+   ],
+   "csp_probe": "eval refused: EvalError",
+   "logs": [
+    {
+     "check": "prime",
+     "type": "csp_probe",
+     "probe": "eval refused: EvalError",
+     "event": "spike_log",
+     "ms": 1807
+    },
+    {
+     "check": "prime",
+     "type": "ready",
+     "languages": 40,
+     "event": "spike_log",
+     "ms": 1809
+    }
+   ]
+  }
+ },
+ "headed": {
+  "chromium-headed": {
+   "version": "156.0.8078.4",
+   "states": [
+    {
+     "theme": "light",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 15,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       78.31,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3333px/normal Arial",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 15,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       114,
+       78.31,
+       35
+      ],
+      "table": [
+       38,
+       114,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       48
+      ],
+      "tab": [
+       20,
+       52,
+       77.48,
+       48
+      ],
+      "select": [
+       215.7,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.7,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.52,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.7,
+       12,
+       147.11,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    }
+   ],
+   "csp": [
+    {
+     "check": "csp",
+     "directive": "script-src",
+     "blocked": "eval",
+     "source": "http://127.0.0.1:39631/assets/PrimePage-ym2yEMt5.js",
+     "line": 3275,
+     "sample": "",
+     "disposition": "enforce",
+     "policy": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'",
+     "event": "spike_log",
+     "ms": 1518.5999999996275
+    }
+   ],
+   "csp_probe": "eval refused: EvalError",
+   "logs": [
+    {
+     "check": "prime",
+     "type": "csp_probe",
+     "probe": "eval refused: EvalError",
+     "event": "spike_log",
+     "ms": 1518.0999999996275
+    },
+    {
+     "check": "prime",
+     "type": "ready",
+     "languages": 40,
+     "event": "spike_log",
+     "ms": 1520.3999999994412
+    }
+   ]
+  },
+  "firefox-headed": {
+   "version": "157.0",
+   "states": [
+    {
+     "theme": "light",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal Noto Sans",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    },
+    {
+     "theme": "dark",
+     "state": "base",
+     "metrics": {
+      "viewport": [
+       1280,
+       800,
+       1
+      ],
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+      "font": {
+       "family": "system-ui, sans-serif",
+       "size": "16px"
+      },
+      "tabFont": "600 13.3281px/normal Noto Sans",
+      "buttonFont": "500 16px/normal system-ui, sans-serif",
+      "scrollbar": 0,
+      "rows": 200,
+      "rowHeights": [
+       35,
+       35,
+       35
+      ],
+      "lastRowTop": 7000,
+      "header": [
+       38,
+       117,
+       79.28,
+       35
+      ],
+      "table": [
+       38,
+       117,
+       1204,
+       380
+      ],
+      "tablist": [
+       20,
+       52,
+       1240,
+       51
+      ],
+      "tab": [
+       20,
+       52,
+       79.78,
+       51
+      ],
+      "select": [
+       215.67,
+       12,
+       224,
+       40
+      ],
+      "overlay": null,
+      "option": null,
+      "slider": [
+       459.67,
+       45.5,
+       192,
+       3
+      ],
+      "handle": [
+       532.48,
+       37,
+       20,
+       20
+      ],
+      "button": [
+       671.67,
+       12,
+       147.13,
+       40
+      ],
+      "dialog": null,
+      "toast": [
+       860,
+       20,
+       400,
+       75
+      ]
+     }
+    }
+   ],
+   "csp": [
+    {
+     "check": "csp",
+     "directive": "script-src",
+     "blocked": "eval",
+     "source": "http://127.0.0.1:39631/assets/PrimePage-ym2yEMt5.js",
+     "line": 3275,
+     "sample": "",
+     "disposition": "enforce",
+     "policy": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'",
+     "event": "spike_log",
+     "ms": 1783
+    }
+   ],
+   "csp_probe": "eval refused: EvalError",
+   "logs": [
+    {
+     "check": "prime",
+     "type": "csp_probe",
+     "probe": "eval refused: EvalError",
+     "event": "spike_log",
+     "ms": 1782
+    },
+    {
+     "check": "prime",
+     "type": "ready",
+     "languages": 40,
+     "event": "spike_log",
+     "ms": 1785
+    }
+   ]
+  },
+  "windows": [
+   {
+    "pid": 109903,
+    "class": "chromium-browser",
+    "added": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      332,
+      118,
+      1256,
+      843
+     ]
+    },
+    "placed": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      40,
+      40,
+      1256,
+      843
+     ]
+    },
+    "shown": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      40,
+      40,
+      1256,
+      843
+     ]
+    },
+    "read_back": [
+     40,
+     40,
+     1256,
+     843
+    ]
+   },
+   {
+    "pid": 110686,
+    "class": "firefox-default",
+    "added": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      320,
+      54,
+      1280,
+      972
+     ]
+    },
+    "placed": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      40,
+      40,
+      1280,
+      972
+     ]
+    },
+    "shown": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      40,
+      40,
+      1280,
+      972
+     ]
+    },
+    "read_back": [
+     40,
+     40,
+     1280,
+     972
+    ]
+   }
+  ],
+  "other_windows": [],
+  "scripts_loaded_after": {
+   "reframe-spike-425dff8fec80-1": false,
+   "reframe-spike-425dff8fec80-2": false,
+   "reframe-spike-425dff8fec80-3": false
+  },
+  "pointer_log": [
+   {
+    "to": [
+     960,
+     1040
+    ],
+    "read_back": [
+     960,
+     1040
+    ],
+    "ms": 0.9
+   }
+  ]
+ },
+ "box_differences": [
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "header",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     79.31,
+     35
+    ],
+    [
+     38,
+     114,
+     79.3,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     77.48,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3333px/normal Arial"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "table",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     1204,
+     380
+    ],
+    [
+     38,
+     114,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tablist",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     51
+    ],
+    [
+     20,
+     52,
+     1240,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 1.0600000000000023
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tabFont",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    "600 13.3333px/normal Arial",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "header",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     79.3,
+     35
+    ],
+    [
+     38,
+     117,
+     79.28,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "table",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     1204,
+     380
+    ],
+    [
+     38,
+     117,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tablist",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     48
+    ],
+    [
+     20,
+     52,
+     1240,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "base",
+   "metric": "tab",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     77.48,
+     48
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "header",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     79.31,
+     35
+    ],
+    [
+     38,
+     114,
+     79.3,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     77.48,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3333px/normal Arial"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "table",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     1204,
+     380
+    ],
+    [
+     38,
+     114,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tablist",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     51
+    ],
+    [
+     20,
+     52,
+     1240,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 1.0600000000000023
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tabFont",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    "600 13.3333px/normal Arial",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "header",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     79.3,
+     35
+    ],
+    [
+     38,
+     117,
+     79.28,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "table",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     1204,
+     380
+    ],
+    [
+     38,
+     117,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tablist",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     48
+    ],
+    [
+     20,
+     52,
+     1240,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "select",
+   "metric": "tab",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     77.48,
+     48
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "header",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     79.31,
+     35
+    ],
+    [
+     38,
+     114,
+     79.3,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     77.48,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3333px/normal Arial"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "table",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     1204,
+     380
+    ],
+    [
+     38,
+     114,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tablist",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     51
+    ],
+    [
+     20,
+     52,
+     1240,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 1.0600000000000023
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tabFont",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    "600 13.3333px/normal Arial",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "header",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     79.3,
+     35
+    ],
+    [
+     38,
+     117,
+     79.28,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "table",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     1204,
+     380
+    ],
+    [
+     38,
+     117,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tablist",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     48
+    ],
+    [
+     20,
+     52,
+     1240,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "light",
+   "state": "dialog",
+   "metric": "tab",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     77.48,
+     48
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "header",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     79.31,
+     35
+    ],
+    [
+     38,
+     114,
+     79.3,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     77.48,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3333px/normal Arial"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "table",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     1204,
+     380
+    ],
+    [
+     38,
+     114,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tablist",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     51
+    ],
+    [
+     20,
+     52,
+     1240,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 1.0600000000000023
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tabFont",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    "600 13.3333px/normal Arial",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "header",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     79.3,
+     35
+    ],
+    [
+     38,
+     117,
+     79.28,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "table",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     1204,
+     380
+    ],
+    [
+     38,
+     117,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tablist",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     48
+    ],
+    [
+     20,
+     52,
+     1240,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "base",
+   "metric": "tab",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     77.48,
+     48
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "header",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     79.31,
+     35
+    ],
+    [
+     38,
+     114,
+     79.3,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     77.48,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3333px/normal Arial"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "table",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     1204,
+     380
+    ],
+    [
+     38,
+     114,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tablist",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     51
+    ],
+    [
+     20,
+     52,
+     1240,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 1.0600000000000023
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tabFont",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    "600 13.3333px/normal Arial",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "header",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     79.3,
+     35
+    ],
+    [
+     38,
+     117,
+     79.28,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "table",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     1204,
+     380
+    ],
+    [
+     38,
+     117,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tablist",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     48
+    ],
+    [
+     20,
+     52,
+     1240,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "select",
+   "metric": "tab",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     77.48,
+     48
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "header",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     79.31,
+     35
+    ],
+    [
+     38,
+     114,
+     79.3,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     77.48,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3333px/normal Arial"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "table",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     38,
+     117,
+     1204,
+     380
+    ],
+    [
+     38,
+     114,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tablist",
+   "engines": [
+    "webkitgtk",
+    "chromium"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     51
+    ],
+    [
+     20,
+     52,
+     1240,
+     48
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tab",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     78.72,
+     51
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 1.0600000000000023
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tabFont",
+   "engines": [
+    "webkitgtk",
+    "firefox"
+   ],
+   "values": [
+    "600 13px/normal Noto Sans",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tabFont",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    "600 13.3333px/normal Arial",
+    "600 13.3281px/normal sans-serif"
+   ],
+   "delta": Infinity
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "header",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     79.3,
+     35
+    ],
+    [
+     38,
+     117,
+     79.28,
+     35
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "table",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     38,
+     114,
+     1204,
+     380
+    ],
+    [
+     38,
+     117,
+     1204,
+     380
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tablist",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     1240,
+     48
+    ],
+    [
+     20,
+     52,
+     1240,
+     51
+    ]
+   ],
+   "delta": 3
+  },
+  {
+   "theme": "dark",
+   "state": "dialog",
+   "metric": "tab",
+   "engines": [
+    "chromium",
+    "firefox"
+   ],
+   "values": [
+    [
+     20,
+     52,
+     77.48,
+     48
+    ],
+    [
+     20,
+     52,
+     79.78,
+     51
+    ]
+   ],
+   "delta": 3
+  }
+ ],
+ "pixel_differences": {
+  "light-base": {
+   "webkitgtk/chromium": 0.0799,
+   "webkitgtk/firefox": 0.0129,
+   "chromium/firefox": 0.0777
+  },
+  "light-select": {
+   "webkitgtk/chromium": 0.0774,
+   "webkitgtk/firefox": 0.0196,
+   "chromium/firefox": 0.075
+  },
+  "light-dialog": {
+   "webkitgtk/chromium": 0.083,
+   "webkitgtk/firefox": 0.0365,
+   "chromium/firefox": 0.0949
+  },
+  "dark-base": {
+   "webkitgtk/chromium": 0.1084,
+   "webkitgtk/firefox": 0.0408,
+   "chromium/firefox": 0.0821
+  },
+  "dark-select": {
+   "webkitgtk/chromium": 0.1062,
+   "webkitgtk/firefox": 0.0486,
+   "chromium/firefox": 0.0788
+  },
+  "dark-dialog": {
+   "webkitgtk/chromium": 0.119,
+   "webkitgtk/firefox": 0.0696,
+   "chromium/firefox": 0.0893
+  }
+ }
+}

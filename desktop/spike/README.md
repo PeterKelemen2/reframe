@@ -224,3 +224,182 @@ be started: No such file or directory (os error 2)`, 0.44 s), a sidecar that exi
 (`The server ended before it was ready (exit status: 1). Log: …`, 0.41 s) and one that never
 prints the ready line (`The server was not ready within 20 s. Log: …`, 20.07 s; it is killed).
 The app stays open and does not restart the sidecar.
+
+## WebKitGTK checks
+
+Drag-and-drop paths and PrimeVue rendering (task 4b-i, 2026-10-27, the AMD desktop: KDE Plasma
+6.8.1 on Wayland, WebKitGTK 2.54.2). The canvas magnifier: [MAGNIFIER.md](MAGNIFIER.md).
+Tool behaviour these checks rely on: `testdata/README.md`, "D-0 (4b-i)".
+
+Every window of these checks goes to the output `HDMI-A-1` only, the pointer moves inside it
+only, and nothing sends a key. The tools below enforce that; a check that cannot (no
+`HDMI-A-1`) opens no window and stops.
+
+### Variables of the app
+
+| Variable | Effect |
+|----------|--------|
+| `REFRAME_SPIKE_PAGE` | the page `ui/src/pages/<Name>Page.vue` instead of 4a's page (`drop`, `prime`, …) |
+| `REFRAME_SPIKE_SNAPSHOT_DIR` | where a relative `snapshot(path)` writes |
+| `REFRAME_SPIKE_NO_DRAG_DROP` | Tauri's drag-drop handler off: the page gets WebKitGTK's DOM `drop` |
+| `REFRAME_SPIKE_WINDOW_SIZE` | the window's inner size, `WxH` |
+| `REFRAME_SPIKE_WINDOW_POSITION` | `X,Y`; only XWayland (`GDK_BACKEND=x11`) honours it |
+
+The app also prints `spike_log` lines (a page's records) and `drop_native` lines (each drag
+enter and drop as Tauri's runtime hands it to the window: every path as bytes in hex, whether
+it exists, whether it is a folder).
+
+### Hooks (for 4b-ii and later checks)
+
+- **A page**: add `ui/src/pages/<Name>Page.vue`; `REFRAME_SPIKE_PAGE=<name>` shows it (found
+  with `import.meta.glob`). A page that needs a plugin exports `install(app)` from a plain
+  `<script>` block (see `PrimePage.vue`). Without the variable the app shows 4a's page.
+- **The same page in a browser**: `scripts/browser.py` serves `ui/dist` on a loopback port
+  with the CSP of `tauri.conf.json` (`serve_ui()`), starts a frozen sidecar in temporary
+  folders that allows that origin (`backend(origin)`), and builds the address
+  `?page=<name>&base=<url>&token=<token>` (`page_url`). `node(script, arguments, stop=…)`
+  runs a Playwright script of `scripts/` and returns its JSON lines; `executables()` gives
+  Playwright's own browser binaries. `scripts/prime_browsers.mjs` is an example.
+- **`ui/src/spike.js`**: `backend()` → `{baseUrl, token}`; `api(path, init)` → `fetch` with
+  the token; `log(record)` → in the app one line `{"event": "spike_log", "ms": <since the
+  shell's main()>, …}` on stdout (`drop_check.Lines` reads them), in a browser the record goes
+  to `window.spikeLogSink` (expose it with Playwright's `page.exposeFunction`), to
+  `window.__spikeLog` and to the console, with `ms` from `performance.now()`;
+  `snapshot(path)` → in the app `{ok: true, path, width, height}`, a PNG of the web view's
+  visible area made by WebKitGTK (`webkit_web_view_get_snapshot`), or `{ok: false, reason}`
+  (always in a browser); `frames(n)` waits n animation frames; `option(name)` reads a setting
+  of the app (`snapshotDir`) or a query parameter; `cspViolations` collects every
+  `securitypolicyviolation` (each one is also logged).
+- **`scripts/windows.py`**: `with windows.Session() as session:` loads a KWin script for the
+  block. `session.spawn(argv, spot, **popen)` starts a program behind a gate (it runs once the
+  script knows its pid), and the script moves its windows to `spot` = `(x, y, width, height)`
+  inside `HDMI-A-1` (`None` for width and height: the window's own; `spot=None`: no move, only
+  shown if it is already on `HDMI-A-1`). A new window is transparent until KWin has it on
+  `HDMI-A-1`, and kept above the other windows there. `session.window(pid)` waits for it and
+  reads it back (`getWindowInfo`); a window anywhere else raises `WrongOutput`, and so does the
+  next call after any window of the session moved off. `session.wrapper(binary, spot)` gives
+  an executable for a launcher that starts the program itself (Playwright's
+  `executablePath`), for a headed browser. The window that had the keyboard keeps it
+  (`guard=True`, the default) or gets it back at `session.give_back()`. Close what you start:
+  `windows.terminate(process)`, or `quit` on the app's stdin. From the shell:
+  `uv run python -m desktop.spike.scripts.windows run -- <command>` (every window of the app's
+  class, for 4a's scripts; `--class Reframe-spike` under XWayland),
+  `… windows open --spot 40,40,1280,800 -- <program>` (open, read back, close),
+  `… windows outputs`.
+- **`scripts/pointer.py`**: inside a session with `cursor=True`,
+  `pointer.for_session(session.journal, session.screen)` is the real pointer (an absolute
+  pointer device made with `/dev/uinput`). `with device:` creates it and removes it on exit;
+  call `pointer.check_device(device.device)` first. `move(x, y)` refuses a point outside
+  `HDMI-A-1` before it sends anything and stops the run when KWin's read-back is not exactly
+  the target; `glide(points)`, `line(start, end, steps)`, `press()`, `release()`,
+  `right_click()`. A button still down at the end is released where it went down. Before you
+  start a program, move the pointer onto `HDMI-A-1`: KWin opens a window on the output under
+  the cursor. `uv run python -m desktop.spike.scripts.pointer demo` moves it round a square.
+
+### Drag-and-drop paths
+
+```sh
+uv run python -m desktop.spike.scripts.drop_check --session wayland --json results/drop-wayland.json
+uv run python -m desktop.spike.scripts.drop_check --session xwayland --json results/drop-xwayland.json
+uv run python -m desktop.spike.scripts.drop_check --session wayland --gtk --json results/drop-gtk-wayland.json
+uv run python -m desktop.spike.scripts.drop_check --session xwayland --gtk --json results/drop-gtk-xwayland.json
+```
+
+Each run makes the files in a temporary folder (one folder per case, so Dolphin's view holds
+the case's items only), starts the app (`REFRAME_SPIKE_PAGE=drop`; `GDK_BACKEND=x11` for
+`xwayland`) at 590,120 and, per case, a Dolphin of its own (new XDG folders,
+`--new-window --select <items>`) at 20,120, so that the app's left edge is under Dolphin's
+right edge. AT-SPI (the system Python's PyGObject, read only) says where the first item is.
+The pointer presses there, moves 13 px (past Qt's drag distance), then to the middle of the
+app in 30 steps, and releases only after the page saw the drag enter; otherwise it goes back
+and releases on the item it pressed (a drop on itself opens nothing). `--handler both` (the
+default) runs the cases with Tauri's handler, then without it; `--gtk` drops on a plain GTK 3
+window instead (the system Python), which logs the bytes of Dolphin's `text/uri-list`.
+`--trace DIR` keeps `WAYLAND_DEBUG` logs of the app and of each Dolphin; `--calibrate` prints
+what AT-SPI says of the items. Each drag takes 1.4 s.
+
+Results (2026-10-27; Dolphin 26.08.2; the same on native Wayland and XWayland):
+
+| Case | Sent (file name) | Tauri's event (Rust bytes = page string) | exists | DOM `drop`, Tauri's handler off | Dolphin's `text/uri-list` |
+|------|------------------|-------------------------------------------|--------|---------------------------------|---------------------------|
+| spaces | `film with spaces.mkv` | the same bytes | yes | `files` empty, `text/uri-list` empty, one `<a>` | `film%20with%20spaces.mkv` |
+| non-ASCII | `Ünnepi film – 2.mkv` (`c39c…e28093…`) | the same bytes | yes | as above | `%C3%9Cnnepi%20film%20%E2%80%93%202.mkv` |
+| CJK | `日本語.mkv` (`e697a5e69cace8aa9e`) | the same bytes | yes | as above | `%E6%97%A5%E6%9C%AC%E8%AA%9E.mkv` |
+| not UTF-8 | `bad\xffname.mkv` (`626164ff6e616d65`) | `bad\u{FFFD}name.mkv` (`626164efbfbd6e616d65`) | **no** | as above (`bad%EF%BF%BDname.mkv`) | `bad%EF%BF%BDname.mkv` |
+| three files | `one.mkv`, `két film.mkv`, `日本語 3.mkv` | all three, the same bytes, in Dolphin's view order | yes | one `<a>`, the first item only | three lines |
+| folder | `A folder/` | the same bytes | yes (a folder) | as above | `A%20folder` |
+
+- Tauri's drag-drop event is usable: every UTF-8 path arrives byte for byte, as several paths
+  and for a folder. The page gets the same strings (`onDragDropEvent`), and Rust gets
+  `WindowEvent::DragDrop` before them.
+- A name that is not UTF-8 cannot be dropped from Dolphin: Dolphin itself sends U+FFFD
+  (`%EF%BF%BD`), so the path that arrives does not exist. (wry would lose such a byte too: it
+  decodes with `decode_utf8_lossy`.) D-5 can only report "this file name cannot be read" for
+  it, and suggest the file dialog.
+- WebKitGTK's own DOM drop gives no files and no URI list: only `text/html` with one link to
+  the first item. With Tauri's handler on, the page sees `dragenter` and `dragleave` but no
+  `drop`. So the app needs Tauri's drag-drop event (or a native handler); HTML5 drop is not
+  enough on Linux.
+- Every drag: pointer read back at each of 235 moves per run, always the target, slowest 7 ms;
+  no menu, no window outside `HDMI-A-1`; Dolphin's settings of the owner untouched (mtimes of
+  `~/.config/dolphinrc` and `~/.local/state/dolphinstaterc` before and after each run);
+  the keyboard back to the window that had it after each case.
+
+### PrimeVue 4 rendering
+
+```sh
+uv run python -m desktop.spike.scripts.prime_check --headed   # --skip-app: browsers only
+```
+
+The page `prime` (`ui/src/pages/PrimePage.vue`) has a DataTable of 200 rows (scrollable,
+380 px), a Dialog, a Select (the first 40 languages of the sidecar's `/api/languages`), a
+Slider, Tabs and a Toast, with the frontend's preset (`ui/src/prime/theme.js`, a copy of
+`frontend/src/styles/theme.ts`, dark mode by the class `reframe-dark`). For each theme
+(light, dark) and state (base; the Select open; the Dialog open) it measures its boxes. The
+app (1280×800, scale 1) takes a WebKitGTK snapshot of each; Playwright's headless Chromium and
+Firefox take a screenshot at the same viewport and a device pixel ratio of 1; headed Chromium
+and Firefox (windows on `HDMI-A-1`) the base state. Screenshots: `results/prime/`
+(`<engine>-<theme>-<state>.png`, reduced to 256 colours after the measurements);
+measurements and differences: `results/prime-metrics.json`.
+
+Results (2026-10-27; Playwright 1.64.1: Chromium 156.0.8078.4, Firefox 157.0):
+
+- **WebKitGTK and Firefox lay the page out the same to about 1 px** (the widest difference: a
+  tab 1.06 px wider in Firefox); 1.3 to 7 % of their pixels differ (text antialiasing).
+- **Chromium differs by 3 px in the tab bar**: each tab, and so the tab bar (`.p-tablist`),
+  is 48 px high in Chromium and 51 px in WebKitGTK and Firefox (`prime-metrics.json`
+  `box_differences`; compare `chromium-light-base.png` and `webkitgtk-light-base.png`), so in
+  Chromium everything below the tab bar starts 3 px higher. The cause: PrimeVue's
+  `Tab` is a `<button>` and takes the browser's button font (WebKitGTK `600 13px Noto Sans`,
+  Chromium `600 13.3333px Arial`, Firefox `600 13.3281px sans-serif`). A `font: inherit` on
+  buttons in the frontend would remove the difference.
+- **Scrollbars**: headed Chromium draws classic 15 px scrollbars (the table's columns are
+  15 px narrower: `chromium-headed-light-base.png`); WebKitGTK and Firefox use overlay
+  scrollbars (0 px). Headless Chromium hides its scrollbars, so only the headed run shows it.
+- **Focus rings**: in Chromium and Firefox the Toast's or the Dialog's close button shows a
+  focus ring (`chromium-dark-base.png`, `firefox-dark-dialog.png`); in WebKitGTK it does not,
+  because the app's window does not have the keyboard (the check gives it back). Not a
+  rendering difference.
+- **CSP**: no violation from PrimeVue or the page in any engine. The app runs the policy of
+  `tauri.conf.json` with four `sha256-…` sources that Tauri adds to `script-src`;
+  `style-src 'self' 'unsafe-inline'` lets PrimeVue's styled mode inject its styles. The
+  page's own `eval` test is refused in every engine (`securitypolicyviolation`, `script-src`):
+  the policy is in force.
+
+### The placement wrapper with 4a's cold start
+
+```sh
+uv run python -m desktop.spike.scripts.windows run -- uv run python -m desktop.spike.scripts.cold_start --target app --runs 2
+```
+
+2026-10-27, taken while a movie plays on `DP-1` (165 Hz); the windows on `HDMI-A-1`, 60 Hz:
+app (frozen onedir), warm, 2 runs: median 0.808 s, worst 0.815 s (the sidecar's ready line at
+0.784 s in the app); with `--in-setup`: median 0.878 s, worst 0.879 s. Each of the three
+windows (one warm-up) was read back at 40,40, 900×708 on `HDMI-A-1`. Two runs only: the
+numbers show that the wrapper works, they are not the measurement (`cold_start --all`).
+
+### Not run
+
+- Anything on Windows (WebView2's drop paths and rendering: the Windows testing phase).
+- Other drag sources than Dolphin (a GTK file manager, a browser's download bar).
+- A drop from an XWayland source (Dolphin ran on native Wayland in every case).
