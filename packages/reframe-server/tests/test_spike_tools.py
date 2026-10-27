@@ -30,6 +30,7 @@ from desktop.spike.scripts import (  # noqa: E402
     cleanup,
     cold_start,
     kwin,
+    page_cache,
     pointer,
     sidecar,
     windows,
@@ -799,3 +800,22 @@ def test_cold_start_kills_a_sidecar_that_does_not_stop_after_the_shutdown_reques
     monkeypatch.setattr(cold_start, "STOP_LIMIT", 0.5)
     cold_start.run_sidecar(cold_start.Case("sidecar"), tmp_path / "xdg")
     assert [process.returncode for process in started] == [-SIGKILL]
+
+
+@pytest.mark.parametrize(("target", "starts"), [("app", 2), ("sidecar", 1)])
+def test_an_evicted_app_case_fills_its_new_caches_with_a_start_that_is_not_counted(
+    monkeypatch: pytest.MonkeyPatch, target: str, starts: int
+) -> None:
+    folders: list[Path] = []
+
+    def start(case: cold_start.Case, xdg: Path) -> dict[str, Any]:
+        folders.append(xdg)
+        return {"total": 1.0}
+
+    monkeypatch.setattr(cold_start, f"run_{target}", start)
+    monkeypatch.setattr(page_cache, "resident", lambda paths: page_cache.Resident(0, 0))
+    monkeypatch.setattr(page_cache, "evict", lambda paths: 0)
+    result = cold_start.measure(cold_start.Case(target, cache="evicted"), runs=1)
+    assert result["runs"] == 1
+    assert len(folders) == starts
+    assert len(set(folders)) == 1

@@ -1,8 +1,8 @@
 """Cold start to "ready": (a) the sidecar alone, spawn to the ready line; (b) the app, process
 start to its page showing ``GET /api/health``. Each run gets new temporary folders; the app runs
 of a case share their XDG folders (WebKitGTK's caches). ``warm`` runs one start first that is not
-counted; ``evicted`` drops the page cache of the measured files before each run and checks with
-``fincore`` that it is gone."""
+counted, and so does every app case, to fill its XDG caches; ``evicted`` drops the page cache of
+the measured files before each run and checks with ``fincore`` that it is gone."""
 
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def measure(case: Case, runs: int) -> dict[str, Any]:
     samples: list[dict[str, Any]] = []
     eviction: list[dict[str, int]] = []
     with tempfile.TemporaryDirectory(prefix="reframe-spike-xdg-") as xdg:
-        if case.cache == "warm":
+        if case.cache == "warm" or case.target == "app":
             run(case, Path(xdg))
         for _ in range(runs):
             if case.cache == "evicted":
