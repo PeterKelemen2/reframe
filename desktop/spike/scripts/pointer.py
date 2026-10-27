@@ -16,14 +16,13 @@ import fcntl
 import glob
 import json
 import os
-import signal
 import struct
 import sys
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import FrameType, TracebackType
+from types import TracebackType
 from typing import Any, Protocol
 
 from desktop.spike.scripts import kwin
@@ -285,15 +284,11 @@ def check_device(device: Writer, limit: float = 3.0) -> dict[str, str]:
     return properties | {"sys_name": device.sys_name, "node": node}
 
 
-def _interrupt(number: int, frame: FrameType | None) -> None:
-    raise KeyboardInterrupt(f"signal {number}")
-
-
 def demo(seconds: float) -> int:
     """Moves the pointer round a small square in the middle of the secondary output."""
     from desktop.spike.scripts import windows
 
-    signal.signal(signal.SIGTERM, _interrupt)
+    windows.stop_on_signals()
     with windows.Session(cursor=True) as session:
         pointer = for_session(session.journal, session.screen)
         try:

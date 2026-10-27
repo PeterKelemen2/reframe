@@ -22,14 +22,12 @@ import json
 import math
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from types import FrameType
 from typing import Any
 
 import httpx
@@ -281,10 +279,6 @@ def real_runs(
     return moves
 
 
-def _interrupt(number: int, frame: FrameType | None) -> None:
-    raise KeyboardInterrupt(f"signal {number}")
-
-
 def leftovers(pids: list[int]) -> list[str]:
     alive = []
     for pid in pids:
@@ -308,7 +302,7 @@ def real_pointer(session: windows.Session) -> Iterator[pointer.Pointer]:
 
 def app_case(no_dmabuf: bool, tag: str = "") -> dict[str, Any]:
     name = ("webkitgtk-no-dmabuf" if no_dmabuf else "webkitgtk") + tag
-    signal.signal(signal.SIGTERM, _interrupt)
+    windows.stop_on_signals()
     record: dict[str, Any] = {"case": name, "load_before": load_now()}
     with tempfile.TemporaryDirectory(prefix="reframe-spike-magnifier-") as tmp:
         home = Path(tmp)
@@ -317,7 +311,6 @@ def app_case(no_dmabuf: bool, tag: str = "") -> dict[str, Any]:
             "REFRAME_SPIKE_WINDOW_SIZE": WINDOW,
             "REFRAME_SPIKE_REPORT_TOKEN": "1",
             "REFRAME_SPIKE_SNAPSHOT_DIR": str(home / "shots"),
-            "XDG_CACHE_HOME": str(home / "xdg-cache"),
         }
         if no_dmabuf:
             extra["WEBKIT_DISABLE_DMABUF_RENDERER"] = "1"
@@ -393,7 +386,7 @@ def browsers_case(
     engine: str, headed: bool, playwright_runs: int = 3, tag: str = ""
 ) -> dict[str, Any]:
     name = f"{engine}-{'headed' if headed else 'headless'}{tag}"
-    signal.signal(signal.SIGTERM, _interrupt)
+    windows.stop_on_signals()
     record: dict[str, Any] = {"case": name, "load_before": load_now()}
     shot = RESULTS / f"magnifier-{engine}{tag}.png"
     with (
@@ -411,16 +404,11 @@ def browsers_case(
             str(shot if headed else Path(tmp) / "shot.png"),
             f"--playwright-runs={playwright_runs}",
         ]
-        env = browser.browser_env()
-        # Playwright looks for its browsers below XDG_CACHE_HOME unless told where they are.
-        env["PLAYWRIGHT_BROWSERS_PATH"] = str(
-            Path(env.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ms-playwright"
-        )
-        env["XDG_CACHE_HOME"] = str(Path(tmp) / "xdg-cache")
+        env = browser.browser_env(Path(tmp) / "xdg")
         if not headed:
             process = subprocess.Popen(argv, cwd=SPIKE, stdout=subprocess.PIPE, env=env)
             lines = drop_check.Lines(process)
-            code = process.wait(300)
+            code = windows.reap(process, 300)
         else:
             with windows.Session(cursor=True) as session, real_pointer(session) as device:
                 exe = session.wrapper(browser.executables()[engine], SPOT)

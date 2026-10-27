@@ -239,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         "--headed", action="store_true", help="also headed Chromium and Firefox (windows)"
     )
     args = parser.parse_args(argv)
+    windows.stop_on_signals()
     SHOTS.mkdir(parents=True, exist_ok=True)
     runs: dict[str, dict[str, Any]] = {}
     if not args.skip_app:

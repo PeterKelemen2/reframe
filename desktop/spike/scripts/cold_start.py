@@ -1,11 +1,13 @@
 """Cold start to "ready": (a) the sidecar alone, spawn to the ready line; (b) the app, process
-start to its page showing ``GET /api/health``. Each run gets new temporary folders. ``warm``
-runs one start first that is not counted; ``evicted`` drops the page cache of the measured
-files before each run and checks with ``fincore`` that it is gone."""
+start to its page showing ``GET /api/health``. Each run gets new temporary folders; the app runs
+of a case share their XDG folders (WebKitGTK's caches). ``warm`` runs one start first that is not
+counted; ``evicted`` drops the page cache of the measured files before each run and checks with
+``fincore`` that it is gone."""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import shutil
 import statistics
@@ -16,7 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from desktop.spike.scripts import app, page_cache, sidecar
+import httpx
+from desktop.spike.scripts import app, page_cache, sidecar, windows
 from desktop.spike.scripts.spike_paths import APP, REPO, SIDECAR_ONEDIR
 
 
@@ -53,24 +56,36 @@ class Case:
         return f"{self.target} ({sidecar}{where})"
 
 
-def run_sidecar(case: Case) -> dict[str, Any]:
+STOP_LIMIT = 15.0
+"""Seconds a sidecar gets to stop after the shutdown request before it is killed."""
+
+
+def run_sidecar(case: Case, xdg: Path) -> dict[str, Any]:
     command = sidecar.unfrozen_command() if case.unfrozen else sidecar.frozen_command()
     with tempfile.TemporaryDirectory(prefix="reframe-spike-") as tmp:
         car = sidecar.start(command, Path(tmp))
         try:
-            car.client.post("/api/system/shutdown")
-            car.process.wait(15)
+            with contextlib.suppress(httpx.HTTPError):
+                car.client.post("/api/system/shutdown")
+            windows.reap(car.process, STOP_LIMIT)
         finally:
             car.close()
+            if car.process.poll() is None:
+                car.process.kill()
+                car.process.wait()
+            if car.process.stdout is not None:
+                car.process.stdout.close()
     return {"total": car.ready_after}
 
 
-def run_app(case: Case) -> dict[str, Any]:
+def run_app(case: Case, xdg: Path) -> dict[str, Any]:
+    """One start of the app; ``xdg`` is shared by the runs of a case, so its caches (the
+    shader cache) are warm after the first run as the owner's would be."""
     env = {"REFRAME_SPIKE_EXIT_AFTER_HEALTH": "1"}
     if case.in_setup:
         env["REFRAME_SPIKE_SPAWN_IN_SETUP"] = "1"
     with tempfile.TemporaryDirectory(prefix="reframe-spike-") as tmp:
-        started = app.start(Path(tmp), unfrozen=case.unfrozen, extra_env=env)
+        started = app.start(Path(tmp), unfrozen=case.unfrozen, extra_env=env, xdg=xdg)
         try:
             page = started.wait_event("page_health")
             started.process.wait(15)
@@ -91,18 +106,21 @@ def run_app(case: Case) -> dict[str, Any]:
 def measure(case: Case, runs: int) -> dict[str, Any]:
     run = run_app if case.target == "app" else run_sidecar
     files = measured_files(case.target, case.unfrozen)
-    if case.cache == "warm":
-        run(case)
     samples: list[dict[str, Any]] = []
     eviction: list[dict[str, int]] = []
-    for _ in range(runs):
-        if case.cache == "evicted":
-            before = page_cache.resident(files)
-            page_cache.evict(files)
-            after = page_cache.resident(files)
-            eviction.append({"before": before.cached, "after": after.cached, "size": after.size})
-        time.sleep(0.5)
-        samples.append(run(case))
+    with tempfile.TemporaryDirectory(prefix="reframe-spike-xdg-") as xdg:
+        if case.cache == "warm":
+            run(case, Path(xdg))
+        for _ in range(runs):
+            if case.cache == "evicted":
+                before = page_cache.resident(files)
+                page_cache.evict(files)
+                after = page_cache.resident(files)
+                eviction.append(
+                    {"before": before.cached, "after": after.cached, "size": after.size}
+                )
+            time.sleep(0.5)
+            samples.append(run(case, Path(xdg)))
     totals = [sample["total"] for sample in samples]
     result: dict[str, Any] = {
         "case": case.label,

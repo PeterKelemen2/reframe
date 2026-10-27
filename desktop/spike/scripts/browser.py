@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from desktop.spike.scripts import sidecar
+from desktop.spike.scripts import app, sidecar, windows
 from desktop.spike.scripts.spike_paths import SPIKE, TAURI
 
 UI_DIST = SPIKE / "ui" / "dist"
+STOP_LIMIT = 15.0
+"""Seconds a stopped Node script gets after SIGTERM before it is killed."""
 
 
 def app_csp() -> str:
@@ -89,22 +91,25 @@ def node(
     """Runs a Node script of the spike (Playwright) and returns the JSON lines it prints.
     ``stop`` is asked every 0.1 s; a reason from it ends the script (its browsers close with
     it: Playwright drives them through a pipe)."""
-    with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
+    with (
+        tempfile.TemporaryDirectory(prefix="reframe-spike-node-") as xdg,
+        tempfile.TemporaryFile("w+") as out,
+        tempfile.TemporaryFile("w+") as err,
+    ):
         process = subprocess.Popen(
             ["node", str(script), *arguments],
             cwd=SPIKE,
             stdout=out,
             stderr=err,
             text=True,
-            env=browser_env(),
+            env=browser_env(Path(xdg)),
         )
         deadline = time.monotonic() + timeout
         reason = None
         while process.poll() is None:
             reason = stop() or ("timeout" if time.monotonic() > deadline else None)
             if reason:
-                process.terminate()
-                process.wait(15)
+                windows.terminate(process, STOP_LIMIT)
                 break
             time.sleep(0.1)
         out.seek(0)
@@ -117,14 +122,18 @@ def node(
     return [json.loads(line) for line in stdout.splitlines() if line.startswith("{")]
 
 
-def browser_env() -> dict[str, str]:
-    """Our environment without what an Electron host (VS Code) leaves in it: Chromium takes its
-    Wayland app id from ``CHROME_DESKTOP``."""
-    return {
+def browser_env(xdg: Path) -> dict[str, str]:
+    """The environment of Node and its browsers: XDG folders below ``xdg`` (Playwright's
+    browsers stay where they are installed), and nothing of what an Electron host (VS Code)
+    leaves in it: Chromium takes its Wayland app id from ``CHROME_DESKTOP``."""
+    env = {
         name: value
         for name, value in os.environ.items()
         if name != "CHROME_DESKTOP" and not name.startswith("ELECTRON_")
     }
+    installed = Path(env.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "ms-playwright"
+    env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(installed))
+    return env | app.private_xdg(xdg)
 
 
 def executables() -> dict[str, str]:

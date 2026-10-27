@@ -38,6 +38,19 @@ def unfrozen_command() -> list[str]:
     return ["uv", "run", "--project", str(REPO), "reframe-server"]
 
 
+SETTINGS = {"encoders": {"hardware_tests": False}}
+"""Every spike sidecar's settings: no VAAPI test encode and no libplacebo (Vulkan) run test on
+the GPU that the owner's movie shares; no check of the spike needs them."""
+
+
+def write_settings(config: Path) -> None:
+    """Writes :data:`SETTINGS` to a new config folder (an existing ``settings.json`` stays)."""
+    config.mkdir(parents=True, exist_ok=True)
+    settings = config / "settings.json"
+    if not settings.exists():
+        settings.write_text(json.dumps(SETTINGS), encoding="utf-8")
+
+
 def isolated_env(home: Path, token: str, extra: Mapping[str, str] | None = None) -> dict[str, str]:
     """The environment of a sidecar whose settings, queue and cache are in ``home``."""
     env = {name: value for name, value in os.environ.items() if not name.startswith("REFRAME_")}
@@ -45,6 +58,7 @@ def isolated_env(home: Path, token: str, extra: Mapping[str, str] | None = None)
         folder = home / name
         folder.mkdir(parents=True, exist_ok=True)
         env[f"REFRAME_{name.upper()}_DIR"] = str(folder)
+    write_settings(home / "config")
     env["REFRAME_TOKEN"] = token
     return env | dict(extra or {})
 
