@@ -236,7 +236,7 @@ class Session:
             f'gate={shlex.quote(str(gate))}\necho $$ > "$gate/pid.new" && mv "$gate/pid.new" '
             '"$gate/pid"\n'
             f'i=0; while [ ! -e "$gate/go" ]; do i=$((i+1)); [ "$i" -gt {limit} ] && exit 97; '
-            "sleep 0.02; done\n"
+            'sleep 0.02; done\nrm -rf -- "$gate"\n'
             f'exec {shlex.quote(os.fspath(binary))} "$@"\n',
             encoding="utf-8",
         )
