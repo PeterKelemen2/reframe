@@ -2437,15 +2437,23 @@ Checked on 2026-10-27 on the same set-up as 4b-i (KDE Plasma 6.8.1 on Wayland, W
   gets zscale.
 - **Frame clocks**: `performance.now()` and `requestAnimationFrame` timestamps step by 1 ms in
   WebKitGTK and Firefox and by 0.1 ms in Chromium (the smallest step in a busy loop). In the
-  Tauri app on a 60 Hz output, WebKitGTK's frame callbacks come at 62.2 Hz (16.08 ms) when the
-  page draws little, and at 60.4 Hz with the full redraw. Chromium, headed and headless, runs at
-  60.0 Hz. Headed Firefox misses single frames (33–34 ms) at about 0.5 %, also when the page
-  draws nothing. Headless Firefox misses none.
+  Tauri app on a 60 Hz output, WebKitGTK's frame callbacks come at 62.2 Hz (16.08 ms) with the
+  real pointer (a full redraw on about 87 % of them) and when the page's own `setTimeout` events
+  draw nothing; at 60.4 Hz only when those events lead to a redraw. Chromium, headed and
+  headless, runs at 60.0 Hz. Headed Firefox misses single frames (33–34 ms) at about 0.5 %, also
+  when the page draws nothing. Headless Firefox misses none.
+- **The first frame interval of a run** (from the callback the run asked for to the next one)
+  was 0.02 to 7 ms in 32 of 117 runs, all of them page-driven runs of Firefox or of WebKitGTK
+  without the DMA-BUF renderer; why is not known. The statistics leave every run's first
+  interval out.
 - **`WEBKIT_DISABLE_DMABUF_RENDERER=1`** makes WebKitGTK draw the canvas on the CPU: 3.3 ms
   per redraw of the 4K bitmap scaled to 860×484 against 0.008 ms to queue (1.05 ms with a read
   back) with the default renderer. The page still holds 60 Hz.
 - **Pointer events per second with the real pointer** (uinput moves at about 125 per second):
-  WebKitGTK 54–55 (60–61 without the DMA-BUF renderer), Chromium 60, Firefox 60. Playwright's
+  WebKitGTK 53.7–55.0 per run with its default (DMA-BUF) renderer, fewer than its 62.2 frame
+  callbacks per second (11.6 to 13.7 % of them come without a new position, so the page redraws
+  53.7–55.0 times per second); 60.3–60.5 without the DMA-BUF renderer. Chromium 60.2–60.5 and
+  Firefox 59.3–60.2, one per frame. Playwright's
   `page.mouse.move` reaches 60 per second in Chromium and Firefox, each call waiting for its
   frame. A `setTimeout` of 8 ms runs at about 12 ms in WebKitGTK (84 events per second).
 - **Firefox fired no `pointermove` for the uinput move that brought the cursor into its

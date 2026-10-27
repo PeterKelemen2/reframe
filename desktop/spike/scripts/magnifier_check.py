@@ -159,10 +159,25 @@ def finish(
     name: str, record: dict[str, Any], refresh_hz: float, runs: list[dict[str, Any]]
 ) -> dict[str, Any]:
     """Adds the statistics per drive and mode and writes ``results/magnifier-<name>.json``."""
+    record["refresh_hz_used"] = refresh_hz
+    with_statistics(record, runs)
+    path = RESULTS / f"magnifier-{name}.json"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(json.dumps({"written": str(path), "cases": record["cases"]}, indent=1))
+    return record
+
+
+DERIVED = ("interval", "rate_fps", "redraws_per_second", "redraw", "dropped", "redraws")
+"""The keys of a stored run that :func:`magnifier_stats.summarise` computes from its lists."""
+
+
+def with_statistics(record: dict[str, Any], runs: list[dict[str, Any]]) -> None:
+    """Sets ``cases`` (per drive and mode) and ``runs`` (each with its own statistics) of a
+    result from the raw runs."""
+    refresh_hz = record["refresh_hz_used"]
     groups: dict[str, list[dict[str, Any]]] = {}
     for run in runs:
         groups.setdefault(f"{run['label']}/{run['mode']}", []).append(run)
-    record["refresh_hz_used"] = refresh_hz
     record["cases"] = {key: pooled(group, refresh_hz) for key, group in groups.items()}
     record["runs"] = [
         summarise(run, refresh_hz)
@@ -170,10 +185,19 @@ def finish(
         | {"draws": [round(v, 2) for v in run["draws"]]}
         for run in runs
     ]
-    path = RESULTS / f"magnifier-{name}.json"
-    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(json.dumps({"written": str(path), "cases": record["cases"]}, indent=1))
-    return record
+
+
+def restat() -> None:
+    """Computes the statistics of every ``results/magnifier-*.json`` again from its raw runs
+    (the page's records stay as they are)."""
+    for path in sorted(RESULTS.glob("magnifier-*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if "runs" not in record:
+            continue
+        raw = [{k: v for k, v in run.items() if k not in DERIVED} for run in record["runs"]]
+        with_statistics(record, raw)
+        path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(json.dumps({"restated": path.name}))
 
 
 def pointer_summary(log: list[dict[str, Any]]) -> dict[str, Any]:
@@ -485,7 +509,8 @@ def summary() -> dict[str, Any]:
         events = row["events_per_second"]
         print(
             f"| {row['case']} | {row['drive']} | {interval['median']} / {interval['p95']} / "
-            f"{interval['worst']} | {row['rate_fps']} | {redraw['median']} / {redraw['p95']} / "
+            f"{interval['worst']} | {row['rate_fps']} | {row['redraws_per_second']} | "
+            f"{redraw['median']} / {redraw['p95']} / "
             f"{redraw['worst']} | {drop['late']} ({drop['missed']}) of {row['frames']} | "
             f"{row['runs']} | {min(events):.0f}-{max(events):.0f} | {row['refresh_hz']:g} | "
             f"{' -> '.join(str(v) for v in row['load_1min'])} |"
@@ -509,6 +534,7 @@ def main(argv: list[str] | None = None) -> int:
     browsers_parser.add_argument("--playwright-runs", type=int, default=3)
     browsers_parser.add_argument("--tag", default="", help="a suffix of the result's name")
     commands.add_parser("summary", help="the table of every results/magnifier-*.json")
+    commands.add_parser("restat", help="the statistics of every result again from its runs")
     args = parser.parse_args(argv)
     RESULTS.mkdir(exist_ok=True)
     if args.command == "frame-route":
@@ -524,6 +550,8 @@ def main(argv: list[str] | None = None) -> int:
                 browsers_case(engine, False, args.playwright_runs, args.tag)
             if args.headed:
                 browsers_case(engine, True, args.playwright_runs, args.tag)
+    elif args.command == "restat":
+        restat()
     else:
         summary()
     return 0
