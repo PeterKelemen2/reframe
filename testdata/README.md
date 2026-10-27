@@ -2418,3 +2418,47 @@ Xwayland 24.1.14), WebKitGTK `webkit2gtk-4.1` 2.54.2, GTK 3.24.52, Dolphin 26.08
   Chromium and 51 px in WebKitGTK and Firefox.
   Headless Chromium hides scrollbars; headed Chromium draws classic 15 px ones, WebKitGTK and
   Firefox overlay ones (0 px).
+
+### D-0 (4b-ii)
+
+Checked on 2026-10-27 on the same set-up as 4b-i (KDE Plasma 6.8.1 on Wayland, WebKitGTK
+2.54.2, Playwright 1.64.1: Chromium 156.0.8078.4, Firefox 157.0), with the frozen sidecar and
+`/usr/bin/ffmpeg`. The magnifier check: `desktop/spike/MAGNIFIER.md`.
+
+- **The preview frame route**: `POST /api/preview/frames` answers JSON with a signed URL
+  (`/api/preview/frames/<key>.png?exp=…&sig=…`), not the bytes; the URL needs no token and gives
+  401 without its signature. For `hdr10-4k.mkv` at 2.5 s the PNG is 3840×2160 `rgb24`
+  (`ffprobe`), with `cICP` 01 01 00 01 (BT.709 primaries and transfer, full range), `cHRM` and
+  `gAMA` chunks.
+- **Which tone mapping a frame gets depends on timing**: with the same source and timestamp,
+  six fresh sidecars used zscale + tonemap (1 169 110 bytes) and four used libplacebo
+  (2 559 598 bytes), with different keys. `libplacebo` counts only after its Vulkan run test
+  has passed (`CapabilitySnapshot.usable_filter`), so a frame request soon after the start
+  gets zscale.
+- **Frame clocks**: `performance.now()` and `requestAnimationFrame` timestamps step by 1 ms in
+  WebKitGTK and Firefox and by 0.1 ms in Chromium (the smallest step in a busy loop). In the
+  Tauri app on a 60 Hz output, WebKitGTK's frame callbacks come at 62.2 Hz (16.08 ms) when the
+  page draws little, and at 60.4 Hz with the full redraw. Chromium, headed and headless, runs at
+  60.0 Hz. Headed Firefox misses single frames (33–34 ms) at about 0.5 %, also when the page
+  draws nothing. Headless Firefox misses none.
+- **`WEBKIT_DISABLE_DMABUF_RENDERER=1`** makes WebKitGTK draw the canvas on the CPU: 3.3 ms
+  per redraw of the 4K bitmap scaled to 860×484 against 0.008 ms to queue (1.05 ms with a read
+  back) with the default renderer. The page still holds 60 Hz.
+- **Pointer events per second with the real pointer** (uinput moves at about 125 per second):
+  WebKitGTK 54–55 (60–61 without the DMA-BUF renderer), Chromium 60, Firefox 60. Playwright's
+  `page.mouse.move` reaches 60 per second in Chromium and Firefox, each call waiting for its
+  frame. A `setTimeout` of 8 ms runs at about 12 ms in WebKitGTK (84 events per second).
+- **Firefox fired no `pointermove` for the uinput move that brought the cursor into its
+  window** (2 of 2 tries), only for later moves. WebKitGTK and Chromium fired one for that
+  first move (5 of 5). Once, WebKitGTK fired none for a move 0.4 s after the entering one
+  either (1 of 8 calibrations in the app), so the check tries up to four points.
+- **Colour conversion in a canvas**: headless Chromium converts a PNG tagged `cICP` BT.709 to
+  sRGB when it decodes it with `createImageBitmap` (a channel of 164 reads back as 159 with
+  `getImageData`); with `{ colorSpaceConversion: "none" }`, or without the colour chunks, it
+  reads 164. Firefox reads 164 in every case.
+- **Playwright and `XDG_CACHE_HOME`**: Playwright looks for its browsers in
+  `$XDG_CACHE_HOME/ms-playwright`; a temporary `XDG_CACHE_HOME` needs
+  `PLAYWRIGHT_BROWSERS_PATH`. Playwright's headless Chromium is `chrome-headless-shell`
+  (`chromium_headless_shell-1248`), not the headed binary.
+- **Node keeps running while a timer is pending**: a Playwright script whose waits leave
+  `setTimeout` timers behind does not exit until they fire, even after `browser.close()`.
