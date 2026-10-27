@@ -123,6 +123,10 @@ class Session:
     _failure: str | None = field(init=False, default=None)
     _watcher: threading.Thread | None = field(init=False, default=None)
     _stop: threading.Event = field(init=False, default_factory=threading.Event)
+    _added: dict[str, dict[str, Any]] = field(init=False, default_factory=dict)
+    _moves: dict[str, dict[str, Any]] = field(init=False, default_factory=dict)
+    _waiting: dict[str, float] = field(init=False, default_factory=dict)
+    """Windows added and not yet shown, with the time KWin's record came."""
     names: list[str] = field(init=False, default_factory=list)
     """Every plugin name this session loaded (each must be unloaded at the end)."""
 
@@ -288,38 +292,44 @@ class Session:
         return self._failure
 
     def _watch(self) -> None:
-        added: dict[str, dict[str, Any]] = {}
-        moves: dict[str, dict[str, Any]] = {}
-        waiting: dict[str, float] = {}
         done = 0
         while not self._stop.is_set():
             new = self.journal.seen[done:]
             done += len(new)
-            for record in new:
-                event, key = record["event"], str(record.get("id"))
-                if event == "added":
-                    added[key] = record
-                    waiting[key] = record["seen"]
-                elif event == "placed":
-                    moves[key] = record
-                elif event == "shown":
-                    waiting.pop(key, None)
-                    info = kwin.window_info(key)
-                    entry = Placed(
-                        record["pid"], key, added[key], moves.get(key, record), record, info
-                    )
-                    if not info or not self.screen.holds(entry.rect):
-                        self._failure = f"window {key} read back as {info or 'gone'}"
-                    self.placed.append(entry)
-                elif event in ("moved", "output") and record["opacity"] > 0:
-                    if record["output"] != kwin.SECONDARY:
-                        self._failure = f"window {key} moved to {record['output']}"
-                elif event == "removed":
-                    waiting.pop(key, None)
-            for key, since in waiting.items():
-                if time.monotonic() - since > SHOW_LIMIT:
-                    self._failure = f"window {key} was not shown on {kwin.SECONDARY}: {added[key]}"
+            self._check(new, time.monotonic())
             time.sleep(0.01)
+
+    def _check(self, records: list[dict[str, Any]], now: float) -> None:
+        """Takes the script's new records: a window that is shown is read back, and the
+        failure is set for a window read back or seen (opaque) off the secondary output, or
+        not shown there within :data:`SHOW_LIMIT` of being added."""
+        for record in records:
+            event, key = record["event"], str(record.get("id"))
+            if event == "added":
+                self._added[key] = record
+                self._waiting[key] = record["seen"]
+            elif event == "placed":
+                self._moves[key] = record
+            elif event == "shown":
+                self._waiting.pop(key, None)
+                info = kwin.window_info(key)
+                added = self._added[key]
+                entry = Placed(
+                    record["pid"], key, added, self._moves.get(key, record), record, info
+                )
+                if not info or not self.screen.holds(entry.rect):
+                    self._failure = f"window {key} read back as {info or 'gone'}"
+                self.placed.append(entry)
+            elif event in ("moved", "output") and record["opacity"] > 0:
+                if record["output"] != kwin.SECONDARY:
+                    self._failure = f"window {key} moved to {record['output']}"
+            elif event == "removed":
+                self._waiting.pop(key, None)
+        for key, since in self._waiting.items():
+            if now - since > SHOW_LIMIT:
+                self._failure = (
+                    f"window {key} was not shown on {kwin.SECONDARY}: {self._added[key]}"
+                )
 
 
 def terminate(process: subprocess.Popen[Any], limit: float = 10.0) -> int:

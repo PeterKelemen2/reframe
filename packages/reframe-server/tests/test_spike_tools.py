@@ -74,8 +74,11 @@ def test_a_move_outside_the_secondary_output_sends_nothing() -> None:
         assert device_of(moved).events == []
 
 
-def test_a_read_back_outside_stops_and_releases_where_the_button_went_down() -> None:
-    moved = make_pointer({(1800, 500): (2100, 500)})
+@pytest.mark.parametrize("seen", [(2100, 500), (1800, 800)], ids=["x elsewhere", "y elsewhere"])
+def test_a_read_back_elsewhere_stops_and_releases_where_the_button_went_down(
+    seen: tuple[int, int],
+) -> None:
+    moved = make_pointer({(1800, 500): seen})
 
     def drag() -> Device:
         with moved:
@@ -86,7 +89,7 @@ def test_a_read_back_outside_stops_and_releases_where_the_button_went_down() -> 
                 moved.move(1800, 500)
             except pointer.OutsideSecondary:
                 return device
-        raise AssertionError("the read-back outside did not stop the move")
+        raise AssertionError("the read-back elsewhere did not stop the move")
 
     device = drag()
     assert device.buttons() == [1, 0]
@@ -120,9 +123,129 @@ def test_outputs_are_read_from_the_coloured_text() -> None:
     }
 
 
-def test_a_spot_that_does_not_fit_the_secondary_output_is_refused() -> None:
+def test_a_spot_that_fits_the_secondary_output_is_taken() -> None:
     windows.check_spot(SECONDARY, (40, 40, 1280, 800))
+
+
+@pytest.mark.parametrize(
+    "spot",
+    [(-10, 40, 1280, 800), (40, -10, 1280, 800), (700, 40, 1280, 800), (40, 400, 1280, 800)],
+    ids=["past the left", "past the top", "past the right", "past the bottom"],
+)
+def test_a_spot_that_does_not_fit_the_secondary_output_is_refused(spot: windows.Spot) -> None:
     with pytest.raises(windows.WrongOutput):
-        windows.check_spot(SECONDARY, (700, 40, 1280, 800))
+        windows.check_spot(SECONDARY, spot)
+
+
+def test_a_spot_without_a_size_must_start_on_the_secondary_output() -> None:
     with pytest.raises(windows.WrongOutput):
         windows.check_spot(SECONDARY, (1930, 40, None, None))
+
+
+class QuietJournal:
+    """A journal whose records the test hands to the session itself."""
+
+    def __init__(self) -> None:
+        self.seen: list[dict[str, Any]] = []
+
+    def wait(self, match: Any, limit: float, since: int = 0) -> None:
+        return None
+
+
+def make_session(monkeypatch: pytest.MonkeyPatch, *answers: kwin.Rect) -> windows.Session:
+    """A session on ``SECONDARY`` with no KWin: ``getWindowInfo`` answers ``answers`` in turn
+    (the last one again after that)."""
+    session = windows.Session()
+    session.screen = SECONDARY
+    session.journal = QuietJournal()  # type: ignore[assignment]
+    replies = list(answers)
+
+    def window_info(uuid: str) -> dict[str, str]:
+        rect = replies.pop(0) if len(replies) > 1 else replies[0]
+        return {
+            "x": str(rect.x),
+            "y": str(rect.y),
+            "width": str(rect.width),
+            "height": str(rect.height),
+            "pid": "7",
+        }
+
+    monkeypatch.setattr(kwin, "window_info", window_info)
+    return session
+
+
+def record(event: str, **fields: Any) -> dict[str, Any]:
+    base = {
+        "event": event,
+        "id": "{w}",
+        "pid": 7,
+        "normal": True,
+        "dialog": False,
+        "output": "HDMI-A-1",
+        "geo": [40, 40, 1280, 800],
+        "opacity": 1,
+        "seen": 100.0,
+    }
+    return base | fields
+
+
+INSIDE = kwin.Rect(40, 40, 1280, 800)
+ON_DP1 = kwin.Rect(2260, 123, 1240, 788)
+
+
+def test_a_window_shown_on_the_secondary_output_is_returned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = make_session(monkeypatch, INSIDE)
+    session._check([record("added", opacity=0), record("shown")], 100.1)
+    assert session.failure is None
+    assert session.window(7, limit=1).rect == INSIDE
+
+
+def test_a_shown_window_read_back_past_the_bottom_stops_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = make_session(monkeypatch, kwin.Rect(40, 400, 1280, 800))
+    session._check([record("added", opacity=0), record("shown")], 100.1)
+    assert session.failure is not None
+    with pytest.raises(windows.WrongOutput):
+        session.window(7, limit=1)
+
+
+def test_a_window_read_back_elsewhere_after_it_settles_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The move was asked for and not applied: the second read-back finds the window on DP-1.
+    session = make_session(monkeypatch, INSIDE, ON_DP1)
+    session._check([record("added", opacity=0), record("shown")], 100.1)
+    with pytest.raises(windows.WrongOutput):
+        session.window(7, limit=1)
+
+
+@pytest.mark.parametrize(("opacity", "stops"), [(1, True), (0, False)], ids=["opaque", "hidden"])
+def test_a_window_seen_on_another_output_stops_the_session_when_it_is_opaque(
+    monkeypatch: pytest.MonkeyPatch, opacity: int, stops: bool
+) -> None:
+    session = make_session(monkeypatch, INSIDE)
+    session._check([record("moved", output="DP-1", opacity=opacity)], 100.1)
+    assert (session.failure is not None) is stops
+    if stops:
+        with pytest.raises(windows.WrongOutput):
+            session.window(7, limit=0.2)
+
+
+def test_a_window_not_shown_in_time_stops_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = make_session(monkeypatch, INSIDE)
+    session._check([record("added", opacity=0)], 100.0 + windows.SHOW_LIMIT / 2)
+    assert session.failure is None
+    session._check([], 100.0 + windows.SHOW_LIMIT + 0.1)
+    assert session.failure is not None
+
+
+def test_a_window_closed_before_it_was_shown_does_not_stop_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = make_session(monkeypatch, INSIDE)
+    session._check([record("added", opacity=0), record("removed")], 100.1)
+    session._check([], 100.0 + windows.SHOW_LIMIT + 0.1)
+    assert session.failure is None

@@ -2414,6 +2414,7 @@ Xwayland 24.1.14), WebKitGTK `webkit2gtk-4.1` 2.54.2, GTK 3.24.52, Dolphin 26.08
 - **PrimeVue 4.5.5 `Tab`** is a `<button>` (`as` defaults to `BUTTON`) that takes the user
   agent's button font: WebKitGTK
   `600 13px Noto Sans`, Chromium `600 13.3333px Arial`, Firefox `600 13.3281px sans-serif`
-  (headless) or `Noto Sans` (headed); Chromium's tab is 3 px lower (48 against 51 px).
+  (headless) or `Noto Sans` (headed). Each tab, and so the tab bar, is 48 px high in
+  Chromium and 51 px in WebKitGTK and Firefox.
   Headless Chromium hides scrollbars; headed Chromium draws classic 15 px ones, WebKitGTK and
   Firefox overlay ones (0 px).

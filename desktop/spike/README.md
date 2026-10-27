@@ -366,9 +366,10 @@ Results (2026-10-27; Playwright 1.64.1: Chromium 156.0.8078.4, Firefox 157.0):
 
 - **WebKitGTK and Firefox lay the page out the same to about 1 px** (the widest difference: a
   tab 1.06 px wider in Firefox); 1.3 to 7 % of their pixels differ (text antialiasing).
-- **Chromium differs by 3 px in the tab bar**: the tabs are 48 px high, not 51 px
-  (`prime-metrics.json` `box_differences`; compare `chromium-light-base.png` and
-  `webkitgtk-light-base.png`), so everything below starts 3 px higher. The cause: PrimeVue's
+- **Chromium differs by 3 px in the tab bar**: each tab, and so the tab bar (`.p-tablist`),
+  is 48 px high in Chromium and 51 px in WebKitGTK and Firefox (`prime-metrics.json`
+  `box_differences`; compare `chromium-light-base.png` and `webkitgtk-light-base.png`), so in
+  Chromium everything below the tab bar starts 3 px higher. The cause: PrimeVue's
   `Tab` is a `<button>` and takes the browser's button font (WebKitGTK `600 13px Noto Sans`,
   Chromium `600 13.3333px Arial`, Firefox `600 13.3281px sans-serif`). A `font: inherit` on
   buttons in the frontend would remove the difference.
