@@ -1,0 +1,51 @@
+{
+ "request": {
+  "source_id": "<from POST /api/sources>",
+  "timestamps": [
+   2.5
+  ]
+ },
+ "answer": {
+  "frames": [
+   {
+    "key": "ff434134e92e825c-2500-970c57a79b93f0ca",
+    "kind": "source",
+    "timestamp": 2.5,
+    "width": 3840,
+    "height": 2160,
+    "cached": false,
+    "url": "/api/preview/frames/ff434134e92e825c-2500-970c57a79b93f0ca.png?…"
+   }
+  ],
+  "notes": [
+   "The source is HDR10: a PNG cannot hold HDR, so the frames are tone mapped to SDR for display with zscale + tonemap."
+  ]
+ },
+ "url_query_keys": [
+  "exp",
+  "sig"
+ ],
+ "seconds": {
+  "first": 0.517,
+  "cached": 0.004
+ },
+ "cached_again": true,
+ "png": {
+  "status": 200,
+  "content_type": "image/png",
+  "bytes": 1169110,
+  "etag": "\"ff434134e92e825c-2500-970c57a79b93f0ca\"",
+  "ffprobe": [
+   {
+    "codec_name": "png",
+    "width": 3840,
+    "height": 2160,
+    "pix_fmt": "rgb24"
+   }
+  ]
+ },
+ "without_signature": {
+  "status": 401,
+  "body": "{\"type\": \"about:blank\", \"title\": \"Credentials are required\", \"status\": 401, \"detail\": null, \"code\": \"auth.required\", \"issues\": [], \"errors\": []}"
+ }
+}
