@@ -1,0 +1,3728 @@
+{
+ "runs": [
+  {
+   "session": "xwayland",
+   "target": "app",
+   "tauri_handler": true,
+   "dolphin": "dolphin 26.08.2",
+   "root": "/tmp/reframe-spike-drop-a7nhsr26/files",
+   "cases": {
+    "spaces": {
+     "dropped": true,
+     "seconds": 1.39,
+     "dolphin_items": [
+      {
+       "name": "spaces — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "film with spaces.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        106
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_enter": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_enter": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_drop": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragleave": {
+      "dropEffect": "none",
+      "effectAllowed": "none",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_drop": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+       "exists": true
+      }
+     ],
+     "raw": [
+      {
+       "event": "drop_native",
+       "kind": "enter",
+       "ms": 2855.942919,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        43.0,
+        212.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 2857.111844,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 2858.878668,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv"
+       ],
+       "position": {
+        "x": 43,
+        "y": 212
+       },
+       "source": "tauri",
+       "type": "enter"
+      },
+      {
+       "event": "drop_native",
+       "kind": "drop",
+       "ms": 3285.7315470000003,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        628.0,
+        360.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 3286.224076,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "none",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragleave"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 3286.89442,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/spaces/film with spaces.mkv"
+       ],
+       "position": {
+        "x": 628,
+        "y": 360
+       },
+       "source": "tauri",
+       "type": "drop"
+      }
+     ]
+    },
+    "accents": {
+     "dropped": true,
+     "seconds": 1.39,
+     "dolphin_items": [
+      {
+       "name": "accents — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "Ünnepi film – 2.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_enter": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_enter": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_drop": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragleave": {
+      "dropEffect": "none",
+      "effectAllowed": "none",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_drop": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+       "exists": true
+      }
+     ],
+     "raw": [
+      {
+       "event": "drop_native",
+       "kind": "enter",
+       "ms": 6361.382895000001,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        43.0,
+        206.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 6362.204685,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 6363.001388,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv"
+       ],
+       "position": {
+        "x": 43,
+        "y": 206
+       },
+       "source": "tauri",
+       "type": "enter"
+      },
+      {
+       "event": "drop_native",
+       "kind": "drop",
+       "ms": 6797.143019,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        628.0,
+        360.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 6797.643723,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "none",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragleave"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 6798.391835,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/accents/Ünnepi film – 2.mkv"
+       ],
+       "position": {
+        "x": 628,
+        "y": 360
+       },
+       "source": "tauri",
+       "type": "drop"
+      }
+     ]
+    },
+    "cjk": {
+     "dropped": true,
+     "seconds": 1.39,
+     "dolphin_items": [
+      {
+       "name": "cjk — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "日本語.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        89
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_enter": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_enter": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_drop": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragleave": {
+      "dropEffect": "none",
+      "effectAllowed": "none",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_drop": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+       "exists": true
+      }
+     ],
+     "raw": [
+      {
+       "event": "drop_native",
+       "kind": "enter",
+       "ms": 9915.921051,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        43.0,
+        206.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 9916.877686,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 9917.62727,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv"
+       ],
+       "position": {
+        "x": 43,
+        "y": 206
+       },
+       "source": "tauri",
+       "type": "enter"
+      },
+      {
+       "event": "drop_native",
+       "kind": "drop",
+       "ms": 10348.839498,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        628.0,
+        360.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 10349.315245,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "none",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragleave"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 10350.016187,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/cjk/日本語.mkv"
+       ],
+       "position": {
+        "x": 628,
+        "y": 360
+       },
+       "source": "tauri",
+       "type": "drop"
+      }
+     ]
+    },
+    "not-utf8": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "not-utf8 — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "bad�name.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164ff6e616d652e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_enter": [
+      {
+       "dir": false,
+       "exists": false,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164efbfbd6e616d652e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_enter": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164efbfbd6e616d652e6d6b76",
+       "exists": false
+      }
+     ],
+     "native_drop": [
+      {
+       "dir": false,
+       "exists": false,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164efbfbd6e616d652e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragleave": {
+      "dropEffect": "none",
+      "effectAllowed": "none",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_drop": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164efbfbd6e616d652e6d6b76",
+       "exists": false
+      }
+     ],
+     "raw": [
+      {
+       "event": "drop_native",
+       "kind": "enter",
+       "ms": 13423.726874,
+       "paths": [
+        {
+         "dir": false,
+         "exists": false,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164efbfbd6e616d652e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        43.0,
+        206.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 13424.278455,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 13424.89612,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv"
+       ],
+       "position": {
+        "x": 43,
+        "y": 206
+       },
+       "source": "tauri",
+       "type": "enter"
+      },
+      {
+       "event": "drop_native",
+       "kind": "drop",
+       "ms": 13861.1075,
+       "paths": [
+        {
+         "dir": false,
+         "exists": false,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f6e6f742d757466382f626164efbfbd6e616d652e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        628.0,
+        360.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 13861.591133,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "none",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragleave"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 13862.255104999998,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/not-utf8/bad�name.mkv"
+       ],
+       "position": {
+        "x": 628,
+        "y": 360
+       },
+       "source": "tauri",
+       "type": "drop"
+      }
+     ]
+    },
+    "three-files": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "three-files — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "két film.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      },
+      {
+       "name": "one.mkv",
+       "role": "list item",
+       "client": [
+        292,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      },
+      {
+       "name": "日本語 3.mkv",
+       "role": "list item",
+       "client": [
+        430,
+        59,
+        125,
+        89
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+       "exists": true
+      },
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+       "exists": true
+      },
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_enter": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+       "utf8": true
+      },
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+       "utf8": true
+      },
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_enter": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+       "exists": true
+      },
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+       "exists": true
+      },
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+       "exists": true
+      }
+     ],
+     "native_drop": [
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+       "utf8": true
+      },
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+       "utf8": true
+      },
+      {
+       "dir": false,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv",
+       "utf8": true
+      }
+     ],
+     "dom_dragleave": {
+      "dropEffect": "none",
+      "effectAllowed": "none",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_drop": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+       "exists": true
+      },
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+       "exists": true
+      },
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+       "exists": true
+      }
+     ],
+     "raw": [
+      {
+       "event": "drop_native",
+       "kind": "enter",
+       "ms": 16953.367175,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+         "utf8": true
+        },
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+         "utf8": true
+        },
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        43.0,
+        206.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 16953.896854,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 16955.578727,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+        "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+        "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv"
+       ],
+       "position": {
+        "x": 43,
+        "y": 206
+       },
+       "source": "tauri",
+       "type": "enter"
+      },
+      {
+       "event": "drop_native",
+       "kind": "drop",
+       "ms": 17390.047503,
+       "paths": [
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+         "utf8": true
+        },
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+         "utf8": true
+        },
+        {
+         "dir": false,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv",
+         "utf8": true
+        }
+       ],
+       "position": [
+        628.0,
+        360.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 17390.482173,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "none",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragleave"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 17391.207220999997,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/két film.mkv",
+        "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/one.mkv",
+        "/tmp/reframe-spike-drop-a7nhsr26/files/three-files/日本語 3.mkv"
+       ],
+       "position": {
+        "x": 628,
+        "y": 360
+       },
+       "source": "tauri",
+       "type": "drop"
+      }
+     ]
+    },
+    "folder": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "folder — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "A folder",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+       "exists": true
+      }
+     ],
+     "native_enter": [
+      {
+       "dir": true,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder",
+       "utf8": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_enter": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+       "exists": true
+      }
+     ],
+     "native_drop": [
+      {
+       "dir": true,
+       "exists": true,
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+       "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder",
+       "utf8": true
+      }
+     ],
+     "dom_dragleave": {
+      "dropEffect": "none",
+      "effectAllowed": "none",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "tauri_drop": [
+      {
+       "path": "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder",
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+       "exists": true
+      }
+     ],
+     "raw": [
+      {
+       "event": "drop_native",
+       "kind": "enter",
+       "ms": 20526.687254999997,
+       "paths": [
+        {
+         "dir": true,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder",
+         "utf8": true
+        }
+       ],
+       "position": [
+        43.0,
+        206.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 20527.206243999997,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 20528.146999,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder"
+       ],
+       "position": {
+        "x": 43,
+        "y": 206
+       },
+       "source": "tauri",
+       "type": "enter"
+      },
+      {
+       "event": "drop_native",
+       "kind": "drop",
+       "ms": 20963.575677,
+       "paths": [
+        {
+         "dir": true,
+         "exists": true,
+         "hex": "2f746d702f72656672616d652d7370696b652d64726f702d61376e68737232362f66696c65732f666f6c6465722f4120666f6c646572",
+         "lossy": "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder",
+         "utf8": true
+        }
+       ],
+       "position": [
+        628.0,
+        360.0
+       ]
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 20964.325943,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "none",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragleave"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 20965.194961999998,
+       "paths": [
+        "/tmp/reframe-spike-drop-a7nhsr26/files/folder/A folder"
+       ],
+       "position": {
+        "x": 628,
+        "y": 360
+       },
+       "source": "tauri",
+       "type": "drop"
+      }
+     ]
+    }
+   },
+   "pointer_device": {
+    "name": "reframe-spike pointer",
+    "pointer": "true",
+    "touch": "false",
+    "tabletTool": "false",
+    "isVirtual": "true",
+    "outputName": "",
+    "mapToWorkspace": "false",
+    "enabled": "true",
+    "sys_name": "input60",
+    "node": "event24"
+   },
+   "app_window": {
+    "pid": 103895,
+    "class": "Reframe-spike",
+    "added": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      340,
+      146,
+      1240,
+      788
+     ]
+    },
+    "placed": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      590,
+      120,
+      1240,
+      760
+     ]
+    },
+    "shown": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      590,
+      120,
+      1240,
+      760
+     ]
+    },
+    "read_back": [
+     590,
+     120,
+     1240,
+     760
+    ]
+   },
+   "app_exit": 0,
+   "windows": [
+    {
+     "pid": 103895,
+     "class": "Reframe-spike",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       340,
+       146,
+       1240,
+       788
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       590,
+       120,
+       1240,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       590,
+       120,
+       1240,
+       760
+      ]
+     },
+     "read_back": [
+      590,
+      120,
+      1240,
+      760
+     ]
+    },
+    {
+     "pid": 104018,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       580,
+       251,
+       760,
+       578
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       760,
+       578
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       760,
+       578
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 104702,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 104766,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 104840,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 104898,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 104971,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    }
+   ],
+   "focus": [
+    {
+     "event": "loaded",
+     "script": 1,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 2,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 3,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 4,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 5,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 6,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 7,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 8,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 9,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 10,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 11,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 12,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 13,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 14,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    }
+   ],
+   "popups": [],
+   "scripts_loaded_after": {
+    "reframe-spike-ce489d9e4975-1": false,
+    "reframe-spike-ce489d9e4975-2": false,
+    "reframe-spike-ce489d9e4975-3": false,
+    "reframe-spike-ce489d9e4975-4": false,
+    "reframe-spike-ce489d9e4975-5": false,
+    "reframe-spike-ce489d9e4975-6": false,
+    "reframe-spike-ce489d9e4975-7": false,
+    "reframe-spike-ce489d9e4975-8": false,
+    "reframe-spike-ce489d9e4975-9": false,
+    "reframe-spike-ce489d9e4975-10": false,
+    "reframe-spike-ce489d9e4975-11": false,
+    "reframe-spike-ce489d9e4975-12": false,
+    "reframe-spike-ce489d9e4975-13": false,
+    "reframe-spike-ce489d9e4975-14": false
+   },
+   "owner_dolphin_files": {
+    "before": {
+     "/home/peti/.config/dolphinrc": 1785684788.6818504,
+     "/home/peti/.local/state/dolphinstaterc": 1793036126.618674
+    },
+    "after": {
+     "/home/peti/.config/dolphinrc": 1785684788.6818504,
+     "/home/peti/.local/state/dolphinstaterc": 1793036126.618674
+    }
+   },
+   "device_left": false,
+   "pointer": {
+    "moves": 235,
+    "read_back_equal_to_target": true,
+    "read_back_box": [
+     236,
+     251,
+     1218,
+     1000
+    ],
+    "slowest_read_back_ms": 7.1,
+    "buttons": [
+     {
+      "press": [
+       236,
+       260
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "session": "xwayland",
+   "target": "app",
+   "tauri_handler": false,
+   "dolphin": "dolphin 26.08.2",
+   "root": "/tmp/reframe-spike-drop-7jxfvl_a/files",
+   "cases": {
+    "spaces": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "spaces — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "film with spaces.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        106
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f7370616365732f66696c6d2077697468207370616365732e6d6b76",
+       "exists": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "dom_drop": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": [
+       "file:///tmp/reframe-spike-drop-7jxfvl_a/files/spaces/film%20with%20spaces.mkv"
+      ]
+     },
+     "raw": [
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 2916.775671,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 3351.63789,
+       "overs": 19,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<474 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "drop"
+      }
+     ]
+    },
+    "accents": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "accents — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "Ünnepi film – 2.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f616363656e74732fc39c6e6e6570692066696c6d20e2809320322e6d6b76",
+       "exists": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "dom_drop": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": [
+       "file:///tmp/reframe-spike-drop-7jxfvl_a/files/accents/%C3%9Cnnepi%20film%20%E2%80%93%202.mkv"
+      ]
+     },
+     "raw": [
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 6456.179067,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 6895.836004,
+       "overs": 18,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<489 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "drop"
+      }
+     ]
+    },
+    "cjk": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "cjk — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "日本語.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        89
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f636a6b2fe697a5e69cace8aa9e2e6d6b76",
+       "exists": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "dom_drop": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": [
+       "file:///tmp/reframe-spike-drop-7jxfvl_a/files/cjk/%E6%97%A5%E6%9C%AC%E8%AA%9E.mkv"
+      ]
+     },
+     "raw": [
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 9987.774034,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 10424.871144,
+       "overs": 18,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<478 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "drop"
+      }
+     ]
+    },
+    "not-utf8": {
+     "dropped": true,
+     "seconds": 1.39,
+     "dolphin_items": [
+      {
+       "name": "not-utf8 — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "bad�name.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f6e6f742d757466382f626164ff6e616d652e6d6b76",
+       "exists": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "dom_drop": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": [
+       "file:///tmp/reframe-spike-drop-7jxfvl_a/files/not-utf8/bad%EF%BF%BDname.mkv"
+      ]
+     },
+     "raw": [
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 13512.433497,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 13950.330258,
+       "overs": 18,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<472 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "drop"
+      }
+     ]
+    },
+    "three-files": {
+     "dropped": true,
+     "seconds": 1.4,
+     "dolphin_items": [
+      {
+       "name": "three-files — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "két film.mkv",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      },
+      {
+       "name": "one.mkv",
+       "role": "list item",
+       "client": [
+        292,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      },
+      {
+       "name": "日本語 3.mkv",
+       "role": "list item",
+       "client": [
+        430,
+        59,
+        125,
+        89
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f74687265652d66696c65732f6f6e652e6d6b76",
+       "exists": true
+      },
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f74687265652d66696c65732f6bc3a9742066696c6d2e6d6b76",
+       "exists": true
+      },
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f74687265652d66696c65732fe697a5e69cace8aa9e20332e6d6b76",
+       "exists": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "dom_drop": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": [
+       "file:///tmp/reframe-spike-drop-7jxfvl_a/files/three-files/k%C3%A9t%20film.mkv"
+      ]
+     },
+     "raw": [
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 17038.432166,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 17479.876372,
+       "overs": 18,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<474 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "drop"
+      }
+     ]
+    },
+    "folder": {
+     "dropped": true,
+     "seconds": 1.39,
+     "dolphin_items": [
+      {
+       "name": "folder — Dolphin",
+       "role": "frame",
+       "client": [
+        0,
+        0,
+        580,
+        732
+       ],
+       "selected": false
+      },
+      {
+       "name": "A folder",
+       "role": "list item",
+       "client": [
+        154,
+        59,
+        125,
+        88
+       ],
+       "selected": true
+      }
+     ],
+     "dolphin_window": [
+      20,
+      120,
+      580,
+      760
+     ],
+     "sent": [
+      {
+       "hex": "2f746d702f72656672616d652d7370696b652d64726f702d376a7866766c5f612f66696c65732f666f6c6465722f4120666f6c646572",
+       "exists": true
+      }
+     ],
+     "dom_dragenter": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": []
+     },
+     "dom_drop": {
+      "dropEffect": "none",
+      "effectAllowed": "copy",
+      "files": [],
+      "items": [
+       {
+        "kind": "string",
+        "type": "text/uri-list"
+       },
+       {
+        "kind": "string",
+        "type": "text/html"
+       }
+      ],
+      "plain": "",
+      "types": [
+       "text/uri-list",
+       "text/html"
+      ],
+      "uriList": "",
+      "html_links": [
+       "file:///tmp/reframe-spike-drop-7jxfvl_a/files/folder/A%20folder"
+      ]
+     },
+     "raw": [
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 20568.953097,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<0 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "dragenter"
+      },
+      {
+       "check": "drop",
+       "event": "spike_log",
+       "ms": 21005.992506,
+       "overs": 18,
+       "source": "dom",
+       "transfer": {
+        "dropEffect": "none",
+        "effectAllowed": "copy",
+        "files": [],
+        "html": "<460 characters>",
+        "items": [
+         {
+          "kind": "string",
+          "type": "text/uri-list"
+         },
+         {
+          "kind": "string",
+          "type": "text/html"
+         }
+        ],
+        "plain": "",
+        "types": [
+         "text/uri-list",
+         "text/html"
+        ],
+        "uriList": ""
+       },
+       "type": "drop"
+      }
+     ]
+    }
+   },
+   "pointer_device": {
+    "name": "reframe-spike pointer",
+    "pointer": "true",
+    "touch": "false",
+    "tabletTool": "false",
+    "isVirtual": "true",
+    "outputName": "",
+    "mapToWorkspace": "false",
+    "enabled": "true",
+    "sys_name": "input61",
+    "node": "event24"
+   },
+   "app_window": {
+    "pid": 105168,
+    "class": "Reframe-spike",
+    "added": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      340,
+      146,
+      1240,
+      788
+     ]
+    },
+    "placed": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      590,
+      120,
+      1240,
+      760
+     ]
+    },
+    "shown": {
+     "output": "HDMI-A-1",
+     "geometry": [
+      590,
+      120,
+      1240,
+      760
+     ]
+    },
+    "read_back": [
+     590,
+     120,
+     1240,
+     760
+    ]
+   },
+   "app_exit": 0,
+   "windows": [
+    {
+     "pid": 105168,
+     "class": "Reframe-spike",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       340,
+       146,
+       1240,
+       788
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       590,
+       120,
+       1240,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       590,
+       120,
+       1240,
+       760
+      ]
+     },
+     "read_back": [
+      590,
+      120,
+      1240,
+      760
+     ]
+    },
+    {
+     "pid": 105292,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       580,
+       251,
+       760,
+       578
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       760,
+       578
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       760,
+       578
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 105981,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 106047,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 106112,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 106170,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    },
+    {
+     "pid": 106250,
+     "class": "org.kde.dolphin",
+     "added": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       670,
+       160,
+       580,
+       760
+      ]
+     },
+     "placed": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "shown": {
+      "output": "HDMI-A-1",
+      "geometry": [
+       20,
+       120,
+       580,
+       760
+      ]
+     },
+     "read_back": [
+      20,
+      120,
+      580,
+      760
+     ]
+    }
+   ],
+   "focus": [
+    {
+     "event": "loaded",
+     "script": 1,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 2,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 3,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 4,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 5,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 6,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 7,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 8,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 9,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 10,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 11,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 12,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 13,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    },
+    {
+     "event": "loaded",
+     "script": 14,
+     "keep": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     },
+     "active": {
+      "id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}",
+      "cls": "com.microsoft.VSCode",
+      "output": "HDMI-A-1"
+     }
+    }
+   ],
+   "popups": [],
+   "scripts_loaded_after": {
+    "reframe-spike-6a1217944778-1": false,
+    "reframe-spike-6a1217944778-2": false,
+    "reframe-spike-6a1217944778-3": false,
+    "reframe-spike-6a1217944778-4": false,
+    "reframe-spike-6a1217944778-5": false,
+    "reframe-spike-6a1217944778-6": false,
+    "reframe-spike-6a1217944778-7": false,
+    "reframe-spike-6a1217944778-8": false,
+    "reframe-spike-6a1217944778-9": false,
+    "reframe-spike-6a1217944778-10": false,
+    "reframe-spike-6a1217944778-11": false,
+    "reframe-spike-6a1217944778-12": false,
+    "reframe-spike-6a1217944778-13": false,
+    "reframe-spike-6a1217944778-14": false
+   },
+   "owner_dolphin_files": {
+    "before": {
+     "/home/peti/.config/dolphinrc": 1785684788.6818504,
+     "/home/peti/.local/state/dolphinstaterc": 1793036126.618674
+    },
+    "after": {
+     "/home/peti/.config/dolphinrc": 1785684788.6818504,
+     "/home/peti/.local/state/dolphinstaterc": 1793036126.618674
+    }
+   },
+   "device_left": false,
+   "pointer": {
+    "moves": 235,
+    "read_back_equal_to_target": true,
+    "read_back_box": [
+     236,
+     251,
+     1218,
+     1000
+    ],
+    "slowest_read_back_ms": 2.3,
+    "buttons": [
+     {
+      "press": [
+       236,
+       260
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     },
+     {
+      "press": [
+       236,
+       251
+      ]
+     },
+     {
+      "release": [
+       1218,
+       508
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -2333,3 +2333,87 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
   (the `uv` binary of a running `uv run`, 17.9 MB). `fincore` 2.42 uses `cachestat`, which
   refuses files the user cannot write: `fincore: failed to do cachestat:
   /usr/lib/python3.14/os.py: Operation not permitted`.
+
+### D-0 (4b-i)
+
+Checked on 2026-10-27 on CachyOS (kernel 7.3), KDE Plasma 6.8.1 on Wayland (KWin 6.8.1,
+Xwayland 24.1.14), WebKitGTK `webkit2gtk-4.1` 2.54.2, GTK 3.24.52, Dolphin 26.08.2, systemd
+262 (`busctl`), Playwright 1.64.1 (Chromium 156.0.8078.4, Firefox 157.0), the system Python
+3.14.8 with PyGObject 3.58.1. The tools: `desktop/spike/README.md`, "WebKitGTK checks".
+
+- **KWin scripts over D-Bus** (`qdbus6 org.kde.KWin /Scripting`): `loadScript(path, name)`
+  then `start()` runs a plain JavaScript file; `unloadScript(name)` stops it and
+  `isScriptLoaded(name)` is then `false`; a loaded script has an object `/Scripting/Script<N>`.
+  `print()` reaches the user journal about 0.5 s late (`journalctl --user -f`); a
+  `callDBus(name, path, interface, method, text)` to a name that nobody owns is seen at once by
+  `busctl --user monitor --json=short` (the bus answers the call with an error). A
+  `callDBus` to KWin's own name is not seen on the bus.
+- **KWin placement**: a new window goes to the output under the cursor (`ActiveMouseScreen`,
+  the default), centred in its work area. `workspace.windowAdded` comes before the window's
+  first frame, so `opacity = 0` there hides it until it is moved. Setting `frameGeometry` to
+  a new position alone takes effect at once; a new position together with a new size waits
+  for the client, and twice in four tries with the Tauri window it did not take effect at all
+  (the window stayed where KWin had put it, once on `DP-1`): move first, resize second.
+  `getWindowInfo(uuid)` has `x`, `y`, `width`, `height` and `pid`, but no output. Before the
+  spike's windows had `keepAbove = true` and overlapped, a drag from Dolphin never reached the
+  app (it got no `wl_data_device.enter`); with both, every drag did.
+- **Position requests**: under XWayland (`GDK_BACKEND=x11`) KWin honours the position that
+  Tauri asks for (`WebviewWindowBuilder::position(100, 100)` → frame at 100,100); on native
+  Wayland it is ignored (the window is centred on the output under the cursor). GTK under
+  XWayland also maps a 1×1 helper window at -100,-100 (class empty) when the app starts; its
+  normal window has the class `Reframe-spike`, on Wayland the app id is `reframe-spike`.
+  Playwright's Chromium takes its Wayland app id from `CHROME_DESKTOP` when that is set (VS
+  Code sets it to `com.microsoft.VSCode.desktop`); without it the class is `chromium-browser`.
+  Playwright's Firefox window: `firefox-default`. Each browser window belongs to the pid that
+  Playwright launched (`executablePath`).
+- **KWin and focus**: setting `workspace.activeWindow` from a script activates that window
+  (the scripts give the keyboard back that way); a new Tauri window is activated when it maps.
+- **`/dev/uinput` without root** (the user has an ACL on it): a device with `EV_ABS`
+  (`ABS_X`, `ABS_Y`), `BTN_LEFT/RIGHT/MIDDLE` and bus `BUS_VIRTUAL`, set up with
+  `UI_DEV_SETUP` and `UI_ABS_SETUP` and made with `UI_DEV_CREATE`, is listed by KWin as a
+  pointer (`/org/kde/KWin/InputDevice/eventN`: `pointer` true, `touch` and `tabletTool` false,
+  `outputName` empty, `mapToWorkspace` false). KWin maps its range onto the bounding box of all
+  outputs: with `ABS_X` 0…3839 and `ABS_Y` 0…1079, value (x, y) puts the cursor at (x, y)
+  (each move read back through `workspace.cursorPosChanged`, 235 of 235 per run, within 7 ms).
+  KWin reports changes only: a move to where the cursor is gets no report. Wayland clients
+  get real input from it: pointer events in WebKitGTK (`pointerType` `mouse`) and Dolphin's
+  drag (`wl_data_device.start_drag` in `WAYLAND_DEBUG`). `UI_DEV_DESTROY` removes the device
+  (gone from `/proc/bus/input/devices`).
+- **Spectacle 6.8.1** `spectacle -b -n -u -S -o <file>` (window under the cursor) did not
+  return within 20 s and was killed. In case it had left KWin waiting for a pick, the spike
+  right-clicked once inside its own window afterwards. The spike takes no shot with Spectacle.
+- **Dolphin 26.08.2** with new XDG folders (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
+  `XDG_CACHE_HOME`, `XDG_DATA_HOME`): `dolphin --new-window --select <paths>` starts a process
+  of its own with the items selected; it writes `dolphinrc`, `dolphinstaterc`,
+  `user-places.xbel` there and leaves `~/.config/dolphinrc` and `~/.local/state/dolphinstaterc`
+  alone (mtimes before and after each run). With `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1` AT-SPI
+  gives each item's extents relative to the client area (below KWin's 28 px title bar); an
+  item whose name is not UTF-8 is named with U+FFFD. Dolphin offers `text/uri-list`,
+  `application/x-kde4-urilist`, `application/vnd.portal.filetransfer` and (not for the name
+  that is not UTF-8) `application/x-kde-source-id`. Its `text/uri-list` is percent-encoded
+  UTF-8, one URI per line with CRLF, in view order; for the file `bad\xffname.mkv` it sends
+  `bad%EF%BF%BDname.mkv` (U+FFFD): the byte is lost in Dolphin, before any drop target. A drop
+  of the selection onto its own item opened no menu (KWin added no window).
+- **Tauri's drag-drop event (2.12.5, wry 0.57.0)**: wry turns each URI into a path by cutting
+  `file://` and percent-decoding with `decode_utf8_lossy`; Tauri emits `tauri://drag-enter`
+  (with paths) and `tauri://drag-drop` to the page, and the window event
+  `WindowEvent::DragDrop` in Rust. The handler returns `true`, so WebKitGTK gets no DOM `drop`
+  (the page sees `dragenter` and `dragleave`). Paths with spaces, `Ünnepi film – 2.mkv`,
+  `日本語.mkv`, three files and a folder arrive byte for byte, on Wayland and XWayland alike.
+- **WebKitGTK's DOM drop** (Tauri's handler off): `dataTransfer.types` is
+  `["text/uri-list", "text/html"]`, `files` is empty, `getData("text/uri-list")` and
+  `getData("text/plain")` are empty, `text/html` is one styled `<a>` with the URI of the first
+  item only (also for three files).
+- **WebKitGTK snapshot**: `webkit_web_view_get_snapshot` (`WebViewExt::snapshot`,
+  `SnapshotRegion::Visible`) through Tauri's `with_webview` gives a cairo image surface of the
+  CSS viewport at the device scale (1280×800 at scale 1), written with
+  `ImageSurface::write_to_png`.
+- **CSP in the app**: Tauri adds four `sha256-…` sources to `script-src` of the policy in
+  `tauri.conf.json` and leaves `style-src 'self' 'unsafe-inline'` as it is; PrimeVue's styled
+  mode works under it, `eval` is refused (`securitypolicyviolation`, `script-src`).
+- **PrimeVue 4.5.5 `Tab`** is a `<button>` (`as` defaults to `BUTTON`) that takes the user
+  agent's button font: WebKitGTK
+  `600 13px Noto Sans`, Chromium `600 13.3333px Arial`, Firefox `600 13.3281px sans-serif`
+  (headless) or `Noto Sans` (headed); Chromium's tab is 3 px lower (48 against 51 px).
+  Headless Chromium hides scrollbars; headed Chromium draws classic 15 px ones, WebKitGTK and
+  Firefox overlay ones (0 px).
