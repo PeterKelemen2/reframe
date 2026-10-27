@@ -140,3 +140,36 @@ The parent watch is `reframe_server/parent.py`; `serve` starts it before uvicorn
    above). The watch then is the second line, and its hard exit covers a stop that hangs. The
    shell forks on its main thread: the death signal follows the thread that forked, not the
    process (checked; `testdata/README.md` "D-0 (4a)").
+
+## Follow-up (review), 2026-10-27
+
+The review of D-0 found that the start-time check of item 1 (`<=`) accepts a process that got
+the parent's pid in the clock tick in which the server started (10 ms), and, for a parent that
+is not the direct parent, one that got it before the server started. This adds to item 1; the
+decision stays.
+
+1. **A live ancestor is the parent, exactly.** After the pidfd is open, the watch walks up from
+   the server's parent (`os.getppid()`, then field 4 of each `/proc/<pid>/stat`). A pid on that
+   chain is accepted: a live ancestor has held its pid since before the server started, so the
+   pidfd is its. Each link is read again from the server up, so a process that ended during
+   the walk (its child then has another parent) makes the check fail. The direct parent needs
+   no `/proc` read.
+2. **Any other pid needs a start one tick earlier** (`<`, not `<=`). Measured on 2026-10-27
+   (`SC_CLK_TCK` 100, kernel 7.3): a Python started through `timeout 60` shared the start tick
+   of `timeout` in 198 of 200 runs; through `timeout 60 timeout 60` it shared the outer
+   `timeout`'s tick in 177 of 200; `uv run` and its Python shared it in 4 of 20. So `<` alone
+   would refuse a real parent most of the time; the ancestor check accepts these exactly. A
+   stand-in that is not an ancestor (a sibling, in the tests) must start a tick before the
+   server: the tests wait 30 ms after starting it. The old frozen-sidecar test did not, and a
+   build with this check refused its stand-in (exit 1, no ready line).
+3. **The window left.** A process that is not a live ancestor of the server and that got the
+   parent's pid at least one tick before the server started is taken for the parent. For the
+   direct parent that cannot happen: it lived when it forked the server, so a reuse comes after
+   the server's start. For a parent above it (the app above `uv run`), it is a parent that ended,
+   and whose pid was given to a new process, between its fork of `uv` and `uv`'s fork of the
+   server, less one tick. A reuse also needs the kernel's pid counter to come round
+   (`pid_max` 4194304 here). D-3 starts the frozen sidecar as the direct child.
+4. Tests (`test_parent.py`): a process started in the server's tick is the parent as its parent
+   or grandparent and not as a younger process; a younger process whose name holds `)` and a
+   space is not the parent; an in-process `serve()` stopped by `POST /api/system/shutdown` exits
+   with 0 and the parent's end afterwards brings no hard exit; the hard exit's code is 70.

@@ -2,8 +2,8 @@
 
 The watch runs on a daemon thread, so it also works while the event loop is blocked: when the
 parent ends it asks the server to stop, and if the process still lives :data:`STOP_LIMIT`
-seconds later it exits hard. A parent starts before its child, so a process with the parent's
-pid that started after this one has a reused pid, and the parent is gone.
+seconds later it exits hard. A live ancestor is the parent for certain; any other process with
+the pid must have started a clock tick before this one, or its pid was reused.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ctypes
+import itertools
 import logging
 import os
 import select
@@ -150,10 +151,37 @@ def watch_parent(
     )
 
 
-def _start_ticks(pid: int | str) -> int:
+def _stat(pid: int | str) -> list[str]:
+    """The fields of ``/proc/<pid>/stat`` after the name (``[0]`` is field 3)."""
     stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
-    # The name in parentheses may hold spaces and ")"; the start time is field 22.
-    return int(stat.rpartition(")")[2].split()[19])
+    # The name in parentheses may hold spaces and ")".
+    return stat.rpartition(")")[2].split()
+
+
+def _start_ticks(pid: int | str) -> int:
+    return int(_stat(pid)[19])
+
+
+def _parent_of(pid: int) -> int:
+    return int(_stat(pid)[1])
+
+
+def _is_ancestor(pid: int) -> bool:
+    """``pid`` is a live ancestor of this process. A live ancestor has held its pid since before
+    this process started, so a pidfd opened before this call is its."""
+    chain = [os.getppid()]
+    try:
+        while chain[-1] != pid:
+            if chain[-1] <= 1:
+                return False
+            chain.append(_parent_of(chain[-1]))
+        # Read each link again, from this process up: a process that ended in between has
+        # given its child a new parent, and a live child's parent is alive.
+        return os.getppid() == chain[0] and all(
+            _parent_of(child) == parent for child, parent in itertools.pairwise(chain)
+        )
+    except (FileNotFoundError, ProcessLookupError):  # a link ended while it was read
+        return False
 
 
 def _open_linux(pid: int) -> int | None:
@@ -164,10 +192,12 @@ def _open_linux(pid: int) -> int | None:
     except ProcessLookupError:
         return None
     try:
-        # Read after the pidfd is open: if this is another process, the pidfd's one is gone.
-        if _start_ticks(pid) <= _start_ticks("self"):
+        # Checked after the pidfd is open: if this is another process, the pidfd's one is gone.
+        # A process in this one's start tick may have the parent's reused pid; an ancestor
+        # often starts in the same tick (a fork through `timeout`), so it is checked exactly.
+        if _is_ancestor(pid) or _start_ticks(pid) < _start_ticks("self"):
             return fd
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         pass
     os.close(fd)
     return None
