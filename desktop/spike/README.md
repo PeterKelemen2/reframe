@@ -61,8 +61,7 @@ shell:
 - starts the sidecar on its **main thread, before it creates the window**:
   `reframe-server --mode desktop --port 0 --auth token --parent-pid <its pid>`, with a token made
   in Rust (32 random bytes, hex) in `REFRAME_TOKEN`, and the sidecar's config, data and cache
-  folders in a temporary folder (`$TMPDIR/reframe-spike-<pid>/`, kept after the exit for its
-  log). The sidecar's stderr goes to `<that folder>/data/sidecar.log`;
+  folders in the run's home (below). The sidecar's stderr goes to `<home>/data/sidecar.log`;
 - sets `PR_SET_PDEATHSIG = SIGTERM` in the child (`pre_exec`): SIGTERM makes uvicorn stop the
   way `POST /api/system/shutdown` does. The death signal follows the thread that forks, so the
   fork is on the main thread (the `sidecar_spawned` line shows `thread == main_thread`);
@@ -70,13 +69,38 @@ shell:
   log path on the page, with no restart (D-3);
 - answers `backend_info` (`{baseUrl, token}`) when the sidecar is ready;
 - on quit (a closed window, or `quit` on stdin) sends `POST /api/system/shutdown`, waits up to
-  5 s, then kills the sidecar.
+  5 s, then kills the sidecar;
+- writes its stdout lines so that a closed stdout loses the line and nothing else: Rust starts
+  the app with SIGPIPE ignored, and `println!` would panic on the `EPIPE` (in the code, the
+  supervisor task prints `sidecar_failed` before it sends `sidecar-ended`, so its panic would
+  also lose that event);
+- gives the page the event permissions `core:event:allow-listen` and `allow-unlisten` only (the
+  pages listen for `sidecar-ended` and the drag-and-drop events; none emits). The app's own
+  commands have no permission of their own;
+- writes a `snapshot` only below `REFRAME_SPIKE_SNAPSHOT_DIR`: a path with `..`, an absolute
+  path outside it, a path through a symlink that leads out of it, and a symlink as the file
+  are refused, with the reason in the answer (`cargo test`). The pages give relative names.
+
+**The run's home** is `REFRAME_SPIKE_HOME` (every script sets it, and removes it after the
+run) or, without it, a new folder `$TMPDIR/reframe-spike-<16 random hex digits>/` made with
+mode 0700. The folder is made with a call that fails when the name exists, so a folder that
+another user made first is never used, and a later run never finds an old queue or settings.
+It is kept after the exit: the error page names `<home>/data/sidecar.log`, and that log must
+still be there when the owner reads it (`/tmp` is a tmpfs here, cleared at a reboot). D-3 does
+not use a temporary folder: the sidecar's settings, queue and log belong in the platform's
+folders, and the log needs rotation there.
+
+Not yet checked on the real app: the two event permissions (a page that registers a listener
+still does), a line to a closed stdout, the home's mode and `webview/` folder, and a quit whose
+sidecar does not stop (killed after 5 s). The window guard refused the run 40 times between
+2026-10-27 23:54 and 2026-10-28 00:24 (the owner's cursor stayed on `DP-1`), so nothing was
+started.
 
 Variables for the measurements:
 
 | Variable | Effect |
 |----------|--------|
-| `REFRAME_SPIKE_HOME` | the sidecar's folder instead of a new temporary one |
+| `REFRAME_SPIKE_HOME` | the run's home (the sidecar's folders, the web view's data) instead of a new private one |
 | `REFRAME_SPIKE_SIDECAR` | the sidecar command, split at spaces (for example `uv run --project /path/to/repo reframe-server`) |
 | `REFRAME_SPIKE_EXIT_AFTER_HEALTH` | quit once the page shows the health answer |
 | `REFRAME_SPIKE_SPAWN_IN_SETUP` | start the sidecar in Tauri's setup hook, after the window |
@@ -113,6 +137,14 @@ anything in the owner's home:
   measurements below. Node and its browsers (`browser.node`, `magnifier_check browsers`) get
   temporary XDG folders too (`PLAYWRIGHT_BROWSERS_PATH` keeps the installed browsers), and each
   Dolphin of `drop_check` its own.
+- The shell itself puts the web view's data in the run's home: `<home>/webview/` (Tauri's
+  `WebviewWindowBuilder::data_directory`, which wry gives WebKitGTK as its base data and cache
+  folder; an incognito web view when the home cannot be made). So a manual run without the
+  scripts keeps nothing of WebKitGTK's in `~/.local/share/org.reframe.spike/`. The scripts also
+  set `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME` below the run's
+  folder (`app.environment`), for what the shell does not move: Mesa's shader cache, GTK's
+  configuration and anything else a library keeps there. Not yet checked on the real app (the
+  run of 2026-10-28 was refused by the window guard: the owner's cursor stayed on `DP-1`).
 - Before the review's fixes the app had no XDG folders of its own, so every run of 4a, 4b-i,
   4b-ii and the lead's repeats wrote WebKitGTK's profile into
   `~/.local/share/org.reframe.spike/` (made 2026-10-27 18:37:41, last written 21:15:53; 51

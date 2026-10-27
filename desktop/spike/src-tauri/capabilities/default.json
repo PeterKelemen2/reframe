@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The spike window: events only (the page listens for the sidecar's end).",
+  "description": "The spike window: it listens for events only (the sidecar's end, drag-and-drop).",
   "windows": ["main"],
-  "permissions": ["core:event:default"]
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

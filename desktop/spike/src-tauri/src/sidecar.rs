@@ -1,8 +1,9 @@
 //! The sidecar: `reframe-server` in desktop mode, started with the shell and stopped with it.
 
-use std::fs::{self, File};
-use std::io;
-use std::path::PathBuf;
+use std::fs::{self, DirBuilder, File};
+use std::io::{self, Write};
+use std::os::unix::fs::DirBuilderExt;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -97,26 +98,54 @@ pub fn report(event: &str, started: Instant, extra: serde_json::Value) {
     if let (Some(line), Some(extra)) = (line.as_object_mut(), extra.as_object()) {
         line.extend(extra.clone());
     }
-    println!("{line}");
+    print_line(&line.to_string());
 }
 
-/// Starts the sidecar. Call it on the main thread: on Linux the death signal follows the
-/// thread that forks, and the main thread lives as long as the shell.
-pub fn spawn(started: Instant) -> Sidecar {
-    match start(started) {
-        Ok(sidecar) => sidecar,
-        Err(error) => Sidecar::failed(format!("The server could not be started: {error}")),
-    }
+/// Writes one line on stdout. A closed stdout loses the line: Rust ignores SIGPIPE, so
+/// `println!` would panic there instead.
+pub fn print_line(line: &str) {
+    let mut stdout = io::stdout().lock();
+    let _ = writeln!(stdout, "{line}").and_then(|()| stdout.flush());
 }
 
-fn start(started: Instant) -> io::Result<Sidecar> {
+/// The folder of this run: the sidecar's config, data and cache, and the web view's data.
+/// `REFRAME_SPIKE_HOME`, or a new private folder in the temporary directory.
+pub fn make_home() -> io::Result<PathBuf> {
     let home = match std::env::var_os("REFRAME_SPIKE_HOME") {
         Some(home) => PathBuf::from(home),
-        None => std::env::temp_dir().join(format!("reframe-spike-{}", std::process::id())),
+        None => private_folder(&std::env::temp_dir())?,
     };
     for name in ["config", "data", "cache"] {
         fs::create_dir_all(home.join(name))?;
     }
+    Ok(home)
+}
+
+/// A new folder with a random name and mode 0700. `create` fails when the name exists, so a
+/// folder that someone else made first is never used.
+fn private_folder(parent: &Path) -> io::Result<PathBuf> {
+    loop {
+        let folder = parent.join(format!("reframe-spike-{}", &make_token()?[..16]));
+        match DirBuilder::new().mode(0o700).create(&folder) {
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            created => return created.map(|()| folder),
+        }
+    }
+}
+
+/// Starts the sidecar in `home` (the error of [`make_home`] fails it). Call it on the main
+/// thread: on Linux the death signal follows the thread that forks, and the main thread lives
+/// as long as the shell.
+pub fn spawn(started: Instant, home: &Result<PathBuf, String>) -> Sidecar {
+    let sidecar = home
+        .clone()
+        .and_then(|home| start(started, &home).map_err(|error| error.to_string()));
+    sidecar.unwrap_or_else(|error| {
+        Sidecar::failed(format!("The server could not be started: {error}"))
+    })
+}
+
+fn start(started: Instant, home: &Path) -> io::Result<Sidecar> {
     let log = home.join("data").join("sidecar.log");
     let token = make_token()?;
     let mut argv: Vec<String> = match std::env::var("REFRAME_SPIKE_SIDECAR") {
@@ -339,4 +368,23 @@ async fn request_shutdown(port: u16, token: &str) -> io::Result<String> {
     tokio::time::timeout(REQUEST_TIMEOUT, exchange)
         .await
         .unwrap_or_else(|_| Err(io::Error::new(io::ErrorKind::TimedOut, "no answer")))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn a_new_home_is_private_and_new() {
+        let parent = std::env::temp_dir();
+        let first = private_folder(&parent).unwrap();
+        let second = private_folder(&parent).unwrap();
+        let mode = fs::metadata(&first).unwrap().permissions().mode();
+        fs::remove_dir(&first).unwrap();
+        fs::remove_dir(&second).unwrap();
+        assert_eq!(mode & 0o777, 0o700);
+        assert_ne!(first, second);
+    }
 }

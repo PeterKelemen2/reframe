@@ -53,7 +53,7 @@ fn page_failed(started: State<'_, Started>, message: String) {
 /// A record of a check page, printed as one JSON line on stdout.
 #[tauri::command]
 fn spike_log(started: State<'_, Started>, record: serde_json::Value) {
-    println!("{}", checks::log_line(started.0, record));
+    sidecar::print_line(&checks::log_line(started.0, record));
 }
 
 /// A PNG of the web view (see `checks::snapshot`).
@@ -82,7 +82,8 @@ fn main() {
     // Started before the window, so the server starts while GTK and WebKitGTK load.
     // `REFRAME_SPIKE_SPAWN_IN_SETUP` starts it in the setup hook instead, to compare.
     let in_setup = std::env::var_os("REFRAME_SPIKE_SPAWN_IN_SETUP").is_some();
-    let early = (!in_setup).then(|| sidecar::spawn(started));
+    let home = sidecar::make_home().map_err(|error| error.to_string());
+    let early = (!in_setup).then(|| sidecar::spawn(started, &home));
     let app = tauri::Builder::default()
         .manage(Started(started))
         .invoke_handler(tauri::generate_handler![
@@ -96,14 +97,15 @@ fn main() {
         .setup(move |app| {
             // In setup, the sidecar starts after the window, as it would after a window of
             // the configuration (Tauri creates those before the setup hook).
+            let webview_data = home.as_ref().ok().map(|home| home.join("webview"));
             if in_setup {
-                checks::create_window(app.handle())?;
+                checks::create_window(app.handle(), webview_data.clone())?;
             }
-            let sidecar = early.unwrap_or_else(|| sidecar::spawn(started));
+            let sidecar = early.unwrap_or_else(|| sidecar::spawn(started, &home));
             sidecar.attach(app.handle().clone());
             app.manage(sidecar);
             if !in_setup {
-                checks::create_window(app.handle())?;
+                checks::create_window(app.handle(), webview_data)?;
             }
             quit_on_stdin(app.handle().clone());
             Ok(())
