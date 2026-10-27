@@ -17,6 +17,7 @@ uv run python -m desktop.spike.scripts.magnifier_check browsers --headless    # 
 uv run python -m desktop.spike.scripts.magnifier_check app                    # WebKitGTK, window + real pointer
 uv run python -m desktop.spike.scripts.magnifier_check app --no-dmabuf        # WEBKIT_DISABLE_DMABUF_RENDERER=1
 uv run python -m desktop.spike.scripts.magnifier_check browsers --headed      # windows + real pointer
+uv run python -m desktop.spike.scripts.magnifier_check restat                 # statistics again from the raw runs
 uv run python -m desktop.spike.scripts.magnifier_check summary                # the table below
 ```
 
@@ -28,8 +29,11 @@ windows as read back, and a summary of the pointer's moves. Screenshots:
 `snapshot()`), `magnifier-chromium.png` and `magnifier-firefox.png` (Playwright's screenshot of
 the page, headed, at the end).
 
-Every sidecar, the app and each browser gets temporary folders (`REFRAME_*_DIR`,
-`XDG_CACHE_HOME`, Playwright's own temporary profile). The app run takes about 60 s, of which
+Every sidecar, the app and each browser gets temporary folders (`REFRAME_*_DIR`, the XDG
+folders, Playwright's own temporary profile; `README.md`, "Isolation"). The runs in the table
+were taken before the app and the browsers had temporary XDG data and config folders (the app's
+WebKitGTK profile was then `~/.local/share/org.reframe.spike/`) and before the sidecars had the
+hardware tests off. The app run takes about 60 s, of which
 the real pointer moves for about 14 s (calibration and three 4 s runs).
 
 ## What the page draws
@@ -81,7 +85,7 @@ never read: a read can make a browser stop accelerating a canvas.
   2 559 598 bytes (libplacebo). `ffprobe` of the downloaded file: `png`, **3840×2160**,
   `rgb24`. The PNG has `cICP` (BT.709 primaries and transfer, full range), `cHRM` and `gAMA`
   chunks. Without the signature the same path gives 401 (`auth.required`).
-- In the pages (all engines): the frames route took 0.51–0.71 s, the PNG fetch 7–12 ms and
+- In the pages (all engines): the frames route took 0.51–0.71 s, the PNG fetch 7–11 ms and
   `createImageBitmap` 34–71 ms.
 
 **The tone mapping is not the same in every run.** Of the ten sidecars whose results are
@@ -90,55 +94,70 @@ timestamp, with different frame keys. `usable_filter` takes `libplacebo` only af
 run test has passed, so the first frame request after a start races that test. The timings do
 not depend on it (the same size of bitmap, the same draw calls). But it changes the colours of
 the screenshots: compare them only with the frame each one shows
-(`frame.answer.notes` in each JSON).
+(`frame.answer.notes` in each JSON). The spike's sidecars now run with the hardware tests off
+(`README.md`, "Isolation"): the Vulkan run test does not run, so a new run gets zscale +
+tonemap every time.
 
 ## Numbers
 
 Interval and redraw: median / 95th percentile / worst, in ms. "fps" is the frame count divided
-by the sum of the intervals. "Dropped" counts intervals > 25 ms (with the missed periods in
+by the sum of the intervals. "Redraws/s" is how often the page drew a new position: the frame
+rate times the share of frame callbacks that redrew (a callback redraws only when a pointer
+event came since the last one). "Dropped" counts intervals > 25 ms (with the missed periods in
 brackets) out of all the frames of the runs. "events/s" is the pointer events that reached the
 page, per run. Refresh rate: `HDMI-A-1` 60 Hz in every run (`kscreen-doctor -o`, the current
 mode). Headless browsers have no output; they draw at 60 frames per second. "Load": the 1-minute
 load average before → after the case (`/proc/loadavg`).
 
-| Engine, case | Drive / mode | Interval ms | fps | Redraw ms | Dropped | Runs | events/s | Hz | Load |
-|---|---|---|---|---|---|---|---|---|---|
-| WebKitGTK | real / full | 16.0 / 17 / 19 | 62.2 | 0 / 1 / 1 | 0 (0) of 744 | 3 | 54–55 | 60 | 2.48 → 1.82 |
-| WebKitGTK | page / full | 17 / 19 / 21 | 60.36 | 0 / 1 / 3 | 0 (0) of 725 | 3 | 84 | 60 | 2.48 → 1.82 |
-| WebKitGTK | page / cached | 16 / 18 / 20 | 60.48 | 0 / 1 / 2 | 0 (0) of 726 | 3 | 84 | 60 | 2.48 → 1.82 |
-| WebKitGTK | page / none | 16 / 17 / 19 | 62.19 | 0 / 0 / 1 | 0 (0) of 747 | 3 | 84 | 60 | 2.48 → 1.82 |
-| WebKitGTK, repeat | real / full | 16 / 17 / 19 | 62.17 | 0 / 1 / 2 | 0 (0) of 744 | 3 | 54–55 | 60 | 2.08 → 2.06 |
-| WebKitGTK, repeat | page / full | 17 / 18 / 21 | 60.36 | 0 / 1 / 2 | 0 (0) of 725 | 3 | 84 | 60 | 2.08 → 2.06 |
-| WebKitGTK, no DMA-BUF | real / full | 16 / 18 / 24 | 60.87 | 4 / 5 / 7 | 0 (0) of 732 | 3 | 60–61 | 60 | 2.29 → 2.41 |
-| WebKitGTK, no DMA-BUF | page / full | 16 / 18 / 20 | 60.57 | 4 / 5 / 7 | 0 (0) of 728 | 3 | 80–81 | 60 | 2.29 → 2.41 |
-| WebKitGTK, no DMA-BUF | page / cached | 16 / 18 / 22 | 60.55 | 1 / 1 / 3 | 0 (0) of 728 | 3 | 84 | 60 | 2.29 → 2.41 |
-| WebKitGTK, no DMA-BUF | page / none | 16 / 17 / 19 | 62.4 | 0 / 0 / 0 | 0 (0) of 750 | 3 | 84 | 60 | 2.29 → 2.41 |
-| WebKitGTK, no DMA-BUF, repeat | real / full | 16 / 19 / 23 | 60.51 | 4 / 5 / 7 | 0 (0) of 727 | 3 | 60–61 | 60 | 2.37 → 1.56 |
-| WebKitGTK, no DMA-BUF, repeat | page / full | 17 / 18 / 23 | 60.52 | 4 / 5 / 6 | 0 (0) of 728 | 3 | 81 | 60 | 2.37 → 1.56 |
-| WebKitGTK, no DMA-BUF, repeat | page / cached | 16 / 18 / 26 | 60.65 | 1 / 1 / 2 | 1 (1) of 730 | 3 | 84 | 60 | 2.37 → 1.56 |
-| Chromium headed | real / full | 16.7 / 16.8 / 17.1 | 60.0 | 0.0 / 0.1 / 0.2 | 0 (0) of 720 | 3 | 60 | 60 | 2.99 → 1.61 |
-| Chromium headed | playwright / full | 16.7 / 16.7 / 17.3 | 60.0 | 0.0 / 0.1 / 0.2 | 0 (0) of 721 | 3 | 60 | 60 | 2.99 → 1.61 |
-| Chromium headed | page / full | 16.7 / 16.8 / 16.8 | 60.0 | 0.0 / 0.1 / 0.2 | 0 (0) of 723 | 3 | 123 | 60 | 2.99 → 1.61 |
-| Chromium headed | page / cached | 16.7 / 16.8 / 16.8 | 60.0 | 0.1 / 0.2 / 0.4 | 0 (0) of 723 | 3 | 123 | 60 | 2.99 → 1.61 |
-| Chromium headed | page / none | 16.7 / 16.7 / 16.8 | 60.0 | 0.0 / 0 / 0.8 | 0 (0) of 723 | 3 | 123 | 60 | 2.99 → 1.61 |
-| Chromium headless | playwright / full | 16.7 / 16.7 / 16.8 | 60.0 | 0.0 / 0.1 / 0.2 | 0 (0) of 723 | 3 | 60 | (60) | 4.35 → 2.89 |
-| Chromium headless | page / full | 16.7 / 16.7 / 16.8 | 60.0 | 0 / 0.1 / 2.2 | 0 (0) of 723 | 3 | 119–120 | (60) | 4.35 → 2.89 |
-| Chromium headless | page / cached | 16.7 / 16.7 / 16.8 | 60.0 | 0.5 / 0.8 / 1.9 | 0 (0) of 723 | 3 | 120 | (60) | 4.35 → 2.89 |
-| Firefox headed | real / full | 17 / 17 / 34 | 59.41 | 0 / 1 / 1 | 7 (7) of 715 | 3 | 59–60 | 60 | 1.48 → 3.14 |
-| Firefox headed | playwright / full | 17 / 17 / 34 | 59.59 | 0 / 1 / 1 | 5 (5) of 717 | 3 | 59–60 | 60 | 1.48 → 3.14 |
-| Firefox headed | page / full | 17 / 17 / 34 | 60.05 | 0 / 1 / 1 | 1 (1) of 720 | 3 | 121–122 | 60 | 1.48 → 3.14 |
-| Firefox headed | page / cached | 17 / 17 / 33 | 59.75 | 0 / 1 / 2 | 3 (3) of 717 | 3 | 121–122 | 60 | 1.48 → 3.14 |
-| Firefox headed | page / none | 17 / 17 / 33 | 60.15 | 0 / 0 / 1 | 1 (1) of 722 | 3 | 121 | 60 | 1.48 → 3.14 |
-| Firefox headed, repeat | real / full | 17 / 17 / 34 | 59.83 | 0 / 1 / 1 | 2 (2) of 720 | 3 | 60 | 60 | 2.82 → 2.27 |
-| Firefox headed, repeat | playwright / full | 17 / 17 / 34 | 59.25 | 0 / 1 / 2 | 9 (9) of 713 | 3 | 59–60 | 60 | 2.82 → 2.27 |
-| Firefox headed, repeat | page / full | 17 / 17 / 17 | 60.09 | 0 / 1 / 1 | 0 (0) of 721 | 3 | 122 | 60 | 2.82 → 2.27 |
-| Firefox headed, repeat | page / none | 17 / 17 / 34 | 59.98 | 0 / 0 / 1 | 3 (3) of 720 | 3 | 121–123 | 60 | 2.82 → 2.27 |
-| Firefox headless | playwright / full | 17.06 / 17.1 / 17.5 | 60.01 | 2 / 3 / 5 | 0 (0) of 720 | 3 | 60 | (60) | 2.89 → 2.53 |
-| Firefox headless | page / full | 17.06 / 17.08 / 17.28 | 60.26 | 2 / 3 / 4 | 0 (0) of 723 | 3 | 120 | (60) | 2.89 → 2.53 |
+**The first interval of each run is left out.** It is measured from the frame callback that the
+run asked for when it started. In 32 of the 117 runs that callback came 0.02 to 7 ms before the
+next one, all of them page-driven runs of Firefox or of WebKitGTK without the DMA-BUF renderer;
+it raised the frame rate by up to 0.25 fps (Firefox headless, page / full: 60.26 with it, 60.01
+without). Why those engines answer the first request so soon is not known. `magnifier_check
+restat` computes every statistic in the result files again from the raw runs, which stay as
+they were recorded.
 
-The other rows (Chromium headless `none`, Firefox headless `cached` and `none`, the repeats'
-`cached`) are in `summary`'s output and the JSON files; none of them has a dropped frame except
-Firefox headed repeat `cached` (5 of 716).
+| Engine, case | Drive / mode | Interval ms | fps | Redraws/s | Redraw ms | Dropped | Runs | events/s | Hz | Load |
+|---|---|---|---|---|---|---|---|---|---|---|
+| WebKitGTK | real / full | 16 / 17 / 19 | 62.2 | 54.37 | 0 / 1 / 1 | 0 (0) of 741 | 3 | 54–55 | 60 | 2.48 → 1.82 |
+| WebKitGTK | page / full | 17 / 19 / 21 | 60.36 | 60.36 | 0 / 1 / 3 | 0 (0) of 722 | 3 | 84 | 60 | 2.48 → 1.82 |
+| WebKitGTK | page / cached | 16 / 18 / 20 | 60.47 | 60.47 | 0 / 1 / 2 | 0 (0) of 723 | 3 | 84 | 60 | 2.48 → 1.82 |
+| WebKitGTK | page / none | 16 / 17 / 19 | 62.19 | 62.19 | 0 / 0 / 1 | 0 (0) of 744 | 3 | 84 | 60 | 2.48 → 1.82 |
+| WebKitGTK, repeat | real / full | 16 / 17 / 19 | 62.16 | 54.5 | 0 / 1 / 2 | 0 (0) of 741 | 3 | 54–55 | 60 | 2.08 → 2.06 |
+| WebKitGTK, repeat | page / full | 17 / 18 / 21 | 60.35 | 60.35 | 0 / 1 / 2 | 0 (0) of 722 | 3 | 84 | 60 | 2.08 → 2.06 |
+| WebKitGTK, repeat | page / cached | 17 / 18 / 20 | 60.45 | 60.45 | 0 / 1 / 1 | 0 (0) of 724 | 3 | 84 | 60 | 2.08 → 2.06 |
+| WebKitGTK, repeat | page / none | 16 / 17 / 19 | 62.13 | 62.13 | 0 / 0 / 1 | 0 (0) of 743 | 3 | 84 | 60 | 2.08 → 2.06 |
+| WebKitGTK, no DMA-BUF | real / full | 16 / 18 / 24 | 60.85 | 60.19 | 4 / 5 / 7 | 0 (0) of 729 | 3 | 60–61 | 60 | 2.29 → 2.41 |
+| WebKitGTK, no DMA-BUF | page / full | 16 / 18 / 20 | 60.45 | 60.28 | 4 / 5 / 7 | 0 (0) of 725 | 3 | 80–81 | 60 | 2.29 → 2.41 |
+| WebKitGTK, no DMA-BUF | page / cached | 16 / 18 / 22 | 60.4 | 60.15 | 1 / 1 / 3 | 0 (0) of 725 | 3 | 84 | 60 | 2.29 → 2.41 |
+| WebKitGTK, no DMA-BUF | page / none | 16 / 17 / 19 | 62.19 | 61.94 | 0 / 0 / 0 | 0 (0) of 747 | 3 | 84 | 60 | 2.29 → 2.41 |
+| WebKitGTK, no DMA-BUF, repeat | real / full | 16 / 19 / 23 | 60.5 | 60.25 | 4 / 5 / 7 | 0 (0) of 724 | 3 | 60–61 | 60 | 2.37 → 1.56 |
+| WebKitGTK, no DMA-BUF, repeat | page / full | 17 / 18 / 23 | 60.39 | 60.22 | 4 / 5 / 6 | 0 (0) of 725 | 3 | 81 | 60 | 2.37 → 1.56 |
+| WebKitGTK, no DMA-BUF, repeat | page / cached | 16 / 18 / 26 | 60.54 | 60.37 | 1 / 1 / 2 | 1 (1) of 727 | 3 | 84 | 60 | 2.37 → 1.56 |
+| WebKitGTK, no DMA-BUF, repeat | page / none | 16 / 17 / 20 | 62.21 | 62.04 | 0 / 0 / 1 | 0 (0) of 746 | 3 | 84 | 60 | 2.37 → 1.56 |
+| Chromium headed | real / full | 16.7 / 16.8 / 17.1 | 60 | 59.92 | 0 / 0.1 / 0.2 | 0 (0) of 717 | 3 | 60 | 60 | 2.99 → 1.61 |
+| Chromium headed | playwright / full | 16.7 / 16.7 / 17.3 | 60 | 60 | 0 / 0.1 / 0.2 | 0 (0) of 718 | 3 | 60 | 60 | 2.99 → 1.61 |
+| Chromium headed | page / full | 16.7 / 16.8 / 16.8 | 60 | 60 | 0 / 0.1 / 0.2 | 0 (0) of 720 | 3 | 123 | 60 | 2.99 → 1.61 |
+| Chromium headed | page / cached | 16.7 / 16.8 / 16.8 | 60 | 60 | 0.1 / 0.2 / 0.4 | 0 (0) of 720 | 3 | 123 | 60 | 2.99 → 1.61 |
+| Chromium headed | page / none | 16.7 / 16.7 / 16.8 | 60 | 60 | 0 / 0 / 0.8 | 0 (0) of 720 | 3 | 123 | 60 | 2.99 → 1.61 |
+| Chromium headless | playwright / full | 16.7 / 16.7 / 16.8 | 60 | 60 | 0 / 0.1 / 0.2 | 0 (0) of 720 | 3 | 60 | (60) | 4.35 → 2.89 |
+| Chromium headless | page / full | 16.7 / 16.7 / 16.8 | 60 | 59.92 | 0 / 0.1 / 2.2 | 0 (0) of 720 | 3 | 119–120 | (60) | 4.35 → 2.89 |
+| Chromium headless | page / cached | 16.7 / 16.7 / 16.8 | 60 | 60 | 0.5 / 0.8 / 1.9 | 0 (0) of 720 | 3 | 120 | (60) | 4.35 → 2.89 |
+| Chromium headless | page / none | 16.7 / 16.7 / 16.8 | 60 | 60 | 0 / 0 / 0.1 | 0 (0) of 720 | 3 | 123–124 | (60) | 4.35 → 2.89 |
+| Firefox headed | real / full | 17 / 17 / 34 | 59.41 | 59.41 | 0 / 1 / 1 | 7 (7) of 712 | 3 | 59–60 | 60 | 1.48 → 3.14 |
+| Firefox headed | playwright / full | 17 / 17 / 34 | 59.58 | 59.5 | 0 / 1 / 1 | 5 (5) of 714 | 3 | 59–60 | 60 | 1.48 → 3.14 |
+| Firefox headed | page / full | 17 / 17 / 34 | 59.91 | 59.91 | 0 / 1 / 1 | 1 (1) of 717 | 3 | 121–122 | 60 | 1.48 → 3.14 |
+| Firefox headed | page / cached | 17 / 17 / 33 | 59.74 | 59.74 | 0 / 1 / 2 | 3 (3) of 714 | 3 | 121–122 | 60 | 1.48 → 3.14 |
+| Firefox headed | page / none | 17 / 17 / 33 | 59.92 | 59.92 | 0 / 0 / 1 | 1 (1) of 719 | 3 | 121 | 60 | 1.48 → 3.14 |
+| Firefox headed, repeat | real / full | 17 / 17 / 34 | 59.83 | 59.83 | 0 / 1 / 1 | 2 (2) of 717 | 3 | 60 | 60 | 2.82 → 2.27 |
+| Firefox headed, repeat | playwright / full | 17 / 17 / 34 | 59.25 | 59.17 | 0 / 1 / 2 | 9 (9) of 710 | 3 | 59–60 | 60 | 2.82 → 2.27 |
+| Firefox headed, repeat | page / full | 17 / 17 / 17 | 60 | 59.92 | 0 / 1 / 1 | 0 (0) of 718 | 3 | 122 | 60 | 2.82 → 2.27 |
+| Firefox headed, repeat | page / cached | 17 / 17 / 33 | 59.58 | 59.58 | 0 / 1 / 2 | 5 (5) of 713 | 3 | 121–122 | 60 | 2.82 → 2.27 |
+| Firefox headed, repeat | page / none | 17 / 17 / 34 | 59.75 | 59.75 | 0 / 0 / 1 | 3 (3) of 717 | 3 | 121–123 | 60 | 2.82 → 2.27 |
+| Firefox headless | playwright / full | 17.06 / 17.1 / 17.5 | 60 | 60 | 2 / 3 / 5 | 0 (0) of 717 | 3 | 60 | (60) | 2.89 → 2.53 |
+| Firefox headless | page / full | 17.06 / 17.08 / 17.28 | 60.01 | 59.68 | 2 / 3 / 4 | 0 (0) of 720 | 3 | 120 | (60) | 2.89 → 2.53 |
+| Firefox headless | page / cached | 17.06 / 17.08 / 17.44 | 60.01 | 59.76 | 1 / 1 / 2 | 0 (0) of 720 | 3 | 121–122 | (60) | 2.89 → 2.53 |
+| Firefox headless | page / none | 17.06 / 17.08 / 17.54 | 60 | 59.75 | 0 / 0 / 1 | 0 (0) of 723 | 3 | 121–123 | (60) | 2.89 → 2.53 |
 
 **Clocks.** `performance.now()` and the frame timestamps step by 1 ms in WebKitGTK and
 Firefox, and by 0.1 ms in Chromium. So a redraw of "0" ms there means less than 1 ms. The fps
@@ -176,7 +195,7 @@ Each run starts with the first move over the main canvas and lasts 4 s.
 - **Real pointer** (`real`; the app, headed Chromium and headed Firefox): an absolute pointer
   device made with `/dev/uinput` (`scripts/pointer.py`). One move every 8 ms (about 125 per
   second were sent: 501 to 506 per run). KWin read back each move at its target before the next
-  one (median 0.2–0.3 ms, worst 3–18 ms; 1512 to 1522 moves per case, every one at its target).
+  one (median 0.2–0.3 ms, worst 3–18 ms; 1513 to 1522 moves per case, every one at its target).
   Before the runs the pointer moves onto the page's empty background below the edge strips.
   There the page logs the client coordinates, which give the window's offset (app: 40, 68;
   Chromium: 40, 127; Firefox: 40, 125). A second point checks the offset. Between runs the
@@ -190,10 +209,14 @@ Each run starts with the first move over the main canvas and lasts 4 s.
   (`isTrusted` false). It reached about 84 events per second in WebKitGTK (its timers come
   later than 8 ms) and about 120 in Chromium and Firefox.
 
-Events that reach the page with the real pointer: WebKitGTK 54–55 per second (60–61 without the
-DMA-BUF renderer), Chromium and Firefox 60. Each engine merges the motion events to about one
-per frame. In WebKitGTK at 62 fps, about 12 % of the frames had no new position and so no
-redraw.
+Events that reach the page with the real pointer (about 125 moves per second sent): WebKitGTK
+53.7–55.0 per second per run with its default (DMA-BUF) renderer and 60.3–60.5 without it,
+Chromium 60.2–60.5, Firefox 59.3–60.2. Chromium and Firefox merge the motion events to one per
+frame. WebKitGTK with the DMA-BUF renderer delivers fewer: its frame loop runs at 62.2 per
+second, but 11.6 to 13.7 % of the frame callbacks of a run come without a new position, so the
+page redraws only 53.7–55.0 times per second (54.4 and 54.5 pooled: the "Redraws/s" column).
+Why WebKitGTK delivers pointer events at that rate with the DMA-BUF renderer is not known (it
+was not looked into without a pointer run).
 
 What this does not measure:
 
@@ -216,15 +239,23 @@ What this does not measure:
 
 ## The two claims of the lost run
 
-**(a) "The magnifier holds 60 Hz in all three engines."** WebKitGTK and Chromium: **holds**.
-Firefox (headed): **holds only with a qualification**.
+**(a) "The magnifier holds 60 Hz in all three engines."** Chromium: **holds**. WebKitGTK:
+**the frame loop and the drawing hold 60 Hz, but what the user sees with the real pointer
+updates at about 54–55 Hz**. Firefox (headed): **holds only with a qualification**.
 
-- WebKitGTK: 0 dropped frames of 5 884 (two app runs: real, page full, page cached, page none),
-  worst interval 21 ms. The frame rate is 60.4 to 62.2 fps.
-- Chromium headed and headless: 0 dropped frames of 6 502, worst 17.3 ms, exactly 60.0 fps.
-- Firefox headed: median 17 ms (59.3 to 60.2 fps), but 36 single missed frames (33–34 ms) of
-  7 181 (0.5 %), 0 to 9 per 720 frames, in every drive and mode. They also come in `none`, where the page draws
-  nothing, and the redraw takes at most 3 ms. The repeat gave the same picture. So they come
+- WebKitGTK: 0 dropped frames of 5 860 (two app runs: real, page full, page cached, page none),
+  worst interval 21 ms; the frame loop runs at 60.35 to 62.2 fps and a full redraw takes under
+  1 ms to queue. But with the real pointer and the default (DMA-BUF) renderer, WebKitGTK
+  delivers 53.7–55.0 pointer events per second, so the magnifier shows a new position only
+  53.7–55.0 times per second (per run; 54.4 and 54.5 pooled): 11.6 to 13.7 % of the frames
+  have no new position. Without the DMA-BUF renderer it delivers 60–61 events per second and
+  the page redraws 60.2–60.3 times per second. The drawing is not the limit: the page's own
+  events (84 per second) get 60.4 redraws per second with the full redraw.
+- Chromium headed and headless: 0 dropped frames of 6 475, worst 17.3 ms, exactly 60.0 fps;
+  59.9 to 60.0 redraws per second.
+- Firefox headed: median 17 ms (59.3 to 60.0 fps), but 36 single missed frames (33–34 ms) of
+  7 151 (0.5 %), 0 to 9 per 720 frames, in every drive and mode. They also come in `none`,
+  where the page draws nothing, and the redraw takes at most 3 ms. The repeat gave the same picture. So they come
   from Firefox's own frame timing on this desktop under this load, not from the magnifier.
   Headless Firefox drops none.
 
@@ -235,9 +266,9 @@ Command: `magnifier_check app`, `app --tag=-repeat`, `browsers --headed`,
 **(b) "`WEBKIT_DISABLE_DMABUF_RENDERER=1` drops a full redraw in WebKitGTK to about 39 fps."**
 **Does not hold** on this machine. Without the DMA-BUF renderer the full redraw is done on the
 CPU: the redraw takes 4 ms (median; worst 7 ms) instead of under 1 ms, and the bench goes from
-0.008 to 3.3 ms per queued redraw. The variable takes effect. But the page still runs at 60.5
-to 60.9 fps, with 0 dropped frames under the real pointer in two runs (1 459 frames), and 1 in
-the 4 413 page-driven frames (the `cached` mode, 26 ms). On the laptop's slower CPU and GPU it
+0.008 to 3.3 ms per queued redraw. The variable takes effect. But the page still runs at 60.4
+to 60.9 fps with a full or cached redraw, with 0 dropped frames under the real pointer in two
+app runs (1 453 frames), and 1 in the 4 395 page-driven frames (the `cached` mode, 26 ms). On the laptop's slower CPU and GPU it
 may be different: not measured.
 
 Command: `magnifier_check app --no-dmabuf` and `app --no-dmabuf --tag=-repeat`, compared with
@@ -248,8 +279,13 @@ Command: `magnifier_check app --no-dmabuf` and `app --no-dmabuf --tag=-repeat`, 
 - **A canvas magnifier with a 4K bitmap is cheap in every engine** at this size: scaling the
   whole 3840×2160 bitmap again on every pointer move costs under 1 ms on a GPU canvas. On
   WebKitGTK's CPU path it costs 4 ms. No engine needs a tile or worker scheme for it. Draw
-  once per `requestAnimationFrame` from the last pointer position: no engine delivers more than
-  one real pointer event per frame anyway.
+  once per `requestAnimationFrame` from the last pointer position: Chromium and Firefox deliver
+  one real pointer event per frame, WebKitGTK fewer.
+- **In the desktop app the magnifier follows the pointer at about 54–55 Hz, not 60.** With its
+  default (DMA-BUF) renderer WebKitGTK delivers 53.7–55.0 real pointer events per second while
+  its frame loop runs at 62.2 Hz. That is the engine's input rate, not the drawing: drawing less
+  does not raise it. Without the DMA-BUF renderer it delivers 60. Other GPUs and the laptop were
+  not measured.
 - **Do not redraw the big image on every move.** Draw the fitted frame on its own canvas when
   the frame, the crop or the size changes, and the loupe and the strips on the moves. The
   `cached` mode (a pre-scaled copy, drawn again) is not that: it saved time on the CPU path
@@ -261,16 +297,22 @@ Command: `magnifier_check app --no-dmabuf` and `app --no-dmabuf --tag=-repeat`, 
   `createImageBitmap(blob, { colorSpaceConversion: "none" })`. Chromium otherwise converts the
   PNG's `cICP` BT.709 transfer to sRGB (a channel of 164 reads back as 159), so the magnifier
   would not show the file's pixel values. Firefox does not convert in either case. This matters
-  for WebView2 (Chromium) on Windows.
+  for WebView2 (Chromium) on Windows. The measured page decodes with the default
+  (`createImageBitmap(blob)`): the conversion was found by a separate check (`testdata/README.md`,
+  "D-0 (4b-ii)"), and the option was not measured for frame times.
 - **Per-frame budgets need care in WebKitGTK and Firefox**: their clocks step by 1 ms. A
   performance test of F-7 should count frames over a time, or use read-backs, not time single
   draws.
-- **WebKitGTK's frame clock is not the output's vblank** (62.2 Hz on a 60 Hz output when the
-  page draws little). An animation should use the frame timestamp, not count frames.
+- **WebKitGTK's frame clock is not the output's vblank**: 62.2 Hz on a 60 Hz output with the
+  real pointer and a full redraw on 87 % of the frames, and with the page's own events when it
+  draws nothing; 60.4 Hz only with the page's own `setTimeout` events and a redraw. An
+  animation should use the frame timestamp, not count frames.
 - **The preview's tone mapping depends on timing** (zscale before the libplacebo run test has
   passed, libplacebo after). The same frame can look different after a restart, and the cache
   holds both. This is for the core (preview / capabilities), not for F-7: a question for the
   lead.
-- **D-1**: the DMA-BUF renderer is no reason to set `WEBKIT_DISABLE_DMABUF_RENDERER` for the
-  magnifier's sake. Even without it this page holds 60 Hz here. Leave the default, and keep the
-  variable as a workaround for GPU driver trouble only.
+- **D-1**: the drawing is no reason to set `WEBKIT_DISABLE_DMABUF_RENDERER`: without the
+  DMA-BUF renderer this page still holds 60 Hz here, at 4 ms of CPU per full redraw. The
+  default renderer's lower pointer-event rate (54–55 against 60 per second) is the one cost
+  measured against it; whether that holds on other GPUs is not known. Keep the variable as a
+  workaround for GPU driver trouble, and decide in D-1 with F-7's real page.

@@ -7,17 +7,19 @@ before and after, how long they took to go, and what became of the job and its `
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import psutil
-from desktop.spike.scripts import app, sidecar
+from desktop.spike.scripts import app, sidecar, windows
 from desktop.spike.scripts.spike_paths import APP, FROZEN_SERVER, SIDECAR_ONEDIR
 
 GONE_LIMIT = 20.0
@@ -39,21 +41,52 @@ def show(title: str, pids: list[int], patterns: list[str]) -> None:
         print(found.rstrip() or "(nothing)")
 
 
-def alive(pids: list[int]) -> list[int]:
-    living = []
-    for pid in pids:
-        try:
-            if psutil.Process(pid).status() != psutil.STATUS_ZOMBIE:
-                living.append(pid)
-        except psutil.NoSuchProcess:
-            pass
-    return living
+def started(pid: int) -> tuple[str, int] | None:
+    """The state and the start time (clock ticks after boot, field 22) of ``/proc/<pid>/stat``;
+    ``None`` when there is no such process."""
+    try:
+        text = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    fields = text.rsplit(") ", 1)[1].split()
+    return fields[0], int(fields[19])
 
 
-def wait_gone(pids: list[int], limit: float = GONE_LIMIT) -> float | None:
-    """Seconds until none of ``pids`` runs (a zombie counts as gone); ``None``: not in time."""
+@dataclass(frozen=True)
+class Tracked:
+    """A process by its pid and start time: a later process that got the same pid is not it."""
+
+    pid: int
+    start: int
+
+    @classmethod
+    def of(cls, pid: int) -> Tracked:
+        found = started(pid)
+        if found is None:
+            raise ProcessLookupError(pid)
+        return cls(pid, found[1])
+
+    def running(self) -> bool:
+        """The same process, and not a zombie."""
+        found = started(self.pid)
+        return found is not None and found[1] == self.start and found[0] != "Z"
+
+
+def alive(tracked: list[Tracked]) -> list[Tracked]:
+    return [process for process in tracked if process.running()]
+
+
+def kill(tracked: list[Tracked]) -> None:
+    """SIGKILL to each tracked process that still runs (a reused pid is left alone)."""
+    for process in alive(tracked):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(process.pid, SIGKILL)
+
+
+def wait_gone(tracked: list[Tracked], limit: float = GONE_LIMIT) -> float | None:
+    """Seconds until none of ``tracked`` runs (a zombie counts as gone); ``None``: not in time."""
     began = time.monotonic()
-    while alive(pids):
+    while alive(tracked):
         if time.monotonic() - began > limit:
             return None
         time.sleep(0.01)
@@ -69,7 +102,7 @@ def job_after(home: Path, job_id: str, part: Path) -> dict[str, Any]:
         time.sleep(2)
         result["part 2 s after the next start"] = part.exists()
         car.client.post("/api/system/shutdown")
-        car.process.wait(15)
+        windows.reap(car.process, 15)
     finally:
         car.close()
         if car.process.poll() is None:
@@ -90,9 +123,8 @@ def run(case: str, *, death_signal: bool, parent_watch: bool) -> dict[str, Any]:
         try:
             return proof(case, shell, home)
         finally:
-            leftovers = alive([shell.process.pid])
-            for pid in leftovers:
-                os.kill(pid, SIGKILL)
+            if shell.process.poll() is None:
+                shell.process.kill()
             shell.process.wait()
 
 
@@ -107,40 +139,43 @@ def proof(case: str, shell: app.App, home: Path) -> dict[str, Any]:
     job = api.wait_encoding(job_id)
     api.close()
     part = Path(job["plan"]["output_tmp"])
-    server = shell.events["sidecar_spawned"]["pid"]
-    encoders = [p.pid for p in psutil.Process(server).children(recursive=True)]
-    tracked = [shell.process.pid, server, *encoders]
+    shell_process = Tracked.of(shell.process.pid)
+    server = Tracked.of(shell.events["sidecar_spawned"]["pid"])
+    encoders = [
+        Tracked.of(child.pid) for child in psutil.Process(server.pid).children(recursive=True)
+    ]
+    tracked = [shell_process, server, *encoders]
+    pids = [process.pid for process in tracked]
     patterns = [str(APP), f"{SIDECAR_ONEDIR.name}/{FROZEN_SERVER.name}", f"ffmpeg.*{home}"]
-    show("before", tracked, patterns)
+    show("before", pids, patterns)
     print(f".part file: {part} exists={part.exists()} size={part.stat().st_size}")
     acted = time.monotonic()
     if case == "app-kill":
-        os.kill(shell.process.pid, SIGKILL)
+        shell.process.kill()
         took = wait_gone(tracked)
     elif case == "sidecar-kill":
-        os.kill(server, SIGKILL)
+        kill([server])
         took = wait_gone([server, *encoders])
         shell.wait_event("page_failed")
     else:
         shell.quit()
         took = wait_gone(tracked)
-    show(f"after ({case})", tracked, patterns)
+    show(f"after ({case})", pids, patterns)
     result: dict[str, Any] = {
         "case": case,
         "gone after (s)": None if took is None else round(took, 3),
-        "still running": alive(tracked),
+        "still running": [process.pid for process in alive(tracked)],
     }
     if case == "sidecar-kill":
         failed = shell.events["page_failed"]
         result["app shows"] = failed["message"]
         result["app shows after (s)"] = round(failed["seen"] - (acted - shell.spawned_at), 3)
-        result["app still running"] = bool(alive([shell.process.pid]))
+        result["app still running"] = shell_process.running()
         shell.quit()
-        shell.process.wait(10)
+        windows.reap(shell.process, 10)
     if case == "quit":
         result["app saw"] = shell.wait_event("sidecar_stopped")
-    for pid in alive(tracked):
-        os.kill(pid, SIGKILL)
+    kill(tracked)
     wait_gone(tracked)
     result |= job_after(home, job_id, part)
     log = shell.log.read_text(errors="replace")

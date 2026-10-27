@@ -19,7 +19,6 @@ import argparse
 import json
 import os
 import re
-import signal
 import subprocess
 import sys
 import tempfile
@@ -29,7 +28,6 @@ import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from types import FrameType
 from typing import Any
 
 from desktop.spike.scripts import app as spike_app
@@ -539,10 +537,6 @@ def trace(name: str) -> Any:
     return (TRACE / f"{name}.log").open("wb")
 
 
-def _interrupt(number: int, frame: FrameType | None) -> None:
-    raise KeyboardInterrupt(f"signal {number}")
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -564,7 +558,7 @@ def main(argv: list[str] | None = None) -> int:
         "--calibrate", action="store_true", help="print where Dolphin's items are and stop"
     )
     args = parser.parse_args(argv)
-    signal.signal(signal.SIGTERM, _interrupt)
+    windows.stop_on_signals()
     if args.calibrate:
         return calibrate()
     global TRACE

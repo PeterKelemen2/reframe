@@ -1,5 +1,8 @@
 """Frame-time statistics of the magnifier runs: the median, the 95th percentile (nearest rank)
-and the worst of a list of milliseconds, and the frames dropped at an output's refresh rate."""
+and the worst of a list of milliseconds, the frames dropped at an output's refresh rate, and
+how often the page redrew. The first interval of each run is left out: it starts at the frame
+callback that the run asked for, whose timestamp in some engines is the time of the request
+(intervals of 0 to 14 ms in Firefox and in WebKitGTK without the DMA-BUF renderer)."""
 
 from __future__ import annotations
 
@@ -42,29 +45,46 @@ def dropped(intervals: Sequence[float], refresh_hz: float) -> dict[str, int]:
     }
 
 
+def steady(run: dict[str, Any]) -> list[float]:
+    """The run's frame intervals without its first one."""
+    intervals: list[float] = run["intervals"][1:]
+    return intervals
+
+
+def redraw_rate(runs: Sequence[dict[str, Any]]) -> float | None:
+    """Redraws per second: the frame rate times the share of frame callbacks that redrew
+    (a callback redraws only when a pointer event came since the last one)."""
+    fps = rate([value for run in runs for value in steady(run)])
+    callbacks = sum(len(run["intervals"]) + 1 for run in runs)
+    draws = sum(len(run["draws"]) for run in runs)
+    return None if fps is None else round(fps * draws / callbacks, 2)
+
+
 def summarise(run: dict[str, Any], refresh_hz: float) -> dict[str, Any]:
     """A run record of the page with its statistics, without the raw lists."""
     kept = {key: value for key, value in run.items() if key not in ("intervals", "draws")}
     return kept | {
-        "interval": spread(run["intervals"]),
-        "rate_fps": rate(run["intervals"]),
+        "interval": spread(steady(run)),
+        "rate_fps": rate(steady(run)),
+        "redraws_per_second": redraw_rate([run]),
         "redraw": spread(run["draws"]),
-        "dropped": dropped(run["intervals"], refresh_hz),
+        "dropped": dropped(steady(run), refresh_hz),
         "redraws": len(run["draws"]),
     }
 
 
 def pooled(runs: Sequence[dict[str, Any]], refresh_hz: float) -> dict[str, Any]:
     """The statistics of several runs of one case, their intervals and redraws taken together."""
-    intervals = [value for run in runs for value in run["intervals"]]
+    intervals = [value for run in runs for value in steady(run)]
     draws = [value for run in runs for value in run["draws"]]
-    late = [dropped(run["intervals"], refresh_hz) for run in runs]
+    late = [dropped(steady(run), refresh_hz) for run in runs]
     return {
         "runs": len(runs),
         "frames": len(intervals),
         "redraws": len(draws),
         "interval": spread(intervals),
         "rate_fps": rate(intervals),
+        "redraws_per_second": redraw_rate(runs),
         "redraw": spread(draws),
         "dropped": {
             "late": sum(entry["late"] for entry in late),

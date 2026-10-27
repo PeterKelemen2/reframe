@@ -2333,6 +2333,10 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
   (the `uv` binary of a running `uv run`, 17.9 MB). `fincore` 2.42 uses `cachestat`, which
   refuses files the user cannot write: `fincore: failed to do cachestat:
   /usr/lib/python3.14/os.py: Operation not permitted`.
+- **psutil 7.2.2** `Process.kill()` checks the pid and the create time before it sends the
+  signal (`_send_signal` calls `_raise_if_pid_reused`). The spike's cleanup script checks the
+  start time itself (field 22 of `/proc/<pid>/stat`, as the server's parent watch does) before
+  each SIGKILL of a process that is not its own child.
 
 ### D-0 (4b-i)
 
@@ -2348,8 +2352,17 @@ Xwayland 24.1.14), WebKitGTK `webkit2gtk-4.1` 2.54.2, GTK 3.24.52, Dolphin 26.08
   `callDBus(name, path, interface, method, text)` to a name that nobody owns is seen at once by
   `busctl --user monitor --json=short` (the bus answers the call with an error). A
   `callDBus` to KWin's own name is not seen on the bus.
-- **KWin placement**: a new window goes to the output under the cursor (`ActiveMouseScreen`,
-  the default), centred in its work area. `workspace.windowAdded` comes before the window's
+- **KWin placement**: KWin 6.8.1 has no `ActiveMouseScreen` setting (`strings
+  /usr/lib/libkwin.so.6.8.1` has no such key; `kreadconfig6 --file kwinrc --group Windows`
+  gives nothing for it, `Placement`, `FocusStealingPreventionLevel` or `SeparateScreenFocus`, so
+  the defaults hold: centred placement, level 1 "Low"). A new window goes to
+  `Workspace::activeOutput()`, centred in its work area. In KWin's 6.8 source,
+  `PointerInputRedirection::updatePosition` sets the active output to the one under every
+  pointer move, and `Workspace::setActiveWindow` sets it to the output of every activated
+  window, also one that a script activates. The review's run fits it: its second app window was
+  added on `DP-1` 2.3 s after the guard had given the keyboard back to the movie player there
+  (where the cursor was then is not recorded). The scripting API reads it as `workspace.activeScreen` (read only) next to
+  `workspace.cursorPos`. `workspace.windowAdded` comes before the window's
   first frame, so `opacity = 0` there hides it until it is moved. Setting `frameGeometry` to
   a new position alone takes effect at once; a new position together with a new size waits
   for the client, and twice in four tries with the Tauri window it did not take effect at all
@@ -2368,6 +2381,18 @@ Xwayland 24.1.14), WebKitGTK `webkit2gtk-4.1` 2.54.2, GTK 3.24.52, Dolphin 26.08
   Playwright launched (`executablePath`).
 - **KWin and focus**: setting `workspace.activeWindow` from a script activates that window
   (the scripts give the keyboard back that way); a new Tauri window is activated when it maps.
+  In KWin 6.8's `Workspace::addWaylandWindow` a new window is activated when focus stealing
+  prevention is "Low" or lower (the default here), and `windowAdded` is emitted after
+  `activateWindow`; the scripting wrapper's signals (`windowAdded`, `windowActivated`,
+  `windowRemoved`, `cursorPosChanged`, …) have nothing earlier and `activeScreen` has no
+  setter. So a script first hears of a new window in `windowActivated`, when it already has the
+  keyboard: each new spike window took it for 2 to 3 ms (the owner's `foreground_booster` log in
+  the user journal), also on `HDMI-A-1`.
+- **GTK 3 and an empty `XDG_CONFIG_HOME`** (`Gtk.Settings` in the system Python, no window):
+  with the owner's config `gtk-font-name` is `Noto Sans 10`, the theme `Breeze`, dark preferred;
+  with an empty one `Adwaita Sans 11`, `Adwaita`, light. A copy of `gtk-3.0/settings.ini` alone
+  gives the dark preference only, a copy of `dconf/user` alone the font and theme only; with
+  both the settings are the owner's.
 - **`/dev/uinput` without root** (the user has an ACL on it): a device with `EV_ABS`
   (`ABS_X`, `ABS_Y`), `BTN_LEFT/RIGHT/MIDDLE` and bus `BUS_VIRTUAL`, set up with
   `UI_DEV_SETUP` and `UI_ABS_SETUP` and made with `UI_DEV_CREATE`, is listed by KWin as a
@@ -2437,15 +2462,23 @@ Checked on 2026-10-27 on the same set-up as 4b-i (KDE Plasma 6.8.1 on Wayland, W
   gets zscale.
 - **Frame clocks**: `performance.now()` and `requestAnimationFrame` timestamps step by 1 ms in
   WebKitGTK and Firefox and by 0.1 ms in Chromium (the smallest step in a busy loop). In the
-  Tauri app on a 60 Hz output, WebKitGTK's frame callbacks come at 62.2 Hz (16.08 ms) when the
-  page draws little, and at 60.4 Hz with the full redraw. Chromium, headed and headless, runs at
-  60.0 Hz. Headed Firefox misses single frames (33–34 ms) at about 0.5 %, also when the page
-  draws nothing. Headless Firefox misses none.
+  Tauri app on a 60 Hz output, WebKitGTK's frame callbacks come at 62.2 Hz (16.08 ms) with the
+  real pointer (a full redraw on about 87 % of them) and when the page's own `setTimeout` events
+  draw nothing; at 60.4 Hz only when those events lead to a redraw. Chromium, headed and
+  headless, runs at 60.0 Hz. Headed Firefox misses single frames (33–34 ms) at about 0.5 %, also
+  when the page draws nothing. Headless Firefox misses none.
+- **The first frame interval of a run** (from the callback the run asked for to the next one)
+  was 0.02 to 7 ms in 32 of 117 runs, all of them page-driven runs of Firefox or of WebKitGTK
+  without the DMA-BUF renderer; why is not known. The statistics leave every run's first
+  interval out.
 - **`WEBKIT_DISABLE_DMABUF_RENDERER=1`** makes WebKitGTK draw the canvas on the CPU: 3.3 ms
   per redraw of the 4K bitmap scaled to 860×484 against 0.008 ms to queue (1.05 ms with a read
   back) with the default renderer. The page still holds 60 Hz.
 - **Pointer events per second with the real pointer** (uinput moves at about 125 per second):
-  WebKitGTK 54–55 (60–61 without the DMA-BUF renderer), Chromium 60, Firefox 60. Playwright's
+  WebKitGTK 53.7–55.0 per run with its default (DMA-BUF) renderer, fewer than its 62.2 frame
+  callbacks per second (11.6 to 13.7 % of them come without a new position, so the page redraws
+  53.7–55.0 times per second); 60.3–60.5 without the DMA-BUF renderer. Chromium 60.2–60.5 and
+  Firefox 59.3–60.2, one per frame. Playwright's
   `page.mouse.move` reaches 60 per second in Chromium and Firefox, each call waiting for its
   frame. A `setTimeout` of 8 ms runs at about 12 ms in WebKitGTK (84 events per second).
 - **Firefox fired no `pointermove` for the uinput move that brought the cursor into its

@@ -41,6 +41,11 @@ def test_the_95th_percentile_shows_spikes_only_when_more_than_5_percent_are_slow
     assert magnifier_stats.spread(five)["worst"] == 33.4
 
 
+def test_the_95th_percentile_rounds_its_rank_up() -> None:
+    # 2 slow frames of 21 are 9.5 %: the 95th percentile is the 20th value (19.95 rounded up).
+    assert magnifier_stats.spread([16.7] * 19 + [33.4] * 2)["p95"] == 33.4
+
+
 def test_the_median_interval_is_not_pulled_up_by_one_long_frame() -> None:
     assert magnifier_stats.spread([16.0, 16.0, 17.0, 50.0])["median"] == 16.5
 
@@ -50,9 +55,30 @@ def test_the_frame_rate_counts_frames_over_the_summed_intervals() -> None:
     assert magnifier_stats.rate([16.0, 16.0, 17.0]) == 61.22
 
 
+def test_a_runs_first_interval_does_not_count() -> None:
+    # Firefox and WebKitGTK without DMA-BUF start some runs with an interval of about 0 ms.
+    run = {"intervals": [0.1, 20.0, 20.0, 20.0], "draws": [1.0] * 5, "events_per_second": 60.0}
+    summary = magnifier_stats.summarise(run, 60.0)
+    assert summary["rate_fps"] == 50.0
+    assert summary["interval"]["count"] == 3
+
+
+def test_redraws_per_second_count_only_the_frames_that_redrew() -> None:
+    # 50 frames per second, and a redraw on 5 of the 10 frame callbacks.
+    first = {"intervals": [20.0] * 4, "draws": [0.5] * 4, "events_per_second": 50.0}
+    second = {"intervals": [20.0] * 4, "draws": [0.5], "events_per_second": 10.0}
+    pooled = magnifier_stats.pooled([first, second], 60.0)
+    assert pooled["rate_fps"] == 50.0
+    assert pooled["redraws_per_second"] == 25.0
+
+
 def test_several_runs_pool_their_frames_and_add_up_each_runs_drops() -> None:
-    first = {"intervals": [16.7, 40.0], "draws": [1.0], "events_per_second": 54.0}
-    second = {"intervals": [16.7, 50.0, 16.7], "draws": [2.0, 3.0], "events_per_second": 60.0}
+    first = {"intervals": [16.7, 16.7, 40.0], "draws": [1.0], "events_per_second": 54.0}
+    second = {
+        "intervals": [16.7, 16.7, 50.0, 16.7],
+        "draws": [2.0, 3.0],
+        "events_per_second": 60.0,
+    }
     pooled = magnifier_stats.pooled([first, second], 60.0)
     assert pooled["runs"] == 2
     assert pooled["frames"] == 5

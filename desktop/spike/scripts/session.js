@@ -18,6 +18,10 @@ function spotOf(w) {
   return C.pids[String(w.pid)] || C.classes[w.resourceClass] || null;
 }
 
+function outputName(w) {
+  return w.output ? w.output.name : null;
+}
+
 function describe(w) {
   return {
     id: w.internalId.toString(),
@@ -26,10 +30,14 @@ function describe(w) {
     normal: w.normalWindow,
     dialog: w.dialog,
     popup: w.popupWindow,
-    output: w.output ? w.output.name : null,
+    output: outputName(w),
     geo: rect(w.frameGeometry),
     opacity: w.opacity,
   };
+}
+
+function brief(w) {
+  return w ? { id: w.internalId.toString(), cls: w.resourceClass, output: outputName(w) } : null;
 }
 
 function secondary() {
@@ -40,19 +48,24 @@ function secondary() {
 
 function onSecondary(w) {
   const screen = secondary();
-  if (!screen || !w.output || w.output.name !== C.secondary) return false;
+  if (!screen || outputName(w) !== C.secondary) return false;
   const g = w.frameGeometry;
   const s = screen.geometry;
   return g.x >= s.x && g.y >= s.y && g.x + g.width <= s.x + s.width && g.y + g.height <= s.y + s.height;
 }
 
 const hidden = {};
+const above = {};
+const stray = {};
 
+// keepAbove waits until the window is on the secondary output: above the owner's windows on
+// another output it would cover them, even while transparent.
 function reveal(w) {
   const id = w.internalId.toString();
-  if (hidden[id] && onSecondary(w)) {
+  if (hidden[id] && !stray[id] && onSecondary(w)) {
     delete hidden[id];
     w.opacity = 1.0;
+    if (above[id]) w.keepAbove = true;
     log("shown", describe(w));
   }
 }
@@ -82,6 +95,26 @@ function apply(w) {
   }
 }
 
+let keep = null;
+
+function giveBack(w) {
+  if (keep && workspace.activeWindow === w) {
+    workspace.activeWindow = keep;
+    log("kept_active", { by: brief(w), keep: brief(keep), active: brief(workspace.activeWindow) });
+  }
+}
+
+// A window of ours on another output is hidden there and never shown: the session stops.
+function strayed(w) {
+  const id = w.internalId.toString();
+  stray[id] = true;
+  w.opacity = 0.0;
+  w.keepAbove = false;
+  giveBack(w);
+  if (w.normalWindow || w.dialog) w.minimized = true;
+  log("stray", describe(w));
+}
+
 function watch(w) {
   w.frameGeometryChanged.connect(function () {
     log("moved", describe(w));
@@ -90,6 +123,7 @@ function watch(w) {
   });
   w.outputChanged.connect(function () {
     log("output", describe(w));
+    if (outputName(w) !== C.secondary && !stray[w.internalId.toString()]) strayed(w);
   });
 }
 
@@ -106,6 +140,10 @@ function place(w) {
   hidden[w.internalId.toString()] = true;
   log("added", describe(w));
   watch(w);
+  if (outputName(w) !== C.secondary) {
+    strayed(w);
+    return;
+  }
   if (!(w.normalWindow || w.dialog)) {
     reveal(w);
     return;
@@ -121,7 +159,7 @@ function place(w) {
   }
   if (w.fullScreen) w.fullScreen = false;
   // Above the owner's windows on that output, so a drag between ours crosses none of theirs.
-  if (C.above) w.keepAbove = true;
+  if (C.above) above[w.internalId.toString()] = true;
   targets[w.internalId.toString()] = {
     x: screen.geometry.x + spot[0],
     y: screen.geometry.y + spot[1],
@@ -134,11 +172,6 @@ function place(w) {
   reveal(w);
 }
 
-function brief(w) {
-  return w ? { id: w.internalId.toString(), cls: w.resourceClass, output: w.output.name } : null;
-}
-
-let keep = null;
 if (C.keep) {
   keep =
     workspace.windowList().find(function (w) {
@@ -147,7 +180,14 @@ if (C.keep) {
 }
 if (!keep && workspace.activeWindow && !spotOf(workspace.activeWindow)) keep = workspace.activeWindow;
 if (keep && spotOf(workspace.activeWindow)) workspace.activeWindow = keep;
-log("loaded", { keep: brief(keep), active: brief(workspace.activeWindow) });
+// KWin opens a new window on its active output, which the last pointer move or the last
+// activation sets: windows.py starts nothing unless all three are on the secondary output.
+log("loaded", {
+  keep: brief(keep),
+  active: brief(workspace.activeWindow),
+  screen: workspace.activeScreen ? workspace.activeScreen.name : null,
+  cursor: [Math.round(workspace.cursorPos.x), Math.round(workspace.cursorPos.y)],
+});
 
 workspace.windowList().forEach(function (w) {
   if (spotOf(w)) watch(w);
@@ -155,7 +195,7 @@ workspace.windowList().forEach(function (w) {
 
 workspace.windowAdded.connect(function (w) {
   if (spotOf(w)) place(w);
-  else log("other", { pid: w.pid, cls: w.resourceClass, normal: w.normalWindow, output: w.output ? w.output.name : null });
+  else log("other", { pid: w.pid, cls: w.resourceClass, normal: w.normalWindow, output: outputName(w) });
 });
 
 workspace.windowRemoved.connect(function (w) {
@@ -163,16 +203,16 @@ workspace.windowRemoved.connect(function (w) {
   if (spotOf(w)) log("removed", { id: w.internalId.toString(), pid: w.pid });
 });
 
+// KWin activates a new window before windowAdded: this is the first a script hears of it.
 workspace.windowActivated.connect(function (w) {
   if (!w) return;
   if (!spotOf(w)) {
     keep = w;
     log("active", { window: brief(w) });
-  } else if (!C.guard) {
+  } else if (C.guard || outputName(w) !== C.secondary) {
+    giveBack(w);
+  } else {
     log("ours_active", { window: brief(w) });
-  } else if (keep) {
-    workspace.activeWindow = keep;
-    log("kept_active", { by: brief(w), keep: brief(keep), active: brief(workspace.activeWindow) });
   }
 });
 

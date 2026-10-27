@@ -75,6 +75,38 @@ Variables for the measurements:
 The shell prints one JSON line per event on stdout (`sidecar_spawned`, `sidecar_ready`,
 `page_health`, `page_failed`, `sidecar_failed`, `sidecar_stopped`), with `ms` since `main()`.
 
+## Isolation
+
+Nothing the spike starts reads or writes the owner's Reframe settings, queue or cache, or keeps
+anything in the owner's home:
+
+- Every sidecar that a script starts (`sidecar.start`, `browser.backend`, and the app's
+  through `REFRAME_SPIKE_HOME`) gets its own temporary `REFRAME_CONFIG_DIR`, `REFRAME_DATA_DIR`
+  and `REFRAME_CACHE_DIR`, and a `settings.json` of `{"encoders": {"hardware_tests": false}}`
+  (`sidecar.SETTINGS`): no VAAPI test encode and no libplacebo (Vulkan) run test on the GPU that
+  the owner's movie shares. No check of the spike needs them. Checked on the frozen sidecar
+  (2026-10-27): `GET /api/system/encoders` gives every hardware encoder (NVENC, QSV, VAAPI) as
+  `unknown`, "Not tested: hardware test encodes are off (Settings → Encoders)", `libplacebo` in
+  `untested_filters`, no filter failure, `detecting` false; the log has no test line. For HDR
+  the preview then always uses zscale + tonemap (libplacebo needs its run test).
+- The app gets temporary XDG folders (`app.environment`): WebKitGTK keeps its profile in
+  `$XDG_DATA_HOME/org.reframe.spike/` (local storage, the HTTP cache, HSTS) and its caches in
+  `$XDG_CACHE_HOME` (`mesa_shader_cache/`; both seen in the review's run with temporary XDG
+  folders). One app run under `windows run` added nothing to the owner's home ("Window session
+  runs" below). The config folder gets copies of the owner's `gtk-3.0/` and `dconf/user`,
+  only read: with an empty one GTK uses Adwaita Sans 11, Adwaita and the light variant
+  instead of Noto Sans 10, Breeze and dark, which changes WebKitGTK's widget font and the window
+  decoration (`testdata/README.md`, "D-0 (4b-i)"). `cold_start` gives all runs of a case one XDG
+  folder, so the shader cache is warm after the first run, as the owner's was in the
+  measurements below. Node and its browsers (`browser.node`, `magnifier_check browsers`) get
+  temporary XDG folders too (`PLAYWRIGHT_BROWSERS_PATH` keeps the installed browsers), and each
+  Dolphin of `drop_check` its own.
+- Before the review's fixes the app had no XDG folders of its own, so every run of 4a, 4b-i,
+  4b-ii and the lead's repeats wrote WebKitGTK's profile into
+  `~/.local/share/org.reframe.spike/` (made 2026-10-27 18:37:41, last written 21:15:53; 51
+  entries, an HTTP cache of the sidecar's answers, among them preview frames of 1 169 110
+  bytes). It is left for the owner to remove.
+
 ## The onedir build: what it needs
 
 `scripts/build_sidecar.py` lists each PyInstaller option with what goes wrong without it.
@@ -118,9 +150,12 @@ The build: 82.5 MB in 1014 files (`du -sb`); the executable is 15.9 MB, `libmedi
 uv run python -m desktop.spike.scripts.cold_start --all --runs 10 --json /tmp/cold.json
 ```
 
-Each run gets new temporary folders. *Sidecar*: from just before the spawn to the ready line.
+Each run gets new temporary folders (the app runs of a case share one XDG folder: "Isolation").
+*Sidecar*: from just before the spawn to the ready line.
 *App*: from just before the spawn of the app to the `page_health` line (printed when the page
-has drawn the health answer). *Warm* runs one start first that is not counted. *Evicted*
+has drawn the health answer). *Warm* runs one start first that is not counted; so does every
+app case, also an evicted one, so that its new XDG caches (WebKitGTK's, the shader cache) are
+filled as the owner's `~/.cache` was in the runs below. *Evicted*
 drops the page cache of the measured files before each run with
 `posix_fadvise(POSIX_FADV_DONTNEED)` and checks with `fincore` that nothing of them is cached.
 
@@ -231,9 +266,32 @@ Drag-and-drop paths and PrimeVue rendering (task 4b-i, 2026-10-27, the AMD deskt
 6.8.1 on Wayland, WebKitGTK 2.54.2). The canvas magnifier: [MAGNIFIER.md](MAGNIFIER.md).
 Tool behaviour these checks rely on: `testdata/README.md`, "D-0 (4b-i)".
 
-Every window of these checks goes to the output `HDMI-A-1` only, the pointer moves inside it
-only, and nothing sends a key. The tools below enforce that; a check that cannot (no
-`HDMI-A-1`) opens no window and stops.
+What the tools below guarantee, and what they do not:
+
+- **No program starts, and no gate opens, unless the window would open on `HDMI-A-1`.** KWin
+  6.8.1 opens a new window on its *active output*, which the last pointer move and the last
+  activation set (also the guard's give-back), and it activates every new window (focus
+  stealing prevention "Low", the default). So a session starts a program only when the KWin
+  script reports the cursor, KWin's active output and the active window all on `HDMI-A-1`
+  (`windows.Refused` otherwise: at once for the cursor, after 5 s for the active window or
+  output). Under `windows run`, each `app.start` of the command asks the session first.
+  Without `HDMI-A-1` no session starts.
+- **Not prevented**: the owner moving the cursor to `DP-1`, or activating a window there,
+  between that check and KWin adding the window. That time is the program's start-up: 543 ms
+  for the app in the one run measured (`added_after_admission_ms`, "Window session runs"
+  below). Not checked
+  either: a later window of a program that was admitted (a dialog, a second window), and a
+  program that a `windows run` command starts without `app.start`. A window that KWin adds on
+  another output anyway stays transparent there, is never kept above, is minimised, gives the
+  keyboard back at once, and stops the session.
+- **Every new window takes the keyboard for a few milliseconds**, also one on `HDMI-A-1`: KWin
+  activates it before it tells a script about it (`windowAdded` comes after the activation in
+  KWin 6.8), and the scripting API has no earlier signal. The script gives the keyboard back in
+  the activation itself. Only a persistent setting (focus stealing prevention "Extreme", or a
+  window rule) would stop it; the spike changes none. So no gate opens while the keyboard is on
+  a window on `DP-1` (the movie player).
+- Windows are kept above the owner's windows only once they are shown on `HDMI-A-1`. The real
+  pointer moves inside `HDMI-A-1` only, and nothing sends a key.
 
 ### Variables of the app
 
@@ -271,21 +329,31 @@ it exists, whether it is a folder).
   of the app (`snapshotDir`) or a query parameter; `cspViolations` collects every
   `securitypolicyviolation` (each one is also logged).
 - **`scripts/windows.py`**: `with windows.Session() as session:` loads a KWin script for the
-  block. `session.spawn(argv, spot, **popen)` starts a program behind a gate (it runs once the
-  script knows its pid), and the script moves its windows to `spot` = `(x, y, width, height)`
-  inside `HDMI-A-1` (`None` for width and height: the window's own; `spot=None`: no move, only
-  shown if it is already on `HDMI-A-1`). A new window is transparent until KWin has it on
-  `HDMI-A-1`, and kept above the other windows there. `session.window(pid)` waits for it and
-  reads it back (`getWindowInfo`); a window anywhere else raises `WrongOutput`, and so does the
-  next call after any window of the session moved off. `session.wrapper(binary, spot)` gives
-  an executable for a launcher that starts the program itself (Playwright's
-  `executablePath`), for a headed browser. The window that had the keyboard keeps it
-  (`guard=True`, the default) or gets it back at `session.give_back()`. Close what you start:
+  block. `session.spawn(argv, spot, **popen)` starts a program behind a gate: it runs once the
+  script knows its pid and `session.admit()` passes (the cursor, KWin's active output and the
+  active window on `HDMI-A-1`); otherwise the gate folder is removed, the gated shell ends with
+  97 without running the program, and the call raises (`Refused`, or `RuntimeError` when the
+  script does not report). The script moves the program's windows to `spot` =
+  `(x, y, width, height)` inside `HDMI-A-1` (`None` for width and height: the window's own;
+  `spot=None`: no move, only shown if it is already on `HDMI-A-1`). A new window is transparent
+  until KWin has it on `HDMI-A-1`, and kept above the other windows only once it is shown
+  there. `session.window(pid)` waits for it and reads it back (`getWindowInfo`); a window
+  anywhere else raises `WrongOutput`, and so does the next call after any window of the session
+  was added or moved off. `session.wrapper(binary, spot)` gives an executable for a launcher
+  that starts the program itself (Playwright's `executablePath`), for a headed browser; its gate
+  opens on the same check (otherwise it ends with 97 and `session.failure` says why), and an
+  unused wrapper's folder goes with the session. The window that had the keyboard gets it back
+  in the activation (`guard=True`, the default); with `guard=False`, at `session.give_back()`,
+  except a window on another output, which always gives it back at once. Close what you start:
   `windows.terminate(process)`, or `quit` on the app's stdin. From the shell:
   `uv run python -m desktop.spike.scripts.windows run -- <command>` (every window of the app's
-  class, for 4a's scripts; `--class Reframe-spike` under XWayland),
+  class, for 4a's scripts; `--class Reframe-spike` under XWayland; each `app.start` of the
+  command asks the session through `REFRAME_SPIKE_WINDOW_GATE` before it starts the app, and
+  the command runs in its own process group, stopped with SIGINT, then SIGKILL after 15 s),
   `… windows open --spot 40,40,1280,800 -- <program>` (open, read back, close),
-  `… windows outputs`.
+  `… windows outputs`. The window scripts (`windows`, `pointer`, `drop_check`, `prime_check`,
+  `magnifier_check`) treat SIGTERM and SIGHUP as Ctrl+C: the KWin script is unloaded, the
+  `busctl` monitor and the programs stop, the temporary folders go.
 - **`scripts/pointer.py`**: inside a session with `cursor=True`,
   `pointer.for_session(session.journal, session.screen)` is the real pointer (an absolute
   pointer device made with `/dev/uinput`). `with device:` creates it and removes it on exit;
@@ -293,8 +361,9 @@ it exists, whether it is a folder).
   `HDMI-A-1` before it sends anything and stops the run when KWin's read-back is not exactly
   the target; `glide(points)`, `line(start, end, steps)`, `press()`, `release()`,
   `right_click()`. A button still down at the end is released where it went down. Before you
-  start a program, move the pointer onto `HDMI-A-1`: KWin opens a window on the output under
-  the cursor. `uv run python -m desktop.spike.scripts.pointer demo` moves it round a square.
+  start a program, move the pointer onto `HDMI-A-1`: a pointer move makes it KWin's active
+  output, where the next window opens (`session.admit()` still checks it).
+  `uv run python -m desktop.spike.scripts.pointer demo` moves it round a square.
 
 ### Drag-and-drop paths
 
@@ -386,7 +455,7 @@ Results (2026-10-27; Playwright 1.64.1: Chromium 156.0.8078.4, Firefox 157.0):
   page's own `eval` test is refused in every engine (`securitypolicyviolation`, `script-src`):
   the policy is in force.
 
-### The placement wrapper with 4a's cold start
+### Window session runs
 
 ```sh
 uv run python -m desktop.spike.scripts.windows run -- uv run python -m desktop.spike.scripts.cold_start --target app --runs 2
@@ -396,7 +465,32 @@ uv run python -m desktop.spike.scripts.windows run -- uv run python -m desktop.s
 app (frozen onedir), warm, 2 runs: median 0.808 s, worst 0.815 s (the sidecar's ready line at
 0.784 s in the app); with `--in-setup`: median 0.878 s, worst 0.879 s. Each of the three
 windows (one warm-up) was read back at 40,40, 900×708 on `HDMI-A-1`. Two runs only: the
-numbers show that the wrapper works, they are not the measurement (`cold_start --all`).
+numbers show that the wrapper works, they are not the measurement (`cold_start --all`). (These
+runs were before the admission check, with no XDG folders of the app's own.)
+
+With the admission check, 2026-10-27 22:50:47, the owner's cursor on `DP-1`:
+`windows run -- uv run python -m desktop.spike.scripts.cold_start --target app --cache evicted
+--runs 1` printed `windows: the cursor is at (2707, 413), not on HDMI-A-1: nothing is started`
+and ended with 1 after 0.12 s. Nothing was started; afterwards `qdbus6 org.kde.KWin` listed
+`/Scripting` and no script object, and no `busctl monitor`, process or `/tmp/reframe-spike-*`
+folder was left. A read-only probe every 15 s from 22:51 on found the cursor on `DP-1` and
+Firefox active there each time.
+
+2026-10-27 23:10:14, the owner's cursor at (1203, 506) on `HDMI-A-1` and VS Code active
+there: the same command was admitted twice (at the session's start, then at the app's question
+through `REFRAME_SPIKE_WINDOW_GATE`). KWin added the app's window on `HDMI-A-1` at 510,186,
+900×708 (centred); the script moved it to 40,40 and showed it there, and it read back at 40,40,
+900×708. KWin added it 543 ms after the app's admission: in that time a move of the cursor or
+of the keyboard to `DP-1` would not have been seen. The keyboard went from VS Code to the
+window at 23:10:15.484 and back 3.9 ms later (the owner's `foreground_booster` log). Its one
+cold start (evicted, in a new XDG folder with nothing cached: app cases had no uncounted start
+then) took 1.438 s, the sidecar spawned 355 ms after the app's `main()`: one run while the owner
+worked on `DP-1`, not a measurement. Afterwards both scripts gave `isScriptLoaded` false, and
+no process or `/tmp/reframe-spike-*` folder was left. Nothing in `~/.local/share` or
+`~/.local/state` was newer than the run's start, `~/.local/share/org.reframe.spike/` listed the
+same 51 entries with the same mtimes, and in `~/.cache` and `~/.config` only the owner's
+Firefox, Spotify and VS Code wrote (23:10:54–59), and KWin its `kwinsession.kcache` (23:10:14.207,
+1.3 s before the window; a script load alone does not write it).
 
 ### Not run
 

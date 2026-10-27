@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import selectors
+import shutil
 import subprocess
 import time
 from collections.abc import Mapping
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from desktop.spike.scripts import sidecar
+from desktop.spike.scripts import sidecar, windows
 from desktop.spike.scripts.spike_paths import APP
 
 
@@ -58,16 +59,60 @@ class App:
         return self.events[name]
 
 
-def environment(home: Path, *, unfrozen: bool, extra: Mapping[str, str] | None) -> dict[str, str]:
+XDG = ("DATA", "CACHE", "CONFIG", "STATE")
+GTK_CONFIG = ("gtk-3.0", "dconf/user")
+"""Copied from the owner's config folder: without them GTK falls back to Adwaita (its font,
+theme and decorations), which changes what the checks measure."""
+
+
+def private_xdg(root: Path) -> dict[str, str]:
+    """XDG folders below ``root``, the config one seeded with copies of :data:`GTK_CONFIG`
+    (the owner's files are only read)."""
+    owner = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    env = {}
+    for name in XDG:
+        folder = root / name.lower()
+        folder.mkdir(parents=True, exist_ok=True)
+        env[f"XDG_{name}_HOME"] = str(folder)
+    for name in GTK_CONFIG:
+        source, target = owner / name, root / "config" / name
+        if target.exists() or not source.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, target, symlinks=True)
+        else:
+            shutil.copyfile(source, target)
+    return env
+
+
+def environment(
+    home: Path, *, unfrozen: bool, extra: Mapping[str, str] | None, xdg: Path | None = None
+) -> dict[str, str]:
+    """The app's environment with everything it writes in ``home``: the sidecar's folders
+    (with :data:`sidecar.SETTINGS`), and the XDG folders (``xdg``, by default in ``home``),
+    where WebKitGTK keeps its profile (``$XDG_DATA_HOME/org.reframe.spike``) and caches."""
     env = {name: value for name, value in os.environ.items() if not name.startswith("REFRAME_")}
     env["REFRAME_SPIKE_HOME"] = str(home)
+    sidecar.write_settings(home / "config")
+    env |= private_xdg(xdg or home / "xdg")
     if unfrozen:
         env["REFRAME_SPIKE_SIDECAR"] = " ".join(sidecar.unfrozen_command())
     return env | dict(extra or {})
 
 
-def start(home: Path, *, unfrozen: bool = False, extra_env: Mapping[str, str] | None = None) -> App:
-    env = environment(home, unfrozen=unfrozen, extra=extra_env)
+def start(
+    home: Path,
+    *,
+    unfrozen: bool = False,
+    extra_env: Mapping[str, str] | None = None,
+    xdg: Path | None = None,
+) -> App:
+    """Starts the app; under ``windows run`` only once the window session admits it."""
+    env = environment(home, unfrozen=unfrozen, extra=extra_env, xdg=xdg)
+    gate = os.environ.get(windows.GATE_ENV)
+    if gate:
+        windows.ask(Path(gate))
     spawned_at = time.monotonic()
     process = subprocess.Popen(
         [str(APP)],
