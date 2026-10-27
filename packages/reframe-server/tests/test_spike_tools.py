@@ -431,17 +431,26 @@ def test_a_script_that_does_not_report_opens_no_gate_and_leaves_nothing(
 
 
 @linux_only
-def test_a_launcher_gate_is_not_opened_after_a_refusal(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, started: list[subprocess.Popen[Any]]
+@pytest.mark.parametrize(
+    ("state", "runs"),
+    [(kwin_state(), True), (REFUSED["the cursor on DP-1"], False)],
+    ids=["admitted", "refused"],
+)
+def test_a_launcher_gate_opens_only_when_the_window_would_open_on_hdmi(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    started: list[subprocess.Popen[Any]],
+    state: dict[str, Any],
+    runs: bool,
 ) -> None:
-    FakeKWin(monkeypatch, kwin_state(), REFUSED["the cursor on DP-1"])
+    FakeKWin(monkeypatch, kwin_state(), state)
     marker = tmp_path / "ran"
     with windows.Session() as session:
         launch = session.wrapper("/bin/sh", SPOT)
         result = subprocess.run([launch, "-c", f"touch {marker}"], timeout=10)
-        assert session.failure is not None
-    assert result.returncode == 97
-    assert not marker.exists()
+        assert (session.failure is None) is runs
+    assert result.returncode == (0 if runs else 97)
+    assert marker.exists() is runs
     assert leftovers(tmp_path) == []
 
 
@@ -573,8 +582,10 @@ def test_the_script_never_shows_a_window_that_kwin_added_on_another_output(
     assert not any(step["value"] for step in window["history"] if step["set"] == "keepAbove")
     assert window["minimized"]
     assert result["active"] == HARUNA["id"]
-    shown = [entry["event"] for entry in result["records"] if entry["event"] in ("stray", "shown")]
-    assert shown == ["stray"]
+    events = [entry["event"] for entry in result["records"]]
+    # The keyboard goes back in KWin's activation, before the window is even added.
+    assert events.index("kept_active") < events.index("added")
+    assert [event for event in events if event in ("stray", "shown")] == ["stray"]
 
 
 # SIGTERM ends a window session cleanly.
@@ -726,7 +737,8 @@ def test_cleanup_does_not_kill_a_process_that_has_a_tracked_pid_but_started_late
     try:
         itself = cleanup.Tracked.of(process.pid)
         cleanup.kill([cleanup.Tracked(process.pid, itself.start - 100)])
-        assert process.poll() is None
+        with pytest.raises(subprocess.TimeoutExpired):
+            process.wait(0.5)
         cleanup.kill([itself])
         assert process.wait(5) == -SIGKILL
     finally:
