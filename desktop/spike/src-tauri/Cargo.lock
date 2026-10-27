@@ -2422,12 +2422,14 @@ dependencies = [
 name = "reframe-spike"
 version = "0.0.0"
 dependencies = [
+ "cairo-rs",
  "libc",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tokio",
+ "webkit2gtk",
 ]
 
 [[package]]
