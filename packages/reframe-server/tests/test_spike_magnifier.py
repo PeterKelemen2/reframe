@@ -39,3 +39,27 @@ def test_the_95th_percentile_shows_spikes_only_when_more_than_5_percent_are_slow
     assert magnifier_stats.spread(five)["p95"] == 16.7
     assert magnifier_stats.spread(six)["p95"] == 33.4
     assert magnifier_stats.spread(five)["worst"] == 33.4
+
+
+def test_the_median_interval_is_not_pulled_up_by_one_long_frame() -> None:
+    assert magnifier_stats.spread([16.0, 16.0, 17.0, 50.0])["median"] == 16.5
+
+
+def test_the_frame_rate_counts_frames_over_the_summed_intervals() -> None:
+    # WebKitGTK's 1 ms steps: three frames in 49 ms are 61.22 fps, not the 62.5 of the median.
+    assert magnifier_stats.rate([16.0, 16.0, 17.0]) == 61.22
+
+
+def test_several_runs_pool_their_frames_and_add_up_each_runs_drops() -> None:
+    first = {"intervals": [16.7, 40.0], "draws": [1.0], "events_per_second": 54.0}
+    second = {"intervals": [16.7, 50.0, 16.7], "draws": [2.0, 3.0], "events_per_second": 60.0}
+    pooled = magnifier_stats.pooled([first, second], 60.0)
+    assert pooled["runs"] == 2
+    assert pooled["frames"] == 5
+    assert pooled["redraws"] == 3
+    assert pooled["interval"]["worst"] == 50.0
+    assert pooled["redraw"]["worst"] == 3.0
+    # 40 ms skipped one period, 50 ms two.
+    assert pooled["dropped"] == {"late": 2, "missed": 3, "per_run_late": [1, 1]}
+    assert pooled["rate_fps"] == 35.69
+    assert pooled["events_per_second"] == [54.0, 60.0]
