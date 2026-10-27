@@ -1,0 +1,86 @@
+[
+  {
+    "case": "app (frozen onedir)",
+    "cache": "warm",
+    "runs": 10,
+    "median": 0.7978267190001134,
+    "worst": 0.820106721999764,
+    "best": 0.7857113310001296,
+    "samples": [
+      {
+        "total": 0.8044613279998885,
+        "spawn (in app)": 0.002149217,
+        "sidecar ready (in app)": 0.758061283,
+        "page health (in app)": 0.775892836,
+        "page mounted (page)": 0.024
+      },
+      {
+        "total": 0.7857113310001296,
+        "spawn (in app)": 0.001996749,
+        "sidecar ready (in app)": 0.74134247,
+        "page health (in app)": 0.759050359,
+        "page mounted (page)": 0.026
+      },
+      {
+        "total": 0.7974990000002435,
+        "spawn (in app)": 0.002103771,
+        "sidecar ready (in app)": 0.75335764,
+        "page health (in app)": 0.771568221,
+        "page mounted (page)": 0.026
+      },
+      {
+        "total": 0.7963323559997662,
+        "spawn (in app)": 0.001869017,
+        "sidecar ready (in app)": 0.752806571,
+        "page health (in app)": 0.770446351,
+        "page mounted (page)": 0.027
+      },
+      {
+        "total": 0.7981544379999832,
+        "spawn (in app)": 0.003030294,
+        "sidecar ready (in app)": 0.754968676,
+        "page health (in app)": 0.772730578,
+        "page mounted (page)": 0.024
+      },
+      {
+        "total": 0.820106721999764,
+        "spawn (in app)": 0.002174555,
+        "sidecar ready (in app)": 0.778324948,
+        "page health (in app)": 0.795827468,
+        "page mounted (page)": 0.01
+      },
+      {
+        "total": 0.7914422040012141,
+        "spawn (in app)": 0.002106927,
+        "sidecar ready (in app)": 0.748300045,
+        "page health (in app)": 0.765949212,
+        "page mounted (page)": 0.021
+      },
+      {
+        "total": 0.8108950879995973,
+        "spawn (in app)": 0.002875852,
+        "sidecar ready (in app)": 0.765937986,
+        "page health (in app)": 0.783870229,
+        "page mounted (page)": 0.022
+      },
+      {
+        "total": 0.8100640790016769,
+        "spawn (in app)": 0.002396275,
+        "sidecar ready (in app)": 0.764607583,
+        "page health (in app)": 0.782912531,
+        "page mounted (page)": 0.021
+      },
+      {
+        "total": 0.7906016739998449,
+        "spawn (in app)": 0.001991238,
+        "sidecar ready (in app)": 0.745777684,
+        "page health (in app)": 0.763429497,
+        "page mounted (page)": 0.022
+      }
+    ],
+    "median spawn (in app)": 0.002128072,
+    "median sidecar ready (in app)": 0.754163158,
+    "median page health (in app)": 0.7721493994999999,
+    "median page mounted (page)": 0.023
+  }
+]

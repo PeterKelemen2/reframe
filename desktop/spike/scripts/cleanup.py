@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import os
 import shutil
 import signal
+import socket
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import psutil
-from desktop.spike.scripts import app, sidecar, windows
+from desktop.spike.scripts import app, cold_start, sidecar, windows
 from desktop.spike.scripts.spike_paths import APP, FROZEN_SERVER, SIDECAR_ONEDIR
 
 GONE_LIMIT = 20.0
@@ -185,18 +188,51 @@ def proof(case: str, shell: app.App, home: Path) -> dict[str, Any]:
     return result
 
 
+class Tee(io.TextIOBase):
+    """Writes to stdout and to a file."""
+
+    def __init__(self, stdout: TextIO, file: TextIO) -> None:
+        self.streams = (stdout, file)
+
+    def write(self, text: str) -> int:
+        for stream in self.streams:
+            stream.write(text)
+        return len(text)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("case", choices=["app-kill", "sidecar-kill", "quit"])
     parser.add_argument("--no-death-signal", action="store_true", help="no PR_SET_PDEATHSIG")
     parser.add_argument("--no-parent-pid", action="store_true", help="no --parent-pid watch")
-    args = parser.parse_args(argv)
-    result = run(
-        args.case, death_signal=not args.no_death_signal, parent_watch=not args.no_parent_pid
+    parser.add_argument(
+        "--out",
+        type=Path,
+        help="also write the output here (default: results/cleanup-<machine>-<date>-<case>.out)",
     )
-    print("--- result")
-    for key, value in result.items():
-        print(f"{key}: {value}")
+    parser.add_argument("--machine", default=socket.gethostname(), help="for the file name")
+    args = parser.parse_args(argv)
+    flags = [("-no-death-signal", args.no_death_signal), ("-no-parent-pid", args.no_parent_pid)]
+    ending = f"-{args.case}{''.join(flag for flag, on in flags if on)}.out"
+    target = args.out or cold_start.results_file("cleanup", args.machine, ending)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        target.open("w", encoding="utf-8") as file,
+        contextlib.redirect_stdout(Tee(sys.stdout, file)),
+    ):
+        print(f"loadavg before: {cold_start.loadavg()}")
+        result = run(
+            args.case, death_signal=not args.no_death_signal, parent_watch=not args.no_parent_pid
+        )
+        print("--- result")
+        for key, value in result.items():
+            print(f"{key}: {value}")
+        print(f"loadavg after: {cold_start.loadavg()}")
+    print(f"output: {target}")
     return 0
 
 
