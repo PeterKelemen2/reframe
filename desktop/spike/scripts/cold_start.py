@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
 import json
 import shutil
+import socket
 import statistics
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -20,7 +21,23 @@ from typing import Any
 
 import httpx
 from desktop.spike.scripts import app, page_cache, sidecar, windows
-from desktop.spike.scripts.spike_paths import APP, REPO, SIDECAR_ONEDIR
+from desktop.spike.scripts.spike_paths import APP, REPO, SIDECAR_ONEDIR, SPIKE
+
+RESULTS = SPIKE / "results"
+
+
+def results_file(kind: str, machine: str, ending: str) -> Path:
+    """``results/<kind>-<machine>-<date>-<time><ending>``, for the raw output of a run."""
+    now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    return RESULTS / f"{kind}-{machine}-{now}{ending}"
+
+
+def loadavg() -> str | None:
+    """``/proc/loadavg``: the load that a timing was taken under (``None`` without it)."""
+    try:
+        return Path("/proc/loadavg").read_text(encoding="ascii").strip()
+    except OSError:
+        return None
 
 
 def unfrozen_files() -> list[Path]:
@@ -108,6 +125,7 @@ def measure(case: Case, runs: int) -> dict[str, Any]:
     files = measured_files(case.target, case.unfrozen)
     samples: list[dict[str, Any]] = []
     eviction: list[dict[str, int]] = []
+    load_before = loadavg()
     with tempfile.TemporaryDirectory(prefix="reframe-spike-xdg-") as xdg:
         if case.cache == "warm" or case.target == "app":
             run(case, Path(xdg))
@@ -129,6 +147,7 @@ def measure(case: Case, runs: int) -> dict[str, Any]:
         "median": statistics.median(totals),
         "worst": max(totals),
         "best": min(totals),
+        "loadavg": {"before": load_before, "after": loadavg()},
         "samples": samples,
     }
     for key in samples[0]:
@@ -160,7 +179,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--in-setup", action="store_true", help="app: spawn in the setup hook")
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--all", action="store_true", help="every case of the table")
-    parser.add_argument("--json", type=Path, help="also write the results here")
+    parser.add_argument(
+        "--json",
+        type=Path,
+        help="write the results here (default: results/cold-start-<machine>-<date>.json)",
+    )
+    parser.add_argument("--machine", default=socket.gethostname(), help="for the file name")
     args = parser.parse_args(argv)
     if args.all:
         cases = CASES
@@ -177,11 +201,10 @@ def main(argv: list[str] | None = None) -> int:
             f"median {result['median']:.3f} s  worst {result['worst']:.3f} s",
             flush=True,
         )
-    if args.json:
-        args.json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
-    else:
-        json.dump(results, sys.stdout, indent=2)
-        print()
+    target = args.json or results_file("cold-start", args.machine, ".json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    print(f"results: {target}")
     return 0
 
 

@@ -2337,6 +2337,29 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
   signal (`_send_signal` calls `_raise_if_pid_reused`). The spike's cleanup script checks the
   start time itself (field 22 of `/proc/<pid>/stat`, as the server's parent watch does) before
   each SIGKILL of a process that is not its own child.
+- **A child often starts in its parent's clock tick** (2026-10-27, kernel 7.3, `SC_CLK_TCK`
+  100): a Python started through `timeout 60` had the start tick of `timeout` in 198 of 200 runs;
+  through `timeout 60 timeout 60`, the outer `timeout`'s in 177 of 200; `uv run` and its Python
+  in 4 of 20. A stand-in started just before the frozen server, not its ancestor, had the
+  server's tick (`2272227` for both) and the server refused it (`the parent process … is not
+  running`, exit 1). Asserted by
+  `packages/reframe-server/tests/test_parent.py::test_a_process_of_the_servers_clock_tick_is_its_parent_only_when_it_is_an_ancestor`.
+- **A process name with `)` and a space**: a Python started through a symlink named `a) b` has
+  `comm` `a) b` and a stat line `381433 (a) b) S 381432 …`; only the last `)` ends the name.
+  Asserted by `test_parent.py::test_a_process_younger_than_the_server_is_not_its_parent`.
+- **MediaInfo in the frozen build** (`/usr/bin/ffprobe` n9.0.2): of the fixtures, the video
+  bit rate of `anamorphic`, `hdr10-4k`, `hdr10`, `interlaced`, `letterbox`, `pgs`, `vobsub` and
+  `vfr.mkv` comes from MediaInfo (`vfr.mkv`: 483043, source `mediainfo`); a build without
+  `pymediainfo` and `libmediainfo` gives `unknown` for each, and no fixture gets a
+  `language_ietf`. `vfr.mp4` has a stream bit rate from ffprobe (489085). Asserted by
+  `test_frozen_sidecar.py::test_the_frozen_server_reads_bit_rates_with_its_bundled_mediainfo`.
+- **Tauri's event permissions**: `core:event:default` is `allow-listen`, `allow-unlisten`,
+  `allow-emit` and `allow-emit-to` (`src-tauri/gen/schemas/acl-manifests.json`, Tauri 2.12.5).
+- **Tauri's `data_directory`** (Tauri 2.12.5, wry 0.57.0): `WebviewWindowBuilder::data_directory`
+  becomes the key of wry's web context, which gives WebKitGTK a `WebsiteDataManager` with that
+  folder as its base data and its base cache directory, and `cookies` in it
+  (`wry/src/webkitgtk/web_context.rs`). Without it WebKitGTK uses its default, which here was
+  `~/.local/share/org.reframe.spike/` (the app's identifier).
 
 ### D-0 (4b-i)
 

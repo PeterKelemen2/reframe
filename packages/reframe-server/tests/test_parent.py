@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 import psutil
 import pytest
+from pydantic import SecretStr
 
 from reframe_server import parent
 from reframe_server.__main__ import serve
@@ -30,9 +31,20 @@ pytestmark = pytest.mark.anyio
 TOKEN = "parent-test-" + "x" * 32
 
 
-def stand_in() -> subprocess.Popen[bytes]:
+LINUX = pytest.mark.skipif(sys.platform != "linux", reason="/proc and pidfd: Linux only")
+
+
+def stand_in(executable: str | Path = sys.executable) -> subprocess.Popen[bytes]:
     """A process that waits until it is killed: the desktop shell of a test."""
-    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    return subprocess.Popen([str(executable), "-c", "import time; time.sleep(600)"])
+
+
+def older_stand_in() -> subprocess.Popen[bytes]:
+    """A stand-in for a server started later. It is not the server's ancestor, so it must have
+    started a clock tick (10 ms) before the server."""
+    process = stand_in()
+    time.sleep(0.03)
+    return process
 
 
 def ended_pid() -> int:
@@ -106,7 +118,7 @@ def ffmpeg_processes(pid: int) -> list[psutil.Process]:
 
 @pytest.fixture
 def shell() -> Iterator[subprocess.Popen[bytes]]:
-    process = stand_in()
+    process = older_stand_in()
     yield process
     process.kill()
     process.wait()
@@ -176,9 +188,14 @@ async def test_a_parent_that_is_gone_at_start_stops_the_server_at_once(
     assert f"the parent process {gone} is not running" in output.err
 
 
-async def test_a_process_younger_than_the_server_is_not_its_parent() -> None:
-    """The parent ended and the OS gave its pid to a new process before the watch began."""
-    younger = stand_in()
+async def test_a_process_younger_than_the_server_is_not_its_parent(tmp_path: Path) -> None:
+    """The parent ended and the OS gave its pid to a new process before the watch began. Its
+    name holds ")" and a space, as ``/proc/<pid>/stat`` shows a name."""
+    executable: str | Path = sys.executable
+    if sys.platform == "linux":
+        executable = tmp_path / "a) b"
+        executable.symlink_to(sys.executable)
+    younger = stand_in(executable)
     try:
         watch = parent.watch_parent(
             younger.pid, lambda: None, asyncio.get_running_loop(), hard_exit=lambda _code: None
@@ -187,6 +204,103 @@ async def test_a_process_younger_than_the_server_is_not_its_parent() -> None:
     finally:
         younger.kill()
         younger.wait()
+
+
+WATCH_IN_A_NEW_PROCESS = """
+import asyncio, json, os, sys
+from pathlib import Path
+from reframe_server import parent
+
+def stat(pid):
+    return Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()
+
+async def main():
+    which = sys.argv[1]
+    if which == "parent":
+        pid = os.getppid()
+    elif which == "grandparent":
+        pid = int(stat(os.getppid())[1])
+    else:
+        pid = int(sys.stdin.readline())
+    loop = asyncio.get_running_loop()
+    watch = parent.watch_parent(pid, lambda: None, loop, hard_exit=lambda _code: None)
+    same = stat(pid)[19] == stat("self")[19]
+    print(json.dumps({"same_tick": same, "watched": watch is not None}))
+
+asyncio.run(main())
+"""
+
+
+@LINUX
+@pytest.mark.parametrize(
+    ("launcher", "which", "watched"),
+    [
+        pytest.param(["timeout", "60"], "parent", True, id="parent"),
+        pytest.param(["timeout", "60", "timeout", "60"], "grandparent", True, id="grandparent"),
+        pytest.param([], "younger", False, id="younger-not-an-ancestor"),
+    ],
+)
+def test_a_process_of_the_servers_clock_tick_is_its_parent_only_when_it_is_an_ancestor(
+    launcher: list[str], which: str, watched: bool
+) -> None:
+    """A launcher such as ``timeout`` forks the server in its own start tick (10 ms), so the
+    tick cannot tell a parent from a process that got the parent's pid in that tick."""
+    for _ in range(50):
+        checker = subprocess.Popen(
+            [*launcher, sys.executable, "-c", WATCH_IN_A_NEW_PROCESS, which],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        younger = stand_in() if which == "younger" else None
+        try:
+            given = f"{younger.pid}\n".encode() if younger else b""
+            out, _ = checker.communicate(given, timeout=30)
+        finally:
+            if younger is not None:
+                younger.kill()
+                younger.wait()
+        result = json.loads(out)
+        if result["same_tick"]:
+            assert result["watched"] is watched
+            return
+    pytest.fail("the processes never started in the same clock tick")
+
+
+@pytest.mark.usefixtures("make_api")  # the test's own folders, tools and settings
+async def test_a_server_stopped_by_request_ignores_its_parents_end_afterwards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The shell asks its sidecar to stop and then exits: the server ends with 0 and no hard
+    exit follows the shell's end."""
+    ended, released = threading.Event(), threading.Event()
+    codes: queue.Queue[int] = queue.Queue()
+
+    def watch(pid: int, stop: Callable[[], None], loop: asyncio.AbstractEventLoop) -> Any:
+        return parent.ParentWatch(pid, ended.wait, released.set, stop, loop, 0.2, codes.put)
+
+    monkeypatch.setattr(parent, "watch_parent", watch)
+    config = ServerConfig(
+        mode="desktop",
+        parent_pid=4242,
+        token=SecretStr(TOKEN),
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+    )
+    serving = asyncio.create_task(serve(config))
+    printed = ""
+    while not printed:
+        assert not serving.done()
+        await asyncio.sleep(0.02)
+        printed = capsys.readouterr().out
+    port = json.loads(printed)["port"]
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=headers) as client:
+        assert (await client.post("/api/system/shutdown")).status_code == 204
+    assert await asyncio.wait_for(serving, 30) == 0
+    ended.set()
+    assert await asyncio.to_thread(released.wait, 5)
+    await asyncio.sleep(0.5)
+    assert codes.empty()
 
 
 async def test_the_server_exits_hard_when_it_has_not_stopped_in_time() -> None:
@@ -199,7 +313,7 @@ async def test_the_server_exits_hard_when_it_has_not_stopped_in_time() -> None:
     ended.set()
     await asyncio.wait_for(stopped.wait(), 5)
     code = await asyncio.to_thread(codes.get, timeout=5)
-    assert code == parent.HARD_EXIT_CODE
+    assert code == 70
     assert time.monotonic() - began >= 0.3
     assert released.is_set()
 
@@ -227,7 +341,7 @@ def test_the_hard_exit_comes_when_the_event_loop_has_closed() -> None:
     codes: queue.Queue[int] = queue.Queue()
     parent.ParentWatch(4242, ended.wait, lambda: None, lambda: None, loop, 0.0, codes.put)
     ended.set()
-    assert codes.get(timeout=5) == parent.HARD_EXIT_CODE
+    assert codes.get(timeout=5) == 70
 
 
 class FakeKernel32:
@@ -283,7 +397,7 @@ async def test_windows_watches_the_parent_through_a_process_handle() -> None:
     assert k32.opened == [(access, False, 77)]
     k32.ended.set()
     await asyncio.wait_for(stopped.wait(), 5)
-    assert await asyncio.to_thread(codes.get, timeout=5) == parent.HARD_EXIT_CODE
+    assert await asyncio.to_thread(codes.get, timeout=5) == 70
     assert k32.waited == [("parent", parent.INFINITE)]
     assert k32.closed == ["parent"]
 
