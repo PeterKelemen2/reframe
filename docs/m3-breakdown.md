@@ -525,6 +525,39 @@ coverage command stays for the server code). Also:
 - No `sudo`. A step that needs `sudo` or a GUI action by the owner goes back to the lead.
 - Nothing runs on Windows; the Windows code paths are written and mock-tested only.
 
+### 4b again, in two tasks (2026-10-27)
+
+The first 4b run was lost (progress, 2026-10-27). 4b is redone from its contract above, as two
+tasks that run one after the other (effort `high` each), on the owner's AMD desktop (Ryzen 5
+5600, 12 threads, Radeon RX 7600, KDE Plasma 6.8 on Wayland, WebKitGTK 2.54.2). 4a measured on
+the laptop (Intel UHD 620); the lead repeats its numbers here for 0001. The owner watches a
+movie on `DP-1` while the work runs: every window goes on `HDMI-A-1`, no synthetic keyboard
+events, pointer runs only on `HDMI-A-1` (the owner allowed them, 2026-10-27), timings are
+taken under that load (the lead's brief, §Displays).
+
+| Task | Owns | Must not touch |
+|------|------|----------------|
+| **4b-i** drag-and-drop paths, PrimeVue rendering, the window and pointer tools | `desktop/spike/src-tauri/src/**` (4a's `sidecar.rs` as it is, unless a check needs a change, said in the report), `desktop/spike/src-tauri/tauri.conf.json`, `desktop/spike/src-tauri/capabilities/**`, `desktop/spike/ui/**` except 4b-ii's files, `desktop/spike/package.json` + `package-lock.json`, new files in `desktop/spike/scripts/` (not `magnifier*`), `desktop/spike/results/drop-*` and `desktop/spike/results/prime*`, a section "WebKitGTK checks" in `desktop/spike/README.md` (with one line that links `MAGNIFIER.md`), a heading "D-0 (4b-i)" in `testdata/README.md` | 4a's build and measurement scripts, every server and core file, `frontend/`, `pyproject.toml`, `uv.lock`, `docs/status.md` (the lead's in phase 1) |
+| **4b-ii** the canvas magnifier | `desktop/spike/ui/src/pages/MagnifierPage.vue`, `desktop/spike/ui/src/magnifier/**`, new `desktop/spike/scripts/magnifier*` files, `desktop/spike/results/magnifier*`, `desktop/spike/MAGNIFIER.md`, a heading "D-0 (4b-ii)" in `testdata/README.md` | every file of 4a and 4b-i (a change goes to the lead), every server and core file, `frontend/`, `pyproject.toml`, `uv.lock`, `docs/status.md` |
+
+Hooks that 4b-i builds for 4b-ii (binding):
+
+- `REFRAME_SPIKE_PAGE=<name>` makes the app show `ui/src/pages/<Name>Page.vue` (found with
+  `import.meta.glob`, so a new page file needs no other change). Without it the page is 4a's,
+  with its `page_ready` / `page_failed` calls unchanged (4a's scripts rely on them).
+- In a browser (no Tauri) the same pages run from the built UI with
+  `?page=<name>&base=<url>&token=<token>`.
+- A module `ui/src/spike.js`: `backend()` → `{baseUrl, token}` (Tauri's `backend_info`, or the
+  query in a browser); `log(record)` → in the app a Tauri command that prints the record as one
+  JSON line on stdout (`{"event": "spike_log", "ms": …, …}`), in a browser something a
+  Playwright script can collect; `snapshot(path)` → in the app a PNG of the web view itself
+  (WebKitGTK's own snapshot call) or the reason it cannot be done.
+- `scripts/windows.py`: put a window of the app, Dolphin or a headed browser at a fixed size
+  inside `HDMI-A-1`, read back its output and geometry, keep the active window as it was, close
+  it; and a wrapper that runs a command with that placement on (for 4a's `cold_start` and
+  `cleanup`). `scripts/pointer.py`: the real pointer through `/dev/uinput`, every move read
+  back and refused outside `HDMI-A-1`.
+
 ## For later steps (recorded, not built)
 
 - S-7: `server.json` (`endpoint_file`), idle exit (`hub.connections`, the queue, the power
@@ -558,3 +591,4 @@ coverage command stays for the server code). Also:
 | 2026-10-23 | Merged 4a (78a0e75; S-0 `--parent-pid` 4bb6c45, the spike 0aabe2c): `test_parent.py` 9 functions (10 items), `test_frozen_sidecar.py` 2 (skipped without the build); 26 mutations by the agent (19 source, 7 frozen builds) all caught; the lead's 3 (age check inverted, no stop request from the watch, the server runs on with a gone parent) caught. The lead rebuilt the onedir (43 s) and the app (`tauri build --no-bundle`) on the merge and repeated the numbers: cold start, 10 runs each, sidecar alone warm median 1.26 s / worst 1.32 s, evicted 1.47 / 1.52; app to the page showing health warm 1.40 / 1.44, evicted 1.54 / 1.60 (4a: 1.18 / 1.21, 1.39 / 1.45, 1.34 / 1.37, 1.47 / 1.53); cleanup with an x265 encode running: `kill -9` of the app gone in 0.275 s, `kill -9` of the sidecar immediate (the page shows it after 0.018 s), quit 0.614 s (204 from the shutdown request, no kill); every job `interrupted` and its `.part` removed (after the sidecar kill: at the next start). Checks on 78a0e75: ruff, format, mypy (both platforms), the frontend commands, `gen-api.sh --check`, `cargo fmt --check`, `cargo clippy -D warnings` green; full suite in four chunks 626 + 2437 + 1632 + 2316 = 7011 passed, 2 skipped, 0 failed (the frozen tests ran). Open from 4a for the lead (core, after M3): a missing definitions data file loads as empty (a broken build starts with 0 encoders), `naming/parse.py` swallows every guessit error, the sidecar's MediaInfo (pymediainfo is the core's optional extra; D-2 decides), a failed lifespan start-up prints `Task exception was never retrieved … SystemExit(3)` |
 | 2026-10-23 | **Wave 5 started**: 4b (`high`) from `m3-api-spike` 4664988 |
 | 2026-10-23 | **4b stopped by the owner** before its report (its last step was "rebuild and rerun the input checks in all four configurations"). Its uncommitted work is saved by the lead as WIP commit 1e17c5c on the branch `worktree-agent-ae6845cfb661b864d` (worktree `.claude/worktrees/agent-ae6845cfb661b864d`); **not reviewed, not merged**. State found on disk: three check pages in the spike (`REFRAME_SPIKE_PAGE=drop\|prime\|magnifier`), `scripts/webkit_checks.py`, `browser_checks.py` + `playwright_checks.mjs` (Playwright 1.64.1, Chromium 156.0.8078.4, Firefox 157.0), `desktop_input.py` (real pointer on native Wayland without root through `/dev/uinput`, which has a user ACL). **Drag-and-drop**: `results/drop-wayland.json` and `drop-xwayland.json`, six cases each, both with Tauri's handler and the DOM's: Tauri's event gives every path exact (spaces, `Ünnepi film – 2.mkv`, `日本語.mkv`, three files, a folder); a non-UTF-8 name arrives with U+FFFD and does not exist (Dolphin already sends `%EF%BF%BD`); the DOM drop has no files and one HTML link to the first item only. The README still calls native Wayland "open" (written before the uinput runs): to correct. **PrimeVue**: 18 screenshots (WebKitGTK native Wayland, Chromium, Firefox × light / dark × base / select / dialog) and a list of differences in the README (Chromium's classic scrollbars, 2–3 px line boxes; WebKitGTK and Firefox the same to 1 px; CSP fine). **Magnifier**: page and four variants built, the README has conclusions (60 Hz in all three engines; `WEBKIT_DISABLE_DMABUF_RENDERER` drops the full redraw to about 39 fps) but **no numbers on disk** (`MAGNIFIER_RESULTS` placeholder). Still to do for 4b: rerun the input checks in the four configurations, record the magnifier table, fix the README, the checks (`cargo fmt` / `clippy`, `build:ui`, ruff / mypy, server pytest), its report; then the lead's merge checks, wave 6 (review), 0001, the M3 demo, the merge into `main` |
+| 2026-10-27 | **Correction of the row above: the WIP commit is not available.** In this clone (the owner's AMD desktop; `m3-api-spike` pulled from origin on 2026-10-25) `git cat-file -t 1e17c5c` gives `fatal: Not a valid object name 1e17c5c`; there is no branch `worktree-agent-ae6845cfb661b864d`, no worktree, no `desktop/spike/results/`, and no dangling commit. The run was on the owner's laptop, which the owner had to pack (that is why it was stopped). So nothing of the first 4b run is in the repository, and the findings the row lists are not facts: 4b is redone from its contract, as 4b-i and 4b-ii ([4b again](#4b-again-in-two-tasks-2026-10-27)), and every finding is checked again. 4a's numbers are from the laptop (Intel UHD 620, 8 threads); the lead repeats them on this machine for 0001. The owner allowed pointer runs on `HDMI-A-1` |
