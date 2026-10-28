@@ -5,6 +5,7 @@ path is resolved (links followed) and must stay inside the resolved folder."""
 from __future__ import annotations
 
 import logging
+import ntpath
 from pathlib import Path
 
 import anyio.to_thread
@@ -80,8 +81,12 @@ class _Frontend:
 
 
 def _inside(root: Path, relative: str) -> Path | None:
+    # On Windows a drive, UNC or device path replaces root in the join, and resolve() opens it
+    # before the check below (a UNC path: an SMB session with the server's credentials).
+    if "\\" in relative or ":" in relative or ntpath.isreserved(relative):
+        return None
     try:
         file = (root / relative).resolve()
-    except (OSError, ValueError):  # ValueError: a NUL
+    except OSError:  # Windows: realpath raises the errors that it does not expect
         return None
     return file if file.is_relative_to(root) and file.is_file() else None

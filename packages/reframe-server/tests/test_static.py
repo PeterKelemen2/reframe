@@ -169,6 +169,32 @@ async def test_no_path_leaves_the_folder(web: Api, target: str) -> None:
     assert (status, body) == (200, INDEX) or status == 404
 
 
+@pytest.mark.parametrize(
+    ("target", "status"),
+    [
+        pytest.param("/%5c%5cattacker.example%5cshare%5cx.js", 200, id="unc"),
+        pytest.param("/C:/Windows/win.ini", 200, id="drive"),
+        pytest.param("/assets/COM1", 404, id="device"),
+    ],
+)
+async def test_windows_path_in_a_request_is_never_resolved(
+    web: Api, site: Path, monkeypatch: pytest.MonkeyPatch, target: str, status: int
+) -> None:
+    # On Windows the join drops the folder, and resolving opens the path (a UNC path: an SMB
+    # session with the server user's credentials) before any check can refuse it.
+    resolved: list[Path] = []
+    resolve = Path.resolve
+
+    def recording(path: Path, strict: bool = False) -> Path:
+        resolved.append(path)
+        return resolve(path, strict)
+
+    async with web.live() as server:
+        monkeypatch.setattr(Path, "resolve", recording)
+        assert (await raw_get(server.port, target))[0] == status
+    assert {path.name for path in resolved} <= {site.name, "index.html"}
+
+
 async def test_websocket_to_a_page_path_is_refused(web: Api) -> None:
     async with web.live() as server:
         with pytest.raises(InvalidStatus) as refused:
