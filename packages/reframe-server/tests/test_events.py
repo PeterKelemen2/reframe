@@ -26,6 +26,7 @@ from websockets.exceptions import ConnectionClosed
 from reframe.events import EventBus, Subscription
 from reframe.models import (
     AppWarningEvent,
+    JobDraft,
     JobLogEvent,
     JobProgress,
     JobProgressEvent,
@@ -536,6 +537,26 @@ async def test_a_client_that_drops_while_the_hub_waits_to_send(
         await stall(bus, client, subscriptions[0])
         client.connection.transport.abort()
         await wait_until(lambda: (hub(api).connections, bus.subscriber_count) == (0, before))
+
+
+async def test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled(
+    api: Api, subscriptions: list[Subscription]
+) -> None:
+    """A CLI that stopped reading is killed: the send that waits for it fails, and its
+    attached job is cancelled all the same (uvicorn queues the disconnect first)."""
+    source = api.media_file()
+    draft = await api.reframe.jobs.draft(source, output=api.output / "Show.mkv")
+    assert isinstance(draft, JobDraft)
+    job = draft.job.model_dump(mode="json")
+    async with serving(api) as server, signed_in(server, api) as client:
+        response = await api.client.post(
+            "/api/queue", json={"jobs": [job], "attach": client.hello["client_id"]}
+        )
+        [added] = response.json()
+        await stall(api.reframe.events, client, subscriptions[0])
+        client.connection.transport.abort()
+        [ended] = await asyncio.wait_for(api.reframe.queue.wait([added["id"]]), 10)
+    assert ended.state is JobState.CANCELLED
 
 
 async def test_close_while_events_flow_ends_every_connection_also_a_stuck_one(

@@ -2295,6 +2295,32 @@ A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive 
 left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
 2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
 
+### uvicorn WebSocket ends (S-7 attachments)
+
+Checked on 2026-10-28 with uvicorn 0.54.0 (`ws="auto"`: websockets-sansio), websockets 17.3 and
+Python 3.14.8 on Linux: read in `uvicorn/protocols/websockets/websockets_sansio_impl.py`, and
+the `websocket.disconnect` message that the hub's listener reads printed in the tests below.
+
+| How the connection ends | The app's `websocket.disconnect` |
+|-------------------------|----------------------------------|
+| The client closes with a close handshake | the client's code (`{"code": 1000, "reason": ""}`) |
+| The client's socket goes away (`transport.abort()`), also while the server's send waits | `{"code": 1005}` (`connection_lost` after the handshake) |
+| uvicorn shuts down (`should_exit`) | `{"code": 1012}` (`shutdown()`); the client sees close code 1012 |
+
+- `connection_lost` puts the disconnect in the app's queue before it wakes a send that waits
+  for the transport; that send then raises `ClientDisconnected` (Starlette:
+  `WebSocketDisconnect`). `handle_close` also queues the disconnect before it closes the
+  transport. So when a send fails because the client left, a receive already has the
+  disconnect.
+- One connection's frames reach the app in the order they came: a text message sent before
+  the close frame is received before the disconnect.
+
+Asserted by `packages/reframe-server/tests/test_attach.py`
+(`test_a_server_stop_leaves_the_attached_jobs_to_the_queue`: close code 1012 and the job not
+cancelled; `test_a_detach_keeps_the_jobs_of_its_own_connection`: a `detach` and then the
+close) and `packages/reframe-server/tests/test_events.py`
+(`test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled`).
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,

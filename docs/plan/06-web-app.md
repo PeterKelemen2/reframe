@@ -313,11 +313,15 @@ S-2 and S-3. Milestone M3b, with C-17 ([05](05-core.md#c-17-remote-queue-and-que
       private queue with `queue.store_busy`; with `owner_only` it exits with code 75.
 - [ ] **Idle exit** (`idle_exit`): exit after N seconds with no running job, no job that a
       `start` still targets, no event connection and no pending when-done countdown.
-- [ ] **Attachments**: after a client authenticates on `WS /api/events`, the server answers
+- [x] **Attachments**: after a client authenticates on `WS /api/events`, the server answers
       with a `client_id`. `POST /api/queue` with `attach: <client_id>` is refused (409)
       unless that connection is open. A connection that ends without a `detach` message
-      cancels its attached jobs that have not ended, as a cancel does. Not persisted.
-- [ ] `POST /api/queue/start` with `job_ids` starts only those jobs; other waiting jobs are
+      cancels its attached jobs that have not ended, as a cancel does, also a job whose add
+      was under way. A `detach` also covers the jobs attached after it; a server stop
+      (uvicorn's 1012, the lifespan's close) cancels nothing and leaves the jobs to the
+      queue's close. Not persisted
+      ([decision 0057](../decisions/0057-s7-attachments-client-id-and-detach.md)).
+- [x] `POST /api/queue/start` with `job_ids` starts only those jobs; other waiting jobs are
       neither started nor cancelled.
 
 Done when: httpx tests show that the file is written after the server listens and removed at

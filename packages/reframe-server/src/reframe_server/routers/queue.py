@@ -45,7 +45,8 @@ class AddJobs(BaseModel):
     position: Annotated[int, Field(ge=0)] | None = None
     """Queue position of the first job (0: first); ``null``: at the end."""
     attach: str | None = None
-    """The ``client_id`` of the caller's event connection, which must be open."""
+    """The ``client_id`` of the caller's event connection, which must be open: the jobs are
+    cancelled when that connection ends without a ``detach`` message."""
 
 
 class StartQueue(BaseModel):
@@ -121,16 +122,22 @@ async def add(
 ) -> JsonTextResponse:
     """Add jobs; the answer holds them in order. The queue validates each job again: one with
     errors is added ``failed`` with its issues. A refused request adds no job."""
-    if body.attach is not None and not hub.client_open(body.attach):
-        raise ProblemError(
-            409, "queue.attach_unknown_client", "No open event connection has this client id"
-        )
+    attachment = None
+    if body.attach is not None:
+        attachment = hub.attachment(body.attach)
+        if attachment is None:
+            raise ProblemError(
+                409, "queue.attach_unknown_client", "No open event connection has this client id"
+            )
     for index, job in enumerate(body.jobs):
         _check(config, job, f"jobs[{index}]")
     added: list[JsonValue] = []
     for index, job in enumerate(body.jobs):
         position = None if body.position is None else body.position + index
-        added.append(_public(reframe, await reframe.queue.add(job, position=position)))
+        queued = await reframe.queue.add(job, position=position)
+        if attachment is not None:
+            queued = await attachment.add(queued)
+        added.append(_public(reframe, queued))
     return JsonTextResponse(added, status_code=201)
 
 
