@@ -2383,6 +2383,47 @@ cancelled; `test_a_detach_keeps_the_jobs_of_its_own_connection`: a `detach` and 
 close) and `packages/reframe-server/tests/test_events.py`
 (`test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled`).
 
+### Docker image and deployment (S-6, task D)
+
+Checked on 2026-10-28 on the owner's desktop (Docker 29.9.2 without buildx, Compose 5.6.1,
+uv 0.13.5), with the image of `docker/Dockerfile` and no `/dev/dri` in any container:
+
+- **No buildx.** `DOCKER_BUILDKIT=1 docker build` fails ("BuildKit is enabled but the buildx
+  component is missing"). `docker compose build` falls back to the classic builder by itself
+  (`Step 1/2 …`, `Successfully built`). The classic builder takes `ARG` before `FROM`, an
+  image reference with a digest, and `COPY --from=<image>`. The whole build took 75 s.
+- **Debian 13's Mesa** is built with `-Dvideo-codecs="all"` (`debian/rules` of mesa
+  25.0.7-2+deb13u1, line 154), so `radeonsi_drv_video.so` in `mesa-va-drivers` has the H.264,
+  HEVC and AV1 encoders. Debian's free `intel-media-va-driver` has only some encoders before
+  Ice Lake (its package description); `intel-media-va-driver-non-free` has them all.
+  `libmfx-gen1.2` (25.1.4) is the oneVPL GPU runtime. `tzdata` comes with these packages.
+- **The BtbN shared build** needs only glibc and `libgcc_s` of the system (`ldd bin/ffmpeg`):
+  libva is linked in, and finds Debian's drivers through `LIBVA_DRIVERS_PATH`, which tool
+  discovery sets to `/usr/lib/x86_64-linux-gnu/dri`.
+- **A clean stop ends with SIGTERM.** uvicorn raises the signal again after its shutdown, so
+  `reframe-server` dies of SIGTERM: exit 143 in Docker (`tini` reports 128 + 15; the image
+  maps it to 0 with `tini -e 143`) and in a shell. `docker compose stop` during an x265 encode
+  took 0.3–0.4 s; the `.part` file was removed and the job was `interrupted` at the next start.
+- **`docker exec` runs as root**, also when the main process dropped to `PUID`: the image
+  links `reframe` and `reframe-server` to the entrypoint, so `--set-password` through
+  `docker compose exec` writes `/config/auth.json` as `PUID:PGID`.
+- **`setpriv`** (util-linux, in the slim image) changes the user without a passwd entry.
+  Docker containers have `CAP_MKNOD`, so the entrypoint's group logic was checked with
+  `mknod` stand-ins under `/dev/dri` (groups 987 and 44 added, a node of group 0 left out).
+- **pydantic-settings reads list settings as JSON**: `REFRAME_MEDIA_ROOTS='["/media"]'` gives
+  `media_roots == [Path("/media")]` in the real container (an output outside it is 403
+  `path.outside_roots`). Asserted by `packages/reframe-server/tests/test_deploy.py`.
+- **uvicorn 0.54 trusts `X-Forwarded-*` only from `FORWARDED_ALLOW_IPS`** (default
+  `127.0.0.1,::1`; CIDR networks work). Through nginx 1.31.8 on a Docker network, with the
+  proxy sending `X-Forwarded-Proto: https`: without the variable the session cookie had no
+  `Secure`; with `FORWARDED_ALLOW_IPS=172.16.0.0/12` it had. Without `REFRAME_ALLOWED_HOSTS`
+  the proxy's host name got 400 `request.host`; with it, `GET /`, the login and the
+  `/api/events` WebSocket (`hello`, then a `heartbeat` within 20 s) worked through the proxy.
+- **`uv tool install './packages/reframe[cli]' --with ./packages/reframe-server
+  --with-executables-from reframe-server`** makes one tool environment (`reframe`) with both
+  commands; `--with-executables-from` takes the package name of a path given with `--with`.
+  `systemd-analyze --user verify` accepts the unit of `docs/deployment.md`.
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,

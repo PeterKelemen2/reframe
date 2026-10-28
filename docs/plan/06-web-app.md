@@ -283,7 +283,7 @@ to a `npm run build:web` output. Files under `assets/` get
 
 ## S-6 Deployment
 
-- [ ] **Docker image** (multi-stage):
+- [x] **Docker image** (multi-stage):
   1. `node` stage builds `frontend/dist`.
   2. `tools` stage downloads the pinned FFmpeg from `tools/ffmpeg.toml` and checks its
      SHA-256 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
@@ -293,12 +293,12 @@ to a `npm run build:web` output. Files under `assets/` get
      Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).
   5. `HEALTHCHECK` on `/api/health`.
-- [ ] **Override in Docker**: mount your own build and set `REFRAME_FFMPEG` /
+- [x] **Override in Docker**: mount your own build and set `REFRAME_FFMPEG` /
       `REFRAME_FFPROBE`, for example `-v /opt/my-ffmpeg:/opt/custom-ffmpeg:ro -e
       REFRAME_FFMPEG=/opt/custom-ffmpeg/bin/ffmpeg`.
-- [ ] `docker/compose.example.yml` with variants for Intel/AMD (`/dev/dri`) and NVIDIA
+- [x] `docker/compose.example.yml` with variants for Intel/AMD (`/dev/dri`) and NVIDIA
       (`deploy.resources.reservations.devices`), and a commented-out override example.
-- [ ] Bare metal: `uv tool install 'reframe[cli]' --with reframe-server
+- [x] Bare metal: `uv tool install 'reframe[cli]' --with reframe-server
       --with-executables-from reframe-server` (one environment, so `reframe` and
       `reframe-server` have the same version;
       [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11),
@@ -306,7 +306,15 @@ to a `npm run build:web` output. Files under `assets/` get
       do not contain FFmpeg. `reframe tools fetch` downloads the pinned build from the manifest
       (checksum verified) into the data dir, where it counts as the bundled build. On Windows:
       run from a terminal. A Windows service wrapper comes later.
-- [ ] Reverse-proxy notes (WebSocket upgrade headers, body size, timeouts).
+- [x] Reverse-proxy notes (WebSocket upgrade headers, body size, timeouts).
+
+`docker/Dockerfile`, `docker/compose.example.yml` and [deployment.md](../deployment.md)
+([decision 0059](../decisions/0059-s6-docker-image-and-bare-metal.md)). The image declares no
+`VOLUME`: the four folders are mount points, so a missing mount is not hidden by an anonymous
+volume. It sets `auth: password`, the media and output roots and `REFRAME_STATIC_DIR`; the
+Intel driver is Debian's non-free build (the free one has no H.264/HEVC encode before Ice
+Lake). Until the packages are on PyPI, `uv tool install` takes the paths of a checkout. The
+"Done when" waits for the GPU run on the owner's desktop.
 
 Done when: `docker compose up` on a Linux host with a GPU (the owner's: AMD) shows its VAAPI
 encoders as available and encodes a fixture file. Intel QSV and NVIDIA NVENC in Docker are
