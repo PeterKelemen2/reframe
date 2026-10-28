@@ -12,7 +12,7 @@ done on Linux and merged into `main` from the branch `m3-api-spike`
 [decision 0001](decisions/0001-desktop-shell.md)). Linux is the primary platform: Windows is checked once,
 in the Windows testing phase at the start of M10
 ([decision 0053](decisions/0053-linux-first-windows-testing-phase.md)). The server side of
-S-7, then S-4 and S-6, are being built on the branch `server-complete`
+S-7, S-4 and S-6 are built and reviewed on the branch `server-complete`
 ([decision 0055](decisions/0055-server-complete-order.md),
 [server-complete-breakdown.md](server-complete-breakdown.md)); it is not merged into `main` yet.
 
