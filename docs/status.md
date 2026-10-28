@@ -14,7 +14,7 @@ in the Windows testing phase at the start of M10
 ([decision 0053](decisions/0053-linux-first-windows-testing-phase.md)). The server side of
 S-7, S-4 and S-6 are built and reviewed on the branch `server-complete`
 ([decision 0055](decisions/0055-server-complete-order.md),
-[server-complete-breakdown.md](server-complete-breakdown.md)); it is not merged into `main` yet.
+[server-complete-breakdown.md](server-complete-breakdown.md)) and merged into `main` on 2026-10-28 at the owner's request.
 
 This file says which parts of the plan (`docs/plan/`) are built. Update it in the same commit
 as each step that lands.
