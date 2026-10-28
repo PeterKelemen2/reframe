@@ -16,10 +16,15 @@ x-reframe: &reframe
   restart: unless-stopped
   # A running encode is stopped and its partial file removed before the container exits.
   stop_grace_period: 30s
+  # Every address of the host, past host firewalls such as ufw. Behind a reverse proxy use
+  # "127.0.0.1:8765:8765" for a proxy on this host, no port for a proxy container, and set
+  # FORWARDED_ALLOW_IPS to the proxy's one address (docs/deployment.md, "Reverse proxy in
+  # Docker").
   ports:
     - "8765:8765"
   environment:
-    # The user and group that own /config, /data and the files written to /output.
+    # The user and group that own /config, /data and the files written to /output. Make the
+    # host folders below as this user first: Docker makes a missing one as root.
     PUID: "1000"
     PGID: "1000"
     # The container's time zone.
