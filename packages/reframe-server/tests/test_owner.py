@@ -180,12 +180,6 @@ def test_a_file_left_by_kill_9_is_replaced_by_the_next_owner(home: Home) -> None
         assert health.json()["instance"] == fresh.instance
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="serve() does not return app.state.exit_code: uvicorn calls sys.exit(3) when the "
-    "lifespan's start-up fails (the lead's change to __main__.serve is pending)",
-)
 def test_owner_only_exits_75_against_a_held_lock_and_writes_nothing(home: Home) -> None:
     lock = StoreLock(home.data / LOCK_FILE)
     assert lock.acquire().owned

@@ -7,6 +7,7 @@ import json
 import os
 import selectors
 import signal
+import socket
 import subprocess
 import sys
 from collections.abc import AsyncIterator
@@ -151,6 +152,33 @@ def test_desktop_server_prints_the_ready_line_and_answers_health(
     assert "Application shutdown complete" in err
     assert _out == "", "only the ready line may go to stdout"
     assert token not in err
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="checked on Linux only (decision 0053)")
+def test_a_server_whose_port_is_taken_exits_1(tmp_path: Path, fake_tools: object) -> None:
+    """A shell or a CLI that starts the server reads a failed start from the exit code. uvicorn
+    ends a failed bind with ``sys.exit(3)`` inside the server's task."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("REFRAME_")} | {
+        "REFRAME_CONFIG_DIR": str(tmp_path / "config"),
+        "REFRAME_DATA_DIR": str(tmp_path / "data"),
+        "REFRAME_CACHE_DIR": str(tmp_path / "cache"),
+        "REFRAME_FFMPEG": str(fake_tools.ffmpeg),  # type: ignore[attr-defined]
+        "REFRAME_FFPROBE": str(fake_tools.ffprobe),  # type: ignore[attr-defined]
+    }
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        result = subprocess.run(
+            [sys.executable, "-m", "reframe_server", "--mode", "desktop", "--port", str(port)],
+            capture_output=True,
+            env=env,
+            text=True,
+            timeout=60,
+        )
+    assert result.returncode == 1, result.stderr
+    assert "Task exception was never retrieved" not in result.stderr
+    assert result.stdout == ""
 
 
 class _PathBody(BaseModel):

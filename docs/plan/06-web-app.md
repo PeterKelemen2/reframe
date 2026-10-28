@@ -315,7 +315,7 @@ listed as not verified until such a host is available
 Implements [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md). Needs
 S-2 and S-3. Milestone M3b, with C-17 ([05](05-core.md#c-17-remote-queue-and-queue-commands)).
 
-- [ ] **Endpoint file** (`endpoint_file`): when the server holds `queue.lock` (it opens the
+- [x] **Endpoint file** (`endpoint_file`): when the server holds `queue.lock` (it opens the
       queue at start-up) and listens, it writes `server.json` (atomic, mode `0600` on POSIX)
       with `pid`, `instance`, `port`, `token`, `version`, `api_version`, `started_at`, and
       removes it at close. A server that cannot take the lock writes nothing and keeps 0027's

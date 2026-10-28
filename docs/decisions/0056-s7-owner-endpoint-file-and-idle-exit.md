@@ -148,3 +148,17 @@ What we found (uvicorn 0.54.0, Python 3.14, Linux, 2026-10-28):
 - [06 §S-7](../plan/06-web-app.md#s-7-local-owner-mode): "Idle exit" ticked. The endpoint
   file bullet says which address a client connects to; it stays open until the change to
   `serve()` lets `--owner-only` exit with 75.
+
+## Follow-up (the lead), 2026-10-28
+
+Decision item 7 is done in `serve()` (`__main__.py`): `server.serve()` runs in a coroutine that
+suppresses `SystemExit`, so uvicorn's `sys.exit(3)` after a failed lifespan start-up or a
+failed bind ends only that task, and `serve()` returns `app.state.exit_code`.
+
+- `test_owner_only_exits_75_against_a_held_lock_and_writes_nothing` is no longer `xfail`: the
+  real `--owner-only` server against a held lock exits 75 and writes no `server.json`.
+- New test `test_app.py::test_a_server_whose_port_is_taken_exits_1`: the real server on a
+  port that another socket holds exits 1. Before the change it exited 3, its stderr ending in
+  `uvicorn/server.py", line 192, in startup … SystemExit: 3`.
+- The one-line message for a losing `--owner-only` server (Consequences) is left as it is:
+  C-17 reads only the exit code.

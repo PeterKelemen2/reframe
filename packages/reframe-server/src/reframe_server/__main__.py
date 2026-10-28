@@ -90,9 +90,16 @@ async def serve(config: ServerConfig) -> int:
                 file=sys.stderr,
             )
             return 1
+
+    async def run_server() -> None:
+        # uvicorn ends a failed lifespan start-up or bind with sys.exit(3) inside this task;
+        # the exit code is app.state.exit_code instead.
+        with contextlib.suppress(SystemExit):
+            await server.serve()
+
     idle_watch: asyncio.Task[None] | None = None
     try:
-        running = asyncio.create_task(server.serve())
+        running = asyncio.create_task(run_server())
         while not server.started and not running.done():  # noqa: ASYNC110 - uvicorn has no event
             await asyncio.sleep(0.02)
         if server.started:
