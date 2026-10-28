@@ -1,0 +1,23 @@
+# The image needs only these. Everything else (.git, .venv, .tools, test media, the desktop
+# app) stays out of the build context.
+*
+!.python-version
+!pyproject.toml
+!uv.lock
+!packages/reframe/pyproject.toml
+!packages/reframe/README.md
+!packages/reframe/src
+!packages/reframe-server/pyproject.toml
+!packages/reframe-server/README.md
+!packages/reframe-server/src
+!frontend
+!tools/ffmpeg.toml
+!scripts/fetch-tools.py
+!docker/entrypoint.sh
+
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/*.local
+**/__pycache__
+**/*.py[cod]
