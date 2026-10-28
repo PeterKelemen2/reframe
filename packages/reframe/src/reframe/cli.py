@@ -1973,9 +1973,11 @@ async def _queue_jobs(
             # the ones before it.
             added = asyncio.ensure_future(session.queue.add(settings))
             adding = (label, added)
-            # Shielded: a job whose add is under way at Ctrl+C is in the queue all the same.
-            job = await asyncio.shield(added)
+            # Not cancelled with the command: a job whose add is under way at Ctrl+C is in the
+            # queue all the same, and the command must learn of it.
+            await asyncio.wait({added})
             adding = None
+            job = added.result()
             jobs.add(job, label)
             if job.state is JobState.FAILED:
                 console.print(
@@ -2040,7 +2042,8 @@ async def _answer(added: asyncio.Future[QueueJob]) -> QueueJob | None:
     the command never learned of when the connection ends without ``detach``."""
     try:
         async with asyncio.timeout(ADD_WAIT):
-            return await asyncio.shield(added)
+            await asyncio.wait({added})
+        return added.result()
     except QueueError:
         return None
     except TimeoutError:

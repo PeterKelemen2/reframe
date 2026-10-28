@@ -35,7 +35,7 @@ from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 
 from .conftest import Queues, invoke, media_file, replay
-from .fake_queue import FakeQueue
+from .fake_queue import Behaviour, FakeQueue
 
 SEASON = "Show.S01.1080p.BluRay.x264-GRP"
 EPISODES = [f"Show.S01E{n:02d}.Title.{n}.1080p.BluRay.x264-GRP.mkv" for n in (1, 2, 10)]
@@ -399,10 +399,12 @@ def test_summary_counts_interrupted_jobs() -> None:
 class _RefusedStart(FakeQueue):
     """The queue contract of a queue in a server: another front end removes ``job-1`` while
     the command's start is on its way, so the owner refuses that start (nothing starts) and
-    the refusal is raised by the next awaited call."""
+    the refusal is raised by the next awaited call. ``seen``: when the queue's copy shows the
+    removal (``never``: the owner refuses every start that names ``job-1``)."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: object, seen: str, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.seen = seen
         self.refusal: UnknownJobError | None = None
 
     def start(self, *, job_ids: Sequence[str] | None = None) -> None:
@@ -410,10 +412,16 @@ class _RefusedStart(FakeQueue):
             super().start(job_ids=job_ids)
             return
         self.calls.append(f"refused start {' '.join(job_ids)}")
+        self.refusal = UnknownJobError("job-1")
+        if self.seen == "at once":
+            self._remove_first()
+        elif self.seen == "later":
+            asyncio.get_running_loop().call_later(0.3, self._remove_first)
+
+    def _remove_first(self) -> None:
         self._order.remove("job-1")
         del self._jobs["job-1"]
         self.events.publish(QueueChangedEvent(job_ids=list(self._order)))
-        self.refusal = UnknownJobError("job-1")
 
     async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]:
         refusal, self.refusal = self.refusal, None
@@ -423,16 +431,18 @@ class _RefusedStart(FakeQueue):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("seen", ["at once", "later"])
 async def test_a_start_that_the_owner_refuses_is_sent_again_for_the_jobs_still_there(
     season: Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    seen: str,
 ) -> None:
     made: list[_RefusedStart] = []
 
     def make(app: Reframe) -> _RefusedStart:
-        made.append(_RefusedStart(app.events, log_dir=tmp_path / "logs"))
+        made.append(_RefusedStart(app.events, log_dir=tmp_path / "logs", seen=seen))
         return made[-1]
 
     monkeypatch.setattr(cli, "get_queue", make)
@@ -446,6 +456,66 @@ async def test_a_start_that_the_owner_refuses_is_sent_again_for_the_jobs_still_t
     ]
     assert "[1/2] removed" in lines
     assert lines[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 1 removed, 0 not queued."
+
+
+@pytest.mark.anyio
+async def test_a_start_that_the_owner_keeps_refusing_ends_the_command(
+    season: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "START_TRIES", 3)
+    monkeypatch.setattr(cli, "START_RETRY", 0.01)
+
+    def make(app: Reframe) -> _RefusedStart:
+        return _RefusedStart(app.events, log_dir=tmp_path / "logs", seen="never")
+
+    monkeypatch.setattr(cli, "get_queue", make)
+    files = [season / name for name in EPISODES[:2]]
+    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    captured = capsys.readouterr()
+    assert code == EXIT_FAILED
+    assert captured.err == "error: the jobs cannot be queued: no job 'job-1' in the queue\n"
+
+
+class _RetriedUnseen(FakeQueue):
+    """Another front end retries ``job-1`` the moment it fails, and the command is interrupted
+    before it has read either change. The retried run hangs."""
+
+    command: asyncio.Task[int] | None = None
+
+    async def _set(self, job_id: str, state: JobState, **changes: object) -> None:
+        await super()._set(job_id, state, **changes)
+        if job_id == "job-1" and state is JobState.FAILED and self.command is not None:
+            await super()._set(job_id, JobState.WAITING)
+            self.command.cancel()
+            self.command = None
+
+
+@pytest.mark.anyio
+async def test_ctrl_c_leaves_a_job_that_ended_and_was_retried_before_the_command_saw_it(
+    season: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    made: list[_RetriedUnseen] = []
+    runs: list[str] = []
+
+    def behaviour(job: JobSettings) -> Behaviour:
+        runs.append(str(job.source.path))
+        return "fail" if len(runs) == 1 else "hang"
+
+    def make(app: Reframe) -> _RetriedUnseen:
+        queue = _RetriedUnseen(app.events, log_dir=tmp_path / "logs", behaviour=behaviour)
+        queue.command = asyncio.current_task()
+        made.append(queue)
+        return queue
+
+    monkeypatch.setattr(cli, "get_queue", make)
+    files = [season / name for name in EPISODES[:2]]
+    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    assert code == EXIT_INTERRUPTED
+    assert "cancel job-1" not in made[0].calls
+    assert "cancel job-2" in made[0].calls
 
 
 @pytest.mark.anyio
