@@ -2413,6 +2413,41 @@ cancelled; `test_a_detach_keeps_the_jobs_of_its_own_connection`: a `detach` and 
 close) and `packages/reframe-server/tests/test_events.py`
 (`test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled`).
 
+### The remote queue and `reframe queue` (C-17)
+
+Checked on 2026-10-28 on Linux with Python 3.14.8, SQLite 3.54.0, websockets 17.3, httpx 0.28.1
+and uvicorn 0.54.0 ([decision 0061](../docs/decisions/0061-c17-remote-queue-and-queue-commands.md)).
+
+- **A client when the server is killed** (`kill -9` of a real `reframe-server`, a `websockets`
+  client authenticated on `WS /api/events`): `recv` raises `ConnectionClosedError` with no
+  close frame (`rcvd` and `sent` `None`), close code 1006, 5 ms after the kill. After uvicorn's
+  shutdown the close code is 1012 (the S-7 section above). `RemoteQueue` reports the second
+  as "the Reframe server stopped" and the first as "the connection to the Reframe server was
+  lost".
+- **SQLite in read-only mode on a WAL database** (`file:…?mode=ro`, the queue store with no
+  open writer, then with a writer that holds the database open): both read. When no `-wal`
+  and `-shm` files exist, the read-only connection makes them and leaves them. In a folder the
+  user cannot write, `mode=ro` fails with "attempt to write a readonly database" and
+  `mode=ro&immutable=1` reads the file. A missing file fails with "unable to open database
+  file" (`read_saved_queue` checks first).
+- **`flock` twice in one process**: a second `open` of `queue.lock` in the process that holds
+  it, then `flock(LOCK_EX | LOCK_NB)`, raises `BlockingIOError` (the lock belongs to the open
+  file description). The owner-search tests hold `queue.lock` or `server-start.lock` in the
+  pytest process to play another process.
+- **The CLI-started owner**: `python -m reframe_server --mode desktop --host 127.0.0.1 --port
+  0 --owner-only --idle-exit 30` from `launch_detached` (new session, null stdio) writes
+  `server.json`, takes the jobs of every client, and ended 30 s after its last client (seen
+  with `ps` and `reframe queue list`, which then read the saved queue).
+- **An encode for the real-process tests**: a 720p `testsrc2` video with a sine tone (x264
+  ultrafast) is encoded with the default preset (H.265 MKV 1080p) at about 1.6 times real time
+  here, under load and `nice -n 19`: 20 s of video in 12 s. The tests use 60 s for a job that
+  must still run while the test acts, and 2–8 s for jobs that must end.
+
+Asserted by `packages/reframe/tests/remote/test_shared_queue_real.py` (the kill of a server,
+the owner and its idle start, the encodes), `test_cli_queue.py`
+(`test_list_without_an_owner_reads_the_saved_queue_as_it_is`) and `test_owner_search.py` (the
+locks held in the test process).
+
 ### Docker image and deployment (S-6, task D)
 
 Checked on 2026-10-28 on the owner's desktop (Docker 29.9.2 without buildx, Compose 5.6.1,

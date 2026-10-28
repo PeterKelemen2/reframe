@@ -52,12 +52,12 @@ def probe(path: Path) -> MediaSource:
     return asyncio.run(run())
 
 
-def add_foreign_job(file: Path) -> str:
+def add_foreign_job(file: Path, output: Path | None = None) -> str:
     """A waiting job of "another front end" in the shared store."""
 
     async def run() -> str:
         async with await Reframe.create() as app:
-            draft = await app.jobs.draft(file)
+            draft = await app.jobs.draft(file, output=output)
             assert isinstance(draft, JobDraft)
             job = await app.queue.add(draft.job)
             assert job.state is JobState.WAITING
@@ -117,7 +117,8 @@ def test_encode_a_season_folder(
         name = f"Show.S01E{n:02d}.Episode.{n}.1080p.BluRay.x264-GRP.mkv"
         shutil.copy2(episode, folder / name)
         names.append(name)
-    foreign = add_foreign_job(tmp_path / "media" / SEASON / names[0])
+    # Another output: a job that would write the output of a waiting job is not queued.
+    foreign = add_foreign_job(tmp_path / "media" / SEASON / names[0], tmp_path / "foreign.mkv")
 
     result = invoke("encode", str(folder), "--preset", "H.265 MKV 1080p")
     assert result.exit_code == EXIT_OK, result.output

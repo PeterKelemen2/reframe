@@ -14,7 +14,7 @@ import pytest
 from reframe.batch import service as batch_service
 from reframe.batch.grouping import episode_key
 from reframe.batch.service import BatchService
-from reframe.cli import EXIT_FAILED, EXIT_OK
+from reframe.cli import EXIT_FAILED, EXIT_OK, IN_PROCESS_ENV
 from reframe.jobs import JobService
 from reframe.models import (
     AppSettings,
@@ -319,6 +319,7 @@ def test_batch_never_overwrites_a_file_named_as_an_output_with_the_real_queue(
     with the collision setting *overwrite*: the copy is not overwritten."""
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
+    monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     write_settings(tmp_path, collision="overwrite")
     folder = tmp_path / "media" / S01
