@@ -295,6 +295,64 @@ async def test_a_job_removed_before_its_client_goes_away(api: Api) -> None:
     assert await states(api) == {other: "cancelled"}
 
 
+FAILS = ft.Scenario([PROBE_RULE, ft.Rule(tool="ffmpeg", argv_has=["matroska"], exit_code=1)])
+"""Each encode fails."""
+
+
+async def failed_job(api: Api, client_id: str) -> str:
+    """A job attached to ``client_id`` that ran and failed."""
+    api.fake.set_scenario(FAILS)
+    [job] = await add_jobs(api, client_id, "Show.mkv")
+    await api.client.post("/api/queue/start", json={"job_ids": [job]})
+    await ended(api, job)
+    assert await states(api) == {job: "failed"}
+    return job
+
+
+async def test_a_job_that_another_front_end_retried_runs_on_when_its_client_goes_away(
+    api: Api,
+) -> None:
+    """A CLI's job failed and ``reframe queue retry`` (or the UI) runs it again while the CLI is
+    still connected: the new run belongs to the front end that retried it, so the CLI's end
+    does not cancel it."""
+    async with live(api) as server, connected(server, api) as (connection, client_id):
+        job = await failed_job(api, client_id)
+        api.fake.set_scenario(WRITE_AND_HANG)
+        assert (await api.client.post(f"/api/queue/{job}/retry")).status_code == 200
+        await api.client.post("/api/queue/start", json={"job_ids": [job]})
+        await encoding(api, job)
+        connection.transport.abort()
+        await wait_until(lambda: not hub(api).client_open(client_id))
+        await hub(api).close()  # waits for the cancels that the end started
+        assert await states(api) == {job: "running"}
+        await api.reframe.queue.cancel(job)
+
+
+async def test_a_job_retried_just_after_its_client_went_away_is_not_cancelled(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The retry comes between the end of the CLI's connection and the cancel of its jobs: the
+    job had ended when the connection did, so that cancel leaves it."""
+    from reframe_server import events
+
+    gate = asyncio.Event()
+    cancel = events._cancel
+
+    async def held(queue: Any, job_ids: Any) -> None:
+        await gate.wait()
+        await cancel(queue, job_ids)
+
+    monkeypatch.setattr(events, "_cancel", held)
+    async with live(api) as server, connected(server, api) as (connection, client_id):
+        job = await failed_job(api, client_id)
+        connection.transport.abort()
+        await wait_until(lambda: not hub(api).client_open(client_id))
+        assert (await api.client.post(f"/api/queue/{job}/retry")).status_code == 200
+        gate.set()
+        await hub(api).close()
+        assert await states(api) == {job: "waiting"}
+
+
 async def test_the_client_messages_and_the_client_id_are_in_the_openapi_document() -> None:
     """The frontend's and a client's generated types know the ``detach`` message and the
     hello's ``client_id``."""

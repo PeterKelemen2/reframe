@@ -20,6 +20,7 @@ import pytest
 
 from reframe.cli import EXIT_FAILED, EXIT_INTERRUPTED, EXIT_OK
 from reframe.models import ServerEndpoint
+from reframe.platform.power import DRY_RUN_ENV
 from reframe.remote.owner import ENDPOINT_FILE
 from reframe_testing import media
 
@@ -64,7 +65,7 @@ class Home:
         ffmpeg, ffprobe = media.find_ffmpeg(), media.find_ffprobe()
         assert ffmpeg is not None
         assert ffprobe is not None
-        env |= {"REFRAME_FFMPEG": ffmpeg, "REFRAME_FFPROBE": ffprobe}
+        env |= {"REFRAME_FFMPEG": ffmpeg, "REFRAME_FFPROBE": ffprobe, DRY_RUN_ENV: "1"}
         env |= {"PYTHONUNBUFFERED": "1", "COLUMNS": "200"}
         return env
 
@@ -111,8 +112,9 @@ class Home:
         )
         return path
 
-    def start(self, *args: str) -> subprocess.Popen[str]:
-        """``reframe ARGS…`` in the background."""
+    def start(self, *args: str, group: bool = False) -> subprocess.Popen[str]:
+        """``reframe ARGS…`` in the background (``group``: in a process group of its own, as a
+        shell starts a job; a stop signal does not stop a process of an orphaned group)."""
         process = subprocess.Popen(
             [sys.executable, "-m", "reframe.cli", *args],
             stdout=subprocess.PIPE,
@@ -121,6 +123,7 @@ class Home:
             text=True,
             encoding="utf-8",
             preexec_fn=_default_sigint,
+            process_group=0 if group else None,
         )
         self.clients.append(process)
         return process
@@ -243,15 +246,18 @@ def test_two_encodes_at_once_both_finish_and_share_the_slot_limit(home: Home) ->
     assert [job["state"] for job in jobs] == ["done", "done"]
     assert jobs[0]["finished_at"] <= jobs[1]["started_at"]  # parallel_jobs is 1
     assert jobs[1]["created_at"] < jobs[0]["finished_at"]  # it waited for the first one
-    assert len(home.owners()) == 1
+    [owner] = home.owners()
+    assert owner.environ().get(DRY_RUN_ENV) == "1"  # its when-done action never reaches the OS
 
 
 def test_sigint_in_one_client_cancels_only_its_own_jobs(home: Home) -> None:
-    first, second = home.source("a/First.mkv", 60), home.source("b/Second.mkv", 60)
+    """Two slots: the other client's job runs next to this one's at the SIGINT, and runs on."""
+    home.settings(parallel_jobs=2)
+    first, second = home.source("a/First.mkv", 60), home.source("b/Second.mkv", 8)
     one = home.start("encode", str(first), "-o", str(home.out / "First.mkv"))
     seen = read_until(one, encoding)
     other = home.start("encode", str(second), "-o", str(home.out / "Second.mkv"))
-    wait_until(lambda: home.state(second) == "waiting")
+    read_until(other, encoding)
     assert list(home.out.glob("First.part.*")), seen
     one.send_signal(signal.SIGINT)
     lines, err = finish(one, seen)
@@ -260,10 +266,9 @@ def test_sigint_in_one_client_cancels_only_its_own_jobs(home: Home) -> None:
     assert lines[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 0 not queued."
     assert home.job(first)["state"] == "cancelled"
     assert not list(home.out.glob("First.part.*"))
-    wait_until(lambda: home.state(second) == "running")  # the free slot is the other's
-    other.send_signal(signal.SIGINT)
-    finish(other)
-    assert other.returncode == EXIT_INTERRUPTED
+    other_lines, other_err = finish(other)
+    assert other.returncode == EXIT_OK, (other_lines, other_err)
+    assert home.job(second)["state"] == "done"
 
 
 def test_kill_9_of_a_client_cancels_its_jobs_and_a_detached_job_runs_on(home: Home) -> None:
@@ -392,3 +397,43 @@ def test_a_server_of_another_api_version_is_not_used_and_the_client_says_why(hom
     assert result.stdout.splitlines()[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 0 not queued."
     assert server.poll() is None
     assert home.jobs() == []  # the server's saved queue: the job ran in the client's own
+
+
+def test_a_waiting_job_that_another_client_removes_ends_the_follow(home: Home) -> None:
+    """``reframe queue remove`` of a waiting job of ``reframe encode A B``: the command reports
+    it, ends when A is done, and says so in its exit code."""
+    a, b = home.source("a/A.mkv", 8), home.source("b/B.mkv", 2)
+    client = home.start("encode", str(a), str(b))
+    seen = read_until(client, lambda line: line.startswith("[1/2] ") and "% · " in line)
+    removed = home.run("queue", "remove", home.job(b)["id"][:8])
+    assert removed.returncode == EXIT_OK, removed.stderr
+    lines, err = finish(client, seen)
+    assert client.returncode == EXIT_FAILED, (lines, err)
+    assert "[2/2] removed" in lines
+    assert lines[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 1 removed, 0 not queued."
+    assert [job["state"] for job in home.jobs()] == ["done"]
+
+
+def test_ctrl_z_pauses_the_job_and_fg_resumes_it(home: Home) -> None:
+    """SIGTSTP (the terminal's Ctrl+Z): while the command is stopped its job is paused in the
+    owner and the command holds no connection; SIGCONT (``fg``) resumes the job."""
+    source = home.source("a/Show.mkv", 8)
+    client = home.start("encode", str(source), "-o", str(home.out / "Show.mkv"), group=True)
+    seen = read_until(client, encoding)
+    [owner] = home.owners()
+    port = home.endpoint().port
+    client.send_signal(signal.SIGTSTP)
+    process = psutil.Process(client.pid)
+    wait_until(lambda: process.status() == psutil.STATUS_STOPPED, 30)
+    assert home.job(source)["state"] == "paused"
+    held = [c for c in process.net_connections() if c.raddr and c.raddr.port == port]
+    assert held == []
+    time.sleep(1.0)
+    assert home.job(source)["state"] == "paused"
+    client.send_signal(signal.SIGCONT)
+    lines, err = finish(client, seen)
+    assert client.returncode == EXIT_OK, (lines, err)
+    assert "Stopped" in err
+    assert "[1/1] resumed" in lines
+    assert lines[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 0 not queued."
+    assert owner.is_running()

@@ -1,38 +1,92 @@
 """``reframe encode`` and ``reframe batch`` as clients of the queue's owner: the owner validates
-and runs the jobs (no encoder detection here), ``--detach``, Ctrl+C, a server that stops, and the
-fallback to the in-process queue with the reason. The owner is the test's server in this event
-loop; the CLI runs in the same loop, on the same folders."""
+and runs the jobs (no encoder detection here), ``--detach``, Ctrl+C and Ctrl+Z, jobs that another
+front end removes or retries, a server that stops or a connection that is lost, the owner's
+when-done countdown, and the fallback to the in-process queue with the reason. The owner is the
+test's server in this event loop; the CLI runs in the same loop, on the same folders."""
 
 from __future__ import annotations
 
 import asyncio
+import gc
+import json
+import signal
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
+import uvicorn
+from websockets.asyncio.client import ClientConnection
 
 from reframe import cli
 from reframe.capabilities.service import CapabilityService
-from reframe.models import JobDraft, JobState, Severity, ValidationIssue
+from reframe.events import EventBus
+from reframe.models import (
+    JobDraft,
+    JobState,
+    NamingOptions,
+    OutputTrackRule,
+    PowerCountdownEvent,
+    Severity,
+    TrackSelector,
+    ValidationIssue,
+)
+from reframe.models.template import AudioOutputSettings
+from reframe.platform.power import OsAction, PowerService
+from reframe.remote import RemoteQueue
 from reframe.remote import owner as owner_module
-from reframe_testing.server import ApiFactory
+from reframe_testing import fake_tools as ft
+from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 
-from .conftest import HANG, Server, poll
+from .conftest import HANG, Server, poll, serving
 
 pytestmark = pytest.mark.anyio
+
+WAIT = 30.0
+"""Seconds a command of these tests may take."""
 
 
 @pytest.fixture
 def detections(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Every encoder detection that starts from now on."""
+    """Every encoder detection that starts from now on, through ``start`` or ``wait``."""
     started: list[str] = []
-    start = CapabilityService.start
+    start = CapabilityService._start
 
-    def record(self: CapabilityService) -> None:
-        started.append("start")
-        start(self)
+    def record(self: CapabilityService, **kwargs: Any) -> Any:
+        started.append("detection")
+        return start(self, **kwargs)
 
-    monkeypatch.setattr(CapabilityService, "start", record)
+    monkeypatch.setattr(CapabilityService, "_start", record)
     return started
+
+
+def ends(name: str, *, seconds: float = 0.0, code: int = 0) -> ft.Rule:
+    """The encode of the source ``name`` writes its ``.part`` file, prints progress, runs for
+    ``seconds`` and exits with ``code``."""
+    actions = [ft.write_output(), ft.progress(blocks=1, end=False), ft.sleep(seconds)]
+    return ft.Rule(tool="ffmpeg", argv_contains=[f"/{name}"], actions=actions, exit_code=code)
+
+
+def scenario(*rules: ft.Rule) -> ft.Scenario:
+    """``rules`` first; every other encode hangs as in :data:`HANG`."""
+    return ft.Scenario([PROBE_RULE, *rules, *HANG.rules[1:]])
+
+
+async def job_of(server: Server, name: str, state: JobState | None = None) -> str:
+    """The id of the job of the source ``name`` (once it is in ``state``)."""
+
+    def found() -> str | None:
+        for job in server.api.reframe.queue.list():
+            if Path(job.settings.source.path).name == name and state in (None, job.state):
+                return job.id
+        return None
+
+    await poll(lambda: found() is not None)
+    job_id = found()
+    assert job_id is not None
+    return job_id
 
 
 @pytest.fixture
@@ -82,14 +136,31 @@ async def test_the_owners_validation_decides_what_is_queued(
     assert server.api.reframe.queue.list() == []
 
 
-async def test_a_client_drafts_as_the_in_process_draft(server: Server) -> None:
+@pytest.mark.parametrize("preset_kind", ["default", "own rules and naming"])
+async def test_a_client_drafts_as_the_in_process_draft(server: Server, preset_kind: str) -> None:
+    """The second preset has a required track rule that no track matches (an error of the
+    track stage) and its own naming template."""
     app = server.api.reframe
     source = server.api.media_file("Show.S01E02.1080p.BluRay.x264-GRP.mkv")
     preset = app.presets.default()
+    if preset_kind != "default":
+        missing = OutputTrackRule(
+            selector=TrackSelector(kind="audio", languages=["fin"]),
+            settings=AudioOutputSettings(encoder="aac"),
+        )
+        preset = preset.model_copy(
+            update={
+                "audio_rules": [missing],
+                "naming": NamingOptions(episode_template="{name} custom"),
+            }
+        )
     local = await app.jobs.draft(source, preset)
     client = await cli.OwnerJobs(app, app.jobs.validate).draft(source, preset)
     assert isinstance(local, JobDraft)
     assert client == local
+    if preset_kind != "default":
+        assert "batch.track_missing" in [issue.code for issue in local.issues]
+        assert local.naming.template == "{name} custom"
 
 
 async def test_detach_queues_and_starts_the_jobs_and_ends(
@@ -106,6 +177,28 @@ async def test_detach_queues_and_starts_the_jobs_and_ends(
     assert "Detached" in out
     [ended] = await asyncio.wait_for(server.api.reframe.queue.wait([job.id]), 30)
     assert ended.state is JobState.DONE  # neither cancelled with the connection nor left waiting
+
+
+async def test_detach_ends_with_1_when_a_file_is_not_queued(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    refused = ValidationIssue(severity=Severity.ERROR, code="owner.refuses", message="No.")
+    validate = server.api.reframe.jobs.validate
+
+    async def owners_validation(job: Any, *args: Any, **kwargs: Any) -> list[ValidationIssue]:
+        issues = await validate(job, *args, **kwargs)
+        return [*issues, refused] if "Bad" in str(job.source.path) else issues
+
+    monkeypatch.setattr(server.api.reframe.jobs, "validate", owners_validation)
+    server.publish()
+    files = [server.api.media_file(name) for name in ("Good.mkv", "Bad.mkv")]
+    code = await cli.run_encode(files, preset=None, output=None, detach=True)
+    out = capsys.readouterr().out
+    assert code == cli.EXIT_FAILED, out
+    assert "Detached" in out
+    [job] = server.api.reframe.queue.list()
+    assert f"[1/2] job {job.id}" in out
+    await asyncio.wait_for(server.api.reframe.queue.wait([job.id]), 30)
 
 
 async def test_detach_needs_an_owner(
@@ -227,18 +320,30 @@ async def test_a_server_of_another_api_version_is_not_used(
 
 
 async def test_ctrl_c_cancels_only_the_commands_jobs(server: Server) -> None:
-    server.api.fake.set_scenario(HANG)
-    foreign = await server.api.reframe.queue.add(await server.job("Foreign.mkv"))
+    """Two slots: another front end's job runs next to the command's, and a third front end's
+    job waits. Ctrl+C cancels the command's running and waiting jobs only."""
+    await server.api.reframe.settings.update(
+        [{"op": "replace", "path": "/queue/parallel_jobs", "value": 2}]
+    )
+    server.api.fake.set_scenario(scenario(ends("Running.mkv", seconds=4)))
+    queue = server.api.reframe.queue
+    running = await queue.add(await server.job("Running.mkv"))
+    queue.start(job_ids=[running.id])
+    waiting = await queue.add(await server.job("Waiting.mkv"))
     server.publish()
     files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
     task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
-    await poll(lambda: JobState.RUNNING in states(server).values())
+    await poll(lambda: list(states(server).values()).count(JobState.RUNNING) == 2)
+    assert queue.get(running.id).state is JobState.RUNNING  # type: ignore[union-attr]
     task.cancel()
-    assert await asyncio.wait_for(task, 30) == cli.EXIT_INTERRUPTED
+    assert await asyncio.wait_for(task, WAIT) == cli.EXIT_INTERRUPTED
     found = states(server)
-    assert found.pop(foreign.id) is JobState.WAITING
+    assert found.pop(waiting.id) is JobState.WAITING
+    assert found.pop(running.id) in (JobState.RUNNING, JobState.DONE)
     assert sorted(found.values()) == [JobState.CANCELLED, JobState.CANCELLED]
-    assert not list(server.api.output.glob("*.part.*"))
+    assert not list(server.api.media.glob("*.part.*"))  # the command's outputs are there
+    [other] = await asyncio.wait_for(queue.wait([running.id]), WAIT)
+    assert other.state is JobState.DONE
 
 
 async def test_a_server_that_stops_while_the_command_follows_its_jobs(
@@ -256,20 +361,20 @@ async def test_a_server_that_stops_while_the_command_follows_its_jobs(
         await api.reframe.queue.cancel()
     captured = capsys.readouterr()
     assert code == cli.EXIT_FAILED
+    assert "[1/2] interrupted" in captured.out.splitlines()
     assert "1 interrupted, 1 not finished" in captured.out
     [waiting] = [j.id for j in jobs if j.state is JobState.WAITING]
-    assert (
-        "error: the Reframe server stopped: its running jobs were interrupted. The waiting jobs "
-        "stay in the queue, not started: reframe queue retry ID starts one, reframe queue "
-        f"cancel ID cancels it ({waiting[:8]})."
-    ) in captured.err
+    assert captured.err == (
+        "error: the Reframe server stopped. The waiting jobs stay in the queue, not started: "
+        f"reframe queue retry ID starts one, reframe queue cancel ID cancels it ({waiting[:8]}).\n"
+    )
 
 
 async def test_batch_hands_its_jobs_to_the_owner(
     server: Server, detections: list[str], fixture_season: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     server.publish()
-    code = await cli.run_batch([fixture_season], preset=None)
+    code = await asyncio.wait_for(cli.run_batch([fixture_season], preset=None), WAIT)
     out = capsys.readouterr().out
     assert code == cli.EXIT_OK, out
     assert "Queue: Reframe " in out
@@ -283,3 +388,482 @@ def fixture_season(server: Server) -> Path:
     for number in (1, 2):
         server.api.media_file(f"{folder.name}/Show.S01E{number:02d}.1080p.BluRay.x264-GRP.mkv")
     return folder
+
+
+async def test_a_job_another_front_end_removes_is_reported_and_the_command_ends(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``reframe queue remove`` (or the UI) takes the command's waiting job; the command ends
+    when its other job has ended."""
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    await server.api.reframe.queue.remove(b)
+    await server.api.reframe.queue.cancel(a)
+    code = await asyncio.wait_for(task, WAIT)
+    lines = capsys.readouterr().out.splitlines()
+    assert code == cli.EXIT_FAILED
+    assert "[2/2] removed" in lines
+    assert lines[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 1 removed, 0 not queued."
+
+
+async def test_ctrl_c_after_another_front_end_removed_a_job(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    await server.api.reframe.queue.remove(b)
+    await asyncio.sleep(0.2)  # the command hears of it
+    task.cancel()
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_INTERRUPTED
+    assert "cannot be cancelled" not in captured.err
+    last = captured.out.splitlines()[-1]
+    assert last == "Summary: 0 done, 0 failed, 1 cancelled, 1 removed, 0 not queued."
+    assert states(server) == {a: JobState.CANCELLED}
+
+
+async def connections_closed(server: Server) -> None:
+    """Until no event connection is open, and the owner has acted on their ends."""
+    await poll(lambda: server.api.app.state.hub.connections == 0)
+    await asyncio.sleep(0.5)
+
+
+async def test_a_job_another_front_end_retries_is_left_to_it(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The command's job A fails, and ``reframe queue retry`` in another terminal runs it again
+    while the command still follows B: the command ends with B (A's new run is not its own),
+    and its end does not cancel A."""
+    server.api.fake.set_scenario(scenario(ends("A.mkv", code=1), ends("B.mkv", seconds=4)))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    a = await job_of(server, "A.mkv", JobState.FAILED)
+    await job_of(server, "B.mkv", JobState.RUNNING)
+    server.api.fake.set_scenario(scenario(ends("B.mkv", seconds=4)))  # A's next run hangs
+    assert await cli.run_queue_retry(a) == cli.EXIT_OK
+    assert not task.done()
+    code = await asyncio.wait_for(task, WAIT)
+    lines = capsys.readouterr().out.splitlines()
+    assert code == cli.EXIT_FAILED
+    assert lines[-1] == "Summary: 1 done, 1 failed, 0 cancelled, 0 not queued."
+    await connections_closed(server)
+    await poll(lambda: states(server)[a] is JobState.RUNNING)
+    await server.api.reframe.queue.cancel(a)
+
+
+async def test_ctrl_c_leaves_a_job_another_front_end_retried(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    server.api.fake.set_scenario(scenario(ends("A.mkv", code=1)))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    a = await job_of(server, "A.mkv", JobState.FAILED)
+    await job_of(server, "B.mkv", JobState.RUNNING)
+    server.api.fake.set_scenario(HANG)
+    assert await cli.run_queue_retry(a) == cli.EXIT_OK  # it waits for B's slot
+    task.cancel()
+    code = await asyncio.wait_for(task, WAIT)
+    lines = capsys.readouterr().out.splitlines()
+    assert code == cli.EXIT_INTERRUPTED
+    assert lines[-1] == "Summary: 0 done, 1 failed, 1 cancelled, 0 not queued."
+    await connections_closed(server)
+    await poll(lambda: states(server)[a] is JobState.RUNNING)  # in the slot of the cancelled B
+    await server.api.reframe.queue.cancel(a)
+
+
+def _sigtstp_handled() -> bool:
+    return signal.getsignal(signal.SIGTSTP) not in (signal.SIG_DFL, signal.SIG_IGN, None)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no job control on Windows")
+async def test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """While the command is stopped, its running job is paused in the owner, and no connection
+    is left whose end would cancel it (a stopped process cannot answer the server's
+    keepalive). When the command is continued it resumes the job and follows it to its end."""
+    server.api.fake.set_scenario(scenario(ends("A.mkv", seconds=2)))
+    server.publish()
+    hub = server.api.app.state.hub
+    seen: list[tuple[JobState | None, int]] = []
+    job_id = ""
+
+    def stopped() -> None:
+        job = server.api.reframe.queue.get(job_id)
+        seen.append((job.state if job is not None else None, hub.connections))
+
+    monkeypatch.setattr(cli, "_stop_process", stopped, raising=False)
+    task = asyncio.create_task(
+        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    )
+    job_id = await job_of(server, "A.mkv", JobState.RUNNING)
+    await poll(_sigtstp_handled, 10)  # never raised without a handler: it would stop pytest
+    signal.raise_signal(signal.SIGTSTP)
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    assert seen == [(JobState.PAUSED, 0)]
+    assert code == cli.EXIT_OK, captured
+    assert "Stopped" in captured.err
+    assert "[1/1] resumed" in captured.out.splitlines()
+    assert states(server) == {job_id: JobState.DONE}
+    assert not _sigtstp_handled()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no job control on Windows")
+async def test_a_command_that_was_stopped_cancels_its_jobs_on_sigterm(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``kill %1`` of a stopped command (SIGTERM, then SIGCONT): its jobs are not attached any
+    more, so the command cancels them itself, as on Ctrl+C."""
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+
+    def stopped() -> None:
+        handled = signal.getsignal(signal.SIGTERM) not in (signal.SIG_DFL, signal.SIG_IGN, None)
+        assert handled, "SIGTERM would end pytest"
+        signal.raise_signal(signal.SIGTERM)
+
+    monkeypatch.setattr(cli, "_stop_process", stopped, raising=False)
+    task = asyncio.create_task(
+        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    )
+    job_id = await job_of(server, "A.mkv", JobState.RUNNING)
+    await poll(_sigtstp_handled, 10)
+    signal.raise_signal(signal.SIGTSTP)
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_INTERRUPTED, captured
+    assert captured.out.splitlines()[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 0 not queued."
+    assert states(server) == {job_id: JobState.CANCELLED}
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+
+
+async def test_after_a_lost_connection_the_owners_states_are_reported(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The connection ends while the owner runs on (as when the owner's keepalive gives up on
+    a stopped client): the owner cancels the job, and the command reports that, not a guess."""
+    from websockets.protocol import State
+
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+    task = asyncio.create_task(
+        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    )
+    job_id = await job_of(server, "A.mkv", JobState.RUNNING)
+    connect = cli.connect_owner
+
+    async def after_the_cancel(*args: Any, **kwargs: Any) -> Any:
+        await poll(lambda: states(server)[job_id] is JobState.CANCELLED)
+        return await connect(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "connect_owner", after_the_cancel)
+    [connection] = [
+        found
+        for found in gc.get_objects()
+        if type(found) is ClientConnection  # not a weak proxy of it
+        and found.state is State.OPEN
+        and found.remote_address[1] == server.live.port
+    ]
+    connection.transport.abort()
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert code == cli.EXIT_FAILED
+    assert "[1/1] cancelled" in lines
+    assert lines[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 0 not queued."
+    assert "error: the connection to the Reframe server was lost." in captured.err
+
+
+def _slow_second_add(
+    server: Server, monkeypatch: pytest.MonkeyPatch, seconds: float
+) -> asyncio.Event:
+    """The owner's second add answers ``seconds`` after the job is in the queue (attached); the
+    event is set when that job is in."""
+    queue = server.api.reframe.queue
+    add = queue.add
+    added: list[str] = []
+    entered = asyncio.Event()
+
+    async def slow_add(*args: Any, **kwargs: Any) -> Any:
+        job = await add(*args, **kwargs)
+        added.append(job.id)
+        if len(added) == 2:
+            entered.set()
+            await asyncio.sleep(seconds)
+        return job
+
+    monkeypatch.setattr(queue, "add", slow_add)
+    return entered
+
+
+async def test_ctrl_c_while_detach_adds_a_job_leaves_no_job_behind(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The job whose ``POST /api/queue`` is under way at Ctrl+C is in the queue already: the
+    command learns of it and cancels it with the other one."""
+    server.publish()
+    entered = _slow_second_add(server, monkeypatch, 0.5)
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None, detach=True))
+    await asyncio.wait_for(entered.wait(), WAIT)
+    task.cancel()
+    code = await asyncio.wait_for(task, WAIT)
+    lines = capsys.readouterr().out.splitlines()
+    assert code == cli.EXIT_INTERRUPTED
+    assert lines[-1] == "Summary: 0 done, 0 failed, 2 cancelled, 0 not queued."
+    assert sorted(states(server).values()) == [JobState.CANCELLED] * 2
+
+
+async def test_a_detach_that_was_interrupted_leaves_its_jobs_to_the_owners_cancel(
+    server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The add under way at Ctrl+C does not answer in time: the command ends without the
+    ``detach`` message, so the owner cancels that job when the connection ends."""
+    monkeypatch.setattr(cli, "ADD_WAIT", 0.2, raising=False)
+    server.publish()
+    entered = _slow_second_add(server, monkeypatch, 2.0)
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None, detach=True))
+    await asyncio.wait_for(entered.wait(), WAIT)
+    task.cancel()
+    assert await asyncio.wait_for(task, WAIT) == cli.EXIT_INTERRUPTED
+    await poll(lambda: sorted(states(server).values()) == [JobState.CANCELLED] * 2)
+
+
+@asynccontextmanager
+async def stoppable(api: Api) -> AsyncIterator[uvicorn.Server]:
+    """``api`` served over TCP as ``Api.live`` does, with the uvicorn server at hand to stop."""
+    served = uvicorn.Server(
+        uvicorn.Config(api.app, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
+    )
+    running = asyncio.create_task(served.serve())
+    try:
+        await poll(lambda: served.started or running.done())
+        yield served
+    finally:
+        served.should_exit = True
+        await running
+
+
+async def test_an_owner_that_stops_while_the_jobs_are_added(
+    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The owner stops (as on SIGTERM) after the command's second add: the jobs that were added
+    stay waiting in the saved queue, and the error names them."""
+    from reframe_testing.server import LiveServer
+
+    async with make_api(mode="desktop") as api, stoppable(api) as served:
+        port = served.servers[0].sockets[0].getsockname()[1]
+        Server(api, LiveServer(port)).publish()
+        queue = api.reframe.queue
+        add = queue.add
+        added: list[str] = []
+
+        async def add_then_stop(*args: Any, **kwargs: Any) -> Any:
+            job = await add(*args, **kwargs)
+            added.append(job.id)
+            if len(added) == 2:
+                served.should_exit = True
+                await poll(lambda: not served.servers[0].is_serving())
+            return job
+
+        monkeypatch.setattr(queue, "add", add_then_stop)
+        files = [api.media_file(f"{name}.mkv") for name in ("A", "B", "C")]
+        code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), WAIT)
+        jobs = api.reframe.queue.list()
+        await api.reframe.queue.cancel()
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_FAILED
+    assert [job.state for job in jobs] == [JobState.WAITING] * 2
+    named = ", ".join(job.id[:8] for job in jobs)
+    assert (
+        "The waiting jobs stay in the queue, not started: reframe queue retry ID starts one, "
+        f"reframe queue cancel ID cancels it ({named})."
+    ) in captured.err
+    last = captured.out.splitlines()[-1]
+    assert last == "Summary: 0 done, 0 failed, 0 cancelled, 2 not finished, 1 not queued."
+
+
+async def test_a_command_that_ends_by_an_unexpected_error_leaves_no_job_behind(
+    server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only ``--detach`` keeps the jobs when the command ends: a bug in the command (here: in
+    its progress view) ends its connection without the ``detach`` message."""
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+
+    def broken(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(cli, "EncodeView", broken)
+    with pytest.raises(RuntimeError, match="a bug"):
+        await asyncio.wait_for(
+            cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None), WAIT
+        )
+    [job] = server.api.reframe.queue.list()
+    [ended] = await asyncio.wait_for(server.api.reframe.queue.wait([job.id]), WAIT)
+    assert ended.state is JobState.CANCELLED
+
+
+class _RecordingExecutor:
+    """A power executor that only records: the operating system is never asked."""
+
+    def __init__(self) -> None:
+        self.actions: list[OsAction] = []
+
+    async def execute(self, action: OsAction) -> str | None:
+        self.actions.append(action)
+        return None
+
+
+@pytest.fixture
+async def owner_with_power(
+    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> AsyncIterator[tuple[Server, _RecordingExecutor]]:
+    """An owner whose power service only records and whose when-done setting is shutdown. The
+    command's own settings (another config folder) say "nothing"."""
+    import reframe.service as service_module
+
+    executor = _RecordingExecutor()
+
+    def recording(events: EventBus, **_options: object) -> PowerService:
+        return PowerService(events, executor=executor)
+
+    monkeypatch.setattr(service_module, "create_power_service", recording)
+    async with serving(make_api) as server:
+        update = [{"op": "replace", "path": "/queue/when_done", "value": "shutdown"}]
+        await server.api.reframe.settings.update(update)
+        own = tmp_path / "client-config"
+        own.mkdir()
+        settings = {"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}
+        (own / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+        monkeypatch.setenv("REFRAME_CONFIG_DIR", str(own))
+        yield server, executor
+
+
+async def test_the_owners_countdown_is_shown_and_ctrl_c_cancels_it(
+    owner_with_power: tuple[Server, _RecordingExecutor],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    server, executor = owner_with_power
+    shown = asyncio.Event()
+    show = cli.CountdownView.show
+
+    def showing(self: cli.CountdownView, event: PowerCountdownEvent) -> None:
+        show(self, event)
+        shown.set()
+
+    monkeypatch.setattr(cli.CountdownView, "show", showing)
+    server.publish()
+    task = asyncio.create_task(
+        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    )
+    await asyncio.wait_for(shown.wait(), WAIT)
+    task.cancel()
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_INTERRUPTED
+    assert "Shutting down in 60 s — press Ctrl+C to cancel" in captured.out
+    assert (
+        "Interrupted: the countdown is cancelled, the computer will not shut down." in captured.err
+    )
+    assert server.api.reframe.power.pending is None
+    assert executor.actions == []
+
+
+def _claimed(server: Server) -> Path:
+    """Another front end's waiting job writes ``Same.mkv``: a job of the command with that
+    output is added ``failed``."""
+    return server.api.output / "Same.mkv"
+
+
+async def test_a_countdown_that_the_commands_jobs_did_not_start_is_not_followed(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The command's only job fails when it is queued, so none of its jobs ran; a countdown
+    that another front end's jobs start meanwhile is not the command's to show or cancel. The
+    owner's power service is a stand-in that only reports that countdown."""
+    foreign = PowerCountdownEvent(
+        countdown_id="ui", action="shutdown", phase="tick", seconds_left=42
+    )
+    pending: list[PowerCountdownEvent] = []
+    cancels: list[str | None] = []
+
+    def cancel(_self: PowerService, countdown_id: str | None = None) -> bool:
+        cancels.append(countdown_id)
+        return True
+
+    monkeypatch.setattr(PowerService, "pending", property(lambda _self: next(iter(pending), None)))
+    monkeypatch.setattr(PowerService, "cancel", cancel)
+
+    async def shutdown(_self: RemoteQueue) -> str:
+        return "shutdown"
+
+    monkeypatch.setattr(RemoteQueue, "when_done", shutdown)
+    queue = server.api.reframe.queue
+    await queue.add(await server.job("Other.mkv", output=_claimed(server).name))
+    add = queue.add
+
+    async def add_then_countdown(*args: Any, **kwargs: Any) -> Any:
+        job = await add(*args, **kwargs)
+        pending.append(foreign)
+        server.api.reframe.events.publish(foreign)
+        return job
+
+    monkeypatch.setattr(queue, "add", add_then_countdown)
+    server.publish()
+    mine = server.api.media_file("Mine.mkv")
+    code = await asyncio.wait_for(cli.run_encode([mine], preset=None, output=_claimed(server)), 10)
+    out = capsys.readouterr().out
+    assert code == cli.EXIT_FAILED
+    assert "Shutting down" not in out
+    assert "ui" not in cancels
+
+
+async def test_a_job_that_the_owner_adds_failed_is_not_counted_as_queued(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    await server.api.reframe.queue.add(await server.job("Other.mkv", output=_claimed(server).name))
+    server.publish()
+    mine = server.api.media_file("Mine.mkv")
+    code = await cli.run_encode([mine], preset=None, output=_claimed(server))
+    out = capsys.readouterr().out
+    assert code == cli.EXIT_FAILED
+    assert "[1/1] failed when it was queued:" in out
+    assert "Queued" not in out
+
+
+@pytest.mark.parametrize(
+    ("value", "client"), [("off", True), ("garbage", False)], ids=["a false word", "not a word"]
+)
+async def test_reframe_in_process_is_read_as_the_command_line_reads_it(
+    server: Server,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    value: str,
+    client: bool,
+) -> None:
+    monkeypatch.setenv(cli.IN_PROCESS_ENV, value)
+    server.publish()
+    code = await cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    captured = capsys.readouterr()
+    if client:
+        assert code == cli.EXIT_OK, captured
+        assert "Queue: Reframe " in captured.out
+    else:
+        assert code == cli.EXIT_USAGE
+        assert f"error: {cli.IN_PROCESS_ENV}: 'garbage' is not a valid boolean" in captured.err
+        assert server.api.reframe.queue.list() == []

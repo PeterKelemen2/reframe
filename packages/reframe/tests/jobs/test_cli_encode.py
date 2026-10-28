@@ -21,8 +21,17 @@ from reframe.cli import (
     EncodeView,
     progress_text,
 )
-from reframe.models import JobProgress, JobSettings, JobState, QueueJob, Severity
+from reframe.models import (
+    JobProgress,
+    JobSettings,
+    JobState,
+    QueueChangedEvent,
+    QueueJob,
+    Severity,
+)
 from reframe.models import ValidationIssue as Issue
+from reframe.queue import UnknownJobError
+from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 
 from .conftest import Queues, invoke, media_file, replay
@@ -326,12 +335,16 @@ class _Events:
     async def __anext__(self) -> object:
         if not self.events:
             raise StopAsyncIteration
-        return self.events.pop(0)
+        event = self.events.pop(0)
+        return event() if callable(event) else event
 
 
 @pytest.mark.anyio
 async def test_follow_rereads_the_queue_after_a_resync(tmp_path: Path) -> None:
-    """A subscription that ends early falls back to ``queue.wait``."""
+    """The end of a job was among the events that a slow subscriber lost: the resync marker
+    makes the follow read the queue, show the end and stop."""
+    from types import SimpleNamespace
+
     from reframe.events import EventBus
     from reframe.models import JobSettings, OutputSettings, ResyncEvent, SourceRef
 
@@ -342,12 +355,21 @@ async def test_follow_rereads_the_queue_after_a_resync(tmp_path: Path) -> None:
             output=OutputSettings(path=tmp_path / "a.mkv"),
         )
     )
-    queue.start()
-    await queue.wait([job.id])
-    view = EncodeView(Console(file=io.StringIO()), {job.id: "[1/1]"}, live=False)
-    events = _Events([ResyncEvent(dropped=3)])
-    await cli._follow_jobs(queue, [job.id], events, view)  # type: ignore[arg-type]
-    await cli._follow_jobs(queue, [job.id], _Events([]), view)  # type: ignore[arg-type]
+    queue._jobs[job.id] = queue._jobs[job.id].model_copy(update={"state": JobState.RUNNING})
+
+    def ended_unseen() -> ResyncEvent:
+        queue._jobs[job.id] = queue._jobs[job.id].model_copy(update={"state": JobState.DONE})
+        return ResyncEvent(dropped=3)
+
+    buffer = io.StringIO()
+    view = EncodeView(Console(file=buffer, width=200), {job.id: "[1/1]"}, live=False)
+    jobs = cli.CommandJobs()
+    jobs.add(job, "[1/1]")
+    session = SimpleNamespace(queue=queue, lost=None)
+    following = cli._Following(session, _Events([ended_unseen]), view)  # type: ignore[arg-type]
+    await asyncio.wait_for(cli._follow_jobs(following, jobs), 10)
+    assert buffer.getvalue().splitlines() == ["[1/1] done"]
+    assert jobs.open() == []
 
 
 @pytest.mark.anyio
@@ -362,39 +384,68 @@ async def test_cancel_wait_is_bounded(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(cli, "CANCEL_WAIT", 0.05)
     errors: list[str] = []
     monkeypatch.setattr(cli, "_error", errors.append)
-    await cli._cancel_jobs(Stuck(EventBus(), log_dir=tmp_path), [])
+    await cli._cancel_jobs(Stuck(EventBus(), log_dir=tmp_path), cli.CommandJobs())
     assert errors == ["the jobs did not end within 0.05 s after they were cancelled."]
 
 
-def test_summary_counts_interrupted_jobs(tmp_path: Path) -> None:
-    from datetime import UTC, datetime
-
-    from reframe.events import EventBus
-    from reframe.models import OutputSettings, SourceRef
-
-    queue = FakeQueue(EventBus(), log_dir=tmp_path)
-    settings = JobSettings(
-        source=SourceRef(path=tmp_path / "a.mkv"), output=OutputSettings(path=tmp_path / "b.mkv")
-    )
-    queue._jobs["x"] = QueueJob(
-        id="x",
-        position=0,
-        state=JobState.INTERRUPTED,
-        settings=settings,
-        created_at=datetime.now(UTC),
-    )
-    queue._jobs["y"] = QueueJob(
-        id="y",
-        position=1,
-        state=JobState.RUNNING,
-        settings=settings,
-        created_at=datetime.now(UTC),
-    )
+def test_summary_counts_interrupted_jobs() -> None:
     buffer = io.StringIO()
-    cli._summary(Console(file=buffer, width=200), queue, ["x", "y"], 0)
+    cli._summary(Console(file=buffer, width=200), [JobState.INTERRUPTED, JobState.RUNNING], 0)
     assert buffer.getvalue().strip() == (
         "Summary: 0 done, 0 failed, 0 cancelled, 1 interrupted, 1 not finished, 0 not queued."
     )
+
+
+class _RefusedStart(FakeQueue):
+    """The queue contract of a queue in a server: another front end removes ``job-1`` while
+    the command's start is on its way, so the owner refuses that start (nothing starts) and
+    the refusal is raised by the next awaited call."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.refusal: UnknownJobError | None = None
+
+    def start(self, *, job_ids: Sequence[str] | None = None) -> None:
+        if job_ids is None or "job-1" not in job_ids:
+            super().start(job_ids=job_ids)
+            return
+        self.calls.append(f"refused start {' '.join(job_ids)}")
+        self._order.remove("job-1")
+        del self._jobs["job-1"]
+        self.events.publish(QueueChangedEvent(job_ids=list(self._order)))
+        self.refusal = UnknownJobError("job-1")
+
+    async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]:
+        refusal, self.refusal = self.refusal, None
+        if refusal is not None:
+            raise refusal
+        return await super().wait(job_ids)
+
+
+@pytest.mark.anyio
+async def test_a_start_that_the_owner_refuses_is_sent_again_for_the_jobs_still_there(
+    season: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    made: list[_RefusedStart] = []
+
+    def make(app: Reframe) -> _RefusedStart:
+        made.append(_RefusedStart(app.events, log_dir=tmp_path / "logs"))
+        return made[-1]
+
+    monkeypatch.setattr(cli, "get_queue", make)
+    files = [season / name for name in EPISODES[:2]]
+    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    lines = capsys.readouterr().out.splitlines()
+    assert code == EXIT_FAILED
+    assert [call for call in made[0].calls if "start" in call] == [
+        "refused start job-1 job-2",
+        "start job-2",
+    ]
+    assert "[1/2] removed" in lines
+    assert lines[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 1 removed, 0 not queued."
 
 
 @pytest.mark.anyio
@@ -413,9 +464,12 @@ async def test_ctrl_c_leaves_foreign_jobs_alone(tmp_path: Path) -> None:
     queue = FakeQueue(EventBus(), log_dir=tmp_path, behaviour=lambda _job: "hang")
     foreign = await queue.add(settings("foreign"))
     ours = [(await queue.add(settings(n), position=i)).id for i, n in enumerate("ab")]
+    jobs = cli.CommandJobs()
+    for number, job_id in enumerate(ours, start=1):
+        jobs.add(queue.get(job_id), f"[{number}/2]")  # type: ignore[arg-type]
     queue.start(job_ids=ours)
     await asyncio.sleep(0.05)
-    await cli._cancel_jobs(queue, ours)
+    await cli._cancel_jobs(queue, jobs)
     assert [c for c in queue.calls if c.startswith("cancel")] == [
         "cancel job-3",  # waiting first, then the running one
         "cancel job-2",
