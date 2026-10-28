@@ -3,6 +3,7 @@ are not UTF-8."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import selectors
@@ -16,7 +17,7 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi import FastAPI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 
 import reframe_server
 from reframe.models import Severity, ValidationIssue
@@ -24,6 +25,8 @@ from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.queue.errors import JobStateError, UnknownJobError
 from reframe.service import ReframeClosedError
 from reframe.tasks import TaskContext
+from reframe_server import idle
+from reframe_server.__main__ import serve
 from reframe_server.api import JsonTextResponse, accepted, api_router
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
@@ -179,6 +182,48 @@ def test_a_server_whose_port_is_taken_exits_1(tmp_path: Path, fake_tools: object
     assert result.returncode == 1, result.stderr
     assert "Task exception was never retrieved" not in result.stderr
     assert result.stdout == ""
+
+
+@pytest.mark.usefixtures("make_api")  # the test's own folders, tools and settings
+async def test_a_cancel_of_serve_while_its_idle_watch_ends_is_not_lost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``serve()`` waits for its cancelled idle watch at the end; a cancel of ``serve()``
+    itself in that time (the event loop's runner on a signal) must still end it cancelled."""
+    ending, release = asyncio.Event(), asyncio.Event()
+
+    async def watch(*_args: object) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            ending.set()
+            await release.wait()  # a clean-up that takes a moment
+            raise
+
+    monkeypatch.setattr(idle, "watch", watch)
+    token = "cancel-test-" + "x" * 32
+    config = ServerConfig(
+        mode="desktop",
+        idle_exit=3600,
+        token=SecretStr(token),
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+    )
+    serving = asyncio.create_task(serve(config))
+    printed = ""
+    while not printed:
+        assert not serving.done()
+        await asyncio.sleep(0.02)
+        printed = capsys.readouterr().out
+    port = json.loads(printed)["port"]
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=headers) as client:
+        assert (await client.post("/api/system/shutdown")).status_code == 204
+    await asyncio.wait_for(ending.wait(), 30)
+    serving.cancel()
+    release.set()
+    await asyncio.wait((serving,), timeout=10)
+    assert serving.cancelled()
 
 
 class _PathBody(BaseModel):

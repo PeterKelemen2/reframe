@@ -113,12 +113,17 @@ async def serve(config: ServerConfig) -> int:
                 print(ready_line(port), flush=True)
         await running
     finally:
-        if idle_watch is not None:
-            idle_watch.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await idle_watch
-        if watch is not None:
-            watch.close()
+        try:
+            if idle_watch is not None:
+                idle_watch.cancel()
+                # Not `await idle_watch`: its CancelledError could not be told from a cancel
+                # of serve() itself, which would then be lost.
+                await asyncio.wait((idle_watch,))
+                if not idle_watch.cancelled():
+                    idle_watch.result()
+        finally:
+            if watch is not None:
+                watch.close()
     return 0 if server.started else int(app.state.exit_code)
 
 
