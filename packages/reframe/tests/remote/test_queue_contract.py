@@ -15,7 +15,7 @@ from reframe.queue import JobStateError, QueueLike, UnknownJobError
 from reframe.queue.service import OUTPUT_CLAIMED
 from reframe.remote import RemoteQueue
 
-from .conftest import HANG, Server, poll
+from .conftest import HANG, Server, poll, watch_requests
 
 pytestmark = pytest.mark.anyio
 
@@ -37,6 +37,20 @@ class Contract:
 
     async def running(self, *job_ids: str) -> None:
         await poll(lambda: all(self.state(j) is JobState.RUNNING for j in job_ids))
+
+    async def start_while_removed(self, removed: str, job_ids: list[str]) -> None:
+        """``start(job_ids)`` while another front end removes ``removed``: in-process the
+        removal comes first; a remote start's request reaches the server after it."""
+        server_queue = self.server.api.reframe.queue
+        if not isinstance(self.queue, RemoteQueue):
+            await server_queue.remove(removed)
+            self.queue.start(job_ids=job_ids)
+            return
+        requests = await watch_requests(self.queue)
+        requests.released.clear()
+        self.queue.start(job_ids=job_ids)
+        await server_queue.remove(removed)
+        requests.released.set()
 
 
 @pytest.fixture(params=["service", "remote"])
@@ -105,6 +119,25 @@ async def test_start_with_job_ids_runs_only_those(contract: Contract) -> None:
     log = contract.queue.log_path(ours.id)
     assert log == contract.server.api.reframe.queue.log_path(ours.id)
     assert f"Reframe job {ours.id}" in log.read_text(encoding="utf-8")
+
+
+async def test_a_start_of_a_job_that_left_the_queue_starts_nothing(contract: Contract) -> None:
+    """A ``wait`` for the jobs of a start that the server refused would never return: the other
+    job is not started either."""
+    gone = await contract.add("Gone.mkv")
+    other = await contract.add("Other.mkv")
+
+    async def start_and_wait() -> None:
+        await contract.start_while_removed(gone.id, [gone.id, other.id])
+        await contract.ended(other.id)
+
+    with pytest.raises(UnknownJobError) as refused:
+        await start_and_wait()
+    assert refused.value.job_id == gone.id
+    await asyncio.sleep(0.2)  # time enough for a started job to leave "waiting"
+    assert contract.server.api.reframe.queue.get(other.id).state is JobState.WAITING  # type: ignore[union-attr]
+    await contract.queue.cancel(other.id)  # the refusal is raised once
+    assert contract.state(other.id) is JobState.CANCELLED
 
 
 async def test_cancel_a_waiting_job(contract: Contract) -> None:
