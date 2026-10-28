@@ -1,0 +1,40 @@
+--- before
+$ ps -o pid,ppid,stat,etime,args -p 162328,162341,162696
+    PID    PPID STAT     ELAPSED COMMAND
+ 162328  162327 SNl        00:02 <repo>/desktop/spike/src-tauri/target/release/reframe-spike
+ 162341  162328 SNl        00:02 <repo>/desktop/spike/src-tauri/../dist/reframe-server/reframe-server --mode desktop --port 0 --auth token --parent-pid 162328
+ 162696  162341 SNsl       00:01 /usr/bin/ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /tmp/reframe-spike-82917_gi/media/hdr10-4k.mkv -map 0:0 -filter:v:0 idet,bwdif=mode=send_frame:parity=auto:deint=interlaced,scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p10le -c:v:0 libx265 -crf:v:0 22 -preset:v:0 slow -profile:v:0 main10 -x265-params:v:0 colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400:strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -map_chapters -1 -map_metadata 0 -f matroska /tmp/reframe-spike-82917_gi/out/encoded.part.mkv
+$ pgrep -af '<repo>/desktop/spike/src-tauri/target/release/reframe-spike'
+162328 <repo>/desktop/spike/src-tauri/target/release/reframe-spike
+$ pgrep -af 'reframe-server/reframe-server'
+162341 <repo>/desktop/spike/src-tauri/../dist/reframe-server/reframe-server --mode desktop --port 0 --auth token --parent-pid 162328
+$ pgrep -af 'ffmpeg.*/tmp/reframe-spike-82917_gi'
+162696 /usr/bin/ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /tmp/reframe-spike-82917_gi/media/hdr10-4k.mkv -map 0:0 -filter:v:0 idet,bwdif=mode=send_frame:parity=auto:deint=interlaced,scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p10le -c:v:0 libx265 -crf:v:0 22 -preset:v:0 slow -profile:v:0 main10 -x265-params:v:0 colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400:strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -map_chapters -1 -map_metadata 0 -f matroska /tmp/reframe-spike-82917_gi/out/encoded.part.mkv
+.part file: /tmp/reframe-spike-82917_gi/out/encoded.part.mkv exists=True size=0
+--- after (sidecar-kill)
+$ ps -o pid,ppid,stat,etime,args -p 162328,162341,162696
+    PID    PPID STAT     ELAPSED COMMAND
+ 162328  162327 SNl        00:02 <repo>/desktop/spike/src-tauri/target/release/reframe-spike
+ 162696    1377 ZNsl       00:01 [ffmpeg] <defunct>
+$ pgrep -af '<repo>/desktop/spike/src-tauri/target/release/reframe-spike'
+162328 <repo>/desktop/spike/src-tauri/target/release/reframe-spike
+$ pgrep -af 'reframe-server/reframe-server'
+(nothing)
+$ pgrep -af 'ffmpeg.*/tmp/reframe-spike-82917_gi'
+(nothing)
+--- result
+case: sidecar-kill
+gone after (s): 0.0
+still running: [162328]
+app shows: The server ended (signal: 9 (SIGKILL)). Log: /tmp/reframe-spike-82917_gi/data/sidecar.log
+app shows after (s): 0.008
+app still running: True
+part right after: True
+state at the next start: interrupted
+part 2 s after the next start: False
+sidecar log: []
+{"window": {"pid": 162328, "class": "reframe-spike", "added": {"output": "HDMI-A-1", "geometry": [510, 186, 900, 708]}, "placed": {"output": "HDMI-A-1", "geometry": [40, 40, 900, 708]}, "shown": {"output": "HDMI-A-1", "geometry": [40, 40, 900, 708]}, "read_back": [40, 40, 900, 708]}}
+{"focus": {"event": "loaded", "script": 1, "keep": {"id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}", "cls": "com.microsoft.VSCode", "output": "HDMI-A-1"}, "active": {"id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}", "cls": "com.microsoft.VSCode", "output": "HDMI-A-1"}}}
+{"focus": {"event": "active", "script": 1, "window": {"id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}", "cls": "com.microsoft.VSCode", "output": "HDMI-A-1"}}}
+{"focus": {"event": "kept_active", "script": 1, "by": {"id": "{d50c2d1b-5d55-41ac-998a-445e6acf921a}", "cls": "reframe-spike", "output": "HDMI-A-1"}, "keep": {"id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}", "cls": "com.microsoft.VSCode", "output": "HDMI-A-1"}, "active": {"id": "{d7294b7c-2580-4d83-8e1d-56e5e6477a69}", "cls": "com.microsoft.VSCode", "output": "HDMI-A-1"}}}
+{"scripts_loaded_after": {"reframe-spike-12638f7dfbdb-1": false}}

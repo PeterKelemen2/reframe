@@ -112,12 +112,15 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 @pytest.fixture(scope="session")
 def fixture_media(request: pytest.FixtureRequest) -> Callable[[str], Path]:
     """``fixture_media("multitrack")`` -> path of ``testdata/media/multitrack.mkv``."""
+    # Found before a test points REFRAME_FFMPEG at the fake ffmpeg, which would regenerate the
+    # shared fixture with garbage.
+    ffmpeg = media.find_ffmpeg()
 
     def get(name: str) -> Path:
         problem = _session_problem(request.config)
         if problem is not None:
             skip_or_fail(problem)
-        return media.ensure_fixture(name)
+        return media.ensure_fixture(name, ffmpeg=ffmpeg)
 
     return get
 

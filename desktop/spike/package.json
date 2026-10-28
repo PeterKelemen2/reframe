@@ -1,0 +1,28 @@
+{
+  "name": "reframe-desktop-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "D-0 spike: a minimal Tauri 2 shell around the frozen reframe-server",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": "^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "dev:ui": "vite --config ui/vite.config.js",
+    "build:ui": "vite build --config ui/vite.config.js",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@primeuix/themes": "2.0.3",
+    "@tauri-apps/api": "2.12.4",
+    "primevue": "4.5.5",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4",
+    "@vitejs/plugin-vue": "6.0.10",
+    "playwright": "1.64.1",
+    "vite": "8.3.4"
+  }
+}

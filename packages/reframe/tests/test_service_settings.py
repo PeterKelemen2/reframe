@@ -172,6 +172,31 @@ async def test_an_invalid_change_is_an_issue_and_changes_nothing(
         assert (config / "settings.json").read_bytes() == before
 
 
+async def test_the_check_sees_the_settings_the_change_applies_to(config: Path) -> None:
+    """A caller that refuses some changes must judge the settings the patch is applied to,
+    not a copy that a concurrent update has made stale."""
+    seen: list[tuple[int, int]] = []
+
+    def refuse_three(old: AppSettings, new: AppSettings) -> None:
+        seen.append((old.queue.parallel_jobs, new.queue.parallel_jobs))
+        if new.queue.parallel_jobs == 3:
+            raise PermissionError("three is refused")
+
+    async with await Reframe.create() as app:
+        patch = [
+            {"op": "test", "path": "/queue/parallel_jobs", "value": 2},
+            {"op": "replace", "path": "/queue/parallel_jobs", "value": 3},
+        ]
+        first = app.settings.update([{"op": "replace", "path": "/queue/parallel_jobs", "value": 2}])
+        second = app.settings.update(patch, check=refuse_three)
+        results = await asyncio.gather(first, second, return_exceptions=True)
+        assert isinstance(results[1], PermissionError)
+        assert seen == [(2, 3)]
+        assert app.settings.get().queue.parallel_jobs == 2
+        saved = json.loads((config / "settings.json").read_text(encoding="utf-8"))
+        assert saved["queue"]["parallel_jobs"] == 2
+
+
 @pytest.mark.parametrize(
     "change",
     [

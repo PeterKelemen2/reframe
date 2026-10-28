@@ -2189,3 +2189,332 @@ the pinned BtbN build) and MKVToolNix 101.0.
   the re-probe shows `opus` 6 channels "Japanese 5.1" (default) and `ac3` 6 channels at
   640 000 b/s "English 5.1"; the ASS tracks are copied with `forced` on "Signs & Songs" and
   `default` on "Full".
+
+### Filtergraph syntax and free filter text (S-1)
+
+Checked on 2026-10-22 with the pinned build and the Arch Linux package (both n9.0.2). The real
+ffmpeg writes the filters it parsed with `-print_graphs_file g.json -print_graphs_format json`
+(FFmpeg 8 and later); `-v debug` shows each option value (`Setting 's' to value 'max(0,1)'`).
+
+```sh
+ffmpeg -v error -f lavfi -i nullsrc=s=64x64:d=0.04 -filter_complex "<graph>" \
+  -print_graphs_file g.json -print_graphs_format json -f null -
+```
+
+| Graph | Filters FFmpeg makes |
+|-------|----------------------|
+| `hue=s='max(0,1)',hflip` | `hue` (`s` = `max(0,1)`), `hflip`: a quoted comma is not a split |
+| `hue=s=max(0\,1),hflip` | `hue` (`s` = `max(0,1)`), `hflip`: nor is an escaped comma |
+| ` eq =brightness=0.1 , hflip , ` | `eq`, `hflip`: spaces around names and separators go; a trailing `,` or `;` is accepted |
+| `null@x,'hf'l\ip` | `null` (instance `x`), `hflip`: a name loses its quotes and escapes too |
+| `[0:v]hflip [a];[a] vflip;` | `hflip`, `vflip`: labels, also after a space |
+| `hflip, [a]vflip` | the label after `, ` is read (the run then fails: `[a]` has no source) |
+| `metadata=mode=add:key=k:value='x,hflip` | `metadata` only, with `value` = `x,hflip`: a quote that is not closed takes the rest of the text, without an error |
+| `hflip\` | error `No such filter: 'hflip\'`: a backslash at the end is kept |
+| `,hflip`, `hflip,,vflip` | error `No such filter: ''` |
+| `hue=s=1]` | error `Error parsing filterchain 'hue=s=1]' around: ]` |
+| `sws_flags=bicubic;hflip` | `hflip`: a leading `sws_flags=…;` sets the scaler flags, it is not a filter |
+
+`reframe_server.filtertext.parse_graph` follows these rules. It refuses a quote that is not
+closed and a backslash at the end (FFmpeg reads them in a way the check cannot follow), and
+reads a leading `sws_flags` as a filter (which is not allowed). Asserted by
+`packages/reframe-server/tests/test_security_filtertext.py`.
+
+`ffmpeg -h filter=<name>`: only options of type `<string>`, `<dictionary>` and `<binary>` can
+hold a file name, a URL, a device or a plugin. In the pinned build, for example: `movie` /
+`amovie` `filename`; `drawtext` `fontfile`, `textfile`; `libplacebo` `lut`, `shader_cache`,
+`custom_shader_path`, `extra_opts`; `curves` `psfile`, `plot` (writes); `nnedi` `weights`;
+`deshake` `filename` (writes); `subtitles` / `ass` `filename`, `fontsdir`; `lut3d` `file`;
+`metadata` `file` (writes); `psnr` / `ssim` `stats_file` (writes); `vidstabdetect` `result`
+(writes); `signature` `filename` (writes); `sendcmd` `filename`; `zmq` `bind_address`
+(network); `frei0r` `filter_name` (a plugin); `lv2` `plugin`; `arnndn` `model`; `hwupload` /
+`hwmap` `derive_device`. No filter of the allow-list (`ALLOWED_FILTERS`) has such an option,
+in either build.
+
+**Option values read from a file.** The ffmpeg tool (not libavfilter) reads an option's value
+from a file when the option's name starts with `/`: `eq=/contrast=FILE` sets `contrast` to
+the file's contents (`-vf` and `-filter_complex` alike; the file's text appears in the error
+`Error when parsing the expression '…' for contrast`). Checked on 2026-10-22 with both builds
+(n9.0.2), a file holding `SECRET-CONTENT-123`:
+
+| Graph | Reads the file |
+|-------|----------------|
+| `eq=/contrast=F`, `lutyuv=/y=F`, `setpts=/expr=F`, `unsharp=/lx=F`, `hue=/s=F`, `drawbox=/color=F`, `scale=/w=F`, `scale=/sws_flags=F` (an option of a child object), `eq=/enable=F` (the timeline option) | yes: any option of any filter |
+| `eq='/contrast'=F`, `eq='/'contrast=F`, `eq=\/contrast=F` | yes: the options lose one level of quoting and escaping first |
+| `eq=brightness=0:/contrast=F`, `eq=1:/contrast=F` (after a value without a name), `eq= /contrast=F`, `eq=brightness=0: /contrast=F`, `eq=brightness=0:<tab>/contrast=F`, `eq=/contrast =F` | yes: spaces around the name are skipped |
+| `eq=brightness='0:/contrast=F'`, `eq=brightness=0\:/contrast=F` | yes: that quote and escape are gone before the options are split at `:` |
+| `eq@x=/contrast=F`, `eq=/contrast='F'`, `hflip,eq=/contrast=F` | yes |
+| `eq=brightness='0\:/contrast=F'`, `eq=brightness=0\\:/contrast=F` | no: the second level escapes the `:`, so `brightness` is `0:/contrast=F` |
+| `eq=\'/contrast\'=F` | no: a quote is not a name character, so the text is a value |
+| `eq=//contrast=F` | no: `Error applying option '//contrast' to filter 'eq': Option not found` |
+| `eq=contrast=/F`, `eq=enable=/F`, `eq=F` | no: a value that starts with `/` is a value |
+
+So a name with a leading `/` can only start at the beginning of the options or after a `:`
+(after the first level of unquoting), then spaces. `filtertext` refuses every `/` there, also
+in the "no" rows of the second level and `eq=//contrast`, `eq=F` (when in doubt, refuse).
+FFmpeg's expression evaluator has no function that reads a file (`man ffmpeg-utils`,
+"Expression Evaluation"); the tool's other file syntax, `-/option FILE`, is a command-line
+option, which free filter text cannot reach. Asserted by
+`packages/reframe-server/tests/test_security_filtertext.py`.
+
+### VAAPI device text (S-2, web-mode settings)
+
+Checked on 2026-10-22 with the pinned build (n9.0.2, libva 1.24, Intel iHD driver) and
+`LIBVA_MESSAGING_LEVEL=2`:
+
+```sh
+ffmpeg -hide_banner -v verbose -init_hw_device "vaapi=va:<device>" -f lavfi -i testsrc=d=0.1 -frames:v 1 -f null -
+```
+
+| `<device>` | What happens |
+|------------|--------------|
+| `/dev/dri/renderD128` | libva opens `/usr/lib/dri/iHD_drv_video.so`; the run works |
+| `/dev/dri/renderD128,driver=../../../../../tmp/…/evil` | the text after the comma is a device option: `libva: User requested driver '…'`, `Trying to open /usr/lib/dri/../../../../../tmp/…/evil_drv_video.so`, so a library named by the client is loaded (here it does not exist: `Device creation failed: -5`) |
+| `/dev/dri/renderD128,kernel_driver=i915` | accepted, the run works |
+| `/etc/passwd`, a folder | `Failed to open … as DRM device node.`, `Cannot open X11 display …`: FFmpeg opens the path, then tries it as an X11 display name |
+| `:0` | tried as an X11 display (`Cannot open X11 display :0.`) |
+| `/dev/dri/card1` | `vaGetDriverNames() failed`: a primary node does not work for VAAPI here |
+
+So web mode accepts only `/dev/dri/renderD<n>` (or empty: automatic). Asserted by
+`packages/reframe-server/tests/test_settings.py::test_a_web_client_can_only_choose_a_vaapi_render_node`.
+
+### uvicorn shutdown with a WebSocket client that does not read (S-3)
+
+Checked on 2026-10-22 with uvicorn 0.54.0 (`ws="auto"`: websockets-sansio), websockets 17.3 and
+Python 3.14 on Linux: a server whose event client paused reading after 200 messages of
+128 KiB. At shutdown uvicorn gives the app `websocket.disconnect` (1012), writes a close frame
+and calls `transport.close()`; the socket stays open while its write buffer is not empty (150 KB
+here), so the connection stays in `server_state.connections` and uvicorn waits for it without
+a limit. A second SIGINT does not help (`Server.wait_closed()` waits for every connection).
+With `timeout_graceful_shutdown=2` uvicorn stops waiting after 2 s, logs `Cancel 0 running
+task(s), timeout graceful shutdown exceeded` (ERROR) and runs the lifespan's shutdown; the
+real `reframe-server` exited 2.5 s after SIGINT. Asserted by
+`packages/reframe-server/tests/test_events.py::test_the_server_stops_while_a_client_does_not_read`.
+
+A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive buffer; one
+left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
+2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
+
+### D-0 (4a)
+
+Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,
+PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12.4), tokio
+1.54.1, util-linux 2.42.4. The spike and its scripts: `desktop/spike/README.md`.
+
+- **`PR_SET_PDEATHSIG` follows the thread that forked**, not the process: a child forked by a
+  thread that then ended got SIGTERM at once (return code -15) while the process lived on; a
+  child forked by the main thread kept running. The spike shell forks on its main thread
+  (tokio's `Command::spawn` forks on the calling thread; the shell logs `gettid()` = pid).
+- **pidfd and a reused pid**: `pidfd_open` of a process that has ended and was reaped raises
+  `ProcessLookupError`; a pidfd becomes readable when its process ends.
+  `/proc/<pid>/stat` field 22 is the start time in clock ticks (100 per second here), the same
+  unit for every process. Asserted by
+  `packages/reframe-server/tests/test_parent.py::test_the_server_and_its_encode_stop_when_the_parent_is_killed`
+  and `::test_a_process_younger_than_the_server_is_not_its_parent`.
+- **uvicorn and SIGTERM**: uvicorn 0.54 handles SIGTERM like `should_exit`: the run of the spike
+  with the death signal alone (no `--parent-pid`) ended with the job `interrupted` and its
+  `.part` file removed.
+- **PyInstaller onedir**: the bootloader runs Python in its own process (no child process;
+  `/proc/<pid>/exe` is the frozen binary). The hooks of pydantic, uvicorn, websockets and
+  langcodes collect what they need; babelfish, language_data, guessit, the `reframe` data and
+  pymediainfo need options (the table in `desktop/spike/README.md`, each with its error). The
+  pymediainfo hook's default library patterns miss the wheel's `libmediainfo.so.0`. Asserted by
+  `packages/reframe-server/tests/test_frozen_sidecar.py` (skipped without the build).
+- **guessit 4.4.0** reads `guessit/config/options.json` at its first call; without it every call
+  raises (`FileNotFoundError`), and the core reads that as "no match".
+- **Tauri**: `npx tauri build` runs `cargo build --bins --features tauri/custom-protocol
+  --release`; without that feature tauri's `build.rs` sets `cfg(dev)` and the app loads
+  `devUrl`. `generate_context!()` fails without `icons/icon.png` (`failed to open icon …`).
+  The page's origin on Linux is `tauri://localhost` (in the server's desktop CORS list).
+  `AppHandle::exit(0)` and a closed last window both reach `RunEvent::Exit`
+  (`xdotool windowquit` under XWayland).
+- **Page cache without root**: `posix_fadvise(POSIX_FADV_DONTNEED)` on every file of the onedir
+  took its cached bytes from 38 MB to 0 (`fincore`). Pages that a running process maps stay
+  (the `uv` binary of a running `uv run`, 17.9 MB). `fincore` 2.42 uses `cachestat`, which
+  refuses files the user cannot write: `fincore: failed to do cachestat:
+  /usr/lib/python3.14/os.py: Operation not permitted`.
+- **psutil 7.2.2** `Process.kill()` checks the pid and the create time before it sends the
+  signal (`_send_signal` calls `_raise_if_pid_reused`). The spike's cleanup script checks the
+  start time itself (field 22 of `/proc/<pid>/stat`, as the server's parent watch does) before
+  each SIGKILL of a process that is not its own child.
+- **A child often starts in its parent's clock tick** (2026-10-27, kernel 7.3, `SC_CLK_TCK`
+  100): a Python started through `timeout 60` had the start tick of `timeout` in 198 of 200 runs;
+  through `timeout 60 timeout 60`, the outer `timeout`'s in 177 of 200; `uv run` and its Python
+  in 4 of 20. A stand-in started just before the frozen server, not its ancestor, had the
+  server's tick (`2272227` for both) and the server refused it (`the parent process … is not
+  running`, exit 1). Asserted by
+  `packages/reframe-server/tests/test_parent.py::test_a_process_of_the_servers_clock_tick_is_its_parent_only_when_it_is_an_ancestor`.
+- **A process name with `)` and a space**: a Python started through a symlink named `a) b` has
+  `comm` `a) b` and a stat line `381433 (a) b) S 381432 …`; only the last `)` ends the name.
+  Asserted by `test_parent.py::test_a_process_younger_than_the_server_is_not_its_parent`.
+- **MediaInfo in the frozen build** (`/usr/bin/ffprobe` n9.0.2): of the fixtures, the video
+  bit rate of `anamorphic`, `hdr10-4k`, `hdr10`, `interlaced`, `letterbox`, `pgs`, `vobsub` and
+  `vfr.mkv` comes from MediaInfo (`vfr.mkv`: 483043, source `mediainfo`); a build without
+  `pymediainfo` and `libmediainfo` gives `unknown` for each, and no fixture gets a
+  `language_ietf`. `vfr.mp4` has a stream bit rate from ffprobe (489085). Asserted by
+  `test_frozen_sidecar.py::test_the_frozen_server_reads_bit_rates_with_its_bundled_mediainfo`.
+- **Tauri's event permissions**: `core:event:default` is `allow-listen`, `allow-unlisten`,
+  `allow-emit` and `allow-emit-to` (`src-tauri/gen/schemas/acl-manifests.json`, Tauri 2.12.5).
+- **Tauri's `data_directory`** (Tauri 2.12.5, wry 0.57.0): `WebviewWindowBuilder::data_directory`
+  becomes the key of wry's web context, which gives WebKitGTK a `WebsiteDataManager` with that
+  folder as its base data and its base cache directory, and `cookies` in it
+  (`wry/src/webkitgtk/web_context.rs`). Without it WebKitGTK uses its default, which here was
+  `~/.local/share/org.reframe.spike/` (the app's identifier).
+
+### D-0 (4b-i)
+
+Checked on 2026-10-27 on CachyOS (kernel 7.3), KDE Plasma 6.8.1 on Wayland (KWin 6.8.1,
+Xwayland 24.1.14), WebKitGTK `webkit2gtk-4.1` 2.54.2, GTK 3.24.52, Dolphin 26.08.2, systemd
+262 (`busctl`), Playwright 1.64.1 (Chromium 156.0.8078.4, Firefox 157.0), the system Python
+3.14.8 with PyGObject 3.58.1. The tools: `desktop/spike/README.md`, "WebKitGTK checks".
+
+- **KWin scripts over D-Bus** (`qdbus6 org.kde.KWin /Scripting`): `loadScript(path, name)`
+  then `start()` runs a plain JavaScript file; `unloadScript(name)` stops it and
+  `isScriptLoaded(name)` is then `false`; a loaded script has an object `/Scripting/Script<N>`.
+  `print()` reaches the user journal about 0.5 s late (`journalctl --user -f`); a
+  `callDBus(name, path, interface, method, text)` to a name that nobody owns is seen at once by
+  `busctl --user monitor --json=short` (the bus answers the call with an error). A
+  `callDBus` to KWin's own name is not seen on the bus.
+- **KWin placement**: KWin 6.8.1 has no `ActiveMouseScreen` setting (`strings
+  /usr/lib/libkwin.so.6.8.1` has no such key; `kreadconfig6 --file kwinrc --group Windows`
+  gives nothing for it, `Placement`, `FocusStealingPreventionLevel` or `SeparateScreenFocus`, so
+  the defaults hold: centred placement, level 1 "Low"). A new window goes to
+  `Workspace::activeOutput()`, centred in its work area. In KWin's 6.8 source,
+  `PointerInputRedirection::updatePosition` sets the active output to the one under every
+  pointer move, and `Workspace::setActiveWindow` sets it to the output of every activated
+  window, also one that a script activates. The review's run fits it: its second app window was
+  added on `DP-1` 2.3 s after the guard had given the keyboard back to the movie player there
+  (where the cursor was then is not recorded). The scripting API reads it as `workspace.activeScreen` (read only) next to
+  `workspace.cursorPos`. `workspace.windowAdded` comes before the window's
+  first frame, so `opacity = 0` there hides it until it is moved. Setting `frameGeometry` to
+  a new position alone takes effect at once; a new position together with a new size waits
+  for the client, and twice in four tries with the Tauri window it did not take effect at all
+  (the window stayed where KWin had put it, once on `DP-1`): move first, resize second.
+  `getWindowInfo(uuid)` has `x`, `y`, `width`, `height` and `pid`, but no output. Before the
+  spike's windows had `keepAbove = true` and overlapped, a drag from Dolphin never reached the
+  app (it got no `wl_data_device.enter`); with both, every drag did.
+- **Position requests**: under XWayland (`GDK_BACKEND=x11`) KWin honours the position that
+  Tauri asks for (`WebviewWindowBuilder::position(100, 100)` → frame at 100,100); on native
+  Wayland it is ignored (the window is centred on the output under the cursor). GTK under
+  XWayland also maps a 1×1 helper window at -100,-100 (class empty) when the app starts; its
+  normal window has the class `Reframe-spike`, on Wayland the app id is `reframe-spike`.
+  Playwright's Chromium takes its Wayland app id from `CHROME_DESKTOP` when that is set (VS
+  Code sets it to `com.microsoft.VSCode.desktop`); without it the class is `chromium-browser`.
+  Playwright's Firefox window: `firefox-default`. Each browser window belongs to the pid that
+  Playwright launched (`executablePath`).
+- **KWin and focus**: setting `workspace.activeWindow` from a script activates that window
+  (the scripts give the keyboard back that way); a new Tauri window is activated when it maps.
+  In KWin 6.8's `Workspace::addWaylandWindow` a new window is activated when focus stealing
+  prevention is "Low" or lower (the default here), and `windowAdded` is emitted after
+  `activateWindow`; the scripting wrapper's signals (`windowAdded`, `windowActivated`,
+  `windowRemoved`, `cursorPosChanged`, …) have nothing earlier and `activeScreen` has no
+  setter. So a script first hears of a new window in `windowActivated`, when it already has the
+  keyboard: each new spike window took it for 2 to 3 ms (the owner's `foreground_booster` log in
+  the user journal), also on `HDMI-A-1`.
+- **GTK 3 and an empty `XDG_CONFIG_HOME`** (`Gtk.Settings` in the system Python, no window):
+  with the owner's config `gtk-font-name` is `Noto Sans 10`, the theme `Breeze`, dark preferred;
+  with an empty one `Adwaita Sans 11`, `Adwaita`, light. A copy of `gtk-3.0/settings.ini` alone
+  gives the dark preference only, a copy of `dconf/user` alone the font and theme only; with
+  both the settings are the owner's.
+- **`/dev/uinput` without root** (the user has an ACL on it): a device with `EV_ABS`
+  (`ABS_X`, `ABS_Y`), `BTN_LEFT/RIGHT/MIDDLE` and bus `BUS_VIRTUAL`, set up with
+  `UI_DEV_SETUP` and `UI_ABS_SETUP` and made with `UI_DEV_CREATE`, is listed by KWin as a
+  pointer (`/org/kde/KWin/InputDevice/eventN`: `pointer` true, `touch` and `tabletTool` false,
+  `outputName` empty, `mapToWorkspace` false). KWin maps its range onto the bounding box of all
+  outputs: with `ABS_X` 0…3839 and `ABS_Y` 0…1079, value (x, y) puts the cursor at (x, y)
+  (each move read back through `workspace.cursorPosChanged`, 235 of 235 per run, within 7 ms).
+  KWin reports changes only: a move to where the cursor is gets no report. Wayland clients
+  get real input from it: pointer events in WebKitGTK (`pointerType` `mouse`) and Dolphin's
+  drag (`wl_data_device.start_drag` in `WAYLAND_DEBUG`). `UI_DEV_DESTROY` removes the device
+  (gone from `/proc/bus/input/devices`).
+- **Spectacle 6.8.1** `spectacle -b -n -u -S -o <file>` (window under the cursor) did not
+  return within 20 s and was killed. In case it had left KWin waiting for a pick, the spike
+  right-clicked once inside its own window afterwards. The spike takes no shot with Spectacle.
+- **Dolphin 26.08.2** with new XDG folders (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
+  `XDG_CACHE_HOME`, `XDG_DATA_HOME`): `dolphin --new-window --select <paths>` starts a process
+  of its own with the items selected; it writes `dolphinrc`, `dolphinstaterc`,
+  `user-places.xbel` there and leaves `~/.config/dolphinrc` and `~/.local/state/dolphinstaterc`
+  alone (mtimes before and after each run). With `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1` AT-SPI
+  gives each item's extents relative to the client area (below KWin's 28 px title bar); an
+  item whose name is not UTF-8 is named with U+FFFD. Dolphin offers `text/uri-list`,
+  `application/x-kde4-urilist`, `application/vnd.portal.filetransfer` and (not for the name
+  that is not UTF-8) `application/x-kde-source-id`. Its `text/uri-list` is percent-encoded
+  UTF-8, one URI per line with CRLF, in view order; for the file `bad\xffname.mkv` it sends
+  `bad%EF%BF%BDname.mkv` (U+FFFD): the byte is lost in Dolphin, before any drop target. A drop
+  of the selection onto its own item opened no menu (KWin added no window).
+- **Tauri's drag-drop event (2.12.5, wry 0.57.0)**: wry turns each URI into a path by cutting
+  `file://` and percent-decoding with `decode_utf8_lossy`; Tauri emits `tauri://drag-enter`
+  (with paths) and `tauri://drag-drop` to the page, and the window event
+  `WindowEvent::DragDrop` in Rust. The handler returns `true`, so WebKitGTK gets no DOM `drop`
+  (the page sees `dragenter` and `dragleave`). Paths with spaces, `Ünnepi film – 2.mkv`,
+  `日本語.mkv`, three files and a folder arrive byte for byte, on Wayland and XWayland alike.
+- **WebKitGTK's DOM drop** (Tauri's handler off): `dataTransfer.types` is
+  `["text/uri-list", "text/html"]`, `files` is empty, `getData("text/uri-list")` and
+  `getData("text/plain")` are empty, `text/html` is one styled `<a>` with the URI of the first
+  item only (also for three files).
+- **WebKitGTK snapshot**: `webkit_web_view_get_snapshot` (`WebViewExt::snapshot`,
+  `SnapshotRegion::Visible`) through Tauri's `with_webview` gives a cairo image surface of the
+  CSS viewport at the device scale (1280×800 at scale 1), written with
+  `ImageSurface::write_to_png`.
+- **CSP in the app**: Tauri adds four `sha256-…` sources to `script-src` of the policy in
+  `tauri.conf.json` and leaves `style-src 'self' 'unsafe-inline'` as it is; PrimeVue's styled
+  mode works under it, `eval` is refused (`securitypolicyviolation`, `script-src`).
+- **PrimeVue 4.5.5 `Tab`** is a `<button>` (`as` defaults to `BUTTON`) that takes the user
+  agent's button font: WebKitGTK
+  `600 13px Noto Sans`, Chromium `600 13.3333px Arial`, Firefox `600 13.3281px sans-serif`
+  (headless) or `Noto Sans` (headed). Each tab, and so the tab bar, is 48 px high in
+  Chromium and 51 px in WebKitGTK and Firefox.
+  Headless Chromium hides scrollbars; headed Chromium draws classic 15 px ones, WebKitGTK and
+  Firefox overlay ones (0 px).
+
+### D-0 (4b-ii)
+
+Checked on 2026-10-27 on the same set-up as 4b-i (KDE Plasma 6.8.1 on Wayland, WebKitGTK
+2.54.2, Playwright 1.64.1: Chromium 156.0.8078.4, Firefox 157.0), with the frozen sidecar and
+`/usr/bin/ffmpeg`. The magnifier check: `desktop/spike/MAGNIFIER.md`.
+
+- **The preview frame route**: `POST /api/preview/frames` answers JSON with a signed URL
+  (`/api/preview/frames/<key>.png?exp=…&sig=…`), not the bytes; the URL needs no token and gives
+  401 without its signature. For `hdr10-4k.mkv` at 2.5 s the PNG is 3840×2160 `rgb24`
+  (`ffprobe`), with `cICP` 01 01 00 01 (BT.709 primaries and transfer, full range), `cHRM` and
+  `gAMA` chunks.
+- **Which tone mapping a frame gets depends on timing**: with the same source and timestamp,
+  six fresh sidecars used zscale + tonemap (1 169 110 bytes) and four used libplacebo
+  (2 559 598 bytes), with different keys. `libplacebo` counts only after its Vulkan run test
+  has passed (`CapabilitySnapshot.usable_filter`), so a frame request soon after the start
+  gets zscale.
+- **Frame clocks**: `performance.now()` and `requestAnimationFrame` timestamps step by 1 ms in
+  WebKitGTK and Firefox and by 0.1 ms in Chromium (the smallest step in a busy loop). In the
+  Tauri app on a 60 Hz output, WebKitGTK's frame callbacks come at 62.2 Hz (16.08 ms) with the
+  real pointer (a full redraw on about 87 % of them) and when the page's own `setTimeout` events
+  draw nothing; at 60.4 Hz only when those events lead to a redraw. Chromium, headed and
+  headless, runs at 60.0 Hz. Headed Firefox misses single frames (33–34 ms) at about 0.5 %, also
+  when the page draws nothing. Headless Firefox misses none.
+- **The first frame interval of a run** (from the callback the run asked for to the next one)
+  was 0.02 to 7 ms in 32 of 117 runs, all of them page-driven runs of Firefox or of WebKitGTK
+  without the DMA-BUF renderer; why is not known. The statistics leave every run's first
+  interval out.
+- **`WEBKIT_DISABLE_DMABUF_RENDERER=1`** makes WebKitGTK draw the canvas on the CPU: 3.3 ms
+  per redraw of the 4K bitmap scaled to 860×484 against 0.008 ms to queue (1.05 ms with a read
+  back) with the default renderer. The page still holds 60 Hz.
+- **Pointer events per second with the real pointer** (uinput moves at about 125 per second):
+  WebKitGTK 53.7–55.0 per run with its default (DMA-BUF) renderer, fewer than its 62.2 frame
+  callbacks per second (11.6 to 13.7 % of them come without a new position, so the page redraws
+  53.7–55.0 times per second); 60.3–60.5 without the DMA-BUF renderer. Chromium 60.2–60.5 and
+  Firefox 59.3–60.2, one per frame. Playwright's
+  `page.mouse.move` reaches 60 per second in Chromium and Firefox, each call waiting for its
+  frame. A `setTimeout` of 8 ms runs at about 12 ms in WebKitGTK (84 events per second).
+- **Firefox fired no `pointermove` for the uinput move that brought the cursor into its
+  window** (2 of 2 tries), only for later moves. WebKitGTK and Chromium fired one for that
+  first move (5 of 5). Once, WebKitGTK fired none for a move 0.4 s after the entering one
+  either (1 of 8 calibrations in the app), so the check tries up to four points.
+- **Colour conversion in a canvas**: headless Chromium converts a PNG tagged `cICP` BT.709 to
+  sRGB when it decodes it with `createImageBitmap` (a channel of 164 reads back as 159 with
+  `getImageData`); with `{ colorSpaceConversion: "none" }`, or without the colour chunks, it
+  reads 164. Firefox reads 164 in every case.
+- **Playwright and `XDG_CACHE_HOME`**: Playwright looks for its browsers in
+  `$XDG_CACHE_HOME/ms-playwright`; a temporary `XDG_CACHE_HOME` needs
+  `PLAYWRIGHT_BROWSERS_PATH`. Playwright's headless Chromium is `chrome-headless-shell`
+  (`chromium_headless_shell-1248`), not the headed binary.
+- **Node keeps running while a timer is pending**: a Playwright script whose waits leave
+  `setTimeout` timers behind does not exit until they fire, even after `browser.close()`.

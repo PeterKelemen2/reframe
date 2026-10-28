@@ -8,12 +8,14 @@ import sys
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 from pydantic import TypeAdapter
 
 from reframe.models import (
     JobDraft,
+    JobSettings,
     JobState,
     JobTemplate,
     JsonPatchOp,
@@ -281,3 +283,36 @@ async def test_derive_merge_and_overrides_by_path_text(
     presets = [r.job.video.preset for r in resolution.rows if r.job is not None]
     assert presets[1] == "veryslow"
     assert presets[0] != "veryslow"
+
+
+async def test_a_check_sees_each_resolved_job_before_it_is_named_or_validated(
+    app: Reframe, fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The server refuses a job whose patch brings in a path outside its roots: nothing may
+    look at that job's files before the check has seen it, with the overrides applied."""
+    files = season(fixture_media, tmp_path, 2, 1)
+    patch = {
+        str(files[0]): OPS.validate_python(
+            [{"op": "replace", "path": "/video/preset", "value": "veryslow"}]
+        )
+    }
+    named: list[JobSettings] = []
+    real = app.jobs.name_job
+
+    async def name_job(job: JobSettings, *args: Any, **kwargs: Any) -> Any:
+        named.append(job)
+        return await real(job, *args, **kwargs)
+
+    monkeypatch.setattr(app.jobs, "name_job", name_job)
+    checked: list[str] = []
+
+    def refuse(job: JobSettings) -> None:
+        checked.append(job.video.preset or "")
+        raise PermissionError(job.source.path)
+
+    with pytest.raises(PermissionError):
+        await app.batch.resolve(None, files, overrides=patch, check=refuse)
+    with pytest.raises(PermissionError):
+        await app.batch.resolve_batch(None, files, overrides=patch, check=refuse)
+    assert checked == ["veryslow", "veryslow"]
+    assert named == []

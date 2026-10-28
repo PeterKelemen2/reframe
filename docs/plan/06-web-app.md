@@ -39,10 +39,21 @@ routers are thin. Each handler calls one facade method and maps the result.
       [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
       `endpoint_file` (the path of `server.json`; on by default in every mode),
       `idle_exit` (seconds; off by default) and `owner_only`; and `allowed_hosts` (S-1).
+- [ ] `parent_pid` (`--parent-pid`; off by default): the server watches that process and,
+      when it ends, stops as `POST /api/system/shutdown` does, with a hard exit when the stop
+      does not end in time. A reused pid is not taken for the parent. The desktop shell
+      passes it ([07 §Sidecar lifecycle](07-desktop-app.md#sidecar-lifecycle),
+      [decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch.md)).
 - [ ] Entry point: start uvicorn with **one worker**. In desktop mode, print one JSON line to
       stdout when ready: `{"event":"ready","port":53817}`. The token is `REFRAME_TOKEN` when it
       is set (the desktop shell sets it), else a random one per run; `server.json` holds it
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 4).
+
+- [ ] Logs go to stderr (stdout holds only the ready line). SIGINT ends with exit code 130,
+      an invalid option or configuration with 2. uvicorn waits at most 2 s for open
+      connections before the lifespan closes the facade
+      ([decision 0047](../decisions/0047-event-websocket.md) "Follow-up (review)"). `GET /api/health` needs no credentials
+      ([decision 0045](../decisions/0045-m3-server-order-and-contract.md)).
 
 Done when: `uv run reframe-server` starts and `GET /api/health` returns version info.
 
@@ -53,29 +64,52 @@ Done when: `uv run reframe-server` starts and `GET /api/health` returns version 
     `<video>` URLs, a short-lived signed query parameter (`?sig=`) is used, because those
     elements cannot send headers. The WebSocket gets the token in its first message.
   - `password` (web, single user): login form → HTTP-only, SameSite=Strict session cookie.
-    The password hash (argon2 or scrypt) is **not** in the settings: it lives in
+    The password hash (stdlib scrypt, [decision 0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md))
+    is **not** in the settings: it lives in
     `<config dir>/auth.json` (mode `0600`), written by `reframe-server --set-password` and
     `PUT /api/auth/password` (which needs the current password). `GET/PUT /api/settings`
     never read or write it ([decision 0043](../decisions/0043-plan-review-before-m3.md)
-    item 3).
+    item 3). Sessions live in memory (30 days; a restart ends them); wrong passwords are
+    limited to 5 per client (IPv4 address or IPv6 /64) per minute, then 429.
   - `none`: allowed only when bound to `127.0.0.1`. A startup warning says so.
   - **Local token** ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)
     item 2): the random token in `<data>/server.json` (mode `0600`) is accepted as
     `Authorization: Bearer` in every mode, next to the mode's own login. A CLI on the same
     machine (also through `docker exec`) uses it.
+  - Routes (no credentials needed but where named): `GET /api/auth/status` (`{mode,
+    authenticated}`: the frontend's choice between a login form and the token),
+    `POST /api/auth/login`, `POST /api/auth/logout`, `PUT /api/auth/password` (credentials
+    and the current password) ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
+  - Credentials are checked **before a request body is read** (FastAPI reads and parses the
+    body before its dependencies run): a body without credentials is a 401, except a login,
+    whose body may have at most 64 KiB (else 413) (0046 "Follow-up (review)").
 - [ ] **Path jail**: every path from the client is resolved (`Path.resolve(strict=False)`, which
       follows symlinks) and must be inside `media_roots` (for reading) or `output_roots` (for
       writing). Web mode enforces this. Desktop mode allows the whole filesystem of the
-      current user.
+      current user. In every mode a path that is not absolute or holds a NUL is a 400. A
+      job's paths are found by walking the model: `output.*` is written, the rest is read,
+      and an in-place edit also writes its source
+      ([0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)). Web mode also
+      refuses a job whose free filter text (`filters.*.custom`) names a filter outside an
+      allow-list, has a `;` or a link label, cannot be read safely, in a `custom` preset
+      would start another filter, or has an option name that starts with `/` (the ffmpeg
+      tool then reads the value from a file) (403 `filter.not_allowed`; 0046 "Follow-up" and
+      "Follow-up (review)").
 - [ ] **Host check** (against DNS rebinding), in every mode: a request or WebSocket upgrade
       whose `Host` is not a loopback name (`127.0.0.1`, `localhost`, `[::1]`, any port) or
       in `allowed_hosts` is refused. `allowed_hosts` defaults to the loopback names, plus the
-      bound address and the machine's host name when the server binds another address; a
-      reverse proxy's name is added by hand. A WebSocket `Origin` must be the server's own or
-      a Tauri origin ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 3).
-- [ ] CORS: off in web mode (same origin). In desktop mode, allow only the Tauri origins
-      (`tauri://localhost`, `http://tauri.localhost`).
-- [ ] Security headers on static responses (CSP, `X-Content-Type-Options`, frame-ancestors none).
+      bound address and the machine's host name when the server binds another address (on a
+      wildcard bind, `0.0.0.0` or `::`, every IP address); a reverse proxy's name is added by
+      hand, and a list that is set replaces these defaults. A WebSocket `Origin` must be the
+      server's own or a Tauri origin ([decision 0043](../decisions/0043-plan-review-before-m3.md)
+      item 3); so must the `Origin` of a `POST`, `PUT`, `PATCH` or `DELETE` that has one
+      (`cors_origins` and pages of `allowed_hosts` names count too;
+      [0046](../decisions/0046-s1-login-sessions-jail-and-request-checks.md)).
+- [ ] CORS: off in web mode (same origin) unless `cors_origins` names origins. In desktop mode,
+      allow the Tauri origins (`tauri://localhost`, `http://tauri.localhost`) and
+      `cors_origins`.
+- [ ] Security headers on every response, a 500 included (CSP, `X-Content-Type-Options`,
+      frame-ancestors none). The docs page `/api/docs` gets a CSP that allows its CDN script and style.
 
 Done when: tests prove that `../` traversal, symlink escape, absolute paths outside the roots,
 a missing or wrong token and a foreign `Host` are all rejected, that `GET /api/settings`
@@ -95,54 +129,63 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 |------|---------------|---------|
 | System | `GET /api/health` | Version, `api_version`, `instance` (random id of this run), uptime |
 | | `GET /api/system` | Tool statuses, versions, platform, mode |
-| | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` | Capability statuses, re-detection |
-| | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only) |
+| | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` → 202 | Capability statuses, re-detection (a task: hardware test encodes take seconds; [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)) |
+| | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
-| Tasks | `GET /api/tasks` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks, one task's state and result, cancel |
-| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only) |
-| Sources | `POST /api/sources` `{paths}` → 202 | Probe files/folders (task) |
+| Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown`. The server's config, data and cache folders show as `<config>`, `<data>`, `<cache>` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
+| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
+| Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error). Every file found in a folder passes the read jail too: a link out of the roots is an error, never probed ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md#follow-up-review-2026-10-22)) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
 | | `POST /api/sources/{id}/subtitle-scan` → 202 | Event counts, forced flags |
 | | `POST /api/sources/{id}/streams/{index}/loudness` `{start?, duration?}` → 202 | EBU R128 loudness of one track |
-| Preview | `POST /api/preview/frames` `{source_id, count \| timestamps}` | Frame list (timestamps + URLs) |
+| Preview | `POST /api/preview/frames` `{source_id, count \| timestamps}` | Frame list (timestamps + signed URLs; the request waits for the frames, a client that goes away cancels them) |
 | | `GET /api/preview/frames/{key}.png` | Frame image (cached, ETag) |
 | | `POST /api/preview/render` `{job, timestamp}` | Output frame with filters → URL |
 | | `POST /api/preview/cropdetect` `{source_id}` → 202 | Crop detection per sample |
 | | `POST /api/preview/clip` `{job, start, seconds}` → 202 | Encoded preview clip |
-| | `GET /api/preview/clips/{id}` | Clip file (HTTP Range support) |
+| | `GET /api/preview/clips/{id}/link` | A signed clip URL for `<video>` (one hour) |
+| | `GET /api/preview/clips/{id}` | Clip file (HTTP Range: one range → 206, outside the file → 416) |
 | | `GET /api/preview/cache` · `DELETE /api/preview/cache` | Size of the frame and clip cache; clear it |
-| Definitions | `GET /api/definitions` | Encoders, option schemas, filters, containers (cached, ETag) |
-| | `GET /api/languages` | Language list for the picker (cached) |
-| | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked) |
-| Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset |
-| | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]` |
-| | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type) |
-| | `POST /api/jobs/geometry` `{job}` | Pipeline header values |
+| Definitions | `GET /api/definitions` | `{definitions, naming_variables}`: encoders, option schemas, filters, containers, the naming variables (cached, ETag; `304` on `If-None-Match`) |
+| | `GET /api/languages` | Language list for the picker (cached, ETag) |
+| | `GET /api/definitions/encoders/{id}/options?q=` | Option search of the advanced panel (`search_options`, ranked); an unknown encoder is `404` |
+| Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset. Web mode: an output outside the output roots adds `output.folder_required` |
+| | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]`. Web mode: an output outside the output roots is the error `output.folder_required` (fixes: a fixed output folder in the settings; with one output root, the job's output moved into it), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-2026-10-22-web-mode-output-folder-and-override-jail)). An in-place edit of a source the server may not write is the error `inplace.not_allowed` (fix: write a new file in the first output root), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-review-2026-10-22)) |
+| | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type); a job with errors is `422 jobs.invalid` with the issues ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md)) |
+| | `POST /api/jobs/geometry` `{job}` | Pipeline header values: `{source, geometry}` (`geometry` `null` for a copied video) |
 | | `POST /api/jobs/explain` `{source_id, template?, container?}` | Why each track was selected (`TrackDecision` with reasons) |
-| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux) |
-| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]` |
+| | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft`; an in-place edit in web mode gets `inplace.not_allowed` instead (as `validate`) |
+| | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]`; an output outside the output roots or a refused in-place edit is `422 jobs.invalid` (as `plan`) |
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
-| | `POST /api/batch/derive` `{job, source_id, sections}` | `JobTemplate` from a single-file job |
-| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues |
-| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): groups, matrices, the name checks over every group, earlier outputs left out |
+| | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
+| | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail inside the batch service, before it is named or validated. A row whose output is outside the output roots gets `output.folder_required` |
+| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out; overrides and rows as `resolve` |
 | | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
-| Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD |
-| | `POST /api/presets/{id}/default` · `POST /api/presets/import` · `GET /api/presets/export` | |
+| Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue (web mode: the store's failures name no server folder) |
+| | `POST /api/presets/{id}/default` · `POST /api/presets/import?on_conflict=` · `GET /api/presets/export?ids=` | Import: the export file as the body (at most 4 MiB), a report with the issues. Export: `{document, issues}` |
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
-| | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids}` | Track decisions with reasons, for the live preview |
-| Naming | `POST /api/naming/preview` `{naming, source_ids, job?}` | Name source + reason, parsed fields with positions, rendered output paths, issues. The variable list comes with `GET /api/definitions` |
-| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot, add (server validates again). `attach`: a client id; the jobs follow that client's event connection (S-7) |
+| | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source |
+| Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues (web mode: `output.folder_required` with the settings fix). The variable list comes with `GET /api/definitions` |
+| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open. Outside a job's `settings`, the server's folders show as in the task answers (`log_path`: `<data>/…`) ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
-| | `POST /api/queue/{start\|pause\|stop}` · `PUT /api/queue/order` | Global actions. `start` takes an optional `job_ids`: only those jobs start |
-| | `GET /api/queue/{id}/log?from=` | Log (incremental) |
-| | `PUT /api/queue/when-done` | When-done action |
-| Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown; cancel it |
+| | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
+| | `GET /api/queue/{id}/log?from=` | Log (incremental, by byte offset: `{text, next, more}`) |
+| | `PUT /api/queue/when-done` | When-done action. A running countdown for another action is cancelled |
+| Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown (`{pending}`); cancel it (`{cancelled}`). Only the queue starts one |
 | Settings | `GET/PUT /api/settings` | App settings |
 
-- [ ] Stable `operationId`s (`sources_probe`, `jobs_validate`, …). The generated client uses
-      them as function names.
+- [ ] Stable `operationId`s (`sources_probe`, `jobs_validate`, …): `<tag>_<handler name>`. The
+      generated client uses them as function names.
+- [ ] Errors: `{type, title, status, detail, code, issues, errors}`; `code` is a stable dotted
+      identifier; a request validation error names the field, never its value. A `source_id`
+      is a hash of the absolute path; the server keeps the probed sources in memory, so the
+      client probes again after a restart. In web mode a settings patch cannot name a
+      program (`/tools/…`; removing one is allowed), `encoders.vaapi_device` may only be a
+      render node (`/dev/dri/renderD<n>`) or empty, and a folder in it must be below an
+      output root; the checks run under the settings store's lock ([decision 0045](../decisions/0045-m3-server-order-and-contract.md),
+      [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)).
 
 Done when: an httpx `AsyncClient` test suite covers every route against a facade that runs on
 fixture media and a fake FFmpeg, and every public method of the facade
@@ -150,14 +193,58 @@ fixture media and a fake FFmpeg, and every public method of the facade
 `Reframe.power`, `Reframe.tasks`) is reached by a route or listed here as not exposed, with
 the reason ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 2).
 
+### Not exposed
+
+Every other public member of the facade is reached by a route.
+`tests/test_facade_coverage.py` reads which members each route reaches from the router code,
+and fails on a public member that no route reaches and this table does not list, and on a
+row whose member a route reaches or that no longer exists
+([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
+
+| Member | Why no route reaches it |
+|--------|-------------------------|
+| `Reframe.create`, `Reframe.close`, `queue.close`, `power.close`, `tasks.close`, `tools.close`, `capabilities.close`, `sources.close`, `events.close` | The app's lifespan creates and closes the facade; a desktop client stops the server with `POST /api/system/shutdown` |
+| `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `power.closed`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
+| `settings.path` | A server folder: a client cannot use it, and an answer must not show it (the queue and task routes read `Reframe.config_dir`, `data_dir` and `cache_dir` only to write them as `<config>`, `<data>`, `<cache>`) |
+| `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
+| `batch.definitions`, `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
+| `jobs.detection_wait` | A setting of the service: how long validation waits for encoder detection |
+| `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
+| `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
+| `capabilities.closest_available` | Validation uses it inside the core |
+| `presets.find` | The routes take ids; `jobs/draft`, `explain` and the batch routes accept a name or an id through the facade's own lookup |
+| `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
+| `sources.store`, `sources.update` | The scans store what they measured themselves |
+| `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
+| `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |
+| `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
+| `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
+| `power.countdown`, `power.executor` | The countdown's length and end are in `pending.seconds_left` and `pending.deadline`; the executor is the operating system's mechanism |
+| `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
+| `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
+| `presets.rename` | `PUT /api/presets/{id}` with the new name |
+| `presets.duplicate` | `GET /api/presets/{id}`, then `POST /api/presets` |
+
 ## S-3 Event WebSocket
 
-- [ ] `WS /api/events`. The client authenticates in its first message and then receives
-      events as JSON.
+- [ ] `WS /api/events`. The client authenticates in its first message
+      (`{"type": "auth", "token": …}`; in password mode the session cookie may stand in for the
+      token). A wrong first message, or none within 5 s, closes the connection with 4401. The
+      server answers `{"type": "hello", "instance", "heartbeat"}` and then sends each event as
+      JSON: `{"type": "event", "seq": n, "event": {…}}`
+      ([decision 0047](../decisions/0047-event-websocket.md)).
 - [ ] **Coalescing**: `job.progress` and `task.progress` are coalesced per id (only the latest
-      is kept, max 4 per second). `job.log` lines are batched every 250 ms.
-- [ ] Heartbeat ping every 15 s. Each event has a sequence number. After a reconnect, the
-      client calls the `GET` snapshots (`/api/queue`, `/api/system/encoders`) to resync.
+      is kept, max 4 per second). `job.log` lines are batched every 250 ms. What is held back
+      for a job or task goes out before the event that ends it.
+- [ ] Heartbeat every 15 s: a `{"type": "heartbeat"}` message (a browser cannot see WebSocket
+      pings). Each event has a sequence number (from 1 on each connection, no gaps). After a
+      reconnect, or a `resync` event, the client calls the `GET` snapshots (`/api/queue`,
+      `/api/system/encoders`) to resync.
+- [ ] A client that cannot keep up gets a `resync` and stays connected. Shutdown closes every
+      connection with 1001 within about 1 s, also one whose client does not read. The server
+      process stops (SIGINT, `POST /api/system/shutdown`) within uvicorn's graceful-shutdown
+      limit of 2 s plus the lifespan's close, also while such a client is connected
+      ([decision 0047](../decisions/0047-event-websocket.md), follow-up).
 
 Done when: a test with a slow consumer shows bounded memory and latest-value delivery.
 
@@ -169,9 +256,17 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
 
 ## S-5 OpenAPI → TypeScript
 
-- [ ] `scripts/gen-api.sh`: export `openapi.json` from `create_app()` without starting a server,
-      then run `openapi-typescript` → `frontend/src/api/schema.d.ts`.
-- [ ] CI check: regenerate and fail on any diff (`Q-2.3`).
+- [x] `scripts/gen-api.sh` (`npm run gen:api` in `frontend/`): export `openapi.json` from
+      `create_app()` without starting a server (`scripts/export-openapi.py`; the shell's
+      `REFRAME_*` variables are ignored), then run `openapi-typescript` (pinned in
+      `frontend/package.json`) → `frontend/src/api/schema.d.ts`, committed and left out of
+      `oxfmt`. The same input gives the same bytes.
+- [x] The document's components also hold the `WS /api/events` messages: `AuthMessage` (the
+      client's first message) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by
+      `type`), with every core event model. OpenAPI has no WebSocket operation, so there is no
+      path for it ([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
+- [x] CI check: `scripts/gen-api.sh --check` regenerates into a temporary folder and fails with
+      the diff (`Q-2.3`, the `api-contract` job on Ubuntu).
 
 ## S-6 Deployment
 

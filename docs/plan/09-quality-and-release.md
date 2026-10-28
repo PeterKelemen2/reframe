@@ -18,8 +18,10 @@
       Windows 10 or 11 by another route: by default a Windows machine or VM that the owner
       provides; a push to a private remote only if the owner allows it (01 open question 5).
       Done when: the commands pass on Windows, or each failure is fixed or recorded; the
-      date, the machine and the result are in `docs/status.md`. It runs in M3 (D-0 needs
-      Windows) and again before M5 and M10 are done.
+      date, the machine and the result are in `docs/status.md`. It runs once, in the
+      [Windows testing phase](08-roadmap.md#windows-testing-phase) at the start of M10
+      ([decision 0053](../decisions/0053-linux-first-windows-testing-phase.md)); no earlier
+      milestone waits for it.
 
 ## Q-2 Test strategy
 

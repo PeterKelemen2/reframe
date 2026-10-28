@@ -6,7 +6,16 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Peter Kelemen" }]
-dependencies = ["reframe"]
+dependencies = [
+    "fastapi>=0.159.1",
+    "pydantic-settings>=2.16.1",
+    "reframe",
+    "uvicorn>=0.54.0",
+    "websockets>=17.3",
+]
+
+[project.scripts]
+reframe-server = "reframe_server.__main__:main"
 
 [build-system]
 requires = ["hatchling>=1.32.4"]

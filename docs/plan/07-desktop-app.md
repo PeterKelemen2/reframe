@@ -120,18 +120,29 @@ read-only. The first-run screen shows which binary is in use and where it came f
 
 ## Steps
 
-### D-0 Spike (do this before the frontend is far along)
-- [ ] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
-      endpoint, on Windows and Linux.
-- [ ] Measure cold start to "ready" (target < 2 s from SSD).
-- [ ] Prove cleanup: kill the Tauri process from Task Manager / `kill -9`, then check that no
-      sidecar or FFmpeg process remains.
-- [ ] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
-      WebKitGTK.
-- [ ] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+Linux first ([decision 0053](../decisions/0053-linux-first-windows-testing-phase.md)): every
+step is built and checked on Linux. The Windows code is written to this plan and mock-tested
+on Linux; its parts marked *(Windows testing phase)* are checked in the
+[Windows testing phase](08-roadmap.md#windows-testing-phase) of M10.
 
-Done when: a short written result goes into `docs/decisions/0001-desktop-shell.md` and confirms
-or revisits this choice.
+### D-0 Spike (do this before the frontend is far along)
+The spike lives in `desktop/spike/`, committed and not built by CI; D-1 and D-2 may reuse
+or delete it ([decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch.md)).
+
+- [x] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
+      endpoint, on Linux. On Windows: *(Windows testing phase)*.
+- [x] Measure cold start to "ready" (target < 2 s from SSD).
+- [x] Prove cleanup: `kill -9` the Tauri process, then check that no sidecar or FFmpeg process
+      remains. The same with a kill from Task Manager: *(Windows testing phase)*.
+- [x] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
+      WebKitGTK.
+- [x] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+
+Linux result (2026-10-28): [decision 0001](../decisions/0001-desktop-shell.md). The Windows items
+stay open for the Windows testing phase.
+
+Done when: a short written result for Linux goes into `docs/decisions/0001-desktop-shell.md`
+and confirms or revisits this choice. It lists the Windows items as not verified.
 
 ### D-1 Project scaffold
 - [ ] `desktop/src-tauri` (Tauri 2). `tauri.conf.json`: `devUrl` = Vite dev server,
@@ -156,7 +167,7 @@ or revisits this choice.
 - [ ] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
 - [ ] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
 - [ ] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
-      sidecar to it (`windows` crate).
+      sidecar to it (`windows` crate). Checked on Windows: *(Windows testing phase)*.
 - [ ] The quit flow with the running-jobs dialog.
 - [ ] **Find the owner first**
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3),
@@ -187,8 +198,8 @@ or revisits this choice.
 - [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
       [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on the hosts that are
       available, aiming at Intel (VAAPI + QSV), AMD (VAAPI, AMF on Windows) and NVIDIA
-      (NVENC), on Windows and on at least two Linux distros (Debian/Ubuntu and Fedora or
-      Arch). Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
+      (NVENC), on at least two Linux distros (Debian/Ubuntu and Fedora or Arch) and on
+      Windows *(Windows testing phase)*. Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
 - [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
@@ -199,6 +210,7 @@ or revisits this choice.
 ### D-8 Packaging, signing, updates
 - [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
       Code signing is strongly recommended (SmartScreen warns about unsigned installers).
+      Installed and run on Windows: *(Windows testing phase)*.
 - [ ] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
       `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
 - [ ] Updater: signed `latest.json` in GitHub Releases.
@@ -206,7 +218,7 @@ or revisits this choice.
 ### D-9 Desktop smoke tests
 - [ ] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
       ready, a fixture opens from argv, a job is queued and finishes, and quitting leaves no
-      orphan processes.
+      orphan processes. On Windows: *(Windows testing phase)*.
 
 ## Risks
 

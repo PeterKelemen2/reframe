@@ -73,8 +73,10 @@ commands on Ubuntu and Windows.
 - Every subprocess goes through `reframe.tools.run*` (timeout, cancel, output limit, tree kill).
 - Expected failures are data (`ValidationIssue`, status enums), not exceptions.
 - The command builder is pure (no I/O). Pydantic models in `reframe.models` are the only schema.
-- Windows code paths (Job Objects, `CREATE_NO_WINDOW`, `SetThreadExecutionState`) are written
-  to the plan and unit-tested with mocks on Linux.
+- Linux is the primary platform: a step is done when it passes on Linux. Windows code paths
+  (Job Objects, `CREATE_NO_WINDOW`, `SetThreadExecutionState`) are still written to the plan
+  and unit-tested with mocks on Linux; they run on Windows only in the Windows testing phase
+  of M10 (decision 0053).
 - Never commit generated media. `scripts/make-testdata.py` creates the fixtures. The name
   corpus `testdata/names.toml` and recorded probe JSON in `testdata/probes/` are committed.
 - Use current stable dependency versions, pinned in `uv.lock` / `frontend/package-lock.json`.
