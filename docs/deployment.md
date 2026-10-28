@@ -15,7 +15,7 @@ repository. The choices are recorded in
 | Stage | What it does |
 |-------|--------------|
 | `frontend` | `npm ci` and `npm run build:web` (Node 24) |
-| `python` | uv and a uv-managed Python (the version of `.python-version`) |
+| `python` | uv and a uv-managed CPython 3.14.8 (`.python-version` names 3.14, the version CI tests) |
 | `tools` | `scripts/fetch-tools.py` downloads the pinned FFmpeg of `tools/ffmpeg.toml`, checks its size and SHA-256 before it extracts anything, and runs `ffmpeg -version` and `ffprobe -version` |
 | `app` | `uv sync --frozen` installs `reframe[cli,mediainfo]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
 
@@ -30,7 +30,10 @@ The runtime image is Debian 13 (trixie) slim with:
 - the web frontend in `/opt/reframe/frontend/` (`REFRAME_STATIC_DIR`);
 - `tini` as process 1, and `reframe-entrypoint`, which starts the server as `PUID:PGID`.
 
-Every package version and base image is pinned in the Dockerfile.
+The base images are pinned by tag and digest, the Debian packages that the Dockerfile names
+by exact version, the Python packages by `uv.lock` and the npm packages by
+`package-lock.json`. The dependencies of those Debian packages are not pinned: they come from
+the Debian archive on the day of the build.
 
 ### Build
 
@@ -59,10 +62,29 @@ buildx, where `docker compose build` uses the classic builder by itself).
    The image declares no `VOLUME`: mount all four. A folder that is not mounted is lost with
    the container.
 
+   Make the host folders before the first start, as the user of `PUID:PGID` (or `chown`
+   them to it). Docker makes a missing folder as `root`, and then the server cannot write to
+   `/output`: each job fails with `output.not_writable`.
+
+   ```sh
+   mkdir -p /srv/reframe/config /srv/reframe/data /srv/encoded
+   ```
+
+   The example publishes port 8765 on every address of the host. Docker's published ports
+   pass by host firewalls such as ufw (Docker's
+   [Packet filtering and firewalls](https://docs.docker.com/engine/network/packet-filtering-firewalls/)),
+   so the port is open to every network that the host is on. To limit it, publish on one
+   address: `192.168.1.10:8765:8765` for one LAN address, `127.0.0.1:8765:8765` for a
+   reverse proxy on the host ([Reverse proxy in Docker](#reverse-proxy-in-docker)).
+
 2. Set `PUID` and `PGID` to the user and group that must own the files (`id -u`, `id -g`).
    The server runs as that user. At start, `/config` and `/data` are given to it
    (`chown -R`, only when the folder's owner is another one). `/media` and `/output` are not
    changed: that user must be able to read `/media` and write `/output`.
+
+   With `docker run --user` (or `user:` in compose) the entrypoint changes nothing, so
+   `/config` and `/data` must already be writable by that user. If `/data` is not, the
+   server starts and the container is `healthy`, but it saves no job.
 
 3. Start it, then set the login password:
 
@@ -100,6 +122,10 @@ buildx, where `docker compose build` uses the classic builder by itself).
 | `REFRAME_CONFIG_DIR`, `REFRAME_DATA_DIR`, `REFRAME_CACHE_DIR` | `/config`, `/data`, `/data/cache` | |
 | `REFRAME_STATIC_DIR` | `/opt/reframe/frontend` | The web UI |
 | `PUID`, `PGID` | `1000` | The user the server runs as |
+
+The `HEALTHCHECK` calls the port of `REFRAME_PORT`. To change the port in the container, set
+`REFRAME_PORT`, not `--port` in the command: with `--port` the container becomes
+`unhealthy`. To use another port on the host, change only the published one (`9000:8765`).
 
 List values are JSON, because pydantic-settings reads lists from the environment as JSON:
 `REFRAME_MEDIA_ROOTS='["/media", "/mnt/archive"]'`. A second media folder must also be
@@ -156,6 +182,10 @@ There the container's root is your own user on the host. Set `PUID=0` and `PGID=
 entrypoint then starts the server without changing the user, and the files on the host
 belong to you.
 
+In rootful Docker, `PUID=0` runs the server as the host's root, with every capability that
+Docker gives the container. The entrypoint warns: `PUID=0 runs the server as root on the
+host`. It knows rootful Docker from the container's user map, which maps each id to itself.
+
 ## Bare metal
 
 ### Install
@@ -191,8 +221,11 @@ The web UI is not in the wheel. Build it and put it where the server can find it
 
 ```sh
 cd frontend && npm ci && npm run build:web
-cp -r dist ~/.local/share/reframe-web
+rm -rf ~/.local/share/reframe-web && cp -r dist ~/.local/share/reframe-web
 ```
+
+Remove the old folder first: when the target folder exists, `cp -r` copies into
+`reframe-web/dist/`, and the server keeps the old UI.
 
 ### Set the password
 
@@ -261,13 +294,22 @@ Run `reframe-server` from a terminal. A Windows service wrapper comes later.
   machine: allow a few minutes (`proxy_read_timeout 300s`).
 - **Body size.** A job is about 3–4 KB of JSON, so adding a whole batch to the queue can
   pass nginx's default limit of 1 MB. Allow more, for example `client_max_body_size 16m`.
-- **Client address and HTTPS.** uvicorn reads `X-Forwarded-For` and `X-Forwarded-Proto` only
-  from the addresses in `FORWARDED_ALLOW_IPS` (default `127.0.0.1,::1`). Set it to the
-  proxy's address or network when the proxy is not on the same host, for example
-  `FORWARDED_ALLOW_IPS=172.16.0.0/12` for a proxy container on a Docker network. Then the
-  login limit (5 wrong passwords per minute) counts each client, not the proxy, and the
-  session cookie gets `Secure` behind HTTPS. Do not trust a network that clients can reach
-  directly.
+- **Client address and HTTPS.** The login limit (5 wrong passwords per minute) counts each
+  client address, and the session cookie gets `Secure` only over HTTPS. Behind a proxy the
+  server sees the proxy's address and plain HTTP, unless it reads the proxy's
+  `X-Forwarded-For` and `X-Forwarded-Proto`. uvicorn reads them only from the addresses in
+  `FORWARDED_ALLOW_IPS` (default `127.0.0.1,::1`). Trust the proxy's own address, and no
+  other:
+  - When the server does not trust the proxy, all clients share one login limit: five wrong
+    passwords from anyone lock out everyone for a minute, the owner too. The cookie gets no
+    `Secure` behind HTTPS.
+  - When the server trusts an address that a client can connect from, that client names any
+    address in `X-Forwarded-For`, a new one for each try, so the limit never stops it. With
+    `X-Forwarded-Proto: https` it gets a `Secure` cookie over plain HTTP.
+
+  On bare metal with the proxy on the same host, the default is correct: the proxy connects
+  from 127.0.0.1. For a proxy on another machine, set `FORWARDED_ALLOW_IPS` to its address.
+  In Docker the default does not apply: see [Reverse proxy in Docker](#reverse-proxy-in-docker).
 
 nginx:
 
@@ -285,6 +327,7 @@ server {
     client_max_body_size 16m;
 
     location / {
+        # A proxy container on the compose network: proxy_pass http://reframe:8765;
         proxy_pass http://127.0.0.1:8765;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -308,3 +351,85 @@ reframe.example.org {
     reverse_proxy 127.0.0.1:8765
 }
 ```
+
+### Reverse proxy in Docker
+
+In a container the proxy does not connect from 127.0.0.1, so the server trusts no proxy until
+you set `FORWARDED_ALLOW_IPS`. Set it to the one address that the proxy connects from, and
+keep every other client away from the server's port. Do not trust a range, such as
+`172.16.0.0/12`: then the host and the containers in that range can name any client. Use one
+of these two set-ups in `docker/compose.yml`. The subnet `172.30.87.0/24` is an example: use
+one that no other network of the host uses (`ip route`, `docker network inspect`). A fixed
+subnet keeps the trusted address the same when Compose makes the network again
+(`docker compose down` removes it).
+
+**A proxy on the Docker host** (nginx or Caddy installed on the host,
+`proxy_pass http://127.0.0.1:8765`). Publish the port on 127.0.0.1 only, and trust the
+gateway of the network: a connection from the host to a published port comes from the
+gateway.
+
+```yaml
+x-reframe: &reframe
+  # … the rest of the example
+  ports:
+    - "127.0.0.1:8765:8765"
+  environment:
+    FORWARDED_ALLOW_IPS: "172.30.87.1"
+    REFRAME_ALLOWED_HOSTS: '["reframe.example.org"]'
+    # … PUID, PGID, TZ
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.87.0/24
+          gateway: 172.30.87.1
+```
+
+A client on the LAN cannot reach the port. Each process on the host can connect from the
+gateway and so name any client, as on bare metal from 127.0.0.1. Do not publish the port on
+another address while the gateway is trusted: every connection that Docker's port
+forwarding passes on, over IPv6 for example, also comes from the gateway.
+
+**A proxy container in the same compose file.** Delete the `ports` lines of the Reframe
+services: only the proxy publishes a port. Give the proxy a fixed address and trust that
+address. `ip_range` keeps the addresses that Docker gives out by itself in the upper half of
+the subnet, so no other container gets the proxy's address.
+
+```yaml
+x-reframe: &reframe
+  # … the rest of the example, with no ports
+  environment:
+    FORWARDED_ALLOW_IPS: "172.30.87.10"
+    REFRAME_ALLOWED_HOSTS: '["reframe.example.org"]'
+    # … PUID, PGID, TZ
+
+services:
+  # … reframe and reframe-nvidia as in the example
+
+  proxy:
+    image: nginx:1.31.8-alpine-slim
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /srv/reframe/certs:/etc/nginx/certs:ro
+    networks:
+      default:
+        ipv4_address: 172.30.87.10
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.87.0/24
+          ip_range: 172.30.87.128/25
+          gateway: 172.30.87.1
+```
+
+Name the gateway: with `ip_range` and no `gateway`, Docker takes the first address of the
+range. In `nginx.conf` the `proxy_pass` is `http://reframe:8765`. The host connects to the
+server from the gateway and the other containers from their own addresses: the server
+ignores their `X-Forwarded-*` headers. The proxy sees the clients that reach it over
+IPv6, or from the host, at the gateway's address too, so they share one login limit.

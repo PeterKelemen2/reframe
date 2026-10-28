@@ -2424,6 +2424,45 @@ uv 0.13.5), with the image of `docker/Dockerfile` and no `/dev/dri` in any conta
   commands; `--with-executables-from` takes the package name of a path given with `--with`.
   `systemd-analyze --user verify` accepts the unit of `docs/deployment.md`.
 
+Checked again on 2026-10-28 for the review of S-6 (same Docker and Compose, nginx
+1.31.8-alpine-slim, util-linux 2.41.5 `setpriv` and Debian's `dash` in the image):
+
+- **The client address that the container sees.** A connection from the host to a port
+  published on `127.0.0.1` comes from the gateway of the container's network (`172.17.0.1`
+  on the default bridge, `172.30.87.1` on a compose network with that fixed gateway). So does
+  each connection that Docker's port forwarding passes on: nginx in a container saw
+  `172.30.87.1` for requests from the host to its port on `127.0.0.1` and on `[::1]`. A
+  container on the default bridge could not connect to a container of another bridge network
+  (timed out). A port published on `127.0.0.1` refused the host's LAN address and `[::1]`.
+- **`ip_range` without `gateway`**: Docker took the first address of the range as the gateway
+  (`172.30.87.128` for `ip_range: 172.30.87.128/25`); with `gateway: 172.30.87.1` the first
+  container got `172.30.87.128`.
+- **uvicorn takes the last untrusted address of `X-Forwarded-For`**, so nginx's
+  `$proxy_add_x_forwarded_for` (the client's header, then the address nginx saw) gives the
+  real client. Through nginx with `FORWARDED_ALLOW_IPS` set to the proxy's one address, a
+  client that sent a new `X-Forwarded-For` with each wrong password got 429 at the 6th try,
+  and another client still logged in (200, `Secure` cookie). A direct client got 429 at the
+  6th try too, and no `Secure` with `X-Forwarded-Proto: https` over plain HTTP. With
+  `FORWARDED_ALLOW_IPS=172.16.0.0/12`, a client on the host through the published port got
+  12 × 401 (never 429) and a `Secure` cookie over plain HTTP; without the variable five wrong
+  passwords through a proxy on the host gave every client 429.
+- **A missing host folder of a bind mount** is made by Docker as `root:root`. The entrypoint
+  gives `/config` and `/data` to `PUID`; `/output` stays root's, and a job failed with
+  `output.not_writable`. Docker's documentation says that published ports pass by ufw (not
+  checked here: no root).
+- **`setpriv` and `chown` read ids as decimal**: `--reuid=01000` and `chown 01000:010` give
+  1000 and 10. `--reuid=00` stays root with every capability of the container (`CapEff:
+  00000000a80425fb`). A rootful container's `/proc/self/uid_map` is `0 0 4294967295`;
+  `unshare --user --map-root-user` gives `0 1000 1`. In `dash`, under `set -e`, an assignment
+  from a command substitution that exits 2 ends the script with 2.
+- **`docker run --user 4321:4321`** gives `HOME=/`. With `/config` and `/data` owned by
+  another user (mode 0755) the server starts and is `healthy`, but logs "the jobs of this
+  server are not saved" and cannot write its cache. `reframe-server --port 9000` as the
+  command makes the container `unhealthy` (the `HEALTHCHECK` calls `REFRAME_PORT`);
+  `REFRAME_PORT=9000` is `healthy`.
+- **`cp -r dist target`** into an existing `target` copies into `target/dist/`; the files of
+  the first copy stay in `target/`.
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,

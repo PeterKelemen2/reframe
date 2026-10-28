@@ -13,20 +13,34 @@ if [ "$#" -eq 0 ]; then
     exit 2
 fi
 
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
-# PUID=0 is for rootless Docker and Podman, where the container's root is the host user.
-if [ "$(id -u)" != 0 ] || [ "$PUID" = 0 ]; then
+if [ "$(id -u)" != 0 ]; then
     exec "$@"
 fi
-for value in "$PUID" "$PGID"; do
-    case "$value" in
+
+# Leading zeros are removed: setpriv reads "00" as 0, and the checks below compare text.
+number() {
+    case "$1" in
     '' | *[!0-9]*)
-        echo "reframe-entrypoint: PUID and PGID must be numbers, not '$value'" >&2
+        echo "reframe-entrypoint: PUID and PGID must be numbers, not '$1'" >&2
         exit 2
         ;;
     esac
-done
+    digits=${1#"${1%%[!0]*}"}
+    echo "${digits:-0}"
+}
+PUID=$(number "${PUID:-1000}")
+PGID=$(number "${PGID:-1000}")
+
+# PUID=0 is for rootless Docker and Podman, where the container's root is the host user. A
+# uid map that maps every id to itself means that the container's root is the host's root.
+if [ "$PUID" = 0 ]; then
+    if read -r inside outside count </proc/self/uid_map &&
+        [ "$inside:$outside:$count" = 0:0:4294967295 ]; then
+        echo "reframe-entrypoint: PUID=0 runs the server as root on the host;" \
+            "set PUID and PGID to the user that owns the files (id -u, id -g)" >&2
+    fi
+    exec "$@"
+fi
 
 for dir in /config /data; do
     mkdir -p "$dir"

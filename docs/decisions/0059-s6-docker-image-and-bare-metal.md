@@ -130,3 +130,70 @@ QSV and NVIDIA NVENC in Docker are not verified until such a host is available
   says what this record decided (no `VOLUME`, the paths for `uv tool install` until the
   packages are published, the non-free Intel driver) and that the "Done when" waits for the
   GPU run.
+
+## Follow-up (review), 2026-10-28
+
+An independent review of S-6 found one major problem, four minor ones and some nits. All are
+fixed. What Docker, uvicorn, `setpriv` and `cp` did is in
+[testdata/README.md](../../testdata/README.md), "Docker image and deployment (S-6, task D)",
+the part checked again on 2026-10-28.
+
+- **F2 (major): the reverse-proxy notes were wrong for Docker.** This replaces the
+  `FORWARDED_ALLOW_IPS` part of item 11. A proxy on the Docker host reaches the container
+  from the network's gateway, not from 127.0.0.1, so with the old notes the server trusted no
+  proxy: five wrong passwords from anyone locked out every client, the owner too, and the
+  cookie had no `Secure`. The old example `FORWARDED_ALLOW_IPS=172.16.0.0/12` let a client on
+  the published port name any `X-Forwarded-For` (12 wrong passwords, never 429) and get a
+  `Secure` cookie over plain HTTP. The compose example published 8765 on every address, past
+  ufw. Now `docs/deployment.md` says what goes wrong when the proxy is not trusted and when
+  more than the proxy is trusted. A new section, "Reverse proxy in Docker", gives two set-ups,
+  each with a fixed subnet: a proxy on the host (`127.0.0.1:8765:8765`, trust the gateway
+  `172.30.87.1`), and a proxy container (no port for Reframe, the proxy at `172.30.87.10`,
+  `ip_range` for the other containers, trust that address). It also says never to trust a
+  range. The compose example says this next to `ports`. Proof (real containers, no GPU, the
+  nginx block of the docs): through the proxy, a client that sent a new `X-Forwarded-For`
+  with each wrong password got 429 at the 6th try. Another client then logged in (200,
+  `Secure`). In the container set-up, a container that went past the proxy and the host (the
+  gateway) each got 429 at the 6th try, and no `Secure` with `X-Forwarded-Proto: https`. In
+  the host set-up, the LAN address and `[::1]` refused the connection, and a container of
+  another network timed out. The same runs with the old notes gave the reviewer's result. No
+  pytest: the behaviour is Docker's and uvicorn's, not Reframe code. The check also found
+  that `ip_range` without `gateway` moves the gateway to the start of the range, so the docs
+  name the gateway.
+- **F4 (minor): `test_deploy.py` let data-loss changes through.** Two new tests. The first
+  checks that the image's config, data and cache folders, as the core resolves them with
+  `HOME=/` (`docker run --user`), are inside the folders that the entrypoint gives to `PUID`,
+  and that the compose example mounts those folders. It catches the reviewer's mutations
+  (data dir `/var/lib/reframe`, config and cache moved or removed), a `/data` that the
+  entrypoint does not hand over, and a compose example without the `/data` mount. The second
+  test asks the harness's password-mode app, without credentials, for the `HEALTHCHECK` URL
+  path, and expects 200. It catches `/api/healthz` and a route that needs a login.
+- **F5 (minor): a missing host folder became root's.** The docs now say to make the host
+  folders first, as `PUID:PGID`. Proof: with only the media folder present, `/output` was
+  `root:root` and the job failed with `output.not_writable`. After `mkdir -p` the encode
+  finished.
+- **F6 (minor): a second `cp -r dist ~/.local/share/reframe-web` kept the old UI.** The docs
+  now remove the folder first, and say why. Proof: two stand-in builds copied the old way
+  left build 1's `index.html`; the new way left build 2's only.
+- **F7 (minor): the entrypoint compared `PUID` as text.** `PUID=00` took the `setpriv` path
+  and ran as root with every capability. A `PUID` with leading zeros (`01000`) walked
+  `/config` and `/data` at every start. The entrypoint now checks both numbers before it
+  compares them, removes leading zeros, and warns on stderr when `PUID=0` runs in a container
+  whose user map maps each id to itself (the container's root is the host's root). Rootless
+  Docker and Podman map it to the host user, so they get no warning. A warning, not a
+  refusal, because the user map is a guess (nested containers, Docker Desktop's VM), and
+  `PUID=0` must be set on purpose. Four tests run the script with stand-in `id`, `stat`,
+  `chown` and `setpriv`. `PUID=00` gives the warning and no `setpriv` (on the old script it
+  ran `setpriv --reuid=00`). Under `unshare --user --map-root-user`, `PUID=0` gives no
+  warning. `PUID=01000` gives `--reuid=1000` and no `chown` (on the old script, both
+  `chown -R 01000:1000` lines). `PUID=1000x` gives exit 2. The image's `dash` gave the same
+  results: `PUID=00` and `PUID=0` warn and run as root, `01000` runs as 1000.
+- **F8 (nits)**, in the docs: the Python is CPython 3.14.8 (`.python-version` names 3.14);
+  the Dockerfile pins the Debian packages that it names, not their dependencies; the
+  `HEALTHCHECK` uses `REFRAME_PORT`, so the port is changed with `REFRAME_PORT`, not
+  `--port` (checked: `--port 9000` became `unhealthy`, `REFRAME_PORT=9000` `healthy`); with
+  `docker run --user`, `/config` and `/data` must be writable by that user (checked: with a
+  `/data` the user cannot write, the container was `healthy` but saved no job).
+
+Still a proposal for the lead (outside S-6): `REFRAME_FORWARDED_ALLOW_IPS` as a Reframe
+setting, so that the trusted proxy is named next to `allowed_hosts`.

@@ -313,8 +313,10 @@ to a `npm run build:web` output. Files under `assets/` get
 `VOLUME`: the four folders are mount points, so a missing mount is not hidden by an anonymous
 volume. It sets `auth: password`, the media and output roots and `REFRAME_STATIC_DIR`; the
 Intel driver is Debian's non-free build (the free one has no H.264/HEVC encode before Ice
-Lake). Until the packages are on PyPI, `uv tool install` takes the paths of a checkout. The
-"Done when" waits for the GPU run on the owner's desktop.
+Lake). Until the packages are on PyPI, `uv tool install` takes the paths of a checkout.
+Behind a reverse proxy in Docker the server trusts `X-Forwarded-*` from the proxy's one
+address only (`FORWARDED_ALLOW_IPS`, the 0059 follow-up). The "Done when" waits for the GPU
+run on the owner's desktop.
 
 Done when: `docker compose up` on a Linux host with a GPU (the owner's: AMD) shows its VAAPI
 encoders as available and encodes a fixture file. Intel QSV and NVIDIA NVENC in Docker are
