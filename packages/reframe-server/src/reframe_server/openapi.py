@@ -8,19 +8,23 @@ from typing import Annotated, Any
 from fastapi import FastAPI
 from pydantic import Field, RootModel
 
-from reframe_server.events import AuthMessage, EventMessage, Heartbeat, Hello
+from reframe_server.events import AuthMessage, DetachMessage, EventMessage, Heartbeat, Hello
 
-__all__ = ["ServerMessage", "install"]
+__all__ = ["ClientMessage", "ServerMessage", "install"]
+
+
+class ClientMessage(RootModel[Annotated[AuthMessage | DetachMessage, Field(discriminator="type")]]):
+    """A message of ``WS /api/events`` from the client; ``type`` tells which. The first one is
+    an ``AuthMessage``."""
 
 
 class ServerMessage(
     RootModel[Annotated[Hello | EventMessage | Heartbeat, Field(discriminator="type")]]
 ):
-    """A message of ``WS /api/events`` from the server; ``type`` tells which. The client's
-    first message is an ``AuthMessage``."""
+    """A message of ``WS /api/events`` from the server; ``type`` tells which."""
 
 
-async def _event_messages(message: AuthMessage) -> ServerMessage:
+async def _event_messages(message: ClientMessage) -> ServerMessage:
     raise NotImplementedError
 
 

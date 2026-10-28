@@ -1501,7 +1501,8 @@ export interface components {
             position?: number | null;
             /**
              * Attach
-             * @description The ``client_id`` of the caller's event connection, which must be open.
+             * @description The ``client_id`` of the caller's event connection, which must be open: the jobs are
+             *     cancelled when that connection ends without a ``detach`` message.
              */
             attach?: string | null;
         };
@@ -2090,8 +2091,8 @@ export interface components {
          */
         AuthMessage: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "auth";
             /**
@@ -2576,6 +2577,12 @@ export interface components {
              */
             help: string;
         };
+        /**
+         * ClientMessage
+         * @description A message of ``WS /api/events`` from the client; ``type`` tells which. The first one is
+         *     an ``AuthMessage``.
+         */
+        ClientMessage: components["schemas"]["AuthMessage"] | components["schemas"]["DetachMessage"];
         /** ClipRequest */
         ClipRequest: {
             job: components["schemas"]["JobSettings"];
@@ -2979,6 +2986,18 @@ export interface components {
              * @default false
              */
             integer: boolean;
+        };
+        /**
+         * DetachMessage
+         * @description Keeps the jobs attached to this connection when it ends, also jobs attached after it.
+         *     The server reads a client's messages in order, so one sent before the close counts.
+         */
+        DetachMessage: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "detach";
         };
         /**
          * DimensionSettings
@@ -4151,6 +4170,13 @@ export interface components {
              *     reconnect.
              */
             heartbeat: number;
+            /**
+             * Client Id
+             * @description Random id of this connection, for ``attach`` in ``POST /api/queue``: the jobs added
+             *     with it are cancelled when the connection ends without a ``detach`` message, unless the
+             *     server is the one that stops.
+             */
+            client_id: string;
         };
         /**
          * JobDraft
@@ -5879,8 +5905,7 @@ export interface components {
         };
         /**
          * ServerMessage
-         * @description A message of ``WS /api/events`` from the server; ``type`` tells which. The client's
-         *     first message is an ``AuthMessage``.
+         * @description A message of ``WS /api/events`` from the server; ``type`` tells which.
          */
         ServerMessage: components["schemas"]["Hello"] | components["schemas"]["EventMessage"] | components["schemas"]["Heartbeat"];
         /**

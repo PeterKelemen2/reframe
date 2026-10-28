@@ -2295,6 +2295,204 @@ A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive 
 left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
 2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
 
+### Request paths that reach the static files (S-4)
+
+Checked on 2026-10-28 with uvicorn 0.54.0 (h11 0.16.0: httptools is not installed, so `http="auto"`
+is h11), httpx 0.28.1, Starlette 1.9.0 and Python 3.14 on Linux, with raw request lines sent on
+a socket:
+
+| Request target | `scope["path"]` the app sees |
+|----------------|------------------------------|
+| `/../etc/passwd` | `/../etc/passwd` (dot segments are not removed) |
+| `/%2e%2e/b` | `/../b` |
+| `/x%2f..%2fy` | `/x/../y` (`%2f` becomes a separator) |
+| `/a\..\b` | `/a\..\b` (unchanged; a separator only on Windows) |
+| `/a%00b` | `/a\x00b`; `Path.resolve()` then raises `ValueError` |
+| `/%5c%5chost%5cshare%5cx.js` | `/\\host\share\x.js` (`%5c` becomes `\`) |
+| `/%5c/host/share/x.js` | `/\/host/share/x.js` |
+| `/C:/Windows/win.ini` | `/C:/Windows/win.ini` |
+
+On Windows such a path leaves the folder before any check (read in `ntpath.py` and `pathlib` of
+Python 3.14.8 and checked with `PureWindowsPath` on Linux on 2026-10-28; not run on Windows):
+
+- The join drops the folder: `PureWindowsPath("C:/srv/web") / "\\\\host\\share\\x.js"` is
+  `\\host\share\x.js`; `\/host/share/x.js` gives the same UNC path, `C:/Windows/win.ini` gives
+  `C:\Windows\win.ini`, and `\\.\pipe\name` stays a named pipe.
+- `Path.resolve()` is `os.path.realpath`. On Windows that is `ntpath.realpath`, which calls
+  `nt._getfinalpathname` (`ntpath.py` lines 674 and 709) and so opens the path: for a UNC path an
+  SMB connection with the user's credentials. On Linux `ntpath.realpath` is only `abspath`.
+- `posixpath.realpath` without `strict` ignores every `OSError`; `ntpath.realpath` raises a
+  Windows error that is not in its list of expected ones (`_getfinalpathname_nonstrict`).
+- `ntpath.isreserved` (Python 3.13+, pure string code on every OS) first removes the drive or UNC
+  part (`splitroot`), then is true for a name with a control character (NUL among them),
+  `"*:<>?|`, a trailing dot or space, or a DOS device name, also with an extension (`CON`,
+  `nul.txt`, `COM1`, `CONIN$`). `aux-Ab12.js` is not reserved. So the drive and UNC forms are
+  refused by their `:` and `\`, apart from it.
+
+httpx removes literal dot segments from a URL before it sends it (`/a/../b` becomes `/b`), but
+keeps `%2e%2e`. So a traversal test sends its request line on a socket to a live uvicorn
+(`packages/reframe-server/tests/test_static.py::test_no_path_leaves_the_folder`).
+
+Starlette's router calls `Router.default` only after no route matched (also not partly, which
+would give 405) and no slash redirect applied. Inside an app it raises `HTTPException(404)`,
+which the app's handler turns into the problem answer; for a WebSocket it closes the connection
+(uvicorn answers 403).
+
+`npm run build:web` (Vite 8.3.4) writes `dist/index.html` and `dist/assets/index-<hash>.js` /
+`.css` only (the frontend has no `public/` folder). The real `reframe-server` with
+`REFRAME_STATIC_DIR=frontend/dist` served it; the headless Chromium shell
+(`chromium_headless_shell-1248`, `--dump-dom`) loaded `/queue` and the Vue app mounted under the
+server's CSP with no refused resource.
+
+### Local owner mode: uvicorn start-up failure, binds and addresses (S-7, task A)
+
+Checked on 2026-10-28 with uvicorn 0.54.0, httpx and Python 3.14 on Linux, with the real
+`reframe-server`:
+
+- **A lifespan that fails at start-up ends the process with 3.** `uvicorn.Server.startup`
+  runs `sys.exit(STARTUP_FAILURE)` (3) when the lifespan's start-up fails, and also when the
+  bind fails. The `SystemExit` leaves the task of `server.serve()` and stops the event loop
+  (`Task exception was never retrieved … exception=SystemExit(3)`), so code after
+  `await server.serve()` does not run. Caught inside the coroutine that awaits
+  `server.serve()`, it ends only that task, which is what `serve()` does. Asserted by
+  `packages/reframe-server/tests/test_owner.py::test_owner_only_exits_75_against_a_held_lock_and_writes_nothing`
+  and `test_app.py::test_a_server_whose_port_is_taken_exits_1`.
+- **Starlette logs the whole traceback** of a lifespan that fails at start-up (uvicorn logs
+  the `lifespan.startup.failed` message at ERROR): 121 lines for `StoreBusy`, because FastAPI
+  nests the lifespan once for each of the 18 included routers.
+- **Which address reaches which bind** (`--port 0`; the port from `server.json`; httpx):
+
+  | `--host` | Listening sockets | `127.0.0.1` | `[::1]` | `localhost` |
+  |---|---|---|---|---|
+  | `127.0.0.1` | `127.0.0.1` | yes | refused | yes |
+  | `::1` | `::1` | refused | yes | yes |
+  | `localhost` | `::1` and `127.0.0.1` on two different ports | yes (the published port was the IPv4 socket's) | refused | yes |
+  | `0.0.0.0` | `0.0.0.0` | yes | refused | yes |
+  | `::` | `::` only (asyncio sets `IPV6_V6ONLY`) | refused | yes | yes |
+  | `172.17.0.1` | `172.17.0.1` | refused | refused | refused |
+
+  `localhost` resolves to `::1`, then `127.0.0.1` (`getent ahosts localhost`), and httpx tries
+  both. Clients use `127.0.0.1` (decision 0056).
+- **`mkstemp` makes the file `0600`**: `server.json` written through
+  `reframe.settings.JsonDocumentFile` has mode `0o100600` with the default umask. Asserted by
+  `test_owner.py::test_the_endpoint_file_names_the_listening_server_until_it_stops`.
+- **The end of an idle exit** (`--mode desktop --idle-exit 1`, seconds after `server.json`
+  appeared, polled every 2 ms): the port refuses at 1.081, `server.json` is gone at 1.181 and
+  `queue.lock` is free at 1.181 (uvicorn closes the listener, sleeps 0.1 s and waits up to 2 s
+  for open connections before the lifespan runs). An event client that had not authenticated
+  when the idle exit came was closed after 1.08 s with code 1012, as an authenticated one is
+  at SIGINT: uvicorn's shutdown closes every WebSocket before the lifespan closes the hub.
+  Recorded in decision 0056 (follow-up) for C-17.
+- **A `queue.lock` that is a folder** cannot be opened (`os.open` with `O_RDWR | O_CREAT`:
+  `IsADirectoryError`, errno 21): the core's `queue.unreadable` path, used by
+  `test_owner.py::test_owner_only_exits_1_when_the_lock_cannot_be_used`.
+
+### uvicorn WebSocket ends (S-7 attachments)
+
+Checked on 2026-10-28 with uvicorn 0.54.0 (`ws="auto"`: websockets-sansio), websockets 17.3 and
+Python 3.14.8 on Linux: read in `uvicorn/protocols/websockets/websockets_sansio_impl.py`, and
+the `websocket.disconnect` message that the hub's listener reads printed in the tests below.
+
+| How the connection ends | The app's `websocket.disconnect` |
+|-------------------------|----------------------------------|
+| The client closes with a close handshake | the client's code (`{"code": 1000, "reason": ""}`) |
+| The client's socket goes away (`transport.abort()`), also while the server's send waits | `{"code": 1005}` (`connection_lost` after the handshake) |
+| uvicorn shuts down (`should_exit`) | `{"code": 1012}` (`shutdown()`); the client sees close code 1012 |
+
+- `connection_lost` puts the disconnect in the app's queue before it wakes a send that waits
+  for the transport; that send then raises `ClientDisconnected` (Starlette:
+  `WebSocketDisconnect`). `handle_close` also queues the disconnect before it closes the
+  transport. So when a send fails because the client left, a receive already has the
+  disconnect.
+- One connection's frames reach the app in the order they came: a text message sent before
+  the close frame is received before the disconnect.
+
+Asserted by `packages/reframe-server/tests/test_attach.py`
+(`test_a_server_stop_leaves_the_attached_jobs_to_the_queue`: close code 1012 and the job not
+cancelled; `test_a_detach_keeps_the_jobs_of_its_own_connection`: a `detach` and then the
+close) and `packages/reframe-server/tests/test_events.py`
+(`test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled`).
+
+### Docker image and deployment (S-6, task D)
+
+Checked on 2026-10-28 on the owner's desktop (Docker 29.9.2 without buildx, Compose 5.6.1,
+uv 0.13.5), with the image of `docker/Dockerfile` and no `/dev/dri` in any container:
+
+- **No buildx.** `DOCKER_BUILDKIT=1 docker build` fails ("BuildKit is enabled but the buildx
+  component is missing"). `docker compose build` falls back to the classic builder by itself
+  (`Step 1/2 …`, `Successfully built`). The classic builder takes `ARG` before `FROM`, an
+  image reference with a digest, and `COPY --from=<image>`. The whole build took 75 s.
+- **Debian 13's Mesa** is built with `-Dvideo-codecs="all"` (`debian/rules` of mesa
+  25.0.7-2+deb13u1, line 154), so `radeonsi_drv_video.so` in `mesa-va-drivers` has the H.264,
+  HEVC and AV1 encoders. Debian's free `intel-media-va-driver` has only some encoders before
+  Ice Lake (its package description); `intel-media-va-driver-non-free` has them all.
+  `libmfx-gen1.2` (25.1.4) is the oneVPL GPU runtime. `tzdata` comes with these packages.
+- **The BtbN shared build** needs only glibc and `libgcc_s` of the system (`ldd bin/ffmpeg`):
+  libva is linked in, and finds Debian's drivers through `LIBVA_DRIVERS_PATH`, which tool
+  discovery sets to `/usr/lib/x86_64-linux-gnu/dri`.
+- **A clean stop ends with SIGTERM.** uvicorn raises the signal again after its shutdown, so
+  `reframe-server` dies of SIGTERM: exit 143 in Docker (`tini` reports 128 + 15; the image
+  maps it to 0 with `tini -e 143`) and in a shell. `docker compose stop` during an x265 encode
+  took 0.3–0.4 s; the `.part` file was removed and the job was `interrupted` at the next start.
+- **`docker exec` runs as root**, also when the main process dropped to `PUID`: the image
+  links `reframe` and `reframe-server` to the entrypoint, so `--set-password` through
+  `docker compose exec` writes `/config/auth.json` as `PUID:PGID`.
+- **`setpriv`** (util-linux, in the slim image) changes the user without a passwd entry.
+  Docker containers have `CAP_MKNOD`, so the entrypoint's group logic was checked with
+  `mknod` stand-ins under `/dev/dri` (groups 987 and 44 added, a node of group 0 left out).
+- **pydantic-settings reads list settings as JSON**: `REFRAME_MEDIA_ROOTS='["/media"]'` gives
+  `media_roots == [Path("/media")]` in the real container (an output outside it is 403
+  `path.outside_roots`). Asserted by `packages/reframe-server/tests/test_deploy.py`.
+- **uvicorn 0.54 trusts `X-Forwarded-*` only from `FORWARDED_ALLOW_IPS`** (default
+  `127.0.0.1,::1`; CIDR networks work). Through nginx 1.31.8 on a Docker network, with the
+  proxy sending `X-Forwarded-Proto: https`: without the variable the session cookie had no
+  `Secure`; with `FORWARDED_ALLOW_IPS=172.16.0.0/12` it had. Without `REFRAME_ALLOWED_HOSTS`
+  the proxy's host name got 400 `request.host`; with it, `GET /`, the login and the
+  `/api/events` WebSocket (`hello`, then a `heartbeat` within 20 s) worked through the proxy.
+- **`uv tool install './packages/reframe[cli]' --with ./packages/reframe-server
+  --with-executables-from reframe-server`** makes one tool environment (`reframe`) with both
+  commands; `--with-executables-from` takes the package name of a path given with `--with`.
+  `systemd-analyze --user verify` accepts the unit of `docs/deployment.md`.
+
+Checked again on 2026-10-28 for the review of S-6 (same Docker and Compose, nginx
+1.31.8-alpine-slim, util-linux 2.41.5 `setpriv` and Debian's `dash` in the image):
+
+- **The client address that the container sees.** A connection from the host to a port
+  published on `127.0.0.1` comes from the gateway of the container's network (`172.17.0.1`
+  on the default bridge, `172.30.87.1` on a compose network with that fixed gateway). So does
+  each connection that Docker's port forwarding passes on: nginx in a container saw
+  `172.30.87.1` for requests from the host to its port on `127.0.0.1` and on `[::1]`. A
+  container on the default bridge could not connect to a container of another bridge network
+  (timed out). A port published on `127.0.0.1` refused the host's LAN address and `[::1]`.
+- **`ip_range` without `gateway`**: Docker took the first address of the range as the gateway
+  (`172.30.87.128` for `ip_range: 172.30.87.128/25`); with `gateway: 172.30.87.1` the first
+  container got `172.30.87.128`.
+- **uvicorn takes the last untrusted address of `X-Forwarded-For`**, so nginx's
+  `$proxy_add_x_forwarded_for` (the client's header, then the address nginx saw) gives the
+  real client. Through nginx with `FORWARDED_ALLOW_IPS` set to the proxy's one address, a
+  client that sent a new `X-Forwarded-For` with each wrong password got 429 at the 6th try,
+  and another client still logged in (200, `Secure` cookie). A direct client got 429 at the
+  6th try too, and no `Secure` with `X-Forwarded-Proto: https` over plain HTTP. With
+  `FORWARDED_ALLOW_IPS=172.16.0.0/12`, a client on the host through the published port got
+  12 × 401 (never 429) and a `Secure` cookie over plain HTTP; without the variable five wrong
+  passwords through a proxy on the host gave every client 429.
+- **A missing host folder of a bind mount** is made by Docker as `root:root`. The entrypoint
+  gives `/config` and `/data` to `PUID`; `/output` stays root's, and a job failed with
+  `output.not_writable`. Docker's documentation says that published ports pass by ufw (not
+  checked here: no root).
+- **`setpriv` and `chown` read ids as decimal**: `--reuid=01000` and `chown 01000:010` give
+  1000 and 10. `--reuid=00` stays root with every capability of the container (`CapEff:
+  00000000a80425fb`). A rootful container's `/proc/self/uid_map` is `0 0 4294967295`;
+  `unshare --user --map-root-user` gives `0 1000 1`. In `dash`, under `set -e`, an assignment
+  from a command substitution that exits 2 ends the script with 2.
+- **`docker run --user 4321:4321`** gives `HOME=/`. With `/config` and `/data` owned by
+  another user (mode 0755) the server starts and is `healthy`, but logs "the jobs of this
+  server are not saved" and cannot write its cache. `reframe-server --port 9000` as the
+  command makes the container `unhealthy` (the `HEALTHCHECK` calls `REFRAME_PORT`);
+  `REFRAME_PORT=9000` is `healthy`.
+- **`cp -r dist target`** into an existing `target` copies into `target/dist/`; the files of
+  the first copy stay in `target/`.
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,

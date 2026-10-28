@@ -1,5 +1,5 @@
 """The queue routes on the real facade and the fake FFmpeg: adding jobs (jail, output path,
-attach, position), the actions on one job or on the whole queue, the order, the log and the
+position), the actions on one job or on the whole queue, the order, the log and the
 when-done setting."""
 
 from __future__ import annotations
@@ -106,26 +106,6 @@ async def test_a_job_without_an_output_path_is_refused(api: Api) -> None:
     assert problem["code"] == "output.no_path"
     assert "jobs[1]" in problem["detail"]
     assert await snapshot(api) == []
-
-
-async def test_attach_needs_an_open_event_connection(
-    api: Api, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    asked: list[str] = []
-
-    def client_open(client_id: str) -> bool:
-        asked.append(client_id)
-        return client_id == "open-client"
-
-    monkeypatch.setattr(api.app.state.hub, "client_open", client_open)
-    job = await draft_job(api)
-    refused = await api.client.post("/api/queue", json={"jobs": [job], "attach": "gone-client"})
-    assert refused.status_code == 409
-    assert refused.json()["code"] == "queue.attach_unknown_client"
-    assert await snapshot(api) == []
-    accepted = await api.client.post("/api/queue", json={"jobs": [job], "attach": "open-client"})
-    assert accepted.status_code == 201
-    assert asked == ["gone-client", "open-client"]
 
 
 async def test_cancel_retry_and_remove_act_on_their_job(api: Api) -> None:

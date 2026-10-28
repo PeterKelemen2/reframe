@@ -1,0 +1,62 @@
+# Reframe with Docker Compose. Copy this file to docker/compose.yml (the build context is the
+# repository), change the host paths, then, from the repository root:
+#   docker compose -f docker/compose.yml up -d
+#   docker compose -f docker/compose.yml exec -it reframe reframe-server --set-password
+# The web UI is on http://<host>:8765/. See docs/deployment.md.
+#
+# `docker compose up` starts the Intel/AMD service. On an NVIDIA host start the other one:
+#   docker compose -f docker/compose.yml up -d reframe-nvidia
+# A host without a GPU: delete the `devices` lines of the `reframe` service.
+
+x-reframe: &reframe
+  image: reframe:local
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  restart: unless-stopped
+  # A running encode is stopped and its partial file removed before the container exits.
+  stop_grace_period: 30s
+  # Every address of the host, past host firewalls such as ufw. Behind a reverse proxy use
+  # "127.0.0.1:8765:8765" for a proxy on this host, no port for a proxy container, and set
+  # FORWARDED_ALLOW_IPS to the proxy's one address (docs/deployment.md, "Reverse proxy in
+  # Docker").
+  ports:
+    - "8765:8765"
+  environment:
+    # The user and group that own /config, /data and the files written to /output. Make the
+    # host folders below as this user first: Docker makes a missing one as root.
+    PUID: "1000"
+    PGID: "1000"
+    # The container's time zone.
+    TZ: Etc/UTC
+    # Without this list every IP address works in the browser's address bar, and no host
+    # name does. A list replaces that default, so name the addresses you use too:
+    # REFRAME_ALLOWED_HOSTS: '["nas.local", "reframe.example.org", "192.168.1.10"]'
+    # Your own FFmpeg build instead of the bundled one (also mount it, under `volumes`):
+    # REFRAME_FFMPEG: /opt/custom-ffmpeg/bin/ffmpeg
+    # REFRAME_FFPROBE: /opt/custom-ffmpeg/bin/ffprobe
+  volumes:
+    - /srv/reframe/config:/config
+    - /srv/reframe/data:/data
+    - /srv/media:/media:ro
+    - /srv/encoded:/output
+    # - /opt/my-ffmpeg:/opt/custom-ffmpeg:ro
+
+services:
+  # Intel (VAAPI, QSV) and AMD (VAAPI).
+  reframe:
+    <<: *reframe
+    devices:
+      - /dev/dri:/dev/dri
+
+  # NVIDIA (NVENC, CUDA): needs the NVIDIA Container Toolkit on the host.
+  reframe-nvidia:
+    <<: *reframe
+    profiles: [nvidia]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video, compute, utility]

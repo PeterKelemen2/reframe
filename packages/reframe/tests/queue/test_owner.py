@@ -15,7 +15,7 @@ from typing import Any
 import psutil
 import pytest
 
-from reframe.models import JobState
+from reframe.models import AppWarningEvent, JobState
 from reframe.queue.lock import (
     LOCK_FILE,
     WINDOWS_LOCK_OFFSET,
@@ -26,7 +26,7 @@ from reframe.queue.lock import (
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 
-from .conftest import draft, encode_rule, poll, recorded
+from .conftest import Harness, draft, encode_rule, poll, queue_at, recorded
 from .test_facade import PROBE, env  # noqa: F401  (the fixture)
 
 pytestmark = pytest.mark.anyio
@@ -185,6 +185,54 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         await poll(lambda: not (env / "out" / "Killed.part.mkv").exists())
     finally:
         await app.close()
+
+
+async def test_the_queue_says_whether_it_owns_the_saved_store(harness: Harness) -> None:
+    """A server publishes ``server.json`` only while its queue owns the saved store."""
+    h = harness
+
+    def owns() -> bool:
+        return h.queue.owns_store
+
+    assert not owns()  # the store opens at the first use
+    h.queue.list()
+    assert owns()
+    second = queue_at(h)
+    try:
+        second.list()
+        assert not second.owns_store  # a private queue (queue.store_busy)
+    finally:
+        await second.close()
+    await h.queue.close()
+    assert not owns()
+
+
+class UnusableLock:
+    def try_lock(self, fd: int) -> bool:
+        raise OSError(errno.EIO, "Input/output error")
+
+    def unlock(self, fd: int) -> None:
+        pass
+
+
+async def test_the_queue_tells_a_held_lock_from_one_that_cannot_be_used(harness: Harness) -> None:
+    """Only a held lock means that another owner exists: a front end waits for that owner's
+    ``server.json``, which a lock that cannot be used never brings."""
+    h = harness
+    h.queue.list()
+    assert not h.queue.store_busy
+    held, unusable = queue_at(h), queue_at(h, lock_backend=UnusableLock())
+    try:
+        held.list()
+        unusable.list()
+        assert held.store_busy
+        assert not unusable.store_busy
+        assert not unusable.owns_store
+        warnings = [e.code for e in h.events.published if isinstance(e, AppWarningEvent)]
+        assert warnings == ["queue.store_busy", "queue.unreadable"]
+    finally:
+        await held.close()
+        await unusable.close()
 
 
 def test_two_owners_in_one_process_conflict(tmp_path: Path) -> None:

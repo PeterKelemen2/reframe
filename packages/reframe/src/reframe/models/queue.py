@@ -10,15 +10,21 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, ConfigDict, Field
 
-from reframe.models.base import NonNegativeFloat, NonNegativeInt, ReframeModel
+from reframe.models.base import (
+    DocumentModel,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveInt,
+    ReframeModel,
+)
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.plan import EncodePlan, StepKind
 from reframe.models.text import DisplayText
 
-__all__ = ["JobProgress", "JobState", "QueueJob"]
+__all__ = ["JobProgress", "JobState", "QueueJob", "ServerEndpoint"]
 
 
 class JobState(StrEnum):
@@ -70,3 +76,22 @@ class QueueJob(ReframeModel):
     error: DisplayText | None = None
     progress: JobProgress | None = None
     """Live progress while running (not a database column)."""
+
+
+class ServerEndpoint(DocumentModel):
+    """``<data dir>/server.json``: how a front end reaches the server that owns the queue. It is
+    a hint: a process that can take ``queue.lock`` knows that the file is stale. A file of a
+    newer server keeps its unknown fields; ``api_version`` says whether a client can use it."""
+
+    # A validation error would otherwise show the token as its input.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+    pid: PositiveInt
+    instance: str
+    """Random id of the server run, as in ``GET /api/health``."""
+    port: Annotated[int, Field(ge=1, le=65535)]
+    token: str = Field(repr=False)
+    """The local token: accepted as ``Authorization: Bearer`` in every auth mode."""
+    version: str
+    api_version: PositiveInt
+    started_at: AwareDatetime

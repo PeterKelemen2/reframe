@@ -7644,6 +7644,65 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[ServerEndpoint]
+  dict({
+    '$defs': list([
+    ]),
+    'description': '''
+      ``<data dir>/server.json``: how a front end reaches the server that owns the queue. It is
+      a hint: a process that can take ``queue.lock`` knows that the file is stale. A file of a
+      newer server keeps its unknown fields; ``api_version`` says whether a client can use it.
+    ''',
+    'properties': dict({
+      'api_version': dict({
+        'minimum': 1,
+        'title': 'Api Version',
+        'type': 'integer',
+      }),
+      'instance': dict({
+        'description': 'Random id of the server run, as in ``GET /api/health``.',
+        'title': 'Instance',
+        'type': 'string',
+      }),
+      'pid': dict({
+        'minimum': 1,
+        'title': 'Pid',
+        'type': 'integer',
+      }),
+      'port': dict({
+        'maximum': 65535,
+        'minimum': 1,
+        'title': 'Port',
+        'type': 'integer',
+      }),
+      'started_at': dict({
+        'format': 'date-time',
+        'title': 'Started At',
+        'type': 'string',
+      }),
+      'token': dict({
+        'description': 'The local token: accepted as ``Authorization: Bearer`` in every auth mode.',
+        'title': 'Token',
+        'type': 'string',
+      }),
+      'version': dict({
+        'title': 'Version',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'pid',
+      'instance',
+      'port',
+      'token',
+      'version',
+      'api_version',
+      'started_at',
+    ]),
+    'title': 'ServerEndpoint',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[Severity]
   dict({
     '$defs': list([

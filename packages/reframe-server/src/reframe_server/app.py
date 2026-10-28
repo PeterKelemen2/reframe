@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 
 from reframe.service import Reframe
-from reframe_server import __version__, openapi, security
+from reframe_server import __version__, openapi, owner, security, static
 from reframe_server.api import JsonTextResponse, operation_id
 from reframe_server.config import ServerConfig
 from reframe_server.errors import install_error_handlers
@@ -73,8 +73,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
     app.state.reframe, app.state.hub = reframe, hub
     try:
+        owner.start(app)
         yield
     finally:
+        owner.withdraw(app)
         await hub.close()
         await reframe.close()
         app.state.reframe = None
@@ -89,7 +91,8 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     ``app.state``: ``config``, ``instance`` (random id of this run), ``started``
     (``time.monotonic()``), ``sources`` (:class:`SourceRegistry`), ``request_shutdown`` (the
-    entry point replaces it), and during the lifespan ``reframe`` and ``hub``.
+    entry point replaces it), ``exit_code`` (the entry point's code when the app does not
+    start), and during the lifespan ``reframe`` and ``hub``.
     """
     app = FastAPI(
         title="Reframe",
@@ -108,6 +111,7 @@ def create_app(config: ServerConfig) -> FastAPI:
     app.state.reframe = None
     app.state.hub = None
     app.state.request_shutdown = _no_shutdown
+    app.state.exit_code = 1
     install_error_handlers(app)
     security.install(app, config)
     openapi.install(app)
@@ -117,4 +121,5 @@ def create_app(config: ServerConfig) -> FastAPI:
         app.include_router(
             module.router, prefix="/api", dependencies=[Depends(security.require_auth)]
         )
+    static.install(app, config)
     return app

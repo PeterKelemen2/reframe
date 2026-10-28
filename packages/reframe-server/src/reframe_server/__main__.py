@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import copy
 import json
 import sys
@@ -16,7 +17,7 @@ from typing import Any
 import uvicorn
 from pydantic import ValidationError
 
-from reframe_server import __version__, parent, security
+from reframe_server import __version__, idle, owner, parent, security
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 
@@ -60,7 +61,8 @@ def _log_config() -> dict[str, Any]:
 
 
 async def serve(config: ServerConfig) -> int:
-    """Run the server until it is stopped. Returns the exit code (1: it never started)."""
+    """Run the server until it is stopped. Returns the exit code: 0, or when it never started
+    ``app.state.exit_code`` (1, or 75 for ``owner_only``)."""
     app = create_app(config)
     server = uvicorn.Server(
         uvicorn.Config(
@@ -88,18 +90,41 @@ async def serve(config: ServerConfig) -> int:
                 file=sys.stderr,
             )
             return 1
+
+    async def run_server() -> None:
+        # uvicorn ends a failed lifespan start-up or bind with sys.exit(3) inside this task;
+        # the exit code is app.state.exit_code instead.
+        with contextlib.suppress(SystemExit):
+            await server.serve()
+
+    idle_watch: asyncio.Task[None] | None = None
     try:
-        running = asyncio.create_task(server.serve())
+        running = asyncio.create_task(run_server())
         while not server.started and not running.done():  # noqa: ASYNC110 - uvicorn has no event
             await asyncio.sleep(0.02)
-        if server.started and config.mode == "desktop":
+        if server.started:
             port = server.servers[0].sockets[0].getsockname()[1]
-            print(ready_line(port), flush=True)
+            owner.publish(app, port)
+            if config.idle_exit is not None:
+                idle_watch = asyncio.create_task(
+                    idle.watch(app, config.idle_exit, request_shutdown)
+                )
+            if config.mode == "desktop":
+                print(ready_line(port), flush=True)
         await running
     finally:
-        if watch is not None:
-            watch.close()
-    return 0 if server.started else 1
+        try:
+            if idle_watch is not None:
+                idle_watch.cancel()
+                # Not `await idle_watch`: its CancelledError could not be told from a cancel
+                # of serve() itself, which would then be lost.
+                await asyncio.wait((idle_watch,))
+                if not idle_watch.cancelled():
+                    idle_watch.result()
+        finally:
+            if watch is not None:
+                watch.close()
+    return 0 if server.started else int(app.state.exit_code)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

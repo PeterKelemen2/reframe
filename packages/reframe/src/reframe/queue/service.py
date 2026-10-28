@@ -213,11 +213,38 @@ class QueueService:
         """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
         self._closed = False
         self._opened = False
+        self._store_busy = False
         self._lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._background: set[asyncio.Task[None]] = set()
         self._when = WhenDoneActions(events, power)
         """The batch counts, the job notifications and the when-done action."""
+
+    @property
+    def owns_store(self) -> bool:
+        """This process holds ``queue.lock`` and keeps its jobs in the saved queue. ``False``
+        before the queue's first use, when another process owns the store, when
+        ``queue.lock`` cannot be used (``queue.unreadable``), and after :meth:`close`."""
+        return self._owner.held
+
+    @property
+    def store_busy(self) -> bool:
+        """The queue's first use found ``queue.lock`` held by another process
+        (``queue.store_busy``). ``False`` before the first use, for the owner, and when the
+        lock cannot be used at all."""
+        return self._store_busy
+
+    @property
+    def busy(self) -> bool:
+        """A job is running or paused, or the runner will still take a waiting job (a
+        :meth:`start` targets it). A waiting job that no ``start`` targets does not count."""
+        if self._active:
+            return True
+        return (
+            self._processing
+            and not self._closed
+            and any(self._eligible(job) for job in self._jobs.values())
+        )
 
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob:
         """Add a job (validated at once). A job with errors is added in state ``failed``
@@ -520,6 +547,7 @@ class QueueService:
             )
             return
         if not owner.owned:
+            self._store_busy = True
             self._store.use_memory()
             who = f" (pid {owner.owner})" if owner.owner is not None else ""
             self._events.publish(

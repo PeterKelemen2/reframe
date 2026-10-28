@@ -217,6 +217,7 @@ row whose member a route reaches or that no longer exists
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
 | `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
 | `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |
+| `queue.owns_store`, `queue.busy`, `queue.store_busy` | The server's own state: it writes `server.json` only while it owns the store, `--owner-only` exits with 75 only while another process holds the lock, and idle exit waits while the queue is busy (S-7). A client reads `GET /api/queue` and the `job.state` events |
 | `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
 | `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
 | `power.countdown`, `power.executor` | The countdown's length and end are in `pending.seconds_left` and `pending.deadline`; the executor is the operating system's mechanism |
@@ -230,7 +231,9 @@ row whose member a route reaches or that no longer exists
 - [ ] `WS /api/events`. The client authenticates in its first message
       (`{"type": "auth", "token": …}`; in password mode the session cookie may stand in for the
       token). A wrong first message, or none within 5 s, closes the connection with 4401. The
-      server answers `{"type": "hello", "instance", "heartbeat"}` and then sends each event as
+      server answers `{"type": "hello", "instance", "heartbeat", "client_id"}` (S-7's
+      `attach`, [decision 0057](../decisions/0057-s7-attachments-client-id-and-detach.md)) and
+      then sends each event as
       JSON: `{"type": "event", "seq": n, "event": {…}}`
       ([decision 0047](../decisions/0047-event-websocket.md)).
 - [ ] **Coalescing**: `job.progress` and `task.progress` are coalesced per id (only the latest
@@ -250,9 +253,20 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
 
 ## S-4 Static frontend and SPA fallback
 
-- [ ] Web mode: serve `frontend/dist` with immutable cache headers for hashed assets, and
+- [x] Web mode: serve `frontend/dist` with immutable cache headers for hashed assets, and
       `index.html` for unknown non-API paths.
-- [ ] Desktop mode: no static files (Tauri bundles the frontend).
+- [x] Desktop mode: no static files (Tauri bundles the frontend).
+
+The folder is `static_dir` (`REFRAME_STATIC_DIR`). It has no implicit default: when it is not
+set, the server is API only, and a deployment (the Docker image, the bare-metal unit) sets it
+to a `npm run build:web` output. Files under `assets/` get
+`public, max-age=31536000, immutable`; every other file and the `index.html` fallback get
+`no-cache`. A path under `/api`, a missing file under `/assets/` and a method other than
+`GET` / `HEAD` keep the JSON problem 404. No file outside the resolved folder is served
+(links are followed, then checked). A `static_dir` without `index.html`, or one that holds the
+config, data or cache folder, the endpoint file, a media root or an output root, is refused at
+start-up (exit 2)
+([decision 0058](../decisions/0058-s4-static-frontend.md)).
 
 ## S-5 OpenAPI → TypeScript
 
@@ -261,16 +275,17 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
       `REFRAME_*` variables are ignored), then run `openapi-typescript` (pinned in
       `frontend/package.json`) → `frontend/src/api/schema.d.ts`, committed and left out of
       `oxfmt`. The same input gives the same bytes.
-- [x] The document's components also hold the `WS /api/events` messages: `AuthMessage` (the
-      client's first message) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by
-      `type`), with every core event model. OpenAPI has no WebSocket operation, so there is no
+- [x] The document's components also hold the `WS /api/events` messages: `ClientMessage`
+      (`AuthMessage | DetachMessage`, by `type`; `AuthMessage` is the first one, S-7 added
+      `DetachMessage`) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by `type`),
+      with every core event model. OpenAPI has no WebSocket operation, so there is no
       path for it ([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
 - [x] CI check: `scripts/gen-api.sh --check` regenerates into a temporary folder and fails with
       the diff (`Q-2.3`, the `api-contract` job on Ubuntu).
 
 ## S-6 Deployment
 
-- [ ] **Docker image** (multi-stage):
+- [x] **Docker image** (multi-stage):
   1. `node` stage builds `frontend/dist`.
   2. `tools` stage downloads the pinned FFmpeg from `tools/ffmpeg.toml` and checks its
      SHA-256 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
@@ -280,12 +295,12 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
      Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).
   5. `HEALTHCHECK` on `/api/health`.
-- [ ] **Override in Docker**: mount your own build and set `REFRAME_FFMPEG` /
+- [x] **Override in Docker**: mount your own build and set `REFRAME_FFMPEG` /
       `REFRAME_FFPROBE`, for example `-v /opt/my-ffmpeg:/opt/custom-ffmpeg:ro -e
       REFRAME_FFMPEG=/opt/custom-ffmpeg/bin/ffmpeg`.
-- [ ] `docker/compose.example.yml` with variants for Intel/AMD (`/dev/dri`) and NVIDIA
+- [x] `docker/compose.example.yml` with variants for Intel/AMD (`/dev/dri`) and NVIDIA
       (`deploy.resources.reservations.devices`), and a commented-out override example.
-- [ ] Bare metal: `uv tool install 'reframe[cli]' --with reframe-server
+- [x] Bare metal: `uv tool install 'reframe[cli]' --with reframe-server
       --with-executables-from reframe-server` (one environment, so `reframe` and
       `reframe-server` have the same version;
       [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11),
@@ -293,7 +308,18 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
       do not contain FFmpeg. `reframe tools fetch` downloads the pinned build from the manifest
       (checksum verified) into the data dir, where it counts as the bundled build. On Windows:
       run from a terminal. A Windows service wrapper comes later.
-- [ ] Reverse-proxy notes (WebSocket upgrade headers, body size, timeouts).
+- [x] Reverse-proxy notes (WebSocket upgrade headers, body size, timeouts).
+
+`docker/Dockerfile`, `docker/compose.example.yml` and [deployment.md](../deployment.md)
+([decision 0059](../decisions/0059-s6-docker-image-and-bare-metal.md)). The image declares no
+`VOLUME`: the four folders are mount points, so a missing mount is not hidden by an anonymous
+volume. It sets `auth: password`, the media and output roots and `REFRAME_STATIC_DIR`; the
+Intel driver is Debian's non-free build (the free one has no H.264/HEVC encode before Ice
+Lake). Until the packages are on PyPI, `uv tool install` takes the paths of a checkout.
+Behind a reverse proxy in Docker the server trusts `X-Forwarded-*` from the proxy's one
+address only (`FORWARDED_ALLOW_IPS`, the 0059 follow-up). The "Done when" was met on the
+owner's AMD desktop on 2026-10-28 (0059, "The lead's GPU check"); Intel QSV and NVIDIA NVENC
+in Docker are not verified.
 
 Done when: `docker compose up` on a Linux host with a GPU (the owner's: AMD) shows its VAAPI
 encoders as available and encodes a fixture file. Intel QSV and NVIDIA NVENC in Docker are
@@ -305,18 +331,24 @@ listed as not verified until such a host is available
 Implements [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md). Needs
 S-2 and S-3. Milestone M3b, with C-17 ([05](05-core.md#c-17-remote-queue-and-queue-commands)).
 
-- [ ] **Endpoint file** (`endpoint_file`): when the server holds `queue.lock` (it opens the
+- [x] **Endpoint file** (`endpoint_file`): when the server holds `queue.lock` (it opens the
       queue at start-up) and listens, it writes `server.json` (atomic, mode `0600` on POSIX)
       with `pid`, `instance`, `port`, `token`, `version`, `api_version`, `started_at`, and
       removes it at close. A server that cannot take the lock writes nothing and keeps 0027's
-      private queue with `queue.store_busy`; with `owner_only` it exits with code 75.
-- [ ] **Idle exit** (`idle_exit`): exit after N seconds with no running job, no job that a
+      private queue with `queue.store_busy`; with `owner_only` it exits with code 75. A client
+      connects to `127.0.0.1` and the file's `port`
+      ([decision 0056](../decisions/0056-s7-owner-endpoint-file-and-idle-exit.md)).
+- [x] **Idle exit** (`idle_exit`): exit after N seconds with no running job, no job that a
       `start` still targets, no event connection and no pending when-done countdown.
-- [ ] **Attachments**: after a client authenticates on `WS /api/events`, the server answers
+- [x] **Attachments**: after a client authenticates on `WS /api/events`, the server answers
       with a `client_id`. `POST /api/queue` with `attach: <client_id>` is refused (409)
       unless that connection is open. A connection that ends without a `detach` message
-      cancels its attached jobs that have not ended, as a cancel does. Not persisted.
-- [ ] `POST /api/queue/start` with `job_ids` starts only those jobs; other waiting jobs are
+      cancels its attached jobs that have not ended, as a cancel does, also a job whose add
+      was under way. A `detach` also covers the jobs attached after it; a server stop
+      (uvicorn's 1012, the lifespan's close) cancels nothing and leaves the jobs to the
+      queue's close. Not persisted
+      ([decision 0057](../decisions/0057-s7-attachments-client-id-and-detach.md)).
+- [x] `POST /api/queue/start` with `job_ids` starts only those jobs; other waiting jobs are
       neither started nor cancelled.
 
 Done when: httpx tests show that the file is written after the server listens and removed at
