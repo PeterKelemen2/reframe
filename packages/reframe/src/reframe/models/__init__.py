@@ -208,7 +208,7 @@ from reframe.models.preview import (
     PreviewClip,
     PreviewFrame,
 )
-from reframe.models.queue import JobProgress, JobState, QueueJob
+from reframe.models.queue import JobProgress, JobState, QueueJob, ServerEndpoint
 from reframe.models.settings import (
     AppearanceSettings,
     AppSettings,
@@ -402,6 +402,7 @@ __all__ = [
     "RuleMixdown",
     "SameAsSource",
     "Scaler",
+    "ServerEndpoint",
     "Severity",
     "SizeSettings",
     "SourceChannels",

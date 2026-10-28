@@ -425,6 +425,34 @@ async def test_start_with_job_ids_never_narrows_a_running_start(harness: Harness
     assert not h.queue._processing
 
 
+async def test_busy_while_a_job_runs_or_a_start_still_targets_a_waiting_one(
+    harness: Harness,
+) -> None:
+    """Idle exit waits while the queue is busy, but not for a waiting job that no ``start``
+    targets (one that another front end left in the shared store)."""
+    h = harness
+
+    def busy() -> bool:
+        return h.queue.busy
+
+    h.scenario(LONG)
+    first, second = [(await h.queue.add(h.job(name))).id for name in ("A", "B")]
+    assert not busy()
+    h.queue.start(job_ids=[first])
+    assert busy()
+    await h.running_process(first)
+    await h.queue.pause(first)
+    assert busy()  # paused
+    await h.queue.cancel(first)
+    await h.wait_for(lambda: not busy(), 5)
+    assert h.queue.get(second).state is JobState.WAITING  # type: ignore[union-attr]
+    h.queue.start()
+    await h.running_process(second)
+    await h.queue.cancel(second)
+    await h.wait_for(lambda: not busy(), 5)
+    assert h.queue._processing  # "every job" stays on with nothing to take
+
+
 async def test_start_and_stop_are_not_saved(harness: Harness) -> None:
     h = harness
     first = await h.queue.add(h.job())

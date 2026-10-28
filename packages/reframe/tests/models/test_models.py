@@ -48,6 +48,7 @@ from reframe.models import (
     PresetFile,
     Range,
     Rational,
+    ServerEndpoint,
     SourceRef,
     SubtitleDefaults,
     SubtitleOutputTrack,
@@ -145,6 +146,24 @@ def test_every_persisted_model_has_schema_version() -> None:
         assert issubclass(model, DocumentModel), kind
         assert model.model_fields["schema_version"].default == 1
         assert current_version(kind) == 1
+
+
+def test_a_newer_servers_endpoint_file_is_read_and_its_token_never_printed() -> None:
+    """A client reads ``server.json`` of a newer server (its ``api_version`` decides), and a log
+    line with the endpoint does not show the local token."""
+    data = {
+        "pid": 4242,
+        "instance": "9f1c2a",
+        "port": 8765,
+        "token": "local-token-secret",
+        "version": "0.3.0",
+        "api_version": 2,
+        "started_at": "2026-10-28T06:00:00Z",
+        "future": {"socket": "/run/reframe.sock"},
+    }
+    endpoint = ServerEndpoint.model_validate_json(json.dumps(data))
+    assert endpoint.model_dump(mode="json") == data
+    assert "local-token-secret" not in f"{endpoint!r} {endpoint}"
 
 
 def test_runtime_models_reject_unknown_fields() -> None:

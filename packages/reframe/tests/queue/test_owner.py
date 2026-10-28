@@ -26,7 +26,7 @@ from reframe.queue.lock import (
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 
-from .conftest import draft, encode_rule, poll, recorded
+from .conftest import Harness, draft, encode_rule, poll, queue_at, recorded
 from .test_facade import PROBE, env  # noqa: F401  (the fixture)
 
 pytestmark = pytest.mark.anyio
@@ -185,6 +185,26 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         await poll(lambda: not (env / "out" / "Killed.part.mkv").exists())
     finally:
         await app.close()
+
+
+async def test_the_queue_says_whether_it_owns_the_saved_store(harness: Harness) -> None:
+    """A server publishes ``server.json`` only while its queue owns the saved store."""
+    h = harness
+
+    def owns() -> bool:
+        return h.queue.owns_store
+
+    assert not owns()  # the store opens at the first use
+    h.queue.list()
+    assert owns()
+    second = queue_at(h)
+    try:
+        second.list()
+        assert not second.owns_store  # a private queue (queue.store_busy)
+    finally:
+        await second.close()
+    await h.queue.close()
+    assert not owns()
 
 
 def test_two_owners_in_one_process_conflict(tmp_path: Path) -> None:

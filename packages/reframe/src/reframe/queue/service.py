@@ -219,6 +219,25 @@ class QueueService:
         self._when = WhenDoneActions(events, power)
         """The batch counts, the job notifications and the when-done action."""
 
+    @property
+    def owns_store(self) -> bool:
+        """This process holds ``queue.lock`` and keeps its jobs in the saved queue. ``False``
+        before the queue's first use, when another process owns the store, and after
+        :meth:`close`."""
+        return self._owner.held
+
+    @property
+    def busy(self) -> bool:
+        """A job is running or paused, or the runner will still take a waiting job (a
+        :meth:`start` targets it). A waiting job that no ``start`` targets does not count."""
+        if self._active:
+            return True
+        return (
+            self._processing
+            and not self._closed
+            and any(self._eligible(job) for job in self._jobs.values())
+        )
+
     async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob:
         """Add a job (validated at once). A job with errors is added in state ``failed``
         with its issues. ``position``: 0 = first; ``None`` = last."""
