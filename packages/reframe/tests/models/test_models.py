@@ -166,6 +166,23 @@ def test_a_newer_servers_endpoint_file_is_read_and_its_token_never_printed() -> 
     assert "local-token-secret" not in f"{endpoint!r} {endpoint}"
 
 
+def test_an_endpoint_file_that_is_not_valid_does_not_show_its_token() -> None:
+    """A client logs why it cannot use ``server.json``: the message must not hold the token."""
+    data = {
+        "pid": 4242,
+        "instance": "9f1c2a",
+        "port": 8765,
+        "token": ["local-token-secret"],
+        "version": "0.3.0",
+        "api_version": 1,
+        "started_at": "2026-10-28T06:00:00Z",
+    }
+    with pytest.raises(ValidationError) as caught:
+        ServerEndpoint.model_validate_json(json.dumps(data))
+    assert "token" in str(caught.value)
+    assert "local-token-secret" not in str(caught.value)
+
+
 def test_runtime_models_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         EncodePlan.model_validate(

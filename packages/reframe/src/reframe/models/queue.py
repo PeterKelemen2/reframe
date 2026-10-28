@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, ConfigDict, Field
 
 from reframe.models.base import (
     DocumentModel,
@@ -82,6 +82,9 @@ class ServerEndpoint(DocumentModel):
     """``<data dir>/server.json``: how a front end reaches the server that owns the queue. It is
     a hint: a process that can take ``queue.lock`` knows that the file is stale. A file of a
     newer server keeps its unknown fields; ``api_version`` says whether a client can use it."""
+
+    # A validation error would otherwise show the token as its input.
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     pid: PositiveInt
     instance: str

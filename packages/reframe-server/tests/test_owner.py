@@ -192,6 +192,17 @@ def test_owner_only_exits_75_against_a_held_lock_and_writes_nothing(home: Home) 
     assert code == owner.EXIT_STORE_BUSY
 
 
+def test_owner_only_exits_1_when_the_lock_cannot_be_used(home: Home) -> None:
+    """No other process holds the lock, so no ``server.json`` will come: exit 75 would make a
+    client wait for one."""
+    (home.data / LOCK_FILE).mkdir(parents=True)
+    with running_server(home, "--mode", "desktop", "--owner-only") as server:
+        code = server.wait(60)
+    assert code == 1
+    assert "the saved queue cannot be used" in home.log.read_text(errors="replace")
+    assert not home.endpoint.exists()
+
+
 @pytest.mark.slow
 def test_idle_exit_waits_for_an_event_connection_and_a_running_job(
     home: Home, fake_tools: ft.FakeTools, tmp_path: Path
@@ -256,6 +267,40 @@ async def test_a_server_that_does_not_own_the_queue_leaves_the_owners_file_alone
     finally:
         lock.release()
     assert endpoint.read_bytes() == written
+
+
+@pytest.mark.parametrize(
+    ("lock", "said", "not_said"),
+    [
+        pytest.param("held", "another Reframe process owns", "cannot be used", id="held"),
+        pytest.param("unusable", "the saved queue cannot be used", "another", id="unusable"),
+    ],
+)
+async def test_the_log_says_why_a_server_does_not_own_the_queue(
+    make_api: ApiFactory,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    lock: str,
+    said: str,
+    not_said: str,
+) -> None:
+    """The operator of a server whose jobs are not saved learns whether another process or
+    the data folder is the cause."""
+    path = tmp_path / "data" / LOCK_FILE
+    holder = StoreLock(path)
+    if lock == "held":
+        assert holder.acquire().owned
+    else:
+        path.mkdir(parents=True)
+    try:
+        with caplog.at_level(logging.WARNING, logger=owner.__name__):
+            async with make_api():
+                pass
+    finally:
+        holder.release()
+    [record] = [record for record in caplog.records if record.name == owner.__name__]
+    assert said in record.getMessage()
+    assert not_said not in record.getMessage()
 
 
 async def test_an_endpoint_file_that_cannot_be_written_is_logged_and_the_server_runs_on(
