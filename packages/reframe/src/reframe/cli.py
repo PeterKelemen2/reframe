@@ -24,6 +24,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Protocol
 
+import psutil
 from pydantic import BaseModel
 
 from reframe import __version__, languages, paths
@@ -72,6 +73,7 @@ from reframe.models.text import json_text
 from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
 from reframe.presets import ConflictPolicy, ImportResult
 from reframe.queue import ENDED, QueueError, QueueLike, UnknownJobError, read_saved_queue
+from reframe.queue.lock import LOCK_FILE
 from reframe.queue.logs import log_file
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
 from reframe.tools.__main__ import status_lines
@@ -2487,32 +2489,34 @@ def queue_rows(jobs: Sequence[QueueJob]) -> list[str]:
 
 
 @asynccontextmanager
-async def _owner_or_saved() -> AsyncIterator[tuple[RemoteQueue | None, list[QueueJob]]]:
+async def _owner_or_saved() -> AsyncIterator[tuple[RemoteQueue | None, list[QueueJob], bool]]:
     """The owner's queue when a server runs for this data folder (none is started), else the
-    saved queue as the file holds it: no lock is taken and nothing is restored."""
+    saved queue as the file holds it: no lock is taken and nothing is restored. The flag: the
+    saved queue could not be read at all (a warning says why)."""
     data_dir = paths.data_dir()
     found = await connect_owner(
         data_dir, config_dir=paths.config_dir(), cache_dir=paths.cache_dir(), start=False
     )
     if not isinstance(found, str):
         try:
-            yield found, found.list()
+            yield found, found.list(), False
         finally:
             await found.close(detach=True)
         return
     saved = await asyncio.to_thread(read_saved_queue, data_dir)
     if saved.problem is not None:
         print(_one_line(f"warning: the saved queue: {saved.problem}"), file=sys.stderr)
-    yield None, saved.jobs
+    yield None, saved.jobs, saved.problem is not None and not saved.jobs
 
 
 async def run_queue_list(*, as_json: bool) -> int:
     """``reframe queue list``: every job of the shared queue."""
-    async with _owner_or_saved() as (remote, jobs):
+    async with _owner_or_saved() as (remote, jobs, unreadable):
         pass
+    code = EXIT_FAILED if unreadable else EXIT_OK
     if as_json:
         _write_json_value([job.model_dump(mode="json") for job in jobs])
-        return EXIT_OK
+        return code
     console = make_console()
     if remote is None:
         console.print(
@@ -2520,11 +2524,12 @@ async def run_queue_list(*, as_json: bool) -> int:
             soft_wrap=True,
         )
     if not jobs:
-        console.print(Text("The queue is empty."), soft_wrap=True)
-        return EXIT_OK
+        if not unreadable:
+            console.print(Text("The queue is empty."), soft_wrap=True)
+        return code
     for line in queue_rows(jobs):
         console.print(Text(line), soft_wrap=True, crop=False)
-    return EXIT_OK
+    return code
 
 
 class _LogPrinter:
@@ -2563,7 +2568,7 @@ async def run_queue_log(ref: str, *, follow: bool) -> int:
     """``reframe queue log``: the job's log file; ``follow``: and what is written to it until
     the job ends."""
     data_dir = paths.data_dir()
-    async with _owner_or_saved() as (remote, jobs):
+    async with _owner_or_saved() as (remote, jobs, _unreadable):
         job = find_job(jobs, ref)
         if isinstance(job, str):
             _error(job)
@@ -2578,13 +2583,25 @@ async def run_queue_log(ref: str, *, follow: bool) -> int:
                 return remote.lost is not None or current is None or current.state in ENDED
             saved = read_saved_queue(data_dir)
             states = [j.state for j in saved.jobs if j.id == job_id]
-            return not states or states[0] in ENDED
+            # Without a live owner nothing writes the log: a "running" job of a store whose
+            # owner crashed would be followed for ever.
+            return not states or states[0] in ENDED or not _owner_alive(data_dir)
 
         while follow and not await asyncio.to_thread(ended):
             await asyncio.sleep(LOG_POLL)
             await asyncio.to_thread(printer.more)
         await asyncio.to_thread(printer.rest)
     return EXIT_OK
+
+
+def _owner_alive(data_dir: Path) -> bool:
+    """The process that held ``queue.lock`` last still runs (the file keeps its pid; the lock
+    is not taken). Blocking."""
+    try:
+        text = (data_dir / LOCK_FILE).read_text(encoding="ascii", errors="replace").strip()
+    except OSError:
+        return False
+    return text.isdigit() and psutil.pid_exists(int(text))
 
 
 async def _owner_for(action: str) -> RemoteQueue | None:

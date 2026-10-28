@@ -120,14 +120,60 @@ async def test_detach_needs_an_owner(
     assert server.api.reframe.queue.list() == []
 
 
-async def test_detach_and_in_process_exclude_each_other(
+@pytest.mark.parametrize(
+    ("command", "options", "named"),
+    [
+        ("encode", {"in_process": True}, "--in-process"),
+        ("batch", {"in_process": True}, "--in-process"),
+        ("batch", {"dry_run": True}, "--dry-run"),
+    ],
+)
+async def test_detach_needs_the_server(
+    capsys: pytest.CaptureFixture[str], command: str, options: dict[str, bool], named: str
+) -> None:
+    if command == "encode":
+        code = await cli.run_encode(
+            [Path("x.mkv")], preset=None, output=None, detach=True, **options
+        )
+    else:
+        code = await cli.run_batch(
+            [Path("x")],
+            preset=None,
+            detach=True,
+            in_process=options.get("in_process"),
+            dry_run=options.get("dry_run", False),
+        )
+    assert code == cli.EXIT_USAGE
+    assert f"cannot be used with {named}" in capsys.readouterr().err
+
+
+async def test_an_owner_that_keeps_stopping_is_left_with_the_reason(
     server: Server, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = await cli.run_encode(
-        [Path("x.mkv")], preset=None, output=None, detach=True, in_process=True
-    )
-    assert code == cli.EXIT_USAGE
-    assert "--in-process" in capsys.readouterr().err
+    server.publish()
+    await server.api.app.state.hub.close()
+    code = await cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_OK, captured.out
+    assert "no Reframe server can take the jobs (the Reframe server is stopping)" in captured.err
+    assert server.api.reframe.queue.list() == []
+
+
+async def test_a_job_the_owner_refuses_to_add(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from reframe.service import ReframeClosedError
+
+    async def closing(*_args: object, **_kwargs: object) -> None:
+        raise ReframeClosedError
+
+    monkeypatch.setattr(server.api.reframe.queue, "add", closing)
+    server.publish()
+    code = await cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_FAILED
+    assert "error: the jobs cannot be queued: The server is shutting down" in captured.err
+    assert "unexpected error" not in captured.err
 
 
 async def test_without_a_usable_owner_the_jobs_run_here_and_the_reason_is_shown(

@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -235,3 +238,140 @@ async def test_remove(server: Server, capsys: pytest.CaptureFixture[str]) -> Non
     assert await cli.run_queue_remove(job.id) == cli.EXIT_FAILED
     assert "cancel it first" in capsys.readouterr().err
     await server.api.reframe.queue.cancel(job.id)
+
+
+async def test_the_list_says_why_a_job_failed(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    job = await server.job("Gone.mkv")
+    (server.api.media / "Gone.mkv").unlink()
+    failed = await server.api.reframe.queue.add(job)
+    server.publish()
+    assert await cli.run_queue_list(as_json=False) == cli.EXIT_OK
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[1].split()[:3] == ["1", failed.id[:8], "failed"]
+    assert lines[2].strip().startswith("failed: The job has errors: ")
+
+
+def saved_queue(api_data: Path, sql: str, *params: object) -> None:
+    with sqlite3.connect(api_data / STORE_FILE) as db:
+        db.execute(sql, params)
+    db.close()
+
+
+async def test_a_saved_queue_of_a_newer_reframe_is_not_listed_and_says_why(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with make_api(mode="desktop") as api:
+        await api.reframe.queue.add(await Server(api, None).job())  # type: ignore[arg-type]
+        data_dir = api.reframe.data_dir
+    saved_queue(data_dir, "PRAGMA user_version = 99")
+    assert await cli.run_queue_list(as_json=False) == cli.EXIT_FAILED
+    captured = capsys.readouterr()
+    assert "warning: the saved queue: " in captured.err
+    assert "saved by a newer Reframe (schema 99)" in captured.err
+    assert "The queue is empty." not in captured.out
+
+
+async def test_a_damaged_job_is_left_out_of_the_list_and_counted(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with make_api(mode="desktop") as api:
+        kept = await api.reframe.queue.add(await Server(api, None).job("Kept.mkv"))  # type: ignore[arg-type]
+        damaged = await api.reframe.queue.add(await Server(api, None).job("Damaged.mkv"))  # type: ignore[arg-type]
+        data_dir = api.reframe.data_dir
+    saved_queue(data_dir, "UPDATE jobs SET settings_json = 'not json' WHERE id = ?", damaged.id)
+    assert await cli.run_queue_list(as_json=True) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert [job["id"] for job in json.loads(captured.out)] == [kept.id]
+    assert "1 saved job(s) could not be read" in captured.err
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0, reason="POSIX folder modes, not as root"
+)
+async def test_the_saved_queue_of_a_folder_the_user_cannot_write(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with make_api(mode="desktop") as api:
+        job = await api.reframe.queue.add(await Server(api, None).job())  # type: ignore[arg-type]
+        data_dir = api.reframe.data_dir
+    for side in ("-wal", "-shm"):
+        (data_dir / f"{STORE_FILE}{side}").unlink(missing_ok=True)
+    data_dir.chmod(0o555)
+    try:
+        assert await cli.run_queue_list(as_json=True) == cli.EXIT_OK
+    finally:
+        data_dir.chmod(0o755)
+    assert [j["id"] for j in json.loads(capsys.readouterr().out)] == [job.id]
+
+
+async def test_the_log_of_a_job_that_never_ran_is_empty(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    job = await add(server)
+    server.publish()
+    assert await cli.run_queue_log(job.id, follow=False) == cli.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
+async def test_following_a_log_without_a_live_owner_ends(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The saved queue says "running", but the process that owned it is gone."""
+    async with make_api(mode="desktop") as api:
+        job = await api.reframe.queue.add(await Server(api, None).job())  # type: ignore[arg-type]
+        data_dir = api.reframe.data_dir
+    saved_queue(data_dir, "UPDATE jobs SET state = 'running' WHERE id = ?", job.id)
+    gone = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
+    await gone.wait()
+    (data_dir / "queue.lock").write_text(f"{gone.pid}\n", encoding="ascii")
+    assert await asyncio.wait_for(cli.run_queue_log(job.id, follow=True), 10) == cli.EXIT_OK
+
+
+@pytest.mark.parametrize("command", ["retry", "remove"])
+async def test_retry_and_remove_of_a_job_that_is_not_there(
+    server: Server, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    server.publish()
+    run = cli.run_queue_retry if command == "retry" else cli.run_queue_remove
+    assert await run("no-such-job") == cli.EXIT_FAILED
+    assert "there is no job no-such-job" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["retry", "remove"])
+async def test_retry_and_remove_need_an_owner(
+    server: Server, short_waits: None, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    job = await add(server)
+    run = cli.run_queue_retry if command == "retry" else cli.run_queue_remove
+    assert await run(job.id) == cli.EXIT_FAILED
+    assert f"reframe queue {command} needs the Reframe server" in capsys.readouterr().err
+    assert state(server, job.id) is JobState.WAITING
+
+
+def test_the_queue_commands_through_the_command_line(
+    make_api_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The typer wiring: arguments and options reach the commands (no owner runs)."""
+    from typer.testing import CliRunner
+
+    app = cli.build_app()
+    runner = CliRunner()
+    listed = runner.invoke(app, ["queue", "list"])
+    assert (listed.exit_code, listed.stdout.splitlines()[-1]) == (0, "The queue is empty.")
+    assert runner.invoke(app, ["queue", "log", "-f", "abc"]).exit_code == cli.EXIT_FAILED
+    for command in ("pause", "resume", "cancel"):
+        both = runner.invoke(app, ["queue", command, "abc", "--all"])
+        assert both.exit_code == cli.EXIT_USAGE, both.output
+    detach = runner.invoke(app, ["encode", "--detach", "--in-process", "x.mkv"])
+    assert detach.exit_code == cli.EXIT_USAGE
+    monkeypatch.setenv(cli.IN_PROCESS_ENV, "1")
+    detach = runner.invoke(app, ["batch", "--detach", "x"])
+    assert "cannot be used with --in-process" in detach.stderr
+
+
+@pytest.fixture
+def make_api_env(make_api: ApiFactory, tmp_path: Path) -> Path:
+    """The private folders and environment of the server harness, with no server."""
+    return tmp_path

@@ -136,6 +136,7 @@ def problem(status: int, code: str, title: str) -> httpx.Response:
             "server.closing",
         ),
         (httpx.ConnectError("refused"), RemoteError, "connection.lost"),
+        (httpx.Response(502, text="<html>Bad Gateway</html>"), RemoteError, ""),
     ],
 )
 async def test_a_refusal_is_the_queues_error(
@@ -158,6 +159,8 @@ async def test_a_refusal_is_the_queues_error(
             await remote.remove(job.id)
         if code is not None:
             assert refused.value.code == code  # type: ignore[attr-defined]
+        if code == "":
+            assert str(refused.value) == "502 Bad Gateway"
     finally:
         await remote.close()
 

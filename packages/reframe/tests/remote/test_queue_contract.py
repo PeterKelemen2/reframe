@@ -200,5 +200,8 @@ async def test_an_unknown_job_is_refused(contract: Contract, call: Call) -> None
             await result
 
     assert contract.queue.get("no-such-job") is None
+    assert contract.queue.log_path("no-such-job") == (
+        contract.server.data_dir / "logs" / "no-such-job.log"
+    )
     with pytest.raises(UnknownJobError):
         await unknown()

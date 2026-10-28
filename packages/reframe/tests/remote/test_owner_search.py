@@ -10,6 +10,7 @@ import logging
 import os
 import socket
 import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -291,15 +292,42 @@ def test_a_started_owner_is_detached_from_the_terminal(
         assert "creationflags" not in options
 
 
+@pytest.mark.parametrize(
+    "text",
+    [json.dumps({"token": "the-secret-token", "port": "x"}), '{"token": "the-secret-token", '],
+    ids=["not valid", "not JSON"],
+)
 def test_an_endpoint_file_that_is_not_valid_is_ignored_without_logging_its_token(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, text: str
 ) -> None:
     path = tmp_path / ENDPOINT_FILE
-    path.write_text(json.dumps({"token": "the-secret-token", "port": "x"}), encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
     with caplog.at_level(logging.DEBUG, logger=owner_module.__name__):
         assert read_endpoint(path) is None
     assert caplog.records
     assert "the-secret-token" not in caplog.text
+
+
+async def test_an_owner_that_cannot_be_started(unowned: Server) -> None:
+    def fails(_start: FakeStart) -> None:
+        raise FileNotFoundError(2, "No such file or directory", "reframe-server")
+
+    found = await search(unowned, FakeStart(fails))
+    assert isinstance(found, NoOwner)
+    assert found.reason.startswith("the Reframe server cannot be started: ")
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0, reason="POSIX folder modes, not as root"
+)
+async def test_a_data_folder_that_cannot_be_written(unowned: Server) -> None:
+    unowned.data_dir.chmod(0o555)
+    try:
+        found = await search(unowned, FakeStart())
+    finally:
+        unowned.data_dir.chmod(0o755)
+    assert isinstance(found, NoOwner)
+    assert found.reason.startswith("the data folder cannot be used: ")
 
 
 def test_the_endpoint_file_follows_the_servers_setting(tmp_path: Path) -> None:
