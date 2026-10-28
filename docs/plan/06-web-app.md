@@ -310,8 +310,10 @@ S-2 and S-3. Milestone M3b, with C-17 ([05](05-core.md#c-17-remote-queue-and-que
       queue at start-up) and listens, it writes `server.json` (atomic, mode `0600` on POSIX)
       with `pid`, `instance`, `port`, `token`, `version`, `api_version`, `started_at`, and
       removes it at close. A server that cannot take the lock writes nothing and keeps 0027's
-      private queue with `queue.store_busy`; with `owner_only` it exits with code 75.
-- [ ] **Idle exit** (`idle_exit`): exit after N seconds with no running job, no job that a
+      private queue with `queue.store_busy`; with `owner_only` it exits with code 75. A client
+      connects to `127.0.0.1` and the file's `port`
+      ([decision 0056](../decisions/0056-s7-owner-endpoint-file-and-idle-exit.md)).
+- [x] **Idle exit** (`idle_exit`): exit after N seconds with no running job, no job that a
       `start` still targets, no event connection and no pending when-done countdown.
 - [ ] **Attachments**: after a client authenticates on `WS /api/events`, the server answers
       with a `client_id`. `POST /api/queue` with `attach: <client_id>` is refused (409)

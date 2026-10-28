@@ -2295,6 +2295,39 @@ A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive 
 left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
 2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
 
+### Local owner mode: uvicorn start-up failure, binds and addresses (S-7, task A)
+
+Checked on 2026-10-28 with uvicorn 0.54.0, httpx and Python 3.14 on Linux, with the real
+`reframe-server`:
+
+- **A lifespan that fails at start-up ends the process with 3.** `uvicorn.Server.startup`
+  runs `sys.exit(STARTUP_FAILURE)` (3) when the lifespan's start-up fails, and also when the
+  bind fails. The `SystemExit` leaves the task of `server.serve()` and stops the event loop
+  (`Task exception was never retrieved … exception=SystemExit(3)`), so code after
+  `await server.serve()` does not run. Caught inside the coroutine that awaits
+  `server.serve()`, it ends only that task. Asserted (once the lead's change to `serve()`
+  lands; `xfail` until then) by
+  `packages/reframe-server/tests/test_owner.py::test_owner_only_exits_75_against_a_held_lock_and_writes_nothing`.
+- **Starlette logs the whole traceback** of a lifespan that fails at start-up (uvicorn logs
+  the `lifespan.startup.failed` message at ERROR): 121 lines for `StoreBusy`, because FastAPI
+  nests the lifespan once for each of the 18 included routers.
+- **Which address reaches which bind** (`--port 0`; the port from `server.json`; httpx):
+
+  | `--host` | Listening sockets | `127.0.0.1` | `[::1]` | `localhost` |
+  |---|---|---|---|---|
+  | `127.0.0.1` | `127.0.0.1` | yes | refused | yes |
+  | `::1` | `::1` | refused | yes | yes |
+  | `localhost` | `::1` and `127.0.0.1` on two different ports | yes (the published port was the IPv4 socket's) | refused | yes |
+  | `0.0.0.0` | `0.0.0.0` | yes | refused | yes |
+  | `::` | `::` only (asyncio sets `IPV6_V6ONLY`) | refused | yes | yes |
+  | `172.17.0.1` | `172.17.0.1` | refused | refused | refused |
+
+  `localhost` resolves to `::1`, then `127.0.0.1` (`getent ahosts localhost`), and httpx tries
+  both. Clients use `127.0.0.1` (decision 0056).
+- **`mkstemp` makes the file `0600`**: `server.json` written through
+  `reframe.settings.JsonDocumentFile` has mode `0o100600` with the default umask. Asserted by
+  `test_owner.py::test_the_endpoint_file_names_the_listening_server_until_it_stops`.
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,
