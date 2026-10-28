@@ -9,7 +9,7 @@ import secrets
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from reframe import paths
@@ -62,7 +62,8 @@ class ServerConfig(BaseSettings):
     data_dir: Path | None = None
     """``None``: the core's default (``REFRAME_DATA_DIR`` or the platform folder)."""
     endpoint_file: Path | None = None
-    """Where ``server.json`` is written. ``None``: ``<data dir>/server.json``."""
+    """Where ``server.json`` is written (blanks around it are cut). ``None`` or blank:
+    ``<data dir>/server.json``."""
     idle_exit: float | None = Field(default=None, gt=0)
     """Exit after this many idle seconds. ``None``: never."""
     owner_only: bool = False
@@ -71,6 +72,15 @@ class ServerConfig(BaseSettings):
     """``Host`` names accepted besides the loopback names. ``None``: the defaults."""
     parent_pid: int | None = Field(default=None, gt=0)
     """Stop when this process ends (the desktop shell's pid). ``None``: no watch."""
+
+    @field_validator("endpoint_file", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        # The client reads REFRAME_ENDPOINT_FILE by the same rule, or it would wait for a file
+        # that this server writes elsewhere.
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @model_validator(mode="after")
     def _resolve(self) -> Self:
