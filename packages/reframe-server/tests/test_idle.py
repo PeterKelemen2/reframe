@@ -1,12 +1,19 @@
-"""The idle watch on the real facade."""
+"""The idle watch on the real facade, and in the entry point."""
 
 from __future__ import annotations
 
 import asyncio
+import json
+import secrets
+from pathlib import Path
 
+import httpx
 import pytest
+from pydantic import SecretStr
 
 from reframe_server import idle
+from reframe_server.__main__ import serve
+from reframe_server.config import ServerConfig
 from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
@@ -39,3 +46,36 @@ async def test_the_watch_outlives_the_close_of_the_facade(make_api: ApiFactory) 
     await asyncio.sleep(0.3)
     assert not watching.done()
     watching.cancel()
+
+
+@pytest.mark.usefixtures("make_api")  # the test's own folders, tools and settings
+async def test_a_server_with_idle_exit_that_is_stopped_by_a_request_ends(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The stop comes from elsewhere (``POST /api/system/shutdown``, the parent watch): the
+    entry point must end the idle watch, which would wait for an idle server for ever."""
+    token = secrets.token_urlsafe(16)
+    config = ServerConfig(
+        mode="desktop",
+        idle_exit=3600,
+        token=SecretStr(token),
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+    )
+    serving = asyncio.create_task(serve(config))
+    printed = ""
+    while not printed:
+        assert not serving.done()
+        await asyncio.sleep(0.02)
+        printed = capsys.readouterr().out
+    port = json.loads(printed)["port"]
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=headers) as client:
+        assert (await client.post("/api/system/shutdown")).status_code == 204
+    # Not wait_for: serve() would take its cancel for the idle watch's and return 0.
+    ended, _ = await asyncio.wait({serving}, timeout=10)
+    try:
+        assert ended == {serving}, "serve() still runs"
+        assert serving.result() == 0
+    finally:
+        serving.cancel()

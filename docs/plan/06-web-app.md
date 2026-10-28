@@ -217,7 +217,7 @@ row whose member a route reaches or that no longer exists
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
 | `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
 | `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |
-| `queue.owns_store`, `queue.busy` | The server's own state: it writes `server.json` only while it owns the store, and idle exit waits while the queue is busy (S-7). A client reads `GET /api/queue` and the `job.state` events |
+| `queue.owns_store`, `queue.busy`, `queue.store_busy` | The server's own state: it writes `server.json` only while it owns the store, `--owner-only` exits with 75 only while another process holds the lock, and idle exit waits while the queue is busy (S-7). A client reads `GET /api/queue` and the `job.state` events |
 | `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
 | `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
 | `power.countdown`, `power.executor` | The countdown's length and end are in `pending.seconds_left` and `pending.deadline`; the executor is the operating system's mechanism |

@@ -162,3 +162,60 @@ failed bind ends only that task, and `serve()` returns `app.state.exit_code`.
   `uvicorn/server.py", line 192, in startup … SystemExit: 3`.
 - The one-line message for a losing `--owner-only` server (Consequences) is left as it is:
   C-17 reads only the exit code.
+
+## Follow-up (review), 2026-10-28
+
+An independent review of the S-7 owner work found no blocker and no major. The findings, what
+changed and the test of each:
+
+1. **`--owner-only` exited 75 also when `queue.lock` cannot be used** (a data folder that is
+   not writable: the core's `queue.unreadable`). 75 means "another owner won", so C-17 would
+   wait for a `server.json` that no owner writes. The core could not tell the two cases apart:
+   `owns_store` is `False` in both. Changes:
+   - `QueueService.store_busy` (read only): `True` only when the queue's first use found the
+     lock held by another process. `owns_store`'s docstring names the unusable case. 06's
+     "Not exposed" table lists `queue.store_busy` (the facade coverage test failed without
+     the row).
+   - `owner.start` raises `StoreBusy` and sets 75 only for a held lock. For a lock that
+     cannot be used it raises `StoreUnusable` with the core's reason (the detail of the
+     `queue.unreadable` warning), and the server exits 1. Without `owner_only`, the warning
+     names the one cause that applies.
+   - Tests: the core's `test_owner.py::test_the_queue_tells_a_held_lock_from_one_that_cannot_be_used`;
+     the real process `test_owner.py::test_owner_only_exits_1_when_the_lock_cannot_be_used`
+     (a `queue.lock` that is a folder; on the old code `assert 75 == 1`);
+     `test_owner.py::test_the_log_says_why_a_server_does_not_own_the_queue` (a held and an
+     unusable lock; the old warning named both causes at once).
+2. **A `ServerEndpoint` validation error showed the token**: `input_value=['local-token-secret']`
+   for a token that is not text, and the whole input, token included, for an error of another
+   field (a missing `pid`). Change: `hide_input_in_errors=True` in the model's config; the
+   schema snapshot does not change. Test: the core's
+   `test_models.py::test_an_endpoint_file_that_is_not_valid_does_not_show_its_token` (on the
+   old model the token is in the message). `ValidationError.errors()` still holds the input:
+   a client that logs those leaves it out (`include_input=False`).
+3. **No test showed that a server with `--idle-exit` that is stopped otherwise ends.** Test:
+   `test_idle.py::test_a_server_with_idle_exit_that_is_stopped_by_a_request_ends` (in-process
+   `serve()`, `POST /api/system/shutdown`); with `idle_watch.cancel()` in `serve()` replaced
+   by `pass` it fails with `serve() still runs` after 10 s. The test waits with
+   `asyncio.wait`, not `wait_for`: the `suppress(asyncio.CancelledError)` around
+   `await idle_watch` in `serve()` also takes a cancel of `serve()` itself, so `wait_for`
+   returned 0 after its timeout with that mutation (reported to the lead).
+4. **The close code at the end of the idle time is 1012, not 1001.** Decision item 5 and the
+   C-17 consequence say 1001; that is wrong. uvicorn's shutdown closes every event connection
+   with 1012 before the lifespan closes the hub. Measured on the real server: an event client
+   that had not authenticated when the idle exit came was closed after 1.08 s with 1012; an
+   authenticated client at SIGINT also got 1012. **C-17: a close with 1012 means that the
+   server stops; look for an owner again** (0042 item 3).
+5. **The exit window.** uvicorn closes the listening socket, sleeps 0.1 s and waits up to 2 s
+   for open connections; then the lifespan removes `server.json`, and the lock is free only
+   after `queue.close()` (later when running jobs are stopped). Measured at an idle exit, in
+   seconds after `server.json` appeared (`--idle-exit 1`): the port refused at 1.081, the file
+   was gone at 1.181, the lock was free at 1.181. So a client can see "file present, port
+   refused, lock held" or "no file, lock held". **C-17 retries the owner search for a few
+   seconds while the lock is held and no endpoint answers**, and only then falls back to 0027.
+6. **With `REFRAME_TOKEN` set, `server.json` holds that token**, which lives as long as the
+   operator keeps it, not a token per run (0042 item 2 says "random per run"). Kept, the
+   lead's choice: the file is `0600` in the user's own data folder, and the operator who set
+   `REFRAME_TOKEN` already holds the token.
+7. `testdata/README.md` (the S-7 task A section) said that the exit-75 test is `xfail` until
+   the lead's change. Corrected, with the exit window, the close code and the unusable lock
+   added.

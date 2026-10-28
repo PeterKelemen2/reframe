@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from reframe.models import ServerEndpoint
+from reframe.models import AppWarningEvent, ServerEndpoint
 from reframe.service import Reframe
 from reframe.settings import JsonDocumentFile
 from reframe_server import __version__
@@ -23,6 +23,7 @@ __all__ = [
     "EXIT_STORE_BUSY",
     "ServerEndpoint",
     "StoreBusy",
+    "StoreUnusable",
     "publish",
     "start",
     "withdraw",
@@ -39,6 +40,11 @@ class StoreBusy(Exception):
     """``owner_only``, and another process owns the queue: the server does not start."""
 
 
+class StoreUnusable(Exception):
+    """``owner_only``, and ``queue.lock`` cannot be used: the server does not start (exit
+    code 1, not 75: no other owner will publish ``server.json`` either)."""
+
+
 def _endpoint_path(app: FastAPI) -> Path:
     config: ServerConfig = app.state.config
     reframe: Reframe = app.state.reframe
@@ -47,22 +53,33 @@ def _endpoint_path(app: FastAPI) -> Path:
 
 def start(app: FastAPI) -> None:
     """Called by the lifespan once the facade exists (``app.state.reframe``): open the queue.
-    When another process owns it and ``config.owner_only`` is set, set ``app.state.exit_code``
-    to :data:`EXIT_STORE_BUSY` and raise :class:`StoreBusy`. Blocking, briefly: the lock is
-    taken without waiting."""
+    With ``config.owner_only``, a queue that another process owns sets ``app.state.exit_code``
+    to :data:`EXIT_STORE_BUSY` and raises :class:`StoreBusy`; a ``queue.lock`` that cannot be
+    used raises :class:`StoreUnusable`. Blocking, briefly: the lock is taken without
+    waiting."""
     reframe: Reframe = app.state.reframe
     config: ServerConfig = app.state.config
-    reframe.queue.list()
+    warnings = reframe.events.subscribe(types={"app.warning"})
+    try:
+        reframe.queue.list()
+    finally:
+        warnings.close()
     if reframe.queue.owns_store:
         return
-    if config.owner_only:
-        app.state.exit_code = EXIT_STORE_BUSY
-        raise StoreBusy(f"another Reframe process owns the queue of {reframe.data_dir}")
+    if reframe.queue.store_busy:
+        problem = f"another Reframe process owns the queue of {reframe.data_dir}"
+        if config.owner_only:
+            app.state.exit_code = EXIT_STORE_BUSY
+            raise StoreBusy(problem)
+    else:
+        problem = f"the saved queue of {reframe.data_dir} cannot be used"
+        while (event := warnings.get_nowait()) is not None:
+            if isinstance(event, AppWarningEvent) and event.code == "queue.unreadable":
+                problem = f"the saved queue cannot be used: {event.detail}"
+        if config.owner_only:
+            raise StoreUnusable(problem)
     log.warning(
-        "another Reframe process owns the queue of %s (or its lock cannot be used): the jobs "
-        "of this server are not saved, and it writes no %s",
-        reframe.data_dir,
-        ENDPOINT_FILE,
+        "%s: the jobs of this server are not saved, and it writes no %s", problem, ENDPOINT_FILE
     )
 
 

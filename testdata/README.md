@@ -2334,9 +2334,9 @@ Checked on 2026-10-28 with uvicorn 0.54.0, httpx and Python 3.14 on Linux, with 
   bind fails. The `SystemExit` leaves the task of `server.serve()` and stops the event loop
   (`Task exception was never retrieved … exception=SystemExit(3)`), so code after
   `await server.serve()` does not run. Caught inside the coroutine that awaits
-  `server.serve()`, it ends only that task. Asserted (once the lead's change to `serve()`
-  lands; `xfail` until then) by
-  `packages/reframe-server/tests/test_owner.py::test_owner_only_exits_75_against_a_held_lock_and_writes_nothing`.
+  `server.serve()`, it ends only that task, which is what `serve()` does. Asserted by
+  `packages/reframe-server/tests/test_owner.py::test_owner_only_exits_75_against_a_held_lock_and_writes_nothing`
+  and `test_app.py::test_a_server_whose_port_is_taken_exits_1`.
 - **Starlette logs the whole traceback** of a lifespan that fails at start-up (uvicorn logs
   the `lifespan.startup.failed` message at ERROR): 121 lines for `StoreBusy`, because FastAPI
   nests the lifespan once for each of the 18 included routers.
@@ -2356,6 +2356,16 @@ Checked on 2026-10-28 with uvicorn 0.54.0, httpx and Python 3.14 on Linux, with 
 - **`mkstemp` makes the file `0600`**: `server.json` written through
   `reframe.settings.JsonDocumentFile` has mode `0o100600` with the default umask. Asserted by
   `test_owner.py::test_the_endpoint_file_names_the_listening_server_until_it_stops`.
+- **The end of an idle exit** (`--mode desktop --idle-exit 1`, seconds after `server.json`
+  appeared, polled every 2 ms): the port refuses at 1.081, `server.json` is gone at 1.181 and
+  `queue.lock` is free at 1.181 (uvicorn closes the listener, sleeps 0.1 s and waits up to 2 s
+  for open connections before the lifespan runs). An event client that had not authenticated
+  when the idle exit came was closed after 1.08 s with code 1012, as an authenticated one is
+  at SIGINT: uvicorn's shutdown closes every WebSocket before the lifespan closes the hub.
+  Recorded in decision 0056 (follow-up) for C-17.
+- **A `queue.lock` that is a folder** cannot be opened (`os.open` with `O_RDWR | O_CREAT`:
+  `IsADirectoryError`, errno 21): the core's `queue.unreadable` path, used by
+  `test_owner.py::test_owner_only_exits_1_when_the_lock_cannot_be_used`.
 
 ### uvicorn WebSocket ends (S-7 attachments)
 

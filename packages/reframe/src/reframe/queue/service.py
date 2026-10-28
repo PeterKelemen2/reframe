@@ -213,6 +213,7 @@ class QueueService:
         """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
         self._closed = False
         self._opened = False
+        self._store_busy = False
         self._lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._background: set[asyncio.Task[None]] = set()
@@ -222,9 +223,16 @@ class QueueService:
     @property
     def owns_store(self) -> bool:
         """This process holds ``queue.lock`` and keeps its jobs in the saved queue. ``False``
-        before the queue's first use, when another process owns the store, and after
-        :meth:`close`."""
+        before the queue's first use, when another process owns the store, when
+        ``queue.lock`` cannot be used (``queue.unreadable``), and after :meth:`close`."""
         return self._owner.held
+
+    @property
+    def store_busy(self) -> bool:
+        """The queue's first use found ``queue.lock`` held by another process
+        (``queue.store_busy``). ``False`` before the first use, for the owner, and when the
+        lock cannot be used at all."""
+        return self._store_busy
 
     @property
     def busy(self) -> bool:
@@ -539,6 +547,7 @@ class QueueService:
             )
             return
         if not owner.owned:
+            self._store_busy = True
             self._store.use_memory()
             who = f" (pid {owner.owner})" if owner.owner is not None else ""
             self._events.publish(
