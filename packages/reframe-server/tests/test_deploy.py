@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from reframe import paths
-from reframe_server.config import ServerConfig
+from reframe_server.config import ServerConfig, is_loopback
 
 DOCKERFILE = Path(__file__).resolve().parents[3] / "docker" / "Dockerfile"
 
@@ -62,6 +62,7 @@ def test_the_image_starts_a_web_server_with_its_roots_and_the_frontend(
     config = ServerConfig()
 
     assert (config.mode, config.auth_mode) == ("web", "password")
+    assert not is_loopback(config.host)
     assert config.media_roots == [Path("/media")]
     assert config.output_roots == [Path("/output")]
     assert config.static_dir == copied_from("frontend")
