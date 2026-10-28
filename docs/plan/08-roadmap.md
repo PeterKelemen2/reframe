@@ -91,7 +91,8 @@ the [Windows testing phase](#windows-testing-phase).
 [Decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md): one process runs
 every job, and the CLI hands its jobs to it. Built after M3 (it needs S-2 and S-3), beside or
 after M4 (the frontend does not need it), and done before M5 (D-3 finds the owner the same
-way).
+way). S-7's server side is built first, on the branch `server-complete`
+([decision 0055](../decisions/0055-server-complete-order.md)); C-17 follows.
 
 **Demo:**
 1. Two `reframe encode` runs in two terminals both encode, share one `parallel_jobs` limit, and
@@ -106,6 +107,9 @@ way).
 
 | Steps | `F-1`–`F-6`, `F-9` (without advanced options), `F-10` (source tables + basic output tracks), `F-12`, `F-14`, `F-15` (basic), `F-18`, `S-4`, `F-17` (Playwright set-up + flow 3) |
 |-------|---|
+
+`S-4` is built early, on the branch `server-complete`
+([decision 0055](../decisions/0055-server-complete-order.md)).
 
 **Demo:** in the browser: open a file from the server file browser → choose a preset → change
 the encoder and quality → add and remove audio tracks → add to queue → watch progress → open
@@ -175,6 +179,10 @@ validation error from the dry run.
 
 | Steps | `Q-1.4` (the Windows testing phase), `S-6`, `D-7`, `D-8`, `D-9`, `F-16`, `F-17` (all four flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5` |
 |-------|---|
+
+`S-6` is built early, on the branch `server-complete`
+([decision 0055](../decisions/0055-server-complete-order.md)); its Intel QSV and NVIDIA NVENC
+checks in Docker wait for such a host.
 
 ### Windows testing phase
 
