@@ -4,7 +4,6 @@ path is resolved (links followed) and must stay inside the resolved folder."""
 
 from __future__ import annotations
 
-import logging
 import ntpath
 from pathlib import Path
 
@@ -16,8 +15,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from reframe_server.config import ServerConfig
 
 __all__ = ["install"]
-
-log = logging.getLogger(__name__)
 
 ASSETS = "assets"
 """Vite's output folder for files with a content hash in their name."""
@@ -42,8 +39,6 @@ def install(app: FastAPI, config: ServerConfig) -> None:
     after every API router; a request under ``/api`` keeps the 404 problem."""
     if config.mode != "web" or config.static_dir is None:
         return
-    if not (config.static_dir / "index.html").is_file():
-        log.warning("%s has no index.html: the frontend cannot load", config.static_dir)
     app.router.default = _Frontend(config.static_dir, app.router.default)
 
 

@@ -1,18 +1,19 @@
-"""The built frontend in web mode: cache headers, the SPA fallback, the 404 of ``/api`` and
-the folder jail."""
+"""The built frontend in web mode: cache headers, the SPA fallback, the 404 of ``/api``, the
+folder jail and the folders refused at start-up."""
 
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from starlette import responses
 from websockets.exceptions import InvalidStatus
 
+from reframe import paths
 from reframe_server.security import APP_CSP
 from reframe_testing.server import Api, ApiFactory
 
@@ -92,23 +93,57 @@ async def test_api_other_methods_and_missing_assets_keep_the_problem_404(
 
 
 @pytest.mark.parametrize(("mode", "static"), [("desktop", True), ("web", False)])
-async def test_no_static_file_without_web_mode_and_folder(
+async def test_no_static_file_or_folder_check_without_web_mode_and_folder(
     make_api: ApiFactory, site: Path, mode: str, static: bool
 ) -> None:
+    (site / "index.html").unlink()
     async with make_api(mode=mode, static_dir=site if static else None) as api:
         assert_problem_404(await api.client.get("/"))
         assert_problem_404(await api.client.get("/assets/index-Ab12.js"))
 
 
-async def test_folder_without_index_is_logged_and_serves_no_page(
-    make_api: ApiFactory, tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_folder_without_index_html_is_refused(make_api: ApiFactory, tmp_path: Path) -> None:
     folder = tmp_path / "empty"
     folder.mkdir()
-    with caplog.at_level(logging.WARNING, logger="reframe_server.static"):
-        async with make_api(static_dir=folder) as api:
-            assert_problem_404(await api.client.get("/queue"))
-    assert f"{folder} has no index.html" in caplog.text
+    with pytest.raises(ValidationError, match=r"has no index\.html"):
+        async with make_api(static_dir=folder):
+            pass
+
+
+@pytest.mark.parametrize(
+    ("held", "overrides", "env"),
+    [
+        pytest.param("config folder", {"config_dir": "web"}, {}, id="config"),
+        pytest.param(
+            "data folder", {"data_dir": None}, {paths.DATA_DIR_ENV: "web/reframe"}, id="data"
+        ),
+        pytest.param("cache folder", {}, {paths.CACHE_DIR_ENV: "alias/cache"}, id="cache"),
+        pytest.param("endpoint file", {"endpoint_file": "web/server.json"}, {}, id="endpoint"),
+    ],
+)
+async def test_folder_that_holds_a_server_folder_is_refused(
+    make_api: ApiFactory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    held: str,
+    overrides: dict[str, str | None],
+    env: dict[str, str],
+) -> None:
+    # Its files are served without a login, server.json with the token among them. The folder
+    # is named through one link and the cache folder through another: both are resolved.
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_bytes(INDEX)
+    for link in ("current", "alias"):
+        (tmp_path / link).symlink_to(web, target_is_directory=True)
+    for name, value in env.items():
+        monkeypatch.setenv(name, str(tmp_path / value))
+    folders = {
+        name: None if value is None else tmp_path / value for name, value in overrides.items()
+    }
+    with pytest.raises(ValidationError, match=f"holds the {held}"):
+        async with make_api(static_dir=tmp_path / "current", **folders):
+            pass
 
 
 async def test_folder_behind_a_link_follows_the_link_on_each_request(
