@@ -124,6 +124,7 @@ class JobLog:
 
     def _timed_flush(self) -> None:
         self._timer = None
+        self.flush_file()  # other processes read the file while the job runs
         self.flush_events()
 
     def _fail(self, exc: OSError) -> None:
