@@ -175,6 +175,18 @@ async def test_a_detach_keeps_the_jobs_of_its_own_connection(api: Api) -> None:
     assert await states(api) == {kept: "waiting", dropped: "cancelled"}
 
 
+async def test_a_message_that_is_not_a_detach_keeps_nothing(api: Api) -> None:
+    """A stray message of another type, or text that is not JSON, before a CLI is killed: its
+    job is cancelled all the same."""
+    async with live(api) as server, connected(server, api) as (connection, client_id):
+        [job] = await add_jobs(api, client_id, "Show.mkv")
+        await connection.send(json.dumps({"type": "subscribe"}))
+        await connection.send("detach")
+        connection.transport.abort()
+        await ended(api, job)
+    assert await states(api) == {job: "cancelled"}
+
+
 async def test_attach_with_the_id_of_a_closed_connection_is_refused(api: Api) -> None:
     """A job is never attached to a client that is already gone: nobody would be left to
     cancel it."""
