@@ -251,9 +251,18 @@ Done when: a test with a slow consumer shows bounded memory and latest-value del
 
 ## S-4 Static frontend and SPA fallback
 
-- [ ] Web mode: serve `frontend/dist` with immutable cache headers for hashed assets, and
+- [x] Web mode: serve `frontend/dist` with immutable cache headers for hashed assets, and
       `index.html` for unknown non-API paths.
-- [ ] Desktop mode: no static files (Tauri bundles the frontend).
+- [x] Desktop mode: no static files (Tauri bundles the frontend).
+
+The folder is `static_dir` (`REFRAME_STATIC_DIR`). It has no implicit default: when it is not
+set, the server is API only, and a deployment (the Docker image, the bare-metal unit) sets it
+to a `npm run build:web` output. Files under `assets/` get
+`public, max-age=31536000, immutable`; every other file and the `index.html` fallback get
+`no-cache`. A path under `/api`, a missing file under `/assets/` and a method other than
+`GET` / `HEAD` keep the JSON problem 404. No file outside the resolved folder is served
+(links are followed, then checked)
+([decision 0058](../decisions/0058-s4-static-frontend.md)).
 
 ## S-5 OpenAPI → TypeScript
 
