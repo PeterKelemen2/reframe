@@ -264,7 +264,8 @@ to a `npm run build:web` output. Files under `assets/` get
 `no-cache`. A path under `/api`, a missing file under `/assets/` and a method other than
 `GET` / `HEAD` keep the JSON problem 404. No file outside the resolved folder is served
 (links are followed, then checked). A `static_dir` without `index.html`, or one that holds the
-config, data or cache folder or the endpoint file, is refused at start-up (exit 2)
+config, data or cache folder, the endpoint file, a media root or an output root, is refused at
+start-up (exit 2)
 ([decision 0058](../decisions/0058-s4-static-frontend.md)).
 
 ## S-5 OpenAPI → TypeScript

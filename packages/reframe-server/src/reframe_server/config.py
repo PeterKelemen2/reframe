@@ -55,7 +55,7 @@ class ServerConfig(BaseSettings):
     """Web mode: folders the client may write to. Empty: none."""
     static_dir: Path | None = None
     """Web mode: the frontend build, served without a login. It must hold ``index.html`` and
-    none of the server's folders. ``None``: no frontend."""
+    none of the server's folders, media roots or output roots. ``None``: no frontend."""
     cors_origins: list[str] = Field(default_factory=list)
     config_dir: Path | None = None
     """``None``: the core's default (``REFRAME_CONFIG_DIR`` or the platform folder)."""
@@ -95,14 +95,16 @@ class ServerConfig(BaseSettings):
         if not (self.static_dir / "index.html").is_file():
             raise ValueError(f"static_dir {self.static_dir} has no index.html")
         served = self.static_dir.resolve()
-        kept = {
-            "config folder": self.config_dir or paths.config_dir(),
-            "data folder": self.data_dir or paths.data_dir(),
-            "cache folder": paths.cache_dir(),
-        }
+        kept = [
+            ("config folder", self.config_dir or paths.config_dir()),
+            ("data folder", self.data_dir or paths.data_dir()),
+            ("cache folder", paths.cache_dir()),
+            *(("media root", root) for root in self.media_roots),
+            *(("output root", root) for root in self.output_roots),
+        ]
         if self.endpoint_file is not None:
-            kept["endpoint file"] = self.endpoint_file
-        for name, path in kept.items():
+            kept.append(("endpoint file", self.endpoint_file))
+        for name, path in kept:
             if path.resolve().is_relative_to(served):
                 raise ValueError(
                     f"static_dir {self.static_dir} holds the {name} {path}: "

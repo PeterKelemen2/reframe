@@ -158,7 +158,10 @@ so `reframe-server` exits 2 and prints the reason) when:
   `endpoint_file` is set. The endpoint file holds the token; its default is in the data folder.
   Both sides are resolved (links followed). A folder that the config does not set comes from
   `reframe.paths`, as the facade gets it (the server gives the facade no cache folder, so that
-  is always `paths.cache_dir()`).
+  is always `paths.cache_dir()`);
+- it is, or holds, a media root or an output root (each one of the list is checked). Their
+  files are not the server's own, but the API shows them only after a login, and the static
+  files need none. Added at the lead's request after the first report.
 
 Desktop mode serves no static file and checks no folder. A folder inside a server folder
 (`<data>/web`) is allowed: only that folder is served. A link that is swapped after start-up is
@@ -168,9 +171,11 @@ not checked again.
 `test_folder_that_holds_a_server_folder_is_refused`, with `static_dir` through a link and one
 row each: the config folder equal to the build, the data folder from `REFRAME_DATA_DIR` one
 level below it (the review's layout), the cache folder through a second link, the endpoint
-file; and the desktop row of `test_no_static_file_or_folder_check_without_web_mode_and_folder`,
-now with a folder without `index.html`. On the old code the first two failed with `DID NOT
-RAISE`. The real `reframe-server` with the review's layout exits 2 with
+file, a media root inside the build as the second of two roots, and an output root equal to
+the build as the second of two; and the desktop row of
+`test_no_static_file_or_folder_check_without_web_mode_and_folder`, now with a folder without
+`index.html`. On the old code the first two failed with `DID NOT RAISE`; the media and output
+rows failed in the same way before their check was added. The real `reframe-server` with the review's layout exits 2 with
 `reframe-server: Value error, static_dir … has no index.html`; with an `index.html` added to
 that folder, it exits 2 with `… holds the config folder …: every file in it would be served
 without a login`, and no `server.json` is written.
@@ -182,6 +187,3 @@ names the folder of the `frontend` stage, then points it at a temporary build.
 **Not changed.** These review notes are accepted as they are: the cache rule uses the resolved
 file and not the request path, the `startswith("assets")` detail, and the duplicate
 `..` / `%2e%2e` test row.
-
-**Open for the lead.** A `static_dir` that holds a media or output root is still allowed, and
-its media is then served without a login.

@@ -119,6 +119,8 @@ async def test_folder_without_index_html_is_refused(make_api: ApiFactory, tmp_pa
         ),
         pytest.param("cache folder", {}, {paths.CACHE_DIR_ENV: "alias/cache"}, id="cache"),
         pytest.param("endpoint file", {"endpoint_file": "web/server.json"}, {}, id="endpoint"),
+        pytest.param("media root", {"media_roots": ["media", "web/media"]}, {}, id="media"),
+        pytest.param("output root", {"output_roots": ["output", "web"]}, {}, id="output"),
     ],
 )
 async def test_folder_that_holds_a_server_folder_is_refused(
@@ -126,7 +128,7 @@ async def test_folder_that_holds_a_server_folder_is_refused(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     held: str,
-    overrides: dict[str, str | None],
+    overrides: dict[str, str | list[str] | None],
     env: dict[str, str],
 ) -> None:
     # Its files are served without a login, server.json with the token among them. The folder
@@ -136,11 +138,14 @@ async def test_folder_that_holds_a_server_folder_is_refused(
     (web / "index.html").write_bytes(INDEX)
     for link in ("current", "alias"):
         (tmp_path / link).symlink_to(web, target_is_directory=True)
-    for name, value in env.items():
-        monkeypatch.setenv(name, str(tmp_path / value))
-    folders = {
-        name: None if value is None else tmp_path / value for name, value in overrides.items()
-    }
+    for variable, relative in env.items():
+        monkeypatch.setenv(variable, str(tmp_path / relative))
+    folders: dict[str, Path | list[Path] | None] = {}
+    for name, value in overrides.items():
+        if isinstance(value, list):
+            folders[name] = [tmp_path / item for item in value]
+        else:
+            folders[name] = None if value is None else tmp_path / value
     with pytest.raises(ValidationError, match=f"holds the {held}"):
         async with make_api(static_dir=tmp_path / "current", **folders):
             pass
