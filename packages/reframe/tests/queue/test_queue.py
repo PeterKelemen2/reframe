@@ -116,6 +116,21 @@ async def test_job_log_events_are_rate_limited(harness: Harness) -> None:
     assert "line 499" in h.log_text(ended.id)  # the file has them all
 
 
+async def test_a_running_jobs_log_file_has_its_lines_while_the_step_runs(
+    harness: Harness,
+) -> None:
+    """Another process (``reframe queue log``) reads the file while the job runs."""
+    h = harness
+    h.scenario(LONG)
+    added = await h.queue.add(h.job())
+    h.queue.start()
+    await h.running_process(added.id)
+    log = h.queue.log_path(added.id)
+    await h.wait_for(lambda: "\n$ " in log.read_text(encoding="utf-8"), limit=5)
+    await h.queue.cancel(added.id)
+    assert h.leftovers() == []
+
+
 async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) -> None:
     h = harness
     h.scenario(

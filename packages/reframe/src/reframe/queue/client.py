@@ -5,9 +5,12 @@ saved queue read without owning it (no lock, no restore, nothing written to the 
 from __future__ import annotations
 
 import builtins
+import contextlib
+import os
 import sqlite3
+import urllib.parse
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Protocol
 
 from pydantic import ValidationError
@@ -59,20 +62,31 @@ class SavedQueue:
     def __init__(self, jobs: _Jobs, problem: str | None = None) -> None:
         self.jobs = jobs
         self.problem = problem
-        """Why the file, or some of its rows, could not be read."""
+        """Why the file, or some of its rows, could not be read, or why it may miss its newest
+        changes."""
+
+
+def _store_uri(path: PurePath) -> str:
+    """``path`` as an SQLite ``file:`` URI. SQLite refuses a host in a URI, so a UNC path keeps
+    both its slashes in the URI's path: ``\\\\nas\\share\\q`` is ``file:////nas/share/q``."""
+    text = path.as_posix()
+    if not text.startswith("/"):
+        text = "/" + text  # a drive letter: file:///C:/…
+    return "file://" + urllib.parse.quote_from_bytes(os.fsencode(text), safe="/:")
 
 
 def read_saved_queue(data_dir: Path) -> SavedQueue:
     """Read ``<data dir>/queue.sqlite3`` without the queue's lock. Blocking. Never raises.
 
-    SQLite in read-only mode still makes the WAL side files; in a folder the user cannot write
-    the file is read as immutable instead (a write in progress may then be missed)."""
+    Read-only mode still makes the WAL side files. Where it cannot (no ``-shm`` file in a folder
+    the user cannot write), the file is read as immutable: the commits in its ``-wal`` file
+    since the last checkpoint are then not seen, and ``problem`` says that they may be missing."""
     path = data_dir / STORE_FILE
     if not path.exists():
         return SavedQueue([])
     rows: builtins.list[tuple[object, ...]] = []
     problem: str | None = None
-    uri = path.absolute().as_uri()
+    uri = _store_uri(path.absolute())
     for options in ("mode=ro", "mode=ro&immutable=1"):
         try:
             db = sqlite3.connect(f"{uri}?{options}", uri=True)
@@ -88,7 +102,8 @@ def read_saved_queue(data_dir: Path) -> SavedQueue:
         except sqlite3.Error as exc:
             problem = f"{path}: {exc}"
             continue
-        problem = None
+        if problem is not None:  # read as immutable
+            problem = _missed_wal(path, problem)
         break
     jobs: _Jobs = []
     skipped = 0
@@ -100,3 +115,14 @@ def read_saved_queue(data_dir: Path) -> SavedQueue:
     if skipped and problem is None:
         problem = f"{skipped} saved job(s) could not be read (made by a newer Reframe?)"
     return SavedQueue(jobs, problem)
+
+
+def _missed_wal(path: Path, why: str) -> str | None:
+    """The problem of a store read as immutable, ``None`` when it has no ``-wal`` file to miss."""
+    wal = path.with_name(f"{path.name}-wal")
+    size = 0
+    with contextlib.suppress(OSError):
+        size = wal.stat().st_size
+    if not size:
+        return None
+    return f"{why}; shown as of its last checkpoint, so newer changes in {wal.name} may be missing"

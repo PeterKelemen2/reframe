@@ -14,6 +14,7 @@ import logging
 import os
 import uuid
 from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,13 +101,20 @@ class _Keys:
     output: files.FileKey | None
 
 
-def _job_keys(job: QueueJob) -> _Keys:
-    """``job``'s keys. Blocking: never call it on the event loop."""
-    source = _source_key(job)
+def _written_key(path: str | os.PathLike[str]) -> files.FileKey:
+    """``path`` as written, made absolute. No file-system call, so links are not resolved."""
+    return files.FileKey(os.path.abspath(path))
+
+
+def _job_keys(
+    job: QueueJob, key: Callable[[str | os.PathLike[str]], files.FileKey] = _path_key
+) -> _Keys:
+    """``job``'s keys. Blocking with the default ``key``: never call it on the event loop."""
+    source = key(job.settings.source.path)
     if job.settings.output.edit_in_place:
         return _Keys(source, source)
     path = job.settings.output.path
-    return _Keys(source, None if path is None else _path_key(path))
+    return _Keys(source, None if path is None else key(path))
 
 
 def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = None) -> bool:
@@ -233,6 +241,9 @@ class QueueService:
         """Each waiting or running job's file keys, taken off the event loop."""
         self._keying: dict[str, asyncio.Task[None]] = {}
         """The jobs whose keys are being taken in the background (restored jobs)."""
+        self._unchecked: set[str] = set()
+        """Restored jobs that were not added or retried since: their claims were never
+        checked against each other (a store of an older Reframe may hold two with one output)."""
         self._processing = False
         self._only: set[str] | None = None
         """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
@@ -298,8 +309,6 @@ class QueueService:
             error=error,
         )
         keys = None if errors else await self._take_keys(queued)  # a failed job: at its retry
-        if keys is not None:
-            await self._take_missing_keys()
         self._check_open()
         async with self._lock:
             # Under the lock: two adds of one output at the same time must not both pass.
@@ -388,7 +397,6 @@ class QueueService:
             raise JobStateError(f"job {job_id} is {job.state.value}: it cannot be retried")
         # Taken again: a link or a file may have changed since the job was added.
         keys = await self._take_keys(job)
-        await self._take_missing_keys()
         self._check_open()
         async with self._lock:
             job = self._job(job_id)  # removed meanwhile: UnknownJobError
@@ -404,6 +412,7 @@ class QueueService:
                 return job.model_copy(deep=True)
             job.issues = kept
             self._keys[job_id] = keys
+            self._unchecked.discard(job_id)
             job.started_at = job.finished_at = None
             job.progress = None
             await self._set_state(job, JobState.WAITING, error=None)
@@ -617,6 +626,7 @@ class QueueService:
                 job.error = _restored_error(job)
                 job.finished_at = job.finished_at or now
             self._jobs[job.id] = job
+        self._unchecked.update(self._jobs)
         changed = self._renumber(self._ordered())
         to_save = {job.id: job for job in changed}
         to_save.update((job.id, job) for job, _ in interrupted)
@@ -706,31 +716,24 @@ class QueueService:
             )
         return False
 
-    def _claim(self, job: QueueJob, keys: _Keys) -> ValidationIssue | None:
+    def _claim(
+        self, job: QueueJob, keys: _Keys, *, skip: AbstractSet[str] = frozenset()
+    ) -> ValidationIssue | None:
         """The issue when ``job``'s output is the output or the source of another waiting,
-        running or paused job. No file-system call: a job without keys yet claims nothing."""
+        running or paused job (not one in ``skip``). No file-system call: a restored job whose
+        keys are still being taken is compared by its paths as written."""
         output = keys.output
         if output is None:
             return None
         for other in self._ordered():
-            if other.id == job.id or other.state not in _CLAIMING:
+            if other.id == job.id or other.state not in _CLAIMING or other.id in skip:
                 continue
-            theirs = self._keys.get(other.id)
-            if theirs is None:
-                continue
+            theirs = self._keys.get(other.id) or _job_keys(other, _written_key)
             if files.same_key(output, theirs.output):
                 return _claim_issue(job, other, as_source=False)
             if files.same_key(output, theirs.source):
                 return _claim_issue(job, other, as_source=True)
         return None
-
-    async def _take_missing_keys(self) -> None:
-        """Take the keys of the waiting, running and paused jobs that have none yet (restored
-        jobs whose keys are still being taken), so that their claims count."""
-        for job in [j for j in self._ordered() if j.state in _CLAIMING and j.id not in self._keys]:
-            keys = await self._take_keys(job)
-            if self._jobs.get(job.id) is job and job.state in _CLAIMING:
-                self._keys.setdefault(job.id, keys)
 
     async def _take_keys(self, job: QueueJob) -> _Keys:
         """``job``'s file keys, taken in a worker thread: a disk or a network share that does
@@ -757,10 +760,20 @@ class QueueService:
             keys = await self._take_keys(job)
         finally:
             self._keying.pop(job.id, None)
-        if self._closed or self._jobs.get(job.id) is not job:
-            return  # closed or removed meanwhile
-        self._keys.setdefault(job.id, keys)  # a retry meanwhile took newer ones
-        self._schedule()
+        if self._closed or self._jobs.get(job.id) is not job or job.id in self._keys:
+            return  # closed or removed meanwhile, or a retry took newer keys and checked them
+        # The jobs added or retried meanwhile were checked against its paths as written; a
+        # link or another spelling of the same file shows only now.
+        claim = None
+        if job.state is JobState.WAITING:
+            claim = self._claim(job, keys, skip=self._unchecked)
+        if claim is None:
+            self._keys[job.id] = keys
+            self._schedule()
+            return
+        job.issues = [*job.issues, claim]
+        job.finished_at = self._clock.now()
+        await self._set_state(job, JobState.FAILED, error=f"The job has errors: {claim.message}")
 
     async def _run(self, job: QueueJob, active: ActiveJob) -> None:
         joblog = JobLog(

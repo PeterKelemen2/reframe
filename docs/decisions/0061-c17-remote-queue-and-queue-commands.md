@@ -211,7 +211,67 @@ worked on separate files; each wrote its own part below.
 
 ### The queue core
 
-(Written by the fix agent of the queue core.)
+- **Every `add` and `retry` waited on the share of a restored job without keys** (R1 B1). Each
+  call took the keys of every waiting job that had none yet, in a new worker thread: a share
+  that did not answer held every add (the owner's `POST /api/queue` too) and left one more
+  blocked thread per attempt. Changed, of R1's suggestions the comparison without I/O and a
+  check when the keys arrive: `add` and `retry` take only their own job's keys (a share that
+  does not answer holds back only the jobs that use it). A job whose keys are still being taken
+  is compared by its paths as written (`os.path.abspath`; `same_key` already ignores case), so
+  the same spelling is claimed at once. When a restored job's keys arrive, it is checked
+  against the jobs added or retried since the queue opened, and **it** fails with
+  `queue.output_claimed` if one of them claims its file through a link or another spelling: it
+  has not started (a job without keys is never taken), while the other job may already run.
+  Restored jobs are still not checked against each other (a store of an older Reframe; the
+  runner keeps such a pair apart). Waiting briefly for the job's own key task was not chosen:
+  every add would then wait while a share is slow. Tests in `tests/queue/test_output_claims.py`:
+  `test_adds_return_at_once_while_a_restored_jobs_share_does_not_answer` (a held `stat`; on the
+  old code `TimeoutError` after 5 s), `test_a_restored_job_fails_when_its_keys_show_a_claimed_output`,
+  `test_a_restored_job_cancelled_before_its_keys_arrive_stays_cancelled`,
+  `test_a_restored_job_removed_before_its_keys_arrive_is_not_saved_again` (without that check,
+  the late claim failed the removed job and saved it again) and
+  `test_a_retried_restored_job_claims_against_the_restored_jobs_whose_keys_arrive` (symbolic
+  links; skipped on Windows); the restored pairs of `restore_together` still run one after the
+  other.
+- **A retry without the keys of restored jobs survived** (the lead's L1, R1 C2).
+  `test_a_retry_is_claimed_by_a_restored_job_whose_keys_are_being_taken`: L1 on the old code
+  fails it (`WAITING is FAILED`), and so does a `_claim` that skips jobs without keys.
+- **A claim checked outside the lock survived** (R1 C1).
+  `test_adds_of_one_output_at_the_same_time_queue_one` now lets the four adds have their keys in
+  one pass of the event loop; with C1 on the old code all four are added waiting (`4 == 1`).
+- **A UNC data folder** (R1 m7). `Path.as_uri()` gives a UNC path a host. The URI is now built
+  from the path's bytes (percent-encoded: `?`, `#`, `%`, a byte that is not UTF-8) with an empty
+  authority, a `/` before a drive letter, and both slashes of a UNC path in the URI's path:
+  `\\nas\share\…` is `file:////nas/share/…`. Checked with SQLite 3.54.0 (Python 3.14.8, Linux):
+  `file://nas/share/data/queue.sqlite3?mode=ro` (also what `nturl2path.pathname2url` gives) →
+  "invalid uri authority: nas"; `file:////nas/share/data/queue.sqlite3?mode=ro` → "unable to
+  open database file" (parsed; no such file here); `file:////tmp/…` opens `/tmp/…`, so SQLite
+  gives the VFS the whole path with both slashes, which Windows reads as the UNC path (not run
+  on Windows). Test: `tests/queue/test_saved_queue.py::test_a_unc_data_folder_has_a_uri_that_sqlite_accepts`.
+- **The immutable read misses every commit since the last checkpoint** (R1 m7). Checked with
+  the same SQLite: a WAL database with one commit after a `TRUNCATE` checkpoint gives 2 rows with
+  `mode=ro` and 1 with `mode=ro&immutable=1`, with or without an open writer; `mode=ro` fails
+  only when there is no `-shm` file and the folder cannot be written ("unable to open database
+  file" with a `-wal` file, "attempt to write a readonly database" without one). The docstring
+  says so, and `SavedQueue.problem` does when a `-wal` file with content is there ("…; shown as
+  of its last checkpoint, so newer changes in queue.sqlite3-wal may be missing"); without one
+  (an owner that closed) the read is complete and there is no problem. Tests:
+  `test_a_store_read_as_immutable_says_newer_changes_may_be_missing`,
+  `test_a_store_without_a_wal_read_as_immutable_has_no_problem`.
+- **`mode=rw` survived** (R1 S3). `test_reading_the_saved_queue_writes_nothing_to_the_store`
+  reads a copy of a stopped owner's store whose newest job is only in the `-wal` file: with
+  `mode=rw` the closing connection folds the `-wal` into the database file and removes it.
+- **The folders guard** (R1 m9, G1). The owner search is also refused when its endpoint file
+  is the session's `REFRAME_ENDPOINT_FILE` (read as the client reads it) or lies in one of the
+  owner's folders. `testing/tests/test_folders_guard.py` runs a pytest session in a subprocess
+  (the guard reads its session's environment at import) whose environment names temporary
+  folders and an endpoint file as the owner's: each refusal is an inner test that expects the
+  guard's failure, and temporary folders pass. On the old guard the two endpoint tests fail
+  (`DID NOT RAISE`); each of eight mutations of the guard fails at least one.
+- **`reframe queue log` was not live** (R2 F9, the core part). The timed flush of a job's log
+  events also flushes the file, so a reader sees a running job's lines within the event
+  interval (0.25 s). Test: `tests/queue/test_queue.py::test_a_running_jobs_log_file_has_its_lines_while_the_step_runs`
+  (on the old code the file stayed empty until the step ended).
 
 
 ### The remote client
