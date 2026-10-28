@@ -296,6 +296,29 @@ async def test_a_restored_job_cancelled_before_its_keys_arrive_stays_cancelled(
 
 
 @needs_symlinks
+async def test_a_restored_job_removed_before_its_keys_arrive_is_not_saved_again(
+    harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness
+    link = tmp_path / "out-link"
+    link.symlink_to(tmp_path / "out", target_is_directory=True)
+    restored = await h.queue.add(writing_to(h, link, "Same"))
+    await h.queue.close()
+    held = hold_share(monkeypatch, link)
+    h.queue = queue_at(h)
+    try:
+        h.queue.list()
+        await h.queue.remove(restored.id)
+        added = await h.queue.add(h.job("Same"))
+    finally:
+        held.answer.set()
+    await h.wait_for(lambda: not h.queue._background)  # the keys arrived and were dropped
+    await h.queue.close()
+    h.queue = queue_at(h)
+    assert [job.id for job in h.queue.list()] == [added.id]
+
+
+@needs_symlinks
 async def test_a_retried_restored_job_claims_against_the_restored_jobs_whose_keys_arrive(
     harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
