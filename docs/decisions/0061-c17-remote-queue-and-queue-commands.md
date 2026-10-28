@@ -197,6 +197,28 @@ Before the merge into `m3b-shared-queue`, on the step's branch at e729196:
   Every process was ended and the folders were removed.
 - The incident (Context item 9): `launch_detached` passes no `env`, so the started server
   inherited the test's environment with `PYTEST_CURRENT_TEST` set. When the countdown ended,
-  `reframe.platform.power.refusal()` would then have refused `systemctl poweroff`. This was
-  read from the code, not run. The fix round checks it and also sets `REFRAME_POWER_DRY_RUN=1`
-  in the real-process tests.
+  `reframe.platform.power.refusal()` would have refused `systemctl poweroff`. Checked: a
+  process that a test started through `launch_detached` read
+  `PYTEST_CURRENT_TEST='…::test_a_detached_child_sees_the_running_test (call)'`, and its
+  `power.refusal()` returned "refused: a test is running (PYTEST_CURRENT_TEST is set)". The
+  fix round also sets `REFRAME_POWER_DRY_RUN=1` in the real-process tests.
+
+## Follow-up: the review fixes
+
+Two reviews of the merged step (R1: the core, R2: the CLI; 2026-10-28) and the lead's checks
+above. [0062](0062-c17-review.md) lists every finding and its outcome. Three fix agents
+worked on separate files; each wrote its own part below.
+
+### The queue core
+
+(Written by the fix agent of the queue core.)
+
+
+### The remote client
+
+(Written by the fix agent of the remote client.)
+
+
+### The CLI
+
+(Written by the fix agent of the CLI.)
