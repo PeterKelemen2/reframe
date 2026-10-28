@@ -1,16 +1,18 @@
 """The event WebSocket hub. A client authenticates in its first message, then receives the
 core's events with a sequence number: progress throttled per id, log lines batched, and a
 heartbeat. Each connection reads its bus subscription only between two sends, so a client
-that does not keep up leaves its backlog in that bounded, coalescing queue.
+that does not keep up leaves its backlog in that bounded, coalescing queue. Jobs added with a
+connection's ``client_id`` are cancelled when that client goes away without a ``detach``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import secrets
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -23,18 +25,22 @@ from reframe.models import (
     Event,
     JobLogEvent,
     JobStateEvent,
+    QueueJob,
     ResyncEvent,
     TaskDoneEvent,
     TaskProgressEvent,
     json_text,
 )
+from reframe.queue import QueueService, UnknownJobError
 from reframe_server import security
 from reframe_server.config import ServerConfig
 
 __all__ = [
     "CLOSE_GOING_AWAY",
     "CLOSE_UNAUTHORIZED",
+    "Attachment",
     "AuthMessage",
+    "DetachMessage",
     "EventHub",
     "EventMessage",
     "Heartbeat",
@@ -43,6 +49,9 @@ __all__ = [
 
 CLOSE_GOING_AWAY = 1001
 CLOSE_UNAUTHORIZED = 4401
+
+_SERVER_STOPS = 1012
+"""The disconnect code that uvicorn's shutdown gives each open connection."""
 
 _TICK = time.get_clock_info("monotonic").resolution
 
@@ -58,6 +67,15 @@ class AuthMessage(BaseModel):
     request counts."""
 
 
+class DetachMessage(BaseModel):
+    """Keeps the jobs attached to this connection when it ends, also jobs attached after it.
+    The server reads a client's messages in order, so one sent before the close counts."""
+
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    type: Literal["detach"]
+
+
 class Hello(BaseModel):
     """The server's first message, once the client is in."""
 
@@ -70,6 +88,10 @@ class Hello(BaseModel):
     heartbeat: float
     """Seconds between two heartbeats. A client that hears nothing for longer should
     reconnect."""
+    client_id: str
+    """Random id of this connection, for ``attach`` in ``POST /api/queue``: the jobs added
+    with it are cancelled when the connection ends without a ``detach`` message, unless the
+    server is the one that stops."""
 
 
 class EventMessage(BaseModel):
@@ -89,6 +111,49 @@ class Heartbeat(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["heartbeat"] = "heartbeat"
+
+
+class Attachment:
+    """The jobs that ``POST /api/queue`` attached to one connection. Running state only: a
+    server restart forgets them."""
+
+    def __init__(self, queue: QueueService) -> None:
+        self.client_id = secrets.token_hex(16)
+        self._queue = queue
+        self._jobs: list[str] = []
+        self._open = True
+        self._cancels = True
+        """False after a ``detach``, or when the server ended the connection."""
+
+    async def add(self, job: QueueJob) -> QueueJob:
+        """Attach ``job``. When the connection has ended meanwhile, without a ``detach`` and
+        not because the server stops, the job is cancelled at once and returned as it is
+        then."""
+        if self._open:
+            self._jobs.append(job.id)
+        elif self._cancels:
+            await _cancel(self._queue, [job.id])
+            return self._queue.get(job.id) or job
+        return job
+
+    def _detach(self) -> None:
+        self._cancels = False
+
+    def _end(self, *, client_left: bool) -> list[str]:
+        """The jobs to cancel now that the connection has ended."""
+        self._open = False
+        self._cancels = self._cancels and client_left
+        return list(self._jobs) if self._cancels else []
+
+
+async def _cancel(queue: QueueService, job_ids: Iterable[str]) -> None:
+    async def cancel(job_id: str) -> None:
+        with contextlib.suppress(UnknownJobError):  # removed meanwhile
+            await queue.cancel(job_id)
+
+    # Together: one at a time, a waiting job could start in the slot that a cancelled running
+    # one frees, and an in-place edit that started is let finish.
+    await asyncio.gather(*(cancel(job_id) for job_id in job_ids))
 
 
 class EventHub:
@@ -124,17 +189,25 @@ class EventHub:
         self._max_log_lines = max_log_lines
         self._hide = hide
         self._running: set[asyncio.Task[None]] = set()
-        self._authenticated: set[_Connection] = set()
+        self._clients: dict[str, Attachment] = {}
+        """Each open, authenticated connection by its ``client_id``."""
+        self._cancelling: set[asyncio.Task[None]] = set()
         self._closed = False
 
     @property
     def connections(self) -> int:
         """Open, authenticated connections."""
-        return len(self._authenticated)
+        return len(self._clients)
 
     def client_open(self, client_id: str) -> bool:
         """A connection that was given ``client_id`` is open (for ``attach``)."""
-        return False
+        return client_id in self._clients
+
+    def attachment(self, client_id: str) -> Attachment | None:
+        """The jobs of the open connection that was given ``client_id``; ``None`` when no such
+        connection is open. Keep it for the jobs you add: it knows how the connection ended,
+        also once the hub has forgotten the connection."""
+        return self._clients.get(client_id)
 
     async def serve(self, websocket: WebSocket) -> None:
         """Run one connection until it ends; a client that goes away ends it without an
@@ -155,17 +228,28 @@ class EventHub:
             task.result()
 
     async def close(self) -> None:
-        """End every connection with code 1001. Returns within about ``close_timeout``, also
-        when a client does not read. Safe to call more than once."""
+        """End every connection with code 1001, within about ``close_timeout``, also when a
+        client does not read; their attached jobs stay. Then wait until the jobs that clients
+        who went away left attached have been cancelled. Safe to call more than once."""
         self._closed = True
         running = tuple(self._running)
         for task in running:
             task.cancel()
         if running:
             await asyncio.wait(running)
+        if self._cancelling:
+            await asyncio.wait(tuple(self._cancelling))
 
     def _subscribe(self) -> Subscription:
         return self._bus.subscribe(max_queue=self._max_queue)
+
+    def _end(self, client: Attachment, *, client_left: bool) -> None:
+        del self._clients[client.client_id]
+        job_ids = client._end(client_left=client_left)
+        if job_ids:
+            task = asyncio.create_task(_cancel(client._queue, job_ids))
+            self._cancelling.add(task)
+            task.add_done_callback(self._cancelling.discard)
 
     async def _close(self, websocket: WebSocket, code: int) -> None:
         # uvicorn's send waits until the client reads, so a stuck client would hold it forever.
@@ -204,20 +288,27 @@ class _Connection:
 
     async def _stream(self) -> None:
         hub = self._hub
+        state = self._websocket.app.state
+        client = Attachment(state.reframe.queue)
         stream = _Stream(hub, self._websocket)
-        hub._authenticated.add(self)
+        # Before the hello: a client may add jobs as soon as it has read it.
+        hub._clients[client.client_id] = client
+        client_left = False
         try:
             await stream.send(
-                Hello(instance=self._websocket.app.state.instance, heartbeat=hub._heartbeat)
+                Hello(instance=state.instance, heartbeat=hub._heartbeat, client_id=client.client_id)
             )
             pump = asyncio.create_task(stream.pump())
-            listen = asyncio.create_task(self._listen())
+            listen = asyncio.create_task(self._listen(client))
             try:
                 await asyncio.wait((pump, listen), return_when=asyncio.FIRST_COMPLETED)
             finally:
                 pump.cancel()
                 listen.cancel()
                 await asyncio.wait((pump, listen))
+            # uvicorn queues the disconnect before it fails a send to a client that is gone, so
+            # the listener has read it also when the pump ended first.
+            client_left = not listen.cancelled() and listen.result() != _SERVER_STOPS
             for task in (pump, listen):
                 if not task.cancelled():
                     task.result()
@@ -225,11 +316,17 @@ class _Connection:
                 await self._hub._close(self._websocket, CLOSE_GOING_AWAY)
         finally:
             stream.close()
-            hub._authenticated.discard(self)
+            hub._end(client, client_left=client_left)
 
-    async def _listen(self) -> None:
-        while (await self._websocket.receive())["type"] != "websocket.disconnect":
-            pass
+    async def _listen(self, client: Attachment) -> int:
+        """Read the client's messages until it is gone; returns the disconnect code."""
+        while True:
+            message = await self._websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return int(message.get("code", 1005))
+            with contextlib.suppress(ValidationError):
+                DetachMessage.model_validate_json(message.get("text") or "")
+                client._detach()
 
 
 @dataclass
