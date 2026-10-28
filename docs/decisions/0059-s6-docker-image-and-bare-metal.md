@@ -197,3 +197,35 @@ the part checked again on 2026-10-28.
 
 Still a proposal for the lead (outside S-6): `REFRAME_FORWARDED_ALLOW_IPS` as a Reframe
 setting, so that the trusted proxy is named next to `allowed_hosts`.
+
+## The lead's GPU check, 2026-10-28
+
+The "Done when", run by the lead in a slot the owner gave (the GPU is shared with the owner's
+movie), on the merged branch (58cdac9): the image built with the classic builder in 87 s; the
+compose example with only the host paths (temporary folders), the image name and a loopback
+port changed (`127.0.0.1:18765:8765`); `settings.json` with `hardware_tests` on.
+
+```
+container devices: [{"PathOnHost":"/dev/dri","PathInContainer":"/dev/dri","CgroupPermissions":"rwm"}]
+health: healthy
+server process (pid from server.json): Name: reframe-server | Uid: 1000 1000 1000 1000 | Gid: 1000 1000 1000 1000 | Groups: 983 987 1000 | CapEff: 0000000000000000 | NoNewPrivs: 1
+server.json (in the /data mount): pid 7 port 8765 api_version 1
+  av1_vaapi: available
+  h264_vaapi: available
+  hevc_vaapi: available
+  qsv / nvenc: h264/hevc/av1 _nvenc and _qsv unavailable
+validate hevc_vaapi: [('info', 'dimensions.crop_not_detected', …)]
+encode: done in 0.4 s
+$ /opt/reframe/tools/ffmpeg/bin/ffmpeg … -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va … format=p010le,hwupload … -c:v:0 hevc_vaapi -rc_mode:v:0 CQP -global_quality:v:0 22 …
+ffprobe of the output (owner 1000): hevc 320x180 yuv420p10le, 3 aac, 3 subrip, duration 4.031000
+compose log: ERROR lines 0 | token in the log: False
+```
+
+- The job was the draft with the encoder set to `hevc_vaapi` and the x265 fields cleared
+  (preset, tune, profile, level, advanced, custom parameters): with only the encoder changed,
+  validation refuses it (`encoder.preset_unsupported`, eight `encoder.custom_param_unknown`).
+- FFmpeg printed `amdgpu: os_same_file_description couldn't determine if two DRM fds
+  reference the same file description. If they do, bad things may happen!` in the container.
+  The encode was not affected; the cause was not checked.
+- Every container, image, network and the build's base images were removed; the Docker state
+  equals the owner's snapshot from before phase 2, build cache 0 B.
