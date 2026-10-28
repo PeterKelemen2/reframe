@@ -473,7 +473,7 @@ cancelling a scan stops its FFmpeg process within 1 s.
       path never run at once (0016). `add` and `retry` fail a job whose output is the output
       or the source of another waiting, running or paused job (`queue.output_claimed`,
       [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 6;
-      built in C-17).
+      built in C-17, [0061](../decisions/0061-c17-remote-queue-and-queue-commands.md)).
 - [ ] **Progress parser** for `-progress` blocks (`out_time_us`, `fps`, `speed`, `total_size`,
       `progress=end`). Weighted across steps (pass 1 = 40 %, …). ETA from a smoothed rate over
       active time: paused time and a system sleep do not count (FFmpeg's own `speed` and `fps`
@@ -643,25 +643,25 @@ Implements [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clien
 scheduler process, and the CLI hands its jobs to it. Needs S-2 (queue routes), S-3 (events)
 and S-7. Milestone M3b.
 
-- [ ] `reframe.queue.QueueLike` (a `Protocol`): the methods of `QueueService` that the CLI
+- [x] `reframe.queue.QueueLike` (a `Protocol`): the methods of `QueueService` that the CLI
       calls (`add`, `list`, `get`, `start(job_ids=…)`, `wait`, `cancel`, `pause`, `resume`,
       `retry`, `remove`, `reorder`, `log_path`). `QueueService` implements it unchanged.
       `reframe encode` and `reframe batch` use only `QueueLike`.
-- [ ] `reframe.remote`: `RemoteQueue(QueueLike)` over the server's REST and WebSocket
+- [x] `reframe.remote`: `RemoteQueue(QueueLike)` over the server's REST and WebSocket
       (`httpx`, `websockets` in the `[cli]` extra), and finding the owner (0042 item 3):
       `<data>/server.json` with the same `instance` and `api_version`; else start one with
-      `sys.executable -m reframe_server --owner-only --idle-exit 30` through
-      `launch_detached` and wait at most 10 s; else 0027's in-process queue with
-      `queue.store_busy` and the reason.
-- [ ] Client mode: probe and draft locally, validate with `POST /api/jobs/validate`, show the
+      `sys.executable -m reframe_server --mode desktop --host 127.0.0.1 --port 0 --owner-only
+      --idle-exit 30` through `launch_detached` and wait at most 10 s; else 0027's in-process
+      queue with `queue.store_busy` and the reason.
+- [x] Client mode: probe and draft locally, validate with `POST /api/jobs/validate`, show the
       owner's encoder statuses, and run no encoder detection of its own (0042 item 4).
-- [ ] Attached jobs (the default: the event connection first, then `attach` with its
+- [x] Attached jobs (the default: the event connection first, then `attach` with its
       `client_id`) and `--detach` for `encode` and `batch`; `--in-process`. The CLI adds its
       jobs at the end of the queue (0042 item 5).
-- [ ] Output claims in `QueueService.add` and `retry`: `queue.output_claimed` when the job's
+- [x] Output claims in `QueueService.add` and `retry`: `queue.output_claimed` when the job's
       output is the output or the source of another waiting, running or paused job, compared
       as files (0042 item 6).
-- [ ] `reframe queue list [--json]` · `log ID [-f]` · `pause|resume|cancel [ID…|--all]` ·
+- [x] `reframe queue list [--json]` · `log ID [-f]` · `pause|resume|cancel [ID…|--all]` ·
       `retry ID` · `remove ID`. With no owner, `list` and `log` open the store read-only: no
       restore, no lock.
 
@@ -680,3 +680,16 @@ or the fake FFmpeg):
    `queue.output_claimed`.
 7. A server of another `api_version` is not used: the client falls back and says why.
 8. The queue contract test suite passes against `QueueService` and `RemoteQueue`.
+
+Built as [decision 0061](../decisions/0061-c17-remote-queue-and-queue-commands.md) records.
+The owner is started in desktop mode (the web mode with no roots refuses every path); clients
+that search at the same time start one owner (`<data>/server-start.lock`); a started owner's
+exit code 75 means another one won. `RemoteQueue` keeps a copy of the queue that only the
+event stream changes, and a call returns once the copy shows its change; when the connection
+ends, its running jobs are reported `interrupted`. A client drafts here and the owner
+validates; the facade starts encoder detection only for an in-process run. Ctrl+C cancels the
+command's own jobs and no longer stops the queue. `--in-process` is also
+`REFRAME_IN_PROCESS=1`; `--detach` needs an owner. `reframe queue retry` also starts the job.
+The eight checks pass: 1–7 with real processes and the real FFmpeg
+(`tests/remote/test_shared_queue_real.py`), 8 in `tests/remote/test_queue_contract.py`.
+Not verified on Windows.

@@ -25,7 +25,7 @@ from reframe.models.events import (
     JobStateEvent,
     QueueChangedEvent,
 )
-from reframe.models.issues import Severity
+from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.naming import NamingOptions
 from reframe.models.queue import JobProgress, JobState, QueueJob
@@ -51,7 +51,7 @@ from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
 from reframe.queue.whendone import WhenDoneActions
 from reframe.validation import FileSystemView, LocalFileSystem
 
-__all__ = ["ENDED", "QueueService"]
+__all__ = ["ENDED", "OUTPUT_CLAIMED", "QueueService"]
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +59,10 @@ log = logging.getLogger(__name__)
 ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 _ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _RETRY = frozenset({JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
+#: States in which a job's output and source are claimed: no other job may write them.
+_CLAIMING = frozenset({JobState.WAITING, JobState.RUNNING, JobState.PAUSED})
+#: The issue of a job whose output another job writes or reads.
+OUTPUT_CLAIMED = "queue.output_claimed"
 
 
 #: ``list[...]`` for annotations inside ``QueueService``, whose ``list`` method hides the builtin.
@@ -122,6 +126,27 @@ def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = 
         if in_place and (same(source, other.source_key) or same(source, other.output_key)):
             return True  # the source to edit is being read or written
     return False
+
+
+def _claim_issue(job: QueueJob, other: QueueJob, *, as_source: bool) -> ValidationIssue:
+    target = (
+        job.settings.source.path if job.settings.output.edit_in_place else job.settings.output.path
+    )
+    name = Path(target).name if target is not None else ""
+    other_source = Path(other.settings.source.path).name
+    if as_source:
+        what = f"the source of a job that is {other.state.value} in the queue ({other_source})"
+    else:
+        what = f"the output of a job that is {other.state.value} in the queue ({other_source})"
+    return ValidationIssue(
+        severity=Severity.ERROR,
+        code=OUTPUT_CLAIMED,
+        path="output.path",
+        message=printable(
+            f"{name} is also {what}: this job would replace that file. Cancel or remove the "
+            "other job first, or choose another output name."
+        ),
+    )
 
 
 def _restored_error(job: QueueJob) -> str:
@@ -273,8 +298,18 @@ class QueueService:
             error=error,
         )
         keys = None if errors else await self._take_keys(queued)  # a failed job: at its retry
+        if keys is not None:
+            await self._take_missing_keys()
         self._check_open()
         async with self._lock:
+            # Under the lock: two adds of one output at the same time must not both pass.
+            claim = None if keys is None else self._claim(queued, keys)
+            if claim is not None:
+                keys = None
+                queued.state = JobState.FAILED
+                queued.issues = [*queued.issues, claim]
+                queued.finished_at = now
+                queued.error = error = printable(f"The job has errors: {claim.message}")
             order = self._ordered()
             index = len(order) if position is None else max(0, min(position, len(order)))
             order.insert(index, queued)
@@ -353,14 +388,25 @@ class QueueService:
             raise JobStateError(f"job {job_id} is {job.state.value}: it cannot be retried")
         # Taken again: a link or a file may have changed since the job was added.
         keys = await self._take_keys(job)
+        await self._take_missing_keys()
         self._check_open()
-        job = self._job(job_id)  # removed meanwhile: UnknownJobError
-        if job.state not in _RETRY:  # a retry at the same time took it first
-            return job.model_copy(deep=True)
-        self._keys[job_id] = keys
-        job.started_at = job.finished_at = None
-        job.progress = None
-        await self._set_state(job, JobState.WAITING, error=None)
+        async with self._lock:
+            job = self._job(job_id)  # removed meanwhile: UnknownJobError
+            if job.state not in _RETRY:  # a retry at the same time took it first
+                return job.model_copy(deep=True)
+            claim = self._claim(job, keys)
+            kept = [issue for issue in job.issues if issue.code != OUTPUT_CLAIMED]
+            if claim is not None:
+                job.issues = [*kept, claim]
+                job.finished_at = self._clock.now()
+                error = f"The job has errors: {claim.message}"
+                await self._set_state(job, JobState.FAILED, error=error)
+                return job.model_copy(deep=True)
+            job.issues = kept
+            self._keys[job_id] = keys
+            job.started_at = job.finished_at = None
+            job.progress = None
+            await self._set_state(job, JobState.WAITING, error=None)
         self._schedule()
         return job.model_copy(deep=True)
 
@@ -659,6 +705,32 @@ class QueueService:
                 self._run(job, active), name=f"reframe-queue-job-{job.id}"
             )
         return False
+
+    def _claim(self, job: QueueJob, keys: _Keys) -> ValidationIssue | None:
+        """The issue when ``job``'s output is the output or the source of another waiting,
+        running or paused job. No file-system call: a job without keys yet claims nothing."""
+        output = keys.output
+        if output is None:
+            return None
+        for other in self._ordered():
+            if other.id == job.id or other.state not in _CLAIMING:
+                continue
+            theirs = self._keys.get(other.id)
+            if theirs is None:
+                continue
+            if files.same_key(output, theirs.output):
+                return _claim_issue(job, other, as_source=False)
+            if files.same_key(output, theirs.source):
+                return _claim_issue(job, other, as_source=True)
+        return None
+
+    async def _take_missing_keys(self) -> None:
+        """Take the keys of the waiting, running and paused jobs that have none yet (restored
+        jobs whose keys are still being taken), so that their claims count."""
+        for job in [j for j in self._ordered() if j.state in _CLAIMING and j.id not in self._keys]:
+            keys = await self._take_keys(job)
+            if self._jobs.get(job.id) is job and job.state in _CLAIMING:
+                self._keys.setdefault(job.id, keys)
 
     async def _take_keys(self, job: QueueJob) -> _Keys:
         """``job``'s file keys, taken in a worker thread: a disk or a network share that does

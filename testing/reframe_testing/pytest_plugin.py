@@ -4,7 +4,8 @@ A test marked ``needs_ffmpeg`` is skipped when ffmpeg or ffprobe is missing or d
 With ``REFRAME_REQUIRE_FFMPEG`` set (CI), it fails instead, so a broken tool path cannot make a
 CI job green by skipping every real-tool test. An autouse guard replaces the power functions of
 ``reframe.platform.power`` for the whole session, so no test can shut down or suspend the
-machine (see :class:`PowerGuard`).
+machine (see :class:`PowerGuard`), and another keeps every test out of the owner's own Reframe
+folders (:mod:`reframe_testing.folders_guard`).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import pytest
 
 from reframe_testing import media
 from reframe_testing.fake_tools import FakeTools, make_fake_tools
+from reframe_testing.folders_guard import guard_reframe_folders  # noqa: F401 - autouse fixture
 
 if TYPE_CHECKING:
     from reframe.platform.power import Win32Libraries

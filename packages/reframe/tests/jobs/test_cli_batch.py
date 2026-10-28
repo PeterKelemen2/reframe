@@ -14,7 +14,7 @@ from types import ModuleType
 import pytest
 
 from reframe import cli
-from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
+from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, IN_PROCESS_ENV
 from reframe.models import MediaSource
 from reframe.probe import mediainfo
 from reframe.service import Reframe
@@ -307,6 +307,7 @@ def test_a_season_encoded_end_to_end(
     """Season 2 with the group preset of season 1, on the real queue and FFmpeg."""
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
+    monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     folder = tmp_path / "media" / media.anime_folder(2)
     shutil.copytree(fixture_media("anime-s02"), folder)

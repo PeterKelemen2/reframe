@@ -16,7 +16,7 @@ import pytest
 
 from reframe import jobs
 from reframe.batch import service as batch_service
-from reframe.cli import EXIT_FAILED, EXIT_OK
+from reframe.cli import EXIT_FAILED, EXIT_OK, IN_PROCESS_ENV
 from reframe.models.issues import ReplaceOp
 from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
@@ -257,6 +257,7 @@ def test_a_user_file_reached_through_a_link_is_never_overwritten_by_the_real_que
     (its SHA-256)."""
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
+    monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
     monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     write_settings(tmp_path, collision="overwrite")
     settings = json.loads((tmp_path / "config" / "settings.json").read_text(encoding="utf-8"))
