@@ -306,21 +306,21 @@ async def find_owner(
     data_dir: Path,
     *,
     start: bool = True,
-    command: Callable[[], Sequence[str] | None] = owner_command,
+    command: Callable[[], Sequence[str] | None] | None = None,
     launch: Launch | None = None,
     platform: str | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> Owner | NoOwner:
     """The owner of ``data_dir``'s queue: the server that ``server.json`` names, if it answers
     with its ``instance`` and this client's ``api_version``. Else, with ``start``, a server
-    started with ``command()`` while ``queue.lock`` is free; its
+    started with ``command()`` (default :func:`owner_command`) while ``queue.lock`` is free; its
     exit code 75 means another owner won. Waits at most :data:`START_WAIT` for a started owner
     and :data:`HELD_WAIT` while another process holds the lock without an endpoint. Without
     ``start`` neither ``queue.lock`` nor anything else is touched. Never raises."""
     search = OwnerSearch(
         data_dir,
         start=start,
-        command=command(),
+        command=(owner_command if command is None else command)(),
         launch=_start if launch is None else launch,
         platform=sys.platform if platform is None else platform,
         environ=environ,

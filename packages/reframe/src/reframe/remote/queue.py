@@ -284,8 +284,10 @@ class RemoteQueue:
             log.warning("the queue was not started: %s", exc)
 
     async def wait(self, job_ids: Sequence[str] | None = None) -> _Jobs:
-        """Until the jobs have ended or left the queue, or the connection has ended."""
-        await self._settle()
+        """Until the jobs have ended or left the queue, or the connection has ended (then the
+        copy says how they were last seen)."""
+        if self._pending:
+            await asyncio.wait(builtins.list(self._pending))
         ids = builtins.list(self._order) if job_ids is None else builtins.list(job_ids)
         for job_id in ids:
             self._known(job_id)

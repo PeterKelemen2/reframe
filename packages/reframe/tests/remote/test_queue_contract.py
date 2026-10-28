@@ -194,8 +194,11 @@ Call = Callable[[QueueLike, str], Awaitable[object] | object]
     ],
 )
 async def test_an_unknown_job_is_refused(contract: Contract, call: Call) -> None:
-    assert contract.queue.get("no-such-job") is None
-    with pytest.raises(UnknownJobError):
+    async def unknown() -> None:
         result = call(contract.queue, "no-such-job")
         if isinstance(result, Awaitable):
             await result
+
+    assert contract.queue.get("no-such-job") is None
+    with pytest.raises(UnknownJobError):
+        await unknown()
