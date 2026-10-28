@@ -90,11 +90,31 @@ still be there when the owner reads it (`/tmp` is a tmpfs here, cleared at a reb
 not use a temporary folder: the sidecar's settings, queue and log belong in the platform's
 folders, and the log needs rotation there.
 
-Not yet checked on the real app: the two event permissions (a page that registers a listener
-still does), a line to a closed stdout, the home's mode and `webview/` folder, and a quit whose
-sidecar does not stop (killed after 5 s). The window guard refused the run 40 times between
-2026-10-27 23:54 and 2026-10-28 00:24 (the owner's cursor stayed on `DP-1`), so nothing was
-started.
+Checked on the real app (the lead, AMD desktop, 2026-10-28 07:14, load 0.28, no movie; three
+app starts under `windows run`, each window on `HDMI-A-1`; raw output
+`results/review-fixes-amd-desktop-2026-10-28.out`). The sidecar was a stand-in that prints the
+ready line, answers `GET /api/health` and answers the shutdown request with 204 without
+stopping:
+
+- **Event permissions.** 4a's page awaits `listen("sidecar-ended")` before it asks for
+  `/api/health`, and the drop page awaits `onDragDropEvent` before it logs `ready`. A refused
+  permission rejects that promise. With `allow-listen` and `allow-unlisten` only, 4a's page
+  showed `/api/health` after 222 ms and the drop page logged `ready` (`inTauri: true`).
+- **Home.** With no `REFRAME_SPIKE_HOME` and no XDG variables, the home was
+  `/tmp/reframe-spike-1ecb9c65db4e5d4e`, mode `0o700`, owned by the user. The stand-in got
+  `REFRAME_CONFIG_DIR`, `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` below it.
+- **Web view data.** `<home>/webview/` held `CacheStorage`, `WebKitCache`,
+  `hsts-storage.sqlite`, `mediakeys` and `storage` (12 entries). Nothing in `~/.cache`,
+  `~/.local/share` or `~/.config` whose name holds `reframe` or `webkit` changed, and
+  `~/.local/share/org.reframe.spike/` was the same before and after.
+- **Quit, sidecar does not stop.** The shell sent the shutdown request (204), waited, and
+  killed the sidecar after 5 002 ms. The app exited 0, 5.009 s after `quit`, with no sidecar
+  left.
+- **A line to a closed stdout.** The test closed the app's stdout, then SIGKILLed the sidecar,
+  so the shell printed `sidecar_failed`. Both binaries start with SIGPIPE ignored (`SigIgn`).
+  The new app ran on and quit with 0, and its stderr has no panic. The app built before the
+  fix also ran on and exited 0, but its `tokio-rt-worker` thread panicked: `failed printing to
+  stdout: Broken pipe (os error 32)`.
 
 Variables for the measurements:
 
@@ -143,13 +163,13 @@ anything in the owner's home:
   scripts keeps nothing of WebKitGTK's in `~/.local/share/org.reframe.spike/`. The scripts also
   set `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME` below the run's
   folder (`app.environment`), for what the shell does not move: Mesa's shader cache, GTK's
-  configuration and anything else a library keeps there. Not yet checked on the real app (the
-  run of 2026-10-28 was refused by the window guard: the owner's cursor stayed on `DP-1`).
+  configuration and anything else a library keeps there. Checked on the real app on
+  2026-10-28 with no XDG variables set ("Run", above).
 - Before the review's fixes the app had no XDG folders of its own, so every run of 4a, 4b-i,
   4b-ii and the lead's repeats wrote WebKitGTK's profile into
   `~/.local/share/org.reframe.spike/` (made 2026-10-27 18:37:41, last written 21:15:53; 51
   entries, an HTTP cache of the sidecar's answers, among them preview frames of 1 169 110
-  bytes). It is left for the owner to remove.
+  bytes). The owner had it removed on 2026-10-28.
 
 ## The onedir build: what it needs
 
@@ -372,7 +392,11 @@ What the tools below guarantee, and what they do not:
   for the app in the one run measured (`added_after_admission_ms`, "Window session runs"
   below). Not checked
   either: a later window of a program that was admitted (a dialog, a second window), and a
-  program that a `windows run` command starts without `app.start`. A window that KWin adds on
+  program that a `windows run` command starts without `app.start`. A window whose class is not
+  the session's is admitted but neither placed nor watched: in the lead's check of 2026-10-28,
+  the app built before the fixes (class `reframe-spike-old`) opened where KWin put it (on
+  `HDMI-A-1`, as the cursor was there) and kept the keyboard from VS Code for 1.64 s, until it
+  quit. A window that KWin adds on
   another output anyway stays transparent there, is never kept above, is minimised, gives the
   keyboard back at once, and stops the session.
 - **Every new window takes the keyboard for a few milliseconds**, also one on `HDMI-A-1`: KWin
