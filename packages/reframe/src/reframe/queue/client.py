@@ -72,28 +72,22 @@ def read_saved_queue(data_dir: Path) -> SavedQueue:
         return SavedQueue([])
     rows: builtins.list[tuple[object, ...]] = []
     problem: str | None = None
-    try:
-        uri = path.absolute().as_uri()
-    except ValueError as exc:
-        return SavedQueue([], f"{path}: {exc}")
+    uri = path.absolute().as_uri()
     for options in ("mode=ro", "mode=ro&immutable=1"):
         try:
             db = sqlite3.connect(f"{uri}?{options}", uri=True)
+            try:
+                version = int(db.execute("PRAGMA user_version").fetchone()[0])
+                if version > SCHEMA_VERSION:
+                    return SavedQueue([], f"{path}: saved by a newer Reframe (schema {version})")
+                rows = db.execute(
+                    f"SELECT {', '.join(_COLUMNS)} FROM jobs ORDER BY position, created_at"
+                ).fetchall()
+            finally:
+                db.close()
         except sqlite3.Error as exc:
             problem = f"{path}: {exc}"
             continue
-        try:
-            version = int(db.execute("PRAGMA user_version").fetchone()[0])
-            if version > SCHEMA_VERSION:
-                return SavedQueue([], f"{path}: saved by a newer Reframe (schema {version})")
-            rows = db.execute(
-                f"SELECT {', '.join(_COLUMNS)} FROM jobs ORDER BY position, created_at"
-            ).fetchall()
-        except sqlite3.Error as exc:
-            problem = f"{path}: {exc}"
-            continue
-        finally:
-            db.close()
         problem = None
         break
     jobs: _Jobs = []

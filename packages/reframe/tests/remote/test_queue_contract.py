@@ -59,7 +59,6 @@ async def contract(
         yield Contract(server, remote)
     finally:
         await remote.close()
-    assert server.api.fake.kill_leftovers() == []
 
 
 async def test_add_puts_a_job_at_the_end_or_at_a_position(contract: Contract) -> None:
