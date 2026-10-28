@@ -193,6 +193,8 @@ def test_a_puid_with_leading_zeros_does_not_walk_the_folders_at_every_start(
 
     assert "chown" not in result.stdout
     assert result.stdout.startswith("setpriv --reuid=1000 --regid=1000 ")
+    # Without it a setuid program in the container could take the privileges back.
+    assert result.stdout.endswith(" --no-new-privs -- serve\n")
 
 
 @linux_only
