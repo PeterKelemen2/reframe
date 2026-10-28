@@ -147,6 +147,29 @@ async def test_detach_needs_the_server(
     assert f"cannot be used with {named}" in capsys.readouterr().err
 
 
+async def test_an_owner_that_was_stopping_when_it_connected_is_looked_for_again(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The owner of the first look was in its exit window; the next look finds one."""
+    from reframe.remote import OwnerStopping, RemoteQueue
+
+    connect = RemoteQueue.connect
+    tries: list[int] = []
+
+    async def stopping_once(*args: object, **kwargs: object) -> RemoteQueue:
+        tries.append(1)
+        if len(tries) == 1:
+            raise OwnerStopping("the Reframe server is stopping", code="server.stopping")
+        return await connect(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(RemoteQueue, "connect", stopping_once)
+    server.publish()
+    code = await cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    assert code == cli.EXIT_OK, capsys.readouterr().out
+    assert len(tries) == 2
+    assert [job.state for job in server.api.reframe.queue.list()] == [JobState.DONE]
+
+
 async def test_an_owner_that_keeps_stopping_is_left_with_the_reason(
     server: Server, capsys: pytest.CaptureFixture[str]
 ) -> None:

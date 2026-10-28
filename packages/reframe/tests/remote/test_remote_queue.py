@@ -36,12 +36,34 @@ async def test_its_jobs_end_with_its_connection_unless_it_detaches(
     await poll(lambda: server.api.reframe.queue.get(job.id).state == state)  # type: ignore[union-attr]
 
 
+class SlowStart(httpx.AsyncBaseTransport):
+    """Holds each ``POST /api/queue/start`` back for a moment, as a busy server would."""
+
+    def __init__(self) -> None:
+        self.inner = httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/queue/start":
+            await asyncio.sleep(0.5)
+        return await self.inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
 async def test_a_start_is_sent_before_it_detaches(server: Server) -> None:
     """``--detach`` ends the command right after ``start``: the job must still run."""
     remote = await server.connect()
+    plain = remote._http
+    remote._http = httpx.AsyncClient(
+        base_url=plain.base_url, headers=plain.headers, transport=SlowStart()
+    )
+    await plain.aclose()
     job = await remote.add(await server.job())
     remote.start(job_ids=[job.id])
     await remote.close(detach=True)
+    for task in list(remote._pending):  # the command's process ends here
+        task.cancel()
     [done] = await asyncio.wait_for(server.api.reframe.queue.wait([job.id]), 30)
     assert done.state is JobState.DONE
 
@@ -84,21 +106,23 @@ async def test_a_server_that_stops_interrupts_its_running_jobs(make_api: ApiFact
             remote = await Server(api, live).connect()
             events = remote.events.subscribe(types={"job.state"})
             job = await remote.add(await Server(api, live).job())
-            remote.start(job_ids=[job.id])
+            waiting = await remote.add(await Server(api, live).job("Waiting.mkv"))
+            remote.start(job_ids=[job.id, waiting.id])
             await poll(lambda: remote.get(job.id).state is JobState.RUNNING)  # type: ignore[union-attr]
         # uvicorn's shutdown closed the connection (1012); the job runs on in the facade.
-        assert await asyncio.wait_for(remote.wait([job.id]), 10) != []
+        assert len(await asyncio.wait_for(remote.wait([job.id, waiting.id]), 10)) == 2
         assert remote.lost == "the Reframe server stopped"
         ended = remote.get(job.id)
         assert ended is not None
         assert ended.state is JobState.INTERRUPTED
+        assert remote.get(waiting.id).state is JobState.WAITING  # type: ignore[union-attr]
         states = [event.state async for event in events]  # type: ignore[union-attr]
         assert states[-1] is JobState.INTERRUPTED  # and the stream ended
         with pytest.raises(RemoteError) as refused:
             await remote.cancel(job.id)
         assert refused.value.code == "connection.lost"
         await remote.close()
-        await api.reframe.queue.cancel(job.id)
+        await api.reframe.queue.cancel()
 
 
 async def test_a_server_that_is_stopping_is_reported_as_stopping(server: Server) -> None:

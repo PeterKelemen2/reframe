@@ -13,6 +13,7 @@ import pytest
 from reframe.models import JobState, QueueJob
 from reframe.queue import JobStateError, QueueLike, UnknownJobError
 from reframe.queue.service import OUTPUT_CLAIMED
+from reframe.remote import RemoteQueue
 
 from .conftest import HANG, Server, poll
 
@@ -39,10 +40,20 @@ class Contract:
 
 
 @pytest.fixture(params=["service", "remote"])
-async def contract(request: pytest.FixtureRequest, server: Server) -> AsyncIterator[Contract]:
+async def contract(
+    request: pytest.FixtureRequest, server: Server, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[Contract]:
     if request.param == "service":
         yield Contract(server, server.api.reframe.queue)
         return
+
+    async def by_events(self: RemoteQueue, condition: Callable[[], bool]) -> None:
+        """A call returns when its event came: the whole-queue read after a timeout would hide
+        an event that the copy does not take."""
+        async with asyncio.timeout(5), self._changed:
+            await self._changed.wait_for(condition)
+
+    monkeypatch.setattr(RemoteQueue, "_until", by_events)
     remote = await server.connect()
     try:
         yield Contract(server, remote)
