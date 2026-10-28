@@ -129,14 +129,17 @@ on Linux; its parts marked *(Windows testing phase)* are checked in the
 The spike lives in `desktop/spike/`, committed and not built by CI; D-1 and D-2 may reuse
 or delete it ([decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch.md)).
 
-- [ ] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
+- [x] Minimal Tauri app + PyInstaller **onedir** sidecar running `reframe-server` with a hello
       endpoint, on Linux. On Windows: *(Windows testing phase)*.
-- [ ] Measure cold start to "ready" (target < 2 s from SSD).
-- [ ] Prove cleanup: `kill -9` the Tauri process, then check that no sidecar or FFmpeg process
+- [x] Measure cold start to "ready" (target < 2 s from SSD).
+- [x] Prove cleanup: `kill -9` the Tauri process, then check that no sidecar or FFmpeg process
       remains. The same with a kill from Task Manager: *(Windows testing phase)*.
-- [ ] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
+- [x] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
       WebKitGTK.
-- [ ] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+- [x] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+
+Linux result (2026-10-28): [decision 0001](../decisions/0001-desktop-shell.md). The Windows items
+stay open for the Windows testing phase.
 
 Done when: a short written result for Linux goes into `docs/decisions/0001-desktop-shell.md`
 and confirms or revisits this choice. It lists the Windows items as not verified.
