@@ -117,14 +117,17 @@ async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
 
 class Requests(httpx.AsyncBaseTransport):
     """The transport of a ``RemoteQueue`` in a test: counts its requests, holds
-    ``POST /api/queue/start`` until :attr:`released` is set, and answers a request with
-    :attr:`answer` when it gives a response."""
+    ``POST /api/queue/start`` until :attr:`released` is set, holds the answers of
+    ``POST /api/queue`` (the server has added the jobs) until :attr:`answers` is set, and
+    answers a request with :attr:`answer` when it gives a response."""
 
     def __init__(self) -> None:
         self.inner = httpx.AsyncHTTPTransport()
         self.seen: list[tuple[str, str]] = []
         self.released = asyncio.Event()
         self.released.set()
+        self.answers = asyncio.Event()
+        self.answers.set()
         self.answer: Callable[[httpx.Request], httpx.Response | None] = lambda _request: None
 
     def reads(self) -> int:
@@ -138,7 +141,10 @@ class Requests(httpx.AsyncBaseTransport):
         answer = self.answer(request)
         if answer is not None:
             return answer
-        return await self.inner.handle_async_request(request)
+        response = await self.inner.handle_async_request(request)
+        if (request.method, request.url.path) == ("POST", "/api/queue"):
+            await self.answers.wait()
+        return response
 
     async def aclose(self) -> None:
         await self.inner.aclose()
@@ -161,7 +167,8 @@ class Wire:
 
     lag: float = 0.0
     drop: Callable[[dict[str, Any]], bool] = lambda _message: False
-    first: list[dict[str, Any]] = field(default_factory=list)
+    first: list[dict[str, Any] | str] = field(default_factory=list)
+    """Messages as objects, or as the text sent."""
 
 
 @pytest.fixture
@@ -171,7 +178,7 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> Wire:
 
     async def messages(self: ClientConnection) -> AsyncIterator[str | bytes]:
         for message in found.first:
-            yield json.dumps(message)
+            yield message if isinstance(message, str) else json.dumps(message)
         async for raw in plain(self):
             if found.lag:
                 await asyncio.sleep(found.lag)

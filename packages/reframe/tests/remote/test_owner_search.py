@@ -399,12 +399,18 @@ def detached(*args: Any, **kwargs: Any) -> int:
     return launch_detached(*args, **kwargs)
 
 
+@pytest.mark.parametrize("log_before", ["", "an earlier run's long log\n"], ids=["new", "full"])
 async def test_a_started_owner_that_fails_points_to_its_messages(
-    unowned: Server, monkeypatch: pytest.MonkeyPatch
+    unowned: Server, monkeypatch: pytest.MonkeyPatch, log_before: str
 ) -> None:
     """The client points to the messages that say why its owner failed. ``REFRAME_AUTH`` of
-    the shell, which made a started owner exit 2, does not reach the owner."""
+    the shell, which made a started owner exit 2, does not reach the owner. A log that grew
+    past its limit is emptied first, or the data folder fills up over the months."""
     monkeypatch.setenv("REFRAME_AUTH", "password")
+    monkeypatch.setattr(owner_module, "SERVER_LOG_LIMIT", 10)
+    log = server_log(unowned.data_dir)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(log_before, encoding="utf-8")
     script = (
         "import os, sys; "
         "sys.stderr.write(f'auth: {os.environ.get(\"REFRAME_AUTH\")}\\n'); "
@@ -415,11 +421,34 @@ async def test_a_started_owner_that_fails_points_to_its_messages(
         command=lambda: [sys.executable, "-c", script],
         launch=functools.partial(owner_module._start, launcher=detached),
     )
-    log = server_log(unowned.data_dir)
     assert found == NoOwner(
         f"the Reframe server started for this command exited with code 2 (see {log})"
     )
     assert log.read_text(encoding="utf-8") == "auth: None\n"
+
+
+def test_a_log_that_cannot_be_opened_does_not_stop_the_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "logs").write_text("a file where the folder should be", encoding="utf-8")
+    created: list[dict[str, Any]] = []
+
+    class Process:
+        pid = 4242
+        returncode = None
+
+        def __init__(self, argv: list[str], **kwargs: Any) -> None:
+            created.append(kwargs)
+
+        def wait(self) -> int:
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", Process)
+    with caplog.at_level(logging.WARNING, logger=owner_module.__name__):
+        owner_module._start(["reframe-server"], tmp_path, "linux", launcher=detached)
+    [options] = created
+    assert options["stderr"] == subprocess.DEVNULL
+    assert "the Reframe server's messages cannot be written" in caplog.text
 
 
 def test_a_started_owner_has_the_clients_folders_as_absolute_paths(

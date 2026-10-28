@@ -6,12 +6,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+from collections.abc import Callable
 
 import httpx
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from reframe.models import JobDraft, JobState, JobStateEvent, ResyncEvent
+from reframe.events import Subscription
+from reframe.models import (
+    Event,
+    JobDraft,
+    JobState,
+    JobStateEvent,
+    QueueChangedEvent,
+    ResyncEvent,
+)
 from reframe.queue import JobStateError, UnknownJobError
 from reframe.remote import OwnerStopping, RemoteError
 from reframe.remote import queue as queue_module
@@ -264,6 +273,114 @@ async def test_an_older_event_never_moves_a_job_out_of_its_end(server: Server) -
         await remote.close()
 
 
+async def test_a_start_refused_for_another_reason_is_raised_by_the_next_call(
+    server: Server,
+) -> None:
+    """A server that is closing refuses the start: a ``wait`` for the jobs would never
+    return."""
+    remote = await server.connect()
+    try:
+        job = await remote.add(await server.job())
+        requests = await watch_requests(remote)
+        closing = {"title": "The server is shutting down", "status": 503, "code": "server.closing"}
+        requests.answer = lambda request: (
+            httpx.Response(503, json=closing) if request.url.path == "/api/queue/start" else None
+        )
+        remote.start(job_ids=[job.id])
+        with pytest.raises(RemoteError) as refused:
+            await asyncio.wait_for(remote.wait([job.id]), 10)
+        assert refused.value.code == "server.closing"
+    finally:
+        await remote.close()
+
+
+async def until(events: Subscription, found: Callable[[Event], bool]) -> Event:
+    async with asyncio.timeout(10):
+        async for event in events:
+            if found(event):
+                return event
+    raise AssertionError("the subscription ended")
+
+
+@pytest.mark.parametrize(
+    "meanwhile",
+    ["nothing", "another add", "another add, reads refused", "a cancel", "a remove", "a read"],
+)
+async def test_an_add_whose_answer_comes_after_its_events(server: Server, meanwhile: str) -> None:
+    """The events of an add can reach the copy before its answer, and another front end can
+    act in between. The copy must not read the whole queue for this client's own adds, and it
+    must show another front end's job, and a cancel, removal or start of the new job that came
+    before the answer: else a ``wait`` for the job never returns."""
+    server.api.fake.set_scenario(HANG)
+    queue = server.api.reframe.queue
+    remote = await server.connect()
+    try:
+        requests = await watch_requests(remote)
+        requests.answers.clear()
+        events = remote.events.subscribe(types={"job.state", "queue.changed", "resync"})
+        names = ["A.mkv", "B.mkv"] if meanwhile == "nothing" else ["A.mkv"]
+        jobs = [await server.job(name) for name in names]
+        adding = asyncio.gather(*(remote.add(job) for job in jobs))
+        shown = await until(
+            events, lambda e: isinstance(e, QueueChangedEvent) and len(e.job_ids) == len(names)
+        )
+        assert isinstance(shown, QueueChangedEvent)
+        ids, mine = shown.job_ids, shown.job_ids[0]
+        other = None
+        if meanwhile.startswith("another add"):
+            if meanwhile.endswith("refused"):
+                broken = {"title": "Broken", "status": 500, "code": "server.broken"}
+                requests.answer = lambda request: (
+                    httpx.Response(500, json=broken) if request.url.path == "/api/queue" else None
+                )
+            other = await queue.add(await server.job("Other.mkv"))
+            await until(events, lambda e: isinstance(e, QueueChangedEvent) and len(e.job_ids) == 2)
+        elif meanwhile == "a cancel":
+            await queue.cancel(mine)
+            await until(events, lambda e: isinstance(e, JobStateEvent) and e.job_id == mine)
+        elif meanwhile == "a remove":
+            await queue.remove(mine)
+            await until(events, lambda e: isinstance(e, QueueChangedEvent) and not e.job_ids)
+        elif meanwhile == "a read":
+            queue.start(job_ids=[mine])
+            await until(
+                events, lambda e: isinstance(e, JobStateEvent) and e.state.value == "running"
+            )
+            server.api.reframe.events.publish(ResyncEvent())
+            await until(events, lambda e: isinstance(e, ResyncEvent))
+        requests.answers.set()
+        added = await adding
+        assert sorted(job.id for job in added) == sorted(ids)
+        if meanwhile == "nothing":
+            assert [(job.id, job.position) for job in remote.list()] == [(ids[0], 0), (ids[1], 1)]
+            assert requests.reads() == 0
+        elif other is not None:
+            requests.answer = lambda _request: None
+            if meanwhile.endswith("refused"):  # the add's read failed: the next event reads
+                await remote.cancel(mine)
+            assert [job.id for job in remote.list()] == [mine, other.id]
+        elif meanwhile == "a cancel":
+            assert remote.get(mine).state is JobState.CANCELLED  # type: ignore[union-attr]
+        elif meanwhile == "a remove":
+            assert remote.list() == []
+        else:
+            assert remote.get(mine).state is JobState.RUNNING  # type: ignore[union-attr]
+    finally:
+        await remote.close()
+        await queue.cancel()
+
+
+async def test_a_job_that_only_a_queue_change_names_is_read(server: Server, wire: Wire) -> None:
+    """Without its add event, the copy would never get a job that another front end added."""
+    remote = await server.connect()
+    try:
+        wire.drop = lambda message: event_type(message) == "job.state"
+        other = await server.api.reframe.queue.add(await server.job("Other.mkv"))
+        await poll(lambda: remote.get(other.id) is not None, 5)
+    finally:
+        await remote.close()
+
+
 async def test_close_logs_a_start_the_server_refused(
     server: Server, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -424,6 +541,8 @@ async def test_events_it_cannot_read_end_nothing(server: Server, wire: Wire) -> 
     detach would cancel them."""
     job = await server.api.reframe.queue.add(await server.job())
     wire.first = [
+        "not JSON",
+        {"type": "heartbeat"},
         event_message({"type": "job.renamed", "job_id": job.id}),
         event_message({"type": "job.state", "job_id": job.id, "state": "resting"}),
         event_message(
