@@ -20,7 +20,7 @@ from reframe.queue import files, runner, service
 from reframe.queue.service import _conflicts, _output_key, _source_key
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule, queue_at, store_rows, tool_set
+from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows, tool_set
 from .test_in_place_scheduling import active_for, ended_before_started, in_place_job, queued
 
 pytestmark = pytest.mark.anyio
@@ -156,12 +156,12 @@ async def test_two_in_place_edits_through_a_link_run_one_after_the_other(
     h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     link = tmp_path / "media" / "link-to-source.mkv"
     link.symlink_to(h.source_path)
-    first = await h.queue.add(in_place_job(h, "One"))
-    second = await h.queue.add(_in_place_job_at(h, link, "Two"))
-    assert second.state is JobState.WAITING, second.issues
+    first, second = await restore_together(
+        h, in_place_job(h, "One"), _in_place_job_at(h, link, "Two")
+    )
     h.queue.start()
-    await h.queue.wait([first.id, second.id])
-    assert ended_before_started(h, first.id, second.id)
+    await h.queue.wait([first, second])
+    assert ended_before_started(h, first, second)
 
 
 async def test_an_encode_of_a_hard_link_waits_for_the_in_place_edit(

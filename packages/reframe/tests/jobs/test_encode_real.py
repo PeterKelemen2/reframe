@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.cli import EXIT_INTERRUPTED, EXIT_OK
+from reframe.cli import EXIT_INTERRUPTED, EXIT_OK, IN_PROCESS_ENV
 from reframe.models import JobDraft, JobState, MediaSource
 from reframe.probe import mediainfo
 from reframe.service import Reframe
@@ -32,7 +32,9 @@ SEASON = "Show.S01.1080p.BluRay.x264-GRP"
 
 @pytest.fixture
 def dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
-    """Private config, data and cache folders for the CLI (in-process and subprocesses)."""
+    """Private config, data and cache folders for the CLI (in-process and subprocesses), whose
+    jobs run in its own process."""
+    monkeypatch.setenv(IN_PROCESS_ENV, "1")
     found = {name: tmp_path / name for name in ("config", "data", "cache")}
     for name, path in found.items():
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(path))

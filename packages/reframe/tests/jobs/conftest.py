@@ -171,7 +171,9 @@ class Stubs:
 def cli_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
 ) -> ft.FakeTools:
-    """Fake ffmpeg and ffprobe, and private config, data and cache folders (never the user's)."""
+    """Fake ffmpeg and ffprobe, and private config, data and cache folders (never the user's).
+    ``encode`` and ``batch`` run their jobs in-process (``tests/remote`` covers the server)."""
+    monkeypatch.setenv(cli.IN_PROCESS_ENV, "1")
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):

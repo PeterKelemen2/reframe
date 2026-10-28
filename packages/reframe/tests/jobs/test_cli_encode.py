@@ -179,8 +179,9 @@ def test_ctrl_c_cancels_the_jobs_and_removes_the_partial_file(season: Path, queu
     assert "Interrupted: cancelling the jobs" in result.stderr
     assert result.stdout.splitlines()[-1] == "Summary: 0 done, 0 failed, 3 cancelled, 0 not queued."
     calls = queues.queue.calls
-    stop = calls.index("stop")
-    assert calls[stop + 1 :] == ["cancel job-2", "cancel job-3", "cancel job-1"]
+    assert "stop" not in calls  # it would stop other front ends' jobs of a shared queue
+    cancels = [call for call in calls if call.startswith("cancel")]
+    assert cancels == ["cancel job-2", "cancel job-3", "cancel job-1"]
     assert [job.state for job in queues.queue.list()] == [JobState.CANCELLED] * 3
     assert not list(season.glob("*.part.*"))
     assert outputs(season) == []
