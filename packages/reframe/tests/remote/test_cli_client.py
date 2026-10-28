@@ -183,11 +183,17 @@ async def test_a_server_that_stops_while_the_command_follows_its_jobs(
             task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
             await poll(lambda: any(j.state is JobState.RUNNING for j in api.reframe.queue.list()))
         code = await asyncio.wait_for(task, 30)
+        jobs = api.reframe.queue.list()
         await api.reframe.queue.cancel()
     captured = capsys.readouterr()
     assert code == cli.EXIT_FAILED
     assert "1 interrupted, 1 not finished" in captured.out
-    assert "the Reframe server stopped. Its running jobs were interrupted" in captured.err
+    [waiting] = [j.id for j in jobs if j.state is JobState.WAITING]
+    assert (
+        "error: the Reframe server stopped: its running jobs were interrupted. The waiting jobs "
+        "stay in the queue, not started: reframe queue retry ID starts one, reframe queue "
+        f"cancel ID cancels it ({waiting[:8]})."
+    ) in captured.err
 
 
 async def test_batch_hands_its_jobs_to_the_owner(

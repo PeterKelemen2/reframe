@@ -18,7 +18,7 @@ import pytest
 
 from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached
 from reframe.queue.lock import LOCK_FILE, StoreLock
-from reframe.remote import NoOwner, Owner, find_owner
+from reframe.remote import API_VERSION, NoOwner, Owner, find_owner
 from reframe.remote import owner as owner_module
 from reframe.remote.owner import (
     ENDPOINT_ENV,
@@ -306,3 +306,9 @@ def test_the_endpoint_file_follows_the_servers_setting(tmp_path: Path) -> None:
     assert endpoint_path(tmp_path, {}) == tmp_path / ENDPOINT_FILE
     elsewhere = tmp_path / "elsewhere.json"
     assert endpoint_path(tmp_path, {ENDPOINT_ENV: str(elsewhere)}) == elsewhere
+
+
+def test_the_client_speaks_the_api_version_of_the_server_of_its_own_version() -> None:
+    from reframe_server.api import API_VERSION as SERVER_API
+
+    assert API_VERSION == SERVER_API

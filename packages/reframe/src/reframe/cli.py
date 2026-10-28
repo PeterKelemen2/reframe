@@ -1829,10 +1829,14 @@ async def _queue_jobs(
             view.close()
     finals = _summary(console, queue, ids, prepared.not_queued)
     if session.lost is not None:
-        _error(
-            f"{session.lost}. Its running jobs were interrupted; its waiting jobs stay in the "
-            "saved queue (reframe queue list)."
+        waiting = [job.id[:SHORT_ID] for job in finals if job.state is JobState.WAITING]
+        left = (
+            f" The waiting jobs stay in the queue, not started: reframe queue retry ID starts "
+            f"one, reframe queue cancel ID cancels it ({', '.join(waiting)})."
+            if waiting
+            else ""
         )
+        _error(f"{session.lost}: its running jobs were interrupted.{left}")
     all_done = all(job.state is JobState.DONE for job in finals)
     return (EXIT_OK if all_done and not prepared.not_queued else EXIT_FAILED), True
 
@@ -2637,8 +2641,8 @@ async def run_queue_action(action: str, refs: Sequence[str], *, every: bool) -> 
 
 
 async def run_queue_retry(ref: str) -> int:
-    """``reframe queue retry``: a failed, cancelled or interrupted job waits again and is
-    started (it runs in the server, as a detached job)."""
+    """``reframe queue retry``: a failed, cancelled or interrupted job waits again, and a
+    waiting job is started (it runs in the server, as a detached job)."""
     remote = await _owner_for("reframe queue retry")
     if remote is None:
         return EXIT_FAILED
@@ -3490,8 +3494,9 @@ def build_app() -> typer.Typer:
 
     @queue_app.command("retry", epilog=_EXIT_HELP_QUEUE_ACTION)
     def queue_retry(job: _JobRef) -> None:
-        """Run a failed, cancelled or interrupted job again: it waits at its place in the
-        queue and starts when a slot is free, in the server, without this command."""
+        """Run a failed, cancelled or interrupted job again, or start a waiting one: it waits
+        at its place in the queue and starts when a slot is free, in the server, without this
+        command."""
         _run(run_queue_retry(job))
 
     @queue_app.command("remove", epilog=_EXIT_HELP_QUEUE_ACTION)
