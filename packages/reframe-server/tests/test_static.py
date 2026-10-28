@@ -111,6 +111,23 @@ async def test_folder_without_index_is_logged_and_serves_no_page(
     assert f"{folder} has no index.html" in caplog.text
 
 
+async def test_folder_behind_a_link_follows_the_link_on_each_request(
+    make_api: ApiFactory, tmp_path: Path
+) -> None:
+    releases = tmp_path / "releases"
+    for name in ("1", "2"):
+        (releases / name).mkdir(parents=True)
+        (releases / name / "index.html").write_text(f"build {name}")
+    current = tmp_path / "current"
+    current.symlink_to(releases / "1")
+    async with make_api(static_dir=current) as api:
+        assert (await api.anonymous.get("/queue")).text == "build 1"
+        swap = tmp_path / "current.new"
+        swap.symlink_to(releases / "2")
+        swap.replace(current)
+        assert (await api.anonymous.get("/queue")).text == "build 2"
+
+
 async def test_static_answers_pass_the_security_middleware(web: Api) -> None:
     page = await web.anonymous.get("/")
     assert page.content == INDEX
