@@ -231,7 +231,9 @@ row whose member a route reaches or that no longer exists
 - [ ] `WS /api/events`. The client authenticates in its first message
       (`{"type": "auth", "token": …}`; in password mode the session cookie may stand in for the
       token). A wrong first message, or none within 5 s, closes the connection with 4401. The
-      server answers `{"type": "hello", "instance", "heartbeat"}` and then sends each event as
+      server answers `{"type": "hello", "instance", "heartbeat", "client_id"}` (S-7's
+      `attach`, [decision 0057](../decisions/0057-s7-attachments-client-id-and-detach.md)) and
+      then sends each event as
       JSON: `{"type": "event", "seq": n, "event": {…}}`
       ([decision 0047](../decisions/0047-event-websocket.md)).
 - [ ] **Coalescing**: `job.progress` and `task.progress` are coalesced per id (only the latest
@@ -271,9 +273,10 @@ to a `npm run build:web` output. Files under `assets/` get
       `REFRAME_*` variables are ignored), then run `openapi-typescript` (pinned in
       `frontend/package.json`) → `frontend/src/api/schema.d.ts`, committed and left out of
       `oxfmt`. The same input gives the same bytes.
-- [x] The document's components also hold the `WS /api/events` messages: `AuthMessage` (the
-      client's first message) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by
-      `type`), with every core event model. OpenAPI has no WebSocket operation, so there is no
+- [x] The document's components also hold the `WS /api/events` messages: `ClientMessage`
+      (`AuthMessage | DetachMessage`, by `type`; `AuthMessage` is the first one, S-7 added
+      `DetachMessage`) and `ServerMessage` (`Hello | EventMessage | Heartbeat`, by `type`),
+      with every core event model. OpenAPI has no WebSocket operation, so there is no
       path for it ([decision 0051](../decisions/0051-openapi-types-and-route-coverage.md)).
 - [x] CI check: `scripts/gen-api.sh --check` regenerates into a temporary folder and fails with
       the diff (`Q-2.3`, the `api-contract` job on Ubuntu).
