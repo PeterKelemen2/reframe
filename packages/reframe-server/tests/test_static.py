@@ -1,18 +1,19 @@
-"""The built frontend in web mode: cache headers, the SPA fallback, the 404 of ``/api`` and
-the folder jail."""
+"""The built frontend in web mode: cache headers, the SPA fallback, the 404 of ``/api``, the
+folder jail and the folders refused at start-up."""
 
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from starlette import responses
 from websockets.exceptions import InvalidStatus
 
+from reframe import paths
 from reframe_server.security import APP_CSP
 from reframe_testing.server import Api, ApiFactory
 
@@ -92,23 +93,62 @@ async def test_api_other_methods_and_missing_assets_keep_the_problem_404(
 
 
 @pytest.mark.parametrize(("mode", "static"), [("desktop", True), ("web", False)])
-async def test_no_static_file_without_web_mode_and_folder(
+async def test_no_static_file_or_folder_check_without_web_mode_and_folder(
     make_api: ApiFactory, site: Path, mode: str, static: bool
 ) -> None:
+    (site / "index.html").unlink()
     async with make_api(mode=mode, static_dir=site if static else None) as api:
         assert_problem_404(await api.client.get("/"))
         assert_problem_404(await api.client.get("/assets/index-Ab12.js"))
 
 
-async def test_folder_without_index_is_logged_and_serves_no_page(
-    make_api: ApiFactory, tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_folder_without_index_html_is_refused(make_api: ApiFactory, tmp_path: Path) -> None:
     folder = tmp_path / "empty"
     folder.mkdir()
-    with caplog.at_level(logging.WARNING, logger="reframe_server.static"):
-        async with make_api(static_dir=folder) as api:
-            assert_problem_404(await api.client.get("/queue"))
-    assert f"{folder} has no index.html" in caplog.text
+    with pytest.raises(ValidationError, match=r"has no index\.html"):
+        async with make_api(static_dir=folder):
+            pass
+
+
+@pytest.mark.parametrize(
+    ("held", "overrides", "env"),
+    [
+        pytest.param("config folder", {"config_dir": "web"}, {}, id="config"),
+        pytest.param(
+            "data folder", {"data_dir": None}, {paths.DATA_DIR_ENV: "web/reframe"}, id="data"
+        ),
+        pytest.param("cache folder", {}, {paths.CACHE_DIR_ENV: "alias/cache"}, id="cache"),
+        pytest.param("endpoint file", {"endpoint_file": "web/server.json"}, {}, id="endpoint"),
+        pytest.param("media root", {"media_roots": ["media", "web/media"]}, {}, id="media"),
+        pytest.param("output root", {"output_roots": ["output", "web"]}, {}, id="output"),
+    ],
+)
+async def test_folder_that_holds_a_server_folder_is_refused(
+    make_api: ApiFactory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    held: str,
+    overrides: dict[str, str | list[str] | None],
+    env: dict[str, str],
+) -> None:
+    # Its files are served without a login, server.json with the token among them. The folder
+    # is named through one link and the cache folder through another: both are resolved.
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_bytes(INDEX)
+    for link in ("current", "alias"):
+        (tmp_path / link).symlink_to(web, target_is_directory=True)
+    for variable, relative in env.items():
+        monkeypatch.setenv(variable, str(tmp_path / relative))
+    folders: dict[str, Path | list[Path] | None] = {}
+    for name, value in overrides.items():
+        if isinstance(value, list):
+            folders[name] = [tmp_path / item for item in value]
+        else:
+            folders[name] = None if value is None else tmp_path / value
+    with pytest.raises(ValidationError, match=f"holds the {held}"):
+        async with make_api(static_dir=tmp_path / "current", **folders):
+            pass
 
 
 async def test_folder_behind_a_link_follows_the_link_on_each_request(
@@ -167,6 +207,32 @@ async def test_no_path_leaves_the_folder(web: Api, target: str) -> None:
         status, body = await raw_get(server.port, target)
     assert SECRET not in body
     assert (status, body) == (200, INDEX) or status == 404
+
+
+@pytest.mark.parametrize(
+    ("target", "status"),
+    [
+        pytest.param("/%5c%5cattacker.example%5cshare%5cx.js", 200, id="unc"),
+        pytest.param("/C:/Windows/win.ini", 200, id="drive"),
+        pytest.param("/assets/COM1", 404, id="device"),
+    ],
+)
+async def test_windows_path_in_a_request_is_never_resolved(
+    web: Api, site: Path, monkeypatch: pytest.MonkeyPatch, target: str, status: int
+) -> None:
+    # On Windows the join drops the folder, and resolving opens the path (a UNC path: an SMB
+    # session with the server user's credentials) before any check can refuse it.
+    resolved: list[Path] = []
+    resolve = Path.resolve
+
+    def recording(path: Path, strict: bool = False) -> Path:
+        resolved.append(path)
+        return resolve(path, strict)
+
+    async with web.live() as server:
+        monkeypatch.setattr(Path, "resolve", recording)
+        assert (await raw_get(server.port, target))[0] == status
+    assert {path.name for path in resolved} <= {site.name, "index.html"}
 
 
 async def test_websocket_to_a_page_path_is_refused(web: Api) -> None:

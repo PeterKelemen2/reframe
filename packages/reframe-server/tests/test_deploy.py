@@ -47,12 +47,18 @@ def copied_from(stage: str) -> Path:
 
 
 def test_the_image_starts_a_web_server_with_its_roots_and_the_frontend(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     env = image_env()
     read = {f"REFRAME_{name.upper()}" for name in ServerConfig.model_fields}
     read |= {paths.CONFIG_DIR_ENV, paths.DATA_DIR_ENV, paths.CACHE_DIR_ENV}
     assert {name for name in env if name.startswith("REFRAME_")} <= read
+    # The server refuses a static_dir without index.html, and the image's build is not here.
+    assert Path(env["REFRAME_STATIC_DIR"]) == copied_from("frontend")
+    build = tmp_path / "frontend"
+    build.mkdir()
+    (build / "index.html").touch()
+    env["REFRAME_STATIC_DIR"] = str(build)
     for name in os.environ:
         if name.startswith("REFRAME_"):
             monkeypatch.delenv(name)
@@ -65,7 +71,7 @@ def test_the_image_starts_a_web_server_with_its_roots_and_the_frontend(
     assert not is_loopback(config.host)
     assert config.media_roots == [Path("/media")]
     assert config.output_roots == [Path("/output")]
-    assert config.static_dir == copied_from("frontend")
+    assert config.static_dir == build
 
 
 def test_the_image_puts_ffmpeg_where_discovery_finds_the_bundled_build() -> None:

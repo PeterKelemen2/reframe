@@ -4,7 +4,7 @@ path is resolved (links followed) and must stay inside the resolved folder."""
 
 from __future__ import annotations
 
-import logging
+import ntpath
 from pathlib import Path
 
 import anyio.to_thread
@@ -15,8 +15,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from reframe_server.config import ServerConfig
 
 __all__ = ["install"]
-
-log = logging.getLogger(__name__)
 
 ASSETS = "assets"
 """Vite's output folder for files with a content hash in their name."""
@@ -41,8 +39,6 @@ def install(app: FastAPI, config: ServerConfig) -> None:
     after every API router; a request under ``/api`` keeps the 404 problem."""
     if config.mode != "web" or config.static_dir is None:
         return
-    if not (config.static_dir / "index.html").is_file():
-        log.warning("%s has no index.html: the frontend cannot load", config.static_dir)
     app.router.default = _Frontend(config.static_dir, app.router.default)
 
 
@@ -80,8 +76,12 @@ class _Frontend:
 
 
 def _inside(root: Path, relative: str) -> Path | None:
+    # On Windows a drive, UNC or device path replaces root in the join, and resolve() opens it
+    # before the check below (a UNC path: an SMB session with the server's credentials).
+    if "\\" in relative or ":" in relative or ntpath.isreserved(relative):
+        return None
     try:
         file = (root / relative).resolve()
-    except (OSError, ValueError):  # ValueError: a NUL
+    except OSError:  # Windows: realpath raises the errors that it does not expect
         return None
     return file if file.is_relative_to(root) and file.is_file() else None

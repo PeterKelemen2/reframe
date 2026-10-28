@@ -263,7 +263,9 @@ to a `npm run build:web` output. Files under `assets/` get
 `public, max-age=31536000, immutable`; every other file and the `index.html` fallback get
 `no-cache`. A path under `/api`, a missing file under `/assets/` and a method other than
 `GET` / `HEAD` keep the JSON problem 404. No file outside the resolved folder is served
-(links are followed, then checked)
+(links are followed, then checked). A `static_dir` without `index.html`, or one that holds the
+config, data or cache folder, the endpoint file, a media root or an output root, is refused at
+start-up (exit 2)
 ([decision 0058](../decisions/0058-s4-static-frontend.md)).
 
 ## S-5 OpenAPI → TypeScript

@@ -2308,6 +2308,26 @@ a socket:
 | `/x%2f..%2fy` | `/x/../y` (`%2f` becomes a separator) |
 | `/a\..\b` | `/a\..\b` (unchanged; a separator only on Windows) |
 | `/a%00b` | `/a\x00b`; `Path.resolve()` then raises `ValueError` |
+| `/%5c%5chost%5cshare%5cx.js` | `/\\host\share\x.js` (`%5c` becomes `\`) |
+| `/%5c/host/share/x.js` | `/\/host/share/x.js` |
+| `/C:/Windows/win.ini` | `/C:/Windows/win.ini` |
+
+On Windows such a path leaves the folder before any check (read in `ntpath.py` and `pathlib` of
+Python 3.14.8 and checked with `PureWindowsPath` on Linux on 2026-10-28; not run on Windows):
+
+- The join drops the folder: `PureWindowsPath("C:/srv/web") / "\\\\host\\share\\x.js"` is
+  `\\host\share\x.js`; `\/host/share/x.js` gives the same UNC path, `C:/Windows/win.ini` gives
+  `C:\Windows\win.ini`, and `\\.\pipe\name` stays a named pipe.
+- `Path.resolve()` is `os.path.realpath`. On Windows that is `ntpath.realpath`, which calls
+  `nt._getfinalpathname` (`ntpath.py` lines 674 and 709) and so opens the path: for a UNC path an
+  SMB connection with the user's credentials. On Linux `ntpath.realpath` is only `abspath`.
+- `posixpath.realpath` without `strict` ignores every `OSError`; `ntpath.realpath` raises a
+  Windows error that is not in its list of expected ones (`_getfinalpathname_nonstrict`).
+- `ntpath.isreserved` (Python 3.13+, pure string code on every OS) first removes the drive or UNC
+  part (`splitroot`), then is true for a name with a control character (NUL among them),
+  `"*:<>?|`, a trailing dot or space, or a DOS device name, also with an extension (`CON`,
+  `nul.txt`, `COM1`, `CONIN$`). `aux-Ab12.js` is not reserved. So the drive and UNC forms are
+  refused by their `:` and `\`, apart from it.
 
 httpx removes literal dot segments from a URL before it sends it (`/a/../b` becomes `/b`), but
 keeps `%2e%2e`. So a traversal test sends its request line on a socket to a live uvicorn

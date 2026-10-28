@@ -109,3 +109,81 @@ static files (S-4)").
 - [06 §S-4](../plan/06-web-app.md#s-4-static-frontend-and-spa-fallback): both items ticked,
   with the default, the cache and fallback rules, and a link to this record.
 - `docs/status.md`: the S-4 row.
+
+## Follow-up (review), 2026-10-28
+
+An independent review of S-4 found two defects: F1 (a blocker on Windows) and F3 (minor).
+
+### F1: a request path that Windows reads as a UNC, drive or device path
+
+**Finding.** The handler removed the leading `/` from the path and joined the rest to the
+resolved folder, then resolved the result. uvicorn decodes `%5c` to `\`, so
+`GET /%5c%5chost%5cshare%5cx.js` gives `\\host\share\x.js` (and `/%5c/host/share/x.js` gives
+the same UNC path). On Windows the join drops the folder for an absolute path (a UNC path, a
+drive path such as `C:/Windows/win.ini`, a device path such as `\\.\pipe\name`).
+`Path.resolve()` then runs `ntpath.realpath`, which calls `nt._getfinalpathname` and so opens
+the path: an SMB session to that host with the server user's NTLM credentials, from an
+anonymous request. The containment check ran only after this. So item 6 and the Windows line
+in "Consequences" were wrong: the resolve-and-compare rule refuses such a path, but only after
+the OS has opened it. The facts are in [testdata/README.md](../../testdata/README.md), "Request
+paths that reach the static files (S-4)".
+
+**Fix (`static.py`).** Before any file-system call, the lookup refuses a path (not found) that
+holds `\` or `:`, or that `ntpath.isreserved` calls reserved: a control character (NUL among
+them), `"*<>?|`, a trailing dot or space, or a DOS device name (`CON`, `nul.txt`, `COM1`). The
+same rule runs on every OS, so the Linux tests prove it. Without a leading `/`, a `\` or a `:`,
+`PureWindowsPath` finds no drive and no root in the path. A Vite build has no such names. A
+refused page path gets `index.html`, and a refused path under `/assets/` gets the problem 404,
+like any other path that is not a file. A NUL no longer reaches `resolve()`, so the handler no
+longer catches `ValueError`. It still catches `OSError`, which only `ntpath.realpath` raises.
+
+**Test.** `test_windows_path_in_a_request_is_never_resolved` (rows `unc`, `drive`, `device`)
+sends the request line to a live uvicorn, with `Path.resolve` patched to record its argument:
+only the folder and its `index.html` are resolved, and the answer is `index.html` (or 404
+under `/assets/`). On the old code all three rows failed: the recorded names held
+`\\attacker.example\share\x.js`, `win.ini` and `COM1`. Not run on Windows (decision 0053).
+
+### F3: a `static_dir` that holds the server's own files
+
+**Finding.** A folder without `index.html` only logged a warning (item 8), and every file in
+it was still served without a login. The review set `REFRAME_STATIC_DIR` to the parent of the
+data folder: `GET /reframe/server.json` answered 200 with the token, and the token opened
+`GET /api/queue`.
+
+**Fix (`config.py`).** In web mode `ServerConfig` refuses a `static_dir` (a validation error,
+so `reframe-server` exits 2 and prints the reason) when:
+
+- it has no `index.html`. This replaces item 8 and does the optional proposal above;
+- it is, or holds, the config, data or cache folder, or the endpoint file when
+  `endpoint_file` is set. The endpoint file holds the token; its default is in the data folder.
+  Both sides are resolved (links followed). A folder that the config does not set comes from
+  `reframe.paths`, as the facade gets it (the server gives the facade no cache folder, so that
+  is always `paths.cache_dir()`);
+- it is, or holds, a media root or an output root (each one of the list is checked). Their
+  files are not the server's own, but the API shows them only after a login, and the static
+  files need none. Added at the lead's request after the first report.
+
+Desktop mode serves no static file and checks no folder. A folder inside a server folder
+(`<data>/web`) is allowed: only that folder is served. A link that is swapped after start-up is
+not checked again.
+
+**Tests.** `test_folder_without_index_html_is_refused`;
+`test_folder_that_holds_a_server_folder_is_refused`, with `static_dir` through a link and one
+row each: the config folder equal to the build, the data folder from `REFRAME_DATA_DIR` one
+level below it (the review's layout), the cache folder through a second link, the endpoint
+file, a media root inside the build as the second of two roots, and an output root equal to
+the build as the second of two; and the desktop row of
+`test_no_static_file_or_folder_check_without_web_mode_and_folder`, now with a folder without
+`index.html`. On the old code the first two failed with `DID NOT RAISE`; the media and output
+rows failed in the same way before their check was added. The real `reframe-server` with the review's layout exits 2 with
+`reframe-server: Value error, static_dir … has no index.html`; with an `index.html` added to
+that folder, it exits 2 with `… holds the config folder …: every file in it would be served
+without a login`, and no `server.json` is written.
+
+`test_deploy.py` builds a `ServerConfig` from the image's variables. The image's
+`/opt/reframe/frontend` exists only in the image, so the test now checks that the variable
+names the folder of the `frontend` stage, then points it at a temporary build.
+
+**Not changed.** These review notes are accepted as they are: the cache rule uses the resolved
+file and not the request path, the `startswith("assets")` detail, and the duplicate
+`..` / `%2e%2e` test row.
