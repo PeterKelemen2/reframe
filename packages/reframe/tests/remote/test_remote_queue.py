@@ -401,18 +401,23 @@ async def test_a_job_it_just_added_stays_while_older_events_come(
     server: Server, wire: Wire
 ) -> None:
     """The event stream lags behind the answers: a ``queue.changed`` sent before an add reaches
-    the copy after it. It must not remove the new job: ``start(job_ids)`` would refuse it,
-    and the command would cancel all of its jobs."""
+    the copy after it. It must not remove the new job from ``get()`` or ``list()``:
+    ``start(job_ids)`` would refuse it, the command would cancel all of its jobs, and
+    ``queue list`` would not show it."""
     wire.lag = 0.03
     jobs = [await server.job(f"Show S01E{n:02}.mkv") for n in range(1, 7)]
     remote = await server.connect()
     added: list[str] = []
-    absent: list[str] = []
+    wrong: list[tuple[list[str], list[str]]] = []
     changes = remote.events.subscribe(types={"queue.changed"})
 
     async def check() -> None:
         async for _ in changes:
-            absent.extend(j for j in added if remote.get(j) is None)
+            listed = [job.id for job in remote.list()]
+            if [j for j in listed if j in added] != added or any(
+                remote.get(j) is None for j in added
+            ):
+                wrong.append((list(added), listed))
 
     checker = asyncio.create_task(check())
     try:
@@ -425,7 +430,7 @@ async def test_a_job_it_just_added_stays_while_older_events_come(
     finally:
         await remote.close()
         await asyncio.wait_for(checker, 10)
-    assert absent == []
+    assert wrong == []
 
 
 async def test_a_job_of_a_whole_queue_read_stays_while_older_events_come(
@@ -439,14 +444,14 @@ async def test_a_job_of_a_whole_queue_read_stays_while_older_events_come(
     remote = await server.connect()
     try:
         changes = remote.events.subscribe(types={"queue.changed"})
-        await server.api.reframe.queue.add(first)
+        earlier = await server.api.reframe.queue.add(first)
         later = await server.api.reframe.queue.add(second)
-        shown: list[bool] = []
+        shown: list[tuple[bool, list[str]]] = []
         async for _ in changes:
-            shown.append(remote.get(later.id) is not None)
+            shown.append((remote.get(later.id) is not None, [j.id for j in remote.list()]))
             if len(shown) == 2:
                 break
-        assert shown == [True, True]
+        assert shown == [(True, [earlier.id, later.id])] * 2
     finally:
         await remote.close()
 
