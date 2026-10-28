@@ -2295,6 +2295,35 @@ A client socket given `SO_RCVBUF` 8192 before it connects keeps a 16 KB receive 
 left alone grew from 128 KB to about 1 MB (Linux auto-tuning). The server's send buffer grew to
 2.6 to 4 MB either way; the hub's send waited after 17 to 24 messages of 128 KiB.
 
+### Request paths that reach the static files (S-4)
+
+Checked on 2026-10-28 with uvicorn 0.54.0 (h11 0.16.0: httptools is not installed, so `http="auto"`
+is h11), httpx 0.28.1, Starlette 1.9.0 and Python 3.14 on Linux, with raw request lines sent on
+a socket:
+
+| Request target | `scope["path"]` the app sees |
+|----------------|------------------------------|
+| `/../etc/passwd` | `/../etc/passwd` (dot segments are not removed) |
+| `/%2e%2e/b` | `/../b` |
+| `/x%2f..%2fy` | `/x/../y` (`%2f` becomes a separator) |
+| `/a\..\b` | `/a\..\b` (unchanged; a separator only on Windows) |
+| `/a%00b` | `/a\x00b`; `Path.resolve()` then raises `ValueError` |
+
+httpx removes literal dot segments from a URL before it sends it (`/a/../b` becomes `/b`), but
+keeps `%2e%2e`. So a traversal test sends its request line on a socket to a live uvicorn
+(`packages/reframe-server/tests/test_static.py::test_no_path_leaves_the_folder`).
+
+Starlette's router calls `Router.default` only after no route matched (also not partly, which
+would give 405) and no slash redirect applied. Inside an app it raises `HTTPException(404)`,
+which the app's handler turns into the problem answer; for a WebSocket it closes the connection
+(uvicorn answers 403).
+
+`npm run build:web` (Vite 8.3.4) writes `dist/index.html` and `dist/assets/index-<hash>.js` /
+`.css` only (the frontend has no `public/` folder). The real `reframe-server` with
+`REFRAME_STATIC_DIR=frontend/dist` served it; the headless Chromium shell
+(`chromium_headless_shell-1248`, `--dump-dom`) loaded `/queue` and the Vue app mounted under the
+server's CSP with no refused resource.
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,
