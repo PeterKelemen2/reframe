@@ -639,7 +639,113 @@ J, after saving the preset).
 
 ## Task H — F-9 Video tab
 
-(Written by task H.)
+Built: `components/editor/tabs/VideoTab.vue` and `components/video/` (`EncoderPicker`,
+`EncoderBanner`, `QualitySlider`, `SpeedPresetSlider`, `ChoiceSelect`, `CommandPreview`, the
+helpers `encoders.ts`, `commandLine.ts`, `frameRates.ts`, `text.ts`, the composables
+`useOutputLines` and `useCommandPlan`, test data in `testing/`), `i18n/messages/en/video.json`.
+The advanced panel is M9.
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2 and `{"encoders": {"hardware_tests":
+true}}` on this AMD desktop; `src/components/video/video.server.test.ts` does items 1–4:
+
+1. **The picker's switch is the server's fix.** For the default preset's job set to `hevc_nvenc`
+   and for the built-in *H.265 NVENC 1080p* preset, `switchEncoderOps(video, 'hevc_amf', …)` is
+   the patch of the `encoder.unavailable` fix, operation for operation (encoder, quality CQ 22 →
+   CQ 20 and CQ 27 → CQ 25 through the definitions' scale tables, the speed preset reset, the
+   advanced options the new encoder lacks dropped), except the picker's own last operation (the
+   custom parameters, "Choices" item 1).
+2. **`EncodePlan.display`** is one line: each step's command shell-quoted (POSIX on Linux:
+   `'title=Director'"'"'s Commentary'`), joined with ` && `, the last step `mv -f -- part final`.
+   The tokenizer gives it back character for character.
+3. **`jobs/plan` of a job with errors** is `422 jobs.invalid` with every issue (warnings and
+   notes too) in `issues`; the preview lists the errors only.
+4. **`jobs/geometry`** of `multitrack.mkv` (320×180) with the 1080p preset is 320×180 (no
+   upscaling): the band of the first row (`max_height` 576). For a copied video `geometry` is
+   `null` and `source` stays.
+5. In headless Chromium (light and dark): the groups, dots and reasons; a click on an unavailable
+   encoder changes nothing; the banner for the job (`This job uses hevc_nvenc …`) and for the
+   preset (`Preset H.265 NVENC 1080p uses hevc_nvenc …`, fix *Use hevc_amf (closest match;
+   quality CQ 27 → CQ 25, approximate)*); `Ctrl+Z` / `Ctrl+Shift+Z` on the encoder change take the
+   banner and the field's error outline away and back; the fix, its undo; *Choose encoder* opens
+   the picker with the focus on it; *Check again* runs a detection (every encoder `checking`, then
+   the same results); a drag is one undo step; a typed `19.5`; two arrow keys; average bitrate
+   with 2-pass changes the command (`-b:v:0 6000k`, `pass=1`); the copied text equals
+   `display`.
+
+### Choices where the plan leaves one
+
+1. **Choosing an encoder converts, it does not clear**, with the rules of the server's
+   closest-match fix (`switch_video_encoder`, ported to `encoders.ts`): the quality through the
+   definitions' scale tables (rounded to the step, halves up), the bitrate into the new range,
+   2-pass and turbo off where the new encoder has no 2-pass, the speed preset, tune, profile and
+   level reset to the encoder's default where it lacks the value, 10-bit off where the definition
+   has no 10-bit format or detection's 10-bit test failed (not while a cached result is checked
+   again), a 10-bit-only profile reset with it, fast decode off where the encoder has none,
+   advanced options kept only where the new encoder has the option and the value fits its type
+   and range. All in one patch: one undo step. **The custom parameters are cleared** (the
+   server's fix keeps them): they are written for one encoder (x265's `strong-intra-smoothing=0`
+   is an error for every other one, one issue per parameter), and an info toast says so and that
+   undo brings them back. The picker refuses an unavailable or failed encoder itself as well
+   (PrimeVue's `Select` relies on `pointer-events: none` for disabled options).
+2. **Status text**: `available` "Available"; `checking` "Checking…" (also `unknown` before the
+   encoder list was read, and before any snapshot); `unavailable` / `error` "Unavailable: …" / "The
+   check failed: …"; a cached failure that detection checks again "Checking again (last result:
+   …)", and it can be chosen (0008's follow-up 1: the server says `encoder.checking`); `unknown`
+   with hardware tests off shows the server's reason ("Not tested: …"). The reason is shown as
+   text in the option, not only on hover (a disabled option takes no pointer events, so no
+   tooltip), and is part of the option's accessible name.
+3. **The banner** (`role="alert"`, above the tab's sections) names the preset only while the job
+   still has the preset's encoder (`editor.preset.video.encoder`); after a change it says "This
+   job uses …". The reason is the encoder status's; without one, the issue's message. Its fix
+   buttons are the issue's (target `job` and `settings`).
+4. **The recommended band** is chosen by the **short side** of the output picture (`jobs/geometry`
+   `scaled_width` / `scaled_height`), not the height: a 1920×800 scope film and a 1080×1920 phone
+   clip are both "1080p" content. The first band whose `max_height` holds it, the last one above
+   all. Without an answer (a copied video, a failed request), the short side of the source (the
+   answer's `source`, else the active source's first video stream). Asked at once for a new job,
+   250 ms after an edit of the source, range, dimensions, filters or passthrough, never for other
+   edits; the newest answer wins (`editor/latest.ts`). The hardware encoders' definitions have
+   no bands: their slider has none.
+5. **Undo steps of the sliders**: a drag is one step (`coalesce` named after the path,
+   `endCoalescing()` at `slideend`); with the keyboard each key press is one (`keyup` ends the
+   run; a held key is one step). A typed value is one step.
+6. **Rate-control switch**: going back to the other mode brings its last value back (per job;
+   a new job forgets them): the model holds one mode at a time. A new bitrate is 6000 kb/s in the
+   encoder's range, 2-pass off. Turning 2-pass off turns turbo off in the same step.
+7. **Frame rates**: HandBrake's list (5 … 120, the NTSC rates as exact fractions); a rate of the
+   job not in the list is shown as `num/den`. The mode's help text says what Peak does (0013).
+8. **Profiles** are offered for the job's bit depth (`Choice.bit_depths`); the current value is
+   always offered so that its issue has something to point at. The `null` entry says the
+   encoder's default for the bit depth ("Main 10 (default)"), else "Automatic" (profile, level) or
+   "None" (tune).
+9. **The custom parameters** show read-only (a `Field` at `video.custom_params`) so that their
+   issues have a place and `ui.reveal` finds them; editing them is the advanced panel's (M9).
+   Issues at `video.advanced.*` have no field before M9 (Summary lists them).
+10. **The command preview is a drawer at the foot of the tab**, sticky while the tab scrolls, not
+    PrimeVue's `Drawer`: that one traps the focus even when not modal, and the point of the
+    preview is to edit with the command in view. Its open state is kept in this browser
+    (`reframe.video.commandOpen`). It asks `jobs/plan` only while open: at once when opened or for
+    a new job, 250 ms after an edit, and again when encoder statuses, tools or settings change;
+    the newest answer wins, the last command stays (with "Updating…") until it comes. One line per
+    step; options in the primary colour, paths green, filter graphs amber, programs bold (the
+    status colours whose contrast `contrast.test.ts` checks). *Copy* copies `display` as the
+    server wrote it (VueUse `useClipboard`, with the text-area fallback for a plain-HTTP LAN
+    address).
+
+### Consequences
+
+- The client and the server both know how to switch encoders; item 1 of the real-server test
+  fails when they drift.
+- For G: the banner and Summary show the same `encoder.unavailable` issue from the validation
+  store; the banner has `role="alert"` and the class `encoder-banner`.
+- For L: the status texts are in `components/video/text.ts` (`useAvailabilityText`) and the
+  mapping in `encoders.ts` (`availabilityOf`): Settings → Encoders can use both.
+- For M (flow 3): the banner is `.encoder-banner`; its buttons `.encoder-banner__fix` (one per
+  fix, the label is the server's), `.encoder-banner__choose`, `.encoder-banner__check`; the picker
+  is `.encoder-picker` (`[role="combobox"]` inside), its options `.encoder-picker__option` with
+  `[data-encoder="<id>"]` and `[data-state]` inside; fields carry `data-path`.
 
 ## Task I — F-10 Audio and Subtitles tabs
 
