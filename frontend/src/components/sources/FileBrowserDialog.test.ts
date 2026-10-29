@@ -136,7 +136,7 @@ describe('the file browser dialog', () => {
     ])
     expect(crumbs()).toEqual(['media'])
     expect(names()).toEqual(['extras', 'season', 'a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
-    expect(entry('a.mkv').textContent).toContain('1.5 MB')
+    expect(entry('a.mkv').textContent).toContain('1.4 MiB')
     expect(document.activeElement).toBe(list())
   })
 

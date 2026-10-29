@@ -13,13 +13,14 @@ import { useI18n } from 'vue-i18n'
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
 import type { FsListing, FsRoot, Problem } from '@/api/types'
 import { fileName } from '@/components/shell/format'
+import { formatBytes } from '@/components/summary/format'
 
 import { type BrowseRequest, currentRequest, finish } from './fileBrowser'
 import { crumbsOf, extensionOf, folderOf, joinPath } from './paths'
 
 type Entry = FsListing['entries'][number]
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 /** Vue's types have no `autofocus` on a `div`; PrimeVue's dialog focuses the element that has it. */
 const autofocus: Record<string, string> = { autofocus: '' }
 const id = useId() ?? 'file-browser'
@@ -80,20 +81,7 @@ function optionId(index: number): string {
 }
 
 function formatSize(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return ''
-  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const
-  let value = bytes
-  let unit = 0
-  while (value >= 1000 && unit < units.length - 1) {
-    value /= 1000
-    unit += 1
-  }
-  return new Intl.NumberFormat(locale.value, {
-    style: 'unit',
-    unit: units[unit],
-    unitDisplay: 'short',
-    maximumFractionDigits: unit === 0 ? 0 : 1,
-  }).format(value)
+  return bytes === null || bytes === undefined ? '' : formatBytes(bytes, t)
 }
 
 async function read<T>(call: () => Promise<{ data?: T; error?: unknown; response: Response }>) {
