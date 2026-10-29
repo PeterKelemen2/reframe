@@ -1502,7 +1502,127 @@ disabled *Quit*); the server ran with `REFRAME_POWER_DRY_RUN=1` (R2 checked
 
 ### Fix round — FA (theme and base)
 
-(Written by task FA.)
+2026-10-30. Checked against a real server (`scripts/dev-server.py`, the real FFmpeg with hardware
+test encodes on, `multitrack`, `pgs`, `hdr10`) in headless Chromium and Firefox, light and dark,
+and with `npm run e2e`.
+
+1. **R2-1 (blocker): screen-reader text made the page taller than the window.** An absolutely
+   positioned box with no offset stays at its static place. In a scrolled column with no
+   positioned parent its containing block is the page, so each `.rf-sr-only` span low in a long
+   column made the page taller than the one-window shell. `.rf-sr-only` now has
+   `inset-block-start: 0; inset-inline-start: 0`, so it adds nothing to the page. Before: Summary
+   3,366 px in a 900 px window (4,011 / 4,024 px in the 720 px window of the e2e run, Chromium /
+   Firefox), Settings 4,407 px (1,458 px), and a section link scrolled the window by 392 and 663 px.
+   After: every screen (empty workspace, Summary, Video, Audio, Subtitles, Settings before and after
+   a section link, Queue, Presets, Activity) is exactly the window's height in both browsers and
+   both themes, and a section link scrolls only the Settings column. Test: `e2e/layout.spec.ts`
+   (the page is no taller than the window and not scrolled on Summary and Audio with a file open,
+   on Settings before and after a section link, and on the Queue with a job). With the old rule,
+   Summary and Settings fail in both browsers. The Queue check passes with the old rule too (its
+   hidden texts are inside PrimeVue's DataTable, which is positioned), so it only guards the
+   Queue view. `overscroll-behavior: contain` on the column scrollers (C's and FC's files) is not
+   needed now, because the page has nothing to scroll. It is still harmless as a second guard.
+2. **R2-2 / L4 (major): the compact issue list gave the message 0 px.** In compact mode the fixes
+   were a third grid column that did not wrap. The fixes now go on their own wrapping row under
+   the message, as in the full list. Compact keeps only the tighter padding and type. Before: the
+   message box was 0 × 1,299 px beside "Use hevc_amf (closest match; quality CQ 27 → CQ 25,
+   approximate)". After: 470 px wide in the status bar's list at 1,440 px. Test: the e2e spec
+   (with the NVENC preset under the fake FFmpeg, the closest-match issue's message is wider than
+   200 px). With the old rule it is 0 px in both browsers.
+3. **R2-5 and R2-6 (majors): text and control contrast.** The preset now sets Aura's component
+   tokens:
+   - Solid info, success, warn, help and danger buttons use the 700 shade with white text in light
+     (hover 800, pressed 900, focus ring 700). Outlined and text buttons use the 700 shade in light.
+     Secondary text is slate-600 in light and zinc-300 in dark.
+   - Outlined borders are 3:1 against the surface: slate-500 / zinc-500, the 600 shade of a
+     severity, and primary 500.
+   - Toasts and messages have opaque tints (50 in light, 950 in dark). Their titles use the 700
+     shade (yellow 800) in light and the 300 shade in dark.
+   - In a SelectButton the unselected labels are slate-600, and the checked option is **filled
+     with the primary colour**. This is a visible change of design: a white chip in a light-grey
+     group was 1.1:1, and a border alone was a weaker sign of the selection.
+   - The switch's off track is slate-500 / zinc-500. In dark its handle is zinc-950 (a light
+     handle on the lighter hover track was below 3:1). The slider's track is slate-500 /
+     zinc-500, and its handle has a ring in the primary colour.
+
+   | Pair | Light before → after | Dark before → after |
+   |------|----------------------|---------------------|
+   | *Modified* marker (outlined warn) on the surface | 2.80 → 5.18 | 7.83 → 7.83 |
+   | its border | 1.35 → 3.56 | 3.42 → 4.98 |
+   | the countdown's *Cancel* (white on solid warn) | 2.80 → 5.18 | 6.92 → 6.92 |
+   | read-only settings note (message warn) | 2.85 see-through → 6.62 | 6.73 see-through → 11.06 |
+   | toast titles: warn, success, error, info | 2.85, 3.16, 4.43, 4.77 (see-through) → 6.62, 4.79, 5.91, 6.16 | 6.73, 5.92, 3.98, 3.96 (see-through) → 11.06, 10.62, 8.51, 8.15 |
+   | outlined *Delete* (outlined danger) | 3.76 → 6.47 | 6.40 → 6.40 |
+   | white on solid danger | 3.76 → 6.47 | 5.84 → 5.84 |
+   | unselected SelectButton label | 4.34 → 6.92 | 7.76 → 7.76 |
+   | outlined secondary text on an error issue (red-50 / red-950) | 4.35 → 6.93 | 6.30 → 10.92 |
+   | switch off track on the surface | 1.48 → 4.76 | 1.70 → 3.67 |
+   | switch handle on the off track | 1.48 → 4.76 | 4.07 → 4.12 |
+   | slider track on the surface | 1.23 → 4.76 | 1.70 → 3.67 |
+   | slider handle ring on the surface | 1.23 → 6.29 | 1.70 → 5.94 |
+   | SelectButton checked option against its group | 1.10 → 5.74 | 1.34 → 6.67 |
+   | outlined secondary border on the surface | 1.23 → 4.76 | 1.70 → 3.67 |
+   | focus ring of a solid warn button | 2.80 → 5.18 | 7.83 → 7.83 |
+
+   "See-through" rows are measured over the content background. Test: `styles/contrast.test.ts`
+   mounts Button, Toast, Message, Tag, SelectButton (with options, for the toggle buttons' own
+   variables), ToggleSwitch, Slider, Select and Listbox, so that PrimeVue writes their variables.
+   It then checks text pairs (4.5:1) for every button kind and state, outlined and text buttons
+   on the surfaces and on the issue backgrounds, toasts, messages, tags, SelectButton labels and
+   list options. It checks control pairs (3:1) for outlined borders, the buttons' focus rings,
+   the switch, the slider and the checked option. It also requires opaque toasts. A see-through
+   background (a hover tint) is measured on the content background. With the preset before this
+   change, 6 of 6 tests failed with 132 pairs. Measured on the page with R2's `nontext.js`
+   (Video tab), the values match the table. The only low row is "slider handle" at 1.32 / 1.62:
+   that row measures the handle's ring against the 3 px track under it. The handle is 20 px
+   across, its ring is 6.29 / 5.94 against the surface, and its centre is 4.76 / 4.12 against the
+   track. The filled range (indigo) differs from the track (grey) by hue only (1.3:1). The handle
+   shows the value.
+4. **L15: a disabled button in dark looked enabled.** PrimeVue fades a disabled button to 60 %,
+   so a disabled *Add to queue* kept its indigo. `main.css` now paints a disabled solid button of
+   the primary or a coloured severity with the form field's disabled colours (slate-200 /
+   slate-500 in light, zinc-700 / zinc-400 in dark). Secondary, outlined, text and link buttons
+   keep the fade, which reads as disabled for greys. A busy (loading) button keeps its colour. The
+   painted disabled *Add to queue* against the enabled *Open files…* changed from 2.25 to 5.10 in
+   light and from 2.01 to 3.50 in dark. Its label changed from 1.92 to 3.86 (light) and from 2.01
+   to 4.07 (dark). WCAG asks nothing of a disabled control; 3:1 is our floor, so that the label
+   stays readable. Tests: the e2e spec measures the two painted fills in light and dark (≥ 3:1;
+   2.25 without the rule). `contrast.test.ts` checks the disabled greys: the label 3:1, and the
+   fill 3:1 against every enabled solid fill (Aura's 500 shades were 1.85 to 2.27 from
+   slate-200).
+5. **R2-9 / L9: icons shrank in small icon-only buttons.** The small size's padding wins over the
+   icon-only padding and leaves 10 px, and the lucide icon is a flex item, so it shrank. One rule
+   in `main.css` (`.p-button svg { flex: none }`) fixes it. Test: the e2e spec (the header's and a
+   track row's icons have their own width; 10 of 18 px without the rule). The local copy in
+   `QueueTable.vue` (K's file) is left as it is.
+6. **R2-15: the outline of a field missed the checked option.** `Field` no longer sets
+   `--p-togglebutton-border-color`. A SelectButton inside a field with an error or a warning gets
+   one outline round the group. Checked on an HDR10 source with 8-bit chosen: amber-700 (light)
+   and amber-400 (dark) round both options. There is no unit test: jsdom does not apply the
+   scoped style.
+7. **R2-16: PrimeVue's own texts bypassed vue-i18n.** `components/base/primevueLocale.ts` builds
+   PrimeVue's `locale` from `base.json` (`base.primevue.*`), and `setup.ts` passes it. The
+   locale covers the texts of the components the app uses: empty and filtered lists, the live
+   regions of Select and Listbox, the close, previous and next buttons, DataTable row
+   announcements and the confirm dialog. PrimeVue keeps its defaults for the other components.
+   PrimeVue puts a count into `{0}` itself, after vue-i18n, so no plural form can be chosen.
+   The counted texts are therefore worded to read right for any count: "Options selected: 1",
+   "Options found: 3". The locale is built once at the start: a second UI language needs it to
+   follow `i18n.global.locale`. Test: `components/base/primevueLocale.test.ts` mounts Listboxes
+   with the app's plugins. The live region says "Options selected: 1" ("1 items selected" without
+   the locale), and an empty list says "No options" and "Nothing selected".
+8. **R2-17: weak focus of list options.** The option of a Select or Listbox under the keyboard or
+   the pointer now has an inset 2 px ring in the primary colour (6.29 / 5.94 against the list),
+   in addition to the tint (1.10:1). Checked with the arrow keys in an open Select in Chromium and
+   Firefox, light and dark.
+9. **R2-25: a field's gutter bar shows over the open command drawer.** This is not a stacking
+   problem. The bar is drawn 8 px left of the field, in the Video tab's side padding. The drawer
+   (`.command-preview`: sticky, `z-index: 1`) does not cover that padding, so the bar shows
+   *beside* the drawer, not over it. No stacking change on the bar can hide it. The drawer
+   (`components/video/CommandPreview.vue`, not FA's) needs to cover the side padding, for example
+   with
+   `.command-preview::before { content: ''; position: absolute; inset-block: -1px; inset-inline: calc(-1 * var(--rf-space-4)); z-index: -1; background: var(--rf-color-surface); }`.
+   Checked by injecting this rule in the browser: the bar no longer shows next to the open drawer.
 
 ### Fix round — FB (the job that is queued)
 
