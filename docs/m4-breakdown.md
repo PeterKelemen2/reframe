@@ -340,14 +340,18 @@ Every "in a browser" check runs headless against a real `reframe-server` started
   once; a problem shows as a toast; the login screen appears in token and password mode; with
   FFmpeg missing (an override to a missing file) the first-run screen shows the reason and where
   the binary came from, with *Use bundled FFmpeg*, *Choose path* and *Check again*, and Presets
-  and Settings stay usable.
+  and Settings stay usable. (What needs a later task's screen — a job from an opened file for
+  *Add to queue*, an edit to undo — C proves with unit tests against the store contracts; the
+  lead checks it in a browser after wave 3a.)
 - **D (F-4)**: Unit tests show that undo and redo of every kind of patch (a coalesced slider
   drag is one step) restore the exact job; that a fix's patch is one undo step; that
   `useValidation` sends at most one `jobs/validate` per 250 ms of edits and that an answer for
   an older job never overwrites a newer one; that issues are found by path; that
   `presetChanges` follows `presets/diff` after a change and after `applyPreset`. In a browser,
   `Ctrl+Z` / `Ctrl+Shift+Z` undo and redo an encoder change, and the field outline and the
-  issue follow.
+  issue follow. (The browser part needs C's shortcuts and H's Video tab: D proves the same
+  against a real server in a `*.server.test.ts`; the lead checks it in a browser after wave
+  3a.)
 - **E (F-5)**: In a browser: the file-browser dialog shows the roots, breadcrumbs, folders and
   media files (the media filter can be turned off), selects several files, and works with the
   keyboard; opening files shows the probe progress, then the sources with their warnings; a
