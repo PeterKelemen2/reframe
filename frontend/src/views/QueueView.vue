@@ -3,7 +3,6 @@ import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import JobLog from '@/components/queue/JobLog.vue'
-import PowerBanner from '@/components/queue/PowerBanner.vue'
 import QueueControls from '@/components/queue/QueueControls.vue'
 import QueueTable from '@/components/queue/QueueTable.vue'
 import WhenDoneSelect from '@/components/queue/WhenDoneSelect.vue'
@@ -37,7 +36,6 @@ async function closeLog(): Promise<void> {
       <!-- The value is a setting: until the settings are read it is not known. -->
       <WhenDoneSelect v-if="settings.loaded" class="queue-view__when-done" />
     </header>
-    <PowerBanner />
     <div class="queue-view__body">
       <QueueTable @open-log="openLog" />
     </div>
@@ -50,7 +48,6 @@ async function closeLog(): Promise<void> {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
 }
 
 .queue-view__header {

@@ -72,6 +72,62 @@ describe('the app shell', () => {
     await visit('workspace')
   })
 
+  it('shows the when-done countdown with its Cancel above every view, and cancels it', async () => {
+    const { host, router } = await mountApp('ready')
+    const cancelPower = vi.fn<() => Promise<void>>(async () => {
+      app?.runWithContext(() => (useQueueStore().power = null))
+    })
+    app?.runWithContext(() => {
+      const queue = useQueueStore()
+      vi.spyOn(queue, 'cancelPower').mockImplementation(cancelPower)
+      queue.power = {
+        type: 'power.countdown',
+        countdown_id: 'p1',
+        action: 'sleep',
+        phase: 'tick',
+        seconds_left: 58,
+      } as never
+    })
+    await flushPromises()
+    const banners = () => host.querySelectorAll('[data-component="power-banner"]')
+    async function visit(view: string): Promise<void> {
+      await router.push({ name: view })
+      await flushPromises()
+      expect(banners()).toHaveLength(1)
+      expect(banners()[0]?.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        'The queue is finished. When done: Sleep.',
+      )
+    }
+    await visit('workspace')
+    await visit('presets')
+    await visit('settings')
+    await visit('queue')
+    const cancel = host.querySelector<HTMLButtonElement>('[data-action="cancel-power"]')
+    cancel?.focus()
+    cancel?.click()
+    await flushPromises()
+    expect(cancelPower).toHaveBeenCalledOnce()
+    expect(banners()).toHaveLength(0)
+    // The banner took its Cancel with it: the focus goes to the current view in the rail.
+    expect(document.activeElement).toBe(host.querySelector('.nav-rail [aria-current="page"]'))
+
+    // A countdown that ends elsewhere does not move a focus that was not on it.
+    app?.runWithContext(() => {
+      useQueueStore().power = {
+        type: 'power.countdown',
+        countdown_id: 'p2',
+        action: 'sleep',
+        phase: 'tick',
+        seconds_left: 30,
+      } as never
+    })
+    await flushPromises()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    app?.runWithContext(() => (useQueueStore().power = null))
+    await flushPromises()
+    expect(document.activeElement).toBe(document.body)
+  })
+
   it('puts the progress of the running jobs on the taskbar', async () => {
     const setTaskbarProgress = vi.spyOn(platform, 'setTaskbarProgress')
     await mountApp('ready')

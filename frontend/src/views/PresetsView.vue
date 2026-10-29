@@ -323,7 +323,6 @@ const renameInitial = computed<PresetDetailsInput>(() => ({
   flex-direction: column;
   gap: var(--rf-space-4);
   min-width: 0;
-  height: 100vh;
   padding: var(--rf-space-4);
   overflow: clip;
 }

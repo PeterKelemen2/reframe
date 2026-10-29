@@ -115,7 +115,6 @@ const lines = computed(() =>
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
 }
 
 .activity-view__header {

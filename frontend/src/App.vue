@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 import { RouterView } from 'vue-router'
 
+import PowerBanner from '@/components/queue/PowerBanner.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
 import NavRail from '@/components/shell/NavRail.vue'
@@ -30,7 +31,11 @@ watch(
 <template>
   <div v-if="system.phase === 'ready'" class="app-shell">
     <NavRail />
-    <RouterView />
+    <div class="app-shell__main">
+      <!-- Above every view: a when-done countdown must be seen and cancelled wherever the user is. -->
+      <PowerBanner />
+      <RouterView />
+    </div>
   </div>
   <LoginScreen v-else-if="system.phase === 'login'" />
   <BootScreen v-else :offline="system.phase === 'offline'" />
@@ -44,8 +49,19 @@ watch(
   min-height: 100vh;
 }
 
-.app-shell > :deep(main) {
+.app-shell__main {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+  height: 100vh;
+}
+
+/* Each view fills what the banner leaves; a view's own height would push the page past the window. */
+.app-shell__main > :deep(main) {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
 }
 </style>

@@ -113,7 +113,6 @@ async function open(): Promise<void> {
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
 }
 
 .workspace__header {
