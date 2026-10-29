@@ -818,7 +818,103 @@ pixels`, and width 1280 with upscaling the amber line with `scale 1280×536`.
 
 ## Task J — F-12 presets UI
 
-(Written by task J.)
+Built: `stores/presets.ts`, `components/presets/` (`PresetPicker`, `PresetChanges`,
+`PresetNameDialog`, `PresetTree`, `PresetDetails`, `PresetNaming`, `PresetImport`, the pure
+helpers in `format.ts`, test data in `testing.ts`), `views/PresetsView.vue` and
+`i18n/messages/en/presets.json`.
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2, fixture `multitrack`;
+`src/stores/presets.server.test.ts` repeats items 1 to 5 and 7.
+
+1. **`GET /api/presets`**: 26 built-ins, categories General, Web, Devices, Matroska,
+   Hardware, Production in that order, every built-in with `naming: null`; `default_id`
+   `h265-mkv-1080p`.
+2. **A name clash** (`POST /api/presets`, and `PUT` for a rename) is `409
+   preset.name_conflict`, its issue at the path `name` with one fix (target `template`) that
+   replaces `/name` with the next free name. The server makes it from the name as typed, trimmed:
+   `"  mine "` against `Mine` offers `mine (2)`; against a built-in the message says "A built-in
+   preset named …". A blank name is `422 preset.name_empty` at `name`. The server offers the
+   name; the client does not compute one.
+3. **Built-ins**: `PUT` (also with `built_in: false` in the body) and `DELETE` are `409
+   preset.built_in` ("… Duplicate it to make a copy you can change."). An unknown id is `404
+   preset.not_found`, also for `presets/diff`.
+4. **The default**: `POST …/{id}/default` answers the preset; deleting the default preset makes
+   `h265-mkv-1080p` the default again (the answer of `DELETE` does not say so: the list must be
+   read).
+5. **Export and import**: `GET /api/presets/export?ids=` gives `{document, issues}`; a built-in
+   can be exported. Importing that document again: `rename` stores it under a new id and
+   `Name (2)` (`renamed: [{name, new_name}]`); `replace` overwrites the user preset (same id,
+   `replaced: [name]`); `skip` leaves it out (`skipped: [name]`). A built-in in the file under
+   `replace` is stored renamed (`H.265 MKV 1080p (2)`) as a user preset that keeps its category
+   (`Matroska`). A file entry without an `id` is skipped with a `preset.invalid` warning; `{}` is
+   `200` with a `presets.import_invalid` error issue; a body that is not a JSON object (`[1]`,
+   text) is `422 presets.import_invalid`. After the default was deleted, an import set the
+   file's `default_preset_id` as the default (0015: only when the target has none of its own).
+6. **The browser** (headless Chromium, light and dark): an export downloads through
+   `<a download>` with a Blob URL under the app's CSP; an import through `<input type="file">`
+   (Playwright's file chooser) is read in the page and sent as the request body.
+7. **A preset made from the open job**: with `editor.currentTemplate` saved by
+   `POST /api/presets` and the job's `/preset_id` and `/preset_name` patched, `presets/diff`
+   gives `[]`; after another edit, `PUT` of `currentTemplate` into the preset and
+   `refreshPresetChanges()` give `[]` again.
+
+### Choices where the plan leaves one
+
+1. **When the list is read** (there is no preset event, and another front end can change
+   presets): at the first use (`ensureLoaded`, from the picker's mount), every time the presets
+   view opens and every time the picker's list opens, after a change whose answer does not
+   describe the list (deleting the default, an import, a `404` from a preset deleted
+   elsewhere), and when the event connection is `open` again after a loss. A change's answer is
+   put into the list at once (create, save, set default). Requests go one at a time, so a read
+   never returns the list from before a change sent earlier.
+2. **A name clash**: the server's free name is shown at the name field as a button (*Use
+   “Mine (2)”*); nothing is saved until the user takes it or types another. *Duplicate* sends
+   the preset's own name and, on the clash, takes the free name at once (`Name (2)`, as 03 says);
+   a built-in's copy goes into `Custom` (0015).
+3. **Inherit naming** (`naming: null`): a switch *Use the naming of Settings → Output* above the
+   naming editor. On, the editor shows Settings → Output's naming read-only. Turning it off
+   gives the preset a copy of Settings → Output's naming, saved at once; turning it on saves
+   `null`. Edits (`NamingOptionsEditor` emits a whole object per keystroke) are saved 600 ms
+   after the last one, and at once when another preset is shown or the view closes. A built-in
+   shows its naming read-only. The preview uses the open sources and the preset's container.
+4. **The preset drawer is the presets view** (`/presets`): the tree by category on the left,
+   the chosen preset's details on the right. The rail reaches it, and the picker's *Open
+   presets* opens it at the job's preset (`?preset=<id>`). *Use for the open job* (and Enter in
+   the tree, or a double-click) drafts the job with the preset and goes back to the workspace.
+5. **The picker** is a button with the preset's name that opens a filterable listbox (PrimeVue
+   `Listbox` in a `Popover`), grouped by category, built-ins with a lock, the default with a
+   star. Not PrimeVue's `Select`: it calls `matchMedia` when it mounts, which jsdom lacks, and
+   the shell's tests (`App.test.ts`, `WorkspaceView.test.ts`) mount the header without a stub.
+   The list is read again when it opens. The focus goes back to the button after a choice.
+6. **The *modified* marker** opens its popover on a click or Enter, not on hover (03 says
+   "hover"): the same for the keyboard and touch. It lists each change of `presets/diff` as
+   its setting in words (`Audio defaults › Codec rule 1 › Maximum bitrate`, from
+   `presets.field.<key>` messages; a key without one is shown with spaces), the preset's value
+   struck out and the current one (encoder and container ids as their labels from the
+   definitions). The popover offers *Save as new preset…*, *Update preset* (a user preset
+   only; a built-in says it cannot be changed) and *Open presets*; the header's ⋯ menu offers the
+   same while the job is not modified.
+7. ***Save as new preset*** saves `currentTemplate` (name, category, description), and the job
+   then follows the new preset: `/preset_id` and `/preset_name` in one undo step, so the marker
+   goes away and an undo brings the old preset back. ***Update*** from the picker saves into the
+   job's own preset; in the view, updating a user preset that is not the job's asks first.
+8. **Delete** asks in a modal dialog (the button and Delete in the tree). **Rename** edits the
+   name, category and description in the same dialog as *Save as new*.
+9. **Import**: the file is read in the page; when a preset in it has the id or the name of a
+   known one (names compared as the server does), the dialog lists them and asks for rename
+   (the default), replace or skip, else the file is imported at once. The server's report is
+   shown (imported, renamed with old → new, replaced, skipped, issues); a file refused as a
+   whole shows the server's reason. **Export**: one preset as `<name>.json`, *Export user
+   presets* as `reframe-presets.json`; presets of a newer Reframe in an export are a warning
+   toast.
+10. **The tree**: an ARIA tree (categories are expandable items with a group of presets), one
+    item in the tab order, the selection follows the focus. Arrow keys, Home, End; Right opens a
+    category or goes to its first preset, Left closes it or goes to the category; Enter applies
+    a preset or opens / closes a category; Delete asks to delete a user preset.
+11. Members added to the contract: `ensureLoaded()`, the exports `templateOfPreset(preset)`,
+    `suggestedName(error)`, `ImportConflict`, `PresetImportReport`, `PresetCategory`.
 
 ## Task K — F-14 queue, activity and job log
 

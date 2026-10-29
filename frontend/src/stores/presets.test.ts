@@ -114,14 +114,26 @@ describe('the presets store', () => {
     expect(store.presets).toEqual([])
   })
 
-  it('offers no name for a failure that is not a clash', () => {
+  it('offers no name for a failure that is not a clash, even one with a fix of the name', () => {
     const error = new ApiError(422, {
       type: 'about:blank',
-      title: 'A preset needs a name.',
+      title: 'Not a valid preset',
       status: 422,
-      code: 'preset.name_empty',
+      code: 'preset.invalid',
       issues: [
-        { severity: 'error', code: 'preset.name_empty', path: 'name', message: 'x', fixes: [] },
+        {
+          severity: 'error',
+          code: 'preset.invalid',
+          path: 'name',
+          message: 'x',
+          fixes: [
+            {
+              label: 'x',
+              patch: [{ op: 'replace', path: '/name', value: 'X' }],
+              target: 'template',
+            },
+          ],
+        },
       ],
     })
     expect(suggestedName(error)).toBeNull()

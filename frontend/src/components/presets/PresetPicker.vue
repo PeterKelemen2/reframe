@@ -110,7 +110,8 @@ function listHidden(): void {
 
 async function choose(chosen: string | null): Promise<void> {
   listPopover.value?.hide()
-  if (chosen === null || chosen === presetId.value || job.value === null) return
+  // The listbox gives `null` for a click on the job's own preset.
+  if (chosen === null || job.value === null) return
   try {
     await editor.applyPreset(chosen)
   } catch (error) {

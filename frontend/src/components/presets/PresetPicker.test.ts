@@ -123,13 +123,14 @@ describe('the preset picker', () => {
     expect(editor.applyPreset).toHaveBeenCalledExactlyOnceWith('fast-1080p30')
   })
 
-  it('does not draft again for the preset the job has', async () => {
+  it('closes the list without drafting again when the job’s own preset is clicked', async () => {
     openJob(H265)
     const { wrapper } = await mountPicker()
     await wrapper.find('.preset-picker__trigger').trigger('click')
     await flushPromises()
     await click('[data-preset="h265-mkv-1080p"]')
     expect(editor.applyPreset).not.toHaveBeenCalled()
+    expect(wrapper.find('.preset-picker__trigger').attributes('aria-expanded')).toBe('false')
   })
 
   it('shows the modified marker only while the job differs, and its popover lists the changes in words', async () => {

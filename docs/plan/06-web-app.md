@@ -524,8 +524,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Chapter table with inline name edits, import/export, generate. Tag form with templates.
 
 ### F-12 Presets UI
-- [ ] Preset drawer: tree by category, built-in lock, CRUD, default star, import/export,
-      "modified" marker with a diff popover.
+- [x] Preset drawer: tree by category, built-in lock, CRUD, default star, import/export,
+      "modified" marker with a diff popover. The drawer is the presets view, and the marker's
+      popover opens on a click ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task J").
 
 ### F-13 Batch UI
 - [ ] Group rows in the sources panel. **Edit group** mode with banner and representative-file
