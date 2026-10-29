@@ -39,6 +39,11 @@ body {
   border: 0;
 }
 
+/* An icon is a flex item of its button; in a small icon-only button it would shrink. */
+.p-button svg {
+  flex: none;
+}
+
 /* The target of `ui.reveal(path)` (useReveal), for a moment. */
 .is-revealed {
   border-radius: var(--rf-radius-md);

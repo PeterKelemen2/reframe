@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 import { openApp, openFile, waitForStore } from './support/app'
 import { expect, test } from './support/test'
@@ -27,7 +27,24 @@ async function expectOneWindowHigh(page: Page, where: string): Promise<void> {
   expect(top, `${where}: the page's scroll position`).toBe(0)
 }
 
-test('the workspace with a file open is one window high', async ({ page }) => {
+/** Each icon in `buttons` is drawn at the width it asks for. */
+async function expectIconsAtFullSize(buttons: Locator, where: string): Promise<void> {
+  const icons = await buttons.locator('svg').all()
+  expect(icons.length, `${where}: icons`).toBeGreaterThan(0)
+  const sizes = await Promise.all(
+    icons.map(async (icon) => ({
+      asked: Number(await icon.getAttribute('width')),
+      drawn: (await icon.boundingBox())?.width,
+    })),
+  )
+  for (const { asked, drawn } of sizes) {
+    expect(drawn, `${where}: an icon of ${asked} px`).toBeGreaterThanOrEqual(asked - 0.5)
+  }
+}
+
+test('the workspace with a file open is one window high, its icons at full size', async ({
+  page,
+}) => {
   await openApp(page)
   await openFile(page, 'multitrack.mkv')
 
@@ -39,6 +56,8 @@ test('the workspace with a file open is one window high', async ({ page }) => {
   await expect(rows.first()).toBeVisible()
   await expect(page.locator('[data-tab="audio"] .track-table').first()).toBeVisible()
   await expectOneWindowHigh(page, 'Audio')
+  await expectIconsAtFullSize(page.locator('.workspace__header .p-button'), 'the header')
+  await expectIconsAtFullSize(rows.first().locator('.track-row__buttons'), 'a track row')
 })
 
 test('Settings stays one window high after a section link', async ({ page }) => {
