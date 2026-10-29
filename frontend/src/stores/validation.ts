@@ -17,6 +17,8 @@ export const useValidationStore = defineStore('validation', () => {
   const failed = ref(false)
   /** +1 for each `revalidate`. */
   const requests = ref(0)
+  /** +1 for each `flush`. */
+  const flushes = ref(0)
   /** The editor session (`editor.session`) whose job `issues` describe. */
   const session = ref<number | null>(null)
 
@@ -50,15 +52,25 @@ export const useValidationStore = defineStore('validation', () => {
     requests.value += 1
   }
 
+  /**
+   * Sends a validation that waits for its debounce at once, or asks again after a failed one:
+   * an add to the queue waits for the answer.
+   */
+  function flush(): void {
+    flushes.value += 1
+  }
+
   return {
     issues,
     pending,
     failed,
     requests,
+    flushes,
     session,
     counts,
     hasErrors,
     issuesFor,
     revalidate,
+    flush,
   }
 })

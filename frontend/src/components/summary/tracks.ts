@@ -52,8 +52,23 @@ export interface SubtitleChip extends TrackChip {
   convertTo: string | null
 }
 
-function flagsOf(metadata: Partial<Record<Flag, boolean>> | undefined): Flag[] {
-  return FLAGS.filter((flag) => metadata?.[flag] === true)
+/** The output flags that a role badge set by the source's disposition already names. */
+const FLAGS_OF_ROLE: Partial<Record<TrackRoleInfo['role'], readonly Flag[]>> = {
+  commentary: ['commentary'],
+  sdh: ['hearing_impaired'],
+  forced: ['forced'],
+  description: ['visual_impaired'],
+}
+
+function flagsOf(
+  metadata: Partial<Record<Flag, boolean>> | undefined,
+  roles: readonly TrackRoleInfo[],
+): Flag[] {
+  const named = new Set<Flag>()
+  for (const role of roles) {
+    if (role.evidence === 'flag') for (const flag of FLAGS_OF_ROLE[role.role] ?? []) named.add(flag)
+  }
+  return FLAGS.filter((flag) => metadata?.[flag] === true && !named.has(flag))
 }
 
 function layoutOf(stream: AudioStream | undefined): string | null {
@@ -77,7 +92,7 @@ export function audioChips(
       language: track.metadata?.language ?? stream?.language ?? null,
       name: track.metadata?.name ?? stream?.title ?? null,
       roles: stream?.roles ?? [],
-      flags: flagsOf(track.metadata),
+      flags: flagsOf(track.metadata, stream?.roles ?? []),
       stream,
       passthru,
       encoder:
@@ -101,7 +116,7 @@ export function subtitleChips(job: JobSettings, source: MediaSource | null): Sub
       language: track.metadata?.language ?? stream?.language ?? external?.language ?? null,
       name: track.metadata?.name ?? stream?.title ?? external?.name ?? null,
       roles: stream?.roles ?? [],
-      flags: flagsOf(track.metadata),
+      flags: flagsOf(track.metadata, stream?.roles ?? []),
       stream,
       action: track.action,
       external: external === null ? null : fileName(external.path),

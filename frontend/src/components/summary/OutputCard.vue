@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { computed } from 'vue'
+import { computed, onScopeDispose, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { Schemas } from '@/api/types'
+import type { JsonPatchOp, Schemas } from '@/api/types'
 import Card from '@/components/base/Card.vue'
 import Field from '@/components/base/Field.vue'
-import KeyValue from '@/components/base/KeyValue.vue'
 import JobNamingEditor from '@/components/naming/JobNamingEditor.vue'
-import { fileName } from '@/components/shell/format'
-import { sameJson } from '@/editor/patch'
-import { useEditorStore } from '@/stores/editor'
+import { withExtension } from '@/components/naming/path'
+import { previewNames } from '@/components/naming/preview'
+import { latestRequest } from '@/editor/latest'
+import { type PendingEdit, useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
 type Container = Schemas['OutputSettings']['container']
@@ -40,51 +40,85 @@ const webOptimizedApplies = computed(() => {
   return flags === undefined ? container === 'mp4' : Object.hasOwn(flags, 'web_optimized')
 })
 
+/** A container change on its way: the path it wrote, and the undo step it belongs to. */
+let change: { key: string; container: Container; path: string } | null = null
+let changes = 0
+
+function extensionsOf(container: Container): string[] {
+  return system.definitions?.containers?.[container]?.extensions ?? []
+}
+
+const extensionRequest = latestRequest<{ extension: string }>({
+  async send(signal) {
+    const job = editor.job
+    const target = editor.target
+    if (job === null || target?.kind !== 'job') throw new Error('OutputCard: no job is open')
+    const container = job.output?.container ?? 'mkv'
+    const [answer] = await previewNames({ source_ids: [target.sourceId], job, container }, signal)
+    if (answer === undefined) throw new Error('OutputCard: no name for the source')
+    return { extension: answer.extension }
+  },
+  done({ extension }) {
+    const job = editor.job
+    // Only over the path the change wrote: an undo or another edit since then wins.
+    if (
+      change !== null &&
+      job?.output?.container === change.container &&
+      job.output.path === change.path
+    ) {
+      const path = withExtension(change.path, extension)
+      if (path !== change.path) {
+        editor.patch([{ op: 'add', path: '/output/path', value: path }], { coalesce: change.key })
+      }
+    }
+    change = null
+    editor.endEdit(extensionEdit)
+  },
+  failed() {
+    // The container's first extension stays: a valid one, though maybe not the naming's.
+    change = null
+    editor.endEdit(extensionEdit)
+  },
+})
+const extensionEdit: PendingEdit = reactive({
+  flush: () => extensionRequest.flush(),
+  failure: null,
+})
+
+function dropChange(): void {
+  extensionRequest.cancel()
+  change = null
+  editor.endEdit(extensionEdit)
+}
+watch(() => editor.session, dropChange)
+onScopeDispose(dropChange)
+
+/**
+ * The container and the path's extension in one undo step. The container's first extension
+ * goes in at once; where the container has more than one (MP4: `.mp4`, `.m4v`), the naming's
+ * choice follows in the same step when the server has named the job.
+ */
 function setContainer(value: Container | null): void {
-  if (value !== null) editor.set('/output/container', value)
+  const job = editor.job
+  if (value === null || job === null || value === job.output?.container) return
+  const key = `output.container#${++changes}`
+  const ops: JsonPatchOp[] = [{ op: 'add', path: '/output/container', value }]
+  const path = job.output?.path
+  const extensions = extensionsOf(value)
+  const next = path ? withExtension(path, extensions[0] ?? value) : null
+  if (next !== null && next !== path) ops.push({ op: 'add', path: '/output/path', value: next })
+  dropChange()
+  editor.patch(ops, { coalesce: key })
+  if (next !== null && extensions.length !== 1) {
+    change = { key, container: value, path: next }
+    editor.beginEdit(extensionEdit)
+    extensionRequest.schedule(0)
+  }
 }
 
 function setFlag(flag: OutputFlag, value: boolean): void {
   editor.set(`/output/${flag}`, value)
 }
-
-const path = computed(() => output.value?.path ?? null)
-const name = computed(() => (path.value === null ? null : fileName(path.value)))
-const folder = computed(() => {
-  if (path.value === null || name.value === null) return null
-  return path.value.slice(0, path.value.length - name.value.length).replace(/[/\\]$/, '') || null
-})
-
-/**
- * The name source: the one the draft chose (with its reason) while the job's naming is the
- * drafted one, else the job's setting.
- */
-const nameSource = computed<{ text: string; reason: string | null } | null>(() => {
-  const job = editor.job
-  if (job === null) return null
-  const naming = job.output?.naming
-  if (naming?.mode === 'manual') return { text: t('summary.output.nameManual'), reason: null }
-  const draft = editor.draft
-  if (
-    draft !== null &&
-    sameJson(draft.job.output?.naming, naming) &&
-    draft.job.output?.container === job.output?.container
-  ) {
-    const chosen =
-      draft.naming.source === 'folder'
-        ? t('summary.output.nameFolder')
-        : t('summary.output.nameFile')
-    return { text: chosen, reason: draft.naming.reason }
-  }
-  switch (naming?.name_source ?? 'auto') {
-    case 'file':
-      return { text: t('summary.output.nameFile'), reason: null }
-    case 'folder':
-      return { text: t('summary.output.nameFolder'), reason: null }
-    default:
-      return { text: t('summary.output.nameAuto'), reason: null }
-  }
-})
 </script>
 
 <template>
@@ -153,24 +187,6 @@ const nameSource = computed<{ text: string; reason: string | null } | null>(() =
           </template>
         </Field>
       </div>
-      <dl class="rf-kv-list summary-output__path">
-        <KeyValue :label="t('summary.output.folder')">
-          <span data-field="folder">{{ folder ?? t('summary.output.noPath') }}</span>
-        </KeyValue>
-        <KeyValue :label="t('summary.output.fileName')">
-          <span class="summary-output__name" data-field="file-name">
-            {{ name ?? t('summary.output.noPath') }}
-          </span>
-        </KeyValue>
-        <KeyValue v-if="nameSource" :label="t('summary.output.nameSource')">
-          <span data-field="name-source">
-            <span>{{ nameSource.text }}</span>
-            <span v-if="nameSource.reason" class="summary-card__note">
-              {{ nameSource.reason }}
-            </span>
-          </span>
-        </KeyValue>
-      </dl>
       <JobNamingEditor />
     </div>
   </Card>
@@ -181,14 +197,5 @@ const nameSource = computed<{ text: string; reason: string | null } | null>(() =
 .summary-output__options {
   display: grid;
   gap: var(--rf-space-3);
-}
-
-.summary-output__name {
-  font-weight: var(--rf-font-weight-medium);
-}
-
-[data-field='name-source'] {
-  display: grid;
-  gap: var(--rf-space-1);
 }
 </style>

@@ -7,7 +7,7 @@ import { ApiError } from '@/api/client'
 import { useQueueStore } from '@/stores/queue'
 
 import QueueSection from './QueueSection.vue'
-import { mountSettings, refusal, systemInfo } from './testing'
+import { comboboxName, mountSettings, refusal, systemInfo } from './testing'
 
 globalThis.matchMedia ??= (query: string) =>
   ({
@@ -48,6 +48,11 @@ describe('the Queue section', () => {
     await flushPromises()
     expect(queue.setWhenDone).toHaveBeenCalledWith('sleep')
     expect(server.patches).toEqual([])
+  })
+
+  it('names the when-done list by its label, not by its value', async () => {
+    await mountQueue()
+    expect(comboboxName('when-done')).toBe('When done')
   })
 
   it('shows quitting as the desktop app only in web mode', async () => {

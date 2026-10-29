@@ -100,11 +100,13 @@ afterEach(() => {
 })
 
 describe('JobNamingEditor', () => {
-  it("shows the draft's name without asking the server again", async () => {
+  it("shows the draft's name, path and name source with its reason without asking the server again", async () => {
     const { wrapper } = await mountOpened()
     await settle()
     expect(previews()).toHaveLength(0)
     expect(wrapper.get('[data-testid="naming-result"]').text()).toBe('Hacksaw.Ridge.mkv')
+    expect(wrapper.get('[data-testid="job-path"]').text()).toBe('/output/Hacksaw.Ridge.mkv')
+    expect(wrapper.get('[data-testid="name-reason"]').text()).toBe(hacksawResult().reason)
     expect((wrapper.get('input[role="combobox"]').element as HTMLInputElement).value).toBe(
       '{main_title}',
     )
@@ -154,17 +156,20 @@ describe('JobNamingEditor', () => {
     expect(editor.job).toEqual(before)
   })
 
-  it('puts a pending edit into the job when its field loses the focus, and its path with the answer, as one undo step', async () => {
+  it('previews an edit at once when its field loses the focus, and puts it into the job with its path, ending its undo step', async () => {
     const { editor, wrapper } = await mountOpened()
     const before = structuredClone(editor.job)
     const input = wrapper.get('input[role="combobox"]')
     await input.setValue('{main_title}.now')
     await input.trigger('blur')
-    // At once: a click on Add to queue follows the blur.
-    expect(naming(editor)?.template).toBe('{main_title}.now')
+    // Not without its path: the job never has a naming and a path that do not belong together.
+    expect(naming(editor)?.template).toBeNull()
+    expect(editor.editing).toBe(true)
     await vi.advanceTimersByTimeAsync(0)
     await flushPromises()
+    expect(naming(editor)?.template).toBe('{main_title}.now')
     expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.now.mkv')
+    expect(editor.editing).toBe(false)
 
     // The step ended with the path: the next typing is a step of its own.
     await input.setValue('{main_title}.later')
@@ -225,14 +230,133 @@ describe('JobNamingEditor', () => {
     expect(wrapper.get('[data-testid="naming-result"]').text()).toBe('Hacksaw.Ridge.mkv')
   })
 
-  it('keeps the edit when the preview fails, with the path as it was', async () => {
+  it('keeps an edit whose preview failed in the field and out of the job, says why, and sends it again when asked', async () => {
     const { editor, wrapper } = await mountOpened()
     server.on(ROUTE, () => new Response('{}', { status: 500 }))
-    await wrapper.get('input[role="combobox"]').setValue('{name}')
+    const input = wrapper.get('input[role="combobox"]')
+    await input.setValue('{name}')
     await settle()
-    expect(naming(editor)?.template).toBe('{name}')
+    expect(naming(editor)?.template).toBeNull()
     expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.mkv')
+    expect((input.element as HTMLInputElement).value).toBe('{name}')
     expect(wrapper.get('[role="alert"]').text()).toMatch(/^No preview: /)
+    expect(editor.editing).toBe(false)
+    expect(editor.editFailure).not.toBeNull()
+
+    server.on(ROUTE, (request) => [named((request.body as PreviewBody).job)])
+    editor.flushEdits()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushPromises()
+    expect(naming(editor)?.template).toBe('{name}')
+    expect(editor.job?.output?.path).toBe('/output/{name}.mkv')
+    expect(editor.editFailure).toBeNull()
+  })
+
+  it.each([
+    [
+      'Use the preset’s template',
+      '[data-action="reset-template"]',
+      { template: null },
+      '/output/Hacksaw.Ridge.mkv',
+    ],
+    [
+      'Manual name',
+      '[data-option="mode"] button:nth-child(2)',
+      { mode: 'manual', manual_name: 'Hacksaw.Ridge.c' },
+      '/output/Hacksaw.Ridge.c.mkv',
+    ],
+  ])(
+    'holds a change made without typing (%s) as an edit on its way until it is in the job, and sends it at once when asked',
+    async (_, selector, expected, path) => {
+      const { editor, wrapper } = await mountOpened()
+      await wrapper.get('input[role="combobox"]').setValue('{main_title}.c')
+      await settle()
+      expect(editor.editing).toBe(false)
+
+      await wrapper.get(selector).trigger('click')
+      expect(editor.editing).toBe(true)
+      expect(naming(editor)?.template).toBe('{main_title}.c')
+      editor.flushEdits()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushPromises()
+      expect(naming(editor)).toMatchObject(expected)
+      expect(editor.job?.output?.path).toBe(path)
+      expect(editor.editing).toBe(false)
+    },
+  )
+
+  it('keeps the naming and its path in one undo step when another edit comes before the preview answers', async () => {
+    const { editor, wrapper } = await mountOpened()
+    const input = wrapper.get('input[role="combobox"]')
+    await input.setValue('{main_title}.q')
+    await input.trigger('blur')
+    editor.set('/video/rate_control/value', 30)
+    await settle()
+    expect(naming(editor)?.template).toBe('{main_title}.q')
+    expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.q.mkv')
+
+    editor.undo()
+    expect(naming(editor)?.template).toBeNull()
+    expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.mkv')
+    expect(editor.job?.video?.rate_control).toEqual({ mode: 'quality', value: 30 })
+  })
+
+  it('puts an edit on its way into the job with its path when the editor unmounts before the answer', async () => {
+    const { editor, wrapper } = await mountOpened()
+    const before = structuredClone(editor.job)
+    await wrapper.get('input[role="combobox"]').setValue('{main_title}.left')
+    wrapper.unmount()
+    expect(editor.editing).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushPromises()
+
+    expect(naming(editor)?.template).toBe('{main_title}.left')
+    expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.left.mkv')
+    expect(editor.editing).toBe(false)
+    editor.undo()
+    expect(editor.job).toEqual(before)
+  })
+
+  it('names the job as it is when it changed after the editor unmounted', async () => {
+    const slow = deferred<NameResult[]>()
+    const { editor, wrapper } = await mountOpened()
+    server.on(ROUTE, (request) =>
+      previews().length === 1 ? slow.promise : [named((request.body as PreviewBody).job)],
+    )
+    await wrapper.get('input[role="combobox"]').setValue('{main_title}.late')
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(0)
+    editor.set('/output/container', 'mp4')
+    slow.resolve([hacksawResult({ relative_path: 'stale.mkv', path: '/output/stale.mkv' })])
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushPromises()
+
+    expect(previews()).toHaveLength(2)
+    expect(naming(editor)?.template).toBe('{main_title}.late')
+    expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.late.mp4')
+  })
+
+  it('drops an edit of an unmounted editor whose preview failed, and says so', async () => {
+    const { editor, wrapper } = await mountOpened()
+    server.on(ROUTE, () => new Response('{}', { status: 500 }))
+    await wrapper.get('input[role="combobox"]').setValue('{main_title}.x')
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushPromises()
+    expect(naming(editor)?.template).toBeNull()
+    expect(editor.editing).toBe(false)
+    expect(editor.editFailure).toBeNull()
+    expect(useToastStore().items.map((item) => item.summary)).toEqual([
+      'The output name was not changed',
+    ])
+  })
+
+  it('names the name-source list by its label', async () => {
+    const { wrapper } = await mountOpened()
+    const combobox = wrapper.get('[data-option="name_source"] [role="combobox"]')
+    const label = document.getElementById(combobox.attributes('aria-labelledby') ?? '')
+    expect(label?.textContent).toBe('Name source')
   })
 
   it("shows a template error at the field and puts its fix into the job's template", async () => {

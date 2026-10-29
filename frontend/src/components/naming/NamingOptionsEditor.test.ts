@@ -74,6 +74,13 @@ afterEach(() => {
 })
 
 describe('NamingOptionsEditor', () => {
+  it('names the word-separator list by its label', () => {
+    const wrapper = mountEditor()
+    const combobox = wrapper.get('[data-option="word_separator"] [role="combobox"]')
+    const label = document.getElementById(combobox.attributes('aria-labelledby') ?? '')
+    expect(label?.textContent).toBe('Word separator')
+  })
+
   it('emits a new object for a change and leaves the given one as it was', async () => {
     const given = Object.freeze(namingOptions())
     const wrapper = mountEditor({ 'onUpdate:modelValue': undefined }, given)

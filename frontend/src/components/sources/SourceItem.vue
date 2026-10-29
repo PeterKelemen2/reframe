@@ -16,6 +16,8 @@ const props = defineProps<{
   member?: Schemas['GroupMember']
   /** The member's episode label (`E05`). */
   label?: string
+  /** `${idBase}-title` and `${idBase}-details` name and describe the tree item without its buttons. */
+  idBase: string
 }>()
 
 const emit = defineEmits<{ remove: []; reprobe: [] }>()
@@ -31,16 +33,20 @@ const near = computed(() => props.member?.match === 'near')
 <template>
   <div class="source-item" :data-path="entry.path">
     <div class="source-item__head">
-      <template v-if="member">
-        <StatusDot
-          :tone="near ? 'warn' : 'ok'"
-          :label="near ? t('sources.group.near') : t('sources.group.exact')"
-          :data-match="member.match"
-        />
-        <span class="source-item__label">{{ label }}</span>
-        <span v-if="label !== name" class="source-item__file" :title="entry.path">{{ name }}</span>
-      </template>
-      <span v-else class="source-item__name" :title="entry.path">{{ name }}</span>
+      <span :id="`${idBase}-title`" class="source-item__title">
+        <template v-if="member">
+          <StatusDot
+            :tone="near ? 'warn' : 'ok'"
+            :label="near ? t('sources.group.near') : t('sources.group.exact')"
+            :data-match="member.match"
+          />
+          <span class="source-item__label">{{ label }}</span>
+          <span v-if="label !== name" class="source-item__file" :title="entry.path">{{
+            name
+          }}</span>
+        </template>
+        <span v-else class="source-item__name" :title="entry.path">{{ name }}</span>
+      </span>
       <Button
         class="source-item__remove"
         severity="secondary"
@@ -56,33 +62,33 @@ const near = computed(() => props.member?.match === 'near')
         <template #icon><X :size="14" aria-hidden="true" /></template>
       </Button>
     </div>
-    <p v-if="!member && summary" class="source-item__summary" data-field="summary">
-      {{ summary }}
-    </p>
-    <ul v-if="near && member?.differences?.length" class="source-item__differences">
-      <li v-for="line in member.differences" :key="line" data-field="difference">{{ line }}</li>
-    </ul>
-    <div v-if="entry.source === null" class="source-item__stale" data-state="stale">
-      <span>{{ t('sources.panel.stale') }}</span>
-      <Button
-        :label="t('sources.panel.reprobe')"
-        link
-        size="small"
-        tabindex="-1"
-        data-action="reprobe"
-        @click.stop="emit('reprobe')"
-      />
+    <div :id="`${idBase}-details`" class="source-item__details">
+      <p v-if="!member && summary" class="source-item__summary" data-field="summary">
+        {{ summary }}
+      </p>
+      <ul v-if="near && member?.differences?.length" class="source-item__differences">
+        <li v-for="line in member.differences" :key="line" data-field="difference">{{ line }}</li>
+      </ul>
+      <div v-if="entry.source === null" class="source-item__stale" data-state="stale">
+        <span>{{ t('sources.panel.stale') }}</span>
+        <Button
+          :label="t('sources.panel.reprobe')"
+          link
+          size="small"
+          tabindex="-1"
+          data-action="reprobe"
+          @click.stop="emit('reprobe')"
+        />
+      </div>
+      <!-- No aria-label: it would replace the warnings in the tree item's description. -->
+      <ul v-if="warnings.length" class="source-item__warnings">
+        <li v-for="(warning, index) in warnings" :key="index" data-field="warning">
+          <TriangleAlert :size="14" aria-hidden="true" />
+          <span class="rf-sr-only">{{ t('sources.panel.warning') }}: </span>
+          <span>{{ warning }}</span>
+        </li>
+      </ul>
     </div>
-    <ul
-      v-if="warnings.length"
-      class="source-item__warnings"
-      :aria-label="t('sources.panel.warnings')"
-    >
-      <li v-for="(warning, index) in warnings" :key="index" data-field="warning">
-        <TriangleAlert :size="14" aria-hidden="true" />
-        <span>{{ warning }}</span>
-      </li>
-    </ul>
   </div>
 </template>
 
@@ -93,11 +99,26 @@ const near = computed(() => props.member?.match === 'near')
   min-width: 0;
 }
 
-.source-item__head {
+.source-item__head,
+.source-item__title {
   display: flex;
   align-items: center;
   gap: var(--rf-space-2);
   min-width: 0;
+}
+
+.source-item__title {
+  flex: 1;
+}
+
+.source-item__details {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.source-item__details:empty {
+  display: none;
 }
 
 .source-item__name,

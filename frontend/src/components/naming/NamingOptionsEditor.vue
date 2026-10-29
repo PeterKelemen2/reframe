@@ -276,9 +276,10 @@ function fileOf(result: NameResult): string {
         </template>
       </Field>
       <Field :label="t('naming.options.separator')" stacked>
-        <template #default="{ id }">
+        <template #default="{ id, labelId }">
           <Select
             :label-id="id"
+            :ariaLabelledby="labelId"
             :model-value="model.word_separator"
             :options="separators"
             option-label="label"
@@ -447,6 +448,12 @@ function fileOf(result: NameResult): string {
 .naming-options__folder {
   display: flex;
   gap: var(--rf-space-2);
+}
+
+/* The fluid path field would squeeze the button, and the button its icon to a sliver. */
+.naming-options__folder > .p-button,
+.naming-options__folder svg {
+  flex: none;
 }
 
 .naming-options__preview {

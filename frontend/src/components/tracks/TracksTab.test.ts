@@ -103,6 +103,20 @@ function encoderChoices(wrapper: VueWrapper): string[] {
   return options.map((option) => option.value)
 }
 
+/** What a screen reader names each list of the row at `path`: `aria-labelledby` wins over `aria-label`. */
+function comboboxNames(wrapper: VueWrapper, path: string): (string | null)[] {
+  return row(wrapper, path)
+    .findAll('[role="combobox"]')
+    .map((combobox) => {
+      const ids = combobox.attributes('aria-labelledby')
+      if (!ids) return combobox.attributes('aria-label') ?? null
+      return ids
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+        .join(' ')
+    })
+}
+
 /** A copied subtitle track of the source stream `source`, not default. */
 function subtitle(source: number) {
   const track = sampleJob().subtitles![0]!
@@ -297,6 +311,18 @@ describe('an output audio track', () => {
     expect(editor.job?.audio?.[0]?.bitrate).toBeNull()
   })
 
+  it('names each list by its label, not by its value', async () => {
+    const { wrapper } = await mountTab()
+    expect(comboboxNames(wrapper, 'audio[0]')).toEqual([
+      'Source',
+      'Encoder',
+      'Mixdown',
+      'Sample rate',
+      'Bitrate',
+      'Normalise loudness',
+    ])
+  })
+
   it('switches to a VBR quality for an encoder that has one', async () => {
     const { wrapper, editor } = await mountTab({
       job: (job) => (job.audio![0]!.encoder = 'libmp3lame'),
@@ -371,6 +397,13 @@ describe('an output subtitle track', () => {
     editor.undo()
     editor.undo()
     expect(editor.job?.subtitles?.[0]).toMatchObject({ action: 'copy', convert_to: null })
+  })
+
+  it('names each list by its label, not by its value', async () => {
+    const { wrapper } = await mountTab({ tab: 'subtitles' })
+    control(wrapper, 'subtitles[0].action', SelectButton).vm.$emit('update:modelValue', 'convert')
+    await nextTick()
+    expect(comboboxNames(wrapper, 'subtitles[0]')).toEqual(['Source', 'Format'])
   })
 
   it('offers forced-only for a burned-in track', async () => {

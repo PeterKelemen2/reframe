@@ -261,6 +261,7 @@ async def test_nothing_found(tmp_path: Path, empty_path: str) -> None:
     assert "REFRAME_FFMPEG" in tools.ffmpeg.reason
     assert tools.mediainfo.reason is not None
     assert "optional" in tools.mediainfo.reason
+    assert "REFRAME_MEDIAINFO" in tools.mediainfo.reason
 
 
 @pytest.mark.anyio

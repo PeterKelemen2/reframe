@@ -1502,11 +1502,236 @@ disabled *Quit*); the server ran with `REFRAME_POWER_DRY_RUN=1` (R2 checked
 
 ### Fix round — FA (theme and base)
 
-(Written by task FA.)
+2026-10-30. Checked against a real server (`scripts/dev-server.py`, the real FFmpeg with hardware
+test encodes on, `multitrack`, `pgs`, `hdr10`) in headless Chromium and Firefox, light and dark,
+and with `npm run e2e`.
+
+1. **R2-1 (blocker): screen-reader text made the page taller than the window.** An absolutely
+   positioned box with no offset stays at its static place. In a scrolled column with no
+   positioned parent its containing block is the page, so each `.rf-sr-only` span low in a long
+   column made the page taller than the one-window shell. `.rf-sr-only` now has
+   `inset-block-start: 0; inset-inline-start: 0`, so it adds nothing to the page. Before: Summary
+   3,366 px in a 900 px window (4,011 / 4,024 px in the 720 px window of the e2e run, Chromium /
+   Firefox), Settings 4,407 px (1,458 px), and a section link scrolled the window by 392 and 663 px.
+   After: every screen (empty workspace, Summary, Video, Audio, Subtitles, Settings before and after
+   a section link, Queue, Presets, Activity) is exactly the window's height in both browsers and
+   both themes, and a section link scrolls only the Settings column. Test: `e2e/layout.spec.ts`
+   (the page is no taller than the window and not scrolled on Summary and Audio with a file open,
+   on Settings before and after a section link, and on the Queue with a job). With the old rule,
+   Summary and Settings fail in both browsers. The Queue check passes with the old rule too (its
+   hidden texts are inside PrimeVue's DataTable, which is positioned), so it only guards the
+   Queue view. `overscroll-behavior: contain` on the column scrollers (C's and FC's files) is not
+   needed now, because the page has nothing to scroll. It is still harmless as a second guard.
+2. **R2-2 / L4 (major): the compact issue list gave the message 0 px.** In compact mode the fixes
+   were a third grid column that did not wrap. The fixes now go on their own wrapping row under
+   the message, as in the full list. Compact keeps only the tighter padding and type. Before: the
+   message box was 0 × 1,299 px beside "Use hevc_amf (closest match; quality CQ 27 → CQ 25,
+   approximate)". After: 470 px wide in the status bar's list at 1,440 px. Test: the e2e spec
+   (with the NVENC preset under the fake FFmpeg, the closest-match issue's message is wider than
+   200 px). With the old rule it is 0 px in both browsers.
+3. **R2-5 and R2-6 (majors): text and control contrast.** The preset now sets Aura's component
+   tokens:
+   - Solid info, success, warn, help and danger buttons use the 700 shade with white text in light
+     (hover 800, pressed 900, focus ring 700). Outlined and text buttons use the 700 shade in light.
+     Secondary text is slate-600 in light and zinc-300 in dark.
+   - Outlined borders are 3:1 against the surface: slate-500 / zinc-500, the 600 shade of a
+     severity, and primary 500.
+   - Toasts and messages have opaque tints (50 in light, 950 in dark). Their titles use the 700
+     shade (yellow 800) in light and the 300 shade in dark.
+   - In a SelectButton the unselected labels are slate-600, and the checked option is **filled
+     with the primary colour**. This is a visible change of design: a white chip in a light-grey
+     group was 1.1:1, and a border alone was a weaker sign of the selection.
+   - The switch's off track is slate-500 / zinc-500. In dark its handle is zinc-950 (a light
+     handle on the lighter hover track was below 3:1). The slider's track is slate-500 /
+     zinc-500, and its handle has a ring in the primary colour.
+
+   | Pair | Light before → after | Dark before → after |
+   |------|----------------------|---------------------|
+   | *Modified* marker (outlined warn) on the surface | 2.80 → 5.18 | 7.83 → 7.83 |
+   | its border | 1.35 → 3.56 | 3.42 → 4.98 |
+   | the countdown's *Cancel* (white on solid warn) | 2.80 → 5.18 | 6.92 → 6.92 |
+   | read-only settings note (message warn) | 2.85 see-through → 6.62 | 6.73 see-through → 11.06 |
+   | toast titles: warn, success, error, info | 2.85, 3.16, 4.43, 4.77 (see-through) → 6.62, 4.79, 5.91, 6.16 | 6.73, 5.92, 3.98, 3.96 (see-through) → 11.06, 10.62, 8.51, 8.15 |
+   | outlined *Delete* (outlined danger) | 3.76 → 6.47 | 6.40 → 6.40 |
+   | white on solid danger | 3.76 → 6.47 | 5.84 → 5.84 |
+   | unselected SelectButton label | 4.34 → 6.92 | 7.76 → 7.76 |
+   | outlined secondary text on an error issue (red-50 / red-950) | 4.35 → 6.93 | 6.30 → 10.92 |
+   | switch off track on the surface | 1.48 → 4.76 | 1.70 → 3.67 |
+   | switch handle on the off track | 1.48 → 4.76 | 4.07 → 4.12 |
+   | slider track on the surface | 1.23 → 4.76 | 1.70 → 3.67 |
+   | slider handle ring on the surface | 1.23 → 6.29 | 1.70 → 5.94 |
+   | SelectButton checked option against its group | 1.10 → 5.74 | 1.34 → 6.67 |
+   | outlined secondary border on the surface | 1.23 → 4.76 | 1.70 → 3.67 |
+   | focus ring of a solid warn button | 2.80 → 5.18 | 7.83 → 7.83 |
+
+   "See-through" rows are measured over the content background. Test: `styles/contrast.test.ts`
+   mounts Button, Toast, Message, Tag, SelectButton (with options, for the toggle buttons' own
+   variables), ToggleSwitch, Slider, Select and Listbox, so that PrimeVue writes their variables.
+   It then checks text pairs (4.5:1) for every button kind and state, outlined and text buttons
+   on the surfaces and on the issue backgrounds, toasts, messages, tags, SelectButton labels and
+   list options. It checks control pairs (3:1) for outlined borders, the buttons' focus rings,
+   the switch, the slider and the checked option. It also requires opaque toasts. A see-through
+   background (a hover tint) is measured on the content background. With the preset before this
+   change, 6 of 6 tests failed with 132 pairs. Measured on the page with R2's `nontext.js`
+   (Video tab), the values match the table. The only low row is "slider handle" at 1.32 / 1.62:
+   that row measures the handle's ring against the 3 px track under it. The handle is 20 px
+   across, its ring is 6.29 / 5.94 against the surface, and its centre is 4.76 / 4.12 against the
+   track. The filled range (indigo) differs from the track (grey) by hue only (1.3:1). The handle
+   shows the value.
+4. **L15: a disabled button in dark looked enabled.** PrimeVue fades a disabled button to 60 %,
+   so a disabled *Add to queue* kept its indigo. `main.css` now paints a disabled solid button of
+   the primary or a coloured severity with the form field's disabled colours (slate-200 /
+   slate-500 in light, zinc-700 / zinc-400 in dark). Secondary, outlined, text and link buttons
+   keep the fade, which reads as disabled for greys. A busy (loading) button keeps its colour. The
+   painted disabled *Add to queue* against the enabled *Open files…* changed from 2.25 to 5.10 in
+   light and from 2.01 to 3.50 in dark. Its label changed from 1.92 to 3.86 (light) and from 2.01
+   to 4.07 (dark). WCAG asks nothing of a disabled control; 3:1 is our floor, so that the label
+   stays readable. Tests: the e2e spec measures the two painted fills in light and dark (≥ 3:1;
+   2.25 without the rule). `contrast.test.ts` checks the disabled greys: the label 3:1, and the
+   fill 3:1 against every enabled solid fill (Aura's 500 shades were 1.85 to 2.27 from
+   slate-200).
+5. **R2-9 / L9: icons shrank in small icon-only buttons.** The small size's padding wins over the
+   icon-only padding and leaves 10 px, and the lucide icon is a flex item, so it shrank. One rule
+   in `main.css` (`.p-button svg { flex: none }`) fixes it. Test: the e2e spec (the header's and a
+   track row's icons have their own width; 10 of 18 px without the rule). The local copy in
+   `QueueTable.vue` (K's file) is left as it is.
+6. **R2-15: the outline of a field missed the checked option.** `Field` no longer sets
+   `--p-togglebutton-border-color`. A SelectButton inside a field with an error or a warning gets
+   one outline round the group. Checked on an HDR10 source with 8-bit chosen: amber-700 (light)
+   and amber-400 (dark) round both options. There is no unit test: jsdom does not apply the
+   scoped style.
+7. **R2-16: PrimeVue's own texts bypassed vue-i18n.** `components/base/primevueLocale.ts` builds
+   PrimeVue's `locale` from `base.json` (`base.primevue.*`), and `setup.ts` passes it. The
+   locale covers the texts of the components the app uses: empty and filtered lists, the live
+   regions of Select and Listbox, the close, previous and next buttons, DataTable row
+   announcements and the confirm dialog. PrimeVue keeps its defaults for the other components.
+   PrimeVue puts a count into `{0}` itself, after vue-i18n, so no plural form can be chosen.
+   The counted texts are therefore worded to read right for any count: "Options selected: 1",
+   "Options found: 3". The locale is built once at the start: a second UI language needs it to
+   follow `i18n.global.locale`. Test: `components/base/primevueLocale.test.ts` mounts Listboxes
+   with the app's plugins. The live region says "Options selected: 1" ("1 items selected" without
+   the locale), and an empty list says "No options" and "Nothing selected".
+8. **R2-17: weak focus of list options.** The option of a Select or Listbox under the keyboard or
+   the pointer now has an inset 2 px ring in the primary colour (6.29 / 5.94 against the list),
+   in addition to the tint (1.10:1). Checked with the arrow keys in an open Select in Chromium and
+   Firefox, light and dark.
+9. **R2-25: a field's gutter bar shows over the open command drawer.** This is not a stacking
+   problem. The bar is drawn 8 px left of the field, in the Video tab's side padding. The drawer
+   (`.command-preview`: sticky, `z-index: 1`) does not cover that padding, so the bar shows
+   *beside* the drawer, not over it. No stacking change on the bar can hide it. The drawer
+   (`components/video/CommandPreview.vue`, not FA's) needs to cover the side padding, for example
+   with
+   `.command-preview::before { content: ''; position: absolute; inset-block: -1px; inset-inline: calc(-1 * var(--rf-space-4)); z-index: -1; background: var(--rf-color-surface); }`.
+   Checked by injecting this rule in the browser: the bar no longer shows next to the open drawer.
 
 ### Fix round — FB (the job that is queued)
 
-(Written by task FB.)
+2026-10-30. Each fix with a test that fails without it: the new tests were run against the code
+before the fix (all 12 of `addToQueue`, `OutputCard`, the two of `sources` fail there, R1's
+reproductions as assertions), and 45 mutations of the fix each failed a test. Browser checks: R1's
+scripts and FB's own (`review-r1/`, the scratchpad's `fix-fb/`), headless Chromium against
+`scripts/dev-server.py` (pinned FFmpeg n9.0.2, `multitrack`, `hdr10-4k`).
+
+**The design: an add takes the job the screen shows.** Two things can show a value that the job
+does not have: a field that writes only when it loses the focus (PrimeVue's `InputNumber` writes on
+blur or Enter, and returns early from its keydown while Ctrl is held; the naming fields), and an
+edit that waits for the server before it writes (the naming editor's preview, the Output card's
+extension below). So:
+
+- **Pending edits** (editor store): `beginEdit(edit)` / `endEdit(edit)` with
+  `PendingEdit = { flush(), failure }` (a reactive object of its owner); `editing` is true while
+  one is on its way, `editFailure` gives the reason of one whose request failed; `flushEdits()`
+  asks each to come in at once (no debounce; once more after a failure). A new session drops them.
+- **`validation.flush()`** sends a debounced validation at once (one under way goes on:
+  `latestRequest.flush()`), or asks again after a failed one.
+- **`addCurrent`, `Ctrl+Enter` and *Add all*** first commit the focused text field (blur it, then
+  give it the focus back: `editor/focus.ts`), call `flushEdits()`, and wait — a Vue watcher with
+  the default flush, so that an edit landing and the check it starts are seen together — until
+  no edit is on its way, the editor is not loading and the check has answered (flushed when
+  nothing else is waiting; a failed check asked once more; 20 s at most). Another session opened
+  meanwhile ends the add silently. Then the job *as it is* is added, or a warning toast says why
+  not: its first error, "could not be checked", "the output name could not be updated: …", no
+  output path, or still being checked after 20 s.
+- **`canAdd`** no longer turns false for a pending check or an edit on its way: the add waits for
+  them. A click on *Add to queue* right after typing blurs the field on mousedown, the value goes
+  into the job and the check starts; the button stays enabled under the pointer (R1-3). It still
+  needs the last check's issues to have no error, an output path, no draft loading and no add
+  under way. `Ctrl+Enter` calls `addCurrent` even when `canAdd` is false: the value typed into
+  the focused field may be what fixes the job. `QueueActions.busy` is added (an add, with its
+  wait, is under way) for the status bar's button. This replaces C's item 8 on `canAdd` and the
+  "still being checked" line of item 9 (*Add all* waits instead).
+- **The naming editor** (replaces F's items 2 and 3 where they differ): an edit, typed or not
+  (mode, *Use the preset's template*, name source, chips, "Use {…}", field overrides), is a
+  pending edit while the fields show a naming the job does not have, and goes into the job only
+  with its preview's name: naming and path in one patch, so they are always one undo step (R1
+  suspected 2: the path no longer follows the naming as a later step). A blur previews at once
+  and ends the typing's undo step when it lands (it no longer puts the naming in without its
+  path). A failed preview keeps the edit out of the job, shows why, and is a failed pending edit
+  (`editFailure`); an add asks it again and adds nothing while it fails (R1 suspected 3: a job
+  never has a naming whose path it lacks, so no *Use this path* is needed for it). An answer for
+  a job that changed after the request went out is not taken: the job is named again as it is.
+  An edit on its way when the editor unmounts (leaving Summary) still goes into the job; a
+  failure then is a toast "The output name was not changed".
+- **A container change** (the Output card) writes the container and the path with the
+  container's first extension in one patch with its own coalescing key; for a container with
+  more than one extension (MP4: `.mp4`, `.m4v`) `naming/preview` of the job with the new
+  container gives the naming's extension (`mp4_extension`, Auto's rule), which follows under the
+  same key, so it is one undo step — unless the job changed since (an undo wins). Until it comes
+  it is a pending edit. A failed request keeps the first extension, which validation accepts. A
+  container change from elsewhere (a validation fix) brings its own path; one without (a script
+  through `editor.set`) still gets *Use this path* from the naming editor.
+
+Findings and tests:
+
+1. **R1-1** (`Ctrl+Enter` without the typed value). Tests: `addToQueue.test.ts` (real editor and
+   validation stores, a PrimeVue `InputNumber`, the naming editor, the shortcut: the typed quality
+   30 and the typed template with its path are queued; the focus is back in the box);
+   `useQueueActions.test.ts` (a field that writes on blur; the wait for a check, for an edit, for
+   both in turn). Chromium: `ctrl-enter-quality` queues `{"mode":"quality","value":30}` (was 22),
+   `ctrl-enter-naming` queues `{main_title} MYNAME` with `…/multitrack MYNAME.mkv` (was `null`).
+2. **R1-2** (a naming change without typing). Tests: `JobNamingEditor.test.ts` (*Use the preset's
+   template* and *Manual name* are pending edits until they land; `flushEdits` sends them at
+   once), `addToQueue.test.ts` (*Reset* then Add queues `null` and the path it gives).
+   Chromium: `naming-mode-add` and `naming-mode-add-gap` (`R1_GAP=200`): Add enabled, the queued
+   naming is the new one (manual `multitrack`; template `null` after Reset).
+3. **L1** (a container change keeps the old extension). Tests: `OutputCard.test.ts` (MP4: `.mp4`
+   at once, one undo step back to MKV and `.mkv`; the naming's `.m4v` in the same step; an undo
+   before the answer is not overwritten; a failed request keeps `.mp4`; WebM asks nothing).
+   Chromium: MP4 then *Add to queue* at once queues `mp4 …/multitrack.mp4`; with
+   `mp4_extension: m4v` the path goes `.mp4` → `.m4v`; one `Ctrl+Z` gives `mkv …/multitrack.mkv`.
+4. **R1-3** (a click on *Add* right after typing). Tests: `useQueueActions.test.ts` (`canAdd`
+   with a pending check or an edit on its way), `addToQueue.test.ts` (the blur of the box leaves
+   *Add* enabled and the add queues 30). Chromium: `click-add-quality` 1 added with 30 (was 0
+   added), `naming-click-add` 1 added with `{main_title} CLICKADD`.
+5. **R1-4** (leaving Summary before the preview answers). Tests: `JobNamingEditor.test.ts` (an
+   unmounted editor's edit lands with its path in one undo step; the job changed meanwhile is
+   named as it is; a failure is a toast and drops the edit). Chromium: `naming-tab-switch-add`
+   and `-human` queue `{main_title} TABSWITCH` with the path the naming gives;
+   `naming-tab-switch` (click and `Ctrl+2`) leaves the job with the template and its path.
+6. **R1-5** (removing the editor's source while another drafts). `removeMany` closes the editor
+   with `close({ keepLoading: true })` when its source goes while another, still active, source
+   is drafting: that draft still comes in. Tests: `sources.test.ts`, `editor.test.ts`; R1's
+   `sources-race.test.ts` passes.
+7. **R1 suspected 5** (*Add* after a failed validation). The add asks again and adds nothing when
+   that fails too. Tests: `useQueueActions.test.ts`, `useValidation.test.ts` (`flush` after a
+   failure). Chromium (`jobs/validate` answered 503 by the page's route): two requests refused, 0
+   added, the toast; after the route is gone, *Add* queues the job with 24.
+8. **L2** (the Output card shows the name twice; given to FB by the lead): the card's Folder, File
+   name and Name source rows are gone. The naming editor shows the name
+   (`[data-testid="naming-result"]`), folder (`job-folder`), path (`job-path`), the job's name
+   source setting (the Select, `[data-option="name_source"]`) and, in the parsed-name panel, the
+   chosen source with its reason (`.parsed-name__source`, `[data-testid="name-reason"]`). Tests:
+   `OutputCard.test.ts`, `JobNamingEditor.test.ts`. `SummaryTab.test.ts` (FD's) still reads
+   `[data-field="file-name"]` and `[data-field="name-source"]`: left to the lead.
+9. **L13** (*Browse…* icon a square): the fluid path field squeezed the button and the button its
+   icon to 5 × 16 px; neither shrinks now (16 × 16, light and dark). No unit test: jsdom lays
+   nothing out.
+10. **R2-8**, the naming Selects (name source, word separator) take `aria-labelledby` from `Field`.
+    Tests: `JobNamingEditor.test.ts`, `NamingOptionsEditor.test.ts`.
+11. **R2-20**: a probe failure's detail follows a message that ends a sentence with a space:
+    "bad.mkv: ffprobe could not read the file (exit code 1). /tmp/…/bad.mkv: Invalid data found
+    when processing input" (real server); a title without a full stop keeps ": ". Test:
+    `sources.test.ts`.
 
 ### Fix round — FC (shell, focus, queue and presets screens)
 
@@ -1514,9 +1739,88 @@ disabled *Quit*); the server ran with `REFRAME_POWER_DRY_RUN=1` (R2 checked
 
 ### Fix round — FD (the tabs, sources and settings screens)
 
-(Written by task FD.)
+2026-10-30. Each fix with the test that fails without it (checked by breaking the fix); the
+browser checks in headless Chromium against `scripts/dev-server.py` (pinned FFmpeg n9.0.2,
+`multitrack` and `pgs`), at 1440 and 1280 px, light and dark.
+
+1. **R2-8, comboboxes named by their value.** PrimeVue's `Select` puts `role="combobox"` on a
+   span, which `<label for>` cannot name, and fills its `aria-label` with the chosen value.
+   Every `Select` of the audio row (source, encoder, mixdown, sample rate, bitrate, loudness),
+   the subtitle row (source, format) and Settings (default container, VAAPI device, when done,
+   language) takes `aria-labelledby` from its `Field`. The Video tab's lists and the encoder
+   picker already did ("Video encoder"). Tests: `TracksTab.test.ts` (each list of an audio and
+   a subtitle row named by its label), one per Settings section (`comboboxName` in
+   `settings/testing.ts`). In Chromium: `combobox "Sample rate": As source`, `combobox "When
+   done": Do nothing`. The naming editors' lists are FB's ("Keep the source's" in Settings →
+   Output is still named by its value).
+2. **R2-18, the quality slider.** It catches the handle's keys before PrimeVue's `Slider`, which
+   moves one `step` for every key: an arrow moves 0.5 on a scale finer than whole numbers
+   (x264, x265, NVENC: step 0.1), else the scale's step (1); PageUp / PageDown 5 on the 0–51 and
+   0–63 scales and 25 on the 0–255 AV1 scales (AMF, VAAPI: their tables map 120 to x264's 24, so
+   25 is about 5 RF there); Home / End the ends. A typed value keeps any value of the scale
+   (19.3). Each key press is still one undo step. Tests: `QualitySlider.test.ts` (each key on
+   the RF scale, a whole-number and a 0–255 scale, a typed 19.3). In Chromium: 22 → 22.5 →
+   27.5 → 51 → 0, four `Ctrl+Z` back to 22.
+3. **R2-19, Summary chips.** An output flag is left out when a role badge set by the source's
+   disposition names it (commentary → Commentary, hearing impaired → SDH, forced → Forced,
+   visual impaired → Description), as `TrackTable` does; beside a role guessed from the title
+   or the layout the flag stays. Tests: `tracks.test.ts`. In Chromium: "Director's Commentary
+   Commentary (Set by a disposition flag in the file)", one Commentary.
+4. **R2-21, sizes.** The file browser uses the Summary's `formatBytes` (B, KiB, MiB, GiB):
+   `multitrack.mkv` is 370 KiB in both. Bitrates stay decimal (kb/s). Test:
+   `FileBrowserDialog.test.ts` (1.4 MiB for 1,500,000 bytes).
+5. **R2-24.** (a) The Summary tab has a visually hidden h2 "Summary": the outline is h1 (the
+   source), h2, the cards' h3, their h4. Test: `SummaryTab.test.ts` (the first heading is h2, no
+   level skipped). (b) A source tree item is named by `aria-labelledby` (its file name; for a
+   member the match, the episode and the file) and described by `aria-describedby` (its line,
+   differences, staleness, warnings), so "Remove …" is no longer part of its name; the warnings
+   list loses its `aria-label` ("Probe warnings"), which would replace the warnings in that
+   description, and each warning starts with a hidden "Probe warning:". Test:
+   `SourcesPanel.test.ts`. In Chromium: `treeitem "multitrack.mkv"`. (c) The file list's empty
+   note is a sibling of `role="listbox"`, laid over the empty list, and describes it. Test:
+   `FileBrowserDialog.test.ts`.
+6. **L2, the Output card's name shown twice**: the duplication is in `OutputCard.vue` (FB's);
+   `SummaryTab.vue` only places the card. Left to FB through the lead (see the report).
+7. **L8 / L16, cut values.** The audio row's fields can be 11rem wide: the keep values of the
+   sample rate and the mixdown are "As source" (were "Same as source", "Keep the source layout"),
+   a longer value of a row's list wraps instead of being cut ("Default (160 kb/s)", "Streaming
+   (−16 LUFS)"), and a number keeps its unit on its line (no-break spaces in `tracks.json`). The
+   encoder picker's value wraps, so the id goes to a second line at 1280 px. No unit test: jsdom
+   lays nothing out; checked in Chromium (no `.p-select-label` with `scrollWidth >
+   clientWidth`).
 
 ### Fix round — FE (server texts)
 
-(Written by task FE.)
+2026-10-30. Three texts that the screens show as they come from the server. No status, problem
+code, title or response model changed; no OpenAPI text changed. Each test fails with the old
+text (checked by putting it back). Before and after: `curl` against `scripts/dev-server.py`
+(web mode, pinned FFmpeg n9.0.2, MediaInfo not installed).
+
+1. **L6 / R2-20, a refused folder listing.** `GET /api/fs/list` tries the read check, then the
+   write check, and answered with the second refusal: "/etc is not inside a folder that this
+   server may write to." also when the user browses to open a file. The route now replaces
+   the detail of a `path.outside_roots` refusal (same 403, code and title): "/etc is outside
+   the server's media and output folders. Browse from one of them." Both kinds are named
+   because the listing accepts both (the output folder picker browses below an output root).
+   A `path.invalid` (400) passes unchanged. The text is made in `routers/fs.py`;
+   `security.py` is unchanged, so every other refusal keeps "may read from" / "may write to".
+   Test: `test_fs.py::test_a_folder_outside_the_roots_is_refused_as_outside_media_and_output`.
+2. **L12, `settings.tools_forbidden`.** The detail said "Set REFRAME_FFMPEG / REFRAME_FFPROBE
+   on the server instead." for every tool. It now names the variable of each tool the refused
+   patch sets, in discovery's order, from `reframe.tools.ENV_VARS` (no second list): "Set
+   REFRAME_MEDIAINFO on the server instead.", "Set REFRAME_FFMPEG / REFRAME_MKVPROPEDIT on the
+   server instead.". A key under `tools` that is no tool (the model keeps unknown fields) has no
+   variable: "Tool paths are set on the server." Test:
+   `test_settings.py::test_a_refused_program_names_the_variables_of_the_tools_it_sets`.
+3. **R2-20, the reason of a missing optional tool.** Decision: one text for both modes, made in
+   the core. The core does not know the mode, and a web-mode text from the server would mean
+   rewriting the core's reasons; both modes honour the variable. Before: "mediainfo was not
+   found (optional: install it, or set its path in Settings)." After: "mediainfo was not found
+   (optional: install it, or set REFRAME_MEDIAINFO to its path)." The same line serves
+   mkvpropedit (REFRAME_MKVPROPEDIT). Desktop mode loses the hint to Settings, where the reason
+   is shown next to the tool's path field anyway. Not changed: the reason of a missing FFmpeg
+   ("Set its path in Settings or REFRAME_FFMPEG, or run `reframe tools fetch`.") already names
+   a way that works in web mode. Tests: `test_system.py::test_a_missing_optional_tool_tells_a_web_client_what_it_can_do`
+   (web mode, an empty `PATH`: both optional tools missing, the variable named, no
+   "Settings"), and `test_discovery.py::test_nothing_found` names the variable.
 

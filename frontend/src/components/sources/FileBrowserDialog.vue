@@ -13,13 +13,14 @@ import { useI18n } from 'vue-i18n'
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
 import type { FsListing, FsRoot, Problem } from '@/api/types'
 import { fileName } from '@/components/shell/format'
+import { formatBytes } from '@/components/summary/format'
 
 import { type BrowseRequest, currentRequest, finish } from './fileBrowser'
 import { crumbsOf, extensionOf, folderOf, joinPath } from './paths'
 
 type Entry = FsListing['entries'][number]
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 /** Vue's types have no `autofocus` on a `div`; PrimeVue's dialog focuses the element that has it. */
 const autofocus: Record<string, string> = { autofocus: '' }
 const id = useId() ?? 'file-browser'
@@ -75,25 +76,14 @@ const canConfirm = computed(() => {
   return true
 })
 
+const empty = computed(() => listing.value !== null && visible.value.length === 0)
+
 function optionId(index: number): string {
   return `${id}-entry-${index}`
 }
 
 function formatSize(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return ''
-  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const
-  let value = bytes
-  let unit = 0
-  while (value >= 1000 && unit < units.length - 1) {
-    value /= 1000
-    unit += 1
-  }
-  return new Intl.NumberFormat(locale.value, {
-    style: 'unit',
-    unit: units[unit],
-    unitDisplay: 'short',
-    maximumFractionDigits: unit === 0 ? 0 : 1,
-  }).format(value)
+  return bytes === null || bytes === undefined ? '' : formatBytes(bytes, t)
 }
 
 async function read<T>(call: () => Promise<{ data?: T; error?: unknown; response: Response }>) {
@@ -413,41 +403,45 @@ const summary = computed(() => {
           }}</span>
         </Message>
 
-        <div
-          :id="`${id}-list`"
-          class="file-browser__list"
-          role="listbox"
-          tabindex="0"
-          v-bind="autofocus"
-          :aria-label="listing ? fileName(listing.path) : t('sources.browser.roots')"
-          :aria-multiselectable="mode === 'files' && request?.multiple ? 'true' : undefined"
-          :aria-activedescendant="visible.length > 0 ? optionId(cursor) : undefined"
-          :aria-busy="loading ? 'true' : undefined"
-          @keydown="onKeydown"
-        >
+        <div class="file-browser__list-area">
           <div
-            v-for="(entry, index) in visible"
-            :id="optionId(index)"
-            :key="entry.path"
-            role="option"
-            class="file-browser__entry"
-            :class="{
-              'file-browser__entry--cursor': index === cursor,
-              'file-browser__entry--selected': isSelected(entry),
-            }"
-            :aria-selected="entry.kind === 'file' ? isSelected(entry) : undefined"
-            :aria-disabled="entry.kind === 'file' && mode === 'folder' ? 'true' : undefined"
-            :data-kind="entry.kind"
-            :data-name="entry.name"
-            @click="onClick(index, $event)"
-            @dblclick="onDoubleClick(index)"
+            :id="`${id}-list`"
+            class="file-browser__list"
+            role="listbox"
+            tabindex="0"
+            v-bind="autofocus"
+            :aria-label="listing ? fileName(listing.path) : t('sources.browser.roots')"
+            :aria-multiselectable="mode === 'files' && request?.multiple ? 'true' : undefined"
+            :aria-activedescendant="visible.length > 0 ? optionId(cursor) : undefined"
+            :aria-describedby="empty ? `${id}-empty` : undefined"
+            :aria-busy="loading ? 'true' : undefined"
+            @keydown="onKeydown"
           >
-            <Folder v-if="entry.kind === 'folder'" :size="18" aria-hidden="true" />
-            <FileVideo v-else :size="18" aria-hidden="true" />
-            <span class="file-browser__name">{{ entry.name }}</span>
-            <span class="file-browser__size">{{ formatSize(entry.size) }}</span>
+            <div
+              v-for="(entry, index) in visible"
+              :id="optionId(index)"
+              :key="entry.path"
+              role="option"
+              class="file-browser__entry"
+              :class="{
+                'file-browser__entry--cursor': index === cursor,
+                'file-browser__entry--selected': isSelected(entry),
+              }"
+              :aria-selected="entry.kind === 'file' ? isSelected(entry) : undefined"
+              :aria-disabled="entry.kind === 'file' && mode === 'folder' ? 'true' : undefined"
+              :data-kind="entry.kind"
+              :data-name="entry.name"
+              @click="onClick(index, $event)"
+              @dblclick="onDoubleClick(index)"
+            >
+              <Folder v-if="entry.kind === 'folder'" :size="18" aria-hidden="true" />
+              <FileVideo v-else :size="18" aria-hidden="true" />
+              <span class="file-browser__name">{{ entry.name }}</span>
+              <span class="file-browser__size">{{ formatSize(entry.size) }}</span>
+            </div>
           </div>
-          <p v-if="listing && visible.length === 0" class="file-browser__empty" data-state="empty">
+          <!-- A listbox may hold options only: the note lies over the empty list instead. -->
+          <p v-if="empty" :id="`${id}-empty`" class="file-browser__empty" data-state="empty">
             {{ t('sources.browser.empty') }}
           </p>
         </div>
@@ -613,6 +607,14 @@ const summary = computed(() => {
   font-family: var(--rf-font-mono);
 }
 
+.file-browser__list-area {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .file-browser__list {
   flex: 1;
   min-height: 14rem;
@@ -681,7 +683,10 @@ const summary = computed(() => {
 }
 
 .file-browser__empty {
+  position: absolute;
+  inset: 1px 1px auto;
   margin: 0;
+  pointer-events: none;
   padding: var(--rf-space-4);
   color: var(--rf-color-text-muted);
   text-align: center;

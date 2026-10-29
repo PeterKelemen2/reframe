@@ -1,4 +1,14 @@
 {
   "fixFailed": "The fix could not be applied",
-  "fixStale": "The job has changed since it was checked. Wait for the new check, then try the fix again."
+  "fixStale": "The job has changed since it was checked. Wait for the new check, then try the fix again.",
+  "add": {
+    "notAdded": "Not added to the queue",
+    "hasErrors": "Not added to the queue: the job has an error",
+    "checking": "The job is still being checked. Try again in a moment.",
+    "unchecked": "The job could not be checked, so it was not added. Try again when the server answers.",
+    "uncheckedLine": "its settings could not be checked",
+    "edit": "The output name could not be updated: {reason}",
+    "editLine": "its output name could not be updated: {reason}",
+    "noPath": "The job has no output path."
+  }
 }

@@ -121,13 +121,14 @@ describe('Ctrl+O', () => {
 })
 
 describe('Ctrl+Enter', () => {
-  it('adds the job when it can be added, once per press', async () => {
+  it('adds the job once per press, also when it could not be added before the press', async () => {
     await mountAt()
     expect(press('Enter').defaultPrevented).toBe(true)
     press('Enter', { repeat: true })
+    // The value typed into the focused field may be what fixes the job: the add decides.
     canAdd.value = false
-    press('Enter')
-    expect(addCurrent).toHaveBeenCalledTimes(1)
+    press('Enter', { target: element('<input data-target type="text">') })
+    expect(addCurrent).toHaveBeenCalledTimes(2)
   })
 
   it('does nothing outside the workspace', async () => {

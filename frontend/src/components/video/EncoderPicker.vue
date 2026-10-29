@@ -153,10 +153,16 @@ defineExpose({ open })
 </template>
 
 <style scoped>
+/* The id goes to a second line rather than being cut: it is what a user searches for. */
+.encoder-picker :deep(.p-select-label) {
+  white-space: normal;
+}
+
 .encoder-picker__value {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--rf-space-2);
+  gap: 0 var(--rf-space-2);
   min-width: 0;
 }
 

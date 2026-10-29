@@ -37,6 +37,11 @@ export function folderOf(path: string | null | undefined, relative?: string | nu
   return parentOf(path, sep)
 }
 
+/** `path` with `extension` (with or without its dot) in place of its own. */
+export function withExtension(path: string, extension: string): string {
+  return `${stem(path)}.${extension.replace(/^\./, '')}`
+}
+
 /** `relative` (`/`-separated) inside `folder`, with the folder's separator. */
 export function joinPath(folder: string, relative: string): string {
   const sep = separatorOf(folder)
