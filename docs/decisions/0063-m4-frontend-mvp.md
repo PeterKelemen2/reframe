@@ -1735,7 +1735,144 @@ Findings and tests:
 
 ### Fix round — FC (shell, focus, queue and presets screens)
 
-(Written by task FC.)
+2026-10-30. Checked against `scripts/dev-server.py` (web mode, token; the pinned FFmpeg n9.0.2;
+`multitrack` and `hdr10-4k`; for the first-run screen `--tools-dir /nonexistent` and a Settings
+path to a missing file) in headless Chromium and Firefox, light and dark, with the keyboard
+only, after merging FA and FB. Each fix has a unit test that fails without it. 56 mutations of
+the fixes were run: 54 failed a test (four of them only after a test was made stricter), two are
+equivalent (see the end).
+
+1. **R2-3 (major): the focus fell to the page after an action.** Three causes, three fixes.
+   - *A button that its own action disables* (*Add to queue*, *Add all*, *Start* in the status
+     bar and the Queue view, *Pause all*, *Make default*, *Export*, *Check again*, *Use bundled
+     FFmpeg*, the countdown's *Cancel*; the queue's *Edit* while it loads). A browser moves the
+     focus of a button that turns `disabled` to the page. `components/shell/FocusSafeButton.ts`
+     wraps PrimeVue's Button: while the button has the focus, "disabled" is `aria-disabled` and
+     PrimeVue's `p-disabled` class (it looks disabled, a click or Enter does nothing); once the
+     focus leaves, it is disabled for real and leaves the tab order. PrimeVue's `loading` also
+     disables, so a busy button shows a spinning icon instead. The status bar's state stays
+     `canAdd` / `canAddAll` / `canStart`; FB's `busy` puts the spinner and `aria-busy` on the
+     button that started the add (*Add all* for its own, *Add to queue* for the button and
+     `Ctrl+Enter`).
+   - *A queue row whose buttons change with the job's state.* Before the jobs change, the table
+     notes the focused row button (job, action, place); after the change, when the focus has
+     gone to the page, it goes to the same action in that row, else to the row's new state
+     action (Pause → Resume, Resume → Pause, Cancel → Retry, Retry → Cancel), else to the
+     button in the same place. A removed row's place goes to the next job's same button (else
+     the new last row's); an empty queue gives the focus to *Go to the workspace*.
+   - *A control that a navigation or a new element replaces.* Opening the first source (from
+     *Open files…* or `Ctrl+O`) replaces the empty state's button with the tabs: the focus goes
+     to the selected editor tab, and removing the last source gives it to *Open files…*. *Edit*
+     in the queue and *Use for the open job* in the Presets view focus the workspace's selected
+     tab after the navigation. *Duplicate* focuses the copy in the preset tree; a deletion (the
+     confirmation gives the focus back to the deleted preset's button) focuses the preset now
+     shown, once both the answer and the dialog's close have come (`@after-hide`).
+
+   Where the focus lands now (Chromium and Firefox, the same): *Open files…* → the Summary tab;
+   *Add to queue*, *Add all*, *Start*, *Stop*, *Pause all* → themselves; a row's *Pause*
+   (Space) → its *Resume*, Enter → *Pause*; *Cancel* of a running job → *Retry*; *Retry* →
+   *Cancel*; *Duplicate* → itself; *Remove* → the same place of the next row; *Cancel all* →
+   the dialog's *Keep them*, Escape → *Cancel all*; *Edit* → the Summary tab; Presets
+   *Duplicate* → the copy in the tree; *Make default* → itself; *Delete* → the dialog's
+   *Cancel*, then after the deletion → the preset shown in the tree; *Use for the open job* →
+   the Summary tab. Tests: `StatusBar.test.ts` (each of the three buttons keeps the focus while
+   its action makes it unavailable, ignores a second press, is disabled once the focus leaves;
+   the add's wait on the right button), `QueueControls.test.ts` (*Start*, *Pause all*),
+   `QueueTable.test.ts` (Pause, Resume, Retry, Cancel of a waiting and of a running job; a
+   removal, the next and the last row, the empty queue; a progress update leaves the focus
+   alone; *Edit* keeps the focus while it loads and then focuses the workspace's tab),
+   `WorkspaceView.test.ts` (the opened source, the last one removed, a control that stays, the
+   tab as other screens' target), `PresetsView.test.ts` (Duplicate, Delete, Make default, Use
+   for the open job), `FirstRunScreen.test.ts` (*Check again* while it checks).
+2. **R2-4 (major): popovers did not take the focus.** PrimeVue's Popover is appended to the end of
+   the page with a focus trap and `aria-modal`, but it focuses only an `[autofocus]` inside.
+   `focusFirstIn` (`components/shell/focus.ts`) focuses the first control of the panel on the
+   popover's `show`, or the panel itself (`tabindex="-1"`) when it has none: the Appearance
+   popover (its theme choice), the issue list (its first fix or *Show*; the list itself when it
+   is empty) and the *Modified* changes (*Save as new preset…*). Tab then stays inside (PrimeVue's
+   trap) and Escape closes and gives the focus back to the trigger. In Chromium and Firefox: 6 Tab
+   presses in Appearance, 4 in the issue list and 5 in the changes all stayed inside. After
+   *Update preset* in the changes the focus goes to the preset button (the marker goes once the
+   job matches); after *Save as new* to the preset button, or to the marker when the dialog was
+   cancelled (`PresetNameDialog` emits `closed` after its leave). Tests: `ThemeSwitch.test.ts`,
+   `StatusBar.test.ts`, `PresetPicker.test.ts`.
+3. **R2-7 (major): the countdown showed only on the Queue view.** `PowerBanner` moves from
+   `QueueView.vue` into `App.vue`, above the router view, as a strip across the main column:
+   announced by its `role="alert"` text, with *Cancel* in the tab order before the view. The
+   views no longer take `100vh` each; the shell's main column is the window's height and each
+   view (Settings too, by the shell's rule) fills what the banner leaves, so the page is exactly
+   the window's height with and without the banner on every view (720 px window, Chromium and
+   Firefox). When the banner goes with the focus on *Cancel*, the focus goes to the rail's link of
+   the current view. Checked with `REFRAME_POWER_DRY_RUN=1` confirmed in `/proc/<pid>/environ` of
+   the `reframe_server` process before the first countdown; only *Sleep*, chosen by its label in
+   the selector and read back from `GET /api/settings` before a job was started; on the
+   Workspace view the banner showed "The queue is finished. When done: Sleep. in 59 s" with
+   *Cancel* (reached with Shift+Tab from the tab list), and Enter cancelled it after about 1.6 s
+   (`GET /api/power` `pending: null`); when-done was set back to *Do nothing* at once. Twice,
+   Chromium light and Firefox dark. Test: `App.test.ts` (one banner with *Cancel* on the
+   workspace, presets, settings and queue views; Cancel cancels; the focus goes to the rail; a
+   countdown that ends elsewhere does not move a focus that was not on it).
+4. **R2-11: toasts covered the header and were see-through.** The shell's toasts sit at the bottom
+   right, above the status bar: the status bar publishes its height as
+   `--shell-status-bar-height` while it is shown, and the toast host's `bottom` adds it. The
+   theme's toast tint is laid over the surface colour without the blur (FA's tokens are opaque
+   now; the layer keeps a see-through token opaque too). Tests: `ShellToasts.test.ts`,
+   `StatusBar.test.ts` (the height published and withdrawn).
+5. **R2-12: the placeholder preview narrowed the tabs.** The preview column starts collapsed and
+   keeps the user's choice: a new storage key, `reframe.workspace.previewHidden`, written only by
+   the toggle (the old key had `false` written by default). The tab column is 856 px at 1280 ×
+   720 and 1,016 px at 1440 × 900 (520 and 680 px with the preview open); an opened preview stays
+   open after a reload. Test: `WorkspaceView.test.ts`.
+6. **R2-10: raw JSON in the Modified popover.** `presets/diff` gives a whole object when a union
+   member changes its kind. The rate control now reads "Constant quality CQ 27 → Average bitrate
+   6,000 kb/s" (each side on its own encoder's scale: the encoder change's preset value for the
+   preset side), the size as the presets view says it, a preset's inherited naming as "The naming
+   of Settings → Output" and an own naming by its movie template; any other object lists its
+   members in words ("Preset: light"). Checked on the NVENC preset with x264 and 6,000 kb/s.
+   Tests: `PresetPicker.test.ts`, `format.test.ts`.
+7. **R2-13 / L17: raw task kinds in Activity.** Each kind the server starts (`probe_sources`,
+   `probe_folder`, `encoders_rescan`, `tools_fetch`, `bitrate_scan`, `subtitle_scan`, `loudness`,
+   `frames`, `cropdetect`, `preview_clip`) has a name: "Reading sources: done". Another kind is
+   shown with spaces and a capital. Test: `activityLines.test.ts`.
+8. **R2-14: a failed copy repeated its reason.** The row lists the job's issues without those whose
+   message the error already quotes ("The job has errors: X" once, then only the other issues).
+   An automatic free name for a copy stays out of M4 (a queue change). Test:
+   `QueueTable.test.ts`.
+9. **R2-20 (queue wording).** "Stopped: 1 job waits for Start" / "Stopped: 2 jobs wait for
+   Start"; while the runner takes every job, "Running: 2 waiting jobs start in turn", and with
+   none left "Running: jobs added now start in turn". Test: `QueueControls.test.ts`.
+10. **R2-23: the Preset column of a changed job.** The column ("Preset and encoder") shows the
+    job's own video encoder under the preset's name, or "Video copied". Test:
+    `QueueTable.test.ts`.
+11. **L3 / L10 / R2-22: the first-run screen's actions.** *Use bundled FFmpeg* is offered only when
+    no failing tool is set by the environment (`REFRAME_FFMPEG` outranks Settings and a bundled
+    build), and *Choose path* only in the desktop app without such an override (the server
+    refuses tool paths from a browser, `403 settings.tools_forbidden`). A note says what to do
+    instead and names the variables. *Use bundled FFmpeg* also removes the Settings paths of
+    ffmpeg and ffprobe after a download that ended `done` (as Settings → Tools does), else the
+    Settings path would still win. *Check again* says "Checked again at 12:42:46 AM: nothing has
+    changed." when the tools are as they were (a status region; the time makes a second press
+    heard). Checked: with the environment override only *Check again* and the note; with a
+    Settings path in web mode *Use bundled FFmpeg* and *Check again* and the browser note. Not
+    clicked for real: *Use bundled FFmpeg* (it downloads FFmpeg). Tests:
+    `FirstRunScreen.test.ts`.
+12. **R1 suspected 4: *Save as new preset* read the job after the await.** It now notes the
+    editor's session and preset before `POST /api/presets` and makes the job follow the new
+    preset only when both are unchanged (another source, or another preset applied, while the
+    request was out is left alone); the "Saved as" toast shows either way. Test:
+    `PresetPicker.test.ts` (both cases).
+13. **R2-8 (queue part): the when-done select was named by its value.** It takes
+    `aria-labelledby` from its `Field`. Test: `QueueControls.test.ts`.
+
+Equivalent mutations (not defects): `t(key, { n })` instead of `t(key, n)` for a plural (vue-i18n
+picks the plural form from `n` either way); `loading` instead of `disabled` on a
+`FocusSafeButton` (the wrapper's explicit `disabled: false` overrides PrimeVue's loading-disable,
+so the button stays focusable; the code does not rely on it).
+
+For other tasks: FA's grey disabled look (`main.css`, `.p-button:disabled:not(…)`) does not reach
+a `FocusSafeButton` that keeps the focus while unavailable: it has the class `p-disabled` and
+`aria-disabled="true"`, not `:disabled`, and shows PrimeVue's 60 % fade of its colour. The rule's
+selector can take `.p-button:is(:disabled, .p-disabled)`.
 
 ### Fix round — FD (the tabs, sources and settings screens)
 
