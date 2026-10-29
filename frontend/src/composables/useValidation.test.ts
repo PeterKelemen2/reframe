@@ -259,6 +259,44 @@ describe('useValidation', () => {
     expect(validation.issues).toEqual([])
   })
 
+  it('sends a validation that waits for its debounce at once on flush, and only once', async () => {
+    start()
+    const editor = await opened()
+    const validation = useValidationStore()
+    const held = deferred<unknown>()
+    answer = () => held.promise
+    editor.set('/video/preset', 'fast')
+    validation.flush()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(validations()).toHaveLength(1)
+    validation.flush()
+    held.resolve([])
+    await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
+    expect(validations()).toHaveLength(1)
+    expect(validation.pending).toBe(false)
+  })
+
+  it('asks again at once on flush after a failed validation, and only then', async () => {
+    start()
+    const editor = await opened()
+    const validation = useValidationStore()
+    validation.flush()
+    await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
+    expect(validations()).toHaveLength(0)
+
+    answer = () => problem(503, 'server.closing', 'The server is shutting down')
+    editor.set('/video/preset', 'fast')
+    await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
+    expect(validation.failed).toBe(true)
+    answer = () => []
+    validation.flush()
+    expect(validation.pending).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(validations()).toHaveLength(2)
+    expect(validation.failed).toBe(false)
+    expect(validation.pending).toBe(false)
+  })
+
   it('shows a value the server cannot read as an error at its field', async () => {
     start()
     const editor = await opened()

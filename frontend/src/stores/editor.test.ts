@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 
 import { ApiError, configureClient } from '@/api/client'
 import { deferred, FakeServer, problem, type Recorded } from '@/api/testing/fakes'
@@ -52,6 +53,10 @@ function sourceEntry(id: string): SourceEntry {
 
 function changed(path: string): FieldChange {
   return { path, kind: 'changed' }
+}
+
+function pendingEdit(failure: string | null = null) {
+  return reactive({ flush: vi.fn<() => void>(), failure })
 }
 
 /** Runs `each` for one item after the other: edits that must come in turn. */
@@ -474,6 +479,59 @@ describe('the editor store', () => {
     expect(editor.canUndo).toBe(false)
     expect(editor.modified).toBe(false)
     expect(editor.loading).toBe(false)
+  })
+
+  it('closes and still takes a draft on its way with keepLoading (another source being opened)', async () => {
+    const editor = await opened()
+    const slow = deferred<JobDraft>()
+    server.on('POST /api/jobs/draft', () => slow.promise)
+    const opening = editor.open('other')
+    editor.close({ keepLoading: true })
+    expect(editor.job).toBeNull()
+    expect(editor.loading).toBe(true)
+    slow.resolve(draftFor('other', null))
+    await opening
+    await flush()
+    expect(editor.job?.source.path).toBe('/media/other.mkv')
+    expect(editor.loading).toBe(false)
+  })
+
+  describe('pending edits', () => {
+    it('says an edit is on its way until it ends, and a failed one apart', async () => {
+      const editor = await opened()
+      const naming = pendingEdit()
+      const other = pendingEdit()
+      editor.beginEdit(naming)
+      editor.beginEdit(other)
+      editor.beginEdit(naming)
+      expect(editor.editing).toBe(true)
+      editor.endEdit(naming)
+      expect(editor.editing).toBe(true)
+
+      other.failure = 'The server did not answer.'
+      expect(editor.editing).toBe(false)
+      expect(editor.editFailure).toBe('The server did not answer.')
+      editor.endEdit(other)
+      expect(editor.editFailure).toBeNull()
+    })
+
+    it('asks each pending edit to come in at once', async () => {
+      const editor = await opened()
+      const first = pendingEdit()
+      const failed = pendingEdit('broken')
+      editor.beginEdit(first)
+      editor.beginEdit(failed)
+      editor.flushEdits()
+      expect(first.flush).toHaveBeenCalledTimes(1)
+      expect(failed.flush).toHaveBeenCalledTimes(1)
+    })
+
+    it('forgets the edits of the last job when another job is opened', async () => {
+      const editor = await opened()
+      editor.beginEdit(pendingEdit())
+      await editor.open('other')
+      expect(editor.editing).toBe(false)
+    })
   })
 
   describe('presetChanges', () => {
