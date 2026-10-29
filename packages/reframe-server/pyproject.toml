@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Peter Kelemen" }]
 dependencies = [
-    "fastapi>=0.159.1",
+    "fastapi>=0.162.0",
     "pydantic-settings>=2.16.1",
     "reframe",
     "uvicorn>=0.54.0",
