@@ -146,6 +146,16 @@ describe('the output audio tracks', () => {
     expect(streamsOf(editor)).toEqual([1, 2, 3])
   })
 
+  it('removes the track whose remove button was pressed, not another one', async () => {
+    const { wrapper, editor } = await mountTab()
+    await row(wrapper, 'audio[1]').find('[data-action="remove"]').trigger('click')
+    await flushPromises()
+    expect(streamsOf(editor)).toEqual([1, 3])
+    editor.undo()
+    expect(streamsOf(editor)).toEqual([1, 2, 3])
+    expect(editor.canUndo).toBe(false)
+  })
+
   it('moves a track with its buttons and keeps the focus on the moved track', async () => {
     const { wrapper, editor } = await mountTab()
     expect(row(wrapper, 'audio[0]').find('[data-move="up"]').attributes('disabled')).toBeDefined()
