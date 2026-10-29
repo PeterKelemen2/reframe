@@ -76,6 +76,8 @@ const canConfirm = computed(() => {
   return true
 })
 
+const empty = computed(() => listing.value !== null && visible.value.length === 0)
+
 function optionId(index: number): string {
   return `${id}-entry-${index}`
 }
@@ -401,41 +403,45 @@ const summary = computed(() => {
           }}</span>
         </Message>
 
-        <div
-          :id="`${id}-list`"
-          class="file-browser__list"
-          role="listbox"
-          tabindex="0"
-          v-bind="autofocus"
-          :aria-label="listing ? fileName(listing.path) : t('sources.browser.roots')"
-          :aria-multiselectable="mode === 'files' && request?.multiple ? 'true' : undefined"
-          :aria-activedescendant="visible.length > 0 ? optionId(cursor) : undefined"
-          :aria-busy="loading ? 'true' : undefined"
-          @keydown="onKeydown"
-        >
+        <div class="file-browser__list-area">
           <div
-            v-for="(entry, index) in visible"
-            :id="optionId(index)"
-            :key="entry.path"
-            role="option"
-            class="file-browser__entry"
-            :class="{
-              'file-browser__entry--cursor': index === cursor,
-              'file-browser__entry--selected': isSelected(entry),
-            }"
-            :aria-selected="entry.kind === 'file' ? isSelected(entry) : undefined"
-            :aria-disabled="entry.kind === 'file' && mode === 'folder' ? 'true' : undefined"
-            :data-kind="entry.kind"
-            :data-name="entry.name"
-            @click="onClick(index, $event)"
-            @dblclick="onDoubleClick(index)"
+            :id="`${id}-list`"
+            class="file-browser__list"
+            role="listbox"
+            tabindex="0"
+            v-bind="autofocus"
+            :aria-label="listing ? fileName(listing.path) : t('sources.browser.roots')"
+            :aria-multiselectable="mode === 'files' && request?.multiple ? 'true' : undefined"
+            :aria-activedescendant="visible.length > 0 ? optionId(cursor) : undefined"
+            :aria-describedby="empty ? `${id}-empty` : undefined"
+            :aria-busy="loading ? 'true' : undefined"
+            @keydown="onKeydown"
           >
-            <Folder v-if="entry.kind === 'folder'" :size="18" aria-hidden="true" />
-            <FileVideo v-else :size="18" aria-hidden="true" />
-            <span class="file-browser__name">{{ entry.name }}</span>
-            <span class="file-browser__size">{{ formatSize(entry.size) }}</span>
+            <div
+              v-for="(entry, index) in visible"
+              :id="optionId(index)"
+              :key="entry.path"
+              role="option"
+              class="file-browser__entry"
+              :class="{
+                'file-browser__entry--cursor': index === cursor,
+                'file-browser__entry--selected': isSelected(entry),
+              }"
+              :aria-selected="entry.kind === 'file' ? isSelected(entry) : undefined"
+              :aria-disabled="entry.kind === 'file' && mode === 'folder' ? 'true' : undefined"
+              :data-kind="entry.kind"
+              :data-name="entry.name"
+              @click="onClick(index, $event)"
+              @dblclick="onDoubleClick(index)"
+            >
+              <Folder v-if="entry.kind === 'folder'" :size="18" aria-hidden="true" />
+              <FileVideo v-else :size="18" aria-hidden="true" />
+              <span class="file-browser__name">{{ entry.name }}</span>
+              <span class="file-browser__size">{{ formatSize(entry.size) }}</span>
+            </div>
           </div>
-          <p v-if="listing && visible.length === 0" class="file-browser__empty" data-state="empty">
+          <!-- A listbox may hold options only: the note lies over the empty list instead. -->
+          <p v-if="empty" :id="`${id}-empty`" class="file-browser__empty" data-state="empty">
             {{ t('sources.browser.empty') }}
           </p>
         </div>
@@ -601,6 +607,14 @@ const summary = computed(() => {
   font-family: var(--rf-font-mono);
 }
 
+.file-browser__list-area {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .file-browser__list {
   flex: 1;
   min-height: 14rem;
@@ -669,7 +683,10 @@ const summary = computed(() => {
 }
 
 .file-browser__empty {
+  position: absolute;
+  inset: 1px 1px auto;
   margin: 0;
+  pointer-events: none;
   padding: var(--rf-space-4);
   color: var(--rf-color-text-muted);
   text-align: center;

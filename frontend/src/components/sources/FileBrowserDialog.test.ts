@@ -155,6 +155,17 @@ describe('the file browser dialog', () => {
     expect(crumbs()).toEqual(['out'])
   })
 
+  it('says that a folder is empty outside the list, which it describes', async () => {
+    await mountDialog()
+    await open({ mode: 'files', multiple: true })
+    expect($('[data-state="empty"]')).toBeNull()
+    await click(entry('extras'))
+    const note = $('[data-state="empty"]')
+    expect(note?.textContent?.trim()).toBe('No folders or video files here.')
+    expect(list().contains(note)).toBe(false)
+    expect(list().getAttribute('aria-describedby')).toBe(note?.id)
+  })
+
   it('chooses files with a click, Ctrl and Shift, and opens them', async () => {
     await mountDialog()
     const { chosen } = await open({ mode: 'files', multiple: true })
