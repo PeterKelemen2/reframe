@@ -441,8 +441,11 @@ async def test_a_job_another_front_end_retries_is_left_to_it(
     server: Server, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The command's job A fails, and ``reframe queue retry`` in another terminal runs it again
-    while the command still follows B: the command ends with B (A's new run is not its own),
-    and its end does not cancel A."""
+    in the second slot while the command still follows B: the command neither shows nor waits
+    for A's new run, and its end does not cancel A."""
+    await server.api.reframe.settings.update(
+        [{"op": "replace", "path": "/queue/parallel_jobs", "value": 2}]
+    )
     server.api.fake.set_scenario(scenario(ends("A.mkv", code=1), ends("B.mkv", seconds=4)))
     server.publish()
     files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
@@ -451,6 +454,7 @@ async def test_a_job_another_front_end_retries_is_left_to_it(
     await job_of(server, "B.mkv", JobState.RUNNING)
     server.api.fake.set_scenario(scenario(ends("B.mkv", seconds=4)))  # A's next run hangs
     assert await cli.run_queue_retry(a) == cli.EXIT_OK
+    await poll(lambda: states(server)[a] is JobState.RUNNING)
     assert not task.done()
     code = await asyncio.wait_for(task, WAIT)
     lines = capsys.readouterr().out.splitlines()
@@ -529,25 +533,25 @@ async def test_a_command_that_was_stopped_cancels_its_jobs_on_sigterm(
     more, so the command cancels them itself, as on Ctrl+C."""
     server.api.fake.set_scenario(HANG)
     server.publish()
-
-    def stopped() -> None:
-        handled = signal.getsignal(signal.SIGTERM) not in (signal.SIG_DFL, signal.SIG_IGN, None)
-        assert handled, "SIGTERM would end pytest"
-        signal.raise_signal(signal.SIGTERM)
-
-    monkeypatch.setattr(cli, "_stop_process", stopped, raising=False)
-    task = asyncio.create_task(
-        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
-    )
-    job_id = await job_of(server, "A.mkv", JobState.RUNNING)
-    await poll(_sigtstp_handled, 10)
-    signal.raise_signal(signal.SIGTSTP)
-    code = await asyncio.wait_for(task, WAIT)
+    monkeypatch.setattr(cli, "_stop_process", lambda: signal.raise_signal(signal.SIGTERM))
+    # A SIGTERM that the command does not take must not end pytest (uvicorn's own handler of
+    # the test's server would raise it again when the server stops).
+    previous = signal.signal(signal.SIGTERM, lambda *_args: None)
+    try:
+        task = asyncio.create_task(
+            cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+        )
+        job_id = await job_of(server, "A.mkv", JobState.RUNNING)
+        await poll(_sigtstp_handled, 10)
+        signal.raise_signal(signal.SIGTSTP)
+        code = await asyncio.wait_for(task, WAIT)
+        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL  # the command's handler is gone
+    finally:
+        signal.signal(signal.SIGTERM, previous)
     captured = capsys.readouterr()
     assert code == cli.EXIT_INTERRUPTED, captured
     assert captured.out.splitlines()[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 0 not queued."
     assert states(server) == {job_id: JobState.CANCELLED}
-    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
 
 
 def _open_connection(server: Server) -> ClientConnection:
@@ -564,16 +568,22 @@ def _open_connection(server: Server) -> ClientConnection:
     return connection
 
 
-@pytest.mark.parametrize("attached", [True, False], ids=["attached", "not attached"])
+@pytest.mark.parametrize(
+    ("attached", "answers"),
+    [(True, True), (False, True), (True, False)],
+    ids=["attached", "not attached", "the saved queue"],
+)
 async def test_after_a_lost_connection_the_owners_states_are_reported(
     server: Server,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     attached: bool,
+    answers: bool,
 ) -> None:
     """The connection ends while the owner runs on (as when the owner's keepalive gives up on
     a stopped client). The owner cancels an attached job; one that is not attached any more
-    (as after a Ctrl+Z) runs on. The command reports what the owner says, not a guess."""
+    (as after a Ctrl+Z) runs on. The command reports what the owner says, or else what the
+    saved queue says, not a guess."""
     server.api.fake.set_scenario(HANG)
     server.publish()
     task = asyncio.create_task(
@@ -587,7 +597,7 @@ async def test_after_a_lost_connection_the_owners_states_are_reported(
 
     async def after_the_owner_acted(*args: Any, **kwargs: Any) -> Any:
         await poll(lambda: states(server)[job_id] is after)
-        return await connect(*args, **kwargs)
+        return await connect(*args, **kwargs) if answers else "no Reframe server answers"
 
     monkeypatch.setattr(cli, "connect_owner", after_the_owner_acted)
     _open_connection(server).transport.abort()
