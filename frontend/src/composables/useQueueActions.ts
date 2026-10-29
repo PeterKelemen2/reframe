@@ -77,8 +77,9 @@ export function useQueueActions(): QueueActions {
   const sources = useSourcesStore()
   const toasts = useToastStore()
 
-  // Not while a check or an edit is on its way: a click on the button blurs the field that was
-  // typed in, its value goes into the job, and the button must not be disabled under the pointer.
+  // A check or an edit on its way does not turn it off: a click on the button blurs the field
+  // that was typed in, its value goes into the job, and the button must stay enabled under the
+  // pointer. The add waits for them.
   const canAdd = computed(
     () =>
       editor.job !== null &&
