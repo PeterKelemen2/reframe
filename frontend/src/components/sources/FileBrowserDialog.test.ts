@@ -31,6 +31,7 @@ const tree: Record<string, { parent: string | null; entries: Entry[] }> = {
   '/srv/media': {
     parent: null,
     entries: [
+      folder('/srv/media/extras'),
       folder('/srv/media/season'),
       file('/srv/media/a.mkv'),
       file('/srv/media/b.mp4'),
@@ -42,6 +43,7 @@ const tree: Record<string, { parent: string | null; entries: Entry[] }> = {
     parent: '/srv/media',
     entries: [file('/srv/media/season/E01.mkv'), file('/srv/media/season/E02.mkv')],
   },
+  '/srv/media/extras': { parent: '/srv/media', entries: [] },
   '/srv/out': { parent: null, entries: [folder('/srv/out/done'), file('/srv/out/old.mkv')] },
   '/srv/out/done': { parent: '/srv/out', entries: [] },
 }
@@ -133,7 +135,7 @@ describe('the file browser dialog', () => {
       'outOutput folder',
     ])
     expect(crumbs()).toEqual(['media'])
-    expect(names()).toEqual(['season', 'a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
+    expect(names()).toEqual(['extras', 'season', 'a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
     expect(entry('a.mkv').textContent).toContain('1.5 MB')
     expect(document.activeElement).toBe(list())
   })
@@ -177,10 +179,12 @@ describe('the file browser dialog', () => {
     const { chosen } = await open({ mode: 'files', multiple: false })
     await click(entry('a.mkv'))
     await click(entry('c.mkv'), { ctrlKey: true })
+    expect(selected()).toEqual(['c.mkv'])
     await click(entry('d.mkv'), { shiftKey: true })
     expect(selected()).toEqual(['d.mkv'])
     expect(list().getAttribute('aria-multiselectable')).toBeNull()
     await key('Home')
+    await key('ArrowDown')
     await key('ArrowDown')
     // Enter opens the chosen file, not the one under the cursor.
     await key('Enter')
@@ -190,7 +194,8 @@ describe('the file browser dialog', () => {
   it('works with the keyboard: arrows, Space, Shift+arrows, folders, Backspace and Enter', async () => {
     await mountDialog()
     const { chosen } = await open({ mode: 'files', multiple: true })
-    await key('Enter') // the cursor starts on the first entry: the folder
+    await key('ArrowDown')
+    await key('Enter')
     expect(crumbs()).toEqual(['media', 'season'])
     await key('Backspace')
     expect(crumbs()).toEqual(['media'])
@@ -206,7 +211,8 @@ describe('the file browser dialog', () => {
     expect(selected()).toEqual(['a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
     await key('Home')
     await key('ArrowUp')
-    expect(list().getAttribute('aria-activedescendant')).toBe(entry('season').id)
+    expect(list().getAttribute('aria-activedescendant')).toBe(entry('extras').id)
+    await key('ArrowDown')
     await key('ArrowDown')
     await key('Enter')
     expect(await chosen).toEqual([
@@ -253,10 +259,10 @@ describe('the file browser dialog', () => {
   it('shows only the filter’s files until the filter is turned off', async () => {
     await mountDialog()
     await open({ mode: 'files', multiple: true, filters: ['mp4'] })
-    expect(names()).toEqual(['season', 'b.mp4'])
+    expect(names()).toEqual(['extras', 'season', 'b.mp4'])
     expect($('label[for$="-filter"]')?.textContent?.trim()).toBe('Only mp4')
     await click($('[data-field="filter"] input'))
-    expect(names()).toEqual(['season', 'a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
+    expect(names()).toEqual(['extras', 'season', 'a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
   })
 
   it('has no filter switch without a filter', async () => {

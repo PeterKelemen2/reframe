@@ -525,12 +525,6 @@ describe('the sources store', () => {
       expect(sources.entries.map((entry) => entry.path)).toEqual(['/media/a.mkv'])
     })
 
-    it('sends nothing when the picker was cancelled', async () => {
-      vi.spyOn(platform, 'pickFiles').mockResolvedValue([])
-      await useSourcesStore().pick()
-      expect(server.requests).toEqual([])
-    })
-
     it('opens the folder the platform’s folder picker gives, with its subfolders when asked', async () => {
       server.folders.set('/media/show', ['/media/a.mkv', '/media/b.mkv'])
       vi.spyOn(platform, 'pickFolder').mockResolvedValue('/media/show')

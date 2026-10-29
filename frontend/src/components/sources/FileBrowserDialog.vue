@@ -38,7 +38,6 @@ const location = ref('')
 const saveName = ref('')
 
 const list = useTemplateRef<HTMLElement>('list')
-let returnFocus: HTMLElement | null = null
 /** The folder each mode showed last in this tab: the next pick starts there. */
 const lastFolder: Partial<Record<BrowseRequest['mode'], string>> = {}
 // The newest listing wins: a slow folder answered after a later click is dropped.
@@ -154,12 +153,9 @@ async function showFirst(next: BrowseRequest, candidates: string[]): Promise<boo
   return (await show(first)) || showFirst(next, rest)
 }
 
-watch(request, (next, previous) => {
-  if (next === null) return
-  if (previous === null) {
-    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  }
-  void start(next)
+// PrimeVue's dialog gives the focus back to where it was when it closes.
+watch(request, (next) => {
+  if (next !== null) void start(next)
 })
 
 function close(paths: string[] | null): void {
@@ -177,11 +173,6 @@ function confirm(): void {
 
 function onShow(): void {
   void nextTick(() => list.value?.focus())
-}
-
-function onAfterHide(): void {
-  returnFocus?.focus()
-  returnFocus = null
 }
 
 function onVisible(value: boolean): void {
@@ -331,7 +322,6 @@ const summary = computed(() => {
     :data-mode="mode"
     @update:visible="onVisible"
     @show="onShow"
-    @after-hide="onAfterHide"
   >
     <div class="file-browser">
       <nav class="file-browser__roots" :aria-label="t('sources.browser.roots')">

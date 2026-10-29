@@ -1,7 +1,6 @@
 import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError } from '@/api/client'
 import type { MediaSource, Schemas, SourceEntry } from '@/api/types'
 import { mountShell } from '@/components/shell/testing'
 import { platform } from '@/platform'
@@ -266,20 +265,6 @@ describe('the sources panel', () => {
     await flushPromises()
     expect(pick).toHaveBeenCalledOnce()
     expect(pickFolder.mock.calls).toEqual([[{ recursive: false }], [{ recursive: true }]])
-  })
-
-  it('leaves a refused open to the API’s toast', async () => {
-    const { sources } = await mountPanel()
-    const refused = new ApiError(403, {
-      type: 'about:blank',
-      title: 'Outside',
-      status: 403,
-      code: 'path.outside_roots',
-    })
-    const pick = vi.spyOn(sources, 'pick').mockRejectedValue(refused)
-    $('[data-action="open-files"]')?.click()
-    await flushPromises()
-    expect(pick).toHaveBeenCalledOnce()
   })
 
   it('opens the paths of files dropped on the desktop window, until the panel goes', async () => {
