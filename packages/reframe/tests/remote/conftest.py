@@ -4,15 +4,19 @@ it: the queue contract runs against its facade's ``QueueService`` and a ``Remote
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
+from websockets.asyncio.client import ClientConnection
 
 from reframe.models import JobDraft, JobSettings, ServerEndpoint
 from reframe.remote import API_VERSION, Owner, RemoteQueue
@@ -109,3 +113,81 @@ async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
     while not condition():
         assert time.monotonic() < deadline, "condition not met in time"
         await asyncio.sleep(0.01)
+
+
+class Requests(httpx.AsyncBaseTransport):
+    """The transport of a ``RemoteQueue`` in a test: counts its requests, holds
+    ``POST /api/queue/start`` until :attr:`released` is set, holds the answers of
+    ``POST /api/queue`` (the server has added the jobs) until :attr:`answers` is set, and
+    answers a request with :attr:`answer` when it gives a response."""
+
+    def __init__(self) -> None:
+        self.inner = httpx.AsyncHTTPTransport()
+        self.seen: list[tuple[str, str]] = []
+        self.released = asyncio.Event()
+        self.released.set()
+        self.answers = asyncio.Event()
+        self.answers.set()
+        self.answer: Callable[[httpx.Request], httpx.Response | None] = lambda _request: None
+
+    def reads(self) -> int:
+        """Whole-queue reads so far."""
+        return self.seen.count(("GET", "/api/queue"))
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.seen.append((request.method, request.url.path))
+        if request.url.path == "/api/queue/start":
+            await self.released.wait()
+        answer = self.answer(request)
+        if answer is not None:
+            return answer
+        response = await self.inner.handle_async_request(request)
+        if (request.method, request.url.path) == ("POST", "/api/queue"):
+            await self.answers.wait()
+        return response
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
+async def watch_requests(remote: RemoteQueue) -> Requests:
+    requests = Requests()
+    plain = remote._http
+    remote._http = httpx.AsyncClient(
+        base_url=plain.base_url, headers=plain.headers, timeout=plain.timeout, transport=requests
+    )
+    await plain.aclose()
+    return requests
+
+
+@dataclass
+class Wire:
+    """The event messages between the socket and a ``RemoteQueue``'s reader: each one ``lag``
+    seconds late, without those that ``drop`` names, and ``first`` before all of them."""
+
+    lag: float = 0.0
+    drop: Callable[[dict[str, Any]], bool] = lambda _message: False
+    first: list[dict[str, Any] | str] = field(default_factory=list)
+    """Messages as objects, or as the text sent."""
+
+
+@pytest.fixture
+def wire(monkeypatch: pytest.MonkeyPatch) -> Wire:
+    found = Wire()
+    plain = ClientConnection.__aiter__
+
+    async def messages(self: ClientConnection) -> AsyncIterator[str | bytes]:
+        for message in found.first:
+            yield message if isinstance(message, str) else json.dumps(message)
+        async for raw in plain(self):
+            if found.lag:
+                await asyncio.sleep(found.lag)
+            if not found.drop(json.loads(raw)):
+                yield raw
+
+    monkeypatch.setattr(ClientConnection, "__aiter__", messages)
+    return found
+
+
+def event_message(event: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "event", "seq": 0, "event": event}

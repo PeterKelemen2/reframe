@@ -5,6 +5,7 @@ started owner is a fake process."""
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -24,10 +25,13 @@ from reframe.remote import owner as owner_module
 from reframe.remote.owner import (
     ENDPOINT_ENV,
     ENDPOINT_FILE,
+    SERVER_OPTIONS,
     START_LOCK,
     endpoint_path,
     owner_command,
+    owner_environment,
     read_endpoint,
+    server_log,
 )
 
 from .conftest import Server
@@ -93,7 +97,7 @@ async def test_the_server_that_the_endpoint_file_names_is_used(server: Server) -
     start = FakeStart()
     found = await search(server, start)
     assert isinstance(found, Owner)
-    assert (found.endpoint.port, found.started) == (server.live.port, False)
+    assert found.endpoint.port == server.live.port
     assert start.started == []
 
 
@@ -117,7 +121,6 @@ async def test_a_stale_file_and_a_free_lock_start_an_owner(unowned: Server) -> N
     start = FakeStart(lambda _: later(0.2, unowned.publish))
     found = await search(unowned, start)
     assert isinstance(found, Owner)
-    assert found.started
     assert start.started == [(COMMAND, unowned.data_dir, "linux")]
 
 
@@ -150,7 +153,6 @@ async def test_exit_75_means_another_owner_won_and_its_endpoint_is_used(unowned:
     finally:
         winner.release()
     assert isinstance(found, Owner)
-    assert not found.started
 
 
 async def test_a_started_owner_that_does_not_answer_in_time(
@@ -259,18 +261,26 @@ def test_a_frozen_cli_starts_the_frozen_server_next_to_it(tmp_path: Path) -> Non
     assert "--owner-only" in command
 
 
-@pytest.mark.parametrize("platform", ["linux", "win32"])
+@pytest.mark.parametrize(
+    ("platform", "breakaway"),
+    [("linux", True), ("win32", True), ("win32", False)],
+    ids=["linux", "win32", "win32 in a job without breakaway"],
+)
 def test_a_started_owner_is_detached_from_the_terminal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, breakaway: bool
 ) -> None:
-    """On Windows it also has no console: closing the terminal must not end it."""
+    """On Windows it also has no console: closing the terminal must not end it, also when it
+    has to start inside the terminal's job."""
     created: list[dict[str, Any]] = []
+    refusals = [] if breakaway else [PermissionError(5, "Access is denied")]
 
     class Process:
         pid = 4242
         returncode = None
 
         def __init__(self, argv: list[str], **kwargs: Any) -> None:
+            if refusals:
+                raise refusals.pop()
             created.append({"argv": argv, **kwargs})
 
         def wait(self) -> int:
@@ -331,12 +341,144 @@ async def test_a_data_folder_that_cannot_be_written(unowned: Server) -> None:
 
 
 def test_the_endpoint_file_follows_the_servers_setting(tmp_path: Path) -> None:
+    """The server's own test reads the same values: a client that looks elsewhere waits for a
+    file that its owner never writes, and the owner keeps the lock."""
     assert endpoint_path(tmp_path, {}) == tmp_path / ENDPOINT_FILE
+    assert endpoint_path(tmp_path, {ENDPOINT_ENV: "  "}) == tmp_path / ENDPOINT_FILE
     elsewhere = tmp_path / "elsewhere.json"
-    assert endpoint_path(tmp_path, {ENDPOINT_ENV: str(elsewhere)}) == elsewhere
+    assert endpoint_path(tmp_path, {ENDPOINT_ENV: f" {elsewhere} "}) == elsewhere
 
 
 def test_the_client_speaks_the_api_version_of_the_server_of_its_own_version() -> None:
     from reframe_server.api import API_VERSION as SERVER_API
 
     assert API_VERSION == SERVER_API
+
+
+async def test_the_health_check_does_not_send_the_token(server: Server) -> None:
+    """``server.json`` may be stale and its port another program's: that program must not
+    get the token."""
+    requests: list[bytes] = []
+
+    async def answer(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        requests.append(await reader.readuntil(b"\r\n\r\n"))
+        writer.write(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n")
+        await writer.drain()
+        writer.close()
+
+    other_program = await asyncio.start_server(answer, "127.0.0.1", 0)
+    async with other_program:
+        write_endpoint(server, port=other_program.sockets[0].getsockname()[1])
+        found = await search(server, FakeStart(), start=False)
+    assert found == NoOwner("no Reframe server answers for this data folder")
+    [request] = requests
+    assert server.api.token.encode() not in request
+
+
+async def test_a_search_frees_the_start_lock(unowned: Server) -> None:
+    """Held on, it makes every later client wait for an owner that this one started."""
+    found = await search(unowned, FakeStart(lambda _: later(0.1, unowned.publish)))
+    assert isinstance(found, Owner)
+    other_client = StoreLock(unowned.data_dir / START_LOCK)
+    assert other_client.acquire().owned
+    other_client.release()
+
+
+async def test_an_owner_whose_token_cannot_be_sent_is_not_used(server: Server) -> None:
+    """``REFRAME_TOKEN`` with a space at its end: every request fails with a message that
+    shows the token."""
+    write_endpoint(server, token="SECRET-TOKEN-xyz ")
+    found = await search(server, FakeStart(), start=False)
+    assert isinstance(found, NoOwner)
+    assert "cannot be sent in an HTTP header" in found.reason
+    assert "SECRET" not in found.reason
+
+
+def detached(*args: Any, **kwargs: Any) -> int:
+    """``launch_detached`` itself: the test guard refuses only the default launcher."""
+    return launch_detached(*args, **kwargs)
+
+
+@pytest.mark.parametrize("log_before", ["", "an earlier run's long log\n"], ids=["new", "full"])
+async def test_a_started_owner_that_fails_points_to_its_messages(
+    unowned: Server, monkeypatch: pytest.MonkeyPatch, log_before: str
+) -> None:
+    """The client points to the messages that say why its owner failed. ``REFRAME_AUTH`` of
+    the shell, which made a started owner exit 2, does not reach the owner. A log that grew
+    past its limit is emptied first, or the data folder fills up over the months."""
+    monkeypatch.setenv("REFRAME_AUTH", "password")
+    monkeypatch.setattr(owner_module, "SERVER_LOG_LIMIT", 10)
+    log = server_log(unowned.data_dir)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(log_before, encoding="utf-8")
+    script = (
+        "import os, sys; "
+        "sys.stderr.write(f'auth: {os.environ.get(\"REFRAME_AUTH\")}\\n'); "
+        "sys.exit(2)"
+    )
+    found = await find_owner(
+        unowned.data_dir,
+        command=lambda: [sys.executable, "-c", script],
+        launch=functools.partial(owner_module._start, launcher=detached),
+    )
+    assert found == NoOwner(
+        f"the Reframe server started for this command exited with code 2 (see {log})"
+    )
+    assert log.read_text(encoding="utf-8") == "auth: None\n"
+
+
+def test_a_log_that_cannot_be_opened_does_not_stop_the_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "logs").write_text("a file where the folder should be", encoding="utf-8")
+    created: list[dict[str, Any]] = []
+
+    class Process:
+        pid = 4242
+        returncode = None
+
+        def __init__(self, argv: list[str], **kwargs: Any) -> None:
+            created.append(kwargs)
+
+        def wait(self) -> int:
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", Process)
+    with caplog.at_level(logging.WARNING, logger=owner_module.__name__):
+        owner_module._start(["reframe-server"], tmp_path, "linux", launcher=detached)
+    [options] = created
+    assert options["stderr"] == subprocess.DEVNULL
+    assert "the Reframe server's messages cannot be written" in caplog.text
+
+
+def test_a_started_owner_has_the_clients_folders_as_absolute_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It runs in the data folder: a relative ``REFRAME_DATA_DIR`` would name a folder inside it,
+    and the client would wait for a ``server.json`` that its owner writes there."""
+    monkeypatch.chdir(tmp_path)
+    environ = {
+        "PATH": "/usr/bin",
+        "REFRAME_DATA_DIR": "data",
+        "REFRAME_CONFIG_DIR": "config",
+        "REFRAME_CACHE_DIR": "cache",
+        "REFRAME_ENDPOINT_FILE": "elsewhere.json",
+        "REFRAME_FFMPEG": "/opt/ffmpeg/bin/ffmpeg",
+        "reframe_token": "SECRET-TOKEN-xyz ",  # the server reads names in any case
+    }
+    assert owner_environment(Path("data"), environ) == {
+        "PATH": "/usr/bin",
+        "REFRAME_DATA_DIR": str(tmp_path / "data"),
+        "REFRAME_CONFIG_DIR": str(tmp_path / "config"),
+        "REFRAME_CACHE_DIR": str(tmp_path / "cache"),
+        "REFRAME_ENDPOINT_FILE": str(tmp_path / "elsewhere.json"),
+        "REFRAME_FFMPEG": "/opt/ffmpeg/bin/ffmpeg",
+    }
+
+
+def test_a_started_owner_leaves_out_every_option_of_the_server() -> None:
+    """A server option added later would reach the owners that clients start."""
+    from reframe_server.config import ServerConfig
+
+    kept = {"CONFIG_DIR", "DATA_DIR", "ENDPOINT_FILE"}
+    assert {name.upper() for name in ServerConfig.model_fields} - kept == SERVER_OPTIONS

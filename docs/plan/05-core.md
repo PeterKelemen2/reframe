@@ -684,9 +684,11 @@ or the fake FFmpeg):
 Built as [decision 0061](../decisions/0061-c17-remote-queue-and-queue-commands.md) records.
 The owner is started in desktop mode (the web mode with no roots refuses every path); clients
 that search at the same time start one owner (`<data>/server-start.lock`); a started owner's
-exit code 75 means another one won. `RemoteQueue` keeps a copy of the queue that only the
-event stream changes, and a call returns once the copy shows its change; when the connection
-ends, its running jobs are reported `interrupted`. A client drafts here and the owner
+exit code 75 means another one won. `RemoteQueue` keeps a copy of the queue that the event
+stream changes in order (an add's answer and a whole-queue read add what events do not carry),
+and a call returns once the copy shows its change; a `start` that the owner refuses is raised
+by the next awaited call; when the connection ends, its running jobs are reported
+`interrupted`. A client drafts here and the owner
 validates; the facade starts encoder detection only for an in-process run. Ctrl+C cancels the
 command's own jobs and no longer stops the queue. `--in-process` is also
 `REFRAME_IN_PROCESS=1`; `--detach` needs an owner. `reframe queue retry` also starts the job.

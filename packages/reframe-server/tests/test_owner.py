@@ -303,6 +303,22 @@ async def test_the_log_says_why_a_server_does_not_own_the_queue(
     assert not_said not in record.getMessage()
 
 
+@pytest.mark.parametrize("value", ["", "  ", " {elsewhere} "], ids=["empty", "blank", "padded"])
+async def test_the_endpoint_file_setting_is_read_as_the_client_reads_it(
+    make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """A client looks where ``reframe.remote.owner.endpoint_path`` says: an owner that writes
+    elsewhere is never found, and it keeps the queue's lock."""
+    from reframe.remote.owner import endpoint_path
+
+    elsewhere = tmp_path / "elsewhere.json"
+    monkeypatch.setenv("REFRAME_ENDPOINT_FILE", value.format(elsewhere=elsewhere))
+    async with make_api(mode="desktop") as api:
+        written = owner.publish(api.app, 8000)
+    assert written == endpoint_path(tmp_path / "data")
+    assert written == (elsewhere if "elsewhere" in value else tmp_path / "data" / "server.json")
+
+
 async def test_an_endpoint_file_that_cannot_be_written_is_logged_and_the_server_runs_on(
     make_api: ApiFactory, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

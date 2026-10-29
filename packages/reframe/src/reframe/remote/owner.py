@@ -6,20 +6,24 @@ is the owner."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import functools
 import importlib.util
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 
 import httpx
 from pydantic import ValidationError
 
+from reframe import paths
 from reframe.models.queue import ServerEndpoint
 from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached
 from reframe.queue.lock import LOCK_FILE, StoreLock
@@ -31,6 +35,7 @@ __all__ = [
     "EXIT_STORE_BUSY",
     "HELD_WAIT",
     "IDLE_EXIT",
+    "SERVER_OPTIONS",
     "START_LOCK",
     "START_WAIT",
     "NoOwner",
@@ -39,7 +44,10 @@ __all__ = [
     "endpoint_path",
     "find_owner",
     "owner_command",
+    "owner_environment",
     "read_endpoint",
+    "server_log",
+    "usable_token",
 ]
 
 log = logging.getLogger(__name__)
@@ -60,8 +68,32 @@ IDLE_EXIT = 30
 """Seconds a started owner stays without a running job or a connected client."""
 EXIT_STORE_BUSY = 75
 """``--owner-only``'s exit code when another process holds the lock."""
+SERVER_OPTIONS = frozenset(
+    {
+        "ALLOWED_HOSTS",
+        "AUTH",
+        "CORS_ORIGINS",
+        "HOST",
+        "IDLE_EXIT",
+        "MEDIA_ROOTS",
+        "MODE",
+        "OUTPUT_ROOTS",
+        "OWNER_ONLY",
+        "PARENT_PID",
+        "PORT",
+        "STATIC_DIR",
+        "TOKEN",
+    }
+)
+"""The server's ``REFRAME_<name>`` options that a started owner does not take from the client's
+environment: they configure a server that the user runs, not one that a command starts."""
+SERVER_LOG_LIMIT = 1 << 20
+"""Bytes of :func:`server_log` above which a start empties it."""
 HEALTH_TIMEOUT = 2.0
 POLL = 0.05
+
+# A header value that httpx and h11 send: visible ASCII, with spaces only inside.
+_HEADER_SAFE = re.compile(r"[\x21-\x7e]+(?: +[\x21-\x7e]+)*")
 
 
 @dataclass(frozen=True)
@@ -70,8 +102,6 @@ class Owner:
 
     endpoint: ServerEndpoint
     version: str
-    started: bool = False
-    """This client started it."""
 
     @property
     def url(self) -> str:
@@ -86,9 +116,42 @@ class NoOwner:
 
 
 def endpoint_path(data_dir: Path, environ: Mapping[str, str] | None = None) -> Path:
-    """The endpoint file the server of ``data_dir`` writes (the same rule as the server)."""
+    """The endpoint file the server of ``data_dir`` writes. The server reads
+    ``REFRAME_ENDPOINT_FILE`` by the same rule: blanks around it are cut, and a blank value is
+    not set."""
     value = (os.environ if environ is None else environ).get(ENDPOINT_ENV, "").strip()
     return Path(value) if value else data_dir / ENDPOINT_FILE
+
+
+def server_log(data_dir: Path) -> Path:
+    """Where a started owner writes its messages (its stderr)."""
+    return data_dir / "logs" / "server.log"
+
+
+def usable_token(token: str) -> bool:
+    """``token`` can be sent as ``Authorization: Bearer <token>``."""
+    return _HEADER_SAFE.fullmatch(token) is not None
+
+
+def owner_environment(data_dir: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment of an owner that a client starts: the client's, without the server's own
+    options (:data:`SERVER_OPTIONS`), and with the client's folders and endpoint file as
+    absolute paths, because the owner runs in another working folder."""
+    environ = os.environ if environ is None else environ
+    env = {
+        name: value
+        for name, value in environ.items()
+        if not (
+            name.upper().startswith("REFRAME_")
+            and name.upper().removeprefix("REFRAME_") in SERVER_OPTIONS
+        )
+    }
+    env[paths.DATA_DIR_ENV] = str(data_dir.absolute())
+    env[paths.CONFIG_DIR_ENV] = str(paths.config_dir(environ))
+    env[paths.CACHE_DIR_ENV] = str(paths.cache_dir(environ))
+    if environ.get(ENDPOINT_ENV, "").strip():
+        env[ENDPOINT_ENV] = str(endpoint_path(data_dir, environ).absolute())
+    return env
 
 
 def read_endpoint(path: Path) -> ServerEndpoint | None:
@@ -150,26 +213,46 @@ Launch = Callable[[Sequence[str], Path, str], Started]
 """Starts the owner command in the data folder on a platform (``sys.platform``)."""
 
 
+def _open_log(path: Path) -> BinaryIO | None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        size = path.stat().st_size if path.exists() else 0
+        return path.open("wb" if size > SERVER_LOG_LIMIT else "ab")
+    except OSError as exc:
+        log.warning("the Reframe server's messages cannot be written to %s: %s", path, exc)
+        return None
+
+
 def _start(
     argv: Sequence[str],
     data_dir: Path,
     platform: str,
     *,
+    environ: Mapping[str, str] | None = None,
     launcher: Callable[..., int] = launch_detached,
 ) -> subprocess.Popen[bytes]:
-    """Start ``argv`` detached from this process (it must outlive the command); the handle is
-    only read for the exit code, which ``launch_detached``'s reaper thread sets."""
+    """Start ``argv`` detached from this process (it must outlive the command), with
+    :func:`owner_environment` and its stderr in :func:`server_log`. The handle is only read for
+    the exit code, which ``launch_detached``'s reaper thread sets."""
     started: list[subprocess.Popen[bytes]] = []
+    env = owner_environment(data_dir, environ)
+    stderr = _open_log(server_log(data_dir))
 
     def popen(args: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
         if platform == "win32":
             # Not tied to the terminal's console: closing it must not end the owner.
             kwargs["creationflags"] = kwargs.get("creationflags", 0) | CREATE_NO_WINDOW
-        process = subprocess.Popen(args, **kwargs)
+        if stderr is not None:
+            kwargs["stderr"] = stderr
+        process = subprocess.Popen(args, env=env, **kwargs)
         started.append(process)
         return process
 
-    launcher(list(argv), cwd=str(data_dir), platform=platform, popen=popen)
+    try:
+        launcher(list(argv), cwd=str(data_dir), platform=platform, popen=popen)
+    finally:
+        if stderr is not None:
+            stderr.close()  # the owner has its own handle
     return started[-1]
 
 
@@ -194,6 +277,7 @@ class OwnerSearch:
         self.endpoint_file = endpoint_path(data_dir, environ)
         self.launched: Started | None = None
         self._start_lock = StoreLock(data_dir / START_LOCK)
+        self._log_size = 0
 
     async def run(self) -> Owner | NoOwner:
         loop = asyncio.get_running_loop()
@@ -221,7 +305,7 @@ class OwnerSearch:
                         if code != EXIT_STORE_BUSY:
                             return NoOwner(
                                 f"the Reframe server started for this command exited with code "
-                                f"{code}"
+                                f"{code}{self._messages()}"
                             )
                         # Another process took the lock first: its endpoint comes, or it is
                         # an owner without one.
@@ -251,6 +335,8 @@ class OwnerSearch:
                             return NoOwner(
                                 "the reframe-server package is not installed with this reframe"
                             )
+                        size = _size(server_log(self.data_dir))
+                        self._log_size = size if size <= SERVER_LOG_LIMIT else 0  # emptied
                         try:
                             self.launched = self.launch(self.command, self.data_dir, self.platform)
                         except OSError as exc:
@@ -287,7 +373,17 @@ class OwnerSearch:
                 f"Reframe {version} (pid {endpoint.pid}) owns the queue, and it speaks API "
                 f"version {health.get('api_version')}, not {API_VERSION} as this reframe does"
             )
-        return Owner(endpoint, version, started=self.launched is not None)
+        if not usable_token(endpoint.token):
+            return NoOwner(
+                f"Reframe {version} (pid {endpoint.pid}) owns the queue, and the token in "
+                f"{self.endpoint_file} cannot be sent in an HTTP header"
+            )
+        return Owner(endpoint, version)
+
+    def _messages(self) -> str:
+        """Where the started owner's messages are, if it wrote any."""
+        path = server_log(self.data_dir)
+        return f" (see {path})" if _size(path) > self._log_size else ""
 
     def _lock_holder(self) -> int | NoOwner | None:
         """``None`` when ``queue.lock`` is free; else the holder's pid (0: unknown)."""
@@ -302,6 +398,12 @@ class OwnerSearch:
         return result.owner or 0
 
 
+def _size(path: Path) -> int:
+    with contextlib.suppress(OSError):
+        return path.stat().st_size
+    return 0
+
+
 async def find_owner(
     data_dir: Path,
     *,
@@ -313,15 +415,16 @@ async def find_owner(
 ) -> Owner | NoOwner:
     """The owner of ``data_dir``'s queue: the server that ``server.json`` names, if it answers
     with its ``instance`` and this client's ``api_version``. Else, with ``start``, a server
-    started with ``command()`` (default :func:`owner_command`) while ``queue.lock`` is free; its
-    exit code 75 means another owner won. Waits at most :data:`START_WAIT` for a started owner
+    started with ``command()`` (default :func:`owner_command`) while ``queue.lock`` is free (by
+    default with :func:`owner_environment`, its messages in :func:`server_log`); its exit code
+    75 means another owner won. Waits at most :data:`START_WAIT` for a started owner
     and :data:`HELD_WAIT` while another process holds the lock without an endpoint. Without
     ``start`` neither ``queue.lock`` nor anything else is touched. Never raises."""
     search = OwnerSearch(
         data_dir,
         start=start,
         command=(owner_command if command is None else command)(),
-        launch=_start if launch is None else launch,
+        launch=functools.partial(_start, environ=environ) if launch is None else launch,
         platform=sys.platform if platform is None else platform,
         environ=environ,
     )
