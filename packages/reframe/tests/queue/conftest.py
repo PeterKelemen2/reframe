@@ -346,6 +346,31 @@ def store_rows(h: Harness, *jobs: QueueJob) -> None:
     db.close()
 
 
+async def store_together(h: Harness, *jobs: JobSettings) -> list[str]:
+    """``jobs`` waiting in the saved queue, in this order, without the output claims of ``add``
+    (a store saved by an older Reframe). ``h.queue`` is closed."""
+    ids = [(await h.queue.add(h.job(f"Placeholder {index}"))).id for index in range(len(jobs))]
+    await h.queue.close()
+    rows = []
+    for job_id, job in zip(ids, jobs, strict=True):
+        stored = h.queue.get(job_id)
+        assert stored is not None
+        stored.settings = job
+        rows.append(stored)
+    store_rows(h, *rows)
+    return ids
+
+
+async def restore_together(h: Harness, *jobs: JobSettings) -> list[str]:
+    """:func:`store_together`, then ``h.queue`` becomes the restored queue."""
+    ids = await store_together(h, *jobs)
+    h.queue = queue_at(h)
+    h.queue.list()
+    # Restored keys are taken in the background: the first to arrive would start first.
+    await poll(lambda: all(job_id in h.queue._keys for job_id in ids))
+    return ids
+
+
 @pytest.fixture
 async def harness(tmp_path: Path, fake_tools: ft.FakeTools) -> AsyncIterator[Harness]:
     source_path = tmp_path / "media" / "Movie.Source.mkv"

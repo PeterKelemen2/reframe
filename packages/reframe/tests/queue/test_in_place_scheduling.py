@@ -17,7 +17,7 @@ from reframe.queue.runner import ActiveJob
 from reframe.queue.service import _conflicts, _output_key, _source_key
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, all_caps, encode_rule, tool_set
+from .conftest import Harness, all_caps, encode_rule, restore_together, tool_set
 
 pytestmark = pytest.mark.anyio
 
@@ -74,16 +74,14 @@ async def test_an_in_place_edit_waits_for_an_encode_of_its_source(harness: Harne
     h.settings.queue.parallel_jobs = 2
     h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     h.scenario(encode_rule(ft.progress(blocks=1, end=False), ft.hang()))
-    encode = await h.queue.add(h.job("Encode"))
-    edit = await h.queue.add(in_place_job(h))
-    assert edit.state is JobState.WAITING, edit.issues
+    encode, edit = await restore_together(h, h.job("Encode"), in_place_job(h))
     h.queue.start()
-    await h.running_process(encode.id)
+    await h.running_process(encode)
     await asyncio.sleep(0.3)  # a free slot, but the edit must not start
-    assert h.queue.get(edit.id).state is JobState.WAITING  # type: ignore[union-attr]
-    await h.queue.cancel(encode.id)
-    await h.queue.wait([encode.id, edit.id])
-    assert ended_before_started(h, encode.id, edit.id)
+    assert h.queue.get(edit).state is JobState.WAITING  # type: ignore[union-attr]
+    await h.queue.cancel(encode)
+    await h.queue.wait([encode, edit])
+    assert ended_before_started(h, encode, edit)
     assert h.source_path.exists()
     assert h.leftovers() == []
 
@@ -104,11 +102,10 @@ async def test_two_in_place_edits_of_one_file_run_one_after_the_other(harness: H
     h = harness
     h.settings.queue.parallel_jobs = 2
     h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
-    first = await h.queue.add(in_place_job(h, "One"))
-    second = await h.queue.add(in_place_job(h, "Two"))
+    first, second = await restore_together(h, in_place_job(h, "One"), in_place_job(h, "Two"))
     h.queue.start()
-    await h.queue.wait([first.id, second.id])
-    assert ended_before_started(h, first.id, second.id)
+    await h.queue.wait([first, second])
+    assert ended_before_started(h, first, second)
 
 
 async def test_restored_in_place_jobs_have_nothing_to_clean_up(

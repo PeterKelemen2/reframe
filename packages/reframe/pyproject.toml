@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cli = ["typer>=0.27.3"]
+cli = ["httpx>=0.28.1", "typer>=0.27.3", "websockets>=17.3"]
 mediainfo = ["pymediainfo>=7.0.1"]
 
 [project.scripts]

@@ -7,12 +7,14 @@ A command's error is one ``error:`` line on stderr, never a traceback;
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import difflib
 import io
 import json
 import logging
 import os
+import signal
 import stat
 import sys
 import tempfile
@@ -21,15 +23,17 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Itera
 from contextlib import asynccontextmanager
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Protocol
 
+import psutil
 from pydantic import BaseModel
 
-from reframe import __version__, languages
+from reframe import __version__, languages, paths
 from reframe.batch.grouping import episode_labels
 from reframe.batch.report import ROW_ASCII, ROW_MARKS, matrix_lines
-from reframe.events import Subscription
-from reframe.jobs import OutputClaims, find_media_files, has_errors
+from reframe.batch.service import BatchService
+from reframe.events import EventBus, Subscription
+from reframe.jobs import OutputClaims, draft_from_preset, find_media_files, has_errors
 from reframe.mediatask import TaskFailed
 from reframe.models.batch import BatchGroup, BatchResolution, MatchLevel
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
@@ -40,6 +44,7 @@ from reframe.models.events import (
     JobProgressEvent,
     JobStateEvent,
     PowerCountdownEvent,
+    QueueChangedEvent,
     ResyncEvent,
     TaskDoneEvent,
     TaskProgressEvent,
@@ -61,7 +66,7 @@ from reframe.models.media import (
     TrackRoleInfo,
     VideoStream,
 )
-from reframe.models.naming import NameResult
+from reframe.models.naming import NameResult, NamingOptions
 from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
 from reframe.models.queue import JobProgress, JobState, QueueJob
@@ -69,6 +74,16 @@ from reframe.models.tasks import TaskInfo, TaskState
 from reframe.models.text import json_text
 from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
 from reframe.presets import ConflictPolicy, ImportResult
+from reframe.queue import (
+    ENDED,
+    JobStateError,
+    QueueError,
+    QueueLike,
+    UnknownJobError,
+    read_saved_queue,
+)
+from reframe.queue.lock import LOCK_FILE
+from reframe.queue.logs import log_file
 from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import (
@@ -80,6 +95,9 @@ from reframe.tools.fetch import (
     installed_build,
     load_manifest,
 )
+
+if TYPE_CHECKING:
+    from reframe.remote import RemoteQueue
 
 try:  # the [cli] extra; main() says so when it is missing
     import typer
@@ -114,6 +132,13 @@ else:
             "or an existing folder for the template name. Only with a single file.",
         ),
     ]
+    #: The job arguments of ``reframe queue``.
+    _JobRefs = Annotated[
+        list[str] | None,
+        typer.Argument(help="Job ids, or the start of each.", metavar="[ID…]", show_default=False),
+    ]
+    _JobRef = Annotated[str, typer.Argument(help="A job id, or its start.", metavar="ID")]
+    _All = Annotated[bool, typer.Option("--all", help="Every job (instead of IDs).")]
 
 __all__ = [
     "EXIT_FAILED",
@@ -825,10 +850,17 @@ class WarningPrinter:
 
 
 @asynccontextmanager
-async def open_reframe() -> AsyncIterator[Reframe]:
+async def open_reframe(*, detect: bool = True) -> AsyncIterator[Reframe]:
     """``Reframe.create()`` for a command, with its warnings printed (:class:`WarningPrinter`)
-    also those published while it closes."""
-    app = await Reframe.create()
+    also those published while it closes. ``detect=False``: encoder detection does not start
+    (the command starts it, or uses the queue owner's)."""
+    if detect:
+        app = await Reframe.create()
+    else:
+        app = Reframe(
+            config_dir=paths.config_dir(), data_dir=paths.data_dir(), cache_dir=paths.cache_dir()
+        )
+        app.tools.start()
     printer = WarningPrinter(app)
     try:
         yield app
@@ -1184,29 +1216,289 @@ async def _probe_failed(app: Reframe, error: ProbeError) -> int:
     return _EXIT_BY_KIND.get(error.kind, EXIT_PROBE_FAILED)
 
 
-class QueueLike(Protocol):
-    """The part of ``QueueService`` (``reframe.queue``) that ``reframe encode`` uses; the
-    tests give it a fake with the same contract."""
-
-    async def add(self, job: JobSettings, *, position: int | None = None) -> QueueJob: ...
-
-    def get(self, job_id: str) -> QueueJob | None: ...
-
-    def start(self, *, job_ids: Sequence[str] | None = None) -> None: ...
-
-    async def stop(self) -> None: ...
-
-    async def cancel(self, job_id: str | None = None) -> None: ...
-
-    async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]: ...
-
-    def log_path(self, job_id: str) -> Path: ...
-
-
 def get_queue(app: Reframe) -> QueueLike:
-    """The queue of ``app`` (``Reframe.queue``): the one place where the CLI gets it.
-    Tests of the CLI's own logic replace it with a fake that follows the same contract."""
+    """The in-process queue of ``app`` (``Reframe.queue``): the one place where the CLI gets
+    it. Tests of the CLI's own logic replace it with a fake that follows the same contract."""
     return app.queue
+
+
+#: Set to ``1`` to run the jobs of ``encode`` and ``batch`` in the command's own process, as
+#: ``--in-process`` does.
+IN_PROCESS_ENV = "REFRAME_IN_PROCESS"
+#: How often a command looks for the queue's owner when the one it found was stopping.
+OWNER_ATTEMPTS = 3
+
+
+def in_process_default() -> bool:
+    """:data:`IN_PROCESS_ENV` read as the command line reads ``--in-process`` from it (``1``,
+    ``true``, ``yes``, ``on``…; empty is false). Raises ``click.BadParameter`` for another
+    value."""
+    import click
+
+    return bool(click.BOOL.convert(os.environ.get(IN_PROCESS_ENV, ""), None, None))
+
+
+def _in_process(given: bool | None) -> bool | None:
+    """``given``, else :func:`in_process_default`; ``None`` (after an error line) when the
+    variable holds no truth value."""
+    if given is not None:
+        return given
+    import click
+
+    try:
+        return in_process_default()
+    except click.BadParameter as exc:
+        _error(f"{IN_PROCESS_ENV}: {exc.message}")
+        return None
+
+
+class _Drafts(Protocol):
+    async def draft(
+        self,
+        source: str | os.PathLike[str] | MediaSource,
+        preset: Preset | str | None = None,
+        *,
+        output: Path | None = None,
+    ) -> JobDraft | ProbeError: ...
+
+
+class PowerLike(Protocol):
+    """The when-done countdown that ``reframe encode`` follows: the in-process
+    ``PowerService`` or the queue owner's."""
+
+    @property
+    def pending(self) -> PowerCountdownEvent | None: ...
+
+    async def cancel(self, countdown_id: str | None = None) -> bool: ...
+
+
+class _LocalPower:
+    def __init__(self, app: Reframe) -> None:
+        self._app = app
+
+    @property
+    def pending(self) -> PowerCountdownEvent | None:
+        return self._app.power.pending
+
+    async def cancel(self, countdown_id: str | None = None) -> bool:
+        return self._app.power.cancel(countdown_id)
+
+
+class OwnerJobs:
+    """Jobs drafted and named in this process, as ``Reframe.jobs`` drafts them, and validated
+    by the queue's owner: its tools and encoder statuses decide, and no encoder detection runs
+    here next to the owner's encodes."""
+
+    def __init__(
+        self, app: Reframe, validate: Callable[[JobSettings], Awaitable[list[ValidationIssue]]]
+    ) -> None:
+        self._app = app
+        self._validate = validate
+
+    async def draft(
+        self,
+        source: str | os.PathLike[str] | MediaSource,
+        preset: Preset | str | None = None,
+        *,
+        output: Path | None = None,
+    ) -> JobDraft | ProbeError:
+        app = self._app
+        media = source if isinstance(source, MediaSource) else await app.sources.probe(source)
+        if isinstance(media, ProbeError):
+            return media
+        chosen = preset if isinstance(preset, Preset) else find_preset(app, preset)
+        if isinstance(chosen, str):
+            raise ValueError(chosen)
+        settings = app.settings_snapshot()
+        naming = chosen.naming if chosen.naming is not None else settings.output.naming
+        job, tracks, notes = await asyncio.to_thread(
+            draft_from_preset,
+            media,
+            chosen,
+            definitions=app.jobs.definitions,
+            languages=settings.languages,
+            container_codecs=False,
+        )
+        job, name, more = await app.jobs.name_job(job, media, naming=naming, output=output)
+        track_issues = [
+            i for i in tracks.issues if i.severity is Severity.ERROR or i.code.startswith("batch.")
+        ]
+        return JobDraft(
+            job=job,
+            decisions=tracks.decisions,
+            subtitle_decisions=tracks.subtitle_decisions,
+            naming=name,
+            issues=[*track_issues, *await self._validate(job)],
+            notes=[*notes, *more],
+        )
+
+    async def name_job(
+        self,
+        job: JobSettings,
+        source: MediaSource,
+        *,
+        naming: NamingOptions | None = None,
+        output: Path | None = None,
+    ) -> tuple[JobSettings, NameResult, list[str]]:
+        return await self._app.jobs.name_job(job, source, naming=naming, output=output)
+
+    async def validate(
+        self,
+        job: JobSettings,
+        source: MediaSource | None = None,
+        *,
+        naming: NamingOptions | None = None,
+    ) -> list[ValidationIssue]:
+        return await self._validate(job)
+
+
+@dataclasses.dataclass
+class QueueSession:
+    """Where a command's jobs go: the in-process queue, or the owner's (``remote``), with the
+    events, the countdown and the drafting that belong to it."""
+
+    queue: QueueLike
+    events: EventBus
+    power: PowerLike
+    jobs: _Drafts
+    batch: BatchService
+    settings: Callable[[], Awaitable[str]]
+    """The when-done setting that applies to the jobs."""
+    remote: RemoteQueue | None = None
+    reconnect: Callable[[], Awaitable[RemoteQueue | str]] | None = None
+    """A new connection to the owner (none is started), or why there is none."""
+    data_dir: Path | None = None
+    detached: bool = False
+    """The command handed its jobs over (``--detach`` reached its end): its connection ends
+    with the ``detach`` message."""
+    unreachable: str | None = None
+    """Why the owner could not be reached again after the command was stopped."""
+
+    @property
+    def lost(self) -> str | None:
+        """Why the connection to the owner ended while the command ran."""
+        if self.unreachable is not None:
+            return self.unreachable
+        return None if self.remote is None else self.remote.lost
+
+    def use(self, remote: RemoteQueue) -> None:
+        """Go on through a new connection to the owner."""
+        self.remote = self.queue = remote
+        self.events = remote.events
+        self.power = remote.power
+        self.settings = remote.when_done
+
+
+class _CommandEnds(Exception):
+    def __init__(self, code: int) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+async def connect_owner(
+    data_dir: Path, *, config_dir: Path, cache_dir: Path, start: bool = True
+) -> RemoteQueue | str:
+    """The queue of the owner of ``data_dir`` (started for this command when none runs and
+    ``start``), or why none can be used."""
+    from reframe.remote import NoOwner, OwnerStopping, RemoteError, RemoteQueue, find_owner
+
+    reason = "no Reframe server answered"
+    for _ in range(OWNER_ATTEMPTS):
+        found = await find_owner(data_dir, start=start)
+        if isinstance(found, NoOwner):
+            return found.reason
+        try:
+            return await RemoteQueue.connect(
+                found, data_dir=data_dir, config_dir=config_dir, cache_dir=cache_dir
+            )
+        except OwnerStopping as exc:
+            reason = str(exc)
+        except RemoteError as exc:
+            reason = str(exc)
+            if exc.code != "connection.failed":  # a server that stopped after its health check
+                break
+    return reason
+
+
+@asynccontextmanager
+async def open_queue(
+    app: Reframe, console: Console, *, in_process: bool, detach: bool = False
+) -> AsyncIterator[QueueSession]:
+    """The queue of ``encode`` and ``batch``: the owner's, else the in-process queue with a
+    warning that says why (with ``detach`` there is no else: the command ends with 1)."""
+    remote: RemoteQueue | None = None
+    if not in_process:
+        found = await connect_owner(
+            app.data_dir, config_dir=app.config_dir, cache_dir=app.cache_dir
+        )
+        if isinstance(found, str):
+            if detach:
+                _error(f"--detach needs the Reframe server that owns the queue: {found}.")
+                raise _CommandEnds(EXIT_FAILED)
+            print(
+                _one_line(
+                    f"warning: no Reframe server can take the jobs ({found}): they run in this "
+                    "process."
+                ),
+                file=sys.stderr,
+            )
+        else:
+            remote = found
+    if remote is None:
+        app.capabilities.start()
+        queue = get_queue(app)
+
+        async def when_done() -> str:
+            return app.settings_snapshot().queue.when_done
+
+        yield QueueSession(
+            queue=queue,
+            events=app.events,
+            power=_LocalPower(app),
+            jobs=app.jobs,
+            batch=app.batch,
+            settings=when_done,
+        )
+        return
+    endpoint = remote.owner.endpoint
+    console.print(
+        Text(
+            printable(
+                f"Queue: Reframe {remote.owner.version} (pid {endpoint.pid}), shared with the "
+                "other Reframe programs of this data folder."
+            ),
+            style="dim",
+        ),
+        soft_wrap=True,
+    )
+    jobs = OwnerJobs(app, remote.validate)
+    batch = BatchService(
+        sources=app.sources, presets=app.presets, jobs=jobs, settings=app.settings_snapshot
+    )
+
+    def reconnect() -> Awaitable[RemoteQueue | str]:
+        return connect_owner(
+            app.data_dir, config_dir=app.config_dir, cache_dir=app.cache_dir, start=False
+        )
+
+    session = QueueSession(
+        queue=remote,
+        events=remote.events,
+        power=remote.power,
+        jobs=jobs,
+        batch=batch,
+        settings=remote.when_done,
+        remote=remote,
+        reconnect=reconnect,
+        data_dir=app.data_dir,
+    )
+    try:
+        yield session
+    finally:
+        # Without "detach" the owner cancels the jobs that are still attached: so does any end
+        # before --detach handed them over (Ctrl+C while they are added, an error).
+        assert session.remote is not None
+        await session.remote.close(detach=session.detached)
 
 
 #: States after which a job does not change by itself.
@@ -1306,6 +1598,11 @@ class EncodeView:
         elif state is JobState.PAUSED:
             self.line(f"{label} paused", "yellow")
 
+    def removed(self, job_id: str) -> None:
+        """Another front end took the job out of the queue."""
+        self._remove_bar(job_id)
+        self.line(f"{self.labels[job_id]} removed", "yellow")
+
     def progress(self, job_id: str, progress: JobProgress) -> None:
         label = self.labels.get(job_id)
         if label is None:
@@ -1340,6 +1637,15 @@ class EncodeView:
         if task is not None and self._progress is not None:
             self._progress.remove_task(task)
 
+    def suspend(self) -> None:
+        """Take the bars off the terminal while the process is stopped."""
+        if self._progress is not None:
+            self._progress.stop()
+
+    def resume(self) -> None:
+        if self._progress is not None:
+            self._progress.start()
+
     def close(self) -> None:
         if self._progress is not None:
             self._progress.stop()
@@ -1352,11 +1658,20 @@ async def run_encode(
     preset: str | None,
     output: Path | None,
     recursive: bool = False,
+    detach: bool = False,
+    in_process: bool | None = None,
 ) -> int:
     """``reframe encode``: one job per media file, queued, run, followed. Returns the exit
-    code; Ctrl+C (the task is cancelled) cancels the jobs and returns 130."""
+    code; Ctrl+C (the task is cancelled) cancels the jobs and returns 130. ``detach``: the
+    jobs are queued and started in the owner, and the command ends."""
+    in_process = _in_process(in_process)
+    if in_process is None:
+        return EXIT_USAGE
+    if detach and in_process:
+        _error("--detach needs the Reframe server: it cannot be used with --in-process.")
+        return EXIT_USAGE
     console = make_console()
-    async with open_reframe() as app:
+    async with open_reframe(detect=False) as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
             _error(f"{display_path(missing)}: the file or folder does not exist.")
@@ -1377,8 +1692,11 @@ async def run_encode(
         if isinstance(chosen, str):
             _error(chosen)
             return EXIT_USAGE
-        queue = get_queue(app)
-        return await _encode(app, queue, found.files, chosen, output, console)
+        try:
+            async with open_queue(app, console, in_process=in_process, detach=detach) as session:
+                return await _encode(session, found.files, chosen, output, console, detach)
+        except _CommandEnds as end:
+            return end.code
 
 
 @dataclasses.dataclass
@@ -1392,41 +1710,46 @@ class Prepared:
 
 
 async def _encode(
-    app: Reframe,
-    queue: QueueLike,
+    session: QueueSession,
     files: Sequence[Path],
     preset: Preset,
     output: Path | None,
     console: Console,
+    detach: bool,
 ) -> int:
     async def prepare(prepared: Prepared) -> None:
-        await _draft_files(app, files, preset, output, console, prepared)
+        await _draft_files(session.jobs, files, preset, output, console, prepared)
 
-    return await _run_jobs(app, queue, prepare, console)
+    return await _run_jobs(session, prepare, console, detach=detach)
 
 
 async def _run_jobs(
-    app: Reframe,
-    queue: QueueLike,
+    session: QueueSession,
     prepare: Callable[[Prepared], Awaitable[None]],
     console: Console,
+    *,
+    detach: bool = False,
 ) -> int:
     """Queue what ``prepare`` lines up, run it, follow it (progress, Ctrl+C, the summary) and
-    wait for a when-done countdown that its jobs started; return the exit code."""
-    # Subscribed before the queue starts: the when-done countdown begins as the last job ends.
-    countdown = app.events.subscribe(types={"power.countdown"})
-    try:
-        code, queued = await _queue_jobs(app, queue, prepare, console)
-        if code == EXIT_INTERRUPTED or not queued:
+    wait for a when-done countdown that its jobs started; return the exit code. ``detach``:
+    queue and start the jobs, print their ids and return."""
+    code, ran = await _queue_jobs(session, prepare, console, detach=detach)
+    # A countdown is the command's only when one of its jobs ran: the queue cancels the
+    # countdown that is pending when a job starts, so another one is newer than that job.
+    if code == EXIT_INTERRUPTED or not ran or detach or session.lost is not None:
+        return code
+    # Subscribed before ``pending`` is read: a countdown that starts in between is not missed.
+    async with session.events.subscribe(types={"power.countdown"}) as countdown:
+        try:
+            when_done = await session.settings()
+        except QueueError:
             return code
-        stopped = await follow_countdown(app, countdown, console)
-        return code if stopped is None else stopped
-    finally:
-        countdown.close()
+        stopped = await follow_countdown(when_done, session.power, countdown, console)
+    return code if stopped is None else stopped
 
 
 async def _draft_files(
-    app: Reframe,
+    jobs: _Drafts,
     files: Sequence[Path],
     preset: Preset,
     output: Path | None,
@@ -1446,7 +1769,7 @@ async def _draft_files(
         {file: f"{label} {file.name}" for file, label in zip(files, labels, strict=True)},
     )
     for label, file in zip(labels, files, strict=True):
-        draft = await app.jobs.draft(file, preset, output=output)
+        draft = await jobs.draft(file, preset, output=output)
         if isinstance(draft, ProbeError):
             prepared.not_queued += 1
             console.print(
@@ -1501,23 +1824,161 @@ def _with_claims(
     return [*issues, *conflicts]
 
 
+#: The events that ``encode`` and ``batch`` follow while their jobs run.
+_FOLLOWED = frozenset({"job.state", "job.progress", "queue.changed", "resync"})
+#: Seconds the command waits after Ctrl+C for the answer of the add that was under way.
+ADD_WAIT = 10.0
+#: How often a start that the queue refused is sent again, and the seconds between two looks
+#: at the queue for the removal that made it refuse.
+START_TRIES = 50
+START_RETRY = 0.1
+
+
+class CommandJobs:
+    """The jobs of one ``encode`` or ``batch`` command as the command saw them. A job that
+    ended keeps its first end: when another front end retries it, the new run belongs to that
+    front end. A job that left the queue was removed by another front end."""
+
+    def __init__(self) -> None:
+        self.ids: list[str] = []
+        self.labels: dict[str, str] = {}
+        self.ended: dict[str, JobState] = {}
+        self.removed: set[str] = set()
+        self.ran = False
+        """One of the jobs started."""
+
+    def add(self, job: QueueJob, label: str) -> None:
+        self.ids.append(job.id)
+        self.labels[job.id] = label
+        if job.state in FINAL_STATES:
+            self.ended[job.id] = job.state
+
+    def is_open(self, job_id: str) -> bool:
+        return job_id in self.labels and job_id not in self.ended and job_id not in self.removed
+
+    def open(self) -> list[str]:
+        """The jobs that have neither ended nor left the queue."""
+        return [job_id for job_id in self.ids if self.is_open(job_id)]
+
+    def see(self, event: JobStateEvent) -> bool:
+        """Take a state change; whether it belongs to an open job of the command."""
+        if not self.is_open(event.job_id):
+            return False
+        if event.state is JobState.RUNNING:
+            self.ran = True
+        if event.state in FINAL_STATES:
+            self.ended[event.job_id] = event.state
+        return True
+
+    def look(self, current: Callable[[str], QueueJob | None]) -> list[tuple[str, QueueJob | None]]:
+        """Read the open jobs (``current``: as the queue shows a job, ``None`` when it is not
+        in it); the jobs that ended or left the queue since, with how."""
+        changed: list[tuple[str, QueueJob | None]] = []
+        for job_id in self.open():
+            job = current(job_id)
+            if job is None:
+                self.removed.add(job_id)
+                changed.append((job_id, None))
+                continue
+            if job.started_at is not None:
+                self.ran = True
+            if job.state in FINAL_STATES:
+                self.ended[job_id] = job.state
+                changed.append((job_id, job))
+        return changed
+
+    def waitable(self, queue: QueueLike) -> list[str]:
+        """The jobs to wait for: in the queue, and not run again by another front end."""
+        return [
+            job_id
+            for job_id in self.ids
+            if (job := queue.get(job_id)) is not None
+            and (job_id not in self.ended or job.state in FINAL_STATES)
+        ]
+
+    def states(self, current: Callable[[str], QueueJob | None]) -> list[JobState | None]:
+        """For the summary: each job's first end, else its state now; ``None``: removed."""
+        found: list[JobState | None] = []
+        for job_id in self.ids:
+            job = None if job_id in self.removed else current(job_id)
+            found.append(self.ended.get(job_id, job.state if job is not None else None))
+        return found
+
+
+@dataclasses.dataclass
+class _Following:
+    """What the command follows its jobs with. The subscription is replaced when the command
+    connects to the owner again after it was stopped."""
+
+    session: QueueSession
+    subscription: Subscription
+    view: EncodeView | None = None
+    signals: list[int] = dataclasses.field(default_factory=list)
+    """Signals that cancel the command, as Ctrl+C does, until it ends."""
+
+    def show(self, job_id: str, job: QueueJob | None) -> None:
+        """Show a job that ended (``None``: it left the queue)."""
+        if self.view is None:
+            return
+        if job is None:
+            self.view.removed(job_id)
+            return
+        failed = job.state is JobState.FAILED
+        self.view.state(
+            job_id,
+            job.state,
+            error=job.error,
+            output=job.output_path,
+            log=self.session.queue.log_path(job_id) if failed else None,
+        )
+
+    def drain(self, jobs: CommandJobs) -> None:
+        """Take the state changes that came and were not shown yet."""
+        while (event := self.subscription.get_nowait()) is not None:
+            if isinstance(event, JobStateEvent):
+                jobs.see(event)
+
+    def close_view(self) -> None:
+        if self.view is not None:
+            self.view.close()
+            self.view = None
+
+    def close(self) -> None:
+        self.subscription.close()
+        self.close_view()
+        if self.signals:
+            loop = asyncio.get_running_loop()
+            for number in self.signals:
+                loop.remove_signal_handler(number)
+            self.signals.clear()
+
+
 async def _queue_jobs(
-    app: Reframe,
-    queue: QueueLike,
+    session: QueueSession,
     prepare: Callable[[Prepared], Awaitable[None]],
     console: Console,
+    *,
+    detach: bool = False,
 ) -> tuple[int, bool]:
-    subscription = app.events.subscribe(types={"job.state", "job.progress"})
-    labels: dict[str, str] = {}
-    ids: list[str] = []
+    """Queue what ``prepare`` lines up and follow it; the exit code, and whether one of the
+    command's jobs ran."""
+    jobs = CommandJobs()
+    following = _Following(session, session.events.subscribe(types=_FOLLOWED))
     prepared = Prepared()
-    view: EncodeView | None = None
+    adding: tuple[str, asyncio.Future[QueueJob]] | None = None
     try:
         await prepare(prepared)
-        for position, (label, settings) in enumerate(prepared.jobs):
-            job = await queue.add(settings, position=position)
-            ids.append(job.id)
-            labels[job.id] = label
+        for label, settings in prepared.jobs:
+            # At the end: with several clients, "at the front" would let each command pass
+            # the ones before it.
+            added = asyncio.ensure_future(session.queue.add(settings))
+            adding = (label, added)
+            # Not cancelled with the command: a job whose add is under way at Ctrl+C is in the
+            # queue all the same, and the command must learn of it.
+            await asyncio.wait({added})
+            adding = None
+            job = added.result()
+            jobs.add(job, label)
             if job.state is JobState.FAILED:
                 console.print(
                     Text(f"{label} failed when it was queued:", style="bold red"), soft_wrap=True
@@ -1525,116 +1986,374 @@ async def _queue_jobs(
                 render_issues(
                     console, job.issues, severities=(Severity.ERROR,), indent=len(label) + 1
                 )
-        if not ids:
+        if not jobs.ids:
             console.print(Text("Nothing to encode.", style="bold red"), soft_wrap=True)
             return EXIT_FAILED, False
-        console.print(Text(f"Queued {_plural(len(ids), 'job')}."), soft_wrap=True)
-        view = EncodeView(console, labels)
-        # Only our jobs: the store is shared, and other front ends' waiting jobs stay as
-        # they are (``start(job_ids=…)``; the runner goes idle when ours have ended).
-        queue.start(job_ids=ids)
-        await _follow_jobs(queue, ids, subscription, view)
-        # The queue decides on its when-done action before wait() returns for the last job.
-        await queue.wait(ids)
+        if waiting := len(jobs.open()):
+            console.print(Text(f"Queued {_plural(waiting, 'job')}."), soft_wrap=True)
+        await _start(session.queue, jobs.open())
+        if detach:
+            return _detached(session, jobs, console, prepared.not_queued), False
+        following.view = EncodeView(console, jobs.labels)
+        await _follow(following, jobs)
+        if session.lost is not None:
+            await _report_lost(following, jobs, session.lost, prepared.not_queued, console)
+            return EXIT_FAILED, jobs.ran
     except asyncio.CancelledError:
         task = asyncio.current_task()
         if task is not None:
             task.uncancel()
-        if view is not None:
-            view.close()
-            view = None
+        following.close_view()
+        if adding is not None:
+            answer = await _answer(adding[1])
+            if answer is not None:
+                jobs.add(answer, adding[0])
         print(
             "Interrupted: cancelling the jobs (their partial files are removed)…", file=sys.stderr
         )
-        await _cancel_jobs(queue, ids)
-        _summary(console, queue, ids, prepared.not_queued)
-        return EXIT_INTERRUPTED, True
+        if session.lost is None:
+            following.drain(jobs)
+        await _cancel_jobs(session.queue, jobs)
+        not_queued = prepared.not_queued + len(prepared.jobs) - len(jobs.ids)
+        _summary(console, jobs.states(session.queue.get), not_queued)
+        return EXIT_INTERRUPTED, jobs.ran
+    except QueueError as exc:
+        not_queued = prepared.not_queued + len(prepared.jobs) - len(jobs.ids)
+        lost = getattr(exc, "code", "") == "connection.lost"
+        reason = session.lost or (str(exc) if lost else None)
+        if reason is None:  # the owner refused a call
+            following.close_view()
+            _error(f"the jobs cannot be queued: {exc}")
+            _summary(console, jobs.states(session.queue.get), not_queued)
+        else:
+            await _report_lost(following, jobs, reason, not_queued, console)
+        return EXIT_FAILED, jobs.ran
     finally:
-        subscription.close()
-        if view is not None:
-            view.close()
-    finals = _summary(console, queue, ids, prepared.not_queued)
-    all_done = all(job.state is JobState.DONE for job in finals)
-    return (EXIT_OK if all_done and not prepared.not_queued else EXIT_FAILED), True
+        following.close()
+    states = jobs.states(session.queue.get)
+    _summary(console, states, prepared.not_queued)
+    all_done = all(state is JobState.DONE for state in states)
+    return (EXIT_OK if all_done and not prepared.not_queued else EXIT_FAILED), jobs.ran
 
 
-async def _follow_jobs(
-    queue: QueueLike, ids: Sequence[str], subscription: Subscription, view: EncodeView
-) -> None:
-    """Show the events of ``ids`` until every one of them has ended."""
-    ours = set(ids)
-    states: dict[str, JobState] = {}
+async def _answer(added: asyncio.Future[QueueJob]) -> QueueJob | None:
+    """The job of an add that was under way at Ctrl+C, once its answer comes (at most
+    :data:`ADD_WAIT` seconds); ``None`` without one. The owner cancels a job it attached and
+    the command never learned of when the connection ends without ``detach``."""
+    try:
+        async with asyncio.timeout(ADD_WAIT):
+            await asyncio.wait({added})
+        return added.result()
+    except QueueError:
+        return None
+    except TimeoutError:
+        added.cancel()
+        return None
 
-    def refresh() -> None:
-        for job_id in ids:
-            job = queue.get(job_id)
-            if job is not None:
-                states[job_id] = job.state
 
-    refresh()
-    for job_id in ids:
-        if states.get(job_id) in FINAL_STATES:
-            ours.discard(job_id)
-    if not ours:
-        return
-    async for event in subscription:
-        if isinstance(event, JobStateEvent) and event.job_id in states:
-            states[event.job_id] = event.state
-            job = queue.get(event.job_id)
-            view.state(
-                event.job_id,
-                event.state,
-                error=event.error,
-                output=job.output_path if job is not None else None,
-                log=queue.log_path(event.job_id) if event.state is JobState.FAILED else None,
-                previous=event.previous,
-            )
-            if event.state in FINAL_STATES:
-                ours.discard(event.job_id)
-        elif isinstance(event, JobProgressEvent) and event.job_id in states:
-            view.progress(event.job_id, event.progress)
-        elif isinstance(event, ResyncEvent):
-            refresh()
-            ours = {j for j in ours if states.get(j) not in FINAL_STATES}
-        if not ours:
+def _detached(session: QueueSession, jobs: CommandJobs, console: Console, not_queued: int) -> int:
+    """``--detach``: the ids of the jobs, which now run on without the command."""
+    removed = False
+    for job_id in jobs.ids:
+        label = jobs.labels[job_id]
+        if session.queue.get(job_id) is None:
+            removed = True
+            console.print(Text(f"{label} removed", style="yellow"), soft_wrap=True)
+        else:
+            console.print(Text(f"{label} job {job_id}"), soft_wrap=True)
+    session.detached = True
+    console.print(
+        Text("Detached: the jobs run on in the Reframe server (reframe queue list).", style="bold"),
+        soft_wrap=True,
+    )
+    return EXIT_FAILED if not_queued or removed or jobs.ended else EXIT_OK
+
+
+async def _start(queue: QueueLike, ids: Sequence[str]) -> None:
+    """Start the jobs of ``ids`` that are still in the queue. A start that names a job that
+    another front end removed meanwhile is refused (at once, or by the next awaited call of a
+    queue in a server): it is sent again for the jobs still there."""
+    tried: list[str] | None = None
+    refused: UnknownJobError | None = None
+    for _ in range(START_TRIES):
+        present = [job_id for job_id in ids if queue.get(job_id) is not None]
+        if not present:
+            return
+        if present == tried:  # the queue's copy does not show the removal yet
+            await asyncio.sleep(START_RETRY)
+            continue
+        try:
+            queue.start(job_ids=present)
+            await queue.wait([])
+            return
+        except UnknownJobError as exc:
+            tried, refused = present, exc
+    assert refused is not None
+    raise refused
+
+
+async def _follow(following: _Following, jobs: CommandJobs) -> None:
+    """Show the command's jobs until each has ended or left the queue, then wait until the
+    queue is done with them. A client that is stopped (Ctrl+Z) goes on after it."""
+    session = following.session
+    while True:
+        stop = _StopRequest(following)
+        with stop:
+            await _follow_jobs(following, jobs)
+        if not stop.requested or session.lost is not None or not await _stop_here(following, jobs):
             break
-    # The subscription ended early (it fell too far behind): wait through the queue.
-    await queue.wait(ids)
+    if session.lost is None:
+        # In-process, the queue decides on its when-done action before wait() returns.
+        await _wait_present(session.queue, jobs.waitable(session.queue))
 
 
-async def _cancel_jobs(queue: QueueLike, ids: Sequence[str]) -> None:
-    """Ctrl+C: stop the queue, cancel our waiting jobs, then our running ones (each cancel
-    kills the process tree and removes the partial file), and wait for them to end. Only
-    ``cancel(job_id)`` for our own ids: ``cancel()`` without an id would also cancel other
-    front ends' jobs in the shared store."""
-    await queue.stop()
-    jobs = [job for job in (queue.get(j) for j in ids) if job is not None]
-    waiting = [job.id for job in jobs if job.state is JobState.WAITING]
-    active = [job.id for job in jobs if job.state in (JobState.RUNNING, JobState.PAUSED)]
-    for job_id in [*waiting, *active]:
-        await queue.cancel(job_id)
+async def _follow_jobs(following: _Following, jobs: CommandJobs) -> None:
+    """Show the events of the command's jobs until each has ended or left the queue, the
+    subscription ends (it fell too far behind, or a stop ended it), or the connection to the
+    owner is lost."""
+    session, view = following.session, following.view
+    assert view is not None
+
+    def look() -> None:
+        for job_id, job in jobs.look(session.queue.get):
+            following.show(job_id, job)
+
+    look()
+    if not jobs.open():
+        return
+    async for event in following.subscription:
+        if session.lost is not None:
+            return  # what follows the loss is the copy's guess, not the owner's word
+        if isinstance(event, JobStateEvent):
+            if jobs.see(event):
+                job = session.queue.get(event.job_id)
+                view.state(
+                    event.job_id,
+                    event.state,
+                    error=event.error,
+                    output=job.output_path if job is not None else None,
+                    log=(
+                        session.queue.log_path(event.job_id)
+                        if event.state is JobState.FAILED
+                        else None
+                    ),
+                    previous=event.previous,
+                )
+        elif isinstance(event, JobProgressEvent):
+            if jobs.is_open(event.job_id):
+                view.progress(event.job_id, event.progress)
+        elif isinstance(event, QueueChangedEvent | ResyncEvent):
+            look()
+        if not jobs.open():
+            return
+
+
+async def _wait_present(queue: QueueLike, ids: Sequence[str]) -> None:
+    """``queue.wait`` for the jobs of ``ids`` that are in the queue: one that another front
+    end removes meanwhile counts as ended."""
+    tried: list[str] | None = None
+    while present := [job_id for job_id in ids if queue.get(job_id) is not None]:
+        try:
+            await queue.wait(present)
+            return
+        except UnknownJobError:
+            if present == tried:
+                raise
+            tried = present
+
+
+async def _cancel_jobs(queue: QueueLike, jobs: CommandJobs) -> None:
+    """Ctrl+C: cancel the command's waiting jobs, then its running ones (each cancel kills the
+    process tree and removes the partial file), and wait for them to end. Only
+    ``cancel(job_id)`` for its open jobs: ``cancel()`` without an id, or ``stop()``, would
+    also reach other front ends' jobs in the shared queue, and a job that ended is left to the
+    front end that retried it. Waiting jobs first: a cancelled running job frees a slot that
+    one of them would take."""
     try:
         async with asyncio.timeout(CANCEL_WAIT):
-            await queue.wait(ids)
+            with contextlib.suppress(UnknownJobError):
+                await queue.wait([])  # a start that a queue in a server refused is raised here
+            found = [job for job in (queue.get(j) for j in jobs.open()) if job is not None]
+            waiting = [job.id for job in found if job.state is JobState.WAITING]
+            active = [job.id for job in found if job.state in _ACTIVE_STATES]
+            for job_id in [*waiting, *active]:
+                with contextlib.suppress(UnknownJobError):  # removed meanwhile
+                    await queue.cancel(job_id)
+            await _wait_present(queue, [*waiting, *active])
     except TimeoutError:
         _error(f"the jobs did not end within {CANCEL_WAIT:g} s after they were cancelled.")
+    except QueueError as exc:
+        _error(f"the jobs cannot be cancelled: {exc}")
 
 
-def _summary(
-    console: Console, queue: QueueLike, ids: Sequence[str], not_queued: int
-) -> list[QueueJob]:
-    finals = [job for job in (queue.get(j) for j in ids) if job is not None]
-    counts = {state: sum(1 for job in finals if job.state is state) for state in JobState}
+async def _now(session: QueueSession, ids: Sequence[str]) -> Callable[[str], QueueJob | None]:
+    """How ``ids`` are now, after the connection to the owner ended: as the owner shows them
+    when it answers; else as the saved queue holds them, where a job that was running or
+    paused did not end on its own (it is interrupted); else as the command last saw them."""
+    assert session.reconnect is not None
+    assert session.data_dir is not None
+    found = await session.reconnect()
+    if not isinstance(found, str):
+        try:
+            answered = {job_id: found.get(job_id) for job_id in ids}
+        finally:
+            await found.close(detach=True)
+        return answered.get
+    copy = session.queue.get
+    saved = await asyncio.to_thread(read_saved_queue, session.data_dir)
+    kept = {job.id: job for job in saved.jobs}
+
+    def now(job_id: str) -> QueueJob | None:
+        job = kept.get(job_id)
+        if job is None:
+            return copy(job_id)
+        if job.state in _ACTIVE_STATES:
+            return job.model_copy(update={"state": JobState.INTERRUPTED})
+        return job
+
+    return now
+
+
+async def _report_lost(
+    following: _Following, jobs: CommandJobs, reason: str, not_queued: int, console: Console
+) -> None:
+    """The connection to the owner ended before the command's jobs did: each job as it is now
+    (:func:`_now`), the summary, and the error with the waiting jobs, which stay in the queue."""
+    current = await _now(following.session, jobs.open())
+    for job_id, job in jobs.look(current):
+        following.show(job_id, job)
+    following.close_view()
+    states = jobs.states(current)
+    _summary(console, states, not_queued)
+    waiting = [
+        job_id[:SHORT_ID]
+        for job_id, state in zip(jobs.ids, states, strict=True)
+        if state is JobState.WAITING
+    ]
+    left = (
+        f" The waiting jobs stay in the queue, not started: reframe queue retry ID starts one, "
+        f"reframe queue cancel ID cancels it ({', '.join(waiting)})."
+        if waiting
+        else ""
+    )
+    _error(f"{reason}.{left}")
+
+
+def _summary(console: Console, states: Sequence[JobState | None], not_queued: int) -> None:
+    """``states``: the command's jobs (``None``: removed by another front end)."""
+    present = [state for state in states if state is not None]
+    counts = {state: sum(1 for found in present if found is state) for state in JobState}
     parts = [f"{counts[JobState.DONE]} done", f"{counts[JobState.FAILED]} failed"]
     parts.append(f"{counts[JobState.CANCELLED]} cancelled")
     if counts[JobState.INTERRUPTED]:
         parts.append(f"{counts[JobState.INTERRUPTED]} interrupted")
-    others = len(finals) - sum(counts[s] for s in FINAL_STATES)
-    if others:
+    if removed := len(states) - len(present):
+        parts.append(f"{removed} removed")
+    if others := len(present) - sum(counts[s] for s in FINAL_STATES):
         parts.append(f"{others} not finished")
     parts.append(f"{not_queued} not queued")
     console.print(Text("Summary: " + ", ".join(parts) + ".", style="bold"), soft_wrap=True)
-    return finals
+
+
+class _StopRequest:
+    """Ctrl+Z (SIGTSTP) while a client follows its jobs, on POSIX: it ends the follow, so that
+    the command can hand its jobs over before it stops (:func:`_stop_here`). In-process the
+    terminal stops the command with its encodes, as for any program."""
+
+    def __init__(self, following: _Following) -> None:
+        self._following = following
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.requested = False
+
+    def __enter__(self) -> _StopRequest:
+        if sys.platform != "win32" and self._following.session.remote is not None:
+            loop = asyncio.get_running_loop()
+            try:
+                loop.add_signal_handler(signal.SIGTSTP, self._request)
+            except (NotImplementedError, RuntimeError, ValueError):  # not the main thread
+                return self
+            self._loop = loop
+        return self
+
+    def _request(self) -> None:
+        self.requested = True
+        self._following.subscription.close()
+
+    def __exit__(self, *_exc: object) -> None:
+        if sys.platform != "win32" and self._loop is not None:
+            self._loop.remove_signal_handler(signal.SIGTSTP)
+
+
+def _stop_process() -> None:
+    """Stop this process as the terminal's Ctrl+Z does; returns once it is continued."""
+    if sys.platform != "win32":
+        os.kill(os.getpid(), signal.SIGTSTP)
+
+
+async def _stop_here(following: _Following, jobs: CommandJobs) -> bool:
+    """Ctrl+Z in client mode. A stopped process cannot answer the owner's keepalive, and the
+    owner cancels the jobs of a connection that ends without ``detach``. So the command pauses
+    its running jobs, ends its connection with ``detach`` and stops; once continued (``fg``,
+    ``bg``) it connects again and resumes them. They stay detached: from then on SIGTERM and
+    SIGHUP cancel them as Ctrl+C does. False: the owner cannot be reached after the stop."""
+    if sys.platform == "win32":  # pragma: no cover - no SIGTSTP
+        return False
+    else:
+        session, view = following.session, following.view
+        assert session.remote is not None
+        assert session.reconnect is not None
+        assert view is not None
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        assert task is not None
+        paused: list[str] = []
+        loop.add_signal_handler(signal.SIGTSTP, lambda: None)  # one stop at a time
+        try:
+            for job_id in jobs.open():
+                job = session.queue.get(job_id)
+                if job is not None and job.state is JobState.RUNNING:
+                    with contextlib.suppress(UnknownJobError, JobStateError):
+                        await session.queue.pause(job_id)
+                    paused.append(job_id)
+            await session.remote.close(detach=True)
+        finally:
+            loop.remove_signal_handler(signal.SIGTSTP)
+        for number in (signal.SIGTERM, signal.SIGHUP):
+            if number not in following.signals:
+                loop.add_signal_handler(number, task.cancel)
+                following.signals.append(number)
+        view.suspend()
+        print(
+            "Stopped: the running jobs of this command are paused in the Reframe server; "
+            "fg goes on.",
+            file=sys.stderr,
+        )
+        _stop_process()
+        view.resume()
+        # Not cut short by a Ctrl+C meanwhile: its cancel needs the new connection.
+        reconnect = asyncio.ensure_future(session.reconnect())
+        interrupted = False
+        while not reconnect.done():
+            try:
+                await asyncio.wait({reconnect})
+            except asyncio.CancelledError:
+                interrupted = True
+                task.uncancel()
+        found = reconnect.result()
+        if isinstance(found, str):
+            session.unreachable = f"the Reframe server cannot be reached after the stop ({found})"
+        else:
+            session.use(found)
+            following.subscription.close()
+            following.subscription = found.events.subscribe(types=_FOLLOWED)
+        if interrupted:
+            raise asyncio.CancelledError
+        if isinstance(found, str):
+            return False
+        for job_id in paused:
+            with contextlib.suppress(UnknownJobError, JobStateError):
+                await found.resume(job_id)
+        return True
 
 
 def _unicode(console: Console) -> bool:
@@ -1739,18 +2458,27 @@ async def run_batch(
     dry_run: bool = False,
     recursive: bool = False,
     as_json: bool = False,
+    detach: bool = False,
+    in_process: bool | None = None,
 ) -> int:
     """``reframe batch``: group the media files, resolve the preset in every file of every
     group and print the groups and the resolution matrix; without ``--dry-run``, queue the
     files without errors in episode order and encode them as ``reframe encode`` does.
     The batch is resolved as a whole (``Reframe.batch.resolve_batch``): the name checks
-    cover every group, and the outputs of an earlier run are left out. Returns the exit
-    code."""
+    cover every group, and the outputs of an earlier run are left out. A dry run validates
+    in this process, as ``reframe plan`` does. Returns the exit code."""
     if as_json and not dry_run:
         _error("--json needs --dry-run: the encode prints progress, not JSON.")
         return EXIT_USAGE
+    in_process = _in_process(in_process)
+    if in_process is None:
+        return EXIT_USAGE
+    if detach and (in_process or dry_run):
+        option = "--in-process" if in_process else "--dry-run"
+        _error(f"--detach needs the Reframe server: it cannot be used with {option}.")
+        return EXIT_USAGE
     console = make_console()
-    async with open_reframe() as app:
+    async with open_reframe(detect=False) as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
             _error(f"{display_path(missing)}: the file or folder does not exist.")
@@ -1765,72 +2493,85 @@ async def run_batch(
         if isinstance(chosen, str):
             _error(chosen)
             return EXIT_USAGE
-        grouping, resolutions = await app.batch.resolve_batch(chosen, found.files, level=level)
-        unreadable = [i for i in grouping.issues if i.severity is Severity.ERROR]
-        left_out = [i for i in grouping.issues if i.severity is not Severity.ERROR]
-        good, bad = _batch_summary(resolutions, len(unreadable))
-        if as_json:
-            _write_json_value(
-                {
-                    "grouping": grouping.model_dump(mode="json"),
-                    "resolutions": [r.model_dump(mode="json") for r in resolutions],
-                }
-            )
-            return EXIT_OK if not bad else EXIT_FAILED
-        console.print(Text(printable(f"Preset: {chosen.name}")), soft_wrap=True)
-        if unreadable:
-            _section(console, "Files that cannot be read")
-            render_issues(console, unreadable)
-        if left_out:
-            _section(console, "Already encoded (left out of the batch)")
-            render_issues(console, left_out)
-        for number, (group, resolution) in enumerate(
-            zip(grouping.groups, resolutions, strict=True), start=1
-        ):
-            console.print()
-            render_group(console, group, number, len(grouping.groups))
-            render_matrix(console, resolution)
-        console.print()
         if dry_run:
-            line = _dry_run_line(good, bad, len(left_out))
-            console.print(Text(line, style="bold"), soft_wrap=True)
-            return EXIT_OK if not bad else EXIT_FAILED
-        queue = get_queue(app)
+            app.capabilities.start()
+            return await _batch(app.batch, None, chosen, found.files, level, console, as_json)
+        try:
+            async with open_queue(app, console, in_process=in_process, detach=detach) as session:
+                return await _batch(
+                    session.batch, session, chosen, found.files, level, console, as_json, detach
+                )
+        except _CommandEnds as end:
+            return end.code
 
-        async def prepare(prepared: Prepared) -> None:
-            prepared.not_queued += len(unreadable)
-            rows = [row for resolution in resolutions for row in resolution.rows]
-            width = len(str(len(rows)))
-            for number, row in enumerate(rows, start=1):
-                label = f"[{number:>{width}}/{len(rows)}]"
-                target = row.job.output.path if row.job is not None else None
+
+async def _batch(
+    service: BatchService,
+    session: QueueSession | None,
+    chosen: Preset,
+    files: Sequence[Path],
+    level: MatchLevel,
+    console: Console,
+    as_json: bool,
+    detach: bool = False,
+) -> int:
+    """The batch after its files and preset are known: resolve, print, and (with a
+    ``session``) queue and follow the jobs."""
+    grouping, resolutions = await service.resolve_batch(chosen, files, level=level)
+    unreadable = [i for i in grouping.issues if i.severity is Severity.ERROR]
+    left_out = [i for i in grouping.issues if i.severity is not Severity.ERROR]
+    good, bad = _batch_summary(resolutions, len(unreadable))
+    if as_json:
+        _write_json_value(
+            {
+                "grouping": grouping.model_dump(mode="json"),
+                "resolutions": [r.model_dump(mode="json") for r in resolutions],
+            }
+        )
+        return EXIT_OK if not bad else EXIT_FAILED
+    console.print(Text(printable(f"Preset: {chosen.name}")), soft_wrap=True)
+    if unreadable:
+        _section(console, "Files that cannot be read")
+        render_issues(console, unreadable)
+    if left_out:
+        _section(console, "Already encoded (left out of the batch)")
+        render_issues(console, left_out)
+    for number, (group, resolution) in enumerate(
+        zip(grouping.groups, resolutions, strict=True), start=1
+    ):
+        console.print()
+        render_group(console, group, number, len(grouping.groups))
+        render_matrix(console, resolution)
+    console.print()
+    if session is None:
+        line = _dry_run_line(good, bad, len(left_out))
+        console.print(Text(line, style="bold"), soft_wrap=True)
+        return EXIT_OK if not bad else EXIT_FAILED
+
+    async def prepare(prepared: Prepared) -> None:
+        prepared.not_queued += len(unreadable)
+        rows = [row for resolution in resolutions for row in resolution.rows]
+        width = len(str(len(rows)))
+        for number, row in enumerate(rows, start=1):
+            label = f"[{number:>{width}}/{len(rows)}]"
+            target = row.job.output.path if row.job is not None else None
+            console.print(
+                Text(printable(f"{label} {row.path.name} → {target or NONE}")),
+                soft_wrap=True,
+            )
+            if row.job is None or row.status == "error":
+                prepared.not_queued += 1
                 console.print(
-                    Text(printable(f"{label} {row.path.name} → {target or NONE}")),
+                    Text(
+                        f"{' ' * len(label)} not queued: {issue_counts(row.issues)} (see Problems)",
+                        style="bold red",
+                    ),
                     soft_wrap=True,
                 )
-                if row.job is None or row.status == "error":
-                    prepared.not_queued += 1
-                    console.print(
-                        Text(
-                            f"{' ' * len(label)} not queued: {issue_counts(row.issues)} "
-                            "(see Problems)",
-                            style="bold red",
-                        ),
-                        soft_wrap=True,
-                    )
-                    continue
-                prepared.jobs.append((label, row.job))
+                continue
+            prepared.jobs.append((label, row.job))
 
-        return await _run_jobs(app, queue, prepare, console)
-
-
-class PowerLike(Protocol):
-    """The part of ``PowerService`` (``Reframe.power``) that ``reframe encode`` uses."""
-
-    @property
-    def pending(self) -> PowerCountdownEvent | None: ...
-
-    def cancel(self, countdown_id: str | None = None) -> bool: ...
+    return await _run_jobs(session, prepare, console, detach=detach)
 
 
 #: Seconds ``reframe encode`` waits for the when-done countdown to start after its last job
@@ -1893,20 +2634,19 @@ class CountdownView:
 
 
 async def follow_countdown(
-    app: Reframe,
+    when_done: str,
+    power: PowerLike,
     subscription: Subscription,
     console: Console,
     *,
-    power: PowerLike | None = None,
     start_wait: float | None = None,
 ) -> int | None:
     """After ``reframe encode``'s jobs: when the queue started a sleep or shutdown countdown
-    (Settings → Queue → When done), show it until it ends. Ctrl+C cancels it
+    (``when_done``, Settings → Queue → When done), show it until it ends. Ctrl+C cancels it
     (``power.cancel``) and gives :data:`EXIT_INTERRUPTED`; else ``None`` (the jobs' exit code
     stands). Nothing is waited for when the setting is another action."""
-    if app.settings_snapshot().queue.when_done not in WAITED_ACTIONS:
+    if when_done not in WAITED_ACTIONS:
         return None
-    power = power if power is not None else app.power
     view: CountdownView | None = None
     current: PowerCountdownEvent | None = None
     try:
@@ -1943,7 +2683,12 @@ async def follow_countdown(
         if view is not None:
             view.close()
         target = current if current is not None else power.pending
-        if target is not None and power.cancel(target.countdown_id):
+        try:
+            cancelled = target is not None and await power.cancel(target.countdown_id)
+        except QueueError as exc:
+            _error(f"the countdown cannot be cancelled: {exc}")
+            cancelled = False
+        if target is not None and cancelled:
             kept = _COUNTDOWN_KEPT.get(target.action, "stays on")
             print(f"Interrupted: the countdown is cancelled, the computer {kept}.", file=sys.stderr)
         else:
@@ -2094,6 +2839,369 @@ async def run_name(
             render_name(console, file, result, exists=exists)
     has_error = any(has_errors(result.issues) for _, result, _ in named)
     return EXIT_FAILED if has_error else EXIT_OK
+
+
+_EXIT_HELP_QUEUE_READ = (
+    "Exit codes: 0 done; 1 there is no such job, or the saved queue cannot be read; 2 usage error."
+)
+_EXIT_HELP_QUEUE_ACTION = (
+    "Exit codes: 0 done; 1 there is no such job, its state does not allow the action, or no "
+    "Reframe server can be reached; 2 usage error."
+)
+#: Characters of a job id that ``reframe queue list`` shows. Every command takes any start of
+#: an id that names one job.
+SHORT_ID = 8
+#: Seconds between two reads of a followed log.
+LOG_POLL = 0.5
+_ACTIVE_STATES = frozenset({JobState.RUNNING, JobState.PAUSED})
+
+
+def find_job(jobs: Sequence[QueueJob], ref: str) -> QueueJob | str:
+    """The job whose id is ``ref`` or starts with it, else the error message."""
+    if not ref:
+        return "name a job by its id or the start of it."
+    for job in jobs:
+        if job.id == ref:
+            return job
+    matches = [job for job in jobs if ref and job.id.startswith(ref)]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        return f"there is no job {ref} in the queue."
+    return f"{ref} is the start of {len(matches)} job ids: give more of it."
+
+
+def _job_name(job: QueueJob) -> str:
+    return f"{job.id[:SHORT_ID]} {Path(job.settings.source.path).name}"
+
+
+def queue_rows(jobs: Sequence[QueueJob]) -> list[str]:
+    """The lines of ``reframe queue list``: position, id, state, progress, the source and the
+    output, the error of a job that failed, then the counts."""
+    header = ("#", "Id", "State", "Done", "Source → Output")
+    rows = []
+    for number, job in enumerate(jobs, start=1):
+        progress = job.progress
+        done = (
+            f"{progress.percent:.1f}%"
+            if progress is not None and job.state in _ACTIVE_STATES
+            else ""
+        )
+        output = job.output_path or job.settings.output.path
+        target = output if output is not None else NONE
+        rows.append(
+            (
+                str(number),
+                job.id[:SHORT_ID],
+                job.state.value,
+                done,
+                printable(f"{Path(job.settings.source.path).name} → {target}"),
+            )
+        )
+    widths = [max(len(row[i]) for row in [header, *rows]) for i in range(len(header) - 1)]
+
+    def line(row: tuple[str, ...]) -> str:
+        cells = [
+            cell.rjust(width) if index in (0, 3) else cell.ljust(width)
+            for index, (cell, width) in enumerate(zip(row, widths, strict=False))
+        ]
+        return "  ".join([*cells, row[-1]]).rstrip()
+
+    lines = [line(header)]
+    lead = " " * (sum(widths[:2]) + 4)
+    for row, job in zip(rows, jobs, strict=True):
+        lines.append(line(row))
+        if job.error and job.state is not JobState.DONE:
+            lines.append(printable(f"{lead}{job.state.value}: {_one_line(job.error)}"))
+    counts = [
+        f"{sum(1 for job in jobs if job.state is state)} {state.value}"
+        for state in JobState
+        if any(job.state is state for job in jobs)
+    ]
+    lines.append("")
+    lines.append(f"{_plural(len(jobs), 'job')}: {', '.join(counts)}.")
+    return lines
+
+
+@dataclasses.dataclass
+class _Queue:
+    """What ``reframe queue list`` and ``log`` read."""
+
+    remote: RemoteQueue | None
+    """The owner's queue; ``None``: the saved queue."""
+    jobs: list[QueueJob]
+    unreadable: bool = False
+    """The saved queue could not be read at all (a warning says why)."""
+    unused: str | None = None
+    """Why the server that ``server.json`` names is not used."""
+
+
+@asynccontextmanager
+async def _owner_or_saved() -> AsyncIterator[_Queue]:
+    """The owner's queue when a server runs for this data folder (none is started), else the
+    saved queue as the file holds it: no lock is taken and nothing is restored."""
+    from reframe.remote.owner import endpoint_path, read_endpoint
+
+    data_dir = paths.data_dir()
+    found = await connect_owner(
+        data_dir, config_dir=paths.config_dir(), cache_dir=paths.cache_dir(), start=False
+    )
+    if not isinstance(found, str):
+        try:
+            yield _Queue(found, found.list())
+        finally:
+            await found.close(detach=True)
+        return
+    named = await asyncio.to_thread(read_endpoint, endpoint_path(data_dir))
+    saved = await asyncio.to_thread(read_saved_queue, data_dir)
+    if saved.problem is not None:
+        print(_one_line(f"warning: the saved queue: {saved.problem}"), file=sys.stderr)
+    unreadable = saved.problem is not None and not saved.jobs
+    yield _Queue(None, saved.jobs, unreadable, found if named is not None else None)
+
+
+def _not_used(reason: str) -> str:
+    return f"the Reframe server of this data folder cannot be used ({reason}): the saved queue."
+
+
+async def run_queue_list(*, as_json: bool) -> int:
+    """``reframe queue list``: every job of the shared queue."""
+    async with _owner_or_saved() as found:
+        pass
+    jobs = found.jobs
+    code = EXIT_FAILED if found.unreadable else EXIT_OK
+    if as_json:
+        _write_json_value([job.model_dump(mode="json") for job in jobs])
+        return code
+    console = make_console()
+    if found.unused is not None:
+        line = _not_used(found.unused)
+        console.print(Text(printable(line[0].upper() + line[1:]), style="dim"), soft_wrap=True)
+    elif found.remote is None:
+        console.print(
+            Text("No Reframe server runs for this data folder: the saved queue.", style="dim"),
+            soft_wrap=True,
+        )
+    if not jobs:
+        if not found.unreadable:
+            console.print(Text("The queue is empty."), soft_wrap=True)
+        return code
+    for line in queue_rows(jobs):
+        console.print(Text(line), soft_wrap=True, crop=False)
+    return code
+
+
+class _LogPrinter:
+    """Prints a log file from where it stopped, whole lines only until :meth:`rest`."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.offset = 0
+        self.held = b""
+
+    def more(self) -> None:
+        try:
+            with self.path.open("rb") as file:
+                file.seek(self.offset)
+                data = file.read()
+        except FileNotFoundError:
+            return
+        self.offset += len(data)
+        *lines, self.held = (self.held + data).split(b"\n")
+        for line in lines:
+            self._write(line)
+
+    def rest(self) -> None:
+        self.more()
+        if self.held:
+            self._write(self.held)
+            self.held = b""
+
+    def _write(self, line: bytes) -> None:
+        text = line.decode("utf-8", errors="replace").rstrip("\r")
+        sys.stdout.write(printable(text) + "\n")
+        sys.stdout.flush()
+
+
+async def run_queue_log(ref: str, *, follow: bool) -> int:
+    """``reframe queue log``: the job's log file; ``follow``: and what is written to it until
+    the job ends."""
+    data_dir = paths.data_dir()
+    async with _owner_or_saved() as found:
+        if found.unused is not None:
+            print(_one_line(f"warning: {_not_used(found.unused)}"), file=sys.stderr)
+        job = find_job(found.jobs, ref)
+        if isinstance(job, str):
+            _error(job)
+            return EXIT_FAILED
+        printer = _LogPrinter(job.log_path or log_file(data_dir, job.id))
+        await asyncio.to_thread(printer.more)
+        job_id = job.id
+        stopped = False
+        while follow:
+            if found.remote is not None:
+                current = found.remote.get(job_id)
+                # A lost connection makes a running job interrupted in the copy: a guess.
+                if found.remote.lost is not None:
+                    stopped = current is not None and current.state not in _ENDED_ON_ITS_OWN
+                    break
+                if current is None or current.state in ENDED:
+                    break
+            else:
+                state, alive = await asyncio.to_thread(_saved_state, data_dir, job_id)
+                if state is None or state in ENDED:
+                    break
+                # Nothing writes the log of a job whose owner is gone: it will not end.
+                if not alive:
+                    stopped = True
+                    break
+            await asyncio.sleep(LOG_POLL)
+            await asyncio.to_thread(printer.more)
+        await asyncio.to_thread(printer.rest)
+    if stopped:
+        _error(f"the Reframe server stopped before job {job_id[:SHORT_ID]} ended.")
+        return EXIT_FAILED
+    return EXIT_OK
+
+
+#: The ends that a lost connection cannot cause.
+_ENDED_ON_ITS_OWN = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED})
+
+
+def _saved_state(data_dir: Path, job_id: str) -> tuple[JobState | None, bool]:
+    """The job's state in the saved queue (``None``: not in it), and whether its owner still
+    runs. Blocking."""
+    states = [job.state for job in read_saved_queue(data_dir).jobs if job.id == job_id]
+    return (states[0] if states else None), _owner_alive(data_dir)
+
+
+def _owner_alive(data_dir: Path) -> bool:
+    """The process that held ``queue.lock`` last still runs (the file keeps its pid; the lock
+    is not taken). Blocking."""
+    try:
+        text = (data_dir / LOCK_FILE).read_text(encoding="ascii", errors="replace").strip()
+    except OSError:
+        return False
+    return text.isdigit() and psutil.pid_exists(int(text))
+
+
+async def _owner_for(action: str) -> RemoteQueue | None:
+    found = await connect_owner(
+        paths.data_dir(), config_dir=paths.config_dir(), cache_dir=paths.cache_dir()
+    )
+    if isinstance(found, str):
+        _error(f"{action} needs the Reframe server that owns the queue: {found}.")
+        return None
+    return found
+
+
+_ALL_DONE = {
+    "pause": "Paused every running job.",
+    "resume": "Resumed every paused job.",
+    "cancel": "Cancelled every job that had not ended.",
+}
+#: The states that each action of ``reframe queue`` acts on, and what it says for another.
+_ACTS_ON = {
+    "pause": (frozenset({JobState.RUNNING}), "it is {state}, not running"),
+    "resume": (frozenset({JobState.PAUSED}), "it is {state}, not paused"),
+    "cancel": (frozenset({JobState.WAITING, *_ACTIVE_STATES}), "it has ended ({state})"),
+}
+
+
+async def run_queue_action(action: str, refs: Sequence[str], *, every: bool) -> int:
+    """``reframe queue pause|resume|cancel``: the named jobs, or ``every`` one."""
+    if every == bool(refs):
+        _error("name the jobs (an id or the start of one), or give --all.")
+        return EXIT_USAGE
+    remote = await _owner_for(f"reframe queue {action}")
+    if remote is None:
+        return EXIT_FAILED
+    console = make_console()
+    try:
+        call = {"pause": remote.pause, "resume": remote.resume, "cancel": remote.cancel}[action]
+        if every:
+            await call()
+            console.print(Text(_ALL_DONE[action]), soft_wrap=True)
+            return EXIT_OK
+        code = EXIT_OK
+        for ref in refs:
+            job = find_job(remote.list(), ref)
+            if isinstance(job, str):
+                _error(job)
+                code = EXIT_FAILED
+                continue
+            states, refusal = _ACTS_ON[action]
+            if job.state not in states:
+                _error(f"{_job_name(job)}: {refusal.format(state=job.state.value)}.")
+                code = EXIT_FAILED
+                continue
+            try:
+                await call(job.id)
+            except QueueError as exc:
+                _error(f"{_job_name(job)}: {exc}")
+                code = EXIT_FAILED
+                continue
+            after = remote.get(job.id)
+            state = after.state.value if after is not None else "removed"
+            console.print(Text(printable(f"{_job_name(job)}: {state}")), soft_wrap=True)
+        return code
+    finally:
+        await remote.close(detach=True)
+
+
+async def run_queue_retry(ref: str) -> int:
+    """``reframe queue retry``: a failed, cancelled or interrupted job waits again, and a
+    waiting job is started (it runs in the server, as a detached job)."""
+    remote = await _owner_for("reframe queue retry")
+    if remote is None:
+        return EXIT_FAILED
+    console = make_console()
+    try:
+        job = find_job(remote.list(), ref)
+        if isinstance(job, str):
+            _error(job)
+            return EXIT_FAILED
+        try:
+            retried = await remote.retry(job.id)
+        except QueueError as exc:
+            _error(f"{_job_name(job)}: {exc}")
+            return EXIT_FAILED
+        if retried.state is not JobState.WAITING:
+            console.print(
+                Text(printable(f"{_job_name(job)}: {retried.state.value}"), style="bold red"),
+                soft_wrap=True,
+            )
+            render_issues(console, retried.issues, severities=(Severity.ERROR,))
+            return EXIT_FAILED
+        remote.start(job_ids=[job.id])
+        console.print(
+            Text(printable(f"{_job_name(job)}: waiting; it starts when a slot is free.")),
+            soft_wrap=True,
+        )
+        return EXIT_OK
+    finally:
+        await remote.close(detach=True)
+
+
+async def run_queue_remove(ref: str) -> int:
+    """``reframe queue remove``: a job that does not run, with its log."""
+    remote = await _owner_for("reframe queue remove")
+    if remote is None:
+        return EXIT_FAILED
+    try:
+        job = find_job(remote.list(), ref)
+        if isinstance(job, str):
+            _error(job)
+            return EXIT_FAILED
+        try:
+            await remote.remove(job.id)
+        except QueueError as exc:
+            _error(f"{_job_name(job)}: {exc}")
+            return EXIT_FAILED
+        make_console().print(Text(printable(f"Removed {_job_name(job)}.")), soft_wrap=True)
+        return EXIT_OK
+    finally:
+        await remote.close(detach=True)
 
 
 _EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one of them cannot."
@@ -2699,15 +3807,46 @@ def build_app() -> typer.Typer:
             bool,
             typer.Option("--recursive", "-r", help="Also search the subfolders of folders."),
         ] = False,
+        detach: Annotated[
+            bool,
+            typer.Option(
+                "--detach",
+                help="Queue the jobs in the Reframe server, start them, print their ids and "
+                "end: they run on without this command (reframe queue list follows them).",
+            ),
+        ] = False,
+        in_process: Annotated[
+            bool,
+            typer.Option(
+                "--in-process",
+                envvar=IN_PROCESS_ENV,
+                help="Run the jobs in this process instead of the Reframe server that every "
+                "Reframe program of this data folder shares. They are saved only when no other "
+                "process owns the queue, and the queue's parallel limit counts them apart.",
+            ),
+        ] = False,
     ) -> None:
         """Encode media files: one job per file, through the queue, with progress and ETA.
 
-        Each job is drafted from the preset and validated; a file whose job has errors is
-        reported and not queued, the others are encoded. Outputs are named by the naming
-        template (-o only with a single file); a job never writes another file of the command
-        or an earlier job's output (that file is not queued). Ctrl+C cancels the running and
-        waiting jobs and removes their partial files."""
-        _run(run_encode(paths, preset=preset, output=output, recursive=recursive))
+        The jobs go to the Reframe server that owns the queue of this data folder (one is
+        started when none runs), at the end of the queue, and its parallel limit holds for
+        every program. Each job is drafted from the preset and validated; a file whose job has
+        errors is reported and not queued, the others are encoded. Outputs are named by the
+        naming template (-o only with a single file); a job never writes another file of the
+        command, an earlier job's output, or the output of another waiting or running job
+        (that file is not queued). Ctrl+C cancels the running and waiting jobs of this command
+        and removes their partial files; so does the end of this command in any other way,
+        unless --detach."""
+        _run(
+            run_encode(
+                paths,
+                preset=preset,
+                output=output,
+                recursive=recursive,
+                detach=detach,
+                in_process=in_process,
+            )
+        )
 
     @app.command(epilog=_EXIT_HELP_NAME)
     def name(
@@ -2774,6 +3913,24 @@ def build_app() -> typer.Typer:
                 "--json", help="With --dry-run: print the groups and the matrices as JSON."
             ),
         ] = False,
+        detach: Annotated[
+            bool,
+            typer.Option(
+                "--detach",
+                help="Queue the jobs in the Reframe server, start them, print their ids and "
+                "end: they run on without this command (reframe queue list follows them).",
+            ),
+        ] = False,
+        in_process: Annotated[
+            bool,
+            typer.Option(
+                "--in-process",
+                envvar=IN_PROCESS_ENV,
+                help="Run the jobs in this process instead of the Reframe server that every "
+                "Reframe program of this data folder shares. They are saved only when no other "
+                "process owns the queue, and the queue's parallel limit counts them apart.",
+            ),
+        ] = False,
     ) -> None:
         """Season mode: group files with the same track layout, resolve the preset's track
         rules in every file, and encode the season.
@@ -2794,8 +3951,67 @@ def build_app() -> typer.Typer:
                 dry_run=dry_run,
                 recursive=recursive,
                 as_json=as_json,
+                detach=detach,
+                in_process=in_process,
             )
         )
+
+    queue_app = typer.Typer(
+        no_args_is_help=True,
+        help="The queue that the Reframe programs of this data folder share: list its jobs, "
+        "read a log, pause, resume, cancel, retry or remove jobs. A job is named by its id or "
+        "any start of it that names one job.",
+    )
+    app.add_typer(queue_app, name="queue")
+
+    @queue_app.command("list", epilog=_EXIT_HELP_QUEUE_READ)
+    def queue_list(
+        as_json: Annotated[
+            bool, typer.Option("--json", help="Print the jobs (QueueJob models) as JSON.")
+        ] = False,
+    ) -> None:
+        """List the jobs in queue order: id, state, progress, source and output. With no
+        Reframe server running, the saved queue is read as it is (nothing is started)."""
+        _run(run_queue_list(as_json=as_json))
+
+    @queue_app.command("log", epilog=_EXIT_HELP_QUEUE_READ)
+    def queue_log(
+        job: _JobRef,
+        follow: Annotated[
+            bool,
+            typer.Option("--follow", "-f", help="Print what is written until the job ends."),
+        ] = False,
+    ) -> None:
+        """Print a job's log: the command lines, the tool output and the timing of each run."""
+        _run(run_queue_log(job, follow=follow))
+
+    @queue_app.command("pause", epilog=_EXIT_HELP_QUEUE_ACTION)
+    def queue_pause(jobs: _JobRefs = None, every: _All = False) -> None:
+        """Pause running jobs (their processes are suspended)."""
+        _run(run_queue_action("pause", jobs or [], every=every))
+
+    @queue_app.command("resume", epilog=_EXIT_HELP_QUEUE_ACTION)
+    def queue_resume(jobs: _JobRefs = None, every: _All = False) -> None:
+        """Resume paused jobs."""
+        _run(run_queue_action("resume", jobs or [], every=every))
+
+    @queue_app.command("cancel", epilog=_EXIT_HELP_QUEUE_ACTION)
+    def queue_cancel(jobs: _JobRefs = None, every: _All = False) -> None:
+        """Cancel jobs: a waiting one is not run, a running one is stopped and its partial
+        file removed. --all cancels every job that has not ended, of every program."""
+        _run(run_queue_action("cancel", jobs or [], every=every))
+
+    @queue_app.command("retry", epilog=_EXIT_HELP_QUEUE_ACTION)
+    def queue_retry(job: _JobRef) -> None:
+        """Run a failed, cancelled or interrupted job again, or start a waiting one: it waits
+        at its place in the queue and starts when a slot is free, in the server, without this
+        command."""
+        _run(run_queue_retry(job))
+
+    @queue_app.command("remove", epilog=_EXIT_HELP_QUEUE_ACTION)
+    def queue_remove(job: _JobRef) -> None:
+        """Remove a job that is not running or paused, with its log."""
+        _run(run_queue_remove(job))
 
     tools_app = typer.Typer(
         no_args_is_help=True,
@@ -2933,6 +4149,9 @@ def _run(work: Coroutine[object, object, int]) -> None:
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
         code = EXIT_INTERRUPTED
+    except QueueError as exc:  # the queue's server refused a call or went away
+        _error(str(exc))
+        code = EXIT_FAILED
     except Exception as exc:  # a bug: one line, never a traceback (unless asked for)
         if os.environ.get(TRACEBACK_ENV, "").strip().lower() not in ("", "0", "false", "no"):
             raise

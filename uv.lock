@@ -1334,7 +1334,9 @@ dependencies = [
 
 [package.optional-dependencies]
 cli = [
+    { name = "httpx" },
     { name = "typer" },
+    { name = "websockets" },
 ]
 mediainfo = [
     { name = "pymediainfo" },
@@ -1343,6 +1345,7 @@ mediainfo = [
 [package.metadata]
 requires-dist = [
     { name = "guessit", specifier = ">=4.4.0" },
+    { name = "httpx", marker = "extra == 'cli'", specifier = ">=0.28.1" },
     { name = "langcodes", specifier = ">=3.5.1" },
     { name = "language-data", specifier = ">=1.4.0" },
     { name = "platformdirs", specifier = ">=4.13.0" },
@@ -1350,6 +1353,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.14.0" },
     { name = "pymediainfo", marker = "extra == 'mediainfo'", specifier = ">=7.0.1" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.27.3" },
+    { name = "websockets", marker = "extra == 'cli'", specifier = ">=17.3" },
 ]
 provides-extras = ["cli", "mediainfo"]
 

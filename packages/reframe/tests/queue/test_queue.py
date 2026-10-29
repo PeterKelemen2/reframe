@@ -23,7 +23,7 @@ from reframe.queue import JobStateError, UnknownJobError
 from reframe.service import ReframeClosedError
 from reframe_testing import fake_tools as ft
 
-from .conftest import Harness, encode_rule, queue_at, store_rows
+from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows
 
 pytestmark = pytest.mark.anyio
 
@@ -114,6 +114,21 @@ async def test_job_log_events_are_rate_limited(harness: Harness) -> None:
     assert batch.dropped > 300
     assert batch.lines[-1].startswith("[")  # the newest lines are kept  # type: ignore[union-attr]
     assert "line 499" in h.log_text(ended.id)  # the file has them all
+
+
+async def test_a_running_jobs_log_file_has_its_lines_while_the_step_runs(
+    harness: Harness,
+) -> None:
+    """Another process (``reframe queue log``) reads the file while the job runs."""
+    h = harness
+    h.scenario(LONG)
+    added = await h.queue.add(h.job())
+    h.queue.start()
+    await h.running_process(added.id)
+    log = h.queue.log_path(added.id)
+    await h.wait_for(lambda: "\n$ " in log.read_text(encoding="utf-8"), limit=5)
+    await h.queue.cancel(added.id)
+    assert h.leftovers() == []
 
 
 async def test_pause_suspends_the_tree_and_resume_continues(harness: Harness) -> None:
@@ -344,18 +359,16 @@ async def test_parallel_slots_from_the_settings(harness: Harness) -> None:
     assert starts == ids  # queue order
 
 
-async def test_two_jobs_with_one_output_never_run_together(harness: Harness) -> None:
+async def test_two_restored_jobs_with_one_output_never_run_together(harness: Harness) -> None:
     h = harness
     h.settings.queue.parallel_jobs = 3
     h.scenario(encode_rule(ft.progress(blocks=4, interval=0.05), ft.write_output()))
-    first = await h.queue.add(h.job("Same"))
-    second = await h.queue.add(h.job("Same"))
-    third = await h.queue.add(h.job("Other"))
+    first, second, third = await restore_together(h, h.job("Same"), h.job("Same"), h.job("Other"))
     h.queue.start()
     ended = await h.queue.wait()
     assert [j.state for j in ended] == [JobState.DONE] * 3
     starts = [e.job_id for e in h.of_type("job.state") if e.state is JobState.RUNNING]  # type: ignore[union-attr]
-    assert starts == [first.id, third.id, second.id]
+    assert starts == [first, third, second]
     assert {j.output_path for j in ended} == {
         h.tmp / "out" / "Same.mkv",
         h.tmp / "out" / "Same (1).mkv",

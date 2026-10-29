@@ -14,6 +14,7 @@ import logging
 import os
 import uuid
 from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from reframe.models.events import (
     JobStateEvent,
     QueueChangedEvent,
 )
-from reframe.models.issues import Severity
+from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.naming import NamingOptions
 from reframe.models.queue import JobProgress, JobState, QueueJob
@@ -51,7 +52,7 @@ from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
 from reframe.queue.whendone import WhenDoneActions
 from reframe.validation import FileSystemView, LocalFileSystem
 
-__all__ = ["ENDED", "QueueService"]
+__all__ = ["ENDED", "OUTPUT_CLAIMED", "QueueService"]
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +60,10 @@ log = logging.getLogger(__name__)
 ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 _ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _RETRY = frozenset({JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
+#: States in which a job's output and source are claimed: no other job may write them.
+_CLAIMING = frozenset({JobState.WAITING, JobState.RUNNING, JobState.PAUSED})
+#: The issue of a job whose output another job writes or reads.
+OUTPUT_CLAIMED = "queue.output_claimed"
 
 
 #: ``list[...]`` for annotations inside ``QueueService``, whose ``list`` method hides the builtin.
@@ -96,13 +101,20 @@ class _Keys:
     output: files.FileKey | None
 
 
-def _job_keys(job: QueueJob) -> _Keys:
-    """``job``'s keys. Blocking: never call it on the event loop."""
-    source = _source_key(job)
+def _written_key(path: str | os.PathLike[str]) -> files.FileKey:
+    """``path`` as written, made absolute. No file-system call, so links are not resolved."""
+    return files.FileKey(os.path.abspath(path))
+
+
+def _job_keys(
+    job: QueueJob, key: Callable[[str | os.PathLike[str]], files.FileKey] = _path_key
+) -> _Keys:
+    """``job``'s keys. Blocking with the default ``key``: never call it on the event loop."""
+    source = key(job.settings.source.path)
     if job.settings.output.edit_in_place:
         return _Keys(source, source)
     path = job.settings.output.path
-    return _Keys(source, None if path is None else _path_key(path))
+    return _Keys(source, None if path is None else key(path))
 
 
 def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = None) -> bool:
@@ -122,6 +134,27 @@ def _conflicts(job: QueueJob, active: Iterable[ActiveJob], keys: _Keys | None = 
         if in_place and (same(source, other.source_key) or same(source, other.output_key)):
             return True  # the source to edit is being read or written
     return False
+
+
+def _claim_issue(job: QueueJob, other: QueueJob, *, as_source: bool) -> ValidationIssue:
+    target = (
+        job.settings.source.path if job.settings.output.edit_in_place else job.settings.output.path
+    )
+    name = Path(target).name if target is not None else ""
+    other_source = Path(other.settings.source.path).name
+    if as_source:
+        what = f"the source of a job that is {other.state.value} in the queue ({other_source})"
+    else:
+        what = f"the output of a job that is {other.state.value} in the queue ({other_source})"
+    return ValidationIssue(
+        severity=Severity.ERROR,
+        code=OUTPUT_CLAIMED,
+        path="output.path",
+        message=printable(
+            f"{name} is also {what}: this job would replace that file. Cancel or remove the "
+            "other job first, or choose another output name."
+        ),
+    )
 
 
 def _restored_error(job: QueueJob) -> str:
@@ -208,6 +241,9 @@ class QueueService:
         """Each waiting or running job's file keys, taken off the event loop."""
         self._keying: dict[str, asyncio.Task[None]] = {}
         """The jobs whose keys are being taken in the background (restored jobs)."""
+        self._unchecked: set[str] = set()
+        """Restored jobs that were not added or retried since: their claims were never
+        checked against each other (a store of an older Reframe may hold two with one output)."""
         self._processing = False
         self._only: set[str] | None = None
         """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
@@ -275,6 +311,14 @@ class QueueService:
         keys = None if errors else await self._take_keys(queued)  # a failed job: at its retry
         self._check_open()
         async with self._lock:
+            # Under the lock: two adds of one output at the same time must not both pass.
+            claim = None if keys is None else self._claim(queued, keys)
+            if claim is not None:
+                keys = None
+                queued.state = JobState.FAILED
+                queued.issues = [*queued.issues, claim]
+                queued.finished_at = now
+                queued.error = error = printable(f"The job has errors: {claim.message}")
             order = self._ordered()
             index = len(order) if position is None else max(0, min(position, len(order)))
             order.insert(index, queued)
@@ -354,13 +398,24 @@ class QueueService:
         # Taken again: a link or a file may have changed since the job was added.
         keys = await self._take_keys(job)
         self._check_open()
-        job = self._job(job_id)  # removed meanwhile: UnknownJobError
-        if job.state not in _RETRY:  # a retry at the same time took it first
-            return job.model_copy(deep=True)
-        self._keys[job_id] = keys
-        job.started_at = job.finished_at = None
-        job.progress = None
-        await self._set_state(job, JobState.WAITING, error=None)
+        async with self._lock:
+            job = self._job(job_id)  # removed meanwhile: UnknownJobError
+            if job.state not in _RETRY:  # a retry at the same time took it first
+                return job.model_copy(deep=True)
+            claim = self._claim(job, keys)
+            kept = [issue for issue in job.issues if issue.code != OUTPUT_CLAIMED]
+            if claim is not None:
+                job.issues = [*kept, claim]
+                job.finished_at = self._clock.now()
+                error = f"The job has errors: {claim.message}"
+                await self._set_state(job, JobState.FAILED, error=error)
+                return job.model_copy(deep=True)
+            job.issues = kept
+            self._keys[job_id] = keys
+            self._unchecked.discard(job_id)
+            job.started_at = job.finished_at = None
+            job.progress = None
+            await self._set_state(job, JobState.WAITING, error=None)
         self._schedule()
         return job.model_copy(deep=True)
 
@@ -571,6 +626,7 @@ class QueueService:
                 job.error = _restored_error(job)
                 job.finished_at = job.finished_at or now
             self._jobs[job.id] = job
+        self._unchecked.update(self._jobs)
         changed = self._renumber(self._ordered())
         to_save = {job.id: job for job in changed}
         to_save.update((job.id, job) for job, _ in interrupted)
@@ -660,6 +716,25 @@ class QueueService:
             )
         return False
 
+    def _claim(
+        self, job: QueueJob, keys: _Keys, *, skip: AbstractSet[str] = frozenset()
+    ) -> ValidationIssue | None:
+        """The issue when ``job``'s output is the output or the source of another waiting,
+        running or paused job (not one in ``skip``). No file-system call: a restored job whose
+        keys are still being taken is compared by its paths as written."""
+        output = keys.output
+        if output is None:
+            return None
+        for other in self._ordered():
+            if other.id == job.id or other.state not in _CLAIMING or other.id in skip:
+                continue
+            theirs = self._keys.get(other.id) or _job_keys(other, _written_key)
+            if files.same_key(output, theirs.output):
+                return _claim_issue(job, other, as_source=False)
+            if files.same_key(output, theirs.source):
+                return _claim_issue(job, other, as_source=True)
+        return None
+
     async def _take_keys(self, job: QueueJob) -> _Keys:
         """``job``'s file keys, taken in a worker thread: a disk or a network share that does
         not answer delays only this call, never the event loop."""
@@ -685,10 +760,20 @@ class QueueService:
             keys = await self._take_keys(job)
         finally:
             self._keying.pop(job.id, None)
-        if self._closed or self._jobs.get(job.id) is not job:
-            return  # closed or removed meanwhile
-        self._keys.setdefault(job.id, keys)  # a retry meanwhile took newer ones
-        self._schedule()
+        if self._closed or self._jobs.get(job.id) is not job or job.id in self._keys:
+            return  # closed or removed meanwhile, or a retry took newer keys and checked them
+        # The jobs added or retried meanwhile were checked against its paths as written; a
+        # link or another spelling of the same file shows only now.
+        claim = None
+        if job.state is JobState.WAITING:
+            claim = self._claim(job, keys, skip=self._unchecked)
+        if claim is None:
+            self._keys[job.id] = keys
+            self._schedule()
+            return
+        job.issues = [*job.issues, claim]
+        job.finished_at = self._clock.now()
+        await self._set_state(job, JobState.FAILED, error=f"The job has errors: {claim.message}")
 
     async def _run(self, job: QueueJob, active: ActiveJob) -> None:
         joblog = JobLog(
