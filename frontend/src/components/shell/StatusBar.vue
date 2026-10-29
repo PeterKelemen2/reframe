@@ -1,7 +1,13 @@
+<script lang="ts">
+/** The CSS variable with the status bar's height while it is shown (toasts keep clear of it). */
+export const STATUS_BAR_HEIGHT = '--shell-status-bar-height'
+</script>
+
 <script setup lang="ts">
 import { ListPlus, ListVideo, Play, Plus } from '@lucide/vue'
+import { useResizeObserver } from '@vueuse/core'
 import vTooltip from 'primevue/tooltip'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
@@ -21,6 +27,13 @@ const { canAdd, canAddAll, canStart } = actions
 
 const outputPath = computed(() => editor.job?.output?.path || null)
 
+const root = useTemplateRef<HTMLElement>('root')
+useResizeObserver(root, ([entry]) => {
+  const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height ?? 0
+  document.documentElement.style.setProperty(STATUS_BAR_HEIGHT, `${Math.ceil(height)}px`)
+})
+onBeforeUnmount(() => document.documentElement.style.removeProperty(STATUS_BAR_HEIGHT))
+
 const queueSummary = computed(() => {
   const { running, paused, waiting } = queue.counts
   const parts: string[] = []
@@ -34,7 +47,7 @@ const queueSummary = computed(() => {
 </script>
 
 <template>
-  <section class="status-bar" :aria-label="t('shell.status.label')">
+  <section ref="root" class="status-bar" :aria-label="t('shell.status.label')">
     <div class="status-bar__output" data-field="output">
       <span class="status-bar__caption">{{ t('shell.status.output') }}</span>
       <span

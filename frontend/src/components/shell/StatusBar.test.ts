@@ -130,6 +130,32 @@ describe('the status bar', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(list()))
   })
 
+  it('publishes its height for the toasts while it is shown', async () => {
+    const observed: ResizeObserverCallback[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observed.push(callback)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    try {
+      const wrapper = await mountBar()
+      const entry = { borderBoxSize: [{ blockSize: 48.4, inlineSize: 900 }] }
+      for (const callback of observed) callback([entry] as never, {} as ResizeObserver)
+      const root = document.documentElement.style
+      expect(root.getPropertyValue('--shell-status-bar-height')).toBe('49px')
+      wrapper.unmount()
+      mounted.splice(0)
+      expect(root.getPropertyValue('--shell-status-bar-height')).toBe('')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('shows a lost connection in words', async () => {
     const wrapper = await mountBar()
     const system = useSystemStore()

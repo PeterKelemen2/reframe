@@ -41,6 +41,15 @@ describe('the toasts', () => {
     expect(shown()).toEqual(['Early / from the boot', 'Later', 'Third'])
   })
 
+  it('shows the toasts at the bottom right, clear of the status bar', async () => {
+    await mountToasts()
+    useToastStore().push({ severity: 'success', summary: 'Added' })
+    await flushPromises()
+    const host = document.querySelector<HTMLElement>('.shell-toasts')
+    expect(host?.classList.contains('p-toast-bottom-right')).toBe(true)
+    expect(host?.style.bottom).toContain('var(--shell-status-bar-height, 0px)')
+  })
+
   it('keeps a toast in the store while it is on screen, and removes it when it is closed', async () => {
     await mountToasts()
     const toasts = useToastStore()
