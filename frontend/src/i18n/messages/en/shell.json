@@ -1,10 +1,4 @@
 {
-  "app": {
-    "name": "Reframe"
-  },
-  "nav": {
-    "workspace": "Workspace"
-  },
   "workspace": {
     "title": "Workspace",
     "placeholder": "Sources, settings and preview will appear here."

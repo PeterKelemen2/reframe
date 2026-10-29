@@ -3,3 +3,6 @@
 
 # Vitest coverage output
 coverage/
+
+# Playwright output (results, traces, screenshots)
+e2e/.results/

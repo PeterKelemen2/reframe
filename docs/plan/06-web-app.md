@@ -374,22 +374,34 @@ needs it). See [decision 0003](../decisions/0003-frontend-held-back-majors.md).
 
 ```
 frontend/src/
-├── api/              # schema.d.ts (generated), client.ts, events.ts (WebSocket + reconnect)
+├── api/              # schema.d.ts (generated), types.ts, client.ts, events.ts (WebSocket + reconnect)
 ├── platform/         # Platform interface + web.ts + desktop.ts (Tauri plugins)
-├── stores/           # system, sources, editor, validation, presets, queue, tasks, settings
-├── views/            # WorkspaceView, QueueView, PresetsView, ActivityView, SettingsView
+├── stores/           # system, sources, editor, validation, presets, queue, tasks, settings,
+│                     # activity, toasts, ui
+├── views/            # WorkspaceView, QueueView, PresetsView, ActivityView, SettingsView,
+│                     # SandboxView (dev only)
 ├── components/
-│   ├── base/         # Field, Section, Card, RoleBadge, CodecLabel, LanguageChip, StatusDot, KeyValue
-│   ├── editor/tabs/  # SummaryTab … TagsTab
+│   ├── base/         # Field, Section, Card, RoleBadge, CodecLabel, LanguageChip, StatusDot, KeyValue,
+│   │                 # IssueList
+│   ├── shell/        # navigation rail, status bar, login and first-run screens, toasts
+│   ├── editor/tabs/  # SummaryTab … TagsTab, and the tab registry
+│   ├── sources/      # SourcesPanel, FileBrowserDialog (web)
+│   ├── naming/       # NamingOptionsEditor, JobNamingEditor
+│   ├── presets/      # PresetPicker, the preset drawer
 │   ├── media/        # FrameViewer, CropMagnifier, CropCheckGrid, SplitCompare, TrackTable
 │   ├── metadata/     # TrackMetadataEditor, LanguagePicker, FlagToggles, BulkEditDialog
 │   ├── video/        # EncoderPicker, QualitySlider, AdvancedOptions, CommandPreview
 │   ├── batch/        # GroupBanner, ApplyToGroupDialog, ResolutionMatrix, OverrideDot
+│   ├── settings/     # the Settings sections
 │   └── queue/        # QueueTable, JobLog
-├── composables/      # useValidation, useGeometry, useShortcuts, useUndo
-├── i18n/
+├── composables/      # useValidation, useGeometry, useShortcuts, useUndo, useReveal, useTheme
+├── i18n/             # index.ts; messages/<locale>/<area>.json, one file per area
 └── styles/           # tokens, theme preset
 ```
+
+Each area of the app has its own message file and its own component folder, so that the M4
+tasks never share one ([decision 0063](../decisions/0063-m4-frontend-mvp.md)); the task
+breakdown and the store contracts are in [../m4-breakdown.md](../m4-breakdown.md).
 
 ## Platform adapter
 
@@ -452,6 +464,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 ### F-3 App shell
 - [ ] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
       shortcuts, theme switch, toasts, a first-run screen when FFmpeg is missing.
+- [ ] A tab of a later milestone is not shown until it is built, and its `Ctrl+N` does nothing
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-4 Editor state
 - [ ] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
@@ -527,6 +541,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 ### F-15 Settings view
 - [ ] The sections from [03 §Settings](03-features.md#settings). The encoder table has a re-scan
       button. Tool paths have a **Test** button.
+- [ ] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
+      `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
+      its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check

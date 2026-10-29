@@ -1,5 +1,8 @@
 import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import ConfirmationService from 'primevue/confirmationservice'
+import ToastService from 'primevue/toastservice'
+import Tooltip from 'primevue/tooltip'
 import type { App } from 'vue'
 import type { Router } from 'vue-router'
 
@@ -19,4 +22,7 @@ export function installPlugins(app: App, router: Router): App {
         },
       },
     })
+    .use(ToastService)
+    .use(ConfirmationService)
+    .directive('tooltip', Tooltip)
 }

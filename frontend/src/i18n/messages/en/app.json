@@ -1,0 +1,21 @@
+{
+  "name": "Reframe",
+  "tabs": {
+    "summary": "Summary",
+    "dimensions": "Dimensions",
+    "filters": "Filters",
+    "video": "Video",
+    "audio": "Audio",
+    "subtitles": "Subtitles",
+    "chapters": "Chapters",
+    "tags": "Tags"
+  },
+  "views": {
+    "workspace": "Workspace",
+    "queue": "Queue",
+    "presets": "Presets",
+    "activity": "Activity",
+    "settings": "Settings",
+    "sandbox": "Sandbox"
+  }
+}

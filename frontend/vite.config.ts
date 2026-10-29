@@ -6,9 +6,12 @@ import { defineConfig } from 'vitest/config'
 
 const PLATFORMS = ['web', 'desktop'] as const
 
-// The local reframe-server on its default port. The dev server forwards REST calls and the
-// `/api/events` WebSocket to it, so the browser sees one origin (CORS stays off in web mode).
-const BACKEND = 'http://127.0.0.1:8765'
+// The dev server forwards REST calls and the `/api/events` WebSocket to a reframe-server, so the
+// browser sees one origin (CORS stays off in web mode). Default: the server's default port.
+// Parallel checks each run their own server and dev server: REFRAME_DEV_BACKEND and
+// REFRAME_DEV_PORT pick them. The dev server never opens a browser itself.
+const BACKEND = process.env.REFRAME_DEV_BACKEND ?? 'http://127.0.0.1:8765'
+const DEV_PORT = process.env.REFRAME_DEV_PORT ? Number(process.env.REFRAME_DEV_PORT) : undefined
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_')
@@ -32,6 +35,8 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '127.0.0.1',
+      port: DEV_PORT,
+      strictPort: DEV_PORT !== undefined,
       proxy: {
         '/api': {
           target: BACKEND,

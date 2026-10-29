@@ -21,7 +21,16 @@ npm run typecheck      # vue-tsc --noEmit (strict templates), app and Node confi
 npm test               # vitest run
 npm run build:web      # dist/ for reframe-server
 npm run build:desktop  # dist/ for Tauri (VITE_PLATFORM=desktop)
+npm run e2e            # Playwright end-to-end tests, headless only (playwright.config.ts)
 ```
+
+`npm run dev:web` reads `REFRAME_DEV_BACKEND` (default `http://127.0.0.1:8765`) and
+`REFRAME_DEV_PORT`, so that several dev servers and backends can run side by side. For a
+browser check against a real server in private folders, see `scripts/dev-server.py` (from the
+repository root); it serves `dist/`, so run `npm run build:web` first.
+
+Every string the user sees goes through vue-i18n. The messages are in
+`src/i18n/messages/en/<area>.json`, one file per area (`video.json` holds the `video.` keys).
 
 ## Platform builds
 

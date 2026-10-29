@@ -3,18 +3,21 @@ import { Clapperboard } from '@lucide/vue'
 import Message from 'primevue/message'
 import { useI18n } from 'vue-i18n'
 
+import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
 
 const { t } = useI18n()
+
+useValidation()
 </script>
 
 <template>
   <main class="workspace" :data-platform="platform.kind">
     <h1 class="workspace__title">
       <Clapperboard :size="28" aria-hidden="true" />
-      {{ t('workspace.title') }}
+      {{ t('shell.workspace.title') }}
     </h1>
-    <Message severity="secondary" :closable="false">{{ t('workspace.placeholder') }}</Message>
+    <Message severity="secondary" :closable="false">{{ t('shell.workspace.placeholder') }}</Message>
   </main>
 </template>
 

@@ -40,7 +40,8 @@ for them.
 | M2 Encode from the CLI | **Done** | Merged into `main`. Demo (run for real on Linux, 2026-10-14): `reframe encoders` (cached at once, then updated; `hevc_nvenc — unavailable: NVIDIA driver not found`), `reframe plan FILE --preset "H.265 MKV 1080p"`, `reframe encode FILE\|DIR…` with progress and ETA (Ctrl+C cancels and removes the `.part` file), a preset with an unavailable encoder names the closest one, `reframe name` (`Hacksaw.Ridge`, `The.Sopranos.S03E02.Proshai.Livushka`). A fresh review found 2 blockers and 9 major defects; all are fixed ([0025](decisions/0025-audio-bitrate-snaps-down.md) – [0028](decisions/0028-preset-export-keeps-newer-presets.md)) |
 | M3 API and desktop spike | **Done** on Linux | Merged into `main` from `m3-api-spike` (2026-10-28; [m3-breakdown.md](m3-breakdown.md)). The server part was reviewed and fixed ([0052](decisions/0052-m3-server-review.md)); D-0 on Linux confirms Tauri 2 with a PyInstaller onedir sidecar, and its review's 16 findings are fixed ([0001](decisions/0001-desktop-shell.md)). Demo (run for real on Linux, 2026-10-28, [0001](decisions/0001-desktop-shell.md#review-of-the-d-0-work-2026-10-27)): the OpenAPI docs page and document list every route (79 operations, none missing either way), `scripts/gen-api.sh --check` passes, `reframe-server` in web mode probes and encodes the 4K fixture with `job.progress` over `WS /api/events` (event numbers 1 to 27, no gap), SIGINT gives exit 130; the desktop spike result is in 0001. The plan was reviewed first ([0043](decisions/0043-plan-review-before-m3.md)). `Q-1.4` (a Windows run) and D-0's Windows items moved to the Windows testing phase of M10 ([0053](decisions/0053-linux-first-windows-testing-phase.md)) |
 | M3b Shared queue | **Done** on Linux | Merged into `main` from `m3b-shared-queue` (2026-10-29). S-7 and C-17 ([0042](decisions/0042-one-scheduler-process-and-cli-clients.md)); S-7's server side came with `server-complete` ([0055](decisions/0055-server-complete-order.md)), C-17 is [0061](decisions/0061-c17-remote-queue-and-queue-commands.md). Two reviews found 2 blockers and 5 majors; all are fixed, the minors fixed or recorded ([0062](decisions/0062-c17-review.md)). Demo (run for real on Linux, 2026-10-29, [0062](decisions/0062-c17-review.md)): two `reframe encode` runs share `parallel_jobs` 1 and show in a third command's `reframe queue list`, and Ctrl+C in one cancels only its own jobs; `kill -9` of one run cancels its job and removes its `.part` while the other ends `done`; a job whose output another waiting job claims is added `failed` with `queue.output_claimed`. C-17's eight checks pass on Linux (2026-10-28): 1–7 with the real `reframe` CLI, the `reframe-server` it starts and the real FFmpeg (`tests/remote/test_shared_queue_real.py`), 8 in the queue contract suite. After the CLI's review fixes (2026-10-29) the real-process tests also cover a waiting job that another client removes, Ctrl+C with the other client's job running in the second slot, and Ctrl+Z (SIGTSTP, then SIGCONT). Not run on Windows |
-| M4, M5 | Not started | |
+| M4 Frontend MVP (web) | **In progress** | Branch `m4-frontend-mvp` ([m4-breakdown.md](m4-breakdown.md), [0063](decisions/0063-m4-frontend-mvp.md)): dependencies, the shared skeleton and `scripts/dev-server.py` are in; the tasks follow in waves |
+| M5 | Not started | |
 | M6 – M9 | Core parts **done**; UI parts not started | The core-complete steps (C-12, C-10, C-13, C-6, C-14, C-11, C-15) are merged into `main` with `core-complete` (2026-10-17, [0029](decisions/0029-core-before-the-ui-milestones.md)). Two reviews: 4 blockers, 12 majors and 22 minors, then 1 blocker, 3 majors and 10 minors (plus what the fix agents found); all fixed or recorded as known limits ([0041](decisions/0041-core-complete-review.md)). The 8 core demos of [core-breakdown.md](core-breakdown.md#demos-run-for-real-by-the-lead-after-wave-3-output-in-the-final-report) pass (run for real on Linux, 2026-10-17). Each milestone stays open until its UI parts (F-10, F-11, F-13, F-7, F-8, F-9) are built and its full demo passes |
 | M10 | Not started | |
 
@@ -90,7 +91,24 @@ for them.
 | Step | Status | Notes |
 |------|--------|-------|
 | F-0 Scaffold | **Done** | Vue 3.5, Vite, Pinia, Router, PrimeVue 4, vue-i18n, oxlint, oxfmt, vue-tsc (strict templates), Vitest, the `Platform` interface. PrimeVue 4 and TypeScript 6 are held back on purpose ([0003](decisions/0003-frontend-held-back-majors.md)) |
-| F-1 … F-18 | Not started | |
+| F-1 Design system | Not started | M4, task A |
+| F-2 API layer and events | Not started | M4, task B |
+| F-3 App shell | Not started | M4, task C |
+| F-4 Editor state | Not started | M4, task D |
+| F-5 Sources panel and opening files | Not started | M4, task E |
+| F-6 Summary tab | Not started | M4, task G |
+| F-7 Dimensions tab, preview panel, crop magnifier | Not started | M8 |
+| F-8 Filters tab | Not started | M8 |
+| F-9 Video tab and advanced options | Not started | M4 without the advanced panel (task H); the advanced panel in M9 |
+| F-10 Audio and subtitles tabs | Not started | M4: source tables and basic output tracks (task I); the rest in M6 |
+| F-11 Chapters and tags tabs | Not started | M6 |
+| F-12 Presets UI | Not started | M4, task J |
+| F-13 Batch UI | Not started | M7 |
+| F-14 Queue and activity | Not started | M4, task K |
+| F-15 Settings view | Not started | M4: Tools, Encoders, Output, Queue, Appearance (task L); Languages in M6, Preview in M8 ([0063](decisions/0063-m4-frontend-mvp.md)) |
+| F-16 i18n and accessibility | Not started | M10 |
+| F-17 End-to-end tests | Not started | M4: the Playwright set-up and flow 3 (task M); flow 1 in M6, flow 2 in M7, flow 4 in M8 |
+| F-18 Naming editor | Not started | M4, task F |
 
 ### Desktop (`desktop/`, 07-desktop-app.md)
 
