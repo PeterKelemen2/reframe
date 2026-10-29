@@ -113,6 +113,23 @@ describe('the status bar', () => {
     await vi.waitFor(() => expect(list()).toBeNull())
   })
 
+  it('takes the focus into the list of issues when it opens: its first control, else the list', async () => {
+    validation.issues = [issue('warning', 'The bitrate is high', 'audio[0].bitrate')]
+    const wrapper = await mountBar()
+    const summary = wrapper.find<HTMLButtonElement>('.validation-summary').element
+    summary.focus()
+    summary.click()
+    await vi.waitFor(() => expect(list()?.contains(document.activeElement)).toBe(true))
+    expect(document.activeElement?.classList.contains('rf-issue__reveal')).toBe(true)
+    summary.click()
+    await vi.waitFor(() => expect(list()).toBeNull())
+
+    validation.issues = []
+    await flushPromises()
+    summary.click()
+    await vi.waitFor(() => expect(document.activeElement).toBe(list()))
+  })
+
   it('shows a lost connection in words', async () => {
     const wrapper = await mountBar()
     const system = useSystemStore()

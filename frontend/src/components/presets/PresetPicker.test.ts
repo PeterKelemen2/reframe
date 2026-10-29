@@ -189,6 +189,10 @@ describe('the preset picker', () => {
       { op: 'replace', path: '/preset_id', value: 'u2' },
       { op: 'replace', path: '/preset_name', value: 'My x264' },
     ])
+    // The marker is about to go: the focus waits on the preset button.
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__trigger').element),
+    )
   })
 
   it('shows a name clash at the name and takes the free name the server offers', async () => {
@@ -233,6 +237,39 @@ describe('the preset picker', () => {
       built_in: false,
     })
     expect(editor.refreshPresetChanges).toHaveBeenCalledOnce()
+  })
+
+  it('takes the focus into the changes when they open, and back to the picker after Update', async () => {
+    openJob(MINE, [ENCODER_CHANGE])
+    server.on('PUT /api/presets/u1', (request) => request.body)
+    editor.refreshPresetChanges.mockImplementation(() => (editor.presetChanges = []))
+    const { wrapper } = await mountPicker()
+    const marker = wrapper.find<HTMLButtonElement>('.preset-picker__modified').element
+    marker.focus()
+    marker.click()
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(body().querySelector('.preset-picker__save-as')),
+    )
+    body().querySelector<HTMLElement>('.preset-picker__update')?.focus()
+    await click('.preset-picker__update')
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__trigger').element),
+    )
+  })
+
+  it('gives the focus back to the marker when Save as new is cancelled', async () => {
+    openJob(H265, [ENCODER_CHANGE])
+    const { wrapper } = await mountPicker()
+    await wrapper.find('.preset-picker__modified').trigger('click')
+    await flushPromises()
+    await click('.preset-picker__save-as')
+    const cancel = [...body().querySelectorAll<HTMLElement>('.preset-name-dialog button')].find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    )
+    cancel?.click()
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__modified').element),
+    )
   })
 
   it('offers no update for a built-in preset', async () => {

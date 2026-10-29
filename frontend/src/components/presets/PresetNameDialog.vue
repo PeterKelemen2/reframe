@@ -21,7 +21,7 @@ export interface PresetDetailsInput {
 /**
  * Name, category and description of a preset: for *Save as new preset* and for *Rename*. `save`
  * rejects with the server's `ApiError`; a name clash shows at the name with the free name the
- * server offers.
+ * server offers. `closed` comes once the dialog has left the page.
  */
 const props = defineProps<{
   /** Already translated. */
@@ -33,6 +33,7 @@ const props = defineProps<{
 }>()
 
 const visible = defineModel<boolean>('visible', { required: true })
+const emit = defineEmits<{ closed: [] }>()
 
 const { t } = useI18n()
 const presets = usePresetsStore()
@@ -108,6 +109,7 @@ function useOffered(): void {
     :header="title"
     class="preset-name-dialog"
     :style="{ width: 'min(32rem, 95vw)' }"
+    @after-hide="emit('closed')"
   >
     <form class="preset-name-dialog__form" @submit.prevent="submit">
       <Field :label="t('presets.dialog.name')" :issues="nameIssues" stacked>

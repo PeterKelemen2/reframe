@@ -9,6 +9,8 @@ import { useI18n } from 'vue-i18n'
 
 import { type Density, type ThemeChoice, useTheme } from '@/composables/useTheme'
 
+import { focusFirstIn } from './focus'
+
 const { t } = useI18n()
 const appearance = useTheme()
 
@@ -34,6 +36,11 @@ const density = computed({
   get: () => appearance.density.value,
   set: (value: Density) => appearance.setDensity(value),
 })
+
+function shown(): void {
+  open.value = true
+  focusFirstIn(document.getElementById(`${id}-panel`))
+}
 </script>
 
 <template>
@@ -52,7 +59,7 @@ const density = computed({
       <Palette :size="20" aria-hidden="true" />
     </template>
   </Button>
-  <Popover ref="popover" @show="open = true" @hide="open = false">
+  <Popover ref="popover" @show="shown" @hide="open = false">
     <div
       :id="`${id}-panel`"
       class="theme-switch"
