@@ -7,7 +7,7 @@ import type { CapabilitySnapshot, Definitions, EncoderStatus } from '@/api/types
 import { useSystemStore } from '@/stores/system'
 
 import EncodersSection from './EncodersSection.vue'
-import { mountSettings, refusal } from './testing'
+import { comboboxName, mountSettings, refusal } from './testing'
 
 // jsdom has none; PrimeVue's Select listens to the orientation with one.
 globalThis.matchMedia ??= (query: string) =>
@@ -105,6 +105,11 @@ describe('the Encoders section', () => {
     expect(server.patches).toEqual([
       [{ op: 'replace', path: '/encoders/hardware_tests', value: false }],
     ])
+  })
+
+  it('names the node list by its label, not by its value', async () => {
+    await mountEncoders()
+    expect(comboboxName('vaapi-device')).toBe('VAAPI device')
   })
 
   it('offers automatic, each node an encoder works on, and another node', async () => {

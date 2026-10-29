@@ -90,9 +90,10 @@ function saveParallel(value: number | null): void {
         :help="web ? t('settings.queue.whenDoneHelpWeb') : t('settings.queue.whenDoneHelpDesktop')"
         :issues="whenDoneIssues"
       >
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :label-id="id"
+            :ariaLabelledby="labelId"
             :model-value="queue.whenDone"
             :options="whenDoneOptions"
             option-label="label"

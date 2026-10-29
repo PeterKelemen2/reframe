@@ -221,9 +221,10 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
   >
     <template #header>
       <Field :label="t('tracks.output.source')" :path="`${path}.source_stream`" stacked>
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="stream ? track.source_stream : null"
             :options="sourceOptions"
@@ -267,9 +268,10 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         :help="passthru ? t('tracks.output.fallbackHelp') : undefined"
         stacked
       >
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="track.encoder"
             :options="encoderOptions"
@@ -282,9 +284,10 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         </template>
       </Field>
       <Field :label="t('tracks.output.mixdown')" :path="`${path}.mixdown`" stacked>
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="track.mixdown ?? KEEP"
             :options="mixdownOptions"
@@ -297,9 +300,10 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         </template>
       </Field>
       <Field :label="t('tracks.output.samplerate')" :path="`${path}.samplerate`" stacked>
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="track.samplerate ? String(track.samplerate) : KEEP"
             :options="samplerateOptions"
@@ -362,9 +366,10 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
           </template>
         </Field>
         <Field v-else :label="t('tracks.output.bitrate')" :path="`${path}.bitrate`" stacked>
-          <template #default="{ id, invalid }">
+          <template #default="{ id, labelId, invalid }">
             <Select
               :input-id="id"
+              :ariaLabelledby="labelId"
               class="track-field__control"
               :model-value="track.bitrate ? String(track.bitrate) : DEFAULT"
               :options="bitrateOptions"
@@ -422,9 +427,10 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         </template>
       </Field>
       <Field :label="t('tracks.output.loudness')" :path="`${path}.loudness`" stacked>
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="track.loudness"
             :options="loudnessOptions"

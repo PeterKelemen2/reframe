@@ -124,3 +124,17 @@ export async function mountSettings<C extends Component>(
   })
   return { ...result, server }
 }
+
+/**
+ * What a screen reader names the list whose root has `data-field="field"`: `aria-labelledby`
+ * wins over `aria-label`, which PrimeVue's `Select` fills with the chosen value.
+ */
+export function comboboxName(field: string): string | undefined {
+  const combobox = document.querySelector(`[data-field="${field}"] [role="combobox"]`)
+  const ids = combobox?.getAttribute('aria-labelledby')
+  if (!ids) return combobox?.getAttribute('aria-label') ?? undefined
+  return ids
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+}

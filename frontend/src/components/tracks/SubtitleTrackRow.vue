@@ -117,13 +117,14 @@ const formatOptions = computed(() =>
   >
     <template #header>
       <Field :label="t('tracks.output.source')" :path="`${path}.source`" stacked>
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <span v-if="external" :id="id" class="track-field__external">
             {{ t('tracks.output.externalFile', { name: fileName(external.path) }) }}
           </span>
           <Select
             v-else
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="stream ? track.source : null"
             :options="sourceOptions"
@@ -165,9 +166,10 @@ const formatOptions = computed(() =>
         :path="`${path}.convert_to`"
         stacked
       >
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
+            :ariaLabelledby="labelId"
             class="track-field__control"
             :model-value="track.convert_to"
             :options="formatOptions"
