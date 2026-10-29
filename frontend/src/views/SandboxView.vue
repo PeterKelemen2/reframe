@@ -5,10 +5,17 @@ import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { Language, TrackRoleInfo, ValidationIssue } from '@/api/types'
+import { apiQuiet } from '@/api/client'
+import type {
+  Language,
+  NamingOptions,
+  SourceEntry,
+  TrackRoleInfo,
+  ValidationIssue,
+} from '@/api/types'
 import Card from '@/components/base/Card.vue'
 import CodecLabel from '@/components/base/CodecLabel.vue'
 import Field from '@/components/base/Field.vue'
@@ -19,7 +26,11 @@ import RoleBadge from '@/components/base/RoleBadge.vue'
 import Section from '@/components/base/Section.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
 import type { CodecInfo, StatusTone } from '@/components/base/types'
+import JobNamingEditor from '@/components/naming/JobNamingEditor.vue'
+import NamingOptionsEditor from '@/components/naming/NamingOptionsEditor.vue'
 import { type Density, type ThemeChoice, useTheme } from '@/composables/useTheme'
+import { useEditorStore } from '@/stores/editor'
+import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
 import { useValidationStore } from '@/stores/validation'
@@ -180,6 +191,49 @@ const toneLabel = computed<Record<StatusTone, string>>(() => ({
   error: t('sandbox.status.error'),
   off: t('sandbox.status.off'),
 }))
+
+// The naming editors need a server: its sources, and a job opened in the editor store.
+const editor = useEditorStore()
+const namingSources = ref<SourceEntry[]>([])
+const namingSource = ref<string | null>(null)
+const namingOptions = ref<NamingOptions>({
+  movie_template: '{main_title}',
+  episode_template: '{main_title}',
+  name_source: 'auto',
+  word_separator: 'keep',
+  title_case: false,
+  replace_underscores: false,
+  remove_punctuation: false,
+  mp4_extension: 'mp4',
+  output_folder_mode: 'same_as_source',
+  output_folder: null,
+})
+// Start from Settings → Output, as the settings page does.
+const settingsStore = useSettingsStore()
+const stopNamingWatch = watch(
+  () => settingsStore.settings?.output?.naming,
+  (naming) => {
+    if (naming === undefined) return
+    namingOptions.value = { ...naming }
+    queueMicrotask(() => stopNamingWatch())
+  },
+  { immediate: true },
+)
+const namingSourceOptions = computed(() =>
+  namingSources.value.map((entry) => ({ value: entry.id, label: entry.path })),
+)
+
+async function loadNamingSources(): Promise<void> {
+  const result = await apiQuiet.GET('/api/sources')
+  namingSources.value = result.data ?? []
+  namingSource.value ??= namingSources.value[0]?.id ?? null
+}
+
+async function openNamingSource(): Promise<void> {
+  if (namingSource.value !== null) await editor.open(namingSource.value)
+}
+
+void loadNamingSources().catch(() => undefined)
 </script>
 
 <template>
@@ -388,6 +442,48 @@ const toneLabel = computed<Record<StatusTone, string>>(() => ({
       <h3>{{ t('sandbox.issues.empty') }}</h3>
       <IssueList :issues="[]" />
     </Section>
+
+    <Section :title="t('sandbox.naming.title')" data-testid="naming-sandbox">
+      <p>{{ t('sandbox.naming.intro') }}</p>
+      <div class="sandbox__row">
+        <Field :label="t('sandbox.naming.source')" stacked>
+          <template #default="{ id }">
+            <Select
+              v-model="namingSource"
+              :label-id="id"
+              :options="namingSourceOptions"
+              option-label="label"
+              option-value="value"
+              :placeholder="t('sandbox.naming.noSources')"
+              data-testid="naming-source"
+            />
+          </template>
+        </Field>
+        <Button
+          :label="t('sandbox.naming.reload')"
+          severity="secondary"
+          data-testid="naming-reload"
+          @click="loadNamingSources"
+        />
+        <Button
+          :label="t('sandbox.naming.open')"
+          :disabled="namingSource === null"
+          data-testid="naming-open"
+          @click="openNamingSource"
+        />
+      </div>
+      <div class="sandbox__naming">
+        <Card :title="t('sandbox.naming.options')" data-testid="naming-options">
+          <NamingOptionsEditor
+            v-model="namingOptions"
+            :source-ids="namingSources.map((entry) => entry.id)"
+          />
+        </Card>
+        <Card :title="t('sandbox.naming.job')" data-testid="job-naming">
+          <JobNamingEditor />
+        </Card>
+      </div>
+    </Section>
   </main>
 </template>
 
@@ -444,6 +540,13 @@ const toneLabel = computed<Record<StatusTone, string>>(() => ({
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   gap: var(--rf-space-4);
+}
+
+.sandbox__naming {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+  gap: var(--rf-space-4);
+  align-items: start;
 }
 
 .sandbox__swatch {
