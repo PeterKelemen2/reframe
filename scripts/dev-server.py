@@ -225,7 +225,15 @@ def main(argv: list[str] | None = None) -> int:
         )
     process = subprocess.Popen(command, env=env)
 
+    stopping = False
+
     def on_signal(signum: int, frame: FrameType | None) -> None:
+        # Only the first signal stops the run: a second one during the clean-up would cut it
+        # short and leave the server and the home behind.
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
         raise KeyboardInterrupt
 
     # SIGINT too: a background job of a non-interactive shell starts with SIGINT ignored.
