@@ -97,6 +97,10 @@ function languages(selection: Selection | undefined): string {
     : list.join(', ')
 }
 
+function selectionWords(selection: Selection | undefined): string {
+  return [tracks(selection), languages(selection)].filter((part) => part !== '').join(' · ')
+}
+
 function codecRule(rule: CodecRule): string {
   const codec =
     system.definitions?.audio_encoders?.[rule.codec]?.label ??
@@ -116,7 +120,7 @@ const audio = computed(() => {
   const rules = defaults.codec_rules?.map(codecRule) ?? []
   const passthru = defaults.passthru?.allowed ?? []
   return {
-    selection: `${tracks(defaults.selection)} · ${languages(defaults.selection)}`,
+    selection: selectionWords(defaults.selection),
     rules: rules.length > 0 ? rules.join('; ') : t('presets.details.noRules'),
     passthru: passthru.length > 0 ? passthru.join(', ') : null,
   }
@@ -141,7 +145,7 @@ const subtitles = computed(() => {
       break
   }
   return {
-    selection: `${tracks(defaults.selection)} · ${languages(defaults.selection)}`,
+    selection: selectionWords(defaults.selection),
     burnIn,
   }
 })
