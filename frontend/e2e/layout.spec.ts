@@ -27,6 +27,68 @@ async function expectOneWindowHigh(page: Page, where: string): Promise<void> {
   expect(top, `${where}: the page's scroll position`).toBe(0)
 }
 
+type Rgb = [number, number, number]
+
+type Rgba = [number, number, number, number]
+
+function rgba(css: string): Rgba {
+  const [r = 0, g = 0, b = 0, a = 1] = (/\(([^)]+)\)/.exec(css)?.[1] ?? '')
+    .split(/[\s,/]+/)
+    .map(Number)
+  return [r, g, b, a]
+}
+
+function over([r, g, b, a]: Rgba, under: Rgb): Rgb {
+  return [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a)]
+}
+
+/** The colour of the element's fill as painted: its background, faded by its opacity, on what lies under it. */
+async function paintedFill(page: Page, selector: string): Promise<Rgb> {
+  const painted = await page.evaluate((wanted) => {
+    // This file is type-checked without the DOM library.
+    interface Box {
+      parentElement: Box | null
+    }
+    const doc = Reflect.get(globalThis, 'document') as { querySelector(s: string): Box | null }
+    const style = Reflect.get(globalThis, 'getComputedStyle') as (box: Box) => {
+      backgroundColor: string
+      opacity: string
+    }
+    const element = doc.querySelector(wanted)
+    if (element === null) throw new Error(`${wanted} is not on the page`)
+    const parents: string[] = []
+    for (let box = element.parentElement; box !== null; box = box.parentElement) {
+      parents.push(style(box).backgroundColor)
+    }
+    let opacity = 1
+    for (let box: Box | null = element; box !== null; box = box.parentElement) {
+      opacity *= Number(style(box).opacity)
+    }
+    return { fill: style(element).backgroundColor, opacity, parents }
+  }, selector)
+  // What lies under it: its parents' backgrounds, from the first opaque one up.
+  const layers = painted.parents.map(rgba)
+  const opaque = layers.findIndex((layer) => layer[3] >= 1)
+  let under: Rgb = [255, 255, 255]
+  for (const layer of layers.slice(0, opaque === -1 ? undefined : opaque + 1).toReversed()) {
+    under = over(layer, under)
+  }
+  const [r, g, b, a] = rgba(painted.fill)
+  return over([r, g, b, a * painted.opacity], under)
+}
+
+function contrast(one: Rgb, other: Rgb): number {
+  const luminance = (rgb: Rgb): number => {
+    const [r = 0, g = 0, b = 0] = rgb.map((channel) => {
+      const c = channel / 255
+      return c <= 0.040_45 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const [x, y] = [luminance(one), luminance(other)]
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
 /** Each icon in `buttons` is drawn at the width it asks for. */
 async function expectIconsAtFullSize(buttons: Locator, where: string): Promise<void> {
   const icons = await buttons.locator('svg').all()
@@ -99,4 +161,32 @@ test("the status bar's issue list keeps a message readable beside a long fix", a
   await expect(issue).toHaveCount(1)
   const message = await issue.locator('.rf-issue__message').boundingBox()
   expect(message?.width, 'the message beside the fix').toBeGreaterThan(200)
+})
+
+test('a disabled Add to queue does not look like an enabled button, in light and dark', async ({
+  page,
+}) => {
+  await openApp(page)
+  await openFile(page, 'multitrack.mkv')
+  await page.locator('.preset-picker__trigger').click()
+  await page.locator(`.preset-picker__list [data-preset="${UNAVAILABLE_PRESET}"]`).click()
+  await expect(page.locator('.status-bar__add')).toBeDisabled()
+  await expect(page.locator('[data-action="open-files"]')).toBeEnabled()
+
+  const fills = async (): Promise<number> =>
+    contrast(
+      await paintedFill(page, '.status-bar__add'),
+      await paintedFill(page, '[data-action="open-files"]'),
+    )
+  // Colours change with a short transition: measure once they have settled.
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+  await expect(page.locator('html')).not.toHaveClass(/reframe-dark/)
+  await expect
+    .poll(fills, { message: 'light: the disabled fill against the enabled one' })
+    .toBeGreaterThanOrEqual(3)
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+  await expect(page.locator('html')).toHaveClass(/reframe-dark/)
+  await expect
+    .poll(fills, { message: 'dark: the disabled fill against the enabled one' })
+    .toBeGreaterThanOrEqual(3)
 })
