@@ -1136,7 +1136,96 @@ subtitles.
 
 ## Task L — F-15 settings
 
-(Written by task L.)
+F-15 in its M4 part: `views/SettingsView.vue` and `components/settings/` (Tools, Encoders,
+Output, Queue, Appearance). Languages (M6) and Preview (M8) are left out without a placeholder
+(item 6).
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` (web mode, token) on ports 8740–8742, headless Chromium, light and dark:
+one server with `--tools-dir` (the pinned FFmpeg through `REFRAME_FFMPEG` / `REFRAME_FFPROBE`)
+and `--settings {"encoders": {"hardware_tests": true}}`, one with the tools from `PATH`, one
+with a newer settings file. Every change below was read back with `GET /api/settings`.
+
+- `GET /api/system` `tools`: `env_var` is set for every tool (the variable's name), `origin`
+  is `env` only when it is set. MediaInfo (not installed): `missing`, `origin` `null`.
+- **Web mode refuses a tool path**: `PUT /api/settings` with `/tools/mediainfo` = a path is
+  `403 settings.tools_forbidden` ("A web client cannot choose the programs the server runs",
+  detail "Set REFRAME_FFMPEG / REFRAME_FFPROBE on the server instead.", for any tool, no
+  `issues`); `replace` with `null` is accepted (0049 item 9).
+- Refusals: `/queue/parallel_jobs` 0, 2.5 or 99 is `422 settings.invalid` with one issue at
+  `queue.parallel_jobs` (the model allows 1 to 16); `/encoders/vaapi_device` `/dev/dri/card1`
+  is `403 settings.vaapi_device_forbidden` without issues; `/output/naming/output_folder`
+  `/etc` is `403 path.outside_roots` without issues. An invalid template (`{bogus`) and an
+  unknown `ui_language` (`xx`) are accepted.
+- A change of `hardware_tests` or `vaapi_device` starts a detection by itself (the settings
+  hook); with `/dev/dri/renderD129` (no such node here) the three VAAPI encoders are
+  `unavailable`, "No VAAPI device (/dev/dri/renderD129)", `device` `null`. With hardware tests
+  off every hardware encoder is `unknown`, reason "Not tested: hardware test encodes are off
+  (Settings → Encoders)", `checked_at` `null`, `device` `null`. Hardware tests on (this AMD
+  desktop): VAAPI available on `/dev/dri/renderD128` (the only render node; `/dev/dri` also has
+  `card1`).
+- `settings_read_only`: true when the settings file is newer than the server or unreadable
+  (`SettingsStore._protect`); tried with `--settings {"schema_version": 999}`:
+  `settings_read_only: true` and the problem `settings.newer_version`. The page shows the note
+  and every control off.
+
+### Choices where the plan leaves one
+
+- **What *Test* does.** The server has no route that tests a path without using it, and
+  `POST /api/system/tools/rescan` takes no body. *Test* saves a changed path
+  (`settings.set('/tools/<tool>', path)`, an empty field is `null`: automatic), calls
+  `system.rescanTools()` and shows the tool's result under the row ("Works: version …" or
+  "Does not work: <reason>"). When the new path does not work it offers *Put back <old path>*
+  (or *Put back automatic*), which saves the old value and re-scans. An unchanged path only
+  re-scans. A refused path shows at the field and nothing is re-scanned.
+- **Tool paths in web mode are read-only** (the server refuses them, see above), with a note
+  that names the tool's variable; *Test* there only re-scans. *Remove override* (a Settings
+  path set to `null`) works in both modes. The editable path and the *Put back* flow are for
+  the desktop app; rule 7 allows only web-mode servers, so that flow is proven by unit tests
+  only. An environment override is read-only in both modes, shows the program the variable
+  names, and says to change or unset the variable and restart. An ffprobe found next to an
+  overridden ffmpeg keeps its own field: its Settings path still wins over the sibling.
+- ***Use bundled FFmpeg*** is one button of the section (the download is the FFmpeg family's):
+  `system.fetchTools()`, and when its task ended `done`, the Settings paths of ffmpeg and
+  ffprobe are set to `null` (they would still win over the bundled build); a failed download
+  changes nothing (its toast is the API layer's). Off when the environment sets both. Not
+  clicked for real (it downloads FFmpeg); unit tests.
+- **VAAPI device choices.** The server lists no render nodes. The choices are *Automatic*
+  (`null`), each node in a VAAPI encoder's `device`, the saved node, and *Another render
+  node…*, which shows a text field; the server refuses anything but `/dev/dri/renderD<n>` in
+  web mode, and the refusal shows at the field with the typed text kept.
+- **Encoder table**: every video encoder of the definitions, then the audio ones, then any
+  other the snapshot names; the status is H's `availabilityOf` / `useAvailabilityText` (the
+  reason is in that line); the per-encoder `checked_at` ("Not checked" when `null`) and the
+  snapshot's last full check. *Re-scan* is busy until `system.rescanEncoders()` returns or
+  while a detection runs.
+- **Saving.** Each control saves at once through `settings.set` (`useSetting`); a refused value
+  stays shown at its `Field` with the server's issues, or one issue made of the problem's title
+  and detail, until the next save of that control. The naming options (F's editor emits a new
+  object per key) are saved 600 ms after the last edit, as one patch of the changed members; a
+  waiting edit is saved when the page is left; a refusal is listed under the editor (wrapping
+  the editor in a `Field` outlined every control in it).
+- **When done** goes through `queue.setWhenDone` (it also cancels a countdown for another
+  action). In web mode *Quit Reframe* is shown as "desktop app only" and cannot be chosen: a
+  server for browsers keeps running. Sleep and Shut down stay (they act on the server's
+  computer; the help says so).
+- **Appearance**: theme and density through `useTheme()`; the UI language lists
+  `SUPPORTED_LOCALES` by their `Intl.DisplayNames` name (English only); a saved language this
+  build lacks is shown as "(not available)".
+- **Read-only settings** turn every control off, theme and density included (the rail's theme
+  switch still changes them for this browser). *Test* and *Check again* still re-scan.
+- **Sections** show once `system.info` and the settings are loaded. `/settings#tools` (and the
+  section links at the top, plain links so that none is marked as the current page) move the
+  focus to the section.
+
+### Consequences
+
+- A server route that tests a path without saving it (`POST /api/system/tools/test {tool,
+  path}`, desktop mode only) would let *Test* leave the settings alone; not needed for M4.
+- `App.test.ts` mounts the real views without `matchMedia`, which PrimeVue's `Select` calls when
+  it mounts: it passes only because the Settings sections wait for the settings, which that
+  test never loads. A shared Vitest setup file with a `matchMedia` stub would remove the trap.
 
 ## Task M — F-17 Playwright set-up and flow 3
 
