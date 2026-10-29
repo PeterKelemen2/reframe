@@ -450,6 +450,12 @@ function fileOf(result: NameResult): string {
   gap: var(--rf-space-2);
 }
 
+/* The fluid path field would squeeze the button, and the button its icon to a sliver. */
+.naming-options__folder > .p-button,
+.naming-options__folder svg {
+  flex: none;
+}
+
 .naming-options__preview {
   display: grid;
   gap: var(--rf-space-2);
