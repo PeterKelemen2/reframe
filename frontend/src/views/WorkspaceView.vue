@@ -25,7 +25,10 @@ const sources = useSourcesStore()
 
 useValidation()
 
-const previewCollapsed = useLocalStorage('reframe.workspace.previewCollapsed', false)
+// Collapsed until the user opens it: the preview is a placeholder, and the tabs need the room.
+const previewCollapsed = useLocalStorage('reframe.workspace.previewHidden', true, {
+  writeDefaults: false,
+})
 
 const title = computed(() => {
   const entry = sources.active

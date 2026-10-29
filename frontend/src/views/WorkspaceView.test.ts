@@ -133,17 +133,21 @@ describe('the workspace', () => {
     expect(document.activeElement?.textContent?.trim()).toBe('Summary')
   })
 
-  it('collapses the preview column and keeps it collapsed next time', async () => {
+  it('starts with the preview collapsed, and keeps the user’s choice next time', async () => {
     const wrapper = await mountWorkspace(openSource)
     const toggle = () => wrapper.find('.preview-panel__toggle')
-    expect(toggle().attributes('aria-expanded')).toBe('true')
-    await toggle().trigger('click')
     expect(wrapper.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
     expect(toggle().attributes('aria-expanded')).toBe('false')
     expect(toggle().attributes('aria-label')).toBe('Show the preview')
+    await toggle().trigger('click')
+    expect(wrapper.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
+    expect(toggle().attributes('aria-expanded')).toBe('true')
 
-    const again = await mountWorkspace(openSource)
-    expect(again.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
+    const opened = await mountWorkspace(openSource)
+    expect(opened.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
+    await opened.find('.preview-panel__toggle').trigger('click')
+    const closed = await mountWorkspace(openSource)
+    expect(closed.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
   })
 
   it('shows the first-run screen instead while FFmpeg cannot be used', async () => {
