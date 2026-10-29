@@ -336,7 +336,7 @@ function toggleMenu(event: Event): void {
         <h2 class="preset-picker__changes-title">
           {{ t('presets.changes.title', { name: current }) }}
         </h2>
-        <PresetChanges :changes="changes" />
+        <PresetChanges :changes="changes" :encoder="job?.video?.encoder ?? null" />
         <div class="preset-picker__changes-actions">
           <Button
             size="small"

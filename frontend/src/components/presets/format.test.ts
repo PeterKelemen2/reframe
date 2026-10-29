@@ -37,10 +37,25 @@ describe('the words of a change', () => {
     expect(valueWords(22.5, words)).toBe('22.5')
     expect(valueWords([], words)).toBe('none')
     expect(valueWords(['ac3', 'eac3'], words)).toBe('ac3, eac3')
-    expect(valueWords({ mode: 'fit' }, words)).toBe('{"mode":"fit"}')
+    expect(valueWords({ max_bitrate: 160, codec: 'aac', name: null }, words)).toBe(
+      'Maximum bitrate: 160 · Codec: aac',
+    )
     const long = valueWords('x'.repeat(200), words)
     expect(long).toHaveLength(80)
     expect(long.endsWith('…')).toBe(true)
+  })
+
+  it('shows a value with words of its own by them, by its path, also inside an object', () => {
+    const known: Words = {
+      ...words,
+      known: (path, value) =>
+        path === 'video.rate_control' && value !== null ? 'CQ 27' : undefined,
+    }
+    expect(valueWords({ mode: 'quality', value: 27 }, known, 'video.rate_control')).toBe('CQ 27')
+    expect(valueWords({ rate_control: { mode: 'quality' } }, known, 'video')).toBe(
+      'Rate control: CQ 27',
+    )
+    expect(valueWords(null, known, 'video.rate_control')).toBe('none')
   })
 })
 

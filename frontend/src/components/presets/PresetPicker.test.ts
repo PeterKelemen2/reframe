@@ -9,6 +9,7 @@ import { sampleJob } from '@/editor/testing/samples'
 import { stubDom } from '@/components/naming/testing/samples'
 import { mountShell } from '@/components/shell/testing'
 import { templateOfPreset } from '@/stores/presets'
+import { useSystemStore } from '@/stores/system'
 
 import PresetPicker from './PresetPicker.vue'
 import { nameConflict, preset, presetList, userPreset } from './testing'
@@ -162,7 +163,70 @@ describe('the preset picker', () => {
       ['Audio defaults › Codec rule 1 › Maximum bitrate', '160', '192'],
       ['Filters › Denoise', undefined, undefined],
     ])
-    expect(rows[2]?.values).toBe('Added: {"preset":"light"}')
+    expect(rows[2]?.values).toBe('Added: Preset: light')
+  })
+
+  it('shows the settings objects of a change in words, a quality on each encoder’s scale', async () => {
+    openJob(H265)
+    editor.job = { ...editor.job!, video: { ...editor.job!.video!, encoder: 'libx264' } }
+    const { wrapper } = await mountPicker()
+    useSystemStore().definitions = {
+      video_encoders: {
+        hevc_nvenc: { label: 'NVENC H.265', rate_control: { quality: { label: 'CQ' } } },
+        libx264: { label: 'x264', rate_control: { quality: { label: 'RF' } } },
+      },
+    } as never
+    editor.presetChanges = [
+      { path: 'video.encoder', kind: 'changed', preset_value: 'hevc_nvenc', value: 'libx264' },
+      {
+        path: 'video.rate_control',
+        kind: 'changed',
+        preset_value: { mode: 'quality', value: 27 },
+        value: { mode: 'bitrate', kbps: 6000, two_pass: false, turbo_first_pass: true },
+      },
+      {
+        path: 'dimensions.size',
+        kind: 'changed',
+        preset_value: { mode: 'fit', width: 1920, height: 1080 },
+        value: { mode: 'width', width: 1280 },
+      },
+      {
+        path: 'naming',
+        kind: 'changed',
+        preset_value: null,
+        value: { movie_template: '{main_title} X', episode_template: '{main_title}' },
+      },
+    ]
+    await flushPromises()
+    await wrapper.find('.preset-picker__modified').trigger('click')
+    await flushPromises()
+    const rows = [...body().querySelectorAll('.preset-changes__item')].map((row) => [
+      row.querySelector('.preset-changes__before')?.textContent,
+      row.querySelector('.preset-changes__after')?.textContent,
+    ])
+    expect(rows).toEqual([
+      ['NVENC H.265', 'x264'],
+      ['Constant quality CQ 27', 'Average bitrate 6,000 kb/s'],
+      ['Fit within 1920×1080', '1280 pixels wide'],
+      ['The naming of Settings → Output', 'Own naming: {main_title} X'],
+    ])
+
+    // Without an encoder change, both sides use the job's encoder.
+    editor.presetChanges = [
+      {
+        path: 'video.rate_control',
+        kind: 'changed',
+        preset_value: { mode: 'bitrate', kbps: 2500, two_pass: true },
+        value: { mode: 'quality', value: 20 },
+      },
+    ]
+    await flushPromises()
+    expect(body().querySelector('.preset-changes__before')?.textContent).toBe(
+      'Average bitrate 2,500 kb/s, two passes',
+    )
+    expect(body().querySelector('.preset-changes__after')?.textContent).toBe(
+      'Constant quality RF 20',
+    )
   })
 
   it('saves the current settings as a new preset, and the job then follows it in one undo step', async () => {

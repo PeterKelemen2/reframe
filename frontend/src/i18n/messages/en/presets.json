@@ -28,7 +28,12 @@
     "none": "none",
     "empty": "empty",
     "on": "on",
-    "off": "off"
+    "off": "off",
+    "quality": "Constant quality {quality}",
+    "bitrate": "Average bitrate {kbps} kb/s",
+    "bitrateTwoPass": "Average bitrate {kbps} kb/s, two passes",
+    "settingsNaming": "The naming of Settings → Output",
+    "ownNaming": "Own naming: {template}"
   },
   "field": {
     "output": "Output",
