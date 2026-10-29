@@ -1,27 +1,34 @@
 <script setup lang="ts">
-import { Download, FolderCog, RefreshCw, Wrench } from '@lucide/vue'
+import { Download, FolderCog, LoaderCircle, RefreshCw, Wrench } from '@lucide/vue'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
-import type { Schemas } from '@/api/types'
+import type { JsonPatchOp, Schemas } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
 import type { StatusTone } from '@/components/base/types'
+import { FFMPEG_FAMILY, setByEnvironment } from '@/components/settings/tools'
+import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
 
+import FocusSafeButton from './FocusSafeButton'
+
 type ToolInfo = Schemas['ToolInfo']
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const system = useSystemStore()
+const settings = useSettingsStore()
 const tasks = useTasksStore()
 
 const checking = ref(false)
+/** When the last *Check again* found the tools as they were: it says so, else nothing changes. */
+const unchangedAt = ref<string | null>(null)
 
 const tools = computed<ToolInfo[]>(() => {
   const set = system.info?.tools
@@ -31,6 +38,25 @@ const fetchTask = computed(() =>
   system.toolsFetch === null ? null : (tasks.tasks[system.toolsFetch] ?? null),
 )
 const fetching = computed(() => system.toolsFetch !== null)
+
+const failing = computed(() => tools.value.filter((tool) => tool.status !== 'found'))
+/** The environment sets a tool that fails: it outranks Settings and a bundled build. */
+const setByEnv = computed(() => failing.value.filter(setByEnvironment))
+/** The server refuses tool paths from a browser; only the desktop app can choose one. */
+const desktop = computed(() => system.info?.mode === 'desktop')
+const canBundle = computed(() => setByEnv.value.length === 0)
+const canChoosePath = computed(() => desktop.value && setByEnv.value.length === 0)
+const variables = computed(() =>
+  (setByEnv.value.length > 0 ? setByEnv.value : failing.value)
+    .map((tool) => tool.env_var)
+    .filter((name): name is string => Boolean(name))
+    .join(', '),
+)
+const note = computed(() => {
+  if (!canBundle.value) return t('shell.firstRun.envNote', { variables: variables.value })
+  if (!desktop.value) return t('shell.firstRun.webNote', { variables: variables.value })
+  return null
+})
 
 function statusTone(tool: ToolInfo): StatusTone {
   return tool.status === 'found' ? 'ok' : 'error'
@@ -73,14 +99,54 @@ async function quietly(action: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Downloads the pinned FFmpeg, then removes the Settings paths of ffmpeg and ffprobe, which would
+ * still win over the bundled build.
+ */
 async function useBundled(): Promise<void> {
-  await quietly(() => system.fetchTools())
+  unchangedAt.value = null
+  let taskId: string | null = null
+  const stop = watch(
+    () => system.toolsFetch,
+    (id) => {
+      if (id !== null) taskId = id
+    },
+    { flush: 'sync' },
+  )
+  try {
+    await quietly(() => system.fetchTools())
+  } finally {
+    stop()
+  }
+  if (taskId === null || tasks.tasks[taskId]?.state !== 'done') return
+  const paths = settings.settings?.tools
+  const ops: JsonPatchOp[] = FFMPEG_FAMILY.filter((name) => paths?.[name]).map((name) => ({
+    op: 'replace',
+    path: `/tools/${name}`,
+    value: null,
+  }))
+  if (ops.length === 0) return
+  await quietly(async () => {
+    await settings.update(ops)
+    await system.rescanTools()
+  })
+}
+
+function snapshot(): string {
+  return JSON.stringify(tools.value)
 }
 
 async function checkAgain(): Promise<void> {
   checking.value = true
+  unchangedAt.value = null
+  const before = snapshot()
   try {
     await quietly(() => system.rescanTools())
+    if (snapshot() === before) {
+      unchangedAt.value = new Intl.DateTimeFormat(locale.value, { timeStyle: 'medium' }).format(
+        new Date(),
+      )
+    }
   } finally {
     checking.value = false
   }
@@ -122,18 +188,22 @@ async function choosePath(): Promise<void> {
       </KeyValue>
     </dl>
 
+    <p v-if="note" class="first-run__note" data-field="note">{{ note }}</p>
     <div class="first-run__actions">
-      <Button
+      <FocusSafeButton
+        v-if="canBundle"
         class="first-run__bundled"
         :label="t('shell.firstRun.useBundled')"
-        :loading="fetching"
+        :disabled="fetching"
         @click="useBundled"
       >
         <template #icon>
-          <Download :size="18" aria-hidden="true" />
+          <LoaderCircle v-if="fetching" class="first-run__spin" :size="18" aria-hidden="true" />
+          <Download v-else :size="18" aria-hidden="true" />
         </template>
-      </Button>
+      </FocusSafeButton>
       <Button
+        v-if="canChoosePath"
         class="first-run__choose"
         :label="t('shell.firstRun.choosePath')"
         severity="secondary"
@@ -144,19 +214,22 @@ async function choosePath(): Promise<void> {
           <FolderCog :size="18" aria-hidden="true" />
         </template>
       </Button>
-      <Button
+      <FocusSafeButton
         class="first-run__check"
         :label="t('shell.firstRun.checkAgain')"
         severity="secondary"
         outlined
-        :loading="checking"
-        :disabled="fetching"
+        :disabled="checking || fetching"
         @click="checkAgain"
       >
         <template #icon>
-          <RefreshCw :size="18" aria-hidden="true" />
+          <LoaderCircle v-if="checking" class="first-run__spin" :size="18" aria-hidden="true" />
+          <RefreshCw v-else :size="18" aria-hidden="true" />
         </template>
-      </Button>
+      </FocusSafeButton>
+      <span class="first-run__checked" role="status" data-field="checked">
+        {{ unchangedAt ? t('shell.firstRun.unchanged', { time: unchangedAt }) : '' }}
+      </span>
     </div>
 
     <div v-if="fetching" class="first-run__progress" role="status">
@@ -210,9 +283,15 @@ async function choosePath(): Promise<void> {
   overflow-wrap: anywhere;
 }
 
-.first-run__intro {
+.first-run__intro,
+.first-run__note,
+.first-run__checked {
   margin: 0;
   color: var(--rf-color-text-muted);
+}
+
+.first-run__checked {
+  align-self: center;
 }
 
 .first-run__tool {
@@ -242,6 +321,16 @@ async function choosePath(): Promise<void> {
   display: flex;
   flex-wrap: wrap;
   gap: var(--rf-space-2);
+}
+
+.first-run__spin {
+  animation: first-run-spin 1s linear infinite;
+}
+
+@keyframes first-run-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .first-run__progress {
