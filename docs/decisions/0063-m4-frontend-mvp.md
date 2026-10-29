@@ -124,7 +124,156 @@ against the generated `schema.d.ts` with TypeScript 6.0.3 (a call with a wrong b
 
 ## Task B — F-2 API layer and events
 
-(Written by task B.)
+Built: `api/client.ts`, `api/credentials.ts`, `api/text.ts`, `api/events.ts`, `api/mirror.ts`,
+`api/dispatch.ts`, `api/boot.ts`, the stores `system`, `tasks`, `queue`, `settings`, and
+`i18n/messages/en/api.json`. Test helpers in `api/testing/` (a fake server and socket for unit
+tests; `devServer.mjs`, `tapSocket.ts` and `serverHelpers.ts` for the `*.server.test.ts` files).
+
+### What was checked against the real server (2026-10-29)
+
+`reframe-server` through `scripts/dev-server.py`, Node 26.12.1 (its `WebSocket` and `fetch` are
+undici 8.12.2), headless Chromium of `@playwright/test` 1.64.1:
+
+1. **`Origin` of the event WebSocket.** Node's `WebSocket` sends no `Origin`: accepted, hello
+   received. With `Origin: http://evil.example` (undici takes headers as a second argument) the
+   upgrade is refused with HTTP 403 (uvicorn logs `connection rejected (403 Forbidden)`), and the
+   client sees only an `error` and close code 1006 — the same as a server that cannot be
+   reached. With the server's own origin: accepted. Chromium sends the page's origin, so the
+   served app is accepted. Consequence: a page on an origin the server does not accept (the
+   Vite dev server without `--cors-origin`) keeps reconnecting with the backoff; nothing in the
+   close tells the client why.
+2. **Auth of the event WebSocket**: a wrong token, `{"type": "auth"}` without a token in token
+   mode, and a first message that is not an auth message each close with 4401 at once; no
+   first message closes with 4401 after 5.0 s. In password mode `{"type": "auth"}` with the
+   session cookie (sent by the browser; in Node through the `cookie` header) gets the hello.
+3. **The hub subscribes before it sends the hello** (`_Stream.__init__` in
+   `reframe_server/events.py` runs before `send(Hello…)`): a read sent after the hello misses
+   no event.
+4. **Problems**: a 401 is `application/problem+json` with `code` `auth.required` /
+   `auth.invalid`; a 404 of an unknown job is `{"title": "No job …", "code":
+   "queue.unknown_job"}`. In password mode the session cookie is `reframe_session`, `Path=/api`,
+   `HttpOnly`, `SameSite=Strict` (as Chromium stored it); after a logout the old cookie gets 401.
+5. **Under the app's CSP** (`script-src 'self'`), Playwright's `page.waitForFunction` with a
+   string predicate fails (`'unsafe-eval'` is not allowed); `page.evaluate` with a function
+   works. (For task M.)
+
+### The resync design
+
+Each mirrored state has a **mirror** (`api/mirror.ts`): a snapshot read, the store's event
+handler, and a log of events per read under way.
+
+- Every event a store mirrors goes through `mirror.event`: it is applied at once (the screens
+  never wait for a read) and appended to the log of each read in flight. When a read's answer
+  comes, the state is replaced by it and the logged events — those that arrived after the read
+  was sent — are applied again on top, in order. So an event that arrives while a snapshot is
+  in flight is never lost.
+- An event that arrived **before** the read was sent is older than the answer (the server sent
+  it before it got the request) and is not applied again. An event that arrived **after** may
+  be older or newer than the answer, so the handlers are written to reach the same end state
+  either way: (a) events that carry a whole value per key (`queue.changed`, `job.progress`,
+  `task.*`, `tools.changed`, `capabilities.changed` per encoder, `power.countdown`,
+  `queue.processing`) — the core publishes an event for every change and the server sends them
+  in order, so for each key the last event is either newer than the answer or carries the value
+  the answer has; (b) `job.state` is a transition and is applied only when the job is in its
+  `previous` state, so an older one changes nothing and a replayed chain of transitions ends
+  where the server is; (c) a task never leaves an end state, and a progress event never changes
+  a job that is not running or paused. What can remain is a short-lived older value until the
+  newer event (already sent) arrives. So an older snapshot never hides newer event state.
+- **One read at a time.** A read asked for while one is in flight runs once more after it
+  (the trigger — a reconnect, a gap, a `resync` — may be newer than the read in flight); any
+  number of such calls make one more read. A handler that needs a read (a job no read has
+  shown, a run's end) asks with `mirror.need()`: idle, a read starts; during a read nothing
+  starts, because the event is in that read's log and its replay asks again if the answer still
+  lacks it. A failed read keeps the state; a `resync`, gap or reconnect reads again.
+- **Reads only after the hello.** The event connection opens first; the first snapshots are
+  read when its hello arrives (or after 3 s without one, then again at the hello). Every
+  `hello` after the first load, a gap in `seq` and a `resync` event call `system.resync`,
+  `tasks.resync` and `queue.resync`.
+
+The queue (`job.state` carries only the state and the error):
+
+- A run's end, a failed start and a retry read the queue (output path, issues, times); a
+  waiting job's cancel does not (its `finished_at` is this client's clock until the next read).
+  A job that `queue.changed` lists and no read has shown reads the queue, except while this
+  client's own add is under way (its answer brings the job; after the last add the copy reads
+  only if a job is still unknown).
+- An add's answer (and a duplicate's) is a snapshot of the new jobs: they are inserted with
+  `mirror.track`, then the events about them that came since the request are applied again (a
+  start by another front end before the answer is not lost). A new job that no `queue.changed`
+  has listed yet keeps its place while an older `queue.changed` leaves it out (the CLI's
+  finding R1 M2 of 0062); a job that the events listed and removed before the answer stays out;
+  a read sent after the answer removes it if the server no longer has it, a read sent before
+  the answer does not (a counter, `mirror.tick()`, orders the two).
+- `reorder` shows the new order at once (a dragged row does not jump back), then the
+  `queue.changed` confirms it; a refused reorder reads the queue again.
+- `queue.processing` is dispatched by its `type` string, and the snapshot's `processing` /
+  `only` are read through a local type: an older server without them leaves the copy as it was.
+
+Tasks: `wait(id)` resolves at `task.done` (failed and cancelled too) or from a read; it holds
+across a lost connection (the read after the reconnect settles it) and rejects with
+`TaskLostError` only when a read **sent after the wait began** does not list the task (the server
+restarted or forgot it). The copy keeps the 200 newest ended tasks (the server's
+`DEFAULT_KEEP_FINISHED`).
+
+### Choices the plan leaves open
+
+- **Backoff** (`api/events.ts`): reconnect after 0.5 s × 2ⁿ, capped at 30 s, half of it fixed and
+  half random (so clients that lost the server together do not come back together); the count
+  starts again after a connection that stayed open 10 s. A connection is dead when nothing
+  (event or heartbeat) came for the hello's `heartbeat` + 5 s (20 s with the server's 15 s), or
+  when no hello came 10 s after the auth message; it is then closed with 4000 and reconnected.
+  A server that cannot be reached at start: `phase` `offline`, retried after 1 s × 2ⁿ, capped at
+  30 s, the same jitter. Later losses keep `phase` `ready` (the screens keep the copy) and show
+  as `connection` `reconnecting`.
+- **Phases.** `system.auth.authenticated` drives the session: becoming true (boot, `login`,
+  `loginWithToken`) starts the event connection and the first load (`booting`, then `ready`);
+  becoming false (a 401 answer of either client, a 4401 close, `logout`) closes the connection
+  and sets `login`. A 4401 leaves `connection` `unauthorized`, and the connection is not opened
+  again until new credentials are accepted.
+- **Credentials.** The `#token=` fragment is read when `api/boot.ts` is evaluated, before the
+  router reads the address, and removed with `history.replaceState(history.state, …)` (other
+  fragment parameters stay; checked in Chromium: the address is `http://127.0.0.1:8720/`, the
+  history has no entry with the token). The token goes to `sessionStorage` (`reframe.token`;
+  every access in try/catch). A token the server refuses at start is forgotten; a password
+  login drops a token from the address (the cookie is the credential); `logout` ends the
+  cookie session and forgets the token. The desktop build takes its token from
+  `platform.backend()` and does not store it.
+- **Toasts.** `api` shows a problem as a toast with its `title` and `detail` as the server wrote
+  them; an answer that is not a problem as "The server answered with an error (status)"; a
+  failed request as "The Reframe server cannot be reached", one at a time while it shows. A 401
+  is not toasted (the login screen shows it). Both clients turn a failed request into an
+  `ApiError` with status 0 and code `network`, so callers handle one error type; `unwrap` throws
+  `ApiError` for any non-2xx answer. A failed rescan or FFmpeg download task is a toast too.
+- **Translations outside components** (`api/text.ts`): a Pinia setup store is created inside
+  the app's injection context, so it injects the app's own vue-i18n instance (the locale the
+  screens use); without an app (unit tests) it uses an English instance.
+- **Notifications**: a toast (`warning` → `warn`, 8 s), and `platform.notify` while
+  `document.hidden`.
+- **Settings**: one request at a time (each answer is the whole document, and answers of
+  concurrent requests can arrive out of order); `update` uses `apiQuiet`; `set` sends `add`
+  where the member is missing. There is no settings event: `queue.resync` reads the settings
+  again, and `queue.whenDone` follows the settings store.
+- **System**: `GET /api/system/encoders` is read again after a `capabilities.changed` while the
+  copy says a detection runs (`detecting` and `checked_at` come only with a read);
+  `rescanEncoders` and `fetchTools` resolve after their task ended and the state was read again;
+  `rescanTools` takes its answer and the `tools.changed` events that came during it. A hello
+  from another `instance` also reads the definitions and languages again (a new server version
+  may bring other definitions) and calls `sources.onServerRestart()`.
+- **Members added** to the contracts: `system.namingVariables`, `system.toolsFetch` (the task
+  id of a running FFmpeg download), `system.loadDefinitions()`; exports `TaskLostError`,
+  `KEEP_ENDED`, `taskEnded`, `hasPointer`, `ConnectionState`. `queue.jobs` is a `shallowRef`:
+  every change replaces the job's object, so a row component sees a new prop. `boot()` takes
+  optional `BootOptions` (tests inject the backend, the fetch and the socket) and `shutdown()`
+  closes the connection.
+
+### Consequences
+
+- A store handler never throws into the dispatcher (`guard`); the stub
+  `sources.onServerRestart` is called through it and logged until task E builds it.
+- `src/api/testing/devServer.mjs` is plain JavaScript with a `.d.mts` beside it, because
+  `tsconfig.app.json` (which includes `*.server.test.ts`) has no Node types. A tsconfig of its
+  own for the server tests (Node and DOM types) would let them be TypeScript; that is the
+  lead's call.
 
 ## Task C — F-3 app shell
 
