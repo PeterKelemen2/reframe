@@ -443,14 +443,14 @@ Done when: the build passes strict type checks, `oxlint` and `oxfmt --check` in 
 oxfmt's output on a few `.vue` files with templates once before you commit to its settings.
 
 ### F-1 Design system
-- [ ] Colour, spacing, radius and typography tokens. Light/dark theme plus a "system" option.
+- [x] Colour, spacing, radius and typography tokens. Light/dark theme plus a "system" option.
       Compact and comfortable density.
-- [ ] Base components. `Field` is the key one: label, control slot, inline help (ⓘ popover),
+- [x] Base components. `Field` is the key one: label, control slot, inline help (ⓘ popover),
       the validation issue for its `path`, and an override dot (batch). Every editor control
       uses `Field`.
-- [ ] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
+- [x] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
       (commercial name + raw codec in the tooltip), `LanguageChip`.
-- [ ] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
+- [x] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
       check fails on literal text in a `<template>` (oxlint does not read templates; pick a
       small script or a Vitest check here)
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).

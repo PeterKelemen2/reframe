@@ -1,1 +1,41 @@
-{}
+{
+  "severity": {
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Note"
+  },
+  "field": {
+    "help": "About {label}",
+    "overridden": "Differs from the group"
+  },
+  "role": {
+    "main": "Main",
+    "commentary": "Commentary",
+    "description": "Audio description",
+    "descriptionText": "Descriptions",
+    "music": "Music only",
+    "sdh": "SDH",
+    "forced": "Forced",
+    "signs": "Signs & Songs",
+    "evidenceSr": " ({evidence})",
+    "evidence": {
+      "flag": "Set by a disposition flag in the file",
+      "title": "Found in the track title",
+      "heuristic": "Guessed from the track layout"
+    }
+  },
+  "codec": {
+    "unknown": "Unknown codec",
+    "raw": "Codec: {codec}",
+    "long": "{long}",
+    "profile": "Profile: {profile}"
+  },
+  "language": {
+    "undetermined": "Undetermined"
+  },
+  "issues": {
+    "none": "No issues",
+    "show": "Show",
+    "showField": "Show the field: {message}"
+  }
+}

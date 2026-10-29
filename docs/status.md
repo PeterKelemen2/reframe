@@ -91,7 +91,7 @@ for them.
 | Step | Status | Notes |
 |------|--------|-------|
 | F-0 Scaffold | **Done** | Vue 3.5, Vite, Pinia, Router, PrimeVue 4, vue-i18n, oxlint, oxfmt, vue-tsc (strict templates), Vitest, the `Platform` interface. PrimeVue 4 and TypeScript 6 are held back on purpose ([0003](decisions/0003-frontend-held-back-majors.md)) |
-| F-1 Design system | Not started | M4, task A |
+| F-1 Design system | **Done** (Linux) | Tokens (`styles/tokens.css`, colours in the PrimeVue preset `styles/theme.ts`, WCAG AA checked by `contrast.test.ts`); light / dark / system theme and comfortable / compact density (`useTheme`: this browser at once, the settings once loaded); the base components; the dev-only `/sandbox`; the i18n checks (literal text in templates, missing message keys) run by `npm test` ([0063](decisions/0063-m4-frontend-mvp.md) task A) |
 | F-2 API layer and events | Not started | M4, task B |
 | F-3 App shell | Not started | M4, task C |
 | F-4 Editor state | Not started | M4, task D |

@@ -1,6 +1,8 @@
 /** What `Field` gives its control: wire `id`, `aria-invalid` and `aria-describedby` with them. */
 export interface FieldSlotProps {
   id: string
+  /** The label's id, for a control that is a group (`aria-labelledby`): SelectButton, radios. */
+  labelId: string
   invalid: boolean
   describedBy: string | undefined
 }
@@ -17,3 +19,6 @@ export interface CodecInfo {
 
 /** `StatusDot` colours: `ok` available, `busy` checking, `warn`, `error`, `off` unknown. */
 export type StatusTone = 'ok' | 'busy' | 'warn' | 'error' | 'off'
+
+/** Which kind of track a badge belongs to, where the names differ. */
+export type TrackKind = 'audio' | 'subtitle'
