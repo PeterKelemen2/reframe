@@ -374,6 +374,7 @@ leaves `get()` before its `queue.changed` reaches the events. The tests are in
 - **Found here, for the remote client (B2):** on this branch alone, before the remote client's
   fix, the real tests with two and with ten clients that add at once fail every time. A
   client's copy drops a job that was just added, and the command now reports that job as
-  removed. With the remote client's branch merged in (9f00a95, not committed here) the 217
-  tests of `tests/remote`, `tests/jobs/test_cli_encode.py` and the server's `test_attach.py`
-  passed, these two included.
+  removed. On this branch merged with `m3b-shared-queue` at 5b23e6a (the queue core's and
+  the remote client's fixes; the merge not committed here) every test passes, these two
+  included: `tests/remote` 198, `tests/queue`, `tests/jobs` and `testing/tests` 667 (1
+  skipped), the server's tests 550 (3 skipped).
