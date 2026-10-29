@@ -224,6 +224,8 @@ CLI, fixture media or the fake FFmpeg):
    "the queue was stopped by another front end" and goes on waiting (Ctrl+C cancels). Not
    built yet ([0061](0061-c17-remote-queue-and-queue-commands.md), the CLI's review fixes): no
    event tells a client that the queue was stopped; one is needed, with the UI's Stop in M4.
+   2026-10-29: built with the default, the `queue.processing` event
+   ([0064](0064-queue-processing-event.md)).
 
 ## Plan changes
 

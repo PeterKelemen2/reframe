@@ -30,6 +30,7 @@ __all__ = [
     "PowerAction",
     "PowerCountdownEvent",
     "QueueChangedEvent",
+    "QueueProcessingEvent",
     "ResyncEvent",
     "TaskDoneEvent",
     "TaskProgressEvent",
@@ -87,6 +88,21 @@ class QueueChangedEvent(ReframeModel):
     type: Literal["queue.changed"] = "queue.changed"
     job_ids: list[str]
     """All job ids, in queue order."""
+
+
+class QueueProcessingEvent(ReframeModel):
+    """Whether the queue takes waiting jobs, and which, changed. Running state: a restarted
+    server is not processing."""
+
+    type: Literal["queue.processing"] = "queue.processing"
+    processing: bool
+    """The runner takes waiting jobs (running and paused jobs go on either way)."""
+    only: list[str] | None
+    """It takes only these jobs, the ones a ``start`` with ``job_ids`` named (an id may name a
+    job that has left the queue since); ``null``: every waiting job, or not processing."""
+    reason: Literal["start", "stop", "idle"]
+    """``start`` and ``stop``: a front end's call; ``idle``: the jobs that a ``start`` named
+    have all ended."""
 
 
 class ToolsChangedEvent(ReframeModel):
@@ -162,6 +178,7 @@ Event = Annotated[
     | JobProgressEvent
     | JobLogEvent
     | QueueChangedEvent
+    | QueueProcessingEvent
     | ToolsChangedEvent
     | AppWarningEvent
     | PowerCountdownEvent

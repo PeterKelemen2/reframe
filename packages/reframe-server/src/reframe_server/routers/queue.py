@@ -36,6 +36,12 @@ class QueueSnapshot(BaseModel):
 
     jobs: list[QueueJob]
     """Every job, in queue order."""
+    processing: bool
+    """The queue takes waiting jobs (after ``start``, until ``stop`` or until the jobs a
+    ``start`` named have all ended). A ``queue.processing`` event tells each change."""
+    only: list[str] | None
+    """It takes only these jobs, the ones a ``start`` with ``job_ids`` named (an id may name a
+    job that has left the queue since); ``null``: every waiting job, or not processing."""
 
 
 class AddJobs(BaseModel):
@@ -113,8 +119,10 @@ def _public(reframe: Reframe, job: QueueJob) -> JsonValue:
 
 @router.get("/queue", response_model=QueueSnapshot)
 async def snapshot(reframe: ReframeDep) -> JsonTextResponse:
-    """Every job in queue order."""
-    return JsonTextResponse({"jobs": [_public(reframe, job) for job in reframe.queue.list()]})
+    """Every job in queue order, and which waiting jobs the queue takes."""
+    queue = reframe.queue
+    jobs = [_public(reframe, job) for job in queue.list()]
+    return JsonTextResponse({"jobs": jobs, "processing": queue.processing, "only": queue.only})
 
 
 @router.post("/queue", status_code=201, response_model=list[QueueJob])

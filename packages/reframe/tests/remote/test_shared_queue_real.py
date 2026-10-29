@@ -9,16 +9,18 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 import psutil
 import pytest
 
-from reframe.cli import EXIT_FAILED, EXIT_INTERRUPTED, EXIT_OK
+from reframe.cli import EXIT_FAILED, EXIT_INTERRUPTED, EXIT_OK, STOPPED_BY_OTHERS
 from reframe.models import ServerEndpoint
 from reframe.platform.power import DRY_RUN_ENV
 from reframe.remote.owner import ENDPOINT_FILE
@@ -439,3 +441,70 @@ def test_ctrl_z_pauses_the_job_and_fg_resumes_it(home: Home) -> None:
     assert "[1/1] resumed" in lines
     assert lines[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 0 not queued."
     assert owner.is_running()
+
+
+def read_within(
+    process: subprocess.Popen[str], check: Callable[[str], bool], seconds: float = 60.0
+) -> list[str]:
+    """:func:`read_until` for a line that a waiting process may never print: it is killed after
+    ``seconds``, so the read ends."""
+    timer = threading.Timer(seconds, process.kill)
+    timer.start()
+    try:
+        return read_until(process, check)
+    finally:
+        timer.cancel()
+
+
+def owner_api(home: Home) -> httpx.Client:
+    """The owner's REST API, as another front end (the UI) calls it."""
+    endpoint = home.endpoint()
+    return httpx.Client(
+        base_url=f"http://127.0.0.1:{endpoint.port}",
+        headers={"Authorization": f"Bearer {endpoint.token}"},
+        timeout=30,
+    )
+
+
+def test_a_stop_by_another_front_end_is_reported_and_the_jobs_wait_for_a_start(
+    home: Home,
+) -> None:
+    """The UI's Stop while the jobs of two commands wait behind a busy job: each command says so
+    and goes on waiting, also once the slot is free; Ctrl+C still cancels one command's job,
+    and the UI's Start runs the other's."""
+    busy = home.source("a/Busy.mkv", 60)
+    first, second = home.source("b/First.mkv", 2), home.source("c/Second.mkv", 2)
+    result = home.run("encode", "--detach", str(busy), "-o", str(home.out / "Busy.mkv"))
+    assert result.returncode == EXIT_OK, (result.stdout, result.stderr)
+    wait_until(lambda: home.state(busy) == "running")
+    clients = [
+        home.start("encode", str(source), "-o", str(home.out / source.name))
+        for source in (first, second)
+    ]
+    with owner_api(home) as api:
+
+        def started() -> bool:
+            """Both commands' starts are in."""
+            body = api.get("/api/queue").json()
+            paths = (str(first), str(second))
+            ids = {j["id"] for j in body["jobs"] if j["settings"]["source"]["path"] in paths}
+            return len(ids) == 2 and body["processing"] and ids <= set(body["only"] or ())
+
+        wait_until(started)
+        assert api.post("/api/queue/stop").status_code == 204
+        seen = [read_within(client, lambda line: line == STOPPED_BY_OTHERS) for client in clients]
+        assert home.run("queue", "cancel", home.job(busy)["id"][:8]).returncode == EXIT_OK
+        time.sleep(1.0)  # a job that the runner took would be running by now
+        assert [home.state(first), home.state(second)] == ["waiting", "waiting"]
+        assert [client.poll() for client in clients] == [None, None]
+        clients[1].send_signal(signal.SIGINT)
+        lines, err = finish(clients[1], seen[1])
+        assert clients[1].returncode == EXIT_INTERRUPTED, (lines, err)
+        assert lines[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 0 not queued."
+        assert home.state(second) == "cancelled"
+        assert api.post("/api/queue/start").status_code == 204
+    lines, err = finish(clients[0], seen[0])
+    assert clients[0].returncode == EXIT_OK, (lines, err)
+    assert lines.count(STOPPED_BY_OTHERS) == 1
+    assert lines[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 0 not queued."
+    assert home.state(first) == "done"

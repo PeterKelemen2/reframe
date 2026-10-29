@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from reframe.definitions import Definitions, load_definitions
 from reframe.events import EventBus
@@ -25,6 +26,7 @@ from reframe.models.events import (
     JobProgressEvent,
     JobStateEvent,
     QueueChangedEvent,
+    QueueProcessingEvent,
 )
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
@@ -68,6 +70,7 @@ OUTPUT_CLAIMED = "queue.output_claimed"
 
 #: ``list[...]`` for annotations inside ``QueueService``, whose ``list`` method hides the builtin.
 _Jobs = list[QueueJob]
+_Ids = list[str]
 _Actives = list[ActiveJob]
 _Tasks = list[asyncio.Task[None]]
 
@@ -245,8 +248,9 @@ class QueueService:
         """Restored jobs that were not added or retried since: their claims were never
         checked against each other (a store of an older Reframe may hold two with one output)."""
         self._processing = False
-        self._only: set[str] | None = None
-        """``start(job_ids=…)``: only these jobs are taken (``None``: every waiting job)."""
+        self._only: dict[str, None] | None = None
+        """``start(job_ids=…)``: only these jobs are taken, in the order named (``None``: every
+        waiting job). ``None`` whenever the runner is not processing."""
         self._closed = False
         self._opened = False
         self._store_busy = False
@@ -269,6 +273,19 @@ class QueueService:
         (``queue.store_busy``). ``False`` before the first use, for the owner, and when the
         lock cannot be used at all."""
         return self._store_busy
+
+    @property
+    def processing(self) -> bool:
+        """The runner takes waiting jobs: from :meth:`start` until :meth:`stop`, :meth:`close`,
+        or the end of every job that ``start(job_ids=…)`` named. Running state, not saved."""
+        return self._processing
+
+    @property
+    def only(self) -> _Ids | None:
+        """The jobs that ``start(job_ids=…)`` named, the only ones the runner takes (an id may
+        name a job that has left the queue since); ``None``: every waiting job, or not
+        processing."""
+        return None if self._only is None else builtins.list(self._only)
 
     @property
     def busy(self) -> bool:
@@ -362,6 +379,7 @@ class QueueService:
         log_path = job.log_path or log_file(self._data_dir, job_id)
         await asyncio.to_thread(files.remove_files, [log_path])
         self._publish_order()
+        self._idle_when_drained()
         await self._notify()
 
     async def reorder(self, job_ids: Sequence[str]) -> None:
@@ -430,24 +448,22 @@ class QueueService:
         """
         self._check_open()
         self._ensure_open()
+        only: dict[str, None] | None = None
         if job_ids is not None:
-            ids = builtins.list(job_ids)
-            for job_id in ids:
+            named = dict.fromkeys(job_ids)
+            for job_id in named:
                 self._job(job_id)
             if not self._processing:
-                self._only = set(ids)
+                only = named
             elif self._only is not None:
-                self._only.update(ids)
-        else:
-            self._only = None
-        self._processing = True
+                only = self._only | named
+        self._set_processing(True, only, "start")
         self._schedule()
 
     async def stop(self) -> None:
         """Take no new jobs; the running ones go on (running state only, not saved)."""
         self._ensure_open()
-        self._processing = False
-        self._only = None
+        self._set_processing(False, None, "stop")
 
     async def pause(self, job_id: str | None = None) -> None:
         """Pause a running job (``None``: every running job). Its process tree is suspended;
@@ -516,6 +532,7 @@ class QueueService:
             elif job.state is JobState.WAITING:
                 job.finished_at = self._clock.now()
                 await self._set_state(job, JobState.CANCELLED)
+        self._idle_when_drained()
         if tasks:
             await asyncio.wait(tasks)
 
@@ -555,7 +572,8 @@ class QueueService:
         if self._closed:
             return
         self._closed = True
-        self._processing = False
+        self._processing = False  # no event: the queue's users are closing too
+        self._only = None
         self._when.close()  # before any await: no when-done action runs after this
         tasks: _Tasks = []
         for active in builtins.list(self._active.values()):
@@ -684,12 +702,7 @@ class QueueService:
         ended and the runner went idle."""
         if self._closed or not self._processing:
             return False
-        if self._only is not None and not any(
-            job_id in self._active or (job_id in self._jobs and self._eligible(self._jobs[job_id]))
-            for job_id in self._only
-        ):
-            self._processing = False  # all of start(job_ids=…) ended: idle, as after stop()
-            self._only = None
+        if self._idle_when_drained():
             return True
         limit = self._settings().queue.parallel_jobs
         for job in self._ordered():
@@ -715,6 +728,37 @@ class QueueService:
                 self._run(job, active), name=f"reframe-queue-job-{job.id}"
             )
         return False
+
+    def _idle_when_drained(self) -> bool:
+        """Go idle, as after :meth:`stop`, once no job that ``start(job_ids=…)`` named is
+        waiting, running or paused; whether it went idle now."""
+        if self._closed or not self._processing or self._only is None:
+            return False
+        if any(
+            job_id in self._active or (job_id in self._jobs and self._eligible(self._jobs[job_id]))
+            for job_id in self._only
+        ):
+            return False
+        self._set_processing(False, None, "idle")
+        return True
+
+    def _set_processing(
+        self,
+        processing: bool,
+        only: dict[str, None] | None,
+        reason: Literal["start", "stop", "idle"],
+    ) -> None:
+        """Change what the runner takes; a change is published, in order with the job events."""
+        if (processing, only) == (self._processing, self._only):
+            return
+        self._processing, self._only = processing, only
+        self._events.publish(
+            QueueProcessingEvent(
+                processing=processing,
+                only=None if only is None else builtins.list(only),
+                reason=reason,
+            )
+        )
 
     def _claim(
         self, job: QueueJob, keys: _Keys, *, skip: AbstractSet[str] = frozenset()
@@ -774,6 +818,7 @@ class QueueService:
         job.issues = [*job.issues, claim]
         job.finished_at = self._clock.now()
         await self._set_state(job, JobState.FAILED, error=f"The job has errors: {claim.message}")
+        self._idle_when_drained()
 
     async def _run(self, job: QueueJob, active: ActiveJob) -> None:
         joblog = JobLog(

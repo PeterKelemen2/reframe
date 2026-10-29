@@ -17,6 +17,7 @@ from reframe.models import (
     NotificationEvent,
     QueueChangedEvent,
     QueueJob,
+    QueueProcessingEvent,
     Severity,
 )
 from reframe.queue import JobStateError, UnknownJobError
@@ -436,6 +437,84 @@ async def test_start_with_job_ids_never_narrows_a_running_start(harness: Harness
     await h.queue.stop()
     h.queue.start(job_ids=[a])  # nothing of it is waiting: idle at once
     assert not h.queue._processing
+
+
+def processing_changes(h: Harness) -> list[tuple[bool, list[str] | None, str]]:
+    return [
+        (e.processing, e.only, e.reason)
+        for e in h.events.published
+        if isinstance(e, QueueProcessingEvent)
+    ]
+
+
+async def test_each_change_of_what_the_queue_takes_is_published(harness: Harness) -> None:
+    """``start`` (also one that adds jobs to a running start), ``stop``, and ``idle`` once the
+    jobs that a start named have ended; a call that changes nothing publishes nothing."""
+    h = harness
+    h.scenario(encode_rule(ft.progress(blocks=2, interval=0.02), ft.write_output()))
+    a, b, c = [(await h.queue.add(h.job(name))).id for name in "ABC"]
+    assert (h.queue.processing, h.queue.only) == (False, None)
+    h.queue.start(job_ids=[a])
+    h.queue.start(job_ids=[b, a])
+    h.queue.start(job_ids=[a])
+    assert (h.queue.processing, h.queue.only) == (True, [a, b])
+    await h.queue.wait([a, b])
+    assert (h.queue.processing, h.queue.only) == (False, None)
+    h.queue.start()
+    h.queue.start(job_ids=[a])  # never narrows "every waiting job"
+    await h.queue.wait([c])
+    assert (h.queue.processing, h.queue.only) == (True, None)
+    await h.queue.stop()
+    await h.queue.stop()
+    assert processing_changes(h) == [
+        (True, [a], "start"),
+        (True, [a, b], "start"),
+        (False, None, "idle"),
+        (True, None, "start"),
+        (False, None, "stop"),
+    ]
+    published = h.events.published
+    [idle] = [e for e in published if isinstance(e, QueueProcessingEvent) and e.reason == "idle"]
+    ends = [published.index(e) for e in h.of_type("job.state") if e.state is JobState.DONE]  # type: ignore[union-attr]
+    assert ends[1] < published.index(idle) < ends[2]  # after B's end, before C's run
+
+
+async def test_a_start_goes_idle_when_its_waiting_job_is_cancelled_or_removed(
+    harness: Harness,
+) -> None:
+    h = harness
+    h.scenario(LONG)
+    busy = (await h.queue.add(h.job("Busy"))).id
+    h.queue.start()
+    await h.running_process(busy)
+    await h.queue.stop()  # the busy job runs on, holding the one slot
+    first, second = [(await h.queue.add(h.job(name))).id for name in ("First", "Second")]
+    h.queue.start(job_ids=[first])
+    await h.queue.cancel(first)
+    assert (h.queue.processing, h.queue.only) == (False, None)
+    h.queue.start(job_ids=[second])
+    await h.queue.remove(second)
+    assert (h.queue.processing, h.queue.only) == (False, None)
+    assert processing_changes(h)[-4:] == [
+        (True, [first], "start"),
+        (False, None, "idle"),
+        (True, [second], "start"),
+        (False, None, "idle"),
+    ]
+    await h.queue.cancel(busy)
+
+
+async def test_close_publishes_no_change_of_what_the_queue_takes(harness: Harness) -> None:
+    """The server's front ends end with it: none is told that someone stopped the queue."""
+    h = harness
+    h.scenario(LONG)
+    job = await h.queue.add(h.job())
+    h.queue.start(job_ids=[job.id])
+    await h.running_process(job.id)
+    before = processing_changes(h)
+    await h.queue.close()
+    assert (h.queue.processing, h.queue.only) == (False, None)
+    assert processing_changes(h) == before
 
 
 async def test_busy_while_a_job_runs_or_a_start_still_targets_a_waiting_one(

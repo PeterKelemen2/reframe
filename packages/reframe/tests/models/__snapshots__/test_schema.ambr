@@ -3007,6 +3007,7 @@
       'NotificationEvent',
       'PowerCountdownEvent',
       'QueueChangedEvent',
+      'QueueProcessingEvent',
       'RemoveOp',
       'ReplaceOp',
       'ResyncEvent',
@@ -3031,6 +3032,7 @@
         'notification': '#/$defs/NotificationEvent',
         'power.countdown': '#/$defs/PowerCountdownEvent',
         'queue.changed': '#/$defs/QueueChangedEvent',
+        'queue.processing': '#/$defs/QueueProcessingEvent',
         'resync': '#/$defs/ResyncEvent',
         'task.done': '#/$defs/TaskDoneEvent',
         'task.progress': '#/$defs/TaskProgressEvent',
@@ -3059,6 +3061,9 @@
       }),
       dict({
         '$ref': '#/$defs/QueueChangedEvent',
+      }),
+      dict({
+        '$ref': '#/$defs/QueueProcessingEvent',
       }),
       dict({
         '$ref': '#/$defs/ToolsChangedEvent',
@@ -7155,6 +7160,68 @@
       'created_at',
     ]),
     'title': 'QueueJob',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[QueueProcessingEvent]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      Whether the queue takes waiting jobs, and which, changed. Running state: a restarted
+      server is not processing.
+    ''',
+    'properties': dict({
+      'only': dict({
+        'anyOf': list([
+          dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': '''
+          It takes only these jobs, the ones a ``start`` with ``job_ids`` named (an id may name a
+          job that has left the queue since); ``null``: every waiting job, or not processing.
+        ''',
+        'title': 'Only',
+      }),
+      'processing': dict({
+        'description': 'The runner takes waiting jobs (running and paused jobs go on either way).',
+        'title': 'Processing',
+        'type': 'boolean',
+      }),
+      'reason': dict({
+        'description': '''
+          ``start`` and ``stop``: a front end's call; ``idle``: the jobs that a ``start`` named
+          have all ended.
+        ''',
+        'enum': list([
+          'start',
+          'stop',
+          'idle',
+        ]),
+        'title': 'Reason',
+        'type': 'string',
+      }),
+      'type': dict({
+        'const': 'queue.processing',
+        'default': 'queue.processing',
+        'title': 'Type',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'processing',
+      'only',
+      'reason',
+    ]),
+    'title': 'QueueProcessingEvent',
     'type': 'object',
   })
 # ---

@@ -1,8 +1,9 @@
 """``reframe encode`` and ``reframe batch`` as clients of the queue's owner: the owner validates
 and runs the jobs (no encoder detection here), ``--detach``, Ctrl+C and Ctrl+Z, jobs that another
-front end removes or retries, a server that stops or a connection that is lost, the owner's
-when-done countdown, and the fallback to the in-process queue with the reason. The owner is the
-test's server in this event loop; the CLI runs in the same loop, on the same folders."""
+front end removes or retries, a Stop by another front end, a server that stops or a connection
+that is lost, the owner's when-done countdown, and the fallback to the in-process queue with the
+reason. The owner is the test's server in this event loop; the CLI runs in the same loop, on the
+same folders."""
 
 from __future__ import annotations
 
@@ -35,12 +36,12 @@ from reframe.models import (
 )
 from reframe.models.template import AudioOutputSettings
 from reframe.platform.power import OsAction, PowerService
-from reframe.remote import RemoteQueue
+from reframe.remote import RemoteError, RemoteQueue
 from reframe.remote import owner as owner_module
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 
-from .conftest import HANG, Server, poll, serving
+from .conftest import HANG, Server, Wire, poll, serving
 
 pytestmark = pytest.mark.anyio
 
@@ -431,6 +432,113 @@ async def test_ctrl_c_after_another_front_end_removed_a_job(
     last = captured.out.splitlines()[-1]
     assert last == "Summary: 0 done, 0 failed, 1 cancelled, 1 removed, 0 not queued."
     assert states(server) == {a: JobState.CANCELLED}
+
+
+async def test_a_stop_by_another_front_end_is_reported_and_a_later_start_runs_the_job(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The UI's Stop while B waits behind A: the command says so once and goes on waiting, also
+    when A's slot is free; the UI's Start then runs B."""
+    server.api.fake.set_scenario(scenario(ends("B.mkv")))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    await poll(lambda: queue.only == [a, b])  # the command's start
+    await queue.stop()
+    out: list[str] = []
+
+    def stop_shown() -> bool:
+        out.append(capsys.readouterr().out)
+        return cli.STOPPED_BY_OTHERS in "".join(out)
+
+    await poll(stop_shown)
+    await queue.cancel(a)
+    await asyncio.sleep(0.3)  # a job that the runner took would be running by now
+    assert states(server)[b] is JobState.WAITING
+    assert not task.done()
+    queue.start()
+    code = await asyncio.wait_for(task, WAIT)
+    lines = "".join([*out, capsys.readouterr().out]).splitlines()
+    assert code == cli.EXIT_FAILED, lines  # A was cancelled
+    assert lines.count(cli.STOPPED_BY_OTHERS) == 1
+    assert "[2/2] done" in [line.split(" in ")[0] for line in lines]
+    assert states(server)[b] is JobState.DONE
+
+
+async def test_a_stop_while_none_of_its_jobs_waits_is_not_reported(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+    task = asyncio.create_task(
+        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    )
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    await queue.stop()
+    await queue.cancel(a)  # its events come after the stop's
+    assert await asyncio.wait_for(task, WAIT) == cli.EXIT_FAILED
+    assert cli.STOPPED_BY_OTHERS not in capsys.readouterr().out
+
+
+async def test_a_stop_just_before_the_commands_own_start_is_not_reported(
+    server: Server, wire: Wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Another front end's Stop reaches the owner between the command's add and its start, so
+    the start runs the command's jobs; its event reaches the command after the stop's."""
+    server.api.fake.set_scenario(HANG)
+    queue = server.api.reframe.queue
+    queue.start()
+    server.publish()
+    wire.lag = 0.05
+    send = RemoteQueue._send_start
+
+    async def stopped_first(self: RemoteQueue, ids: list[str] | None) -> None:
+        await queue.stop()
+        await send(self, ids)
+
+    monkeypatch.setattr(RemoteQueue, "_send_start", stopped_first)
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    await poll(lambda: queue.only == [a, b])
+    await queue.cancel()  # its events come after the stop's and the start's
+    assert await asyncio.wait_for(task, WAIT) == cli.EXIT_FAILED
+    assert cli.STOPPED_BY_OTHERS not in capsys.readouterr().out
+
+
+async def test_a_stop_that_cannot_be_checked_with_the_owner_ends_nothing(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checks: list[RemoteQueue] = []
+
+    async def unreadable(self: RemoteQueue) -> None:
+        checks.append(self)
+        raise RemoteError("the queue cannot be read", code="test")
+
+    monkeypatch.setattr(RemoteQueue, "refresh", unreadable)
+    server.api.fake.set_scenario(scenario(ends("B.mkv")))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    await job_of(server, "B.mkv", JobState.WAITING)
+    await queue.stop()
+    await poll(lambda: bool(checks))
+    await queue.cancel(a)
+    queue.start()
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_FAILED, captured
+    assert captured.out.splitlines()[-1] == (
+        "Summary: 1 done, 0 failed, 1 cancelled, 0 not queued."
+    )
+    assert "error" not in captured.err
 
 
 async def connections_closed(server: Server) -> None:
