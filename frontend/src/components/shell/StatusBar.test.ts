@@ -2,6 +2,7 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
+import { deferred } from '@/api/testing/fakes'
 import type { JobSettings, QueueJob, Severity, ValidationIssue } from '@/api/types'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
@@ -25,6 +26,7 @@ const actions = {
   canAdd: ref(false),
   canAddAll: ref(false),
   canStart: ref(false),
+  busy: ref(false),
   addCurrent: vi.fn<() => Promise<void>>(async () => {}),
   addAll: vi.fn<() => Promise<void>>(async () => {}),
   start: vi.fn<() => Promise<void>>(async () => {}),
@@ -43,7 +45,9 @@ beforeEach(() => {
   } as JobSettings
   validation.issues = []
   validation.pending = false
-  for (const flag of [actions.canAdd, actions.canAddAll, actions.canStart]) flag.value = false
+  for (const flag of [actions.canAdd, actions.canAddAll, actions.canStart, actions.busy]) {
+    flag.value = false
+  }
   vi.clearAllMocks()
 })
 
@@ -128,6 +132,38 @@ describe('the status bar', () => {
     await flushPromises()
     summary.click()
     await vi.waitFor(() => expect(document.activeElement).toBe(list()))
+  })
+
+  it('shows the wait of an add on the button that started it', async () => {
+    actions.canAdd.value = true
+    actions.canAddAll.value = true
+    const wrapper = await mountBar()
+    const busyOf = () =>
+      ['add', 'add-all'].filter(
+        (name) => wrapper.find(`.status-bar__${name}`).attributes('aria-busy') === 'true',
+      )
+    // Ctrl+Enter or the button: the add waits for the job's check.
+    actions.busy.value = true
+    await flushPromises()
+    expect(busyOf()).toEqual(['add'])
+    actions.busy.value = false
+
+    const drafts = deferred()
+    actions.addAll.mockImplementationOnce(async () => {
+      actions.busy.value = true
+      await drafts.promise
+      actions.busy.value = false
+    })
+    await wrapper.find('.status-bar__add-all').trigger('click')
+    await flushPromises()
+    expect(busyOf()).toEqual(['add-all'])
+    drafts.resolve()
+    await flushPromises()
+    expect(busyOf()).toEqual([])
+    // A later Ctrl+Enter waits on Add to queue again.
+    actions.busy.value = true
+    await flushPromises()
+    expect(busyOf()).toEqual(['add'])
   })
 
   it('publishes its height for the toasts while it is shown', async () => {

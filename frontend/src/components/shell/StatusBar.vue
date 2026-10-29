@@ -4,10 +4,10 @@ export const STATUS_BAR_HEIGHT = '--shell-status-bar-height'
 </script>
 
 <script setup lang="ts">
-import { ListPlus, ListVideo, Play, Plus } from '@lucide/vue'
+import { ListPlus, ListVideo, LoaderCircle, Play, Plus } from '@lucide/vue'
 import { useResizeObserver } from '@vueuse/core'
 import vTooltip from 'primevue/tooltip'
-import { computed, onBeforeUnmount, useTemplateRef } from 'vue'
+import { computed, onBeforeUnmount, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
@@ -23,7 +23,19 @@ const { t } = useI18n()
 const editor = useEditorStore()
 const queue = useQueueStore()
 const actions = useQueueActions()
-const { canAdd, canAddAll, canStart } = actions
+const { canAdd, canAddAll, canStart, busy } = actions
+
+/** Add all is the add under way: its button shows the wait, else *Add to queue*'s does. */
+const addingAll = ref(false)
+
+async function addAll(): Promise<void> {
+  addingAll.value = true
+  try {
+    await actions.addAll()
+  } finally {
+    addingAll.value = false
+  }
+}
 
 const outputPath = computed(() => editor.job?.output?.path || null)
 
@@ -74,11 +86,18 @@ const queueSummary = computed(() => {
         size="small"
         :label="t('shell.queue.add')"
         :disabled="!canAdd"
+        :aria-busy="(busy && !addingAll) || undefined"
         aria-keyshortcuts="Control+Enter"
         @click="actions.addCurrent()"
       >
         <template #icon>
-          <Plus :size="16" aria-hidden="true" />
+          <LoaderCircle
+            v-if="busy && !addingAll"
+            class="status-bar__spin"
+            :size="16"
+            aria-hidden="true"
+          />
+          <Plus v-else :size="16" aria-hidden="true" />
         </template>
       </FocusSafeButton>
       <FocusSafeButton
@@ -88,10 +107,17 @@ const queueSummary = computed(() => {
         outlined
         :label="t('shell.queue.addAll')"
         :disabled="!canAddAll"
-        @click="actions.addAll()"
+        :aria-busy="(busy && addingAll) || undefined"
+        @click="addAll"
       >
         <template #icon>
-          <ListPlus :size="16" aria-hidden="true" />
+          <LoaderCircle
+            v-if="busy && addingAll"
+            class="status-bar__spin"
+            :size="16"
+            aria-hidden="true"
+          />
+          <ListPlus v-else :size="16" aria-hidden="true" />
         </template>
       </FocusSafeButton>
       <FocusSafeButton
@@ -160,6 +186,16 @@ const queueSummary = computed(() => {
 
 .status-bar__queue:hover {
   color: var(--rf-color-text);
+}
+
+.status-bar__spin {
+  animation: status-bar-spin 1s linear infinite;
+}
+
+@keyframes status-bar-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .status-bar__actions {
