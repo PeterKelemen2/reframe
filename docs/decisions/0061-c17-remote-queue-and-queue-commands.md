@@ -221,4 +221,159 @@ worked on separate files; each wrote its own part below.
 
 ### The CLI
 
-(Written by the fix agent of the CLI.)
+(Written by the fix agent of the CLI.) The CLI is built to the contract between the remote
+client and the CLI: a start that the owner refuses is raised by the next awaited queue call,
+`wait` raises for an id that is not in the queue, and a job that another front end removes
+leaves `get()` before its `queue.changed` reaches the events. The tests are in
+`tests/remote/test_cli_client.py`, `test_cli_queue.py`, `test_shared_queue_real.py`,
+`tests/jobs/test_cli_encode.py` and the server's `tests/test_attach.py`.
+
+- **C1, a removed job hung `encode` and `batch`.** The command followed only `job.state` and
+  `job.progress`, and waited for every id. It now follows `queue.changed` and `resync` too.
+  On each of them it reads its open jobs; a job that `get` does not return was removed. The
+  command prints `[i/N] removed` and counts the job in the summary (`1 removed`), with exit 1.
+  It waits only for the jobs that are still in the queue. Ctrl+C cancels and waits only for
+  those jobs. A job that `get` does not return at the first read counts as removed too (R1).
+  After `start(job_ids=…)` the command calls `await queue.wait([])`. That call raises a start
+  that the owner refused. The command then starts the jobs that are still there. When the
+  copy does not show the removal yet, it looks again every 0.1 s, at most 50 times; then the
+  error ends the command. A `JobStateError` or `RemoteError` from that call ends the command
+  as any other refusal does ("the jobs cannot be queued: …", or the lost-connection report).
+  Tests: `test_a_job_another_front_end_removes_is_reported_and_the_command_ends`, before:
+  `assert 130 == 1` (the command was still waiting when `wait_for` cancelled it after 30 s);
+  `test_ctrl_c_after_another_front_end_removed_a_job`, before: `the jobs cannot be cancelled:
+  no job '…' in the queue` and a summary without the removed job;
+  `test_a_start_that_the_owner_refuses_is_sent_again_for_the_jobs_still_there` (a fake queue
+  that follows the contract), before: `assert 130 == 1` after 30 s;
+  `test_a_start_that_the_owner_keeps_refusing_ends_the_command`; with real processes
+  `test_a_waiting_job_that_another_client_removes_ends_the_follow` (`reframe queue remove`,
+  then `[2/2] removed` and `1 done … 1 removed`). Checked by hand against the remote client's
+  branch at 9f00a95: a start that the owner refuses (the job removed in `queue.start`) gives
+  `[1/2] removed`, `[2/2] done` and exit 1.
+- **C2, a retried job was cancelled with the command.** The lead's decision, as a follow-up of
+  [0057](0057-s7-attachments-client-id-and-detach.md) (its consequence "revisit if a front end
+  retries the jobs of a CLI that is still running"): **a retry makes the job leave every
+  attachment.** `POST /api/queue/{id}/retry` calls `EventHub.release(id)` for a job that has
+  ended, before it awaits the retry, so no end of a connection comes in between. A refused
+  retry of a running job (409) keeps the attachment. When a connection ends, the hub cancels
+  only its jobs that have not ended. So a retry that comes between the end and the cancel is
+  not cancelled. In the CLI a job keeps its first end (`CommandJobs`). Its later events are
+  not shown and not counted. The final wait leaves it out, and Ctrl+C does not cancel it.
+  Before it cancels, Ctrl+C also takes the state events that came and were not shown yet. The
+  OpenAPI document does not change. Tests: `test_attach.py::test_a_job_that_another_front_end_retried_runs_on_when_its_client_goes_away`
+  and `test_a_job_retried_just_after_its_client_went_away_is_not_cancelled`, before: the job
+  `cancelled` instead of `running` and `waiting`;
+  `test_a_retry_that_is_refused_leaves_the_job_attached`;
+  `test_a_job_another_front_end_retries_is_left_to_it`, before: `assert 130 == 1` (the command
+  waited for the new run); `test_ctrl_c_leaves_a_job_another_front_end_retried`, before:
+  `Summary: 0 done, 0 failed, 2 cancelled` (A was cancelled);
+  `test_ctrl_c_leaves_a_job_that_ended_and_was_retried_before_the_command_saw_it`.
+- **C3, the "Done when" 2 tests.** Both now use `parallel_jobs` 2. The other front end's job
+  runs at the Ctrl+C, runs on and ends `done`. The in-loop test checked the wrong folder for
+  `.part` files: the command's outputs are next to the sources. The mutation in which Ctrl+C
+  takes the running jobs from `queue.list()` fails both tests. They pass on the unfixed code:
+  the code was right, the tests were too weak.
+- **C4, a stopped client.** Measured: a client process that is stopped cannot answer
+  uvicorn's keepalive ping. After the ping interval plus its timeout, the hub reads code 1005,
+  as for a client that is gone, and cancels the client's jobs (`testdata/README.md`). The
+  chosen mechanism: while a client follows its jobs on POSIX, SIGTSTP (Ctrl+Z) ends the
+  follow. The command pauses its running jobs, closes its connection with `detach`, prints
+  `Stopped: …` and stops itself with SIGTSTP. On SIGCONT (`fg`, `bg`) it connects again
+  (no owner is started) and resumes the jobs that it paused, then follows them through the new
+  connection. A Ctrl+C during that reconnection is applied once the new connection is open.
+  The jobs stay detached because the API cannot attach a job that is already in the queue. So
+  from the stop until the command ends, SIGTERM and SIGHUP cancel them as Ctrl+C does
+  (`kill %1`, a closed terminal). Known limits: a stop that cannot be caught (SIGSTOP, a
+  debugger, SIGTTOU or SIGTTIN) still lets the owner cancel the jobs after about 20–40 s. A
+  `kill -9` of a stopped command leaves its jobs paused and detached until `reframe queue
+  resume` or `cancel`; the owner stays because it is busy. A waiting job of the command can
+  start while the command is stopped, when a slot frees. Ctrl+Z before the jobs are followed
+  (while drafting or adding) stops the process as before. In-process and on Windows nothing
+  changes. (b) After a lost connection the command reports each open job as it is now. The
+  owner gives the state when it answers. Else the saved queue gives it, and a job there that
+  was running or paused counts as `interrupted`. Else the command's own copy gives it. The
+  error line is `error: <reason>.`, and the waiting jobs are named as in item 6. Item 6's
+  "reports its running jobs interrupted" is now a fact read from the owner or the saved queue,
+  not a guess. Tests: `test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them` (the stop
+  itself replaced; at the stop the job is `paused` and no connection is open; it ends `done`),
+  before: no SIGTSTP handler, so the test does not raise the signal and fails;
+  `test_a_command_that_was_stopped_cancels_its_jobs_on_sigterm`;
+  `test_a_command_that_cannot_reach_the_owner_after_a_stop`;
+  `test_after_a_lost_connection_the_owners_states_are_reported` (attached: `cancelled`; not
+  attached: runs on; no owner: the saved queue), before: `[1/1] interrupted`, or a summary
+  with `1 not finished`; with real processes `test_ctrl_z_pauses_the_job_and_fg_resumes_it`
+  (SIGTSTP to the CLI in its own process group: `paused`, no connection to the owner's port;
+  SIGCONT: `[1/1] resumed` and `done`).
+- **C5, Ctrl+C during the adds.** The add that is under way is not cancelled with the command.
+  It is waited for with `asyncio.wait`, not `shield`, because Python 3.14 reports the error of a
+  shielded add whose waiter was cancelled. After Ctrl+C the command waits up to 10 s
+  (`ADD_WAIT`) for that answer, then cancels the job with the others and counts it. A
+  connection sends `detach` only once `--detach` has printed `Detached:`. Any earlier end (Ctrl+C,
+  an error) closes it without `detach`, so the owner cancels an attached job that the command
+  never learned of (R2's suggestion). Jobs that were drafted but never added count as not
+  queued. Tests: `test_ctrl_c_while_detach_adds_a_job_leaves_no_job_behind`, before: `Summary: 0
+  done, 0 failed, 1 cancelled` (the job of the add under way was neither counted nor
+  cancelled);
+  `test_a_detach_that_was_interrupted_leaves_its_jobs_to_the_owners_cancel`, before: the
+  condition not met in time (a job stayed waiting); `test_ctrl_c_while_an_add_fails`.
+- **C6, the owner stopping during the adds.** An add that fails with `connection.lost`, or
+  any queue error after the connection was lost, gives the lost-connection report (C4 b).
+  That report names the waiting jobs. Test:
+  `test_an_owner_that_stops_while_the_jobs_are_added`, before: `error: the jobs cannot be
+  queued: the Reframe server cannot be reached: All connection attempts failed`, without the
+  jobs.
+- **C7, a countdown that the command's jobs did not start.** The command follows a countdown
+  only when one of its jobs ran (a `running` event, or a `started_at`). The queue cancels its
+  pending countdown when a job starts, so a later countdown is newer than that job. The
+  countdown subscription is made after the jobs end, and before `pending` is read, so it does
+  not hold older countdowns. Test:
+  `test_a_countdown_that_the_commands_jobs_did_not_start_is_not_followed`, before:
+  `assert 130 == 1` (the command showed the other countdown and waited until the test's
+  time-out cancelled it).
+- **C8, a global Stop from another front end.** Not built, the lead's decision: no event shows
+  a stop. 0042's open question 5 says so, and so does the status row.
+- **C9, `log -f`.** When the owner's connection is lost before the job ended, `log -f` prints
+  `error: the Reframe server stopped before job ID ended.` and ends with 1. It does the same
+  without an owner when the process that holds the saved queue is gone. That case ended with 0
+  before, and its test changed. The owner's copy is read on the event loop; only the saved
+  queue is read in a worker thread. Tests:
+  `test_following_a_log_ends_with_an_error_when_the_owner_stops_first`, before: exit 0 and no
+  message; `test_following_a_log_without_a_live_owner_ends_with_an_error`;
+  `test_following_the_log_of_a_job_that_an_in_process_command_runs`.
+- **C10, the test gaps.** The `detections` fixture records `CapabilityService._start`, which
+  covers `start` and `wait`. The draft test also has a preset with a required track rule that
+  matches nothing and its own naming. New tests cover `--detach` with a file that is not
+  queued (exit 1) and a command that ends by an unexpected error (no attached job is left).
+  Another new test runs the owner's countdown with a power service that only records
+  (`RecordingExecutor`, `when_done` "shutdown" in the owner's folder, "nothing" in the
+  command's own): the command shows it, and Ctrl+C cancels it through the API. Further new
+  tests: `log -f` when the owner stops, and control characters in `queue list` and `log`. The
+  batch test now has a time-out. The mutations `local_power_in_client`,
+  `local_when_done_in_client`, `local_validate_in_client`, `detach_exit_always_ok`,
+  `no_track_issues`, `ignore_preset_naming`, `queue_rows_no_printable`, `log_no_printable` and
+  `log_follow_ignores_lost` now fail a test.
+- **C11.** A job that `get` does not return at the first read is handled in C1. Drafting does
+  not hold the event loop: with 120 files in client mode the longest block of the loop was
+  0.11 s (`encode` 13.5 s in all, `batch` 6.5 s). The client's connection answers the
+  keepalive pings between files, so the connection is not opened later. Measured under load,
+  with `nice -n 19` and a movie playing.
+- **C12, the nits.** `REFRAME_IN_PROCESS` is read by click's own rule (`click.BOOL`, click
+  8.5.0: `off`, `f` and `n` are false), and a value that is not a truth value is a usage error
+  (exit 2). `reframe queue pause|resume|cancel ID` ends with 1 and an error line when the job's
+  state is not one that the action works on (pause: running; resume: paused; cancel: waiting,
+  running or paused), as the help says; `--all` does not change. When `server.json` names a
+  server that cannot be used, `queue list` prints `The Reframe server of this data folder
+  cannot be used (<reason>): the saved queue.` and `queue log` prints the same as a warning.
+  `find_job("")` asks for an id. `Queued N jobs.` counts only the jobs that wait. The
+  real-process tests set `REFRAME_POWER_DRY_RUN=1`, and one of them checks with psutil that the
+  started owner has it. Tests: `test_reframe_in_process_is_read_as_the_command_line_reads_it`,
+  `test_an_action_that_the_jobs_state_does_not_allow`,
+  `test_list_and_log_say_why_a_running_server_is_not_used`,
+  `test_a_job_that_is_not_in_the_queue`,
+  `test_a_job_that_the_owner_adds_failed_is_not_counted_as_queued`, all failing before.
+- **Found here, for the remote client (B2):** on this branch alone, before the remote client's
+  fix, the real tests with two and with ten clients that add at once fail every time. A
+  client's copy drops a job that was just added, and the command now reports that job as
+  removed. With the remote client's branch merged in (9f00a95, not committed here) the 217
+  tests of `tests/remote`, `tests/jobs/test_cli_encode.py` and the server's `test_attach.py`
+  passed, these two included.

@@ -693,3 +693,10 @@ command's own jobs and no longer stops the queue. `--in-process` is also
 The eight checks pass: 1–7 with real processes and the real FFmpeg
 (`tests/remote/test_shared_queue_real.py`), 8 in `tests/remote/test_queue_contract.py`.
 Not verified on Windows.
+
+After the review ([0061](../decisions/0061-c17-remote-queue-and-queue-commands.md), "The
+CLI"): a command reports a job that another front end removes and ends without it; a job that
+another front end retries is that front end's (the command keeps its first end, and the job
+leaves the command's connection on the server); Ctrl+Z in client mode pauses and detaches the
+command's running jobs while it is stopped and resumes them on SIGCONT; after a lost
+connection the command reports its jobs as the owner, or else the saved queue, shows them.

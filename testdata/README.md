@@ -2448,6 +2448,39 @@ the owner and its idle start, the encodes), `test_cli_queue.py`
 (`test_list_without_an_owner_reads_the_saved_queue_as_it_is`) and `test_owner_search.py` (the
 locks held in the test process).
 
+Checked on 2026-10-29 for the CLI's review fixes (Linux 7.3, Python 3.14.8, uvicorn 0.54.0,
+websockets 17.3, rich 15.0.0, click 8.5.0, psutil 7.2.2):
+
+- **A stopped client is dropped by uvicorn's keepalive.** A `websockets` client process,
+  authenticated on `WS /api/events`, was stopped with SIGSTOP while the server's ping interval
+  and ping timeout were 1 s each: the hub forgot the connection 2.03 s later and its listener
+  read disconnect code 1005, the code of a client that is gone, so its attached jobs are
+  cancelled. (In uvicorn's source: the pong time-out fails the connection with 1011 and closes
+  the transport, and `connection_lost` queues 1005.) With the defaults (20 s and 20 s) the
+  lead saw a job cancelled 29 s after the SIGSTOP of `reframe encode`.
+- **SIGTSTP and an orphaned process group.** SIGTSTP with its default action stopped a child
+  in a process group of its own (`process_group=0`, its parent in another group of the same
+  session); a child in a new session (an orphaned group) went on running. The real-process
+  Ctrl+Z test starts the CLI in a group of its own for this reason.
+- **Python 3.14's `asyncio.shield`.** When the waiter of a shielded task is cancelled and the
+  task then fails, the loop's exception handler gets "RemoteError exception in shielded
+  future" (anyio's test runner turns that into a test error). The CLI waits for the add that
+  is under way at Ctrl+C with `asyncio.wait`, which does not cancel the task and reports
+  nothing.
+- **rich's `Progress`** can be stopped and started again: the bars come back (the CLI takes
+  them off the terminal while it is stopped).
+- **Drafting in client mode does not hold the event loop**: with 120 files (fake tools) the
+  longest gap of a 10 ms timer was 0.11 s, for `encode` (13.5 s in all) and for `batch`
+  (6.5 s), measured under load with `nice -n 19`; the client's connection answers the
+  keepalive pings in between.
+- **click's truth values** (`click.BOOL`, also for an option's environment variable): `1`,
+  `true`, `t`, `yes`, `y`, `on` and `0`, `false`, `f`, `no`, `n`, `off`, any case, spaces
+  stripped; empty is false; another value (`2`, `garbage`) is a usage error (exit 2).
+
+Asserted by `test_cli_client.py` (Ctrl+Z, a lost connection, the add under way at Ctrl+C,
+`REFRAME_IN_PROCESS`) and `test_shared_queue_real.py`
+(`test_ctrl_z_pauses_the_job_and_fg_resumes_it`).
+
 ### Docker image and deployment (S-6, task D)
 
 Checked on 2026-10-28 on the owner's desktop (Docker 29.9.2 without buildx, Compose 5.6.1,
