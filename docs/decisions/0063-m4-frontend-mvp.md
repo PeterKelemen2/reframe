@@ -736,7 +736,101 @@ pixels`, and width 1280 with upscaling the amber line with `scale 1280×536`.
 
 ## Task I — F-10 Audio and Subtitles tabs
 
-(Written by task I.)
+Built: `components/editor/tabs/{AudioTab,SubtitlesTab}.vue` (both are `components/tracks/TracksTab.vue`
+with the list's name), `components/media/` (`TrackTable.vue`, the display helpers in `streams.ts`),
+`components/tracks/` (`OutputTrackList`, `AudioTrackRow`, `SubtitleTrackRow`, `TrackRowFrame`, the
+patch builders in `ops.ts`, test data from the real server in `testing.ts`) and
+`i18n/messages/en/tracks.json`.
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2, fixtures `multitrack`, `dts-hd-ma`, `pgs`,
+`text-subs`; `components/tracks/testing.ts` holds the definitions and probes as the server sent them.
+
+1. **Bitrates.** `multitrack`: the AC-3 track has `bit_rate` 192 000 (`source: stream`); its two
+   AAC tracks have neither `bit_rate` nor Matroska statistics tags (`source: unknown`, shown `—`).
+   `dts-hd-ma`: the DTS-HD MA track is lossless and unknown (`—`, 24-bit), the AC-3 tracks 224 and
+   192 kb/s from the stream. No fixture has statistics tags or `NUMBER_OF_FRAMES`, so every event
+   count is `—`. `pgs`: two bitmap tracks, canvas 720×480, delay +200 ms.
+2. **Encoders.** `libfdk_aac` is `unavailable` ("Not in this FFmpeg build"); the other six audio
+   encoders are available. AC-3 and E-AC-3 list their allowed bitrates, AAC and Opus give ranges
+   only; `libmp3lame` (and `libfdk_aac`) have a VBR quality (`-q:a` 0–9, default 2); FLAC is
+   lossless. Containers: MKV copies any audio codec except a list, MP4 copies a list, WebM Opus
+   and Vorbis; text subtitles go to `srt` (MKV), `mov_text` (MP4), `webvtt` (WebM).
+3. **The draft** of `multitrack` with the default preset: three AAC stereo 160 kb/s tracks with
+   `language` `ja` / `en` (BCP 47) and the source titles, three copied subtitles.
+4. **The issues the rows show**, from `jobs/validate`: two burn-ins give `subtitle.burn_multiple` at
+   the second track's action ("Only one subtitle track can be burned in; track 1 already is.");
+   PGS copied into MP4 gives `subtitle.bitmap_unsupported` at each action ("MP4 cannot hold the
+   bitmap subtitles of stream 1 (PGS)."); a passthru AC-3 track in MKV with gain, DRC or loudness
+   set gives the warning `audio.passthru_settings_ignored` at its action.
+
+Headless Chromium (Playwright 1.64.1, 1440×1000, light and dark) on port 8710, with the sources
+store set through Pinia (E's panel is built in parallel): the tables for all four fixtures; a row
+expanded with Enter and closed with Space; remove, *Add all*, *Add track* (a duplicate of the
+default track is not default), undo and redo of each with `Ctrl+Z` / `Ctrl+Shift+Z`; move up twice
+by keyboard with the focus following the track; a drag of the first row's handle below the fourth
+(in a 1440×2400 viewport: a row is about 360 px high and a drag cannot leave the viewport); encoder,
+mixdown, sample rate, bitrate, loudness, a typed gain and a DRC moved by the arrow keys, each one
+undo step; passthru; VBR quality with MP3; *Reload from preset rules* and its undo; a Summary chip
+landing on its row with the focus in it; the issues above at their fields; the MP4 note for text
+subtitles.
+
+### Choices where the plan leaves one
+
+1. **Add all** adds an output track for each source track that has none yet, in source order
+   (HandBrake's "Add all remaining tracks"), as one undo step; it is disabled when there is none.
+   *Add track* is a menu of every source track, so a track can be added twice (two mixdowns).
+2. **A new track** is the preset's own output for that source track when the editor's draft has
+   one (`decisions[].outputs[0]`, `subtitle_decisions[].subtitle_outputs[0]`). Otherwise audio is
+   encoded with the first encoder the container takes and the build has (AAC first), stereo (mono
+   for a mono source) at the encoder's default bitrate for it; a subtitle is copied. The flags come
+   from the source's dispositions; `language` and `name` are `null`, which the command builder and
+   validation read as the source's (`OutputTrack.language` / `.title`). A track added while another
+   track of its kind is default is not default.
+3. **Another source** for a row replaces its metadata with the new source's (the row keeps its
+   default flag): without the metadata editor (M6), an old title would stay on another track.
+4. **Another encoder** fits the track in the same undo step: a mixdown the encoder cannot make
+   becomes stereo (or its first), a bitrate outside its range for the layout or not in its list
+   becomes its default for the layout, a VBR quality it lacks is cleared. **Another mixdown** moves
+   a bitrate outside the new layout's range to its default. (The core snaps such values down and
+   says so; HandBrake also resets the bitrate when the mixdown changes.)
+5. **Passthru.** The row works out whether the track is copied as the core does (the container's
+   copy list for the source codec); then it says "copied as it is" and turns the encoder settings
+   off (still shown, so a value a warning names can be seen). When the container cannot hold the
+   codec, the server's `audio.passthru_fallback` note at the action says what happens, and the
+   encoder field is labelled *Fallback encoder*.
+6. **Values offered.** Encoders: every audio encoder whose status is not `unavailable` (and the
+   track's own). Bitrate: "Default (N kb/s)" (`null`), then the encoder's list or common steps
+   inside its range for the layout (the source layout's when the layout is kept). Encoders with a
+   VBR quality get a Bitrate / Quality switch. Gain −20 to +20 dB in steps of 1 (HandBrake's range;
+   the model has no bound). DRC a slider 0–4 in steps of 0.1, "Off" at 0, with a help text that it
+   acts on AC-3 and E-AC-3 sources only (`DRC_CODECS` of the command builder).
+7. **Subtitles.** Convert is disabled for a bitmap track (FFmpeg has no OCR); choosing it sets the
+   container's text format; leaving Convert clears the format and leaving Burn in clears forced-only
+   in the same step. Burn in stays enabled for a second track: the validation error says why it
+   cannot. Forced-only shows for a burn-in (or when set). A copied text track that the container
+   cannot hold says it is converted (MP4: `mov_text`).
+8. **Undo.** A typed gain or quality is one step until the field is left (`blur`), a DRC drag
+   until the handle is let go (`slideend`) and a keyboard change until the focus leaves the slider.
+   *Reload from preset rules* is `jobs/draft` with `editor.presetId`, and `editor.set` of that
+   tab's list only (one step); the editor's draft (its decisions) is not replaced. An answer that
+   comes after another job was opened (`editor.session`) is dropped.
+9. **Issues.** A row is marked by its most severe issue (`issuesFor('audio[i]', { nested: true })`).
+   Each control is a `Field` with its path; an issue at a path no shown field has (metadata, an
+   external file, a quality while the bitrate is set) is listed under the row with `IssueList`
+   (fix buttons and links).
+10. **Table details.** `#` is the position among the source's tracks of the kind
+    (`type_index + 1`); the source choice reads `2 · eng · DTS-HD MA 5.1 · English Dub` (the BCP 47
+    tag when the file has one, else the tag ffprobe read, `und` without one). A disposition flag is
+    shown beside the badges unless a badge set by that flag names it (`comment` under
+    *Commentary*); the details list every disposition and every tag.
+11. **Layout.** The output list is a PrimeVue `DataTable` over copies (`{ index, track }`: the job is
+    frozen) whose header is hidden but read by screen readers (its inline `position: sticky` is
+    overridden); a row has the drag handle, then its frame (number, issue mark, move up, move down,
+    remove) and fields that wrap. The rows and the source table's scroll box use
+    `contain: inline-size`, so a long label scrolls or wraps inside the 600–700 px tab column
+    instead of widening it.
 
 ## Task J — F-12 presets UI
 

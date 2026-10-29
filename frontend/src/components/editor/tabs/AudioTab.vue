@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Reads and writes the editor store; takes no props.
+import TracksTab from '@/components/tracks/TracksTab.vue'
 </script>
 
 <template>
-  <section class="editor-tab" data-tab="audio" />
+  <TracksTab list="audio" />
 </template>

@@ -509,8 +509,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 
 ### F-10 Audio and subtitles tabs
 - [ ] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
-      button for unknown bitrates.
+      button for unknown bitrates. (M4 built all but the "Measure" button, which is M6;
+      [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
 - [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
+      (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
 - [ ] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
       (`hun · hu`).
 - [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
