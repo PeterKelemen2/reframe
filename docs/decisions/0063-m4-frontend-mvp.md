@@ -1514,7 +1514,55 @@ disabled *Quit*); the server ran with `REFRAME_POWER_DRY_RUN=1` (R2 checked
 
 ### Fix round — FD (the tabs, sources and settings screens)
 
-(Written by task FD.)
+2026-10-30. Each fix with the test that fails without it (checked by breaking the fix); the
+browser checks in headless Chromium against `scripts/dev-server.py` (pinned FFmpeg n9.0.2,
+`multitrack` and `pgs`), at 1440 and 1280 px, light and dark.
+
+1. **R2-8, comboboxes named by their value.** PrimeVue's `Select` puts `role="combobox"` on a
+   span, which `<label for>` cannot name, and fills its `aria-label` with the chosen value.
+   Every `Select` of the audio row (source, encoder, mixdown, sample rate, bitrate, loudness),
+   the subtitle row (source, format) and Settings (default container, VAAPI device, when done,
+   language) takes `aria-labelledby` from its `Field`. The Video tab's lists and the encoder
+   picker already did ("Video encoder"). Tests: `TracksTab.test.ts` (each list of an audio and
+   a subtitle row named by its label), one per Settings section (`comboboxName` in
+   `settings/testing.ts`). In Chromium: `combobox "Sample rate": As source`, `combobox "When
+   done": Do nothing`. The naming editors' lists are FB's ("Keep the source's" in Settings →
+   Output is still named by its value).
+2. **R2-18, the quality slider.** It catches the handle's keys before PrimeVue's `Slider`, which
+   moves one `step` for every key: an arrow moves 0.5 on a scale finer than whole numbers
+   (x264, x265, NVENC: step 0.1), else the scale's step (1); PageUp / PageDown 5 on the 0–51 and
+   0–63 scales and 25 on the 0–255 AV1 scales (AMF, VAAPI: their tables map 120 to x264's 24, so
+   25 is about 5 RF there); Home / End the ends. A typed value keeps any value of the scale
+   (19.3). Each key press is still one undo step. Tests: `QualitySlider.test.ts` (each key on
+   the RF scale, a whole-number and a 0–255 scale, a typed 19.3). In Chromium: 22 → 22.5 →
+   27.5 → 51 → 0, four `Ctrl+Z` back to 22.
+3. **R2-19, Summary chips.** An output flag is left out when a role badge set by the source's
+   disposition names it (commentary → Commentary, hearing impaired → SDH, forced → Forced,
+   visual impaired → Description), as `TrackTable` does; beside a role guessed from the title
+   or the layout the flag stays. Tests: `tracks.test.ts`. In Chromium: "Director's Commentary
+   Commentary (Set by a disposition flag in the file)", one Commentary.
+4. **R2-21, sizes.** The file browser uses the Summary's `formatBytes` (B, KiB, MiB, GiB):
+   `multitrack.mkv` is 370 KiB in both. Bitrates stay decimal (kb/s). Test:
+   `FileBrowserDialog.test.ts` (1.4 MiB for 1,500,000 bytes).
+5. **R2-24.** (a) The Summary tab has a visually hidden h2 "Summary": the outline is h1 (the
+   source), h2, the cards' h3, their h4. Test: `SummaryTab.test.ts` (the first heading is h2, no
+   level skipped). (b) A source tree item is named by `aria-labelledby` (its file name; for a
+   member the match, the episode and the file) and described by `aria-describedby` (its line,
+   differences, staleness, warnings), so "Remove …" is no longer part of its name; the warnings
+   list loses its `aria-label` ("Probe warnings"), which would replace the warnings in that
+   description, and each warning starts with a hidden "Probe warning:". Test:
+   `SourcesPanel.test.ts`. In Chromium: `treeitem "multitrack.mkv"`. (c) The file list's empty
+   note is a sibling of `role="listbox"`, laid over the empty list, and describes it. Test:
+   `FileBrowserDialog.test.ts`.
+6. **L2, the Output card's name shown twice**: the duplication is in `OutputCard.vue` (FB's);
+   `SummaryTab.vue` only places the card. Left to FB through the lead (see the report).
+7. **L8 / L16, cut values.** The audio row's fields can be 11rem wide: the keep values of the
+   sample rate and the mixdown are "As source" (were "Same as source", "Keep the source layout"),
+   a longer value of a row's list wraps instead of being cut ("Default (160 kb/s)", "Streaming
+   (−16 LUFS)"), and a number keeps its unit on its line (no-break spaces in `tracks.json`). The
+   encoder picker's value wraps, so the id goes to a second line at 1280 px. No unit test: jsdom
+   lays nothing out; checked in Chromium (no `.p-select-label` with `scrollWidth >
+   clientWidth`).
 
 ### Fix round — FE (server texts)
 

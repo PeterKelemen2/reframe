@@ -62,6 +62,48 @@ function update(value: number | number[] | null | undefined): void {
   if (next !== props.modelValue) emit('update:modelValue', next)
 }
 
+// PrimeVue's Slider moves one `step` for every key, PageUp and PageDown included: on x264's
+// 0.1 scale that is 510 presses end to end. A page is 5 x264 RF, about 25 on the 0–255 scales.
+const keySteps = computed(() => {
+  const { min, max, step } = props.mode
+  const unit = Math.max(1, Math.round((max - min) / 51))
+  return { arrow: step < 1 ? 0.5 : step, page: 5 * unit }
+})
+
+function onKey(event: KeyboardEvent): void {
+  if (props.disabled) return
+  const { arrow, page } = keySteps.value
+  const value = props.modelValue
+  let next: number
+  switch (event.key) {
+    case 'ArrowLeft':
+    case 'ArrowDown':
+      next = value - arrow
+      break
+    case 'ArrowRight':
+    case 'ArrowUp':
+      next = value + arrow
+      break
+    case 'PageDown':
+      next = value - page
+      break
+    case 'PageUp':
+      next = value + page
+      break
+    case 'Home':
+      next = props.mode.min
+      break
+    case 'End':
+      next = props.mode.max
+      break
+    default:
+      return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  update(next)
+}
+
 function typed(value: number | null | undefined): void {
   update(value)
   emit('commit')
@@ -71,7 +113,7 @@ function typed(value: number | null | undefined): void {
 <template>
   <div class="quality-slider" :class="{ 'quality-slider--disabled': disabled }">
     <div class="quality-slider__row">
-      <div class="quality-slider__track" @keyup="emit('commit')">
+      <div class="quality-slider__track" @keydown.capture="onKey" @keyup="emit('commit')">
         <span
           v-if="bandStyle"
           class="quality-slider__band"

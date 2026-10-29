@@ -153,6 +153,17 @@ describe('the Summary tab', () => {
     expect(text(wrapper, '[data-card="estimate"] [data-field="size"]')).toBe('Depends on content')
   })
 
+  it('nests its headings under the tab, one level at a time', async () => {
+    const { wrapper } = await mountSummary()
+    const levels = [...wrapper.element.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((heading) =>
+      Number(heading.tagName.slice(1)),
+    )
+    expect(levels[0]).toBe(2)
+    expect(levels.every((level, index) => index === 0 || level <= levels[index - 1]! + 1)).toBe(
+      true,
+    )
+  })
+
   it('updates every card as the job changes, through undo and redo', async () => {
     const { wrapper, editor } = await mountSummary()
     editor.set('/video/rate_control', {

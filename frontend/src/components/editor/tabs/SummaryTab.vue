@@ -16,6 +16,8 @@ const editor = useEditorStore()
 
 <template>
   <section class="editor-tab summary-tab" data-tab="summary">
+    <!-- The cards' titles are h3: without this level the outline skips from h1 to h3. -->
+    <h2 class="rf-sr-only">{{ t('summary.heading') }}</h2>
     <p v-if="editor.job === null" class="summary-tab__empty" data-state="empty">
       {{ editor.loading ? t('summary.loading') : t('summary.noJob') }}
     </p>

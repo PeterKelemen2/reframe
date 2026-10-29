@@ -53,9 +53,10 @@ const partialOptions = computed(() => [
   <Section :title="t('settings.output.title')">
     <div class="output-section__fields">
       <Field :label="t('settings.output.container')" :issues="container.issues.value">
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :label-id="id"
+            :ariaLabelledby="labelId"
             :model-value="container.value.value"
             :options="containerOptions"
             option-label="label"
