@@ -18,7 +18,9 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-async function mountSlider(props: { modelValue?: number; band?: QualityBand | null } = {}) {
+async function mountSlider(
+  props: { mode?: QualityMode; modelValue?: number; band?: QualityBand | null } = {},
+) {
   const { wrapper } = await mountShell(QualitySlider, {
     pinia: setUpVideo().pinia,
     props: { mode: RF, modelValue: 22, band: BAND_1080, lines: 1080, ...props },
@@ -63,6 +65,41 @@ describe('QualitySlider', () => {
     const wrapper = await mountSlider()
     await wrapper.find('.quality-slider__track').trigger('keyup', { key: 'ArrowRight' })
     expect(wrapper.emitted('commit')).toHaveLength(1)
+  })
+
+  it.each([
+    ['ArrowRight', 22.5],
+    ['ArrowUp', 22.5],
+    ['ArrowLeft', 21.5],
+    ['ArrowDown', 21.5],
+    ['PageUp', 27],
+    ['PageDown', 17],
+    ['Home', 0],
+    ['End', 51],
+  ])('moves a fine scale by half a unit, five a page, with %s', async (key, expected) => {
+    const wrapper = await mountSlider()
+    await wrapper.find('[role="slider"]').trigger('keydown', { key })
+    expect(wrapper.emitted('update:modelValue')).toEqual([[expected]])
+  })
+
+  it('moves a whole-number scale by its step, and a 0–255 scale 25 a page', async () => {
+    const cq = { ...RF, min: 1, max: 51, step: 1 }
+    const whole = await mountSlider({ mode: cq })
+    await whole.find('[role="slider"]').trigger('keydown', { key: 'ArrowRight' })
+    await whole.find('[role="slider"]').trigger('keydown', { key: 'PageDown' })
+    expect(whole.emitted('update:modelValue')).toEqual([[23], [17]])
+
+    const qIndex = { ...RF, min: 1, max: 255, step: 1 }
+    const wide = await mountSlider({ mode: qIndex, modelValue: 110 })
+    await wide.find('[role="slider"]').trigger('keydown', { key: 'PageUp' })
+    await wide.find('[role="slider"]').trigger('keydown', { key: 'ArrowLeft' })
+    expect(wide.emitted('update:modelValue')).toEqual([[135], [109]])
+  })
+
+  it('keeps a typed value between the key steps', async () => {
+    const wrapper = await mountSlider()
+    wrapper.findComponent(InputNumber).vm.$emit('update:modelValue', 19.3)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[19.3]])
   })
 
   it('takes a typed value, on the scale, as a step of its own', async () => {
