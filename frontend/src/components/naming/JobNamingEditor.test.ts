@@ -100,11 +100,13 @@ afterEach(() => {
 })
 
 describe('JobNamingEditor', () => {
-  it("shows the draft's name without asking the server again", async () => {
+  it("shows the draft's name, path and name source with its reason without asking the server again", async () => {
     const { wrapper } = await mountOpened()
     await settle()
     expect(previews()).toHaveLength(0)
     expect(wrapper.get('[data-testid="naming-result"]').text()).toBe('Hacksaw.Ridge.mkv')
+    expect(wrapper.get('[data-testid="job-path"]').text()).toBe('/output/Hacksaw.Ridge.mkv')
+    expect(wrapper.get('[data-testid="name-reason"]').text()).toBe(hacksawResult().reason)
     expect((wrapper.get('input[role="combobox"]').element as HTMLInputElement).value).toBe(
       '{main_title}',
     )

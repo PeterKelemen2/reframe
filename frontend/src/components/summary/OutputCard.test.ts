@@ -68,6 +68,13 @@ async function choose(wrapper: VueWrapper, label: string): Promise<void> {
   await button!.trigger('click')
 }
 
+it('leaves the name, the folder and the name source to the naming editor', async () => {
+  const { wrapper } = await mountCard()
+  expect(wrapper.findComponent({ name: 'JobNamingEditor' }).exists()).toBe(true)
+  expect(wrapper.text()).not.toContain('multitrack.mkv')
+  expect(wrapper.text()).not.toContain('/output')
+})
+
 describe('the Output card’s container', () => {
   it('changes the path’s extension with the container, in one undo step', async () => {
     const { wrapper, editor } = await mountCard()
