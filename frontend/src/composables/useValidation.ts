@@ -154,6 +154,14 @@ export function useValidation(): void {
     () => validate(EDIT_DEBOUNCE),
   )
   watch(
+    () => validation.flushes,
+    () => {
+      if (validation.pending) request.flush()
+      else if (validation.failed) validate(0)
+    },
+    { flush: 'sync' },
+  )
+  watch(
     () => system.connection,
     (state) => {
       if (state === 'open' && validation.failed) validate(0)

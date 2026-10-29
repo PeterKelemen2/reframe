@@ -60,6 +60,13 @@ function name(path: string): string {
   return path.split(/[/\\]/).findLast((part) => part !== '') ?? path
 }
 
+/** The message and its detail: after a sentence (ffprobe's "… (exit code 1).") a space, else ": ". */
+function reason(failure: ProbeFailure): string {
+  if (!failure.detail) return failure.message
+  const joiner = /[.!?…]$/.test(failure.message) ? ' ' : ': '
+  return `${failure.message}${joiner}${failure.detail}`
+}
+
 /** The opened sources, the active one, the probes that run, and the batch grouping. */
 export const useSourcesStore = defineStore('sources', () => {
   const tasks = useTasksStore()
@@ -129,9 +136,7 @@ export const useSourcesStore = defineStore('sources', () => {
 
   function reportFailures(failures: ProbeFailure[]): void {
     if (failures.length === 0) return
-    const lines = failures.map((failure) =>
-      [name(failure.path), failure.message, failure.detail].filter(Boolean).join(': '),
-    )
+    const lines = failures.map((failure) => `${name(failure.path)}: ${reason(failure)}`)
     toast('warn', text('sources.errors.notOpened'), lines.join('\n'))
   }
 
@@ -254,9 +259,13 @@ export const useSourcesStore = defineStore('sources', () => {
     const gone = new Set(ids.filter((_, index) => results[index]?.status === 'fulfilled'))
     entries.value = entries.value.filter((entry) => !gone.has(entry.id))
     const target = editor.target
-    // A removed active source may still be drafting: closing drops that draft too.
     const activeGone = activeId.value !== null && gone.has(activeId.value)
-    if (activeGone || (target?.kind === 'job' && gone.has(target.sourceId))) editor.close()
+    // A removed active source may still be drafting: closing drops that draft too. The draft of
+    // an active source that stays (selected while the editor's source goes) must still come in.
+    if (activeGone) editor.close()
+    else if (target?.kind === 'job' && gone.has(target.sourceId)) {
+      editor.close({ keepLoading: true })
+    }
     if (activeGone) activeId.value = null
     await regroup()
     const failed = results.find((result) => result.status === 'rejected')

@@ -5,6 +5,8 @@ export interface LatestRequest {
    * and its answer, if one still comes, is never handed on.
    */
   schedule(delay: number): void
+  /** Sends a request that waits for its delay at once; one under way goes on. */
+  flush(): void
   /** Drops the waiting or running request. */
   cancel(): void
 }
@@ -53,5 +55,11 @@ export function latestRequest<T>(options: LatestOptions<T>): LatestRequest {
     timer = setTimeout(() => void fire(mine), delay)
   }
 
-  return { schedule, cancel }
+  function flush(): void {
+    if (timer === undefined) return
+    clearTimeout(timer)
+    void fire(generation)
+  }
+
+  return { schedule, flush, cancel }
 }

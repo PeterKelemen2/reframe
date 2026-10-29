@@ -1506,7 +1506,112 @@ disabled *Quit*); the server ran with `REFRAME_POWER_DRY_RUN=1` (R2 checked
 
 ### Fix round — FB (the job that is queued)
 
-(Written by task FB.)
+2026-10-30. Each fix with a test that fails without it: the new tests were run against the code
+before the fix (all 12 of `addToQueue`, `OutputCard`, the two of `sources` fail there, R1's
+reproductions as assertions), and 45 mutations of the fix each failed a test. Browser checks: R1's
+scripts and FB's own (`review-r1/`, the scratchpad's `fix-fb/`), headless Chromium against
+`scripts/dev-server.py` (pinned FFmpeg n9.0.2, `multitrack`, `hdr10-4k`).
+
+**The design: an add takes the job the screen shows.** Two things can show a value that the job
+does not have: a field that writes only when it loses the focus (PrimeVue's `InputNumber` writes on
+blur or Enter, and returns early from its keydown while Ctrl is held; the naming fields), and an
+edit that waits for the server before it writes (the naming editor's preview, the Output card's
+extension below). So:
+
+- **Pending edits** (editor store): `beginEdit(edit)` / `endEdit(edit)` with
+  `PendingEdit = { flush(), failure }` (a reactive object of its owner); `editing` is true while
+  one is on its way, `editFailure` gives the reason of one whose request failed; `flushEdits()`
+  asks each to come in at once (no debounce; once more after a failure). A new session drops them.
+- **`validation.flush()`** sends a debounced validation at once (one under way goes on:
+  `latestRequest.flush()`), or asks again after a failed one.
+- **`addCurrent`, `Ctrl+Enter` and *Add all*** first commit the focused text field (blur it, then
+  give it the focus back: `editor/focus.ts`), call `flushEdits()`, and wait — a Vue watcher with
+  the default flush, so that an edit landing and the check it starts are seen together — until
+  no edit is on its way, the editor is not loading and the check has answered (flushed when
+  nothing else is waiting; a failed check asked once more; 20 s at most). Another session opened
+  meanwhile ends the add silently. Then the job *as it is* is added, or a warning toast says why
+  not: its first error, "could not be checked", "the output name could not be updated: …", no
+  output path, or still being checked after 20 s.
+- **`canAdd`** no longer turns false for a pending check or an edit on its way: the add waits for
+  them. A click on *Add to queue* right after typing blurs the field on mousedown, the value goes
+  into the job and the check starts; the button stays enabled under the pointer (R1-3). It still
+  needs the last check's issues to have no error, an output path, no draft loading and no add
+  under way. `Ctrl+Enter` calls `addCurrent` even when `canAdd` is false: the value typed into
+  the focused field may be what fixes the job. `QueueActions.busy` is added (an add, with its
+  wait, is under way) for the status bar's button. This replaces C's item 8 on `canAdd` and the
+  "still being checked" line of item 9 (*Add all* waits instead).
+- **The naming editor** (replaces F's items 2 and 3 where they differ): an edit, typed or not
+  (mode, *Use the preset's template*, name source, chips, "Use {…}", field overrides), is a
+  pending edit while the fields show a naming the job does not have, and goes into the job only
+  with its preview's name: naming and path in one patch, so they are always one undo step (R1
+  suspected 2: the path no longer follows the naming as a later step). A blur previews at once
+  and ends the typing's undo step when it lands (it no longer puts the naming in without its
+  path). A failed preview keeps the edit out of the job, shows why, and is a failed pending edit
+  (`editFailure`); an add asks it again and adds nothing while it fails (R1 suspected 3: a job
+  never has a naming whose path it lacks, so no *Use this path* is needed for it). An answer for
+  a job that changed after the request went out is not taken: the job is named again as it is.
+  An edit on its way when the editor unmounts (leaving Summary) still goes into the job; a
+  failure then is a toast "The output name was not changed".
+- **A container change** (the Output card) writes the container and the path with the
+  container's first extension in one patch with its own coalescing key; for a container with
+  more than one extension (MP4: `.mp4`, `.m4v`) `naming/preview` of the job with the new
+  container gives the naming's extension (`mp4_extension`, Auto's rule), which follows under the
+  same key, so it is one undo step — unless the job changed since (an undo wins). Until it comes
+  it is a pending edit. A failed request keeps the first extension, which validation accepts. A
+  container change from elsewhere (a validation fix) brings its own path; one without (a script
+  through `editor.set`) still gets *Use this path* from the naming editor.
+
+Findings and tests:
+
+1. **R1-1** (`Ctrl+Enter` without the typed value). Tests: `addToQueue.test.ts` (real editor and
+   validation stores, a PrimeVue `InputNumber`, the naming editor, the shortcut: the typed quality
+   30 and the typed template with its path are queued; the focus is back in the box);
+   `useQueueActions.test.ts` (a field that writes on blur; the wait for a check, for an edit, for
+   both in turn). Chromium: `ctrl-enter-quality` queues `{"mode":"quality","value":30}` (was 22),
+   `ctrl-enter-naming` queues `{main_title} MYNAME` with `…/multitrack MYNAME.mkv` (was `null`).
+2. **R1-2** (a naming change without typing). Tests: `JobNamingEditor.test.ts` (*Use the preset's
+   template* and *Manual name* are pending edits until they land; `flushEdits` sends them at
+   once), `addToQueue.test.ts` (*Reset* then Add queues `null` and the path it gives).
+   Chromium: `naming-mode-add` and `naming-mode-add-gap` (`R1_GAP=200`): Add enabled, the queued
+   naming is the new one (manual `multitrack`; template `null` after Reset).
+3. **L1** (a container change keeps the old extension). Tests: `OutputCard.test.ts` (MP4: `.mp4`
+   at once, one undo step back to MKV and `.mkv`; the naming's `.m4v` in the same step; an undo
+   before the answer is not overwritten; a failed request keeps `.mp4`; WebM asks nothing).
+   Chromium: MP4 then *Add to queue* at once queues `mp4 …/multitrack.mp4`; with
+   `mp4_extension: m4v` the path goes `.mp4` → `.m4v`; one `Ctrl+Z` gives `mkv …/multitrack.mkv`.
+4. **R1-3** (a click on *Add* right after typing). Tests: `useQueueActions.test.ts` (`canAdd`
+   with a pending check or an edit on its way), `addToQueue.test.ts` (the blur of the box leaves
+   *Add* enabled and the add queues 30). Chromium: `click-add-quality` 1 added with 30 (was 0
+   added), `naming-click-add` 1 added with `{main_title} CLICKADD`.
+5. **R1-4** (leaving Summary before the preview answers). Tests: `JobNamingEditor.test.ts` (an
+   unmounted editor's edit lands with its path in one undo step; the job changed meanwhile is
+   named as it is; a failure is a toast and drops the edit). Chromium: `naming-tab-switch-add`
+   and `-human` queue `{main_title} TABSWITCH` with the path the naming gives;
+   `naming-tab-switch` (click and `Ctrl+2`) leaves the job with the template and its path.
+6. **R1-5** (removing the editor's source while another drafts). `removeMany` closes the editor
+   with `close({ keepLoading: true })` when its source goes while another, still active, source
+   is drafting: that draft still comes in. Tests: `sources.test.ts`, `editor.test.ts`; R1's
+   `sources-race.test.ts` passes.
+7. **R1 suspected 5** (*Add* after a failed validation). The add asks again and adds nothing when
+   that fails too. Tests: `useQueueActions.test.ts`, `useValidation.test.ts` (`flush` after a
+   failure). Chromium (`jobs/validate` answered 503 by the page's route): two requests refused, 0
+   added, the toast; after the route is gone, *Add* queues the job with 24.
+8. **L2** (the Output card shows the name twice; given to FB by the lead): the card's Folder, File
+   name and Name source rows are gone. The naming editor shows the name
+   (`[data-testid="naming-result"]`), folder (`job-folder`), path (`job-path`), the job's name
+   source setting (the Select, `[data-option="name_source"]`) and, in the parsed-name panel, the
+   chosen source with its reason (`.parsed-name__source`, `[data-testid="name-reason"]`). Tests:
+   `OutputCard.test.ts`, `JobNamingEditor.test.ts`. `SummaryTab.test.ts` (FD's) still reads
+   `[data-field="file-name"]` and `[data-field="name-source"]`: left to the lead.
+9. **L13** (*Browse…* icon a square): the fluid path field squeezed the button and the button its
+   icon to 5 × 16 px; neither shrinks now (16 × 16, light and dark). No unit test: jsdom lays
+   nothing out.
+10. **R2-8**, the naming Selects (name source, word separator) take `aria-labelledby` from `Field`.
+    Tests: `JobNamingEditor.test.ts`, `NamingOptionsEditor.test.ts`.
+11. **R2-20**: a probe failure's detail follows a message that ends a sentence with a space:
+    "bad.mkv: ffprobe could not read the file (exit code 1). /tmp/…/bad.mkv: Invalid data found
+    when processing input" (real server); a title without a full stop keeps ": ". Test:
+    `sources.test.ts`.
 
 ### Fix round — FC (shell, focus, queue and presets screens)
 

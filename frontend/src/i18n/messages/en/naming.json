@@ -123,6 +123,7 @@
     "chooseFolder": "Choose folder…",
     "useDefaultFolder": "Use the naming options' folder",
     "stale": "The naming now gives {path}.",
-    "updatePath": "Use this path"
+    "updatePath": "Use this path",
+    "notApplied": "The output name was not changed"
   }
 }

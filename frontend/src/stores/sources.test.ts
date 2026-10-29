@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, configureClient } from '@/api/client'
 import { deferred, FakeServer, problem, type Recorded } from '@/api/testing/fakes'
-import type { MediaSource, Schemas, SourceEntry, TaskInfo } from '@/api/types'
+import type { JobSettings, MediaSource, Schemas, SourceEntry, TaskInfo } from '@/api/types'
+import { sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 import { platform } from '@/platform'
 
 import { useEditorStore } from './editor'
@@ -244,6 +245,35 @@ describe('the sources store', () => {
       ])
     })
 
+    it('joins a failure’s message and its detail as one sentence after another', async () => {
+      server.auto = false
+      const sources = useSourcesStore()
+      const opening = sources.open(['/media/bad.mkv', '/etc/x.mkv'])
+      await running(1)
+      server.done(server.last(), {
+        sources: [],
+        errors: [
+          {
+            path: '/media/bad.mkv',
+            code: 'probe.failed',
+            message: 'ffprobe could not read the file (exit code 1).',
+            detail: '/media/bad.mkv: Invalid data found when processing input',
+          },
+          {
+            path: '/etc/x.mkv',
+            code: 'path.outside_roots',
+            message: 'The path is outside the allowed folders',
+            detail: '/etc/x.mkv is not inside a folder that this server may read.',
+          },
+        ],
+      })
+      await opening
+      expect(useToastStore().items.map((item) => item.detail)).toEqual([
+        'bad.mkv: ffprobe could not read the file (exit code 1). /media/bad.mkv: Invalid data found when processing input\n' +
+          'x.mkv: The path is outside the allowed folders: /etc/x.mkv is not inside a folder that this server may read.',
+      ])
+    })
+
     it('shows a failed probe task as an error toast and adds nothing', async () => {
       server.auto = false
       const sources = useSourcesStore()
@@ -436,6 +466,34 @@ describe('the sources store', () => {
       await sources.remove(idOf('/media/b.mkv'))
       expect(close).toHaveBeenCalledOnce()
       expect(sources.activeId).toBeNull()
+    })
+
+    it('keeps the draft of the source being selected when the editor’s source goes meanwhile', async () => {
+      editorOpen.mockRestore()
+      const held = deferred()
+      let hold = false
+      server
+        .on('POST /api/jobs/draft', async (request) => {
+          const { source_id } = request.body as { source_id: string }
+          if (hold) await held.promise
+          return sampleDraft({ ...sampleJob(), source: { path: source_id } } as JobSettings)
+        })
+        .on('POST /api/presets/diff', [])
+        .on('GET /api/presets/h265-mkv-1080p', samplePreset())
+      const sources = useSourcesStore()
+      const editor = useEditorStore()
+      await sources.open(['/media/a.mkv', '/media/b.mkv'])
+      expect(editor.job?.source.path).toBe(idOf('/media/a.mkv'))
+
+      hold = true
+      const selecting = sources.select(idOf('/media/b.mkv'))
+      await sources.remove(idOf('/media/a.mkv'))
+      expect(editor.job).toBeNull()
+      held.resolve()
+      await selecting
+
+      expect(sources.activeId).toBe(idOf('/media/b.mkv'))
+      expect(editor.job?.source.path).toBe(idOf('/media/b.mkv'))
     })
 
     it('keeps the active source and the editor when another one goes', async () => {

@@ -52,6 +52,18 @@ export interface PatchOptions {
   coalesce?: string
 }
 
+/**
+ * An edit that the screen shows and the job does not have yet: a field that writes into the job
+ * once the server has answered. An add to the queue waits for it. A reactive object, so that a
+ * change of `failure` is seen.
+ */
+export interface PendingEdit {
+  /** Sends what the edit waits for at once: no debounce, and once more after a failure. */
+  flush(): void
+  /** Why the edit could not reach the job (its request failed); `null` while it is on its way. */
+  readonly failure: string | null
+}
+
 /** Milliseconds from the last edit to `presets/diff` and `jobs/validate`. */
 export const EDIT_DEBOUNCE = 250
 
@@ -88,6 +100,7 @@ export const useEditorStore = defineStore('editor', () => {
   const history = shallowRef<History>(EMPTY_HISTORY)
   /** The job's preset as `GET /api/presets/{id}` gave it, while the presets store lacks it. */
   const fetchedPreset = shallowRef<Preset | null>(null)
+  const pendingEdits = shallowRef<readonly PendingEdit[]>([])
 
   const job = computed<JobSettings | null>(() =>
     target.value?.kind === 'job' ? target.value.job : null,
@@ -112,6 +125,12 @@ export const useEditorStore = defineStore('editor', () => {
   const modified = computed(() => presetChanges.value.length > 0)
   const canUndo = computed(() => history.value.done.length > 0)
   const canRedo = computed(() => history.value.undone.length > 0)
+  /** Edits on the screen are on their way into the job. */
+  const editing = computed(() => pendingEdits.value.some((edit) => edit.failure === null))
+  /** Why an edit on the screen could not reach the job; `null` when none failed. */
+  const editFailure = computed(
+    () => pendingEdits.value.find((edit) => edit.failure !== null)?.failure ?? null,
+  )
 
   // Each open, preset change, loadJob and close counts: an older one's answer is dropped.
   let loads = 0
@@ -133,6 +152,8 @@ export const useEditorStore = defineStore('editor', () => {
     if (newSession) {
       session.value += 1
       presetChanges.value = []
+      // An edit of the last job never reaches this one.
+      pendingEdits.value = []
     }
     draft.value = nextDraft
     target.value = next
@@ -285,11 +306,30 @@ export const useEditorStore = defineStore('editor', () => {
     move(redoStep(history.value), (step) => step.redo, 'after')
   }
 
-  function close(): void {
-    loads += 1
-    loading.value = false
+  /** No job. `keepLoading`: a draft on its way (another source being opened) still comes in. */
+  function close(options?: { keepLoading?: boolean }): void {
+    if (options?.keepLoading !== true) {
+      loads += 1
+      loading.value = false
+    }
     history.value = EMPTY_HISTORY
     place(null, null, true)
+  }
+
+  /** Until `endEdit`, `editing` (or `editFailure`) says that the job lacks what the screen shows. */
+  function beginEdit(edit: PendingEdit): void {
+    if (!pendingEdits.value.includes(edit)) pendingEdits.value = [...pendingEdits.value, edit]
+  }
+
+  function endEdit(edit: PendingEdit): void {
+    if (pendingEdits.value.includes(edit)) {
+      pendingEdits.value = pendingEdits.value.filter((other) => other !== edit)
+    }
+  }
+
+  /** Asks each pending edit to reach the job at once (an add to the queue is waiting). */
+  function flushEdits(): void {
+    for (const edit of pendingEdits.value) edit.flush()
   }
 
   // A preset that the presets store does not hold yet (it loads later, or never in a test).
@@ -377,6 +417,8 @@ export const useEditorStore = defineStore('editor', () => {
     modified,
     canUndo,
     canRedo,
+    editing,
+    editFailure,
     open,
     applyPreset,
     loadJob,
@@ -388,6 +430,9 @@ export const useEditorStore = defineStore('editor', () => {
     undo,
     redo,
     close,
+    beginEdit,
+    endEdit,
+    flushEdits,
     refreshPresetChanges,
   }
 })
