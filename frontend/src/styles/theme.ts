@@ -16,7 +16,7 @@ function perSeverity<T>(make: (palette: string) => T): Record<keyof typeof SEVER
   ) as Record<keyof typeof SEVERITIES, T>
 }
 
-/** A solid light button: white text needs the 700 shade (Aura's 500 gives 2.3 to 3.8:1). */
+/** A solid light button: white text needs the 700 shade; on Aura's 500 it is below 4.5:1. */
 function solidLight(palette: string) {
   return {
     background: `{${palette}.700}`,
@@ -48,7 +48,7 @@ function message(palette: string, scheme: 'light' | 'dark') {
   }
 }
 
-/** Aura's yellow 600 is 2.8:1 on its own tint: warnings use the 800 shade in light. */
+/** Aura's yellow 600 is below 4.5:1 on its own tint: warnings use the 800 shade in light. */
 const WARN_NOTICE_LIGHT = {
   background: '{yellow.50}',
   borderColor: '{yellow.200}',
