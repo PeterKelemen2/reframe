@@ -390,6 +390,27 @@ async def test_the_log_of_a_job_that_never_ran_is_empty(
     assert capsys.readouterr().out == ""
 
 
+async def test_following_the_log_of_a_job_that_an_in_process_command_runs(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No server, but the process that holds the saved queue (an ``--in-process`` command)
+    runs: the log is followed until the saved queue says the job ended."""
+    async with make_api(mode="desktop") as api:
+        job = await api.reframe.queue.add(await Server(api, None).job())  # type: ignore[arg-type]
+        data_dir = api.reframe.data_dir
+    saved_queue(data_dir, "UPDATE jobs SET state = 'running' WHERE id = ?", job.id)
+    (data_dir / "queue.lock").write_text(f"{os.getpid()}\n", encoding="ascii")
+    follow = asyncio.create_task(cli.run_queue_log(job.id, follow=True))
+    await asyncio.sleep(1.0)
+    assert not follow.done()
+    log = log_file(data_dir, job.id)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("the last line\n", encoding="utf-8")
+    saved_queue(data_dir, "UPDATE jobs SET state = 'done' WHERE id = ?", job.id)
+    assert await asyncio.wait_for(follow, 10) == cli.EXIT_OK
+    assert capsys.readouterr().out == "the last line\n"
+
+
 async def test_following_a_log_without_a_live_owner_ends_with_an_error(
     make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
 ) -> None:

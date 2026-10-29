@@ -328,6 +328,20 @@ async def test_a_job_that_another_front_end_retried_runs_on_when_its_client_goes
         await api.reframe.queue.cancel(job)
 
 
+async def test_a_retry_that_is_refused_leaves_the_job_attached(api: Api) -> None:
+    """``reframe queue retry`` of a CLI's running job is refused (409): the job stays the
+    CLI's, and the CLI's end still cancels it."""
+    api.fake.set_scenario(WRITE_AND_HANG)
+    async with live(api) as server, connected(server, api) as (connection, client_id):
+        [job] = await add_jobs(api, client_id, "Show.mkv")
+        await api.client.post("/api/queue/start", json={"job_ids": [job]})
+        await encoding(api, job)
+        assert (await api.client.post(f"/api/queue/{job}/retry")).status_code == 409
+        connection.transport.abort()
+        await ended(api, job)
+    assert await states(api) == {job: "cancelled"}
+
+
 async def test_a_job_retried_just_after_its_client_went_away_is_not_cancelled(
     api: Api, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -479,6 +479,37 @@ async def test_a_start_that_the_owner_keeps_refusing_ends_the_command(
     assert captured.err == "error: the jobs cannot be queued: no job 'job-1' in the queue\n"
 
 
+class _RemovedWhileWaited(FakeQueue):
+    """Another front end removes the ended ``job-1`` just as the command waits for its jobs:
+    the wait refuses the id it no longer has, as a queue in a server does."""
+
+    async def wait(self, job_ids: Sequence[str] | None = None) -> list[QueueJob]:
+        if job_ids and "job-1" in job_ids:
+            self._order.remove("job-1")
+            del self._jobs["job-1"]
+            self.events.publish(QueueChangedEvent(job_ids=list(self._order)))
+            raise UnknownJobError("job-1")
+        return await super().wait(job_ids)
+
+
+@pytest.mark.anyio
+async def test_a_job_removed_while_the_command_waits_for_its_jobs(
+    season: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def make(app: Reframe) -> _RemovedWhileWaited:
+        return _RemovedWhileWaited(app.events, log_dir=tmp_path / "logs")
+
+    monkeypatch.setattr(cli, "get_queue", make)
+    files = [season / name for name in EPISODES[:2]]
+    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    lines = capsys.readouterr().out.splitlines()
+    assert code == EXIT_OK
+    assert lines[-1] == "Summary: 2 done, 0 failed, 0 cancelled, 0 not queued."
+
+
 class _RetriedUnseen(FakeQueue):
     """Another front end retries ``job-1`` the moment it fails, and the command is interrupted
     before it has read either change. The retried run hangs."""

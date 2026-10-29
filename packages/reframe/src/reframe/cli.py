@@ -2190,17 +2190,16 @@ async def _now(session: QueueSession, ids: Sequence[str]) -> Callable[[str], Que
     """How ``ids`` are now, after the connection to the owner ended: as the owner shows them
     when it answers; else as the saved queue holds them, where a job that was running or
     paused did not end on its own (it is interrupted); else as the command last saw them."""
-    if session.reconnect is not None:
-        found = await session.reconnect()
-        if not isinstance(found, str):
-            try:
-                answered = {job_id: found.get(job_id) for job_id in ids}
-            finally:
-                await found.close(detach=True)
-            return answered.get
+    assert session.reconnect is not None
+    assert session.data_dir is not None
+    found = await session.reconnect()
+    if not isinstance(found, str):
+        try:
+            answered = {job_id: found.get(job_id) for job_id in ids}
+        finally:
+            await found.close(detach=True)
+        return answered.get
     copy = session.queue.get
-    if session.data_dir is None:
-        return copy
     saved = await asyncio.to_thread(read_saved_queue, session.data_dir)
     kept = {job.id: job for job in saved.jobs}
 
@@ -2299,9 +2298,10 @@ async def _stop_here(following: _Following, jobs: CommandJobs) -> bool:
     SIGHUP cancel them as Ctrl+C does. False: the owner cannot be reached after the stop."""
     if sys.platform == "win32":  # pragma: no cover - no SIGTSTP
         return False
-    session = following.session
+    session, view = following.session, following.view
     assert session.remote is not None
     assert session.reconnect is not None
+    assert view is not None
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None
@@ -2321,15 +2321,13 @@ async def _stop_here(following: _Following, jobs: CommandJobs) -> bool:
         if number not in following.signals:
             loop.add_signal_handler(number, task.cancel)
             following.signals.append(number)
-    if following.view is not None:
-        following.view.suspend()
+    view.suspend()
     print(
         "Stopped: the running jobs of this command are paused in the Reframe server; fg goes on.",
         file=sys.stderr,
     )
     _stop_process()
-    if following.view is not None:
-        following.view.resume()
+    view.resume()
     # Not cut short by a Ctrl+C meanwhile: its cancel needs the new connection.
     reconnect = asyncio.ensure_future(session.reconnect())
     interrupted = False
