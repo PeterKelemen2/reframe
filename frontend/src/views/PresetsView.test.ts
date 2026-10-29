@@ -77,6 +77,11 @@ async function click(selector: string): Promise<void> {
   await flushPromises()
 }
 
+function focusAndClick(selector: string): Promise<void> {
+  document.querySelector<HTMLElement>(selector)?.focus()
+  return click(selector)
+}
+
 function details(): string | undefined {
   return document.querySelector<HTMLElement>('.preset-details')?.dataset.preset
 }
@@ -245,6 +250,53 @@ describe('the presets view', () => {
     expect(requests('PUT')).toHaveLength(1)
     await click('.presets-view__confirm-button')
     expect(requests('PUT').at(-1)?.body).toEqual({ ...OTHER, crop_policy: 'fixed' })
+  })
+
+  describe('keeps the keyboard focus on the page', () => {
+    it('after Duplicate: on the copy in the tree', async () => {
+      server.on('POST /api/presets', userPreset('u3', 'Mine (2)'))
+      await mountView('?preset=u1')
+      await focusAndClick('.preset-details__duplicate')
+      await flushPromises()
+      expect(document.activeElement).toBe(document.querySelector('.preset-tree [data-preset="u3"]'))
+    })
+
+    it('after a deletion: on the preset shown instead, in the tree', async () => {
+      server.on('DELETE /api/presets/u2', OTHER)
+      await mountView('?preset=u2')
+      await focusAndClick('.preset-details__delete')
+      await click('.presets-view__confirm-button')
+      expect(details()).toBe('h265-mkv-1080p')
+      await vi.waitFor(() =>
+        expect(document.activeElement).toBe(
+          document.querySelector('.preset-tree [data-preset="h265-mkv-1080p"]'),
+        ),
+      )
+    })
+
+    it('after Make default: on its button, now unavailable', async () => {
+      server.on('POST /api/presets/u1/default', MINE)
+      await mountView('?preset=u1')
+      await focusAndClick('.preset-details__default')
+      const button = document.querySelector<HTMLButtonElement>('.preset-details__default')
+      expect(document.activeElement).toBe(button)
+      expect(button?.getAttribute('aria-disabled')).toBe('true')
+    })
+
+    it('after Use for the open job: in the workspace', async () => {
+      openJob(H265)
+      const tab = Object.assign(document.createElement('button'), { className: 'workspace-tab' })
+      tab.setAttribute('role', 'tab')
+      tab.setAttribute('aria-selected', 'true')
+      const tabs = Object.assign(document.createElement('div'), { className: 'editor-tabs' })
+      tabs.append(tab)
+      const { router } = await mountView('?preset=fast-1080p30')
+      document.body.append(tabs)
+      await focusAndClick('.preset-details__apply')
+      await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('workspace'))
+      await flushPromises()
+      expect(document.activeElement).toBe(tab)
+    })
   })
 
   it('exports one preset under its name, and every user preset', async () => {

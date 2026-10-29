@@ -10,6 +10,7 @@ import { useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
 import type { FieldChange, JobTemplate, JsonPatchOp, Preset } from '@/api/types'
+import { focusFirstIn, focusLost } from '@/components/shell/focus'
 import { useEditorStore } from '@/stores/editor'
 import { usePresetsStore } from '@/stores/presets'
 import { hasPointer } from '@/stores/settings'
@@ -27,6 +28,7 @@ const router = useRouter()
 const id = useId()
 const labelId = `${id}-label`
 const listId = `${id}-list`
+const changesId = `${id}-changes`
 const root = useTemplateRef<HTMLElement>('root')
 const listPopover = useTemplateRef<InstanceType<typeof Popover>>('listPopover')
 const changesPopover = useTemplateRef<InstanceType<typeof Popover>>('changesPopover')
@@ -124,6 +126,22 @@ function toggleChanges(event: Event): void {
   changesPopover.value?.toggle(event)
 }
 
+function changesShown(): void {
+  changesOpen.value = true
+  focusFirstIn(document.getElementById(changesId))
+}
+
+/** The job follows the preset that Save as new made: its marker is about to go. */
+let savedAs = false
+
+// The dialog gives the focus back to its button in the changes, which closed when it opened.
+function saveAsClosed(): void {
+  if (!focusLost()) return
+  const marker = root.value?.querySelector<HTMLElement>('.preset-picker__modified')
+  if (marker && !savedAs) marker.focus()
+  else focusTrigger()
+}
+
 const saveAsInitial = computed<PresetDetailsInput>(() => ({
   name: '',
   category: preset.value !== null && !preset.value.built_in ? preset.value.category : 'Custom',
@@ -133,19 +151,24 @@ const saveAsInitial = computed<PresetDetailsInput>(() => ({
 /** Saves the current settings as a new preset, and the job then follows that preset. */
 async function saveAs(details: PresetDetailsInput): Promise<void> {
   if (template.value === null) return
+  // Only the job the settings came from follows the new preset: by the answer, another source
+  // or another preset may be open.
+  const session = editor.session
+  const from = presetId.value
   const created = await presets.create({ template: template.value, ...details })
-  const opened = job.value
-  if (opened === null) return
-  const op = (path: string) => (hasPointer(opened, path) ? 'replace' : 'add')
-  editor.patch([
-    { op: op('/preset_id'), path: '/preset_id', value: created.id },
-    { op: op('/preset_name'), path: '/preset_name', value: created.name },
-  ] as JsonPatchOp[])
   toasts.push({
     severity: 'success',
     summary: t('presets.picker.saved', { name: created.name }),
     life: 5000,
   })
+  const opened = job.value
+  if (opened === null || editor.session !== session || presetId.value !== from) return
+  savedAs = true
+  const op = (path: string) => (hasPointer(opened, path) ? 'replace' : 'add')
+  editor.patch([
+    { op: op('/preset_id'), path: '/preset_id', value: created.id },
+    { op: op('/preset_name'), path: '/preset_name', value: created.name },
+  ] as JsonPatchOp[])
 }
 
 async function update(): Promise<void> {
@@ -168,6 +191,8 @@ async function update(): Promise<void> {
       summary: t('presets.picker.updated', { name: target.name }),
       life: 5000,
     })
+    // The marker goes with the changes: the focus waits on the preset button.
+    if (document.getElementById(changesId)?.contains(document.activeElement)) focusTrigger()
     changesPopover.value?.hide()
   } catch (error) {
     if (!(error instanceof ApiError)) throw error
@@ -184,6 +209,7 @@ async function update(): Promise<void> {
 
 function openSaveAs(): void {
   changesPopover.value?.hide()
+  savedAs = false
   saveAsOpen.value = true
 }
 
@@ -302,10 +328,11 @@ function toggleMenu(event: Event): void {
     <Popover
       ref="changesPopover"
       class="preset-picker__popover"
-      @show="changesOpen = true"
+      @show="changesShown"
       @hide="changesOpen = false"
     >
       <section
+        :id="changesId"
         class="preset-picker__changes"
         role="dialog"
         :aria-label="t('presets.changes.title', { name: current })"
@@ -313,7 +340,7 @@ function toggleMenu(event: Event): void {
         <h2 class="preset-picker__changes-title">
           {{ t('presets.changes.title', { name: current }) }}
         </h2>
-        <PresetChanges :changes="changes" />
+        <PresetChanges :changes="changes" :encoder="job?.video?.encoder ?? null" />
         <div class="preset-picker__changes-actions">
           <Button
             size="small"
@@ -350,6 +377,7 @@ function toggleMenu(event: Event): void {
       :submit-label="t('presets.dialog.create')"
       :initial="saveAsInitial"
       :save="saveAs"
+      @closed="saveAsClosed"
     />
   </div>
 </template>

@@ -5,6 +5,8 @@ import { onMounted, toRaw, watch } from 'vue'
 
 import { useToastStore } from '@/stores/toasts'
 
+import { STATUS_BAR_HEIGHT } from './StatusBar.vue'
+
 const toasts = useToastStore()
 const toast = useToast()
 
@@ -32,6 +34,11 @@ function show(items: typeof toasts.items): void {
 // reached" toast at a time by looking for it in the store.
 onMounted(() => watch(() => toasts.items, show, { immediate: true, deep: true }))
 
+// Bottom right, clear of the header's controls and of the status bar's actions.
+const position = {
+  root: { style: { bottom: `calc(var(${STATUS_BAR_HEIGHT}, 0px) + var(--rf-space-3))` } },
+}
+
 function closed(event: { message: ToastMessageOptions }): void {
   const id = ids.get(toRaw(event.message))
   if (id === undefined) return
@@ -41,7 +48,13 @@ function closed(event: { message: ToastMessageOptions }): void {
 </script>
 
 <template>
-  <Toast class="shell-toasts" @close="closed" @life-end="closed" />
+  <Toast
+    class="shell-toasts"
+    position="bottom-right"
+    :pt="position"
+    @close="closed"
+    @life-end="closed"
+  />
 </template>
 
 <!-- Not scoped: the toast is teleported to <body>, out of reach of the scope attribute. -->
@@ -49,5 +62,34 @@ function closed(event: { message: ToastMessageOptions }): void {
 .shell-toasts .p-toast-detail {
   white-space: pre-line;
   overflow-wrap: anywhere;
+}
+
+/* The theme's toast colours are see-through: here they are laid over the surface, unblurred. */
+.shell-toasts .p-toast-message {
+  backdrop-filter: none;
+}
+
+.shell-toasts .p-toast-message-success {
+  background:
+    linear-gradient(var(--p-toast-success-background), var(--p-toast-success-background)),
+    var(--rf-color-surface);
+}
+
+.shell-toasts .p-toast-message-info {
+  background:
+    linear-gradient(var(--p-toast-info-background), var(--p-toast-info-background)),
+    var(--rf-color-surface);
+}
+
+.shell-toasts .p-toast-message-warn {
+  background:
+    linear-gradient(var(--p-toast-warn-background), var(--p-toast-warn-background)),
+    var(--rf-color-surface);
+}
+
+.shell-toasts .p-toast-message-error {
+  background:
+    linear-gradient(var(--p-toast-error-background), var(--p-toast-error-background)),
+    var(--rf-color-surface);
 }
 </style>

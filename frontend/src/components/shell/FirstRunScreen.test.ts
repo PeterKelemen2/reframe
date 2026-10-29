@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import { deferred } from '@/api/testing/fakes'
 import type { Schemas, SystemInfo, TaskInfo } from '@/api/types'
+import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
 
@@ -23,8 +24,13 @@ function tool(name: ToolInfo['name'], extra: Partial<ToolInfo>): ToolInfo {
   return { name, status: 'found', ...extra } as ToolInfo
 }
 
-function info(ffmpeg: Partial<ToolInfo>, ffprobe: Partial<ToolInfo>): SystemInfo {
+function info(
+  ffmpeg: Partial<ToolInfo>,
+  ffprobe: Partial<ToolInfo>,
+  mode: 'web' | 'desktop' = 'desktop',
+): SystemInfo {
   return {
+    mode,
     tools: {
       ffmpeg: tool('ffmpeg', ffmpeg),
       ffprobe: tool('ffprobe', ffprobe),
@@ -104,6 +110,94 @@ describe('the first-run screen', () => {
     download.resolve()
     await flushPromises()
     expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('after the download, removes the Settings paths that would win over the bundled build', async () => {
+    const { wrapper, system } = await mountFirstRun(
+      info({ status: 'missing', origin: 'settings', reason: 'gone' }, {}),
+    )
+    const settings = useSettingsStore()
+    settings.settings = { tools: { ffmpeg: '/opt/gone/ffmpeg', ffprobe: null } } as never
+    settings.update = vi.fn<typeof settings.update>(async () => ({}) as never)
+    system.rescanTools = vi.fn<() => Promise<void>>(async () => {})
+    system.fetchTools = vi.fn<() => Promise<void>>(async () => {
+      system.toolsFetch = 't1'
+      useTasksStore().tasks = { t1: { id: 't1', kind: 'tools_fetch', state: 'done' } as TaskInfo }
+      system.toolsFetch = null
+    })
+    await wrapper.find('.first-run__bundled').trigger('click')
+    await flushPromises()
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith([
+      { op: 'replace', path: '/tools/ffmpeg', value: null },
+    ])
+    expect(system.rescanTools).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the Settings paths when the download failed', async () => {
+    const { wrapper, system } = await mountFirstRun(info({ status: 'missing', reason: 'gone' }, {}))
+    const settings = useSettingsStore()
+    settings.settings = { tools: { ffmpeg: '/opt/gone/ffmpeg' } } as never
+    settings.update = vi.fn<typeof settings.update>(async () => ({}) as never)
+    system.fetchTools = vi.fn<() => Promise<void>>(async () => {
+      system.toolsFetch = 't1'
+      useTasksStore().tasks = { t1: { id: 't1', kind: 'tools_fetch', state: 'failed' } as TaskInfo }
+      system.toolsFetch = null
+    })
+    await wrapper.find('.first-run__bundled').trigger('click')
+    await flushPromises()
+    expect(settings.update).not.toHaveBeenCalled()
+  })
+
+  it('offers only what can fix an environment override, and says what can', async () => {
+    const { wrapper } = await mountFirstRun(
+      info(
+        { status: 'missing', origin: 'env', env_var: 'REFRAME_FFMPEG', reason: 'gone' },
+        { status: 'found', origin: 'env', env_var: 'REFRAME_FFPROBE' },
+      ),
+    )
+    expect(wrapper.find('.first-run__bundled').exists()).toBe(false)
+    expect(wrapper.find('.first-run__choose').exists()).toBe(false)
+    expect(wrapper.find('.first-run__check').exists()).toBe(true)
+    expect(wrapper.find('[data-field="note"]').text()).toContain('sets the path (REFRAME_FFMPEG)')
+  })
+
+  it('offers no path in a browser, where the server refuses one, and names the variables', async () => {
+    const { wrapper } = await mountFirstRun(
+      info({ status: 'missing', env_var: 'REFRAME_FFMPEG', reason: 'gone' }, {}, 'web'),
+    )
+    expect(wrapper.find('.first-run__choose').exists()).toBe(false)
+    expect(wrapper.find('.first-run__bundled').exists()).toBe(true)
+    expect(wrapper.find('[data-field="note"]').text()).toContain('set REFRAME_FFMPEG on the server')
+  })
+
+  it('says when Check again found nothing new, and nothing when it did', async () => {
+    const before = info({ status: 'missing', reason: 'gone' }, {})
+    const { wrapper, system } = await mountFirstRun(before)
+    const scan = deferred()
+    system.rescanTools = vi.fn<() => Promise<void>>(async () => {
+      await scan.promise
+      system.info = structuredClone(before)
+    })
+    const check = wrapper.find<HTMLButtonElement>('.first-run__check').element
+    check.focus()
+    check.click()
+    await flushPromises()
+    // Busy, and still focused: a disabled button would drop the focus to the page.
+    expect(check.disabled).toBe(false)
+    expect(check.getAttribute('aria-disabled')).toBe('true')
+    scan.resolve()
+    await flushPromises()
+    expect(wrapper.find('[data-field="checked"]').text()).toMatch(
+      /^Checked again at .+: nothing has changed\.$/,
+    )
+    expect(document.activeElement).toBe(check)
+
+    system.rescanTools = vi.fn<() => Promise<void>>(async () => {
+      system.info = info({ status: 'broken', reason: 'still bad' }, {})
+    })
+    check.click()
+    await flushPromises()
+    expect(wrapper.find('[data-field="checked"]').text()).toBe('')
   })
 
   it('checks the tools again, and stays when the server refuses', async () => {

@@ -65,7 +65,10 @@
       "path": "From the system PATH",
       "none": "Not found anywhere"
     },
-    "version": "Version {version}"
+    "version": "Version {version}",
+    "envNote": "The server's environment sets the path ({variables}), and that wins over Settings and a bundled build: change or unset it there, then restart the server.",
+    "webNote": "In a browser, Reframe cannot choose the programs the server runs: use the bundled FFmpeg, or set {variables} on the server and restart it.",
+    "unchanged": "Checked again at {time}: nothing has changed."
   },
   "keys": {
     "open": "Ctrl+O"

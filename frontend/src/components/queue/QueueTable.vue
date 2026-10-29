@@ -5,6 +5,7 @@ import {
   Copy,
   FolderOpen,
   ListVideo,
+  LoaderCircle,
   Pause,
   Pencil,
   Play,
@@ -18,7 +19,7 @@ import Column from 'primevue/column'
 import DataTable, { type DataTableRowReorderEvent } from 'primevue/datatable'
 import ProgressBar from 'primevue/progressbar'
 import vTooltip from 'primevue/tooltip'
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -26,11 +27,14 @@ import { ApiError } from '@/api/client'
 import type { QueueJob } from '@/api/types'
 import { SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
 import StatusDot from '@/components/base/StatusDot.vue'
+import FocusSafeButton from '@/components/shell/FocusSafeButton'
+import { focusLost, focusWorkspace } from '@/components/shell/focus'
 import { fileName } from '@/components/shell/format'
 import { platform } from '@/platform'
 import { useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 import { SourceOpenError } from '@/stores/sources'
+import { useSystemStore } from '@/stores/system'
 import { TaskLostError } from '@/stores/tasks'
 
 import {
@@ -50,6 +54,7 @@ const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const queue = useQueueStore()
 const editor = useEditorStore()
+const system = useSystemStore()
 const router = useRouter()
 const root = useTemplateRef<HTMLElement>('root')
 
@@ -76,6 +81,20 @@ const expanded = computed<Record<string, boolean>>(() =>
   ),
 )
 
+/** The video encoder the job uses: it may differ from its preset's (an edited job). */
+function encoderName(job: QueueJob): string | null {
+  const video = job.settings.video
+  if (video === undefined) return null
+  if (video.passthrough) return t('queue.table.videoCopy')
+  return system.definitions?.video_encoders?.[video.encoder]?.label ?? video.encoder
+}
+
+/** A failed job's issues, without the ones its error already quotes. */
+function otherIssues(job: QueueJob): NonNullable<QueueJob['issues']> {
+  const error = job.error ?? ''
+  return (job.issues ?? []).filter((issue) => !error.includes(issue.message))
+}
+
 /** The API client has shown the problem as a toast. */
 async function run(action: () => Promise<unknown>): Promise<void> {
   try {
@@ -91,6 +110,8 @@ async function edit(job: QueueJob): Promise<void> {
   try {
     await editor.loadJob(job.settings)
     await router.push({ name: 'workspace' })
+    await nextTick()
+    focusWorkspace()
   } catch (error) {
     // The source could not be opened; the reason is a toast already.
     const shown =
@@ -199,6 +220,64 @@ function severity(action: JobAction): 'danger' | 'secondary' {
   return action === 'remove' || action === 'cancel' ? 'danger' : 'secondary'
 }
 
+/** The row button that had the focus before the jobs changed: its job, action and place. */
+let focused: { jobId: string; name: string | null; index: number; row: number } | null = null
+
+function rowButtons(group: Element | null | undefined): HTMLButtonElement[] {
+  return [...(group?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+}
+
+function buttonName(button: Element): string | null {
+  return button.getAttribute('data-action') ?? button.getAttribute('data-move')
+}
+
+function usable(button: HTMLButtonElement | undefined): button is HTMLButtonElement {
+  return button !== undefined && !button.disabled
+}
+
+// A state change swaps a row's buttons (Pause for Resume) and a removal drops the row: the
+// focused button goes away, and the focus goes to the button that took its place.
+watch(
+  rows,
+  () => {
+    focused = null
+    const active = document.activeElement
+    const group = active?.closest('[data-job]')
+    const jobId = group?.getAttribute('data-job')
+    if (!jobId || !group || !root.value?.contains(group)) return
+    // The page still shows the rows from before the change.
+    const row = [...root.value.querySelectorAll('[data-job]')].indexOf(group)
+    const index = rowButtons(group).indexOf(active as HTMLButtonElement)
+    focused = { jobId, name: active ? buttonName(active) : null, index, row }
+  },
+  { flush: 'pre' },
+)
+
+watch(
+  rows,
+  () => {
+    const before = focused
+    focused = null
+    if (before === null || !focusLost()) return
+    const groups = [...(root.value?.querySelectorAll('[data-job]') ?? [])]
+    const same = groups.find((found) => found.getAttribute('data-job') === before.jobId)
+    // A removed job's place goes to the job after it, else to the new last one.
+    const group = same ?? groups[Math.min(before.row, groups.length - 1)]
+    const buttons = rowButtons(group)
+    const target =
+      buttons.find((button) => usable(button) && buttonName(button) === before.name) ??
+      // The job's new state brought its own action first (Resume for Pause, Retry for Cancel).
+      (same === undefined
+        ? undefined
+        : buttons.find((button) => usable(button) && button.dataset.action)) ??
+      buttons.slice(before.index).find(usable) ??
+      buttons.slice(0, before.index).findLast(usable)
+    if (target !== undefined) target.focus()
+    else root.value?.querySelector<HTMLElement>('.queue-table__empty-link')?.focus()
+  },
+  { flush: 'post' },
+)
+
 function onReorder(event: DataTableRowReorderEvent): void {
   if (event.dragIndex === event.dropIndex) return
   const ids = (event.value as { job: QueueJob }[]).map((row) => row.job.id)
@@ -281,6 +360,9 @@ async function move(index: number, to: number): Promise<void> {
       <Column :header="t('queue.columns.preset')">
         <template #body="{ data }">
           <span data-field="preset">{{ data.job.settings.preset_name ?? '—' }}</span>
+          <span v-if="encoderName(data.job)" class="queue-table__encoder" data-field="encoder">
+            {{ encoderName(data.job) }}
+          </span>
         </template>
       </Column>
       <Column :header="t('queue.columns.progress')" body-class="queue-table__progress">
@@ -351,7 +433,7 @@ async function move(index: number, to: number): Promise<void> {
             >
               <template #icon><ArrowDown :size="18" aria-hidden="true" /></template>
             </Button>
-            <Button
+            <FocusSafeButton
               v-for="action in data.actions as JobAction[]"
               :key="action"
               v-tooltip.top="actionTip(action)"
@@ -360,15 +442,21 @@ async function move(index: number, to: number): Promise<void> {
               size="small"
               :severity="severity(action)"
               :data-action="action"
-              :loading="action === 'edit' && editing === data.job.id"
               :disabled="action === 'edit' && editing !== null"
+              :aria-busy="(action === 'edit' && editing === data.job.id) || undefined"
               :aria-label="actionLabel(action, sourceName(data.job))"
               @click="act(action, data.job, $event)"
             >
               <template #icon>
-                <component :is="ICONS[action]" :size="18" aria-hidden="true" />
+                <LoaderCircle
+                  v-if="action === 'edit' && editing === data.job.id"
+                  class="queue-table__spin"
+                  :size="18"
+                  aria-hidden="true"
+                />
+                <component :is="ICONS[action]" v-else :size="18" aria-hidden="true" />
               </template>
-            </Button>
+            </FocusSafeButton>
           </div>
         </template>
       </Column>
@@ -378,9 +466,9 @@ async function move(index: number, to: number): Promise<void> {
             <component :is="SEVERITY_ICON.error" :size="16" aria-hidden="true" />
             <span>{{ data.job.error }}</span>
           </p>
-          <ul v-if="(data.job.issues ?? []).length > 0" class="queue-table__issues">
+          <ul v-if="otherIssues(data.job).length > 0" class="queue-table__issues">
             <li
-              v-for="(issue, index) in data.job.issues"
+              v-for="(issue, index) in otherIssues(data.job)"
               :key="`${issue.code}:${index}`"
               :class="`queue-table__issue--${issue.severity}`"
               :data-severity="issue.severity"
@@ -452,7 +540,8 @@ async function move(index: number, to: number): Promise<void> {
 }
 
 .queue-table__percent,
-.queue-table__step {
+.queue-table__step,
+.queue-table__encoder {
   display: block;
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-xs);
@@ -477,6 +566,16 @@ async function move(index: number, to: number): Promise<void> {
 /* A small icon-only button's padding leaves less than the icon's width: it would shrink. */
 .queue-table__buttons :deep(.p-button svg) {
   flex: none;
+}
+
+.queue-table__spin {
+  animation: queue-table-spin 1s linear infinite;
+}
+
+@keyframes queue-table-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .queue-table__problem {

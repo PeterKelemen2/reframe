@@ -2,6 +2,7 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
+import { deferred } from '@/api/testing/fakes'
 import type { JobSettings, QueueJob, Severity, ValidationIssue } from '@/api/types'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
@@ -25,6 +26,7 @@ const actions = {
   canAdd: ref(false),
   canAddAll: ref(false),
   canStart: ref(false),
+  busy: ref(false),
   addCurrent: vi.fn<() => Promise<void>>(async () => {}),
   addAll: vi.fn<() => Promise<void>>(async () => {}),
   start: vi.fn<() => Promise<void>>(async () => {}),
@@ -43,7 +45,9 @@ beforeEach(() => {
   } as JobSettings
   validation.issues = []
   validation.pending = false
-  for (const flag of [actions.canAdd, actions.canAddAll, actions.canStart]) flag.value = false
+  for (const flag of [actions.canAdd, actions.canAddAll, actions.canStart, actions.busy]) {
+    flag.value = false
+  }
   vi.clearAllMocks()
 })
 
@@ -113,6 +117,81 @@ describe('the status bar', () => {
     await vi.waitFor(() => expect(list()).toBeNull())
   })
 
+  it('takes the focus into the list of issues when it opens: its first control, else the list', async () => {
+    validation.issues = [issue('warning', 'The bitrate is high', 'audio[0].bitrate')]
+    const wrapper = await mountBar()
+    const summary = wrapper.find<HTMLButtonElement>('.validation-summary').element
+    summary.focus()
+    summary.click()
+    await vi.waitFor(() => expect(list()?.contains(document.activeElement)).toBe(true))
+    expect(document.activeElement?.classList.contains('rf-issue__reveal')).toBe(true)
+    summary.click()
+    await vi.waitFor(() => expect(list()).toBeNull())
+
+    validation.issues = []
+    await flushPromises()
+    summary.click()
+    await vi.waitFor(() => expect(document.activeElement).toBe(list()))
+  })
+
+  it('shows the wait of an add on the button that started it', async () => {
+    actions.canAdd.value = true
+    actions.canAddAll.value = true
+    const wrapper = await mountBar()
+    const busyOf = () =>
+      ['add', 'add-all'].filter(
+        (name) => wrapper.find(`.status-bar__${name}`).attributes('aria-busy') === 'true',
+      )
+    // Ctrl+Enter or the button: the add waits for the job's check.
+    actions.busy.value = true
+    await flushPromises()
+    expect(busyOf()).toEqual(['add'])
+    actions.busy.value = false
+
+    const drafts = deferred()
+    actions.addAll.mockImplementationOnce(async () => {
+      actions.busy.value = true
+      await drafts.promise
+      actions.busy.value = false
+    })
+    await wrapper.find('.status-bar__add-all').trigger('click')
+    await flushPromises()
+    expect(busyOf()).toEqual(['add-all'])
+    drafts.resolve()
+    await flushPromises()
+    expect(busyOf()).toEqual([])
+    // A later Ctrl+Enter waits on Add to queue again.
+    actions.busy.value = true
+    await flushPromises()
+    expect(busyOf()).toEqual(['add'])
+  })
+
+  it('publishes its height for the toasts while it is shown', async () => {
+    const observed: ResizeObserverCallback[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observed.push(callback)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    try {
+      const wrapper = await mountBar()
+      const entry = { borderBoxSize: [{ blockSize: 48.4, inlineSize: 900 }] }
+      for (const callback of observed) callback([entry] as never, {} as ResizeObserver)
+      const root = document.documentElement.style
+      expect(root.getPropertyValue('--shell-status-bar-height')).toBe('49px')
+      wrapper.unmount()
+      mounted.splice(0)
+      expect(root.getPropertyValue('--shell-status-bar-height')).toBe('')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('shows a lost connection in words', async () => {
     const wrapper = await mountBar()
     const system = useSystemStore()
@@ -172,4 +251,40 @@ describe('the status bar', () => {
     expect(actions.addAll).toHaveBeenCalledTimes(1)
     expect(actions.start).toHaveBeenCalledTimes(1)
   })
+
+  // A browser moves the focus of a button that turns disabled to the page.
+  it.each([
+    ['add', actions.canAdd, actions.addCurrent],
+    ['add-all', actions.canAddAll, actions.addAll],
+    ['start', actions.canStart, actions.start],
+  ] as const)(
+    'the %s button keeps the focus while its action makes it unavailable',
+    async (name, flag, run) => {
+      flag.value = true
+      const wrapper = await mountBar()
+      run.mockImplementationOnce(async () => {
+        flag.value = false
+      })
+      const button = wrapper.find<HTMLButtonElement>(`.status-bar__${name}`).element
+      button.focus()
+      button.click()
+      await flushPromises()
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).toBe(button)
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-disabled')).toBe('true')
+      // Unavailable: Enter on it does nothing.
+      button.click()
+      await flushPromises()
+      expect(run).toHaveBeenCalledTimes(1)
+      // Once the focus has left, it is disabled for real (out of the tab order).
+      button.blur()
+      await flushPromises()
+      expect(button.disabled).toBe(true)
+      flag.value = true
+      await flushPromises()
+      expect(button.disabled).toBe(false)
+      expect(button.hasAttribute('aria-disabled')).toBe(false)
+    },
+  )
 })

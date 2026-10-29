@@ -9,6 +9,8 @@ import IssueList from '@/components/base/IssueList.vue'
 import { useUiStore } from '@/stores/ui'
 import { useValidationStore } from '@/stores/validation'
 
+import { focusFirstIn } from './focus'
+
 const { t } = useI18n()
 const validation = useValidationStore()
 const ui = useUiStore()
@@ -19,6 +21,11 @@ const open = ref(false)
 
 const counts = computed(() => validation.counts)
 const clean = computed(() => validation.issues.length === 0)
+
+function shown(): void {
+  open.value = true
+  focusFirstIn(document.getElementById(`${id}-list`))
+}
 
 // "Show" in the list takes the user to the field, which the open list would cover.
 watch(
@@ -76,7 +83,7 @@ watch(
       </span>
     </template>
   </Button>
-  <Popover ref="popover" @show="open = true" @hide="open = false">
+  <Popover ref="popover" @show="shown" @hide="open = false">
     <div
       :id="`${id}-list`"
       class="validation-summary__list"

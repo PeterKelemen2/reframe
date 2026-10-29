@@ -3,12 +3,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { reactive } from 'vue'
 
 import { configureClient } from '@/api/client'
-import { FakeServer } from '@/api/testing/fakes'
+import { deferred, FakeServer } from '@/api/testing/fakes'
 import type { FieldChange, JobSettings, JobTemplate, JsonPatchOp, Preset } from '@/api/types'
 import { sampleJob } from '@/editor/testing/samples'
 import { stubDom } from '@/components/naming/testing/samples'
 import { mountShell } from '@/components/shell/testing'
 import { templateOfPreset } from '@/stores/presets'
+import { useSystemStore } from '@/stores/system'
 
 import PresetPicker from './PresetPicker.vue'
 import { nameConflict, preset, presetList, userPreset } from './testing'
@@ -19,6 +20,7 @@ const MINE = userPreset('u1', 'Mine')
 
 // A double of the editor store: the picker reads the job's preset and its changes from it.
 const editor = reactive({
+  session: 1,
   job: null as JobSettings | null,
   presetId: null as string | null,
   preset: null as Preset | null,
@@ -50,6 +52,7 @@ beforeAll(stubDom)
 beforeEach(() => {
   server = new FakeServer().on('GET /api/presets', presetList([FAST, H265, MINE]))
   configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
+  editor.session = 1
   editor.job = null
   editor.presetId = null
   editor.preset = null
@@ -162,7 +165,70 @@ describe('the preset picker', () => {
       ['Audio defaults › Codec rule 1 › Maximum bitrate', '160', '192'],
       ['Filters › Denoise', undefined, undefined],
     ])
-    expect(rows[2]?.values).toBe('Added: {"preset":"light"}')
+    expect(rows[2]?.values).toBe('Added: Preset: light')
+  })
+
+  it('shows the settings objects of a change in words, a quality on each encoder’s scale', async () => {
+    openJob(H265)
+    editor.job = { ...editor.job!, video: { ...editor.job!.video!, encoder: 'libx264' } }
+    const { wrapper } = await mountPicker()
+    useSystemStore().definitions = {
+      video_encoders: {
+        hevc_nvenc: { label: 'NVENC H.265', rate_control: { quality: { label: 'CQ' } } },
+        libx264: { label: 'x264', rate_control: { quality: { label: 'RF' } } },
+      },
+    } as never
+    editor.presetChanges = [
+      { path: 'video.encoder', kind: 'changed', preset_value: 'hevc_nvenc', value: 'libx264' },
+      {
+        path: 'video.rate_control',
+        kind: 'changed',
+        preset_value: { mode: 'quality', value: 27 },
+        value: { mode: 'bitrate', kbps: 6000, two_pass: false, turbo_first_pass: true },
+      },
+      {
+        path: 'dimensions.size',
+        kind: 'changed',
+        preset_value: { mode: 'fit', width: 1920, height: 1080 },
+        value: { mode: 'width', width: 1280 },
+      },
+      {
+        path: 'naming',
+        kind: 'changed',
+        preset_value: null,
+        value: { movie_template: '{main_title} X', episode_template: '{main_title}' },
+      },
+    ]
+    await flushPromises()
+    await wrapper.find('.preset-picker__modified').trigger('click')
+    await flushPromises()
+    const rows = [...body().querySelectorAll('.preset-changes__item')].map((row) => [
+      row.querySelector('.preset-changes__before')?.textContent,
+      row.querySelector('.preset-changes__after')?.textContent,
+    ])
+    expect(rows).toEqual([
+      ['NVENC H.265', 'x264'],
+      ['Constant quality CQ 27', 'Average bitrate 6,000 kb/s'],
+      ['Fit within 1920×1080', '1280 pixels wide'],
+      ['The naming of Settings → Output', 'Own naming: {main_title} X'],
+    ])
+
+    // Without an encoder change, both sides use the job's encoder.
+    editor.presetChanges = [
+      {
+        path: 'video.rate_control',
+        kind: 'changed',
+        preset_value: { mode: 'bitrate', kbps: 2500, two_pass: true },
+        value: { mode: 'quality', value: 20 },
+      },
+    ]
+    await flushPromises()
+    expect(body().querySelector('.preset-changes__before')?.textContent).toBe(
+      'Average bitrate 2,500 kb/s, two passes',
+    )
+    expect(body().querySelector('.preset-changes__after')?.textContent).toBe(
+      'Constant quality RF 20',
+    )
   })
 
   it('saves the current settings as a new preset, and the job then follows it in one undo step', async () => {
@@ -189,7 +255,42 @@ describe('the preset picker', () => {
       { op: 'replace', path: '/preset_id', value: 'u2' },
       { op: 'replace', path: '/preset_name', value: 'My x264' },
     ])
+    // The marker is about to go: the focus waits on the preset button.
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__trigger').element),
+    )
   })
+
+  it.each([
+    [
+      'another source with the same preset',
+      () => {
+        editor.session += 1
+        openJob(H265)
+      },
+    ],
+    ['another preset', () => openJob(FAST)],
+  ])(
+    'leaves the job alone when %s was opened while the new preset was saved',
+    async (_, change) => {
+      openJob(H265, [ENCODER_CHANGE])
+      const answer = deferred<Response>()
+      server.on('POST /api/presets', () => answer.promise)
+      const { wrapper } = await mountPicker()
+      await wrapper.find('.preset-picker__modified').trigger('click')
+      await flushPromises()
+      await click('.preset-picker__save-as')
+      const input = body().querySelector<HTMLInputElement>('.preset-name-dialog__name')!
+      input.value = 'My x264'
+      input.dispatchEvent(new Event('input'))
+      await flushPromises()
+      await click('.preset-name-dialog__submit')
+      change()
+      answer.resolve(new Response(JSON.stringify(userPreset('u2', 'My x264')), { status: 201 }))
+      await flushPromises()
+      expect(editor.patch).not.toHaveBeenCalled()
+    },
+  )
 
   it('shows a name clash at the name and takes the free name the server offers', async () => {
     openJob(H265, [ENCODER_CHANGE])
@@ -233,6 +334,39 @@ describe('the preset picker', () => {
       built_in: false,
     })
     expect(editor.refreshPresetChanges).toHaveBeenCalledOnce()
+  })
+
+  it('takes the focus into the changes when they open, and back to the picker after Update', async () => {
+    openJob(MINE, [ENCODER_CHANGE])
+    server.on('PUT /api/presets/u1', (request) => request.body)
+    editor.refreshPresetChanges.mockImplementation(() => (editor.presetChanges = []))
+    const { wrapper } = await mountPicker()
+    const marker = wrapper.find<HTMLButtonElement>('.preset-picker__modified').element
+    marker.focus()
+    marker.click()
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(body().querySelector('.preset-picker__save-as')),
+    )
+    body().querySelector<HTMLElement>('.preset-picker__update')?.focus()
+    await click('.preset-picker__update')
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__trigger').element),
+    )
+  })
+
+  it('gives the focus back to the marker when Save as new is cancelled', async () => {
+    openJob(H265, [ENCODER_CHANGE])
+    const { wrapper } = await mountPicker()
+    await wrapper.find('.preset-picker__modified').trigger('click')
+    await flushPromises()
+    await click('.preset-picker__save-as')
+    const cancel = [...body().querySelectorAll<HTMLElement>('.preset-name-dialog button')].find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    )
+    cancel?.click()
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__modified').element),
+    )
   })
 
   it('offers no update for a built-in preset', async () => {

@@ -43,11 +43,29 @@ const el = <T extends HTMLElement = HTMLButtonElement>(selector: string) => {
 }
 const text = (selector: string) => el(selector).textContent?.trim()
 
+/** Presses a control whose action makes it unavailable; it keeps the focus, and does nothing again. */
+async function pressTwice(action: string, run: () => Promise<void>): Promise<void> {
+  const button = el(`[data-action="${action}"]`)
+  button.focus()
+  button.click()
+  await flushPromises()
+  expect(run).toHaveBeenCalledOnce()
+  expect(document.activeElement).toBe(button)
+  expect(button.disabled).toBe(false)
+  expect(button.getAttribute('aria-disabled')).toBe('true')
+  button.click()
+  await flushPromises()
+  expect(run).toHaveBeenCalledOnce()
+}
+
 describe('the run state and the global controls', () => {
   it('says that the queue is stopped and how many jobs wait for Start; Start starts every job', async () => {
     queue.jobs = [job('a', 'done'), job('b'), job('c')]
     await mountIt(QueueControls)
-    expect(text('[data-field="run-state"]')).toBe('Stopped: 2 waiting jobs wait for Start')
+    expect(text('[data-field="run-state"]')).toBe('Stopped: 2 jobs wait for Start')
+    queue.jobs = [job('b')]
+    await flushPromises()
+    expect(text('[data-field="run-state"]')).toBe('Stopped: 1 job waits for Start')
     expect(el('[data-action="stop"]').disabled).toBe(true)
     el('[data-action="start"]').click()
     await flushPromises()
@@ -65,8 +83,12 @@ describe('the run state and the global controls', () => {
     queue.jobs = [job('a', 'running'), job('b')]
     queue.processing = true
     await mountIt(QueueControls)
-    expect(text('[data-field="run-state"]')).toBe('Running: every waiting job is taken')
+    expect(text('[data-field="run-state"]')).toBe('Running: 1 waiting job starts in turn')
     expect(el('[data-action="start"]').disabled).toBe(true)
+    // Nothing left to take: the runner takes what is added next.
+    queue.jobs = [job('a', 'running')]
+    await flushPromises()
+    expect(text('[data-field="run-state"]')).toBe('Running: jobs added now start in turn')
     el('[data-action="stop"]').click()
     await flushPromises()
     expect(queue.stop).toHaveBeenCalledOnce()
@@ -117,6 +139,21 @@ describe('the run state and the global controls', () => {
     expect(queue.cancelAll).toHaveBeenCalledOnce()
   })
 
+  // A browser moves the focus of a button that turns disabled to the page.
+  it('keeps the focus on Start and Pause all once their action has made them unavailable', async () => {
+    queue.jobs = [job('a', 'running'), job('b')]
+    queue.start.mockImplementationOnce(async () => {
+      queue.processing = true
+    })
+    queue.pauseAll.mockImplementationOnce(async () => {
+      queue.jobs = [job('a', 'paused'), job('b')]
+    })
+    await mountIt(QueueControls)
+    await pressTwice('start', queue.start)
+    await pressTwice('pause-all', queue.pauseAll)
+    expect(queue.counts.paused).toBe(1)
+  })
+
   it('offers no Cancel all when no job is open', async () => {
     queue.jobs = [job('a', 'done'), job('b', 'failed')]
     await mountIt(QueueControls)
@@ -149,6 +186,13 @@ describe('the when-done selector', () => {
     system.info = { mode: 'desktop' }
     await mountIt(WhenDoneSelect)
     expect((await options())[2]).toBe('Quit Reframe')
+  })
+
+  it('is named by its label, not by the value it shows', async () => {
+    await mountIt(WhenDoneSelect)
+    const combobox = el<HTMLElement>('[role="combobox"]')
+    const label = document.getElementById(combobox.getAttribute('aria-labelledby') ?? '')
+    expect(label?.textContent?.trim()).toBe('When done')
   })
 
   it('sets the choice through the queue', async () => {

@@ -2,13 +2,14 @@
 import { FolderOpen } from '@lucide/vue'
 import { useLocalStorage } from '@vueuse/core'
 import Button from 'primevue/button'
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
 import EditorTabs from '@/components/shell/EditorTabs.vue'
 import FirstRunScreen from '@/components/shell/FirstRunScreen.vue'
+import { focusLost, focusWorkspace } from '@/components/shell/focus'
 import { fileName, formatDuration } from '@/components/shell/format'
 import PreviewPanel from '@/components/shell/PreviewPanel.vue'
 import StatusBar from '@/components/shell/StatusBar.vue'
@@ -24,7 +25,10 @@ const sources = useSourcesStore()
 
 useValidation()
 
-const previewCollapsed = useLocalStorage('reframe.workspace.previewCollapsed', false)
+// Collapsed until the user opens it: the preview is a placeholder, and the tabs need the room.
+const previewCollapsed = useLocalStorage('reframe.workspace.previewHidden', true, {
+  writeDefaults: false,
+})
 
 const title = computed(() => {
   const entry = sources.active
@@ -32,12 +36,25 @@ const title = computed(() => {
 })
 const duration = computed(() => formatDuration(sources.active?.source?.container?.duration))
 
+// The first source replaces the empty state's button with the tabs, and removing the last one
+// brings the button back: the focused element goes away with it.
+watch(
+  () => sources.active !== null,
+  () => {
+    if (focusLost()) focusWorkspace()
+  },
+  { flush: 'post' },
+)
+
 async function open(): Promise<void> {
   try {
     await sources.pick()
   } catch (error) {
     if (!(error instanceof ApiError)) throw error
   }
+  // The file dialog gives the focus back to this button, which the new source has replaced.
+  await nextTick()
+  if (focusLost()) focusWorkspace()
 }
 </script>
 
@@ -99,7 +116,6 @@ async function open(): Promise<void> {
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
 }
 
 .workspace__header {

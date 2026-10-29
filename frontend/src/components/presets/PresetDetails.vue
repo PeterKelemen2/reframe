@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { Copy, Download, Lock, Pencil, Play, RefreshCw, Star, Trash2 } from '@lucide/vue'
-import Button from 'primevue/button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Preset, Schemas } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import Section from '@/components/base/Section.vue'
+import FocusSafeButton from '@/components/shell/FocusSafeButton'
 import { useSystemStore } from '@/stores/system'
 
 import PresetNaming from './PresetNaming.vue'
@@ -169,7 +169,7 @@ const subtitles = computed(() => {
         {{ preset.description || t('presets.details.noDescription') }}
       </p>
       <div class="preset-details__actions" role="group" :aria-label="t('presets.details.actions')">
-        <Button
+        <FocusSafeButton
           size="small"
           class="preset-details__apply"
           :label="t('presets.details.apply')"
@@ -177,8 +177,8 @@ const subtitles = computed(() => {
           @click="emit('apply')"
         >
           <template #icon><Play :size="16" aria-hidden="true" /></template>
-        </Button>
-        <Button
+        </FocusSafeButton>
+        <FocusSafeButton
           size="small"
           severity="secondary"
           class="preset-details__duplicate"
@@ -187,9 +187,9 @@ const subtitles = computed(() => {
           @click="emit('duplicate')"
         >
           <template #icon><Copy :size="16" aria-hidden="true" /></template>
-        </Button>
+        </FocusSafeButton>
         <template v-if="!preset.built_in">
-          <Button
+          <FocusSafeButton
             size="small"
             severity="secondary"
             class="preset-details__rename"
@@ -198,8 +198,8 @@ const subtitles = computed(() => {
             @click="emit('rename')"
           >
             <template #icon><Pencil :size="16" aria-hidden="true" /></template>
-          </Button>
-          <Button
+          </FocusSafeButton>
+          <FocusSafeButton
             v-tooltip.bottom="canUpdate ? undefined : t('presets.details.updateNoJob')"
             size="small"
             severity="secondary"
@@ -209,9 +209,9 @@ const subtitles = computed(() => {
             @click="emit('update')"
           >
             <template #icon><RefreshCw :size="16" aria-hidden="true" /></template>
-          </Button>
+          </FocusSafeButton>
         </template>
-        <Button
+        <FocusSafeButton
           size="small"
           severity="secondary"
           class="preset-details__default"
@@ -221,8 +221,8 @@ const subtitles = computed(() => {
           @click="emit('makeDefault')"
         >
           <template #icon><Star :size="16" aria-hidden="true" /></template>
-        </Button>
-        <Button
+        </FocusSafeButton>
+        <FocusSafeButton
           size="small"
           severity="secondary"
           class="preset-details__export"
@@ -231,8 +231,8 @@ const subtitles = computed(() => {
           @click="emit('export')"
         >
           <template #icon><Download :size="16" aria-hidden="true" /></template>
-        </Button>
-        <Button
+        </FocusSafeButton>
+        <FocusSafeButton
           v-if="!preset.built_in"
           size="small"
           severity="danger"
@@ -243,7 +243,7 @@ const subtitles = computed(() => {
           @click="emit('remove')"
         >
           <template #icon><Trash2 :size="16" aria-hidden="true" /></template>
-        </Button>
+        </FocusSafeButton>
       </div>
       <p v-if="preset.built_in" class="preset-details__hint">
         {{ t('presets.details.lockedHint') }}

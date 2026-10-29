@@ -23,14 +23,15 @@
     "percent": "{value} %"
   },
   "table": {
-    "label": "Jobs in the queue"
+    "label": "Jobs in the queue",
+    "videoCopy": "Video copied"
   },
   "columns": {
     "drag": "Drag to reorder",
     "state": "State",
     "source": "Source",
     "output": "Output",
-    "preset": "Preset",
+    "preset": "Preset and encoder",
     "progress": "Progress",
     "fps": "FPS",
     "speed": "Speed",
@@ -68,10 +69,11 @@
     "link": "Go to the workspace"
   },
   "run": {
-    "all": "Running: every waiting job is taken",
+    "all": "Running: {n} waiting job starts in turn | Running: {n} waiting jobs start in turn",
+    "allIdle": "Running: jobs added now start in turn",
     "only": "Running only the jobs another front end started ({n})",
     "stopped": "Stopped",
-    "stoppedWaiting": "Stopped: {n} waiting job waits for Start | Stopped: {n} waiting jobs wait for Start"
+    "stoppedWaiting": "Stopped: {n} job waits for Start | Stopped: {n} jobs wait for Start"
   },
   "controls": {
     "label": "Queue controls",
@@ -179,10 +181,22 @@
       "unknown": "not tested"
     },
     "task": {
-      "done": "Task {kind} done",
-      "failed": "Task {kind} failed",
-      "cancelled": "Task {kind} cancelled",
-      "running": "Task {kind} running"
+      "done": "{task}: done",
+      "failed": "{task}: failed",
+      "cancelled": "{task}: cancelled",
+      "running": "{task}: running"
+    },
+    "taskKind": {
+      "probe_sources": "Reading sources",
+      "probe_folder": "Reading a folder",
+      "encoders_rescan": "Encoder detection",
+      "tools_fetch": "FFmpeg download",
+      "bitrate_scan": "Bitrate measurement",
+      "subtitle_scan": "Subtitle count",
+      "loudness": "Loudness measurement",
+      "frames": "Preview frames",
+      "cropdetect": "Crop detection",
+      "preview_clip": "Preview clip"
     },
     "resync": "Some events were lost: the app read the server's state again"
   }

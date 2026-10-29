@@ -8,6 +8,8 @@ export interface Words {
   empty: string
   on: string
   off: string
+  /** A settings value that has its own words (`Constant quality CQ 27`), else `undefined`. */
+  known?(path: string, value: unknown): string | undefined
 }
 
 const VALUE_LIMIT = 80
@@ -40,8 +42,13 @@ function clip(text: string): string {
   return text.length > VALUE_LIMIT ? `${text.slice(0, VALUE_LIMIT - 1)}…` : text
 }
 
-/** A settings value in a few words; objects as compact JSON, cut at 80 characters. */
-export function valueWords(value: unknown, words: Words): string {
+/**
+ * A settings value at `path` in a few words, cut at 80 characters; an object without words of
+ * its own as its members (`Preset: light · Tune: film`).
+ */
+export function valueWords(value: unknown, words: Words, path = ''): string {
+  const known = words.known?.(path, value)
+  if (known !== undefined) return clip(known)
   if (value === null || value === undefined) return words.none
   if (typeof value === 'boolean') return value ? words.on : words.off
   if (typeof value === 'string') return value === '' ? words.empty : clip(value)
@@ -51,7 +58,14 @@ export function valueWords(value: unknown, words: Words): string {
       ? words.none
       : clip(value.map((item) => valueWords(item, words)).join(', '))
   }
-  return clip(JSON.stringify(value))
+  if (typeof value !== 'object') return clip(String(value))
+  const members = Object.entries(value as Record<string, unknown>)
+    .filter(([, member]) => member !== null && member !== undefined)
+    .map(
+      ([key, member]) =>
+        `${words.field(key) ?? fallbackWord(key)}: ${valueWords(member, words, path ? `${path}.${key}` : key)}`,
+    )
+  return members.length === 0 ? words.none : clip(members.join(' · '))
 }
 
 function normalName(name: string): string {

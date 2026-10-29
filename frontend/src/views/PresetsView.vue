@@ -2,7 +2,7 @@
 import { Download } from '@lucide/vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -15,6 +15,8 @@ import PresetNameDialog, {
   type PresetDetailsInput,
 } from '@/components/presets/PresetNameDialog.vue'
 import PresetTree from '@/components/presets/PresetTree.vue'
+import FocusSafeButton from '@/components/shell/FocusSafeButton'
+import { focusLost, focusWorkspace } from '@/components/shell/focus'
 import { useEditorStore } from '@/stores/editor'
 import {
   type PresetImportReport,
@@ -38,6 +40,7 @@ const busy = ref(false)
 const renaming = ref<Preset | null>(null)
 /** The preset a confirmation is open for, and what it confirms. */
 const confirming = ref<{ preset: Preset; action: 'remove' | 'update' } | null>(null)
+const tree = useTemplateRef<InstanceType<typeof PresetTree>>('tree')
 
 onMounted(() => void presets.load().catch(() => undefined))
 
@@ -81,6 +84,8 @@ function apply(id: string): Promise<void> {
   return act(async () => {
     await editor.applyPreset(id)
     await router.push({ name: 'workspace' })
+    await nextTick()
+    focusWorkspace()
   })
 }
 
@@ -103,6 +108,8 @@ function duplicate(preset: Preset): Promise<void> {
         created = await presets.create({ ...request, name: free })
       }
       chosen.value = created.id
+      // The details of the copy replace the button.
+      await tree.value?.focusPreset(created.id)
     },
     t('presets.view.duplicateFailed', { name: preset.name }),
   )
@@ -153,7 +160,17 @@ function remove(preset: Preset): Promise<void> {
   return act(async () => {
     await presets.remove(preset.id)
     if (chosen.value === preset.id) chosen.value = null
+    await nextTick()
+    await refocusTree()
   })
+}
+
+/**
+ * The confirmation gives the focus back to the control that opened it: after a deletion, that
+ * control is gone, whether the dialog closes before the answer comes or after it.
+ */
+async function refocusTree(): Promise<void> {
+  if (focusLost() && selected.value !== null) await tree.value?.focusPreset(selected.value.id)
 }
 
 async function confirm(): Promise<void> {
@@ -205,7 +222,7 @@ const renameInitial = computed<PresetDetailsInput>(() => ({
       <h1 class="presets-view__title">{{ t('presets.view.title') }}</h1>
       <div class="presets-view__tools">
         <PresetImport @imported="imported" />
-        <Button
+        <FocusSafeButton
           class="presets-view__export-all"
           size="small"
           severity="secondary"
@@ -214,13 +231,14 @@ const renameInitial = computed<PresetDetailsInput>(() => ({
           @click="exportPresets(userPresets)"
         >
           <template #icon><Download :size="16" aria-hidden="true" /></template>
-        </Button>
+        </FocusSafeButton>
       </div>
     </header>
     <p v-if="!presets.loaded" class="presets-view__loading">{{ t('presets.view.loading') }}</p>
     <div v-else class="presets-view__body">
       <div class="presets-view__tree">
         <PresetTree
+          ref="tree"
           :categories="presets.categories"
           :selected-id="selected?.id ?? null"
           :default-id="presets.defaultId"
@@ -267,6 +285,7 @@ const renameInitial = computed<PresetDetailsInput>(() => ({
       "
       class="presets-view__confirm"
       :style="{ width: 'min(28rem, 95vw)' }"
+      @after-hide="refocusTree"
     >
       <p v-if="confirming?.action === 'update'" class="presets-view__confirm-text">
         {{ t('presets.view.confirmUpdate', { name: confirming.preset.name }) }}
@@ -304,7 +323,6 @@ const renameInitial = computed<PresetDetailsInput>(() => ({
   flex-direction: column;
   gap: var(--rf-space-4);
   min-width: 0;
-  height: 100vh;
   padding: var(--rf-space-4);
   overflow: clip;
 }
