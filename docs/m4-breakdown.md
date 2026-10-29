@@ -417,7 +417,11 @@ screenshots read), then once headed by the lead on `HDMI-A-1` through the guard.
 ## Commands
 
 From `frontend/`: `npm ci`, `npm run lint`, `npm run fmt:check`, `npm run typecheck`,
-`npm test`, `npm run build:web`, `npm run e2e` (headless only). From the root:
+`npm test`, `npm run build:web`, `npm run e2e` (headless only). Vitest has two projects:
+`unit` (`npm test`: jsdom, `src/**/*.test.ts`) and `server` (`npm run test:server`: Node,
+`src/**/*.server.test.ts`, one file at a time, for tests against a real `reframe-server`; it
+needs `uv sync`, so it is kept out of `npm test`, which runs where only Node is installed). A
+task with `*.server.test.ts` files runs `npm run test:server` too. From the root:
 `scripts/gen-api.sh --check`; for a `packages/` change `uv run ruff check`,
 `uv run ruff format --check`, `uv run mypy`, `uv run mypy --platform win32` and the tests of
 what changed (`uv run pytest …`, in the foreground).

@@ -92,11 +92,14 @@ against the generated `schema.d.ts` with TypeScript 6.0.3 (a call with a wrong b
     media root, output root), with `REFRAME_POWER_DRY_RUN=1` and the fixtures copied in, and
     removes the home when it stops. Each task has its own port range (87N0–87N9). The Vite dev
     server reads `REFRAME_DEV_PORT` and `REFRAME_DEV_BACKEND`.
-12. **Headless only.** `playwright.config.ts` sets `headless: true` in every project and uses
+12. **Tests against a real server** are `src/**/*.server.test.ts`, Vitest's `server` project
+    (`npm run test:server`, Node environment, one file at a time). `npm test` runs the `unit`
+    project only, because CI's frontend job has Node and no Python.
+13. **Headless only.** `playwright.config.ts` sets `headless: true` in every project and uses
     the list reporter: the HTML reporter opens a browser when a test fails. `package.json` has
     `e2e` (`playwright test`) and no `--ui`, `--headed` or `open` script; `vite.config.ts` has
     no `server.open`. Headed checks are the lead's, through the D-0 window guard.
-13. **The queue-processing event** of 0042 open question 5 is task S, recorded in
+14. **The queue-processing event** of 0042 open question 5 is task S, recorded in
     [0064](0064-queue-processing-event.md).
 
 ## Consequences

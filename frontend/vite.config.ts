@@ -48,8 +48,30 @@ export default defineConfig(({ mode }) => {
       target: 'es2023',
     },
     test: {
-      environment: 'jsdom',
-      include: ['src/**/*.test.ts'],
+      projects: [
+        {
+          extends: true,
+          test: {
+            name: 'unit',
+            environment: 'jsdom',
+            include: ['src/**/*.test.ts'],
+            exclude: ['src/**/*.server.test.ts'],
+          },
+        },
+        {
+          // Against a real reframe-server (scripts/dev-server.py), so it needs `uv sync`: kept
+          // out of `npm test`, which runs where only Node is installed.
+          extends: true,
+          test: {
+            name: 'server',
+            environment: 'node',
+            include: ['src/**/*.server.test.ts'],
+            fileParallelism: false,
+            testTimeout: 60_000,
+            hookTimeout: 60_000,
+          },
+        },
+      ],
     },
   }
 })
