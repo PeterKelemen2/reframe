@@ -47,6 +47,8 @@ type Blocker =
 
 const ADDED_LIFE = 4_000
 const NOT_ADDED_LIFE = 15_000
+/** An add that waits longer for the job's check gives up (a server that does not answer). */
+const SETTLE_LIMIT = 20_000
 
 // Shared by every caller (the status bar's buttons and the shortcut), so that a second click or
 // a held Ctrl+Enter during an add does not queue the job twice.
@@ -91,8 +93,9 @@ export function useQueueActions(): QueueActions {
   )
 
   /**
-   * Resolves once what the screen shows is in the job and the job has been checked: `false` when
-   * another job was opened meanwhile. A failed check is asked once more.
+   * Resolves once what the screen shows is in the job and the job has been checked, or after
+   * `SETTLE_LIMIT`: `false` when another job was opened meanwhile. A failed check is asked once
+   * more.
    */
   function settled(): Promise<boolean> {
     commitFocusedField()
@@ -102,8 +105,11 @@ export function useQueueActions(): QueueActions {
     return new Promise((resolve) => {
       let stop: WatchStopHandle | undefined
       let over = false
+      const limit = setTimeout(() => finish(true), SETTLE_LIMIT)
       function finish(value: boolean): void {
+        if (over) return
         over = true
+        clearTimeout(limit)
         stop?.()
         resolve(value)
       }

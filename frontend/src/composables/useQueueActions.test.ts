@@ -319,6 +319,26 @@ describe('addCurrent', () => {
     ])
   })
 
+  it('gives up after a while when the check does not answer, and says it is still being checked', async () => {
+    vi.useFakeTimers()
+    try {
+      open('s1', settings('a'))
+      validation.pending = true
+      const adding = actions().addCurrent()
+      await vi.advanceTimersByTimeAsync(19_000)
+      expect(toasts()).toEqual([])
+      await vi.advanceTimersByTimeAsync(1_000)
+      await adding
+      expect(queueBodies()).toEqual([])
+      expect(toasts().map((toast) => toast.detail)).toEqual([
+        'The job is still being checked. Try again in a moment.',
+      ])
+      expect(actions().canAdd.value).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('adds nothing, and says nothing, when another job is opened while it waits', async () => {
     open('s1', settings('a'))
     validation.pending = true
