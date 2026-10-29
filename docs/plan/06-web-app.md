@@ -542,9 +542,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Queue-group flow with the error dialog.
 
 ### F-14 Queue and activity
-- [ ] Queue table: drag reorder, live progress, per-job and global controls, edit-back,
+- [x] Queue table: drag reorder, live progress, per-job and global controls, edit-back,
       reveal in folder (desktop), when-done selector.
-- [ ] Job log viewer (virtual scroll, follow mode, copy all). Global activity log.
+- [x] Job log viewer (virtual scroll, follow mode, copy all). Global activity log.
 
 ### F-15 Settings view
 - [ ] The sections from [03 §Settings](03-features.md#settings). The encoder table has a re-scan
