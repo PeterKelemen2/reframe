@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 import type { SourceEntry, SystemInfo } from '@/api/types'
+import { focusWorkspace } from '@/components/shell/focus'
 import { mountShell } from '@/components/shell/testing'
 import { useSystemStore } from '@/stores/system'
 
@@ -95,6 +96,41 @@ describe('the workspace', () => {
     expect(wrapper.find('[data-state="empty"]').text()).toContain('Ctrl+O')
     await wrapper.find('.workspace__open').trigger('click')
     expect(sources.pick).toHaveBeenCalledTimes(1)
+  })
+
+  it('moves the focus to the selected tab when the opened source replaces the Open button', async () => {
+    const wrapper = await mountWorkspace()
+    sources.pick.mockImplementationOnce(async () => openSource())
+    const button = wrapper.find<HTMLButtonElement>('.workspace__open').element
+    button.focus()
+    button.click()
+    await flushPromises()
+    expect(document.activeElement?.getAttribute('role')).toBe('tab')
+    expect(document.activeElement?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('moves the focus to the Open button when the last source goes away', async () => {
+    const wrapper = await mountWorkspace(openSource)
+    wrapper.find<HTMLElement>('[role="tab"][aria-selected="true"]').element.focus()
+    sources.entries = []
+    sources.activeId = null
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.find('.workspace__open').element)
+  })
+
+  it('leaves the focus alone when the source changes under a control that stays', async () => {
+    const wrapper = await mountWorkspace()
+    const toggle = wrapper.find<HTMLButtonElement>('.preview-panel__toggle').element
+    toggle.focus()
+    openSource()
+    await flushPromises()
+    expect(document.activeElement).toBe(toggle)
+  })
+
+  it("gives other screens the workspace's place for the focus: the selected tab", async () => {
+    await mountWorkspace(openSource)
+    expect(focusWorkspace()).toBe(true)
+    expect(document.activeElement?.textContent?.trim()).toBe('Summary')
   })
 
   it('collapses the preview column and keeps it collapsed next time', async () => {

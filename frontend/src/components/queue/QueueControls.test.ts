@@ -43,6 +43,21 @@ const el = <T extends HTMLElement = HTMLButtonElement>(selector: string) => {
 }
 const text = (selector: string) => el(selector).textContent?.trim()
 
+/** Presses a control whose action makes it unavailable; it keeps the focus, and does nothing again. */
+async function pressTwice(action: string, run: () => Promise<void>): Promise<void> {
+  const button = el(`[data-action="${action}"]`)
+  button.focus()
+  button.click()
+  await flushPromises()
+  expect(run).toHaveBeenCalledOnce()
+  expect(document.activeElement).toBe(button)
+  expect(button.disabled).toBe(false)
+  expect(button.getAttribute('aria-disabled')).toBe('true')
+  button.click()
+  await flushPromises()
+  expect(run).toHaveBeenCalledOnce()
+}
+
 describe('the run state and the global controls', () => {
   it('says that the queue is stopped and how many jobs wait for Start; Start starts every job', async () => {
     queue.jobs = [job('a', 'done'), job('b'), job('c')]
@@ -115,6 +130,21 @@ describe('the run state and the global controls', () => {
     el('.p-confirmdialog-accept-button').click()
     await flushPromises()
     expect(queue.cancelAll).toHaveBeenCalledOnce()
+  })
+
+  // A browser moves the focus of a button that turns disabled to the page.
+  it('keeps the focus on Start and Pause all once their action has made them unavailable', async () => {
+    queue.jobs = [job('a', 'running'), job('b')]
+    queue.start.mockImplementationOnce(async () => {
+      queue.processing = true
+    })
+    queue.pauseAll.mockImplementationOnce(async () => {
+      queue.jobs = [job('a', 'paused'), job('b')]
+    })
+    await mountIt(QueueControls)
+    await pressTwice('start', queue.start)
+    await pressTwice('pause-all', queue.pauseAll)
+    expect(queue.counts.paused).toBe(1)
   })
 
   it('offers no Cancel all when no job is open', async () => {

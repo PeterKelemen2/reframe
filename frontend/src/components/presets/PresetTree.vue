@@ -155,6 +155,16 @@ function clickCategory(name: string): void {
 function clickPreset(preset: Preset): void {
   void focus({ key: presetKey(preset.id), kind: 'preset', preset, parent: '' })
 }
+
+/** Moves the focus to a preset's item, once the tree shows it. */
+async function focusPreset(presetId: string): Promise<void> {
+  await nextTick()
+  focusKey.value = presetKey(presetId)
+  await nextTick()
+  elements.get(presetKey(presetId))?.focus()
+}
+
+defineExpose({ focusPreset })
 </script>
 
 <template>

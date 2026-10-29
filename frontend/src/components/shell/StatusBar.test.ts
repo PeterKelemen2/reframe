@@ -172,4 +172,40 @@ describe('the status bar', () => {
     expect(actions.addAll).toHaveBeenCalledTimes(1)
     expect(actions.start).toHaveBeenCalledTimes(1)
   })
+
+  // A browser moves the focus of a button that turns disabled to the page.
+  it.each([
+    ['add', actions.canAdd, actions.addCurrent],
+    ['add-all', actions.canAddAll, actions.addAll],
+    ['start', actions.canStart, actions.start],
+  ] as const)(
+    'the %s button keeps the focus while its action makes it unavailable',
+    async (name, flag, run) => {
+      flag.value = true
+      const wrapper = await mountBar()
+      run.mockImplementationOnce(async () => {
+        flag.value = false
+      })
+      const button = wrapper.find<HTMLButtonElement>(`.status-bar__${name}`).element
+      button.focus()
+      button.click()
+      await flushPromises()
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).toBe(button)
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-disabled')).toBe('true')
+      // Unavailable: Enter on it does nothing.
+      button.click()
+      await flushPromises()
+      expect(run).toHaveBeenCalledTimes(1)
+      // Once the focus has left, it is disabled for real (out of the tab order).
+      button.blur()
+      await flushPromises()
+      expect(button.disabled).toBe(true)
+      flag.value = true
+      await flushPromises()
+      expect(button.disabled).toBe(false)
+      expect(button.hasAttribute('aria-disabled')).toBe(false)
+    },
+  )
 })

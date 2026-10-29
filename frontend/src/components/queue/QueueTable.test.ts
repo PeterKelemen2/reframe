@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
 import { ApiError } from '@/api/client'
+import { deferred } from '@/api/testing/fakes'
 import type { JobSettings } from '@/api/types'
 import { SourceOpenError } from '@/stores/sources'
 
@@ -177,6 +178,85 @@ describe('the queue table', () => {
     await flushPromises()
     expect(editor.loadJob).toHaveBeenCalledWith(queue.jobs[0]?.settings)
     expect(router.currentRoute.value.name).toBe('workspace')
+  })
+
+  it('puts the focus into the workspace after Edit, and keeps it on Edit while it loads', async () => {
+    queue.jobs = [job('a', 'done')]
+    const loading = deferred()
+    editor.loadJob.mockImplementationOnce(() => loading.promise)
+    // The selected tab of the workspace, which the router shows in the app.
+    const tab = document.createElement('button')
+    tab.setAttribute('role', 'tab')
+    tab.setAttribute('aria-selected', 'true')
+    const tabs = document.createElement('div')
+    tabs.className = 'editor-tabs'
+    tabs.append(tab)
+    await mountTable()
+    document.body.append(tabs)
+    const edit = button('a', '[data-action="edit"]')
+    edit.focus()
+    edit.click()
+    await flushPromises()
+    expect(document.activeElement).toBe(edit)
+    expect(edit.disabled).toBe(false)
+    expect(edit.getAttribute('aria-busy')).toBe('true')
+    loading.resolve()
+    await flushPromises()
+    expect(document.activeElement).toBe(tab)
+  })
+
+  it.each([
+    ['running', 'pause', 'paused', 'resume'],
+    ['paused', 'resume', 'running', 'pause'],
+    ['failed', 'retry', 'waiting', 'cancel'],
+    ['waiting', 'cancel', 'cancelled', 'retry'],
+    ['running', 'cancel', 'cancelled', 'retry'],
+  ] as const)(
+    'after a %s job’s %s, the focus goes to the action that took its place',
+    async (state, action, next, replacement) => {
+      queue.jobs = [job('x', 'done'), job('a', state)]
+      await mountTable()
+      queue[action].mockImplementationOnce(async () => {
+        queue.jobs = [job('x', 'done'), job('a', next)]
+      })
+      const pressed = button('a', `[data-action="${action}"]`)
+      pressed.focus()
+      pressed.click()
+      await flushPromises()
+      expect(pressed.isConnected).toBe(false)
+      expect(document.activeElement).toBe(button('a', `[data-action="${replacement}"]`))
+    },
+  )
+
+  it('after a removal, the focus goes to the same button of the next job, else of the last one', async () => {
+    queue.jobs = [job('a', 'done'), job('b', 'done'), job('c', 'failed')]
+    queue.remove.mockImplementation(async (id) => {
+      queue.jobs = queue.jobs.filter((found) => found.id !== id)
+    })
+    await mountTable()
+    button('a', '[data-action="remove"]').focus()
+    button('a', '[data-action="remove"]').click()
+    await flushPromises()
+    expect(document.activeElement).toBe(button('b', '[data-action="remove"]'))
+    button('c', '[data-action="log"]').focus()
+    button('c', '[data-action="log"]').click()
+    queue.jobs = [job('b', 'done')]
+    await flushPromises()
+    expect(document.activeElement).toBe(button('b', '[data-action="log"]'))
+    button('b', '[data-action="remove"]').focus()
+    button('b', '[data-action="remove"]').click()
+    await flushPromises()
+    expect(document.activeElement?.textContent?.trim()).toBe('Go to the workspace')
+  })
+
+  it('leaves the focus alone when the jobs change and the focused button stays', async () => {
+    queue.jobs = [job('a', 'running', { progress: { percent: 10, step: 0, step_count: 1 } })]
+    await mountTable()
+    const pause = button('a', '[data-action="pause"]')
+    pause.focus()
+    queue.jobs = [job('a', 'running', { progress: { percent: 20, step: 0, step_count: 1 } })]
+    await flushPromises()
+    expect(document.activeElement).toBe(pause)
   })
 
   it('stays on the queue when the source cannot be opened (the reason is a toast)', async () => {

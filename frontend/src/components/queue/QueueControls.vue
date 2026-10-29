@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Ban, Pause, Play, Square, StepForward } from '@lucide/vue'
-import Button from 'primevue/button'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
 import vTooltip from 'primevue/tooltip'
@@ -10,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import { ApiError } from '@/api/client'
 import type { StatusTone } from '@/components/base/types'
 import StatusDot from '@/components/base/StatusDot.vue'
+import FocusSafeButton from '@/components/shell/FocusSafeButton'
 import { useQueueStore } from '@/stores/queue'
 
 import { runState } from './format'
@@ -73,7 +73,7 @@ function cancelAll(): void {
       <StatusDot :tone="stateTone" :label="stateText" show-label />
     </p>
     <div class="queue-controls__buttons" role="group" :aria-label="t('queue.controls.label')">
-      <Button
+      <FocusSafeButton
         v-tooltip.bottom="state.mode === 'only' ? t('queue.controls.startAllHelp') : undefined"
         size="small"
         data-action="start"
@@ -82,8 +82,8 @@ function cancelAll(): void {
         @click="run(() => queue.start())"
       >
         <template #icon><Play :size="16" aria-hidden="true" /></template>
-      </Button>
-      <Button
+      </FocusSafeButton>
+      <FocusSafeButton
         v-tooltip.bottom="t('queue.controls.stopHelp')"
         size="small"
         severity="secondary"
@@ -93,8 +93,8 @@ function cancelAll(): void {
         @click="run(() => queue.stop())"
       >
         <template #icon><Square :size="16" aria-hidden="true" /></template>
-      </Button>
-      <Button
+      </FocusSafeButton>
+      <FocusSafeButton
         size="small"
         severity="secondary"
         outlined
@@ -104,8 +104,8 @@ function cancelAll(): void {
         @click="run(() => queue.pauseAll())"
       >
         <template #icon><Pause :size="16" aria-hidden="true" /></template>
-      </Button>
-      <Button
+      </FocusSafeButton>
+      <FocusSafeButton
         size="small"
         severity="secondary"
         outlined
@@ -115,8 +115,8 @@ function cancelAll(): void {
         @click="run(() => queue.resumeAll())"
       >
         <template #icon><StepForward :size="16" aria-hidden="true" /></template>
-      </Button>
-      <Button
+      </FocusSafeButton>
+      <FocusSafeButton
         size="small"
         severity="danger"
         outlined
@@ -126,7 +126,7 @@ function cancelAll(): void {
         @click="cancelAll"
       >
         <template #icon><Ban :size="16" aria-hidden="true" /></template>
-      </Button>
+      </FocusSafeButton>
     </div>
     <ConfirmDialog :group="CONFIRM_GROUP" />
   </div>

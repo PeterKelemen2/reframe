@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ListPlus, ListVideo, Play, Plus } from '@lucide/vue'
-import Button from 'primevue/button'
 import vTooltip from 'primevue/tooltip'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -11,6 +10,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 
 import ConnectionStatus from './ConnectionStatus.vue'
+import FocusSafeButton from './FocusSafeButton'
 import ValidationSummary from './ValidationSummary.vue'
 
 const { t } = useI18n()
@@ -56,7 +56,7 @@ const queueSummary = computed(() => {
       {{ queueSummary }}
     </RouterLink>
     <div class="status-bar__actions">
-      <Button
+      <FocusSafeButton
         class="status-bar__add"
         size="small"
         :label="t('shell.queue.add')"
@@ -67,8 +67,8 @@ const queueSummary = computed(() => {
         <template #icon>
           <Plus :size="16" aria-hidden="true" />
         </template>
-      </Button>
-      <Button
+      </FocusSafeButton>
+      <FocusSafeButton
         class="status-bar__add-all"
         size="small"
         severity="secondary"
@@ -80,8 +80,8 @@ const queueSummary = computed(() => {
         <template #icon>
           <ListPlus :size="16" aria-hidden="true" />
         </template>
-      </Button>
-      <Button
+      </FocusSafeButton>
+      <FocusSafeButton
         class="status-bar__start"
         size="small"
         severity="secondary"
@@ -93,7 +93,7 @@ const queueSummary = computed(() => {
         <template #icon>
           <Play :size="16" aria-hidden="true" />
         </template>
-      </Button>
+      </FocusSafeButton>
     </div>
   </section>
 </template>
