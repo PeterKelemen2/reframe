@@ -23,9 +23,12 @@ body {
   outline-offset: var(--p-focus-ring-offset);
 }
 
-/* Read by screen readers, not shown. */
+/* Read by screen readers, not shown. Pinned to a corner of its containing block: left at its
+   place in a scrolled column, it would make the page taller than the one-window shell. */
 .rf-sr-only {
   position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   width: 1px;
   height: 1px;
   margin: -1px;
