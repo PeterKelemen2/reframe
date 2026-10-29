@@ -25,13 +25,24 @@ describe('the audio track chips', () => {
   })
 
   it("carry the output's language and flags and the source's roles", () => {
-    const [, , commentary] = audioChips(sampleJob(), multitrackSource(), DEFINITIONS)
+    const job = sampleJob()
+    job.audio![2]!.metadata!.original = true
+    const [, , commentary] = audioChips(job, multitrackSource(), DEFINITIONS)
     expect(commentary).toMatchObject({
       language: 'en',
       name: "Director's Commentary",
-      flags: ['commentary'],
+      flags: ['original'],
       roles: [{ role: 'commentary', evidence: 'flag' }],
     })
+  })
+
+  it('leave out a flag that a badge from that flag names, and keep it beside a guessed role', () => {
+    const job = sampleJob()
+    job.audio![2]!.metadata!.commentary = true
+    const source = multitrackSource()
+    expect(audioChips(job, source, DEFINITIONS)[2]?.flags).toEqual([])
+    source.audio![2]!.roles = [{ role: 'commentary', evidence: 'title', detail: 'title' }]
+    expect(audioChips(job, source, DEFINITIONS)[2]?.flags).toEqual(['commentary'])
   })
 })
 
@@ -60,5 +71,27 @@ describe('the subtitle track chips', () => {
       roles: [{ role: 'forced' }, { role: 'signs' }],
     })
     expect(external).toMatchObject({ external: 'movie.hu.srt', language: 'hu', stream: undefined })
+  })
+
+  it('leave out the forced and hearing-impaired flags that their badges name', () => {
+    const job = sampleJob()
+    job.subtitles = [
+      {
+        ...job.subtitles![0]!,
+        source: 5,
+        metadata: { ...job.subtitles![0]!.metadata!, default: false, hearing_impaired: true },
+      },
+      {
+        ...job.subtitles![0]!,
+        source: 6,
+        metadata: { ...job.subtitles![0]!.metadata!, default: true, forced: true },
+      },
+    ]
+    const [sdh, forced] = subtitleChips(job, multitrackSource())
+    expect(sdh).toMatchObject({ roles: [{ role: 'sdh' }], flags: [] })
+    expect(forced).toMatchObject({
+      roles: [{ role: 'forced' }, { role: 'signs' }],
+      flags: ['default'],
+    })
   })
 })
