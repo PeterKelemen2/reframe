@@ -16,6 +16,11 @@ import { useValidationStore } from '@/stores/validation'
 import { forgetThumbnails } from './useThumbnail'
 import { multitrackSource, sampleDefinitions } from './testing'
 
+// The naming editor is tested on its own; here it would need a complete naming preview.
+vi.mock('@/components/naming/JobNamingEditor.vue', () => ({
+  default: { name: 'JobNamingEditor', render: () => null },
+}))
+
 const SOON = { timeout: 2000, interval: 20 }
 
 /** `jobs/geometry` as the server computes it for the job's dimensions (320×180, no crop). */

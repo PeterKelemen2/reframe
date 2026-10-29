@@ -562,6 +562,14 @@ test.
   in its screenshots (light and dark), the test rules' checks, every deviation from the plan
   and from this file, every file touched outside its list, and what later tasks need.
 
+## Integration findings (the lead's checks between merges; for the fix round of wave 5)
+
+| # | Severity | Finding | Seen |
+|---|----------|---------|------|
+| L1 | major | A container change on the Summary Output card (G) leaves `output.path` with the old extension (MP4 chosen, `…/multitrack.mkv` kept); validation gives only the warning `output.extension_mismatch`, so *Add to queue* stays enabled. F's `JobNamingEditor` does not rewrite the path after a change from elsewhere (by design, so that redo is not lost) and offers *Use this path*. Expected: the container change and the new extension are one undo step | 2026-10-29, headless Chromium, real server, after merging F |
+| L2 | minor | The Output card shows its own Folder / File name / Name source rows and then F's editor below them, which shows the name again | same run |
+| L3 | minor | The first-run screen keeps *Use bundled FFmpeg* and *Choose path* enabled for an environment override, which they cannot fix (C's own note) | C's report |
+
 ## Progress
 
 | Date | What |
@@ -578,3 +586,4 @@ test.
 | 2026-10-29 | **Resumed at the owner's request; wave 3a started**: E (F-5, 877x), F (F-18, 878x; may add one section to the dev-only `SandboxView.vue` for its browser check), G (F-6, 879x), H (F-9, 870x), all `high`, with the notes of the previous row in their briefs |
 | 2026-10-29 | **Merged G** (425fe90; b2d3cf6): F-6 (seven cards; the thumbnail is a synchronous `POST /api/preview/frames` with `count: 1`, a relative URL signed for 300 s that loads under the CSP without the token, kept per source for 50 min; the estimate in bitrate mode only, passthru at the source's bitrate, unknown bitrates left out and counted; links to unbuilt tabs as plain text, the Picture card the target of `dimensions.*` / `filters.*`). The agent's mutations caught (two equivalent survivors replaced by real defects). Checks on the merge: lint, format, typecheck, 396 unit tests, `build:web`. The lead's 3 mutations caught (an estimate in quality mode; passthru not counted; a chip revealing the next track). **Open, to check after F's merge**: a container change on the Output card does not change the output path's extension |
 | 2026-10-29 | **I started early** (F-10, 871x, `high`) in the slot G freed: it needs only what is merged (the editor, the base components, G's chip paths). Wave split changed accordingly: 3b is now J, K, L as slots free up, still at most four worktrees |
+| 2026-10-29 | **Merged F** (ce merge below; e8a3642, 20773be, efde0f8): F-18 (`TemplateField` with completion after `{` and format specs, `VariableChips`, `ParsedNamePanel` with coloured spans and per-file overrides, `NamingOptionsEditor` emitting a new object per change, `JobNamingEditor` writing `/output/naming` and `/output/path` in one undo step on blur or the preview's answer; the folder of one job taken from its path). Real server: Hacksaw Ridge → folder (`Hacksaw.Ridge.mkv`), Sopranos → file (`The.Sopranos.S03E02.Proshai.Livushka.mkv`). **Found on the merge**: 9 of G's Summary tests failed, because G's sample draft lacks `naming.relative_path` (the real server always sends it) and F's editor now renders where the stub rendered nothing; the lead mocked `JobNamingEditor` in `SummaryTab.test.ts` (G's tests are about G's cards) — all 9 pass. The lead's headless check of the merged Summary tab against a real server: findings L1, L2 above |
