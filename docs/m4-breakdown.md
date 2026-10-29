@@ -439,7 +439,7 @@ copies the fixtures from `testdata/media/` into the media root, sets
 `REFRAME_POWER_DRY_RUN=1`, runs `reframe-server --mode web --auth token`, and on SIGINT,
 SIGTERM or SIGHUP stops the server and removes the home. `--tools-dir DIR` picks an FFmpeg
 build, `--fake-ffmpeg SCENARIO.json` the fake one of `reframe_testing`, `--settings FILE`
-merges settings, `--auth password` / `none`, `--cors-origin URL` for the Vite dev server
+merges settings, `--auth password` / `none` (`--password PW` sets the login password first), `--cors-origin URL` for the Vite dev server
 (`REFRAME_DEV_PORT=87N1 REFRAME_DEV_BACKEND=http://127.0.0.1:87N0 npm run dev:web`; it opens
 no browser).
 

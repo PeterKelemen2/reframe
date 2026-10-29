@@ -52,6 +52,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--auth", choices=["token", "password", "none"], default="token")
     parser.add_argument("--token", help="the run's token (default: random)")
     parser.add_argument(
+        "--password",
+        help="set this login password in the private config before the start (for --auth "
+        "password; the run's token is accepted too)",
+    )
+    parser.add_argument(
         "--tools-dir",
         type=Path,
         help="a folder with ffmpeg and ffprobe (default: the server's own discovery)",
@@ -209,6 +214,15 @@ def main(argv: list[str] | None = None) -> int:
         "--output-root",
         str(folders["output"]),
     ]
+    if args.password is not None:
+        # From a pipe, --set-password reads the first line as the password.
+        subprocess.run(
+            [sys.executable, "-m", "reframe_server", "--set-password"],
+            env=env,
+            input=f"{args.password}\n".encode(),
+            check=True,
+            capture_output=True,
+        )
     process = subprocess.Popen(command, env=env)
 
     def on_signal(signum: int, frame: FrameType | None) -> None:
