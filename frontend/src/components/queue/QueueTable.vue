@@ -79,6 +79,12 @@ const expanded = computed<Record<string, boolean>>(() =>
   ),
 )
 
+/** A failed job's issues, without the ones its error already quotes. */
+function otherIssues(job: QueueJob): NonNullable<QueueJob['issues']> {
+  const error = job.error ?? ''
+  return (job.issues ?? []).filter((issue) => !error.includes(issue.message))
+}
+
 /** The API client has shown the problem as a toast. */
 async function run(action: () => Promise<unknown>): Promise<void> {
   try {
@@ -447,9 +453,9 @@ async function move(index: number, to: number): Promise<void> {
             <component :is="SEVERITY_ICON.error" :size="16" aria-hidden="true" />
             <span>{{ data.job.error }}</span>
           </p>
-          <ul v-if="(data.job.issues ?? []).length > 0" class="queue-table__issues">
+          <ul v-if="otherIssues(data.job).length > 0" class="queue-table__issues">
             <li
-              v-for="(issue, index) in data.job.issues"
+              v-for="(issue, index) in otherIssues(data.job)"
               :key="`${issue.code}:${index}`"
               :class="`queue-table__issue--${issue.severity}`"
               :data-severity="issue.severity"

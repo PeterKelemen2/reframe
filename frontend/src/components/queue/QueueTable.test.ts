@@ -315,6 +315,34 @@ describe('the queue table', () => {
     ).toEqual(['error', 'warning'])
   })
 
+  it('says why a job failed once: an issue that its error quotes is not listed again', async () => {
+    const claimed =
+      'a.mkv is also the output of a job that is waiting in the queue (a.mkv): this job would replace that file.'
+    queue.jobs = [
+      job('a', 'failed', {
+        error: `The job has errors: ${claimed}`,
+        issues: [
+          { severity: 'info', code: 'crop', path: 'dimensions.crop', message: 'Crop did not run' },
+          {
+            severity: 'error',
+            code: 'queue.output_claimed',
+            path: 'output.path',
+            message: claimed,
+          },
+        ],
+      }),
+    ]
+    await mountTable()
+    const problem = document.querySelector('[data-field="problem"]')
+    expect(problem?.querySelector('[data-field="error"]')?.textContent?.trim()).toBe(
+      `The job has errors: ${claimed}`,
+    )
+    expect(
+      [...(problem?.querySelectorAll('li') ?? [])].map((li) => li.textContent?.trim()),
+    ).toEqual(['Note: Crop did not run'])
+    expect(problem?.textContent?.split(claimed)).toHaveLength(2)
+  })
+
   it('says that the queue is empty and links to the workspace', async () => {
     await mountTable()
     const empty = document.querySelector('[data-state="empty"]')
