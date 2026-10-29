@@ -458,8 +458,9 @@ oxfmt's output on a few `.vue` files with templates once before you commit to it
 Done when: a component sandbox page (dev only) shows every base component in both themes.
 
 ### F-2 API layer and events
-- [ ] Typed client from `schema.d.ts`. Auth header or cookie. Problem+json → toast.
-- [ ] WebSocket client: reconnect with backoff, resync snapshots, dispatch events to stores.
+- [x] Typed client from `schema.d.ts`. Auth header or cookie. Problem+json → toast.
+- [x] WebSocket client: reconnect with backoff, resync snapshots, dispatch events to stores
+      (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task B").
 
 ### F-3 App shell
 - [ ] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
