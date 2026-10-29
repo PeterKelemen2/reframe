@@ -1325,4 +1325,89 @@ with a newer settings file. Every change below was read back with `GET /api/sett
 
 ## Task M — F-17 Playwright set-up and flow 3
 
-(Written by task M.)
+Built: `frontend/playwright.config.ts` (the servers, `retries: 0`, timeouts, one worker per
+project), `frontend/e2e/support/servers.ts` (the `webServer` entries), `support/app.ts` (open
+the app, open a file through the file browser, wait for a store value, read and act on the
+queue), `support/test.ts` (the `test` with the queue fixture), the scenario
+`e2e/fake-ffmpeg.json`, the settings `e2e/settings.json`, and flow 3,
+`e2e/flow3-unavailable-encoder.spec.ts`.
+
+### What was checked against the real tools (2026-10-29)
+
+1. **The FFmpeg of the tests.** `scripts/dev-server.py --fake-ffmpeg e2e/fake-ffmpeg.json
+   --settings e2e/settings.json` (hardware test encodes on), with the pinned FFmpeg n9.0.2 first
+   on `PATH`, gives in `GET /api/system/encoders`: `libx264`, `libx265`, `libsvtav1`,
+   `libvpx-vp9` available; `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` unavailable "NVIDIA driver
+   not found"; the QSV encoders "No Intel QSV device (needs an Intel GPU with its media
+   driver)"; the AMF encoders "AMD AMF runtime not found (libamfrt64.so.1)"; the VAAPI encoders
+   "VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error)"; `libplacebo` a
+   filter failure "No working Vulkan driver"; `ffmpeg_version` the pinned build's. The built-in
+   *H.265 NVENC 1080p* on `multitrack.mkv` then shows the banner "Preset *H.265 NVENC 1080p*
+   uses `hevc_nvenc`, which is not available: NVIDIA driver not found" with the fix *Use
+   libx265 (closest match; quality CQ 27 → RF 22, approximate)*, and the job encodes to `done`
+   with the real libx265.
+2. **The stop.** Playwright 1.64.1 starts each `webServer` command through a shell spawned
+   `detached` (a new process group: `sh`, `uv`, `dev-server.py`, `reframe_server`, its
+   ffmpeg). Without `gracefulShutdown` it ends the group with SIGKILL, which would leave the
+   server's home behind; with `gracefulShutdown: { signal: 'SIGTERM', timeout }` it sends
+   SIGTERM to the group, waits until the shell's output pipes close (every process of the
+   group holds them, so this is when `dev-server.py` has finished), and sends SIGKILL only after
+   the timeout. It starts the `webServer` entries one after the other, before any global set-up,
+   and stops them on SIGINT too (read in `playwright/lib/runner/index.js` and
+   `playwright-core/lib/coreBundle.js`). `uv run` (0.13.5) passes SIGTERM on to its child and
+   waits for it: SIGTERM to the `uv` process alone stopped the server and removed the home.
+   `dev-server.py` acts on the first signal only, so the group's SIGTERM plus uv's forwarded one
+   do no harm.
+3. **Nothing left behind**, checked with `pgrep -af "dev-server|reframe_server"` and
+   `ls -d /tmp/reframe-dev-*` after two passes in a row, after a forced failure, and after
+   SIGINT to the whole process group of `npm run e2e` (what Ctrl+C in a terminal sends) while
+   both tests ran: no process and no home of this run (npm exited with 130 after about 1 s).
+
+### Choices where the plan leaves one
+
+1. **The fake FFmpeg passes through.** 06 asks for fake FFmpeg; flow 3 needs an encoder that is
+   unavailable with a reason, and a closest match that is the same on every machine. With the
+   real FFmpeg the answer depends on the machine (this AMD desktop: `hevc_amf`; no GPU:
+   `libx265`; an NVIDIA GPU: NVENC works and the flow cannot run). The scenario answers every
+   hardware test encode (`-i color=size=640x360 … -c:v <hw>`) with a captured real failure of
+   its family (`fake_data/`, NVENC: "Cannot load libcuda.so.1") and passes every other call to
+   the real `ffmpeg` / `ffprobe` (`exec`), so the probe and the encode are real. The closest
+   match of `hevc_nvenc` (chain QSV, AMF, VAAPI, libx265) is then always `libx265`, the plan's
+   own example (03 §Missing encoder behaviour), and the flow names it. Which real FFmpeg: the
+   folder in `REFRAME_TEST_TOOLS_DIR`, else the pinned build in `.tools/`, put first on the
+   servers' `PATH`; else the `ffmpeg` already on `PATH` (it needs libx265).
+2. **One server per browser project** (Chromium 8750, Firefox 8751), each a new home with the
+   `multitrack` fixture and the known token `reframe-e2e-token`; the page opens `/#token=…`.
+   The projects run at the same time; inside a project the tests take turns (`workers: 1` per
+   project), and the auto fixture `ownQueue` (`e2e/support/test.ts`) gives the queue back as it
+   found it: Stop if it was not processing, cancel the test's running or paused jobs, wait for
+   them to end, remove the test's jobs. A test finds its own job as the one whose id was not in
+   the queue before. Without the fixture a second run on the same server fails ("the job was
+   added as failed": *multitrack.mp4* is also the output of a waiting job; or the job runs at
+   once because the queue was left started). What it does not give back: the output file of a
+   finished job stays in the output root, so a later flow on the same fixture sees that file.
+3. **`dist/` is built on every run**: the first `webServer` command is
+   `npm run build:web && uv run python scripts/dev-server.py …` (about 1 s), and Playwright
+   starts the second server only after the first answers.
+4. **Server output is not shown** (`stdout` / `stderr: 'ignore'`): the server logs every
+   request. `DEBUG=pw:webserver npm run e2e` shows it.
+5. **No retries** (`retries: 0`), screenshots only on failure, traces kept on failure (in
+   `e2e/.results/`, git-ignored). Store values are waited for with `expect.poll` over
+   `page.evaluate` of a function (the app's CSP refuses a string), through the app's Pinia; the
+   flow itself acts only through the UI.
+
+### Consequences
+
+- **`scripts/dev-server.py` leaves its home behind when it fails before the server starts**
+  (a missing fixture, an unreadable `--settings` file): the home is made with `mkdtemp` before
+  the `try` whose `finally` removes it (`--fixtures multitrack,nonexistent` left
+  `/tmp/reframe-dev-rvl_8n8e`). For the lead: wrap everything after `mkdtemp`.
+- A second Ctrl+C within the stop makes Playwright exit at once and kill the group with
+  SIGKILL, which can leave a home behind; one Ctrl+C is clean.
+- CI (Q-1.1) needs, for `npm run e2e`: Python with `uv sync`, `testdata/media/multitrack.mkv`
+  (`scripts/make-testdata.py`), `npm ci`, the browsers (`npx playwright install chromium
+  firefox`, CI only), an FFmpeg with libx265 in `REFRAME_TEST_TOOLS_DIR` or on `PATH` (the
+  bundled build in the job's `REFRAME_DATA_DIR` is not seen: `dev-server.py` gives the server
+  its own data folder), and the ports 8750 and 8751 free.
+- 09 §Q-2 names Chromium and WebKit; M4 runs Chromium and Firefox (the browsers in the cache);
+  06 §F-17 leaves WebKit for M10.

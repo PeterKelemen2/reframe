@@ -1,0 +1,48 @@
+{
+  "rules": [
+    {
+      "tool": "ffmpeg",
+      "argv_has": ["color=size=640x360"],
+      "argv_regex": "-c:v hevc_nvenc ",
+      "actions": [{ "stderr_data": "detect_hevc_nvenc_no_driver.stderr.txt" }],
+      "exit_code": 255
+    },
+    {
+      "tool": "ffmpeg",
+      "argv_has": ["color=size=640x360"],
+      "argv_regex": "-c:v \\w+_nvenc ",
+      "actions": [{ "stderr_data": "hw_h264_nvenc_no_driver.stderr.txt" }],
+      "exit_code": 255
+    },
+    {
+      "tool": "ffmpeg",
+      "argv_has": ["color=size=640x360"],
+      "argv_regex": "-c:v \\w+_qsv ",
+      "actions": [{ "stderr_data": "detect_hevc_qsv_no_device.stderr.txt" }],
+      "exit_code": 187
+    },
+    {
+      "tool": "ffmpeg",
+      "argv_has": ["color=size=640x360"],
+      "argv_regex": "-c:v \\w+_amf ",
+      "actions": [{ "stderr_data": "detect_hevc_amf_no_runtime.stderr.txt" }],
+      "exit_code": 171
+    },
+    {
+      "tool": "ffmpeg",
+      "argv_has": ["color=size=640x360"],
+      "argv_regex": "-c:v \\w+_vaapi ",
+      "actions": [{ "stderr_data": "detect_h264_vaapi_no_driver.stderr.txt" }],
+      "exit_code": 251
+    },
+    {
+      "tool": "ffmpeg",
+      "argv_has": ["color=size=640x360", "libplacebo"],
+      "actions": [{ "stderr_data": "detect_libplacebo_no_vulkan.stderr.txt" }],
+      "exit_code": 187
+    },
+    { "tool": "ffmpeg", "actions": [{ "exec": "ffmpeg" }] },
+    { "tool": "ffprobe", "actions": [{ "exec": "ffprobe" }] }
+  ],
+  "defaults": false
+}
