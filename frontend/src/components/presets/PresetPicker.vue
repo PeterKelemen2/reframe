@@ -151,20 +151,24 @@ const saveAsInitial = computed<PresetDetailsInput>(() => ({
 /** Saves the current settings as a new preset, and the job then follows that preset. */
 async function saveAs(details: PresetDetailsInput): Promise<void> {
   if (template.value === null) return
+  // Only the job the settings came from follows the new preset: by the answer, another source
+  // or another preset may be open.
+  const session = editor.session
+  const from = presetId.value
   const created = await presets.create({ template: template.value, ...details })
+  toasts.push({
+    severity: 'success',
+    summary: t('presets.picker.saved', { name: created.name }),
+    life: 5000,
+  })
   const opened = job.value
-  if (opened === null) return
+  if (opened === null || editor.session !== session || presetId.value !== from) return
   savedAs = true
   const op = (path: string) => (hasPointer(opened, path) ? 'replace' : 'add')
   editor.patch([
     { op: op('/preset_id'), path: '/preset_id', value: created.id },
     { op: op('/preset_name'), path: '/preset_name', value: created.name },
   ] as JsonPatchOp[])
-  toasts.push({
-    severity: 'success',
-    summary: t('presets.picker.saved', { name: created.name }),
-    life: 5000,
-  })
 }
 
 async function update(): Promise<void> {

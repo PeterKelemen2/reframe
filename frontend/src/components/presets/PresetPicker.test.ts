@@ -3,7 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { reactive } from 'vue'
 
 import { configureClient } from '@/api/client'
-import { FakeServer } from '@/api/testing/fakes'
+import { deferred, FakeServer } from '@/api/testing/fakes'
 import type { FieldChange, JobSettings, JobTemplate, JsonPatchOp, Preset } from '@/api/types'
 import { sampleJob } from '@/editor/testing/samples'
 import { stubDom } from '@/components/naming/testing/samples'
@@ -20,6 +20,7 @@ const MINE = userPreset('u1', 'Mine')
 
 // A double of the editor store: the picker reads the job's preset and its changes from it.
 const editor = reactive({
+  session: 1,
   job: null as JobSettings | null,
   presetId: null as string | null,
   preset: null as Preset | null,
@@ -51,6 +52,7 @@ beforeAll(stubDom)
 beforeEach(() => {
   server = new FakeServer().on('GET /api/presets', presetList([FAST, H265, MINE]))
   configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
+  editor.session = 1
   editor.job = null
   editor.presetId = null
   editor.preset = null
@@ -258,6 +260,37 @@ describe('the preset picker', () => {
       expect(document.activeElement).toBe(wrapper.find('.preset-picker__trigger').element),
     )
   })
+
+  it.each([
+    [
+      'another source with the same preset',
+      () => {
+        editor.session += 1
+        openJob(H265)
+      },
+    ],
+    ['another preset', () => openJob(FAST)],
+  ])(
+    'leaves the job alone when %s was opened while the new preset was saved',
+    async (_, change) => {
+      openJob(H265, [ENCODER_CHANGE])
+      const answer = deferred<Response>()
+      server.on('POST /api/presets', () => answer.promise)
+      const { wrapper } = await mountPicker()
+      await wrapper.find('.preset-picker__modified').trigger('click')
+      await flushPromises()
+      await click('.preset-picker__save-as')
+      const input = body().querySelector<HTMLInputElement>('.preset-name-dialog__name')!
+      input.value = 'My x264'
+      input.dispatchEvent(new Event('input'))
+      await flushPromises()
+      await click('.preset-name-dialog__submit')
+      change()
+      answer.resolve(new Response(JSON.stringify(userPreset('u2', 'My x264')), { status: 201 }))
+      await flushPromises()
+      expect(editor.patch).not.toHaveBeenCalled()
+    },
+  )
 
   it('shows a name clash at the name and takes the free name the server offers', async () => {
     openJob(H265, [ENCODER_CHANGE])
