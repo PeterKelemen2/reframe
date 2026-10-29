@@ -28,7 +28,7 @@ import VariableChips from './VariableChips.vue'
 /**
  * The editor's job's output name (the Summary tab's Output card): the template or a manual
  * name, the name source, the parsed-name panel with per-file field overrides, and the output
- * folder. Edits are kept here until the preview has named them; then the naming and the output
+ * folder. An edit waits here for its preview (or the end of typing); then the naming and the output
  * path go into the job as one undo step.
  */
 const props = defineProps<{
@@ -87,6 +87,16 @@ let editKey: string | undefined
 /** A text field lost the focus while its edit was on its way: end the step after it lands. */
 let endAfterCommit = false
 let inFlight: { base: JobSettings; naming: JobNaming } | null = null
+/** The naming went into the job before its preview: the path follows with the answer. */
+let owed: { previous: string | null | undefined } | null = null
+
+/** The name the job's path was made with (it tells the job's folder from its path). */
+function previousName(job: JobSettings): string | null | undefined {
+  return (
+    applied.value?.result.relative_path ??
+    (editor.draft?.job === job ? editor.draft.naming?.relative_path : null)
+  )
+}
 
 const sourceId = computed(() => (editor.target?.kind === 'job' ? editor.target.sourceId : null))
 
@@ -122,20 +132,26 @@ const runner = latestRequest<{ base: JobSettings; naming: JobNaming; answer?: Na
   done({ base, naming, answer }) {
     pending.value = false
     failure.value = null
-    if (answer === undefined || editor.job !== base) return
+    if (answer === undefined) return
     result.value = answer
-    if (sameNaming(naming, base.output?.naming)) {
-      applied.value = { job: base, result: answer }
-    } else {
-      const previous =
-        applied.value?.result.relative_path ??
-        (editor.draft?.job === base ? editor.draft.naming?.relative_path : null)
-      commit(base, naming, nextOutputPath(base.output?.path, previous, answer))
-      applied.value = editor.job === null ? null : { job: editor.job, result: answer }
+    if (!sameNaming(naming, base.output?.naming)) {
+      commit(base, naming, nextOutputPath(base.output?.path, previousName(base), answer))
+    } else if (owed !== null) {
+      const path = nextOutputPath(base.output?.path, owed.previous, answer)
+      if (path !== (base.output?.path ?? null)) {
+        editor.patch(
+          [{ op: 'add', path: '/output/path', value: path }],
+          editKey === undefined ? undefined : { coalesce: editKey },
+        )
+        ownJob = editor.job
+      }
     }
+    owed = null
+    applied.value = editor.job === null ? null : { job: editor.job, result: answer }
     finishGesture()
   },
   failed(error) {
+    owed = null
     pending.value = false
     failure.value = failureText(error) ?? t('naming.preview.failed')
     // The edit is kept even without a name for it; the output path stays as it was.
@@ -207,14 +223,20 @@ function edit(change: Partial<JobNaming>, key?: string): void {
   schedule(PREVIEW_DEBOUNCE)
 }
 
-/** A text field lost the focus: its edit goes into the job now and ends its undo step. */
+/**
+ * A text field lost the focus: its edit goes into the job at once (a click on *Add to queue*
+ * comes right after), the path follows with the preview in the same undo step, which ends there.
+ */
 function onBlur(): void {
-  if (pending.value) {
-    endAfterCommit = true
-    runner.schedule(0)
-  } else {
+  const job = editor.job
+  if (job === null || sameNaming(local.value, job.output?.naming)) {
     editor.endCoalescing()
+    return
   }
+  owed = { previous: previousName(job) }
+  commit(job, local.value, undefined)
+  endAfterCommit = true
+  schedule(0)
 }
 
 /** Without a template of its own, the job uses the naming options' (the preset's, else the settings'). */

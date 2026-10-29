@@ -1,5 +1,4 @@
-// What the naming editors rely on in the real server's `naming/preview` (the release names of
-// the plan's naming examples).
+// What the naming editors rely on in the real server's `naming/preview`, with release names.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { type DevServer, startServer } from '@/api/testing/devServer.mjs'

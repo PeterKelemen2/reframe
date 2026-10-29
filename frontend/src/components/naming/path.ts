@@ -30,9 +30,7 @@ export function folderOf(path: string | null | undefined, relative?: string | nu
   if (!path) return null
   const sep = separatorOf(path)
   if (relative) {
-    const tail = sep + relative.split('/').join(sep)
-    if (path.endsWith(tail)) return path.slice(0, -tail.length) || sep
-    const tailStem = stem(tail)
+    const tailStem = stem(sep + relative.split('/').join(sep))
     const pathStem = stem(path)
     if (pathStem.endsWith(tailStem)) return pathStem.slice(0, -tailStem.length) || sep
   }

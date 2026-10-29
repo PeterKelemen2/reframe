@@ -30,6 +30,7 @@ describe('completionAt', () => {
   it('offers nothing outside a variable', () => {
     expect(completionAt('{main_title}.x', 14)).toBeNull()
     expect(completionAt('plain', 3)).toBeNull()
+    expect(completionAt('{season:02}.', 12)).toBeNull()
   })
 
   it('takes a doubled brace as literal text', () => {

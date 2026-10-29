@@ -154,14 +154,26 @@ describe('JobNamingEditor', () => {
     expect(editor.job).toEqual(before)
   })
 
-  it('sends a pending edit at once when its field loses the focus', async () => {
+  it('puts a pending edit into the job when its field loses the focus, and its path with the answer, as one undo step', async () => {
     const { editor, wrapper } = await mountOpened()
+    const before = structuredClone(editor.job)
     const input = wrapper.get('input[role="combobox"]')
     await input.setValue('{main_title}.now')
     await input.trigger('blur')
+    // At once: a click on Add to queue follows the blur.
+    expect(naming(editor)?.template).toBe('{main_title}.now')
     await vi.advanceTimersByTimeAsync(0)
     await flushPromises()
+    expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.now.mkv')
+
+    // The step ended with the path: the next typing is a step of its own.
+    await input.setValue('{main_title}.later')
+    await settle()
+    editor.undo()
     expect(naming(editor)?.template).toBe('{main_title}.now')
+    expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.now.mkv')
+    editor.undo()
+    expect(editor.job).toEqual(before)
   })
 
   it('keeps the folder chosen for the job when the name changes', async () => {
