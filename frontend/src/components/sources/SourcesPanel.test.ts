@@ -91,6 +91,31 @@ const item = (id: string) => $(`[data-key="source:${id}"]`) as HTMLElement
 const groupItem = () => $('[data-key="group:g1"]') as HTMLElement
 const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, ' ').trim()
 
+/** Text as a screen reader computes it: `aria-label` replaces content, hidden parts drop out. */
+function spoken(node: Node): string {
+  if (node instanceof Element) {
+    if (node.getAttribute('aria-hidden') === 'true') return ''
+    const label = node.getAttribute('aria-label')
+    if (label !== null) return label
+    return [...node.childNodes].map(spoken).join(' ')
+  }
+  return node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '') : ''
+}
+
+function referenced(element: HTMLElement, attribute: string): string | undefined {
+  const ids = element.getAttribute(attribute)
+  if (ids === null) return undefined
+  return ids
+    .split(/\s+/)
+    .map((id) => {
+      const target = document.getElementById(id)
+      return target === null ? '' : spoken(target)
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function key(name: string): Promise<void> {
   const target = document.activeElement ?? document.body
   target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }))
@@ -109,9 +134,25 @@ describe('the sources panel', () => {
     expect(text(item('movie.mkv').querySelector('[data-field="summary"]'))).toBe(
       'MKV · 1:05 · H.264 1920×1080',
     )
-    expect($$('[data-field="warning"]').map(text)).toEqual(['The container reports no duration.'])
+    expect($$('[data-field="warning"]').map(text)).toEqual([
+      'Probe warning: The container reports no duration.',
+    ])
     expect(item('movie.mkv').getAttribute('aria-selected')).toBe('true')
     expect(item('Show.S01E01.mkv').getAttribute('aria-selected')).toBe('false')
+  })
+
+  it('names a source by its file and describes it by its line and warnings, without its buttons', async () => {
+    await mountPanel(withShow)
+    expect(referenced(item('movie.mkv'), 'aria-labelledby')).toBe('movie.mkv')
+    expect(referenced(item('movie.mkv'), 'aria-describedby')).toBe(
+      'MKV · 1:05 · H.264 1920×1080 Probe warning: The container reports no duration.',
+    )
+    expect(referenced(item('Show.S01E05.mkv'), 'aria-labelledby')).toBe(
+      'Near match: added with differences E05 Show.S01E05.mkv',
+    )
+    expect(referenced(item('Show.S01E05.mkv'), 'aria-describedby')).toBe(
+      '1 extra track (eng AC-3 2.0 "Commentary")',
+    )
   })
 
   it('shows a group with its size, level and near matches, its members by episode', async () => {

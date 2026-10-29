@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useSettingsStore } from '@/stores/settings'
 
 import AppearanceSection from './AppearanceSection.vue'
-import { mountSettings } from './testing'
+import { comboboxName, mountSettings } from './testing'
 
 globalThis.matchMedia ??= (query: string) =>
   ({
@@ -55,6 +55,11 @@ describe('the Appearance section', () => {
       [{ op: 'replace', path: '/appearance/density', value: 'compact' }],
     ])
     expect(buttons('theme')?.props('modelValue')).toBe('dark')
+  })
+
+  it('names the language list by its label, not by its value', async () => {
+    await mountAppearance()
+    expect(comboboxName('ui-language')).toBe('Language')
   })
 
   it('offers only the languages this build has, by name', async () => {

@@ -8,7 +8,7 @@ import type { NamingOptions, SourceEntry } from '@/api/types'
 import { useSourcesStore } from '@/stores/sources'
 
 import OutputSection from './OutputSection.vue'
-import { defaultSettings, mountSettings, refusal } from './testing'
+import { comboboxName, defaultSettings, mountSettings, refusal } from './testing'
 import { NAMING_SAVE_DELAY, namingOps } from './useNamingSetting'
 
 // The naming editor has its own tests; here it only hands over whole objects.
@@ -133,6 +133,11 @@ describe('the Output section', () => {
     })
     expect(editor().props('sourceIds')).toEqual(['a'])
     expect(editor().props('container')).toBe('mkv')
+  })
+
+  it('names the container list by its label, not by its value', async () => {
+    await mountOutput()
+    expect(comboboxName('default-container')).toBe('Default container')
   })
 
   it('saves the default container, collision and partial-file behaviour at once', async () => {

@@ -154,10 +154,11 @@ async function useTyped(): Promise<void> {
         :help="t('settings.encoders.vaapiHelp')"
         :issues="vaapiDevice.issues.value"
       >
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <div class="encoders-section__device">
             <Select
               :label-id="id"
+              :ariaLabelledby="labelId"
               :model-value="deviceChoice"
               :options="deviceOptions"
               option-label="label"

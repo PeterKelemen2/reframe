@@ -20,6 +20,10 @@ const { t } = useI18n()
 const sources = useSourcesStore()
 const id = useId() ?? 'sources'
 
+function itemId(entryId: string): string {
+  return `${id}-item-${entryId}`
+}
+
 const root = useTemplateRef<HTMLElement>('root')
 const tree = useTemplateRef<HTMLElement>('tree')
 const collapsed = ref(new Set<string>())
@@ -377,10 +381,13 @@ onBeforeUnmount(() => stopDrops?.())
           :aria-level="1"
           :tabindex="tabKey === sourceKey(item.entry.id) ? 0 : -1"
           :data-key="sourceKey(item.entry.id)"
+          :aria-labelledby="`${itemId(item.entry.id)}-title`"
+          :aria-describedby="`${itemId(item.entry.id)}-details`"
           @click="choose(item.entry.id)"
         >
           <SourceItem
             :entry="item.entry"
+            :id-base="itemId(item.entry.id)"
             @remove="askRemove(sourceKey(item.entry.id))"
             @reprobe="reprobe(item.entry)"
           />
@@ -437,10 +444,13 @@ onBeforeUnmount(() => stopDrops?.())
               :tabindex="tabKey === sourceKey(row.entry.id) ? 0 : -1"
               :data-key="sourceKey(row.entry.id)"
               :data-match="row.member.match"
+              :aria-labelledby="`${itemId(row.entry.id)}-title`"
+              :aria-describedby="`${itemId(row.entry.id)}-details`"
               @click.stop="choose(row.entry.id)"
             >
               <SourceItem
                 :entry="row.entry"
+                :id-base="itemId(row.entry.id)"
                 :member="row.member"
                 :label="row.label"
                 @remove="askRemove(sourceKey(row.entry.id))"

@@ -83,9 +83,10 @@ const languages = computed(() => {
         :help="t('settings.appearance.languageHelp')"
         :issues="language.issues.value"
       >
-        <template #default="{ id, invalid }">
+        <template #default="{ id, labelId, invalid }">
           <Select
             :label-id="id"
+            :ariaLabelledby="labelId"
             :model-value="language.value.value"
             :options="languages"
             option-label="label"
