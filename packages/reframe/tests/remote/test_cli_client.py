@@ -468,6 +468,43 @@ async def test_a_stop_by_another_front_end_is_reported_and_a_later_start_runs_th
     assert states(server)[b] is JobState.DONE
 
 
+async def test_the_idle_end_of_another_commands_start_is_not_reported_as_a_stop(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After the UI's Stop, another CLI starts only its own job Y; Y's end makes the queue idle
+    while B still waits: that is no second stop. C's cancel comes after the idle event, so once
+    the command shows it, it has handled the idle event with B waiting."""
+    server.api.fake.set_scenario(scenario(ends("Y.mkv")))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B", "C")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    c = await job_of(server, "C.mkv", JobState.WAITING)
+    await poll(lambda: queue.only == [a, b, c])  # the command's start
+    await queue.stop()
+    await queue.cancel(a)
+    other = await queue.add(await server.job("Y.mkv"))
+    queue.start(job_ids=[other.id])
+    [ended] = await asyncio.wait_for(queue.wait([other.id]), WAIT)
+    assert ended.state is JobState.DONE
+    assert not queue.processing  # idle, with B and C still waiting
+    await queue.cancel(c)
+    out: list[str] = []
+
+    def c_shown() -> bool:
+        out.append(capsys.readouterr().out)
+        return "[3/3] cancelled" in "".join(out).splitlines()
+
+    await poll(c_shown)
+    await queue.cancel(b)
+    code = await asyncio.wait_for(task, WAIT)
+    lines = "".join([*out, capsys.readouterr().out]).splitlines()
+    assert code == cli.EXIT_FAILED, lines
+    assert lines.count(cli.STOPPED_BY_OTHERS) == 1
+
+
 async def test_a_stop_while_none_of_its_jobs_waits_is_not_reported(
     server: Server, capsys: pytest.CaptureFixture[str]
 ) -> None:
