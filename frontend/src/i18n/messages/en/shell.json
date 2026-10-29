@@ -1,6 +1,117 @@
 {
+  "nav": {
+    "label": "Main",
+    "logout": "Sign out"
+  },
+  "theme": {
+    "button": "Appearance",
+    "title": "Appearance",
+    "theme": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "density": "Density",
+    "comfortable": "Comfortable",
+    "compact": "Compact"
+  },
+  "connection": {
+    "open": "Connected to the server",
+    "connecting": "Connecting…",
+    "reconnecting": "Connection lost, reconnecting…",
+    "unauthorized": "Signed out by the server",
+    "closed": "Not connected",
+    "short": {
+      "connecting": "Connecting…",
+      "reconnecting": "Reconnecting…",
+      "unauthorized": "Signed out",
+      "closed": "Offline"
+    }
+  },
+  "boot": {
+    "connecting": "Connecting to the Reframe server…",
+    "offline": "The Reframe server cannot be reached",
+    "offlineDetail": "Check that the server is running. Reframe tries again on its own."
+  },
+  "login": {
+    "title": "Sign in to Reframe",
+    "tokenIntro": "This server wants its access token. It is part of the address the server printed when it started (after #token=).",
+    "passwordIntro": "This server is protected by a password.",
+    "token": "Access token",
+    "password": "Password",
+    "submit": "Sign in",
+    "wrongToken": "The server does not accept this token.",
+    "wrongPassword": "The password is wrong.",
+    "required": "Enter a value first."
+  },
+  "firstRun": {
+    "title": "FFmpeg cannot be used",
+    "intro": "Reframe needs FFmpeg and FFprobe to read and encode videos. Until they work, the workspace is not available; presets and settings can still be used.",
+    "tools": "The tools Reframe found",
+    "useBundled": "Use bundled FFmpeg",
+    "choosePath": "Choose path",
+    "checkAgain": "Check again",
+    "downloading": "Downloading FFmpeg…",
+    "notFound": "No binary was found",
+    "status": {
+      "found": "Found",
+      "missing": "Missing",
+      "too_old": "Too old",
+      "broken": "Does not work"
+    },
+    "origin": {
+      "env": "From an environment variable",
+      "settings": "From a path in the settings",
+      "bundled": "Bundled with Reframe",
+      "path": "From the system PATH",
+      "none": "Not found anywhere"
+    },
+    "version": "Version {version}"
+  },
+  "keys": {
+    "open": "Ctrl+O"
+  },
   "workspace": {
-    "title": "Workspace",
-    "placeholder": "Sources, settings and preview will appear here."
+    "noSource": "No source open",
+    "emptyTitle": "Open a video to start",
+    "emptyText": "Choose one or more video files. Reframe reads their tracks, and you choose what to keep.",
+    "emptyShortcut": "Shortcut: {key}",
+    "open": "Open files…",
+    "tabs": "Settings of the job"
+  },
+  "preview": {
+    "title": "Preview",
+    "show": "Show the preview",
+    "hide": "Hide the preview",
+    "later": "The frame preview comes in a later version of Reframe."
+  },
+  "status": {
+    "label": "Status and queue actions",
+    "output": "Output",
+    "noOutput": "No output path yet",
+    "issues": {
+      "title": "Issues of this job",
+      "checking": "Checking…",
+      "none": "No issues",
+      "errors": "{n} error | {n} errors",
+      "warnings": "{n} warning | {n} warnings",
+      "infos": "{n} note | {n} notes"
+    }
+  },
+  "queue": {
+    "add": "Add to queue",
+    "addAll": "Add all",
+    "start": "Start",
+    "idle": "Queue: nothing waiting",
+    "running": "{n} running",
+    "paused": "{n} paused",
+    "waiting": "{n} waiting",
+    "summary": "Queue: {parts}",
+    "added": "Added to the queue",
+    "addedAll": "{n} job added to the queue | {n} jobs added to the queue",
+    "addFailed": "The job was added as failed",
+    "notAdded": "{n} source was not added | {n} sources were not added",
+    "notAddedLine": "{name}: {reason}",
+    "stillChecking": "its settings are still being checked",
+    "noOutputPath": "it has no output path"
   }
 }

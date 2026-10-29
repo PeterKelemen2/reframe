@@ -463,9 +463,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task B").
 
 ### F-3 App shell
-- [ ] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
+- [x] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
       shortcuts, theme switch, toasts, a first-run screen when FFmpeg is missing.
-- [ ] A tab of a later milestone is not shown until it is built, and its `Ctrl+N` does nothing
+- [x] A tab of a later milestone is not shown until it is built, and its `Ctrl+N` does nothing
       ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-4 Editor state

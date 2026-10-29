@@ -361,7 +361,108 @@ restarted or forgot it). The copy keeps the 200 newest ended tasks (the server's
 
 ## Task C — F-3 app shell
 
-(Written by task C.)
+Built: `App.vue`, `components/shell/` (`NavRail`, `ThemeSwitch`, `ConnectionStatus`,
+`ShellToasts`, `BootScreen`, `LoginScreen`, `FirstRunScreen`, `EditorTabs`, `PreviewPanel`,
+`StatusBar`, `ValidationSummary`, `format.ts`, the test helper `testing.ts`),
+`views/WorkspaceView.vue`, `composables/useQueueActions.ts`, `composables/useShortcuts.ts`,
+`i18n/messages/en/shell.json`.
+
+Choices where the plan leaves one:
+
+1. **Screens per phase.** `booting` and `offline` share one screen (a spinner, or "cannot be
+   reached" with "Reframe tries again on its own"; boot retries, there is no "try now" button);
+   `login` is the login screen; only `ready` shows the rail and the views. A later lost
+   connection keeps the screens (`connection` `reconnecting`): the rail shows a short label under
+   its dot on every view (the rail's copy is the live region), the status bar the full one.
+   Password mode has a *Sign out* button in the rail; token mode has none (the token would have
+   to be pasted again).
+2. **Login.** One field: the token (`loginWithToken`, trimmed) or the password (`login`, as
+   typed). A refusal (`false`) and any other `ApiError` (a 429, a lost server: its `title` and
+   `detail`) show inline at the field through `Field`'s `issues`, never as a toast.
+3. **Toasts** leave the toast store only when PrimeVue's toast closes them (close button or
+   `life` end), not when they are shown: the API client shows one "cannot be reached" toast at a
+   time by looking for it in the store. The shell starts showing store items when its `Toast`
+   has mounted: PrimeVue's toast drops messages added before it listens (found by a unit test;
+   a toast pushed during the boot was lost). A toast's `detail` keeps its line breaks (*Add
+   all*'s list).
+4. **First-run screen** replaces only the workspace view; the rail, Queue, Presets, Activity
+   and Settings stay. It shows the server's reason (`system.ffmpegProblem`), then ffmpeg and
+   ffprobe each with status, origin ("From an environment variable", "From a path in the
+   settings", "Bundled with Reframe", "From the system PATH", "Not found anywhere"), path,
+   version and its own reason when it differs from the headline. *Use bundled FFmpeg* calls
+   `fetchTools` and shows the task's progress (`tasks.tasks[system.toolsFetch]`; indeterminate
+   while it has none); *Check again* is `rescanTools`; *Choose path* goes to
+   **`/settings#tools`** (route `settings`, hash `#tools`): task L focuses its Tools section from
+   that hash. Checked against the real server: `--tools-dir /nonexistent` sets
+   `REFRAME_FFMPEG` / `REFRAME_FFPROBE`, and the server reports both `missing`, origin `env`,
+   with the reason "REFRAME_FFMPEG=/nonexistent/ffmpeg: the file does not exist. The environment
+   sets this path, so it cannot be changed in Reframe: change or unset REFRAME_FFMPEG and
+   restart."; a settings override (`{"tools": {"ffmpeg": "/nonexistent/settings/ffmpeg"}}`)
+   gives origin `settings` and "The FFmpeg path in Settings (/nonexistent/settings/ffmpeg): the
+   file does not exist." The buttons stay enabled with an environment override, although only
+   the environment can fix it (the reason says so).
+5. **Workspace layout.** A grid of three columns: sources `minmax(14rem, 18rem)`, tabs the
+   rest, preview `minmax(16rem, 24rem)` or 3 rem collapsed; one column below 60 rem. Each column
+   scrolls on its own; the status bar stays at the bottom. The preview's collapsed state is kept
+   in `localStorage` (`reframe.workspace.previewCollapsed`, VueUse). The source header shows the
+   active source's file name (not the container's title tag) and its duration (`h:mm:ss`), with
+   `PresetPicker` at its right; **the Range selector of 03's diagram is not in M4** (no step of
+   M4 builds ranges in the UI). Without an active source the tab column shows an empty state
+   (*Open files…* and `Ctrl+O`); the tabs show once a source is active.
+6. **Tabs** are PrimeVue `Tabs` (`lazy`: only the active tab's component exists; each tab's code
+   loads the first time it shows; arrow keys move between tabs), bound to `ui.activeTab`, with
+   `aria-keyshortcuts` `Control+N`.
+7. **Status bar.** The output path is cut at its start (the file name stays visible; the whole
+   path in the tooltip). The validation summary is a button ("1 error 2 warnings 1 note", "No
+   issues", "Checking…") that opens a popover with `IssueList` (compact); *Show* on an issue
+   closes the popover, since the field it reveals is behind it. The queue summary ("Queue: 1
+   running · 2 waiting") links to the Queue view. *Add to queue*, *Add all* and *Start* follow
+   `useQueueActions`' `canAdd`, `canAddAll`, `canStart`.
+8. **`useQueueActions`** (members added to the contract: `canAddAll`, `canStart`).
+   `canAdd`: a job, the editor not loading, no validation pending, no error, an output path, and
+   no add under way. One add at a time across all callers (a module-level flag), so a double
+   click or a held `Ctrl+Enter` queues once. An added job that the queue took as `failed`
+   (`queue.output_claimed`) is an error toast with its `error`, not "Added". A refused add is the
+   API client's toast only. `canStart`: waiting jobs, and the runner not already taking every
+   waiting job (`processing` with `only` `null`).
+9. **Add all** (item 10) drafts every open source with `editor.presetId` through
+   `POST /api/jobs/draft` (`apiQuiet`, in parallel), except **the source open in the editor,
+   whose job is taken as edited** (a re-draft would drop the user's changes): it is added when
+   its validation is not pending and has no error. Jobs with an error issue, without an output
+   path, whose draft failed (the problem's title) or that the queue took as `failed` are listed
+   in one warning toast (`name: reason` per line); the others are added in one request, in
+   source order, with a success toast. The jobs are copies taken when Add all is clicked (an
+   edit during the drafts does not change them). When the queue refuses the request, only the
+   API client's toast shows.
+10. **Shortcuts** (`useShortcuts`, one `keydown` listener on `window` through VueUse, removed
+    with the shell). `Ctrl` or `Meta`, never with `Alt`; ignored outside phase `ready`, after
+    another handler's `preventDefault`, and while the focus is inside an `aria-modal` dialog.
+    `Ctrl+O` works from every view: it goes to the workspace, then `sources.pick()`; it does
+    nothing while FFmpeg cannot be used or when held down. The others act only on the workspace
+    (not under the first-run screen): `Ctrl+Enter` → `addCurrent` when `canAdd`, once per press;
+    `Ctrl+1…8` by the physical key (`Digit1`…`Digit8`, the keypad too, so an AZERTY layout
+    works), selecting the tab whose `shortcut` is N; for a tab that is not built nothing changes,
+    but the browser's own tab switch is still prevented; `Ctrl+Z` → `undo`,
+    `Ctrl+Shift+Z` / `Ctrl+Y` → `redo` (when `canUndo` / `canRedo`), left to the browser while
+    the focus is in a text-like `input`, a `textarea` or a `contenteditable` (a check box, a
+    radio button, a button still undo the editor).
+11. **Taskbar.** `App.vue` sets `platform.setTaskbarProgress(queue.overallProgress)` on every
+    change and at start (`null` clears it), on every view.
+12. **Theme switch** in the rail: a popover with two `SelectButton`s (theme: system, light,
+    dark; density: comfortable, compact) through `useTheme()`, which `App.vue` also calls once at
+    start so that the settings' appearance is followed before the rail exists.
+
+Checked in headless Chromium (Playwright 1.64.1) against `scripts/dev-server.py` on ports
+8740–8743 (token mode with the `multitrack` fixture, password mode, `--tools-dir /nonexistent`,
+a settings override), light and dark: every view from the rail with the current one marked;
+the token leaves the address; the preview collapses to 48 px; theme and density switch at once
+(root font 16 → 14 px); `Ctrl+1…8` (`Ctrl+2`, Dimensions, changes nothing); `Ctrl+O` reaches
+`sources.pick` (the stub until task E); `Ctrl+Enter` with a job in the editor (set through
+Pinia) sends `POST /api/queue` and shows "Added to the queue", and a second time the server's
+`queue.output_claimed` as "The job was added as failed"; a refused request through `api` shows
+its problem as a toast; the issue list opens from the status bar; the login screens refuse a
+wrong token or password inline and accept the right one; the first-run screen with both
+overrides, *Choose path* to `/settings#tools`, Presets and Settings usable.
 
 ## Task D — F-4 editor state
 
