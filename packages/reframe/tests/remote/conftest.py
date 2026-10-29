@@ -163,10 +163,12 @@ async def watch_requests(remote: RemoteQueue) -> Requests:
 @dataclass
 class Wire:
     """The event messages between the socket and a ``RemoteQueue``'s reader: each one ``lag``
-    seconds late, without those that ``drop`` names, and ``first`` before all of them."""
+    seconds late, without those that ``drop`` names, as ``change`` makes them, and ``first``
+    before all of them."""
 
     lag: float = 0.0
     drop: Callable[[dict[str, Any]], bool] = lambda _message: False
+    change: Callable[[dict[str, Any]], dict[str, Any]] = lambda message: message
     first: list[dict[str, Any] | str] = field(default_factory=list)
     """Messages as objects, or as the text sent."""
 
@@ -182,8 +184,10 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> Wire:
         async for raw in plain(self):
             if found.lag:
                 await asyncio.sleep(found.lag)
-            if not found.drop(json.loads(raw)):
-                yield raw
+            message = json.loads(raw)
+            if not found.drop(message):
+                changed = found.change(message)
+                yield raw if changed is message else json.dumps(changed)
 
     monkeypatch.setattr(ClientConnection, "__aiter__", messages)
     return found

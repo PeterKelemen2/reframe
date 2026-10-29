@@ -589,6 +589,77 @@ def event_type(message: dict[str, object]) -> object:
     return event.get("type") if isinstance(event, dict) else None
 
 
+async def test_the_copy_says_what_the_owners_queue_takes(server: Server) -> None:
+    """From the snapshot when it connects, then from the events."""
+    server.api.fake.set_scenario(HANG)
+    queue = server.api.reframe.queue
+    first = await queue.add(await server.job("First.mkv"))
+    second = await queue.add(await server.job("Second.mkv"))
+    queue.start(job_ids=[first.id])
+    remote = await server.connect()
+    try:
+        assert (remote.processing, remote.only) == (True, [first.id])
+        queue.start(job_ids=[second.id])
+        await poll(lambda: remote.only == [first.id, second.id], 5)
+        await queue.stop()
+        await poll(lambda: not remote.processing, 5)
+        assert remote.only is None
+        queue.start()
+        await poll(lambda: remote.processing, 5)
+        assert remote.only is None
+    finally:
+        await remote.close()
+        await queue.cancel()
+
+
+async def test_a_refresh_reads_what_the_queue_takes_without_its_event(
+    server: Server, wire: Wire
+) -> None:
+    remote = await server.connect()
+    try:
+        wire.drop = lambda message: event_type(message) == "queue.processing"
+        server.api.reframe.queue.start()
+        await remote.refresh()
+        assert (remote.processing, remote.only) == (True, None)
+    finally:
+        await remote.close()
+
+
+async def test_a_processing_event_it_cannot_read_reads_the_whole_queue(
+    server: Server, wire: Wire
+) -> None:
+    remote = await server.connect()
+    try:
+        wire.change = lambda message: (
+            event_message({"type": "queue.processing", "processing": "maybe"})
+            if event_type(message) == "queue.processing"
+            else message
+        )
+        server.api.reframe.queue.start()
+        await poll(lambda: remote.processing, 5)
+        assert remote.lost is None
+    finally:
+        await remote.close()
+
+
+async def test_an_owner_that_does_not_say_what_it_takes_is_not_processing(
+    server: Server,
+) -> None:
+    """An owner of an older Reframe with the same API version has no ``processing`` in its
+    snapshot: the client still reads the queue."""
+    server.api.reframe.queue.start()
+    remote = await server.connect()
+    try:
+        requests = await watch_requests(remote)
+        requests.answer = lambda request: (
+            httpx.Response(200, json={"jobs": []}) if request.url.path == "/api/queue" else None
+        )
+        await remote.refresh()
+        assert (remote.processing, remote.only) == (False, None)
+    finally:
+        await remote.close()
+
+
 async def test_a_change_whose_event_does_not_come_is_read(
     server: Server, wire: Wire, monkeypatch: pytest.MonkeyPatch
 ) -> None:
