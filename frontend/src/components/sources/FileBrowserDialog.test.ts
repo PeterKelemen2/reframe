@@ -283,6 +283,14 @@ describe('the file browser dialog', () => {
     expect(await chosen).toEqual(['/srv/media/season'])
   })
 
+  it('does not choose the folder on a double click on a file in folder mode', async () => {
+    await mountDialog()
+    await open({ mode: 'folder' })
+    entry('a.mkv').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await settled()
+    expect(currentRequest()).toMatchObject({ mode: 'folder' })
+  })
+
   it('saves into the default path’s folder under its name, or a file’s name clicked', async () => {
     await mountDialog()
     const { chosen } = await open({ mode: 'save', defaultPath: '/srv/out/new.mkv' })
