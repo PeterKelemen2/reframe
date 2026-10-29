@@ -4,7 +4,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
-import { computed, onScopeDispose, ref, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { JobNaming, JobSettings, JsonPatchOp, NameResult } from '@/api/types'
@@ -12,7 +12,7 @@ import Field from '@/components/base/Field.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
 import { latestRequest } from '@/editor/latest'
 import { platform } from '@/platform'
-import { useEditorStore } from '@/stores/editor'
+import { type PendingEdit, useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 import { useToastStore } from '@/stores/toasts'
 
@@ -28,8 +28,9 @@ import VariableChips from './VariableChips.vue'
 /**
  * The editor's job's output name (the Summary tab's Output card): the template or a manual
  * name, the name source, the parsed-name panel with per-file field overrides, and the output
- * folder. An edit waits here for its preview (or the end of typing); then the naming and the output
- * path go into the job as one undo step.
+ * folder. An edit waits here for its preview; then the naming and the output path go into the
+ * job in one patch. Until then it is a pending edit of the editor store, which an add to the
+ * queue waits for. An edit on its way when the editor unmounts still goes into the job.
  */
 const props = defineProps<{
   disabled?: boolean
@@ -86,9 +87,8 @@ let ownJob: JobSettings | null = null
 let editKey: string | undefined
 /** A text field lost the focus while its edit was on its way: end the step after it lands. */
 let endAfterCommit = false
-let inFlight: { base: JobSettings; naming: JobNaming } | null = null
-/** The naming went into the job before its preview: the path follows with the answer. */
-let owed: { previous: string | null | undefined } | null = null
+/** Unmounted with an edit on its way: the session it belongs to. */
+let detached: number | null = null
 
 /** The name the job's path was made with (it tells the job's folder from its path). */
 function previousName(job: JobSettings): string | null | undefined {
@@ -98,7 +98,34 @@ function previousName(job: JobSettings): string | null | undefined {
   )
 }
 
-const sourceId = computed(() => (editor.target?.kind === 'job' ? editor.target.sourceId : null))
+function targetSource(): string | null {
+  return editor.target?.kind === 'job' ? editor.target.sourceId : null
+}
+
+/** The fields show a naming that the job does not have yet. */
+function isUnapplied(): boolean {
+  return editor.job !== null && !sameNaming(local.value, editor.job.output?.naming)
+}
+
+function flushEdit(): void {
+  if (pending.value) runner.flush()
+  else schedule(0)
+}
+
+const pendingEdit: PendingEdit = reactive({
+  flush: flushEdit,
+  get failure() {
+    return failure.value
+  },
+})
+watch(
+  isUnapplied,
+  (on) => {
+    if (on) editor.beginEdit(pendingEdit)
+    else editor.endEdit(pendingEdit)
+  },
+  { immediate: true, flush: 'sync' },
+)
 
 function finishGesture(): void {
   if (!endAfterCommit) return
@@ -106,75 +133,86 @@ function finishGesture(): void {
   editor.endCoalescing()
 }
 
-function commit(base: JobSettings, naming: JobNaming, path: string | null | undefined): void {
+function commit(base: JobSettings, naming: JobNaming, path: string | null): void {
   const ops: JsonPatchOp[] = [{ op: 'add', path: '/output/naming', value: naming }]
-  if (path !== undefined && path !== (base.output?.path ?? null)) {
+  if (path !== (base.output?.path ?? null)) {
     ops.push({ op: 'add', path: '/output/path', value: path })
   }
   editor.patch(ops, editKey === undefined ? undefined : { coalesce: editKey })
   ownJob = editor.job
 }
 
-const runner = latestRequest<{ base: JobSettings; naming: JobNaming; answer?: NameResult }>({
+const runner = latestRequest<{ base: JobSettings; naming: JobNaming; answer: NameResult }>({
   async send(signal) {
     const base = editor.job
-    const id = sourceId.value
+    const id = targetSource()
     if (base === null || id === null) throw new Error('JobNamingEditor: no job is open')
     const naming = local.value
-    inFlight = { base, naming }
     const job = { ...base, output: { ...base.output, naming } } as JobSettings
     const [answer] = await previewNames(
       { source_ids: [id], job, container: base.output?.container ?? 'mkv' },
       signal,
     )
+    if (answer === undefined) throw new Error('JobNamingEditor: no name for the source')
     return { base, naming, answer }
   },
   done({ base, naming, answer }) {
+    if (detached !== null && detached !== editor.session) {
+      editor.endEdit(pendingEdit)
+      return
+    }
+    // The job changed after the request went out (a change the job watcher has not seen yet,
+    // or one made after the editor unmounted): name the job as it is now.
+    if (editor.job !== base) {
+      runner.schedule(0)
+      return
+    }
     pending.value = false
     failure.value = null
-    if (answer === undefined) return
     result.value = answer
     if (!sameNaming(naming, base.output?.naming)) {
       commit(base, naming, nextOutputPath(base.output?.path, previousName(base), answer))
-    } else if (owed !== null) {
-      const path = nextOutputPath(base.output?.path, owed.previous, answer)
-      if (path !== (base.output?.path ?? null)) {
-        editor.patch(
-          [{ op: 'add', path: '/output/path', value: path }],
-          editKey === undefined ? undefined : { coalesce: editKey },
-        )
-        ownJob = editor.job
-      }
     }
-    owed = null
     applied.value = editor.job === null ? null : { job: editor.job, result: answer }
+    if (detached !== null) editor.endEdit(pendingEdit)
     finishGesture()
   },
   failed(error) {
-    owed = null
     pending.value = false
+    // The edit stays out of the job: the job keeps a naming and a path that belong together.
     failure.value = failureText(error) ?? t('naming.preview.failed')
-    // The edit is kept even without a name for it; the output path stays as it was.
-    const sent = inFlight
-    if (
-      sent !== null &&
-      editor.job === sent.base &&
-      !sameNaming(sent.naming, sent.base.output?.naming)
-    ) {
-      commit(sent.base, sent.naming, undefined)
+    if (detached !== null) {
+      editor.endEdit(pendingEdit)
+      if (detached === editor.session) {
+        toasts.push({
+          severity: 'warn',
+          summary: t('naming.job.notApplied'),
+          detail: failure.value,
+          life: 10_000,
+        })
+      }
     }
     finishGesture()
   },
 })
-onScopeDispose(() => runner.cancel())
+onScopeDispose(() => {
+  if (isUnapplied() && failure.value === null) {
+    detached = editor.session
+    flushEdit()
+    return
+  }
+  runner.cancel()
+  editor.endEdit(pendingEdit)
+})
 
 function schedule(delay: number): void {
-  if (editor.job === null || sourceId.value === null) {
+  if (editor.job === null || targetSource() === null) {
     runner.cancel()
     pending.value = false
     return
   }
   pending.value = true
+  failure.value = null
   runner.schedule(delay)
 }
 
@@ -224,19 +262,16 @@ function edit(change: Partial<JobNaming>, key?: string): void {
 }
 
 /**
- * A text field lost the focus: its edit goes into the job at once (a click on *Add to queue*
- * comes right after), the path follows with the preview in the same undo step, which ends there.
+ * A text field lost the focus: its edit is previewed at once (an add to the queue may come
+ * next), and the undo step of its typing ends when it lands.
  */
 function onBlur(): void {
-  const job = editor.job
-  if (job === null || sameNaming(local.value, job.output?.naming)) {
+  if (!isUnapplied()) {
     editor.endCoalescing()
     return
   }
-  owed = { previous: previousName(job) }
-  commit(job, local.value, undefined)
   endAfterCommit = true
-  schedule(0)
+  flushEdit()
 }
 
 /** Without a template of its own, the job uses the naming options' (the preset's, else the settings'). */
@@ -458,9 +493,10 @@ function useDefaultFolder(): void {
       </Disclosure>
 
       <Field :label="t('naming.job.nameSource')" stacked>
-        <template #default="{ id }">
+        <template #default="{ id, labelId }">
           <Select
             :label-id="id"
+            :ariaLabelledby="labelId"
             :model-value="local.name_source ?? FROM_OPTIONS"
             :options="nameSources"
             option-label="label"
