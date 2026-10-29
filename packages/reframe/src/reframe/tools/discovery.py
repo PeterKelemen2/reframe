@@ -282,7 +282,8 @@ def _locate(
     if found is not None:
         return ToolLocation(tool, found, ToolOrigin.PATH, None, env_var)
     if tool in ("mkvpropedit", "mediainfo"):
-        problem = f"{tool} was not found (optional: install it, or set its path in Settings)."
+        # A web client cannot set a tool path in Settings: name what works in every mode.
+        problem = f"{tool} was not found (optional: install it, or set {env_var} to its path)."
     else:
         problem = (
             f"{tool} was not found: no bundled build, nothing on PATH. Set its path in "
