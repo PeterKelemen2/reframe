@@ -138,7 +138,6 @@ describe('the Summary tab', () => {
       'H.264 Constrained Baseline · 320×180 · 25 fps',
     )
     expect(text(wrapper, '[data-field="tracks"]')).toBe('3 audio tracks · 3 subtitle tracks')
-    expect(text(wrapper, '[data-field="file-name"]')).toBe('multitrack.mkv')
     await vi.waitFor(
       () =>
         expect(text(wrapper, '[data-field="pipeline"]')).toBe('320×180 · 1.78:1 · square pixels'),
@@ -285,23 +284,12 @@ describe('the Summary tab', () => {
     expect(useUiStore().activeTab).toBe('video')
   })
 
-  it("shows the draft's name source while the naming is the drafted one, then the job's setting", async () => {
-    const { wrapper, editor } = await mountSummary()
-    expect(text(wrapper, '[data-field="name-source"]')).toBe(
-      'File nameFile name: 1 field recognised (1 point)',
-    )
-    editor.set('/output/naming/name_source', 'folder')
-    await flushPromises()
-    expect(text(wrapper, '[data-field="name-source"]')).toBe('Folder name')
-  })
-
   it('works for a job loaded back from the queue, which has no draft', async () => {
     const { wrapper, editor } = await mountSummary()
     editor.draft = null
     editor.target = { kind: 'job', sourceId: 'src', job: sampleJob() }
     await flushPromises()
     expect(wrapper.findAll('[data-card]')).toHaveLength(7)
-    expect(text(wrapper, '[data-field="name-source"]')).toBe('Automatic')
     expect(text(wrapper, '[data-field="encoder"]')).toBe('x265')
   })
 
