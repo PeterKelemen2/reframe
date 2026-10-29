@@ -53,17 +53,5 @@ export type ReframeEvent = Schemas['EventMessage']['event']
 export type EventType = ReframeEvent['type']
 export type EventOf<T extends EventType> = Extract<ReframeEvent, { type: T }>
 
-/**
- * The queue's run state changed (decision 0042 open question 5). Written by hand until the
- * server publishes it; then it becomes `Schemas['QueueProcessingEvent']` and joins
- * `ReframeEvent`.
- */
-export interface QueueProcessingEvent {
-  type: 'queue.processing'
-  /** The runner takes waiting jobs. */
-  processing: boolean
-  /** It takes only these jobs (a `start` with `job_ids`); `null`: every waiting job. */
-  only: string[] | null
-  /** `start` and `stop` are calls; `idle`: the jobs a `start` named have all ended. */
-  reason: 'start' | 'stop' | 'idle'
-}
+/** The queue's run state changed (decision 0064): what the runner takes, and why. */
+export type QueueProcessingEvent = EventOf<'queue.processing'>

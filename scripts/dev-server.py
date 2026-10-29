@@ -229,7 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         raise KeyboardInterrupt
 
     # SIGINT too: a background job of a non-interactive shell starts with SIGINT ignored.
-    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    handled = [signal.SIGINT, signal.SIGTERM]
+    if sys.platform != "win32":
+        handled.append(signal.SIGHUP)
+    for signum in handled:
         signal.signal(signum, on_signal)
 
     url = f"http://127.0.0.1:{args.port}"
