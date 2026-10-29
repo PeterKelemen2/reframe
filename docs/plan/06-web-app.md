@@ -500,12 +500,12 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Colorspace source-colour box and the "what will happen" sentence.
 
 ### F-9 Video tab and advanced options
-- [ ] `EncoderPicker` grouped by family, with status dots and reasons. The
+- [x] `EncoderPicker` grouped by family, with status dots and reasons. The
       missing-encoder banner shows the fix buttons from the validation issue.
-- [ ] `QualitySlider` with the recommended band. Rate-control switch.
+- [x] `QualitySlider` with the recommended band. Rate-control switch.
 - [ ] `AdvancedOptions` is generated from the option schema: categories, search, "show only
       changed", reset, placeholders for defaults, help popovers, "copy HDR metadata".
-- [ ] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
+- [x] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
 
 ### F-10 Audio and subtitles tabs
 - [ ] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
