@@ -466,7 +466,164 @@ overrides, *Choose path* to `/settings#tools`, Presets and Settings usable.
 
 ## Task D — F-4 editor state
 
-(Written by task D.)
+Built: `stores/editor.ts`, `stores/validation.ts`, `composables/useValidation.ts`,
+`composables/useUndo.ts` (unchanged: it was already a view of the store), the helpers in
+`editor/` (`pointer.ts`, `patch.ts`, `history.ts`, `template.ts`, `latest.ts`; test data and the
+server tests' FFmpeg lookup in `editor/testing/`) and `i18n/messages/en/editor.json`.
+
+### What was checked against the real server (2026-10-29)
+
+`reframe-server` through `scripts/dev-server.py` with the pinned FFmpeg n9.0.2 (`--tools-dir`),
+on this AMD desktop; `src/stores/editor.server.test.ts` does each of these:
+
+1. **Which encoder is unavailable.** `scripts/dev-server.py` turns the hardware test encodes
+   off, and then every hardware encoder of the build is `unknown` ("Not tested: hardware test
+   encodes are off"), which validation reports as the warning `encoder.untested`, not
+   `encoder.unavailable`. With `PUT /api/settings` `/encoders/hardware_tests` `true` and a
+   rescan: `hevc_nvenc` (and the other NVENC and QSV encoders) `unavailable`, reason "NVIDIA
+   driver not found"; AMF and VAAPI `available`; `libfdk_aac` `unavailable` ("Not in this
+   FFmpeg build"). The test picks `hevc_nvenc` when it is unavailable, else any unavailable
+   video encoder of the definitions.
+2. **The issue and its fix.** With the default preset's job and `video.encoder` set to
+   `hevc_nvenc`: `encoder.unavailable` at `video.encoder`, "hevc_nvenc (NVIDIA NVENC H.265) is
+   not available: NVIDIA driver not found.", one fix, "Use hevc_amf (closest match; quality CQ 22
+   → CQ 20, approximate)" (target `job`; three `replace` operations: the encoder, the quality,
+   the speed preset to `null`). The closest match on this machine is `hevc_amf`, not `libx265`:
+   the fallback chain takes the first available encoder. After the fix the issue is gone, after
+   an undo it is back, after a redo gone again. `presets/diff` after the encoder change:
+   `[{path: "video.encoder", kind: "changed", preset_value: "libx265", value: "hevc_nvenc"}]`.
+   (The x265 speed preset and custom parameters give more errors with NVENC; the store keeps
+   them all, the test looks at `video.encoder`.)
+3. **A value of the wrong type** (`"fast"` for the quality) is a 422 `request.invalid` whose
+   `errors[].loc` holds the tag of the union member: `["body", "job", "video", "rate_control",
+   "quality", "value"]`.
+4. **`currentTemplate` of every built-in preset** (26) drafted for `multitrack.mkv` is unmodified
+   for `POST /api/presets/diff` (`[]`).
+
+### The undo history
+
+- **Patches.** The job is immutable: each change makes a new job (a JSON copy, the patch
+  applied with `rfc6902`, the result frozen deep), so the history can keep the documents it
+  diffs, and a component that writes into the job (a `v-model` on a member) throws instead of
+  changing it without an undo step and a validation. A patch applies whole or not at all:
+  `applyPatch` goes on after a failed operation, so the store applies the operations one by one
+  to a copy and throws `PatchError` at the first that fails (the job stays the same object). A
+  `replace` or `add` of the whole document (`''`) is applied too (`rfc6902` refuses it).
+- **Steps.** Each step keeps two patches, `redo` and `undo`, computed by `createPatch` from the
+  job before and after (not the caller's operations): the same code for every kind of operation
+  (`add`, `remove`, `replace`, `move`, `copy`, `test`), and the step is exact. `createPatch`
+  turns a key that is removed and added again into a `remove` and an `add`, which puts the key
+  last; filter and advanced-option order is shown, so an object whose keys a member-wise patch
+  would reorder is replaced whole. The tests compare `JSON.stringify` of the job, key order
+  included.
+- **Bound: 200 steps**; the oldest is dropped. A step is a few hundred bytes (a preset change
+  some kilobytes).
+- **Coalescing.** Patches in a row with the same `coalesce` key are one step, from the job before
+  the first to the job after the last. Any other patch (another key or none), an undo, a redo,
+  `endCoalescing()`, `open`, `applyPreset`, `loadJob` and `close` end the run. A run that comes
+  back to where it began leaves no step. A patch that changes nothing adds no step, keeps the
+  job object and keeps the steps to redo; any other patch drops them. Keys are not timed: two
+  drags of one slider with nothing between are one step unless the component calls
+  `endCoalescing()` when it is let go (or puts a gesture number in the key).
+- **A preset change** (`applyPreset`) is one step, from the job as it is when the new draft
+  comes (an edit made while it loads is in the step it undoes to). The step also brings back the
+  draft of its side (the track decisions of that preset). `presetId` is the job's `preset_id`,
+  so an undo brings back the preset too.
+- **A history that does not fit the job** (only when something wrote `target` past the store):
+  the undo fails, the history is cleared and the job stays.
+
+### `currentTemplate`: from a job back to a template
+
+The inverse of `build_job` (`reframe.batch.resolve`) and the same rules as
+`reframe.batch.derive.derive_template`, with the preset as the base:
+
+| Template field | From |
+|----------------|------|
+| `schema_version`, `audio_defaults`, `subtitle_defaults`, `audio_rules`, `subtitle_rules` | the preset (a job holds concrete tracks) |
+| `output` | the job's `output` without `path`, `naming` and `edit_in_place` |
+| `dimensions`, `crop_policy` | the job's dimensions. Crop: `manual` → policy `fixed` with its rectangle; `none` → the preset's policy; `auto` / `conservative` → the preset's crop and policy when the job's crop is what a draft of the preset gives (a rectangle measured on another file is dropped, or `manual` under `fixed`), else policy `detect_per_file` and no rectangle (measured on this file) |
+| `filters`, `tags` | the job |
+| `video` | the job's, with the preset's `metadata` (the job's is the source track's) |
+| `chapters`, `chapter_name_policy` | the job's `enabled` and `generate_every`; the names: `Chapter 1 … n` → `generated`, other names → `source`, no names → the preset's policy (no names is both "the source's" and "the source has none") |
+| `naming` | the preset's own (`null` stays `null`: Settings → Output); the job's naming `template` (as both movie and episode template) and `name_source` over the preset's naming options, or over Settings → Output's when the preset has none; a manual name and field overrides are per file |
+| the preset's `id`, `name`, `category`, `description`, `built_in` | left out |
+
+The preset comes from the presets store when it holds it, else from `GET /api/presets/{id}`
+(once per preset id; task J's store does not load yet). `currentTemplate` is `null` while the
+preset is not known (and when it does not exist): then nothing is diffed and `modified` is
+false.
+
+### `presetChanges`
+
+`POST /api/presets/diff` (`apiQuiet`) of `currentTemplate` against `presetId`: at once after
+`open`, `loadJob`, `applyPreset`, an undo or redo to another preset, and when the preset arrives;
+250 ms after the last edit otherwise. An edit that leaves the template as it was (a track, the
+output path) sends nothing (the template and the preset are compared as JSON). A new job or
+another preset clears the list at once. The newest request wins: a new one aborts the one under
+way and an older answer is never taken (the same runner as validation, below). A 404 (the preset
+was deleted) clears the list; another failure keeps it. `refreshPresetChanges()` asks again (task
+J, after saving the preset).
+
+### Validation
+
+- **Ordering.** `editor/latest.ts`: one request at a time for state that keeps changing. Each
+  `schedule(delay)` bumps a generation number, clears the timer and aborts the request under
+  way (`AbortController`); a request reads the job when it goes out; an answer (or a failure)
+  is taken only while its generation is the newest. So an answer for an older job never
+  replaces a newer one, and a closed editor or a new job cancels what is on its way.
+- **When.** 250 ms after the last edit (a trailing debounce: nothing goes out while edits come
+  closer together than that). A new job without a draft (`loadJob`) at once; also at once when
+  `useValidation` starts (a remount: what changed meanwhile is not known) and when the event
+  connection is `open` again after a failed validation. 250 ms after a change of what the
+  issues depend on besides the job: `system.capabilities` (a detection, *Check again*),
+  `system.info` (tools), `settings.settings` (a settings fix, Settings), and
+  `validation.revalidate()`.
+- **`pending`** is true from the change (the job watcher is `flush: 'sync'`) until the answer
+  for the job as it is now, or a failure. The issues shown meanwhile are the last answer's for
+  the same job (fields do not flicker while typing); a new job clears them at once.
+- **The draft's issues show until the first answer: none is asked for.** `jobs/draft` validated
+  that same job, so after `open` and `applyPreset` the draft's issues are shown and no request
+  goes out until something changes. The draft also has issues that `jobs/validate` never gives:
+  the track stage's (`batch.*`, `defaults.*`, at paths in the preset's rules) and
+  `preset.not_found`. They are added to every answer while the job is still the drafted one
+  (JSON-equal, so an undo back to it brings them back) and dropped once it is edited: they say
+  how the preset met the source, and an error among them would otherwise block *Add to queue*
+  for a job the user has since changed (the server's queue never sees them).
+- **Fixes with target `template`** are removed from the issues of a job (only the batch editor,
+  M7, can apply one); `applyFix` of one throws.
+- **A job the server cannot read** (422 `request.invalid`, a value of the wrong type) is shown as
+  one `error` per field, code `request.invalid`, with the server's message, at the field's path:
+  the location is followed through the job and a part that is not a member is skipped (the tag
+  of a union member, `quality`), unless it is the last (a missing field).
+- **Another failure** (no answer, 5xx): `pending` false, `failed` true, the issues kept;
+  retried at the next change or when the connection is open again.
+- `useValidation()` validates while its caller's scope lives (the workspace view); its
+  watchers and the request stop with it.
+
+### Choices the plan leaves open
+
+- `open(sourceId)` without a preset uses `presets.defaultId`, else `null` (the server's
+  default). It does not keep the current preset by itself; a caller that should (HandBrake
+  keeps the selected preset for the next title) passes `editor.presetId`.
+- A failed `open`, `applyPreset` or `loadJob` rejects (the `ApiError` of the draft is a toast
+  already) and leaves the editor as it was; an older one's answer after a newer call is
+  dropped. `loading` is true while the newest runs.
+- `loadJob` makes the job's source the active one (`sources.activeId`) and has no draft (track
+  decisions describe a draft, not a queued job). It imports the sources store when it runs: the
+  sources store opens sources in the editor, and a static import both ways is an import cycle
+  (oxlint `import/no-cycle`; a dynamic import in one direction is not one). Vite's build says
+  the dynamic import does not move the module into another chunk; that is expected.
+- `patch` and `set` throw while no job is open, and `PatchError` for a patch that does not
+  apply. `applyFix` never rejects for a fix that cannot be applied: a job fix that does not fit
+  the job any more (it changed after the check) and a settings fix the server refuses are
+  toasts ("The fix could not be applied", with the reason).
+- Members added to the contracts: editor `session` (+1 for each new target), `preset` (the
+  job's preset document), `endCoalescing()`, `refreshPresetChanges()`, and the exports
+  `EDIT_DEBOUNCE` (250) and `PatchError`; validation `failed`, `requests`, `session`,
+  `revalidate()`. `presetId` is a computed (read only): it follows the job's `preset_id`.
+- The server tests take FFmpeg from `REFRAME_TEST_TOOLS_DIR`, else from the build that
+  `scripts/fetch-tools.py` put into `.tools/`, else the server finds one
+  (`editor/testing/tools.mjs`).
 
 ## Task E — F-5 sources panel and the file browser
 
