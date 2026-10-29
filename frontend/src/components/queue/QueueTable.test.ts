@@ -7,6 +7,7 @@ import { ApiError } from '@/api/client'
 import { deferred } from '@/api/testing/fakes'
 import type { JobSettings } from '@/api/types'
 import { SourceOpenError } from '@/stores/sources'
+import { useSystemStore } from '@/stores/system'
 
 import QueueTable from './QueueTable.vue'
 import { job, mountQueue, queueDouble, resetQueue } from './testing'
@@ -58,6 +59,16 @@ function button(id: string, selector: string): HTMLButtonElement {
 const actions = (id: string) =>
   [...row(id).querySelectorAll('[data-action]')].map((el) => el.getAttribute('data-action'))
 
+function nvencSettings(id: string, video: object): JobSettings {
+  return { ...job(id).settings, preset_name: 'H.265 NVENC 1080p', video } as JobSettings
+}
+
+function presetCell(id: string): (string | undefined)[] {
+  return ['preset', 'encoder'].map((field) =>
+    row(id).querySelector(`[data-field="${field}"]`)?.textContent?.trim(),
+  )
+}
+
 const order = () =>
   [...document.querySelectorAll('[data-job]')].map((el) => el.getAttribute('data-job'))
 
@@ -94,6 +105,24 @@ describe('the queue table', () => {
     ])
     // The output's final name once the run chose it.
     expect(row('b').querySelector('[data-field="output"]')?.textContent?.trim()).toBe('b (1).mkv')
+  })
+
+  it('shows the encoder a job uses under its preset: an edited job’s own, or a copied video', async () => {
+    queue.jobs = [
+      job('a', 'waiting', {
+        settings: nvencSettings('a', { encoder: 'libx264', passthrough: false }),
+      }),
+      job('b', 'waiting', {
+        settings: nvencSettings('b', { encoder: 'hevc_nvenc', passthrough: true }),
+      }),
+    ]
+    await mountTable()
+    useSystemStore().definitions = {
+      video_encoders: { libx264: { label: 'x264' }, hevc_nvenc: { label: 'NVIDIA NVENC H.265' } },
+    } as never
+    await flushPromises()
+    expect(presetCell('a')).toEqual(['H.265 NVENC 1080p', 'x264'])
+    expect(presetCell('b')).toEqual(['H.265 NVENC 1080p', 'Video copied'])
   })
 
   it('follows a job that the store replaces with new progress', async () => {

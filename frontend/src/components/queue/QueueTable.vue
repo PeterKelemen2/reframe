@@ -34,6 +34,7 @@ import { platform } from '@/platform'
 import { useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 import { SourceOpenError } from '@/stores/sources'
+import { useSystemStore } from '@/stores/system'
 import { TaskLostError } from '@/stores/tasks'
 
 import {
@@ -53,6 +54,7 @@ const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const queue = useQueueStore()
 const editor = useEditorStore()
+const system = useSystemStore()
 const router = useRouter()
 const root = useTemplateRef<HTMLElement>('root')
 
@@ -78,6 +80,14 @@ const expanded = computed<Record<string, boolean>>(() =>
       .map((job) => [job.id, true]),
   ),
 )
+
+/** The video encoder the job uses: it may differ from its preset's (an edited job). */
+function encoderName(job: QueueJob): string | null {
+  const video = job.settings.video
+  if (video === undefined) return null
+  if (video.passthrough) return t('queue.table.videoCopy')
+  return system.definitions?.video_encoders?.[video.encoder]?.label ?? video.encoder
+}
 
 /** A failed job's issues, without the ones its error already quotes. */
 function otherIssues(job: QueueJob): NonNullable<QueueJob['issues']> {
@@ -350,6 +360,9 @@ async function move(index: number, to: number): Promise<void> {
       <Column :header="t('queue.columns.preset')">
         <template #body="{ data }">
           <span data-field="preset">{{ data.job.settings.preset_name ?? '—' }}</span>
+          <span v-if="encoderName(data.job)" class="queue-table__encoder" data-field="encoder">
+            {{ encoderName(data.job) }}
+          </span>
         </template>
       </Column>
       <Column :header="t('queue.columns.progress')" body-class="queue-table__progress">
@@ -527,7 +540,8 @@ async function move(index: number, to: number): Promise<void> {
 }
 
 .queue-table__percent,
-.queue-table__step {
+.queue-table__step,
+.queue-table__encoder {
   display: block;
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-xs);

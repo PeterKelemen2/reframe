@@ -23,14 +23,15 @@
     "percent": "{value} %"
   },
   "table": {
-    "label": "Jobs in the queue"
+    "label": "Jobs in the queue",
+    "videoCopy": "Video copied"
   },
   "columns": {
     "drag": "Drag to reorder",
     "state": "State",
     "source": "Source",
     "output": "Output",
-    "preset": "Preset",
+    "preset": "Preset and encoder",
     "progress": "Progress",
     "fps": "FPS",
     "speed": "Speed",
