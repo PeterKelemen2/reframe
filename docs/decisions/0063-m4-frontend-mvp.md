@@ -1488,3 +1488,35 @@ queue), `support/test.ts` (the `test` with the queue fixture), the scenario
   its own data folder), and the ports 8750 and 8751 free.
 - 09 §Q-2 names Chromium and WebKit; M4 runs Chromium and Firefox (the browsers in the cache);
   06 §F-17 leaves WebKit for M10.
+
+## Review, 2026-10-29
+
+Two fresh reviews at 57eb8cc (R1: the API layer, events, stores, editor state, undo, validation,
+the queue and Stop; R2: the screens, i18n, keyboard, focus, contrast, empty and error states):
+R1 found 2 majors and 3 minors, R2 1 blocker, 6 majors, 11 minors and 7 nits; with the lead's
+integration findings L1–L17 they are assigned in [m4-breakdown.md](../m4-breakdown.md),
+"Fix round". The lead reproduced every blocker and major before the fixes. R2 reported that one of
+its scripts chose *Shut down* as the when-done action (it counted arrow presses, which skip the
+disabled *Quit*); the server ran with `REFRAME_POWER_DRY_RUN=1` (R2 checked
+`/proc/<pid>/environ` first) and the countdown was cancelled after about 2 s.
+
+### Fix round — FA (theme and base)
+
+(Written by task FA.)
+
+### Fix round — FB (the job that is queued)
+
+(Written by task FB.)
+
+### Fix round — FC (shell, focus, queue and presets screens)
+
+(Written by task FC.)
+
+### Fix round — FD (the tabs, sources and settings screens)
+
+(Written by task FD.)
+
+### Fix round — FE (server texts)
+
+(Written by task FE.)
+
