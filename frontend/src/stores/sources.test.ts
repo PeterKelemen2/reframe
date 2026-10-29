@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, configureClient } from '@/api/client'
-import { deferred, FakeServer, problem, type Recorded, settle } from '@/api/testing/fakes'
+import { deferred, FakeServer, problem, type Recorded } from '@/api/testing/fakes'
 import type { MediaSource, Schemas, SourceEntry, TaskInfo } from '@/api/types'
 import { platform } from '@/platform'
 
@@ -145,6 +145,14 @@ describe('the sources store', () => {
     vi.restoreAllMocks()
   })
 
+  /** Waits until the store shows the run of the `count`th probe task. */
+  async function running(count: number): Promise<void> {
+    await vi.waitFor(() => {
+      expect(server.probes).toHaveLength(count)
+      expect(useSourcesStore().probing.map((run) => run.taskId)).toEqual([server.last().taskId])
+    })
+  }
+
   function deletes(): string[] {
     return server.requests
       .filter((request) => request.method === 'DELETE')
@@ -177,13 +185,14 @@ describe('the sources store', () => {
       server.auto = false
       const sources = useSourcesStore()
       const opening = sources.open(['/media/a.mkv'])
-      await settle()
+      await running(1)
       expect(sources.probing).toEqual([
         { taskId: server.last().taskId, paths: ['/media/a.mkv'], progress: null, message: null },
       ])
       server.progress(server.last(), { progress: 50, message: '1/2 files' })
-      await settle()
-      expect(sources.probing[0]).toMatchObject({ progress: 0.5, message: '1/2 files' })
+      await vi.waitFor(() =>
+        expect(sources.probing[0]).toMatchObject({ progress: 0.5, message: '1/2 files' }),
+      )
       server.done(server.last())
       await opening
       expect(sources.probing).toEqual([])
@@ -239,7 +248,7 @@ describe('the sources store', () => {
       server.auto = false
       const sources = useSourcesStore()
       const opening = sources.open(['/media/a.mkv'])
-      await settle()
+      await running(1)
       server.end(server.last(), { state: 'failed', error: 'ffprobe crashed' })
       expect(await opening).toEqual([])
       expect(sources.entries).toEqual([])
@@ -252,7 +261,7 @@ describe('the sources store', () => {
       server.auto = false
       const sources = useSourcesStore()
       const opening = sources.open(['/media/a.mkv'])
-      await settle()
+      await running(1)
       server.end(server.last(), { state: 'cancelled' })
       expect(await opening).toEqual([])
       expect(useToastStore().items).toEqual([])
@@ -264,7 +273,7 @@ describe('the sources store', () => {
       const wait = vi.spyOn(tasks, 'wait').mockRejectedValueOnce(new TaskLostError('t1'))
       const sources = useSourcesStore()
       const opening = sources.open(['/media/a.mkv'])
-      await settle()
+      await running(2)
       expect(server.probes).toHaveLength(2)
       expect(sources.probing.map((run) => run.taskId)).toEqual([server.last().taskId])
       server.done(server.last())
@@ -414,6 +423,19 @@ describe('the sources store', () => {
       expect(sources.entries.map((entry) => entry.path)).toEqual(['/media/b.mkv'])
       expect(sources.activeId).toBeNull()
       expect(close).toHaveBeenCalledOnce()
+    })
+
+    it('closes the editor when the source it is drafting goes', async () => {
+      const sources = useSourcesStore()
+      await sources.open(['/media/a.mkv', '/media/b.mkv'])
+      const editor = useEditorStore()
+      editor.target = { kind: 'job', sourceId: idOf('/media/a.mkv'), job: {} as never }
+      editorOpen.mockReturnValueOnce(new Promise(() => {}))
+      void sources.select(idOf('/media/b.mkv'))
+      const close = vi.spyOn(editor, 'close')
+      await sources.remove(idOf('/media/b.mkv'))
+      expect(close).toHaveBeenCalledOnce()
+      expect(sources.activeId).toBeNull()
     })
 
     it('keeps the active source and the editor when another one goes', async () => {

@@ -7,7 +7,7 @@ import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
-import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
@@ -20,6 +20,8 @@ import { crumbsOf, extensionOf, folderOf, joinPath } from './paths'
 type Entry = FsListing['entries'][number]
 
 const { t, locale } = useI18n()
+/** Vue's types have no `autofocus` on a `div`; PrimeVue's dialog focuses the element that has it. */
+const autofocus: Record<string, string> = { autofocus: '' }
 const id = useId() ?? 'file-browser'
 
 const request = computed(currentRequest)
@@ -37,7 +39,6 @@ const filterOn = ref(true)
 const location = ref('')
 const saveName = ref('')
 
-const list = useTemplateRef<HTMLElement>('list')
 /** The folder each mode showed last in this tab: the next pick starts there. */
 const lastFolder: Partial<Record<BrowseRequest['mode'], string>> = {}
 // The newest listing wins: a slow folder answered after a later click is dropped.
@@ -169,10 +170,6 @@ function confirm(): void {
   if (mode.value === 'files') close([...selected.value])
   else if (mode.value === 'folder') close([folder])
   else close([joinPath(folder, saveName.value.trim())])
-}
-
-function onShow(): void {
-  void nextTick(() => list.value?.focus())
 }
 
 function onVisible(value: boolean): void {
@@ -321,7 +318,6 @@ const summary = computed(() => {
     :draggable="false"
     :data-mode="mode"
     @update:visible="onVisible"
-    @show="onShow"
   >
     <div class="file-browser">
       <nav class="file-browser__roots" :aria-label="t('sources.browser.roots')">
@@ -419,10 +415,10 @@ const summary = computed(() => {
 
         <div
           :id="`${id}-list`"
-          ref="list"
           class="file-browser__list"
           role="listbox"
           tabindex="0"
+          v-bind="autofocus"
           :aria-label="listing ? fileName(listing.path) : t('sources.browser.roots')"
           :aria-multiselectable="mode === 'files' && request?.multiple ? 'true' : undefined"
           :aria-activedescendant="visible.length > 0 ? optionId(cursor) : undefined"

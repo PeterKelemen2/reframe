@@ -253,9 +253,11 @@ export const useSourcesStore = defineStore('sources', () => {
     const results = await Promise.allSettled(ids.map((id) => forget(id)))
     const gone = new Set(ids.filter((_, index) => results[index]?.status === 'fulfilled'))
     entries.value = entries.value.filter((entry) => !gone.has(entry.id))
-    if (activeId.value !== null && gone.has(activeId.value)) activeId.value = null
     const target = editor.target
-    if (target?.kind === 'job' && gone.has(target.sourceId)) editor.close()
+    // A removed active source may still be drafting: closing drops that draft too.
+    const activeGone = activeId.value !== null && gone.has(activeId.value)
+    if (activeGone || (target?.kind === 'job' && gone.has(target.sourceId))) editor.close()
+    if (activeGone) activeId.value = null
     await regroup()
     const failed = results.find((result) => result.status === 'rejected')
     if (failed !== undefined) throw failed.reason

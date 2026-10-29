@@ -627,7 +627,117 @@ J, after saving the preset).
 
 ## Task E — F-5 sources panel and the file browser
 
-(Written by task E.)
+Built: `stores/sources.ts`, `components/sources/` (`SourcesPanel`, `SourceItem`,
+`FileBrowserDialog`, `fileBrowser.ts` (the open picker request), `panel.ts` (rows, groups,
+episode labels, the short line), `paths.ts` (breadcrumbs, joins)), `platform/web.ts` (the
+three pickers), `i18n/messages/en/sources.json`.
+
+### What was checked against the real server (2026-10-29)
+
+`reframe-server` through `scripts/dev-server.py` with the pinned FFmpeg n9.0.2 and the fixtures
+`multitrack`, `season`, `Anime.Show.S01.BluRay.x264-GRP`, `dts-hd-ma`, `interlaced`, `vfr`,
+`text-subs.en.srt`:
+
+1. **`GET /api/fs/list` lists folders and media files only** (`reframe.probe.MEDIA_EXTENSIONS`,
+   0049 item 8): `text-subs.en.srt` in the media root is not in the listing, and there is no
+   query parameter for other files. So the client cannot show more than media files, whatever
+   its filter says (item 9 below).
+2. **Paths outside the roots**: `/etc` and `<media>/..` are `403 path.outside_roots`, "The path
+   is outside the allowed folders", detail "… is not inside a folder that this server may
+   **write** to." (the route tries the read jail, then the write jail, and reports the second
+   refusal; for a folder to read, "write" is misleading — server wording, for the lead). A file
+   is `422 fs.not_a_folder`, a missing folder `404 fs.not_found`; `parent` is `null` at a root.
+3. **The probe task** (`POST /api/sources`): `progress` is a **percent** (`100.0` at the end, as
+   `TaskInfo` says), `message` is "Probing season" first, then "12/12 files"; the result is
+   `{sources: [{id, path}], errors: [{path, code, message, detail}]}` (a missing file:
+   `probe.not_found`, "The file does not exist."). An id is a hash of the path, so a probe of the
+   same file gives the same id, after a restart too.
+4. **`GET /api/sources` is server-wide**: it lists what every client probed. The store keeps
+   its own list (what this tab opened) and takes from the listing only the ids its task gave.
+5. **Grouping** (`POST /api/batch/group`, level `standard`) over the `season` folder: one group
+   "Show S01" of 12, `E05` near ("1 extra track (eng AC-3 2.0 "Commentary")"), `E09` near ("1
+   track missing (eng AAC-LC 2.0 "English Stereo")"). With `multitrack.mkv` open as well it
+   joins that group as an exact member (the season was cut from it). An empty `source_ids` is
+   `{groups: [], issues: []}`; an unknown id is `404 source.unknown`. Every open source is in
+   some group (a group of one for a lone file).
+6. **A probe warning**: none of the fixtures has one; `multitrack.mkv` remuxed with
+   `-metadata:s:a:0 language=xx1` gives "Stream 1: language tag 'xx1' is not a language code."
+   (the browser check's warning).
+
+### Choices the plan leaves open
+
+1. **Which sources the panel shows**: those this tab opened, in the order it opened them (item
+   4). A file opened again keeps its place and gets the new probe.
+2. **`open`** is one probe task per call (files and folders together); its progress shows in the
+   panel per run (the server's "n/m files" once the task gives a count); paths that gave no
+   source are one warning toast (`name: message: detail` per line); a failed task is an error
+   toast, a cancelled one says nothing. The first new source is selected when none is active;
+   `open(paths, { select: false })` (a member added to the contract) leaves the selection, and
+   `ensure` uses it: `editor.loadJob` drafts nothing, and a `select` from `ensure` would start
+   a newer `editor.open` that drops the queued job. A task the server no longer knows
+   (`TaskLostError`: it restarted during the probe) is posted once more.
+3. **`select`** sets `activeId` at once (the header names the new source while its draft
+   loads), then `editor.open(id, editor.presetId)`. The source the editor already has is not
+   drafted again (its edits stay). A failed draft (a toast already) makes the editor's source
+   the active one again and rejects.
+4. **Remove** asks first, in a bar at the top of the panel (sticky, `role="alertdialog"`, the
+   focus on *Remove*, Escape keeps), not a PrimeVue `ConfirmPopup`: the popup needs the
+   `ConfirmationService` in every mount and closes when the column scrolls. Delete on a group
+   removes all its sources. `DELETE /api/sources/{id}`; a `404` counts as removed (the server
+   forgot it already); another refusal is a toast and the source stays. The editor closes when
+   its source goes, and also when the active source goes while it is still drafting (that draft
+   is dropped). After a removal the focus goes to the next row.
+5. **Groups**: `POST /api/batch/group` at the `standard` level (04's default; there is no
+   setting for it) over the open sources that have a probe, from two sources on; the newest
+   answer wins; a refused grouping lists the sources one by one and says nothing. A group with
+   two or more open members takes the place of its first one; a group of one is shown as that
+   source alone. Members are labelled as `reframe batch` labels them (`E05`, `S01E05` when a
+   group spans seasons, the file name for a file without an episode or two of one episode),
+   with a dot per member (circle: exact; diamond: near, with its differences below), and the
+   header has the count, the level and the number of near matches. Groups are open by
+   default; *Edit group* and *Add group to queue* are M7.
+6. **A source's short line**: container, duration, the first video stream's commercial codec
+   and size (`MKV · 0:04 · H.264 Constrained Baseline 320×180`); then its probe warnings. A
+   source whose file changed or is gone (`source` `null`) says so with *Read it again*.
+7. **Server restart and `refresh`**: the open paths are probed again in one task; each entry
+   keeps its place and the active one stays active (the ids do not change, item 3); a path that
+   no longer gives a source stays in the list without a probe.
+8. **Keyboard in the panel**: a WAI-ARIA tree with one tab stop (the active source, else the
+   first row): Up / Down / Home / End move, Right opens a group or goes to its first member,
+   Left closes it or goes to the group, Enter and Space choose a source or open and close a
+   group, Delete and Backspace ask to remove.
+9. **The file browser** (`FileBrowserDialog`, mounted once by `App.vue`): a PrimeVue modal
+   `Dialog` (`aria-modal="true"`, so the shell's shortcuts stay out: `Ctrl+O` inside it does
+   not open a second one; its focus trap keeps the focus inside, and it gives the focus back to
+   the element that had it when it closes). The pickers go through `fileBrowser.ts`: a pick
+   while another is open cancels the older one (`[]` / `null`). Where it starts: the default
+   path's folder (save), else the folder this mode showed last in this tab, else the first
+   root of the kind (media for files and folders, output for save), falling back when a folder
+   is gone. Roots on the left with their kind, breadcrumbs from the deepest root that holds the
+   folder, *Up*, and a **Path** field: typing a path is how a folder outside the roots is
+   tried, and the server's problem shows above the folder, which stays. Mouse: a click on a
+   folder enters it; on a file, click / Ctrl / Shift choose as a desktop dialog does (Shift
+   from the last plain or Ctrl click); a double click opens. Keyboard on the list
+   (`role="listbox"`, `aria-activedescendant`): arrows, Home, End, Shift+arrows, Space
+   (choose or toggle), Enter (a folder: enter; else open what is chosen, or with nothing chosen
+   the file under the cursor), Backspace and Alt+Up (up), Ctrl+A (every file). Folder mode
+   shows the files dimmed (they cannot be chosen) and gives the folder shown; save mode has a
+   file name field (a click on a file takes its name) and gives folder + name, with no
+   overwrite question (the queue's collision setting decides).
+10. **The media filter (deviation).** The server lists media files only (item 1), so the
+    dialog's filter can only narrow that list: a caller's `filters` (`pickFiles({ filters:
+    ['srt'] })`, with or without the dot) shows a check box "Only srt", on by default, that
+    can be turned off. The sources panel passes no filter, so in M4 the list is the server's
+    media files with nothing to turn off. To show other files (M6's external subtitles need
+    `.srt`, `.ass`, … through `pickFiles`), `GET /api/fs/list` needs an option for every file
+    or for given extensions: a server change for the lead.
+11. **The desktop path**: the panel calls only `platform.pickFiles`, `platform.pickFolder` and
+    `platform.onFilesDropped` (registered while the panel lives); the dialog is never opened
+    there. The desktop stub's `onFilesDropped` throws, so the desktop build needs D-x's
+    implementation before the workspace mounts.
+
+The test double of the sources store in `views/WorkspaceView.test.ts` (task C's file) gained
+`probing` and `grouping`, which the real panel reads (commit `ca10002`, for the lead).
 
 ## Task F — F-18 naming editor
 
