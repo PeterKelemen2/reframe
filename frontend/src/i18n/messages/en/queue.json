@@ -1,1 +1,189 @@
-{}
+{
+  "state": {
+    "waiting": "Waiting",
+    "running": "Running",
+    "paused": "Paused",
+    "done": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "interrupted": "Interrupted"
+  },
+  "step": {
+    "analyse": "Analysing",
+    "pass1": "Pass 1 of 2",
+    "pass2": "Pass 2 of 2",
+    "encode": "Encoding",
+    "mkvpropedit": "Writing tags",
+    "finalize": "Finishing",
+    "of": "step {n} of {count}"
+  },
+  "units": {
+    "fps": "{value} fps",
+    "speed": "{value}×",
+    "percent": "{value} %"
+  },
+  "table": {
+    "label": "Jobs in the queue"
+  },
+  "columns": {
+    "drag": "Drag to reorder",
+    "state": "State",
+    "source": "Source",
+    "output": "Output",
+    "preset": "Preset",
+    "progress": "Progress",
+    "fps": "FPS",
+    "speed": "Speed",
+    "eta": "Time left",
+    "size": "Size",
+    "actions": "Actions"
+  },
+  "actions": {
+    "pause": "Pause {job}",
+    "resume": "Resume {job}",
+    "cancel": "Cancel {job}",
+    "retry": "Retry {job}",
+    "duplicate": "Duplicate {job}",
+    "edit": "Edit {job} in the workspace",
+    "remove": "Remove {job} from the queue",
+    "log": "Show the log of {job}",
+    "reveal": "Show the output of {job} in its folder",
+    "moveUp": "Move {job} up",
+    "moveDown": "Move {job} down"
+  },
+  "actionTips": {
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "duplicate": "Duplicate",
+    "edit": "Edit in the workspace",
+    "remove": "Remove",
+    "log": "Log",
+    "reveal": "Show in folder"
+  },
+  "empty": {
+    "title": "The queue is empty",
+    "text": "Open a file in the workspace and add it to the queue.",
+    "link": "Go to the workspace"
+  },
+  "run": {
+    "all": "Running: every waiting job is taken",
+    "only": "Running only the jobs another front end started ({n})",
+    "stopped": "Stopped",
+    "stoppedWaiting": "Stopped: {n} waiting job waits for Start | Stopped: {n} waiting jobs wait for Start"
+  },
+  "controls": {
+    "label": "Queue controls",
+    "start": "Start",
+    "startAll": "Start all",
+    "startAllHelp": "Take every waiting job, not only the ones another front end started",
+    "stop": "Stop",
+    "stopHelp": "Take no new job: running jobs go on to the end",
+    "pauseAll": "Pause all",
+    "resumeAll": "Resume all",
+    "cancelAll": "Cancel all"
+  },
+  "cancelAll": {
+    "title": "Cancel all jobs?",
+    "message": "This cancels {n} job that is waiting, running or paused. | This cancels all {n} jobs that are waiting, running or paused.",
+    "accept": "Cancel all jobs",
+    "reject": "Keep them"
+  },
+  "whenDone": {
+    "label": "When done",
+    "helpWeb": "Sleep and Shut down act on the server's computer, after a countdown that can be cancelled.",
+    "helpDesktop": "Quit, Sleep and Shut down start after a countdown that can be cancelled.",
+    "nothing": "Do nothing",
+    "notify": "Notify",
+    "quit": "Quit Reframe",
+    "quitDesktopOnly": "Quit Reframe (desktop app only)",
+    "sleep": "Sleep",
+    "shutdown": "Shut down"
+  },
+  "power": {
+    "label": "When-done countdown",
+    "countdown": "The queue is finished. When done: {action}.",
+    "executing": "When done: {action} now.",
+    "seconds": "in {n} s",
+    "cancel": "Cancel"
+  },
+  "log": {
+    "title": "Log of {job}",
+    "label": "Job log",
+    "follow": "Follow",
+    "copy": "Copy all",
+    "copied": "The log was copied",
+    "copyFailed": "The log could not be copied",
+    "lines": "{n} line | {n} lines",
+    "loading": "Reading the log…",
+    "failed": "The log could not be read.",
+    "empty": "The log is empty: the job has not run yet."
+  },
+  "activity": {
+    "label": "Activity of this session, newest first",
+    "filter": "Show",
+    "clear": "Clear",
+    "empty": "Nothing has happened yet in this session.",
+    "noneOfKind": "No entries of this kind.",
+    "unknownJob": "job {id}",
+    "kinds": {
+      "all": "All",
+      "jobs": "Jobs",
+      "queue": "Queue",
+      "system": "Tools and encoders",
+      "warnings": "Warnings",
+      "notifications": "Notifications",
+      "tasks": "Tasks"
+    },
+    "job": {
+      "added": "{job} was added to the queue",
+      "addedFailed": "{job} was added as failed",
+      "waiting": "{job} waits again",
+      "started": "{job} started",
+      "resumed": "{job} resumed",
+      "paused": "{job} paused",
+      "done": "{job} is done",
+      "failed": "{job} failed",
+      "cancelled": "{job} was cancelled",
+      "interrupted": "{job} was interrupted",
+      "removed": "{job} was removed from the queue",
+      "removedMany": "{n} jobs were removed from the queue"
+    },
+    "order": "The order of the queue changed",
+    "processing": {
+      "startAll": "The queue was started: it takes every waiting job",
+      "startOnly": "The queue was started for some jobs only ({n})",
+      "stop": "The queue was stopped: running jobs go on, no new job starts",
+      "idle": "The jobs of the last start have all ended"
+    },
+    "power": {
+      "started": "When done: {action} in {seconds} s",
+      "cancelled": "When done: {action} was cancelled",
+      "executing": "When done: {action} now"
+    },
+    "tools": "The tools were checked",
+    "tool": {
+      "found": "{name} {version}",
+      "foundNoVersion": "{name} found",
+      "missing": "{name} missing",
+      "tooOld": "{name} too old",
+      "broken": "{name} does not work"
+    },
+    "encoders": "Encoder status changed ({n})",
+    "encoder": {
+      "available": "available",
+      "unavailable": "unavailable",
+      "checking": "checking",
+      "error": "error",
+      "unknown": "not tested"
+    },
+    "task": {
+      "done": "Task {kind} done",
+      "failed": "Task {kind} failed",
+      "cancelled": "Task {kind} cancelled",
+      "running": "Task {kind} running"
+    },
+    "resync": "Some events were lost: the app read the server's state again"
+  }
+}
