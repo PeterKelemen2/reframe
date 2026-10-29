@@ -544,7 +544,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 ### F-15 Settings view
 - [ ] The sections from [03 §Settings](03-features.md#settings). The encoder table has a re-scan
       button. Tool paths have a **Test** button.
-- [ ] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
+- [x] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
       `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
       its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 

@@ -1,1 +1,133 @@
-{}
+{
+  "sections": "Settings sections",
+  "loading": "Loading the settings…",
+  "readOnly": "The server's settings file is newer than this Reframe or cannot be read, so changes would not be saved. The settings are shown read-only.",
+  "refusedWithDetail": "{title}. {detail}",
+  "tools": {
+    "title": "Tools",
+    "intro": "The programs Reframe runs. Where each one comes from: an environment variable on the server, a path in the settings, the bundled build, or the system PATH.",
+    "useBundled": "Use bundled FFmpeg",
+    "checkAgain": "Check again",
+    "downloading": "Downloading FFmpeg…",
+    "bundledUseless": "Environment variables on the server set ffmpeg and ffprobe, so a bundled FFmpeg would not be used.",
+    "version": "Version",
+    "from": "From",
+    "nextToFfmpeg": "(next to ffmpeg)",
+    "binary": "Program",
+    "noBinary": "Not found",
+    "override": "Path override",
+    "automatic": "Automatic (no override)",
+    "test": "Test",
+    "removeOverride": "Remove override",
+    "putBack": "Put back {path}",
+    "putBackAutomatic": "Put back automatic",
+    "testOk": "Works: version {version}",
+    "testOkNoVersion": "Works",
+    "testFailed": "Does not work: {reason}",
+    "envNote": "The environment variable {variable} on the server sets this path. To change it, change or unset the variable there and restart the server.",
+    "webNote": "A browser cannot choose the programs the server runs. Set {variable} on the server, or the path in the server's settings file.",
+    "status": {
+      "found": "Found",
+      "missing": "Missing",
+      "tooOld": "Too old",
+      "broken": "Does not work"
+    },
+    "origin": {
+      "env": "Environment variable {variable}",
+      "settings": "Path in the settings",
+      "bundled": "Bundled with Reframe",
+      "path": "System PATH",
+      "none": "Not found anywhere"
+    }
+  },
+  "encoders": {
+    "title": "Encoders",
+    "rescan": "Re-scan",
+    "detecting": "Detecting the encoders…",
+    "lastCheck": "Last full check: {time}.",
+    "neverChecked": "The encoders have not been checked yet.",
+    "fromCache": "The statuses come from the cache and have not been checked again yet.",
+    "hardwareTests": "Hardware test encodes",
+    "hardwareTestsHelp": "Encode a few frames with each hardware encoder to find out whether it works. Off: hardware encoders stay \"not tested\".",
+    "vaapiDevice": "VAAPI device",
+    "vaapiHelp": "Automatic tests the VAAPI encoders on every render node and uses the first one where each works. Choose a node to force it, for example on a computer with two GPUs.",
+    "vaapiAutomatic": "Automatic",
+    "vaapiOther": "Another render node…",
+    "vaapiNode": "Render node",
+    "vaapiPlaceholder": "/dev/dri/renderD129",
+    "vaapiUse": "Use this node",
+    "tableCaption": "Every encoder Reframe knows, with its status",
+    "column": {
+      "encoder": "Encoder",
+      "kind": "Kind",
+      "status": "Status",
+      "checked": "Last check"
+    },
+    "onDevice": "on {device}",
+    "notChecked": "Not checked",
+    "kind": {
+      "software": "Video, software",
+      "nvenc": "Video, NVIDIA NVENC",
+      "qsv": "Video, Intel Quick Sync",
+      "amf": "Video, AMD AMF",
+      "vaapi": "Video, VAAPI",
+      "audio": "Audio",
+      "other": "Other"
+    }
+  },
+  "output": {
+    "title": "Output",
+    "container": "Default container",
+    "collisionLabel": "When the file exists",
+    "collisionHelp": "Ask: the job stops and asks. Auto-rename: adds a number to the name. Overwrite: replaces the file.",
+    "collision": {
+      "ask": "Ask",
+      "autoRename": "Auto-rename",
+      "overwrite": "Overwrite"
+    },
+    "partialLabel": "Partial file",
+    "partialHelp": "What happens to the unfinished output file when a job fails or is cancelled.",
+    "partial": {
+      "delete": "Delete",
+      "keep": "Keep"
+    },
+    "naming": "File names and default folder"
+  },
+  "queue": {
+    "title": "Queue",
+    "parallelJobs": "Parallel jobs",
+    "parallelHelp": "How many jobs encode at the same time.",
+    "whenDoneLabel": "When done",
+    "whenDoneHelpWeb": "Sleep and Shut down act on the server's computer, after a countdown that can be cancelled.",
+    "whenDoneHelpDesktop": "Quit, Sleep and Shut down start after a countdown that can be cancelled.",
+    "whenDone": {
+      "nothing": "Do nothing",
+      "notify": "Notify",
+      "quit": "Quit Reframe",
+      "quitDesktopOnly": "Quit Reframe (desktop app only)",
+      "sleep": "Sleep",
+      "shutdown": "Shut down"
+    },
+    "sleepInhibit": "Prevent sleep while encoding",
+    "sleepInhibitHelp": "Stops automatic sleep while jobs run. Your own Sleep, the power button and the lid still work.",
+    "notifications": "Notifications",
+    "notificationsHelp": "A notification when a job is done or fails."
+  },
+  "appearance": {
+    "title": "Appearance",
+    "themeLabel": "Theme",
+    "theme": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "densityLabel": "Density",
+    "density": {
+      "comfortable": "Comfortable",
+      "compact": "Compact"
+    },
+    "language": "Language",
+    "languageHelp": "The language of the user interface.",
+    "languageMissing": "{language} (not available)"
+  }
+}
