@@ -101,6 +101,22 @@ describe('the job log viewer', () => {
     expect(el('[data-action="follow"]').getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('does not jump to the end when the user scrolls up while new lines are placed', async () => {
+    queue.jobs = [job('a', 'running')]
+    file = 'one\n'
+    mounted.push((await mountQueue(JobLog, { props: { jobId: 'a' } })).wrapper)
+    await settle()
+    const box = scroller()
+    file += 'two\n'
+    queue.logTicks = { a: 1 }
+    await flushPromises()
+    // The lines are in; the scroll to the end waits for the next frame.
+    box.scrollTop = 0
+    box.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(box.scrollTop).toBe(0)
+  })
+
   it('follows again when the user scrolls back to the end', async () => {
     queue.jobs = [job('a', 'running')]
     file = 'one\n'

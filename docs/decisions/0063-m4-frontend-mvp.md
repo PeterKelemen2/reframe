@@ -1132,7 +1132,84 @@ subtitles.
 
 ## Task K — F-14 queue, activity and job log
 
-(Written by task K.)
+Built: `views/QueueView.vue`, `views/ActivityView.vue`, `stores/activity.ts` and
+`components/queue/` (`QueueTable`, `QueueControls`, `WhenDoneSelect`, `PowerBanner`, `JobLog`,
+`useJobLog.ts`, `format.ts`, `activityLines.ts`), `i18n/messages/en/queue.json`.
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` (web mode, token, port 8730, `--tools-dir` the pinned FFmpeg n9.0.2,
+fixtures `multitrack` and `hdr10-4k`), headless Chromium, light and dark. The slow jobs are the
+4K fixture at 3840×2160 with libx265 `placebo` (about 40 s each here; `veryslow` was 27 s,
+too short to stop the queue under it).
+
+- **The dry run** was confirmed before the countdown from the server process itself:
+  `/proc/<pid>/environ` of `python -m reframe_server --mode web --auth token …` had
+  `REFRAME_POWER_DRY_RUN=1` and the temporary `REFRAME_CONFIG_DIR` / `REFRAME_DATA_DIR`. Only
+  *Sleep* was tried, and each countdown was cancelled after 2 s (`GET /api/power` then
+  `pending: null`). *Shut down* was never chosen.
+- **Stop**: with one job running and two waiting, *Stop* gave `processing: false`; the running
+  job ran on to `done` (21–24 s later) and 3 s after that both waiting jobs were still
+  `waiting` with `processing: false` (store and `GET /api/queue`).
+- **`processing` / `only` in the store** follow the real events
+  (`components/queue/queue.server.test.ts`): `POST /api/queue/start {job_ids: [A]}` (another
+  front end) gives `processing: true, only: [A]`; the store's `start()` widens it to
+  `only: null`; `stop()` gives `false` and the waiting job stays waiting after the running one
+  is cancelled; a start whose named job had ended gives `start` then `idle` (`false, null`).
+  The activity log has the reasons in order: start, start, stop, start, stop, start, idle.
+  Removing the store's `only` update makes the test fail.
+- **The job log**: `GET /api/queue/{id}/log` is empty before the first run; while x265 encodes
+  a 4K file the log grows only at the run's start (about 50 lines) and at its end (the stats,
+  the steps, the rename: 67 lines), so the follow mode was seen to keep the view at the end
+  when the end lines came, and to leave it where it was after a scroll up. A log read on from
+  `next` at its end answers `{text: "", next, more: false}`. Copy all gave the server's whole
+  log byte for byte (4106 characters, the first line `=== Reframe job …: run started …`).
+- **When done**: `PUT /api/queue/when-done` with `sleep` is read back as
+  `settings.queue.when_done`; the countdown came at once after the last job ended
+  (`power.countdown` `started`, then `tick` once a second; the banner showed "in 58 s").
+- **Reorder**: a keyboard move up sent the two jobs (`PUT /api/queue/order` with the moved job
+  and its neighbour in their new order); a drag sent every job; `GET /api/queue` had the same
+  order both times.
+
+### Choices where the plan leaves one
+
+- **The activity bound.** At most 1000 entries (`MAX_ENTRIES`); older ones are dropped. Events
+  that come several times a second (`job.progress`, up to 4 per second per job; `job.log`;
+  `task.progress`; a countdown's `tick`) and a `queue.changed` that only added jobs keep only
+  their latest entry per job, task or countdown: the newer one replaces the older. So a long
+  encode leaves one progress entry, not thousands, and B's dispatcher still records every
+  event (its test reads them back). The view shows none of these entries: a job's addition is
+  its `job.state` with `previous: null`, a removal or a reorder is a `queue.changed` compared
+  with the order before (the first one with the queue store's jobs). A removed job keeps its
+  name: the dispatcher records an event before the queue store applies it, so the store still
+  has the job then.
+- **The log follow rule.** The log is read whole from byte 0 in chunks until `more` is false,
+  then read on from `next` each time `queue.logTicks[id]` changes and once more when the job
+  ends (the end lines can come after the last `job.log` event). A tick during a read makes one
+  more read after it, however many ticks came. A line cut by a chunk end is joined. The view
+  follows (stays at the end) when it opens and after each new line, unless the user has
+  scrolled up: a scroll leaves follow mode when the view is more than 4 px from the end and
+  enters it again at the end; *Follow* jumps back. The scroll to the end waits one frame (the
+  virtual scroller sizes its content after its own update) and is skipped when the user
+  scrolled up in that frame.
+- **The log viewer** is a PrimeVue `Drawer` (modal, Escape closes it); on close the focus goes
+  back to the row's log button. A line's height is 1.4 rem in pixels (the virtual scroller needs
+  pixels); long lines scroll sideways, they do not wrap.
+- **Start and the run state.** Start is enabled when the queue is stopped with waiting jobs, and
+  while `only` is set (then labelled *Start all*: a Start without ids widens the run to every
+  waiting job). The UI never starts with ids. `only` is matched with the jobs in the queue for
+  the count ("only the jobs another front end started (1)").
+- **When done in web mode** follows task L: *Quit* is shown as "Quit Reframe (desktop app
+  only)" and cannot be chosen (`system.info.mode !== 'desktop'`); *Sleep* and *Shut down* act
+  on the server's computer, as the help says. The selector waits for the settings (the value is
+  a setting).
+- **Reveal in folder** shows only when `platform.kind === 'desktop'`, for a done job: calling
+  `revealInFolder` to find out would open a file manager on the desktop.
+- **A failed job** shows its error and its issues (message and severity, no fix buttons: the fixes
+  are for the editor's job) in an expanded row under it; *Edit* takes the job to the editor.
+- **Icon-only buttons** in the table do not shrink: a small icon-only PrimeVue button has less
+  room than an 18 px icon, and the icon (a flex item) shrank to 10 px (measured in Chromium).
+  The same happens in the track rows (finding L9).
 
 ## Task L — F-15 settings
 
