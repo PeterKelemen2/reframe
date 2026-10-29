@@ -68,10 +68,11 @@
     "link": "Go to the workspace"
   },
   "run": {
-    "all": "Running: every waiting job is taken",
+    "all": "Running: {n} waiting job starts in turn | Running: {n} waiting jobs start in turn",
+    "allIdle": "Running: jobs added now start in turn",
     "only": "Running only the jobs another front end started ({n})",
     "stopped": "Stopped",
-    "stoppedWaiting": "Stopped: {n} waiting job waits for Start | Stopped: {n} waiting jobs wait for Start"
+    "stoppedWaiting": "Stopped: {n} job waits for Start | Stopped: {n} jobs wait for Start"
   },
   "controls": {
     "label": "Queue controls",

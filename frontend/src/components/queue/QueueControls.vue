@@ -24,9 +24,12 @@ const state = computed(() => runState(queue.processing, queue.only, queue.jobs))
 const busy = ref(false)
 
 function describe(mode: 'all' | 'only' | 'stopped', onlyCount: number, held: number): string {
-  if (mode === 'all') return t('queue.run.all')
   if (mode === 'only') return t('queue.run.only', { n: onlyCount })
-  return held > 0 ? t('queue.run.stoppedWaiting', held) : t('queue.run.stopped')
+  if (mode === 'stopped') {
+    return held > 0 ? t('queue.run.stoppedWaiting', held) : t('queue.run.stopped')
+  }
+  const waiting = queue.counts.waiting
+  return waiting > 0 ? t('queue.run.all', waiting) : t('queue.run.allIdle')
 }
 
 const stateText = computed(() =>

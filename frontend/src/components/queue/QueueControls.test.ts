@@ -62,7 +62,10 @@ describe('the run state and the global controls', () => {
   it('says that the queue is stopped and how many jobs wait for Start; Start starts every job', async () => {
     queue.jobs = [job('a', 'done'), job('b'), job('c')]
     await mountIt(QueueControls)
-    expect(text('[data-field="run-state"]')).toBe('Stopped: 2 waiting jobs wait for Start')
+    expect(text('[data-field="run-state"]')).toBe('Stopped: 2 jobs wait for Start')
+    queue.jobs = [job('b')]
+    await flushPromises()
+    expect(text('[data-field="run-state"]')).toBe('Stopped: 1 job waits for Start')
     expect(el('[data-action="stop"]').disabled).toBe(true)
     el('[data-action="start"]').click()
     await flushPromises()
@@ -80,8 +83,12 @@ describe('the run state and the global controls', () => {
     queue.jobs = [job('a', 'running'), job('b')]
     queue.processing = true
     await mountIt(QueueControls)
-    expect(text('[data-field="run-state"]')).toBe('Running: every waiting job is taken')
+    expect(text('[data-field="run-state"]')).toBe('Running: 1 waiting job starts in turn')
     expect(el('[data-action="start"]').disabled).toBe(true)
+    // Nothing left to take: the runner takes what is added next.
+    queue.jobs = [job('a', 'running')]
+    await flushPromises()
+    expect(text('[data-field="run-state"]')).toBe('Running: jobs added now start in turn')
     el('[data-action="stop"]').click()
     await flushPromises()
     expect(queue.stop).toHaveBeenCalledOnce()
