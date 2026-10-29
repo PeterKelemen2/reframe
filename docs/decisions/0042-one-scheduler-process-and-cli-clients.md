@@ -221,7 +221,9 @@ CLI, fixture media or the fake FFmpeg):
    desktop sidecar the UI quits (as in 0037).
 4. *`reframe queue` against a server that is stopping*: a clean error, not a hang.
 5. *A global Stop from the UI* also stops the waiting jobs of a CLI. Default: the CLI says
-   "the queue was stopped by another front end" and goes on waiting (Ctrl+C cancels).
+   "the queue was stopped by another front end" and goes on waiting (Ctrl+C cancels). Not
+   built yet ([0061](0061-c17-remote-queue-and-queue-commands.md), the CLI's review fixes): no
+   event tells a client that the queue was stopped; one is needed, with the UI's Stop in M4.
 
 ## Plan changes
 

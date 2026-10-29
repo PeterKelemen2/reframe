@@ -13,6 +13,7 @@ from fastapi import Body, Query
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from reframe.models import JobSettings, QueueJob, WhenDone
+from reframe.queue import ENDED
 from reframe.queue.errors import UnknownJobError
 from reframe.service import Reframe
 from reframe_server import security
@@ -210,9 +211,14 @@ async def cancel_job(job_id: str, reframe: ReframeDep) -> None:
 
 
 @router.post("/queue/{job_id}/retry", response_model=QueueJob)
-async def retry(job_id: str, reframe: ReframeDep) -> JsonTextResponse:
+async def retry(job_id: str, reframe: ReframeDep, hub: HubDep) -> JsonTextResponse:
     """Make a failed, cancelled or interrupted job wait again (409 for a running, paused or
     done job)."""
+    job = reframe.queue.get(job_id)
+    if job is not None and job.state in ENDED:
+        # Its next run is the retrying front end's: the end of the connection that added the
+        # job must not cancel it. Before the await, so that no end comes in between.
+        hub.release(job_id)
     return JsonTextResponse(_public(reframe, await reframe.queue.retry(job_id)))
 
 

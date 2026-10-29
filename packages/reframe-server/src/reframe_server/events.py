@@ -2,7 +2,8 @@
 core's events with a sequence number: progress throttled per id, log lines batched, and a
 heartbeat. Each connection reads its bus subscription only between two sends, so a client
 that does not keep up leaves its backlog in that bounded, coalescing queue. Jobs added with a
-connection's ``client_id`` are cancelled when that client goes away without a ``detach``.
+connection's ``client_id`` are cancelled when that client goes away without a ``detach``; a
+job that another front end retries leaves its connection.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from reframe.models import (
     TaskProgressEvent,
     json_text,
 )
-from reframe.queue import QueueService, UnknownJobError
+from reframe.queue import ENDED, QueueService, UnknownJobError
 from reframe_server import security
 from reframe_server.config import ServerConfig
 
@@ -114,8 +115,8 @@ class Heartbeat(BaseModel):
 
 
 class Attachment:
-    """The jobs that ``POST /api/queue`` attached to one connection. Running state only: a
-    server restart forgets them."""
+    """The jobs that ``POST /api/queue`` attached to one connection, until they are retried.
+    Running state only: a server restart forgets them."""
 
     def __init__(self, queue: QueueService) -> None:
         self.client_id = secrets.token_hex(16)
@@ -136,14 +137,24 @@ class Attachment:
             return self._queue.get(job.id) or job
         return job
 
+    def release(self, job_id: str) -> None:
+        """The job leaves the connection: its next run belongs to the front end that retried
+        it."""
+        if job_id in self._jobs:
+            self._jobs.remove(job_id)
+
     def _detach(self) -> None:
         self._cancels = False
 
     def _end(self, *, client_left: bool) -> list[str]:
-        """The jobs to cancel now that the connection has ended."""
+        """The jobs to cancel now that the connection has ended. A job that has ended is left
+        out: a retry that comes before the cancel runs makes it another front end's job."""
         self._open = False
         self._cancels = self._cancels and client_left
-        return list(self._jobs) if self._cancels else []
+        if not self._cancels:
+            return []
+        current = [self._queue.get(job_id) for job_id in self._jobs]
+        return [job.id for job in current if job is not None and job.state not in ENDED]
 
 
 async def _cancel(queue: QueueService, job_ids: Iterable[str]) -> None:
@@ -202,6 +213,11 @@ class EventHub:
     def client_open(self, client_id: str) -> bool:
         """A connection that was given ``client_id`` is open (for ``attach``)."""
         return client_id in self._clients
+
+    def release(self, job_id: str) -> None:
+        """The job leaves every open connection that it was attached to (it is retried)."""
+        for client in self._clients.values():
+            client.release(job_id)
 
     def attachment(self, client_id: str) -> Attachment | None:
         """The jobs of the open connection that was given ``client_id``; ``None`` when no such

@@ -15,6 +15,7 @@ import pytest
 from reframe import cli
 from reframe.models import JobState, QueueJob
 from reframe.queue import lock as lock_module
+from reframe.queue.logs import log_file
 from reframe.queue.store import STORE_FILE
 from reframe.remote import owner as owner_module
 from reframe_testing.server import ApiFactory
@@ -87,6 +88,23 @@ async def test_list_without_an_owner_reads_the_saved_queue_as_it_is(
     db.close()
 
 
+async def test_list_and_log_say_why_a_running_server_is_not_used(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from reframe_server.routers import health
+
+    job = await add(server)
+    monkeypatch.setattr(health, "API_VERSION", 2)
+    server.publish()
+    assert await cli.run_queue_list(as_json=False) == cli.EXIT_OK
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first.startswith("The Reframe server of this data folder cannot be used (Reframe ")
+    assert first.endswith("it speaks API version 2, not 1 as this reframe does): the saved queue.")
+    assert await cli.run_queue_log(job.id, follow=False) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert err.startswith("warning: the Reframe server of this data folder cannot be used (")
+
+
 async def test_an_empty_queue(make_api: ApiFactory, capsys: pytest.CaptureFixture[str]) -> None:
     async with make_api(mode="desktop"):
         pass  # the folders and the environment of a server, and no store file
@@ -121,6 +139,25 @@ async def test_log_follows_a_running_job_until_it_ends(
     assert "Job cancelled" in capsys.readouterr().out  # written after the follow began
 
 
+async def test_following_a_log_ends_with_an_error_when_the_owner_stops_first(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with make_api(mode="desktop") as api:
+        api.fake.set_scenario(HANG)
+        async with api.live() as live:
+            server = Server(api, live)
+            job = await add(server, start=True)
+            await running(server, job.id)
+            server.publish()
+            follow = asyncio.create_task(cli.run_queue_log(job.id, follow=True))
+            await asyncio.sleep(1.0)
+            assert not follow.done()
+        assert await asyncio.wait_for(follow, 10) == cli.EXIT_FAILED
+        await api.reframe.queue.cancel(job.id)
+    err = capsys.readouterr().err
+    assert err == f"error: the Reframe server stopped before job {job.id[:8]} ended.\n"
+
+
 async def test_a_job_that_is_not_in_the_queue(
     server: Server, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -128,6 +165,25 @@ async def test_a_job_that_is_not_in_the_queue(
     server.publish()
     assert await cli.run_queue_log("no-such-job", follow=False) == cli.EXIT_FAILED
     assert capsys.readouterr().err == "error: there is no job no-such-job in the queue.\n"
+    assert await cli.run_queue_log("", follow=False) == cli.EXIT_FAILED
+    assert capsys.readouterr().err == "error: name a job by its id or the start of it.\n"
+
+
+async def test_queue_output_shows_no_control_characters(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A source named with an escape sequence, and a log line with one, reach the terminal as
+    U+FFFD: they cannot change the terminal."""
+    job = await add(server, "Evil\x1b]0;title\x07.mkv")
+    log = log_file(server.data_dir, job.id)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_bytes(b"frame=1 \x1b[2J\x1b[31mred\n")
+    server.publish()
+    assert await cli.run_queue_list(as_json=False) == cli.EXIT_OK
+    listed = capsys.readouterr().out
+    assert "Evil�]0;title�.mkv" in listed
+    assert await cli.run_queue_log(job.id, follow=False) == cli.EXIT_OK
+    assert capsys.readouterr().out == "frame=1 �[2J�[31mred\n"
 
 
 def test_a_job_is_named_by_its_id_or_a_start_that_names_one_job() -> None:
@@ -158,6 +214,25 @@ async def test_pause_resume_and_cancel_by_id(
         assert await cli.run_queue_action(action, [job.id[:8]], every=False) == cli.EXIT_OK
         assert capsys.readouterr().out.strip() == f"{job.id[:8]} Show.mkv: {after}"
         assert state(server, job.id) == after
+
+
+@pytest.mark.parametrize(
+    ("action", "start", "said"),
+    [("cancel", True, "it has ended (done)"), ("pause", False, "it is waiting, not running")],
+)
+async def test_an_action_that_the_jobs_state_does_not_allow(
+    server: Server, capsys: pytest.CaptureFixture[str], action: str, start: bool, said: str
+) -> None:
+    job = await add(server, start=start)
+    if start:
+        await asyncio.wait_for(server.api.reframe.queue.wait([job.id]), 30)
+    before = state(server, job.id)
+    server.publish()
+    assert await cli.run_queue_action(action, [job.id], every=False) == cli.EXIT_FAILED
+    captured = capsys.readouterr()
+    assert captured.err == f"error: {job.id[:8]} Show.mkv: {said}.\n"
+    assert captured.out == ""
+    assert state(server, job.id) is before
 
 
 async def test_all(server: Server, capsys: pytest.CaptureFixture[str]) -> None:
@@ -315,10 +390,32 @@ async def test_the_log_of_a_job_that_never_ran_is_empty(
     assert capsys.readouterr().out == ""
 
 
-async def test_following_a_log_without_a_live_owner_ends(
+async def test_following_the_log_of_a_job_that_an_in_process_command_runs(
     make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The saved queue says "running", but the process that owned it is gone."""
+    """No server, but the process that holds the saved queue (an ``--in-process`` command)
+    runs: the log is followed until the saved queue says the job ended."""
+    async with make_api(mode="desktop") as api:
+        job = await api.reframe.queue.add(await Server(api, None).job())  # type: ignore[arg-type]
+        data_dir = api.reframe.data_dir
+    saved_queue(data_dir, "UPDATE jobs SET state = 'running' WHERE id = ?", job.id)
+    (data_dir / "queue.lock").write_text(f"{os.getpid()}\n", encoding="ascii")
+    follow = asyncio.create_task(cli.run_queue_log(job.id, follow=True))
+    await asyncio.sleep(1.0)
+    assert not follow.done()
+    log = log_file(data_dir, job.id)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("the last line\n", encoding="utf-8")
+    saved_queue(data_dir, "UPDATE jobs SET state = 'done' WHERE id = ?", job.id)
+    assert await asyncio.wait_for(follow, 10) == cli.EXIT_OK
+    assert capsys.readouterr().out == "the last line\n"
+
+
+async def test_following_a_log_without_a_live_owner_ends_with_an_error(
+    make_api: ApiFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The saved queue says "running", but the process that owned it is gone: the job will not
+    end."""
     async with make_api(mode="desktop") as api:
         job = await api.reframe.queue.add(await Server(api, None).job())  # type: ignore[arg-type]
         data_dir = api.reframe.data_dir
@@ -326,7 +423,10 @@ async def test_following_a_log_without_a_live_owner_ends(
     gone = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
     await gone.wait()
     (data_dir / "queue.lock").write_text(f"{gone.pid}\n", encoding="ascii")
-    assert await asyncio.wait_for(cli.run_queue_log(job.id, follow=True), 10) == cli.EXIT_OK
+    follow = cli.run_queue_log(job.id, follow=True)
+    assert await asyncio.wait_for(follow, 10) == cli.EXIT_FAILED
+    err = capsys.readouterr().err
+    assert err == f"error: the Reframe server stopped before job {job.id[:8]} ended.\n"
 
 
 @pytest.mark.parametrize("command", ["retry", "remove"])
