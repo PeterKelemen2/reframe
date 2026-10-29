@@ -60,6 +60,12 @@ body {
   opacity: 1;
 }
 
+/* The option under the keyboard or the pointer: its tint alone is 1.1:1 on the list. */
+.p-select-option.p-focus,
+.p-listbox-option.p-focus {
+  box-shadow: inset 0 0 0 2px var(--p-primary-color);
+}
+
 /* The target of `ui.reveal(path)` (useReveal), for a moment. */
 .is-revealed {
   border-radius: var(--rf-radius-md);

@@ -257,11 +257,15 @@ useReveal(() => props.path, root)
   --p-radiobutton-border-color: var(--rf-field-tone);
   --p-radiobutton-hover-border-color: var(--rf-field-tone);
   --p-radiobutton-invalid-border-color: var(--rf-field-tone);
-  --p-togglebutton-border-color: var(--rf-field-tone);
-  --p-togglebutton-invalid-border-color: var(--rf-field-tone);
-  --p-selectbutton-invalid-border-color: var(--rf-field-tone);
   --p-toggleswitch-border-color: var(--rf-field-tone);
   --p-toggleswitch-hover-border-color: var(--rf-field-tone);
   --p-toggleswitch-invalid-border-color: var(--rf-field-tone);
+}
+
+/* A SelectButton is one control: the outline goes round the group, checked option included. */
+.rf-field--error .rf-field__control :deep(.p-selectbutton),
+.rf-field--warning .rf-field__control :deep(.p-selectbutton) {
+  outline: 1px solid var(--rf-field-tone);
+  outline-offset: 0;
 }
 </style>
