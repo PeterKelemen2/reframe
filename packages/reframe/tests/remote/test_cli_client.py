@@ -489,6 +489,19 @@ async def test_ctrl_c_leaves_a_job_another_front_end_retried(
     await server.api.reframe.queue.cancel(a)
 
 
+def _open_connections(server: Server) -> list[ClientConnection]:
+    """The open event connections of this process's clients to the test's server."""
+    from websockets.protocol import State
+
+    return [
+        found
+        for found in gc.get_objects()
+        if type(found) is ClientConnection  # not a weak proxy of it
+        and found.state is State.OPEN
+        and found.remote_address[1] == server.live.port
+    ]
+
+
 def _sigtstp_handled() -> bool:
     return signal.getsignal(STOP) not in (signal.SIG_DFL, signal.SIG_IGN, None)
 
@@ -502,13 +515,12 @@ async def test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them(
     keepalive). When the command is continued it resumes the job and follows it to its end."""
     server.api.fake.set_scenario(scenario(ends("A.mkv", seconds=2)))
     server.publish()
-    hub = server.api.app.state.hub
     seen: list[tuple[JobState | None, int]] = []
     job_id = ""
 
     def stopped() -> None:
         job = server.api.reframe.queue.get(job_id)
-        seen.append((job.state if job is not None else None, hub.connections))
+        seen.append((job.state if job is not None else None, len(_open_connections(server))))
 
     monkeypatch.setattr(cli, "_stop_process", stopped, raising=False)
     task = asyncio.create_task(
@@ -556,20 +568,6 @@ async def test_a_command_that_was_stopped_cancels_its_jobs_on_sigterm(
     assert states(server) == {job_id: JobState.CANCELLED}
 
 
-def _open_connection(server: Server) -> ClientConnection:
-    """The command's event connection to the test's server."""
-    from websockets.protocol import State
-
-    [connection] = [
-        found
-        for found in gc.get_objects()
-        if type(found) is ClientConnection  # not a weak proxy of it
-        and found.state is State.OPEN
-        and found.remote_address[1] == server.live.port
-    ]
-    return connection
-
-
 @pytest.mark.parametrize(
     ("attached", "answers"),
     [(True, True), (False, True), (True, False)],
@@ -602,7 +600,8 @@ async def test_after_a_lost_connection_the_owners_states_are_reported(
         return await connect(*args, **kwargs) if answers else "no Reframe server answers"
 
     monkeypatch.setattr(cli, "connect_owner", after_the_owner_acted)
-    _open_connection(server).transport.abort()
+    [connection] = _open_connections(server)
+    connection.transport.abort()
     code = await asyncio.wait_for(task, WAIT)
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
