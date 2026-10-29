@@ -85,7 +85,18 @@ def _jailed(config: ServerConfig, path: str) -> Path:
     try:
         return security.jail_read(config, path)
     except ProblemError:
+        pass
+    try:
         return security.jail_write(config, path)
+    except ProblemError as refused:
+        problem = refused.problem
+        if problem.code != "path.outside_roots":
+            raise
+        # The write check's own text would say "may write to" while the user only browses.
+        detail = (
+            f"{path} is outside the server's media and output folders. Browse from one of them."
+        )
+        raise ProblemError(problem.status, problem.code, problem.title, detail) from None
 
 
 def _roots(config: ServerConfig) -> list[FsRoot]:

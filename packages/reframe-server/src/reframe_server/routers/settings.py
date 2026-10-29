@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from reframe.models import AppSettings, AppWarningEvent, FieldChange, JsonPatch, ToolPaths
+from reframe.tools import ENV_VARS
 from reframe_server import security
 from reframe_server.api import api_router
 from reframe_server.config import ServerConfig
@@ -62,12 +63,16 @@ def _check(config: ServerConfig, old: AppSettings, new: AppSettings) -> None:
     """Runs under the store's lock on the settings the patch was applied to, so a concurrent
     change cannot slip a patch past it. A value the patch does not change is not checked."""
     if config.mode == "web":
-        if _sets_a_program(old.tools, new.tools):
+        programs = _programs_set(old.tools, new.tools)
+        if programs:
+            variables = [variable for tool, variable in ENV_VARS.items() if tool in programs]
             raise ProblemError(
                 403,
                 "settings.tools_forbidden",
                 "A web client cannot choose the programs the server runs",
-                "Set REFRAME_FFMPEG / REFRAME_FFPROBE on the server instead.",
+                f"Set {' / '.join(variables)} on the server instead."
+                if variables
+                else "Tool paths are set on the server.",
             )
         device = (new.encoders.vaapi_device or "").strip()
         changed = new.encoders.vaapi_device != old.encoders.vaapi_device
@@ -84,10 +89,12 @@ def _check(config: ServerConfig, old: AppSettings, new: AppSettings) -> None:
             security.jail_write(config, folder)
 
 
-def _sets_a_program(old: ToolPaths, new: ToolPaths) -> bool:
+def _programs_set(old: ToolPaths, new: ToolPaths) -> set[str]:
     # Removing an override ("Use bundled") lets discovery choose again: allowed.
     before, after = old.model_dump(mode="json"), new.model_dump(mode="json")
-    return any(value is not None and before.get(name) != value for name, value in after.items())
+    return {
+        name for name, value in after.items() if value is not None and before.get(name) != value
+    }
 
 
 def _folders(model: BaseModel, where: str = "") -> Iterator[tuple[str, Path]]:

@@ -1566,5 +1566,36 @@ browser checks in headless Chromium against `scripts/dev-server.py` (pinned FFmp
 
 ### Fix round — FE (server texts)
 
-(Written by task FE.)
+2026-10-30. Three texts that the screens show as they come from the server. No status, problem
+code, title or response model changed; no OpenAPI text changed. Each test fails with the old
+text (checked by putting it back). Before and after: `curl` against `scripts/dev-server.py`
+(web mode, pinned FFmpeg n9.0.2, MediaInfo not installed).
+
+1. **L6 / R2-20, a refused folder listing.** `GET /api/fs/list` tries the read check, then the
+   write check, and answered with the second refusal: "/etc is not inside a folder that this
+   server may write to." also when the user browses to open a file. The route now replaces
+   the detail of a `path.outside_roots` refusal (same 403, code and title): "/etc is outside
+   the server's media and output folders. Browse from one of them." Both kinds are named
+   because the listing accepts both (the output folder picker browses below an output root).
+   A `path.invalid` (400) passes unchanged. The text is made in `routers/fs.py`;
+   `security.py` is unchanged, so every other refusal keeps "may read from" / "may write to".
+   Test: `test_fs.py::test_a_folder_outside_the_roots_is_refused_as_outside_media_and_output`.
+2. **L12, `settings.tools_forbidden`.** The detail said "Set REFRAME_FFMPEG / REFRAME_FFPROBE
+   on the server instead." for every tool. It now names the variable of each tool the refused
+   patch sets, in discovery's order, from `reframe.tools.ENV_VARS` (no second list): "Set
+   REFRAME_MEDIAINFO on the server instead.", "Set REFRAME_FFMPEG / REFRAME_MKVPROPEDIT on the
+   server instead.". A key under `tools` that is no tool (the model keeps unknown fields) has no
+   variable: "Tool paths are set on the server." Test:
+   `test_settings.py::test_a_refused_program_names_the_variables_of_the_tools_it_sets`.
+3. **R2-20, the reason of a missing optional tool.** Decision: one text for both modes, made in
+   the core. The core does not know the mode, and a web-mode text from the server would mean
+   rewriting the core's reasons; both modes honour the variable. Before: "mediainfo was not
+   found (optional: install it, or set its path in Settings)." After: "mediainfo was not found
+   (optional: install it, or set REFRAME_MEDIAINFO to its path)." The same line serves
+   mkvpropedit (REFRAME_MKVPROPEDIT). Desktop mode loses the hint to Settings, where the reason
+   is shown next to the tool's path field anyway. Not changed: the reason of a missing FFmpeg
+   ("Set its path in Settings or REFRAME_FFMPEG, or run `reframe tools fetch`.") already names
+   a way that works in web mode. Tests: `test_system.py::test_a_missing_optional_tool_tells_a_web_client_what_it_can_do`
+   (web mode, an empty `PATH`: both optional tools missing, the variable named, no
+   "Settings"), and `test_discovery.py::test_nothing_found` names the variable.
 
