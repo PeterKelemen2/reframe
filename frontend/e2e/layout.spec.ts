@@ -1,7 +1,10 @@
 import type { Page } from '@playwright/test'
 
-import { openApp, openFile } from './support/app'
+import { openApp, openFile, waitForStore } from './support/app'
 import { expect, test } from './support/test'
+
+// Its encoder is unavailable under the fake FFmpeg: its issue's fix has a long label.
+const UNAVAILABLE_PRESET = 'h265-nvenc-1080p'
 
 /** The page's own scroll height and position next to the window's height. */
 function pageScroll(page: Page): Promise<{ height: number; top: number; window: number }> {
@@ -61,4 +64,20 @@ test('the queue view with a job is one window high', async ({ page }) => {
   await page.locator('.nav-rail').getByRole('link', { name: 'Queue' }).click()
   await expect(page.locator('[data-view="queue"] tbody tr').first()).toBeVisible()
   await expectOneWindowHigh(page, 'Queue')
+})
+
+test("the status bar's issue list keeps a message readable beside a long fix", async ({ page }) => {
+  await openApp(page)
+  await openFile(page, 'multitrack.mkv')
+  await page.locator('.preset-picker__trigger').click()
+  await page.locator(`.preset-picker__list [data-preset="${UNAVAILABLE_PRESET}"]`).click()
+  await waitForStore(page, 'editor', 'presetId', UNAVAILABLE_PRESET)
+
+  await page.locator('.validation-summary').click()
+  const issue = page
+    .locator('.validation-summary__list .rf-issue')
+    .filter({ has: page.locator('.rf-issue__fix', { hasText: 'closest match' }) })
+  await expect(issue).toHaveCount(1)
+  const message = await issue.locator('.rf-issue__message').boundingBox()
+  expect(message?.width, 'the message beside the fix').toBeGreaterThan(200)
 })

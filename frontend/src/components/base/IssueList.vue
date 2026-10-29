@@ -15,7 +15,7 @@ import { bySeverity, SEVERITY_ICON, useSeverityLabel } from './severity'
  */
 const props = defineProps<{
   issues: ValidationIssue[]
-  /** One line per issue, for the status bar's list. */
+  /** Tighter rows, for the status bar's list. */
   compact?: boolean
 }>()
 
@@ -150,19 +150,8 @@ async function applyFix(fix: Fix): Promise<void> {
 }
 
 .rf-issue-list--compact .rf-issue {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
   padding: var(--rf-space-1) var(--rf-space-2);
   font-size: var(--rf-font-size-sm);
-}
-
-.rf-issue-list--compact .rf-issue__icon {
-  margin-top: 0;
-}
-
-.rf-issue-list--compact .rf-issue__actions {
-  grid-column: 3;
-  flex-wrap: nowrap;
 }
 
 .rf-issue-list__empty {
