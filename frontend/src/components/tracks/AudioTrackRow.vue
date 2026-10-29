@@ -488,6 +488,12 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
   width: 100%;
 }
 
+/* A field can be 11rem wide: a long value wraps instead of being cut ("Default (160 kb/s)"). */
+.track-field__control :deep(.p-select-label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .track-field__number :deep(input) {
   width: 100%;
   min-width: 0;

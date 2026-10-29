@@ -243,6 +243,12 @@ const formatOptions = computed(() =>
   width: 100%;
 }
 
+/* A field can be 11rem wide: a long value wraps instead of being cut. */
+.track-field__control :deep(.p-select-label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .track-field__external {
   display: inline-block;
   padding: var(--rf-space-2) 0;
