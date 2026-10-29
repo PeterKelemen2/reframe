@@ -477,9 +477,11 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] "Modified vs preset" uses `presets/diff` (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task D").
 
 ### F-5 Sources panel and opening files
-- [ ] Web: a server file-browser dialog (roots, breadcrumbs, media filter, multi-select).
+- [x] Web: a server file-browser dialog (roots, breadcrumbs, media filter, multi-select). The
+      server lists media files only, so the filter narrows that list to a caller's types
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task E").
 - [ ] Desktop: native dialogs and drag-and-drop through `Platform`.
-- [ ] Probe progress, warnings, batch groups (collapsible), near-match markers.
+- [x] Probe progress, warnings, batch groups (collapsible), near-match markers.
 
 ### F-6 Summary tab
 - [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields (the job

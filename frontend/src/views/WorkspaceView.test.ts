@@ -15,6 +15,8 @@ const sources = reactive({
   entries,
   activeId,
   active: computed(() => entries.value.find((entry) => entry.id === activeId.value) ?? null),
+  probing: [],
+  grouping: null,
   pick: vi.fn<() => Promise<void>>(async () => {}),
 })
 const editor = reactive({ job: null })

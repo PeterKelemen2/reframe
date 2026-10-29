@@ -37,11 +37,45 @@ describe('web platform', () => {
     expect(document.title).toBe('Reframe')
   })
 
-  it('rejects the pickers it does not have yet', async () => {
+  it('opens the file browser for files and gives its choice, or nothing when cancelled', async () => {
     const platform = await loadPlatform()
-    const message = 'not available in this build yet'
-    await expect(platform.pickFiles({ multiple: true })).rejects.toThrow(message)
-    await expect(platform.pickFolder()).rejects.toThrow(message)
-    await expect(platform.pickSavePath({ defaultPath: 'out.mkv' })).rejects.toThrow(message)
+    const { currentRequest, finish } = await import('@/components/sources/fileBrowser')
+    const picked = platform.pickFiles({ multiple: true, filters: ['.MKV', 'mp4'] })
+    const request = currentRequest()
+    expect(request).toMatchObject({ mode: 'files', multiple: true, filters: ['mkv', 'mp4'] })
+    finish(request!, ['/m/a.mkv', '/m/b.mkv'])
+    expect(await picked).toEqual(['/m/a.mkv', '/m/b.mkv'])
+    expect(currentRequest()).toBeNull()
+
+    const cancelled = platform.pickFiles({ multiple: false })
+    finish(currentRequest()!, null)
+    expect(await cancelled).toEqual([])
+  })
+
+  it('opens the file browser for a folder and for a path to save', async () => {
+    const platform = await loadPlatform()
+    const { currentRequest, finish } = await import('@/components/sources/fileBrowser')
+    const folder = platform.pickFolder({ title: 'Output folder' })
+    expect(currentRequest()).toMatchObject({ mode: 'folder', title: 'Output folder' })
+    finish(currentRequest()!, ['/srv/out'])
+    expect(await folder).toBe('/srv/out')
+
+    const save = platform.pickSavePath({ defaultPath: '/srv/out/a.mkv' })
+    expect(currentRequest()).toMatchObject({ mode: 'save', defaultPath: '/srv/out/a.mkv' })
+    finish(currentRequest()!, null)
+    expect(await save).toBeNull()
+  })
+
+  it('cancels an open picker when another one opens', async () => {
+    const platform = await loadPlatform()
+    const { currentRequest, finish } = await import('@/components/sources/fileBrowser')
+    const first = platform.pickFiles({ multiple: true })
+    const stale = currentRequest()!
+    const second = platform.pickFolder()
+    expect(await first).toEqual([])
+    finish(stale, ['/m/late.mkv'])
+    expect(currentRequest()).toMatchObject({ mode: 'folder' })
+    finish(currentRequest()!, ['/m'])
+    expect(await second).toBe('/m')
   })
 })
