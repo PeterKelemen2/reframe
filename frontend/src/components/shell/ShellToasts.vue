@@ -70,22 +70,26 @@ function closed(event: { message: ToastMessageOptions }): void {
 }
 
 .shell-toasts .p-toast-message-success {
-  background: linear-gradient(var(--p-toast-success-background), var(--p-toast-success-background)),
+  background:
+    linear-gradient(var(--p-toast-success-background), var(--p-toast-success-background)),
     var(--rf-color-surface);
 }
 
 .shell-toasts .p-toast-message-info {
-  background: linear-gradient(var(--p-toast-info-background), var(--p-toast-info-background)),
+  background:
+    linear-gradient(var(--p-toast-info-background), var(--p-toast-info-background)),
     var(--rf-color-surface);
 }
 
 .shell-toasts .p-toast-message-warn {
-  background: linear-gradient(var(--p-toast-warn-background), var(--p-toast-warn-background)),
+  background:
+    linear-gradient(var(--p-toast-warn-background), var(--p-toast-warn-background)),
     var(--rf-color-surface);
 }
 
 .shell-toasts .p-toast-message-error {
-  background: linear-gradient(var(--p-toast-error-background), var(--p-toast-error-background)),
+  background:
+    linear-gradient(var(--p-toast-error-background), var(--p-toast-error-background)),
     var(--rf-color-surface);
 }
 </style>
