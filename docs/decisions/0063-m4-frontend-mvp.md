@@ -635,7 +635,100 @@ J, after saving the preset).
 
 ## Task G — F-6 Summary tab
 
-(Written by task G.)
+Built: `components/editor/tabs/SummaryTab.vue`, `components/summary/` (the seven cards,
+`SummaryLink`, the pure helpers `format.ts`, `estimate.ts`, `pipeline.ts`, `filters.ts`,
+`tracks.ts`, the composables `useGeometry`, `useThumbnail`, `useJobSource`, test data in
+`testing.ts`) and `i18n/messages/en/summary.json`.
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2, fixtures `multitrack`, `hdr10`,
+`letterbox`; `src/components/summary/summary.server.test.ts` repeats items 2 and 3.
+
+1. **The thumbnail flow.** `POST /api/preview/frames {source_id, count: 1}` is not a 202: the
+   request waits for the frames task and answers `{frames, notes}` at once (0.1 s for the
+   fixture). `count: 1` gives the middle of the file (2.0 s of 4.021 s). The frame's `url` is
+   relative (`/api/preview/frames/<key>.png?exp=…&sig=…`), signed for about 5 minutes (`exp` is
+   now + 300 s), and loads **without** the bearer token (an `<img>` cannot send it): `200`,
+   `image/png`, `ETag` the key, `Cache-Control: private, max-age=3600`; a changed `sig` is a
+   `401`. The app's CSP (`img-src 'self' data: blob:`) lets it load: same origin. HDR10 frames
+   come tone mapped, with a note ("…tone mapped to SDR for display with zscale + tonemap").
+2. **`POST /api/jobs/geometry`** reads the job's source, `dimensions`, `video.passthrough` and
+   whether `filters` has `deinterlace` (the route's code). For `letterbox.mkv` with a manual
+   crop of 22 / 24 lines: crop 320×134, aspect 2.388; with pixel aspect custom 4:3: scaled
+   240×134, `output_sar` 4:3; passthrough: `geometry: null`; a draft whose automatic crop has
+   not been detected: no crop, with the notes "Automatic crop: detection has not run yet…" and
+   "Upscaling is off…". A size mode the server does not know is a 422 `request.invalid`.
+
+### Choices where the plan leaves one
+
+1. **Thumbnail.** One source frame, `count: 1` (the server picks the middle), through
+   `apiQuiet` (no toast: the card shows a placeholder), aborted when the source changes or the
+   card unmounts (the server cancels the task). The link is made absolute against the client's
+   base URL (the desktop app's server is not the page's origin). A source without video asks
+   for nothing. Links are kept per source id for 50 minutes: a new request signs a new URL, and
+   a new URL would download the full-resolution PNG again (megabytes for 4K) every time the
+   lazily mounted tab is shown, while the browser keeps the image under the old URL for an
+   hour. When the image fails to load (the browser no longer has it and the link expired), the
+   card asks once for a new link.
+2. **Picture pipeline.** `jobs/geometry` at once for a new job, 250 ms after the last edit that
+   changes what the route reads (an audio edit sends nothing), through D's `latestRequest`, so
+   an older answer never replaces a newer one; another job's line is cleared at once. A step is
+   shown only when it changes something: `crop W×H` when a side is cropped, `rotate N°`,
+   `scale W×H` when the size differs from the cropped one; then the display aspect (`2.39:1`)
+   and "square pixels" or "pixel aspect N:D". The line is amber when the server says
+   `upscaled`, red with the problem's title when it cannot be computed; the geometry's notes
+   are listed under it.
+3. **Filter chips.** A filter is on when the job's `filters` has it (the definitions have no
+   "off" preset). Chips in the filter chain's order (`definitions.filter_order`): every filter
+   that is on, with the label of its preset in the chosen implementation, plus Deinterlace,
+   Colorspace and Tone mapping as "off" (the three of 03's example), named as the definitions
+   name them ("HDR → SDR tone mapping").
+4. **Estimate.** Only in bitrate mode (and for a copied video): (video kb/s + Σ audio kb/s) ×
+   1000 / 8 × the range's duration (full: the container's duration; time, chapters and frames
+   ranges: their part). An encoded audio track counts at its bitrate, or, without one, at the
+   encoder's default for its mixdown (`definitions.audio_encoders[…].bitrate.by_mixdown`; a
+   kept layout by the source's channel count). **A passthru track counts at the source
+   stream's bitrate** (`bitrate.value`, from the stream or the Matroska statistics); one
+   without a known bitrate, a VBR-quality track and a lossless encoder are left out and the card
+   says how many. A copied video counts at the source's video bitrate, or the card says it
+   cannot be estimated. Subtitles, chapters and the container's overhead are not counted.
+   Sizes in binary units (KiB, MiB, GiB), as Linux and Windows file managers show them.
+5. **Video line** of the Source card: the commercial codec name, `W×H`, the rate (the average
+   rate, else `r_frame_rate`; three decimals at most, "(variable)" for VFR), the HDR formats
+   (HDR10, HDR10+, HLG, Dolby Vision) and the colour (`BT.2020 PQ`, `BT.709`; the transfer is
+   named only for PQ and HLG; nothing when the stream does not tag it).
+6. **Name source** on the Output card: the draft's choice and reason while the job's naming and
+   container are the drafted ones; otherwise (an edited naming, a job from the queue without a
+   draft) the job's setting: Automatic, File name, Folder name, or Manual name. F's
+   `JobNamingEditor` below it shows the live parsed name.
+7. **Links.** A track chip calls `ui.reveal('audio[i]')` / `'subtitles[i]'`; each value of the
+   Video card is a link to its field (`video.encoder`, `video.rate_control`, `video.preset`,
+   `video.bit_depth`, `video.advanced`, `video.passthrough`). A link whose tab is not built
+   (`tabForPath` gives `summary`: the pipeline, `dimensions`; a filter chip, `filters.<id>`) is
+   plain text until that tab exists. The Picture card is the reveal target of `dimensions.*`
+   and `filters.*` paths while their tabs do not exist (item 5 of the lead's decision), so the
+   *Show* of a crop issue lands there. A chip carries the colour and icon of its most severe
+   issue (`issuesFor('audio[i]', { nested: true })`).
+8. **Layout.** `repeat(auto-fill, minmax(min(100%, 20rem), 1fr))` with dense flow: one column in
+   the 600–700 px tab column, two or more on wider screens. Output, Tracks and Issues span the
+   whole row; the Source card puts the thumbnail (at most 18 rem) beside the facts when there
+   is room.
+9. **The source** is the sources store's entry for the editor target's `sourceId`. Without one
+   (not open in this window) or with `source: null` (changed since the probe), the card says
+   so and shows the file name from the job; the other cards still work.
+
+Checked in headless Chromium (Playwright 1.64.1, 1440×1000) against `scripts/dev-server.py` on
+port 8790, light and dark (the sources store set through Pinia, since E's panel is built in
+parallel): every card for `multitrack`; the thumbnail loaded (320×180); bitrate mode 6000 kb/s
+gives "About 3.1 MiB" (video 6000 + audio 3 × 160 kb/s over 4 s), undo gives "Depends on
+content", redo the size again; the MP4 button sets the container (and shows *Web optimized*),
+MKV hides it; a toggle is one undo step; `hevc_nvenc` gives errors, a warning and a note in
+three groups with their fix buttons; an issue's *Show* and a Video link go to the Video tab, a
+chip to the Audio tab with `revealed` `audio[1]`; the crop note's *Show* highlights the Picture
+card; a job without a draft shows every card; `hdr10` gives `HEVC Main 10 · 320×180 · 25 fps ·
+HDR10 · BT.2020 PQ`; `letterbox` with a manual crop `320×180 → crop 320×134 · 2.39:1 · square
+pixels`, and width 1280 with upscaling the amber line with `scale 1280×536`.
 
 ## Task H — F-9 Video tab
 

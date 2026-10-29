@@ -482,7 +482,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Probe progress, warnings, batch groups (collapsible), near-match markers.
 
 ### F-6 Summary tab
-- [ ] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields.
+- [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields (the job
+      type line comes with M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
 - [ ] Pipeline header from `jobs/geometry`.
