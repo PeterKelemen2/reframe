@@ -84,5 +84,15 @@
     "empty": "Empty",
     "fixFallback": "Use libx264 (closest match)",
     "fixChoose": "Choose encoder"
+  },
+  "naming": {
+    "title": "Naming editors",
+    "intro": "Both editors against the connected server: the naming options with every open source, and the naming of the job opened in the editor.",
+    "source": "Source",
+    "noSources": "No source is open on the server",
+    "reload": "Read the sources again",
+    "open": "Open in the editor",
+    "options": "Naming options",
+    "job": "This job's name"
   }
 }

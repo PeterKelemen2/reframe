@@ -631,7 +631,85 @@ J, after saving the preset).
 
 ## Task F — F-18 naming editor
 
-(Written by task F.)
+Built in `components/naming/`: `TemplateField`, `VariableChips`, `ParsedNamePanel`,
+`TemplateFixes`, `NamingIssues`, `Disclosure`, the helpers `template.ts` (completion), `path.ts`
+(the job's folder), `spans.ts`, `preview.ts`, `fields.ts`, and the two editors of item 8;
+`i18n/messages/en/naming.json`; a "Naming editors" section of the dev-only sandbox.
+
+### What was checked against the real server (2026-10-29)
+
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2, copies of `multitrack.mkv` under the
+release names of 03 §Output naming's examples; `src/components/naming/naming.server.test.ts`
+does each of these:
+
+1. `Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson/hacksawridge.2160p.remux-henderson.mkv`:
+   name source **folder**, "Folder name: 8 fields recognised, title with word separators (10
+   points); file name: 3 fields recognised (3 points)", `Hacksaw.Ridge.mkv`.
+   `The.Sopranos.S03.1080p.BluRay.REMUX-Kataklysm/The.Sopranos.S03E02.Proshai.Livushka…mkv`:
+   name source **file**, "Only the file name has an episode number (S03E02), so it is used",
+   `season_pack` true although the folder holds one file, `template_kind` `episode`,
+   `The.Sopranos.S03E02.Proshai.Livushka.mkv`. Both as 03 says.
+2. **Spans** use guessit's property names besides the `ParsedName` fields (`other`,
+   `audio_codec`, `audio_channels`, `hdr`, `video_codec`, `video_profile`, `language`), and two
+   can cover the same characters (`HEVC` as `video_codec` and `video_profile`). Positions are
+   Python string indices (code points). The panel shows the first span at a position and gives
+   every property that is not a name field one "other tag" colour.
+3. **A source reports the issues of the template it used only**: with the episode template
+   `{main_titel}`, a movie gets no issue. The issues of a template are always at
+   `output.naming.template`, also for naming options (no job), and their "did you mean" fix is
+   one `add` of the whole fixed template.
+4. A template with errors names the file after the source file (`hacksawridge.2160p.remux-henderson.mkv`);
+   the preview's `path` is the naming options' folder joined with `relative_path` (the
+   dev server's settings have a fixed folder in its output root).
+
+### Choices the plan leaves open
+
+1. **The output folder of one job** is the folder of its naming options (the preset's, else
+   Settings → Output), as the draft names it. *Choose folder…* (`platform.pickFolder`) puts the
+   job into another folder, and *Use the naming options' folder* takes it back; both are one
+   undo step on `/output/path`. `JobNaming` has no folder, so the job's folder lives in its
+   path: it is the path without the name the template gave (`relative_path` of the last preview
+   of the job as it is, compared without the extension, since a container change replaces it);
+   a path that does not end with that name (changed by a fix or by hand) is taken as a file in
+   its folder. A naming change keeps that folder. No schema change, and undo, `loadJob` and the
+   queue keep the folder because it is in the job.
+2. **Edits are previewed before they reach the job.** The fields edit a working copy of
+   `output.naming`; 250 ms after the last change `naming/preview` names the job with it, and the
+   answer's name goes into the job together with the naming: one `editor.patch` with
+   `/output/naming` and `/output/path`. Typing in one field coalesces
+   (`output.naming.template`, `…manual_name`, `…field_overrides`) until the field loses the
+   focus. When a field loses the focus with an edit not yet in the job, the naming goes in at
+   once (a click on *Add to queue* blurs the field first; validation is then pending, so
+   `canAdd` is false until the job is checked) and the path follows with the preview's answer
+   under the same coalescing key, so both are still one undo step, which ends there. A failed
+   preview still puts the naming into the job (the path stays) and says why.
+3. **Changes from elsewhere** (undo, a preset, a container or size change) never write the path:
+   a write after an undo would drop the redo steps. The editor previews the job again, takes
+   back the job's naming when it changed, and when the job's path is not what its naming gives
+   now (a container change) shows that path with *Use this path*. Validation's own extension fix
+   covers the container case as well.
+4. **Per-file overrides** are editable in `JobNamingEditor` only. `NamingOptionsEditor` shows
+   the parsed-name panel read only: naming options apply to every file, and an override belongs
+   to one job.
+5. **Template issues** show at their template field (`Field`'s `issues`, from the preview),
+   with their "Use {…}" fixes as buttons that put the fixed template into that field; other
+   issues of the preview (`output.folder_required`, `naming.no_output_folder` at the folder
+   field) show as messages without fix buttons, since `IssueList`'s fixes patch the editor's job,
+   which is not what the options editor edits. `NamingOptionsEditor` checks a template that no
+   source used (the episode template with only movies open) with one more preview on the first
+   source with both templates set to it (item 3 above). Without sources there is no preview and
+   no check.
+6. **Completion** is a combobox of our own on PrimeVue's `InputText` (`role="combobox"`,
+   `aria-activedescendant`): PrimeVue's `AutoComplete` completes the whole value, not the word
+   at the caret. Format specs offered after `name:`: `02`, `03` (numbers), `upper`, `lower`,
+   `title` (text), `%Y-%m-%d`, `%d.%m.%Y`, `%Y`, `%H-%M`, `%H-%M-%S` (dates), the kinds of
+   `NamingVariable.kind`. Variable descriptions are the server's text, as issue messages are.
+7. **Name source per job**: "As the naming options say" is `name_source: null` (a Select has no
+   option for `null`, so it has its own value).
+8. A folder picker that rejects (the web one before task E) is a warning toast, "A folder cannot
+   be chosen here: type its path"; the folder stays.
+9. Members added to the contracts: both editors have `compact?` (the chips and the parsed name
+   start folded).
 
 ## Task G — F-6 Summary tab
 

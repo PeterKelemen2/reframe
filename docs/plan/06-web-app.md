@@ -566,8 +566,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 
 ### F-18 Naming editor
-- [ ] Template field with `{` autocomplete and variable chips (current values, click to insert).
-- [ ] **Parsed name** panel: name source + reason, coloured spans over the original name,
+- [x] Template field with `{` autocomplete and variable chips (current values, click to insert).
+- [x] **Parsed name** panel: name source + reason, coloured spans over the original name,
       editable fields (per-file override).
 - [ ] Live preview (`naming/preview`, debounced). Used in Settings → Output, the preset editor,
       the Summary Output card, and the batch matrix naming column.
