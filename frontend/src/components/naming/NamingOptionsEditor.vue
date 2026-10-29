@@ -276,9 +276,10 @@ function fileOf(result: NameResult): string {
         </template>
       </Field>
       <Field :label="t('naming.options.separator')" stacked>
-        <template #default="{ id }">
+        <template #default="{ id, labelId }">
           <Select
             :label-id="id"
+            :ariaLabelledby="labelId"
             :model-value="model.word_separator"
             :options="separators"
             option-label="label"
