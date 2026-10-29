@@ -470,10 +470,11 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 
 ### F-4 Editor state
 - [ ] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
-      (`JobTemplate` + overrides). The tabs use one API for both.
-- [ ] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
-- [ ] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
-- [ ] "Modified vs preset" uses `presets/diff`.
+      (`JobTemplate` + overrides). The tabs use one API for both. (M4 builds the job target;
+      the group target is typed and comes with F-13.)
+- [x] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
+- [x] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
+- [x] "Modified vs preset" uses `presets/diff` (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task D").
 
 ### F-5 Sources panel and opening files
 - [ ] Web: a server file-browser dialog (roots, breadcrumbs, media filter, multi-select).

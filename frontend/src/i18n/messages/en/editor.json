@@ -1,1 +1,4 @@
-{}
+{
+  "fixFailed": "The fix could not be applied",
+  "fixStale": "The job has changed since it was checked. Wait for the new check, then try the fix again."
+}

@@ -1,15 +1,24 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 
 import type { Severity, ValidationIssue } from '@/api/types'
 
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
 
-/** The open job's validation issues (`jobs/validate`), indexed by path for `Field`. */
+/**
+ * The open job's validation issues (`jobs/validate`), indexed by path for `Field`.
+ * `useValidation` keeps them current.
+ */
 export const useValidationStore = defineStore('validation', () => {
-  const issues = ref<ValidationIssue[]>([])
-  /** A validation is waiting for its debounce or its answer. */
+  const issues = shallowRef<ValidationIssue[]>([])
+  /** A validation is waiting for its debounce or its answer: `issues` may be an older job's. */
   const pending = ref(false)
+  /** The last validation failed (no answer): `issues` are an older job's. */
+  const failed = ref(false)
+  /** +1 for each `revalidate`. */
+  const requests = ref(0)
+  /** The editor session (`editor.session`) whose job `issues` describe. */
+  const session = ref<number | null>(null)
 
   const counts = computed<Record<Severity, number>>(() => {
     const result: Record<Severity, number> = { error: 0, warning: 0, info: 0 }
@@ -33,5 +42,23 @@ export const useValidationStore = defineStore('validation', () => {
       .toSorted((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
   }
 
-  return { issues, pending, counts, hasErrors, issuesFor }
+  /**
+   * Validates the open job again although it did not change: something the job's issues depend
+   * on changed on the server.
+   */
+  function revalidate(): void {
+    requests.value += 1
+  }
+
+  return {
+    issues,
+    pending,
+    failed,
+    requests,
+    session,
+    counts,
+    hasErrors,
+    issuesFor,
+    revalidate,
+  }
 })
