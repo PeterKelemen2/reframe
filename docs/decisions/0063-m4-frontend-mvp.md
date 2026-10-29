@@ -120,7 +120,91 @@ against the generated `schema.d.ts` with TypeScript 6.0.3 (a call with a wrong b
 
 ## Task A — F-1 design system
 
-(Written by task A.)
+Choices where the plan leaves one, and the check behind each:
+
+1. **Colours live in the PrimeVue preset** (`styles/theme.ts`), not in our CSS, so that one
+   dark class (`.reframe-dark`) switches PrimeVue and our components together. Our own colour
+   tokens are custom semantic keys of the preset, which PrimeVue writes as CSS variables:
+   `--p-app-background`, `--p-app-border-color`, and `--p-status-{error,warn,info,ok,busy,off}-{color,background,border-color}`.
+   `styles/tokens.css` adds spacing (`--rf-space-1…6`), radius, typography and aliases
+   (`--rf-color-text`, `--rf-color-primary`, …). Aura's defaults fail WCAG AA in places, so the
+   preset changes them: light primary 600 instead of 500 (white on indigo-500 is 4.47:1), light
+   muted text slate-600, input borders slate-500 / zinc-500 (Aura's slate-300 is 1.5:1 against
+   the field, WCAG 1.4.11 wants 3:1), light invalid border red-600. Check:
+   `styles/contrast.test.ts` mounts PrimeVue with the preset, reads the `--p-*` variables it
+   writes for `:root` and for `.reframe-dark`, and requires 4.5:1 for every text pair (text,
+   muted text, primary, each status colour on the surfaces and on its own background, white on
+   primary, field text and placeholder) and 3:1 for field and status borders, in both schemes.
+   Breaking a colour on purpose (dark muted text zinc-600, light primary 500, dark field
+   border zinc-700) fails it.
+2. **Density** is `<html data-density>`. `compact` sets the root font size to 87.5 % and
+   overrides PrimeVue's semantic padding tokens on `:root` (form field, list option,
+   navigation item, popover and modal padding, icon-only button width, DataTable cells) and
+   `--rf-density` (0.75), which scales our spacing. This works because PrimeVue's component
+   tokens are declared on the same element and refer to the semantic ones with `var()`.
+   Checked in the browser: the root font size goes from 16 px to 14 px and the controls get
+   tighter.
+3. **`prefers-reduced-motion: reduce`** sets `--p-transition-duration` and `--rf-duration` to
+   0 and cuts every animation and transition to one 0.01 ms run (the busy dot stops turning,
+   the reveal highlight does not fade). `useReveal`'s `scrollIntoView({ behavior: 'smooth' })`
+   is JavaScript and not covered by CSS (see the report to the lead).
+4. **Theme storage.** `useTheme` keeps `{ theme, density }` under `localStorage`
+   `reframe.appearance` (read and write in `try`, a value it does not know is ignored), so
+   `initTheme()` paints the first frame right. Once the settings store has loaded, a choice is
+   also written with `settings.set('/appearance/theme' | '/appearance/density', …)`; a settings
+   value that arrives later or changes wins and is copied to `localStorage`. While its own
+   writes are in flight, `useTheme` does not take settings answers (an answer to an older
+   choice would flash the old theme); after the last one it takes the settings value if it
+   changed in between, and keeps the local choice if a write failed. Another tab's change
+   arrives through the `storage` event. `system` follows `matchMedia('(prefers-color-scheme:
+   dark)')` live. `useTheme()` starts following the settings store on its first call, so the
+   app must call it once at start (the shell's theme switch does). Checked by
+   `composables/useTheme.test.ts` with a test double of the settings store, and in headless
+   Chromium: theme and density switch at once, survive a reload, and `system` follows an
+   emulated change of the colour scheme.
+5. **Base components** wrap PrimeVue (Button, Popover, the Tooltip directive, imported locally
+   so that the components work without the global directive). Additions to the contract,
+   all optional: `FieldSlotProps.labelId` (for group controls, `aria-labelledby`),
+   `RoleBadge.kind` (`'subtitle'` names `description` "Descriptions"), `StatusDot.showLabel`,
+   the CSS class `rf-kv-list` for a `<dl>` of `KeyValue`s, `rf-sr-only`. `Field` sets
+   `aria-describedby` itself on the element with its slot's `id`, because InputNumber, Select
+   and ToggleSwitch do not pass the attribute on. A field with an error or a warning gets a
+   coloured bar in the gutter (any control) and the coloured border on PrimeVue's inputs,
+   selects, text areas, check boxes, radio buttons, toggles (the focus border stays the
+   primary colour). A heuristic `RoleBadge` has a dashed outline, a title one a solid outline;
+   the evidence is also in a screen-reader-only text, since PrimeVue's tooltip opens on hover
+   only. `StatusDot` tones differ in shape as well as colour (circle, turning arc, diamond,
+   square, ring).
+6. **The i18n checks** (`src/i18n/checks/`, run by `npm test`; `codebase.test.ts` runs them
+   on every `src/**/*.vue` and `src/**/*.ts` except tests, `*.d.ts` and the checks):
+   - *Literal text*: the `<template>` is parsed with `@vue/compiler-sfc`. It is literal text
+     when it contains a Unicode letter (`\p{L}`) and is (a) a text node, (b) the value of a
+     static attribute a user sees: `title`, `alt`, `placeholder`, `aria-label`,
+     `aria-description`, `aria-roledescription`, `aria-placeholder`, `aria-valuetext`, and the
+     PrimeVue text props `label`, `header`, `footer`, `subheader`, `legend`, `message`,
+     `summary`, `detail`, `tooltip`, `badge`, `on-label`, `off-label`, `accept-label`,
+     `reject-label`, `choose-label`, `upload-label`, `cancel-label`, `empty-message`,
+     `empty-filter-message`, `empty-selection-message`, `selection-message`,
+     `filter-placeholder`, `current-page-report-template` (kebab or camel case), and `value` on
+     `Tag`, `Badge`, `Chip`, `OverlayBadge`; or (c) a string literal inside `{{ }}`, inside a
+     bound one of those attributes (`:label="'Save'"`) or in `v-tooltip`, `v-text`, `v-html`,
+     except the first argument of `t`, `$t`, `te`, `tc`, `tm`, `rt` and an operand of
+     `===`, `!==`, `==`, `!=`. Symbols, digits and punctuation pass (`·`, `→`, `×`, `%`,
+     `—`, `ⓘ`). Comments, other attributes (`class`, `id`, `data-*`, `severity`, `icon`,
+     `value` on an input) and `<script>` are not read.
+   - *Message keys*: every literal first argument of `t`, `$t`, `te`, `tc`, `tm` (also as a
+     method, `i18n.global.t`) and every `<i18n-t keypath>` must name a message in the English
+     messages (`en` of `i18n/index.ts`); `tm` must name a group. Keys built at run time
+     (`t('a.' + x)`, a template literal with `${}`) are not seen: write each key as a literal
+     (a `switch` over the values, as `RoleBadge` does) so that the check covers it.
+   Both have tests that fail on bad input (`literalText.test.ts`, `messageKeys.test.ts`), and
+   putting `<h1>Sandbox</h1>` in a view or a wrong key in a component fails `codebase.test.ts`.
+7. **The sandbox** (`/sandbox`, dev only) has its own theme and density switch and shows each
+   component in its states; it fills `system.languages` with five sample languages when no
+   server has sent them, and gives the validation store one issue so that the store path and
+   `ui.reveal` can be tried. `npm run build:web` has no Sandbox chunk (the route is behind
+   `import.meta.env.DEV`); `sandbox.json` is still in the main bundle, because `i18n/index.ts`
+   loads every message file.
 
 ## Task B — F-2 API layer and events
 

@@ -1,16 +1,172 @@
 <script setup lang="ts">
-import type { ValidationIssue } from '@/api/types'
+import Button from 'primevue/button'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+import type { Fix, ValidationIssue } from '@/api/types'
+import { useEditorStore } from '@/stores/editor'
+import { useUiStore } from '@/stores/ui'
+
+import { bySeverity, SEVERITY_ICON, useSeverityLabel } from './severity'
 
 /**
  * Issues, most severe first, each with its fix buttons (`editor.applyFix`) and a link to its
  * field (`ui.reveal(issue.path)`). Used by the Summary tab and the status bar.
  */
-defineProps<{
+const props = defineProps<{
   issues: ValidationIssue[]
+  /** One line per issue, for the status bar's list. */
   compact?: boolean
 }>()
+
+const { t } = useI18n()
+const severityLabel = useSeverityLabel()
+const editor = useEditorStore()
+const ui = useUiStore()
+
+const sorted = computed(() => bySeverity(props.issues))
+/** The fix being applied: every fix button waits for it, so that two patches never race. */
+const applying = ref<Fix | null>(null)
+
+async function applyFix(fix: Fix): Promise<void> {
+  if (applying.value !== null) return
+  applying.value = fix
+  try {
+    await editor.applyFix(fix)
+  } finally {
+    applying.value = null
+  }
+}
 </script>
 
 <template>
-  <ul class="issue-list" />
+  <p v-if="sorted.length === 0" class="rf-issue-list__empty">{{ t('base.issues.none') }}</p>
+  <ul v-else class="rf-issue-list" :class="{ 'rf-issue-list--compact': compact }">
+    <li
+      v-for="(issue, index) in sorted"
+      :key="`${issue.code}:${issue.path}:${index}`"
+      class="rf-issue"
+      :class="`rf-issue--${issue.severity}`"
+      :data-severity="issue.severity"
+    >
+      <component
+        :is="SEVERITY_ICON[issue.severity]"
+        class="rf-issue__icon"
+        :size="16"
+        aria-hidden="true"
+      />
+      <span class="rf-sr-only">{{ severityLabel(issue.severity) }}: </span>
+      <span class="rf-issue__message">{{ issue.message }}</span>
+      <span class="rf-issue__actions">
+        <Button
+          v-if="issue.path"
+          class="rf-issue__reveal"
+          link
+          size="small"
+          :label="t('base.issues.show')"
+          :aria-label="t('base.issues.showField', { message: issue.message })"
+          @click="ui.reveal(issue.path)"
+        />
+        <Button
+          v-for="fix in issue.fixes ?? []"
+          :key="fix.label"
+          class="rf-issue__fix"
+          size="small"
+          severity="secondary"
+          outlined
+          :label="fix.label"
+          :loading="applying === fix"
+          :disabled="applying !== null"
+          @click="applyFix(fix)"
+        />
+      </span>
+    </li>
+  </ul>
 </template>
+
+<style scoped>
+.rf-issue-list {
+  display: grid;
+  gap: var(--rf-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rf-issue {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--rf-space-1) var(--rf-space-2);
+  padding: var(--rf-space-2) var(--rf-space-3);
+  border: 1px solid var(--rf-issue-border);
+  border-radius: var(--rf-radius-md);
+  background: var(--rf-issue-background);
+  color: var(--rf-color-text);
+}
+
+.rf-issue--error {
+  --rf-issue-accent: var(--p-status-error-color);
+  --rf-issue-border: var(--p-status-error-border-color);
+  --rf-issue-background: var(--p-status-error-background);
+}
+
+.rf-issue--warning {
+  --rf-issue-accent: var(--p-status-warn-color);
+  --rf-issue-border: var(--p-status-warn-border-color);
+  --rf-issue-background: var(--p-status-warn-background);
+}
+
+.rf-issue--info {
+  --rf-issue-accent: var(--p-status-info-color);
+  --rf-issue-border: var(--p-status-info-border-color);
+  --rf-issue-background: var(--p-status-info-background);
+}
+
+.rf-issue__icon {
+  margin-top: 0.2em;
+  color: var(--rf-issue-accent);
+}
+
+.rf-issue__message {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.rf-issue__actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2;
+  align-items: center;
+  gap: var(--rf-space-2);
+}
+
+.rf-issue__actions:empty {
+  display: none;
+}
+
+.rf-issue-list--compact {
+  gap: var(--rf-space-1);
+}
+
+.rf-issue-list--compact .rf-issue {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  padding: var(--rf-space-1) var(--rf-space-2);
+  font-size: var(--rf-font-size-sm);
+}
+
+.rf-issue-list--compact .rf-issue__icon {
+  margin-top: 0;
+}
+
+.rf-issue-list--compact .rf-issue__actions {
+  grid-column: 3;
+  flex-wrap: nowrap;
+}
+
+.rf-issue-list__empty {
+  margin: 0;
+  color: var(--rf-color-text-muted);
+}
+</style>

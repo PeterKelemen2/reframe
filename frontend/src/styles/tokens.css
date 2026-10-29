@@ -1,0 +1,83 @@
+/*
+ * Design tokens. Colours come from the PrimeVue preset (theme.ts), so they follow the dark
+ * class; this file adds spacing, radius, typography and density, all in rem so that the
+ * browser's font size scales them.
+ */
+:root {
+  --rf-font-family:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --rf-font-mono:
+    ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --rf-font-size-xs: 0.75rem;
+  --rf-font-size-sm: 0.875rem;
+  --rf-font-size-md: 1rem;
+  --rf-font-size-lg: 1.125rem;
+  --rf-font-size-xl: 1.25rem;
+  --rf-font-size-2xl: 1.5rem;
+  --rf-font-weight-normal: 400;
+  --rf-font-weight-medium: 500;
+  --rf-font-weight-bold: 600;
+  --rf-line-height: 1.45;
+  --rf-line-height-tight: 1.2;
+
+  /* Spacing steps of 0.25rem, multiplied by the density. */
+  --rf-density: 1;
+  --rf-space-1: calc(0.25rem * var(--rf-density));
+  --rf-space-2: calc(0.5rem * var(--rf-density));
+  --rf-space-3: calc(0.75rem * var(--rf-density));
+  --rf-space-4: calc(1rem * var(--rf-density));
+  --rf-space-5: calc(1.5rem * var(--rf-density));
+  --rf-space-6: calc(2rem * var(--rf-density));
+
+  --rf-radius-sm: var(--p-border-radius-sm);
+  --rf-radius-md: var(--p-border-radius-md);
+  --rf-radius-lg: var(--p-border-radius-lg);
+  --rf-radius-pill: 999px;
+
+  --rf-color-bg: var(--p-app-background);
+  --rf-color-surface: var(--p-content-background);
+  --rf-color-surface-hover: var(--p-content-hover-background);
+  --rf-color-border: var(--p-content-border-color);
+  --rf-color-text: var(--p-text-color);
+  --rf-color-text-muted: var(--p-text-muted-color);
+  --rf-color-primary: var(--p-primary-color);
+  --rf-color-on-primary: var(--p-primary-contrast-color);
+
+  --rf-duration: 0.15s;
+  --rf-reveal-duration: 1.5s;
+}
+
+/*
+ * Compact: smaller type and tighter controls. PrimeVue's component tokens are declared on the
+ * same element and refer to these semantic ones, so overriding them here reaches every control.
+ */
+:root[data-density='compact'] {
+  font-size: 87.5%;
+  --rf-density: 0.75;
+  --p-form-field-padding-x: 0.5rem;
+  --p-form-field-padding-y: 0.3rem;
+  --p-list-option-padding: 0.3rem 0.5rem;
+  --p-list-option-group-padding: 0.3rem 0.5rem;
+  --p-navigation-item-padding: 0.3rem 0.5rem;
+  --p-overlay-popover-padding: 0.5rem;
+  --p-overlay-modal-padding: 1rem;
+  --p-button-icon-only-width: 2rem;
+  --p-datatable-header-cell-padding: 0.375rem 0.5rem;
+  --p-datatable-body-cell-padding: 0.375rem 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --p-transition-duration: 0s;
+    --rf-duration: 0s;
+  }
+
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
