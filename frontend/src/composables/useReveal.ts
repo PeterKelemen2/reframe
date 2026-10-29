@@ -26,7 +26,8 @@ export function useReveal(
       if (performance.now() - request.at > REQUEST_TTL_MS) return
       ui.revealDone(request)
       await nextTick()
-      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      node.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
       const focusable = node.matches(FOCUSABLE) ? node : node.querySelector<HTMLElement>(FOCUSABLE)
       focusable?.focus({ preventScroll: true })
       node.classList.add(REVEALED_CLASS)

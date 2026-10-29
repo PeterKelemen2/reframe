@@ -6,10 +6,14 @@ type AreaMessages = Record<string, unknown>
  * One file per area (`messages/en/video.json` holds the `video.` keys), so that the areas of
  * the app never share a message file.
  */
-const files = import.meta.glob<AreaMessages>('./messages/en/*.json', {
-  eager: true,
-  import: 'default',
-})
+const files = import.meta.glob<AreaMessages>(
+  ['./messages/en/*.json', '!./messages/en/sandbox.json'],
+  { eager: true, import: 'default' },
+)
+/** The dev-only sandbox's messages stay out of the production bundle with the sandbox. */
+const devFiles = import.meta.env.DEV
+  ? import.meta.glob<AreaMessages>('./messages/en/sandbox.json', { eager: true, import: 'default' })
+  : {}
 
 function byArea(modules: Record<string, AreaMessages>): Record<string, AreaMessages> {
   return Object.fromEntries(
@@ -21,7 +25,7 @@ function byArea(modules: Record<string, AreaMessages>): Record<string, AreaMessa
 }
 
 /** English is the source locale. Other locales must have the same keys. */
-export const en = byArea(files)
+export const en = byArea({ ...files, ...devFiles })
 
 export const SUPPORTED_LOCALES = ['en'] as const
 export type Locale = (typeof SUPPORTED_LOCALES)[number]
