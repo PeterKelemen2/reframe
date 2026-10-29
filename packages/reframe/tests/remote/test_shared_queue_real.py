@@ -31,6 +31,8 @@ pytestmark = [
 ]
 
 WAIT = 120.0
+STOP = int(getattr(signal, "SIGTSTP", 20))
+GO_ON = int(getattr(signal, "SIGCONT", 18))
 
 
 def _default_sigint() -> None:
@@ -422,7 +424,7 @@ def test_ctrl_z_pauses_the_job_and_fg_resumes_it(home: Home) -> None:
     seen = read_until(client, encoding)
     [owner] = home.owners()
     port = home.endpoint().port
-    client.send_signal(signal.SIGTSTP)
+    client.send_signal(STOP)
     process = psutil.Process(client.pid)
     wait_until(lambda: process.status() == psutil.STATUS_STOPPED, 30)
     assert home.job(source)["state"] == "paused"
@@ -430,7 +432,7 @@ def test_ctrl_z_pauses_the_job_and_fg_resumes_it(home: Home) -> None:
     assert held == []
     time.sleep(1.0)
     assert home.job(source)["state"] == "paused"
-    client.send_signal(signal.SIGCONT)
+    client.send_signal(GO_ON)
     lines, err = finish(client, seen)
     assert client.returncode == EXIT_OK, (lines, err)
     assert "Stopped" in err

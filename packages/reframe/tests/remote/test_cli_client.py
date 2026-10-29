@@ -46,6 +46,8 @@ pytestmark = pytest.mark.anyio
 
 WAIT = 30.0
 """Seconds a command of these tests may take."""
+STOP = int(getattr(signal, "SIGTSTP", 20))
+"""The terminal's Ctrl+Z (POSIX only)."""
 
 
 @pytest.fixture
@@ -488,7 +490,7 @@ async def test_ctrl_c_leaves_a_job_another_front_end_retried(
 
 
 def _sigtstp_handled() -> bool:
-    return signal.getsignal(signal.SIGTSTP) not in (signal.SIG_DFL, signal.SIG_IGN, None)
+    return signal.getsignal(STOP) not in (signal.SIG_DFL, signal.SIG_IGN, None)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="no job control on Windows")
@@ -514,7 +516,7 @@ async def test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them(
     )
     job_id = await job_of(server, "A.mkv", JobState.RUNNING)
     await poll(_sigtstp_handled, 10)  # never raised without a handler: it would stop pytest
-    signal.raise_signal(signal.SIGTSTP)
+    signal.raise_signal(STOP)
     code = await asyncio.wait_for(task, WAIT)
     captured = capsys.readouterr()
     assert seen == [(JobState.PAUSED, 0)]
@@ -543,7 +545,7 @@ async def test_a_command_that_was_stopped_cancels_its_jobs_on_sigterm(
         )
         job_id = await job_of(server, "A.mkv", JobState.RUNNING)
         await poll(_sigtstp_handled, 10)
-        signal.raise_signal(signal.SIGTSTP)
+        signal.raise_signal(STOP)
         code = await asyncio.wait_for(task, WAIT)
         assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL  # the command's handler is gone
     finally:
@@ -634,7 +636,7 @@ async def test_a_command_that_cannot_reach_the_owner_after_a_stop(
     )
     job_id = await job_of(server, "A.mkv", JobState.RUNNING)
     await poll(_sigtstp_handled, 10)
-    signal.raise_signal(signal.SIGTSTP)
+    signal.raise_signal(STOP)
     code = await asyncio.wait_for(task, WAIT)
     captured = capsys.readouterr()
     assert code == cli.EXIT_FAILED

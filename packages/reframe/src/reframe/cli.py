@@ -2298,60 +2298,62 @@ async def _stop_here(following: _Following, jobs: CommandJobs) -> bool:
     SIGHUP cancel them as Ctrl+C does. False: the owner cannot be reached after the stop."""
     if sys.platform == "win32":  # pragma: no cover - no SIGTSTP
         return False
-    session, view = following.session, following.view
-    assert session.remote is not None
-    assert session.reconnect is not None
-    assert view is not None
-    loop = asyncio.get_running_loop()
-    task = asyncio.current_task()
-    assert task is not None
-    paused: list[str] = []
-    loop.add_signal_handler(signal.SIGTSTP, lambda: None)  # one stop at a time
-    try:
-        for job_id in jobs.open():
-            job = session.queue.get(job_id)
-            if job is not None and job.state is JobState.RUNNING:
-                with contextlib.suppress(UnknownJobError, JobStateError):
-                    await session.queue.pause(job_id)
-                paused.append(job_id)
-        await session.remote.close(detach=True)
-    finally:
-        loop.remove_signal_handler(signal.SIGTSTP)
-    for number in (signal.SIGTERM, signal.SIGHUP):
-        if number not in following.signals:
-            loop.add_signal_handler(number, task.cancel)
-            following.signals.append(number)
-    view.suspend()
-    print(
-        "Stopped: the running jobs of this command are paused in the Reframe server; fg goes on.",
-        file=sys.stderr,
-    )
-    _stop_process()
-    view.resume()
-    # Not cut short by a Ctrl+C meanwhile: its cancel needs the new connection.
-    reconnect = asyncio.ensure_future(session.reconnect())
-    interrupted = False
-    while not reconnect.done():
-        try:
-            await asyncio.wait({reconnect})
-        except asyncio.CancelledError:
-            interrupted = True
-            task.uncancel()
-    found = reconnect.result()
-    if isinstance(found, str):
-        session.unreachable = f"the Reframe server cannot be reached after the stop ({found})"
     else:
-        session.use(found)
-        following.subscription.close()
-        following.subscription = found.events.subscribe(types=_FOLLOWED)
-    if interrupted:
-        raise asyncio.CancelledError
-    if isinstance(found, str):
-        return False
-    for job_id in paused:
-        with contextlib.suppress(UnknownJobError, JobStateError):
-            await found.resume(job_id)
-    return True
+        session, view = following.session, following.view
+        assert session.remote is not None
+        assert session.reconnect is not None
+        assert view is not None
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        assert task is not None
+        paused: list[str] = []
+        loop.add_signal_handler(signal.SIGTSTP, lambda: None)  # one stop at a time
+        try:
+            for job_id in jobs.open():
+                job = session.queue.get(job_id)
+                if job is not None and job.state is JobState.RUNNING:
+                    with contextlib.suppress(UnknownJobError, JobStateError):
+                        await session.queue.pause(job_id)
+                    paused.append(job_id)
+            await session.remote.close(detach=True)
+        finally:
+            loop.remove_signal_handler(signal.SIGTSTP)
+        for number in (signal.SIGTERM, signal.SIGHUP):
+            if number not in following.signals:
+                loop.add_signal_handler(number, task.cancel)
+                following.signals.append(number)
+        view.suspend()
+        print(
+            "Stopped: the running jobs of this command are paused in the Reframe server; "
+            "fg goes on.",
+            file=sys.stderr,
+        )
+        _stop_process()
+        view.resume()
+        # Not cut short by a Ctrl+C meanwhile: its cancel needs the new connection.
+        reconnect = asyncio.ensure_future(session.reconnect())
+        interrupted = False
+        while not reconnect.done():
+            try:
+                await asyncio.wait({reconnect})
+            except asyncio.CancelledError:
+                interrupted = True
+                task.uncancel()
+        found = reconnect.result()
+        if isinstance(found, str):
+            session.unreachable = f"the Reframe server cannot be reached after the stop ({found})"
+        else:
+            session.use(found)
+            following.subscription.close()
+            following.subscription = found.events.subscribe(types=_FOLLOWED)
+        if interrupted:
+            raise asyncio.CancelledError
+        if isinstance(found, str):
+            return False
+        for job_id in paused:
+            with contextlib.suppress(UnknownJobError, JobStateError):
+                await found.resume(job_id)
+        return True
 
 
 def _unicode(console: Console) -> bool:
