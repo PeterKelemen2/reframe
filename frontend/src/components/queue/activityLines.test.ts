@@ -151,7 +151,12 @@ describe('the activity lines', () => {
         type: 'task.done',
         task: { id: 't', kind: 'probe_sources', state: 'failed', error: 'no such file' },
       },
-      { kind: 'tasks', tone: 'error', text: 'Task probe_sources failed', detail: 'no such file' },
+      { kind: 'tasks', tone: 'error', text: 'Reading sources: failed', detail: 'no such file' },
+    ],
+    [
+      'a task of a kind without a name of its own, in words',
+      { type: 'task.done', task: { id: 't', kind: 'thumbnail_sheet', state: 'done' } },
+      { kind: 'tasks', tone: 'off', text: 'Thumbnail sheet: done' },
     ],
     [
       'lost events',
@@ -160,6 +165,38 @@ describe('the activity lines', () => {
     ],
   ])('describes %s', (_, event, expected) => {
     expect(line(event)).toMatchObject(expected)
+  })
+
+  it('names every kind of task the server starts', () => {
+    const kinds = [
+      'probe_sources',
+      'probe_folder',
+      'encoders_rescan',
+      'tools_fetch',
+      'bitrate_scan',
+      'subtitle_scan',
+      'loudness',
+      'frames',
+      'cropdetect',
+      'preview_clip',
+    ]
+    const texts = kinds.map(
+      (kind) =>
+        line({ type: 'task.done', task: { id: 't', kind, state: 'cancelled' } } as ReframeEvent)
+          .text,
+    )
+    expect(texts).toEqual([
+      'Reading sources: cancelled',
+      'Reading a folder: cancelled',
+      'Encoder detection: cancelled',
+      'FFmpeg download: cancelled',
+      'Bitrate measurement: cancelled',
+      'Subtitle count: cancelled',
+      'Loudness measurement: cancelled',
+      'Preview frames: cancelled',
+      'Crop detection: cancelled',
+      'Preview clip: cancelled',
+    ])
   })
 
   it('names one removed job, and counts several', () => {

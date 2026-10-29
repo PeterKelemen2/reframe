@@ -137,6 +137,34 @@ function countdownLine(event: EventOf<'power.countdown'>, t: Translate): Activit
   }
 }
 
+/** A task's kind in words; a kind without a message is shown with spaces and a capital. */
+export function taskName(kind: string, t: Translate): string {
+  switch (kind) {
+    case 'probe_sources':
+      return t('queue.activity.taskKind.probe_sources')
+    case 'probe_folder':
+      return t('queue.activity.taskKind.probe_folder')
+    case 'encoders_rescan':
+      return t('queue.activity.taskKind.encoders_rescan')
+    case 'tools_fetch':
+      return t('queue.activity.taskKind.tools_fetch')
+    case 'bitrate_scan':
+      return t('queue.activity.taskKind.bitrate_scan')
+    case 'subtitle_scan':
+      return t('queue.activity.taskKind.subtitle_scan')
+    case 'loudness':
+      return t('queue.activity.taskKind.loudness')
+    case 'frames':
+      return t('queue.activity.taskKind.frames')
+    case 'cropdetect':
+      return t('queue.activity.taskKind.cropdetect')
+    case 'preview_clip':
+      return t('queue.activity.taskKind.preview_clip')
+  }
+  const spaced = kind.replaceAll('_', ' ').trim()
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 const TONE_OF_LEVEL: Record<EventOf<'notification'>['level'], StatusTone> = {
   info: 'off',
   success: 'ok',
@@ -213,17 +241,18 @@ export function describeEntry(
         : { kind: 'notifications', tone: TONE_OF_LEVEL[event.level], text: event.title }
     case 'task.done': {
       const task = event.task
+      const taskWords = taskName(task.kind, t)
       const text = (() => {
         switch (task.state) {
           case 'done':
-            return t('queue.activity.task.done', { kind: task.kind })
+            return t('queue.activity.task.done', { task: taskWords })
           case 'failed':
-            return t('queue.activity.task.failed', { kind: task.kind })
+            return t('queue.activity.task.failed', { task: taskWords })
           case 'cancelled':
-            return t('queue.activity.task.cancelled', { kind: task.kind })
+            return t('queue.activity.task.cancelled', { task: taskWords })
           case 'queued':
           case 'running':
-            return t('queue.activity.task.running', { kind: task.kind })
+            return t('queue.activity.task.running', { task: taskWords })
         }
       })()
       const tone: StatusTone = task.state === 'failed' ? 'error' : 'off'
