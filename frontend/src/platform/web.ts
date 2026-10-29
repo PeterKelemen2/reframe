@@ -1,8 +1,6 @@
-import type { Platform } from './types'
+import { browse } from '@/components/sources/fileBrowser'
 
-function notAvailable(): Error {
-  return new Error('not available in this build yet')
-}
+import type { Platform } from './types'
 
 /** Browser implementation. The server serves the UI, so the backend is the page's origin. */
 export function createWebPlatform(): Platform {
@@ -15,16 +13,18 @@ export function createWebPlatform(): Platform {
       return Promise.resolve({ baseUrl: window.location.origin })
     },
 
-    pickFiles() {
-      return Promise.reject(notAvailable())
+    async pickFiles({ multiple, filters }) {
+      return (await browse({ mode: 'files', multiple, filters })) ?? []
     },
 
-    pickFolder() {
-      return Promise.reject(notAvailable())
+    async pickFolder(options) {
+      const chosen = await browse({ mode: 'folder', title: options?.title })
+      return chosen?.[0] ?? null
     },
 
-    pickSavePath() {
-      return Promise.reject(notAvailable())
+    async pickSavePath({ defaultPath }) {
+      const chosen = await browse({ mode: 'save', defaultPath })
+      return chosen?.[0] ?? null
     },
 
     onFilesDropped() {

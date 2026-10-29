@@ -1,1 +1,63 @@
-{}
+{
+  "panel": {
+    "label": "Sources",
+    "openFiles": "Open files…",
+    "openFolder": "Open folder…",
+    "openFolderRecursive": "Open a folder and its subfolders…",
+    "emptyTitle": "No sources open",
+    "emptyText": "Open video files or a folder. A season folder becomes one group.",
+    "remove": "Remove {name}",
+    "confirmRemoveOne": "Remove {name} from the sources?",
+    "confirmRemoveMany": "Remove these {count} sources?",
+    "confirmRemove": "Remove",
+    "keep": "Keep",
+    "warnings": "Probe warnings",
+    "stale": "The file changed or is gone since it was read.",
+    "reprobe": "Read it again"
+  },
+  "probe": {
+    "one": "Reading {name}…",
+    "many": "Reading {count} items…"
+  },
+  "group": {
+    "files": "{count} file | {count} files",
+    "nearCount": "{count} near match | {count} near matches",
+    "exact": "Matches the group",
+    "near": "Near match: added with differences",
+    "level": {
+      "strict": "strict match",
+      "standard": "standard match",
+      "loose": "loose match"
+    }
+  },
+  "errors": {
+    "probeFailed": "The files could not be read",
+    "notOpened": "Some paths could not be opened",
+    "noSource": "{path} could not be opened"
+  },
+  "browser": {
+    "titleFiles": "Open files",
+    "titleFile": "Open a file",
+    "titleFolder": "Choose a folder",
+    "titleSave": "Save as",
+    "roots": "Places",
+    "kind": {
+      "media": "Media folder",
+      "output": "Output folder",
+      "home": "Home folder",
+      "drive": "Drive"
+    },
+    "up": "Up one folder",
+    "crumbs": "Folder path",
+    "location": "Path",
+    "go": "Go",
+    "empty": "No folders or video files here.",
+    "filter": "Only {types}",
+    "fileName": "File name",
+    "selected": "No file selected | {n} file selected | {n} files selected",
+    "cancel": "Cancel",
+    "open": "Open",
+    "chooseFolder": "Choose this folder",
+    "save": "Save"
+  }
+}
