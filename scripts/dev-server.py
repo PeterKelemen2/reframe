@@ -141,14 +141,74 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+
+    stopping = False
+
+    def on_signal(signum: int, frame: FrameType | None) -> None:
+        # Only the first signal stops the run: a second one during the clean-up would cut it
+        # short and leave the server and the home behind.
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
+        raise KeyboardInterrupt
+
+    # SIGINT too: a background job of a non-interactive shell starts with SIGINT ignored.
+    handled = [signal.SIGINT, signal.SIGTERM]
+    if sys.platform != "win32":
+        handled.append(signal.SIGHUP)
+    for signum in handled:
+        signal.signal(signum, on_signal)
+
+    # Checked before anything is made, so that a home given by mistake is never deleted.
     if args.home is not None:
         home = args.home.resolve()
+        _check_home(home)
         home.mkdir(parents=True, exist_ok=True)
         if any(home.iterdir()):
             raise SystemExit(f"dev-server: {home} is not empty")
     else:
         home = Path(tempfile.mkdtemp(prefix="reframe-dev-"))
-    _check_home(home)
+        _check_home(home)
+
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        command, env, folders, token = _prepare(args, home)
+        process = subprocess.Popen(command, env=env)
+        url = f"http://127.0.0.1:{args.port}"
+        _wait_healthy(url, process)
+        print(
+            json.dumps(
+                {
+                    "event": "ready",
+                    "url": url,
+                    "token": token,
+                    "open": f"{url}/#token={token}",
+                    "home": str(home),
+                    "media": str(folders["media"]),
+                    "output": str(folders["output"]),
+                    "pid": process.pid,
+                }
+            ),
+            flush=True,
+        )
+        process.wait()
+        return process.returncode or 0
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        # Also after a failure before the server started (a missing fixture, a bad settings
+        # file): the home is ours either way.
+        if process is not None:
+            _stop(process)
+        if not args.keep:
+            shutil.rmtree(home, ignore_errors=True)
+
+
+def _prepare(
+    args: argparse.Namespace, home: Path
+) -> tuple[list[str], dict[str, str], dict[str, Path], str]:
+    """The home's folders, fixtures and settings, and the server's command and environment."""
     folders = {name: home / name for name in ("config", "data", "cache", "media", "output")}
     for folder in folders.values():
         folder.mkdir(exist_ok=True)
@@ -173,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     (folders["config"] / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
 
     env = {key: value for key, value in os.environ.items() if not key.startswith("REFRAME_")}
-    token = args.token or secrets.token_urlsafe(24)
+    token: str = args.token or secrets.token_urlsafe(24)
     env.update(
         REFRAME_CONFIG_DIR=str(folders["config"]),
         REFRAME_DATA_DIR=str(folders["data"]),
@@ -197,6 +257,15 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("dev-server: no frontend/dist/index.html (run npm run build:web)")
         env["REFRAME_STATIC_DIR"] = str(DIST)
 
+    if args.password is not None:
+        # From a pipe, --set-password reads the first line as the password.
+        subprocess.run(
+            [sys.executable, "-m", "reframe_server", "--set-password"],
+            env=env,
+            input=f"{args.password}\n".encode(),
+            check=True,
+            capture_output=True,
+        )
     command = [
         sys.executable,
         "-m",
@@ -214,61 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         "--output-root",
         str(folders["output"]),
     ]
-    if args.password is not None:
-        # From a pipe, --set-password reads the first line as the password.
-        subprocess.run(
-            [sys.executable, "-m", "reframe_server", "--set-password"],
-            env=env,
-            input=f"{args.password}\n".encode(),
-            check=True,
-            capture_output=True,
-        )
-    process = subprocess.Popen(command, env=env)
-
-    stopping = False
-
-    def on_signal(signum: int, frame: FrameType | None) -> None:
-        # Only the first signal stops the run: a second one during the clean-up would cut it
-        # short and leave the server and the home behind.
-        nonlocal stopping
-        if stopping:
-            return
-        stopping = True
-        raise KeyboardInterrupt
-
-    # SIGINT too: a background job of a non-interactive shell starts with SIGINT ignored.
-    handled = [signal.SIGINT, signal.SIGTERM]
-    if sys.platform != "win32":
-        handled.append(signal.SIGHUP)
-    for signum in handled:
-        signal.signal(signum, on_signal)
-
-    url = f"http://127.0.0.1:{args.port}"
-    try:
-        _wait_healthy(url, process)
-        print(
-            json.dumps(
-                {
-                    "event": "ready",
-                    "url": url,
-                    "token": token,
-                    "open": f"{url}/#token={token}",
-                    "home": str(home),
-                    "media": str(folders["media"]),
-                    "output": str(folders["output"]),
-                    "pid": process.pid,
-                }
-            ),
-            flush=True,
-        )
-        process.wait()
-        return process.returncode or 0
-    except KeyboardInterrupt:
-        return 130
-    finally:
-        _stop(process)
-        if not args.keep:
-            shutil.rmtree(home, ignore_errors=True)
+    return command, env, folders, token
 
 
 if __name__ == "__main__":
