@@ -1,9 +1,10 @@
-import { type ComputedRef, computed, ref } from 'vue'
+import { type ComputedRef, computed, ref, watch, type WatchStopHandle } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
 import type { JobSettings, QueueJob, SourceEntry, ValidationIssue } from '@/api/types'
 import { fileName } from '@/components/shell/format'
+import { commitFocusedField } from '@/editor/focus'
 import { useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 import { useSourcesStore } from '@/stores/sources'
@@ -11,13 +12,22 @@ import { useToastStore } from '@/stores/toasts'
 import { useValidationStore } from '@/stores/validation'
 
 export interface QueueActions {
-  /** The editor's job has no error, and nothing is in the way of adding it. */
+  /**
+   * The editor's job had no error at its last check, and nothing is in the way of adding it. A
+   * check or an edit on its way does not count: the add waits for them.
+   */
   canAdd: ComputedRef<boolean>
   /** At least one source is open and no add is under way. */
   canAddAll: ComputedRef<boolean>
   /** Waiting jobs that a Start would hand to the runner. */
   canStart: ComputedRef<boolean>
-  /** Adds the editor's job (`Ctrl+Enter`, *Add to queue*). */
+  /** An add is under way (it may still wait for the job's check). */
+  busy: ComputedRef<boolean>
+  /**
+   * Adds the editor's job as the screen shows it (`Ctrl+Enter`, *Add to queue*): first the
+   * focused field's value and the edits on their way go into the job and the job is checked.
+   * A job that cannot be added then is a toast that says why.
+   */
   addCurrent(): Promise<void>
   /** Drafts every open source with the editor's preset and adds those without errors. */
   addAll(): Promise<void>
@@ -26,6 +36,14 @@ export interface QueueActions {
 }
 
 type Outcome = { entry: SourceEntry; job: JobSettings } | { entry: SourceEntry; reason: string }
+
+/** Why the open job cannot be added now. */
+type Blocker =
+  | { kind: 'checking' }
+  | { kind: 'unchecked' }
+  | { kind: 'edit'; reason: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'noPath' }
 
 const ADDED_LIFE = 4_000
 const NOT_ADDED_LIFE = 15_000
@@ -57,11 +75,12 @@ export function useQueueActions(): QueueActions {
   const sources = useSourcesStore()
   const toasts = useToastStore()
 
+  // Not while a check or an edit is on its way: a click on the button blurs the field that was
+  // typed in, its value goes into the job, and the button must not be disabled under the pointer.
   const canAdd = computed(
     () =>
       editor.job !== null &&
       !editor.loading &&
-      !validation.pending &&
       !validation.hasErrors &&
       Boolean(editor.job.output?.path) &&
       !busy.value,
@@ -71,11 +90,114 @@ export function useQueueActions(): QueueActions {
     () => queue.counts.waiting > 0 && !(queue.processing && queue.only === null),
   )
 
+  /**
+   * Resolves once what the screen shows is in the job and the job has been checked: `false` when
+   * another job was opened meanwhile. A failed check is asked once more.
+   */
+  function settled(): Promise<boolean> {
+    commitFocusedField()
+    editor.flushEdits()
+    const session = editor.session
+    let retried = false
+    return new Promise((resolve) => {
+      let stop: WatchStopHandle | undefined
+      let over = false
+      function finish(value: boolean): void {
+        over = true
+        stop?.()
+        resolve(value)
+      }
+      // Not `sync`: an edit that lands makes the check pending in the same change, and that
+      // must be seen together.
+      stop = watch(
+        () =>
+          [
+            editor.session,
+            editor.loading,
+            editor.editing,
+            validation.pending,
+            validation.failed,
+          ] as const,
+        () => {
+          if (over) return
+          if (editor.session !== session) return finish(false)
+          if (editor.loading || editor.editing) return
+          if (validation.pending) {
+            validation.flush()
+            return
+          }
+          if (validation.failed && !retried) {
+            retried = true
+            validation.flush()
+            return
+          }
+          finish(true)
+        },
+        { immediate: true },
+      )
+      if (over) stop()
+    })
+  }
+
+  /** Why the open job cannot be added as it is now; `null`: it can. */
+  function blocker(job: JobSettings): Blocker | null {
+    if (editor.loading || editor.editing || validation.pending) return { kind: 'checking' }
+    if (editor.editFailure !== null) return { kind: 'edit', reason: editor.editFailure }
+    if (validation.failed) return { kind: 'unchecked' }
+    const error = firstError(validation.issues)
+    if (error) return { kind: 'error', message: error.message }
+    if (!job.output?.path) return { kind: 'noPath' }
+    return null
+  }
+
+  /** A line of *Add all*'s list: "name: reason". */
+  function lineReason(found: Blocker): string {
+    switch (found.kind) {
+      case 'checking':
+        return t('shell.queue.stillChecking')
+      case 'unchecked':
+        return t('editor.add.uncheckedLine')
+      case 'edit':
+        return t('editor.add.editLine', { reason: found.reason })
+      case 'error':
+        return found.message
+      case 'noPath':
+        return t('shell.queue.noOutputPath')
+    }
+  }
+
+  function toastReason(found: Blocker): string {
+    switch (found.kind) {
+      case 'checking':
+        return t('editor.add.checking')
+      case 'unchecked':
+        return t('editor.add.unchecked')
+      case 'edit':
+        return t('editor.add.edit', { reason: found.reason })
+      case 'error':
+        return found.message
+      case 'noPath':
+        return t('editor.add.noPath')
+    }
+  }
+
   async function addCurrent(): Promise<void> {
-    const job = editor.job
-    if (!canAdd.value || job === null) return
+    if (busy.value || editor.job === null || editor.loading) return
     busy.value = true
     try {
+      if (!(await settled())) return
+      const job = editor.job
+      if (job === null) return
+      const found = blocker(job)
+      if (found !== null) {
+        toasts.push({
+          severity: 'warn',
+          summary: t(found.kind === 'error' ? 'editor.add.hasErrors' : 'editor.add.notAdded'),
+          detail: toastReason(found),
+          life: NOT_ADDED_LIFE,
+        })
+        return
+      }
       const [added] = await queue.add([snapshot(job)])
       if (added?.state === 'failed') {
         toasts.push({
@@ -103,11 +225,8 @@ export function useQueueActions(): QueueActions {
     const target = editor.target
     let job: JobSettings
     if (target?.kind === 'job' && target.sourceId === entry.id && editor.job !== null) {
-      if (validation.pending || editor.loading) {
-        return { entry, reason: t('shell.queue.stillChecking') }
-      }
-      const error = firstError(validation.issues)
-      if (error) return { entry, reason: error.message }
+      const found = blocker(editor.job)
+      if (found !== null) return { entry, reason: lineReason(found) }
       job = editor.job
     } else {
       try {
@@ -132,6 +251,7 @@ export function useQueueActions(): QueueActions {
     if (!canAddAll.value) return
     busy.value = true
     try {
+      await settled()
       const outcomes = await Promise.all(sources.entries.map((entry) => jobOf(entry)))
       const ready = outcomes.filter((outcome) => 'job' in outcome)
       const lines = outcomes.flatMap((outcome) =>
@@ -191,5 +311,13 @@ export function useQueueActions(): QueueActions {
     }
   }
 
-  return { canAdd, canAddAll, canStart, addCurrent, addAll, start }
+  return {
+    canAdd,
+    canAddAll,
+    canStart,
+    busy: computed(() => busy.value),
+    addCurrent,
+    addAll,
+    start,
+  }
 }

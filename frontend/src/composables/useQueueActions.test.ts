@@ -18,18 +18,24 @@ const editorState = reactive({
   target: null as EditorTarget | null,
   presetId: null as string | null,
   loading: false,
+  session: 1,
+  editing: false,
+  editFailure: null as string | null,
 })
 const editor = reactive({
   ...toRefs(editorState),
   job: computed((): JobSettings | null =>
     editorState.target?.kind === 'job' ? editorState.target.job : null,
   ),
+  flushEdits: vi.fn<() => void>(),
 })
 const issues = ref<ValidationIssue[]>([])
 const validation = reactive({
   issues,
   pending: false,
+  failed: false,
   hasErrors: computed(() => issues.value.some((found) => found.severity === 'error')),
+  flush: vi.fn<() => void>(),
 })
 const sources = reactive({ entries: [] as SourceEntry[] })
 vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
@@ -100,8 +106,14 @@ beforeEach(() => {
   editor.target = null
   editor.presetId = null
   editor.loading = false
+  editor.session = 1
+  editor.editing = false
+  editor.editFailure = null
+  editor.flushEdits.mockReset()
   validation.issues = []
   validation.pending = false
+  validation.failed = false
+  validation.flush.mockReset()
   sources.entries = []
   server = new FakeServer()
     .on('GET /api/queue', { jobs: [] })
@@ -115,6 +127,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  document.body.replaceChildren()
 })
 
 describe('canAdd', () => {
@@ -137,13 +150,22 @@ describe('canAdd', () => {
       },
       true,
     ],
+    // The add waits for these: the button must not turn off under a click that blurs a field.
     [
       'a validation is pending',
       () => {
         open('s1', settings('a'))
         validation.pending = true
       },
-      false,
+      true,
+    ],
+    [
+      'an edit is on its way into the job',
+      () => {
+        open('s1', settings('a'))
+        editor.editing = true
+      },
+      true,
     ],
     [
       'the editor is loading a draft',
@@ -175,11 +197,140 @@ describe('addCurrent', () => {
     ])
   })
 
-  it('adds nothing while the job has an error', async () => {
+  it('adds nothing while the job has an error, and says why', async () => {
     open('s1', settings('a'))
-    validation.issues = [issue('error', 'broken')]
+    validation.issues = [issue('error', 'The encoder is not available.')]
     await actions().addCurrent()
     expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([
+      {
+        severity: 'warn',
+        summary: 'Not added to the queue: the job has an error',
+        detail: 'The encoder is not available.',
+      },
+    ])
+  })
+
+  it('puts the value typed into the focused field into the job first, and gives the field the focus back', async () => {
+    open('s1', settings('a'))
+    // A field that writes into the job only when it loses the focus (PrimeVue's InputNumber).
+    const field = document.createElement('input')
+    field.type = 'text'
+    document.body.append(field)
+    field.addEventListener('blur', () => open('s1', settings('a', '/out/typed.mkv')))
+    field.focus()
+
+    await actions().addCurrent()
+
+    expect(queueBodies()).toEqual([[settings('a', '/out/typed.mkv')]])
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('waits for the check of the job on its way, asks for it at once, and adds the job as it then is', async () => {
+    open('s1', settings('a'))
+    validation.pending = true
+    const adding = actions().addCurrent()
+    await settle()
+    expect(validation.flush).toHaveBeenCalled()
+    expect(queueBodies()).toEqual([])
+
+    open('s1', settings('a', '/out/later.mkv'))
+    validation.pending = false
+    await adding
+    expect(queueBodies()).toEqual([[settings('a', '/out/later.mkv')]])
+  })
+
+  it('waits for an edit on its way (sent at once), then for the check of the job with it', async () => {
+    open('s1', settings('a'))
+    editor.editing = true
+    const adding = actions().addCurrent()
+    await settle()
+    expect(editor.flushEdits).toHaveBeenCalledTimes(1)
+
+    // The edit lands: the job changes and its check starts in the same change.
+    open('s1', settings('a', '/out/renamed.mkv'))
+    editor.editing = false
+    validation.pending = true
+    await settle()
+    expect(queueBodies()).toEqual([])
+
+    validation.pending = false
+    await adding
+    expect(queueBodies()).toEqual([[settings('a', '/out/renamed.mkv')]])
+  })
+
+  it('does not add a job whose check, once it answers, has an error', async () => {
+    open('s1', settings('a'))
+    validation.pending = true
+    const adding = actions().addCurrent()
+    await settle()
+    validation.issues = [issue('error', 'The quality is out of range.')]
+    validation.pending = false
+    await adding
+    expect(queueBodies()).toEqual([])
+    expect(toasts().map((toast) => toast.detail)).toEqual(['The quality is out of range.'])
+  })
+
+  it('asks once more after a failed check, and adds the job when that answer has no error', async () => {
+    open('s1', settings('a'))
+    validation.failed = true
+    validation.flush.mockImplementation(() => {
+      validation.pending = true
+    })
+    const adding = actions().addCurrent()
+    await settle()
+    expect(validation.flush).toHaveBeenCalled()
+    expect(queueBodies()).toEqual([])
+    validation.failed = false
+    validation.pending = false
+    await adding
+    expect(queueBodies()).toEqual([[settings('a')]])
+  })
+
+  it('adds nothing when the check fails again, and says so', async () => {
+    open('s1', settings('a'))
+    validation.failed = true
+    validation.flush.mockImplementation(() => {
+      validation.pending = true
+    })
+    const adding = actions().addCurrent()
+    await settle()
+    validation.pending = false
+    await adding
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([
+      {
+        severity: 'warn',
+        summary: 'Not added to the queue',
+        detail:
+          'The job could not be checked, so it was not added. Try again when the server answers.',
+      },
+    ])
+  })
+
+  it('adds nothing when an edit on the screen could not reach the job, and says why', async () => {
+    open('s1', settings('a'))
+    editor.editFailure = 'The server did not answer.'
+    await actions().addCurrent()
+    expect(editor.flushEdits).toHaveBeenCalled()
+    expect(queueBodies()).toEqual([])
+    expect(toasts().map((toast) => toast.detail)).toEqual([
+      'The output name could not be updated: The server did not answer.',
+    ])
+  })
+
+  it('adds nothing, and says nothing, when another job is opened while it waits', async () => {
+    open('s1', settings('a'))
+    validation.pending = true
+    const adding = actions().addCurrent()
+    await settle()
+    open('s2', settings('b'))
+    editor.session = 2
+    await adding
+    validation.pending = false
+    await settle()
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
   })
 
   it('reports a job that the queue took as failed', async () => {
@@ -255,20 +406,33 @@ describe('addAll', () => {
     ])
   })
 
-  it('lists the open job when it has an error or is still being checked, and adds nothing when no job is ready', async () => {
+  it('lists the open job when it has an error, and adds nothing when no job is ready', async () => {
     sources.entries = [entry('a')]
     open('a', settings('a'))
     validation.issues = [issue('error', 'The encoder is not available')]
     await actions().addAll()
-    validation.issues = []
-    validation.pending = true
-    await actions().addAll()
 
     expect(queueBodies()).toEqual([])
-    expect(toasts().map((toast) => toast.detail)).toEqual([
-      'a.mkv: The encoder is not available',
-      'a.mkv: its settings are still being checked',
-    ])
+    expect(toasts().map((toast) => toast.detail)).toEqual(['a.mkv: The encoder is not available'])
+  })
+
+  it('takes the open job once the value of the focused field and its check are in', async () => {
+    sources.entries = [entry('a')]
+    open('a', settings('a'))
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.addEventListener('blur', () => {
+      open('a', settings('a', '/out/typed.mkv'))
+      validation.pending = true
+    })
+    field.focus()
+
+    const adding = actions().addAll()
+    await settle()
+    expect(queueBodies()).toEqual([])
+    validation.pending = false
+    await adding
+    expect(queueBodies()).toEqual([[settings('a', '/out/typed.mkv')]])
   })
 
   it('lists a draft without an output path and a job the queue took as failed', async () => {
@@ -323,6 +487,7 @@ describe('addAll', () => {
     server.on('POST /api/jobs/draft', () => draft.promise)
 
     const adding = actions().addAll()
+    await settle()
     // An edit while the other source is still being drafted.
     ;(editor.target as { job: JobSettings }).job.output = {
       ...settings('b').output,

@@ -3,32 +3,13 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
 import { EDITOR_TABS } from '@/components/editor/tabs/registry'
+import { isTextField } from '@/editor/focus'
 import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
 
 import { useQueueActions } from './useQueueActions'
-
-const NOT_TEXT_INPUTS = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit',
-])
-
-/** A field where `Ctrl+Z` undoes typing rather than the editor's last change. */
-function isTextField(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  if (target instanceof HTMLTextAreaElement) return true
-  if (target.closest('[contenteditable]:not([contenteditable="false"])') !== null) return true
-  return target instanceof HTMLInputElement && !NOT_TEXT_INPUTS.has(target.type)
-}
 
 function inModal(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[aria-modal="true"]') !== null
@@ -93,12 +74,14 @@ export function useShortcuts(): void {
     }
     if (key === 'enter' && !event.shiftKey) {
       event.preventDefault()
-      if (!event.repeat && actions.canAdd.value) void actions.addCurrent()
+      // Even when the job cannot be added as it was: the focused field may hold what fixes it.
+      if (!event.repeat) void actions.addCurrent()
       return
     }
     const undo = key === 'z' && !event.shiftKey
     const redo = (key === 'z' && event.shiftKey) || (key === 'y' && !event.shiftKey)
     if (!undo && !redo) return
+    // Left to the browser: it undoes the typing.
     if (isTextField(event.target)) return
     event.preventDefault()
     if (undo && editor.canUndo) editor.undo()
