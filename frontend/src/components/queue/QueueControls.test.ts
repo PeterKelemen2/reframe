@@ -188,6 +188,13 @@ describe('the when-done selector', () => {
     expect((await options())[2]).toBe('Quit Reframe')
   })
 
+  it('is named by its label, not by the value it shows', async () => {
+    await mountIt(WhenDoneSelect)
+    const combobox = el<HTMLElement>('[role="combobox"]')
+    const label = document.getElementById(combobox.getAttribute('aria-labelledby') ?? '')
+    expect(label?.textContent?.trim()).toBe('When done')
+  })
+
   it('sets the choice through the queue', async () => {
     queue.whenDone = 'nothing'
     const { wrapper } = await mountIt(WhenDoneSelect)

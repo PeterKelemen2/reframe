@@ -51,9 +51,11 @@ async function choose(value: WhenDone): Promise<void> {
     :label="t('queue.whenDone.label')"
     :help="web ? t('queue.whenDone.helpWeb') : t('queue.whenDone.helpDesktop')"
   >
-    <template #default="{ id }">
+    <template #default="{ id, labelId }">
+      <!-- Named by its label: without it, a combobox is named by its value. -->
       <Select
         :input-id="id"
+        :ariaLabelledby="labelId"
         :model-value="queue.whenDone"
         :options="options"
         option-label="label"
