@@ -3,8 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { api, ApiError, apiQuiet, unwrap } from '@/api/client'
 import { text } from '@/api/text'
-import type { Schemas, SourceEntry, TaskInfo } from '@/api/types'
-import { notBuilt } from '@/notBuilt'
+import type { MediaSource, Schemas, SourceEntry, TaskInfo } from '@/api/types'
 import { platform } from '@/platform'
 
 import { useEditorStore } from './editor'
@@ -329,11 +328,34 @@ export const useSourcesStore = defineStore('sources', () => {
 
   /**
    * Reads one source again (`GET /api/sources/{id}`) and puts it in its place: a scan ended,
-   * or an in-place edit changed the file.
+   * or an in-place edit changed the file. The selection and the editor's job stay. A source the
+   * server forgot is probed again (same id); one whose file changed gets `source` `null`, as
+   * `refresh` gives it. Another refusal is a toast and rejects.
    */
-  // oxlint-disable-next-line unicorn/consistent-function-scoping -- a stub; it uses the store once built
   async function reload(id: string): Promise<void> {
-    return notBuilt('sources.reload', id)
+    const entry = entries.value.find((candidate) => candidate.id === id)
+    if (entry === undefined) return
+    const result = await apiQuiet.GET('/api/sources/{source_id}', {
+      params: { path: { source_id: id } },
+    })
+    if (result.response.status === 404) {
+      await reprobe([entry])
+      return
+    }
+    let source: MediaSource | null = null
+    if (result.response.status !== 409) {
+      try {
+        source = unwrap(result)
+      } catch (error) {
+        if (error instanceof ApiError) {
+          toast('error', error.problem.title, error.problem.detail ?? undefined)
+        }
+        throw error
+      }
+    }
+    entries.value = entries.value.map((other) => (other.id === id ? { ...other, source } : other))
+    // Measured values change the roles, which the grouping compares.
+    await regroup()
   }
 
   /** A new server instance forgot the sources: probe every open path again. */
