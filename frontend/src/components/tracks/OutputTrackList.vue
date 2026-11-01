@@ -30,6 +30,7 @@ import { pickSubtitleFiles } from './external'
 import { externalTrack } from './metadata'
 import {
   addOps,
+  followSelection,
   moveOp,
   newAudioTrack,
   type NewTrackContext,
@@ -68,25 +69,48 @@ const streams = computed<readonly SourceStream[]>(() =>
 const rows = computed(() => tracks.value.map((track, index) => ({ index, track })))
 const unused = computed(() => unusedStreams(streams.value, tracks.value))
 
-/** The selected tracks, by place: any change of the list's tracks or order clears it. */
+/** The selected tracks' places; they follow the tracks through a reorder. */
 const selected = ref<number[]>([])
 const bulkVisible = ref(false)
+/** One track has nothing to edit together with. */
+const selectable = computed(() => rows.value.length > 1)
 const allSelected = computed(
   () => rows.value.length > 0 && selected.value.length === rows.value.length,
 )
 
-function trackKey(track: AudioOutputTrack | SubtitleOutputTrack): string {
-  if ('source_stream' in track) return String(track.source_stream)
-  const from = (track as SubtitleOutputTrack).source
-  return typeof from === 'object' ? from.path : String(from)
-}
-
 watch(
-  () => [editor.session, ...tracks.value.map(trackKey)].join('\u0000'),
-  () => {
-    selected.value = []
+  () => [editor.session, tracks.value] as const,
+  ([session, after], [previousSession, before]) => {
+    selected.value =
+      session === previousSession && after.length > 1
+        ? followSelection(before, after, selected.value)
+        : []
   },
 )
+
+// The bulk buttons leave with the selection: the focus stays in the selection bar.
+async function focusSelectAll(): Promise<void> {
+  await nextTick()
+  document.getElementById(`${id}-all`)?.focus()
+}
+
+function clearSelection(): void {
+  selected.value = []
+  void focusSelectAll()
+}
+
+let applied = false
+
+function onApplied(): void {
+  selected.value = []
+  applied = true
+}
+
+function onBulkClosed(): void {
+  if (!applied) return
+  applied = false
+  void focusSelectAll()
+}
 
 function select(index: number, on: boolean): void {
   const others = selected.value.filter((other) => other !== index)
@@ -281,7 +305,7 @@ async function reload(): Promise<void> {
         </Button>
       </template>
       <div
-        v-if="rows.length > 1"
+        v-if="selectable"
         class="output-tracks__selection"
         :class="{ 'output-tracks__selection--active': selected.length > 0 }"
         data-role="selection"
@@ -318,7 +342,7 @@ async function reload(): Promise<void> {
             text
             data-action="bulk-clear"
             :label="t('tracks.bulk.clear')"
-            @click="selected = []"
+            @click="clearSelection"
           >
             <template #icon><X :size="16" aria-hidden="true" /></template>
           </Button>
@@ -328,7 +352,8 @@ async function reload(): Promise<void> {
         v-model:visible="bulkVisible"
         :list="list"
         :indexes="selected"
-        @applied="selected = []"
+        @applied="onApplied"
+        @closed="onBulkClosed"
       />
       <p v-if="rows.length === 0" class="output-tracks__empty" data-state="empty">
         {{ list === 'audio' ? t('tracks.output.noAudio') : t('tracks.output.noSubtitles') }}
@@ -346,7 +371,11 @@ async function reload(): Promise<void> {
             <span class="rf-sr-only">{{ t('tracks.output.dragColumn') }}</span>
           </template>
         </Column>
-        <Column body-class="output-tracks__select" header-class="output-tracks__select">
+        <Column
+          v-if="selectable"
+          body-class="output-tracks__select"
+          header-class="output-tracks__select"
+        >
           <template #header>
             <span class="rf-sr-only">{{ t('tracks.bulk.selectColumn') }}</span>
           </template>
@@ -391,6 +420,24 @@ async function reload(): Promise<void> {
 </template>
 
 <style scoped>
+/* The actions do not fit beside the title in a narrow panel: they go below it and wrap. */
+.output-tracks :deep(.rf-section__header) {
+  flex-wrap: wrap;
+  row-gap: var(--rf-space-2);
+}
+
+.output-tracks :deep(.rf-section__title) {
+  white-space: nowrap;
+}
+
+.output-tracks :deep(.rf-section__actions) {
+  flex-wrap: wrap;
+}
+
+.output-tracks :deep(.rf-section__actions .p-button) {
+  white-space: nowrap;
+}
+
 .output-tracks__empty {
   margin: 0;
   color: var(--rf-color-text-muted);
