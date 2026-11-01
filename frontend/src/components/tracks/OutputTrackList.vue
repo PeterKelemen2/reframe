@@ -82,7 +82,7 @@ function trackKey(track: AudioOutputTrack | SubtitleOutputTrack): string {
 }
 
 watch(
-  () => [editor.session, tracks.value.map(trackKey).join('\u0000')],
+  () => [editor.session, ...tracks.value.map(trackKey)].join('\u0000'),
   () => {
     selected.value = []
   },
