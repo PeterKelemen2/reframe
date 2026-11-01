@@ -24,7 +24,9 @@
   },
   "table": {
     "label": "Jobs in the queue",
-    "videoCopy": "Video copied"
+    "videoCopy": "Video copied",
+    "inPlace": "Source, edited in place",
+    "inPlaceTip": "mkvpropedit changes {path} itself: no new file is written."
   },
   "columns": {
     "drag": "Drag to reorder",
