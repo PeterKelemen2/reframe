@@ -63,7 +63,8 @@
     "canEditInPlace": "Only metadata changes: with Edit in place, {name} itself is changed in seconds instead of a new file being written.",
     "blocked": "Edit in place is not possible because:",
     "remuxOnly": "Remux only",
-    "remuxOnlyHelp": "Drafts the job again so that the video and every audio and subtitle track are copied as they are: only languages, names and flags change."
+    "remuxOnlyHelp": "Drafts the job again so that the video and every audio and subtitle track are copied as they are into a new file: only languages, names and flags change.",
+    "remuxOnlyInPlaceHelp": "Drafts the job again so that the video and every audio and subtitle track are copied as they are. Edit in place is on: the source file itself is edited, and no new file is written."
   },
   "picture": {
     "title": "Picture pipeline",
