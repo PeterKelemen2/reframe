@@ -45,7 +45,9 @@
     "scope": "Edits go to",
     "scopeGroup": "Group",
     "scopeFile": "This file only ({label})",
-    "inGroup": "In group “{name}”"
+    "inGroup": "In group “{name}”",
+    "matrixError": "The group could not be checked: {reason}",
+    "retry": "Try again"
   },
   "apply": {
     "title": "Apply to group “{name}”",

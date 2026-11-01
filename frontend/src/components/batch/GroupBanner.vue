@@ -183,6 +183,19 @@ watch(mode, async () => {
           @update:model-value="setScope"
         />
       </div>
+      <div v-if="editor.matrixError !== null" class="group-banner__error" data-state="matrix-error">
+        <span role="alert">{{
+          t('group.banner.matrixError', { reason: editor.matrixError })
+        }}</span>
+        <Button
+          size="small"
+          severity="secondary"
+          text
+          :label="t('group.banner.retry')"
+          data-action="retry-matrix"
+          @click="editor.retryMatrix()"
+        />
+      </div>
       <div class="group-banner__actions">
         <Button
           size="small"
@@ -307,6 +320,14 @@ watch(mode, async () => {
 
 .group-banner__actions {
   margin-inline-start: auto;
+}
+
+.group-banner__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2);
+  color: var(--p-status-error-color);
 }
 
 .group-banner__label {

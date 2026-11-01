@@ -193,6 +193,22 @@ describe('the group banner', () => {
     expect(document.activeElement).toBe(button)
   })
 
+  it('says that the group could not be checked, and asks again with Try again', async () => {
+    const { editor } = await mountBanner('group')
+    const retry = vi.spyOn(editor, 'retryMatrix').mockImplementation(() => undefined)
+    expect($('[data-state="matrix-error"]')).toBeNull()
+    editor.matrixError = 'The server is not reachable.'
+    await flushPromises()
+    expect(text($('[data-state="matrix-error"] [role="alert"]'))).toBe(
+      'The group could not be checked: The server is not reachable.',
+    )
+    await click('[data-action="retry-matrix"]')
+    expect(retry).toHaveBeenCalledOnce()
+    editor.matrixError = null
+    await flushPromises()
+    expect($('[data-state="matrix-error"]')).toBeNull()
+  })
+
   it('closes the group by opening the shown file as one job', async () => {
     const { select } = await mountBanner('group')
     await click('[data-action="close-group"]')
