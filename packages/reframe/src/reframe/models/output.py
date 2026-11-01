@@ -123,7 +123,8 @@ class RenderedTags(ReframeModel):
 
     values: TagValues
     """Each set tag with the naming variables filled in (``{date}`` and ``{time}`` as of now);
-    ``null`` for a tag the job does not set. A tag with a template error is written as typed."""
+    ``null`` for a tag the job does not set. An unknown variable is empty; a template with a
+    syntax error is written as typed."""
     source: TagValues
     """The source file's value of each tag: what *Passthru common metadata* copies when the
     job does not set it."""

@@ -1,5 +1,6 @@
-"""The server-side file browser: media files and folders. Web mode shows only what is below
-the media and output roots; desktop mode the user's whole file system."""
+"""The server-side file browser: folders, and media files or files of the extensions asked for.
+Web mode shows only what is below the media and output roots; desktop mode the user's whole
+file system."""
 
 from __future__ import annotations
 
@@ -8,8 +9,9 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
+from fastapi import Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from reframe.probe import MEDIA_EXTENSIONS, natural_key
@@ -43,7 +45,8 @@ class FsRoots(BaseModel):
 
 
 class FsEntry(BaseModel):
-    """A folder or a media file (other files and hidden entries are left out)."""
+    """A folder or a media file, or a file of the extensions asked for (other files and hidden
+    entries are left out)."""
 
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
@@ -74,10 +77,28 @@ async def roots(config: ConfigDep) -> FsRoots:
 
 
 @router.get("/fs/list", name="list")
-async def list_folder(path: str, config: ConfigDep) -> FsListing:
-    """The folders and media files in ``path``."""
+async def list_folder(
+    path: str,
+    config: ConfigDep,
+    extensions: Annotated[list[str] | None, Query()] = None,
+) -> FsListing:
+    """The folders and media files in ``path``. With ``extensions`` (repeatable: ``.srt``,
+    ``ass``; any case), the files with these extensions instead of the media files."""
+    wanted = MEDIA_EXTENSIONS if not extensions else _extensions(extensions)
     folder = _jailed(config, path)
-    return await asyncio.to_thread(_listing, config, folder)
+    return await asyncio.to_thread(_listing, config, folder, wanted)
+
+
+def _extensions(given: list[str]) -> frozenset[str]:
+    found: set[str] = set()
+    for text in given:
+        bare = text.strip().lower().removeprefix(".")
+        if not bare or any(c in bare for c in "./\\\0"):
+            raise ProblemError(
+                422, "fs.bad_extension", "The extension is not valid", f"{text!r} is not one."
+            )
+        found.add(f".{bare}")
+    return frozenset(found)
 
 
 def _jailed(config: ServerConfig, path: str) -> Path:
@@ -119,10 +140,10 @@ def _roots(config: ServerConfig) -> list[FsRoot]:
     return found + [FsRoot(name=str(drive), path=drive, kind="drive") for drive in drives]
 
 
-def _listing(config: ServerConfig, folder: Path) -> FsListing:
+def _listing(config: ServerConfig, folder: Path, wanted: frozenset[str]) -> FsListing:
     try:
         with os.scandir(folder) as scan:
-            entries = [entry for entry in (_entry(item) for item in scan) if entry is not None]
+            entries = [e for e in (_entry(item, wanted) for item in scan) if e is not None]
     except FileNotFoundError:
         raise ProblemError(404, "fs.not_found", "The folder does not exist") from None
     except NotADirectoryError:
@@ -134,13 +155,13 @@ def _listing(config: ServerConfig, folder: Path) -> FsListing:
     return FsListing(path=folder, parent=_parent(config, folder), entries=entries)
 
 
-def _entry(item: os.DirEntry[str]) -> FsEntry | None:
+def _entry(item: os.DirEntry[str], wanted: frozenset[str]) -> FsEntry | None:
     if item.name.startswith("."):
         return None
     try:
         if item.is_dir():
             kind: Literal["folder", "file"] = "folder"
-        elif item.is_file() and os.path.splitext(item.name)[1].lower() in MEDIA_EXTENSIONS:
+        elif item.is_file() and os.path.splitext(item.name)[1].lower() in wanted:
             kind = "file"
         else:
             return None
