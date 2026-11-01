@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Check, LoaderCircle, Minus } from '@lucide/vue'
-import { computed, useId } from 'vue'
+import { computed, ref, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { AudioStream, SubtitleStream, TrackDecision } from '@/api/types'
@@ -25,6 +25,7 @@ const defaults = useDefaultsStore()
 const scans = useScansStore()
 const system = useSystemStore()
 const id = useId()
+const root = useTemplateRef<HTMLElement>('root')
 
 const audio = computed(() => defaults.kind === 'audio')
 const decisions = computed<TrackDecision[]>(() => {
@@ -73,6 +74,11 @@ function measureRun(decision: TrackDecision) {
   return sourceId === null ? undefined : scans.running(sourceId, 'bitrate', decision.source_stream)
 }
 
+function number(decision: TrackDecision): number {
+  const stream = streamOf(decision)
+  return stream ? trackNumber(stream) : decision.source_stream
+}
+
 function measure(decision: TrackDecision): void {
   const sourceId = defaults.sourceId
   // A failure is the scans store's toast; the measured source comes back through the watcher.
@@ -80,14 +86,27 @@ function measure(decision: TrackDecision): void {
     void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
 }
 
-function number(decision: TrackDecision): number {
-  const stream = streamOf(decision)
-  return stream ? trackNumber(stream) : decision.source_stream
+const announcement = ref('')
+
+/**
+ * The measured reason replaced Measure, which had the focus: without a place in the row the
+ * focus would leave the dialog. Called while the new answer is shown.
+ */
+function measured(stream: number): void {
+  root.value?.querySelector<HTMLElement>(`tr[data-stream="${stream}"] th`)?.focus()
+  const decision = decisions.value.find((each) => each.source_stream === stream)
+  if (decision !== undefined && !decision.measure) {
+    announcement.value = t('defaults.preview.measured', {
+      n: number(decision),
+      reason: decision.reason,
+    })
+  }
 }
 </script>
 
 <template>
   <section
+    ref="root"
     class="defaults-preview"
     :aria-labelledby="`${id}-title`"
     :aria-busy="defaults.previewing"
@@ -151,7 +170,7 @@ function number(decision: TrackDecision): number {
               :data-stream="decision.source_stream"
               :data-selected="decision.selected"
             >
-              <th scope="row" class="defaults-preview__source">
+              <th scope="row" class="defaults-preview__source" tabindex="-1">
                 <span>{{ sourceText(decision) }}</span
                 >{{ ' ' }}
                 <span class="defaults-preview__muted">
@@ -202,6 +221,7 @@ function number(decision: TrackDecision): number {
                   :help="t('defaults.preview.measureHelp')"
                   @start="measure(decision)"
                   @cancel="scans.cancel($event)"
+                  @leave="measured(decision.source_stream)"
                 />
               </td>
             </tr>
@@ -216,6 +236,7 @@ function number(decision: TrackDecision): number {
     <p v-else class="defaults-preview__empty" data-state="loading">
       {{ t('defaults.preview.loading') }}
     </p>
+    <span class="rf-sr-only" aria-live="polite" data-role="announcement">{{ announcement }}</span>
   </section>
 </template>
 
@@ -305,11 +326,36 @@ function number(decision: TrackDecision): number {
 }
 
 .defaults-preview__scroll {
+  position: relative;
   overflow-x: auto;
 }
 
-.defaults-preview[aria-busy='true'] .defaults-preview__table {
-  opacity: 0.6;
+/* Busy: a bar runs along the table's top. Fading the table would take its text below AA. */
+.defaults-preview[aria-busy='true'] .defaults-preview__scroll::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(var(--rf-color-primary), var(--rf-color-primary)) no-repeat;
+  background-size: 40% 100%;
+  animation: defaults-preview-busy 1.2s linear infinite;
+  content: '';
+}
+
+@keyframes defaults-preview-busy {
+  from {
+    background-position: -50% 0;
+  }
+
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .defaults-preview[aria-busy='true'] .defaults-preview__scroll::before {
+    background-size: 100% 100%;
+    animation: none;
+  }
 }
 
 .defaults-preview__table {

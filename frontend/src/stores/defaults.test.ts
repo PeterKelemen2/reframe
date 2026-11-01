@@ -13,7 +13,6 @@ import {
 import type {
   AudioCodecRule,
   AudioOutputTrack,
-  DefaultsPreviewRequest,
   JobDraft,
   JobTemplate,
   Preset,
@@ -25,7 +24,7 @@ import { preset, presetList, userPreset } from '@/components/presets/testing'
 import { probedSource } from '@/components/tracks/testing'
 import { sampleDraft, sampleJob } from '@/editor/testing/samples'
 
-import { PREVIEW_DEBOUNCE, useDefaultsStore } from './defaults'
+import { PREVIEW_DEBOUNCE, type PreviewRequest, useDefaultsStore } from './defaults'
 import { useEditorStore } from './editor'
 import { useSourcesStore } from './sources'
 import { useToastStore } from './toasts'
@@ -75,8 +74,8 @@ function issueAt(path: string, code = 'defaults.rule_shadowed'): ValidationIssue
   return { severity: 'warning', code, path, message: `${code} at ${path}`, fixes: [] }
 }
 
-function previewBody(request: Recorded | undefined): DefaultsPreviewRequest {
-  return request?.body as DefaultsPreviewRequest
+function previewBody(request: Recorded | undefined): PreviewRequest {
+  return request?.body as PreviewRequest
 }
 
 const toasts = () => useToastStore().items.map(({ severity, summary }) => ({ severity, summary }))
@@ -112,6 +111,7 @@ class DefaultsServer extends FakeServer {
         return answer.promise
       })
       .on(EXPLAIN, () => this.explained)
+      .on(`GET /api/presets/${MINE}`, () => this.presets.find((each) => each.id === MINE))
       .on(`PUT /api/presets/${MINE}`, (request) => request.body)
       .on('POST /api/presets', (request) => {
         const body = request.body as { template: JobTemplate; name: string; category: string }
@@ -344,6 +344,52 @@ describe('the defaults store', () => {
       expect(defaults.previewing).toBe(false)
     })
 
+    it("sends the template that Apply sends, with the preset's own track rules", async () => {
+      const audioRules = [
+        {
+          selector: { kind: 'audio', languages: ['en'] },
+          multiple: true,
+          required: true,
+          settings: { kind: 'audio', action: 'encode', encoder: 'aac', bitrate: 96 },
+        },
+      ] as JobTemplate['audio_rules']
+      server.presets = [
+        preset(BUILT_IN, 'H.265 MKV 1080p'),
+        userPreset(MINE, 'Mine', { audio_rules: audioRules }),
+      ]
+      const defaults = await opened('audio', MINE)
+      defaults.setRule(0, rule({ codec: 'ac3', max_bitrate: 320 }))
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE)
+      await defaults.apply()
+      const sent = previewBody(server.previews().at(-1)).template
+      const applied = server.requests.find((each) => `${each.method} ${each.path}` === EXPLAIN)
+      expect(sent).toEqual((applied!.body as { template: JobTemplate }).template)
+      expect(sent?.audio_rules).toEqual(audioRules)
+      expect(sent?.audio_defaults?.codec_rules?.[0]).toMatchObject({ codec: 'ac3' })
+    })
+
+    it("says when the template's own track rules of the dialog's kind replace the defaults", async () => {
+      server.presets = [
+        preset(BUILT_IN, 'H.265 MKV 1080p'),
+        userPreset(MINE, 'Mine', {
+          subtitle_rules: [
+            {
+              selector: { kind: 'subtitle' },
+              multiple: false,
+              required: false,
+              settings: { kind: 'subtitle', action: 'copy' },
+            },
+          ] as JobTemplate['subtitle_rules'],
+        }),
+      ]
+      const defaults = await opened('audio', MINE)
+      expect(defaults.ruledByTemplate).toBe(false)
+      await defaults.open('subtitles', { kind: 'job' })
+      expect(defaults.ruledByTemplate).toBe(true)
+      await defaults.open('subtitles', { kind: 'preset', presetId: BUILT_IN })
+      expect(defaults.ruledByTemplate).toBe(false)
+    })
+
     it('keeps an issue at its rule when the rules move before the next answer', async () => {
       server.answer = trackDraft({
         issues: [issueAt('audio_defaults.codec_rules[1].max_bitrate', 'defaults.bitrate_snapped')],
@@ -514,6 +560,47 @@ describe('the defaults store', () => {
       expect(body.audio_defaults).toEqual(server.presets[1]!.audio_defaults)
       expect(body.name).toBe('Mine')
       expect(defaults.visible).toBe(false)
+    })
+
+    it("saves into the preset as the server has it now: another window's changes to it stay", async () => {
+      await jobOpen()
+      const defaults = useDefaultsStore()
+      await defaults.open('audio', { kind: 'preset', presetId: MINE })
+      await flush()
+      const stale = server.presets[1]!
+      const elsewhere = userPreset(MINE, 'Mine', {
+        description: 'Changed in another window',
+        video: { ...stale.video, encoder: 'libx264' } as Preset['video'],
+        subtitle_defaults: { burn_in: 'first', foreign_audio_search: true },
+      })
+      server.presets = [server.presets[0]!, elsewhere]
+      defaults.addRule()
+      await defaults.save()
+      const body = server.requests.find((each) => each.method === 'PUT')?.body as Preset
+      expect(body.description).toBe('Changed in another window')
+      expect(body.video?.encoder).toBe('libx264')
+      expect(body.subtitle_defaults).toEqual({ burn_in: 'first', foreign_audio_search: true })
+      expect(body.audio_defaults?.codec_rules).toHaveLength(2)
+    })
+
+    it('a preset deleted elsewhere is not saved: a toast, and the list is read again', async () => {
+      await jobOpen()
+      const defaults = useDefaultsStore()
+      await defaults.open('audio', { kind: 'preset', presetId: MINE })
+      await flush()
+      server.on(`GET /api/presets/${MINE}`, () =>
+        problem(404, 'preset.not_found', 'Not found', `No preset ${MINE}`),
+      )
+      const lists = server.count('GET /api/presets')
+      defaults.addRule()
+      await defaults.save()
+      await flush()
+      expect(server.requests.filter((each) => each.method === 'PUT')).toHaveLength(0)
+      expect(toasts()).toEqual([
+        { severity: 'error', summary: 'The defaults could not be saved in “Mine”' },
+      ])
+      expect(server.count('GET /api/presets')).toBe(lists + 1)
+      expect(defaults.visible).toBe(true)
     })
 
     it('shows a built-in preset read-only: edits are ignored and nothing is saved', async () => {

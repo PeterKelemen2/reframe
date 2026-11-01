@@ -11,12 +11,15 @@ import { useSystemStore } from '@/stores/system'
 import { PASSTHRU, useCodecOptions } from './codecs'
 import IssueLines from './IssueLines.vue'
 import { PASSTHRU_CODECS, type PassthruCodec } from './model'
+import { labelOf, useDefaultsOptions } from './options'
+import ShownValue from './ShownValue.vue'
 
 /** Which source codecs may be passed through, and the encoder when one may not. */
 const { t } = useI18n()
 const defaults = useDefaultsStore()
 const system = useSystemStore()
 const codecs = useCodecOptions()
+const choices = useDefaultsOptions()
 const id = useId()
 
 const policy = computed(() => defaults.audio?.passthru ?? { allowed: [], fallback_encoder: 'aac' })
@@ -28,6 +31,10 @@ const fallbackOptions = computed(() =>
 function label(codec: PassthruCodec): string {
   return system.definitions?.passthru_codecs?.[codec]?.label ?? codec
 }
+
+const allowedText = computed(() =>
+  allowed.value.length === 0 ? t('defaults.passthru.none') : choices.list(allowed.value.map(label)),
+)
 
 function setAllowed(codec: PassthruCodec, on: boolean): void {
   if (defaults.audio === null) return
@@ -48,17 +55,19 @@ function setFallback(encoder: string): void {
   <div class="defaults-passthru">
     <fieldset class="defaults-passthru__codecs" data-path="audio_defaults.passthru.allowed">
       <legend class="defaults-passthru__legend">{{ t('defaults.passthru.allowed') }}</legend>
-      <span v-for="codec in PASSTHRU_CODECS" :key="codec" class="defaults-passthru__codec">
-        <Checkbox
-          :input-id="`${id}-${codec}`"
-          binary
-          :model-value="allowed.includes(codec)"
-          :disabled="defaults.readOnly"
-          :data-codec="codec"
-          @update:model-value="setAllowed(codec, $event === true)"
-        />
-        <label :for="`${id}-${codec}`">{{ label(codec) }}</label>
-      </span>
+      <ShownValue v-if="defaults.readOnly" :text="allowedText" data-field="allowed" />
+      <template v-else>
+        <span v-for="codec in PASSTHRU_CODECS" :key="codec" class="defaults-passthru__codec">
+          <Checkbox
+            :input-id="`${id}-${codec}`"
+            binary
+            :model-value="allowed.includes(codec)"
+            :data-codec="codec"
+            @update:model-value="setAllowed(codec, $event === true)"
+          />
+          <label :for="`${id}-${codec}`">{{ label(codec) }}</label>
+        </span>
+      </template>
       <IssueLines
         class="defaults-passthru__issues"
         :issues="defaults.issuesAt('audio_defaults.passthru.allowed')"
@@ -73,7 +82,13 @@ function setFallback(encoder: string): void {
       stacked
     >
       <template #default="{ id: inputId, labelId, invalid }">
+        <ShownValue
+          v-if="defaults.readOnly"
+          :text="labelOf(fallbackOptions, policy.fallback_encoder)"
+          data-field="fallback"
+        />
         <Select
+          v-else
           :input-id="inputId"
           :ariaLabelledby="labelId"
           :invalid="invalid"
@@ -81,7 +96,6 @@ function setFallback(encoder: string): void {
           :options="fallbackOptions"
           option-label="label"
           option-value="value"
-          :disabled="defaults.readOnly"
           fluid
           data-field="fallback"
           @update:model-value="setFallback"

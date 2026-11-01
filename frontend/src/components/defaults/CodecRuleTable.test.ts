@@ -53,6 +53,21 @@ const body = (index: number) => document.querySelector<HTMLElement>(`tbody[data-
 const button = (index: number, selector: string) =>
   body(index).querySelector<HTMLButtonElement>(selector)!
 
+/** The accessible names of the controls in a rule's expanded settings. */
+function controlNames(index: number): string[] {
+  return (
+    [
+      ...body(index).querySelectorAll<HTMLElement>(
+        '[data-rule-extras] :is([role="combobox"], [role="spinbutton"], input, button)',
+      ),
+    ]
+      // A help button shows the same help in every rule.
+      .filter((control) => !control.classList.contains('rf-field__help'))
+      .map((control) => control.getAttribute('aria-label'))
+      .filter((name) => name !== null)
+  )
+}
+
 async function click(target: HTMLElement): Promise<void> {
   target.focus()
   target.click()
@@ -139,5 +154,30 @@ describe('the codec rule table', () => {
       ),
     ).toEqual(['hu', 'en'])
     expect(button(0, '[data-action="expand"]').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it("names each control of an expanded rule's settings after its rule", async () => {
+    await mountTable()
+    await click(button(0, '[data-action="expand"]'))
+    await click(button(0, '[data-action="add-output"]'))
+    await click(button(1, '[data-action="expand"]'))
+    await click(button(1, '[data-action="add-output"]'))
+    const first = controlNames(0)
+    expect(first).toEqual(
+      expect.arrayContaining([
+        'Sample rate of rule 1',
+        'Gain of rule 1',
+        'Dynamic range compression of rule 1',
+        'Normalise loudness of rule 1',
+        'Track name of rule 1',
+        'Only for the first track of this language, in rule 1',
+        'Codec of extra output 1 of rule 1',
+        'Mixdown of extra output 1 of rule 1',
+        'Bitrate of extra output 1 of rule 1',
+        'Remove extra output 1 of rule 1',
+        'Add extra output to rule 1',
+      ]),
+    )
+    expect(controlNames(1).filter((name) => first.includes(name))).toEqual([])
   })
 })

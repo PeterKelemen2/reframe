@@ -843,7 +843,50 @@ same fixes), plus `metadata.nul_character` and `metadata.tag_too_long`; `chapter
 
 ### Fix round — FB (defaults dialog, shortcuts)
 
-(Written by FB.)
+2026-11-01. Checked in headless Chromium against `scripts/dev-server.py --port 8740` with the
+pinned FFmpeg, light and dark, 1440 × 900 and 1280 × 800. Until FA's server part is merged, the
+server refuses the preview's `template`; the checks of the other findings strip it in the test
+script (a Playwright route), and the R1-M2 checks wait for FA.
+
+1. **R1-M2, the frontend part.** The preview sends `template`: the same edited template that
+   *Apply* sends to `jobs/explain` (`container` stays; it is the template's own). When the
+   template has its own `audio_rules` (or `subtitle_rules`, for the subtitle dialog), a warning
+   in the dialog says that those rules decide the tracks, and that a change of the defaults
+   changes no track until the rules are removed from the preset. `PreviewRequest` in
+   `stores/defaults.ts` types the new member until `schema.d.ts` has it.
+2. **R1-m1.** No app shortcut while a modal is open: any `[aria-modal="true"]` element in the
+   page, not the key's target (after a click on a dialog's text the target is `<body>`).
+   PrimeVue gives a Dialog, a Drawer and an open Popover `aria-modal="true"`. An element in its
+   Vue leave transition (`*-leave-active`) does not count: a picked preset's list keeps
+   `aria-modal="true"` while it fades out, and `Ctrl+5` right after the pick was lost (found in
+   the browser check). **Added by the lead:** `Ctrl+1…8` move the focus to the selected tab's
+   button (the old panel's content goes, and the focus with it). It is
+   `focus({ focusVisible: true })`: Chromium does not count a `Ctrl` key press as keyboard use,
+   so the ring did not show without it. `EditorTabs.vue` is unchanged.
+3. **R1-m4.** *Save* reads the preset again (`GET /api/presets/{id}`) and writes it back with
+   only this kind's defaults replaced. A preset deleted elsewhere is a toast, and the list is read
+   again. A change made between the read and the write is still lost: presets have no version
+   check.
+4. **R2-4.** A built-in preset's defaults are text in the text colour, wrapped, instead of
+   disabled controls; the drag handle and the move, remove and add buttons are left out, and
+   *Optional settings* still opens a rule's extras as a list. The lowest contrast of a value is
+   14.63:1 (light) and 17.72:1 (dark), and no value is cut.
+5. **R2-5.** The busy preview keeps its text: a 3 px bar runs along the table's top (static with
+   reduced motion), with *Updating…* in the header. While busy, the muted text is 7.58:1 (light)
+   and 6.91:1 (dark), the reason 14.63:1 and 17.72:1.
+6. **R2-1, the dialog.** `ScanControl` (FC) keeps the focus between Start and Cancel and emits
+   `leave` when the measured reason replaces it; the preview then puts the focus on the row's
+   header (`tabindex="-1"`) and says "Track N measured: <reason>" in a polite live region.
+   Escape with the focus on Measure gives it back to *Defaults…*.
+7. **Nits.** The controls of an expanded rule name their rule, with the visible label first
+   ("Gain of rule 2", "Codec of extra output 1 of rule 2"). The help buttons of `Field` keep
+   "About …": they show the same text in each rule. Language and codec lists use
+   `Intl.ListFormat`. The preview takes at most two fifths of the dialog, and the dialog may use
+   the window's height (PrimeVue's own limit is 90 %): the edit pane at 1280 × 800 is 299 px
+   (211 px before).
+
+**Not changed.** An editable select still cuts a long value ("Treat as another lang…") in its
+15rem column; the read-only text shows it in full.
 
 ### Fix round — FC (tracks, scans, language)
 

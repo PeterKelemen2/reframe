@@ -44,6 +44,11 @@ export type DefaultsTarget =
 
 export type Container = NonNullable<Schemas['DefaultsPreviewRequest']['container']>
 
+/** The body of `presets/defaults/preview`. */
+// TEMPORARY: `template` is not in the generated schema yet; replace with
+// `Schemas['DefaultsPreviewRequest']` once it is.
+export type PreviewRequest = Schemas['DefaultsPreviewRequest'] & { template?: JobTemplate | null }
+
 /** Milliseconds from the last edit to `presets/defaults/preview`. */
 export const PREVIEW_DEBOUNCE = 250
 
@@ -128,14 +133,23 @@ export const useDefaultsStore = defineStore('defaults', () => {
     return issues.value.filter((placed) => placed.at === at).map((placed) => placed.issue)
   }
 
+  /** The template's own track rules of the dialog's kind replace the defaults it edits. */
+  const ruledByTemplate = computed(() => {
+    const own =
+      kind.value === 'audio' ? template.value?.audio_rules : template.value?.subtitle_rules
+    return (own ?? []).length > 0
+  })
+
   const request = latestRequest<{ drafts: TrackDraft[]; keys: number[] }>({
     async send(signal) {
       const keys = ruleKeys.value
-      const body = {
+      // The template that Apply sends: its own track rules draft as they would there.
+      const body: PreviewRequest = {
         source_ids: [sourceId.value as string],
         audio_defaults: audio.value as AudioDefaults,
         subtitle_defaults: subtitles.value as SubtitleDefaults,
         container: container.value,
+        template: editedTemplate(),
       }
       const drafts = unwrap(await apiQuiet.POST('/api/presets/defaults/preview', { body, signal }))
       return { drafts, keys }
@@ -372,16 +386,25 @@ export const useDefaultsStore = defineStore('defaults', () => {
     })
   }
 
-  /** Writes the edited defaults of the dialog's kind into a user preset. */
+  /**
+   * Writes the edited defaults of the dialog's kind into a user preset, as the server has it
+   * now: another window's changes to the rest of the preset stay.
+   */
   async function saveInto(into: Preset): Promise<boolean> {
     const edits =
       kind.value === 'audio'
         ? { audio_defaults: audio.value }
         : { subtitle_defaults: subtitles.value }
     try {
-      await presets.save({ ...into, ...edits } as Preset)
+      const current = unwrap(
+        await apiQuiet.GET('/api/presets/{preset_id}', {
+          params: { path: { preset_id: into.id } },
+        }),
+      )
+      await presets.save({ ...current, ...edits } as Preset)
     } catch (error) {
       if (!(error instanceof ApiError)) throw error
+      if (error.status === 404) void presets.load().catch(() => undefined)
       fail(
         text('defaults.save.failed', { name: into.name }),
         error.problem.detail ?? error.problem.title,
@@ -466,6 +489,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
     busy,
     preset,
     readOnly,
+    ruledByTemplate,
     container,
     sourceId,
     source,

@@ -56,6 +56,17 @@ async function mountPreview(draft: TrackDraft | null, withSource = true): Promis
   mounted.push(wrapper)
 }
 
+/** One track whose bitrate decides the outcome (`measure`), with this reason. */
+function oneTrack(measure: boolean, reason: string): TrackDraft {
+  return {
+    audio: [],
+    subtitles: [],
+    subtitle_decisions: [],
+    issues: [],
+    decisions: [decision({ source_stream: 1, measure, reason })],
+  }
+}
+
 const rows = () =>
   [...document.querySelectorAll<HTMLTableRowElement>('[data-role="preview"] tbody tr')].map((row) =>
     [...row.cells].map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim()),
@@ -124,6 +135,28 @@ describe('the live preview', () => {
     buttons[0]!.click()
     await flushPromises()
     expect(measure).toHaveBeenCalledWith('movie', 1)
+  })
+
+  it('keeps the focus in the row while Measure runs and ends, and says the new reason', async () => {
+    await mountPreview(oneTrack(true, 'Bitrate unknown'))
+    const scans = useScansStore()
+    vi.spyOn(scans, 'measureBitrate').mockImplementation(async (sourceId, streamIndex) => {
+      scans.runs = [{ sourceId, kind: 'bitrate', streamIndex, taskId: 'task', progress: null }]
+    })
+    const row = document.querySelector<HTMLElement>('tr[data-stream="1"]')!
+    const start = row.querySelector<HTMLButtonElement>('[data-action="start-scan"]')!
+    start.focus()
+    start.click()
+    await flushPromises()
+    scans.runs = []
+    await flushPromises()
+    // The measured source's answer: the reason replaces Measure, which has the focus.
+    useDefaultsStore().preview = oneTrack(false, 'AC-3, 5.1, 640 > 320 → encode at the max')
+    await flushPromises()
+    expect(document.activeElement).toBe(row.querySelector('th'))
+    expect(document.querySelector('[data-role="announcement"]')?.textContent).toBe(
+      'Track 1 measured: AC-3, 5.1, 640 > 320 → encode at the max',
+    )
   })
 
   it('lists only the issues that no rule or field shows, and counts them all', async () => {

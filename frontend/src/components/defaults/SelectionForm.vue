@@ -13,7 +13,8 @@ import { useSystemStore } from '@/stores/system'
 
 import IssueLines from './IssueLines.vue'
 import type { TrackSelection } from './model'
-import { type Option, useDefaultsOptions } from './options'
+import { labelOf, type Option, useDefaultsOptions } from './options'
+import ShownValue from './ShownValue.vue'
 
 /** Which source tracks the defaults take: shared by the audio and the subtitle defaults. */
 const { t } = useI18n()
@@ -44,12 +45,13 @@ const preferred = computed(() => {
   return (audio.value ? languages?.preferred_audio : languages?.preferred_subtitle) ?? []
 })
 const fromSettings = computed(() => (selection.value.languages ?? null) === null)
+function names(tags: readonly string[]): string {
+  return choices.list(tags.map((tag) => describeTag(system.languages, tag)?.english_name ?? tag))
+}
+
 const preferredText = computed(() => {
   if (preferred.value.length === 0) return t('defaults.selection.noneSet')
-  const names = preferred.value.map(
-    (tag) => describeTag(system.languages, tag)?.english_name ?? tag,
-  )
-  return t('defaults.selection.settingsList', { languages: names.join(', ') })
+  return t('defaults.selection.settingsList', { languages: names(preferred.value) })
 })
 
 function useSettings(checked: boolean): void {
@@ -110,12 +112,25 @@ const fields = computed<SelectField[]>(() => [
       :aria-describedby="`${id}-languages-text`"
     >
       <legend class="defaults-selection__legend">{{ t('defaults.selection.languages') }}</legend>
-      <span class="defaults-selection__check">
+      <template v-if="defaults.readOnly">
+        <ShownValue
+          v-if="fromSettings"
+          :text="
+            audio
+              ? t('defaults.selection.settingsAudio')
+              : t('defaults.selection.settingsSubtitles')
+          "
+        />
+        <ShownValue
+          v-else-if="(selection.languages ?? []).length > 0"
+          :text="names(selection.languages ?? [])"
+        />
+      </template>
+      <span v-else class="defaults-selection__check">
         <Checkbox
           :input-id="`${id}-settings`"
           binary
           :model-value="fromSettings"
-          :disabled="defaults.readOnly"
           data-role="languages-from-settings"
           @update:model-value="useSettings($event === true)"
         />
@@ -132,10 +147,9 @@ const fields = computed<SelectField[]>(() => [
         </template>
       </p>
       <LanguageListEditor
-        v-if="!fromSettings"
+        v-if="!fromSettings && !defaults.readOnly"
         :model-value="selection.languages ?? []"
         :label="t('defaults.selection.languages')"
-        :disabled="defaults.readOnly"
         :container="container"
         @update:model-value="update('languages', $event)"
       />
@@ -152,7 +166,13 @@ const fields = computed<SelectField[]>(() => [
         stacked
       >
         <template #default="{ id: inputId, labelId, invalid }">
+          <ShownValue
+            v-if="defaults.readOnly"
+            :text="labelOf(field.options, selection[field.key])"
+            :data-field="field.key"
+          />
           <Select
+            v-else
             :input-id="inputId"
             :ariaLabelledby="labelId"
             :invalid="invalid"
@@ -160,7 +180,6 @@ const fields = computed<SelectField[]>(() => [
             :options="field.options"
             option-label="label"
             option-value="value"
-            :disabled="defaults.readOnly"
             fluid
             :data-field="field.key"
             @update:model-value="update(field.key, $event)"
