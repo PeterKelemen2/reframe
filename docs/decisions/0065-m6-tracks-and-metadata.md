@@ -310,7 +310,84 @@ click; its tooltip reads "Set by a disposition flag in the file" and "dispositio
 
 ## Task F — F-11 Chapters and Tags tabs
 
-(Written by F.)
+Built: `components/editor/tabs/{Chapters,Tags}Tab.vue`, `components/chapters/` (`ChapterRow`,
+`chapters.ts`, `useOutputChapters.ts`, `requests.ts`), `components/tags/` (`tags.ts`,
+`useRenderedTags.ts`, `requests.ts`), `i18n/messages/en/{chapters,tags}.json`. S6's routes are
+called from the two `requests.ts` modules (typed by the generated schema since S6's merge).
+
+### The contract question
+
+`ChapterSettings.names` is indexed by **source** chapter: the core's renaming
+(`command/metadata.py`, `_renamed`) takes `names[i]` for source chapter `i` and drops the
+chapters outside the range. `OutputChapter` had only its place in the output, so with a chapter
+or time range the tab could not tell which name an output row is. At F's request the lead added
+`OutputChapter.source_index` (0-based source chapter; `null` for a generated chapter, whose
+names are by output position) to the contract (d09da36). The tab writes a name at
+`source_index ?? number - 1`. No client-side mapping from the range was built: the member is
+required in the contract.
+
+### Choices where the plan leaves one
+
+1. **A rename** writes the whole names list: the other chapters of the output as the table
+   shows them, names of source chapters outside the output as they were (`''` where there was
+   none, which the encode reads as the source's title, or `Chapter N` for an untitled chapter).
+   An untitled chapter copied as it is has the name `""` (S6); its field shows *No name*. Typing coalesces under
+   `chapters.names[<slot>]` until the field loses the focus, so one field edit is one undo step;
+   Enter ends the edit. While the field has the focus it shows what was typed (an emptied name
+   would otherwise jump to the source's title).
+2. **The table shows the job's names first** and the server's answer for the rest: the answer
+   comes 250 ms after the edit and may be older than an undo.
+3. **Reset names**: *To the source names* is `names: null`; *To Chapter 1, Chapter 2, …* writes
+   `Chapter N` by output position at each chapter's slot (the label is translated). For
+   generated chapters the two are the same, so the menu has one item (`null`).
+4. **Import** sends `format: null` (the server tells the format from the content) and applies
+   the names by position over the output's chapters, as one undo step. A start in the file that
+   differs from the output's by more than 10 ms, a different count, and the server's `issues`
+   are listed in a warning under the toolbar; an unreadable file is an error there with the
+   server's reason, and nothing changes. The file chooser filters `.csv`, `.txt`, `.xml`. An
+   answer that comes after another job was opened is dropped.
+5. **Export** is a menu of the three formats; the file is a Blob download (as the presets view
+   does) of `content` named `file_name`.
+6. **Generate chapters** shows only when the open source has no chapters (or, when the source
+   is not known, when the job already generates). Turning it on takes 5 minutes, or the last
+   interval of this job; turning it off writes `null`. The interval takes 0.01 to 600 minutes
+   with two decimals, so that the seconds-long fixtures can show several chapters.
+7. **Tags** write on each keystroke under the coalescing key `tags.<name>` (one undo step per
+   field until it loses the focus); an emptied field writes `null`. *Written* is the rendered
+   value, "copied from the source" for an unset tag while *Passthru common metadata* is on and
+   the source has a value, else "Not written". The issues at `tags.<name>` are the validation
+   store's and `jobs/tags`'s, each shown once; their "did you mean" fixes are buttons
+   (`TemplateFixes`) that put the fixed template into the tag. `jobs/tags` is asked again
+   250 ms after any edit (a tag can name any naming variable) and after a change of Settings.
+
+### Checked in a browser (2026-11-01)
+
+Headless Chromium (`/usr/bin/chromium`: the Playwright cache was not on this machine) against
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2, fixtures `chapters`, `multitrack`,
+`season` (and `--output-fixtures multitrack`), light and dark, after S6's merge:
+
+1. The `chapters` fixture shows four chapters (0 / 1 s, 1 / 1.5 s, 2.5 / 1.5 s, 4 / 1 s:
+   Opening, Part One, Part Two, Credits). A rename writes `["Opening", "The Middle", "Part Two",
+   "Credits"]` and shows it after the next answer; Ctrl+Z brings `names: null` back. *To Chapter
+   1, Chapter 2, …* and *To the source names* work. *Create chapter markers* off shows "The output
+   gets no chapters. Create chapter markers is off."
+2. Import through the file browser, which lists `names.csv`, `names.txt` and `names.xml` in the
+   media root: a HandBrake CSV (with a quoted name holding a comma), an OGM text file and a
+   Matroska XML file each set the four names in one undo step. The XML file's fourth start
+   (4.2 s) gives the warning "Chapter 4 starts at 0:00:04.200 in the file and at 0:00:04.000 in
+   the output"; the others say "4 names imported from …".
+3. Export: `chapters.chapters.csv` (`1,Intro`…), `chapters.chapters.txt` (`CHAPTER01=…`,
+   `CHAPTER01NAME=Intro`…) and `chapters.chapters.xml`, each with the renamed first chapter.
+4. Generate every 0.02 min on `multitrack` (no chapters; before: "The source has no chapters.")
+   shows four generated chapters (1.2 s each, the last 0.421 s).
+5. Tags: Title's source value is "Reframe chapters fixture", shown as copied while unset;
+   `{na` completes to `{name}`, `{file_name}`, `{folder_name}`; `{name} – test` is written as
+   `chapters – test`; `{nam}` in Genre shows "Unknown variable {nam} (position 1). Did you mean
+   {name}?" at the field, and its fix puts `{name}` there. On `season/Show.S01E02.Title.mkv`,
+   `{name}< – S{season:02}E{episode:02}>` is written as `Show – S01E02`.
+6. An encode of `chapters.mkv` (H.265 MKV 1080p) with the third chapter renamed and that Title
+   tag ends `done`; ffprobe of the output gives the chapters `Opening, Part One, Renamed Three,
+   Credits` and the format tag `title=chapters – test`.
 
 ## Task C — F-10 `TrackMetadataEditor`, bulk edit, external subtitles
 
