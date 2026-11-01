@@ -209,7 +209,41 @@ are not open (item 6).
 
 ## Task C — F-13 the resolution matrix and queueing a group, F-18 the naming column
 
-(placeholder: task C writes this section)
+Choices where the plan and the brief leave room:
+
+1. **The candidate picker lists every source track of the column's kind**, not only the
+   match's `candidates`. For an exact match `candidates` is the taken track alone (checked
+   against the real server: E05's A2 has `candidates: [2]`, while E05 also has the commentary
+   `#3`), so a list of the candidates only could never pick another track. The tracks that
+   match the rule are tagged *matches the rule*, the taken one *taken*. Then *No track* and,
+   when the file's override picks this rule, *Back to the group's rule*.
+2. **Keyboard: Tab** into each cell's button (the row's mark opens its issues, each track cell
+   its picker, the pencil of the name cell its fields); Enter or Space opens it, Escape closes
+   the popover only. The V cell has no action and no tab stop. The sort headers are the
+   `DataTable`'s (Tab, Enter).
+3. **Rows have a fixed height** (60 px) so that the virtual scroller places them without
+   measuring; the cell's message and the name's fields are one line each, cut with an ellipsis.
+4. **Sorting** is by the file (episode order) and by each track and name column's status (error,
+   warning, the rest; ties keep episode order). The V column has no sort: its cell is ✓ for every
+   file with a job. The name column's status is the row's worst issue at `output.path` (the
+   collision checks). A row without a job (a file that could not be read) sorts first and shows
+   its first error in the V cell.
+5. **The naming column** shows the output file name, the name source and the five fields as
+   `{name} Anime.Show {season} 1 …`; its pencil opens a small editor of the five fields of 04
+   (`ParsedNamePanel` has ten fields, candidates and spans, and writes on each key: too much for
+   a popover of one row). A field is committed on Enter or blur, once; an empty field takes the
+   parsed value again (`null`), an empty field that is not corrected changes nothing.
+6. **`ui.matrixFocus` is a source id.** `useQueueGroup`'s *Open matrix* passes the first file
+   with errors; the matrix scrolls to that row and focuses its mark.
+7. **`useQueueGroup` adds `question` and `answer`** (the contract allows additions): the
+   question of the error dialog, which `QueueGroupDialog` (mounted in `MatrixDialog`'s tree)
+   shows and answers. It uses stores only (`text()` for its toasts), so B calls it in click
+   handlers. While it asks, `busy` stays true: a second *Add group to queue* does nothing.
+   *Queue the valid files* queues the rows of the resolution that the dialog listed.
+8. **Toasts**: `Queued 12 jobs` (success); a job the queue refused is listed in a warning
+   toast (as *Add all* does); a failed resolve or add is the API layer's toast.
+9. **The V cell** shows the source's video size (`320×180`), as the sources panel writes it,
+   not 04's `1080p`.
 
 ## Task D — F-13 override dots, F-10 the defaults dialog for a group, group-aware cards
 

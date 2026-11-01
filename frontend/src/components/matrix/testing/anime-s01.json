@@ -1,0 +1,2854 @@
+{
+  "sources": [
+    {
+      "id": "f4749987f31abe579679b1dd",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767735,
+            "mtime": 1792168572.598162,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "2c7cb251edc117677d1e8ac6",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767739,
+            "mtime": 1792168572.6415927,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ad4500f1aa5e02d476f3c835",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767735,
+            "mtime": 1792168572.6854799,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "396b52f95ce3836389a505ec",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767736,
+            "mtime": 1792168572.7298331,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7f9c6676dec0529dcc79c9eb",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 792568,
+            "mtime": 1792168572.7719555,
+            "probe_hash": "ca1ddc39d9d34b3c"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 3,
+            "type_index": 2,
+            "kind": "audio",
+            "codec": "ac3",
+            "display_codec": "AC-3",
+            "profile": null,
+            "language": "eng",
+            "title": "Commentary",
+            "channels": 2,
+            "channel_layout": "stereo",
+            "lossless": false
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 4,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 5,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f01a43aa3170dc0fe13838cf",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767736,
+            "mtime": 1792168572.8159773,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fedd0ab1476c1a9f0ec360ef",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767736,
+            "mtime": 1792168572.856498,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "67ef686054d25e07bcec030c",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767735,
+            "mtime": 1792168572.9011235,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "d14bca64b54c61b15a5ac908",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767737,
+            "mtime": 1792168572.950833,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a878930862180e0c24bdd633",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767735,
+            "mtime": 1792168572.9985309,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "5f84fa2c7539bbc89eab1f60",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 206786,
+            "mtime": 1792168573.040839,
+            "probe_hash": "e2d0f30873bda1f9"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 2,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs"
+          },
+          {
+            "index": 3,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    },
+    {
+      "id": "85a17ceaf068f0e8a755c22b",
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv",
+      "source": {
+        "schema_version": 1,
+        "ref": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 767740,
+            "mtime": 1792168573.0861113,
+            "probe_hash": "ea72ece8f0825ea4"
+          }
+        },
+        "video": [
+          {
+            "index": 0,
+            "type_index": 0,
+            "kind": "video",
+            "codec": "h264",
+            "width": 320,
+            "height": 180
+          }
+        ],
+        "audio": [
+          {
+            "index": 1,
+            "type_index": 0,
+            "kind": "audio",
+            "codec": "truehd",
+            "display_codec": "TrueHD",
+            "profile": null,
+            "language": "jpn",
+            "title": "Japanese",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          },
+          {
+            "index": 2,
+            "type_index": 1,
+            "kind": "audio",
+            "codec": "dts",
+            "display_codec": "DTS-HD MA",
+            "profile": "DTS-HD MA",
+            "language": "eng",
+            "title": "English Dub",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "lossless": true
+          }
+        ],
+        "subtitles": [
+          {
+            "index": 3,
+            "type_index": 0,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Signs & Songs"
+          },
+          {
+            "index": 4,
+            "type_index": 1,
+            "kind": "subtitle",
+            "codec": "ass",
+            "display_codec": "ASS",
+            "language": "eng",
+            "title": "Full"
+          }
+        ]
+      }
+    }
+  ],
+  "resolution": {
+    "group": {
+      "id": "dab8fc61a9219818",
+      "name": "Anime Show S01",
+      "level": "standard",
+      "representative": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv",
+      "fingerprint": {
+        "level": "standard",
+        "tracks": []
+      },
+      "members": [
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 1
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 2
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 3
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 4
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+          "match": "near",
+          "differences": ["1 extra track (eng AC-3 2.0 \"Commentary\")"],
+          "season": 1,
+          "episode": 5
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 6
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 7
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 8
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 9
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 10
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+          "match": "near",
+          "differences": ["1 track missing (eng DTS-HD MA 5.1 \"English Dub\")"],
+          "season": 1,
+          "episode": 11
+        },
+        {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv",
+          "match": "exact",
+          "differences": [],
+          "season": 1,
+          "episode": 12
+        }
+      ]
+    },
+    "columns": [
+      {
+        "kind": "video",
+        "rule": null,
+        "label": "V",
+        "defaults": false
+      },
+      {
+        "kind": "audio",
+        "rule": 0,
+        "label": "A1 jpn TrueHD→Opus 5.1",
+        "defaults": false
+      },
+      {
+        "kind": "audio",
+        "rule": 1,
+        "label": "A2 eng DTS-HD MA→AAC 2.0",
+        "defaults": false
+      },
+      {
+        "kind": "subtitle",
+        "rule": 0,
+        "label": "S1 eng Signs & Songs",
+        "defaults": false
+      },
+      {
+        "kind": "subtitle",
+        "rule": 1,
+        "label": "S2 eng Full",
+        "defaults": false
+      },
+      {
+        "kind": "name",
+        "rule": null,
+        "label": "Output name",
+        "defaults": false
+      }
+    ],
+    "rows": [
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E01.Pilot",
+            "name": "Anime.Show",
+            "sub_title": "Pilot",
+            "season": 1,
+            "episode": 1,
+            "episodes": [1],
+            "episode_code": "S01E01",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E01.Pilot.mkv",
+          "path": "/output/Anime.Show.S01E01.Pilot.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767735,
+              "mtime": 1792168572.598162,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E01.Pilot.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E02.Departure",
+            "name": "Anime.Show",
+            "sub_title": "Departure",
+            "season": 1,
+            "episode": 2,
+            "episodes": [2],
+            "episode_code": "S01E02",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E02.Departure.mkv",
+          "path": "/output/Anime.Show.S01E02.Departure.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767739,
+              "mtime": 1792168572.6415927,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E02.Departure.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E03.Storm",
+            "name": "Anime.Show",
+            "sub_title": "Storm",
+            "season": 1,
+            "episode": 3,
+            "episodes": [3],
+            "episode_code": "S01E03",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E03.Storm.mkv",
+          "path": "/output/Anime.Show.S01E03.Storm.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767735,
+              "mtime": 1792168572.6854799,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E03.Storm.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E04.Signal",
+            "name": "Anime.Show",
+            "sub_title": "Signal",
+            "season": 1,
+            "episode": 4,
+            "episodes": [4],
+            "episode_code": "S01E04",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E04.Signal.mkv",
+          "path": "/output/Anime.Show.S01E04.Signal.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767736,
+              "mtime": 1792168572.7298331,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E04.Signal.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+        "status": "warning",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [5],
+            "candidates": [5],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "warning",
+            "code": "batch.near_match",
+            "path": "source",
+            "message": "Near match of the group: 1 extra track (eng AC-3 2.0 \"Commentary\").",
+            "fixes": []
+          },
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E05.Echoes",
+            "name": "Anime.Show",
+            "sub_title": "Echoes",
+            "season": 1,
+            "episode": 5,
+            "episodes": [5],
+            "episode_code": "S01E05",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E05.Echoes.mkv",
+          "path": "/output/Anime.Show.S01E05.Echoes.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 792568,
+              "mtime": 1792168572.7719555,
+              "probe_hash": "ca1ddc39d9d34b3c"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E05.Echoes.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E06.Harbor",
+            "name": "Anime.Show",
+            "sub_title": "Harbor",
+            "season": 1,
+            "episode": 6,
+            "episodes": [6],
+            "episode_code": "S01E06",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E06.Harbor.mkv",
+          "path": "/output/Anime.Show.S01E06.Harbor.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767736,
+              "mtime": 1792168572.8159773,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E06.Harbor.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E07.Embers",
+            "name": "Anime.Show",
+            "sub_title": "Embers",
+            "season": 1,
+            "episode": 7,
+            "episodes": [7],
+            "episode_code": "S01E07",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E07.Embers.mkv",
+          "path": "/output/Anime.Show.S01E07.Embers.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767736,
+              "mtime": 1792168572.856498,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E07.Embers.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E08.Drift",
+            "name": "Anime.Show",
+            "sub_title": "Drift",
+            "season": 1,
+            "episode": 8,
+            "episodes": [8],
+            "episode_code": "S01E08",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E08.Drift.mkv",
+          "path": "/output/Anime.Show.S01E08.Drift.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767735,
+              "mtime": 1792168572.9011235,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E08.Drift.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E09.Lantern",
+            "name": "Anime.Show",
+            "sub_title": "Lantern",
+            "season": 1,
+            "episode": 9,
+            "episodes": [9],
+            "episode_code": "S01E09",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E09.Lantern.mkv",
+          "path": "/output/Anime.Show.S01E09.Lantern.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767737,
+              "mtime": 1792168572.950833,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E09.Lantern.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E10.Tides",
+            "name": "Anime.Show",
+            "sub_title": "Tides",
+            "season": 1,
+            "episode": 10,
+            "episodes": [10],
+            "episode_code": "S01E10",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E10.Tides.mkv",
+          "path": "/output/Anime.Show.S01E10.Tides.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767735,
+              "mtime": 1792168572.9985309,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E10.Tides.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+        "status": "error",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "missing",
+            "streams": [],
+            "candidates": [],
+            "relaxed": [],
+            "severity": "error",
+            "message": "no track matches",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "relaxed",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": ["title_pattern"],
+            "severity": "warning",
+            "message": "matched without title",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "warning",
+            "code": "batch.near_match",
+            "path": "source",
+            "message": "Near match of the group: 1 track missing (eng DTS-HD MA 5.1 \"English Dub\").",
+            "fixes": []
+          },
+          {
+            "severity": "error",
+            "code": "batch.track_missing",
+            "path": "audio_rules[1]",
+            "message": "No source track matches rule A2 eng DTS-HD MA→AAC 2.0, and the rule is required.",
+            "fixes": [
+              {
+                "label": "Make the rule optional (skip it where no track matches)",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/audio_rules/1/required",
+                    "value": false
+                  }
+                ],
+                "target": "template"
+              }
+            ]
+          },
+          {
+            "severity": "warning",
+            "code": "batch.track_relaxed",
+            "path": "subtitle_rules[0]",
+            "message": "Rule S1 eng Signs & Songs took #2: matched without title.",
+            "fixes": []
+          },
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E11.Static",
+            "name": "Anime.Show",
+            "sub_title": "Static",
+            "season": 1,
+            "episode": 11,
+            "episodes": [11],
+            "episode_code": "S01E11",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E11.Static.mkv",
+          "path": "/output/Anime.Show.S01E11.Static.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 206786,
+              "mtime": 1792168573.040839,
+              "probe_hash": "e2d0f30873bda1f9"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E11.Static.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      },
+      {
+        "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv",
+        "status": "ok",
+        "matches": [
+          {
+            "kind": "audio",
+            "rule": 0,
+            "status": "exact",
+            "streams": [1],
+            "candidates": [1],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "audio",
+            "rule": 1,
+            "status": "exact",
+            "streams": [2],
+            "candidates": [2],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 0,
+            "status": "exact",
+            "streams": [3],
+            "candidates": [3],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          },
+          {
+            "kind": "subtitle",
+            "rule": 1,
+            "status": "exact",
+            "streams": [4],
+            "candidates": [4],
+            "relaxed": [],
+            "severity": null,
+            "message": "",
+            "defaults": false
+          }
+        ],
+        "issues": [
+          {
+            "severity": "info",
+            "code": "dimensions.crop_not_detected",
+            "path": "dimensions.crop",
+            "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+            "fixes": [
+              {
+                "label": "Do not crop",
+                "patch": [
+                  {
+                    "op": "replace",
+                    "path": "/dimensions/crop/mode",
+                    "value": "none"
+                  }
+                ],
+                "target": "job"
+              }
+            ]
+          }
+        ],
+        "override": [],
+        "naming": {
+          "source": "file",
+          "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+          "season_pack": true,
+          "fields": {
+            "kind": "episode",
+            "main_title": "Anime.Show.S01E12.Homecoming",
+            "name": "Anime.Show",
+            "sub_title": "Homecoming",
+            "season": 1,
+            "episode": 12,
+            "episodes": [12],
+            "episode_code": "S01E12",
+            "year": null,
+            "edition": null,
+            "source_type": "BluRay",
+            "release_group": "GRP",
+            "resolution": null,
+            "separator": "."
+          },
+          "template": "{main_title}",
+          "template_kind": "episode",
+          "relative_path": "Anime.Show.S01E12.Homecoming.mkv",
+          "path": "/output/Anime.Show.S01E12.Homecoming.mkv",
+          "extension": "mkv"
+        },
+        "job": {
+          "schema_version": 1,
+          "source": {
+            "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv",
+            "fingerprint": {
+              "size": 767740,
+              "mtime": 1792168573.0861113,
+              "probe_hash": "ea72ece8f0825ea4"
+            }
+          },
+          "output": {
+            "container": "mkv",
+            "web_optimized": false,
+            "align_av_start": false,
+            "passthru_metadata": true,
+            "path": "/output/Anime.Show.S01E12.Homecoming.mkv",
+            "naming": {
+              "mode": "template",
+              "manual_name": null,
+              "template": null,
+              "name_source": null,
+              "field_overrides": {}
+            },
+            "edit_in_place": false
+          }
+        }
+      }
+    ],
+    "issues": []
+  },
+  "fixed": [
+    {
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+      "status": "warning",
+      "matches": [
+        {
+          "kind": "audio",
+          "rule": 0,
+          "status": "exact",
+          "streams": [1],
+          "candidates": [1],
+          "relaxed": [],
+          "severity": null,
+          "message": "",
+          "defaults": false
+        },
+        {
+          "kind": "audio",
+          "rule": 1,
+          "status": "skipped",
+          "streams": [],
+          "candidates": [],
+          "relaxed": [],
+          "severity": "info",
+          "message": "no track matches: skipped (the rule is optional)",
+          "defaults": false
+        },
+        {
+          "kind": "subtitle",
+          "rule": 0,
+          "status": "relaxed",
+          "streams": [2],
+          "candidates": [2],
+          "relaxed": ["title_pattern"],
+          "severity": "warning",
+          "message": "matched without title",
+          "defaults": false
+        },
+        {
+          "kind": "subtitle",
+          "rule": 1,
+          "status": "exact",
+          "streams": [3],
+          "candidates": [3],
+          "relaxed": [],
+          "severity": null,
+          "message": "",
+          "defaults": false
+        }
+      ],
+      "issues": [
+        {
+          "severity": "warning",
+          "code": "batch.near_match",
+          "path": "source",
+          "message": "Near match of the group: 1 track missing (eng DTS-HD MA 5.1 \"English Dub\").",
+          "fixes": []
+        },
+        {
+          "severity": "info",
+          "code": "batch.track_skipped",
+          "path": "audio_rules[1]",
+          "message": "No source track matches rule A2 eng DTS-HD MA→AAC 2.0: it is skipped (optional).",
+          "fixes": []
+        },
+        {
+          "severity": "warning",
+          "code": "batch.track_relaxed",
+          "path": "subtitle_rules[0]",
+          "message": "Rule S1 eng Signs & Songs took #2: matched without title.",
+          "fixes": []
+        },
+        {
+          "severity": "info",
+          "code": "dimensions.crop_not_detected",
+          "path": "dimensions.crop",
+          "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+          "fixes": [
+            {
+              "label": "Do not crop",
+              "patch": [
+                {
+                  "op": "replace",
+                  "path": "/dimensions/crop/mode",
+                  "value": "none"
+                }
+              ],
+              "target": "job"
+            }
+          ]
+        }
+      ],
+      "override": [],
+      "naming": {
+        "source": "file",
+        "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+        "season_pack": true,
+        "fields": {
+          "kind": "episode",
+          "main_title": "Anime.Show.S01E11.Static",
+          "name": "Anime.Show",
+          "sub_title": "Static",
+          "season": 1,
+          "episode": 11,
+          "episodes": [11],
+          "episode_code": "S01E11",
+          "year": null,
+          "edition": null,
+          "source_type": "BluRay",
+          "release_group": "GRP",
+          "resolution": null,
+          "separator": "."
+        },
+        "template": "{main_title}",
+        "template_kind": "episode",
+        "relative_path": "Anime.Show.S01E11.Static.mkv",
+        "path": "/output/Anime.Show.S01E11.Static.mkv",
+        "extension": "mkv"
+      },
+      "job": {
+        "schema_version": 1,
+        "source": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 206786,
+            "mtime": 1792168573.040839,
+            "probe_hash": "e2d0f30873bda1f9"
+          }
+        },
+        "output": {
+          "container": "mkv",
+          "web_optimized": false,
+          "align_av_start": false,
+          "passthru_metadata": true,
+          "path": "/output/Anime.Show.S01E11.Static.mkv",
+          "naming": {
+            "mode": "template",
+            "manual_name": null,
+            "template": null,
+            "name_source": null,
+            "field_overrides": {}
+          },
+          "edit_in_place": false
+        }
+      }
+    }
+  ],
+  "picked": [
+    {
+      "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+      "status": "warning",
+      "matches": [
+        {
+          "kind": "audio",
+          "rule": 0,
+          "status": "exact",
+          "streams": [1],
+          "candidates": [1],
+          "relaxed": [],
+          "severity": null,
+          "message": "",
+          "defaults": false
+        },
+        {
+          "kind": "audio",
+          "rule": 1,
+          "status": "exact",
+          "streams": [3],
+          "candidates": [3],
+          "relaxed": [],
+          "severity": null,
+          "message": "#3 picked by hand",
+          "defaults": false
+        },
+        {
+          "kind": "subtitle",
+          "rule": 0,
+          "status": "exact",
+          "streams": [4],
+          "candidates": [4],
+          "relaxed": [],
+          "severity": null,
+          "message": "",
+          "defaults": false
+        },
+        {
+          "kind": "subtitle",
+          "rule": 1,
+          "status": "exact",
+          "streams": [5],
+          "candidates": [5],
+          "relaxed": [],
+          "severity": null,
+          "message": "",
+          "defaults": false
+        }
+      ],
+      "issues": [
+        {
+          "severity": "warning",
+          "code": "batch.near_match",
+          "path": "source",
+          "message": "Near match of the group: 1 extra track (eng AC-3 2.0 \"Commentary\").",
+          "fixes": []
+        },
+        {
+          "severity": "info",
+          "code": "dimensions.crop_not_detected",
+          "path": "dimensions.crop",
+          "message": "Crop detection did not run for this job, so automatic crop has no values: the picture is not cropped.",
+          "fixes": [
+            {
+              "label": "Do not crop",
+              "patch": [
+                {
+                  "op": "replace",
+                  "path": "/dimensions/crop/mode",
+                  "value": "none"
+                }
+              ],
+              "target": "job"
+            }
+          ]
+        }
+      ],
+      "override": [
+        {
+          "op": "replace",
+          "path": "/audio_rules/1/selector/stream",
+          "value": 3
+        },
+        {
+          "op": "add",
+          "path": "/job/output/naming/field_overrides/sub_title",
+          "value": "Echoes Remastered"
+        }
+      ],
+      "naming": {
+        "source": "file",
+        "reason": "Season pack: the folder holds 12 episode files, so the file name is used (only it has the episode number and title)",
+        "season_pack": true,
+        "fields": {
+          "kind": "episode",
+          "main_title": "Anime.Show.S01E05.Echoes Remastered",
+          "name": "Anime.Show",
+          "sub_title": "Echoes Remastered",
+          "season": 1,
+          "episode": 5,
+          "episodes": [5],
+          "episode_code": "S01E05",
+          "year": null,
+          "edition": null,
+          "source_type": "BluRay",
+          "release_group": "GRP",
+          "resolution": null,
+          "separator": "."
+        },
+        "template": "{main_title}",
+        "template_kind": "episode",
+        "relative_path": "Anime.Show.S01E05.Echoes Remastered.mkv",
+        "path": "/output/Anime.Show.S01E05.Echoes Remastered.mkv",
+        "extension": "mkv"
+      },
+      "job": {
+        "schema_version": 1,
+        "source": {
+          "path": "/media/Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv",
+          "fingerprint": {
+            "size": 792568,
+            "mtime": 1792168572.7719555,
+            "probe_hash": "ca1ddc39d9d34b3c"
+          }
+        },
+        "output": {
+          "container": "mkv",
+          "web_optimized": false,
+          "align_av_start": false,
+          "passthru_metadata": true,
+          "path": "/output/Anime.Show.S01E05.Echoes Remastered.mkv",
+          "naming": {
+            "mode": "template",
+            "manual_name": null,
+            "template": null,
+            "name_source": null,
+            "field_overrides": {
+              "sub_title": "Echoes Remastered"
+            }
+          },
+          "edit_in_place": false
+        }
+      }
+    }
+  ],
+  "pickedOverrides": {
+    "7f9c6676dec0529dcc79c9eb": [
+      {
+        "op": "replace",
+        "path": "/audio_rules/1/selector/stream",
+        "value": 3
+      },
+      {
+        "op": "add",
+        "path": "/job/output/naming/field_overrides/sub_title",
+        "value": "Echoes Remastered"
+      }
+    ]
+  }
+}
