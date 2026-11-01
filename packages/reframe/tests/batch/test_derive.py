@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from reframe.batch import (
     SECTIONS,
     as_template,
@@ -19,6 +21,7 @@ from reframe.batch.derive import SECTION_FIELDS
 from reframe.models import (
     AudioOutputSettings,
     AudioStream,
+    ChapterNamePolicy,
     ChapterSettings,
     CropRect,
     CropSettings,
@@ -178,6 +181,30 @@ def test_chapter_names_and_naming_without_overrides() -> None:
     job.chapters.names = ["Intro", "Part 1"]
     assert derive_template(job, e01, {"chapters"}).chapter_name_policy == "source"
     assert derive_template(job, e01, {"naming"}).naming is None
+
+
+@pytest.mark.parametrize(
+    ("names", "own", "policy"),
+    [
+        (None, "generated", "source"),
+        (["Chapter 1", "Chapter 2"], "source", "generated"),
+        (["Chapter 1"], "source", "generated"),
+        (["Intro", "Chapter 2"], "generated", "generated"),
+        (["Intro", "Chapter 2"], "source", "source"),
+        (["Chapter 2", "Chapter 1"], "generated", "generated"),
+        ([], "generated", "generated"),
+    ],
+)
+def test_per_file_chapter_names_keep_the_base_presets_policy(
+    names: list[str] | None, own: ChapterNamePolicy, policy: ChapterNamePolicy
+) -> None:
+    """A preset holds a policy, never names: only "the source names" and "Chapter 1 … N" say
+    one; other names are this file's."""
+    e01 = A.recorded(1, 1)
+    job = A.example_job(e01)
+    job.chapters.names = names
+    base = JobTemplate(chapter_name_policy=own)
+    assert derive_template(job, e01, {"chapters"}, base=base).chapter_name_policy == policy
 
 
 def test_external_subtitles_and_tracks_without_a_source_are_left_out() -> None:
