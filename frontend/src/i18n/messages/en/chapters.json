@@ -34,8 +34,7 @@
   "reset": {
     "label": "Reset names",
     "source": "To the source names",
-    "numbered": "To Chapter 1, Chapter 2, …",
-    "numberedName": "Chapter {n}"
+    "numbered": "To Chapter 1, Chapter 2, …"
   },
   "format": {
     "csv": "CSV",
