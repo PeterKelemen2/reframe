@@ -3,7 +3,7 @@ import { Hand, Pencil } from '@lucide/vue'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Popover from 'primevue/popover'
-import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type {
@@ -165,7 +165,8 @@ type Panel =
 const popover = useTemplateRef<InstanceType<typeof Popover>>('popover')
 const panel = ref<Panel | null>(null)
 const popoverOpen = ref(false)
-let anchor: HTMLElement | null = null
+/** The `data-focus-key` of the button the popover belongs to. */
+let anchorKey: string | null = null
 
 /** The open panel's row as the newest resolution has it. */
 const panelRow = computed(() =>
@@ -189,16 +190,16 @@ const cellPanel = computed(() => {
 
 async function openPanel(next: Panel, event: Event): Promise<void> {
   const target = event.currentTarget as HTMLElement
-  if (popoverOpen.value && target === anchor) {
+  if (popoverOpen.value && target.dataset.focusKey === anchorKey) {
     popover.value?.hide()
     return
   }
   const moving = popoverOpen.value
-  anchor = target
+  anchorKey = target.dataset.focusKey ?? null
   panel.value = next
   popover.value?.show(event, target)
   if (!moving) return
-  // An open popover keeps its place and focus when it gets another target.
+  // An open popover neither moves nor takes the focus when it gets another target.
   await nextTick()
   popover.value?.alignOverlay()
   document.querySelector<HTMLElement>('.matrix-popover [autofocus]')?.focus()
@@ -206,7 +207,33 @@ async function openPanel(next: Panel, event: Event): Promise<void> {
 
 function closePanel(): void {
   popover.value?.hide()
-  anchor?.focus()
+  focusKey(anchorKey)
+}
+
+function focusKey(key: string | null): void {
+  if (key === null) return
+  root.value?.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(key)}"]`)?.focus()
+}
+
+// The DataTable renders its cells anew for every resolution, and the focused button goes with
+// them: the same cell of the new rows takes the focus back.
+let focusedKey: string | null = null
+function onFocusin(event: FocusEvent): void {
+  focusedKey = (event.target as HTMLElement).dataset.focusKey ?? null
+}
+watch(
+  allRows,
+  () => {
+    if (document.activeElement === document.body) focusKey(focusedKey)
+  },
+  { flush: 'post' },
+)
+
+/** Escape with the focus still on the cell closes the popover, not the matrix around it. */
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !popoverOpen.value) return
+  event.preventDefault()
+  closePanel()
 }
 
 const root = useTemplateRef<HTMLElement>('root')
@@ -224,7 +251,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div ref="root" class="matrix">
+  <div ref="root" class="matrix" @keydown="onKeydown" @focusin="onFocusin">
     <p class="rf-sr-only">{{ t('matrix.keyboard') }}</p>
     <p v-if="shownRows.length === 0" class="matrix__empty" data-state="empty">
       {{ t('matrix.noProblems') }}
@@ -250,6 +277,7 @@ onMounted(async () => {
             class="matrix__file"
             :data-status="data.row.status"
             :data-row-mark="data.entry?.id"
+            :data-focus-key="`${data.path}|file`"
             :disabled="data.entry === undefined"
             :autofocus="(focus !== null && data.entry?.id === focus) || undefined"
             :aria-label="t('matrix.row.issues', { label: data.label, status: rowState(data.row) })"
@@ -288,6 +316,17 @@ onMounted(async () => {
             {{ videoSize(data) }}
           </span>
           <div v-else-if="column.kind === 'name' && data.row.job" class="matrix__name">
+            <button
+              type="button"
+              class="matrix__edit"
+              data-role="edit-name"
+              :data-focus-key="`${data.path}|name`"
+              :disabled="data.entry === undefined"
+              :aria-label="t('matrix.name.edit', { label: data.label })"
+              @click="openPanel({ kind: 'name', path: data.path }, $event)"
+            >
+              <Pencil :size="14" aria-hidden="true" />
+            </button>
             <span class="matrix__output" dir="ltr" :data-status="nameIssues(data.row)[0]?.severity">
               {{ fileName(data.row.job.output?.path ?? '') }}
             </span>
@@ -310,16 +349,6 @@ onMounted(async () => {
                 </span>
               </template>
             </span>
-            <button
-              type="button"
-              class="matrix__edit"
-              data-role="edit-name"
-              :disabled="data.entry === undefined"
-              :aria-label="t('matrix.name.edit', { label: data.label })"
-              @click="openPanel({ kind: 'name', path: data.path }, $event)"
-            >
-              <Pencil :size="14" aria-hidden="true" />
-            </button>
           </div>
           <button
             v-else-if="data.cells[index]"
@@ -327,6 +356,7 @@ onMounted(async () => {
             class="matrix__cell"
             :data-status="data.cells[index].status"
             :data-cell="`${column.kind}:${column.rule}`"
+            :data-focus-key="`${data.path}|${column.kind}:${column.rule}`"
             :disabled="data.entry === undefined"
             :aria-label="cellLabel(data, column, data.cells[index])"
             @click="openPanel({ kind: 'cell', path: data.path, column: index }, $event)"
@@ -366,6 +396,7 @@ onMounted(async () => {
           :source-id="panelRow.entry.id"
           :label="panelRow.label"
           :issues="panelRow.row.issues ?? []"
+          @done="closePanel"
         />
         <NameFields
           v-else-if="panel.kind === 'name' && panelRow.row.naming"
@@ -468,8 +499,7 @@ onMounted(async () => {
   color: var(--rf-color-text-muted);
 }
 
-.matrix__message,
-.matrix__naming {
+.matrix__message {
   overflow: hidden;
   max-width: 100%;
   color: var(--rf-color-text-muted);
@@ -483,7 +513,7 @@ onMounted(async () => {
 
 .matrix__name {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   column-gap: var(--rf-space-2);
 }
@@ -497,14 +527,15 @@ onMounted(async () => {
 }
 
 .matrix__naming {
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-xs);
   display: flex;
-  grid-column: 1;
+  grid-column: 2;
   gap: var(--rf-space-2);
 }
 
 .matrix__edit {
   grid-row: 1 / span 2;
-  grid-column: 2;
 }
 
 .matrix__variable {

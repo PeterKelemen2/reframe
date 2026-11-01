@@ -36,6 +36,7 @@ const sources = useSourcesStore()
 const editor = useEditorStore()
 const ui = useUiStore()
 const toasts = useToastStore()
+const { queueGroup } = useQueueGroup()
 const id = useId() ?? 'sources'
 
 function itemId(entryId: string): string {
@@ -194,8 +195,7 @@ function checkGroup(groupId: string): Promise<void> {
 }
 
 function queue(groupId: string): Promise<void> {
-  // Called here, not in setup: its stub throws until it is built.
-  return quietly(() => useQueueGroup().queueGroup(groupId))
+  return quietly(() => queueGroup(groupId))
 }
 
 function toggle(groupId: string): void {

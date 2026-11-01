@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import type { NameResult, ValidationIssue } from '@/api/types'
 import { useEditorStore } from '@/stores/editor'
 
-import { type NameField, NAME_FIELDS } from './matrix'
+import type { NameField } from './matrix'
 
 /** One file's parsed-name fields; an edit is that file's correction, an empty field none. */
 const props = defineProps<{
@@ -21,6 +21,8 @@ const props = defineProps<{
 const { t } = useI18n()
 const editor = useEditorStore()
 const id = useId()
+/** The two text fields on their own lines, the three numbers on one. */
+const EDIT_ORDER: NameField[] = ['name', 'sub_title', 'season', 'episode', 'year']
 
 /** What is typed, until the next resolution shows the file's fields. */
 const drafts = ref<Partial<Record<NameField, string>>>({})
@@ -75,7 +77,12 @@ function issuesOf(field: NameField): ValidationIssue[] {
     <p class="name-fields__title">{{ t('matrix.name.title', { label }) }}</p>
     <p class="name-fields__reason">{{ naming.reason }}</p>
     <p class="name-fields__hint">{{ t('matrix.name.hint') }}</p>
-    <div v-for="(field, index) in NAME_FIELDS" :key="field" class="name-fields__field">
+    <div
+      v-for="(field, index) in EDIT_ORDER"
+      :key="field"
+      class="name-fields__field"
+      :class="{ 'name-fields__field--wide': field === 'name' || field === 'sub_title' }"
+    >
       <label :for="`${id}-${field}`">
         {{ fieldLabel(field) }}
         <span v-if="field in overrides" class="name-fields__corrected">
@@ -90,6 +97,7 @@ function issuesOf(field: NameField): ValidationIssue[] {
         :autofocus="index === 0 || undefined"
         :inputmode="field === 'name' || field === 'sub_title' ? undefined : 'numeric'"
         size="small"
+        fluid
         @update:model-value="drafts[field] = $event ?? ''"
         @blur="commit(field)"
         @keydown.enter="commit(field)"
@@ -104,8 +112,14 @@ function issuesOf(field: NameField): ValidationIssue[] {
 <style scoped>
 .name-fields {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--rf-space-2);
-  width: min(24rem, 80vw);
+  width: min(28rem, 80vw);
+}
+
+.name-fields > p,
+.name-fields__field--wide {
+  grid-column: 1 / -1;
 }
 
 .name-fields p {

@@ -121,5 +121,14 @@ describe('the matrix dialog', () => {
     await settle()
     dialog()?.querySelector<HTMLButtonElement>('.p-dialog-close-button')?.click()
     expect(ui.matrixOpen).toBe(false)
+
+    // A click on text leaves the focus nowhere: Escape still closes the matrix.
+    ui.openMatrix()
+    await settle()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    )
+    expect(ui.matrixOpen).toBe(false)
   })
 })

@@ -233,6 +233,10 @@ class BatchService:
         if base is None:
             found = self._presets.find(job.preset_id) if job.preset_id else None
             base = found if found is not None else self._presets.default()
+        if "naming" in sections and base.naming is None:
+            # A template without naming is named with Settings → Output: a naming edit starts
+            # from those options, not from the defaults (another output folder).
+            base = base.model_copy(update={"naming": self._settings().output.naming})
         return derive_template(job, source, sections, base=base)
 
     def merge(
