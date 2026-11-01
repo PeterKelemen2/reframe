@@ -168,6 +168,9 @@
       "original": "Original language"
     },
     "burned": "A burned-in subtitle is part of the picture: it has no track, so its metadata is not written.",
+    "summary": "{language} · {name} · {flags}",
+    "summaryName": "“{name}”",
+    "summaryUnd": "und (not set)",
     "summaryNoName": "no title",
     "summaryNoFlags": "no flags"
   },
@@ -195,6 +198,8 @@
     "events": "{count} event | {count} events",
     "displaySets": "{count} display set | {count} display sets",
     "eventsUnknown": "events not counted",
+    "described": "{format} · {events}",
+    "describedCharset": "{format} · {events} · {charset}",
     "inspecting": "Reading the file…",
     "unreadable": "The file could not be read: its format and encoding are not known.",
     "offset": "Time offset",

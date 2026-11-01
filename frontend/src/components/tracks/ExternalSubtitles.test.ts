@@ -10,6 +10,7 @@ import type { ExternalSubtitle, JobSettings, SubtitleFileInfo } from '@/api/type
 import SubtitlesTab from '@/components/editor/tabs/SubtitlesTab.vue'
 import { platform } from '@/platform'
 import type { useEditorStore } from '@/stores/editor'
+import { useValidationStore } from '@/stores/validation'
 
 import { mountEditor, prepareDom, unmountAll } from './editorTesting'
 
@@ -193,6 +194,39 @@ describe('the row of an external subtitle file', () => {
     expect(field(wrapper, 'subtitles[0].source.charset').text()).toContain(
       'UTF-16, which FFmpeg reads wrongly',
     )
+  })
+
+  it("shows validation's encoding error once at the encoding, with its fix", async () => {
+    const { wrapper, editor } = await mountEditor(SubtitlesTab, {
+      job: external('/media/Film.cp1250.srt'),
+      server: inspectRoute,
+    })
+    useValidationStore().issues = [
+      {
+        severity: 'error',
+        code: 'subtitle.charset_unknown',
+        path: 'subtitles[0].source.charset',
+        message: 'Choose the character encoding of Film.cp1250.srt',
+        fixes: [
+          {
+            label: 'Use CP1250',
+            target: 'job',
+            patch: [{ op: 'replace', path: '/subtitles/0/source/charset', value: 'CP1250' }],
+          },
+        ],
+      },
+    ]
+    await nextTick()
+    const charsetField = field(wrapper, 'subtitles[0].source.charset')
+    expect(charsetField.findAll('.rf-field__issue').map((issue) => issue.text())).toEqual([
+      'Error: Choose the character encoding of Film.cp1250.srt',
+    ])
+    expect(wrapper.find('[data-path="subtitles[0]"]').text()).not.toContain('was not detected')
+    const fix = wrapper.find('[data-role="charset-fixes"] button')
+    expect(fix.text()).toBe('Use CP1250')
+    await fix.trigger('click')
+    await flushPromises()
+    expect(editor.job?.subtitles?.[0]?.source).toMatchObject({ charset: 'CP1250' })
   })
 
   it('makes a typed time offset (negative too) one undo step', async () => {
