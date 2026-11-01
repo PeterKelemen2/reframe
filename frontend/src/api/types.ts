@@ -68,11 +68,14 @@ export type ReframeEvent = Schemas['EventMessage']['event']
 export type EventType = ReframeEvent['type']
 export type EventOf<T extends EventType> = Extract<ReframeEvent, { type: T }>
 
-/** The queue's run state changed (decision 0064): what the runner takes, and why. */
+/**
+ * The runner's state changed: which jobs it takes, and why. Clients need not infer it from the
+ * jobs.
+ */
 export type QueueProcessingEvent = EventOf<'queue.processing'>
 
-// The results of the scan tasks (`TaskInfo.result`): `reframe.models.analysis`, which the
-// OpenAPI document does not list because a task's result is untyped there.
+// The scan results (`TaskInfo.result`) are written by hand: the OpenAPI document leaves a
+// task's result untyped.
 type BitrateInfo = Schemas['BitrateInfo']
 
 export interface BitrateScan {
