@@ -1,1 +1,223 @@
-{}
+{
+  "title": {
+    "audio": "Audio defaults",
+    "subtitles": "Subtitle defaults",
+    "of": "{what} · {name}"
+  },
+  "whose": {
+    "audioTracks": "audio tracks",
+    "subtitleTracks": "subtitle tracks",
+    "job": "The defaults of this job's preset “{name}”. Apply replaces the job's {list} with what these defaults give; the preset changes only when you save into it.",
+    "jobBuiltIn": "The defaults of this job's preset “{name}”. Apply replaces the job's {list} with what these defaults give. “{name}” is built in and cannot be changed: Save as new preset… keeps these defaults in a new preset.",
+    "preset": "The defaults of the preset “{name}”. Jobs drafted with it from now on use what you save here.",
+    "builtIn": "“{name}” is a built-in preset: its defaults are shown read-only. Duplicate it in the presets list to change them."
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "apply": "Apply to this job",
+    "save": "Save",
+    "saveToPreset": "Save to preset…",
+    "saveAsNew": "Save as new preset…"
+  },
+  "confirm": {
+    "title": "Save into “{name}”?",
+    "audio": "The audio defaults of “{name}” are replaced with these. Jobs drafted with it from now on use them; this job's tracks change only when you apply them.",
+    "subtitles": "The subtitle defaults of “{name}” are replaced with these. Jobs drafted with it from now on use them; this job's tracks change only when you apply them."
+  },
+  "save": {
+    "saved": "The defaults are saved in “{name}”",
+    "created": "Saved as the new preset “{name}”",
+    "failed": "The defaults could not be saved in “{name}”",
+    "newTitle": "Save as new preset",
+    "newName": "{name} (my defaults)"
+  },
+  "open": {
+    "noPreset": "The job's preset is not known, so its defaults cannot be shown",
+    "presetGone": "This preset is gone"
+  },
+  "group": {
+    "notBuilt": "Defaults for a batch group are not built yet",
+    "notBuiltDetail": "They come with batch editing. Open a single file, or edit a preset's defaults in the presets view."
+  },
+  "fixFailed": "The fix no longer fits these defaults",
+  "units": {
+    "kbpsSuffix": " kb/s",
+    "dbSuffix": " dB",
+    "khz": "{value} kHz"
+  },
+  "selection": {
+    "title": "Which tracks to take",
+    "languages": "Languages",
+    "fromSettingsAudio": "Use the preferred audio languages of Settings → Languages",
+    "fromSettings": "Use the preferred subtitle languages of Settings → Languages",
+    "settingsList": "Settings → Languages: {languages}.",
+    "noneSet": "Settings → Languages has none: every track is kept, in source order, and the settings below wait until a language is set.",
+    "emptyList": "An empty list uses the preferred languages of Settings → Languages too.",
+    "tracksPerLanguage": "Tracks per language",
+    "tieBreak": "If a language has several tracks",
+    "tieBreakHelp": "Best quality: lossless first, then the highest bitrate (an unknown bitrate last), then more channels.",
+    "undetermined": "Undetermined (und) tracks",
+    "otherLanguages": "Other languages",
+    "noMatch": "No listed language found",
+    "commentaryAudio": "Commentary and audio description",
+    "commentary": "Commentary",
+    "order": "Output order",
+    "defaultTrack": "Default track",
+    "tracksPerLanguageChoice": {
+      "none": "None",
+      "first": "First matching track",
+      "all": "All matching tracks"
+    },
+    "tieBreakChoice": {
+      "sourceOrder": "Source order",
+      "mostChannels": "Most channels",
+      "bestQuality": "Best quality"
+    },
+    "undeterminedChoice": {
+      "firstLanguage": "Treat as the first listed language",
+      "other": "Treat as another language"
+    },
+    "otherLanguagesChoice": {
+      "drop": "Drop",
+      "keepFirst": "Keep the first track",
+      "keepAll": "Keep all"
+    },
+    "noMatchChoice": {
+      "defaultFlagged": "Take the default-flagged track",
+      "firstTrack": "Take the first track",
+      "none": "Take none"
+    },
+    "commentaryChoice": {
+      "drop": "Drop",
+      "keepAfterMain": "Keep, after the main tracks"
+    },
+    "orderChoice": {
+      "languageList": "Language list order",
+      "source": "Source order"
+    },
+    "defaultTrackChoice": {
+      "firstOutput": "First output track",
+      "firstInFirstLanguage": "First track in the first language",
+      "forced": "Forced track",
+      "none": "None"
+    }
+  },
+  "rules": {
+    "title": "Codec rules",
+    "intro": "Each selected track takes the first rule that matches it, from the top. The last rule takes every track that no rule above takes.",
+    "dragColumn": "Drag to reorder",
+    "drag": "Drag to reorder",
+    "number": "#",
+    "rule": "Rule",
+    "language": "Language",
+    "channels": "Source channels",
+    "codec": "Codec",
+    "mixdown": "Mixdown",
+    "maxBitrate": "Max bitrate",
+    "ifFits": "If the source already fits",
+    "actions": "Actions",
+    "anyLanguage": "Any language",
+    "anyChannels": "Any",
+    "catchAllLocked": "The last rule takes any language and any channels. It stays last and cannot be removed.",
+    "editLanguages": "Edit the languages of rule {n}",
+    "noMax": "None",
+    "passthru": "Passthru",
+    "more": "Optional settings of rule {n}",
+    "moveUp": "Move rule {n} up",
+    "moveDown": "Move rule {n} down",
+    "remove": "Remove rule {n}",
+    "add": "Add rule",
+    "added": "Rule added above the last rule",
+    "removed": "Rule {n} removed",
+    "moved": "Rule {n} moved to position {position}",
+    "languages": "Languages of rule {n}",
+    "anyLanguageHint": "No language: the rule takes any language.",
+    "samplerate": "Sample rate",
+    "sameAsSource": "Same as source",
+    "gain": "Gain",
+    "drc": "Dynamic range compression",
+    "drcHelp": "0 is off; 1 to 4 make loud and quiet parts closer. A track that is compressed is encoded, never passed through.",
+    "loudness": "Normalise loudness",
+    "nameTemplate": "Track name",
+    "nameTemplateHelp": "A name template: {'{'}lang_native{'}'}, {'{'}lang_name{'}'}, {'{'}channels{'}'}, {'{'}codec{'}'}, {'{'}bitrate{'}'}, {'{'}title{'}'}, {'{'}source_codec{'}'}. Empty: the source track's name.",
+    "nameTemplatePlaceholder": "{'{'}lang_native{'}'} {'{'}channels{'}'}",
+    "firstTrackOnly": "Only for the first track of this language",
+    "extraOutputs": "Extra outputs",
+    "extraOutputsHelp": "More tracks made from the same source track, for example an AAC stereo track for compatibility.",
+    "bitrate": "Bitrate",
+    "encoderDefault": "Encoder default",
+    "addOutput": "Add extra output",
+    "removeOutput": "Remove extra output {n}",
+    "channelsChoice": {
+      "any": "Any",
+      "mono": "Mono",
+      "stereoOrLess": "Stereo or less",
+      "surround51": "5.1 or more",
+      "surround71": "7.1 or more"
+    },
+    "mixdownChoice": {
+      "keep": "Keep source",
+      "upTo51": "Up to 5.1",
+      "surround51": "5.1",
+      "stereo": "Stereo",
+      "dpl2": "Dolby Pro Logic II",
+      "mono": "Mono"
+    },
+    "ifFitsChoice": {
+      "passthru": "Passthru",
+      "reencode": "Re-encode"
+    },
+    "loudnessChoice": {
+      "off": "Off",
+      "ebuR128": "EBU R128 (−23 LUFS)",
+      "streaming": "Streaming (−16 LUFS)"
+    }
+  },
+  "passthru": {
+    "title": "Passthru and fallback",
+    "allowed": "Allowed passthru codecs",
+    "fallback": "Fallback encoder",
+    "fallbackHelp": "Encodes a track whose rule says Passthru when its codec is not allowed or the container cannot hold it."
+  },
+  "subtitles": {
+    "title": "Foreign audio and burn-in",
+    "foreignAudioSearch": "Foreign audio search",
+    "foreignAudioSearchHelp": "When the audio is in your first subtitle language, take that language's forced subtitles (for the parts in another language). The track goes first and gets the forced flag.",
+    "burnIn": "Burn in",
+    "burnInHelp": "At most one track is burned into the picture; a burned-in track is not copied.",
+    "burnInChoice": {
+      "none": "None",
+      "foreignAudio": "Foreign audio subtitles",
+      "first": "The first subtitle track",
+      "foreignAudioThenFirst": "Foreign audio subtitles, else the first track"
+    }
+  },
+  "preview": {
+    "title": "Preview",
+    "updating": "Updating…",
+    "loading": "Drafting the tracks…",
+    "noSource": "Open a source file to see what these defaults do with its tracks.",
+    "failed": "The preview could not be made: {detail}",
+    "noAudio": "The source has no audio tracks.",
+    "noSubtitles": "The source has no subtitle tracks.",
+    "source": "Source track",
+    "selected": "Selected",
+    "rule": "Rule",
+    "output": "Output",
+    "reason": "Reason",
+    "stream": "stream #{index}",
+    "unknownStream": "Unknown track",
+    "taken": "Taken",
+    "dropped": "Dropped",
+    "passthruOf": "Passthru ({codec})",
+    "withBitrate": "{format} · {kbps} kb/s",
+    "extra": "+ {output}",
+    "copy": "Copy",
+    "burn": "Burn in",
+    "burnForced": "Burn in (forced only)",
+    "convert": "Convert to {format}",
+    "issues": "Issues of these defaults",
+    "measureHelp": "The bitrate is unknown and decides what the rule does: measure it to see the real outcome."
+  }
+}
