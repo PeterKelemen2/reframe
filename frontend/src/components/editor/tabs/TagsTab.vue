@@ -35,25 +35,25 @@ function setTag(name: TagName, value: string): void {
   editor.set(`/tags/${name}`, value === '' ? null : value, { coalesce: `tags.${name}` })
 }
 
-function useFix(name: TagName, template: string): void {
+/** `inputId`: the tag's field, which gets the focus that the fix's button loses with its issue. */
+function useFix(name: TagName, template: string, inputId: string): void {
   editor.endCoalescing()
   editor.set(`/tags/${name}`, template)
+  root.value?.ownerDocument.getElementById(inputId)?.focus()
 }
 
-/** The validation's issues and the rendering's, once each. */
+/**
+ * The validation's issues, and those of `jobs/tags` with a code the validation does not report
+ * here: the status bar and the Issues card count the validation's, at its severity.
+ */
 function issuesOf(name: TagName): ValidationIssue[] {
   const path = `tags.${name}`
-  const all = [
-    ...validation.issuesFor(path),
-    ...(rendered.value?.issues ?? []).filter((issue) => issue.path === path),
-  ]
-  const seen = new Set<string>()
-  return all.filter((issue) => {
-    const key = `${issue.code}\u0000${issue.message}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
+  const validated = validation.issuesFor(path)
+  const codes = new Set(validated.map((issue) => issue.code))
+  const rendering = (rendered.value?.issues ?? []).filter(
+    (issue) => issue.path === path && !codes.has(issue.code),
+  )
+  return [...validated, ...rendering]
 }
 
 function written(name: TagName): { text: string; state: string } {
@@ -108,7 +108,7 @@ function sourceText(name: TagName): string {
                 @update:model-value="setTag(name, $event)"
                 @blur="editor.endCoalescing()"
               />
-              <TemplateFixes :issues="issuesOf(name)" @use="useFix(name, $event)" />
+              <TemplateFixes :issues="issuesOf(name)" @use="useFix(name, $event, id)" />
               <dl class="tags-tab__values" :class="{ 'tags-tab__values--pending': pending }">
                 <div class="tags-tab__value">
                   <dt>{{ t('tags.written.label') }}</dt>
@@ -164,11 +164,12 @@ function sourceText(name: TagName): string {
   gap: var(--rf-space-1) var(--rf-space-4);
   margin: 0;
   font-size: var(--rf-font-size-sm);
-  transition: opacity var(--rf-duration) ease;
 }
 
-.tags-tab__values--pending {
-  opacity: 0.7;
+/* Muted, not faded: the values keep an AA contrast while a newer answer is on its way. */
+.tags-tab__values--pending dd {
+  color: var(--rf-color-text-muted);
+  transition: color var(--rf-duration) ease;
 }
 
 .tags-tab__value {
