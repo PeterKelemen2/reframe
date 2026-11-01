@@ -1,6 +1,6 @@
 import type { Component } from 'vue'
 
-/** Every editor tab of 03 §App layout, in its order; `Ctrl+N` selects the N-th. */
+/** Every editor tab, in its order; `Ctrl+N` selects the N-th. */
 export const EDITOR_TAB_ORDER = [
   'summary',
   'dimensions',
@@ -33,8 +33,7 @@ function tab(id: EditorTabId, component: () => Promise<Component>): EditorTab {
 }
 
 /**
- * The tabs that are built. A tab of a later milestone joins this list when it is built; until
- * then it is not shown, and its shortcut does nothing.
+ * The built tabs. A tab that is not in this list is not shown, and its shortcut does nothing.
  */
 export const EDITOR_TABS: readonly EditorTab[] = [
   tab('summary', () => import('./SummaryTab.vue')),

@@ -98,7 +98,7 @@ export const useEditorStore = defineStore('editor', () => {
   /** +1 for each new target (`open`, `loadJob`, `close`): what was known of the last one is void. */
   const session = ref(0)
   const history = shallowRef<History>(EMPTY_HISTORY)
-  /** The job's preset as `GET /api/presets/{id}` gave it, while the presets store lacks it. */
+  /** The job's preset as fetched by its id, while the presets store lacks it. */
   const fetchedPreset = shallowRef<Preset | null>(null)
   const pendingEdits = shallowRef<readonly PendingEdit[]>([])
 
@@ -197,10 +197,9 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * Drafts the open source again as a remux-only job with the job's preset (`jobs/draft-remux`:
-   * every track copied with its metadata); one undo step. `editInPlace` (default `true`) turns
-   * *Edit in place* on, also for a source that is not MKV (validation then refuses it). Rejects
-   * as `open`.
+   * Drafts the open source again as a remux-only job (every track copied) with the job's preset;
+   * one undo step. `editInPlace` (default `true`) turns *Edit in place* on, also for a source that
+   * is not MKV: validation then refuses it. Rejects as `open`.
    */
   async function applyRemuxDraft(options?: { editInPlace?: boolean }): Promise<void> {
     const opened = target.value
@@ -318,7 +317,7 @@ export const useEditorStore = defineStore('editor', () => {
       next = applyOps(current.job, ops(moved.step))
     } catch (error) {
       if (!(error instanceof PatchError)) throw error
-      // The job was changed outside the history: its steps no longer fit it.
+      // The job was changed outside the history, so its steps do not fit it.
       console.error('editor: the undo history does not fit the job and was cleared', error)
       history.value = EMPTY_HISTORY
       return

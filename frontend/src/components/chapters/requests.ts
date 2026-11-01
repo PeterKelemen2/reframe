@@ -7,7 +7,7 @@ import type {
   OutputChapters,
 } from '@/api/types'
 
-/** The chapters the output gets (`POST /api/jobs/chapters`). */
+/** The chapters the output gets. */
 export async function outputChapters(
   job: JobSettings,
   signal?: AbortSignal,

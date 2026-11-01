@@ -65,10 +65,7 @@ export async function readQueue(request: APIRequestContext): Promise<QueueSnapsh
   return (await answer.json()) as QueueSnapshot
 }
 
-/**
- * Probes a file through the server (`POST /api/sources`, the probe task, `GET /api/sources/{id}`)
- * and gives what the server read from it.
- */
+/** Probes a file through the server and gives what the server read from it. */
 export async function probeFile(request: APIRequestContext, path: string): Promise<MediaSource> {
   const accepted = await request.post('/api/sources', {
     headers: AUTH,
@@ -94,7 +91,7 @@ export async function probeFile(request: APIRequestContext, path: string): Promi
   return (await answer.json()) as MediaSource
 }
 
-/** Sends a queue action (`/api/queue/stop`, `/api/queue/{id}/cancel`, …) and checks its answer. */
+/** Sends a queue action and checks its answer. */
 export async function queueAction(
   request: APIRequestContext,
   method: 'post' | 'delete',

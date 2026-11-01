@@ -68,7 +68,7 @@ function rule(overrides: Partial<AudioCodecRule>): AudioCodecRule {
   }
 }
 
-/** The two AC-3 rules of the M6 demo, above the built-in preset's AAC catch-all. */
+/** The two AC-3 rules, above the built-in preset's AAC catch-all. */
 async function demoRules(): Promise<void> {
   const defaults = useDefaultsStore()
   await defaults.open('audio', { kind: 'job' })

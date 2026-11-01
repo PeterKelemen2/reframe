@@ -65,7 +65,7 @@ describe('the scans against a real server', () => {
     await scans.measureBitrate(id, 1)
     const bitrate = entryOf(id).audio?.[0]?.bitrate
     expect(bitrate?.source).toBe('measured')
-    // 1 069 764 bytes in 3.999 s of packets, as ffprobe reads the fixture.
+    // Measured from the fixture's packets: testdata/README.md has the bytes and the duration.
     expect(bitrate?.value).toBe(2_140_063)
     expect(scans.runs).toEqual([])
     expect(useToastStore().items).toEqual([])
@@ -122,7 +122,7 @@ describe('the scans against a real server', () => {
     await scans.measureBitrate(id, 1)
     const after = entryOf(id).audio?.[1]
     expect(after?.bitrate?.source).toBe('measured')
-    // The commentary guess of the core: a 2.0 track under 192 kb/s after a 5.1 track in its language.
+    // A 2.0 track under 192 kb/s after a 5.1 track in its language is marked as commentary.
     expect(after?.roles?.map((role) => [role.role, role.evidence])).toEqual([
       ['commentary', 'heuristic'],
     ])

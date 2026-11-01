@@ -17,8 +17,8 @@ export interface RenderedTagsState {
 }
 
 /**
- * `POST /api/jobs/tags` for the open job: at once for a new job, 250 ms after the last edit.
- * Any edit counts, since a tag can name any naming variable. The newest request wins.
+ * The tags for the open job: at once for a new job, 250 ms after the last edit. Any edit counts,
+ * since a tag can name any naming variable. The newest request wins.
  */
 export function useRenderedTags(): RenderedTagsState {
   const editor = useEditorStore()

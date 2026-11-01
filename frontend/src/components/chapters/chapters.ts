@@ -12,7 +12,6 @@ export function nameSlot(chapter: OutputChapter): number {
 export function shownName(chapter: OutputChapter, names: readonly string[] | null): string {
   const written = names?.[nameSlot(chapter)]
   if (written) return written
-  // An empty or missing name falls back to the source chapter's title, as the encode does.
   if (chapter.source_index !== null && chapter.source_name) return chapter.source_name
   return chapter.name
 }
