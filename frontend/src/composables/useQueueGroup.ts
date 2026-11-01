@@ -95,6 +95,8 @@ export function useQueueGroup(): QueueGroup {
   }
 
   async function showProblem(error: ApiError): Promise<void> {
+    // The failed edit has shown its own toast.
+    if (error.problem.code === 'edit.failed') return
     const changed = error.problem.code === 'source.stale' ? await changedFiles() : []
     const n = changed.length
     toasts.push(

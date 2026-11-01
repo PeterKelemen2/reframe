@@ -74,6 +74,9 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
     :draggable="false"
     :close-on-escape="false"
     :maximize-button-props="{
+      severity: 'secondary',
+      text: true,
+      rounded: true,
       'aria-label': maximized ? t('matrix.restore') : t('matrix.maximize'),
     }"
     :pt="{ root: { onKeydown: onKey }, content: { class: 'matrix-dialog__content' } }"

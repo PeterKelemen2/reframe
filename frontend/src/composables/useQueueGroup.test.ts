@@ -213,6 +213,19 @@ describe('queueGroup without errors', () => {
     expect(queueBodies()).toHaveLength(1)
   })
 
+  it('adds no toast when an edit did not reach the group: the edit showed its own', async () => {
+    editor.resolveNow.mockRejectedValueOnce(
+      new ApiError(0, {
+        title: 'An edit did not reach the group',
+        status: 0,
+        code: 'edit.failed',
+      } as never),
+    )
+    await setup().queueGroup('g1')
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
+  })
+
   it('names the files that changed on disk when the resolve finds a changed file', async () => {
     const listed = animeSources()
     ;(listed[1] as SourceEntry).source = null
