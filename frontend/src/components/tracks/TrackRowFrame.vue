@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ArrowDown, ArrowUp, Trash2 } from '@lucide/vue'
 import Button from 'primevue/button'
-import { computed, useTemplateRef } from 'vue'
+import vTooltip from 'primevue/tooltip'
+import { computed, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { ValidationIssue } from '@/api/types'
 import IssueList from '@/components/base/IssueList.vue'
 import { SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
 import { useReveal } from '@/composables/useReveal'
+import { useEditorStore } from '@/stores/editor'
 import { useValidationStore } from '@/stores/validation'
 
 /**
@@ -30,7 +32,12 @@ defineSlots<{ header(): unknown; default(): unknown }>()
 const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const validation = useValidationStore()
+const editor = useEditorStore()
+const id = useId()
 const root = useTemplateRef<HTMLElement>('root')
+/** Scope `file` of a group: the template's rules fix the track list. */
+const fixedList = computed(() => editor.target?.kind === 'group' && editor.target.scope === 'file')
+const describedBy = computed(() => (fixedList.value ? `${id}-fixed` : undefined))
 
 useReveal(() => props.path, root)
 
@@ -63,14 +70,22 @@ const unplaced = computed<ValidationIssue[]>(() =>
       <div class="track-row__lead">
         <slot name="header" />
       </div>
-      <div class="track-row__buttons">
+      <!-- Not every browser sends pointer events to a disabled button: the wrapper has the tooltip. -->
+      <div
+        v-tooltip.top="fixedList ? t('tracks.output.rowFileScope') : undefined"
+        class="track-row__buttons"
+      >
+        <span v-if="fixedList" :id="`${id}-fixed`" hidden>{{
+          t('tracks.output.rowFileScope')
+        }}</span>
         <Button
           text
           rounded
           size="small"
           severity="secondary"
           data-move="up"
-          :disabled="index === 0"
+          :disabled="index === 0 || fixedList"
+          :aria-describedby="describedBy"
           :aria-label="t('tracks.output.moveUp', { n: index + 1 })"
           @click="emit('move', index - 1)"
         >
@@ -82,7 +97,8 @@ const unplaced = computed<ValidationIssue[]>(() =>
           size="small"
           severity="secondary"
           data-move="down"
-          :disabled="index >= count - 1"
+          :disabled="index >= count - 1 || fixedList"
+          :aria-describedby="describedBy"
           :aria-label="t('tracks.output.moveDown', { n: index + 1 })"
           @click="emit('move', index + 1)"
         >
@@ -94,6 +110,8 @@ const unplaced = computed<ValidationIssue[]>(() =>
           size="small"
           severity="danger"
           data-action="remove"
+          :disabled="fixedList"
+          :aria-describedby="describedBy"
           :aria-label="t('tracks.output.remove', { n: index + 1 })"
           @click="emit('remove')"
         >
