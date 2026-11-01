@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** A read-only value in place of its control: the whole text, wrapped, in the text colour. */
+/** A read-only value in place of its control. The whole text wraps. */
 defineProps<{ text: string }>()
 </script>
 

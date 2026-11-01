@@ -16,9 +16,8 @@ import { shownAtField } from './model'
 import { outputLines } from './preview'
 
 /**
- * What the edited defaults do with the source, one row per source track: taken or dropped and
- * why, the rule, the output and the reason. Only the newest answer is shown; the table is
- * marked busy while a newer one is on its way.
+ * One row per source track: what the edited defaults take or drop, and why. Only the newest
+ * answer is shown.
  */
 const { t } = useI18n()
 const defaults = useDefaultsStore()
@@ -81,7 +80,7 @@ function number(decision: TrackDecision): number {
 
 function measure(decision: TrackDecision): void {
   const sourceId = defaults.sourceId
-  // A failure is the scans store's toast; the measured source comes back through the watcher.
+  // The scans store shows a failure as a toast, so nothing is shown here.
   if (sourceId !== null)
     void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
 }
@@ -89,8 +88,8 @@ function measure(decision: TrackDecision): void {
 const announcement = ref('')
 
 /**
- * The measured reason replaced Measure, which had the focus: without a place in the row the
- * focus would leave the dialog. Called while the new answer is shown.
+ * The reason replaced the Measure button, which had the focus: the row header takes it, so the
+ * focus stays in the dialog. The new answer must already be shown for the announcement.
  */
 function measured(stream: number): void {
   root.value?.querySelector<HTMLElement>(`tr[data-stream="${stream}"] th`)?.focus()

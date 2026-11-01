@@ -8,7 +8,7 @@ import type {
 
 type Translate = (key: string, named?: Record<string, unknown>) => string
 
-/** `AC-3 5.1 · 320 kb/s`, `FLAC 5.1`, `Passthru (DTS-HD MA)`. */
+/** The text of an audio output: encoder, mixdown and bitrate, or the passthru source codec. */
 export function audioOutputText(
   output: AudioOutputTrack,
   stream: AudioStream | undefined,
@@ -30,7 +30,7 @@ export function audioOutputText(
     : format
 }
 
-/** `Copy`, `Convert to SRT`, `Burn in (forced only)`. */
+/** The text of a subtitle output: copy, convert or burn in. */
 export function subtitleOutputText(output: SubtitleOutputTrack, t: Translate): string {
   if (output.action === 'burn') {
     return output.forced_only ? t('defaults.preview.burnForced') : t('defaults.preview.burn')

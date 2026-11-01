@@ -53,7 +53,6 @@ const body = (index: number) => document.querySelector<HTMLElement>(`tbody[data-
 const button = (index: number, selector: string) =>
   body(index).querySelector<HTMLButtonElement>(selector)!
 
-/** The accessible names of the controls in a rule's expanded settings. */
 function controlNames(index: number): string[] {
   return (
     [

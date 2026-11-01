@@ -29,10 +29,7 @@ import { rulePath } from './model'
 import { labelOf, useDefaultsOptions } from './options'
 import ShownValue from './ShownValue.vue'
 
-/**
- * The codec rules, first match wins: drag or the arrow buttons reorder them, the catch-all stays
- * last and cannot be removed, and each row expands to its optional settings.
- */
+/** The codec rules, first match wins; the catch-all stays last and cannot be moved or removed. */
 const { t } = useI18n()
 const defaults = useDefaultsStore()
 const system = useSystemStore()

@@ -22,7 +22,7 @@ import { type AudioRuleExtras, type ExtraAudioOutput, rulePath } from './model'
 import { labelOf, useDefaultsOptions } from './options'
 import ShownValue from './ShownValue.vue'
 
-/** A codec rule's optional settings: its languages, sample rate, gain, DRC, loudness, name, extra outputs. */
+/** A codec rule's optional settings, shown in the rule's expanded row. */
 const props = defineProps<{
   rule: AudioCodecRule
   index: number
