@@ -191,6 +191,7 @@
     "tracksAll": "Every track per language",
     "tracksNone": "No tracks",
     "languagesSettings": "the preferred languages of Settings",
+    "ownRules": "Chosen by the preset's {n} track rule | Chosen by the preset's {n} track rules",
     "naming": "Output naming"
   },
   "naming": {
