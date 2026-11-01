@@ -9,12 +9,17 @@ import CodecLabel from '@/components/base/CodecLabel.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
 import LanguageChip from '@/components/base/LanguageChip.vue'
 import RoleBadge from '@/components/base/RoleBadge.vue'
+import { useJobSource } from '@/components/summary/useJobSource'
+import { type ScanRun, useScansStore } from '@/stores/scans'
 
+import ScanControl from './ScanControl.vue'
 import {
   channelsText,
   delayText,
+  hasForcedEvents,
   kbps,
   kiloHertz,
+  oneDecimal,
   preciseDuration,
   setDispositions,
   type ShownFlag,
@@ -24,14 +29,63 @@ import {
   trackNumber,
 } from './streams'
 
-/** The source's tracks of one kind, read only; a row expands to every detail of its track. */
+/**
+ * The source's tracks of one kind, read only; a row expands to every detail of its track. The
+ * scans (bitrate, events, loudness) run on `sourceId`, by default the editor job's source;
+ * `null`: no scans.
+ */
 const props = defineProps<{
   kind: 'audio' | 'subtitle'
   streams: readonly SourceStream[]
+  sourceId?: string | null
 }>()
 
 const { t } = useI18n()
 const id = useId()
+const scans = useScansStore()
+const jobSource = useJobSource()
+
+const scanSource = computed(() =>
+  props.sourceId === undefined ? jobSource.sourceId.value : props.sourceId,
+)
+
+function runOf(kind: 'bitrate' | 'subtitle' | 'loudness', stream: SourceStream | null) {
+  const source = scanSource.value
+  return source === null ? undefined : scans.running(source, kind, stream?.index ?? null)
+}
+
+/** Every subtitle track is being counted: a track's own count would join that scan. */
+const countingAll = computed(
+  () => props.kind === 'subtitle' && runOf('subtitle', null) !== undefined,
+)
+
+function measureBitrate(stream: SourceStream): void {
+  if (scanSource.value !== null) void scans.measureBitrate(scanSource.value, stream.index)
+}
+
+function countEvents(stream: SourceStream | null): void {
+  if (scanSource.value === null) return
+  void scans.scanSubtitles(scanSource.value, stream === null ? undefined : [stream.index])
+}
+
+function measureLoudness(stream: SourceStream): void {
+  if (scanSource.value !== null) void scans.measureLoudness(scanSource.value, stream.index)
+}
+
+function cancel(run: ScanRun): void {
+  void scans.cancel(run)
+}
+
+function loudnessOf(stream: SourceStream) {
+  return scanSource.value === null
+    ? undefined
+    : scans.loudness[`${scanSource.value}:${stream.index}`]
+}
+
+function measured(value: number | null | undefined, key: 'lufs' | 'dbtp' | 'lu'): string {
+  if (value === null || value === undefined) return '—'
+  return t(`media.loudness.${key}`, { value: oneDecimal(value) })
+}
 
 const expanded = ref(new Set<number>())
 
@@ -140,7 +194,23 @@ function tagsOf(stream: SourceStream): [string, string][] {
     <p v-if="streams.length === 0" class="track-table__empty">
       {{ kind === 'audio' ? t('tracks.source.noAudio') : t('tracks.source.noSubtitles') }}
     </p>
-    <div v-else class="track-table__scroll">
+    <div
+      v-if="kind === 'subtitle' && streams.length > 0 && scanSource !== null"
+      class="track-table__actions"
+    >
+      <ScanControl
+        :run="runOf('subtitle', null)"
+        :label="t('media.scan.countAll')"
+        :start-label="t('media.scan.countAllLabel')"
+        :progress-label="t('media.scan.countingAll')"
+        :cancel-label="t('media.scan.cancelCountAll')"
+        :help="t('media.scan.countHelp')"
+        data-scan="events-all"
+        @start="countEvents(null)"
+        @cancel="cancel"
+      />
+    </div>
+    <div v-if="streams.length > 0" class="track-table__scroll">
       <table class="track-table__table">
         <caption class="rf-sr-only">
           {{
@@ -201,17 +271,58 @@ function tagsOf(stream: SourceStream): [string, string][] {
                     {{ bitrateSource(stream.bitrate!.source) }}
                   </span>
                 </template>
-                <span v-else v-tooltip.top="bitrateHelp(undefined)">
-                  <span aria-hidden="true">—</span>
-                  <span class="rf-sr-only">{{ t('tracks.source.bitrateFrom.unknown') }}</span>
+                <span v-else class="track-table__unknown">
+                  <span v-tooltip.top="bitrateHelp(undefined)">
+                    <span aria-hidden="true">—</span>
+                    <span class="rf-sr-only">{{ t('tracks.source.bitrateFrom.unknown') }}</span>
+                  </span>
+                  <ScanControl
+                    v-if="scanSource !== null"
+                    :run="runOf('bitrate', stream)"
+                    :label="t('media.scan.measure')"
+                    :start-label="t('media.scan.measureBitrate', { n: trackNumber(stream) })"
+                    :progress-label="t('media.scan.measuringBitrate', { n: trackNumber(stream) })"
+                    :cancel-label="t('media.scan.cancelBitrate', { n: trackNumber(stream) })"
+                    :help="t('media.scan.measureHelp')"
+                    data-scan="bitrate"
+                    @start="measureBitrate(stream)"
+                    @cancel="cancel"
+                  />
                 </span>
               </td>
             </template>
             <template v-else>
               <td><CodecLabel :stream="stream" /></td>
               <td>{{ typeLabel(stream) }}</td>
-              <td v-tooltip.top="eventsHelp(stream)">
-                {{ stream.event_count ?? '—' }}
+              <td class="track-table__events">
+                <span class="track-table__unknown">
+                  <span v-tooltip.top="eventsHelp(stream)">{{ stream.event_count ?? '—' }}</span>
+                  <ScanControl
+                    v-if="
+                      scanSource !== null &&
+                      (stream.event_count === null || stream.event_count === undefined)
+                    "
+                    :run="runOf('subtitle', stream)"
+                    :label="t('media.scan.count')"
+                    :start-label="t('media.scan.countTrack', { n: trackNumber(stream) })"
+                    :progress-label="t('media.scan.countingTrack', { n: trackNumber(stream) })"
+                    :cancel-label="t('media.scan.cancelCountTrack', { n: trackNumber(stream) })"
+                    :help="t('media.scan.countHelp')"
+                    :disabled="countingAll"
+                    data-scan="events"
+                    @start="countEvents(stream)"
+                    @cancel="cancel"
+                  />
+                </span>
+                <span
+                  v-if="
+                    stream.forced_event_count !== null && stream.forced_event_count !== undefined
+                  "
+                  class="track-table__muted"
+                  data-forced
+                >
+                  {{ t('media.events.forced', { count: stream.forced_event_count }) }}
+                </span>
               </td>
             </template>
             <td>
@@ -273,6 +384,47 @@ function tagsOf(stream: SourceStream): [string, string][] {
                     </template>
                     {{ bitrateHelp(stream.bitrate?.source) }}
                   </KeyValue>
+                  <KeyValue :label="t('media.loudness.title')">
+                    <dl
+                      v-if="loudnessOf(stream)"
+                      class="rf-kv-list track-table__loudness"
+                      data-loudness
+                    >
+                      <KeyValue
+                        :label="t('media.loudness.integrated')"
+                        :value="measured(loudnessOf(stream)!.integrated, 'lufs')"
+                      />
+                      <KeyValue
+                        :label="t('media.loudness.truePeak')"
+                        :value="measured(loudnessOf(stream)!.true_peak, 'dbtp')"
+                      />
+                      <KeyValue
+                        :label="t('media.loudness.range')"
+                        :value="measured(loudnessOf(stream)!.lra, 'lu')"
+                      />
+                    </dl>
+                    <template v-else-if="scanSource === null">—</template>
+                    <ScanControl
+                      v-if="scanSource !== null"
+                      :run="runOf('loudness', stream)"
+                      :label="
+                        loudnessOf(stream)
+                          ? t('media.scan.measureLoudnessAgain')
+                          : t('media.scan.measureLoudness')
+                      "
+                      :start-label="
+                        t('media.scan.measureLoudnessLabel', { n: trackNumber(stream) })
+                      "
+                      :progress-label="
+                        t('media.scan.measuringLoudness', { n: trackNumber(stream) })
+                      "
+                      :cancel-label="t('media.scan.cancelLoudness', { n: trackNumber(stream) })"
+                      :help="t('media.loudness.help')"
+                      data-scan="loudness"
+                      @start="measureLoudness(stream)"
+                      @cancel="cancel"
+                    />
+                  </KeyValue>
                 </template>
                 <template v-else>
                   <KeyValue
@@ -283,13 +435,34 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   <KeyValue :label="t('tracks.details.events')">
                     {{ stream.event_count ?? '—' }}
                     <template v-if="eventsHelp(stream)"> · {{ eventsHelp(stream) }} </template>
+                    <!-- The row offers the count while it is unknown; here it counts again (the forced events too). -->
+                    <ScanControl
+                      v-if="
+                        scanSource !== null &&
+                        stream.event_count !== null &&
+                        stream.event_count !== undefined
+                      "
+                      class="track-table__detail-scan"
+                      :run="runOf('subtitle', stream)"
+                      :label="t('media.scan.count')"
+                      :start-label="t('media.scan.countTrack', { n: trackNumber(stream) })"
+                      :progress-label="t('media.scan.countingTrack', { n: trackNumber(stream) })"
+                      :cancel-label="t('media.scan.cancelCountTrack', { n: trackNumber(stream) })"
+                      :help="t('media.scan.countHelp')"
+                      :disabled="countingAll"
+                      data-scan="events"
+                      @start="countEvents(stream)"
+                      @cancel="cancel"
+                    />
                   </KeyValue>
                   <KeyValue
                     v-if="
-                      stream.forced_event_count !== null && stream.forced_event_count !== undefined
+                      (stream.forced_event_count !== null &&
+                        stream.forced_event_count !== undefined) ||
+                      hasForcedEvents(stream)
                     "
                     :label="t('tracks.details.forcedEvents')"
-                    :value="stream.forced_event_count"
+                    :value="stream.forced_event_count ?? t('media.events.forcedUnknown')"
                   />
                 </template>
                 <KeyValue
@@ -427,6 +600,34 @@ tbody + tbody .track-table__row td {
 
 .track-table__bitrate > span {
   display: block;
+}
+
+.track-table__table .track-table__unknown {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-2);
+}
+
+.track-table__events {
+  white-space: nowrap;
+}
+
+.track-table__events > span {
+  display: block;
+}
+
+.track-table__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--rf-space-2);
+}
+
+.track-table__detail-scan {
+  margin-inline-start: var(--rf-space-2);
+}
+
+.track-table__loudness {
+  margin-bottom: var(--rf-space-1);
 }
 
 .track-table__muted {

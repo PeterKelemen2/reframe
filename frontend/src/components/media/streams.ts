@@ -106,6 +106,17 @@ export function delayText(seconds: number): string {
   return size < 10_000 ? `${sign}${size} ms` : `${sign}${Number((size / 1000).toFixed(3))} s`
 }
 
+/** `−22.5`, `2.2`: one decimal, with a real minus sign. */
+export function oneDecimal(value: number): string {
+  const fixed = value.toFixed(1)
+  return fixed.startsWith('-') ? `−${fixed.slice(1)}` : fixed
+}
+
+/** The subtitle formats whose events carry a forced flag, which a scan counts. */
+export function hasForcedEvents(stream: SubtitleStream): boolean {
+  return stream.codec === 'hdmv_pgs_subtitle' || stream.codec === 'dvd_subtitle'
+}
+
 /** `1:02:03.250`, `0:04.021`. */
 export function preciseDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds * 1000))
