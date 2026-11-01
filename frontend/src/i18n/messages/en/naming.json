@@ -124,6 +124,7 @@
     "useDefaultFolder": "Use the naming options' folder",
     "stale": "The naming now gives {path}.",
     "updatePath": "Use this path",
-    "notApplied": "The output name was not changed"
+    "notApplied": "The output name was not changed",
+    "perFileInGroup": "The output folder, a manual name and corrected name fields are set per file: to change them for the shown file, set Edits go to This file only."
   }
 }

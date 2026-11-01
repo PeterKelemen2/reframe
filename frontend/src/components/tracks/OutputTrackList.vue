@@ -250,7 +250,7 @@ async function reload(): Promise<void> {
   <div ref="root" class="output-tracks" :data-list="list">
     <Section :title="title">
       <template #actions>
-        <!-- A disabled button gets no pointer events: its wrapper's tooltip says why. -->
+        <!-- Not every browser sends pointer events to a disabled button: the wrapper says why. -->
         <span v-tooltip.top="fixedList ? t('tracks.output.fileScopeHelp') : undefined">
           <Button
             size="small"
@@ -267,7 +267,7 @@ async function reload(): Promise<void> {
         <Menu ref="addMenu" :pt="{ root: { id: `${id}-add` } }" :model="addItems" popup />
         <span v-tooltip.top="fixedList ? t('tracks.output.fileScopeHelp') : undefined">
           <Button
-            v-tooltip.top="t('tracks.output.addAllHelp')"
+            v-tooltip.top="fixedList ? undefined : t('tracks.output.addAllHelp')"
             size="small"
             severity="secondary"
             data-action="add-all"
@@ -280,7 +280,7 @@ async function reload(): Promise<void> {
         </span>
         <span v-tooltip.top="inGroup ? t('tracks.output.reloadGroup') : undefined">
           <Button
-            v-tooltip.top="t('tracks.output.reloadHelp')"
+            v-tooltip.top="inGroup ? undefined : t('tracks.output.reloadHelp')"
             size="small"
             severity="secondary"
             data-action="reload"
@@ -297,7 +297,7 @@ async function reload(): Promise<void> {
           v-tooltip.top="inGroup ? t('tracks.external.addGroup') : undefined"
         >
           <Button
-            v-tooltip.top="t('tracks.external.addHelp')"
+            v-tooltip.top="inGroup ? undefined : t('tracks.external.addHelp')"
             size="small"
             severity="secondary"
             data-action="add-external"

@@ -96,13 +96,18 @@ onScopeDispose(dropChange)
 /**
  * The container and the path's extension in one undo step. The container's first extension
  * goes in at once; where the container has more than one (MP4: `.mp4`, `.m4v`), the naming's
- * choice follows in the same step when the server has named the job.
+ * choice follows in the same step when the server has named the job. In a group the server
+ * names each file, so only the container changes.
  */
 function setContainer(value: Container | null): void {
   const job = editor.job
   if (value === null || job === null || value === job.output?.container) return
   const key = `output.container#${++changes}`
   const ops: JsonPatchOp[] = [{ op: 'add', path: '/output/container', value }]
+  if (editor.target?.kind === 'group') {
+    editor.patch(ops)
+    return
+  }
   const path = job.output?.path
   const extensions = extensionsOf(value)
   const next = path ? withExtension(path, extensions[0] ?? value) : null
