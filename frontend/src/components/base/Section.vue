@@ -54,8 +54,10 @@ const bodyId = `${id}-body`
   gap: var(--rf-space-3);
 }
 
+/* Actions that do not fit beside the title go below it, and wrap among themselves. */
 .rf-section__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--rf-space-3);
   min-height: 2rem;
@@ -97,6 +99,7 @@ const bodyId = `${id}-body`
 
 .rf-section__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--rf-space-2);
 }
