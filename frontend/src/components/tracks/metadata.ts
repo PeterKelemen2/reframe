@@ -62,10 +62,8 @@ export function externalOf(track: SubtitleOutputTrack | undefined): ExternalSubt
 }
 
 /**
- * The patch for `changes` to one metadata block. A job may lack the block (the model's
- * default); then the whole block is added. An external file's language, name and flags say what
- * the file is, and `null` in the output's metadata means "as the file": the two are kept equal,
- * so that the file reads as the user described it wherever it is shown.
+ * The patch for `changes` to one metadata block; a job without the block gets all of it. For an
+ * external file, the same changes go to its source, so that both say the same.
  */
 export function metadataOps(
   pointer: string,
@@ -292,9 +290,8 @@ const FORCED_WORDS = new Set(['forced', 'foreign'])
 const SDH_WORDS = new Set(['sdh', 'cc'])
 
 /**
- * What the file name says about a subtitle file: its language (`Movie.pt-BR.srt`), forced
- * (`.forced.`) and hearing impaired (`.sdh.`, `.cc.`). Only the parts right before the extension
- * count, so that a word of the title (`The.Art.srt`) is not taken for a language code.
+ * What the file name says about a subtitle file: its language, forced and hearing impaired. Only
+ * the parts right before the extension count, so a word of the title is not taken for a language.
  */
 export function fromFileName(
   path: string,
@@ -315,7 +312,7 @@ export function fromFileName(
   return result
 }
 
-/** A new output track of an external file: copied, as the name says, never the default. */
+/** A new output track for an external file: copied, and never the default. */
 export function externalTrack(
   info: Pick<SubtitleFileInfo, 'path'>,
   languages: readonly Language[],
@@ -336,9 +333,8 @@ export function externalTrack(
       name: null,
       flags,
       offset_ms: 0,
-      // None for UTF-8 (FFmpeg reads it, with or without a byte order mark) and for UTF-16
-      // (`-sub_charenc UTF-16LE` loses every event). A file whose encoding was not detected
-      // starts with none too: the row asks the user to pick one.
+      // None for UTF-8 (FFmpeg reads it with or without a byte order mark) and for UTF-16
+      // (`-sub_charenc UTF-16LE` loses every event). An undetected encoding starts with none too.
       charset: null,
     },
     metadata: { ...flags, language: guessed.language, name: null },

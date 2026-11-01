@@ -11,10 +11,7 @@ export const SUBTITLE_FILE_FILTERS = ['.srt', '.ass', '.ssa', '.vtt', '.sup']
 /** What `subtitles/inspect` said about a file; `null`: it could not be read. */
 type Inspected = SubtitleFileInfo | null
 
-/**
- * The answers by path, for this page: a row of an external track shows the detected encoding and
- * the warnings, also after an undo or an edit-back brought the track back.
- */
+/** Inspection answers by path, kept for the page: a row shows them again after an undo. */
 const answers = reactive(new Map<string, Inspected>())
 const asked = new Map<string, Promise<Inspected>>()
 
@@ -23,8 +20,8 @@ export function inspected(path: string): Inspected | undefined {
 }
 
 /**
- * `POST /api/subtitles/inspect`, once per path. `quiet`: a refusal is not shown as a toast (a
- * row that asks on its own); otherwise the API client shows it (a file the user just picked).
+ * Inspects a file once per path (`POST /api/subtitles/inspect`). `quiet`: a refusal is not
+ * toasted, for a row that asks on its own; a file the user picked shows it.
  */
 export function inspect(path: string, options: { quiet?: boolean } = {}): Promise<Inspected> {
   const running = asked.get(path)

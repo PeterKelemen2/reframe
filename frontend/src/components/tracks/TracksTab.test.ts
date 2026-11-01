@@ -86,7 +86,6 @@ function row(wrapper: VueWrapper, path: string) {
   return wrapper.find(`[data-path="${path}"]`)
 }
 
-/** The PrimeVue control of the field at `path`. */
 function control(
   wrapper: VueWrapper,
   path: string,
@@ -103,7 +102,7 @@ function encoderChoices(wrapper: VueWrapper): string[] {
   return options.map((option) => option.value)
 }
 
-/** What a screen reader names each list of the row at `path`: `aria-labelledby` wins over `aria-label`. */
+/** The accessible names of the row's comboboxes; `aria-labelledby` wins over `aria-label`. */
 function comboboxNames(wrapper: VueWrapper, path: string): (string | null)[] {
   return row(wrapper, path)
     .findAll('[role="combobox"]')
@@ -117,7 +116,6 @@ function comboboxNames(wrapper: VueWrapper, path: string): (string | null)[] {
     })
 }
 
-/** A copied subtitle track of the source stream `source`, not default. */
 function subtitle(source: number) {
   const track = sampleJob().subtitles![0]!
   return { ...track, source, metadata: { ...track.metadata!, default: false } }

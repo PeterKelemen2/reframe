@@ -274,7 +274,6 @@ function named(track: AudioOutputTrack, name: string): AudioOutputTrack {
   return { ...track, metadata: { ...track.metadata!, name } }
 }
 
-/** An external file and what is written for it say the same language. */
 function file(path: string, language: string | null): SubtitleOutputTrack {
   return {
     action: 'copy',

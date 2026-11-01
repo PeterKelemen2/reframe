@@ -56,7 +56,7 @@ const bitmap = computed(() =>
     ? (externalInfo.value?.bitmap ?? external.value.path.toLowerCase().endsWith('.sup'))
     : stream.value?.subtitle_kind === 'bitmap',
 )
-/** The codec the track reads: the source stream's, or what the file was found to hold. */
+/** The codec the track reads: the source stream's, or the inspected file's. */
 const codec = computed(() =>
   external.value ? externalInfo.value?.format : stream.value?.display_codec || stream.value?.codec,
 )

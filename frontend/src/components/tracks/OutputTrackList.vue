@@ -41,7 +41,7 @@ import {
 } from './ops'
 import SubtitleTrackRow from './SubtitleTrackRow.vue'
 
-/** The job's output tracks of one list: add, remove, reorder (drag or buttons), reload. */
+/** The job's output tracks of one list. */
 const props = defineProps<{ list: TrackList }>()
 
 const { t } = useI18n()
@@ -72,7 +72,7 @@ const unused = computed(() => unusedStreams(streams.value, tracks.value))
 /** The selected tracks' places; they follow the tracks through a reorder. */
 const selected = ref<number[]>([])
 const bulkVisible = ref(false)
-/** One track has nothing to edit together with. */
+/** Bulk editing needs at least two tracks. */
 const selectable = computed(() => rows.value.length > 1)
 const allSelected = computed(
   () => rows.value.length > 0 && selected.value.length === rows.value.length,
