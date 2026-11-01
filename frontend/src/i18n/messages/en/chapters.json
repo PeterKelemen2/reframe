@@ -9,8 +9,7 @@
   "generate": {
     "label": "Generate chapters",
     "help": "The source has no chapters. Reframe can make one every N minutes; the last one is merged into the one before it when it would be very short.",
-    "every": "every",
-    "unit": "min",
+    "every": "every {field} min",
     "minutes": "Minutes between generated chapters"
   },
   "origin": {
@@ -46,12 +45,12 @@
   "import": {
     "label": "Import…",
     "done": "No names imported from {file}. | {count} name imported from {file}. | {count} names imported from {file}.",
-    "failed": "The chapter file could not be imported.",
-    "count": "The file has {file} chapters and the output has {output}: the names were applied in order.",
+    "failed": "The chapter file could not be imported: {reason}",
+    "count": "The file has {file} chapter and the output has {output}: the names were applied in order. | The file has {file} chapters and the output has {output}: the names were applied in order.",
     "moved": "Chapter {n} starts at {file} in the file and at {output} in the output."
   },
   "export": {
     "label": "Export",
-    "failed": "The chapters could not be exported."
+    "failed": "The chapters could not be exported: {reason}"
   }
 }

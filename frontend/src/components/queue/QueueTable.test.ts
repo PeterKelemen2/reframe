@@ -335,6 +335,38 @@ describe('the queue table', () => {
     expect(row('b').querySelector('[data-field="output"]')?.textContent?.trim()).toBe('b.mkv')
   })
 
+  it('shows the in-place tooltip to the keyboard, as the target’s description', async () => {
+    const inPlace = job('a', 'waiting')
+    inPlace.settings = {
+      ...inPlace.settings,
+      output: { path: '/media/a.mkv', edit_in_place: true },
+    } as JobSettings
+    queue.jobs = [inPlace]
+    await mountTable()
+    const target = row('a').querySelector<HTMLElement>('[data-field="output"]')!
+    expect(target.tabIndex).toBe(0)
+    target.focus()
+    const tip = 'mkvpropedit changes /media/a.mkv itself: no new file is written.'
+    await vi.waitFor(() => expect(document.querySelector('.p-tooltip')?.textContent).toBe(tip))
+    const described = document.getElementById(target.getAttribute('aria-describedby') ?? '')
+    expect(described?.textContent).toBe(tip)
+    target.blur()
+    await vi.waitFor(() => expect(document.querySelector('.p-tooltip')).toBeNull())
+  })
+
+  it('names a metadata edit, not a copied video, under an in-place job’s preset', async () => {
+    const inPlace = job('a', 'waiting', {
+      settings: nvencSettings('a', { encoder: 'hevc_nvenc', passthrough: true }),
+    })
+    inPlace.settings = {
+      ...inPlace.settings,
+      output: { path: '/media/a.mkv', edit_in_place: true },
+    } as JobSettings
+    queue.jobs = [inPlace]
+    await mountTable()
+    expect(presetCell('a')).toEqual(['H.265 NVENC 1080p', 'Metadata edit'])
+  })
+
   it('shows the error and the issues of a failed job under its row', async () => {
     queue.jobs = [
       job('a', 'failed', {

@@ -5,7 +5,7 @@ import InputNumber from 'primevue/inputnumber'
 import Menu from 'primevue/menu'
 import Message from 'primevue/message'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { computed, reactive, ref, useId, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, reactive, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
@@ -25,6 +25,8 @@ import {
 import { exportChapters, importChapters } from '@/components/chapters/requests'
 import { useOutputChapters } from '@/components/chapters/useOutputChapters'
 import { download } from '@/components/presets/format'
+import FocusSafeButton from '@/components/shell/FocusSafeButton'
+import { focusLost } from '@/components/shell/focus'
 import { useJobSource } from '@/components/summary/useJobSource'
 import { useReveal } from '@/composables/useReveal'
 import { platform } from '@/platform'
@@ -66,10 +68,25 @@ function setGenerate(on: boolean): void {
   editor.set('/chapters/generate_every', on ? (rememberedEvery ?? DEFAULT_EVERY) : null)
 }
 
-function setEvery(value: number | null | undefined): void {
-  if (typeof value === 'number' && value > 0 && value !== settings.value?.generate_every) {
-    editor.set('/chapters/generate_every', value)
+/** What the interval field shows: the job's interval. */
+const every = ref<number | null>(null)
+watch(
+  () => settings.value?.generate_every ?? null,
+  (value) => (every.value = value),
+  { immediate: true },
+)
+
+async function setEvery(value: number | null | undefined): Promise<void> {
+  const current = settings.value?.generate_every ?? null
+  if (typeof value === 'number' && value > 0) {
+    if (value !== current) editor.set('/chapters/generate_every', value)
+    return
   }
+  // A cleared field is no interval (the switch turns generation off): it shows the job's again.
+  // PrimeVue's field keeps what it shows until its value changes, so the value changes twice.
+  every.value = null
+  await nextTick()
+  every.value = current
 }
 
 /** Text typed into a name field that is still focused: the job may show it differently. */
@@ -112,6 +129,12 @@ watch(
 function reason(error: unknown): string {
   if (error instanceof ApiError) return error.problem.detail ?? error.problem.title
   return String(error)
+}
+
+/** The button of `action` gets the focus back when the page took it while the action ran. */
+function refocus(action: 'import' | 'export'): void {
+  if (!focusLost()) return
+  root.value?.querySelector<HTMLElement>(`[data-action="${action}"]`)?.focus()
 }
 
 const resetMenu = useTemplateRef<InstanceType<typeof Menu>>('resetMenu')
@@ -168,12 +191,14 @@ async function exportAs(format: ChapterFormat): Promise<void> {
   } catch (error) {
     notice.value = {
       severity: 'error',
-      summary: t('chapters.export.failed'),
-      details: [reason(error)],
+      summary: t('chapters.export.failed', { reason: reason(error) }),
+      details: [],
     }
   } finally {
     busy.value = false
   }
+  await nextTick()
+  refocus('export')
 }
 
 function fileName(path: string): string {
@@ -181,6 +206,15 @@ function fileName(path: string): string {
 }
 
 async function importFile(): Promise<void> {
+  try {
+    await readChapterFile()
+  } finally {
+    await nextTick()
+    refocus('import')
+  }
+}
+
+async function readChapterFile(): Promise<void> {
   const session = editor.session
   const [path] = await platform.pickFiles({ multiple: false, filters: ['.csv', '.txt', '.xml'] })
   if (path === undefined || session !== editor.session) return
@@ -192,8 +226,8 @@ async function importFile(): Promise<void> {
     if (session === editor.session) {
       notice.value = {
         severity: 'error',
-        summary: t('chapters.import.failed'),
-        details: [reason(error)],
+        summary: t('chapters.import.failed', { reason: reason(error) }),
+        details: [],
       }
     }
     return
@@ -207,7 +241,13 @@ async function importFile(): Promise<void> {
   }
   const details = (imported.issues ?? []).map((issue) => issue.message)
   if (plan.fileCount !== plan.outputCount) {
-    details.push(t('chapters.import.count', { file: plan.fileCount, output: plan.outputCount }))
+    details.push(
+      t(
+        'chapters.import.count',
+        { file: plan.fileCount, output: plan.outputCount },
+        plan.fileCount,
+      ),
+    )
   }
   for (const moved of plan.moved) {
     details.push(
@@ -239,7 +279,7 @@ const hasRows = computed(() => rows.value.length > 0)
     </p>
     <Section v-else :title="t('chapters.title')">
       <template #actions>
-        <Button
+        <FocusSafeButton
           size="small"
           severity="secondary"
           :label="t('chapters.import.label')"
@@ -248,8 +288,8 @@ const hasRows = computed(() => rows.value.length > 0)
           @click="importFile"
         >
           <template #icon><Upload :size="16" aria-hidden="true" /></template>
-        </Button>
-        <Button
+        </FocusSafeButton>
+        <FocusSafeButton
           size="small"
           severity="secondary"
           :label="t('chapters.export.label')"
@@ -260,7 +300,7 @@ const hasRows = computed(() => rows.value.length > 0)
           @click="exportMenu?.toggle($event)"
         >
           <template #icon><Download :size="16" aria-hidden="true" /></template>
-        </Button>
+        </FocusSafeButton>
         <Menu ref="exportMenu" :pt="{ root: { id: `${id}-export` } }" :model="exportItems" popup />
         <Button
           size="small"
@@ -308,23 +348,28 @@ const hasRows = computed(() => rows.value.length > 0)
               data-field="generate"
               @update:model-value="setGenerate"
             />
-            <template v-if="settings?.generate_every != null">
-              <span class="chapters-tab__hint">{{ t('chapters.generate.every') }}</span>
-              <InputNumber
-                class="chapters-tab__every"
-                :model-value="settings.generate_every"
-                :min="0.01"
-                :max="600"
-                :max-fraction-digits="2"
-                :suffix="` ${t('chapters.generate.unit')}`"
-                :ariaLabel="t('chapters.generate.minutes')"
-                :invalid="invalid"
-                :disabled="!enabled"
-                size="small"
-                data-field="generate-every"
-                @update:model-value="setEvery"
-              />
-            </template>
+            <i18n-t
+              v-if="settings?.generate_every != null"
+              keypath="chapters.generate.every"
+              tag="span"
+              class="chapters-tab__hint chapters-tab__inline"
+            >
+              <template #field>
+                <InputNumber
+                  class="chapters-tab__every"
+                  :model-value="every"
+                  :min="0.01"
+                  :max="600"
+                  :max-fraction-digits="2"
+                  :ariaLabel="t('chapters.generate.minutes')"
+                  :invalid="invalid"
+                  :disabled="!enabled"
+                  size="small"
+                  data-field="generate-every"
+                  @update:model-value="setEvery"
+                />
+              </template>
+            </i18n-t>
           </div>
         </template>
       </Field>
@@ -426,7 +471,7 @@ const hasRows = computed(() => rows.value.length > 0)
 }
 
 .chapters-tab__every {
-  width: 9rem;
+  width: 6rem;
 }
 
 .chapters-tab__every :deep(input) {
@@ -468,11 +513,12 @@ const hasRows = computed(() => rows.value.length > 0)
   overflow-x: auto;
   border: 1px solid var(--rf-color-border);
   border-radius: var(--rf-radius-md);
-  transition: opacity var(--rf-duration) ease;
 }
 
-.chapters-tab__scroll--pending {
-  opacity: 0.7;
+/* Muted, not faded: the times keep an AA contrast while a newer answer is on its way. */
+.chapters-tab__scroll--pending :deep(.chapter-row__time) {
+  color: var(--rf-color-text-muted);
+  transition: color var(--rf-duration) ease;
 }
 
 .chapters-tab__table {

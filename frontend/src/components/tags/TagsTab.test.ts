@@ -136,3 +136,60 @@ it('shows a template error at its field, once, with its fix', async () => {
   await button!.trigger('click')
   expect(editor.job?.tags?.title).toBe('{name}')
 })
+
+it("shows an issue that validation and jobs/tags both report once, as validation's", async () => {
+  const fromValidation = {
+    ...issue('naming.unknown_variable', 'tags.title'),
+    message: 'Unknown variable {nam} (position 1). Did you mean {name}?',
+  }
+  const fromRoute = { ...fromValidation, severity: 'warning' as const, message: 'Unknown {nam}' }
+  server.on(ROUTE, (request) =>
+    renderedFor((request.body as { job: JobSettings }).job, [fromRoute]),
+  )
+  const { wrapper } = await mountTab()
+  useValidationStore().issues = [fromValidation]
+  await flushPromises()
+  const shown = wrapper.find('[data-path="tags.title"]').findAll('.rf-field__issue')
+  expect(shown.map((item) => item.text())).toEqual([
+    expect.stringContaining(fromValidation.message),
+  ])
+  expect(shown[0]!.classes()).toContain('rf-field__issue--error')
+})
+
+it('shows what only jobs/tags reports at the field too', async () => {
+  const fromRoute = issue('naming.unbalanced', 'tags.title', 'warning')
+  server.on(ROUTE, (request) =>
+    renderedFor((request.body as { job: JobSettings }).job, [fromRoute]),
+  )
+  const { wrapper } = await mountTab()
+  useValidationStore().issues = [issue('naming.unknown_variable', 'tags.title')]
+  await flushPromises()
+  expect(
+    wrapper
+      .find('[data-path="tags.title"]')
+      .findAll('.rf-field__issue')
+      .map((item) => item.text()),
+  ).toEqual([
+    expect.stringContaining('naming.unknown_variable at tags.title'),
+    expect.stringContaining('naming.unbalanced at tags.title'),
+  ])
+})
+
+it('puts the focus into the tag that a fix changed', async () => {
+  const fix: Fix = {
+    label: 'Use {name}',
+    target: 'job',
+    patch: [{ op: 'replace', path: '/tags/genre', value: '{name}' }],
+  }
+  const error = { ...issue('naming.unknown_variable', 'tags.genre'), fixes: [fix] }
+  server.on(ROUTE, (request) => renderedFor((request.body as { job: JobSettings }).job, [error]))
+  const { wrapper, editor } = await mountTab()
+  const button = tag(wrapper, 'genre')
+    .findAll('button')
+    .find((b) => b.text() === 'Use {name}')
+  button!.element.focus()
+  await button!.trigger('click')
+  await flushPromises()
+  expect(editor.job?.tags?.genre).toBe('{name}')
+  expect(document.activeElement).toBe(tag(wrapper, 'genre').find('input').element)
+})

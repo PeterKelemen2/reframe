@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import { deferred, FakeServer, problem } from '@/api/testing/fakes'
-import type { ChapterImport, JobSettings, MediaSource, OutputChapters } from '@/api/types'
+import type {
+  ChapterExport,
+  ChapterImport,
+  JobSettings,
+  MediaSource,
+  OutputChapters,
+} from '@/api/types'
 import { mountBase } from '@/components/base/testing'
 import ChaptersTab from '@/components/editor/tabs/ChaptersTab.vue'
 import { download } from '@/components/presets/format'
@@ -137,6 +143,18 @@ describe('the chapter table', () => {
     expect(wrapper.find('tbody').exists()).toBe(false)
   })
 
+  it('ends a name edit on Enter and keeps the focus in the field', async () => {
+    const { wrapper, editor } = await mountTab()
+    const input = wrapper.findAll<HTMLInputElement>('[data-field="name"]')[1]!
+    input.element.focus()
+    await input.setValue('Middle')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(document.activeElement).toBe(input.element)
+    await input.setValue('Middle part')
+    editor.undo()
+    expect(names(editor)).toEqual(['Opening', 'Middle', 'Part Two'])
+  })
+
   it('shows the issues of the names', async () => {
     const { wrapper } = await mountTab()
     useValidationStore().issues = [issue('chapters.bad', 'chapters.names[1]')]
@@ -216,9 +234,22 @@ describe('Import', () => {
     )
   })
 
+  it('says “1 chapter” for a file with one chapter', async () => {
+    vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/chapters.txt'])
+    answer([{ start: 0, name: 'Eins' }])
+    const { wrapper } = await mountTab()
+    await wrapper.find('[data-action="import"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-state="notice"]').text()).toContain(
+      'The file has 1 chapter and the output has 3',
+    )
+  })
+
   it("shows the server's reason when the file cannot be read, and changes nothing", async () => {
     vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/bad.csv'])
-    server.on(IMPORT, () => problem(422, 'chapters.invalid', 'Invalid', 'Line 3: no name'))
+    server.on(IMPORT, () =>
+      problem(422, 'chapters.invalid', 'Invalid', 'this is not a chapter file (CSV)'),
+    )
     const { wrapper, editor } = await mountTab()
     await wrapper.find('[data-action="import"]').trigger('click')
     await flushPromises()
@@ -226,7 +257,30 @@ describe('Import', () => {
     expect(editor.canUndo).toBe(false)
     const notice = wrapper.find('[data-state="notice"]')
     expect(notice.attributes('data-severity')).toBe('error')
-    expect(notice.text()).toContain('Line 3: no name')
+    // One sentence: the server's detail starts in lower case and is no list item of its own.
+    expect(notice.find('strong').text()).toBe(
+      'The chapter file could not be imported: this is not a chapter file (CSV)',
+    )
+    expect(notice.findAll('li')).toHaveLength(0)
+  })
+
+  it('gives the focus back to Import when it was lost while the file was read', async () => {
+    vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/chapters.xml'])
+    const late = deferred<ChapterImport>()
+    server.on(IMPORT, () => late.promise)
+    const { wrapper } = await mountTab()
+    const button = wrapper.find<HTMLButtonElement>('[data-action="import"]')
+    button.element.focus()
+    await button.trigger('click')
+    await vi.waitFor(() => expect(server.count(IMPORT)).toBe(1))
+    // The file browser took the focus and gave it to the page when it closed.
+    const dialog = document.body.appendChild(document.createElement('input'))
+    dialog.focus()
+    dialog.remove()
+    expect(document.activeElement).toBe(document.body)
+    late.resolve({ format: 'xml', chapters: [{ start: 0, name: 'Eins' }], issues: [] })
+    await flushPromises()
+    expect(document.activeElement).toBe(button.element)
   })
 
   it('does nothing when no file is chosen', async () => {
@@ -275,10 +329,42 @@ describe('Export', () => {
   })
 
   it('says why an export failed', async () => {
-    server.on(EXPORT, () => problem(422, 'chapters.none', 'No chapters', 'The output has none'))
+    server.on(EXPORT, () => problem(422, 'chapters.none', 'No chapters', 'the output has none'))
     const { wrapper } = await mountTab()
     await chooseMenuItem(wrapper, 'export', 'CSV')
-    expect(wrapper.find('[data-state="notice"]').text()).toContain('The output has none')
+    const notice = wrapper.find('[data-state="notice"]')
+    expect(notice.find('strong').text()).toBe(
+      'The chapters could not be exported: the output has none',
+    )
+    expect(notice.findAll('li')).toHaveLength(0)
+  })
+
+  it('keeps a focused Export button focusable while the file is made', async () => {
+    const late = deferred<ChapterExport>()
+    server.on(EXPORT, () => late.promise)
+    const { wrapper } = await mountTab()
+    const button = wrapper.find<HTMLButtonElement>('[data-action="export"]')
+    await button.trigger('click')
+    const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (element) => element.textContent?.trim() === 'CSV',
+    )
+    // With Enter, PrimeVue's menu gives the focus back to its button before it runs the item.
+    button.element.focus()
+    item?.querySelector<HTMLElement>('a, .p-menu-item-link, .p-menu-item-content')?.click()
+    await flushPromises()
+    expect(button.element.disabled).toBe(false)
+    expect(button.attributes('aria-disabled')).toBe('true')
+    late.resolve({ format: 'csv', file_name: 'x.csv', content: '' })
+    await flushPromises()
+    expect(document.activeElement).toBe(button.element)
+    expect(button.attributes('aria-disabled')).toBeUndefined()
+  })
+
+  it('gives the focus back to Export when the menu took it away', async () => {
+    server.on(EXPORT, { format: 'csv', file_name: 'x.csv', content: '' })
+    const { wrapper } = await mountTab()
+    await chooseMenuItem(wrapper, 'export', 'CSV')
+    expect(document.activeElement).toBe(wrapper.find('[data-action="export"]').element)
   })
 })
 
@@ -302,6 +388,27 @@ describe('Generate chapters', () => {
     await wrapper.find('[data-field="generate"] input').setValue(true)
     expect(editor.job?.chapters?.generate_every).toBe(10)
   })
+
+  it.each([
+    ['leaving the field', 'blur', {}],
+    ['Enter', 'keydown', { key: 'Enter', code: 'Enter' }],
+  ])(
+    'shows the job’s interval again after the field is cleared and left by %s',
+    async (_name, event, init) => {
+      const { wrapper, editor } = await mountTab({ source: { chapters: [] } })
+      await wrapper.find('[data-field="generate"] input').setValue(true)
+      const field = wrapper.find<HTMLInputElement>('[data-field="generate-every"] input')
+      field.element.focus()
+      field.element.value = ''
+      await field.trigger(event, init)
+      await flushPromises()
+      expect(editor.job?.chapters?.generate_every).toBe(5)
+      expect(field.element.value).toMatch(/^5\b/)
+      expect(editor.canUndo).toBe(true)
+      editor.undo()
+      expect(editor.job?.chapters?.generate_every).toBeNull()
+    },
+  )
 
   it('forgets the remembered interval when another job opens', async () => {
     const { wrapper, editor } = await mountTab({ source: { chapters: [] } })
