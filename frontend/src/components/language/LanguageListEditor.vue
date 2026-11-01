@@ -10,10 +10,7 @@ import { useSystemStore } from '@/stores/system'
 import { type Container, describeTag, writtenAs } from './catalog'
 import LanguagePicker from './LanguagePicker.vue'
 
-/**
- * An ordered list of languages (Settings → Languages, the defaults' languages): add through
- * `LanguagePicker`, remove, reorder by drag and by keyboard.
- */
+/** An ordered list of languages: add with `LanguagePicker`, remove, reorder by drag or keys. */
 const props = defineProps<{
   label: string
   disabled?: boolean

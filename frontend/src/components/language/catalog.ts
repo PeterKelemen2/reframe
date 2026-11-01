@@ -56,9 +56,9 @@ function withSubtags(name: string, parts: (string | undefined)[]): string {
 }
 
 /**
- * The language of a typed code or tag (`hun`, `ger-AT`, `pt_br`, `zh-hans-tw`): a listed
- * entry, or one made from a listed base language with a known script and region. `undefined`
- * for anything else, variant and extension subtags included.
+ * The language of a typed code or tag (`ger-AT`, `pt_br`): a listed entry, or one made from a
+ * listed base language with a known script and region. `undefined` for anything else, variant
+ * and extension subtags included.
  */
 export function resolveTag(languages: readonly Language[], text: string): Language | undefined {
   const typed = text.trim().replaceAll('_', '-')
@@ -153,7 +153,7 @@ function searchable(language: Language): Searchable {
   return found
 }
 
-/** Best first: the tag, an ISO code, an exact name, a name prefix, a word prefix, a substring. */
+/** Lower is better; -1 when the language does not match. */
 function rank(language: Language, folded: string, typedTag: string | undefined): number {
   const s = searchable(language)
   if (language.tag === typedTag || folded === s.tag) return 0
@@ -173,9 +173,8 @@ export interface SearchResult {
 }
 
 /**
- * The picker's search. An empty query gives every favourite, then every other language in
- * list order. A typed tag whose base language is listed (`de-AT`) adds an entry for it.
- * `exclude` hides languages by tag (an ordered list's members).
+ * An empty query gives every favourite, then every other language in list order. A typed tag
+ * whose base language is listed (`de-AT`) adds an entry for it. `exclude` hides languages by tag.
  */
 export function searchLanguages(
   languages: readonly Language[],
