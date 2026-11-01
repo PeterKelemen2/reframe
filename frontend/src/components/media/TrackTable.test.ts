@@ -274,6 +274,15 @@ describe('the scans in the source tables', () => {
     expect(document.activeElement).toBe(button(wrapper, 'Measure the bitrate of track 1')!.element)
   })
 
+  it('leaves the focus alone when a scan starts while it is elsewhere', async () => {
+    const { wrapper, scans } = mountScans('audio', probedSource('dts-hd-ma').audio!)
+    const toggle = wrapper.findAll<HTMLButtonElement>('.track-table__toggle')[1]!.element
+    toggle.focus()
+    scans.runs = [run('bitrate', 1, null)]
+    await flushPromises()
+    expect(document.activeElement).toBe(toggle)
+  })
+
   it('gives the focus to the row when the measured value replaces the scan', async () => {
     const audio = probedSource('dts-hd-ma').audio!
     const { wrapper, scans } = mountScans('audio', audio)
@@ -283,6 +292,16 @@ describe('the scans in the source tables', () => {
     await wrapper.setProps({ streams: [measuredBitrate(audio[0]!), ...audio.slice(1)] })
     await flushPromises()
     expect(document.activeElement).toBe(wrapper.findAll('.track-table__toggle')[0]!.element)
+  })
+
+  it('leaves the focus alone when a scan control goes away without it', async () => {
+    const audio = probedSource('dts-hd-ma').audio!
+    const { wrapper } = mountScans('audio', audio)
+    const toggle = wrapper.findAll<HTMLButtonElement>('.track-table__toggle')[1]!.element
+    toggle.focus()
+    await wrapper.setProps({ streams: [measuredBitrate(audio[0]!), ...audio.slice(1)] })
+    await flushPromises()
+    expect(document.activeElement).toBe(toggle)
   })
 
   it('groups the digits of a bitrate', () => {
@@ -323,6 +342,12 @@ describe('the scans in the source tables', () => {
       ended: run('subtitle', 2, null),
       streams: () => [{ ...pgsStreams()[1]!, event_count: 1 }],
       said: 'Track 2: one event counted.',
+    },
+    {
+      what: 'a count that found nothing to show',
+      ended: run('subtitle', 2, null),
+      streams: () => [pgsStreams()[1]!],
+      said: 'Counting the events of track 2: done.',
     },
     {
       what: 'every track’s events',

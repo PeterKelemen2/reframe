@@ -115,9 +115,8 @@ function doneText(run: ScanRun, stream: SourceStream | undefined, n: number): st
       ? t('media.scan.ended.bitrate', { n, value: kbpsText(value, locale.value) })
       : t('media.scan.ended.noBitrate', { n })
   }
-  if (stream?.kind === 'audio' && run.kind === 'loudness') {
-    const found = loudnessOf(stream)
-    if (found === undefined) return t('media.scan.ended.done', { scan: progressText(run, n) })
+  const found = stream?.kind === 'audio' && run.kind === 'loudness' ? loudnessOf(stream) : undefined
+  if (found !== undefined) {
     return t('media.scan.ended.loudness', {
       n,
       integrated: measured(found.integrated, 'lufs'),

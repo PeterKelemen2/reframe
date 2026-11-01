@@ -141,6 +141,18 @@ describe('bulk edit of the selected output tracks', () => {
     expect(document.activeElement).toBe(checkbox(wrapper, 'all').element)
   })
 
+  it('does not move the focus after Cancel, since Edit selected… is still there', async () => {
+    const { wrapper } = await mountEditor(AudioTab)
+    await checkbox(wrapper, '1').setValue(true)
+    const dialog = await openDialog(wrapper)
+    document.querySelector<HTMLButtonElement>('[data-action="bulk-cancel"]')!.click()
+    await flushPromises()
+    dialog.findComponent({ name: 'Dialog' }).vm.$emit('after-hide')
+    await flushPromises()
+    expect(wrapper.find('[data-action="bulk-edit"]').exists()).toBe(true)
+    expect(document.activeElement).not.toBe(checkbox(wrapper, 'all').element)
+  })
+
   it('keeps the selection while a selected track is edited', async () => {
     const { wrapper, editor } = await mountEditor(AudioTab)
     await checkbox(wrapper, '1').setValue(true)

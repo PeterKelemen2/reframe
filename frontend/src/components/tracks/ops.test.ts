@@ -274,6 +274,17 @@ function named(track: AudioOutputTrack, name: string): AudioOutputTrack {
   return { ...track, metadata: { ...track.metadata!, name } }
 }
 
+/** An external file and what is written for it say the same language. */
+function file(path: string, language: string | null): SubtitleOutputTrack {
+  return {
+    action: 'copy',
+    convert_to: null,
+    forced_only: false,
+    source: { path, language, name: null, offset_ms: 0, charset: null },
+    metadata: { ...audioTrack().metadata!, language },
+  }
+}
+
 describe('the bulk selection through a change of the list', () => {
   const aac = audioTrack({ source_stream: 1, encoder: 'aac' })
   const ac3 = audioTrack({ source_stream: 1, encoder: 'ac3', bitrate: 192 })
@@ -290,6 +301,12 @@ describe('the bulk selection through a change of the list', () => {
   it('keeps the places when the metadata of several tracks changes', () => {
     const after = [named(aac, 'A'), named(ac3, 'B'), other]
     expect(followSelection([aac, ac3, other], after, [0, 2])).toEqual([0, 2])
+  })
+
+  it('keeps the places when the language of several external files changes', () => {
+    const before = [file('/a.srt', null), file('/b.srt', null)]
+    const after = [file('/a.srt', 'hu'), file('/b.srt', 'hu')]
+    expect(followSelection(before, after, [1])).toEqual([1])
   })
 
   it('keeps the places when the settings of one track change', () => {
