@@ -84,10 +84,27 @@ const expanded = computed<Record<string, boolean>>(() =>
 
 /** The video encoder the job uses: it may differ from its preset's (an edited job). */
 function encoderName(job: QueueJob): string | null {
+  if (job.settings.output?.edit_in_place) return t('queue.table.metadataEdit')
   const video = job.settings.video
   if (video === undefined) return null
   if (video.passthrough) return t('queue.table.videoCopy')
   return system.definitions?.video_encoders?.[video.encoder]?.label ?? video.encoder
+}
+
+function inPlaceTip(job: QueueJob): { value: string; id: string } {
+  return {
+    value: t('queue.table.inPlaceTip', { path: job.settings.source.path }),
+    id: `queue-in-place-${job.id}`,
+  }
+}
+
+// PrimeVue's tooltip shows on hover, or with `.focus` on focus only: this one does both.
+function showTip(event: FocusEvent): void {
+  event.target?.dispatchEvent(new MouseEvent('mouseenter'))
+}
+
+function hideTip(event: FocusEvent): void {
+  event.target?.dispatchEvent(new MouseEvent('mouseleave'))
 }
 
 /** A failed job's issues, without the ones its error already quotes. */
@@ -350,10 +367,14 @@ async function move(index: number, to: number): Promise<void> {
         <template #body="{ data }">
           <span
             v-if="data.job.settings.output?.edit_in_place"
-            v-tooltip.top="t('queue.table.inPlaceTip', { path: data.job.settings.source.path })"
+            v-tooltip.top="inPlaceTip(data.job)"
             class="queue-table__in-place"
+            tabindex="0"
+            :aria-describedby="inPlaceTip(data.job).id"
             data-field="output"
             data-in-place
+            @focus="showTip"
+            @blur="hideTip"
           >
             <FilePenLine :size="14" aria-hidden="true" />
             {{ t('queue.table.inPlace') }}
