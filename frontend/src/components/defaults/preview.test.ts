@@ -25,7 +25,26 @@ function audio(output: Partial<AudioOutputTrack>): AudioOutputTrack {
 }
 
 function decision(overrides: Partial<TrackDecision>): TrackDecision {
-  return { source_stream: 1, reason: 'why', ...overrides }
+  return {
+    source_stream: 1,
+    kind: 'audio',
+    selected: true,
+    reason: 'why',
+    measure: false,
+    ...overrides,
+  }
+}
+
+function subtitle(output: object): string[] {
+  return outputLines(
+    decision({
+      kind: 'subtitle',
+      subtitle_outputs: [{ forced_only: false, source: 4, ...output } as never],
+    }),
+    undefined,
+    definitions,
+    t,
+  )
 }
 
 describe('the output column of the preview', () => {
@@ -64,16 +83,6 @@ describe('the output column of the preview', () => {
   })
 
   it('names what happens to a subtitle', () => {
-    const subtitle = (output: object) =>
-      outputLines(
-        decision({
-          kind: 'subtitle',
-          subtitle_outputs: [{ forced_only: false, source: 4, ...output } as never],
-        }),
-        undefined,
-        definitions,
-        t,
-      )
     expect(subtitle({ action: 'copy' })).toEqual(['Copy'])
     expect(subtitle({ action: 'burn' })).toEqual(['Burn in'])
     expect(subtitle({ action: 'burn', forced_only: true })).toEqual(['Burn in (forced only)'])
