@@ -338,4 +338,85 @@ line under the actions says why); the preview's per-file issue lists.
 
 ## Task E — F-17 flow 2
 
-(placeholder: task E writes this section)
+Built: `frontend/e2e/flow2-season-group.spec.ts`, `readSettings` and `changeSettings` in
+`e2e/support/app.ts`, and one fixture more for the servers in `e2e/support/servers.ts`:
+`--fixtures multitrack,Anime.Show.S01.BluRay.x264-GRP`.
+
+The flow: Settings → Output's *Word separator* set to *Space* (checked through
+`GET /api/settings`); the panel's *Open folder…* → the file browser → a click on
+`Anime.Show.S01.BluRay.x264-GRP` (the crumb shows it) → *Choose this folder*; the tree has one
+top-level item, the group `Anime Show S01` with `12 files`, members E01–E12 in order, E05 and
+E11 near, E05's difference `1 extra track (eng AC-3 2.0 "Commentary")`; *Edit group* → the
+banner `Editing group "Anime Show S01" (12 files) — showing E01`; Audio: output track 1 encoder
+*Opus*, mixdown *5.1*, bitrate *448 kb/s*, name `Japanese 5.1`; track 2 *AC-3*, *5.1*,
+*640 kb/s*, `English 5.1`; Subtitles: track 2 named `Full subtitles`; the banner's *Check group*
+→ the matrix dialog: rows E01–E12, row marks ✓ except E05 ⚠ and E11 ✗, E11's A2 cell ✗ and S1
+cell ≈; E11's row mark → *Make the rule optional* → E11's A2 cell – and the row marks ✓ except
+E05 and E11 ⚠; the dialog closed; Summary → the Output card's *Template*
+`{name} - S{season:02}E{episode:02}< - {sub_title}>` → its preview
+`Anime Show - S01E01 - Pilot.mkv`; the banner's *Add group to queue* → `Queued 12 jobs`; then
+`GET /api/queue`: the 12 new jobs by position are named `Anime Show - S01E01 - Pilot.mkv` …
+`Anime Show - S01E12 - Homecoming.mkv`, and each has audio `libopus 5.1 448 "Japanese 5.1"`,
+`ac3 5.1 640 "English 5.1"` (E11: the first only).
+
+### Choices where the plan and the brief leave one
+
+1. **The folder is opened with the panel's *Open folder…***, not `Ctrl+O`: `Ctrl+O` opens files,
+   and choosing twelve files would test the file picker's multi-select, not "open a season
+   folder".
+2. **The viewport is 1600×1200** for this flow only, so the matrix's virtual scroller renders
+   all twelve rows (60 px each) and every row mark is checked at once. The matrix is not
+   scrolled.
+3. **The word separator is set through the Settings view** (as a user does before *Edit group*)
+   and given back through `PUT /api/settings` in an `afterEach`, so a failed flow 2 does not
+   change the names of the tests after it. The queue is given back by the existing `ownQueue`
+   fixture; the flow does not encode the jobs.
+4. **The derive is checked at the server.** Besides the names, the queued jobs' audio tracks
+   are compared for all twelve files, so an edit that does not reach the template fails at the
+   queue even if the page shows it. The subtitle edit is a name (E01's flags are the example's
+   already, Task A); its derive is what makes the S1 and S2 columns explicit rules.
+5. **Rows and cells are found by the screens' own hooks**: the tree's `aria-level`,
+   `data-group`, `data-match` and `data-field="difference"`; the matrix's `.matrix__label`,
+   `.matrix__mark` and `data-cell="audio:1"` / `"subtitle:0"`; the Output card's
+   `data-card="output"` and `naming-result`. Buttons and fields by their role and name. No hook
+   was missing.
+6. Only the S01 folder is a fixture of the servers: flow 2 does not open S02.
+
+### Checked against the real server (2026-11-01, pinned FFmpeg, headless Chromium and Firefox)
+
+With the default preset and the separator *Space*, the matrix's names before the template are
+`Anime Show S01E01 Pilot.mkv` (the settings' episode template `{main_title}`). E11's A2 cell is
+`✗ none` "no track matches", its S1 cell `≈ #2` "matched without title"; after the fix A2 is
+`– none` "no track matches: skipped (the rule is optional)". E05's subtitles are `#4` and `#5`
+(its commentary is `#3`). The Output card's preview of E01 shows the template's name at once;
+the queued names are the server's resolution of every file. Opening the folder opens E01 as one
+job (the slim banner "In group …" with *Edit group*). Screenshots (light Chromium, dark Firefox)
+of the panel, the matrix before and after the fix and the queued state show what the checks
+read; the matrix's columns, marks and messages are readable in both themes.
+
+### Mutations
+
+Each made once in `src/`, `dist/` rebuilt, flow 2 run in Chromium and Firefox against a server
+started like `npm run e2e`'s, then the code restored and touched:
+
+| Mutation | Result |
+|----------|--------|
+| `panelItems` never forms a group (`open.length < 99`): the folder shows as 12 single files | failed: 12 top-level tree items, not 1 |
+| the derive drops the `audio` section (`sections.filter(s => s !== 'audio')`) | failed: A2's drop-downs close under the click when the shown job snaps back to the template (test timeout at A2's mixdown) |
+| `applyRowFix` skips a template fix (`return` before `applyFix`) | failed: E11's A2 cell `✗`, expected `–` |
+| `useQueueGroup` queues the rows reversed | failed: the queued names E12 … E01 |
+| a naming edit derives no `naming` section (`group.ts`) | failed at the queue: all 12 names differ from the template's (the Output card's preview of E01 showed the template's name, so only the queue check catches it) |
+
+### Runs and clean-up
+
+`npm run e2e` (flows 1, 2 and 3 and the 7 layout checks in each browser): 20 passed, 34.6 s,
+then 20 passed, 35.3 s. After a forced failure (E11's row mark expected ✓ after the fix: 2
+failed at that line, 18 passed, the tests after flow 2 unaffected) and after SIGINT to the
+process group of `npm run e2e` 3 s into flow 2 (2 interrupted, 16 did not run, npm exit 130):
+no process on 8750 or 8751 and no e2e home (`/tmp/reframe-dev-*` whose output root holds
+`chapters.mkv`) left. Other agents' servers (8782, 8790) and their `/tmp/reframe-dev-*` folders
+were running at the same time and were not touched.
+
+Not built: a check of E05's commentary not being selected (04 §Example step 3) beyond its
+S1 / S2 columns; the matrix's candidate picker, *Problems only* and the naming column's edits
+(task C's checks); encoding the queued jobs.
