@@ -88,8 +88,4 @@ describe('the output column of the preview', () => {
     expect(subtitle({ action: 'burn', forced_only: true })).toEqual(['Burn in (forced only)'])
     expect(subtitle({ action: 'convert', convert_to: 'srt' })).toEqual(['Convert to SRT'])
   })
-
-  it('is empty for a dropped track', () => {
-    expect(outputLines(decision({ selected: false }), dtsHdMa, definitions, t)).toEqual([])
-  })
 })

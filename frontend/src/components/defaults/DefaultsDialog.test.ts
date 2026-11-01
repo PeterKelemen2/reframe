@@ -66,10 +66,27 @@ const action = (name: string) =>
 const puts = () => server.requests.filter((request) => request.method === 'PUT')
 
 function escape(target: Element): void {
-  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+  )
 }
 
 describe('the defaults dialog', () => {
+  it('closes on Escape when the focus is on no control, unless a dialog of its own is above it', async () => {
+    await openDialog('job', MINE)
+    action('save-to-preset').click()
+    await flushPromises()
+    escape(document.body)
+    await flushPromises()
+    expect(useDefaultsStore().visible).toBe(true)
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    document.body.replaceChildren()
+    await openDialog('job', MINE)
+    escape(document.body)
+    await flushPromises()
+    expect(useDefaultsStore().visible).toBe(false)
+  })
+
   it('offers a job with a built-in preset Apply and Save as new preset…', async () => {
     await openDialog('job', BUILT_IN)
     expect(footer()).toEqual(['cancel', 'save-as-new', 'apply'])

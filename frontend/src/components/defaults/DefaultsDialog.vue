@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useEventListener } from '@vueuse/core'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import { computed, ref } from 'vue'
@@ -65,11 +66,13 @@ function onKey(event: KeyboardEvent): void {
   defaults.close()
 }
 
-function onConfirmKey(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') return
-  event.stopPropagation()
-  confirming.value = false
-}
+// A click on text in the dialog leaves the focus nowhere, so the key never reaches the dialog.
+useEventListener(document, 'keydown', (event: KeyboardEvent) => {
+  const lost = event.target === document.body || event.target === document.documentElement
+  if (event.key !== 'Escape' || !lost || !defaults.visible) return
+  const top = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].at(-1)
+  if (top?.classList.contains('defaults-dialog')) defaults.close()
+})
 
 async function confirmSave(): Promise<void> {
   confirming.value = false
@@ -181,8 +184,6 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
     class="defaults-confirm"
     :style="{ width: 'min(30rem, calc(100vw - 2rem))' }"
     :draggable="false"
-    :close-on-escape="false"
-    :pt="{ root: { onKeydown: onConfirmKey } }"
   >
     <p class="defaults-confirm__text">
       {{
