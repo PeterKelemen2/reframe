@@ -16,8 +16,8 @@ export interface OutputChaptersState {
 }
 
 /**
- * `POST /api/jobs/chapters` for the open job: at once for a new job, 250 ms after an edit of
- * what the list depends on. The newest request wins.
+ * The output's chapters for the open job: at once for a new job, 250 ms after an edit of what
+ * the list depends on. The newest request wins.
  */
 export function useOutputChapters(): OutputChaptersState {
   const editor = useEditorStore()

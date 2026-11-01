@@ -34,7 +34,6 @@ import { platform } from '@/platform'
 import { useEditorStore } from '@/stores/editor'
 import { useValidationStore } from '@/stores/validation'
 
-// Reads and writes the editor store; takes no props.
 const { t } = useI18n()
 const editor = useEditorStore()
 const validation = useValidationStore()
@@ -69,7 +68,6 @@ function setGenerate(on: boolean): void {
   editor.set('/chapters/generate_every', on ? (rememberedEvery ?? DEFAULT_EVERY) : null)
 }
 
-/** What the interval field shows: the job's interval. */
 const every = ref<number | null>(null)
 watch(
   () => settings.value?.generate_every ?? null,
@@ -84,13 +82,13 @@ async function setEvery(value: number | null | undefined): Promise<void> {
     return
   }
   // A cleared field is no interval (the switch turns generation off): it shows the job's again.
-  // PrimeVue's field keeps what it shows until its value changes, so the value changes twice.
+  // PrimeVue's field keeps its shown value until the model changes, so the model changes twice.
   every.value = null
   await nextTick()
   every.value = current
 }
 
-/** The fixes of the interval's issues (*Generate a chapter every N minutes*), each one button. */
+/** The fixes of the interval's issues, one button each. */
 const everyFixes = computed<Fix[]>(() => {
   const seen = new Set<string>()
   return validation

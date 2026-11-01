@@ -1,5 +1,4 @@
-// Test data shaped as the server's `jobs/chapters` answers for testdata's chapters.mkv
-// (Opening 0–1 s, Part One 1–2.5 s, Part Two 2.5–4 s).
+// Test data shaped as the server's `jobs/chapters` answers for testdata's chapters.mkv.
 import type { JobSettings, OutputChapter, OutputChapters } from '@/api/types'
 
 export const SOURCE_NAMES = ['Opening', 'Part One', 'Part Two']

@@ -258,7 +258,7 @@ describe('Import', () => {
     expect(editor.canUndo).toBe(false)
     const notice = wrapper.find('[data-state="notice"]')
     expect(notice.attributes('data-severity')).toBe('error')
-    // One sentence: the server's detail starts in lower case and is no list item of its own.
+    // One sentence from the server: shown as text, not as a list.
     expect(notice.find('strong').text()).toBe(
       'The chapter file could not be imported: this is not a chapter file (CSV)',
     )

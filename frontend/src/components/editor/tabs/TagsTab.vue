@@ -15,7 +15,6 @@ import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 import { useValidationStore } from '@/stores/validation'
 
-// Reads and writes the editor store; takes no props.
 const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
@@ -43,8 +42,8 @@ function useFix(name: TagName, template: string, inputId: string): void {
 }
 
 /**
- * The validation's issues, and those of `jobs/tags` with a code the validation does not report
- * here: the status bar and the Issues card count the validation's, at its severity.
+ * The validation's issues, and the tags answer's issues with a code the validation lacks. The
+ * status bar and the Issues card count only the validation's.
  */
 function issuesOf(name: TagName): ValidationIssue[] {
   const path = `tags.${name}`
