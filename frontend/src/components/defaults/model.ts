@@ -107,10 +107,7 @@ export function newRule(catchAll: AudioCodecRule | undefined): AudioCodecRule {
 
 const RULE_PATH = /^audio_defaults\.codec_rules\[(\d+)\]/
 
-/**
- * An issue path with the rule's index replaced by its key (`audio_defaults.codec_rules[k7]`), so
- * that an issue stays at its rule when the rules are moved before the next answer.
- */
+/** Replaces the rule index in an issue path with its key, so the issue follows the rule. */
 export function keyedPath(path: string, keys: readonly number[]): string {
   return path.replace(RULE_PATH, (whole, index: string) => {
     const key = keys[Number(index)]

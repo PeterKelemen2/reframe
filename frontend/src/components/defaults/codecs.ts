@@ -8,7 +8,7 @@ import type { Option } from './options'
 
 type AudioEncoderDef = Schemas['AudioEncoderDef']
 
-/** A rule's codec: an audio encoder id, or this. */
+/** A rule's codec: an audio encoder id, or PASSTHRU for the source as it is. */
 export const PASSTHRU = 'passthru'
 
 /** The codec choices of a rule and an extra output, and the encoder a codec stands for. */
@@ -17,7 +17,6 @@ export function useCodecOptions() {
   const system = useSystemStore()
   const defaults = useDefaultsStore()
 
-  /** The encoders this FFmpeg has, then Passthru; `current` is kept when it is missing. */
   function options(current: string): Option<string>[] {
     const encoders = Object.values(system.definitions?.audio_encoders ?? {})
       .filter(

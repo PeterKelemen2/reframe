@@ -18,8 +18,7 @@ import PassthruForm from './PassthruForm.vue'
 import SelectionForm from './SelectionForm.vue'
 import SubtitleOptions from './SubtitleOptions.vue'
 
-// The audio or subtitle defaults dialog with its live preview; opened through the defaults
-// store, mounted once by `App.vue`.
+// The audio or subtitle defaults dialog. The defaults store opens it; `App.vue` mounts it once.
 const { t } = useI18n()
 const defaults = useDefaultsStore()
 
@@ -60,7 +59,7 @@ function onVisible(open: boolean): void {
   if (!open) defaults.close()
 }
 
-/** Escape closes this dialog only when it is pressed in it: the dialogs it opens get their own. */
+/** Escape closes this dialog only when it is pressed in it; the dialogs it opens get their own. */
 function onKey(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || event.defaultPrevented) return
   event.stopPropagation()

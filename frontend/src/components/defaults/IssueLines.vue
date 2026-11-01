@@ -6,7 +6,7 @@ import type { Fix, ValidationIssue } from '@/api/types'
 import { bySeverity, SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
 import { useDefaultsStore } from '@/stores/defaults'
 
-/** The preview's issues of one rule, field or the whole defaults; `fixes` adds their fix buttons. */
+/** The issues of one rule, field or the whole defaults; `fixes` adds their fix buttons. */
 const props = defineProps<{
   issues: readonly ValidationIssue[]
   id?: string
