@@ -1061,9 +1061,41 @@ restored (M3, the plural argument dropped, survived the "1 chapter" test, becaus
 then takes the first form. The "2 chapters" test kills it, and M3b, the plural by the
 output's count, kills the "1 chapter" test).
 
-**Not changed, seen at 390 px**: the Chapters tab's header buttons (*Import…*, *Export*,
-*Reset names*) do not wrap, so the tab is wider than the window. That is `Section`'s header
-(`components/base/`), not FD's files.
+**Seen at 390 px**: the Chapters tab's header buttons (*Import…*, *Export*, *Reset names*) did
+not wrap, so the tab was wider than the window. Fixed after FA's merge (below).
+
+**After FA's merge** (2026-11-01, real server on 8770, light and dark):
+
+- Each tag error of FA's validation (`naming.template_syntax`, `naming.unknown_variable`,
+  `naming.bad_format_spec`, `metadata.nul_character`, `metadata.tag_too_long`) shows once at its
+  field, as an error there, in the status bar and in the Issues card, with its fixes. *Add to
+  queue* is off. R2's `tagerror.mjs` gives two errors at Title and "2 errors". *Remove the NUL
+  characters* works and leaves the focus in the field. A NUL in an audio track's name shows once.
+- `chapters.too_many`: its fix is a button at the interval field. A 20-minute source at 0.01 min
+  → *Generate a chapter every 0.02 minutes* → 1000 generated chapters, and the focus is in the
+  interval. L2: an untitled chapter shows *No name* before and after another one is renamed, and
+  `jobs/chapters` gives it `""`. This replaces Task F's choice 1 ("`Chapter N` for an untitled
+  chapter").
+- **L3, done in `editor/template.ts`** as the core's `derive_template` decides: `names: null` →
+  `source`; exactly *Chapter 1 … Chapter N* → `generated`; other names → the preset's own policy.
+  Under a `generated` user preset, a one-chapter rename gives no marker and *To the source
+  names* gives `generated → source`. **The translated name: not translated.** *To Chapter 1,
+  Chapter 2, …* writes the core's `Chapter N` (`numberedChapterName`), because the names are
+  file content and must be what the `generated` policy writes. Only the menu label is
+  translated. This replaces Task F's choice 3 ("the label is translated").
+  **Open for the lead**: a source without chapters drafted from a `generated` preset has
+  `names: null`, so its job shows *modified* at once (checked on `multitrack.mkv`). The core's
+  `derive_template` gives the same. A rule that knows whether the source has chapters would keep
+  the preset's policy there, but `templateOf` is given no source (its caller is `editor.ts`).
+- **`Section`'s header** wraps: actions that do not fit beside the title go below it and wrap
+  among themselves. Measured before and after on the editor tabs, Settings and the presets view:
+  no change at 1440 px. At 390 px the cut headers of Chapters, the audio and subtitle track lists,
+  Settings → Tools and the presets view now fit. Still too wide at 390 px: `Field`'s inline
+  label column (Video, Settings, the Chapters switches), which is not a header.
+
+Tests: `template.test.ts` (the policy table, both wrong cases fail before), `ChaptersTab.test.ts`
++1 (the interval's fix, fails before), `chapters.test.ts` +1 (an untitled chapter stays
+untitled). 8 more mutations (M27–M34), all killed. `npm run e2e`: 18 passed.
 
 ## M6 demo
 
