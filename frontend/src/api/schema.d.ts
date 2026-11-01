@@ -3091,9 +3091,16 @@ export interface components {
             source_ids: string[];
             /**
              * Container
-             * @description The output container the codec rules check against; ``null``: a new template's.
+             * @description The output container the codec rules check against; ``null``: the template's, else a
+             *     new template's.
              */
             container?: ("mkv" | "mp4" | "webm") | null;
+            /**
+             * @description The template that *Apply* drafts with (``jobs/explain``): the preview is that template
+             *     with these two defaults put in, so its explicit ``audio_rules`` and ``subtitle_rules``
+             *     apply as they do there. ``null``: only the two defaults.
+             */
+            template?: components["schemas"]["JobTemplate"] | null;
         };
         /**
          * Definitions

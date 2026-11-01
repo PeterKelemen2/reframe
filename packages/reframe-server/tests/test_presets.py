@@ -208,6 +208,50 @@ async def test_diff_against_a_preset(api: Api) -> None:
     assert (unknown.status_code, unknown.json()["code"]) == (404, "preset.not_found")
 
 
+ENGLISH_AT_96 = {
+    "selector": {"kind": "audio", "languages": ["en"]},
+    "multiple": True,
+    "settings": {
+        "kind": "audio", "action": "encode", "encoder": "aac", "mixdown": "stereo", "bitrate": 96,
+    },
+}  # fmt: skip
+
+
+def outputs(draft: dict[str, Any]) -> list[tuple[Any, ...]]:
+    audio = [(t["source_stream"], t["encoder"], t["bitrate"]) for t in draft["audio"]]
+    return [*audio, *((t["source"],) for t in draft["subtitles"])]
+
+
+async def test_the_defaults_preview_of_a_template_is_what_apply_drafts(api: Api) -> None:
+    sid = await add_source(api)
+    preset = (await api.client.get(f"/api/presets/{BUILT_IN}")).json()
+    template = {k: v for k, v in preset.items() if k not in ("id", "name", "category", "built_in")}
+    template["audio_rules"] = [ENGLISH_AT_96]
+    subtitles = {"selection": {"languages": ["ja"]}}
+    body = {
+        "audio_defaults": template["audio_defaults"],
+        "subtitle_defaults": subtitles,
+        "source_ids": [sid],
+    }
+
+    async def post(path: str, data: dict[str, Any]) -> Any:
+        response = await api.client.post(path, json=data)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    [preview] = await post("/api/presets/defaults/preview", {**body, "template": template})
+    applied = await post(
+        "/api/jobs/explain",
+        {"source_id": sid, "template": {**template, "subtitle_defaults": subtitles}},
+    )
+    assert outputs(preview) == outputs(applied)
+    assert outputs(preview)[:2] == [(2, "aac", 96), (3, "aac", 96)]
+    [defaults_only] = await post("/api/presets/defaults/preview", body)
+    assert outputs(defaults_only)[:2] != outputs(preview)[:2]
+    own = await post("/api/jobs/explain", {"source_id": sid, "template": template})
+    assert outputs(own) != outputs(preview)
+
+
 async def test_defaults_preview_explains_each_source(api: Api) -> None:
     first, second = await add_source(api), await add_source(api, "Show S01E02.mkv")
     response = await api.client.post(
