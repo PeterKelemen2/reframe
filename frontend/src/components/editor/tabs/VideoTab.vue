@@ -30,7 +30,6 @@ import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 import { useToastStore } from '@/stores/toasts'
 
-// Reads and writes the editor store; takes no props.
 const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
@@ -525,7 +524,7 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
   padding: var(--rf-space-4) var(--rf-space-4) 0;
 }
 
-/* The command drawer sits at the bottom of the panel, and stays there while the panel scrolls. */
+/* The command drawer stays at the panel's foot while the panel scrolls. */
 .video-tab__content > :last-child {
   margin-top: auto;
 }
