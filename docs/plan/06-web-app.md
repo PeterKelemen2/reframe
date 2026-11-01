@@ -516,9 +516,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
 
 ### F-10 Audio and subtitles tabs
-- [ ] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
-      button for unknown bitrates. (M4 built all but the "Measure" button, which is M6;
-      [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
+- [x] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
+      button for unknown bitrates. (M4 built the table, [decision 0063](../decisions/0063-m4-frontend-mvp.md),
+      "Task I"; M6 the "Measure" button, the subtitle event count and the loudness measurement,
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task B".)
 - [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
       (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
 - [ ] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
