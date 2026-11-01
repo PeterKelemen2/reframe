@@ -23,7 +23,8 @@ export interface BrowseRequest {
   defaultPath: string | null
 }
 
-// The server lists these without being asked: reframe.probe.MEDIA_EXTENSIONS.
+// The media extensions the server lists when asked for none: a filter within them needs
+// no other request.
 const MEDIA_EXTENSIONS = new Set([
   '3gp',
   'asf',

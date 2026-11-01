@@ -115,7 +115,6 @@ const selected = () =>
 const crumbs = () => $$('[data-role="crumb"]').map((crumb) => crumb.textContent?.trim())
 const list = () => $('[role="listbox"]') as HTMLElement
 const entry = (name: string) => $(`.file-browser__entry[data-name="${name}"]`) as HTMLElement
-/** The `extensions` of each folder listing asked for. */
 const listedExtensions = () =>
   server.requests
     .filter((request) => request.path === '/api/fs/list')
