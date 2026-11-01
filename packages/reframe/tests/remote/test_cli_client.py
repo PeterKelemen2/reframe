@@ -658,6 +658,32 @@ async def test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them(
     """While the command is stopped, its running job is paused in the owner, and no connection
     is left whose end would cancel it (a stopped process cannot answer the server's
     keepalive). When the command is continued it resumes the job and follows it to its end."""
+    await _stop_and_continue(server, monkeypatch, capsys)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no job control on Windows")
+async def test_ctrl_z_pauses_a_job_whose_start_the_command_has_not_seen(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The command's copy of the queue can be behind the owner: a job that has just started
+    still shows as waiting. It is paused all the same."""
+    real = RemoteQueue._apply_state
+    missed: list[object] = []
+
+    async def behind(self: RemoteQueue, event: Any) -> None:
+        if event.state is JobState.RUNNING and not missed:
+            missed.append(event)
+        else:
+            await real(self, event)
+
+    monkeypatch.setattr(RemoteQueue, "_apply_state", behind)
+    await _stop_and_continue(server, monkeypatch, capsys)
+    assert missed
+
+
+async def _stop_and_continue(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     server.api.fake.set_scenario(scenario(ends("A.mkv", seconds=2)))
     server.publish()
     seen: list[tuple[JobState | None, int]] = []

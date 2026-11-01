@@ -2342,6 +2342,8 @@ async def _stop_here(following: _Following, jobs: CommandJobs) -> bool:
         paused: list[str] = []
         loop.add_signal_handler(signal.SIGTSTP, lambda: None)  # one stop at a time
         try:
+            # The copy can be behind the owner: a job that has just started still shows as waiting.
+            await session.remote.refresh()
             for job_id in jobs.open():
                 job = session.queue.get(job_id)
                 if job is not None and job.state is JobState.RUNNING:

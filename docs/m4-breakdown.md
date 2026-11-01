@@ -644,8 +644,9 @@ touches its files).
 ## Where M4 stands (2026-10-30, stopped by the owner; updated 2026-11-01)
 
 Everything the scope lists is built, merged on `m4-frontend-mvp`, reviewed twice, and every
-blocker and major found is fixed with a test. Since the stop (2026-11-01): R2-25 is fixed, and
-the CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml` (never run). What is
+blocker and major found is fixed with a test. Since the stop (2026-11-01): R2-25 is fixed, the
+CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml` (never run), and the flaky Ctrl+Z
+test is fixed (a race in the code, 0061 "Follow-up, 2026-11-01"). What is
 left before the owner can merge:
 
 1. **The M4 demo**: the headless run is done (2026-11-01, 0063 "M4 demo, 2026-11-01": one defect
@@ -659,14 +660,7 @@ left before the owner can merge:
    duplicate's automatic free name; from the headless demo: the queue table's narrow Source and
    Output columns at 1440 px, Summary's issue list below the Output card, a second opened file
    not selected while another is open.
-3. **A flaky test**:
-   `packages/reframe/tests/remote/test_cli_client.py::test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them`
-   fails about 1 run in 12, also alone: `seen == [(PAUSED, 0)]` gets `(RUNNING, 0)`. Unverified
-   guess: `_stop_here` in `packages/reframe/src/reframe/cli.py` pauses only the jobs that its
-   own copy of the queue shows as RUNNING, while the test waits for the owner's state.
-   Reproduce with a loop first; then fix the code (with a follow-up to decision 0061) or the
-   test.
-4. **The docs reconciliation and the final checks** before a merge: the F rows say "on
+3. **The docs reconciliation and the final checks** before a merge: the F rows say "on
    `m4-frontend-mvp`"; the roadmap's M4; a final run of all the checks after the changes above,
    with the full Python suite (the last full run, 2026-11-01: 7393 passed, 2 skipped, 1 failed:
    the flaky test), `npm run test:server` and `npm run e2e`.
