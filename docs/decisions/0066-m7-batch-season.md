@@ -420,3 +420,71 @@ were running at the same time and were not touched.
 Not built: a check of E05's commentary not being selected (04 §Example step 3) beyond its
 S1 / S2 columns; the matrix's candidate picker, *Problems only* and the naming column's edits
 (task C's checks); encoding the queued jobs.
+
+## Review, 2026-11-01
+
+### Fix round — FS (core and server)
+
+Three findings of review R1, each with a test that failed before the fix (C-12, S-2; 0040 §4,
+§5, §6; items 1 and 2 above). No model or route contract changed (`schema.d.ts` is the same).
+
+- **R1-1 (blocker): a derive from a file that lacks a rule's track kept only that file's
+  rules.** With E11 shown (no dub), one edit of A1 derived a template with one audio rule, so
+  every episode lost its dub. `derive_template` now keeps each base rule that takes no track in
+  the job's source (the rule engine's `match_rules` on the base's rules: no track taken, that
+  is `missing` or `skipped`), unchanged (selector, settings, metadata, `required`,
+  `multiple`), inserted at its index in the base (at the end when the derived list is
+  shorter). The derived rules of the job's tracks are as before (with `_kept_required`). A base
+  rule that takes a track the job dropped is not kept: that removal is the edit. Tests
+  (`test_derive.py`): `test_a_rule_that_takes_no_track_in_the_shown_file_is_kept` (04's
+  template with A2 optional, E11's job with A1 at 384 kb/s → 2 rules, A2 unchanged and
+  optional, 2 audio tracks in E01), `test_a_subtitle_rule_that_takes_no_track_keeps_its_place`
+  (an optional German rule between S1 and S2 stays at index 1),
+  `test_a_removed_track_removes_its_rule`.
+  **Choice:** a base rule with `languages: []` (the rule `derive_template` writes for a job
+  without tracks of that kind; it takes no track in any file) is not kept, and that rule is
+  added only when the merged list is empty. Otherwise a file with tracks derived on such a
+  template kept a stale "A1 no track" column before its real rule, and a file without tracks
+  derived again would add a second one. Test: `test_a_job_without_tracks_of_a_kind` (derived
+  again: one rule; a track added: its rule alone).
+- **R1-6 (major): a per-file output path was named over.** A file's override `replace
+  /job/output/path` (the matrix fix "Save as … (1).mkv" of `output.renamed` /
+  `batch.output_exists`, or a folder chosen for one file) was applied, then naming replaced the
+  path. A resolved job has no output path, so the batch service now keeps a path that the job
+  has after its override: naming still runs for the row's name fields (`Resolution.naming`),
+  its notes about the path it gave are dropped. Every check still applies, in the same order:
+  the server's jail on the patched job (before naming), validation, the batch name checks on
+  the kept path, and the route's output-folder check. In `resolve_batch` a kept path is not a
+  planned output of the preset: a file whose override names another file of the batch does not
+  make that file "already encoded" (it stays in its group) and gets `batch.output_is_source`.
+  Tests (`test_batch_service.py`): `test_an_output_path_set_by_a_files_override_is_kept` (the
+  real `output.renamed` fix as E01's override → the `(1)` path, no `batch.output_exists`, row
+  `ok`), `test_output_paths_set_by_overrides_are_checked_in_the_batch` (`resolve` and
+  `resolve_batch`: two files on one path → both `batch.name_collision`; a path that is E01 →
+  `batch.output_is_source`, E01 not left out); route (`reframe-server/tests/test_batch.py`):
+  `test_an_output_path_of_a_files_override` (both routes, web mode: a path in the output root
+  is kept without `output.folder_required`; a path outside the roots is a 403
+  `path.outside_roots`, as before).
+- **R1-9 (minor): the naming fallback froze Settings → Output into the template.**
+  `BatchService.derive` fills Settings → Output's naming into a base without naming only when
+  the job sets `output.naming.template` or `output.naming.name_source`; otherwise the derived
+  template keeps `naming: null` and follows the settings. Test: the last line of
+  `test_a_naming_edit_on_a_base_without_naming_keeps_the_settings_output_folder`.
+
+Known limit, not fixed:
+
+- **R1-12:** the core stops a file's whole job part at the first failed `test` (0040 §5), so a
+  stale guard of one track also skips the valid operations of later tracks. Fixing it means a
+  `test` that guards only the operations up to the next `test`, a change of 0040 §5's rule
+  that the UI's override writer (item 1) is built on, not a fix; the row's
+  `batch.override_stale` warning says how many operations were skipped.
+
+Mutations (each made once, then the file restored and touched):
+
+| Mutation | Result |
+|----------|--------|
+| `_with_absent` keeps no rule (`if False:`) | 2 failed: the audio and subtitle keep tests |
+| `_with_absent` also keeps `languages: []` rules | 1 failed: `test_a_job_without_tracks_of_a_kind` |
+| `_row` does not keep the override's path | 5 failed: the 3 service tests and the 2 route tests |
+| `resolve_batch` counts a kept path as a planned output | 1 failed: the `resolve_batch` case (E01 left out) |
+| `derive` fills the settings' naming for every naming derive | 1 failed: the naming test |
