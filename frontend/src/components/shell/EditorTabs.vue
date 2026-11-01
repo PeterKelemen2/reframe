@@ -4,7 +4,7 @@ import TabList from 'primevue/tablist'
 import TabPanel from 'primevue/tabpanel'
 import TabPanels from 'primevue/tabpanels'
 import Tabs from 'primevue/tabs'
-import { type Component, computed, defineAsyncComponent } from 'vue'
+import { type Component, computed, defineAsyncComponent, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { EDITOR_TABS, type EditorTabId } from '@/components/editor/tabs/registry'
@@ -25,6 +25,13 @@ const active = computed({
     if (tab) ui.activeTab = tab.id
   },
 })
+
+const panels = useTemplateRef<{ $el: HTMLElement }>('panels')
+
+// The panels are the one scroller of every tab: a new tab would open at the old tab's offset.
+watch(active, () => {
+  if (panels.value) panels.value.$el.scrollTop = 0
+})
 </script>
 
 <template>
@@ -40,7 +47,7 @@ const active = computed({
         {{ t(tab.labelKey) }}
       </Tab>
     </TabList>
-    <TabPanels class="editor-tabs__panels">
+    <TabPanels ref="panels" class="editor-tabs__panels">
       <TabPanel v-for="tab in EDITOR_TABS" :key="tab.id" :value="tab.id" :data-panel="tab.id">
         <component :is="components[tab.id]" />
       </TabPanel>
