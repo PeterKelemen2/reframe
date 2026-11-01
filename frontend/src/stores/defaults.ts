@@ -460,6 +460,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
     subtitles,
     ruleKeys,
     preview,
+    previewKeys,
     previewing,
     previewFailure,
     busy,

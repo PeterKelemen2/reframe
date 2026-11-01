@@ -152,7 +152,8 @@ function number(decision: TrackDecision): number {
               :data-selected="decision.selected"
             >
               <th scope="row" class="defaults-preview__source">
-                <span>{{ sourceText(decision) }}</span>
+                <span>{{ sourceText(decision) }}</span
+                >{{ ' ' }}
                 <span class="defaults-preview__muted">
                   {{ t('defaults.preview.stream', { index: decision.source_stream }) }}
                 </span>
@@ -163,8 +164,8 @@ function number(decision: TrackDecision): number {
                   <Minus v-else :size="14" aria-hidden="true" />
                   {{
                     decision.selected ? t('defaults.preview.taken') : t('defaults.preview.dropped')
-                  }}
-                </span>
+                  }} </span
+                >{{ ' ' }}
                 <span v-if="decision.selection" class="defaults-preview__muted">
                   {{ decision.selection }}
                 </span>
