@@ -2027,3 +2027,46 @@ run.
 
 Checks after the fix: frontend lint, format, typecheck, 1008 unit tests, `build:web`,
 `npm run e2e` (14 passed).
+
+
+## M4 demo, 2026-11-01 (headed)
+
+Run once by the lead, in Playwright's Chromium (headed) started through the guard in
+`desktop/spike/scripts/windows.py` (`Session.wrapper` as `executablePath`), against the real
+server and the pinned FFmpeg n9.0.2 on the AMD desktop, with hardware tests on. Input went
+through Playwright (CDP) only: no real pointer, no real keyboard, no native dialog (the Sources
+panel's "Open files" button, not Ctrl+O). The page screenshots were read; no screenshot of a
+display was taken.
+
+- **The guard.** Admitted: the owner's cursor at 993,509 and the active window (VS Code) on
+  `HDMI-A-1`. The Chromium window was added at 503,31 (913x1018) and placed at 40,40 on
+  `HDMI-A-1`, read back there; VS Code kept the keyboard (`kept_active`); both scripts were
+  unloaded at the end. The page then reported an outer size of 1532x1002 and an inner size of
+  1500x873 (the window grew after the placement; it was not read back again).
+  Chromium took `CHROME_DESKTOP=code.desktop` from the VS Code terminal and called itself
+  `com.microsoft.VSCode`. The guard follows the pid, so the placement was right, but a run that
+  places by class (`windows run --class`) would also move the owner's own VS Code window: unset
+  `CHROME_DESKTOP` first.
+- **Flow.** Open `multitrack.mkv` from the file browser, preset Fast 1080p30, x265, RF 24, the
+  command drawer shows `libx265` and `-crf:v:0 24`, audio track 3 removed, add to queue, start:
+  Done at 100 %, the log shows 125 lines of FFmpeg output. No console error or warning, no
+  popup.
+- **Flow 3.** The preset H.265 NVENC 1080p shows the banner (`hevc_nvenc` is not available:
+  NVIDIA driver not found), Add to queue is off, "Use hevc_amf (closest match; quality CQ 27 →
+  CQ 25, approximate)" changes the encoder to AMD AMF H.265 and clears the banner; the job
+  `multitrack (1).mp4` ended Done at 100 %. The queue was already running ("jobs added now
+  start in turn"), so the job started by itself; the Start button of the finished first job is
+  off (my script waited for it: not a defect). The output files were not probed in this run (the
+  dev server removes its folder); the headless run did.
+- **Defect, fixed.** The command drawer ended 18 px above the bottom of the panel: PrimeVue's
+  tab panels keep a 18 px bottom padding, a sticky element stops at the scroller's padding, and
+  the next field showed in the gap (seen headless too, in the 1440x900 shots). The bottom
+  padding is now on every tab panel except the Video one (`EditorTabs.vue`), so the drawer is
+  flush at every scroll position. `e2e/layout.spec.ts` checks the gap closed and open, at the top
+  and at the end of the scroll: 18 px without the fix, 0 with it, in Chromium and Firefox. A
+  first version (pull the drawer down by the padding) left the drawer 18 px high at the end of
+  the scroll; it was dropped.
+- **Not checked headed:** dark mode, Windows, a run while the main display plays a movie (the
+  load was not looked at), the fix itself (checked headless in both engines).
+- **Checks after the fix:** oxlint, oxfmt, vue-tsc clean; 1008 unit tests; `build:web`;
+  `npm run e2e` 16 passed.

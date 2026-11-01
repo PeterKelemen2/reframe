@@ -154,6 +154,51 @@ test("the open command drawer covers the padding where a field's bar is drawn", 
   expect(hit, 'the drawer is what is painted beside its own left edge').toBe(true)
 })
 
+/** The distance between the bottom edges of the editor's panels and of the command drawer. */
+async function gapUnderDrawer(page: Page): Promise<number> {
+  const panels = await page.locator('.editor-tabs__panels').boundingBox()
+  const drawer = await page.locator('.command-preview').boundingBox()
+  if (panels === null || drawer === null) return Number.NaN
+  return Math.abs(panels.y + panels.height - (drawer.y + drawer.height))
+}
+
+async function scrollPanelsTo(page: Page, where: 'top' | 'end'): Promise<void> {
+  await page.evaluate((to) => {
+    // This file is type-checked without the DOM library.
+    interface Panels {
+      scrollTop: number
+      scrollHeight: number
+    }
+    const doc = Reflect.get(globalThis, 'document') as {
+      querySelector(selector: string): Panels | null
+    }
+    const panels = doc.querySelector('.editor-tabs__panels')
+    if (panels !== null) panels.scrollTop = to === 'end' ? panels.scrollHeight : 0
+  }, where)
+}
+
+async function expectDrawerFlush(page: Page, state: string): Promise<void> {
+  // A gap under the drawer shows whatever scrolls beneath it.
+  await scrollPanelsTo(page, 'top')
+  await expect.poll(() => gapUnderDrawer(page), `${state}, at the top`).toBeLessThanOrEqual(1)
+  await scrollPanelsTo(page, 'end')
+  await expect.poll(() => gapUnderDrawer(page), `${state}, at the end`).toBeLessThanOrEqual(1)
+}
+
+test("the command drawer ends at the panel's bottom edge, closed and open", async ({ page }) => {
+  await openApp(page)
+  await openFile(page, 'multitrack.mkv')
+  await page.getByRole('tab', { name: 'Video' }).click()
+
+  const toggle = page.locator('.command-preview__toggle')
+  await expect(toggle).toBeVisible()
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click()
+  await expectDrawerFlush(page, 'closed')
+  await toggle.click()
+  await expect(page.locator('.command-preview__body')).toBeVisible()
+  await expectDrawerFlush(page, 'open')
+})
+
 test('Settings stays one window high after a section link', async ({ page }) => {
   await openApp(page)
   await page.locator('.nav-rail').getByRole('link', { name: 'Settings' }).click()

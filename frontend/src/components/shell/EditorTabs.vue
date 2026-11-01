@@ -66,6 +66,19 @@ watch(active, () => {
 .editor-tabs__panels {
   flex: 1;
   min-height: 0;
+  padding-bottom: 0;
   overflow: auto;
+}
+
+/*
+ * A sticky drawer stops at the scroller's padding, and what scrolls under it shows in the gap.
+ * The bottom padding belongs to the panels, except the one that ends in the drawer.
+ */
+.editor-tabs__panels :deep([role='tabpanel']) {
+  padding-bottom: 1.125rem;
+}
+
+.editor-tabs__panels :deep([data-panel='video']) {
+  padding-bottom: 0;
 }
 </style>

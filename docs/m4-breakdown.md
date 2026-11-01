@@ -646,14 +646,15 @@ touches its files).
 Everything the scope lists is built, merged on `m4-frontend-mvp`, reviewed twice, and every
 blocker and major found is fixed with a test. Since the stop (2026-11-01): R2-25 is fixed, the
 CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml` (never run), and the flaky Ctrl+Z
-test is fixed (a race in the code, 0061 "Follow-up, 2026-11-01"). What is
-left before the owner can merge:
+test is fixed (a race in the code, 0061 "Follow-up, 2026-11-01"). The headed demo ran and
+found the command drawer's bottom gap (fixed). What is left before the owner can merge:
 
-1. **The M4 demo**: the headless run is done (2026-11-01, 0063 "M4 demo, 2026-11-01": one defect
-   fixed, three observations recorded). What is left is the headed run. The flow, for reference: in the browser, open a file from the server file browser →
+1. **The M4 demo**: done. The headless run (2026-11-01, 0063 "M4 demo, 2026-11-01": one defect
+   fixed, three observations recorded) and the headed run on `HDMI-A-1` the same day (0063 "M4
+   demo, 2026-11-01 (headed)": one defect fixed, the command drawer's bottom gap). The flow, for reference: in the browser, open a file from the server file browser →
    choose a preset → change the encoder and quality → add and remove audio tracks → add to queue
    → watch progress → open the log; validation issues inline and on Summary; plus flow 3. First
-   headless (Playwright, screenshots read; done), then once headed by the lead on `HDMI-A-1` through the
+   headless (Playwright, screenshots read; done), then once headed by the lead on `HDMI-A-1` (done) through the
    spike's window guard (ask the owner first to put the mouse and the active window there).
 2. **Recorded, not fixed in M4**: L5 (a `fs/list` option for other files: M6), L7 (the desktop
    platform stub: M5), L14 (an output another waiting job claims is known only at the add), a
@@ -663,4 +664,5 @@ left before the owner can merge:
 3. **The docs reconciliation** before a merge: the F rows say "on `m4-frontend-mvp`"; the
    roadmap's M4. The final checks are done (2026-11-01, run alone, on Linux): the full Python
    suite 7395 passed, 2 skipped, 26 deselected; `npm run test:server` 38 passed; `npm run e2e`
-   14 passed; the other commands from `CLAUDE.md` clean. The two CI jobs have not run on GitHub.
+   16 passed (14 before the drawer fix of the headed demo, re-run after it); the other commands
+   from `CLAUDE.md` clean. The two CI jobs have not run on GitHub.
