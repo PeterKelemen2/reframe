@@ -19,7 +19,8 @@ from typing import Protocol
 from reframe import metadata, preview
 from reframe.batch import draft_tracks, output_size, video_metadata
 from reframe.batch.resolve import resolve_with_tracks
-from reframe.command import PlanError, build_plan
+from reframe.command import PlanError, build_plan, job_type_info, output_chapters
+from reframe.command.metadata import rendered_tags
 from reframe.definitions import Definitions, EncoderOption, load_definitions
 from reframe.definitions import hdr_options as _hdr_options
 from reframe.definitions import search_options as _search_options
@@ -32,6 +33,7 @@ from reframe.models.issues import AddOp, JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import Container, JobNaming, JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.naming import NameResult, NamingOptions
+from reframe.models.output import JobTypeInfo, OutputChapters, RenderedTags
 from reframe.models.plan import EncodePlan
 from reframe.models.preset import Preset
 from reframe.models.settings import AppSettings, LanguageSettings
@@ -704,6 +706,26 @@ class JobService:
             AddOp(path=f"/video/advanced/{escape_token(key)}", value=value)
             for key, value in values.items()
         ]
+
+    def job_type(
+        self, job: JobSettings, source: MediaSource, *, write_blocker: str | None = None
+    ) -> JobTypeInfo:
+        """The job type of ``job`` and why, and why it could not edit its source in place.
+        ``write_blocker``: why the caller may not write the source, as one more blocker."""
+        return job_type_info(job, source, definitions=self.definitions, write_blocker=write_blocker)
+
+    def output_chapters(self, job: JobSettings, source: MediaSource) -> OutputChapters:
+        """The chapters the output of ``job`` gets, in output time, as the plan writes them."""
+        return output_chapters(job, source, definitions=self.definitions)
+
+    def rendered_tags(self, job: JobSettings, source: MediaSource) -> RenderedTags:
+        """The tags of ``job`` as the plan writes them (the date and time variables as of now,
+        the naming options of its preset, else the settings'), the source's values, and the
+        tags' template errors."""
+        return rendered_tags(
+            job, source, options=self._naming_options(self._job_preset(job)),
+            output_size=output_size(job, source), now=self._clock(), definitions=self.definitions,
+        )  # fmt: skip
 
     def preview_clip(self, job: JobSettings, *, start: float, seconds: float) -> TaskInfo:
         """Encode ``seconds`` from ``start`` with the job's full settings into the preview cache,

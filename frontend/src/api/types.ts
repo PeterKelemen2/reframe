@@ -109,99 +109,17 @@ export interface LoudnessMeasurement {
   duration?: number | null
 }
 
-// Written by hand until S6's routes are in the schema (m6-breakdown.md, "Contracts"); then
-// each becomes `Schemas['…']` with the same name.
-export type ChapterFormat = 'csv' | 'ogm' | 'xml'
+export type ChapterExport = Schemas['ChapterExport']
+export type ChapterExportRequest = Schemas['ChapterExportRequest']
+export type ChapterFormat = ChapterExport['format']
+export type ChapterImport = Schemas['ChapterImport']
+export type ChapterImportRequest = Schemas['ChapterImportRequest']
+export type ImportedChapter = Schemas['ImportedChapter']
+export type JobTypeInfo = Schemas['JobTypeInfo']
+export type OutputChapter = Schemas['OutputChapter']
+export type OutputChapters = Schemas['OutputChapters']
+export type RenderedTags = Schemas['RenderedTags']
+export type SubtitleFileInfo = Schemas['SubtitleFileInfo']
+export type SubtitleInspectRequest = Schemas['SubtitleInspectRequest']
 export type TagName = keyof TagSettings
-
-/** `POST /api/jobs/type`: the job type the job gets, and why. */
-export interface JobTypeInfo {
-  job_type: JobType
-  /** One sentence; two when *Edit in place* is chosen but not possible. */
-  reason: string
-  /** Why this job could not be edited in place; empty when it could. */
-  in_place_blockers: string[]
-}
-
-/** One chapter of the output, in output time. */
-export interface OutputChapter {
-  /** 1-based. */
-  number: number
-  start: number
-  end: number
-  /** What is written. */
-  name: string
-  /** The source chapter's title; `null` for a generated chapter or a source chapter without one. */
-  source_name: string | null
-  /**
-   * The 0-based source chapter, the index of `ChapterSettings.names` for it; `null` for a
-   * generated chapter, whose names are by output position.
-   */
-  source_index: number | null
-}
-
-/** `POST /api/jobs/chapters`: the chapters the output gets. */
-export interface OutputChapters {
-  origin: 'source' | 'generated' | 'none'
-  chapters: OutputChapter[]
-  /** Why there are none (`origin` `none`); empty otherwise. */
-  reason: string
-}
-
-export interface ChapterImportRequest {
-  path: string
-  /** `null`: from the file's content. */
-  format?: ChapterFormat | null
-}
-
-export interface ImportedChapter {
-  /** Seconds; `null` for a format without times (CSV). */
-  start: number | null
-  name: string
-}
-
-/** `POST /api/chapters/import`. */
-export interface ChapterImport {
-  format: ChapterFormat
-  chapters: ImportedChapter[]
-  issues: ValidationIssue[]
-}
-
-export interface ChapterExportRequest {
-  job: JobSettings
-  format: ChapterFormat
-}
-
-/** `POST /api/jobs/chapters/export`: the output's chapters as a file's text. */
-export interface ChapterExport {
-  format: ChapterFormat
-  /** A suggested file name: the output's stem and the format's extension. */
-  file_name: string
-  content: string
-}
-
-/** `POST /api/jobs/tags`: each tag as it will be written, and the source's value. */
-export interface RenderedTags {
-  /** The template filled in; `null` when the tag is not set. */
-  values: Record<TagName, string | null>
-  /** The source file's value (what *Passthru common metadata* copies); `null` when it has none. */
-  source: Record<TagName, string | null>
-  /** Template errors, at `tags.<name>`. */
-  issues: ValidationIssue[]
-}
-
-export interface SubtitleInspectRequest {
-  path: string
-}
-
-/** `POST /api/subtitles/inspect`: an external subtitle file before it is added. */
-export interface SubtitleFileInfo {
-  path: string
-  /** FFmpeg's codec name: `subrip`, `ass`, `ssa`, `webvtt`, `hdmv_pgs_subtitle`. */
-  format: string
-  bitmap: boolean
-  /** From a byte order mark or valid UTF-8; `null`: not detected. */
-  charset: string | null
-  events: number | null
-  issues: ValidationIssue[]
-}
+export type TagValues = Schemas['TagValues']

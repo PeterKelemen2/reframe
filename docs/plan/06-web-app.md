@@ -133,7 +133,9 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
 | Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown`. The server's config, data and cache folders show as `<config>`, `<data>`, `<cache>` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
-| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
+| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=&extensions=` | Server-side file browser (media files and folders only; with `extensions` (repeatable: `.srt`), the files with those extensions instead of the media files, [0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
+| Subtitles | `POST /api/subtitles/inspect` `{path}` | An external subtitle file before it is added: FFmpeg's format, text or bitmap, the character encoding (byte order mark or valid UTF-8, else `null`), the event count, issues; a file a job cannot take is `422 subtitles.unsupported` ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
+| Chapters | `POST /api/chapters/import` `{path, format?}` | Names (and times where the format has them) of a HandBrake CSV, OGM text or Matroska XML chapter file; the format from the content when not given; `422 chapters.unreadable` / `chapters.invalid` (with the line) ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
 | Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error). Every file found in a folder passes the read jail too: a link out of the roots is an error, never probed ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md#follow-up-review-2026-10-22)) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
@@ -158,6 +160,10 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft`; an in-place edit in web mode gets `inplace.not_allowed` instead (as `validate`) |
 | | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]`; an output outside the output roots or a refused in-place edit is `422 jobs.invalid` (as `plan`) |
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
+| | `POST /api/jobs/type` `{job}` | The job type and its reason, and why the job could not be edited in place (for any job; a source the server may not write is a blocker, not a refusal) ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
+| | `POST /api/jobs/chapters` `{job}` | The chapters the output gets, in output time (`OutputChapters`; from the one function the command uses) |
+| | `POST /api/jobs/chapters/export` `{job, format}` | Those chapters as a CSV, OGM or XML file's text with a file name; none is `422 chapters.none` |
+| | `POST /api/jobs/tags` `{job}` | Each tag as it will be written, the source's values, the template errors at `tags.<name>` |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
 | | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail inside the batch service, before it is named or validated. A row whose output is outside the output roots gets `output.folder_required` |
@@ -516,13 +522,15 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
 
 ### F-10 Audio and subtitles tabs
-- [ ] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
-      button for unknown bitrates. (M4 built all but the "Measure" button, which is M6;
-      [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
+- [x] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
+      button for unknown bitrates. (M4 built the table, [decision 0063](../decisions/0063-m4-frontend-mvp.md),
+      "Task I"; M6 the "Measure" button, the subtitle event count and the loudness measurement,
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task B".)
 - [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
       (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
-- [ ] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
-      (`hun · hu`).
+- [x] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
+      (`hun · hu`). With `LanguageListEditor` for ordered language lists (M6,
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
 - [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
 - [ ] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
       selection settings, a codec-rule table (drag to reorder, the catch-all row is locked,
@@ -558,6 +566,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
       `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
       its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
+- [x] Languages (M6): favourites, preferred audio and subtitle languages
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check

@@ -2561,6 +2561,68 @@ Checked again on 2026-10-28 for the review of S-6 (same Docker and Compose, ngin
 - **`cp -r dist target`** into an existing `target` copies into `target/dist/`; the files of
   the first copy stay in `target/`.
 
+### Subtitle files, tags and chapter files (S-2 additions, M6 task S6)
+
+Checked on 2026-11-01 with both FFmpeg n9.0.2 builds (Arch and the pinned BtbN
+`n9.0.2-17-g2a571b6068-20260930`, the same results) and MKVToolNix v103.0. The routes that rely
+on it are tested in `packages/reframe-server/tests/test_subtitles.py` and
+`test_job_output.py`.
+
+**ffprobe on external subtitle files** (`ffprobe -v error -of json -show_streams -show_format
+-count_packets -i FILE`):
+
+| File | `format_name` | `codec_name` | `nb_read_packets` |
+|------|---------------|--------------|-------------------|
+| `text-subs.en.srt` (UTF-8), the same with a UTF-8 BOM, with CRLF | `srt` | `subrip` | 2 |
+| a Hungarian SRT in CP1250, a French one in Latin-1 | `srt` | `subrip` | 3, 2 (ffprobe does not decode the text) |
+| a Hungarian SRT in UTF-16LE or UTF-16BE with a BOM | `srt` | `subrip` | 3 |
+| `text-subs.en.ass`, and a `.ssa` (`ScriptType: v4.00`, `[V4 Styles]`) | `ass` | `ass` (never `ssa`) | 3 |
+| a `.vtt` | `webvtt` | `webvtt` | 2 |
+| the `ass` file named `.srt` | `ass` | `ass` | 3 (the demuxer goes by content) |
+| `.sup` of the `pgs` fixture's tracks (`mkvextract` or `ffmpeg -c copy -f sup`) | `sup` | `hdmv_pgs_subtitle` | 48 and 16: one packet per *segment*; 12 and 4 display sets (the subtitle scan's count) |
+| an empty `.srt`, a text file that is no subtitle file | exit 1, `Invalid data found when processing input` | | |
+
+**Decoding the text** (`ffmpeg -i FILE -c:s srt -f srt -`):
+
+- UTF-8, with or without a BOM, and `-sub_charenc UTF-8` on a BOM file: right.
+- CP1250 or Latin-1 without `-sub_charenc`: exit 69, `Invalid UTF-8 in decoded subtitles text;
+  maybe missing -sub_charenc option`. With `-sub_charenc CP1250` / `ISO-8859-1`: right
+  (`Árvíztűrő tükörfúrógép.`, `Café à la crème.`).
+- **UTF-16 with a BOM is read wrongly.** Without `-sub_charenc`, every event whose text starts
+  with a letter that is not ASCII fails to decode (`Invalid UTF-8 …`, exit 0, the other events
+  are written); copied into Matroska (`-c:s copy`), that first letter is U+FFFD as `mkvextract`
+  writes it back (`Árvíztűrő` → `�rvíztűrő`, `Őszi` → `�szi`; `ű`, `ő` later in a line are
+  kept). With `-sub_charenc UTF-16LE` or `UTF-16` every event fails (`Unable to recode subtitle
+  event … from UTF-16LE to UTF-8`, exit 69). So `subtitles/inspect` names the encoding from the
+  BOM and warns (`subtitle.utf16`: save the file as UTF-8); a detected `UTF-8` or `UTF-16*` is
+  not a value for `-sub_charenc`.
+
+**Tags as the builder writes them** (`-map_metadata:g -1 -metadata <key>=…` with the keys of
+`reframe.command.metadata.TAG_KEYS`), read back with `ffprobe -show_format`: Matroska gives
+`title` and `ARTIST`, `ALBUM_ARTIST`, `DATE`, `COMMENT`, `GENRE`, `DESCRIPTION`, `SYNOPSIS` (upper
+case); MP4 gives the same keys in lower case. `jobs/tags` looks the source's values up without
+case.
+
+**Chapter files and mkvmerge.** `mkvmerge -o out.mkv --chapters FILE --no-chapters chapters.mkv`
+reads the OGM and XML files that `jobs/chapters/export` writes (names such as
+`Árvíztűrő, "tükör"`, `Part = 1; #2`, `<Two> & more`); `ffprobe -show_chapters` shows them. An
+OGM file is read right as UTF-8 with and without a BOM, also under `LC_ALL=C`. OGM has no end
+times: the last chapter ends at the end of the file (5.034 s), while the XML end times are kept
+(5.000 s). `mkvextract FILE chapters out.xml` writes a UTF-8 BOM, a commented `<!DOCTYPE …>`,
+`EditionFlagDefault` and `ChapterUID`; `mkvextract FILE chapters -s out.txt` writes OGM text;
+`chapters/import` reads both.
+
+**HandBrake's chapter CSV** (HandBrake itself was not run; read from its source on GitHub,
+`master`, 2026-11-01): Windows (`ChaptersViewModel.Export`, `CsvHelper.Escape`) writes
+`number,name` per line, the name in double quotes when it holds `,`, `"`, a line end or a tab,
+`"` doubled, UTF-8 without a BOM, `Environment.NewLine`; its import (`CsvHelper.ParseFile`,
+`ChapterImporterCsv`) parses RFC 4180, needs an integer first column and takes the second
+column trimmed. macOS (`HBChapterTitlesController`) quotes for `,` and `"` only, writes LF and
+no final line end, and its import needs the rows numbered 1 … n with as many rows as the movie
+has chapters. Reframe writes RFC 4180 (Python's `csv`, minimal quoting, LF, a final line end),
+which both import, and reads with Python's `csv`: the second column trimmed, a warning when the
+numbers are not 1, 2, 3 ….
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,

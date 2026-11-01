@@ -146,6 +146,15 @@ describe('the sources store', () => {
     vi.restoreAllMocks()
   })
 
+  /** `a.mkv` (active) and `b.mkv` open; the requests and calls so far forgotten. */
+  async function openTwo() {
+    const sources = useSourcesStore()
+    await sources.open(['/media/a.mkv', '/media/b.mkv'])
+    editorOpen.mockClear()
+    server.requests.length = 0
+    return sources
+  }
+
   /** Waits until the store shows the run of the `count`th probe task. */
   async function running(count: number): Promise<void> {
     await vi.waitFor(() => {
@@ -617,6 +626,67 @@ describe('the sources store', () => {
     it('sends nothing when the folder picker was cancelled', async () => {
       vi.spyOn(platform, 'pickFolder').mockResolvedValue(null)
       await useSourcesStore().pickFolder()
+      expect(server.requests).toEqual([])
+    })
+  })
+
+  describe('reload', () => {
+    const a = idOf('/media/a.mkv')
+    const b = idOf('/media/b.mkv')
+
+    it('puts the server’s copy of the source in its place; the selection and the editor stay', async () => {
+      const sources = await openTwo()
+      server.on(`GET /api/sources/${b}`, source('/media/b.mkv', ['measured']))
+      server.groupings.push({ groups: [group('Both', [{ path: '/media/a.mkv' }])], issues: [] })
+      await sources.reload(b)
+      expect(sources.entries.map((entry) => [entry.id, entry.source?.warnings])).toEqual([
+        [a, []],
+        [b, ['measured']],
+      ])
+      expect(sources.activeId).toBe(a)
+      expect(editorOpen).not.toHaveBeenCalled()
+      // Measured values change the roles, which the grouping compares.
+      expect(sources.grouping?.groups?.map((g) => g.name)).toEqual(['Both'])
+    })
+
+    it('probes a source the server forgot again', async () => {
+      const sources = await openTwo()
+      server.on(`GET /api/sources/${b}`, () => problem(404, 'source.unknown', `No source ${b}`))
+      server.files.set('/media/b.mkv', source('/media/b.mkv', ['probed again']))
+      await sources.reload(b)
+      expect(server.last().request.body).toEqual({ paths: ['/media/b.mkv'], recursive: false })
+      expect(sources.entries.map((entry) => [entry.id, entry.source?.warnings])).toEqual([
+        [a, []],
+        [b, ['probed again']],
+      ])
+      expect(useToastStore().items).toEqual([])
+    })
+
+    it('marks a source whose file changed as not known, as refresh does', async () => {
+      const sources = await openTwo()
+      server.on(`GET /api/sources/${b}`, () =>
+        problem(409, 'source.stale', 'The file changed or is gone since it was probed'),
+      )
+      await sources.reload(b)
+      expect(sources.entries.map((entry) => [entry.id, entry.source === null])).toEqual([
+        [a, false],
+        [b, true],
+      ])
+      expect(useToastStore().items).toEqual([])
+    })
+
+    it('shows another refusal as a toast, rejects and leaves the source as it was', async () => {
+      const sources = await openTwo()
+      const before = sources.entries[1]
+      server.on(`GET /api/sources/${b}`, () => problem(500, 'internal', 'Server error'))
+      await expect(sources.reload(b)).rejects.toBeInstanceOf(ApiError)
+      expect(sources.entries[1]).toBe(before)
+      expect(useToastStore().items.map((toast) => toast.summary)).toEqual(['Server error'])
+    })
+
+    it('asks nothing for a source that is not open', async () => {
+      const sources = await openTwo()
+      await sources.reload('other')
       expect(server.requests).toEqual([])
     })
   })

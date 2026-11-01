@@ -22,6 +22,7 @@ from reframe_server.folders import hide_server_folders
 from reframe_server.routers import (
     auth,
     batch,
+    chapters,
     definitions,
     events,
     fs,
@@ -36,6 +37,7 @@ from reframe_server.routers import (
     queue,
     settings,
     sources,
+    subtitles,
     system,
     tasks,
 )
@@ -54,6 +56,8 @@ _AUTHENTICATED = (
     definitions,
     languages,
     jobs,
+    chapters,
+    subtitles,
     naming,
     batch,
     presets,

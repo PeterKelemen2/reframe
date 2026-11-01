@@ -113,6 +113,29 @@ INPUTS = [
     single_job("jobs_geometry", "/api/jobs/geometry"),
     single_job("jobs_dry_run", "/api/jobs/dry-run"),
     single_job("jobs_hdr_metadata", "/api/jobs/hdr-metadata"),
+    single_job("jobs_type", "/api/jobs/type"),
+    single_job("jobs_chapters", "/api/jobs/chapters"),
+    single_job("jobs_tags", "/api/jobs/tags"),
+    PathInput(
+        "jobs_export_chapters",
+        "job",
+        "media",
+        lambda api, p, _: Request(
+            "post", "/api/jobs/chapters/export", {"job": job(api, p), "format": "xml"}
+        ),
+    ),
+    PathInput(
+        "chapters_import_file",
+        "path",
+        "media",
+        lambda _, p, __: Request("post", "/api/chapters/import", {"path": p}),
+    ),
+    PathInput(
+        "subtitles_inspect",
+        "path",
+        "media",
+        lambda _, p, __: Request("post", "/api/subtitles/inspect", {"path": p}),
+    ),
     PathInput(
         "jobs_explain",
         "template",

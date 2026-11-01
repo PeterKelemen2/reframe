@@ -15,7 +15,7 @@ import type { FsListing, FsRoot, Problem } from '@/api/types'
 import { fileName } from '@/components/shell/format'
 import { formatBytes } from '@/components/summary/format'
 
-import { type BrowseRequest, currentRequest, finish } from './fileBrowser'
+import { type BrowseRequest, currentRequest, finish, listedExtensions } from './fileBrowser'
 import { crumbsOf, extensionOf, folderOf, joinPath } from './paths'
 
 type Entry = FsListing['entries'][number]
@@ -47,6 +47,10 @@ let reads = 0
 
 const mode = computed(() => request.value?.mode ?? 'files')
 const filtered = computed(() => (request.value?.filters.length ?? 0) > 0)
+/** The server lists only the filter's files: there is nothing to turn the filter off for. */
+const serverFiltered = computed(
+  () => request.value !== null && listedExtensions(request.value) !== null,
+)
 const visible = computed<Entry[]>(() => {
   const entries = listing.value?.entries ?? []
   const wanted = request.value?.filters ?? []
@@ -99,7 +103,9 @@ async function read<T>(call: () => Promise<{ data?: T; error?: unknown; response
 async function show(path: string, focusPath?: string): Promise<boolean> {
   const mine = ++reads
   loading.value = true
-  const answer = await read(() => apiQuiet.GET('/api/fs/list', { params: { query: { path } } }))
+  const extensions = request.value === null ? null : listedExtensions(request.value)
+  const query = extensions === null ? { path } : { path, extensions }
+  const answer = await read(() => apiQuiet.GET('/api/fs/list', { params: { query } }))
   if (mine !== reads) return false
   loading.value = false
   problem.value = answer.problem
@@ -451,7 +457,14 @@ const summary = computed(() => {
     <template #footer>
       <div class="file-browser__footer">
         <div class="file-browser__footer-info">
-          <div v-if="filtered && mode !== 'folder'" class="file-browser__filter">
+          <span
+            v-if="serverFiltered && mode === 'files'"
+            class="file-browser__filter"
+            data-field="filter-note"
+          >
+            {{ t('sources.browser.filter', { types: request?.filters.join(', ') ?? '' }) }}
+          </span>
+          <div v-else-if="filtered && mode !== 'folder'" class="file-browser__filter">
             <Checkbox v-model="filterOn" :input-id="`${id}-filter`" binary data-field="filter" />
             <label :for="`${id}-filter`">
               {{ t('sources.browser.filter', { types: request?.filters.join(', ') ?? '' }) }}
