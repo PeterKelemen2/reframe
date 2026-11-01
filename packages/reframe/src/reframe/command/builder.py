@@ -22,6 +22,7 @@ from reframe.command.metadata import (
     OutputTrack,
     chapter_plan,
     chapter_range,
+    planned_chapters,
     render_tag,
     stream_metadata_args,
     tag_args,
@@ -59,6 +60,7 @@ from reframe.models import (
     Measurement,
     MediaSource,
     NamingOptions,
+    OutputChapters,
     PlanArg,
     PlanFile,
     PlanStep,
@@ -76,6 +78,7 @@ __all__ = [
     "GLOBAL_ARGS",
     "STEP_WEIGHTS",
     "build_plan",
+    "output_chapters",
     "partial_path",
 ]
 
@@ -111,11 +114,11 @@ class _Range:
     """The output duration for progress."""
 
 
-def _source_duration(source: MediaSource, video: VideoStream) -> float | None:
-    return source.container.duration or video.duration
+def _source_duration(source: MediaSource, video: VideoStream | None) -> float | None:
+    return source.container.duration or (video.duration if video is not None else None)
 
 
-def _resolve_range(job: JobSettings, source: MediaSource, video: VideoStream) -> _Range:
+def _resolve_range(job: JobSettings, source: MediaSource, video: VideoStream | None) -> _Range:
     total = _source_duration(source, video)
     r = job.range
     start = 0.0
@@ -125,7 +128,7 @@ def _resolve_range(job: JobSettings, source: MediaSource, video: VideoStream) ->
     elif isinstance(r, TimeRange):
         start, end = r.start, r.end
     elif isinstance(r, FrameRange):
-        rate = source_rate(video)
+        rate = source_rate(video) if video is not None else None
         if rate is None:
             raise PlanError("a frame range needs the source's frame rate (validation)")
         fps = float(rate)
@@ -467,6 +470,31 @@ def build_plan(
         files=files,
         temp_files=temp_files,
     )
+
+
+def output_chapters(
+    job: JobSettings, source: MediaSource, *, definitions: Definitions | None = None
+) -> OutputChapters:
+    """The chapters :func:`build_plan` writes into the output, in output time. Pure. A range that
+    cannot be planned (validation reports it) gives none, with the reason."""
+    defs = definitions if definitions is not None else load_definitions()
+    container = defs.containers.get(job.output.container)
+    if container is None:
+        return OutputChapters(
+            origin="none", reason=f"The container {job.output.container} is not known."
+        )
+    try:
+        rng = _resolve_range(job, source, source.video[0] if source.video else None)
+    except PlanError:
+        return OutputChapters(
+            origin="none",
+            reason="The range is not inside the source, so its chapters are not known.",
+        )
+    planned, _ = planned_chapters(
+        job, source, container, start=rng.start, duration=rng.duration,
+        expected_duration=rng.expected,
+    )  # fmt: skip
+    return planned
 
 
 def _fixup_step(
