@@ -546,8 +546,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       expandable rows for optional settings), passthru check boxes, fallback encoder, and the
       **live preview** table (`presets/defaults/preview`, debounced). In a batch group, the preview
       covers every file. From a tab, *Apply* replaces the job's tracks with what the defaults give
-      (the job keeps no defaults of its own); the batch-group case comes with F-13 (M7)
-      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), item 4 and "Task E").
+      (the job keeps no defaults of its own); in a group, *Apply* puts the defaults into the
+      template and drops its explicit rules of that kind
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), item 4 and "Task E";
+      the group case [decision 0066](../decisions/0066-m7-batch-season.md) item 10 and "Task D").
 
 ### F-11 Chapters and tags tabs
 - [x] Chapter table with inline name edits, import/export, generate. Tag form with templates.
@@ -563,7 +565,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] `ApplyToGroupDialog` (section checkboxes). Copy/paste sections from the context menu.
 - [x] `ResolutionMatrix`: virtualised table with ✓/≈/✗ cells, a candidate picker per cell, a
       "problems only" filter, and an editable naming column.
-- [ ] Override dots on `Field` with **Reset to group** and **Apply to whole group**.
+- [x] Override dots on `Field` with **Reset to group** and **Apply to whole group**
+      ([decision 0066](../decisions/0066-m7-batch-season.md), "Task D").
 - [x] Queue-group flow with the error dialog.
 
 ### F-14 Queue and activity
