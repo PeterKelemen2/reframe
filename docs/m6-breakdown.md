@@ -7,7 +7,7 @@ metadata. The plan ([plan/08-roadmap.md](plan/08-roadmap.md) §M6,
 languages, §Chapters, §Tags, §Remux-only jobs, §Settings) is the spec; this file says who builds
 which part, in which order, and what each part must offer to the others. Decision:
 [0065](decisions/0065-m6-tracks-and-metadata.md) (the lead's choices and one section per task).
-Status: [status.md](status.md). The template is [m4-breakdown.md](m4-breakdown.md). If the lead's
+Status: [status.md](status.md). M6 is done on Linux on this branch and not merged into `main` yet. The template is [m4-breakdown.md](m4-breakdown.md). If the lead's
 context is summarised, this file and `status.md` are the source of truth.
 
 M6's core parts (C-10 scans, C-12 rule engine and defaults, C-13 metadata and in-place edits) are
@@ -483,3 +483,52 @@ Not fixed in M6 (recorded): R2's suspicion about the file browser's Path + Go ra
 | 2026-11-01 | **Merged FD's post-FA part** (ed6205a, 236002b, 8ac71e1): FA's five tag codes each once at their field, the status bar and the Issues card, *Add to queue* off (R2's `tagerror.mjs`: two `naming.unknown_variable` errors, "2 errors"); a NUL in a track name once; `chapters.too_many`'s fix as a button at the interval field (1000 generated chapters on a 20-min file at 0.02 min); L2 agreed (*No name* before and after a rename); **L3 in `editor/template.ts`** exactly as the core (under a `generated` preset a rename gives no marker, *To the source names* gives `generated → source`); *To Chapter 1, …* writes the core's untranslated `Chapter N` (written into the file, so it must match the `generated` policy; only the menu label is translated); `base/Section.vue` header actions wrap (390 px: Chapters, both track lists, Settings → Tools, the presets view fit; `Field`'s inline label column still too wide at 390 on Video, Settings, the Chapters switches); `npm run e2e` 18 passed. Checks on the merge: lint, format, typecheck, 1335 unit tests, `build:web`. The lead's mutation (the tag issues of both sources shown) failed 2 tests. FD's worktree removed. **Recorded limit / owner question (L5)**: under a user preset whose chapter name policy is `generated`, a source without chapters shows *modified* at once (`names: null` → `source`; `templateOf` and the core's `derive_template` do not know whether the source has chapters). No built-in preset sets the policy, so it needs a preset saved after a *To Chapter 1, …* reset. **The fix round is done**; no worktree left |
 | 2026-11-01 | **Final checks alone** (after the fix round, no agent running): lint, format, typecheck, `npm test` 1335 passed, `build:web`, `gen-api.sh --check`, ruff, format, mypy ×2; `npm run test:server` 12 files, 50 tests; `npm run e2e` 18 passed (27.5 s); the full Python suite in four chunks: 468, 1296 (1 deselected), 5030 (1 skipped, 25 deselected), 820 (1 skipped) passed — **7614 passed, 2 skipped, 26 deselected**; nothing left behind. **The M6 demo, headless** (0065 "M6 demo"): items 1–5 pass through the UI in Chromium light and dark and in Firefox; flow 1 in `npm run e2e`; the charset mismatch checked at the API. Next: the headed run on `HDMI-A-1` (asking the owner) |
 | 2026-11-01 | **The M6 demo, headed** (0065 "M6 demo (headed)"): once, through the guard on `HDMI-A-1` after the owner placed the cursor and the active window there; items 1–5 the same as headless; nothing left behind |
+| 2026-11-01 | **Docs reconciled**: `status.md` (an M6 milestone row, the Features rows Rich audio, Languages, Track metadata and Chapters / tags **Done**, the Web app row, open items and owner questions), the plan boxes checked (F-6, F-10, F-11, F-15 Languages ticked; F-17 stays open for flows 2 and 4), "Where M6 ended" below. **Not merged into `main`**: the owner decides |
+
+## Where M6 ended (2026-11-01)
+
+M6 is done on Linux on the branch `m6-tracks-and-metadata`; it is **not merged into `main`** (the owner decides). Everything the scope lists is built:
+- S6, the server routes;
+- A, the language picker and Settings → Languages;
+- B, Measure and the scans;
+- F, the Chapters and Tags tabs;
+- C, the metadata editor, bulk edit and external subtitles;
+- D, the job type and in-place edits;
+- E, the defaults dialog;
+- G, flow 1.
+
+Two fresh reviews found no blocker and 4 majors. Every major was reproduced by the lead and fixed with a test that failed before; the minors are fixed or recorded. The M6 demo ran headless (Chromium light and dark, Firefox) and once headed on `HDMI-A-1`.
+
+The final checks ran alone on Linux:
+
+| Check | Result |
+|-------|--------|
+| `npm test` | 1335 passed |
+| `npm run test:server` | 50 passed |
+| `npm run e2e` | 18 passed |
+| Python suite | 7614 passed, 2 skipped, 26 deselected |
+| lint, format, typecheck, `build:web`, `gen-api.sh --check`, ruff, mypy ×2 | clean |
+
+What is left blocks nothing:
+
+1. **Recorded, not fixed**:
+   - L4: M4's second opened file is not selected;
+   - L5: a `generated` chapter policy marks a source without chapters *modified*;
+   - another window's table after *Measure*: there is no source-change event;
+   - the `subtitles/inspect` cache, which lasts the page's life;
+   - a preset write between the dialog's read and its save: presets have no version check;
+   - `Field`'s inline labels at 390 px;
+   - editable defaults selects still cut long values;
+   - the language picker is stricter than the server (A).
+2. **Owner questions**, with their defaults kept:
+   - the picker's language range (A);
+   - L5;
+   - *Remux only* not turning *Edit in place* on (FD's choice, replacing D's);
+   - chapter import by names only;
+   - no automatic UTF-16 → UTF-8 conversion;
+   - the 3000-character tag limit.
+3. **Not verified**:
+   - Windows: the tag limit against the real command line, and everything else (M10);
+   - GitHub CI: nothing was pushed;
+   - dark mode and Firefox headed (both checked headless);
+   - H, the optional comment trim of the frontend files M6 changed, was not run: it waits for the owner's yes.
