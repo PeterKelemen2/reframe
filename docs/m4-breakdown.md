@@ -641,23 +641,29 @@ touches its files).
 | 2026-10-30 | **Merged FB** (aa3699a…89af41c): R1-1 / R1-2 / R1-3 / R1-4 / R1-5 / R1 suspected 2, 3, 5, L1, L2, L13, R2-8 (naming), R2-20 (probe toast). Design: pending edits in the editor store (`beginEdit` / `endEdit` / `flushEdits`), `validation.flush()`; an add commits the focused field, waits for the edits, the draft and the check (at most 20 s), then adds the job as it is, or says why not in a toast; `canAdd` no longer drops under a click; a naming edit is pending until it is in the job with its path; a container change carries the extension in one undo step. R1's scripts after the fix (FB's run): every one queues what the screen shows. The lead applied FB's patch to FD's `SummaryTab.test.ts` (the Output card's name rows are gone; the naming editor's tests cover the name and reason). **Merged FA** (600fa84…9314d44): R2-1 (`.rf-sr-only` gets `inset-block-start` / `inset-inline-start` 0: every screen exactly the window's height, both browsers), R2-2 / L4 (fixes on their own row: the message box 0 → 470 px), R2-5 / R2-6 / L15 (Aura component tokens overridden: e.g. the Modified marker 2.80 → 5.18, the unselected SelectButton label 4.34 → 6.92, the switch track 1.48 → 4.76, the checked SelectButton option filled with the primary colour), R2-9, R2-15, R2-16 (PrimeVue's `locale` from `base.primevue.*`), R2-17; `e2e/layout.spec.ts` (5 tests × 2 browsers). R2-25 not fixed: the bar is drawn in the Video tab's padding beside the sticky drawer, a `CommandPreview.vue` change (FA's proposed rule recorded in its 0063 section). Checks after both merges: lint, format, typecheck, 965 unit tests, `build:web`. The lead's mutation (the switch track back to slate-300) failed `contrast.test.ts`. FA's and FB's worktrees removed |
 | 2026-10-30 | **Merged FC** (2119a7e…a03594d): R2-3 (focus-safe busy buttons, the focus moved to the row's new action, to the Summary tab after opening or *Edit*, to the copy after *Duplicate*), R2-4 (popovers take the focus and keep Tab inside), R2-7 (the countdown above every view, keyboard reachable; checked with the dry run confirmed in `/proc/<pid>/environ`, *Sleep* chosen by its label, cancelled), R2-11, R2-12, R2-10, R2-13 / L17, R2-14, R2-20, R2-23, R2-8 (when-done), L3 / L10 / R2-22, R1 suspected 4. **Final checks, alone** (no agent running): frontend lint, format, typecheck, 1007 unit tests, `build:web`; `npm run test:server` 9 files, 38 tests; `npm run e2e` 12 passed (flow 3 and FA's 5 layout checks, Chromium and Firefox), nothing left behind; Python ruff, format, mypy ×2, `gen-api.sh --check`, server + testing + core tools + CLI `1041 passed, 1 skipped`. The lead's mutation on FC (the banner hidden in the shell) failed `App.test.ts`. All worktrees removed. **Stopped at the owner's request** ("Stop implementation after these agents come back. Commit their work and document the status"): no new agent, no demo, no merge into `main` |
 
-## Where M4 stands (2026-10-30, stopped by the owner)
+## Where M4 stands (2026-10-30, stopped by the owner; updated 2026-11-01)
 
 Everything the scope lists is built, merged on `m4-frontend-mvp`, reviewed twice, and every
-blocker and major found is fixed with a test. What is left before the owner can merge:
+blocker and major found is fixed with a test. Since the stop (2026-11-01): R2-25 is fixed, and
+the CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml` (never run). What is
+left before the owner can merge:
 
 1. **The M4 demo**, run for real: in the browser, open a file from the server file browser →
    choose a preset → change the encoder and quality → add and remove audio tracks → add to queue
    → watch progress → open the log; validation issues inline and on Summary; plus flow 3. First
    headless (Playwright, screenshots read), then once headed by the lead on `HDMI-A-1` through the
    spike's window guard (ask the owner first to put the mouse and the active window there).
-2. **R2-25**: a field's warning bar shows beside the open command drawer; FA's proposed
-   `CommandPreview.vue` rule is in 0063 "Fix round — FA".
-3. **Recorded, not fixed in M4**: L5 (a `fs/list` option for other files: M6), L7 (the desktop
+2. **Recorded, not fixed in M4**: L5 (a `fs/list` option for other files: M6), L7 (the desktop
    platform stub: M5), L14 (an output another waiting job claims is known only at the add), a
    duplicate's automatic free name.
-4. **CI (Q-1.1)**: jobs for `npm run test:server` and `npm run e2e` (they need `uv sync`,
-   `scripts/make-testdata.py`, the Playwright browsers and an FFmpeg with libx265; M's notes in
-   0063 "Task M").
-5. **The docs reconciliation** before a merge: the F rows say "on `m4-frontend-mvp`"; the
-   roadmap's M4; a final full Python suite (only the tests of what changed ran after wave 1).
+3. **A flaky test**:
+   `packages/reframe/tests/remote/test_cli_client.py::test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them`
+   fails about 1 run in 12, also alone: `seen == [(PAUSED, 0)]` gets `(RUNNING, 0)`. Unverified
+   guess: `_stop_here` in `packages/reframe/src/reframe/cli.py` pauses only the jobs that its
+   own copy of the queue shows as RUNNING, while the test waits for the owner's state.
+   Reproduce with a loop first; then fix the code (with a follow-up to decision 0061) or the
+   test.
+4. **The docs reconciliation and the final checks** before a merge: the F rows say "on
+   `m4-frontend-mvp`"; the roadmap's M4; a final run of all the checks after the changes above,
+   with the full Python suite (the last full run, 2026-11-01: 7393 passed, 2 skipped, 1 failed:
+   the flaky test), `npm run test:server` and `npm run e2e`.
