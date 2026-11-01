@@ -6,7 +6,7 @@ Working notes of the lead for the branch `m4-frontend-mvp`: milestone M4, the fi
 §M4) is the spec; this file says who builds which part, in which order, and what each part
 must offer to the others. Decisions: [0063](decisions/0063-m4-frontend-mvp.md) (the lead's
 choices and one section per task) and [0064](decisions/0064-queue-processing-event.md) (task S).
-Status: [status.md](status.md). The branch is not merged into `main` until the owner says so.
+Status: [status.md](status.md). The branch was merged into `main` on 2026-11-01, at the owner's request.
 If the lead's context is summarised, this file and `status.md` are the source of truth.
 
 ## Scope
@@ -641,28 +641,21 @@ touches its files).
 | 2026-10-30 | **Merged FB** (aa3699a…89af41c): R1-1 / R1-2 / R1-3 / R1-4 / R1-5 / R1 suspected 2, 3, 5, L1, L2, L13, R2-8 (naming), R2-20 (probe toast). Design: pending edits in the editor store (`beginEdit` / `endEdit` / `flushEdits`), `validation.flush()`; an add commits the focused field, waits for the edits, the draft and the check (at most 20 s), then adds the job as it is, or says why not in a toast; `canAdd` no longer drops under a click; a naming edit is pending until it is in the job with its path; a container change carries the extension in one undo step. R1's scripts after the fix (FB's run): every one queues what the screen shows. The lead applied FB's patch to FD's `SummaryTab.test.ts` (the Output card's name rows are gone; the naming editor's tests cover the name and reason). **Merged FA** (600fa84…9314d44): R2-1 (`.rf-sr-only` gets `inset-block-start` / `inset-inline-start` 0: every screen exactly the window's height, both browsers), R2-2 / L4 (fixes on their own row: the message box 0 → 470 px), R2-5 / R2-6 / L15 (Aura component tokens overridden: e.g. the Modified marker 2.80 → 5.18, the unselected SelectButton label 4.34 → 6.92, the switch track 1.48 → 4.76, the checked SelectButton option filled with the primary colour), R2-9, R2-15, R2-16 (PrimeVue's `locale` from `base.primevue.*`), R2-17; `e2e/layout.spec.ts` (5 tests × 2 browsers). R2-25 not fixed: the bar is drawn in the Video tab's padding beside the sticky drawer, a `CommandPreview.vue` change (FA's proposed rule recorded in its 0063 section). Checks after both merges: lint, format, typecheck, 965 unit tests, `build:web`. The lead's mutation (the switch track back to slate-300) failed `contrast.test.ts`. FA's and FB's worktrees removed |
 | 2026-10-30 | **Merged FC** (2119a7e…a03594d): R2-3 (focus-safe busy buttons, the focus moved to the row's new action, to the Summary tab after opening or *Edit*, to the copy after *Duplicate*), R2-4 (popovers take the focus and keep Tab inside), R2-7 (the countdown above every view, keyboard reachable; checked with the dry run confirmed in `/proc/<pid>/environ`, *Sleep* chosen by its label, cancelled), R2-11, R2-12, R2-10, R2-13 / L17, R2-14, R2-20, R2-23, R2-8 (when-done), L3 / L10 / R2-22, R1 suspected 4. **Final checks, alone** (no agent running): frontend lint, format, typecheck, 1007 unit tests, `build:web`; `npm run test:server` 9 files, 38 tests; `npm run e2e` 12 passed (flow 3 and FA's 5 layout checks, Chromium and Firefox), nothing left behind; Python ruff, format, mypy ×2, `gen-api.sh --check`, server + testing + core tools + CLI `1041 passed, 1 skipped`. The lead's mutation on FC (the banner hidden in the shell) failed `App.test.ts`. All worktrees removed. **Stopped at the owner's request** ("Stop implementation after these agents come back. Commit their work and document the status"): no new agent, no demo, no merge into `main` |
 
-## Where M4 stands (2026-10-30, stopped by the owner; updated 2026-11-01)
+## Where M4 ended (2026-11-01)
 
-Everything the scope lists is built, merged on `m4-frontend-mvp`, reviewed twice, and every
-blocker and major found is fixed with a test. Since the stop (2026-11-01): R2-25 is fixed, the
-CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml` (never run), and the flaky Ctrl+Z
-test is fixed (a race in the code, 0061 "Follow-up, 2026-11-01"). The headed demo ran and
-found the command drawer's bottom gap (fixed). What is left before the owner can merge:
+M4 is done on Linux and merged into `main`. Everything the scope lists is built, reviewed twice, and
+every blocker and major found is fixed with a test. After the stop of 2026-10-30: R2-25 is fixed,
+the CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml`, the flaky Ctrl+Z test is
+fixed (a race in the code, 0061 "Follow-up, 2026-11-01"), the headless and the headed demo ran
+(0063; each found one defect, both fixed), and the final checks ran alone on Linux: the full Python
+suite 7395 passed, 2 skipped, 26 deselected; `npm run test:server` 38 passed; `npm run e2e` 16
+passed; the other commands from `CLAUDE.md` clean. What is left blocks nothing:
 
-1. **The M4 demo**: done. The headless run (2026-11-01, 0063 "M4 demo, 2026-11-01": one defect
-   fixed, three observations recorded) and the headed run on `HDMI-A-1` the same day (0063 "M4
-   demo, 2026-11-01 (headed)": one defect fixed, the command drawer's bottom gap). The flow, for reference: in the browser, open a file from the server file browser →
-   choose a preset → change the encoder and quality → add and remove audio tracks → add to queue
-   → watch progress → open the log; validation issues inline and on Summary; plus flow 3. First
-   headless (Playwright, screenshots read; done), then once headed by the lead on `HDMI-A-1` (done) through the
-   spike's window guard (ask the owner first to put the mouse and the active window there).
-2. **Recorded, not fixed in M4**: L5 (a `fs/list` option for other files: M6), L7 (the desktop
+1. **Recorded, not fixed in M4**: L5 (a `fs/list` option for other files: M6), L7 (the desktop
    platform stub: M5), L14 (an output another waiting job claims is known only at the add), a
    duplicate's automatic free name; from the headless demo: the queue table's narrow Source and
    Output columns at 1440 px, Summary's issue list below the Output card, a second opened file
    not selected while another is open.
-3. **The docs reconciliation** before a merge: the F rows say "on `m4-frontend-mvp`"; the
-   roadmap's M4. The final checks are done (2026-11-01, run alone, on Linux): the full Python
-   suite 7395 passed, 2 skipped, 26 deselected; `npm run test:server` 38 passed; `npm run e2e`
-   16 passed (14 before the drawer fix of the headed demo, re-run after it); the other commands
-   from `CLAUDE.md` clean. The two CI jobs have not run on GitHub.
+2. **Not verified**: the two new CI jobs have not run on GitHub (the branches were never pushed);
+   nothing has run on Windows (the Windows testing phase of M10). The headed demo covered the
+   light theme only.
