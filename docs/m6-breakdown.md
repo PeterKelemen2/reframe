@@ -76,7 +76,7 @@ or `packages/`.
 
 | Task | Owns | Must not touch |
 |------|------|----------------|
-| **S6** | `packages/**` (the server's routers and their models, the core functions they call, their tests), `frontend/src/api/schema.d.ts` (regenerated only), `testdata/README.md` (its own heading) | every other file of `frontend/` |
+| **S6** | `packages/**` (the server's routers and their models, the core functions they call, their tests), `frontend/src/api/schema.d.ts` (regenerated only), `components/sources/{FileBrowserDialog.vue,fileBrowser.ts}` and their tests (only so that `platform.pickFiles({ filters })` lists those files through `fs/list?extensions=`), `testdata/README.md` (its own heading) | every other file of `frontend/` |
 | **A** | `components/language/**`, `components/settings/LanguagesSection.vue`, `i18n/messages/en/language.json`, the `languages` keys of `i18n/messages/en/settings.json` | the other Settings sections, `views/SettingsView.vue` |
 | **B** | `components/media/**`, `stores/scans.ts`, `sources.reload` in `stores/sources.ts` (that function only), `i18n/messages/en/media.json` | the rest of `stores/sources.ts`, `components/tracks/**` |
 | **F** | `components/editor/tabs/{ChaptersTab,TagsTab}.vue`, `components/chapters/**`, `components/tags/**`, `i18n/messages/en/{chapters,tags}.json` | `components/naming/**` (use it) |
