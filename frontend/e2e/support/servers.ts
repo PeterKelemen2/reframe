@@ -58,6 +58,9 @@ export function webServers(
       `--port ${new URL(baseURL).port}`,
       `--token ${TOKEN}`,
       '--fixtures multitrack',
+      // Makes the output root a media root too, so a flow can probe its job's output; the
+      // option needs a fixture to copy, and this one is not opened by any flow.
+      '--output-fixtures chapters',
       `--fake-ffmpeg ${quote(SCENARIO)}`,
       `--settings ${quote(SETTINGS)}`,
     ].join(' ')
