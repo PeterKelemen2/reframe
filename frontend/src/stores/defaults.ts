@@ -114,8 +114,8 @@ export const useDefaultsStore = defineStore('defaults', () => {
   })
   /** The source the preview drafts: the job's (a group's shown file), else the open one. */
   const sourceId = computed<string | null>(() => {
-    const opened = editor.target
-    if (opened !== null) return opened.sourceId
+    const shown = editor.target?.sourceId
+    if (shown !== undefined) return shown
     if (target.value?.kind === 'job') return null
     const active = sources.active
     return active !== null && active.source !== null ? active.id : null
