@@ -1,10 +1,9 @@
 import { openApp, openFile, probeFile, readQueue, waitForStore } from './support/app'
 import { expect, test } from './support/test'
 
-// Named, so the flow does not follow a change of the default preset: an MKV one that keeps the
-// encode short with libx264.
+// Named, so a change of the default preset does not change this flow.
 const PRESET = 'h264-mkv-1080p'
-// The English stereo track: the flow gives it a language and a flag that it does not have.
+// multitrack.mkv's English stereo track.
 const TRACK = 1
 
 test('an audio language and the commentary flag set in the editor are in the encoded file', async ({
@@ -28,8 +27,8 @@ test('an audio language and the commentary flag set in the editor are in the enc
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
 
-  // Between the edits and the probe the flow waits only for the controls: whether the edits
-  // reached the file is for the probe to say. The trigger's name is its label and its value.
+  // The flow waits for controls only; the probe at the end says if the edits reached the file.
+  // The language button's name is its label and value, so only its start is matched.
   await block.getByRole('button', { name: /^Language / }).click()
   const picker = page.getByRole('dialog', { name: 'Choose a language' })
   await picker.getByRole('combobox', { name: 'Search languages' }).fill('Hungarian')
