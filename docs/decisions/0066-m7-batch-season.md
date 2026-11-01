@@ -229,7 +229,8 @@ Choices where the plan and the brief leave room:
    the popover only. The V cell has no action and no tab stop. The sort headers are the
    `DataTable`'s (Tab, Enter).
 3. **Rows have a fixed height** (60 px) so that the virtual scroller places them without
-   measuring; the cell's message and the name's fields are one line each, cut with an ellipsis.
+   measuring; the cell's message is one line, cut with an ellipsis. The name column keeps its
+   fields whole: a wide matrix scrolls sideways, the File column stays (frozen).
 4. **Sorting** is by the file (episode order) and by each track and name column's status (error,
    warning, the rest; ties keep episode order). The V column has no sort: its cell is ✓ for every
    file with a job. The name column's status is the row's worst issue at `output.path` (the
@@ -251,6 +252,29 @@ Choices where the plan and the brief leave room:
    toast (as *Add all* does); a failed resolve or add is the API layer's toast.
 9. **The V cell** shows the source's video size (`320×180`), as the sources panel writes it,
    not 04's `1080p`.
+
+Browser checks (phase 2, 2026-11-01, headless Chromium, light and dark, against
+`scripts/dev-server.py` with the pinned FFmpeg and `anime-s01`; E01's audio set to Opus 5.1 448
+"Japanese 5.1" / AC-3 5.1 640 and a subtitle named, through `editor.patch`; Settings → Output's
+episode template `{name} - S{season:02}E{episode:02}< - {sub_title}>` with spaces): 38 checks of
+the "Done when" pass in each theme. Found and fixed:
+
+- PrimeVue's `DataTable` renders every cell anew when the resolution changes, so the focused
+  button was dropped after each pick, fix or name edit. Each action button has a
+  `data-focus-key`; after a new resolution the same cell takes the focus back.
+- Escape with the focus on a cell whose popover was open closed the whole matrix; the matrix now
+  closes the popover only. A click on text left the focus nowhere and Escape did nothing; the
+  matrix closes then (as the defaults dialog does).
+- After a row fix the popover's row changed under it and the popover jumped to the page's
+  corner; a fix now closes the popover and gives the focus back to the row.
+- The naming line was cut to a few letters in a narrow column, and the five-field editor
+  overflowed its popover; the pencil now leads the cell and the editor is three columns wide.
+
+Seen, not mine (for the lead): editing the naming template while a group is edited
+(`editor.patch /output/naming/template`) derives a `naming` section whose
+`output_folder_mode` is `same_as_source` instead of Settings → Output's, so every output moves
+next to its source and is `output.folder_required` in web mode (every row an error). The checks
+set the template in Settings → Output instead.
 
 ## Task D — F-13 override dots, F-10 the defaults dialog for a group, group-aware cards
 

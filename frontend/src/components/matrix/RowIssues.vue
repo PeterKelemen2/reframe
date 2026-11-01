@@ -10,6 +10,8 @@ import { useEditorStore } from '@/stores/editor'
 /** One matrix row's errors and warnings with their fixes; its notes folded. */
 const props = defineProps<{ sourceId: string; label: string; issues: ValidationIssue[] }>()
 
+const emit = defineEmits<{ done: [] }>()
+
 const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const editor = useEditorStore()
@@ -24,6 +26,7 @@ async function apply(fix: Fix): Promise<void> {
   applying.value = fix
   try {
     await editor.applyRowFix(props.sourceId, fix)
+    emit('done')
   } finally {
     applying.value = null
   }

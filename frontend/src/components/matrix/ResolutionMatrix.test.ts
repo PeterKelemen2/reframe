@@ -60,7 +60,11 @@ async function mountMatrix(
   const wrapper = mount(ResolutionMatrix, {
     props: { resolution, problemsOnly: false, focus: null, ...props },
     attachTo: document.body,
-    global: { plugins: [createPinia(), createAppI18n(), [PrimeVue, { theme: 'none' }]] },
+    global: {
+      plugins: [createPinia(), createAppI18n(), [PrimeVue, { theme: 'none' }]],
+      // The popover says it is shown from its enter transition.
+      stubs: { transition: false },
+    },
   })
   mounted.push(wrapper)
   await settle()
@@ -255,10 +259,48 @@ describe("a row's issues", () => {
     ).toEqual(['batch.track_missing', 'batch.near_match', 'batch.track_relaxed'])
     expect(panel.querySelector('details')).not.toBeNull()
     panel.querySelector<HTMLButtonElement>('[data-role="fix"]')?.click()
-    await flushPromises()
+    await settle()
     const fix = animeResolution().rows?.[10]?.issues?.find((i) => i.code === 'batch.track_missing')
       ?.fixes?.[0]
     expect(editor.applyRowFix).toHaveBeenCalledExactlyOnceWith(sourceIdOf(11), fix)
+    // The popover's row changes under it: it closes, and the focus goes back to the row.
+    expect(document.querySelector('.matrix-popover')).toBeNull()
+    expect(document.activeElement?.getAttribute('data-row-mark')).toBe(sourceIdOf(11))
+  })
+})
+
+describe('focus across resolutions', () => {
+  it('moves the focus into an opened popover, and Escape on the cell closes only it', async () => {
+    await mountMatrix()
+    const panel = await open(cell(5, 'audio:1'))
+    expect(panel.contains(document.activeElement)).toBe(true)
+    cell(5, 'audio:1').focus()
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    cell(5, 'audio:1').dispatchEvent(escape)
+    await settle()
+    expect(escape.defaultPrevented).toBe(true)
+    expect(document.querySelector('.matrix-popover')).toBeNull()
+  })
+
+  it('shows another cell in the open popover, with the focus in it', async () => {
+    await mountMatrix()
+    await open(cell(5, 'audio:1'))
+    const panel = await open(cell(11, 'subtitle:0'))
+    await settle()
+    expect(panel.querySelector('.candidate-picker')?.getAttribute('data-column')).toBe(
+      'S1 eng Signs & Songs',
+    )
+    expect(panel.contains(document.activeElement)).toBe(true)
+  })
+
+  it('keeps the focus on its cell when a new resolution renders the cells anew', async () => {
+    const wrapper = await mountMatrix()
+    const before = cell(5, 'audio:1')
+    before.focus()
+    await wrapper.setProps({ resolution: withRow(animeResolution(), pickedE05()) })
+    await settle()
+    expect(cell(5, 'audio:1')).not.toBe(before)
+    expect(document.activeElement).toBe(cell(5, 'audio:1'))
   })
 })
 
