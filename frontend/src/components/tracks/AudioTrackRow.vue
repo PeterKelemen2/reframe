@@ -24,6 +24,8 @@ import {
   rateModeOps,
   sourceChangeOps,
 } from './ops'
+import { metadataPaths } from './metadata'
+import TrackMetadataEditor from './TrackMetadataEditor.vue'
 import TrackRowFrame from './TrackRowFrame.vue'
 
 const props = defineProps<{
@@ -162,7 +164,10 @@ const fieldPaths = computed(() => {
   ]
   if (!lossless.value)
     fields.push(rateMode.value === 'quality' && encoder.value?.quality ? 'quality' : 'bitrate')
-  return fields.map((field) => `${path.value}.${field}`)
+  return [
+    ...fields.map((field) => `${path.value}.${field}`),
+    ...metadataPaths(`${path.value}.metadata`),
+  ]
 })
 
 const limits = computed(() => bitrateTable(encoder.value, props.track.mixdown, channels.value))
@@ -443,6 +448,7 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         </template>
       </Field>
     </div>
+    <TrackMetadataEditor list="audio" :index="index" collapsible />
   </TrackRowFrame>
 </template>
 

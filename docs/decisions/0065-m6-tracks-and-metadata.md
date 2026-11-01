@@ -391,7 +391,92 @@ Headless Chromium (`/usr/bin/chromium`: the Playwright cache was not on this mac
 
 ## Task C — F-10 `TrackMetadataEditor`, bulk edit, external subtitles
 
-(Written by C.)
+Built in `components/tracks/`: `TrackMetadataEditor.vue`, `BulkEditDialog.vue`,
+`ExternalSubtitleFields.vue`, the pure patch builders and name values in `metadata.ts`, the
+inspection cache and the file picking in `external.ts`; the rows, `OutputTrackList` and the
+messages changed. The stub's props are unchanged; one optional prop is added, `collapsible`.
+
+1. **The block.** Language: the `LanguagePicker` (clearable; *None* is "As the source
+   (Japanese)", for an external file "Not set (written as und)"; `container` is the job's, so the
+   ISO 639-2 code shown is the one written). Name: a text field (`null` shows the source title as
+   its placeholder, `""` shows "No title"); typing is one undo step until the field is left.
+   Flags: six toggles, each one undo step. Every field is a `Field` with its validation path
+   (`audio[2].metadata.default`), so issues show at it; the fixes of the block's issues are
+   buttons under the flags (`metadata.several_defaults` → *Keep only audio track 1 default*,
+   `tool.mkvpropedit_missing` and `container.flag_unsupported` → *Clear the … flag*,
+   `metadata.language_tag_lost` → *Write it as por*). The row no longer lists these issues
+   again (its `fieldPaths` include the block's paths).
+2. **Folded in a row.** In an audio or subtitle row the block is folded behind one line
+   (*Metadata* `Japanese · “Japanese 5.1” · Default`); it opens by itself when one of its fields
+   gets an issue and when `ui.reveal` asks for one of its paths, before the field takes the
+   focus. On the Video tab it is open. A burned-in subtitle's block is turned off with a note:
+   validation writes no metadata for it.
+3. **Name templates.** `TrackMetadata.name` stays text. There is no route that renders a track
+   name template, and porting the naming template syntax (`<…>` groups, format specs) into the
+   client would be a second renderer that can drift from `batch/metadata.py`. So the name field
+   has a menu *From this track* with the codec rules' templates, each rendered at edit time with
+   this track's values and shown with its template (`Japanese 2.0 AAC` —
+   `{lang_name} {channels} {codec}`): audio `{lang_name|lang_native} {channels} {codec}`,
+   `{lang_name|lang_native} {channels}`, `{lang_name}`, `{lang_native}`, `{title}`; subtitles and
+   video `{lang_name}`, `{lang_native}`, `{lang_name} {codec}`, `{title}`. The values are the
+   core's: the language of the block (else the source track's), its English and capitalised
+   native name, the output layout (the mixdown's `channels − lfe`.`lfe`, else the source layout
+   for a copied track), the output codec (the encoder's label, the source codec for a copied
+   passthru, the conversion format or the file's format for subtitles), the source title. A
+   template with an empty value is not offered. The chosen text is stored; it does not follow a
+   later language change. The menu also has *Keep the source title* (`null`) and *Write no
+   title* (`""`).
+4. **Bulk edit.** A selection column (a check box per row, Space toggles it) and a bar above
+   the list with *Select all* (shown from two tracks), the count, *Edit selected…* and *Clear
+   the selection*. The dialog changes only what is set: *Set the language* plus the picker, and
+   per flag *Leave / On / Off*; *Apply* is off until something is set; one `editor.patch`, so one
+   undo step. The selection is by place, so it is cleared when the list's tracks or their order
+   change (a move, an add, a remove, an undo of those, another job), and kept when a selected
+   track's settings change.
+5. **External files.** *Add external subtitle…* (Subtitles tab) → `platform.pickFiles({
+   multiple: true, filters: ['.srt', '.ass', '.ssa', '.vtt', '.sup'] })` → `subtitles/inspect`
+   for each file (a refused file is the API client's toast and is left out) → one copied track
+   per file at the end of the list, all in one undo step, never default. No dialog in between:
+   the row offers every setting, and keeps offering it later. The file name gives the language
+   and flags when its last parts say so (`Film.pt-BR.forced.srt`, `.sdh.`, `.cc.`; not `hi`,
+   which is Hindi; only the parts right before the extension, so a title word is never taken for
+   a code). The row shows the file (its path in the tooltip), `SRT · 120 events · UTF-8` (a
+   `.sup`: *display sets*), the inspection's warnings about the file, the time offset (ms,
+   negative too; typing is one undo step) and the character encoding (an editable list of the
+   common code pages and ISO 8859 sets by iconv's names; the first entry is *As detected: UTF-8*
+   or *Not detected: choose one*). As S6 found: `charset` stays `null` for UTF-8 and UTF-16; a
+   file whose encoding was not detected shows `subtitle.charset_unknown` at the encoding until
+   one is chosen; a UTF-16 file shows `subtitle.utf16` there. A bitmap file has no encoding
+   field, and *Convert* is off for it. The row asks `subtitles/inspect` itself (quietly) when the
+   page has no answer for the path (after a reload from the preset or an edit-back).
+6. **The external file's own fields.** `ExternalSubtitle.language`, `name` and `flags` say what
+   the file is; the output's `metadata` says what is written, and its `null` means "as the
+   file". The block of an external track writes both in one patch, so they are always equal and
+   the file reads as the user described it everywhere (the builder takes the source language
+   and title from `ExternalSubtitle`, the flags from `metadata`).
+
+**Checked** in headless Chromium against `scripts/dev-server.py --port 8750` with the pinned
+FFmpeg (n9.0.2), light and dark, 2026-11-01. `subtitles/inspect` of the files used:
+`text-subs.en.srt` `subrip` UTF-8 2 events, `text-subs.en.ass` `ass` UTF-8 3, a `.sup` made with
+`mkvextract` from `pgs.mkv` `hdmv_pgs_subtitle` bitmap 12 display sets, a `.vtt` `webvtt` UTF-8 2,
+an `.ssa` `ass` UTF-8 2, a CP1250 `.srt` (made with `iconv`) `subrip`, `charset: null`, with
+`subtitle.charset_unknown`. **M6 demo 3** through the UI on `multitrack` (H.265 MKV 1080p):
+audio 1 Hungarian, *Original language*, the name from the menu (`Hungarian 2.0 AAC`); audio 2
+`pt-BR`, `Português (Brasil)`; audio 3 `pt-BR`, *Commentary*, `Comentário do diretor`; subtitle 1
+Hungarian, *Hearing impaired* (SDH), `Magyar SDH`; the CP1250 file with *CP1250* and −200 ms; the
+`.vtt` file as `pt-BR`, `Legendas` → queue → done. Re-probed with the pinned ffprobe, `mkvmerge -J`
+and the server (`POST /api/sources`): audio `hun` "Hungarian 2.0 AAC" default+original; `por` /
+`LanguageIETF pt-BR` "Português (Brasil)"; `por` / `pt-BR` "Comentário do diretor" comment;
+subtitles `hun` "Magyar SDH" default+hearing_impaired, the source's `eng` "English SDH"
+hearing_impaired and "Signs & Songs" forced, `hun` (the CP1250 file, its text decoded: "Árvíztűrő
+tükörfúrógép", the events 200 ms earlier), `por` / `pt-BR` "Legendas" (WebVTT). The BCP 47 tags
+come from the post-mux mkvpropedit step; ffprobe shows `por` only, as 0034 says.
+
+**Open**, for the lead: validation does not know an external text file whose encoding was not
+detected (only `subtitles/inspect` says so), so a job with such a file and no `charset` can be
+queued and fails in FFmpeg; the row shows the warning. A rule in `jobs/validate` (or the dry run)
+would close it. PrimeVue's popup menu closes when the page scrolls, so the name menu of a row
+near the bottom of the window closes if the page scrolls under it.
 
 ## Task D — F-6 the job type, remux and in-place edits
 
