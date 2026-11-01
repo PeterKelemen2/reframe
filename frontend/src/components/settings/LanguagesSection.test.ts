@@ -31,6 +31,16 @@ function withLanguages(): AppSettings {
   } as AppSettings
 }
 
+/** A 422 with one issue at the second favourite, as the server words it. */
+function tagRefusal(code: string, message: string): Response {
+  const issue = { severity: 'error', code, path: 'languages.favourites.1', message, fixes: [] }
+  const body = { type: 'about:blank', title: message, status: 422, code, detail: null }
+  return new Response(JSON.stringify({ ...body, issues: [issue] }), {
+    status: 422,
+    headers: { 'Content-Type': 'application/problem+json' },
+  })
+}
+
 async function mountSection(readOnly = false) {
   const result = await mountSettings(LanguagesSection, {
     info: systemInfo({ settings_read_only: readOnly }),
@@ -87,6 +97,31 @@ describe('the Languages section', () => {
     ])
     expect(document.querySelectorAll('.rf-field__issue')).toHaveLength(1)
     expect(shown('audio')).toEqual(['en', 'hu'])
+  })
+
+  it('says in a sentence which tag the server refused, not its schema pattern', async () => {
+    const { editor, server } = await mountSection()
+    // The real server's answer to ["en", "pt_BR"].
+    server.refuse = () =>
+      tagRefusal(
+        'settings.invalid',
+        "The settings change is not valid: languages.favourites.1: String should match pattern '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$'",
+      )
+    editor('favourites').vm.$emit('update:modelValue', ['en', 'pt_BR'])
+    await flushPromises()
+    const issues = document.querySelectorAll(`[data-field="favourites"] .rf-field__issue`)
+    expect([...issues].map((issue) => issue.textContent)).toEqual([
+      'Error: The server did not accept “pt_BR”: a language tag is letters and digits in parts joined by hyphens, such as hu, pt-BR or sr-Latn.',
+    ])
+  })
+
+  it('keeps the words of another refusal of one tag', async () => {
+    const { editor, server } = await mountSection()
+    server.refuse = () => tagRefusal('settings.other', 'Not this one')
+    editor('favourites').vm.$emit('update:modelValue', ['en', 'pt_BR'])
+    await flushPromises()
+    const issues = document.querySelectorAll(`[data-field="favourites"] .rf-field__issue`)
+    expect([...issues].map((issue) => issue.textContent)).toEqual(['Error: Not this one'])
   })
 
   it('shows a change before the answer, so that a second change builds on the first', async () => {
