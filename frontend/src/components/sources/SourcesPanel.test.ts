@@ -606,7 +606,7 @@ describe('a batch group in the sources panel', () => {
     await rightClick(item('Show.S01E02.mkv'))
     await choose('Apply to group…')
     expect(text($('[data-dialog="apply-to-group"] .p-dialog-title'))).toBe(
-      'Apply to group "Show S01"',
+      'Apply to group “Show S01”',
     )
   })
 })

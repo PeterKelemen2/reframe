@@ -2,10 +2,10 @@ import { flushPromises } from '@vue/test-utils'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
+import type { Ref } from 'vue'
 
 import { configureClient } from '@/api/client'
-import { FakeServer } from '@/api/testing/fakes'
+import { deferred, FakeServer } from '@/api/testing/fakes'
 import type { Schemas, SourceEntry } from '@/api/types'
 import PresetNameDialog from '@/components/presets/PresetNameDialog.vue'
 import { nameConflict, presetList, userPreset } from '@/components/presets/testing'
@@ -20,10 +20,17 @@ import { useUiStore } from '@/stores/ui'
 import ApplyToGroupDialog from './ApplyToGroupDialog.vue'
 import GroupBanner from './GroupBanner.vue'
 
-const queue = vi.hoisted(() => ({ queueGroup: vi.fn<(id: string) => Promise<void>>() }))
-vi.mock('@/composables/useQueueGroup', () => ({
-  useQueueGroup: () => ({ busy: computed(() => false), queueGroup: queue.queueGroup }),
+const queue = vi.hoisted(() => ({
+  queueGroup: vi.fn<(id: string) => Promise<void>>(),
+  busy: { value: false } as Ref<boolean>,
 }))
+vi.mock('@/composables/useQueueGroup', async () => {
+  const { computed, ref } = await import('vue')
+  queue.busy = ref(false)
+  return {
+    useQueueGroup: () => ({ busy: computed(() => queue.busy.value), queueGroup: queue.queueGroup }),
+  }
+})
 
 const episodes: SourceEntry[] = [1, 2, 5].map((n) => ({
   id: `e0${n}`,
@@ -59,6 +66,7 @@ beforeEach(() => {
   server = new FakeServer()
   configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
   queue.queueGroup.mockReset().mockResolvedValue()
+  queue.busy.value = false
 })
 
 afterEach(() => {
@@ -125,7 +133,7 @@ describe('the group banner', () => {
   it('names the edited group, its size and the shown file', async () => {
     await mountBanner('group')
     expect(text($('[data-state="group"] [data-field="title"]'))).toBe(
-      'Editing group "Show S01" (3 files) — showing E01',
+      'Editing group “Show S01” (3 files) — showing E01',
     )
     expect($('[data-state="member"]')).toBeNull()
   })
@@ -165,6 +173,26 @@ describe('the group banner', () => {
     expect(queue.queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
   })
 
+  it('keeps Add group to queue focusable while it runs, and the focus on it after', async () => {
+    await mountBanner('group')
+    const done = deferred()
+    queue.queueGroup.mockImplementation(async () => {
+      queue.busy.value = true
+      await done.promise
+      queue.busy.value = false
+    })
+    const button = $('[data-action="queue-group"]') as HTMLButtonElement
+    button.focus()
+    await click('[data-action="queue-group"]')
+    expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-busy')).toBe('true')
+    expect(document.activeElement).toBe(button)
+    done.resolve()
+    await flushPromises()
+    expect(button.getAttribute('aria-busy')).toBeNull()
+    expect(document.activeElement).toBe(button)
+  })
+
   it('closes the group by opening the shown file as one job', async () => {
     const { select } = await mountBanner('group')
     await click('[data-action="close-group"]')
@@ -174,7 +202,7 @@ describe('the group banner', () => {
   it('offers Apply to group and Edit group while a file of a group is open as one job', async () => {
     const { editGroup } = await mountBanner('member')
     expect($('[data-state="group"]')).toBeNull()
-    expect(text($('[data-state="member"] [data-field="title"]'))).toBe('In group "Show S01"')
+    expect(text($('[data-state="member"] [data-field="title"]'))).toBe('In group “Show S01”')
     await click('[data-action="apply-to-group"]')
     expect($('[data-dialog="apply-to-group"]')).not.toBeNull()
     await click('[data-action="edit-group"]')
@@ -225,7 +253,7 @@ describe('Save as preset', () => {
     })
     expect(server.count('GET /api/presets')).toBe(1)
     expect(applyPreset).toHaveBeenCalledExactlyOnceWith('u9')
-    expect(useToastStore().items.map((toast) => toast.summary)).toEqual(['Preset "Anime BD" saved'])
+    expect(useToastStore().items.map((toast) => toast.summary)).toEqual(['Preset “Anime BD” saved'])
     expect(wrapper.findComponent(PresetNameDialog).props('visible')).toBe(false)
   })
 

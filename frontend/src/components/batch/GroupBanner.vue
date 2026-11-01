@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Above the tabs: the edited group (its file count, the shown file, the scope, its actions), or
 // a slim line while a file of a group is open as one job. Nothing otherwise.
+import { LoaderCircle } from '@lucide/vue'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
@@ -30,7 +31,7 @@ const sources = useSourcesStore()
 const presets = usePresetsStore()
 const toasts = useToastStore()
 const ui = useUiStore()
-const { busy: queueing, queueGroup: queueOne } = useQueueGroup()
+const { busy: queueing, queueGroup } = useQueueGroup()
 const id = useId()
 
 const root = useTemplateRef<HTMLElement>('root')
@@ -93,10 +94,6 @@ function setScope(scope: GroupScope): Promise<void> {
 
 function editGroup(groupId: string): Promise<void> {
   return quietly(() => editor.editGroup(groupId))
-}
-
-function queueGroup(groupId: string): Promise<void> {
-  return quietly(() => queueOne(groupId))
 }
 
 function closeGroup(): Promise<void> {
@@ -193,14 +190,19 @@ watch(mode, async () => {
           data-action="check-group"
           @click="ui.openMatrix()"
         />
+        <!-- Busy, not disabled: the focus stays here, and a second click is refused. -->
         <Button
           size="small"
           severity="secondary"
           :label="t('group.actions.queue')"
-          :loading="queueing"
+          :aria-busy="queueing || undefined"
           data-action="queue-group"
           @click="queueGroup(groupTarget.groupId)"
-        />
+        >
+          <template v-if="queueing" #icon>
+            <LoaderCircle class="group-banner__spin" :size="16" aria-hidden="true" />
+          </template>
+        </Button>
         <Button
           size="small"
           severity="secondary"
@@ -258,6 +260,16 @@ watch(mode, async () => {
 </template>
 
 <style scoped>
+.group-banner__spin {
+  animation: group-banner-spin 1s linear infinite;
+}
+
+@keyframes group-banner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .group-banner {
   display: flex;
   flex-wrap: wrap;
