@@ -267,6 +267,41 @@ async def test_tags_show_the_source_values_and_the_template_errors(api: Api) -> 
     assert (syntax["code"], syntax["path"]) == ("naming.template_syntax", "tags.plot")
 
 
+async def test_validation_reports_the_tag_errors_that_jobs_tags_shows(api: Api) -> None:
+    path = await recorded(api, "Film.mkv", "chapters.mkv")
+    job = await drafted(api, path)
+    job["tags"] = {"genre": "{nme}", "plot": "{name", "release_date": "{year:%Y}"}
+    shown = ok(await api.client.post("/api/jobs/tags", json={"job": job}))["issues"]
+    issues = ok(await api.client.post("/api/jobs/validate", json={"job": job}))
+    assert [i for i in issues if i["path"].startswith("tags.")] == shown
+    assert {(i["code"], i["path"], i["severity"]) for i in shown} == {
+        ("naming.unknown_variable", "tags.genre", "error"),
+        ("naming.template_syntax", "tags.plot", "error"),
+        ("naming.bad_format_spec", "tags.release_date", "error"),
+    }
+    [queued] = (await api.client.post("/api/queue", json={"jobs": [job]})).json()
+    assert queued["state"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("value", "code"),
+    [("a\0b", "metadata.nul_character"), ("x" * 200_000, "metadata.tag_too_long")],
+    ids=["nul", "200000-characters"],
+)
+async def test_a_tag_the_command_line_cannot_carry_is_an_error(
+    api: Api, value: str, code: str
+) -> None:
+    path = await recorded(api, "Film.mkv", "chapters.mkv")
+    job = await drafted(api, path)
+    job["tags"]["description"] = value
+    issues = ok(await api.client.post("/api/jobs/validate", json={"job": job}))
+    assert [(i["code"], i["severity"]) for i in issues if i["path"] == "tags.description"] == [
+        (code, "error")
+    ]
+    [queued] = (await api.client.post("/api/queue", json={"jobs": [job]})).json()
+    assert queued["state"] == "failed"
+
+
 # ---- chapters/import
 
 

@@ -1583,7 +1583,7 @@ CASES: list[Case] = [
 
 #: Cases in other files next to this one: each has ``cases(h) -> list[Case]``, where ``h``
 #: gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
-EXTRA_CASE_FILES = ("cases_inplace", "cases_options")
+EXTRA_CASE_FILES = ("cases_inplace", "cases_options", "cases_metadata")
 _HELPERS = SimpleNamespace(**globals())
 for _name in EXTRA_CASE_FILES:
     CASES.extend(_load(_name).cases(_HELPERS))

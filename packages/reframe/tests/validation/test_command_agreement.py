@@ -10,7 +10,7 @@ import inspect
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PurePath
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -39,6 +39,7 @@ from reframe.models import (
     ToolSet,
     ValidationIssue,
 )
+from reframe.textfile import TextCharset
 from reframe.validation import validate
 
 _COMMAND_TESTS = Path(__file__).resolve().parents[1] / "command"
@@ -81,11 +82,15 @@ DEFS = load_definitions()
 
 
 def file_system(job: JobSettings, source: MediaSource) -> Any:
-    """The source, the external subtitle files and the output folder exist."""
-    files: list[PurePath] = [source.ref.path]
-    files += [t.source.path for t in job.subtitles if isinstance(t.source, ExternalSubtitle)]
+    """The source, the external subtitle files and the output folder exist. A subtitle file is
+    in the encoding its track names, else in UTF-8."""
     dirs = [job.output.path.parent] if job.output.path is not None else []
-    return sc.FakeFs(files=files, dirs=dirs)
+    fs = sc.FakeFs(files=[source.ref.path], dirs=dirs)
+    for track in job.subtitles:
+        if isinstance(track.source, ExternalSubtitle):
+            named = track.source.charset is not None
+            fs.add_file(track.source.path, TextCharset(None, False) if named else sc.UTF8)
+    return fs
 
 
 def run_validation(

@@ -45,9 +45,11 @@ from reframe.models import (
     VideoStream,
 )
 from reframe.naming import FileTimes
+from reframe.textfile import TextCharset
 from reframe.validation import validate, validate_template
 
 DEFS = load_definitions()
+UTF8 = TextCharset("UTF-8", ascii=False)
 SOURCE = Path("/media/movies/Movie.2019.1080p.BluRay.mkv")
 OUTPUT = Path("/out/Movie (2019).mkv")
 GB = 1_000_000_000
@@ -68,6 +70,7 @@ class FakeFs:
     ) -> None:
         self.case_insensitive = case_insensitive
         self.files: dict[str, PurePath] = {}
+        self.charsets: dict[str, TextCharset] = {}
         self.dirs: dict[str, PurePath] = {}
         self.readonly = {self._key(p) for p in readonly}
         self.free = free
@@ -84,9 +87,10 @@ class FakeFs:
         for part in [path, *path.parents]:
             self.dirs[self._key(part)] = part
 
-    def add_file(self, path: PurePath) -> None:
+    def add_file(self, path: PurePath, charset: TextCharset = UTF8) -> None:
         self.add_dir(path.parent)
         self.files[self._key(path)] = path
+        self.charsets[self._key(path)] = charset
 
     def exists(self, path: PurePath) -> bool:
         key = self._key(path)
@@ -116,6 +120,9 @@ class FakeFs:
 
     def file_times(self, file: Path) -> FileTimes | None:
         return None
+
+    def text_charset(self, path: PurePath) -> TextCharset | None:
+        return self.charsets.get(self._key(path))
 
 
 def make_source(path: Path = SOURCE) -> MediaSource:

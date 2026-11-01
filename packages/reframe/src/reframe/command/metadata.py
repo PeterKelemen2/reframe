@@ -7,6 +7,7 @@ by an mkvpropedit step, since FFmpeg never writes that element.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,11 +31,14 @@ from reframe.models import (
     TagSettings,
     TagValues,
     TrackMetadata,
+    ValidationIssue,
 )
+from reframe.models.issues import FixTarget
 from reframe.naming import check_template, render_value
 from reframe.probe.bitrate import tag_value
 
 __all__ = [
+    "MAX_GENERATED_CHAPTERS",
     "TAG_KEYS",
     "ChapterPlan",
     "OutputTrack",
@@ -43,6 +47,7 @@ __all__ = [
     "container_language",
     "dispositions",
     "ffmetadata",
+    "generated_starts",
     "ietf_edits",
     "needs_ietf",
     "planned_chapters",
@@ -50,6 +55,7 @@ __all__ = [
     "rendered_tags",
     "stream_metadata_args",
     "tag_args",
+    "tag_template_issues",
 ]
 
 StreamType = Literal["v", "a", "s"]
@@ -196,10 +202,11 @@ def _renamed(
         if e < CHAPTER_EDGE or (duration is not None and s > duration - CHAPTER_EDGE):
             continue
         name = names[i] if names is not None and i < len(names) and names[i] else None
+        # An untitled chapter stays untitled, as when FFmpeg copies the chapters.
         out.append(
             OutputChapter(
-                number=len(out) + 1, start=max(0.0, s), end=e,
-                name=name or ch.title or f"Chapter {i + 1}", source_name=ch.title, source_index=i,
+                number=len(out) + 1, start=max(0.0, s), end=e, name=name or ch.title or "",
+                source_name=ch.title, source_index=i,
             )
         )  # fmt: skip
     return out
@@ -208,15 +215,30 @@ def _renamed(
 #: A generated last chapter shorter than this share of the interval is merged into the one
 #: before it, so that no tiny chapter ends the film.
 GENERATED_TAIL = 0.25
+#: More generated chapters than this is a mistake in the interval; none are made.
+MAX_GENERATED_CHAPTERS = 1000
+
+
+def generated_starts(every_minutes: float, duration: float) -> list[float] | None:
+    """The start times of the chapters generated every ``every_minutes`` over ``duration``
+    seconds; ``None`` when they would be more than :data:`MAX_GENERATED_CHAPTERS`. The work is
+    bounded by that limit, whatever the interval."""
+    step = every_minutes * 60
+    count = duration / step if step > 0 else math.inf
+    if not count < MAX_GENERATED_CHAPTERS + 1:
+        return None
+    starts = [k * step for k in range(int(count) + 1) if k * step < duration]
+    if len(starts) > 1 and duration - starts[-1] < GENERATED_TAIL * step:
+        starts.pop()
+    return starts if len(starts) <= MAX_GENERATED_CHAPTERS else None
 
 
 def _generated(
     every_minutes: float, duration: float, names: list[str] | None
-) -> list[OutputChapter]:
-    step = every_minutes * 60
-    starts = [k * step for k in range(int(duration // step) + 1) if k * step < duration]
-    if len(starts) > 1 and duration - starts[-1] < GENERATED_TAIL * step:
-        starts.pop()
+) -> list[OutputChapter] | None:
+    starts = generated_starts(every_minutes, duration)
+    if starts is None:
+        return None
     out: list[OutputChapter] = []
     for k, start in enumerate(starts):
         end = starts[k + 1] if k + 1 < len(starts) else duration
@@ -265,8 +287,13 @@ def planned_chapters(
         return _none("The source has no chapters.")
     if expected_duration <= 0:
         return _none("The source's duration is not known, so no chapters can be generated.")
-    chapters = _generated(settings.generate_every, expected_duration, settings.names)
-    return OutputChapters(origin="generated", chapters=chapters), False
+    generated = _generated(settings.generate_every, expected_duration, settings.names)
+    if generated is None:
+        return _none(
+            f"A chapter every {settings.generate_every:g} minutes would make more than "
+            f"{MAX_GENERATED_CHAPTERS} chapters, so none are generated."
+        )
+    return OutputChapters(origin="generated", chapters=generated), False
 
 
 def chapter_plan(
@@ -328,6 +355,22 @@ def render_tag(
     )  # fmt: skip
 
 
+def tag_template_issues(tags: TagSettings, *, target: FixTarget = "job") -> list[ValidationIssue]:
+    """The template errors of the set tags (:func:`reframe.naming.check_template`'s errors), at
+    ``tags.<name>``, with fixes for ``target``."""
+    issues: list[ValidationIssue] = []
+    for name in TAG_KEYS:
+        template = getattr(tags, name)
+        if template is None:
+            continue
+        issues += [
+            issue
+            for issue in check_template(template, field=f"tags.{name}", target=target)
+            if issue.severity is Severity.ERROR
+        ]
+    return issues
+
+
 def rendered_tags(
     job: JobSettings,
     source: MediaSource,
@@ -341,7 +384,6 @@ def rendered_tags(
     errors of the tags (at ``tags.<name>``)."""
     values: dict[str, str | None] = {}
     found: dict[str, str | None] = {}
-    issues = []
     for name, key in TAG_KEYS.items():
         template = getattr(job.tags, name)
         found[name] = (source.container.title if name == "title" else None) or tag_value(
@@ -354,15 +396,10 @@ def rendered_tags(
             template, job, source, options=options, output_size=output_size, now=now,
             definitions=definitions,
         )  # fmt: skip
-        issues += [
-            issue
-            for issue in check_template(template, field=f"tags.{name}")
-            if issue.severity is Severity.ERROR
-        ]
     return RenderedTags(
         values=TagValues.model_validate(values),
         source=TagValues.model_validate(found),
-        issues=issues,
+        issues=tag_template_issues(job.tags),
     )
 
 

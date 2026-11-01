@@ -4,12 +4,18 @@ function: the table the user sees is what the encode writes. The real encodes ar
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 
 from reframe.command import build_plan, output_chapters
-from reframe.command.metadata import chapter_plan, planned_chapters, rendered_tags
+from reframe.command.metadata import (
+    chapter_plan,
+    generated_starts,
+    planned_chapters,
+    rendered_tags,
+)
 from reframe.definitions import load_definitions
 from reframe.models import (
     Chapter,
@@ -63,14 +69,29 @@ def test_copied_chapters_keep_a_missing_title_and_are_mapped_from_the_source() -
     assert written(job, source) == "-map_chapters 0"
 
 
-def test_renamed_chapters_without_a_name_or_title_get_chapter_n_in_the_table_and_the_file() -> None:
+@pytest.mark.parametrize(
+    "chapters",
+    [ChapterSettings(names=["Intro"]), ChapterSettings(names=["Intro", "", "", ""])],
+)
+def test_a_rename_leaves_an_untitled_chapter_untitled_in_the_table_and_the_file(
+    chapters: ChapterSettings,
+) -> None:
     source = untitled(FILM, 1)
-    job = draft(source, chapters=ChapterSettings(names=["Intro"]))
-    assert [r[3] for r in rows(job, source)] == ["Intro", "Chapter 2", "Part Two", "Credits"]
+    job = draft(source, chapters=chapters)
+    assert [r[3] for r in rows(job, source)] == ["Intro", "", "Part Two", "Credits"]
     content = written(job, source)
     assert content is not None
     assert "title=Intro\n" in content
-    assert "title=Chapter 2\n" in content
+    assert "START=1000\nEND=2500\n[CHAPTER]" in content
+
+
+def test_a_range_cut_inside_an_untitled_chapter_keeps_it_untitled() -> None:
+    source = untitled(FILM, 1)
+    job = draft(source, range=TimeRange(start=1.5, end=4.0))
+    assert [r[3] for r in rows(job, source)] == ["", "Part Two"]
+    content = written(job, source)
+    assert content is not None
+    assert "title=" + "Chapter 2" not in content
 
 
 def test_a_range_that_ends_on_a_chapter_edge_writes_the_same_chapters_as_the_table() -> None:
@@ -146,6 +167,34 @@ def test_generated_chapters_are_numbered_and_named_by_position() -> None:
     content = written(job, plain)
     assert content is not None
     assert content.count("[CHAPTER]") == 3
+
+
+@pytest.mark.parametrize("every", [1e-7, 1e-300, 5e-324])
+def test_an_interval_that_makes_too_many_chapters_makes_none_at_once(every: float) -> None:
+    plain = recorded("multitrack.mkv")
+    job = draft(plain, chapters=ChapterSettings(generate_every=every))
+    started = time.monotonic()
+    found = output_chapters(job, plain, definitions=DEFS)
+    assert time.monotonic() - started < 0.5
+    assert (found.origin, found.chapters) == ("none", [])
+    assert found.reason == (
+        f"A chapter every {every:g} minutes would make more than 1000 chapters, so none are "
+        "generated."
+    )
+    assert written(job, plain) == "-map_chapters -1"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "count"),
+    [
+        (1000.0, 1000),  # the last start, 999, is a whole step before the end
+        (1000.2, 1000),  # a tail shorter than a quarter step joins the chapter before it
+        (1000.5, None),  # a longer tail is chapter 1001
+    ],
+)
+def test_the_limit_counts_the_chapters_that_are_written(seconds: float, count: int | None) -> None:
+    starts = generated_starts(1 / 60, seconds)
+    assert (len(starts) if starts is not None else None) == count
 
 
 @pytest.mark.parametrize(

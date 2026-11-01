@@ -11,14 +11,20 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import sys
 import tempfile
+import threading
 from pathlib import Path, PurePath
 from typing import Protocol
 
 from reframe.naming import FileTimes, NamingFs, RealNamingFs
+from reframe.textfile import TextCharset, read_charset
 
 __all__ = ["FileSystemView", "LocalFileSystem", "has_nul"]
+
+#: Files whose encoding :class:`LocalFileSystem` remembers between validations.
+_CHARSET_CACHE = 256
 
 
 class FileSystemView(NamingFs, Protocol):
@@ -51,6 +57,12 @@ class FileSystemView(NamingFs, Protocol):
         a case-insensitive file system, ``..``, a link). ``False`` when either does not exist."""
         ...
 
+    def text_charset(self, path: PurePath) -> TextCharset | None:
+        """The character encoding of the text file ``path``, as
+        :func:`reframe.textfile.read_charset` tells it; ``None`` when ``path`` is not a regular
+        file or cannot be read."""
+        ...
+
 
 def has_nul(path: PurePath | str) -> bool:
     """``path`` has a NUL character: no file system allows it, and the ``os`` calls that take
@@ -79,6 +91,11 @@ class LocalFileSystem(RealNamingFs):
 
     A path with a NUL character names no file: every method answers as for a path that does
     not exist, before any ``os`` call (which would raise ``ValueError``)."""
+
+    def __init__(self) -> None:
+        # Validation runs on every edit; a file is read again only when its stat changes.
+        self._charsets: dict[tuple[object, ...], TextCharset] = {}
+        self._lock = threading.Lock()
 
     def exists(self, path: PurePath) -> bool:
         return not has_nul(path) and os.path.exists(path)
@@ -127,6 +144,33 @@ class LocalFileSystem(RealNamingFs):
             return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
         except OSError:
             return False
+
+    def text_charset(self, path: PurePath) -> TextCharset | None:
+        if has_nul(path):
+            return None
+        try:
+            info = os.stat(path)
+            if not stat.S_ISREG(info.st_mode):
+                return None
+            key = (
+                str(path),
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+            )
+            with self._lock:
+                found = self._charsets.get(key)
+            if found is None:
+                found = read_charset(path)
+                with self._lock:
+                    if len(self._charsets) >= _CHARSET_CACHE:
+                        self._charsets.clear()
+                    self._charsets[key] = found
+            return found
+        except OSError:
+            return None
 
     def list_files(self, folder: Path) -> list[str] | None:
         return None if has_nul(folder) else super().list_files(folder)

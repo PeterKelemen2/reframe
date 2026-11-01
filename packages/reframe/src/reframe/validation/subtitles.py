@@ -60,6 +60,86 @@ def sources(ctx: JobContext) -> Iterator[ValidationIssue]:
             )
 
 
+def _plain(charset: str) -> str:
+    return charset.upper().replace("-", "").replace("_", "")
+
+
+def _wide(charset: str) -> bool:
+    """A 16- or 32-bit Unicode encoding, in which FFmpeg reads no subtitle file right."""
+    return _plain(charset).startswith(("UTF16", "UTF32", "UCS2", "UCS4"))
+
+
+@job_rule("subtitles", "subtitle.charset_unknown", "subtitle.utf16", "subtitle.charset_mismatch")
+def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """The encoding of an external text file against the one its track names. Without one,
+    FFmpeg copies the bytes as they are, so only UTF-8 comes out right; with one, it decodes
+    the file and drops or garbles what that encoding cannot read."""
+    for index, track in enumerate(ctx.job.subtitles):
+        if isinstance(track.source, int):
+            continue
+        file = PurePath(track.source.path)
+        kind = EXTERNAL_FORMATS.get(file.suffix.lower())
+        found = ctx.fs.text_charset(file) if kind is not None and kind[1] == "text" else None
+        if found is None:
+            continue  # a bitmap file, or one that subtitle.external_* reports
+        at = f"subtitles[{index}].source.charset"
+        chosen = track.source.charset or None
+        as_utf8 = fix("Read it as UTF-8 (as detected)", replace(at, None), target=ctx.target)
+        if found.name is not None and found.name != "UTF-8":
+            effect = (
+                "FFmpeg cannot open it"
+                if found.name.startswith("UTF-32")
+                else "a line that starts with a letter that is not ASCII loses that letter or "
+                "the whole line, whichever encoding is chosen"
+            )
+            yield error(
+                "subtitle.utf16",
+                at,
+                f"{file.name} is {found.name}, which FFmpeg reads wrongly: {effect}. Save the "
+                "file as UTF-8.",
+                _drop(ctx, index),
+            )
+        elif chosen is None:
+            if found.name is None:
+                yield error(
+                    "subtitle.charset_unknown",
+                    at,
+                    f"The character encoding of {file.name} was not detected (it is not "
+                    "UTF-8), and none is chosen: FFmpeg would write its letters that are not "
+                    "ASCII as invalid text (shown as \N{REPLACEMENT CHARACTER}) or stop with an "
+                    "error. Choose the encoding the file was saved in.",
+                    _drop(ctx, index),
+                )
+        elif _wide(chosen):
+            yield error(
+                "subtitle.utf16",
+                at,
+                f"FFmpeg reads subtitles as {chosen} wrongly: the text of {file.name} would "
+                "come out as other characters. Choose the encoding the file was saved in.",
+                *([as_utf8] if found.name == "UTF-8" else []),
+                _drop(ctx, index),
+            )
+        elif _plain(chosen) == "UTF8":
+            if found.name is None:
+                yield error(
+                    "subtitle.charset_mismatch",
+                    at,
+                    f"{file.name} is not UTF-8, but UTF-8 is chosen: FFmpeg would stop with an "
+                    "error at its first letter that is not ASCII. Choose the encoding the file "
+                    "was saved in.",
+                    _drop(ctx, index),
+                )
+        elif found.name == "UTF-8" and not found.ascii:
+            yield error(
+                "subtitle.charset_mismatch",
+                at,
+                f"{file.name} is UTF-8, but {chosen} is chosen: FFmpeg would drop or garble the "
+                "lines with letters that are not ASCII.",
+                as_utf8,
+                _drop(ctx, index),
+            )
+
+
 @job_rule("subtitles", "subtitle.burn_multiple", "subtitle.burn_passthrough")
 def burn_in(ctx: JobContext) -> Iterator[ValidationIssue]:
     burned = [i for i, track in enumerate(ctx.job.subtitles) if track.action == "burn"]
