@@ -1,1 +1,28 @@
-{}
+{
+  "picker": {
+    "choose": "Choose a language…",
+    "title": "Choose a language",
+    "none": "None",
+    "search": "Search languages",
+    "searchPlaceholder": "Name, code or tag: magyar, hun, pt-BR",
+    "list": "Languages",
+    "favourites": "Favourites",
+    "all": "All languages",
+    "codes": "{iso} (ISO 639-2) · {tag} (BCP 47)",
+    "shortCodes": "{iso} · {tag}",
+    "noMatch": "No language matches “{query}”.",
+    "count": "No languages | One language | {n} languages"
+  },
+  "list": {
+    "empty": "None yet.",
+    "add": "Add a language…",
+    "addTo": "Add a language to {label}",
+    "moveUp": "Move {language} up",
+    "moveDown": "Move {language} down",
+    "remove": "Remove {language}",
+    "drag": "Drag to reorder",
+    "moved": "{language} is now number {position} of {count}.",
+    "removed": "{language} removed.",
+    "added": "{language} added."
+  }
+}
