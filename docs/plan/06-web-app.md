@@ -532,11 +532,13 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       (`hun · hu`). With `LanguageListEditor` for ordered language lists (M6,
       [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
 - [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
-- [ ] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
+- [x] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
       selection settings, a codec-rule table (drag to reorder, the catch-all row is locked,
       expandable rows for optional settings), passthru check boxes, fallback encoder, and the
       **live preview** table (`presets/defaults/preview`, debounced). In a batch group, the preview
-      covers every file.
+      covers every file. From a tab, *Apply* replaces the job's tracks with what the defaults give
+      (the job keeps no defaults of its own); the batch-group case comes with F-13 (M7)
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), item 4 and "Task E").
 
 ### F-11 Chapters and tags tabs
 - [x] Chapter table with inline name edits, import/export, generate. Tag form with templates.
