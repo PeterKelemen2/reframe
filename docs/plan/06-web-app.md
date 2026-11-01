@@ -522,8 +522,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task B".)
 - [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
       (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
-- [ ] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
-      (`hun · hu`).
+- [x] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
+      (`hun · hu`). With `LanguageListEditor` for ordered language lists (M6,
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
 - [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
 - [ ] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
       selection settings, a codec-rule table (drag to reorder, the catch-all row is locked,
@@ -559,6 +560,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
       `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
       its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
+- [x] Languages (M6): favourites, preferred audio and subtitle languages
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
