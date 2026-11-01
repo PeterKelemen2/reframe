@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import stat
 import sys
 import tempfile
 import threading
@@ -150,8 +149,6 @@ class LocalFileSystem(RealNamingFs):
             return None
         try:
             info = os.stat(path)
-            if not stat.S_ISREG(info.st_mode):
-                return None
             key = (
                 str(path),
                 info.st_dev,

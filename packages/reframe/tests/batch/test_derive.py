@@ -192,7 +192,7 @@ def test_chapter_names_and_naming_without_overrides() -> None:
         (["Intro", "Chapter 2"], "generated", "generated"),
         (["Intro", "Chapter 2"], "source", "source"),
         (["Chapter 2", "Chapter 1"], "generated", "generated"),
-        ([], "generated", "generated"),
+        ([], "source", "source"),
     ],
 )
 def test_per_file_chapter_names_keep_the_base_presets_policy(

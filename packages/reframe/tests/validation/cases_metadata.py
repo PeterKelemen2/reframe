@@ -40,10 +40,21 @@ def track_name(value: str) -> Any:
     return mod
 
 
-def generate_every(minutes: float) -> Any:
+def generate_every(minutes: float, *, source_chapters: bool = False) -> Any:
     def mod(s: Any) -> None:
-        s.source.chapters = []
+        if not source_chapters:
+            s.source.chapters = []
         s.job.chapters.generate_every = minutes
+
+    return mod
+
+
+def external_name(name: str) -> Any:
+    def mod(s: Any) -> None:
+        s.job.subtitles.append(
+            SubtitleOutputTrack(source=ExternalSubtitle(path=EXTERNAL, name=name))
+        )
+        s.fs.add_file(EXTERNAL, UTF8)
 
     return mod
 
@@ -100,11 +111,20 @@ def cases(h: Any) -> list[Any]:
             track_name("Main\0"), track_name("Main"),
         ),
         case(
+            "external_name_nul", "metadata.nul_character", "subtitles[2].source.name", err,
+            external_name("Hu\0n"), external_name("Hun"),
+        ),
+        case(
             "tag_too_long", "metadata.tag_too_long", "tags.plot", err,
             tags(plot="x" * 3001), tags(plot="x" * 3000),
         ),
         case(
             "chapters_too_many", "chapters.too_many", "chapters.generate_every", err,
             generate_every(0.001), generate_every(0.02),
+        ),
+        case(
+            "chapters_too_many_but_the_source_has_chapters", "chapters.too_many",
+            "chapters.generate_every", err,
+            generate_every(0.001), generate_every(0.001, source_chapters=True),
         ),
     ]  # fmt: skip
