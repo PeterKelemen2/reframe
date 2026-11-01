@@ -1137,3 +1137,16 @@ Run by the lead on the merged branch (after the fix round, 1ee81a1), with a scri
    The same in dark Chromium and in Firefox.
 
 F-17 flow 1 ran in `npm run e2e` (18 passed, Chromium and Firefox, 27.5 s), nothing left behind. Also checked at the API: a UTF-8 SRT with `charset: CP1250` gives `error subtitle.charset_mismatch` at `subtitles[3].source.charset`, with *Read it as UTF-8 (as detected)* and *Remove this subtitle track* (the case FC did not run in a browser). The server and its home were removed afterwards.
+
+## M6 demo, 2026-11-01 (headed)
+
+Run once by the lead. The browser was Playwright's Chromium 1248, headed, started through the guard in `desktop/spike/scripts/windows.py` (`Session.wrapper` as `executablePath`, spot 40,40 1500×1000 on `HDMI-A-1`, `CHROME_DESKTOP` unset). The script was the same one as the headless run, on a fresh server (`--port 8767`, the same fixtures). Input went through Playwright only: no real pointer or keyboard, and no native dialog. No screenshot of a display was taken.
+
+- **The guard.** The owner put the cursor and the active window (VS Code, `com.microsoft.VSCode`) on `HDMI-A-1` when asked, and the guard admitted the run. One Chromium window (`chromium-browser`) was added and placed. The session ended without a placement failure, and afterwards no browser, gate folder or server home was left.
+- **Results**, the same as headless:
+  1. `— Unknown Measure` → `2,140 kb/s measured`.
+  2. The solid *Commentary* badge, with the tooltip "Set by a disposition flag in the file".
+  3. The re-probe shows `hun` "Magyar 5.1" `original`, `por` / `pt-BR` "Comentário" `comment`, and subtitle `hun` "Magyar SDH" `hearing_impaired`.
+  4. *Metadata edit*, `done` in 0.076 s; `default` `[true,false,false]` → `[false,true,false]`.
+  5. The three preview rows with rules 1, 2, 3 and their reasons.
+- **Not checked headed:** dark mode and Firefox (both were checked headless), Windows (the Windows testing phase of M10), and a run while the main display plays a movie.
