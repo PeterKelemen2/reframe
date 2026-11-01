@@ -18,14 +18,12 @@ import StatusBar from '@/components/shell/StatusBar.vue'
 import SourcesPanel from '@/components/sources/SourcesPanel.vue'
 import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
-import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 
 const { t } = useI18n()
 const system = useSystemStore()
 const sources = useSourcesStore()
-const editor = useEditorStore()
 
 useValidation()
 
@@ -83,7 +81,7 @@ async function open(): Promise<void> {
       >
         <SourcesPanel />
         <section class="workspace__editor" :aria-label="t('shell.workspace.tabs')">
-          <GroupBanner v-if="editor.target?.kind === 'group'" />
+          <GroupBanner />
           <EditorTabs v-if="sources.active !== null" />
           <div v-else class="workspace__empty" data-state="empty">
             <FolderOpen class="workspace__empty-icon" :size="40" aria-hidden="true" />

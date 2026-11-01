@@ -138,8 +138,9 @@ item 7. B's group row and banner call it; C's status bar case calls it.
 
 ### Mount points (lead)
 
-`WorkspaceView` shows `components/batch/GroupBanner.vue` (B) above the tabs while a group is
-edited, and mounts `components/matrix/MatrixDialog.vue` (C) once. C mounts its queue-group error
+`WorkspaceView` mounts `components/batch/GroupBanner.vue` (B) above the tabs (it shows itself
+while a group is edited, and *Apply to group…* / *Edit group* while a file of a group is open as
+one job), and mounts `components/matrix/MatrixDialog.vue` (C) once. C mounts its queue-group error
 dialog inside `MatrixDialog.vue`'s tree.
 
 ### i18n
