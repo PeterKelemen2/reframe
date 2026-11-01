@@ -316,10 +316,11 @@ describe('the queue table', () => {
   })
 
   it('shows an in-place job’s target as its source edited in place, not as an output file', async () => {
-    const inPlace = job('a', 'done', { output_path: '/media/a.mkv' })
+    // The output path an in-place edit does not use (validation warns about it).
+    const inPlace = job('a', 'waiting')
     inPlace.settings = {
       ...inPlace.settings,
-      output: { path: '/media/a.mkv', edit_in_place: true },
+      output: { path: '/out/a.mkv', edit_in_place: true },
     } as JobSettings
     queue.jobs = [inPlace, job('b', 'waiting')]
     await mountTable()
