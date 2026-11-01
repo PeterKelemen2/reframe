@@ -7,7 +7,7 @@ metadata. The plan ([plan/08-roadmap.md](plan/08-roadmap.md) §M6,
 languages, §Chapters, §Tags, §Remux-only jobs, §Settings) is the spec; this file says who builds
 which part, in which order, and what each part must offer to the others. Decision:
 [0065](decisions/0065-m6-tracks-and-metadata.md) (the lead's choices and one section per task).
-Status: [status.md](status.md). M6 is done on Linux on this branch and not merged into `main` yet. The template is [m4-breakdown.md](m4-breakdown.md). If the lead's
+Status: [status.md](status.md). M6 is done on Linux; the branch was merged into `main` on 2026-11-01, at the owner's request. The template is [m4-breakdown.md](m4-breakdown.md). If the lead's
 context is summarised, this file and `status.md` are the source of truth.
 
 M6's core parts (C-10 scans, C-12 rule engine and defaults, C-13 metadata and in-place edits) are
@@ -485,10 +485,11 @@ Not fixed in M6 (recorded): R2's suspicion about the file browser's Path + Go ra
 | 2026-11-01 | **The M6 demo, headed** (0065 "M6 demo (headed)"): once, through the guard on `HDMI-A-1` after the owner placed the cursor and the active window there; items 1–5 the same as headless; nothing left behind |
 | 2026-11-01 | **Docs reconciled**: `status.md` (an M6 milestone row, the Features rows Rich audio, Languages, Track metadata and Chapters / tags **Done**, the Web app row, open items and owner questions), the plan boxes checked (F-6, F-10, F-11, F-15 Languages ticked; F-17 stays open for flows 2 and 4), "Where M6 ended" below. **Not merged into `main`**: the owner decides |
 | 2026-11-01 | **Merged H3** (0a27139…c4909fd, 8 commits by step): summary, queue, settings, sources, shell, editor, api, presets — 146 comment blocks in 31 files, 116 kept, 16 cut or reworded, 14 deleted, 20 files changed; two stale comments corrected (`api/types.ts` on `reframe.models.analysis`, `LanguagesSection.vue` on focus); a decision number removed from a JSDoc (reason in words). The lead accepted the removal of "PrimeVue's dialog gives the focus back…" above `FileBrowserDialog.vue`'s request watcher (it described code that is not there). H3's notes (not fixed): `App.test.ts` imports out of order; `QueueTable.vue` `encoderName` also returns the job-type labels; mkvpropedit's own refusal of WebM in place is a design rule in 0065, not a recorded tool check. **H done**: the whole trim against the pre-trim tip 3d46f03 — `comments_only_ts.py` exit 0 over every changed `.ts` / `.vue` / `.mjs`; lint, format, typecheck, 1335 unit tests, `build:web`, `npm run e2e` 18 passed (27.5 s), nothing left behind; no worktree left |
+| 2026-11-01 | **Merged into `main`** at the owner's request (`--no-ff`, not pushed; the branch `m6-tracks-and-metadata` kept) |
 
 ## Where M6 ended (2026-11-01)
 
-M6 is done on Linux on the branch `m6-tracks-and-metadata`; it is **not merged into `main`** (the owner decides). Everything the scope lists is built:
+M6 is done on Linux and merged into `main` from the branch `m6-tracks-and-metadata` on 2026-11-01, at the owner's request. Everything the scope lists is built:
 - S6, the server routes;
 - A, the language picker and Settings → Languages;
 - B, Measure and the scans;
