@@ -2,7 +2,7 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
-import { FakeServer, problem } from '@/api/testing/fakes'
+import { deferred, FakeServer, problem } from '@/api/testing/fakes'
 import type { ChapterImport, JobSettings, MediaSource, OutputChapters } from '@/api/types'
 import { mountBase } from '@/components/base/testing'
 import ChaptersTab from '@/components/editor/tabs/ChaptersTab.vue'
@@ -239,12 +239,17 @@ describe('Import', () => {
 
   it('drops the answer when another job opened meanwhile', async () => {
     vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/chapters.xml'])
-    answer([{ start: null, name: 'Late' }])
+    const late = deferred<ChapterImport>()
+    server.on(IMPORT, () => late.promise)
     const { wrapper, editor } = await mountTab()
     await wrapper.find('[data-action="import"]').trigger('click')
+    await vi.waitFor(() => expect(server.count(IMPORT)).toBe(1))
     await editor.open('other')
+    await vi.waitFor(() => expect(wrapper.findAll('[data-field="name"]')).toHaveLength(3))
+    late.resolve({ format: 'csv', chapters: [{ start: null, name: 'Late' }], issues: [] })
     await flushPromises()
     expect(names(editor)).toBeNull()
+    expect(wrapper.find('[data-state="notice"]').exists()).toBe(false)
   })
 })
 
