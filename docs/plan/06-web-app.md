@@ -588,7 +588,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
      `crop=` filter.
 
   (M4 built the set-up and flow 3, in headless Chromium and Firefox, each with its own server;
-  [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M".)
+  [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M". M6 built flow 1, which
+  probes the job's output through the server; [decision
+  0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
