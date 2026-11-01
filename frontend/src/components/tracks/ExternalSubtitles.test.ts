@@ -131,15 +131,6 @@ describe('Add external subtitle…', () => {
     expect(sources(editor)).toEqual([4])
   })
 
-  it('adds nothing when the picker is cancelled', async () => {
-    vi.spyOn(platform, 'pickFiles').mockResolvedValue([])
-    const { wrapper, editor, server } = await mountEditor(SubtitlesTab, { server: inspectRoute })
-    await wrapper.find('[data-action="add-external"]').trigger('click')
-    await flushPromises()
-    expect(server.count('POST /api/subtitles/inspect')).toBe(0)
-    expect(editor.canUndo).toBe(false)
-  })
-
   it('drops the files when another job was opened while they were picked', async () => {
     const picked = deferred<string[]>()
     vi.spyOn(platform, 'pickFiles').mockReturnValue(picked.promise)

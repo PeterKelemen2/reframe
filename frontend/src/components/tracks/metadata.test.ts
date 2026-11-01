@@ -125,12 +125,12 @@ describe('track names', () => {
 
   it("names an encoded track by its encoder and mixdown, in the track's language", () => {
     const values = audioNameValues(
-      track({ action: 'encode', encoder: 'ac3', mixdown: 'stereo', metadata: META }),
+      track({ action: 'encode', encoder: 'aac', mixdown: 'stereo', metadata: META }),
       stream,
       { ...context, copied: false },
     )
-    expect(values).toMatchObject({ lang_name: 'English', channels: '2.0', codec: 'AC-3' })
-    expect(nameSuggestions(NAME_TEMPLATES.audio, values)[0]?.text).toBe('English 2.0 AC-3')
+    expect(values).toMatchObject({ lang_name: 'English', channels: '2.0', codec: 'AAC' })
+    expect(nameSuggestions(NAME_TEMPLATES.audio, values)[0]?.text).toBe('English 2.0 AAC')
   })
 
   it('names a copied track by the source codec and layout', () => {
