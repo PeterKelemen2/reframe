@@ -11,7 +11,10 @@
     "codes": "{iso} (ISO 639-2) · {tag} (BCP 47)",
     "shortCodes": "{iso} · {tag}",
     "noMatch": "No language matches “{query}”.",
-    "count": "No languages | One language | {n} languages"
+    "count": "No languages | One language | {n} languages",
+    "failed": "The list of languages could not be read from the server, so no language can be chosen.",
+    "readAgain": "Read the list again",
+    "notNamed": "(not named: the language list is missing)"
   },
   "list": {
     "empty": "None yet.",
