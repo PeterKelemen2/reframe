@@ -481,7 +481,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-4 Editor state
-- [ ] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
+- [x] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
       (`JobTemplate` + overrides). The tabs use one API for both. (M4 builds the job target;
       the group target is typed and comes with F-13. It also holds the file the tabs show and
       that file's job, and a scope: an edit goes into the template or into that file's
