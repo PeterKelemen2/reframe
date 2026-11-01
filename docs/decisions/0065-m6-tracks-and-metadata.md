@@ -86,7 +86,66 @@ card, a second opened file not selected while another is open.
 
 ## Task A — F-10 `LanguagePicker`, F-15 Settings → Languages
 
-(Written by A.)
+**What the server has and accepts** (checked 2026-11-01 against `scripts/dev-server.py` with
+the pinned FFmpeg, `curl` with the run's token):
+
+- `GET /api/languages` holds 429 entries: every ISO 639-2 individual language, macrolanguage
+  and special code (`und`, `mul`, `zxx`, `mis`) as a base language, and 11 variants
+  (`variant: true`): `en-GB`, `en-US`, `es-419`, `es-ES`, `fr-CA`, `pt-BR`, `pt-PT`,
+  `sr-Cyrl`, `sr-Latn`, `zh-Hans`, `zh-Hant` (`reframe.languages.COMMON_VARIANTS`). No listed
+  language has an `iso639_3` that differs from its `iso639_2t`; languages that only ISO 639-3
+  has (`yue`, `cmn`, `arb`) are not listed.
+- `PUT /api/settings` checks a language tag's shape only (`LanguageTag`,
+  `^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`): `["de-AT","pt-BR","sr-Latn-RS"]`, `["xx-YY-ZZ"]`,
+  `["zz"]` and `["en-u-ca-gregory"]` are saved, `["pt_BR"]` is a 422 with an issue at
+  `languages.favourites.0`. Job tracks use the same type. So the client decides which tags are
+  real languages; the core normalises later (`reframe.languages.normalize`: `ger-AT` → `de-AT`,
+  `pt_br` → `pt-BR`; it also takes `en-XX`, `en-Qaaa` and variant subtags such as `sl-rozaj`).
+
+**Decision.**
+
+1. **The search runs in the browser** (`components/language/catalog.ts`), on the list from
+   `GET /api/languages`, with the ranking of `reframe.languages.search`: tag, ISO code, exact
+   English name, exact native name, name prefix, word prefix, substring; matching favourites
+   form their own group first, in the order of the settings. Case and accents are folded
+   (`francais` finds French). No new route: one list, read once, keeps every keystroke local.
+2. **A typed variant of a listed language** is offered when its base language is listed and
+   its script and region are known: `de-AT`, `ger-AT` (→ `de-AT`), `zh-hant-tw`
+   (→ `zh-Hant-TW`), `es-MX`. The names come from the base entry and `Intl.DisplayNames`
+   (`German (Austria)`, as the core names them); the ISO 639-2 codes are the base language's,
+   as the core writes them. Not offered: private-use or unknown regions and scripts (`en-XX`,
+   `en-ZZ`, `en-Qaaa`), variant and extension subtags (`sl-rozaj`, `en-u-…`), and languages
+   that only ISO 639-3 has (`yue`): the client has no macrolanguage table, so it could not show
+   their ISO 639-2 code (the core writes `yue` as `chi`). The picker is so stricter than the
+   server, never looser. Checked in Node and Chromium: `Intl.getCanonicalLocales` would rewrite
+   `tl` to `fil` and `sh` to `sr-Latn`, which the core keeps apart, so the language subtag comes
+   from the list and only the region goes through `Intl`.
+3. **What is written** is shown on each entry: `Hungarian · hun (ISO 639-2) · hu (BCP 47)`.
+   The ISO 639-2 code is /B for MKV and WebM and /T for MP4: the optional prop `container`
+   (default MKV) picks it, as `reframe.languages.picker_label` does.
+4. **Escape** closes only the picker: the Dialog's own Escape listener is off and the picker
+   stops the key on its dialog, so a picker inside another dialog (the defaults dialog) does not
+   close that one too.
+5. **Settings → Languages** shows a list change before the server answers (and the server's
+   answer after it), so that a second move builds on the first and the focus follows the moved
+   language; a refused list stays shown with its issue (`useSetting`).
+
+**Props added** (all optional, the stubs' props unchanged): `LanguagePicker`: `noneLabel` (the
+text of *None*), `container`, `exclude` (tags not offered); `LanguageListEditor`: `inputId`,
+`labelledby` (for a `Field`), `container`.
+
+**Checked** in headless Chromium (Playwright 1.64.1) against `scripts/dev-server.py
+--port 8711` with the pinned FFmpeg, light and dark, 1440 × 900 and 390 × 844: the search by
+`Hungarian`, `magyar`, `hu`, `hun`, `ger`, `deu`, `Deutsch`, `pt-BR`, `pt_br`, `es-419`,
+`zh-Hans`, `sr-Latn`, `de-AT`, `zh-hant-tw` and `Brazil` gives the right first entry, `en-XX`
+none; keyboard alone (Enter or ArrowDown or a letter on the control, typing, arrows, Enter,
+Escape from the search field and from the dialog's close button, the focus back on the
+control); add, move up (the focus stays on the moved language), drag, remove (the focus on the
+next one) in the three lists, each saved at once; the new favourites lead the next picker; a
+refusal (the request rewritten on its way so that the real server refuses it) shows at its
+field with the list kept. Unit tests: 42; each test function was failed by a mutation of the
+code (40 mutations); the six that survived the first run showed redundant code (removed) or a
+weak test (fixed).
 
 ## Task B — F-10 the Measure button and the scans
 
