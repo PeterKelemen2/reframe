@@ -220,6 +220,30 @@ As [m6-breakdown.md](m6-breakdown.md#commands). The fixtures are folders:
 B 872x, C 873x, D 874x, E 877x, the lead 876x, R1 878x, R2 879x; fix agents take the ranges
 free at the time.
 
+## Fix round (wave 5; binding for the fix agents)
+
+The two reviews (R1: 1 blocker, 5 majors, 6 minors, 2 nits; R2: 2 majors, 8 minors, 5 nits) and the
+lead's L1–L3. The lead reproduced every blocker and major (Progress, 2026-11-01 / 02). Four fix
+tasks with disjoint files, each `opus` / `high`. A fix of a blocker or major comes with a test that
+fails before it. Each task writes its own subsection "Fix round — FX" under 0066's
+`## Review, 2026-11-01`.
+
+| Task | Findings | Owns |
+|------|----------|------|
+| **FS** core and server | R1-1 (core part: a base rule that takes no track in the derived file is kept), R1-6 (a per-file output path override is kept), R1-9; R1-12 recorded | `packages/**` |
+| **FA** editor store | R1-1 (store part: a scope-`group` track edit from a near member while the template has no explicit rules of that kind is refused), R1-2 (an output-track override guarded by the whole track as the file's group job has it), R1-3 (a hand pick guarded by its rule's selector), R1-4 (`resolveNow` waits for every pending edit, also the naming editor's), R1-5 (a group's state follows it when its id changes), R1-7, R1-8 (one derive queue that `patchTemplate` waits on; R1's simplification of the two derive paths), R1-14, R2-1 (store part: the contract below) | `stores/editor.ts` and its tests, `editor/group.ts` (+ test), `i18n/messages/en/editor.json` |
+| **FU1** matrix and queueing | R2-1 (UI: an error line in the matrix and its cells marked out of date, *Try again*; the banner part is FU2's), R2-2, R2-4 (`Ctrl+Z` / `Ctrl+Shift+Z` work while the matrix is the top dialog), R2-5 (the error dialog's part), R2-6, R2-7, R2-10, R2-11, R2-12 (`matrix.json`: curly quotes), R2-14 (`MatrixDialog`'s part), R2-15 (default button *Open matrix*), R1-10 (the toast says what the queue did with each job, and that rows with a stale override are queued without it) | `components/matrix/**`, `composables/{useQueueGroup,useQueueActions,useShortcuts}.ts` (+ tests), `components/base/primevueLocale.ts`, `i18n/messages/en/matrix.json` |
+| **FU2** panel, banner, cards | R2-1 (the banner shows the matrix error), R2-3 (`path` on those `Field`s), R2-5 (the banner's part: the button keeps the focus), R2-8, R2-9, R2-12 (`group.json`: curly quotes), R2-13, R2-14 (`quietly` removed), R1-11 (in scope `group` the naming options that a group cannot set are not offered), L1 (the presets view's summary of a preset with explicit rules), L3 (track rows' move / remove disabled in scope `file`) | `components/{sources,batch,naming,tracks,presets}/**`, `components/editor/tabs/VideoTab.vue`, `i18n/messages/en/{group,sources,naming,tracks,presets}.json` |
+
+**Contract FA → FU1, FU2 (the matrix's failure).** The editor store gains
+`matrixError: Ref<string | null>` (the failed `batch/resolve-run`'s problem detail, else its
+title; `null` after a successful answer and while no group is edited) and `retryMatrix(): void`
+(asks again at once). A failed resolve still keeps the last `resolution` (so the screens can show
+it as out of date). FU1 and FU2 code against these names; FA merges first.
+
+Recorded, not fixed: R1-12 (core, 0040 §5), R1-13 (V is always ✓: the matrix has no video match
+data), the three suspicions of R2.
+
 ## Rules for every agent (word for word in each brief)
 
 ### Rule 5: the code
