@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test'
 
-import type { MediaSource, QueueJob, TaskInfo } from '../../src/api/types'
+import type { AppSettings, JsonPatchOp, MediaSource, QueueJob, TaskInfo } from '../../src/api/types'
 import { TOKEN } from './servers'
 
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
@@ -63,6 +63,22 @@ export async function readQueue(request: APIRequestContext): Promise<QueueSnapsh
   const answer = await request.get('/api/queue', { headers: AUTH })
   expect(answer.ok()).toBe(true)
   return (await answer.json()) as QueueSnapshot
+}
+
+/** The server's settings, read with the run's token. */
+export async function readSettings(request: APIRequestContext): Promise<AppSettings> {
+  const answer = await request.get('/api/settings', { headers: AUTH })
+  expect(answer.ok()).toBe(true)
+  return (await answer.json()) as AppSettings
+}
+
+/** Changes the server's settings and checks the answer. */
+export async function changeSettings(
+  request: APIRequestContext,
+  ops: JsonPatchOp[],
+): Promise<void> {
+  const answer = await request.put('/api/settings', { headers: AUTH, data: ops })
+  expect(answer.ok(), `PUT /api/settings: ${answer.status()}`).toBe(true)
 }
 
 /** Probes a file through the server and gives what the server read from it. */
