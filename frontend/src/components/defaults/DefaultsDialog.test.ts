@@ -11,6 +11,8 @@ import { trackDefinitions } from '@/components/tracks/testing'
 import { sampleDraft, sampleJob } from '@/editor/testing/samples'
 import { useDefaultsStore } from '@/stores/defaults'
 import { useEditorStore } from '@/stores/editor'
+import { templateOfPreset } from '@/stores/presets'
+import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 
 import DefaultsDialog from './DefaultsDialog.vue'
@@ -106,6 +108,53 @@ describe('the defaults dialog', () => {
   it('offers a job with a built-in preset Apply and Save as new preset…', async () => {
     await openDialog('job', BUILT_IN)
     expect(footer()).toEqual(['cancel', 'save-as-new', 'apply'])
+  })
+
+  it("edits a group's defaults with Apply only, and says that Apply replaces the group's rules", async () => {
+    const { wrapper } = await mountShell(DefaultsDialog, {
+      setup: () => {
+        useSystemStore().definitions = trackDefinitions()
+        useSystemStore().languages = languages()
+        const sources = useSourcesStore()
+        sources.entries = [{ id: 'e1', path: '/media/e1.mkv', source: null }]
+        sources.grouping = {
+          groups: [
+            {
+              id: 'g1',
+              name: 'Show S01',
+              level: 'standard',
+              representative: '/media/e1.mkv',
+              fingerprint: { level: 'standard', tracks: [], digest: 'd' },
+              members: [{ path: '/media/e1.mkv', match: 'exact', episode: 1 }],
+            },
+          ],
+        }
+      },
+    })
+    mounted.push(wrapper)
+    useEditorStore().target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'e1',
+      job: sampleJob(),
+      template: {
+        ...templateOfPreset(userPreset(MINE, 'Mine')),
+        audio_rules: [{ selector: { kind: 'audio', languages: ['jpn'] } }] as Preset['audio_rules'],
+      },
+      presetId: MINE,
+      overrides: {},
+      scope: 'group',
+    }
+    await useDefaultsStore().open('audio', { kind: 'group', groupId: 'g1' })
+    await flushPromises()
+    expect(footer()).toEqual(['cancel', 'apply'])
+    expect(action('apply').textContent).toContain('Apply to the group')
+    expect(document.querySelector('.defaults-dialog .p-dialog-title')?.textContent).toBe(
+      'Audio defaults · Show S01',
+    )
+    expect(document.querySelector('[data-role="ruled"]')?.textContent).toContain(
+      'Apply removes them',
+    )
   })
 
   it("asks before it saves into the job's user preset, then saves into it", async () => {

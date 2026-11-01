@@ -154,6 +154,17 @@ async function opened(which: 'audio' | 'subtitles' = 'audio', presetId = BUILT_I
   return defaults
 }
 
+/** The group template: an explicit audio rule from an edit, and AAC defaults. */
+function groupTemplate(): JobTemplate {
+  return {
+    schema_version: 1,
+    output: { container: 'mkv' } as JobTemplate['output'],
+    audio_defaults: { codec_rules: [rule()] },
+    audio_rules: [{ selector: { kind: 'audio', languages: ['jpn'] } }],
+    subtitle_rules: [{ selector: { kind: 'subtitle', languages: ['eng'] } }],
+  } as JobTemplate
+}
+
 describe('the defaults store', () => {
   let server: DefaultsServer
 
@@ -213,16 +224,6 @@ describe('the defaults store', () => {
       expect(defaults.sourceId).toBeNull()
       expect(server.previews()).toHaveLength(0)
       expect(defaults.previewing).toBe(false)
-    })
-
-    it('says that a batch group is not built yet, and stays closed', async () => {
-      const defaults = useDefaultsStore()
-      await defaults.open('audio', { kind: 'group', groupId: 'g1' })
-      expect(defaults.visible).toBe(false)
-      expect(toasts()).toEqual([
-        { severity: 'info', summary: 'Defaults for a batch group are not built yet' },
-      ])
-      expect(server.requests).toHaveLength(0)
     })
 
     it('does not open for a job whose preset is not known', async () => {
@@ -660,6 +661,92 @@ describe('the defaults store', () => {
       expect(body.template.audio_defaults?.passthru?.allowed).toEqual(['ac3'])
       expect(body.template.video?.encoder).toBe('libx265')
       expect(defaults.changed).toBe(false)
+    })
+  })
+
+  /** E01 and E02 are open (E02 shown, in scope `file`); the panel lists E01 first. */
+  async function groupOpened(which: 'audio' | 'subtitles' = 'audio') {
+    const sources = useSourcesStore()
+    sources.entries = [
+      { id: 'e2', path: '/media/Show.S01E02.mkv', source: probedSource('multitrack') },
+      { id: 'e1', path: '/media/Show.S01E01.mkv', source: probedSource('dts-hd-ma') },
+    ]
+    sources.grouping = {
+      groups: [
+        {
+          id: 'g1',
+          name: 'Show S01',
+          level: 'standard',
+          representative: '/media/Show.S01E01.mkv',
+          fingerprint: { level: 'standard', tracks: [], digest: 'd' },
+          members: [
+            { path: '/media/Show.S01E01.mkv', match: 'exact', episode: 1 },
+            { path: '/media/Show.S01E02.mkv', match: 'exact', episode: 2 },
+          ],
+        },
+      ],
+    }
+    const editor = useEditorStore()
+    editor.target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'e2',
+      job: sampleJob(),
+      template: groupTemplate(),
+      presetId: BUILT_IN,
+      overrides: {},
+      scope: 'file',
+    }
+    const patchTemplate = vi.spyOn(editor, 'patchTemplate').mockImplementation(() => undefined)
+    server.on(PREVIEW, (request) =>
+      json(
+        (request.body as DefaultsPreviewRequest).source_ids.map((id) =>
+          trackDraft({ issues: [issueAt('audio_defaults.codec_rules[0]', `rule.${id}`)] }),
+        ),
+      ),
+    )
+    const defaults = useDefaultsStore()
+    await defaults.open(which, { kind: 'group', groupId: 'g1' })
+    await flush()
+    return { defaults, editor, patchTemplate }
+  }
+
+  describe('a batch group', () => {
+    it("edits the template's defaults and previews every file of the group as Apply would", async () => {
+      const { defaults } = await groupOpened()
+      expect(defaults.visible).toBe(true)
+      expect(defaults.audio?.codec_rules).toEqual([expect.objectContaining(rule())])
+      const body = previewBody(server.previews()[0])
+      expect(body.source_ids).toEqual(['e1', 'e2'])
+      expect(body.template?.audio_rules).toEqual([])
+      expect(body.template?.subtitle_rules).toEqual(groupTemplate().subtitle_rules)
+      expect(defaults.previews.map(({ id, label }) => ({ id, label }))).toEqual([
+        { id: 'e1', label: 'E01' },
+        { id: 'e2', label: 'E02' },
+      ])
+      // The rules show the issues of the shown file's answer.
+      expect(defaults.issues.map(({ issue }) => issue.code)).toEqual(['rule.e2'])
+    })
+
+    it('applies the edited defaults to the template and drops its rules of that kind, then closes', async () => {
+      const { defaults, patchTemplate } = await groupOpened('subtitles')
+      const edited = { ...defaults.subtitles!, forced_only: true }
+      defaults.setSubtitles(edited)
+      await defaults.apply()
+      expect(patchTemplate).toHaveBeenCalledTimes(1)
+      expect(patchTemplate.mock.calls[0]?.[0]).toEqual([
+        { op: 'add', path: '/subtitle_defaults', value: edited },
+        { op: 'add', path: '/subtitle_rules', value: [] },
+      ])
+      expect(defaults.visible).toBe(false)
+      expect(server.requests.some((each) => each.path === '/api/jobs/explain')).toBe(false)
+    })
+
+    it('closes when the group is left', async () => {
+      const { defaults } = await groupOpened()
+      await useEditorStore().open('e1', BUILT_IN)
+      await flush()
+      expect(defaults.visible).toBe(false)
     })
   })
 
