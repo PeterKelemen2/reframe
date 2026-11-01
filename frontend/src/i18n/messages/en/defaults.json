@@ -10,11 +10,14 @@
     "job": "The defaults of this job's preset “{name}”. Apply replaces the job's {list} with what these defaults give; the preset changes only when you save into it.",
     "jobBuiltIn": "The defaults of this job's preset “{name}”. Apply replaces the job's {list} with what these defaults give. “{name}” is built in and cannot be changed: Save as new preset… keeps these defaults in a new preset.",
     "preset": "The defaults of the preset “{name}”. Jobs drafted with it from now on use what you save here.",
-    "builtIn": "“{name}” is a built-in preset: its defaults are shown read-only. Duplicate it in the presets list to change them."
+    "builtIn": "“{name}” is a built-in preset: its defaults are shown read-only. Duplicate it in the presets list to change them.",
+    "group": "The defaults of the group “{name}”. Apply puts them into the group, so that they decide the {list} of every file; the group's preset does not change."
   },
   "ruled": {
     "audio": "“{name}” has its own audio track rules. They decide the audio tracks instead of these defaults, so a change here changes no track until those rules are removed from the preset. The preview shows what the rules give.",
-    "subtitles": "“{name}” has its own subtitle track rules. They decide the subtitle tracks instead of these defaults, so a change here changes no track until those rules are removed from the preset. The preview shows what the rules give."
+    "subtitles": "“{name}” has its own subtitle track rules. They decide the subtitle tracks instead of these defaults, so a change here changes no track until those rules are removed from the preset. The preview shows what the rules give.",
+    "groupAudio": "The group has its own audio track rules from edits of its audio tracks. Apply removes them, so that these defaults decide the audio tracks of every file. The preview shows what Apply gives.",
+    "groupSubtitles": "The group has its own subtitle track rules from edits of its subtitle tracks. Apply removes them, so that these defaults decide the subtitle tracks of every file. The preview shows what Apply gives."
   },
   "shown": {
     "on": "On",
@@ -26,6 +29,7 @@
     "cancel": "Cancel",
     "close": "Close",
     "apply": "Apply to this job",
+    "applyGroup": "Apply to the group",
     "save": "Save",
     "saveToPreset": "Save to preset…",
     "saveAsNew": "Save as new preset…"
@@ -45,10 +49,6 @@
   "open": {
     "noPreset": "The job's preset is not known, so its defaults cannot be shown",
     "presetGone": "This preset is gone"
-  },
-  "group": {
-    "notBuilt": "Defaults for a batch group are not built yet",
-    "notBuiltDetail": "They come with batch editing. Open a single file, or edit a preset's defaults in the presets view."
   },
   "fixFailed": "The fix no longer fits these defaults",
   "units": {

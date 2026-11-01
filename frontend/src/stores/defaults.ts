@@ -24,6 +24,7 @@ import {
   keysAfter,
   newRule,
 } from '@/components/defaults/model'
+import { panelItems } from '@/components/sources/panel'
 import { latestRequest } from '@/editor/latest'
 import { applyOps, cloneJson, PatchError, sameJson } from '@/editor/patch'
 
@@ -35,8 +36,8 @@ import { useToastStore } from './toasts'
 export type DefaultsKind = 'audio' | 'subtitles'
 
 /**
- * Whose defaults the dialog edits: the open job's (from its preset), a preset's, or a batch
- * group's. `open` refuses a group.
+ * Whose defaults the dialog edits: the open job's (from its preset), a preset's, or the edited
+ * batch group's (its template's).
  */
 export type DefaultsTarget =
   | { kind: 'job' }
@@ -52,6 +53,13 @@ export const PREVIEW_DEBOUNCE = 250
 export interface PlacedIssue {
   issue: ValidationIssue
   at: string
+}
+
+/** One file's answer of a group's preview, labelled as the sources panel labels the file. */
+export interface FilePreview {
+  id: string
+  label: string
+  draft: TrackDraft
 }
 
 const TOAST_LIFE = 10_000
@@ -75,7 +83,10 @@ export const useDefaultsStore = defineStore('defaults', () => {
   const saved = shallowRef<{ audio: AudioDefaults; subtitles: SubtitleDefaults } | null>(null)
   /** One stable key per codec rule, in rule order: rows and issues follow a moved rule. */
   const ruleKeys = shallowRef<number[]>([])
+  /** The answer for `sourceId`. */
   const preview = shallowRef<TrackDraft | null>(null)
+  /** A group's answers, one per file; empty for another target. */
+  const previews = shallowRef<FilePreview[]>([])
   /** The rule keys of the request whose answer `preview` is. */
   const previewKeys = shallowRef<number[]>([])
   /** A preview request waits for its delay or is under way: `preview` may be out of date. */
@@ -101,10 +112,10 @@ export const useDefaultsStore = defineStore('defaults', () => {
       target.value?.kind === 'job' ? editor.job?.output : (template.value?.output ?? undefined)
     return (output?.container as Container | undefined) ?? null
   })
-  /** The source the preview drafts: the job's, else the open one. */
+  /** The source the preview drafts: the job's (a group's shown file), else the open one. */
   const sourceId = computed<string | null>(() => {
-    const opened = editor.target
-    if (opened?.kind === 'job') return opened.sourceId
+    const shown = editor.target?.sourceId
+    if (shown !== undefined) return shown
     if (target.value?.kind === 'job') return null
     const active = sources.active
     return active !== null && active.source !== null ? active.id : null
@@ -112,6 +123,21 @@ export const useDefaultsStore = defineStore('defaults', () => {
   const source = computed<MediaSource | null>(
     () => sources.entries.find((entry) => entry.id === sourceId.value)?.source ?? null,
   )
+  /** The edited group's open files, in the panel's order; empty for another target. */
+  const groupFiles = computed<{ id: string; label: string }[]>(() => {
+    const whose = target.value
+    if (whose?.kind !== 'group') return []
+    const item = panelItems(sources.entries, sources.grouping).find(
+      (found) => found.kind === 'group' && found.group.id === whose.groupId,
+    )
+    return item?.kind === 'group'
+      ? item.rows.map((row) => ({ id: row.entry.id, label: row.label }))
+      : []
+  })
+  const previewIds = computed<string[]>(() => {
+    if (groupFiles.value.length > 0) return groupFiles.value.map((file) => file.id)
+    return sourceId.value === null ? [] : [sourceId.value]
+  })
   const changed = computed(
     () =>
       saved.value !== null &&
@@ -136,22 +162,32 @@ export const useDefaultsStore = defineStore('defaults', () => {
     return (own ?? []).length > 0
   })
 
-  const request = latestRequest<{ drafts: TrackDraft[]; keys: number[] }>({
+  const request = latestRequest<{
+    drafts: TrackDraft[]
+    keys: number[]
+    files: { id: string; label: string }[]
+  }>({
     async send(signal) {
       const keys = ruleKeys.value
+      const files = groupFiles.value
       // The template that Apply sends: its own track rules draft as they would there.
       const body: DefaultsPreviewRequest = {
-        source_ids: [sourceId.value as string],
+        source_ids: previewIds.value,
         audio_defaults: audio.value as AudioDefaults,
         subtitle_defaults: subtitles.value as SubtitleDefaults,
         container: container.value,
         template: editedTemplate(),
       }
       const drafts = unwrap(await apiQuiet.POST('/api/presets/defaults/preview', { body, signal }))
-      return { drafts, keys }
+      return { drafts, keys, files }
     },
-    done({ drafts, keys }) {
-      preview.value = drafts[0] ?? null
+    done({ drafts, keys, files }) {
+      const shown = files.findIndex((file) => file.id === sourceId.value)
+      preview.value = drafts[Math.max(shown, 0)] ?? null
+      previews.value = files.flatMap((file, index) => {
+        const draft = drafts[index]
+        return draft === undefined ? [] : [{ ...file, draft }]
+      })
       previewKeys.value = keys
       previewFailure.value = null
       previewing.value = false
@@ -160,6 +196,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
       previewing.value = false
       if (!(error instanceof ApiError)) throw error
       preview.value = null
+      previews.value = []
       previewFailure.value = error.problem.detail ?? error.problem.title
     },
   })
@@ -170,6 +207,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
       request.cancel()
       previewing.value = false
       preview.value = null
+      previews.value = []
       previewFailure.value = null
       return
     }
@@ -184,6 +222,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
     saved.value = { audio: audio.value, subtitles: subtitles.value }
     ruleKeys.value = (audio.value.codec_rules ?? []).map(nextKey)
     preview.value = null
+    previews.value = []
     previewKeys.value = []
     previewFailure.value = null
     kind.value = which
@@ -198,16 +237,11 @@ export const useDefaultsStore = defineStore('defaults', () => {
 
   /**
    * Opens the dialog on a copy of the target's defaults. A job's are its preset's: the job keeps
-   * none of its own.
+   * none of its own. A group's are its template's: the group must be the edited one.
    */
   async function open(which: DefaultsKind, whose: DefaultsTarget): Promise<void> {
     if (whose.kind === 'group') {
-      toasts.push({
-        severity: 'info',
-        summary: text('defaults.group.notBuilt'),
-        detail: text('defaults.group.notBuiltDetail'),
-        life: TOAST_LIFE,
-      })
+      start(which, whose, cloneJson(editor.currentTemplate as JobTemplate))
       return
     }
     await presets.ensureLoaded().catch(() => undefined)
@@ -336,13 +370,18 @@ export const useDefaultsStore = defineStore('defaults', () => {
     edited()
   }
 
-  /** The template with the edited defaults in it. */
+  /**
+   * The template with the edited defaults in it. A group's loses its explicit rules of the
+   * dialog's kind, so that the defaults decide those tracks.
+   */
   function editedTemplate(): JobTemplate {
-    return {
+    const next = {
       ...(template.value as JobTemplate),
       audio_defaults: audio.value as AudioDefaults,
       subtitle_defaults: subtitles.value as SubtitleDefaults,
     }
+    if (target.value?.kind !== 'group') return next
+    return kind.value === 'audio' ? { ...next, audio_rules: [] } : { ...next, subtitle_rules: [] }
   }
 
   async function guarded(run: () => Promise<void>): Promise<void> {
@@ -357,9 +396,25 @@ export const useDefaultsStore = defineStore('defaults', () => {
 
   /**
    * Replaces the job's tracks of the dialog's kind with what the edited defaults draft for its
-   * source: one undo step. A refusal is the API client's toast; the dialog stays.
+   * source: one undo step. A refusal is the API client's toast; the dialog stays. A group's
+   * template takes the edited defaults instead of its explicit rules of that kind.
    */
   async function apply(): Promise<void> {
+    if (target.value?.kind === 'group') {
+      editor.patchTemplate(
+        kind.value === 'audio'
+          ? [
+              { op: 'add', path: '/audio_defaults', value: audio.value },
+              { op: 'add', path: '/audio_rules', value: [] },
+            ]
+          : [
+              { op: 'add', path: '/subtitle_defaults', value: subtitles.value },
+              { op: 'add', path: '/subtitle_rules', value: [] },
+            ],
+      )
+      close()
+      return
+    }
     const opened = editor.target
     if (target.value?.kind !== 'job' || opened?.kind !== 'job') return
     const session = editor.session
@@ -458,15 +513,18 @@ export const useDefaultsStore = defineStore('defaults', () => {
   }
 
   // A measured bitrate or another opened source changes what the defaults draft.
-  watch(source, () => {
-    if (visible.value) schedulePreview(0)
-  })
+  watch(
+    () => previewIds.value.map((id) => sources.entries.find((entry) => entry.id === id)?.source),
+    () => {
+      if (visible.value) schedulePreview(0)
+    },
+  )
 
-  // The job the dialog was opened for is gone (another source opened, the job closed).
+  // The job or group the dialog was opened for is gone (another source opened, the job closed).
   watch(
     () => editor.session,
     () => {
-      if (visible.value && target.value?.kind === 'job') close()
+      if (visible.value && target.value?.kind !== 'preset') close()
     },
   )
 
@@ -479,6 +537,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
     subtitles,
     ruleKeys,
     preview,
+    previews,
     previewKeys,
     previewing,
     previewFailure,

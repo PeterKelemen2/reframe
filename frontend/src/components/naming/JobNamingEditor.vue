@@ -11,6 +11,7 @@ import type { JobNaming, JobSettings, JsonPatchOp, NameResult } from '@/api/type
 import Field from '@/components/base/Field.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
 import { latestRequest } from '@/editor/latest'
+import { sameJson } from '@/editor/patch'
 import { platform } from '@/platform'
 import { type PendingEdit, useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
@@ -99,8 +100,14 @@ function previousName(job: JobSettings): string | null | undefined {
 }
 
 function targetSource(): string | null {
-  return editor.target?.kind === 'job' ? editor.target.sourceId : null
+  return editor.target?.sourceId ?? null
 }
+
+const inGroup = computed(() => editor.target?.kind === 'group')
+/** The edits go into the group's template, which cannot hold the per-file fields. */
+const groupScope = computed(
+  () => editor.target?.kind === 'group' && editor.target.scope === 'group',
+)
 
 /** The fields show a naming that the job does not have yet. */
 function isUnapplied(): boolean {
@@ -133,9 +140,21 @@ function finishGesture(): void {
   editor.endCoalescing()
 }
 
+/**
+ * In a group the server names each file, so the path stays; only the changed naming members
+ * are patched, so that a file's override holds only what was edited for it.
+ */
+function groupOps(base: JobSettings, naming: JobNaming): JsonPatchOp[] {
+  const before: JobNaming = { ...EMPTY, ...base.output?.naming }
+  return (Object.keys(naming) as (keyof JobNaming)[])
+    .filter((key) => !sameJson(naming[key], before[key]))
+    .map((key) => ({ op: 'add', path: `/output/naming/${key}`, value: naming[key] }) as JsonPatchOp)
+}
+
 function commit(base: JobSettings, naming: JobNaming, path: string | null): void {
-  const ops: JsonPatchOp[] = [{ op: 'add', path: '/output/naming', value: naming }]
-  if (path !== (base.output?.path ?? null)) {
+  let ops: JsonPatchOp[] = [{ op: 'add', path: '/output/naming', value: naming }]
+  if (inGroup.value) ops = groupOps(base, naming)
+  else if (path !== (base.output?.path ?? null)) {
     ops.push({ op: 'add', path: '/output/path', value: path })
   }
   editor.patch(ops, editKey === undefined ? undefined : { coalesce: editKey })
@@ -289,6 +308,13 @@ const modes = computed(() => [
 ])
 /** The Select shows no option for `null`, so "as the naming options say" has a value of its own. */
 const FROM_OPTIONS = 'options'
+/** A file of a group without a name source of its own is named with the group's. */
+const shownNameSource = computed(
+  () =>
+    local.value.name_source ??
+    (inGroup.value ? editor.currentTemplate?.naming?.name_source : null) ??
+    FROM_OPTIONS,
+)
 const nameSources = computed(() => [
   { value: FROM_OPTIONS, label: t('naming.job.sourceOptions') },
   { value: 'auto', label: t('naming.source.auto') },
@@ -354,7 +380,7 @@ const ownFolder = computed(
 const expectedPath = computed(() => {
   const now = applied.value
   const job = editor.job
-  if (now === null || job === null || now.job !== job || pending.value) return null
+  if (now === null || job === null || now.job !== job || pending.value || inGroup.value) return null
   const expected = nextOutputPath(job.output?.path, now.result.relative_path, now.result)
   if (expected === null || expected === (job.output?.path ?? null)) return null
   return expected === job.source.path ? null : expected
@@ -387,7 +413,10 @@ function useDefaultFolder(): void {
   <div class="job-naming-editor">
     <p v-if="editor.job === null" class="job-naming__empty">{{ t('naming.job.noJob') }}</p>
     <template v-else>
-      <Field :label="t('naming.job.mode')" stacked>
+      <p v-if="groupScope" class="job-naming__per-file" data-role="per-file">
+        {{ t('naming.job.perFileInGroup') }}
+      </p>
+      <Field v-else :label="t('naming.job.mode')" stacked>
         <template #default="{ labelId }">
           <SelectButton
             :ariaLabelledby="labelId"
@@ -497,7 +526,7 @@ function useDefaultFolder(): void {
           <Select
             :label-id="id"
             :ariaLabelledby="labelId"
-            :model-value="local.name_source ?? FROM_OPTIONS"
+            :model-value="shownNameSource"
             :options="nameSources"
             option-label="label"
             option-value="value"
@@ -532,7 +561,7 @@ function useDefaultFolder(): void {
             <code class="job-naming__path" data-testid="job-path">{{ outputPath ?? '—' }}</code>
           </KeyValue>
         </dl>
-        <div class="job-naming__actions">
+        <div v-if="!groupScope" class="job-naming__actions">
           <Button
             :label="t('naming.job.chooseFolder')"
             severity="secondary"
@@ -578,7 +607,7 @@ function useDefaultFolder(): void {
       <Disclosure v-if="result" v-model:open="parsedOpen" :title="t('naming.parsed.heading')">
         <ParsedNamePanel
           :result="result"
-          editable
+          :editable="!groupScope"
           :overrides="local.field_overrides ?? {}"
           :issues="overrideIssues"
           :disabled="disabled"
@@ -597,9 +626,14 @@ function useDefaultFolder(): void {
   min-width: 0;
 }
 
-.job-naming__empty {
+.job-naming__empty,
+.job-naming__per-file {
   margin: 0;
   color: var(--rf-color-text-muted);
+}
+
+.job-naming__per-file {
+  font-size: var(--rf-font-size-sm);
 }
 
 .job-naming__row {

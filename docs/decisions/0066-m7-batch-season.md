@@ -278,7 +278,63 @@ set the template in Settings → Output instead.
 
 ## Task D — F-13 override dots, F-10 the defaults dialog for a group, group-aware cards
 
-(placeholder: task D writes this section)
+Built in `components/base/Field.vue`, `stores/defaults.ts`, `components/defaults/`
+(`DefaultsDialog`, `DefaultsPreview`), `components/summary/OutputCard.vue`,
+`components/naming/JobNamingEditor.vue`, `components/tracks/OutputTrackList.vue`, and (given to
+task D by the lead) `components/summary/useJobSource.ts`, which gave no source while a group was
+edited: the Tracks tab's source table, the track rows and the Summary cards now see the shown
+file. Choices where the plan and the brief leave room:
+
+1. **The dot** is a small button in the label (its name: "Encoder differs from the group") that
+   opens a popup menu. *Apply to whole group* stays in the menu for a per-file path, disabled,
+   with its reason under it. After either action the focus goes to the first control of the
+   field (the dot is gone after the action). The `overridden` prop stays a plain dot without a
+   menu (the sandbox). A field shows the dot when the override sets its path or a path below or
+   above it (`overriddenAt`), so a whole-track field shows it for an edit of one of its members.
+2. **The defaults preview of a group** asks for the group's open members in the panel's order
+   (`panelItems`, so the labels are the panel's) and shows one table per file. The rules' and
+   fields' issues and the issue counts are the shown file's answer (one file's issues; a
+   per-file list of the same lint repeated 12 times would say nothing more). The template sent
+   is the one *Apply* writes: the edited defaults, and no explicit rules of the dialog's kind.
+   When the template has such rules, the dialog says that *Apply* removes them.
+3. **Apply** is one `patchTemplate` with two `add` operations (the defaults and an empty rule
+   list of that kind); the dialog closes. The dialog of a group has no save into a preset (saving
+   a group is *Save as preset*), and it closes when the group is left (another file opened, the
+   group closed), as a job's does.
+4. **The naming editor in a group** patches only the naming members that changed
+   (`/output/naming/template`, …), never the path: the server names each file, and a whole
+   `/output/naming` in a file's override would set every naming field for that file (and show
+   the dot on all of them). No stale-path offer in a group. A file without a name source of its
+   own shows the group template's (`naming.name_source`). In scope `group` the naming mode, the
+   folder buttons and the parsed-name fields are replaced by one line that says they are per
+   file and names *This file only*.
+5. **The Output card in a group** changes the container only (no path and no extension request):
+   the resolution names each file with the container's extension.
+6. **The track lists**: *Defaults…* opens the group target; *Reload from preset rules* and
+   *Add external subtitle…* stay disabled in a group, each with a tooltip saying why (a wrapper
+   carries it, since not every browser sends pointer events to a disabled button). In scope
+   `file`, *Add track* and *Add all* are disabled with a tooltip, the drag handles are not shown,
+   and a line under the actions points to the matrix.
+
+**Checked in a browser** (headless Chromium, light and dark, a real server with the pinned FFmpeg
+and `anime-s01`, *Edit group* and the scope switch through B's banner): in scope `file` a toggle
+of *Align A/V start* sets `/job/output/align_av_start` and shows the dot; from the keyboard
+(Shift+Tab to the dot, Enter, arrow, Enter) *Reset to group* empties the override, the focus is
+on the toggle, Ctrl+Z brings the override back and Ctrl+Shift+Z drops it again; *Apply to whole
+group* sets the template's value (every matrix row takes it), empties the override, and one
+undo brings both back; no dot in scope `group` or for a job; the group's *Defaults…* shows 12
+preview tables (E01–E12), *Apply to the group* empties `audio_rules`, the shown job's tracks
+follow the defaults, and one undo brings the rules back; the naming template and name source edit
+the template and every row's name; the container changes the template and the extension. No
+page error in any run.
+
+**Found and handed to the lead**: a naming edit derived on a template without naming set
+`same_as_source` and moved every output next to its source (fixed by the lead in 8e4d2ff; the
+check after the fix keeps the outputs in the output root).
+
+**Not built**: a disabled state for the track rows' move and remove buttons in scope `file`
+(they are `TrackRowFrame`'s, not task D's; the store refuses those edits with its toast, and the
+line under the actions says why); the preview's per-file issue lists.
 
 ## Task E — F-17 flow 2
 

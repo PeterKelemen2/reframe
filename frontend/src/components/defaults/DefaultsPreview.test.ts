@@ -180,6 +180,31 @@ describe('the live preview', () => {
     )
   })
 
+  it("shows one table per file of a group, labelled, with each file's own tracks", async () => {
+    await mountPreview(oneTrack(false, 'Shown file'))
+    const sources = useSourcesStore()
+    sources.entries = [
+      { id: 'e1', path: '/media/e1.mkv', source: probedSource('dts-hd-ma') },
+      { id: 'e2', path: '/media/e2.mkv', source: probedSource('multitrack') },
+    ]
+    const defaults = useDefaultsStore()
+    defaults.target = { kind: 'group', groupId: 'g1' }
+    defaults.previews = [
+      { id: 'e1', label: 'E01', draft: oneTrack(false, 'First file') },
+      { id: 'e2', label: 'E02', draft: oneTrack(false, 'Second file') },
+    ]
+    await flushPromises()
+    const tables = [...document.querySelectorAll<HTMLElement>('[data-role="preview"] [data-table]')]
+    expect(tables.map((table) => table.querySelector('h3')?.textContent?.trim())).toEqual([
+      'E01',
+      'E02',
+    ])
+    expect(rows().map((row) => [row[0], row.at(-1)])).toEqual([
+      ['1 · hun · DTS-HD MA 5.1 · DTS-HD MA 5.1 stream #1', 'First file'],
+      ['1 · jpn · AC-3 5.1 · Japanese 5.1 stream #1', 'Second file'],
+    ])
+  })
+
   it('says why there is nothing to preview without an open source', async () => {
     await mountPreview(null, false)
     expect(document.querySelector('[data-state="no-source"]')?.textContent).toContain(

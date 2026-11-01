@@ -27,6 +27,7 @@ const editor = reactive({
   currentTemplate: null as JobTemplate | null,
   applyPreset: vi.fn<(id: string) => Promise<void>>(async () => {}),
   refreshPresetChanges: vi.fn<() => void>(),
+  overriddenAt: () => false,
 })
 vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
 

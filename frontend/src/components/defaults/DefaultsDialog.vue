@@ -11,6 +11,7 @@ import PresetNameDialog, {
   type PresetDetailsInput,
 } from '@/components/presets/PresetNameDialog.vue'
 import { useDefaultsStore } from '@/stores/defaults'
+import { useSourcesStore } from '@/stores/sources'
 
 import CodecRuleTable from './CodecRuleTable.vue'
 import DefaultsPreview from './DefaultsPreview.vue'
@@ -21,6 +22,7 @@ import SubtitleOptions from './SubtitleOptions.vue'
 // The audio or subtitle defaults dialog. The defaults store opens it; `App.vue` mounts it once.
 const { t } = useI18n()
 const defaults = useDefaultsStore()
+const sources = useSourcesStore()
 
 const confirming = ref(false)
 const naming = ref(false)
@@ -28,18 +30,26 @@ const naming = ref(false)
 const audio = computed(() => defaults.kind === 'audio')
 const ready = computed(() => defaults.audio !== null && defaults.subtitles !== null)
 const job = computed(() => defaults.target?.kind === 'job')
+const group = computed(() => defaults.target?.kind === 'group')
 const presetName = computed(() => defaults.preset?.name ?? '')
 const builtIn = computed(() => defaults.preset?.built_in === true)
+/** Whose defaults: the preset's, or the group's. */
+const ownerName = computed(() => {
+  const whose = defaults.target
+  if (whose?.kind !== 'group') return presetName.value
+  return sources.grouping?.groups?.find((found) => found.id === whose.groupId)?.name ?? ''
+})
 
 const title = computed(() => {
   const what = audio.value ? t('defaults.title.audio') : t('defaults.title.subtitles')
-  return presetName.value === '' ? what : t('defaults.title.of', { what, name: presetName.value })
+  return ownerName.value === '' ? what : t('defaults.title.of', { what, name: ownerName.value })
 })
 
 const whose = computed(() => {
-  const name = presetName.value
+  const name = ownerName.value
+  const list = audio.value ? t('defaults.whose.audioTracks') : t('defaults.whose.subtitleTracks')
+  if (group.value) return t('defaults.whose.group', { name, list })
   if (job.value) {
-    const list = audio.value ? t('defaults.whose.audioTracks') : t('defaults.whose.subtitleTracks')
     return builtIn.value
       ? t('defaults.whose.jobBuiltIn', { name, list })
       : t('defaults.whose.job', { name, list })
@@ -111,11 +121,16 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
         severity="warn"
         data-role="ruled"
       >
-        {{
-          audio
-            ? t('defaults.ruled.audio', { name: presetName })
-            : t('defaults.ruled.subtitles', { name: presetName })
-        }}
+        <template v-if="group">
+          {{ audio ? t('defaults.ruled.groupAudio') : t('defaults.ruled.groupSubtitles') }}
+        </template>
+        <template v-else>
+          {{
+            audio
+              ? t('defaults.ruled.audio', { name: presetName })
+              : t('defaults.ruled.subtitles', { name: presetName })
+          }}
+        </template>
       </Message>
       <div class="defaults-dialog__edit" data-role="edit">
         <Section :title="t('defaults.selection.title')">
@@ -153,7 +168,13 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
             data-action="cancel"
             @click="defaults.close()"
           />
-          <template v-if="job">
+          <Button
+            v-if="group"
+            :label="t('defaults.actions.applyGroup')"
+            data-action="apply"
+            @click="defaults.apply()"
+          />
+          <template v-else-if="job">
             <Button
               v-if="builtIn"
               :label="t('defaults.actions.saveAsNew')"

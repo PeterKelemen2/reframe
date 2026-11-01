@@ -1,38 +1,47 @@
 <script setup lang="ts">
 import { Info } from '@lucide/vue'
 import Button from 'primevue/button'
+import Menu from 'primevue/menu'
 import Popover from 'primevue/popover'
 import vTooltip from 'primevue/tooltip'
-import { computed, ref, useId, useTemplateRef, watchPostEffect } from 'vue'
+import { computed, nextTick, ref, useId, useTemplateRef, watchPostEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { ValidationIssue } from '@/api/types'
 import { useReveal } from '@/composables/useReveal'
+import { useEditorStore } from '@/stores/editor'
 import { useValidationStore } from '@/stores/validation'
 
 import { bySeverity, SEVERITY_ICON, useSeverityLabel } from './severity'
 import type { FieldSlotProps } from './types'
 
-const props = defineProps<{
-  /** Already translated. */
-  label: string
-  /** The value's validation path (`video.encoder`): its issues show here, and `ui.reveal` finds it. */
-  path?: string
-  /** The ⓘ popover's text; already translated. */
-  help?: string
-  /** Shown instead of the validation store's issues for `path` (settings forms, the sandbox). */
-  issues?: ValidationIssue[]
-  /** The value differs from the batch group's (the override dot; M7). */
-  overridden?: boolean
-  /** The label above the control instead of beside it. */
-  stacked?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** Already translated. */
+    label: string
+    /** The value's validation path (`video.encoder`): its issues show here, and `ui.reveal` finds it. */
+    path?: string
+    /** The ⓘ popover's text; already translated. */
+    help?: string
+    /** Shown instead of the validation store's issues for `path` (settings forms, the sandbox). */
+    issues?: ValidationIssue[]
+    /**
+     * Shows the override dot without its menu (the sandbox). Without it, the dot and its menu show
+     * while the edited group's shown file overrides `path`.
+     */
+    overridden?: boolean
+    /** The label above the control instead of beside it. */
+    stacked?: boolean
+  }>(),
+  { overridden: undefined },
+)
 
 defineSlots<{ default(props: FieldSlotProps): unknown }>()
 
 const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const validation = useValidationStore()
+const editor = useEditorStore()
 
 const id = useId()
 const labelId = `${id}-label`
@@ -40,6 +49,7 @@ const issuesId = `${id}-issues`
 const root = useTemplateRef<HTMLElement>('root')
 const helpPopover = useTemplateRef<InstanceType<typeof Popover>>('helpPopover')
 const helpOpen = ref(false)
+const overrideMenu = useTemplateRef<InstanceType<typeof Menu>>('overrideMenu')
 
 function toggleHelp(event: Event): void {
   helpOpen.value = !helpOpen.value
@@ -69,6 +79,44 @@ watchPostEffect(() => {
 })
 
 useReveal(() => props.path, root)
+
+const overrideMenuShown = computed(
+  () =>
+    props.overridden === undefined && props.path !== undefined && editor.overriddenAt(props.path),
+)
+
+/** The dot goes away with the override: the focus goes back to the field's control. */
+async function focusControl(): Promise<void> {
+  await nextTick()
+  root.value
+    ?.querySelector<HTMLElement>(
+      '.rf-field__control :is(input, select, textarea, button, [tabindex]:not([tabindex="-1"]))',
+    )
+    ?.focus()
+}
+
+const overrideItems = computed(() => {
+  const path = props.path as string
+  const perFile = editor.perFile(path)
+  return [
+    {
+      label: t('base.field.resetToGroup'),
+      command: () => {
+        editor.resetToGroup(path)
+        void focusControl()
+      },
+    },
+    {
+      label: t('base.field.applyToGroup'),
+      reason: perFile ? t('base.field.perFile') : null,
+      disabled: perFile,
+      command: async () => {
+        await editor.applyToWholeGroup(path)
+        await focusControl()
+      },
+    },
+  ]
+})
 </script>
 
 <template>
@@ -90,6 +138,35 @@ useReveal(() => props.path, root)
         role="img"
         :aria-label="t('base.field.overridden')"
       />
+      <template v-else-if="overrideMenuShown">
+        <Button
+          v-tooltip.top="t('base.field.overridden')"
+          class="rf-field__override-button"
+          text
+          rounded
+          size="small"
+          :aria-label="t('base.field.overrideMenu', { label })"
+          aria-haspopup="menu"
+          :aria-controls="`${id}-override`"
+          data-action="override-menu"
+          @click="overrideMenu?.toggle($event)"
+        >
+          <template #icon><span class="rf-field__override" aria-hidden="true" /></template>
+        </Button>
+        <Menu
+          ref="overrideMenu"
+          :pt="{ root: { id: `${id}-override` } }"
+          :model="overrideItems"
+          popup
+        >
+          <template #item="{ item, props: itemProps }">
+            <a v-bind="itemProps.action" class="rf-field__override-item">
+              <span>{{ item.label }}</span>
+              <small v-if="item.reason" class="rf-field__override-reason">{{ item.reason }}</small>
+            </a>
+          </template>
+        </Menu>
+      </template>
       <template v-if="help">
         <Button
           class="rf-field__help"
@@ -175,6 +252,22 @@ useReveal(() => props.path, root)
   height: 0.5rem;
   border-radius: 50%;
   background: var(--rf-color-primary);
+}
+
+.rf-field__override-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+}
+
+.rf-field__override-item {
+  display: grid;
+}
+
+.rf-field__override-reason {
+  max-width: 18rem;
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
 }
 
 .rf-field__control {

@@ -2,8 +2,11 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { h, nextTick } from 'vue'
 
-import type { ValidationIssue } from '@/api/types'
+import type { JsonPatchOp, ValidationIssue } from '@/api/types'
 import { REVEALED_CLASS } from '@/composables/useReveal'
+import { sampleJob, samplePreset } from '@/editor/testing/samples'
+import { type EditorTarget, type GroupScope, useEditorStore } from '@/stores/editor'
+import { templateOfPreset } from '@/stores/presets'
 import { useUiStore } from '@/stores/ui'
 import { useValidationStore } from '@/stores/validation'
 
@@ -22,6 +25,44 @@ const control = {
 
 function mountField(props: Record<string, unknown>) {
   return mountBase(Field, { props: { label: 'Encoder', ...props }, slots: control })
+}
+
+const QUALITY: JsonPatchOp = { op: 'replace', path: '/job/video/quality', value: 20 }
+
+function groupTarget(scope: GroupScope, ops: JsonPatchOp[] = [QUALITY]): EditorTarget {
+  return {
+    kind: 'group',
+    groupId: 'g1',
+    sourceId: 'e2',
+    job: sampleJob(),
+    template: templateOfPreset(samplePreset()),
+    presetId: null,
+    overrides: { e2: ops },
+    scope,
+  }
+}
+
+/** A field of the shown file of a group, with the store's override actions replaced by spies. */
+async function mountGroupField(path: string, scope: GroupScope = 'file') {
+  const wrapper = mountField({ label: 'Quality', path })
+  const editor = useEditorStore()
+  editor.target = groupTarget(scope)
+  const reset = vi.spyOn(editor, 'resetToGroup').mockImplementation(() => {
+    editor.target = groupTarget(scope, [])
+  })
+  const apply = vi.spyOn(editor, 'applyToWholeGroup').mockImplementation(async () => {
+    editor.target = groupTarget(scope, [])
+  })
+  await flushPromises()
+  return { wrapper, editor, reset, apply }
+}
+
+async function chooseItem(label: string): Promise<void> {
+  const item = [...document.querySelectorAll<HTMLElement>('[data-pc-section="item"]')].find((li) =>
+    li.textContent?.includes(label),
+  )
+  item?.querySelector<HTMLElement>('a')?.click()
+  await flushPromises()
 }
 
 afterEach(() => {
@@ -76,6 +117,59 @@ describe('Field', () => {
     await wrapper.setProps({ overridden: true })
     expect(wrapper.get('.rf-field__override').attributes('aria-label')).toBe(
       'Differs from the group',
+    )
+  })
+
+  it("shows a named dot in scope file when the shown file's override sets its path", async () => {
+    const { wrapper } = await mountGroupField('video.quality')
+    expect(wrapper.get('[data-action="override-menu"]').attributes('aria-label')).toBe(
+      'Quality differs from the group',
+    )
+  })
+
+  it('shows no dot for a path the override does not set, in scope group, or for a job', async () => {
+    const { wrapper, editor } = await mountGroupField('video.encoder')
+    expect(wrapper.find('[data-action="override-menu"]').exists()).toBe(false)
+    const other = mountField({ label: 'Quality', path: 'video.quality' })
+    editor.target = groupTarget('group')
+    await flushPromises()
+    expect(other.find('[data-action="override-menu"]').exists()).toBe(false)
+    editor.target = { kind: 'job', sourceId: 'e2', job: sampleJob() }
+    await flushPromises()
+    expect(other.find('[data-action="override-menu"]').exists()).toBe(false)
+  })
+
+  it('resets the field to the group from its menu, and the focus goes back to the control', async () => {
+    const { wrapper, reset, apply } = await mountGroupField('video.quality')
+    await wrapper.get('[data-action="override-menu"]').trigger('click')
+    await flushPromises()
+    await chooseItem('Reset to group')
+    expect(reset).toHaveBeenCalledWith('video.quality')
+    expect(apply).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-action="override-menu"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('input.control').element)
+  })
+
+  it('applies the value to the whole group from its menu, and the focus goes back to the control', async () => {
+    const { wrapper, reset, apply } = await mountGroupField('video.quality')
+    await wrapper.get('[data-action="override-menu"]').trigger('click')
+    await flushPromises()
+    await chooseItem('Apply to whole group')
+    expect(apply).toHaveBeenCalledWith('video.quality')
+    expect(reset).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(wrapper.get('input.control').element)
+  })
+
+  it('offers no Apply to whole group for a per-file value, and says why', async () => {
+    const { wrapper, editor, apply } = await mountGroupField('output.path')
+    editor.target = groupTarget('file', [{ op: 'add', path: '/job/output/path', value: '/x.mkv' }])
+    await flushPromises()
+    await wrapper.get('[data-action="override-menu"]').trigger('click')
+    await flushPromises()
+    await chooseItem('Apply to whole group')
+    expect(apply).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain(
+      "Set per file: the group's template cannot hold it.",
     )
   })
 

@@ -94,6 +94,9 @@
     "reload": "Reload from preset rules",
     "reloadHelp": "Replaces these tracks with what the preset's rules choose for this source (Undo brings them back)",
     "defaults": "Defaults…",
+    "reloadGroup": "Not in a group: Defaults… and Apply to the group give the group's tracks back to the defaults",
+    "fileScope": "Edits go to this file only: tracks are added, removed and moved for the whole group. To use another source track or none in this file, pick it in the matrix (Check group).",
+    "fileScopeHelp": "Tracks are added for the whole group: set Edits go to Group, or pick another track for this file in the matrix",
     "noAudio": "No audio tracks: the output will have no audio.",
     "noSubtitles": "No subtitle tracks.",
     "dragColumn": "Drag to reorder",
@@ -194,6 +197,7 @@
   "external": {
     "add": "Add external subtitle…",
     "addHelp": "Adds SRT, ASS, SSA, WebVTT or PGS (.sup) files as subtitle tracks",
+    "addGroup": "An external subtitle file belongs to one file: close the group and open that file to add one",
     "file": "File",
     "events": "{count} event | {count} events",
     "displaySets": "{count} display set | {count} display sets",
