@@ -26,7 +26,17 @@
       "loudness": "The loudness could not be measured"
     },
     "noBitrate": "No bitrate could be measured",
-    "noBitrateDetail": "The track has no packets with a size and a time."
+    "noBitrateDetail": "The track has no packets with a size and a time.",
+    "ended": {
+      "bitrate": "Track {n}: {value} kb/s, measured.",
+      "noBitrate": "Track {n}: no bitrate could be measured.",
+      "events": "Track {n}: one event counted. | Track {n}: {count} events counted.",
+      "eventsForced": "Track {n}: {count} events counted, {forced} forced.",
+      "eventsAll": "The events of every subtitle track are counted.",
+      "loudness": "Track {n}: integrated loudness {integrated}, true peak {peak}, loudness range {range}.",
+      "done": "{scan}: done.",
+      "cancelled": "{scan}: cancelled."
+    }
   },
   "events": {
     "forced": "{count} forced",

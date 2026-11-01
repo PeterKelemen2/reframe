@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { AudioOutputTrack, AudioStream } from '@/api/types'
 import Field from '@/components/base/Field.vue'
-import { kiloHertz, streamLabel } from '@/components/media/streams'
+import { groupedKbps, kiloHertz, streamLabel } from '@/components/media/streams'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -38,7 +38,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ move: [to: number]; remove: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 
@@ -177,11 +177,13 @@ const bitrateOptions = computed(() => [
     label:
       limits.value === null
         ? t('tracks.output.encoderDefault')
-        : t('tracks.output.defaultBitrate', { value: limits.value.default }),
+        : t('tracks.output.defaultBitrate', {
+            value: groupedKbps(limits.value.default, locale.value),
+          }),
   },
   ...bitrateChoices(encoder.value, limits.value, props.track.bitrate).map((value) => ({
     value: String(value),
-    label: t('tracks.units.kbps', { value }),
+    label: t('tracks.units.kbps', { value: groupedKbps(value, locale.value) }),
   })),
 ])
 
