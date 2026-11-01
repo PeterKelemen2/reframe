@@ -36,7 +36,7 @@ export type DefaultsKind = 'audio' | 'subtitles'
 
 /**
  * Whose defaults the dialog edits: the open job's (from its preset), a preset's, or a batch
- * group's. The group target is typed for the batch UI and not built yet.
+ * group's. `open` refuses a group.
  */
 export type DefaultsTarget =
   | { kind: 'job' }
@@ -197,8 +197,8 @@ export const useDefaultsStore = defineStore('defaults', () => {
   }
 
   /**
-   * Opens the dialog on a copy of the target's defaults. A job's are its preset's (the job keeps
-   * none of its own). A batch group is not built: a toast says so.
+   * Opens the dialog on a copy of the target's defaults. A job's are its preset's: the job keeps
+   * none of its own.
    */
   async function open(which: DefaultsKind, whose: DefaultsTarget): Promise<void> {
     if (whose.kind === 'group') {
@@ -357,7 +357,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
 
   /**
    * Replaces the job's tracks of the dialog's kind with what the edited defaults draft for its
-   * source (`jobs/explain`): one undo step. A refusal is the API client's toast; the dialog stays.
+   * source: one undo step. A refusal is the API client's toast; the dialog stays.
    */
   async function apply(): Promise<void> {
     const opened = editor.target
@@ -383,8 +383,8 @@ export const useDefaultsStore = defineStore('defaults', () => {
   }
 
   /**
-   * Writes the edited defaults of the dialog's kind into a user preset, as the server has it
-   * now: another window's changes to the rest of the preset stay.
+   * Writes the dialog's kind of edited defaults into a user preset. The preset is read first, so
+   * changes made elsewhere in it stay.
    */
   async function saveInto(into: Preset): Promise<boolean> {
     const edits =
