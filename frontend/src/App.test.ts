@@ -33,6 +33,15 @@ async function mountApp(phase: AppPhase, path = '/', mode: 'token' | 'password' 
   return { host, router }
 }
 
+function inPlaceJob(state: QueueJob['state']): QueueJob {
+  return {
+    id: 'edit',
+    state,
+    started_at: '2026-11-01T10:00:00Z',
+    settings: { source: { path: '/media/a.mkv' }, output: { edit_in_place: true } },
+  } as QueueJob
+}
+
 afterEach(() => {
   app?.unmount()
   app = undefined
@@ -145,24 +154,17 @@ describe('the app shell', () => {
 
   it('reads an open source again when its in-place edit ends, whatever view is shown', async () => {
     await mountApp('ready', '/queue')
-    const job = (state: QueueJob['state']) =>
-      ({
-        id: 'edit',
-        state,
-        started_at: '2026-11-01T10:00:00Z',
-        settings: { source: { path: '/media/a.mkv' }, output: { edit_in_place: true } },
-      }) as QueueJob
     const reload = app!.runWithContext(() => {
       const sources = useSourcesStore()
       sources.entries = [{ id: 's1', path: '/media/a.mkv', source: null } as never]
       const queue = useQueueStore()
       queue.loaded = true
-      queue.jobs = [job('running')]
+      queue.jobs = [inPlaceJob('running')]
       return vi.spyOn(sources, 'reload').mockResolvedValue()
     })
     await flushPromises()
     app!.runWithContext(() => {
-      useQueueStore().jobs = [job('done')]
+      useQueueStore().jobs = [inPlaceJob('done')]
     })
     await flushPromises()
     expect(reload).toHaveBeenCalledWith('s1')
