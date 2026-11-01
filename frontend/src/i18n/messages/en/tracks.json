@@ -205,7 +205,6 @@
     "charsetDetected": "As detected: {charset}",
     "charsetMissing": "Not detected: choose one",
     "charsetBitmap": "A bitmap file has no character encoding.",
-    "charsetChoose": "Choose the encoding the file was saved in: without it FFmpeg cannot decode the text.",
     "formatNames": {
       "subrip": "SRT",
       "srt": "SRT",

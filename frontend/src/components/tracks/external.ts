@@ -5,7 +5,7 @@ import { api, ApiError, apiQuiet, unwrap } from '@/api/client'
 import type { SubtitleFileInfo } from '@/api/types'
 import { platform } from '@/platform'
 
-/** The subtitle files a job can take (`reframe.analysis.subtitlefile`). */
+/** The subtitle files a job can take. */
 export const SUBTITLE_FILE_FILTERS = ['.srt', '.ass', '.ssa', '.vtt', '.sup']
 
 /** What `subtitles/inspect` said about a file; `null`: it could not be read. */

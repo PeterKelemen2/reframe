@@ -526,12 +526,14 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       button for unknown bitrates. (M4 built the table, [decision 0063](../decisions/0063-m4-frontend-mvp.md),
       "Task I"; M6 the "Measure" button, the subtitle event count and the loudness measurement,
       [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task B".)
-- [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
-      (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
+- [x] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
+      (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I";
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task C".)
 - [x] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
       (`hun · hu`). With `LanguageListEditor` for ordered language lists (M6,
       [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
-- [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
+- [x] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`)
+      (M6, [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task C").
 - [ ] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
       selection settings, a codec-rule table (drag to reorder, the catch-all row is locked,
       expandable rows for optional settings), passthru check boxes, fallback encoder, and the

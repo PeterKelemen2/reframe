@@ -19,7 +19,7 @@ import { DEFAULT_AUDIO_ENCODER } from './ops'
 export type MetadataList = 'video' | 'audio' | 'subtitles'
 export type Flag = keyof TrackFlags
 
-/** In the order of 03 §Track metadata. */
+/** In the order the metadata block shows them. */
 export const FLAGS: readonly Flag[] = [
   'default',
   'forced',
@@ -132,7 +132,7 @@ export function bulkOps(
   return ops
 }
 
-/** The values of a track name template (`batch/metadata.py`'s variables) for one track. */
+/** The values of a track name template for one track, as the codec rules render them. */
 export type NameValues = Partial<Record<NameVariable, string>>
 export type NameVariable =
   | 'lang'
