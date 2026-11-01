@@ -70,23 +70,19 @@ class NotARegularFileError(OSError):
         super().__init__(errno.EINVAL, "Not a regular file", os.fspath(path))
 
 
-def _check_kind(mode: int, path: str | os.PathLike[str]) -> None:
-    if stat.S_ISDIR(mode):
-        raise IsADirectoryError(errno.EISDIR, "Is a directory", os.fspath(path))
-    if not stat.S_ISREG(mode):
-        raise NotARegularFileError(path)
-
-
 def open_regular(path: str | os.PathLike[str]) -> BinaryIO:
     """``path`` opened for reading in binary mode when it is a regular file (links followed).
     Raises :class:`IsADirectoryError` for a folder, :class:`NotARegularFileError` for any other
     kind of file, at once, and :class:`OSError` as :func:`open` does."""
-    _check_kind(os.stat(path).st_mode, path)
-    # O_NONBLOCK: a file replaced by a FIFO after the stat must not wait for a writer.
+    # O_NONBLOCK: opening a FIFO waits for a writer without it; the kind is checked after.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
     try:
-        _check_kind(os.fstat(fd).st_mode, path)
+        mode = os.fstat(fd).st_mode
+        if stat.S_ISDIR(mode):
+            raise IsADirectoryError(errno.EISDIR, "Is a directory", os.fspath(path))
+        if not stat.S_ISREG(mode):
+            raise NotARegularFileError(path)
         return os.fdopen(fd, "rb")
     except BaseException:
         os.close(fd)

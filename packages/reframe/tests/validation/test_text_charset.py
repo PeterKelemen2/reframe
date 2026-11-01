@@ -6,8 +6,11 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from reframe.textfile import TextCharset
+import pytest
+
+from reframe.textfile import TextCharset, read_charset
 from reframe.validation import LocalFileSystem
+from reframe.validation import fs as validation_fs
 
 TEXT = "1\n00:00:00,500 --> 00:00:01,500\nŐszi szél\n"
 
@@ -32,6 +35,22 @@ def test_a_file_saved_again_with_the_same_size_and_time_is_read_again(tmp_path: 
     file.write_bytes(b"\xff\xfe")
     os.utime(file, ns=times)
     assert local.text_charset(file) == TextCharset("UTF-16LE", ascii=False)
+
+
+def test_an_unchanged_file_is_read_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Validation runs on every edit, and a subtitle file can be megabytes."""
+    file = tmp_path / "Film.hu.srt"
+    file.write_bytes(TEXT.encode())
+    reads: list[object] = []
+
+    def counted(path: Path) -> TextCharset:
+        reads.append(path)
+        return read_charset(path)
+
+    monkeypatch.setattr(validation_fs, "read_charset", counted)
+    local = LocalFileSystem()
+    assert local.text_charset(file) == local.text_charset(file) == TextCharset("UTF-8", False)
+    assert reads == [file]
 
 
 def test_what_is_not_a_readable_file_has_no_encoding(tmp_path: Path) -> None:

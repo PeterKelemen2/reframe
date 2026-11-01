@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from reframe.analysis.subtitlefile import detect_charset
+from reframe.textfile import charset_of
 
 TEXT = "Őszi szél"
 
@@ -33,3 +34,18 @@ def test_a_character_cut_at_the_end_of_a_sample_is_still_utf8() -> None:
     cut = TEXT.encode()[:1]  # the first byte of "Ő"
     assert detect_charset(cut, complete=False) == "UTF-8"
     assert detect_charset(cut, complete=True) is None
+
+
+@pytest.mark.parametrize(
+    ("data", "ascii"),
+    [
+        (b"plain", True),
+        (b"\xef\xbb\xbfplain", True),
+        (TEXT.encode(), False),
+        (b"\xff\xfeplain", False),
+    ],
+)
+def test_ascii_text_is_marked_as_read_alike_by_every_ascii_encoding(
+    data: bytes, ascii: bool
+) -> None:
+    assert charset_of(data).ascii is ascii
