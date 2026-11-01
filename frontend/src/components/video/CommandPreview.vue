@@ -99,6 +99,24 @@ async function copyCommand(): Promise<void> {
   box-shadow: 0 -2px 8px rgb(0 0 0 / 8%);
 }
 
+/*
+ * A field's bar is drawn in the panel's side padding, which the drawer does not cover. The
+ * middle of the gradient stays clear: it is painted over the drawer's own border.
+ */
+.command-preview::before {
+  content: '';
+  position: absolute;
+  inset-block: -1px;
+  inset-inline: calc(-1 * (var(--rf-space-4) + 1px));
+  z-index: -1;
+  background: linear-gradient(
+    to right,
+    var(--rf-color-surface) var(--rf-space-4),
+    transparent var(--rf-space-4) calc(100% - var(--rf-space-4)),
+    var(--rf-color-surface) calc(100% - var(--rf-space-4))
+  );
+}
+
 .command-preview__bar {
   display: flex;
   align-items: center;

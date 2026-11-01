@@ -1623,6 +1623,13 @@ and with `npm run e2e`.
    with
    `.command-preview::before { content: ''; position: absolute; inset-block: -1px; inset-inline: calc(-1 * var(--rf-space-4)); z-index: -1; background: var(--rf-color-surface); }`.
    Checked by injecting this rule in the browser: the bar no longer shows next to the open drawer.
+   Applied 2026-11-01 with one change: that rule also paints over the drawer's own border, side
+   shadow and rounded corners (its `::before` sits above them), so the built rule fills only
+   the two padding strips (a hard-stop gradient with a clear middle). Test:
+   `e2e/layout.spec.ts`, "the open command drawer covers the padding where a field's bar is
+   drawn" (what is hit 6 px left of the drawer is the drawer). Checked with a bar injected
+   beside the drawer, headless Chromium and Firefox, light and dark: the bar shows above the
+   drawer, not beside it, and the border and corners are as before.
 
 ### Fix round — FB (the job that is queued)
 

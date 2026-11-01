@@ -122,6 +122,38 @@ test('the workspace with a file open is one window high, its icons at full size'
   await expectIconsAtFullSize(rows.first().locator('.track-row__buttons'), 'a track row')
 })
 
+test("the open command drawer covers the padding where a field's bar is drawn", async ({
+  page,
+}) => {
+  await openApp(page)
+  await openFile(page, 'multitrack.mkv')
+  await page.getByRole('tab', { name: 'Video' }).click()
+
+  const drawer = page.locator('.command-preview')
+  const toggle = drawer.locator('.command-preview__toggle')
+  await expect(toggle).toBeVisible()
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await expect(drawer.locator('.command-preview__body')).toBeVisible()
+
+  const box = await drawer.boundingBox()
+  if (box === null) throw new Error('the drawer has no box')
+  // A field's bar is drawn 8 px left of the field, 3 px wide: its middle is 6 px left of the drawer.
+  const hit = await page.evaluate(
+    ({ x, y }) => {
+      // This file is type-checked without the DOM library.
+      interface Box {
+        closest(selector: string): Box | null
+      }
+      const doc = Reflect.get(globalThis, 'document') as {
+        elementFromPoint(x: number, y: number): Box | null
+      }
+      return doc.elementFromPoint(x, y)?.closest('.command-preview') != null
+    },
+    { x: box.x - 6, y: box.y + box.height / 2 },
+  )
+  expect(hit, 'the drawer is what is painted beside its own left edge').toBe(true)
+})
+
 test('Settings stays one window high after a section link', async ({ page }) => {
   await openApp(page)
   await page.locator('.nav-rail').getByRole('link', { name: 'Settings' }).click()
