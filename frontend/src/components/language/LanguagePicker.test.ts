@@ -245,12 +245,16 @@ describe('the language picker', () => {
     const read = vi.spyOn(system, 'loadDefinitions').mockImplementation(async () => {
       system.languages = languages()
     })
-    $<HTMLButtonElement>('[data-action="read-languages"]')?.click()
+    const readAgain = $<HTMLButtonElement>('[data-action="read-languages"]')!
+    readAgain.focus()
+    // jsdom does not drop the focus to body when the button goes, as a browser does.
+    const focused = vi.spyOn(search()!, 'focus')
+    readAgain.click()
     await flushPromises()
     expect(read).toHaveBeenCalledOnce()
     expect($('[data-state="failed"]')).toBeNull()
     expect(optionTags()).toContain('hu')
-    expect(document.activeElement).toBe(search())
+    expect(focused).toHaveBeenCalled()
   })
 
   it('is named by its label and its value', async () => {
