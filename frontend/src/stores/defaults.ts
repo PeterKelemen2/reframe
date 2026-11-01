@@ -6,6 +6,7 @@ import { text } from '@/api/text'
 import type {
   AudioCodecRule,
   AudioDefaults,
+  DefaultsPreviewRequest,
   Fix,
   JobTemplate,
   MediaSource,
@@ -43,11 +44,6 @@ export type DefaultsTarget =
   | { kind: 'group'; groupId: string }
 
 export type Container = NonNullable<Schemas['DefaultsPreviewRequest']['container']>
-
-/** The body of `presets/defaults/preview`. */
-// TEMPORARY: `template` is not in the generated schema yet; replace with
-// `Schemas['DefaultsPreviewRequest']` once it is.
-export type PreviewRequest = Schemas['DefaultsPreviewRequest'] & { template?: JobTemplate | null }
 
 /** Milliseconds from the last edit to `presets/defaults/preview`. */
 export const PREVIEW_DEBOUNCE = 250
@@ -144,7 +140,7 @@ export const useDefaultsStore = defineStore('defaults', () => {
     async send(signal) {
       const keys = ruleKeys.value
       // The template that Apply sends: its own track rules draft as they would there.
-      const body: PreviewRequest = {
+      const body: DefaultsPreviewRequest = {
         source_ids: [sourceId.value as string],
         audio_defaults: audio.value as AudioDefaults,
         subtitle_defaults: subtitles.value as SubtitleDefaults,

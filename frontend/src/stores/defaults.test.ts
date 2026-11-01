@@ -13,6 +13,7 @@ import {
 import type {
   AudioCodecRule,
   AudioOutputTrack,
+  DefaultsPreviewRequest,
   JobDraft,
   JobTemplate,
   Preset,
@@ -24,7 +25,7 @@ import { preset, presetList, userPreset } from '@/components/presets/testing'
 import { probedSource } from '@/components/tracks/testing'
 import { sampleDraft, sampleJob } from '@/editor/testing/samples'
 
-import { PREVIEW_DEBOUNCE, type PreviewRequest, useDefaultsStore } from './defaults'
+import { PREVIEW_DEBOUNCE, useDefaultsStore } from './defaults'
 import { useEditorStore } from './editor'
 import { useSourcesStore } from './sources'
 import { useToastStore } from './toasts'
@@ -74,8 +75,8 @@ function issueAt(path: string, code = 'defaults.rule_shadowed'): ValidationIssue
   return { severity: 'warning', code, path, message: `${code} at ${path}`, fixes: [] }
 }
 
-function previewBody(request: Recorded | undefined): PreviewRequest {
-  return request?.body as PreviewRequest
+function previewBody(request: Recorded | undefined): DefaultsPreviewRequest {
+  return request?.body as DefaultsPreviewRequest
 }
 
 const toasts = () => useToastStore().items.map(({ severity, summary }) => ({ severity, summary }))
