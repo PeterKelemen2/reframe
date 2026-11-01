@@ -103,6 +103,13 @@ async function open(button: HTMLElement): Promise<HTMLElement> {
   return panel
 }
 
+/** The role of the popover `button` opens, and the text of the element in it that names it. */
+async function popoverName(button: HTMLElement | null | undefined): Promise<string> {
+  const panel = await open(button as HTMLElement)
+  const title = document.getElementById(panel.getAttribute('aria-labelledby') ?? '')
+  return `${panel.getAttribute('role')}: ${panel.contains(title) ? title?.textContent?.trim() : ''}`
+}
+
 // jsdom has no layout: the virtual scroller sees a window this tall, and scrolling does nothing.
 let windowHeight = 720
 Element.prototype.scrollTo ??= () => {}
@@ -160,6 +167,24 @@ describe('the matrix', () => {
     expect(cell(11, 'audio:1').dataset.status).toBe('missing')
     expect(text(cell(11, 'subtitle:0'))).toBe('≈ #2 matched without title')
     expect(cell(11, 'subtitle:0').getAttribute('aria-label')).toContain('Matched after relaxing')
+  })
+
+  it('gives the whole message of a cell, which may be cut, as its title and in its picker', async () => {
+    await mountMatrix(withRow(animeResolution(), fixedE11()))
+    const message = 'no track matches: skipped (the rule is optional)'
+    expect(cell(11, 'audio:1').querySelector('.matrix__message')?.getAttribute('title')).toBe(
+      message,
+    )
+    const panel = await open(cell(11, 'audio:1'))
+    expect(panel.querySelector('[data-role="message"]')?.textContent?.trim()).toBe(message)
+  })
+
+  it("names the video size in the V cell's label", async () => {
+    await mountMatrix()
+    const tr = document.querySelector(`[data-row-mark="${sourceIdOf(1)}"]`)?.closest('tr')
+    expect(tr?.querySelector('.matrix__video')?.getAttribute('aria-label')).toBe(
+      'V, E01: Exact match, 320×180',
+    )
   })
 
   it("shows a skipped rule after E11's fix", async () => {
@@ -366,6 +391,24 @@ describe('keyboard and size', () => {
     // The row's issues, four track cells and the name fields.
     expect(buttons).toHaveLength(6)
     expect(buttons.every((button) => button.tabIndex === 0 && !button.disabled)).toBe(true)
+  })
+
+  it('gives the first row the first focus when no row is asked for', async () => {
+    await mountMatrix()
+    const marks = [...document.querySelectorAll('[data-row-mark]')]
+    expect(marks.filter((mark) => mark.hasAttribute('autofocus'))).toEqual([marks[0]])
+  })
+
+  it('names each popover by its title', async () => {
+    await mountMatrix()
+    const row = cell(11, 'audio:1').closest('tr')
+    expect(await popoverName(cell(11, 'audio:1'))).toBe('dialog: A2 eng DTS-HD MA→AAC 2.0 in E11')
+    expect(await popoverName(row?.querySelector<HTMLElement>('[data-row-mark]'))).toBe(
+      'dialog: E11',
+    )
+    expect(await popoverName(row?.querySelector<HTMLElement>('[data-role="edit-name"]'))).toBe(
+      'dialog: Name fields of E11',
+    )
   })
 
   it('focuses the row asked for', async () => {

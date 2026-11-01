@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { LoaderCircle } from '@lucide/vue'
+import { CircleX, LoaderCircle } from '@lucide/vue'
 import { useEventListener } from '@vueuse/core'
+import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { bySeverity, SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
@@ -20,13 +21,26 @@ const editor = useEditorStore()
 const ui = useUiStore()
 
 const problemsOnly = ref(false)
+const maximized = ref(false)
 
-const resolution = computed(() => (editor.target?.kind === 'group' ? editor.resolution : null))
 const title = computed(() => {
-  const name = resolution.value?.group?.name
+  const name = editor.resolution?.group?.name
   return name ? t('matrix.title', { name }) : t('matrix.titleNoName')
 })
-const batchIssues = computed(() => bySeverity(resolution.value?.issues ?? []))
+const batchIssues = computed(() => bySeverity(editor.resolution?.issues ?? []))
+const status = computed(() => {
+  if (!editor.resolving) return ''
+  return editor.resolution ? t('matrix.resolving') : t('matrix.loading')
+})
+
+// The matrix of an older template is only looked at: a pick there would name another rule.
+const outdated = computed(() => editor.matrixError !== null && editor.resolution !== null)
+watch(outdated, async (now) => {
+  await nextTick()
+  const active = document.activeElement
+  if (now && (active === document.body || active?.closest('.matrix') != null))
+    document.querySelector<HTMLElement>('.matrix-dialog [data-role="retry"]')?.focus()
+})
 
 function close(): void {
   ui.matrixOpen = false
@@ -59,21 +73,48 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
     }"
     :draggable="false"
     :close-on-escape="false"
+    :maximize-button-props="{
+      'aria-label': maximized ? t('matrix.restore') : t('matrix.maximize'),
+    }"
     :pt="{ root: { onKeydown: onKey }, content: { class: 'matrix-dialog__content' } }"
     @update:visible="close"
+    @maximize="maximized = true"
+    @unmaximize="maximized = false"
   >
     <div class="matrix-dialog__bar">
-      <span v-if="resolution" data-role="count">
-        {{ t('matrix.files', (resolution.rows ?? []).length) }}
+      <span v-if="editor.resolution" data-role="count">
+        {{ t('matrix.files', (editor.resolution.rows ?? []).length) }}
       </span>
-      <span v-if="editor.resolving" class="matrix-dialog__resolving" role="status">
-        <LoaderCircle class="matrix-dialog__spin" :size="14" aria-hidden="true" />
-        {{ resolution ? t('matrix.resolving') : t('matrix.loading') }}
+      <span class="matrix-dialog__resolving" role="status">
+        <LoaderCircle v-if="status" class="matrix-dialog__spin" :size="14" aria-hidden="true" />{{
+          status
+        }}
       </span>
       <label class="matrix-dialog__filter">
-        <Checkbox v-model="problemsOnly" binary input-id="matrix-problems-only" />
+        <Checkbox
+          v-model="problemsOnly"
+          binary
+          input-id="matrix-problems-only"
+          :pt="{ input: { autofocus: editor.resolution === null || undefined } }"
+        />
         <span>{{ t('matrix.problemsOnly') }}</span>
       </label>
+    </div>
+    <div v-if="editor.matrixError !== null" class="matrix-dialog__failure">
+      <CircleX :size="16" aria-hidden="true" />
+      <p role="alert">
+        {{ t('matrix.failed', { reason: editor.matrixError }) }}
+        {{ editor.resolution ? t('matrix.outdated') : t('matrix.none') }}
+      </p>
+      <Button
+        :label="t('matrix.retry')"
+        size="small"
+        severity="secondary"
+        outlined
+        :loading="editor.resolving"
+        data-role="retry"
+        @click="editor.retryMatrix()"
+      />
     </div>
     <section
       v-if="batchIssues.length > 0"
@@ -86,12 +127,19 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
         {{ issue.message }}
       </p>
     </section>
-    <ResolutionMatrix
-      v-if="resolution"
-      :resolution="resolution"
-      :problems-only="problemsOnly"
-      :focus="ui.matrixFocus"
-    />
+    <div
+      v-if="editor.resolution"
+      class="matrix-dialog__matrix"
+      :class="{ 'matrix-dialog__matrix--outdated': outdated }"
+      :inert="outdated || undefined"
+      :data-state="outdated ? 'outdated' : undefined"
+    >
+      <ResolutionMatrix
+        :resolution="editor.resolution"
+        :problems-only="problemsOnly"
+        :focus="ui.matrixFocus"
+      />
+    </div>
   </Dialog>
   <QueueGroupDialog />
 </template>
@@ -121,6 +169,31 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
   to {
     transform: rotate(360deg);
   }
+}
+
+.matrix-dialog__failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2);
+  margin-bottom: var(--rf-space-2);
+  color: var(--p-status-error-color);
+}
+
+.matrix-dialog__failure p {
+  flex: 1 1 20rem;
+  margin: 0;
+}
+
+.matrix-dialog__matrix {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.matrix-dialog__matrix--outdated {
+  opacity: 0.5;
 }
 
 .matrix-dialog__filter {
