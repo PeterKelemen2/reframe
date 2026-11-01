@@ -133,6 +133,11 @@ export interface OutputChapter {
   name: string
   /** The source chapter's title; `null` for a generated chapter or a source chapter without one. */
   source_name: string | null
+  /**
+   * The 0-based source chapter, the index of `ChapterSettings.names` for it; `null` for a
+   * generated chapter, whose names are by output position.
+   */
+  source_index: number | null
 }
 
 /** `POST /api/jobs/chapters`: the chapters the output gets. */
