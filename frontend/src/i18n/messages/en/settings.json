@@ -100,7 +100,8 @@
     "preferredAudio": "Preferred audio languages",
     "preferredAudioHelp": "Used, in this order, by the audio defaults of a preset that names no languages of its own. Empty: every audio track is kept.",
     "preferredSubtitle": "Preferred subtitle languages",
-    "preferredSubtitleHelp": "Used, in this order, by the subtitle defaults of a preset that names no languages of its own. Empty: every subtitle track is kept."
+    "preferredSubtitleHelp": "Used, in this order, by the subtitle defaults of a preset that names no languages of its own. Empty: every subtitle track is kept.",
+    "refusedTag": "The server did not accept “{tag}”: a language tag is letters and digits in parts joined by hyphens, such as hu, pt-BR or sr-Latn."
   },
   "queue": {
     "title": "Queue",

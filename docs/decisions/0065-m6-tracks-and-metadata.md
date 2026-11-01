@@ -945,8 +945,17 @@ pinned FFmpeg, light and dark, 1440 × 900, 1280 × 800 and 390 × 844.
    `Intl.ListFormat`. Bitrates in the source table, the scans' announcements and the output
    bitrate list use the locale's digit grouping (`Intl.NumberFormat`; en: `2,140 kb/s`).
 
-Not changed here: a refused language in Settings → Languages shows the server's Pydantic
-message at its field; `LanguagesSection` is not in FC's files (reported to the lead).
+**After FA's merge** (checked against `dev-server.py --port 8752`, light and dark): a CP1250
+SRT and a UTF-16LE SRT added as external tracks get `subtitle.charset_unknown` and
+`subtitle.utf16` errors at `subtitles[i].source.charset`. Each shows once at the encoding field,
+with *Remove this subtitle track* below it, and the inspection's warning of the same meaning
+is not shown. *Add to queue* is off. Choosing *CP1250* clears the first error, and the fix
+removes the UTF-16 track, after which *Add to queue* is on again.
+
+Settings → Languages: the server refuses a tag of the wrong shape (`pt_BR`) with
+`settings.invalid` at `languages.<list>.<n>`, and its message quotes the schema pattern. The
+list now shows a sentence that names the refused tag instead. Another refusal keeps the
+server's words.
 
 ### Fix round — FD (chapters, tags, summary, queue)
 

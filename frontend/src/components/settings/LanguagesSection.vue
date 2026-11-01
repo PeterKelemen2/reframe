@@ -2,6 +2,7 @@
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import type { ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
 import LanguageListEditor from '@/components/language/LanguageListEditor.vue'
@@ -26,11 +27,20 @@ function useLanguageList(pointer: string) {
       if (pending.value === next) pending.value = null
     }
   }
+  const value = computed(() => pending.value ?? setting.value.value ?? [])
   return {
-    value: computed(() => pending.value ?? setting.value.value ?? []),
-    issues: setting.issues,
+    value,
+    issues: computed(() => setting.issues.value.map((issue) => plainIssue(issue, value.value))),
     save,
   }
+}
+
+/** The server words a tag of the wrong shape as its schema pattern: it gets a sentence. */
+function plainIssue(issue: ValidationIssue, list: readonly string[]): ValidationIssue {
+  const place = /^languages\.\w+\.(\d+)$/.exec(issue.path)?.[1]
+  const tag = place === undefined ? undefined : list[Number(place)]
+  if (issue.code !== 'settings.invalid' || tag === undefined) return issue
+  return { ...issue, message: t('settings.languages.refusedTag', { tag }) }
 }
 
 const favourites = useLanguageList('/languages/favourites')
