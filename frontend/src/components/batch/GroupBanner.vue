@@ -131,6 +131,16 @@ function focusIn(selector: string): void {
   if (focusLost()) root.value?.querySelector<HTMLElement>(selector)?.focus()
 }
 
+// *Try again* leaves with its error line once the group is checked.
+watch(
+  () => editor.matrixError,
+  async (error) => {
+    if (error !== null) return
+    await nextTick()
+    focusIn('[data-action=check-group]')
+  },
+)
+
 // The control that was used may leave with its banner (*Close group*, *Edit group*).
 const mode = computed(() => (edited.value ? 'group' : memberOf.value ? 'member' : null))
 watch(mode, async () => {

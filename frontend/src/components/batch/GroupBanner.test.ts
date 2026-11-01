@@ -202,11 +202,14 @@ describe('the group banner', () => {
     expect(text($('[data-state="matrix-error"] [role="alert"]'))).toBe(
       'The group could not be checked: The server is not reachable.',
     )
+    $('[data-action="retry-matrix"]')?.focus()
     await click('[data-action="retry-matrix"]')
     expect(retry).toHaveBeenCalledOnce()
     editor.matrixError = null
     await flushPromises()
     expect($('[data-state="matrix-error"]')).toBeNull()
+    // Try again left with its line: the focus goes on to Check group.
+    expect(document.activeElement).toBe($('[data-action="check-group"]'))
   })
 
   it('closes the group by opening the shown file as one job', async () => {
