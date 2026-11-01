@@ -51,9 +51,12 @@ No server route is missing; one core change is needed (item 2).
    - **Scope `file`**: the tabs show the shown file's job with its override; an edit becomes
      `/job/…` operations in that file's override (a later edit of the same path replaces the
      earlier one). An operation inside an output track (`/job/audio/<i>/…`,
-     `/job/subtitles/<i>/…`) comes after a `test` of that track's source
-     (`source_stream` / `source`), so a template change that moves the track makes the override
-     stale (`batch.override_stale`, a warning in its row), never applied to another track.
+     `/job/subtitles/<i>/…`) comes after a `test` of the whole track as the file's job has it
+     without its override (review fix FA, R1-2; first a `test` of the track's source alone, which
+     let a new track of the same source take the override), so a template change of that track
+     or its place makes the override stale (`batch.override_stale`, a warning in its row), never
+     applied to another track. A hand pick likewise comes after a `test` of its rule's selector
+     (R1-3).
      Adding, removing or moving an output track for one file is refused with a toast (the
      matrix's candidate picker does that, item 4).
    - **Undo / redo** work on the document `{template, overrides}`; the shown job and the matrix
@@ -420,3 +423,219 @@ were running at the same time and were not touched.
 Not built: a check of E05's commentary not being selected (04 §Example step 3) beyond its
 S1 / S2 columns; the matrix's candidate picker, *Problems only* and the naming column's edits
 (task C's checks); encoding the queued jobs.
+
+## Review, 2026-11-01
+
+### Fix round — FS (core and server)
+
+Three findings of review R1, each with a test that failed before the fix (C-12, S-2; 0040 §4,
+§5, §6; items 1 and 2 above). No model or route contract changed (`schema.d.ts` is the same).
+
+- **R1-1 (blocker): a derive from a file that lacks a rule's track kept only that file's
+  rules.** With E11 shown (no dub), one edit of A1 derived a template with one audio rule, so
+  every episode lost its dub. `derive_template` now keeps each base rule that takes no track in
+  the job's source (the rule engine's `match_rules` on the base's rules: no track taken, that
+  is `missing` or `skipped`), unchanged (selector, settings, metadata, `required`,
+  `multiple`), inserted at its index in the base (at the end when the derived list is
+  shorter). The derived rules of the job's tracks are as before (with `_kept_required`). A base
+  rule that takes a track the job dropped is not kept: that removal is the edit. Tests
+  (`test_derive.py`): `test_a_rule_that_takes_no_track_in_the_shown_file_is_kept` (04's
+  template with A2 optional, E11's job with A1 at 384 kb/s → 2 rules, A2 unchanged and
+  optional, 2 audio tracks in E01), `test_a_subtitle_rule_that_takes_no_track_keeps_its_place`
+  (an optional German rule between S1 and S2 stays at index 1),
+  `test_a_removed_track_removes_its_rule`.
+  **Choice:** a base rule with `languages: []` (the rule `derive_template` writes for a job
+  without tracks of that kind; it takes no track in any file) is not kept, and that rule is
+  added only when the merged list is empty. Otherwise a file with tracks derived on such a
+  template kept a stale "A1 no track" column before its real rule, and a file without tracks
+  derived again would add a second one. Test: `test_a_job_without_tracks_of_a_kind` (derived
+  again: one rule; a track added: its rule alone).
+- **R1-6 (major): a per-file output path was named over.** A file's override `replace
+  /job/output/path` (the matrix fix "Save as … (1).mkv" of `output.renamed` /
+  `batch.output_exists`, or a folder chosen for one file) was applied, then naming replaced the
+  path. A resolved job has no output path, so the batch service now keeps a path that the job
+  has after its override: naming still runs for the row's name fields (`Resolution.naming`),
+  its notes about the path it gave are dropped. Every check still applies, in the same order:
+  the server's jail on the patched job (before naming), validation, the batch name checks on
+  the kept path, and the route's output-folder check. In `resolve_batch` a kept path is not a
+  planned output of the preset: a file whose override names another file of the batch does not
+  make that file "already encoded" (it stays in its group) and gets `batch.output_is_source`.
+  Tests (`test_batch_service.py`): `test_an_output_path_set_by_a_files_override_is_kept` (the
+  real `output.renamed` fix as E01's override → the `(1)` path, no `batch.output_exists`, row
+  `ok`), `test_output_paths_set_by_overrides_are_checked_in_the_batch` (`resolve` and
+  `resolve_batch`: two files on one path → both `batch.name_collision`; a path that is E01 →
+  `batch.output_is_source`, E01 not left out); route (`reframe-server/tests/test_batch.py`):
+  `test_an_output_path_of_a_files_override` (both routes, web mode: a path in the output root
+  is kept without `output.folder_required`; a path outside the roots is a 403
+  `path.outside_roots`, as before).
+- **R1-9 (minor): the naming fallback froze Settings → Output into the template.**
+  `BatchService.derive` fills Settings → Output's naming into a base without naming only when
+  the job sets `output.naming.template` or `output.naming.name_source`; otherwise the derived
+  template keeps `naming: null` and follows the settings. Test: the last line of
+  `test_a_naming_edit_on_a_base_without_naming_keeps_the_settings_output_folder`.
+
+Known limit, not fixed:
+
+- **R1-12:** the core stops a file's whole job part at the first failed `test` (0040 §5), so a
+  stale guard of one track also skips the valid operations of later tracks. Fixing it means a
+  `test` that guards only the operations up to the next `test`, a change of 0040 §5's rule
+  that the UI's override writer (item 1) is built on, not a fix; the row's
+  `batch.override_stale` warning says how many operations were skipped.
+
+Mutations (each made once, then the file restored and touched):
+
+| Mutation | Result |
+|----------|--------|
+| `_with_absent` keeps no rule (`if False:`) | 2 failed: the audio and subtitle keep tests |
+| `_with_absent` also keeps `languages: []` rules | 1 failed: `test_a_job_without_tracks_of_a_kind` |
+| `_row` does not keep the override's path | 5 failed: the 3 service tests and the 2 route tests |
+| `resolve_batch` counts a kept path as a planned output | 1 failed: the `resolve_batch` case (E01 left out) |
+| `derive` fills the settings' naming for every naming derive | 1 failed: the naming test |
+
+### Fix round — FA (editor store)
+
+Fixed in `stores/editor.ts` and `editor/group.ts`. Each blocker and major has a test that failed
+on the store of `m7-batch-season` (f1b8a5a) and passes now: unit tests in
+`src/stores/editor.group.test.ts` and `src/editor/group.test.ts`, real-server tests (pinned FFmpeg,
+`anime-s01`) in `src/stores/editor.group.fixes.server.test.ts`.
+
+- **R1-1 (store part).** An edit of scope `group` (and *Apply to whole group*) that touches the
+  audio or the subtitles is refused while the shown file is not an exact member and the template
+  has no explicit rules of that kind: a toast names the file and the representative to show
+  instead ("E11's tracks do not match the group's" … "Show E01 to edit the group's tracks"), and
+  nothing changes. Other sections, and a kind the template has rules for, derive as before (the
+  core keeps the base rules, task FS).
+- **R1-2.** The `test` before an operation inside an output track checks the **whole track**
+  (`/job/audio/<i>`, `/job/subtitles/<i>`), as the file's job has it before the track's first
+  operation; later operations on that track keep that guard. This replaces item 1's "test of
+  that track's source". Checked on the real server: an unchanged track passes the test (the
+  API's JSON of the job is the core's model dump), an override survives a group change of
+  another track, and a track added above it makes it stale (`batch.override_stale`), never
+  applied to the new track.
+- **R1-3.** A hand pick or *No track* comes after `test /<kind>_rules/<r>/selector` with the
+  selector as the template has it when the pick is made (a new pick takes the newest selector).
+  On the real server the pick stays when a group edit derives the same rule again, and is stale
+  when the rules are moved (the Japanese rule never takes the dub's pick).
+- **R1-4.** `resolveNow()` flushes the pending edits and waits until none is on its way (a field's
+  edit that lands starts its derive, which is sent at once too), then waits for the derive queue,
+  then resolves. A pending edit that failed rejects with an `ApiError` (status 0, code
+  `edit.failed`, title `editor.group.editFailed`, detail the edit's failure). Its
+  `batch/resolve-run` goes through `apiQuiet` (the lead's addition): no toast, it rejects with the
+  `ApiError` and sets `matrixError`.
+- **R1-5.** Each kept state remembers its group's representative and member paths. When the
+  grouping changes, a state whose id is gone moves to the group that holds its representative,
+  else the one with most of its members, if that group has no state of its own; the edited
+  target's `groupId` follows at once (a synchronous watcher, so the group never looks gone), and
+  the matrix is asked again. With no such group the state stays under its old id and the editor
+  closes as before.
+- **R1-7.** An edit of scope `group` clears the steps to redo at once; `redo` with nothing to redo
+  no longer drops a waiting edit.
+- **R1-8 and the simplification.** One derive queue: the debounced edits (after their timer),
+  `mergeIntoGroup`, *Apply to whole group* and `patchTemplate` run one after the other in the
+  order asked for, all through `deriveInto`. `patchTemplate` returns a promise: with nothing on
+  its way it applies at once (a `PatchError` is thrown at once, as before), else it waits in the
+  queue (the promise rejects with it). A derive is derived again only when the template changed
+  while it was on its way (an undo during a merge), not on an override change.
+- **R1-14.** A preset whose template equals the group's (*Save as preset* then that preset) only
+  sets `presetId`: no undo step.
+- **R2-1 (store part).** `matrixError` (the problem's detail, else its title; for `source.stale`
+  the text `editor.group.sourceStale`, since that detail is for developers) is set by a failed
+  `batch/resolve-run`, `null` after an answer and when the group is left; the last `resolution`
+  stays. `retryMatrix()` asks again at once. A failure is no toast.
+
+**Changed in an existing test:** the real-server test's "a scope-`file` edit survives a template
+change" now changes another track (A2's mixdown); a change of the overridden track itself makes
+the override stale (R1-2).
+
+**Not built:** a stale track override taken up again by a new edit of that track. A later edit of
+a track whose guard failed keeps the stale guard, so it is stale too, until *Reset to group*
+removes the track's operations. Telling a stale track from an applied one in the store needs the
+server's stale issues or a local replay of the override, and a replay can disagree with the
+server's normalised job; for the lead to decide. Also not built: R1's optional simplification of
+the target copying the state; deleting a kept state that has no group any more.
+
+**Mutations** (each made once, the tests run, the code restored and touched): 24 on the unit tests
+(the near-member check and its kind check; the guard path back to the source; a pick without its
+guard; `ordered` not grouping rule guards; `resolveNow` not waiting, ignoring a failure, or not
+flushing a landed edit's derive; a gone state not following, the target keeping the old id, the
+first group instead of the most members, no matrix for the same state; `source.stale` shown raw;
+no redo clearing; `patchTemplate` not waiting; a saved preset as a step; `matrixError` not set,
+not cleared after an answer or on leaving; `retryMatrix` doing nothing; `api` instead of
+`apiQuiet`; a dropped derive committing; no re-derive; `endRun` ignored): each failed at least one
+test. On the real-server test: the source guard back and a pick without guard each fail their
+test.
+
+### Fix round — FU2 (panel, banner, cards)
+
+Fixed, each with a test that fails before the fix (mutation-checked):
+
+- **R2-3** The naming editor's *Name from* and *Name source* carry `output.naming.mode` and
+  `output.naming.name_source`, so a scope-`file` override of them shows its dot. The audio *Rate
+  control* carries the path of the rate member it **hides** (`bitrate` in quality mode, `quality`
+  in bitrate mode): that member has no field of its own, so an override of it was invisible
+  (seen on the real server: after *Reset to group* on the quality, the file kept `quality` while
+  its bitrate came back from the group, and only the rate mode's dot shows it). The shown member
+  keeps its own field and dot. `Field` takes one path, so a rate-mode switch (two members) is
+  reset in two steps, one per member. The other `Field`s without a path stay so: the
+  `NamingOptionsEditor` fields (Settings → Output and the preset editor edit `NamingOptions`, not
+  a job: no override reaches them), the defaults dialog's codec-rule fields
+  (`CodecRuleExtras`, issues given through `issues`; they edit a template's defaults), and the
+  fields outside the editor (preset name dialog, settings sections, login, *When done*).
+- **R1-11** In scope `group` the naming editor offers no *Use the preset's template* and no
+  *As the naming options say* once the group has its own name source: the derive keeps the
+  template's naming when the job's member is `null` (`derive._naming`), so both did nothing. The
+  name source still shows *As the naming options say* while the template has no naming (its
+  current value). A line under the name source says where the group's naming is set ("they start
+  from the preset's naming options, else Settings → Output, and are changed here"). Scope `file`
+  keeps both (a file's override can go back to the group's).
+- **R2-8** The reasons of the disabled *Reload from preset rules* and *Add external subtitle…*
+  in a group are visible lines under the actions, each named by its button's
+  `aria-describedby`; *Add track* and *Add all* in scope `file` point to the file-scope line the
+  same way. Each control has one tooltip with one text (on the wrapper, as before).
+- **L3** In scope `file` the track rows' move and remove buttons are disabled; a hidden line
+  with the reason is their `aria-describedby`, and the buttons' wrapper has it as a tooltip (the
+  list's visible file-scope line says it too).
+- **R2-9** The group treeitem is named by its name and lines (`aria-labelledby`); its buttons and
+  members are no longer part of its name.
+- **R2-13** The tree is one column no wider than the panel (`minmax(0, 1fr)`): a long group name
+  is cut with an ellipsis (full text in `title`), the buttons stay. Measured with a 3-file group
+  "A Very Long Series Title With Many Words That Keeps Going S03": row 521 px in a 263 px tree
+  without the rule, 263 px with it.
+- **R2-14** The panel and the banner call `queueGroup` directly.
+- **R2-5** The banner's *Add group to queue* is busy (`aria-busy`, a spinner), not disabled:
+  the focus stays on it after a queue without errors, and the error dialog can give it back;
+  `useQueueGroup` refuses a second click.
+- **R2-12** Group names in curly quotes in `group.json` (banner, slim line, *Apply to group*
+  title and toast, the saved-preset toast). Flow 2's expected banner text
+  (`e2e/flow2-season-group.spec.ts`, the lead's file) changes to
+  `Editing group “Anime Show S01” (12 files) — showing E01`.
+- **L1** (F-12) A preset with explicit `audio_rules` / `subtitle_rules` says "Chosen by the
+  preset's N track rules" for that kind, and leaves out the defaults' encoding, passthru or
+  burn-in line, which do not apply to it (`reframe.batch.rules`: explicit rules take precedence
+  over the defaults of their kind).
+- **R2-1** (the banner's part) While a group is edited and `editor.matrixError` is set, the
+  banner shows "The group could not be checked: …" (`role="alert"`) with *Try again*
+  (`editor.retryMatrix()`). Found in the browser check and fixed: once an answer comes, the line
+  leaves with the focused *Try again*, so the focus goes on to *Check group*.
+
+Checked headless against `scripts/dev-server.py` (pinned FFmpeg, `anime-s01`, a 3-file group
+with a long name made in the temp media root), after FA's merge, Chromium light and dark (the
+panel and banner checks also Firefox dark), screenshots read: the long group name cut, the row
+263 px, its buttons in view; the treeitem's name "A Very Long … S03 3 files · standard match";
+the banner `Editing group “Anime Show S01” (12 files) — showing E01`; *Add group to queue* from
+the keyboard: `Queued 12 jobs`, the focus still on the button; in scope `group` the name source
+loses *As the naming options say* once the group has one, no template reset, the line says where
+the naming is set; in scope `file` the dots on *Name from*, *File name* and *Name source*,
+*Reset to group* from the keyboard on *Name source* (dot gone, the group's value back); an MP3
+track switched to *Quality* in scope `file`: dots on *Rate control* and *Quality*, *Reset to
+group* on the rate mode leaves the quality override, still marked at the rate mode; move and
+remove disabled with their description in scope `file`, enabled in scope `group`; the
+subtitles' two reason lines named by *Reload from preset rules* and *Add external subtitle…*;
+`batch/resolve-run` answered with 503 by the test's interception: the error line, *Try again*
+keeps it while it fails and drops it once the server answers (focus on *Check group*); a saved
+group preset in the presets view: "Audio tracks: Chosen by the preset's 2 track rules", no
+encoding line. No page error.
+
+Not built: a two-member reset for the rate mode (`Field` has one path, and `components/base` is
+not this task's); the reason lines are shown in a group whether or not the user looks for the
+buttons (one line each, no disclosure).

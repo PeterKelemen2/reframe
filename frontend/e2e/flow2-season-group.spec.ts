@@ -105,7 +105,7 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   await group.getByRole('button', { name: 'Edit group' }).click()
   const banner = page.locator('.group-banner')
   await expect(banner.locator('[data-field="title"]')).toHaveText(
-    `Editing group "${GROUP}" (12 files) — showing E01`,
+    `Editing group “${GROUP}” (12 files) — showing E01`,
   )
 
   await page.getByRole('tab', { name: 'Audio' }).click()

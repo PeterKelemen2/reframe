@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Above the tabs: the edited group (its file count, the shown file, the scope, its actions), or
 // a slim line while a file of a group is open as one job. Nothing otherwise.
+import { LoaderCircle } from '@lucide/vue'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
@@ -30,7 +31,7 @@ const sources = useSourcesStore()
 const presets = usePresetsStore()
 const toasts = useToastStore()
 const ui = useUiStore()
-const { busy: queueing, queueGroup: queueOne } = useQueueGroup()
+const { busy: queueing, queueGroup } = useQueueGroup()
 const id = useId()
 
 const root = useTemplateRef<HTMLElement>('root')
@@ -95,10 +96,6 @@ function editGroup(groupId: string): Promise<void> {
   return quietly(() => editor.editGroup(groupId))
 }
 
-function queueGroup(groupId: string): Promise<void> {
-  return quietly(() => queueOne(groupId))
-}
-
 function closeGroup(): Promise<void> {
   const target = groupTarget.value
   if (target === null) return Promise.resolve()
@@ -133,6 +130,16 @@ async function saveAsPreset(details: PresetDetailsInput): Promise<void> {
 function focusIn(selector: string): void {
   if (focusLost()) root.value?.querySelector<HTMLElement>(selector)?.focus()
 }
+
+// *Try again* leaves with its error line once the group is checked.
+watch(
+  () => editor.matrixError,
+  async (error) => {
+    if (error !== null) return
+    await nextTick()
+    focusIn('[data-action=check-group]')
+  },
+)
 
 // The control that was used may leave with its banner (*Close group*, *Edit group*).
 const mode = computed(() => (edited.value ? 'group' : memberOf.value ? 'member' : null))
@@ -186,6 +193,19 @@ watch(mode, async () => {
           @update:model-value="setScope"
         />
       </div>
+      <div v-if="editor.matrixError !== null" class="group-banner__error" data-state="matrix-error">
+        <span role="alert">{{
+          t('group.banner.matrixError', { reason: editor.matrixError })
+        }}</span>
+        <Button
+          size="small"
+          severity="secondary"
+          text
+          :label="t('group.banner.retry')"
+          data-action="retry-matrix"
+          @click="editor.retryMatrix()"
+        />
+      </div>
       <div class="group-banner__actions">
         <Button
           size="small"
@@ -193,14 +213,19 @@ watch(mode, async () => {
           data-action="check-group"
           @click="ui.openMatrix()"
         />
+        <!-- Busy, not disabled: the focus stays here, and a second click is refused. -->
         <Button
           size="small"
           severity="secondary"
           :label="t('group.actions.queue')"
-          :loading="queueing"
+          :aria-busy="queueing || undefined"
           data-action="queue-group"
           @click="queueGroup(groupTarget.groupId)"
-        />
+        >
+          <template v-if="queueing" #icon>
+            <LoaderCircle class="group-banner__spin" :size="16" aria-hidden="true" />
+          </template>
+        </Button>
         <Button
           size="small"
           severity="secondary"
@@ -258,6 +283,16 @@ watch(mode, async () => {
 </template>
 
 <style scoped>
+.group-banner__spin {
+  animation: group-banner-spin 1s linear infinite;
+}
+
+@keyframes group-banner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .group-banner {
   display: flex;
   flex-wrap: wrap;
@@ -295,6 +330,14 @@ watch(mode, async () => {
 
 .group-banner__actions {
   margin-inline-start: auto;
+}
+
+.group-banner__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2);
+  color: var(--p-status-error-color);
 }
 
 .group-banner__label {

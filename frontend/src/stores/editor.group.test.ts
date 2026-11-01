@@ -1,8 +1,8 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope } from 'vue'
+import { effectScope, reactive } from 'vue'
 
-import { configureClient } from '@/api/client'
+import { ApiError, configureClient } from '@/api/client'
 import { deferred, FakeServer, problem, type Recorded } from '@/api/testing/fakes'
 import type {
   BatchGroup,
@@ -94,6 +94,20 @@ type ResolveBody = {
   level?: string
 }
 
+function resolveRun(request: Recorded): BatchRun {
+  const { template, source_ids, overrides } = body<ResolveBody>(request)
+  return {
+    grouping: { groups: [], issues: [] },
+    resolutions: [
+      {
+        columns: [{ kind: 'video', label: 'V', defaults: false }],
+        rows: source_ids.map((id) => row(template, id, overrides[id])),
+        issues: [],
+      },
+    ],
+  }
+}
+
 async function edited() {
   const editor = useEditorStore()
   await editor.editGroup('g1')
@@ -163,19 +177,7 @@ describe('the editor store, group target', () => {
           issues: [],
         }
       })
-      .on('POST /api/batch/resolve-run', (request): BatchRun => {
-        const { template, source_ids, overrides } = body<ResolveBody>(request)
-        return {
-          grouping: { groups: [], issues: [] },
-          resolutions: [
-            {
-              columns: [{ kind: 'video', label: 'V', defaults: false }],
-              rows: source_ids.map((id) => row(template, id, overrides[id])),
-              issues: [],
-            },
-          ],
-        }
-      })
+      .on('POST /api/batch/resolve-run', resolveRun)
       .on('POST /api/batch/derive', (request) => derive(body(request)))
     configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
     const sources = useSourcesStore()
@@ -362,7 +364,26 @@ describe('the editor store, group target', () => {
       expect(documentOf(editor).template).toEqual(base)
     })
 
-    it('derives again when the template changed while its derive was on its way', async () => {
+    it('derives a merge again when an undo changed the template while it was on its way', async () => {
+      const slow = deferred<JobTemplate>()
+      const editor = await edited()
+      editor.patchTemplate([{ op: 'replace', path: '/output/container', value: 'mp4' }])
+      const from = { ...editor.job!, video: { ...editor.job!.video!, preset: 'veryslow' } }
+      server.on('POST /api/batch/derive', () => slow.promise)
+      const merged = editor.mergeIntoGroup('g1', from, 'e1', ['video'])
+      await flush()
+      editor.undo()
+      server.on('POST /api/batch/derive', (request) => derive(body(request)))
+      slow.resolve(derive(body(requests('POST /api/batch/derive')[0])))
+      await merged
+      expect(requests('POST /api/batch/derive')).toHaveLength(2)
+      expect(documentOf(editor).template).toMatchObject({
+        output: { container: 'mkv' },
+        video: { preset: 'veryslow' },
+      })
+    })
+
+    it('a template change made while a derive is on its way comes after it', async () => {
       const slow = deferred<JobTemplate>()
       let first = true
       server.on('POST /api/batch/derive', (request) => {
@@ -458,6 +479,105 @@ describe('the editor store, group target', () => {
       expect(documentOf(editor)).toEqual(before)
       expect(editor.canUndo).toBe(false)
     })
+
+    it('ends what there was to redo, so a redo does not drop it', async () => {
+      const editor = await edited()
+      await derivedEdit(editor, [{ op: 'replace', path: '/video/encoder', value: 'libx264' }])
+      editor.undo()
+      await flush()
+      expect(editor.canRedo).toBe(true)
+      editor.set('/video/preset', 'veryslow')
+      expect(editor.canRedo).toBe(false)
+      editor.redo()
+      expect(editor.job?.video?.preset).toBe('veryslow')
+      await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
+      await flush()
+      expect(documentOf(editor).template.video).toMatchObject({
+        encoder: 'libx265',
+        preset: 'veryslow',
+      })
+    })
+
+    it('a template change made while an edit waits comes after that edit’s derive', async () => {
+      const editor = await edited()
+      const before = documentOf(editor)
+      editor.set('/video/encoder', 'libx264')
+      const changed = editor.patchTemplate([
+        { op: 'replace', path: '/video/preset', value: 'veryfast' },
+      ])
+      await flush()
+      await changed
+      expect(documentOf(editor).template.video).toMatchObject({
+        encoder: 'libx264',
+        preset: 'veryfast',
+      })
+      editor.undo()
+      expect(documentOf(editor).template.video).toMatchObject({
+        encoder: 'libx264',
+        preset: before.template.video?.preset,
+      })
+      editor.undo()
+      expect(documentOf(editor)).toEqual(before)
+    })
+
+    describe('from a near member', () => {
+      beforeEach(() => {
+        const found = group()
+        found.members = found.members?.map((member) =>
+          member.path === pathOf('e2') ? { ...member, match: 'near' } : member,
+        )
+        useSourcesStore().grouping = { groups: [found], issues: [] }
+      })
+
+      it('refuses a track edit while the template has no rules of that kind: a toast, nothing changes', async () => {
+        const editor = await edited()
+        await editor.showFile('e2')
+        const before = documentOf(editor)
+        const job = editor.job
+        editor.set('/audio/0/bitrate', 96)
+        editor.set('/subtitles/0/metadata/name', 'Signs')
+        await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
+        expect(editor.job).toBe(job)
+        expect(editor.editing).toBe(false)
+        expect(documentOf(editor)).toEqual(before)
+        expect(requests('POST /api/batch/derive')).toHaveLength(0)
+        const toasts = useToastStore().items
+        expect(toasts.map((toast) => toast.summary)).toEqual([
+          "E02's tracks do not match the group's",
+          "E02's tracks do not match the group's",
+        ])
+        expect(toasts[0]?.detail).toContain('Show E01')
+        // Not a track: derived as from any member.
+        await derivedEdit(editor, [{ op: 'replace', path: '/video/encoder', value: 'libx264' }])
+        expect(documentOf(editor).template.video?.encoder).toBe('libx264')
+      })
+
+      it('takes a track edit of a kind the template has rules for', async () => {
+        const editor = await withRules()
+        await editor.showFile('e2')
+        await derivedEdit(editor, [{ op: 'replace', path: '/audio/0/bitrate', value: 96 }])
+        expect(body(requests('POST /api/batch/derive')[0])).toMatchObject({
+          source_id: 'e2',
+          sections: ['audio'],
+        })
+        editor.set('/subtitles/0/metadata/name', 'Signs')
+        expect(useToastStore().items).toHaveLength(1)
+      })
+
+      it('Apply to whole group refuses a track value of a kind the template has no rules for', async () => {
+        const editor = await edited()
+        await editor.showFile('e2')
+        await editor.setScope('file')
+        editor.set('/audio/0/bitrate', 96)
+        const before = documentOf(editor)
+        await editor.applyToWholeGroup('audio[0].bitrate')
+        expect(documentOf(editor)).toEqual(before)
+        expect(requests('POST /api/batch/derive')).toHaveLength(0)
+        expect(useToastStore().items.map((toast) => toast.summary)).toEqual([
+          "E02's tracks do not match the group's",
+        ])
+      })
+    })
   })
 
   describe('an edit of scope file', () => {
@@ -470,7 +590,7 @@ describe('the editor store, group target', () => {
       expect(documentOf(editor).overrides).toEqual({
         e1: [
           { op: 'replace', path: '/job/video/encoder', value: 'libx264' },
-          { op: 'test', path: '/job/audio/1/source_stream', value: 2 },
+          { op: 'test', path: '/job/audio/1', value: sampleJob().audio?.[1] },
           { op: 'replace', path: '/job/audio/1/bitrate', value: 320 },
         ],
       })
@@ -565,13 +685,19 @@ describe('the editor store, group target', () => {
       const editor = await withRules()
       editor.setNameField('e3', 'episode', '3')
       const before = documentOf(editor)
+      const guard = {
+        op: 'test',
+        path: '/audio_rules/0/selector',
+        value: { kind: 'audio', languages: ['ja'] },
+      }
       editor.pickTrack('e2', 'audio', 0, 3)
       expect(documentOf(editor).overrides).toEqual({
         ...before.overrides,
-        e2: [{ op: 'replace', path: '/audio_rules/0/selector/stream', value: 3 }],
+        e2: [guard, { op: 'replace', path: '/audio_rules/0/selector/stream', value: 3 }],
       })
       editor.pickTrack('e2', 'audio', 0, null)
       expect(documentOf(editor).overrides.e2).toEqual([
+        guard,
         { op: 'replace', path: '/audio_rules/0/selector/languages', value: [] },
       ])
       expect(documentOf(editor).template).toEqual(before.template)
@@ -579,7 +705,24 @@ describe('the editor store, group target', () => {
       expect(documentOf(editor)).toEqual(before)
       editor.undo()
       editor.undo()
-      expect(documentOf(editor).overrides.e2?.[0]).toMatchObject({ value: 3 })
+      expect(documentOf(editor).overrides.e2?.[1]).toMatchObject({ value: 3 })
+    })
+
+    it('guards a pick with the rule’s selector as the template has it now', async () => {
+      const editor = await withRules()
+      editor.pickTrack('e2', 'audio', 0, 3)
+      await editor.patchTemplate([
+        { op: 'replace', path: '/audio_rules/0/selector/languages', value: ['en'] },
+      ])
+      editor.pickTrack('e2', 'audio', 0, 2)
+      expect(documentOf(editor).overrides.e2).toEqual([
+        {
+          op: 'test',
+          path: '/audio_rules/0/selector',
+          value: { kind: 'audio', languages: ['en'] },
+        },
+        { op: 'replace', path: '/audio_rules/0/selector/stream', value: 2 },
+      ])
     })
 
     it('refuses a pick in a column the defaults compile to', async () => {
@@ -610,7 +753,7 @@ describe('the editor store, group target', () => {
       })
       expect(documentOf(editor).overrides).toEqual({
         e3: [
-          { op: 'test', path: '/job/audio/0/source_stream', value: 1 },
+          { op: 'test', path: '/job/audio/0', value: sampleJob().audio?.[0] },
           { op: 'replace', path: '/job/audio/0/bitrate', value: 96 },
         ],
       })
@@ -647,6 +790,16 @@ describe('the editor store, group target', () => {
       editor.undo()
       expect(documentOf(editor)).toEqual(before)
       expect(editor.presetId).toBe(PRESET)
+    })
+
+    it('a preset with the group’s template only becomes the group’s preset: no undo step', async () => {
+      server.on('GET /api/presets/saved', { ...samplePreset(), id: 'saved', name: 'Saved' })
+      const editor = await edited()
+      const before = documentOf(editor)
+      await editor.applyPreset('saved')
+      expect(editor.presetId).toBe('saved')
+      expect(documentOf(editor)).toEqual(before)
+      expect(editor.canUndo).toBe(false)
     })
 
     it('merges into a group never edited: a template from the job’s preset, one step of that group', async () => {
@@ -714,6 +867,85 @@ describe('the editor store, group target', () => {
       expect(answer.rows?.[0]?.job?.video?.encoder).toBe('libx264')
       expect(editor.resolution).toEqual(answer)
     })
+
+    it('resolveNow waits for a field’s pending edit and the derive it leads to', async () => {
+      const editor = await edited()
+      const edit = reactive({
+        failure: null,
+        flush() {
+          setTimeout(() => {
+            editor.set('/video/encoder', 'libx264')
+            editor.endEdit(edit)
+          }, 100)
+        },
+      })
+      editor.beginEdit(edit)
+      const answer = editor.resolveNow()
+      await vi.advanceTimersByTimeAsync(100)
+      await flush()
+      expect((await answer).rows?.[0]?.job?.video?.encoder).toBe('libx264')
+      expect(requests('POST /api/batch/derive')).toHaveLength(1)
+    })
+
+    it('resolveNow rejects when a field’s edit fails, and resolves nothing', async () => {
+      const editor = await edited()
+      const asked = requests('POST /api/batch/resolve-run').length
+      const edit = reactive({
+        failure: null as string | null,
+        flush() {
+          edit.failure = 'The preview failed'
+        },
+      })
+      editor.beginEdit(edit)
+      await expect(editor.resolveNow()).rejects.toMatchObject({
+        problem: { detail: 'The preview failed' },
+      })
+      expect(requests('POST /api/batch/resolve-run')).toHaveLength(asked)
+    })
+
+    it('a failed resolve keeps the last matrix and says why, without a toast; a retry asks again', async () => {
+      const editor = await edited()
+      const last = editor.resolution
+      server.on('POST /api/batch/resolve-run', () =>
+        problem(422, 'request.invalid', 'Bad request', 'The template is not valid'),
+      )
+      editor.setNameField('e2', 'episode', '2')
+      await flush()
+      expect(editor.matrixError).toBe('The template is not valid')
+      expect(editor.resolution).toBe(last)
+      expect(editor.resolving).toBe(false)
+      expect(useToastStore().items).toEqual([])
+
+      server.on('POST /api/batch/resolve-run', resolveRun)
+      const asked = requests('POST /api/batch/resolve-run').length
+      editor.retryMatrix()
+      await flush()
+      expect(requests('POST /api/batch/resolve-run')).toHaveLength(asked + 1)
+      expect(editor.matrixError).toBeNull()
+      expect(editor.resolution?.rows?.[1]?.override).toHaveLength(1)
+    })
+
+    it('a failed resolveNow rejects with the ApiError, sets matrixError (a stale source in words), and shows no toast', async () => {
+      const editor = await edited()
+      server.on('POST /api/batch/resolve-run', () =>
+        problem(409, 'source.stale', 'Source changed', 'Probe it again with POST /api/sources.'),
+      )
+      await expect(editor.resolveNow()).rejects.toBeInstanceOf(ApiError)
+      expect(editor.matrixError).toBe(
+        'A file of the group changed on disk since it was opened: remove it from the sources and open it again.',
+      )
+      expect(useToastStore().items).toEqual([])
+    })
+
+    it('has no error once the group is left', async () => {
+      const editor = await edited()
+      server.on('POST /api/batch/resolve-run', () => problem(500, 'internal', 'Broken'))
+      editor.setNameField('e2', 'episode', '2')
+      await flush()
+      expect(editor.matrixError).toBe('Broken')
+      await editor.open('other')
+      expect(editor.matrixError).toBeNull()
+    })
   })
 
   describe('sources', () => {
@@ -746,6 +978,44 @@ describe('the editor store, group target', () => {
       await flush()
       expect(editor.target).toMatchObject({ kind: 'group', sourceId: 'e1' })
       expect(useSourcesStore().activeId).toBe('e1')
+    })
+
+    it('a new id for the edited group (an earlier episode opened): its state follows', async () => {
+      const editor = await edited()
+      await derivedEdit(editor, [{ op: 'replace', path: '/video/encoder', value: 'libx264' }])
+      const before = documentOf(editor)
+      const sources = useSourcesStore()
+      sources.entries = [{ id: 'e0', path: pathOf('e0'), source: null }, ...sources.entries]
+      sources.grouping = { groups: [group('g0', ['e0', ...IDS])], issues: [] }
+      await flush()
+      expect(editor.target).toMatchObject({ kind: 'group', groupId: 'g0', sourceId: 'e1' })
+      expect(editor.group?.id).toBe('g0')
+      expect(documentOf(editor)).toEqual(before)
+      expect(editor.canUndo).toBe(true)
+      expect(body<ResolveBody>(requests('POST /api/batch/resolve-run').at(-1)).source_ids).toEqual([
+        'e0',
+        ...IDS,
+      ])
+      await editor.editGroup('g0')
+      expect(editor.canUndo).toBe(true)
+    })
+
+    it('a kept state follows most of its members when its representative left', async () => {
+      const sources = useSourcesStore()
+      sources.entries = [...sources.entries, { id: 'e4', path: pathOf('e4'), source: null }]
+      sources.grouping = { groups: [group('g1', [...IDS, 'e4'])], issues: [] }
+      const editor = await edited()
+      editor.setNameField('e3', 'episode', '3')
+      const before = documentOf(editor)
+      await editor.open('other')
+      sources.grouping = {
+        groups: [group('ga', ['e2', 'other']), group('gb', ['e3', 'e4'])],
+        issues: [],
+      }
+      await editor.editGroup('gb')
+      expect(documentOf(editor)).toEqual(before)
+      await editor.editGroup('ga')
+      expect(documentOf(editor).overrides).toEqual({})
     })
 
     it('the group gone: the editor closes', async () => {

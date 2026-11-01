@@ -697,7 +697,7 @@ describe('the defaults store', () => {
       overrides: {},
       scope: 'file',
     }
-    const patchTemplate = vi.spyOn(editor, 'patchTemplate').mockImplementation(() => undefined)
+    const patchTemplate = vi.spyOn(editor, 'patchTemplate').mockResolvedValue()
     server.on(PREVIEW, (request) =>
       json(
         (request.body as DefaultsPreviewRequest).source_ids.map((id) =>

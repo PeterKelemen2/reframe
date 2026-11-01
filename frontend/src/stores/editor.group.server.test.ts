@@ -239,11 +239,17 @@ describe('a group in the editor against a real server', () => {
     resolution = await editor.resolveNow()
     expect(others(resolution, 2)).toBe(rest)
     expect(rowOf(resolution, 2).job?.audio?.[0]?.bitrate).toBe(320)
+    // A change of another track; a change of this one makes the override stale (below).
     editor.patchTemplate([
-      { op: 'replace', path: '/audio_rules/0/settings/mixdown', value: 'stereo' },
+      { op: 'replace', path: '/audio_rules/1/settings/mixdown', value: 'stereo' },
     ])
     resolution = await editor.resolveNow()
-    expect(rowOf(resolution, 2).job?.audio?.[0]).toMatchObject({ bitrate: 320, mixdown: 'stereo' })
+    expect(rowOf(resolution, 2).job?.audio?.map((track) => [track.bitrate, track.mixdown])).toEqual(
+      [
+        [320, '5.1'],
+        [640, 'stereo'],
+      ],
+    )
     await vi.waitFor(() => expect(editor.job?.audio?.[0]?.bitrate).toBe(320), SOON)
 
     // Reset to group: the group's value again.

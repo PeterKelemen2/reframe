@@ -22,6 +22,7 @@ from reframe.models import (
     MediaSource,
     NamingOptions,
     Preset,
+    Resolution,
 )
 from reframe.probe import mediainfo
 from reframe.service import Reframe
@@ -343,3 +344,57 @@ async def test_a_naming_edit_on_a_base_without_naming_keeps_the_settings_output_
     assert (derived.naming.output_folder_mode, derived.naming.output_folder) == ("fixed", out)
     # Other sections leave a template without naming as it is: it follows the settings.
     assert app.batch.derive(job, source, {"video"}, base=base).naming is None
+    # So does a naming section from a job without naming of its own.
+    assert app.batch.derive(draft.job, source, {"naming"}, base=base).naming is None
+
+
+def output_path(path: Path) -> list[JsonPatchOp]:
+    """A file's override that sets its output path."""
+    return OPS.validate_python([{"op": "replace", "path": "/job/output/path", "value": str(path)}])
+
+
+def codes(row: Resolution) -> list[str]:
+    return [issue.code for issue in row.issues]
+
+
+async def test_an_output_path_set_by_a_files_override_is_kept(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    files = season(fixture_media, tmp_path, 2)
+    template, _ = await example_template(app, files[0])
+    (files[0].parent / "Anime Show - S02E01 - Return.mkv").write_bytes(b"done before")
+    first = (await app.batch.resolve(template, files)).rows[0]
+    (renamed,) = [i for i in first.issues if i.code == "output.renamed"]
+    (fix,) = renamed.fixes
+    override = [op.model_copy(update={"path": "/job" + op.path}) for op in fix.patch]
+    resolution = await app.batch.resolve(template, files, overrides={str(files[0]): override})
+    row = resolution.rows[0]
+    assert row.job is not None
+    assert row.job.output.path == files[0].parent / "Anime Show - S02E01 - Return (1).mkv"
+    assert "batch.output_exists" not in codes(row)
+    assert row.status == "ok"
+    assert row.naming is not None
+    assert row.naming.fields.episode == 1  # the name fields are still the file's
+
+
+@pytest.mark.parametrize("run", [False, True])
+async def test_output_paths_set_by_overrides_are_checked_in_the_batch(
+    app: Reframe, fixture_media: Media, tmp_path: Path, run: bool
+) -> None:
+    files = season(fixture_media, tmp_path, 2)
+    template, _ = await example_template(app, files[0])
+    shared = tmp_path / "out" / "same.mkv"
+    overrides = {
+        str(files[0]): output_path(shared),
+        str(files[1]): output_path(shared),
+        str(files[2]): output_path(files[0]),
+    }
+    if run:
+        _, (resolution,) = await app.batch.resolve_batch(template, files, overrides=overrides)
+    else:
+        resolution = await app.batch.resolve(template, files, overrides=overrides)
+    e01, e02, e03 = resolution.rows
+    assert [row.path for row in resolution.rows] == files  # E01 is not left out as an output
+    assert "batch.name_collision" in codes(e01)
+    assert "batch.name_collision" in codes(e02)
+    assert "batch.output_is_source" in codes(e03)

@@ -146,6 +146,12 @@ const rateModeOptions = computed(() => [
   { value: 'quality', label: t('tracks.output.quality') },
 ])
 
+/**
+ * The rate member that the mode hides has no field of its own: the mode's field shows its
+ * issues and an override of it.
+ */
+const hiddenRate = computed(() => (rateMode.value === 'quality' ? 'bitrate' : 'quality'))
+
 function onRateMode(mode: 'bitrate' | 'quality' | null): void {
   if (mode && mode !== rateMode.value) editor.patch(rateModeOps(props.index, mode, encoder.value))
 }
@@ -162,8 +168,8 @@ const fieldPaths = computed(() => {
     'drc',
     'loudness',
   ]
-  if (!lossless.value)
-    fields.push(rateMode.value === 'quality' && encoder.value?.quality ? 'quality' : 'bitrate')
+  if (!lossless.value) fields.push('bitrate')
+  if (!lossless.value && encoder.value?.quality) fields.push('quality')
   return [
     ...fields.map((field) => `${path.value}.${field}`),
     ...metadataPaths(`${path.value}.metadata`),
@@ -331,6 +337,7 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
           v-if="encoder?.quality"
           class="track-field--fit"
           :label="t('tracks.output.rateMode')"
+          :path="`${path}.${hiddenRate}`"
           stacked
         >
           <template #default="{ id, labelId }">

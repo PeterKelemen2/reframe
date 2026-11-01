@@ -59,7 +59,7 @@ describe('Apply to group', () => {
     await flushPromises()
     expect(merge).toHaveBeenCalledExactlyOnceWith('g1', job, 'e02', ['audio', 'subtitles'])
     expect(useToastStore().items.map((toast) => toast.summary)).toEqual([
-      'Applied to "Show S01": Audio and Subtitles',
+      'Applied to “Show S01”: Audio and Subtitles',
     ])
     expect(wrapper.emitted('update:visible')).toEqual([[false]])
   })

@@ -133,6 +133,12 @@ const tabKey = computed(() => {
   return shown[0]?.key ?? null
 })
 
+/** The group's name and lines: the treeitem's name would otherwise take its buttons and members. */
+function groupLabel(item: Extract<PanelItem, { kind: 'group' }>, index: number): string {
+  const parts = ['head', 'meta', ...(nearCount(item) > 0 ? ['near'] : [])]
+  return parts.map((part) => `${id}-group-${index}-${part}`).join(' ')
+}
+
 function nearCount(item: Extract<PanelItem, { kind: 'group' }>): number {
   return item.rows.filter((row) => row.member.match === 'near').length
 }
@@ -192,10 +198,6 @@ function checkGroup(groupId: string): Promise<void> {
     if (!editedGroup(groupId)) await editor.editGroup(groupId)
     ui.openMatrix()
   })
-}
-
-function queue(groupId: string): Promise<void> {
-  return quietly(() => queueGroup(groupId))
 }
 
 function toggle(groupId: string): void {
@@ -356,7 +358,7 @@ function groupMenu(groupId: string): MenuItem[] {
       command: () => editGroup(groupId),
     },
     { label: t('group.actions.check'), command: () => checkGroup(groupId) },
-    { label: t('group.actions.queue'), command: () => queue(groupId) },
+    { label: t('group.actions.queue'), command: () => queueGroup(groupId) },
     { separator: true },
     ...copyItems(
       edited === null
@@ -554,7 +556,10 @@ onBeforeUnmount(() => stopDrops?.())
       @focusin="onFocusin"
       @contextmenu="onContextmenu"
     >
-      <template v-for="item in items" :key="item.kind === 'group' ? item.group.id : item.entry.id">
+      <template
+        v-for="(item, index) in items"
+        :key="item.kind === 'group' ? item.group.id : item.entry.id"
+      >
         <li
           v-if="item.kind === 'source'"
           role="treeitem"
@@ -586,12 +591,19 @@ onBeforeUnmount(() => stopDrops?.())
           :tabindex="tabKey === groupKey(item.group.id) ? 0 : -1"
           :data-key="groupKey(item.group.id)"
           :data-group="item.group.name"
+          :aria-labelledby="groupLabel(item, index)"
           @click.self="toggle(item.group.id)"
         >
-          <div class="sources-panel__group-head" @click="toggle(item.group.id)">
+          <div
+            :id="`${id}-group-${index}-head`"
+            class="sources-panel__group-head"
+            @click="toggle(item.group.id)"
+          >
             <ChevronRight v-if="isCollapsed(item)" :size="16" aria-hidden="true" />
             <ChevronDown v-else :size="16" aria-hidden="true" />
-            <span class="sources-panel__group-name">{{ item.group.name }}</span>
+            <span class="sources-panel__group-name" :title="item.group.name">{{
+              item.group.name
+            }}</span>
             <span
               v-if="editedGroup(item.group.id)"
               class="sources-panel__group-editing"
@@ -599,7 +611,11 @@ onBeforeUnmount(() => stopDrops?.())
               >{{ t('sources.group.editing') }}</span
             >
           </div>
-          <div class="sources-panel__group-meta" @click="toggle(item.group.id)">
+          <div
+            :id="`${id}-group-${index}-meta`"
+            class="sources-panel__group-meta"
+            @click="toggle(item.group.id)"
+          >
             <span data-field="count">{{ t('sources.group.files', item.rows.length) }}</span>
             <span>
               <template v-if="item.group.level === 'strict'">{{
@@ -613,6 +629,7 @@ onBeforeUnmount(() => stopDrops?.())
           </div>
           <div
             v-if="nearCount(item) > 0"
+            :id="`${id}-group-${index}-near`"
             class="sources-panel__group-meta"
             @click="toggle(item.group.id)"
           >
@@ -648,7 +665,7 @@ onBeforeUnmount(() => stopDrops?.())
               tabindex="-1"
               :label="t('group.actions.queue')"
               data-action="queue-group"
-              @click="queue(item.group.id)"
+              @click="queueGroup(item.group.id)"
             />
           </div>
           <ul v-if="!isCollapsed(item)" role="group" class="sources-panel__members">
@@ -759,8 +776,10 @@ onBeforeUnmount(() => stopDrops?.())
   font-variant-numeric: tabular-nums;
 }
 
+/* One column no wider than the panel: a long group name is cut, not the row widened. */
 .sources-panel__tree {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
 }
 
