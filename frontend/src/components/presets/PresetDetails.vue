@@ -125,7 +125,15 @@ function codecRule(rule: CodecRule): string {
   return parts.join(' · ')
 }
 
+/** Explicit track rules (a saved group) take the place of the defaults of their kind. */
+function ownRules(rules: readonly unknown[] | undefined): string | null {
+  const count = rules?.length ?? 0
+  return count > 0 ? t('presets.details.ownRules', { n: count }, count) : null
+}
+
 const audio = computed(() => {
+  const own = ownRules(props.preset.audio_rules)
+  if (own !== null) return { selection: own, rules: null, passthru: null }
   const defaults = props.preset.audio_defaults
   if (defaults === undefined) return null
   const rules = defaults.codec_rules?.map(codecRule) ?? []
@@ -138,6 +146,8 @@ const audio = computed(() => {
 })
 
 const subtitles = computed(() => {
+  const own = ownRules(props.preset.subtitle_rules)
+  if (own !== null) return { selection: own, burnIn: null }
   const defaults = props.preset.subtitle_defaults
   if (defaults === undefined) return null
   let burnIn = ''
@@ -291,7 +301,11 @@ const subtitles = computed(() => {
         <KeyValue :label="t('presets.details.size')" :value="size" />
         <template v-if="audio">
           <KeyValue :label="t('presets.details.audioTracks')" :value="audio.selection" />
-          <KeyValue :label="t('presets.details.audioCodecs')" :value="audio.rules" />
+          <KeyValue
+            v-if="audio.rules"
+            :label="t('presets.details.audioCodecs')"
+            :value="audio.rules"
+          />
           <KeyValue
             v-if="audio.passthru"
             :label="t('presets.details.passthru')"
@@ -300,7 +314,11 @@ const subtitles = computed(() => {
         </template>
         <template v-if="subtitles">
           <KeyValue :label="t('presets.details.subtitleTracks')" :value="subtitles.selection" />
-          <KeyValue :label="t('presets.details.burnIn')" :value="subtitles.burnIn" />
+          <KeyValue
+            v-if="subtitles.burnIn !== null"
+            :label="t('presets.details.burnIn')"
+            :value="subtitles.burnIn"
+          />
         </template>
       </dl>
     </Section>

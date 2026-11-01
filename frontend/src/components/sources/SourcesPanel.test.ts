@@ -211,6 +211,14 @@ describe('the sources panel', () => {
     ])
   })
 
+  it('names a group by its name and its lines, without its buttons or members', async () => {
+    await mountPanel(editing)
+    expect(referenced(groupItem(), 'aria-labelledby')).toBe(
+      'Show S01 Editing 3 files standard match 1 near match',
+    )
+    expect($('.sources-panel__group-name')?.title).toBe('Show S01')
+  })
+
   it('collapses and expands a group with a click and with the arrow keys', async () => {
     await mountPanel(withShow)
     $('.sources-panel__group-head')?.click()
@@ -598,7 +606,7 @@ describe('a batch group in the sources panel', () => {
     await rightClick(item('Show.S01E02.mkv'))
     await choose('Apply to group…')
     expect(text($('[data-dialog="apply-to-group"] .p-dialog-title'))).toBe(
-      'Apply to group "Show S01"',
+      'Apply to group “Show S01”',
     )
   })
 })

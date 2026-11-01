@@ -40,24 +40,26 @@
   },
   "banner": {
     "label": "Batch group",
-    "editing": "Editing group \"{name}\" ({count} file) — showing {label} | Editing group \"{name}\" ({count} files) — showing {label}",
+    "editing": "Editing group “{name}” ({count} file) — showing {label} | Editing group “{name}” ({count} files) — showing {label}",
     "shown": "Shown file",
     "scope": "Edits go to",
     "scopeGroup": "Group",
     "scopeFile": "This file only ({label})",
-    "inGroup": "In group \"{name}\""
+    "inGroup": "In group “{name}”",
+    "matrixError": "The group could not be checked: {reason}",
+    "retry": "Try again"
   },
   "apply": {
-    "title": "Apply to group \"{name}\"",
+    "title": "Apply to group “{name}”",
     "intro": "The checked sections of this file go into the group's template, for every file of the group.",
     "sections": "Sections",
     "cancel": "Cancel",
     "apply": "Apply",
-    "applied": "Applied to \"{name}\": {sections}"
+    "applied": "Applied to “{name}”: {sections}"
   },
   "preset": {
     "title": "Save the group as a preset",
     "save": "Save preset",
-    "saved": "Preset \"{name}\" saved"
+    "saved": "Preset “{name}” saved"
   }
 }

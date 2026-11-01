@@ -315,8 +315,14 @@ const shownNameSource = computed(
     (inGroup.value ? editor.currentTemplate?.naming?.name_source : null) ??
     FROM_OPTIONS,
 )
+/**
+ * A group's template keeps its naming when the job has none (`null`), so in scope `group` the
+ * naming options are offered only while the group has no name source of its own.
+ */
 const nameSources = computed(() => [
-  { value: FROM_OPTIONS, label: t('naming.job.sourceOptions') },
+  ...(groupScope.value && shownNameSource.value !== FROM_OPTIONS
+    ? []
+    : [{ value: FROM_OPTIONS, label: t('naming.job.sourceOptions') }]),
   { value: 'auto', label: t('naming.source.auto') },
   { value: 'file', label: t('naming.source.file') },
   { value: 'folder', label: t('naming.source.folder') },
@@ -416,7 +422,7 @@ function useDefaultFolder(): void {
       <p v-if="groupScope" class="job-naming__per-file" data-role="per-file">
         {{ t('naming.job.perFileInGroup') }}
       </p>
-      <Field v-else :label="t('naming.job.mode')" stacked>
+      <Field v-else :label="t('naming.job.mode')" path="output.naming.mode" stacked>
         <template #default="{ labelId }">
           <SelectButton
             :ariaLabelledby="labelId"
@@ -453,7 +459,7 @@ function useDefaultFolder(): void {
               @blur="onBlur"
             />
             <Button
-              v-if="local.template !== null"
+              v-if="local.template !== null && !groupScope"
               :label="t('naming.job.resetTemplate')"
               severity="secondary"
               text
@@ -521,7 +527,7 @@ function useDefaultFolder(): void {
         />
       </Disclosure>
 
-      <Field :label="t('naming.job.nameSource')" stacked>
+      <Field :label="t('naming.job.nameSource')" path="output.naming.name_source" stacked>
         <template #default="{ id, labelId }">
           <Select
             :label-id="id"
@@ -536,6 +542,9 @@ function useDefaultFolder(): void {
           />
         </template>
       </Field>
+      <p v-if="groupScope" class="job-naming__per-file" data-role="group-naming">
+        {{ t('naming.job.groupNaming') }}
+      </p>
 
       <section class="job-naming__output" :aria-label="t('naming.preview.title')">
         <div class="job-naming__head">

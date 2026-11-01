@@ -250,7 +250,7 @@ async function reload(): Promise<void> {
   <div ref="root" class="output-tracks" :data-list="list">
     <Section :title="title">
       <template #actions>
-        <!-- Not every browser sends pointer events to a disabled button: the wrapper says why. -->
+        <!-- Not every browser sends pointer events to a disabled button: the wrapper has the tooltip. -->
         <span v-tooltip.top="fixedList ? t('tracks.output.fileScopeHelp') : undefined">
           <Button
             size="small"
@@ -259,34 +259,41 @@ async function reload(): Promise<void> {
             :disabled="streams.length === 0 || fixedList"
             aria-haspopup="menu"
             :aria-controls="`${id}-add`"
+            :aria-describedby="fixedList ? `${id}-file-scope` : undefined"
             @click="addMenu?.toggle($event)"
           >
             <template #icon><Plus :size="16" aria-hidden="true" /></template>
           </Button>
         </span>
         <Menu ref="addMenu" :pt="{ root: { id: `${id}-add` } }" :model="addItems" popup />
-        <span v-tooltip.top="fixedList ? t('tracks.output.fileScopeHelp') : undefined">
+        <span
+          v-tooltip.top="
+            fixedList ? t('tracks.output.fileScopeHelp') : t('tracks.output.addAllHelp')
+          "
+        >
           <Button
-            v-tooltip.top="fixedList ? undefined : t('tracks.output.addAllHelp')"
             size="small"
             severity="secondary"
             data-action="add-all"
             :label="t('tracks.output.addAll')"
             :disabled="unused.length === 0 || fixedList"
+            :aria-describedby="fixedList ? `${id}-file-scope` : undefined"
             @click="addAll"
           >
             <template #icon><ListPlus :size="16" aria-hidden="true" /></template>
           </Button>
         </span>
-        <span v-tooltip.top="inGroup ? t('tracks.output.reloadGroup') : undefined">
+        <span
+          v-tooltip.top="inGroup ? t('tracks.output.reloadGroup') : t('tracks.output.reloadHelp')"
+        >
           <Button
-            v-tooltip.top="inGroup ? undefined : t('tracks.output.reloadHelp')"
             size="small"
             severity="secondary"
             data-action="reload"
             :label="t('tracks.output.reload')"
             :loading="reloading"
             :disabled="inGroup"
+            :aria-describedby="inGroup ? `${id}-reload` : undefined"
             @click="reload"
           >
             <template #icon><RotateCcw :size="16" aria-hidden="true" /></template>
@@ -294,10 +301,9 @@ async function reload(): Promise<void> {
         </span>
         <span
           v-if="list === 'subtitles'"
-          v-tooltip.top="inGroup ? t('tracks.external.addGroup') : undefined"
+          v-tooltip.top="inGroup ? t('tracks.external.addGroup') : t('tracks.external.addHelp')"
         >
           <Button
-            v-tooltip.top="inGroup ? undefined : t('tracks.external.addHelp')"
             size="small"
             severity="secondary"
             data-action="add-external"
@@ -305,6 +311,7 @@ async function reload(): Promise<void> {
             :label="t('tracks.external.add')"
             :loading="addingExternal"
             :disabled="inGroup"
+            :aria-describedby="inGroup ? `${id}-external` : undefined"
             @click="addExternal"
           >
             <template #icon><FilePlus2 :size="16" aria-hidden="true" /></template>
@@ -365,7 +372,25 @@ async function reload(): Promise<void> {
           </Button>
         </template>
       </div>
-      <p v-if="fixedList" class="output-tracks__note" data-role="file-scope">
+      <template v-if="inGroup">
+        <p :id="`${id}-reload`" class="output-tracks__note" data-role="group">
+          {{ t('tracks.output.reloadGroup') }}
+        </p>
+        <p
+          v-if="list === 'subtitles'"
+          :id="`${id}-external`"
+          class="output-tracks__note"
+          data-role="group"
+        >
+          {{ t('tracks.external.addGroup') }}
+        </p>
+      </template>
+      <p
+        v-if="fixedList"
+        :id="`${id}-file-scope`"
+        class="output-tracks__note"
+        data-role="file-scope"
+      >
         {{ t('tracks.output.fileScope') }}
       </p>
       <BulkEditDialog

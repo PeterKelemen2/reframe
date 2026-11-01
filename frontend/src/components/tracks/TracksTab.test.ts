@@ -15,6 +15,7 @@ import SubtitlesTab from '@/components/editor/tabs/SubtitlesTab.vue'
 import { mountShell } from '@/components/shell/testing'
 import { issue, sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 import { useEditorStore } from '@/stores/editor'
+import { templateOfPreset } from '@/stores/presets'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
@@ -93,6 +94,12 @@ function control(
 ): VueWrapper<{ $props: Record<string, unknown> }> {
   const field = wrapper.find(`.rf-field[data-path="${path}"]`)
   return field.findComponent(component as never) as unknown as VueWrapper
+}
+
+function labels(wrapper: VueWrapper, path: string): string[] {
+  return row(wrapper, path)
+    .findAll('.rf-field label')
+    .map((label) => label.text())
 }
 
 function encoderChoices(wrapper: VueWrapper): string[] {
@@ -325,13 +332,36 @@ describe('an output audio track', () => {
     const { wrapper, editor } = await mountTab({
       job: (job) => (job.audio![0]!.encoder = 'libmp3lame'),
     })
-    expect(wrapper.find('.rf-field[data-path="audio[0].quality"]').exists()).toBe(false)
+    expect(labels(wrapper, 'audio[0]')).toContain('Bitrate')
+    expect(labels(wrapper, 'audio[0]')).not.toContain('Quality')
     const mode = row(wrapper, 'audio[0]').findAllComponents(SelectButton)[1]!
     mode.vm.$emit('update:modelValue', 'quality')
     await nextTick()
     expect(editor.job?.audio?.[0]).toMatchObject({ bitrate: null, quality: 2 })
-    expect(wrapper.find('.rf-field[data-path="audio[0].quality"]').exists()).toBe(true)
-    expect(wrapper.find('.rf-field[data-path="audio[0].bitrate"]').exists()).toBe(false)
+    expect(labels(wrapper, 'audio[0]')).toContain('Quality')
+    expect(labels(wrapper, 'audio[0]')).not.toContain('Bitrate')
+  })
+
+  it("marks the rate mode when a file's override sets the rate member the mode hides", async () => {
+    const { wrapper, editor } = await mountTab({
+      job: (job) => (job.audio![0]!.encoder = 'libmp3lame'),
+    })
+    editor.target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'src',
+      job: editor.job!,
+      template: templateOfPreset(samplePreset()),
+      presetId: null,
+      overrides: { src: [{ op: 'replace', path: '/job/audio/0/quality', value: null }] },
+      scope: 'file',
+    }
+    await nextTick()
+    expect(
+      row(wrapper, 'audio[0]')
+        .findAll('[data-action="override-menu"]')
+        .map((dot) => dot.attributes('aria-label')),
+    ).toEqual(['Rate control differs from the group'])
   })
 
   it('says a lossless encoder has no bitrate', async () => {

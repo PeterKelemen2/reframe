@@ -564,3 +564,78 @@ not cleared after an answer or on leaving; `retryMatrix` doing nothing; `api` in
 `apiQuiet`; a dropped derive committing; no re-derive; `endRun` ignored): each failed at least one
 test. On the real-server test: the source guard back and a pick without guard each fail their
 test.
+
+### Fix round — FU2 (panel, banner, cards)
+
+Fixed, each with a test that fails before the fix (mutation-checked):
+
+- **R2-3** The naming editor's *Name from* and *Name source* carry `output.naming.mode` and
+  `output.naming.name_source`, so a scope-`file` override of them shows its dot. The audio *Rate
+  control* carries the path of the rate member it **hides** (`bitrate` in quality mode, `quality`
+  in bitrate mode): that member has no field of its own, so an override of it was invisible
+  (seen on the real server: after *Reset to group* on the quality, the file kept `quality` while
+  its bitrate came back from the group, and only the rate mode's dot shows it). The shown member
+  keeps its own field and dot. `Field` takes one path, so a rate-mode switch (two members) is
+  reset in two steps, one per member. The other `Field`s without a path stay so: the
+  `NamingOptionsEditor` fields (Settings → Output and the preset editor edit `NamingOptions`, not
+  a job: no override reaches them), the defaults dialog's codec-rule fields
+  (`CodecRuleExtras`, issues given through `issues`; they edit a template's defaults), and the
+  fields outside the editor (preset name dialog, settings sections, login, *When done*).
+- **R1-11** In scope `group` the naming editor offers no *Use the preset's template* and no
+  *As the naming options say* once the group has its own name source: the derive keeps the
+  template's naming when the job's member is `null` (`derive._naming`), so both did nothing. The
+  name source still shows *As the naming options say* while the template has no naming (its
+  current value). A line under the name source says where the group's naming is set ("they start
+  from the preset's naming options, else Settings → Output, and are changed here"). Scope `file`
+  keeps both (a file's override can go back to the group's).
+- **R2-8** The reasons of the disabled *Reload from preset rules* and *Add external subtitle…*
+  in a group are visible lines under the actions, each named by its button's
+  `aria-describedby`; *Add track* and *Add all* in scope `file` point to the file-scope line the
+  same way. Each control has one tooltip with one text (on the wrapper, as before).
+- **L3** In scope `file` the track rows' move and remove buttons are disabled; a hidden line
+  with the reason is their `aria-describedby`, and the buttons' wrapper has it as a tooltip (the
+  list's visible file-scope line says it too).
+- **R2-9** The group treeitem is named by its name and lines (`aria-labelledby`); its buttons and
+  members are no longer part of its name.
+- **R2-13** The tree is one column no wider than the panel (`minmax(0, 1fr)`): a long group name
+  is cut with an ellipsis (full text in `title`), the buttons stay. Measured with a 3-file group
+  "A Very Long Series Title With Many Words That Keeps Going S03": row 521 px in a 263 px tree
+  without the rule, 263 px with it.
+- **R2-14** The panel and the banner call `queueGroup` directly.
+- **R2-5** The banner's *Add group to queue* is busy (`aria-busy`, a spinner), not disabled:
+  the focus stays on it after a queue without errors, and the error dialog can give it back;
+  `useQueueGroup` refuses a second click.
+- **R2-12** Group names in curly quotes in `group.json` (banner, slim line, *Apply to group*
+  title and toast, the saved-preset toast). Flow 2's expected banner text
+  (`e2e/flow2-season-group.spec.ts`, the lead's file) changes to
+  `Editing group “Anime Show S01” (12 files) — showing E01`.
+- **L1** (F-12) A preset with explicit `audio_rules` / `subtitle_rules` says "Chosen by the
+  preset's N track rules" for that kind, and leaves out the defaults' encoding, passthru or
+  burn-in line, which do not apply to it (`reframe.batch.rules`: explicit rules take precedence
+  over the defaults of their kind).
+- **R2-1** (the banner's part) While a group is edited and `editor.matrixError` is set, the
+  banner shows "The group could not be checked: …" (`role="alert"`) with *Try again*
+  (`editor.retryMatrix()`). Found in the browser check and fixed: once an answer comes, the line
+  leaves with the focused *Try again*, so the focus goes on to *Check group*.
+
+Checked headless against `scripts/dev-server.py` (pinned FFmpeg, `anime-s01`, a 3-file group
+with a long name made in the temp media root), after FA's merge, Chromium light and dark (the
+panel and banner checks also Firefox dark), screenshots read: the long group name cut, the row
+263 px, its buttons in view; the treeitem's name "A Very Long … S03 3 files · standard match";
+the banner `Editing group “Anime Show S01” (12 files) — showing E01`; *Add group to queue* from
+the keyboard: `Queued 12 jobs`, the focus still on the button; in scope `group` the name source
+loses *As the naming options say* once the group has one, no template reset, the line says where
+the naming is set; in scope `file` the dots on *Name from*, *File name* and *Name source*,
+*Reset to group* from the keyboard on *Name source* (dot gone, the group's value back); an MP3
+track switched to *Quality* in scope `file`: dots on *Rate control* and *Quality*, *Reset to
+group* on the rate mode leaves the quality override, still marked at the rate mode; move and
+remove disabled with their description in scope `file`, enabled in scope `group`; the
+subtitles' two reason lines named by *Reload from preset rules* and *Add external subtitle…*;
+`batch/resolve-run` answered with 503 by the test's interception: the error line, *Try again*
+keeps it while it fails and drops it once the server answers (focus on *Check group*); a saved
+group preset in the presets view: "Audio tracks: Chosen by the preset's 2 track rules", no
+encoding line. No page error.
+
+Not built: a two-member reset for the rate mode (`Field` has one path, and `components/base` is
+not this task's); the reason lines are shown in a group whether or not the user looks for the
+buttons (one line each, no disclosure).

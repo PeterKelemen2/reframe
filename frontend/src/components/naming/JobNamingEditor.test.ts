@@ -1,10 +1,11 @@
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import Select from 'primevue/select'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import { deferred, FakeServer, type Recorded } from '@/api/testing/fakes'
-import type { JobNaming, JobSettings, JobTemplate, NameResult } from '@/api/types'
+import type { JobNaming, JobSettings, JobTemplate, JsonPatchOp, NameResult } from '@/api/types'
 import { mountBase } from '@/components/base/testing'
 import { sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 import { platform } from '@/platform'
@@ -100,7 +101,11 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-async function mountInGroup(scope: GroupScope, nameSource: JobNaming['name_source'] = null) {
+async function mountInGroup(
+  scope: GroupScope,
+  nameSource: JobNaming['name_source'] = null,
+  override: JsonPatchOp[] = [],
+) {
   const editor = useEditorStore()
   await editor.open('src')
   await flushPromises()
@@ -115,7 +120,7 @@ async function mountInGroup(scope: GroupScope, nameSource: JobNaming['name_sourc
         ? template
         : { ...template, naming: { name_source: nameSource } as JobTemplate['naming'] },
     presetId: null,
-    overrides: {},
+    overrides: { e2: override },
     scope,
   }
   const patch = vi.spyOn(editor, 'patch').mockImplementation(() => undefined)
@@ -123,6 +128,14 @@ async function mountInGroup(scope: GroupScope, nameSource: JobNaming['name_sourc
   useSystemStore().namingVariables = VARIABLES
   await settle()
   return { editor, wrapper, patch }
+}
+
+function nameSourceLabels(wrapper: VueWrapper): string[] {
+  const select = wrapper
+    .findAllComponents(Select)
+    .find((found) => found.attributes('data-option') === 'name_source')
+  if (select === undefined) throw new Error('no name source list')
+  return (select.props('options') as { label: string }[]).map((option) => option.label)
 }
 
 describe('JobNamingEditor', () => {
@@ -466,6 +479,41 @@ describe('JobNamingEditor', () => {
       expect(wrapper.find('[data-option="mode"]').exists()).toBe(true)
       expect(wrapper.find('[data-action="choose-folder"]').exists()).toBe(true)
       expect(wrapper.find('.parsed-name__fields').exists()).toBe(true)
+    })
+
+    it("in scope file marks the naming mode and the name source that the file's override sets", async () => {
+      const { wrapper } = await mountInGroup('file', null, [
+        { op: 'add', path: '/job/output/naming/mode', value: 'template' },
+        { op: 'add', path: '/job/output/naming/name_source', value: 'file' },
+      ])
+      const dots = wrapper.findAll('[data-action="override-menu"]')
+      expect(dots.map((dot) => dot.attributes('aria-label'))).toEqual([
+        'Name from differs from the group',
+        'Name source differs from the group',
+      ])
+    })
+
+    it("in scope group offers no way back to the naming options, and says where the group's naming is set", async () => {
+      const { wrapper } = await mountInGroup('group', 'file')
+      expect(nameSourceLabels(wrapper)).toEqual(['Auto', 'File name', 'Folder name'])
+      await wrapper.get('input[role="combobox"]').setValue('{main_title}.x')
+      expect(wrapper.find('[data-action="reset-template"]').exists()).toBe(false)
+      expect(wrapper.get('[data-role="group-naming"]').text()).toContain(
+        'changed here, for every file',
+      )
+    })
+
+    it("in scope group shows the naming options' name source while the group has none", async () => {
+      const { wrapper } = await mountInGroup('group')
+      expect(nameSourceLabels(wrapper)[0]).toBe('As the naming options say')
+    })
+
+    it('in scope file lets the file go back to the group', async () => {
+      const { wrapper } = await mountInGroup('file', 'file')
+      expect(nameSourceLabels(wrapper)[0]).toBe('As the naming options say')
+      await wrapper.get('input[role="combobox"]').setValue('{main_title}.x')
+      expect(wrapper.find('[data-action="reset-template"]').exists()).toBe(true)
+      expect(wrapper.find('[data-role="group-naming"]').exists()).toBe(false)
     })
 
     it("shows the group's name source for a file without its own", async () => {
