@@ -2,7 +2,7 @@
 import { Check, ChevronDown } from '@lucide/vue'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
-import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Language } from '@/api/types'
@@ -45,7 +45,6 @@ const id = useId()
 const ownLabelId = `${id}-label`
 const valueId = `${id}-value`
 const listId = `${id}-list`
-const trigger = useTemplateRef<HTMLButtonElement>('trigger')
 
 const open = ref(false)
 const query = ref('')
@@ -160,10 +159,6 @@ function choose(option: Option | undefined): void {
   if (tag !== model.value) model.value = tag
 }
 
-function close(): void {
-  open.value = false
-}
-
 function onTriggerKey(event: KeyboardEvent): void {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
@@ -195,28 +190,18 @@ function onSearchKey(event: KeyboardEvent): void {
     case 'Enter':
       choose(activeOption.value)
       break
-    case 'Escape':
-      // The dialog's own Escape would also close a dialog this picker sits in.
-      event.stopPropagation()
-      close()
-      break
     default:
       return
   }
   event.preventDefault()
 }
 
+/** Escape anywhere in the dialog; the Dialog's own Escape would also close a dialog around it. */
 function onDialogKey(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
   event.stopPropagation()
-  close()
+  open.value = false
 }
-
-function focusTrigger(): void {
-  trigger.value?.focus()
-}
-
-defineExpose({ show })
 </script>
 
 <template>
@@ -224,7 +209,6 @@ defineExpose({ show })
     <span v-if="label && !labelledby" :id="ownLabelId" class="rf-sr-only">{{ label }}</span>
     <button
       :id="inputId"
-      ref="trigger"
       type="button"
       class="language-picker__trigger"
       :class="{ 'language-picker__trigger--invalid': invalid }"
@@ -256,9 +240,9 @@ defineExpose({ show })
       :style="{ width: 'min(34rem, calc(100vw - 2rem))' }"
       :draggable="false"
       :close-on-escape="false"
-      @hide="focusTrigger"
+      :pt="{ root: { onKeydown: onDialogKey } }"
     >
-      <div class="language-picker__panel" @keydown="onDialogKey">
+      <div class="language-picker__panel">
         <InputText
           :model-value="query"
           autofocus

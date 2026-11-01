@@ -124,8 +124,8 @@ describe('the language list editor', () => {
 
   it('takes no drop that did not start in the list', async () => {
     const { changes } = await mountList(['hu', 'en'])
-    drag('dragover', item('hu'))
-    drag('drop', item('hu'))
+    drag('dragover', item('en'))
+    drag('drop', item('en'))
     await flushPromises()
     expect(changes).toEqual([])
   })

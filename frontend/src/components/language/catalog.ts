@@ -41,7 +41,7 @@ function displayName(type: 'script' | 'region', locale: string, code: string): s
   }
 }
 
-/** `DD` → `DE`, `999` → `ZZ`: the region as it is canonical. */
+/** `at` → `AT`, `DD` → `DE`, `999` → `ZZ`: the region as it is canonical. */
 function canonicalRegion(region: string): string {
   try {
     return new Intl.Locale(Intl.getCanonicalLocales(`und-${region}`)[0] ?? '').region ?? region
@@ -79,7 +79,7 @@ export function resolveTag(languages: readonly Language[], text: string): Langua
   if (rest.length > 0) {
     const candidate = rest.shift() ?? ''
     if (!REGION.test(candidate)) return undefined
-    region = canonicalRegion(candidate.toUpperCase())
+    region = canonicalRegion(candidate)
   }
   if (rest.length > 0) return undefined
   if (script !== undefined && (UNKNOWN.has(script) || !displayName('script', 'en', script))) {
@@ -214,7 +214,6 @@ export function searchLanguages(
     (a, b) =>
       a.rank - b.rank ||
       (favouriteIndex.get(a.language.tag) ?? 0) - (favouriteIndex.get(b.language.tag) ?? 0) ||
-      Number(a.language.variant) - Number(b.language.variant) ||
       searchable(a.language).english.localeCompare(searchable(b.language).english) ||
       a.language.tag.localeCompare(b.language.tag),
   )
