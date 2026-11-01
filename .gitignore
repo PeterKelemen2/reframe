@@ -35,6 +35,8 @@ testdata/media/
 *.webm
 *.m2ts
 *.mts
+# …but not TypeScript declarations of ES modules.
+!*.d.mts
 *.avi
 *.mov
 *.sup

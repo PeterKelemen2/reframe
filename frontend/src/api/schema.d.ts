@@ -1122,7 +1122,7 @@ export interface paths {
         };
         /**
          * Snapshot
-         * @description Every job in queue order.
+         * @description Every job in queue order, and which waiting jobs the queue takes.
          */
         get: operations["queue_snapshot"];
         put?: never;
@@ -3411,7 +3411,7 @@ export interface components {
              */
             seq: number;
             /** Event */
-            event: components["schemas"]["CapabilitiesChangedEvent"] | components["schemas"]["TaskProgressEvent"] | components["schemas"]["TaskDoneEvent"] | components["schemas"]["JobStateEvent"] | components["schemas"]["JobProgressEvent"] | components["schemas"]["JobLogEvent"] | components["schemas"]["QueueChangedEvent"] | components["schemas"]["ToolsChangedEvent"] | components["schemas"]["AppWarningEvent"] | components["schemas"]["PowerCountdownEvent"] | components["schemas"]["NotificationEvent"] | components["schemas"]["ResyncEvent"];
+            event: components["schemas"]["CapabilitiesChangedEvent"] | components["schemas"]["TaskProgressEvent"] | components["schemas"]["TaskDoneEvent"] | components["schemas"]["JobStateEvent"] | components["schemas"]["JobProgressEvent"] | components["schemas"]["JobLogEvent"] | components["schemas"]["QueueChangedEvent"] | components["schemas"]["QueueProcessingEvent"] | components["schemas"]["ToolsChangedEvent"] | components["schemas"]["AppWarningEvent"] | components["schemas"]["PowerCountdownEvent"] | components["schemas"]["NotificationEvent"] | components["schemas"]["ResyncEvent"];
         };
         /** ExactHeight */
         ExactHeight: {
@@ -5679,6 +5679,36 @@ export interface components {
              */
             job_ids: string[];
         };
+        /**
+         * QueueProcessingEvent
+         * @description Whether the queue takes waiting jobs, and which, changed. Running state: a restarted
+         *     server is not processing.
+         */
+        QueueProcessingEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "queue.processing";
+            /**
+             * Processing
+             * @description The runner takes waiting jobs (running and paused jobs go on either way).
+             */
+            processing: boolean;
+            /**
+             * Only
+             * @description It takes only these jobs, the ones a ``start`` with ``job_ids`` named (an id may name a
+             *     job that has left the queue since); ``null``: every waiting job, or not processing.
+             */
+            only: string[] | null;
+            /**
+             * Reason
+             * @description ``start`` and ``stop``: a front end's call; ``idle``: the jobs that a ``start`` named
+             *     have all ended.
+             * @enum {string}
+             */
+            reason: "start" | "stop" | "idle";
+        };
         /** QueueSettings */
         QueueSettings: {
             /**
@@ -5713,6 +5743,18 @@ export interface components {
              * @description Every job, in queue order.
              */
             jobs: components["schemas"]["QueueJob"][];
+            /**
+             * Processing
+             * @description The queue takes waiting jobs (after ``start``, until ``stop`` or until the jobs a
+             *     ``start`` named have all ended). A ``queue.processing`` event tells each change.
+             */
+            processing: boolean;
+            /**
+             * Only
+             * @description It takes only these jobs, the ones a ``start`` with ``job_ids`` named (an id may name a
+             *     job that has left the queue since); ``null``: every waiting job, or not processing.
+             */
+            only: string[] | null;
         };
         /** RateControlDef */
         RateControlDef: {

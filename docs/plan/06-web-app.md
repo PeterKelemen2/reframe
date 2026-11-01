@@ -168,7 +168,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
 | | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source |
 | Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues (web mode: `output.folder_required` with the settings fix). The variable list comes with `GET /api/definitions` |
-| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs}`, add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open. Outside a job's `settings`, the server's folders show as in the task answers (`log_path`: `<data>/…`) ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
+| Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs, processing, only}` (whether the queue takes waiting jobs and which; each change is a `queue.processing` event, [0064](../decisions/0064-queue-processing-event.md)), add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open. Outside a job's `settings`, the server's folders show as in the task answers (`log_path`: `<data>/…`) ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
 | | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
 | | `GET /api/queue/{id}/log?from=` | Log (incremental, by byte offset: `{text, next, more}`) |
@@ -374,22 +374,34 @@ needs it). See [decision 0003](../decisions/0003-frontend-held-back-majors.md).
 
 ```
 frontend/src/
-├── api/              # schema.d.ts (generated), client.ts, events.ts (WebSocket + reconnect)
+├── api/              # schema.d.ts (generated), types.ts, client.ts, events.ts (WebSocket + reconnect)
 ├── platform/         # Platform interface + web.ts + desktop.ts (Tauri plugins)
-├── stores/           # system, sources, editor, validation, presets, queue, tasks, settings
-├── views/            # WorkspaceView, QueueView, PresetsView, ActivityView, SettingsView
+├── stores/           # system, sources, editor, validation, presets, queue, tasks, settings,
+│                     # activity, toasts, ui
+├── views/            # WorkspaceView, QueueView, PresetsView, ActivityView, SettingsView,
+│                     # SandboxView (dev only)
 ├── components/
-│   ├── base/         # Field, Section, Card, RoleBadge, CodecLabel, LanguageChip, StatusDot, KeyValue
-│   ├── editor/tabs/  # SummaryTab … TagsTab
+│   ├── base/         # Field, Section, Card, RoleBadge, CodecLabel, LanguageChip, StatusDot, KeyValue,
+│   │                 # IssueList
+│   ├── shell/        # navigation rail, status bar, login and first-run screens, toasts
+│   ├── editor/tabs/  # SummaryTab … TagsTab, and the tab registry
+│   ├── sources/      # SourcesPanel, FileBrowserDialog (web)
+│   ├── naming/       # NamingOptionsEditor, JobNamingEditor
+│   ├── presets/      # PresetPicker, the preset drawer
 │   ├── media/        # FrameViewer, CropMagnifier, CropCheckGrid, SplitCompare, TrackTable
 │   ├── metadata/     # TrackMetadataEditor, LanguagePicker, FlagToggles, BulkEditDialog
 │   ├── video/        # EncoderPicker, QualitySlider, AdvancedOptions, CommandPreview
 │   ├── batch/        # GroupBanner, ApplyToGroupDialog, ResolutionMatrix, OverrideDot
+│   ├── settings/     # the Settings sections
 │   └── queue/        # QueueTable, JobLog
-├── composables/      # useValidation, useGeometry, useShortcuts, useUndo
-├── i18n/
+├── composables/      # useValidation, useGeometry, useShortcuts, useUndo, useReveal, useTheme
+├── i18n/             # index.ts; messages/<locale>/<area>.json, one file per area
 └── styles/           # tokens, theme preset
 ```
+
+Each area of the app has its own message file and its own component folder, so that the M4
+tasks never share one ([decision 0063](../decisions/0063-m4-frontend-mvp.md)); the task
+breakdown and the store contracts are in [../m4-breakdown.md](../m4-breakdown.md).
 
 ## Platform adapter
 
@@ -431,14 +443,14 @@ Done when: the build passes strict type checks, `oxlint` and `oxfmt --check` in 
 oxfmt's output on a few `.vue` files with templates once before you commit to its settings.
 
 ### F-1 Design system
-- [ ] Colour, spacing, radius and typography tokens. Light/dark theme plus a "system" option.
+- [x] Colour, spacing, radius and typography tokens. Light/dark theme plus a "system" option.
       Compact and comfortable density.
-- [ ] Base components. `Field` is the key one: label, control slot, inline help (ⓘ popover),
+- [x] Base components. `Field` is the key one: label, control slot, inline help (ⓘ popover),
       the validation issue for its `path`, and an override dot (batch). Every editor control
       uses `Field`.
-- [ ] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
+- [x] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
       (commercial name + raw codec in the tooltip), `LanguageChip`.
-- [ ] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
+- [x] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
       check fails on literal text in a `<template>` (oxlint does not read templates; pick a
       small script or a Vitest check here)
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
@@ -446,27 +458,34 @@ oxfmt's output on a few `.vue` files with templates once before you commit to it
 Done when: a component sandbox page (dev only) shows every base component in both themes.
 
 ### F-2 API layer and events
-- [ ] Typed client from `schema.d.ts`. Auth header or cookie. Problem+json → toast.
-- [ ] WebSocket client: reconnect with backoff, resync snapshots, dispatch events to stores.
+- [x] Typed client from `schema.d.ts`. Auth header or cookie. Problem+json → toast.
+- [x] WebSocket client: reconnect with backoff, resync snapshots, dispatch events to stores
+      (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task B").
 
 ### F-3 App shell
-- [ ] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
+- [x] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
       shortcuts, theme switch, toasts, a first-run screen when FFmpeg is missing.
+- [x] A tab of a later milestone is not shown until it is built, and its `Ctrl+N` does nothing
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-4 Editor state
 - [ ] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
-      (`JobTemplate` + overrides). The tabs use one API for both.
-- [ ] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
-- [ ] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
-- [ ] "Modified vs preset" uses `presets/diff`.
+      (`JobTemplate` + overrides). The tabs use one API for both. (M4 builds the job target;
+      the group target is typed and comes with F-13.)
+- [x] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
+- [x] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
+- [x] "Modified vs preset" uses `presets/diff` (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task D").
 
 ### F-5 Sources panel and opening files
-- [ ] Web: a server file-browser dialog (roots, breadcrumbs, media filter, multi-select).
+- [x] Web: a server file-browser dialog (roots, breadcrumbs, media filter, multi-select). The
+      server lists media files only, so the filter narrows that list to a caller's types
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task E").
 - [ ] Desktop: native dialogs and drag-and-drop through `Platform`.
-- [ ] Probe progress, warnings, batch groups (collapsible), near-match markers.
+- [x] Probe progress, warnings, batch groups (collapsible), near-match markers.
 
 ### F-6 Summary tab
-- [ ] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields.
+- [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields (the job
+      type line comes with M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
 - [ ] Pipeline header from `jobs/geometry`.
@@ -483,17 +502,19 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Colorspace source-colour box and the "what will happen" sentence.
 
 ### F-9 Video tab and advanced options
-- [ ] `EncoderPicker` grouped by family, with status dots and reasons. The
+- [x] `EncoderPicker` grouped by family, with status dots and reasons. The
       missing-encoder banner shows the fix buttons from the validation issue.
-- [ ] `QualitySlider` with the recommended band. Rate-control switch.
+- [x] `QualitySlider` with the recommended band. Rate-control switch.
 - [ ] `AdvancedOptions` is generated from the option schema: categories, search, "show only
       changed", reset, placeholders for defaults, help popovers, "copy HDR metadata".
-- [ ] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
+- [x] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
 
 ### F-10 Audio and subtitles tabs
 - [ ] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
-      button for unknown bitrates.
+      button for unknown bitrates. (M4 built all but the "Measure" button, which is M6;
+      [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
 - [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
+      (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
 - [ ] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
       (`hun · hu`).
 - [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
@@ -507,8 +528,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Chapter table with inline name edits, import/export, generate. Tag form with templates.
 
 ### F-12 Presets UI
-- [ ] Preset drawer: tree by category, built-in lock, CRUD, default star, import/export,
-      "modified" marker with a diff popover.
+- [x] Preset drawer: tree by category, built-in lock, CRUD, default star, import/export,
+      "modified" marker with a diff popover. The drawer is the presets view, and the marker's
+      popover opens on a click ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task J").
 
 ### F-13 Batch UI
 - [ ] Group rows in the sources panel. **Edit group** mode with banner and representative-file
@@ -520,13 +542,16 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Queue-group flow with the error dialog.
 
 ### F-14 Queue and activity
-- [ ] Queue table: drag reorder, live progress, per-job and global controls, edit-back,
+- [x] Queue table: drag reorder, live progress, per-job and global controls, edit-back,
       reveal in folder (desktop), when-done selector.
-- [ ] Job log viewer (virtual scroll, follow mode, copy all). Global activity log.
+- [x] Job log viewer (virtual scroll, follow mode, copy all). Global activity log.
 
 ### F-15 Settings view
 - [ ] The sections from [03 §Settings](03-features.md#settings). The encoder table has a re-scan
       button. Tool paths have a **Test** button.
+- [x] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
+      `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
+      its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
@@ -541,13 +566,16 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   3. A preset with an unavailable encoder → banner → use the fallback → queue.
   4. Manual crop → magnifier shows the crop lines → the command contains the matching
      `crop=` filter.
+
+  (M4 built the set-up and flow 3, in headless Chromium and Firefox, each with its own server;
+  [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 
 ### F-18 Naming editor
-- [ ] Template field with `{` autocomplete and variable chips (current values, click to insert).
-- [ ] **Parsed name** panel: name source + reason, coloured spans over the original name,
+- [x] Template field with `{` autocomplete and variable chips (current values, click to insert).
+- [x] **Parsed name** panel: name source + reason, coloured spans over the original name,
       editable fields (per-file override).
 - [ ] Live preview (`naming/preview`, debounced). Used in Settings → Output, the preset editor,
       the Summary Output card, and the batch matrix naming column.

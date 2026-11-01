@@ -93,6 +93,19 @@ async def test_a_folder_below_an_output_root_can_be_listed(api: Api) -> None:
     assert _names(response.json()) == ["Movies"]
 
 
+async def test_a_folder_outside_the_roots_is_refused_as_outside_media_and_output(
+    api: Api, tmp_path: Path
+) -> None:
+    """The dialog shows the detail: browsing to open a file is not a write."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    response = await api.client.get("/api/fs/list", params={"path": str(outside)})
+    problem = response.json()
+    assert (response.status_code, problem["code"]) == (403, "path.outside_roots")
+    assert "media and output folders" in problem["detail"]
+    assert "write" not in problem["detail"]
+
+
 @pytest.mark.parametrize(
     ("make", "status", "code"),
     [

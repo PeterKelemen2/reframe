@@ -546,3 +546,17 @@ leaves `get()` before its `queue.changed` reaches the events. The tests are in
   the remote client's fixes; the merge not committed here) every test passes, these two
   included: `tests/remote` 198, `tests/queue`, `tests/jobs` and `testing/tests` 667 (1
   skipped), the server's tests 550 (3 skipped).
+
+## Follow-up, 2026-11-01: Ctrl+Z right after a job starts
+
+`test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them` failed in about 1 run in 13 (3 of 40
+runs alone), always with `seen == [(PAUSED, 0)]` getting `(RUNNING, 0)`. Cause, read from the
+command's copy of the queue at the stop: it showed the job as `waiting` in every failing run and
+as `running` in every passing one. The test raised SIGTSTP once the owner had the job running,
+but the event of the start had not reached the command yet, and `_stop_here` pauses only the jobs
+that its copy shows as running. So the code was wrong, not the test: a Ctrl+Z in that window
+detached the command with its job still running instead of paused. `_stop_here` now reads the
+whole queue (`RemoteQueue.refresh`) before it looks at the states. A new test holds back the
+first `running` event of the copy: `test_ctrl_z_pauses_a_job_whose_start_the_command_has_not_seen`
+fails every time without the change (3 of 3) and passes with it. The original test passed 60 of
+60 runs after the change.

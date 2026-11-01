@@ -18,20 +18,26 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --project unit",
+    "test:server": "vitest run --project server",
+    "test:watch": "vitest --project unit",
+    "e2e": "playwright test",
     "gen:api": "bash ../scripts/gen-api.sh"
   },
   "dependencies": {
     "@lucide/vue": "^1.55.0",
     "@primeuix/themes": "^2.0.3",
+    "@vueuse/core": "^15.0.0",
+    "openapi-fetch": "^0.17.0",
     "pinia": "^4.0.3",
     "primevue": "^4.5.5",
+    "rfc6902": "^5.3.0",
     "vue": "^3.5.43",
     "vue-i18n": "^11.4.14",
     "vue-router": "^5.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/node": "^24.19.2",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",

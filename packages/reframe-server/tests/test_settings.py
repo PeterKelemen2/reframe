@@ -14,6 +14,7 @@ import pytest
 
 from reframe.models import AppSettings
 from reframe.service import SettingsUpdate
+from reframe.tools import ENV_VARS
 from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
@@ -73,6 +74,24 @@ async def test_a_web_client_cannot_choose_a_program(api: Api, patch: list[dict[s
     response = await api.client.put("/api/settings", json=patch)
     assert (response.status_code, response.json()["code"]) == (403, "settings.tools_forbidden")
     assert api.reframe.settings.get().tools.model_dump(exclude_none=True) == {}
+
+
+@pytest.mark.parametrize(
+    ("tools", "named"),
+    [
+        (["mediainfo"], ["REFRAME_MEDIAINFO"]),
+        (["mkvpropedit", "ffmpeg"], ["REFRAME_FFMPEG", "REFRAME_MKVPROPEDIT"]),
+    ],
+)
+async def test_a_refused_program_names_the_variables_of_the_tools_it_sets(
+    api: Api, tools: list[str], named: list[str]
+) -> None:
+    patch = [{"op": "add", "path": f"/tools/{tool}", "value": "/bin/sh"} for tool in tools]
+    response = await api.client.put("/api/settings", json=patch)
+    problem = response.json()
+    assert (response.status_code, problem["code"]) == (403, "settings.tools_forbidden")
+    shown = [variable for variable in ENV_VARS.values() if variable in problem["detail"]]
+    assert shown == named
 
 
 async def test_a_concurrent_change_cannot_slip_a_program_past_the_check(

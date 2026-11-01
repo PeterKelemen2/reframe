@@ -353,9 +353,9 @@ def test_filter_settings_keep_their_order() -> None:
 def test_event_types_match_the_union() -> None:
     members = TypeAdapter(Event).json_schema()["discriminator"]["mapping"]
     assert set(members) == set(EVENT_TYPES)
-    assert len(EVENT_TYPES) == 12
+    assert len(EVENT_TYPES) == 13
     assert EVENT_TYPES[-1] == "resync"
-    assert EVENT_TYPES[:7] == (
+    assert EVENT_TYPES[:8] == (
         "capabilities.changed",
         "task.progress",
         "task.done",
@@ -363,6 +363,7 @@ def test_event_types_match_the_union() -> None:
         "job.progress",
         "job.log",
         "queue.changed",
+        "queue.processing",
     )
     event = EVENT_ADAPTER.validate_python({"type": "job.state", "job_id": "1", "state": "running"})
     assert event.type == "job.state"

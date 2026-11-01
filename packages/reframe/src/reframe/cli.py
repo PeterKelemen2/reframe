@@ -45,6 +45,7 @@ from reframe.models.events import (
     JobStateEvent,
     PowerCountdownEvent,
     QueueChangedEvent,
+    QueueProcessingEvent,
     ResyncEvent,
     TaskDoneEvent,
     TaskProgressEvent,
@@ -1825,7 +1826,11 @@ def _with_claims(
 
 
 #: The events that ``encode`` and ``batch`` follow while their jobs run.
-_FOLLOWED = frozenset({"job.state", "job.progress", "queue.changed", "resync"})
+_FOLLOWED = frozenset({"job.state", "job.progress", "queue.changed", "queue.processing", "resync"})
+STOPPED_BY_OTHERS = (
+    "The queue was stopped by another front end: the waiting jobs of this command start when it "
+    "is started again (Ctrl+C cancels them)."
+)
 #: Seconds the command waits after Ctrl+C for the answer of the add that was under way.
 ADD_WAIT = 10.0
 #: How often a start that the queue refused is sent again, and the seconds between two looks
@@ -2144,8 +2149,36 @@ async def _follow_jobs(following: _Following, jobs: CommandJobs) -> None:
                 view.progress(event.job_id, event.progress)
         elif isinstance(event, QueueChangedEvent | ResyncEvent):
             look()
+        elif isinstance(event, QueueProcessingEvent):
+            # The command never stops the queue: another front end did.
+            remote = session.remote
+            if remote is not None and event.reason == "stop" and await _held(remote, jobs):
+                view.line(STOPPED_BY_OTHERS, "yellow")
         if not jobs.open():
             return
+
+
+async def _held(remote: RemoteQueue, jobs: CommandJobs) -> bool:
+    """A waiting job of the command that the owner's queue does not take now. Read from the
+    owner: a stop that came just before the command's own start holds nothing."""
+
+    def held() -> bool:
+        taken = remote.only if remote.processing else []  # None: every waiting job
+        return any(
+            (job := remote.get(job_id)) is not None
+            and job.state is JobState.WAITING
+            and taken is not None
+            and job_id not in taken
+            for job_id in jobs.open()
+        )
+
+    if not held():
+        return False
+    try:
+        await remote.refresh()
+    except QueueError:  # the owner cannot be read: a lost connection ends the follow
+        return False
+    return held()
 
 
 async def _wait_present(queue: QueueLike, ids: Sequence[str]) -> None:
@@ -2309,6 +2342,8 @@ async def _stop_here(following: _Following, jobs: CommandJobs) -> bool:
         paused: list[str] = []
         loop.add_signal_handler(signal.SIGTSTP, lambda: None)  # one stop at a time
         try:
+            # The copy can be behind the owner: a job that has just started still shows as waiting.
+            await session.remote.refresh()
             for job_id in jobs.open():
                 job = session.queue.get(job_id)
                 if job is not None and job.state is JobState.RUNNING:

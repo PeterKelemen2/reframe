@@ -172,6 +172,7 @@ The core has an async **event bus**. The server forwards it over one WebSocket
 | `job.progress` | percent, fps, speed, eta, output size | Queue |
 | `job.log` | log lines (batched, rate-limited) | Queue |
 | `queue.changed` | order / membership | Queue |
+| `queue.processing` | whether the queue takes waiting jobs, which (`only`), and why (`start`, `stop`, `idle`) | Queue ([decision 0064](../decisions/0064-queue-processing-event.md)) |
 | `tools.changed` | tool statuses | Tool discovery (a path changed, or *Check again*) |
 | `app.warning` | code, message, detail | Any service: a problem that stops nothing (a corrupt file replaced, sleep inhibit not available, `queue.store_busy`) |
 | `power.countdown` | action, phase, seconds left | The when-done power action (60 s, cancellable) |

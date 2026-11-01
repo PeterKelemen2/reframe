@@ -1,0 +1,77 @@
+import { delimiter } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import type { PlaywrightTestConfig } from '@playwright/test'
+
+import { pinnedTools } from '../../src/editor/testing/tools.mjs'
+
+/** The page reads it from `#token=…`; the server is started with it. */
+export const TOKEN = 'reframe-e2e-token'
+
+const E2E = fileURLToPath(new URL('../', import.meta.url))
+const DEV_SERVER = fileURLToPath(new URL('../../../scripts/dev-server.py', import.meta.url))
+// Every hardware test encode fails with a captured real error, and every other call goes to the
+// real ffmpeg / ffprobe found on PATH: the encoder states, and so the closest match of an
+// unavailable encoder, are the same on every machine.
+const SCENARIO = `${E2E}fake-ffmpeg.json`
+// Hardware test encodes on: without them a hardware encoder is only "not tested".
+const SETTINGS = `${E2E}settings.json`
+const FIRST_PORT = 8750
+// Longer than dev-server.py's own stop (10 s for the server, then the home's removal): Playwright
+// sends SIGKILL to the process group after this, which would leave the home behind. Shorter than
+// the 30 s after which Playwright exits anyway.
+const STOP_TIMEOUT = 20_000
+
+/**
+ * The base URL of each browser project's own server, so that one project's queue never shows in
+ * the other's.
+ */
+export function projectServers<P extends string>(projects: readonly P[]): Record<P, string> {
+  return Object.fromEntries(
+    projects.map((project, index) => [project, `http://127.0.0.1:${FIRST_PORT + index}`]),
+  ) as Record<P, string>
+}
+
+function quote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
+/** The PATH of the servers: the pinned FFmpeg first when there is one, for the fake's `exec`. */
+function toolsPath(): Record<string, string> {
+  const tools = pinnedTools()
+  if (tools === null) return {}
+  return { PATH: [tools, process.env.PATH].filter(Boolean).join(delimiter) }
+}
+
+/**
+ * The `webServer` entries: `scripts/dev-server.py` for each project, in a new temporary home.
+ * Playwright starts them one after the other, so the first one builds `dist/` for all. SIGTERM
+ * to the process group stops them: dev-server.py then stops the server and removes the home.
+ */
+export function webServers(
+  servers: Record<string, string>,
+): NonNullable<PlaywrightTestConfig['webServer']> {
+  return Object.entries(servers).map(([project, baseURL], index) => {
+    const start = [
+      'uv run python',
+      quote(DEV_SERVER),
+      `--port ${new URL(baseURL).port}`,
+      `--token ${TOKEN}`,
+      '--fixtures multitrack',
+      `--fake-ffmpeg ${quote(SCENARIO)}`,
+      `--settings ${quote(SETTINGS)}`,
+    ].join(' ')
+    return {
+      name: project,
+      command: index === 0 ? `npm run build:web && ${start}` : start,
+      url: `${baseURL}/api/health`,
+      env: toolsPath(),
+      reuseExistingServer: false,
+      timeout: 120_000,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: STOP_TIMEOUT },
+      // The server logs every request; DEBUG=pw:webserver shows its output.
+      stdout: 'ignore',
+      stderr: 'ignore',
+    }
+  })
+}

@@ -34,6 +34,7 @@ from reframe.models.events import (
     JobStateEvent,
     PowerCountdownEvent,
     QueueChangedEvent,
+    QueueProcessingEvent,
     ResyncEvent,
 )
 from reframe.models.issues import ValidationIssue
@@ -52,19 +53,25 @@ _WS_LOG = logging.getLogger("websockets.client")
 ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 _ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _Forwarded = (
-    JobStateEvent | JobProgressEvent | QueueChangedEvent | PowerCountdownEvent | ResyncEvent
+    JobStateEvent
+    | JobProgressEvent
+    | QueueChangedEvent
+    | QueueProcessingEvent
+    | PowerCountdownEvent
+    | ResyncEvent
 )
 _MODELS: dict[str, type[_Forwarded]] = {
     "job.state": JobStateEvent,
     "job.progress": JobProgressEvent,
     "queue.changed": QueueChangedEvent,
+    "queue.processing": QueueProcessingEvent,
     "power.countdown": PowerCountdownEvent,
     "resync": ResyncEvent,
 }
 #: The events that the queue's users follow; the others stay with the server.
 FORWARDED = frozenset(_MODELS)
 #: An event of these types that cannot be read leaves the copy behind: read the whole queue.
-_COPIED = frozenset({"job.state", "queue.changed", "resync"})
+_COPIED = frozenset({"job.state", "queue.changed", "queue.processing", "resync"})
 OPEN_TIMEOUT = 10.0
 CHANGE_WAIT = 10.0
 """Seconds a call waits for the event of its change before it reads the whole queue."""
@@ -130,6 +137,15 @@ def _unhide(value: Any, folders: dict[str, Path]) -> Any:
     if isinstance(value, dict):
         return {_unhide(key, folders): _unhide(item, folders) for key, item in value.items()}
     return value
+
+
+def _processing_of(answer: Any) -> tuple[bool, builtins.list[str] | None]:
+    """``processing`` and ``only`` of a queue snapshot; not processing when the owner does not
+    say."""
+    if not isinstance(answer, dict) or answer.get("processing") is not True:
+        return False, None
+    only = answer.get("only")
+    return True, [str(job_id) for job_id in only] if isinstance(only, builtins.list) else None
 
 
 def _decode(raw: str | bytes) -> tuple[str, _Forwarded | None]:
@@ -239,6 +255,8 @@ class RemoteQueue:
         self._adding = 0
         self._retries: dict[str, int] = {}
         """Per job, the retries the copy took (events from an end)."""
+        self._processing = False
+        self._only: builtins.list[str] | None = None
         self._mirror = asyncio.Lock()
         """Held while the copy changes: an event, an add's answer, or a whole-queue read with
         its request."""
@@ -369,6 +387,24 @@ class RemoteQueue:
 
     def list(self) -> _Jobs:
         return [self._jobs[j].model_copy(deep=True) for j in self._order if j in self._jobs]
+
+    @property
+    def processing(self) -> bool:
+        """The owner's queue takes waiting jobs, as the copy shows it (``False`` when the owner
+        does not say)."""
+        return self._processing
+
+    @property
+    def only(self) -> builtins.list[str] | None:
+        """The only jobs the owner's queue takes, as the copy shows it; ``None``: every waiting
+        job, or not processing."""
+        return None if self._only is None else builtins.list(self._only)
+
+    async def refresh(self) -> None:
+        """Read the whole queue now: the copy then shows every call that the owner answered
+        before, also one whose events are still on their way."""
+        self._check_open()
+        await self._refresh()
 
     def get(self, job_id: str) -> QueueJob | None:
         return self._copy(job_id)
@@ -541,6 +577,7 @@ class RemoteQueue:
         sent before this answer, so the answer is newer than all of them."""
         answer = await self._request("GET", "/api/queue")
         jobs = self._jobs_of(answer.get("jobs", []) if isinstance(answer, dict) else [])
+        self._processing, self._only = _processing_of(answer)
         self._jobs = {job.id: job for job in jobs}
         self._order = [job.id for job in jobs]
         self._seen &= self._jobs.keys()
@@ -634,6 +671,8 @@ class RemoteQueue:
                     job.progress = event.progress
         elif isinstance(event, QueueChangedEvent):
             await self._apply_order(event.job_ids)
+        elif isinstance(event, QueueProcessingEvent):
+            self._processing, self._only = event.processing, event.only
         elif isinstance(event, ResyncEvent):
             await self._refresh_locked()
         elif isinstance(event, PowerCountdownEvent):

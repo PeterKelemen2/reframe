@@ -1,8 +1,9 @@
 """``reframe encode`` and ``reframe batch`` as clients of the queue's owner: the owner validates
 and runs the jobs (no encoder detection here), ``--detach``, Ctrl+C and Ctrl+Z, jobs that another
-front end removes or retries, a server that stops or a connection that is lost, the owner's
-when-done countdown, and the fallback to the in-process queue with the reason. The owner is the
-test's server in this event loop; the CLI runs in the same loop, on the same folders."""
+front end removes or retries, a Stop by another front end, a server that stops or a connection
+that is lost, the owner's when-done countdown, and the fallback to the in-process queue with the
+reason. The owner is the test's server in this event loop; the CLI runs in the same loop, on the
+same folders."""
 
 from __future__ import annotations
 
@@ -35,12 +36,12 @@ from reframe.models import (
 )
 from reframe.models.template import AudioOutputSettings
 from reframe.platform.power import OsAction, PowerService
-from reframe.remote import RemoteQueue
+from reframe.remote import RemoteError, RemoteQueue
 from reframe.remote import owner as owner_module
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 
-from .conftest import HANG, Server, poll, serving
+from .conftest import HANG, Server, Wire, poll, serving
 
 pytestmark = pytest.mark.anyio
 
@@ -433,6 +434,150 @@ async def test_ctrl_c_after_another_front_end_removed_a_job(
     assert states(server) == {a: JobState.CANCELLED}
 
 
+async def test_a_stop_by_another_front_end_is_reported_and_a_later_start_runs_the_job(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The UI's Stop while B waits behind A: the command says so once and goes on waiting, also
+    when A's slot is free; the UI's Start then runs B."""
+    server.api.fake.set_scenario(scenario(ends("B.mkv")))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    await poll(lambda: queue.only == [a, b])  # the command's start
+    await queue.stop()
+    out: list[str] = []
+
+    def stop_shown() -> bool:
+        out.append(capsys.readouterr().out)
+        return cli.STOPPED_BY_OTHERS in "".join(out)
+
+    await poll(stop_shown)
+    await queue.cancel(a)
+    await asyncio.sleep(0.3)  # a job that the runner took would be running by now
+    assert states(server)[b] is JobState.WAITING
+    assert not task.done()
+    queue.start()
+    code = await asyncio.wait_for(task, WAIT)
+    lines = "".join([*out, capsys.readouterr().out]).splitlines()
+    assert code == cli.EXIT_FAILED, lines  # A was cancelled
+    assert lines.count(cli.STOPPED_BY_OTHERS) == 1
+    assert "[2/2] done" in [line.split(" in ")[0] for line in lines]
+    assert states(server)[b] is JobState.DONE
+
+
+async def test_the_idle_end_of_another_commands_start_is_not_reported_as_a_stop(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After the UI's Stop, another CLI starts only its own job Y; Y's end makes the queue idle
+    while B still waits: that is no second stop. C's cancel comes after the idle event, so once
+    the command shows it, it has handled the idle event with B waiting."""
+    server.api.fake.set_scenario(scenario(ends("Y.mkv")))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B", "C")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    c = await job_of(server, "C.mkv", JobState.WAITING)
+    await poll(lambda: queue.only == [a, b, c])  # the command's start
+    await queue.stop()
+    await queue.cancel(a)
+    other = await queue.add(await server.job("Y.mkv"))
+    queue.start(job_ids=[other.id])
+    [ended] = await asyncio.wait_for(queue.wait([other.id]), WAIT)
+    assert ended.state is JobState.DONE
+    assert not queue.processing  # idle, with B and C still waiting
+    await queue.cancel(c)
+    out: list[str] = []
+
+    def c_shown() -> bool:
+        out.append(capsys.readouterr().out)
+        return "[3/3] cancelled" in "".join(out).splitlines()
+
+    await poll(c_shown)
+    await queue.cancel(b)
+    code = await asyncio.wait_for(task, WAIT)
+    lines = "".join([*out, capsys.readouterr().out]).splitlines()
+    assert code == cli.EXIT_FAILED, lines
+    assert lines.count(cli.STOPPED_BY_OTHERS) == 1
+
+
+async def test_a_stop_while_none_of_its_jobs_waits_is_not_reported(
+    server: Server, capsys: pytest.CaptureFixture[str]
+) -> None:
+    server.api.fake.set_scenario(HANG)
+    server.publish()
+    task = asyncio.create_task(
+        cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
+    )
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    await queue.stop()
+    await queue.cancel(a)  # its events come after the stop's
+    assert await asyncio.wait_for(task, WAIT) == cli.EXIT_FAILED
+    assert cli.STOPPED_BY_OTHERS not in capsys.readouterr().out
+
+
+async def test_a_stop_just_before_the_commands_own_start_is_not_reported(
+    server: Server, wire: Wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Another front end's Stop reaches the owner between the command's add and its start, so
+    the start runs the command's jobs; its event reaches the command after the stop's."""
+    server.api.fake.set_scenario(HANG)
+    queue = server.api.reframe.queue
+    queue.start()
+    server.publish()
+    wire.lag = 0.05
+    send = RemoteQueue._send_start
+
+    async def stopped_first(self: RemoteQueue, ids: list[str] | None) -> None:
+        await queue.stop()
+        await send(self, ids)
+
+    monkeypatch.setattr(RemoteQueue, "_send_start", stopped_first)
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    b = await job_of(server, "B.mkv", JobState.WAITING)
+    await poll(lambda: queue.only == [a, b])
+    await queue.cancel()  # its events come after the stop's and the start's
+    assert await asyncio.wait_for(task, WAIT) == cli.EXIT_FAILED
+    assert cli.STOPPED_BY_OTHERS not in capsys.readouterr().out
+
+
+async def test_a_stop_that_cannot_be_checked_with_the_owner_ends_nothing(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    checks: list[RemoteQueue] = []
+
+    async def unreadable(self: RemoteQueue) -> None:
+        checks.append(self)
+        raise RemoteError("the queue cannot be read", code="test")
+
+    monkeypatch.setattr(RemoteQueue, "refresh", unreadable)
+    server.api.fake.set_scenario(scenario(ends("B.mkv")))
+    server.publish()
+    files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
+    task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
+    queue = server.api.reframe.queue
+    a = await job_of(server, "A.mkv", JobState.RUNNING)
+    await job_of(server, "B.mkv", JobState.WAITING)
+    await queue.stop()
+    await poll(lambda: bool(checks))
+    await queue.cancel(a)
+    queue.start()
+    code = await asyncio.wait_for(task, WAIT)
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_FAILED, captured
+    assert captured.out.splitlines()[-1] == (
+        "Summary: 1 done, 0 failed, 1 cancelled, 0 not queued."
+    )
+    assert "error" not in captured.err
+
+
 async def connections_closed(server: Server) -> None:
     """Until no event connection is open, and the owner has acted on their ends."""
     await poll(lambda: server.api.app.state.hub.connections == 0)
@@ -513,6 +658,32 @@ async def test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them(
     """While the command is stopped, its running job is paused in the owner, and no connection
     is left whose end would cancel it (a stopped process cannot answer the server's
     keepalive). When the command is continued it resumes the job and follows it to its end."""
+    await _stop_and_continue(server, monkeypatch, capsys)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no job control on Windows")
+async def test_ctrl_z_pauses_a_job_whose_start_the_command_has_not_seen(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The command's copy of the queue can be behind the owner: a job that has just started
+    still shows as waiting. It is paused all the same."""
+    real = RemoteQueue._apply_state
+    missed: list[object] = []
+
+    async def behind(self: RemoteQueue, event: Any) -> None:
+        if event.state is JobState.RUNNING and not missed:
+            missed.append(event)
+        else:
+            await real(self, event)
+
+    monkeypatch.setattr(RemoteQueue, "_apply_state", behind)
+    await _stop_and_continue(server, monkeypatch, capsys)
+    assert missed
+
+
+async def _stop_and_continue(
+    server: Server, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     server.api.fake.set_scenario(scenario(ends("A.mkv", seconds=2)))
     server.publish()
     seen: list[tuple[JobState | None, int]] = []

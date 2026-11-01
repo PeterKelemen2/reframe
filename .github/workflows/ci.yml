@@ -122,6 +122,74 @@ jobs:
       - run: npm run build:web
       - run: npm run build:desktop
 
+  frontend-server:
+    # The frontend against a real reframe-server and a real FFmpeg: the server tests (vitest)
+    # and the browser flows (Playwright, Chromium and Firefox). Linux only: the tests find the
+    # pinned FFmpeg through .tools/ and start the servers with a POSIX shell.
+    name: Frontend, npm run ${{ matrix.script }} (ubuntu-latest)
+    strategy:
+      fail-fast: false
+      matrix:
+        script: [test:server, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache the pinned FFmpeg
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-default-frontend-${{ hashFiles('tools/ffmpeg.toml') }}
+
+      # The servers need an FFmpeg with libx265 (the closest match of an unavailable encoder).
+      # The folder goes on PATH for the fixture generator and into REFRAME_TEST_TOOLS_DIR,
+      # which the tests and the e2e servers read before .tools/.
+      - name: Fetch the pinned FFmpeg
+        run: |
+          bin_dir="$(uv run --no-project python scripts/fetch-tools.py --build default)"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          echo "REFRAME_TEST_TOOLS_DIR=$bin_dir" >> "$GITHUB_ENV"
+
+      - name: Show the FFmpeg
+        run: |
+          ffmpeg -version | sed -n 1p
+          ffmpeg -hide_banner -encoders | grep -w libx265
+
+      - run: uv sync --frozen
+
+      - name: Cache the generated test media
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: testdata/media
+          key: testdata-${{ runner.os }}-frontend-default-${{ hashFiles('scripts/make-testdata.py', 'testing/reframe_testing/**/*.py', 'tools/ffmpeg.toml') }}
+
+      - name: Generate the test media (incremental)
+        run: uv run python scripts/make-testdata.py
+
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Install the browsers
+        if: matrix.script == 'e2e'
+        run: npx playwright install --with-deps chromium firefox
+        working-directory: frontend
+
+      - run: npm run ${{ matrix.script }}
+        working-directory: frontend
+
   api-contract:
     # The committed TypeScript types must match the server's OpenAPI document.
     name: API contract (ubuntu-latest)

@@ -504,6 +504,11 @@ Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers p
 cancel, a failure from a fake encoder error, and a restart with an interrupted job. All
 expected events arrive in order.
 
+What the runner takes (`QueueService.processing` and `only`, running state) changes with
+`start`, `stop` and the end of the jobs that a `start(job_ids=…)` named, however they end
+(idle); each change is a `queue.processing` event
+([decision 0064](../decisions/0064-queue-processing-event.md)).
+
 ## C-12 Batch engine
 
 Implements [04-batch-mode.md](04-batch-mode.md): descriptors, fingerprints, grouping, rule
@@ -702,3 +707,11 @@ another front end retries is that front end's (the command keeps its first end, 
 leaves the command's connection on the server); Ctrl+Z in client mode pauses and detaches the
 command's running jobs while it is stopped and resumes them on SIGCONT; after a lost
 connection the command reports its jobs as the owner, or else the saved queue, shows them.
+
+A global Stop from another front end (0042 open question 5,
+[decision 0064](../decisions/0064-queue-processing-event.md)): `RemoteQueue` forwards the
+`queue.processing` event and keeps `processing` and `only` in its copy; when a stop holds a
+waiting job of the command (checked with a whole-queue read, so a stop that came just before
+the command's own start does not count), `encode` and `batch` print one line, "The queue was
+stopped by another front end: …", and go on waiting. Ctrl+C cancels the jobs; a later Start
+runs them.

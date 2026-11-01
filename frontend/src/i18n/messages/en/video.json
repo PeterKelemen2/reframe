@@ -1,0 +1,120 @@
+{
+  "sections": {
+    "encoder": "Encoder",
+    "quality": "Quality",
+    "framerate": "Frame rate",
+    "encoderSettings": "Encoder settings"
+  },
+  "family": {
+    "software": "Software",
+    "nvenc": "NVIDIA NVENC",
+    "qsv": "Intel QSV",
+    "amf": "AMD AMF",
+    "vaapi": "VAAPI",
+    "other": "Other"
+  },
+  "status": {
+    "available": "Available",
+    "checking": "Checking…",
+    "rechecking": "Checking again (last result: {reason})",
+    "untested": "Not tested",
+    "unavailable": "Unavailable",
+    "unavailableBecause": "Unavailable: {reason}",
+    "failed": "The check failed",
+    "failedBecause": "The check failed: {reason}",
+    "unknown": "Status not known"
+  },
+  "encoder": {
+    "label": "Video encoder",
+    "option": "{label} ({id}), {status}",
+    "paramsCleared": "Custom parameters removed",
+    "paramsClearedDetail": "They were written for {encoder}. Undo brings them back."
+  },
+  "banner": {
+    "title": "The video encoder is not available",
+    "preset": "Preset {preset} uses {encoder}, which is not available: {reason}",
+    "job": "This job uses {encoder}, which is not available: {reason}",
+    "choose": "Choose encoder",
+    "checkAgain": "Check again"
+  },
+  "passthrough": {
+    "label": "Video passthrough",
+    "hint": "Copy the video stream unchanged",
+    "note": "The video is copied unchanged, so the video settings, dimensions and filters do not apply."
+  },
+  "rate": {
+    "label": "Rate control",
+    "quality": "Constant quality",
+    "bitrate": "Average bitrate"
+  },
+  "quality": {
+    "label": "Quality ({scale})",
+    "valueText": "{scale} {value}",
+    "better": "Higher quality, bigger file",
+    "smaller": "Smaller file",
+    "recommended": "Recommended for {lines} lines: {scale} {low} to {high}",
+    "outside": "The value is outside this range."
+  },
+  "bitrate": {
+    "label": "Average bitrate",
+    "unit": "kb/s",
+    "twoPass": "2-pass encoding",
+    "noTwoPass": "This encoder has no 2-pass mode.",
+    "turbo": "Turbo first pass",
+    "turboHint": "A faster first pass (2-pass only)"
+  },
+  "framerate": {
+    "label": "Frame rate",
+    "same": "Same as source",
+    "mode": "Frame rate mode",
+    "variable": "Variable",
+    "constant": "Constant",
+    "peak": "Peak",
+    "modeHelp": "Variable keeps the source's timing. Constant writes every frame at one rate. Peak keeps a slower source's rate and makes a faster or variable source constant at the chosen rate."
+  },
+  "speed": {
+    "label": "Speed preset",
+    "default": "{label} (default)",
+    "encoderDefault": "The encoder's default",
+    "faster": "Faster",
+    "slower": "Slower, better compression",
+    "useDefault": "Use the encoder's default"
+  },
+  "choice": {
+    "default": "{label} (default)",
+    "auto": "Automatic",
+    "noTune": "None"
+  },
+  "tune": {
+    "label": "Tune"
+  },
+  "profile": {
+    "label": "Profile"
+  },
+  "level": {
+    "label": "Level"
+  },
+  "fastDecode": {
+    "label": "Fast decode",
+    "hint": "Easier to play on slow devices, a little bigger"
+  },
+  "bitDepth": {
+    "label": "Bit depth",
+    "bits": "{bits}-bit",
+    "noMode": "This encoder has no 10-bit mode.",
+    "testFailed": "The 10-bit test encode failed."
+  },
+  "customParams": {
+    "label": "Custom parameters"
+  },
+  "command": {
+    "title": "FFmpeg command",
+    "code": "The FFmpeg command of this job",
+    "copy": "Copy",
+    "copied": "Copied",
+    "updating": "Updating…",
+    "loading": "Making the command…",
+    "invalid": "There is no command while the job has errors:",
+    "failed": "The command could not be made: {reason}"
+  }
+}

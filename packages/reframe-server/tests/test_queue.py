@@ -239,6 +239,24 @@ async def test_stop_takes_no_new_job(api: Api) -> None:
     assert await snapshot(api) == [(first, "cancelled"), (second, "waiting")]
 
 
+async def test_the_snapshot_says_which_waiting_jobs_the_queue_takes(api: Api) -> None:
+    api.fake.set_scenario(HANG)
+    first, _ = await add_jobs(api, "First.mkv", "Second.mkv")
+
+    async def taken() -> tuple[bool, list[str] | None]:
+        body = (await api.client.get("/api/queue")).json()
+        return body["processing"], body["only"]
+
+    assert await taken() == (False, None)
+    await api.client.post("/api/queue/start", json={"job_ids": [first]})
+    assert await taken() == (True, [first])
+    await api.client.post("/api/queue/start")
+    assert await taken() == (True, None)
+    await api.client.post("/api/queue/stop")
+    assert await taken() == (False, None)
+    await api.client.post(f"/api/queue/{first}/cancel")
+
+
 async def test_the_log_is_read_from_a_byte_offset(api: Api) -> None:
     """Before the first run there is no file: the answer is empty, not an error."""
     [job_id] = await add_jobs(api, "Show.mkv")

@@ -275,6 +275,29 @@ async def test_a_restored_job_fails_when_its_keys_show_a_claimed_output(
 
 
 @needs_symlinks
+async def test_a_start_of_a_restored_job_that_its_keys_fail_goes_idle(
+    harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness
+    link = tmp_path / "out-link"
+    link.symlink_to(tmp_path / "out", target_is_directory=True)
+    restored = await h.queue.add(writing_to(h, link, "Same"))
+    await h.queue.close()
+    held = hold_share(monkeypatch, link)
+    h.queue = queue_at(h)
+    try:
+        h.queue.list()
+        await h.queue.add(h.job("Same"))
+        h.queue.start(job_ids=[restored.id])
+        assert h.queue.processing
+    finally:
+        held.answer.set()
+    await h.wait_for(lambda: not h.queue.processing, 5)
+    assert h.queue.only is None
+    assert claims(h.queue.get(restored.id)) != []
+
+
+@needs_symlinks
 async def test_a_restored_job_cancelled_before_its_keys_arrive_stays_cancelled(
     harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

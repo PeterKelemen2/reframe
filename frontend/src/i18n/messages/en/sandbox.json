@@ -1,0 +1,98 @@
+{
+  "intro": "Every base component in the states that matter. Switch the theme and density to see them in each.",
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "density": "Density",
+    "comfortable": "Comfortable",
+    "compact": "Compact",
+    "inEffect": "In effect"
+  },
+  "tokens": {
+    "title": "Tokens",
+    "text": "Text",
+    "muted": "Muted text",
+    "primary": "Primary",
+    "sample": "Sphinx of black quartz, judge my vow"
+  },
+  "field": {
+    "title": "Field",
+    "plain": "Output folder",
+    "withHelp": "Quality",
+    "help": "Lower values give better quality and larger files.",
+    "error": "Encoder",
+    "warning": "Audio bitrate",
+    "info": "Frame rate",
+    "overridden": "Container",
+    "stacked": "Title",
+    "fromStore": "Speed preset",
+    "reveal": "Reveal the speed preset",
+    "toggle": "Hardware decoding",
+    "errorMessage": "The encoder libx265 is not available on this computer.",
+    "warningMessage": "128 kb/s is low for 5.1 audio.",
+    "infoMessage": "The source has a variable frame rate.",
+    "storeMessage": "This preset is slow for this encoder."
+  },
+  "section": {
+    "title": "Section",
+    "collapsible": "A collapsible section",
+    "plain": "A section",
+    "action": "Action",
+    "body": "The section's content."
+  },
+  "card": {
+    "title": "Card",
+    "titled": "Source",
+    "custom": "A custom header",
+    "body": "The card's content."
+  },
+  "role": {
+    "title": "Role badges",
+    "flag": "Disposition flag",
+    "byTitle": "Track title",
+    "heuristic": "Heuristic",
+    "detailFlag": "disposition comment",
+    "detailTitle": "title contains \"Commentary\"",
+    "detailHeuristic": "2.0, low bitrate, same language as the main track"
+  },
+  "codec": {
+    "title": "Codec labels"
+  },
+  "language": {
+    "title": "Language chips"
+  },
+  "status": {
+    "title": "Status dots",
+    "ok": "Available",
+    "busy": "Checking",
+    "warn": "Not tested",
+    "error": "Unavailable",
+    "off": "Unknown"
+  },
+  "keyValue": {
+    "title": "Key and value",
+    "duration": "Duration",
+    "size": "Size",
+    "missing": "Bitrate",
+    "slot": "Status"
+  },
+  "issues": {
+    "title": "Issue list",
+    "compact": "Compact",
+    "empty": "Empty",
+    "fixFallback": "Use libx264 (closest match)",
+    "fixChoose": "Choose encoder"
+  },
+  "naming": {
+    "title": "Naming editors",
+    "intro": "Both editors against the connected server: the naming options with every open source, and the naming of the job opened in the editor.",
+    "source": "Source",
+    "noSources": "No source is open on the server",
+    "reload": "Read the sources again",
+    "open": "Open in the editor",
+    "options": "Naming options",
+    "job": "This job's name"
+  }
+}

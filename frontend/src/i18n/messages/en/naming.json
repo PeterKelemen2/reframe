@@ -1,0 +1,129 @@
+{
+  "template": {
+    "completion": "Template variables"
+  },
+  "spec": {
+    "pad2": "Two digits at least: 3 becomes 03",
+    "pad3": "Three digits at least: 3 becomes 003",
+    "upper": "Upper case",
+    "lower": "Lower case",
+    "title": "Title Case",
+    "isoDate": "Year-month-day: 2026-10-11",
+    "dotDate": "Day.month.year: 11.10.2026",
+    "year": "Year only: 2026",
+    "time": "Hours-minutes: 14-30",
+    "timeSeconds": "Hours-minutes-seconds: 14-30-05"
+  },
+  "chips": {
+    "title": "Variables",
+    "groupName": "From the name",
+    "groupMedia": "Output media",
+    "groupHandbrake": "HandBrake variables",
+    "empty": "empty",
+    "insert": "Insert {name} (now: {value})",
+    "insertEmpty": "Insert {name} (empty for this file)"
+  },
+  "source": {
+    "auto": "Auto",
+    "file": "File name",
+    "folder": "Folder name"
+  },
+  "separator": {
+    "keep": "Keep the source's",
+    "space": "Space",
+    "dot": "Dot",
+    "underscore": "Underscore"
+  },
+  "options": {
+    "movieTemplate": "Movie template",
+    "episodeTemplate": "Episode template",
+    "episodeHelp": "Used when a season or an episode number is recognised in the name.",
+    "nameSource": "Name source",
+    "separator": "Word separator",
+    "titleCase": "Title case",
+    "replaceUnderscores": "Replace underscores with spaces",
+    "removePunctuation": "Remove dashes, periods and commas",
+    "mp4Extension": "MP4 extension",
+    "mp4Help": "Auto uses .m4v when the output has AC-3 passthru, chapters or 3GPP subtitles, else .mp4.",
+    "extMp4": ".mp4",
+    "extM4v": ".m4v",
+    "extAuto": "Auto"
+  },
+  "folder": {
+    "mode": "Output folder",
+    "fixed": "Fixed folder",
+    "sameAsSource": "Same as source",
+    "folder": "Folder",
+    "browse": "Browse…",
+    "pickTitle": "Choose the output folder",
+    "pickFailed": "A folder cannot be chosen here: type its path."
+  },
+  "preview": {
+    "title": "Output name",
+    "updating": "Updating…",
+    "noSource": "Open a source file to see the names it gets.",
+    "failed": "The server did not answer.",
+    "failedWith": "No preview: {reason}"
+  },
+  "parsed": {
+    "title": "Parsed name of {file}",
+    "heading": "Parsed name",
+    "source": "Name source: {source}",
+    "fileName": "File name",
+    "folderName": "Folder name",
+    "seasonPack": "Season pack",
+    "skipped": "Skipped generic folders: {folders}",
+    "score": "{n} point | {n} points",
+    "chosen": "Used",
+    "legend": "Colours of the recognised parts",
+    "overrideHint": "Correct a field when the parser got it wrong; the correction is kept for this file only.",
+    "cleared": "Cleared for this file",
+    "reset": "Use the parsed {field}",
+    "resetTo": "Parsed: {value}"
+  },
+  "tone": {
+    "title": "Title",
+    "episode": "Episode",
+    "subtitle": "Episode title",
+    "year": "Year",
+    "resolution": "Resolution",
+    "source": "Source",
+    "edition": "Edition",
+    "group": "Release group",
+    "other": "Other tag"
+  },
+  "field": {
+    "name": "Title or show",
+    "main_title": "Main title",
+    "sub_title": "Episode title",
+    "season": "Season",
+    "episode": "Episode",
+    "episode_code": "Episode code",
+    "year": "Year",
+    "edition": "Edition",
+    "source_type": "Source",
+    "release_group": "Release group"
+  },
+  "job": {
+    "noJob": "No file is open.",
+    "mode": "Name from",
+    "modeTemplate": "Template",
+    "modeManual": "Manual name",
+    "template": "Template",
+    "resetTemplate": "Use the preset's template",
+    "manualName": "File name",
+    "manualHelp": "Without folder; the extension comes from the container.",
+    "backToTemplate": "Reset to template",
+    "nameSource": "Name source",
+    "sourceOptions": "As the naming options say",
+    "folder": "Folder",
+    "folderDefault": "from the naming options",
+    "folderOwn": "chosen for this file",
+    "path": "Output path",
+    "chooseFolder": "Choose folder…",
+    "useDefaultFolder": "Use the naming options' folder",
+    "stale": "The naming now gives {path}.",
+    "updatePath": "Use this path",
+    "notApplied": "The output name was not changed"
+  }
+}
