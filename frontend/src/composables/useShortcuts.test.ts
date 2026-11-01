@@ -9,7 +9,6 @@ import { useUiStore } from '@/stores/ui'
 
 import { useShortcuts } from './useShortcuts'
 
-// Test doubles of the editor and sources stores and of the queue actions.
 const editor = reactive({
   canUndo: true,
   canRedo: true,
@@ -44,7 +43,6 @@ async function mountAt(path = '/', phase: 'ready' | 'login' = 'ready') {
   return result
 }
 
-/** Presses a key with Ctrl on `target` (the focused element); returns the event. */
 function press(
   key: string,
   options: { shift?: boolean; code?: string; repeat?: boolean; target?: Element } = {},
@@ -144,7 +142,8 @@ describe('Ctrl+1…8', () => {
     const ui = useUiStore()
     press('4', { code: 'Digit4' })
     expect(ui.activeTab).toBe('video')
-    // Dimensions: a later milestone's tab. The browser must not switch its own tab either.
+    // Shortcut 2 has no built tab: the key does nothing, and the browser must not switch its
+    // own tab either.
     expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(true)
     expect(ui.activeTab).toBe('video')
     press('5', { code: 'Numpad5' })
@@ -164,7 +163,7 @@ describe('Ctrl+1…8', () => {
     field.focus()
     press('4', { code: 'Digit4', target: field })
     expect(document.activeElement).toBe(document.querySelector('[data-tab="video"]'))
-    // A tab that is not built takes no focus either.
+    // Shortcut 2 has no built tab, so it takes no focus either.
     press('2', { code: 'Digit2' })
     expect(document.activeElement).toBe(document.querySelector('[data-tab="video"]'))
   })

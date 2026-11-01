@@ -23,8 +23,7 @@ let scope: EffectScope
 
 beforeAll(async () => {
   const tools = pinnedTools()
-  // The output root holds a copy that the server may write: the only file an in-place edit
-  // may touch. The media root's copy is read-only for the server.
+  // The server may write only the output root's copy; the media root is read-only for it.
   server = await startServer({
     port: PORT,
     args: [

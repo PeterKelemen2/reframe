@@ -46,7 +46,6 @@ function generatedNames(names: readonly string[]): boolean {
   return names.length > 0 && names.every((name, index) => name === numberedChapterName(index + 1))
 }
 
-/** The preset's naming options, with the job's own template and name source over them. */
 function namingOf(
   job: JobSettings,
   own: NamingOptions | null,
@@ -66,11 +65,9 @@ function namingOf(
 }
 
 /**
- * The preset-level settings of `job`, which was drafted from `preset`: what `presets/diff`
- * compares and *Save as preset* stores. The job's own parts (source, range, output path and
- * name, concrete tracks, chapter names, the video track's metadata) are not in it; the track
- * rules and defaults are the preset's. `settingsNaming`: the naming options of Settings →
- * Output, which a preset without its own uses.
+ * The preset-level settings of `job`, drafted from `preset`: the job's source, output name,
+ * chapter names and video metadata are left out, and the track rules stay the preset's.
+ * `settingsNaming` is the naming of Settings → Output, which a preset without its own uses.
  */
 export function templateOf(
   job: JobSettings,

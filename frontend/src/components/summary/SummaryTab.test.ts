@@ -275,7 +275,6 @@ describe('the Summary tab', () => {
     ])
     expect(groups.map((group) => group.findAll('li').length)).toEqual([1, 2, 1])
     expect(groups[1]!.find('h4').text()).toBe('Warnings (2)')
-    // The track with an issue is marked.
     expect(wrapper.find('[data-path="audio[1]"]').classes()).toContain('summary-track--warning')
 
     await groups[0]!.find('.rf-issue__fix').trigger('click')

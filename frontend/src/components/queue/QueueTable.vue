@@ -48,7 +48,6 @@ import {
   stateLabel,
 } from './format'
 
-/** The queue's jobs in queue order, with their live progress and the actions of each state. */
 const emit = defineEmits<{ openLog: [jobId: string, opener: HTMLElement] }>()
 
 const { t } = useI18n()
@@ -82,7 +81,10 @@ const expanded = computed<Record<string, boolean>>(() =>
   ),
 )
 
-/** The video encoder the job uses: it may differ from its preset's (an edited job). */
+/**
+ * What the job's video does, by label: its own encoder (not the preset's), a copy, or a
+ * metadata edit.
+ */
 function encoderName(job: QueueJob): string | null {
   if (job.settings.output?.edit_in_place) return t('queue.table.metadataEdit')
   const video = job.settings.video

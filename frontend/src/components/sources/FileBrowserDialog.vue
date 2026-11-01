@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// The web build's file and folder picker. Mounted once by App.vue; the web platform's
-// `pickFiles`, `pickFolder` and `pickSavePath` open it.
+// The web build's file and folder picker, shown for the requests in fileBrowser.ts.
 import { ArrowUp, FileVideo, Folder, HardDrive, Search } from '@lucide/vue'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
@@ -150,7 +149,6 @@ async function showFirst(next: BrowseRequest, candidates: string[]): Promise<boo
   return (await show(first)) || showFirst(next, rest)
 }
 
-// PrimeVue's dialog gives the focus back to where it was when it closes.
 watch(request, (next) => {
   if (next !== null) void start(next)
 })

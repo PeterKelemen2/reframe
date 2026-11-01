@@ -14,7 +14,7 @@ const locked = useSettingsLocked()
 
 /**
  * A language list setting that shows a change before the server answers, so that a second
- * move or add builds on the first and the focus follows the moved language.
+ * move or add builds on the first.
  */
 function useLanguageList(pointer: string) {
   const setting = useSetting<string[]>(pointer)

@@ -19,7 +19,7 @@ import { useSystemStore } from '@/stores/system'
 const system = useSystemStore()
 const queue = useQueueStore()
 
-// The first call starts following the theme and density saved in the server's settings.
+// Follows the theme and density saved in the server's settings.
 useTheme()
 useShortcuts()
 useInPlaceReload()

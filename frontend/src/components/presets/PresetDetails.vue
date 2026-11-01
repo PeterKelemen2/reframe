@@ -22,7 +22,6 @@ import { useSystemStore } from '@/stores/system'
 
 import PresetNaming from './PresetNaming.vue'
 
-/** One preset: what its template does in short, its naming, and what can be done with it. */
 const props = defineProps<{
   preset: Preset
   isDefault: boolean

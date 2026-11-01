@@ -101,7 +101,6 @@ function toggle(wrapper: VueWrapper) {
   return wrapper.find('[data-field="edit-in-place"] input')
 }
 
-/** Waits for the answer to an edit: the debounce, then the request. */
 async function answered(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, EDIT_DEBOUNCE + 20))
   await flushPromises()

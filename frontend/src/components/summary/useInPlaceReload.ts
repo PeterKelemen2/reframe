@@ -8,7 +8,6 @@ import { TaskLostError } from '@/stores/tasks'
 
 const ENDED = new Set<JobState>(['done', 'failed', 'cancelled', 'interrupted'])
 
-/** A job that edits its source in place and has run: its source may have changed on disk. */
 function editedInPlace(job: QueueJob): boolean {
   return job.settings.output?.edit_in_place === true && Boolean(job.started_at)
 }

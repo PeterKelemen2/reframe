@@ -44,7 +44,6 @@ const el = <T extends HTMLElement = HTMLButtonElement>(selector: string) => {
 }
 const text = (selector: string) => el(selector).textContent?.trim()
 
-/** Presses a control whose action makes it unavailable; it keeps the focus, and does nothing again. */
 async function pressTwice(action: string, run: () => Promise<void>): Promise<void> {
   const button = el(`[data-action="${action}"]`)
   button.focus()

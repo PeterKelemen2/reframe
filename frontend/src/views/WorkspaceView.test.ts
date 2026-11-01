@@ -9,7 +9,6 @@ import { useSystemStore } from '@/stores/system'
 
 import WorkspaceView from './WorkspaceView.vue'
 
-// Test doubles of the stores and composables of other tasks that the workspace places.
 const entries = ref<SourceEntry[]>([])
 const activeId = ref<string | null>(null)
 const sources = reactive({

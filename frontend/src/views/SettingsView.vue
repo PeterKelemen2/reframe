@@ -43,7 +43,7 @@ const readOnly = computed(() => system.info?.settings_read_only === true)
 /** The sections need the server's tools and the settings. */
 const ready = computed(() => system.info !== null && settings.settings !== null)
 
-/** `/settings#tools` (the first-run screen's *Choose path*) moves the focus to that section. */
+/** Moves the focus to the section that the hash names. */
 async function focusHash(): Promise<void> {
   const id = route.hash.slice(1)
   if (!(SECTIONS as readonly string[]).includes(id)) return

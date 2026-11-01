@@ -12,7 +12,7 @@ import { useUiStore } from '@/stores/ui'
 import { useQueueActions } from './useQueueActions'
 
 // Not the key's target: after a click on a dialog's text the focus, and the target, is `<body>`.
-// A closing one (its Vue leave transition) is still in the page but no longer holds the keys.
+// A closing one (its Vue leave transition) is still in the page, but does not hold the keys.
 function modalOpen(): boolean {
   return document.querySelector('[aria-modal="true"]:not([class*="-leave-active"])') !== null
 }
@@ -31,9 +31,7 @@ function ignoreShown(promise: Promise<void>): void {
 }
 
 /**
- * The app's keyboard shortcuts: `Ctrl+O` open, `Ctrl+Enter` add to queue, `Ctrl+1…8` tabs,
- * `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo outside text fields. Called once, by the
- * app shell; removed when it unmounts.
+ * The app's keyboard shortcuts. Called once, by the app shell; removed when it unmounts.
  */
 export function useShortcuts(): void {
   const route = useRoute()

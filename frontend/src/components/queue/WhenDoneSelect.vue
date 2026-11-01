@@ -9,7 +9,6 @@ import Field from '@/components/base/Field.vue'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
 
-/** What happens when the queue is finished: the `queue.when_done` setting. */
 const { t } = useI18n()
 const queue = useQueueStore()
 const system = useSystemStore()
@@ -40,7 +39,6 @@ watch(
   (value) => (shown.value = value),
 )
 
-/** Through the queue, which also cancels a countdown for another action. */
 async function choose(value: WhenDone): Promise<void> {
   if (value === queue.whenDone) return
   shown.value = value
