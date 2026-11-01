@@ -82,7 +82,93 @@ card, a second opened file not selected while another is open.
 
 ## Task S6 — S-2 additions
 
-(Written by S6.)
+Built on branch `worktree-agent-a7cf1dd08f96c6537` (2026-11-01). The routes, with their
+response models (in `reframe.models`; none is persisted, none has a `schema_version`):
+
+| Route | Answer | Core |
+|-------|--------|------|
+| `POST /api/jobs/type` `{job}` | `JobTypeInfo {job_type, reason, in_place_blockers}` | `reframe.command.jobtype.job_type_info` (`Reframe.jobs.job_type`) |
+| `POST /api/jobs/chapters` `{job}` | `OutputChapters {origin, chapters, reason}`, `OutputChapter {number, start, end, name, source_name, source_index}` | `reframe.command.output_chapters` (`Reframe.jobs.output_chapters`) |
+| `POST /api/jobs/chapters/export` `{job, format}` | `ChapterExport {format, file_name, content}` | `reframe.chapters.chapter_export` |
+| `POST /api/chapters/import` `{path, format?}` | `ChapterImport {format, chapters, issues}`, `ImportedChapter {start, name}` | `reframe.chapters.read_chapter_file` |
+| `POST /api/jobs/tags` `{job}` | `RenderedTags {values, source, issues}`; `values` and `source` are `TagValues` (the eight tag names, each `string \| null`) | `reframe.command.metadata.rendered_tags` (`Reframe.jobs.rendered_tags`) |
+| `POST /api/subtitles/inspect` `{path}` | `SubtitleFileInfo {path, format, bitmap, charset, events, issues}` | `reframe.analysis.subtitlefile.inspect_subtitle_file` (`Reframe.sources.inspect_subtitle`) |
+| `GET /api/fs/list?path=…&extensions=…` | `FsListing` (unchanged) | the router |
+
+`ChapterFormat` (`csv` \| `ogm` \| `xml`) and `ChapterOrigin` are type aliases in
+`reframe.models`. Tool behaviour these rely on: testdata/README.md "Subtitle files, tags and
+chapter files".
+
+1. **One chapter function.** `reframe.command.metadata.planned_chapters` gives the output's
+   chapters and whether `-map_chapters 0` writes them; `chapter_plan` (the command) and
+   `output_chapters` (the route, with `build_plan`'s range resolution) both call it. A source
+   chapter without a title that is copied as it is has the name `""`, since FFmpeg writes no
+   `ChapterDisplay` for it; renamed or edge-cut chapters go through the FFMETADATA file, where
+   such a chapter is `Chapter N` (as before). One change of the command: a copy whose range
+   holds no chapter now writes `-map_chapters -1` instead of `0` (the output is the same: no
+   chapters). The route's answer equals the re-probed encode for renamed chapters, a chapter
+   range, a time range (copied chapters) and generated chapters (real encodes, both in the tests
+   and against a real server with the pinned FFmpeg).
+2. **`source_index`** (the lead's addition to the contract): the 0-based source chapter, which
+   is the slot of `ChapterSettings.names` (indexed by source chapter, so with a range it differs
+   from `number - 1`); `null` for a generated chapter, whose name is `names[number - 1]`.
+3. **`jobs/type` never refuses an in-place edit.** In web mode a source that the write jail
+   refuses (a media root that is not an output root) is one more blocker, `<name> is in a folder
+   that this server may only read`: after "the source is not an MKV file" when that is there,
+   else first. It also counts for the job type, so with *Edit in place* on, the answer is the
+   remux / encode type with "It cannot be edited in place: …", as the plan would treat it;
+   `jobs/validate` still reports `inplace.not_allowed` with its fix. The blockers are given for
+   every job (with *Edit in place* off too).
+4. **Chapter import.** The format comes from the content when the request names none (`<` →
+   XML, `CHAPTER` → OGM, `<number>,` → CSV). The text is UTF-8 or UTF-16 with a byte order mark,
+   else UTF-8, else Latin-1 with the warning `chapters.not_utf8`. At most 4 MiB. Failures are a
+   422: `chapters.unreadable` (missing, a folder, too large, an I/O error) or `chapters.invalid`
+   (the detail starts with `Line N:` where the line is known). CSV: HandBrake's form (RFC 4180;
+   checked in HandBrake's source, not by running HandBrake), the name trimmed, a warning
+   (`chapters.numbers`) when the numbers are not 1, 2, 3 …. OGM: `CHAPTERnn=` and
+   `CHAPTERnnNAME=` in any order; a name without a time has `start: null` and a warning. XML:
+   the first `EditionEntry` (`chapters.editions` when there are more), its top-level
+   `ChapterAtom`s (`chapters.nested` when inner ones are left out), the first `ChapterString`;
+   an entity declaration is refused (no new dependency such as `defusedxml`: the reader is
+   expat with entity declarations turned into an error). The import gives names and times; the
+   UI compares them (decision item 3).
+5. **Chapter export.** CSV `number,name` with RFC 4180 quoting and LF; OGM with millisecond
+   times, UTF-8 without a byte order mark (mkvmerge v103 reads it, also under `LC_ALL=C`), a line
+   end in a name becomes a space; XML as mkvextract writes it, without UIDs, `ChapterLanguage`
+   `und`, no `ChapterDisplay` for a chapter without a name, characters that XML 1.0 cannot hold
+   replaced with a space. `file_name` is the output's name without its extension (else the
+   source's) plus `.chapters.csv`, `.chapters.txt` or `.chapters.xml`. A job whose output gets no
+   chapters is a 422 `chapters.none` with the reason as the detail.
+6. **Tags.** `values` are rendered as the plan renders them: the job's preset's naming options,
+   else the settings', the output size of the job, `{date}` and `{time}` as of the request. An
+   unknown variable renders empty (as in the encode), a syntax error leaves the template as
+   typed. `issues` are only the template errors (`naming.template_syntax`,
+   `naming.unknown_variable` with its "did you mean" fixes, `naming.bad_format_spec`) at
+   `tags.<name>`; validation does not report tag templates. `source` comes from the probed
+   container tags under the builder's FFmpeg keys, without case (Matroska writes `ARTIST`,
+   MP4 `artist`), the title from the container title.
+7. **Subtitle files.** ffprobe `-show_streams -count_packets` through `reframe.tools.run`;
+   `events` are its packets, for a `.sup` the display sets (`read_display_sets`, the subtitle
+   scan's count: the sup demuxer gives one packet per segment). `charset` (decision item 6):
+   `UTF-8` from a BOM or valid UTF-8 (the first 16 MiB), `UTF-16LE` / `UTF-16BE` from a BOM,
+   else `null`. Issues (warnings): `subtitle.charset_unknown` (`charset`),
+   `subtitle.utf16` (FFmpeg reads UTF-16 subtitle files wrongly: save as UTF-8),
+   `subtitle.format_mismatch` (the content is another format than the name ending says),
+   `subtitle.no_events`. A file a job cannot take (another ending than `.srt`, `.ass`, `.ssa`,
+   `.vtt`, `.sup`, or no subtitles FFmpeg can read) is a 422 `subtitles.unsupported`; a missing
+   file a 404 `probe.not_found`; other probe failures keep their `probe.*` problem.
+8. **`fs/list?extensions=`**: repeatable, any case, with or without the dot; a value that is
+   empty or holds `.`, `/`, `\` or NUL is a 422 `fs.bad_extension`. The web file browser asks
+   for the filter's extensions only when one of them is not a media file's
+   (`listedExtensions` in `components/sources/fileBrowser.ts`, whose list mirrors
+   `reframe.probe.MEDIA_EXTENSIONS`); then it shows the filter as a note (*Only srt, ass*)
+   instead of the switch, since there is nothing else to show. No filter or media extensions
+   only: as before.
+9. **`API_VERSION` stays 1**: new routes and one optional query parameter; no field, route or
+   meaning of an earlier version changes, so no client of an earlier version breaks.
+10. Every new path input is in the jail sweep (`test_jail_sweep.py`); the facade's new members
+    (`jobs.job_type`, `jobs.output_chapters`, `jobs.rendered_tags`, `sources.inspect_subtitle`)
+    are reached by routes.
 
 ## Task A — F-10 `LanguagePicker`, F-15 Settings → Languages
 

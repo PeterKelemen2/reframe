@@ -21,7 +21,9 @@ from reframe.models.base import (
     NonNegativeInt,
     PositiveInt,
     Rational,
+    ReframeModel,
 )
+from reframe.models.issues import ValidationIssue
 from reframe.models.text import DisplayText
 
 __all__ = [
@@ -46,6 +48,7 @@ __all__ = [
     "SourceFingerprint",
     "SourceRef",
     "SourceStream",
+    "SubtitleFileInfo",
     "SubtitleKind",
     "SubtitleStream",
     "TrackRole",
@@ -433,3 +436,23 @@ class MediaSource(DocumentModel):
 
 #: Any stream of a source (audio, video, subtitle), discriminated by ``kind``.
 SourceStream = Annotated[VideoStream | AudioStream | SubtitleStream, Field(discriminator="kind")]
+
+
+class SubtitleFileInfo(ReframeModel):
+    """An external subtitle file, read before it is added to a job. A runtime model."""
+
+    path: Path
+    format: str
+    """FFmpeg's codec name: ``subrip``, ``ass`` (also for ``.ssa``), ``webvtt``,
+    ``hdmv_pgs_subtitle``."""
+    bitmap: bool
+    """A bitmap format (PGS): it cannot be converted to text, and has no character encoding."""
+    charset: str | None
+    """The character encoding of a text file: ``UTF-8`` (with or without a byte order mark),
+    ``UTF-16LE`` or ``UTF-16BE`` (byte order mark). ``null``: not detected (another encoding,
+    which the user names) or a bitmap file."""
+    events: NonNegativeInt | None
+    """Subtitle events (a PGS file: display sets, as the subtitle scan counts them); ``null``
+    when they could not be counted."""
+    issues: list[ValidationIssue] = Field(default_factory=list)
+    """What to look at before the file is added (an encoding that was not detected)."""
