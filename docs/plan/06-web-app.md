@@ -496,8 +496,13 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Probe progress, warnings, batch groups (collapsible), near-match markers.
 
 ### F-6 Summary tab
-- [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields (the job
-      type line comes with M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
+- [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
+- [x] A **Job type** card (not a line): the job type (encode, remux, metadata edit) and why from
+      `jobs/type`, updated after each edit; *Edit in place*, why the job could not edit its source
+      in place, the `inplace.*` issues with their fixes; *Remux only* (`jobs/draft-remux`, one undo
+      step); the source read again after an in-place edit
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task D").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
 - [ ] Pipeline header from `jobs/geometry`.
