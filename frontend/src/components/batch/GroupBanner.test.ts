@@ -149,7 +149,7 @@ describe('the group banner', () => {
     expect(scope.props('modelValue')).toBe('group')
     expect((scope.props('options') as { label: string }[]).map((option) => option.label)).toEqual([
       'Group',
-      'E01 only',
+      'This file only (E01)',
     ])
     scope.vm.$emit('update:modelValue', 'file')
     await flushPromises()
