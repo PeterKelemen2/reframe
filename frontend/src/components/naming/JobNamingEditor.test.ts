@@ -134,7 +134,8 @@ function nameSourceLabels(wrapper: VueWrapper): string[] {
   const select = wrapper
     .findAllComponents(Select)
     .find((found) => found.attributes('data-option') === 'name_source')
-  return (select?.props('options') as { label: string }[]).map((option) => option.label)
+  if (select === undefined) throw new Error('no name source list')
+  return (select.props('options') as { label: string }[]).map((option) => option.label)
 }
 
 describe('JobNamingEditor', () => {

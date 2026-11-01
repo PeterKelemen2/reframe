@@ -27,14 +27,12 @@ async function summary(preset: Preset): Promise<(string | undefined)[][]> {
   ])
 }
 
+function rule(kind: 'audio' | 'subtitle', stream: number) {
+  return { selector: { kind, stream }, multiple: false, settings: {}, required: true }
+}
+
 describe('the preset summary', () => {
   it('says that the explicit rules of a saved group choose its tracks, not its defaults', async () => {
-    const rule = (kind: 'audio' | 'subtitle', stream: number) => ({
-      selector: { kind, stream },
-      multiple: false,
-      settings: {},
-      required: true,
-    })
     const preset = {
       ...userPreset('u1', 'Anime BD'),
       audio_rules: [rule('audio', 1), rule('audio', 2)],
