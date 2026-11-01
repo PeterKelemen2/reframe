@@ -201,11 +201,11 @@ async function importFile(): Promise<void> {
     busy.value = false
   }
   if (session !== editor.session || editor.job === null) return
-  const plan = importPlan(imported.chapters, rows.value)
+  const plan = importPlan(imported.chapters ?? [], rows.value)
   if (plan.changes.size > 0) {
     editor.set('/chapters/names', namesWith(names.value, rows.value, plan.changes))
   }
-  const details = imported.issues.map((issue) => issue.message)
+  const details = (imported.issues ?? []).map((issue) => issue.message)
   if (plan.fileCount !== plan.outputCount) {
     details.push(t('chapters.import.count', { file: plan.fileCount, output: plan.outputCount }))
   }
@@ -313,7 +313,7 @@ const hasRows = computed(() => rows.value.length > 0)
               <InputNumber
                 class="chapters-tab__every"
                 :model-value="settings.generate_every"
-                :min="0.5"
+                :min="0.01"
                 :max="600"
                 :max-fraction-digits="2"
                 :suffix="` ${t('chapters.generate.unit')}`"

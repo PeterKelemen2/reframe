@@ -46,7 +46,7 @@ it('asks at once for the open job', async () => {
   expect(pending.value).toBe(true)
   await vi.advanceTimersByTimeAsync(0)
   expect(asked()).toBe(1)
-  expect(chapters.value?.chapters.map((c) => c.name)).toEqual(['Opening', 'Part One', 'Part Two'])
+  expect(chapters.value?.chapters?.map((c) => c.name)).toEqual(['Opening', 'Part One', 'Part Two'])
   expect(pending.value).toBe(false)
 })
 
@@ -62,7 +62,7 @@ it('asks once, 250 ms after the last edit of the chapters, for the newest job', 
   await vi.advanceTimersByTimeAsync(1)
   expect(asked()).toBe(2)
   expect(jobOf(server.requests.at(-1)!.body).chapters?.names).toEqual(['B'])
-  expect(chapters.value?.chapters[0]?.name).toBe('B')
+  expect(chapters.value?.chapters?.[0]?.name).toBe('B')
 })
 
 it('asks again after a change of the range', async () => {
@@ -91,10 +91,10 @@ it('never shows an older answer over a newer one', async () => {
   await vi.advanceTimersByTimeAsync(0)
   useEditorStore().set('/chapters/names', ['New'])
   await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
-  expect(chapters.value?.chapters[0]?.name).toBe('New')
+  expect(chapters.value?.chapters?.[0]?.name).toBe('New')
   slow.resolve(chaptersOf(sampleJob()))
   await vi.advanceTimersByTimeAsync(0)
-  expect(chapters.value?.chapters[0]?.name).toBe('New')
+  expect(chapters.value?.chapters?.[0]?.name).toBe('New')
 })
 
 it("says why the server gave no list, and keeps the last list's place empty for a new job", async () => {

@@ -313,8 +313,7 @@ click; its tooltip reads "Set by a disposition flag in the file" and "dispositio
 Built: `components/editor/tabs/{Chapters,Tags}Tab.vue`, `components/chapters/` (`ChapterRow`,
 `chapters.ts`, `useOutputChapters.ts`, `requests.ts`), `components/tags/` (`tags.ts`,
 `useRenderedTags.ts`, `requests.ts`), `i18n/messages/en/{chapters,tags}.json`. S6's routes are
-called only from the two `requests.ts` modules, with a cast of the path until they are in
-`schema.d.ts`.
+called from the two `requests.ts` modules (typed by the generated schema since S6's merge).
 
 ### The contract question
 
@@ -331,7 +330,8 @@ required in the contract.
 
 1. **A rename** writes the whole names list: the other chapters of the output as the table
    shows them, names of source chapters outside the output as they were (`''` where there was
-   none, which the encode reads as "the source's title"). Typing coalesces under
+   none, which the encode reads as the source's title, or `Chapter N` for an untitled chapter).
+   An untitled chapter copied as it is has the name `""` (S6); its field shows *No name*. Typing coalesces under
    `chapters.names[<slot>]` until the field loses the focus, so one field edit is one undo step;
    Enter ends the edit. While the field has the focus it shows what was typed (an emptied name
    would otherwise jump to the source's title).
@@ -350,7 +350,8 @@ required in the contract.
    does) of `content` named `file_name`.
 6. **Generate chapters** shows only when the open source has no chapters (or, when the source
    is not known, when the job already generates). Turning it on takes 5 minutes, or the last
-   interval of this job; turning it off writes `null`.
+   interval of this job; turning it off writes `null`. The interval takes 0.01 to 600 minutes
+   with two decimals, so that the seconds-long fixtures can show several chapters.
 7. **Tags** write on each keystroke under the coalescing key `tags.<name>` (one undo step per
    field until it loses the focus); an emptied field writes `null`. *Written* is the rendered
    value, "copied from the source" for an unset tag while *Passthru common metadata* is on and
@@ -359,17 +360,34 @@ required in the contract.
    (`TemplateFixes`) that put the fixed template into the tag. `jobs/tags` is asked again
    250 ms after any edit (a tag can name any naming variable) and after a change of Settings.
 
-### Checked in a browser (2026-11-01, before S6's merge)
+### Checked in a browser (2026-11-01)
 
-Headless Chromium (`/usr/bin/chromium`: the Playwright cache was not there) against
-`scripts/dev-server.py` with the pinned FFmpeg, fixtures `chapters`, `multitrack`, `season`,
-light and dark. Against the real server the two tabs show their failure states ("could not be
-read: Not Found") and the tag fields complete `{na` to `{name}`, `{file_name}`, `{folder_name}`.
-With S6's routes answered by `page.route` (shapes of the contract; times of the `chapters`
-fixture): the table, an inline rename and its undo, both resets, *Create chapter markers* off
-with the reason, generated chapters for `multitrack`, the eight tags with written and source
-values, a template error with its fix. The checks of the real routes wait for S6 (listed in
-the report and in `status.md`).
+Headless Chromium (`/usr/bin/chromium`: the Playwright cache was not on this machine) against
+`scripts/dev-server.py` with the pinned FFmpeg n9.0.2, fixtures `chapters`, `multitrack`,
+`season` (and `--output-fixtures multitrack`), light and dark, after S6's merge:
+
+1. The `chapters` fixture shows four chapters (0 / 1 s, 1 / 1.5 s, 2.5 / 1.5 s, 4 / 1 s:
+   Opening, Part One, Part Two, Credits). A rename writes `["Opening", "The Middle", "Part Two",
+   "Credits"]` and shows it after the next answer; Ctrl+Z brings `names: null` back. *To Chapter
+   1, Chapter 2, …* and *To the source names* work. *Create chapter markers* off shows "The output
+   gets no chapters. Create chapter markers is off."
+2. Import through the file browser, which lists `names.csv`, `names.txt` and `names.xml` in the
+   media root: a HandBrake CSV (with a quoted name holding a comma), an OGM text file and a
+   Matroska XML file each set the four names in one undo step. The XML file's fourth start
+   (4.2 s) gives the warning "Chapter 4 starts at 0:00:04.200 in the file and at 0:00:04.000 in
+   the output"; the others say "4 names imported from …".
+3. Export: `chapters.chapters.csv` (`1,Intro`…), `chapters.chapters.txt` (`CHAPTER01=…`,
+   `CHAPTER01NAME=Intro`…) and `chapters.chapters.xml`, each with the renamed first chapter.
+4. Generate every 0.02 min on `multitrack` (no chapters; before: "The source has no chapters.")
+   shows four generated chapters (1.2 s each, the last 0.421 s).
+5. Tags: Title's source value is "Reframe chapters fixture", shown as copied while unset;
+   `{na` completes to `{name}`, `{file_name}`, `{folder_name}`; `{name} – test` is written as
+   `chapters – test`; `{nam}` in Genre shows "Unknown variable {nam} (position 1). Did you mean
+   {name}?" at the field, and its fix puts `{name}` there. On `season/Show.S01E02.Title.mkv`,
+   `{name}< – S{season:02}E{episode:02}>` is written as `Show – S01E02`.
+6. An encode of `chapters.mkv` (H.265 MKV 1080p) with the third chapter renamed and that Title
+   tag ends `done`; ffprobe of the output gives the chapters `Opening, Part One, Renamed Three,
+   Credits` and the format tag `title=chapters – test`.
 
 ## Task C — F-10 `TrackMetadataEditor`, bulk edit, external subtitles
 

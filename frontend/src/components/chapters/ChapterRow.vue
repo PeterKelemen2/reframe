@@ -42,6 +42,7 @@ function leave(event: KeyboardEvent): void {
       <InputText
         :model-value="name"
         :aria-label="t('chapters.table.nameLabel', { n: chapter.number })"
+        :placeholder="t('chapters.table.noName')"
         :disabled="disabled"
         size="small"
         fluid

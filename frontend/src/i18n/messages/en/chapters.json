@@ -29,7 +29,8 @@
     "duration": "Duration",
     "name": "Name",
     "nameLabel": "Name of chapter {n}",
-    "sourceName": "Source: {name}"
+    "sourceName": "Source: {name}",
+    "noName": "No name"
   },
   "reset": {
     "label": "Reset names",

@@ -539,7 +539,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       covers every file.
 
 ### F-11 Chapters and tags tabs
-- [ ] Chapter table with inline name edits, import/export, generate. Tag form with templates.
+- [x] Chapter table with inline name edits, import/export, generate. Tag form with templates.
 
 ### F-12 Presets UI
 - [x] Preset drawer: tree by category, built-in lock, CRUD, default star, import/export,
