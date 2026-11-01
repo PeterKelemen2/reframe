@@ -24,7 +24,6 @@ function mountTable(kind: 'audio' | 'subtitle', streams: unknown[]) {
   return wrapper
 }
 
-/** The text nodes of an element, one word group each, joined with spaces. */
 function words(element: Element): string {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
   const parts: string[] = []
@@ -40,7 +39,6 @@ function cells(wrapper: VueWrapper, row: number): string[] {
   return rows[row]!.findAll('td').map((cell) => words(cell.element))
 }
 
-/** The value of one detail of the expanded row. */
 function detail(wrapper: VueWrapper, label: string): string | undefined {
   const pair = wrapper
     .findAll('.track-table__details .rf-kv')

@@ -41,9 +41,8 @@ import {
 import { canCopy, containerDef } from './ops'
 
 /**
- * The metadata block of one output track: language, name (text or a name template) and the
- * six flags, each change one undo step in the editor's job (`/video/metadata`,
- * `/audio/{index}/metadata`, `/subtitles/{index}/metadata`).
+ * The metadata block of one output track: language, name and flags. Each change is one undo
+ * step.
  */
 const props = defineProps<{
   list: 'video' | 'audio' | 'subtitles'
@@ -92,7 +91,7 @@ const container = computed<Container | undefined>(() => {
   return value === 'mkv' || value === 'mp4' || value === 'webm' ? value : undefined
 })
 
-/** The language and title that `null` keeps: the source track's, or what the file was given. */
+/** The language and title that `null` keeps: the source track's, or the external file's own. */
 const sourceLanguage = computed<string | null>(() => {
   if (external.value) return external.value.language ?? null
   return stream.value?.language_ietf || stream.value?.language || null
@@ -195,7 +194,7 @@ const fieldPaths = computed(() => metadataPaths(place.value.path))
 const issues = computed<ValidationIssue[]>(() =>
   fieldPaths.value.flatMap((path) => validation.issuesFor(path)),
 )
-/** The fixes of the block's issues ("Keep only audio track 1 default"), each one button. */
+/** The block's issue fixes, one button each: a fix that several issues offer is shown once. */
 const fixes = computed<Fix[]>(() => {
   const seen = new Set<string>()
   return issues.value

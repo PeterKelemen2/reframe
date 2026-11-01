@@ -225,11 +225,9 @@ function shapeOf(track: OutputTrack): string {
 }
 
 /**
- * The selected places after the list changed from `before` to `after`. A reorder carries each
- * selected track to its new place (equal tracks keep their order among themselves). Metadata
- * edits, and other edits of one track, keep the places. Anything else (an add, a remove, a
- * reload, a step that changes several tracks' settings) clears the selection, since a place
- * may then hold another track.
+ * The selected places after the list changed from `before` to `after`. A reorder moves each
+ * selected track to its new place (equal tracks keep their order). An edit of one track keeps
+ * the places; any other change clears the selection, as a place may then hold another track.
  */
 export function followSelection(
   before: readonly OutputTrack[],
@@ -290,8 +288,8 @@ function fittedBitrate(
 }
 
 /**
- * Another encoder: a mixdown it cannot make, a bitrate it cannot write and a VBR quality it
- * does not have are changed with it, so the track stays valid.
+ * Another encoder: a mixdown, bitrate or VBR quality it cannot take is changed with it, so the
+ * track stays valid.
  */
 export function encoderChangeOps(
   index: number,
@@ -349,8 +347,8 @@ export function rateModeOps(
 }
 
 /**
- * Another subtitle action: Convert gets the container's text format when it has none, and a
- * format or forced-only setting the new action does not use is cleared.
+ * Another subtitle action. Convert gets the container's text format if it has none; settings
+ * that the new action does not use are cleared.
  */
 export function subtitleActionOps(
   index: number,

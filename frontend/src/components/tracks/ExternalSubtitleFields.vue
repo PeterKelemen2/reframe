@@ -14,7 +14,7 @@ import { useValidationStore } from '@/stores/validation'
 import { inspect, inspected, useSubtitleFormatName } from './external'
 import { CHARSETS } from './metadata'
 
-/** What an external subtitle file is (format, events, encoding) and its offset and encoding. */
+/** An external subtitle file's format, events and encoding, and the fields that set its offset. */
 const props = defineProps<{
   index: number
   external: ExternalSubtitle
@@ -71,8 +71,8 @@ const fileIssues = computed<ValidationIssue[]>(
 )
 
 /**
- * Validation's issues at the encoding; without them, the inspection's "not detected" and
- * "UTF-16" while the track names none. Both say the same about the file, so never both.
+ * The encoding's issues: the validation's, or else the inspection's while the track names no
+ * encoding. Both say the same about the file, so never both.
  */
 const charsetIssues = computed<ValidationIssue[]>(() => {
   const validated = validation.issuesFor(`${path.value}.charset`)

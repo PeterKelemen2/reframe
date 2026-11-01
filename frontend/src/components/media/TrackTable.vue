@@ -31,9 +31,8 @@ import {
 } from './streams'
 
 /**
- * The source's tracks of one kind, read only; a row expands to every detail of its track. The
- * scans (bitrate, events, loudness) run on `sourceId`, by default the editor job's source;
- * `null`: no scans.
+ * The source's tracks of one kind, read only. Scans run on `sourceId`: by default the editor
+ * job's source; `null` runs none.
  */
 const props = defineProps<{
   kind: 'audio' | 'subtitle'
@@ -80,7 +79,7 @@ function cancel(run: ScanRun): void {
 
 const root = useTemplateRef<HTMLElement>('root')
 
-/** A track's scan control went away with the focus (its value is known now): the row takes it. */
+/** The scan control leaves once its value is known: the focus goes to the row. */
 async function focusRow(stream: SourceStream): Promise<void> {
   await nextTick()
   root.value
@@ -143,7 +142,7 @@ async function announceEnd(run: ScanRun): Promise<void> {
     state === 'cancelled'
       ? t('media.scan.ended.cancelled', { scan: progressText(run, n) })
       : doneText(run, stream, n)
-  // The same text twice in a row is announced again only after a change.
+  // Clearing the text first lets a repeated message be announced again.
   announcement.value = ''
   await nextTick()
   announcement.value = message
@@ -524,7 +523,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   <KeyValue :label="t('tracks.details.events')">
                     {{ stream.event_count ?? '—' }}
                     <template v-if="eventsHelp(stream)"> · {{ eventsHelp(stream) }} </template>
-                    <!-- The row offers the count while it is unknown; here it counts again (the forced events too). -->
+                    <!-- Counts again, forced events too; the row counts only while unknown. -->
                     <ScanControl
                       v-if="
                         scanSource !== null &&
