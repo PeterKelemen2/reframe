@@ -561,10 +561,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [ ] Group rows in the sources panel. **Edit group** mode with banner and representative-file
       switcher.
 - [ ] `ApplyToGroupDialog` (section checkboxes). Copy/paste sections from the context menu.
-- [ ] `ResolutionMatrix`: virtualised table with ✓/≈/✗ cells, a candidate picker per cell, a
+- [x] `ResolutionMatrix`: virtualised table with ✓/≈/✗ cells, a candidate picker per cell, a
       "problems only" filter, and an editable naming column.
 - [ ] Override dots on `Field` with **Reset to group** and **Apply to whole group**.
-- [ ] Queue-group flow with the error dialog.
+- [x] Queue-group flow with the error dialog.
 
 ### F-14 Queue and activity
 - [x] Queue table: drag reorder, live progress, per-job and global controls, edit-back,
