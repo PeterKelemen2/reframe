@@ -18,6 +18,8 @@ TEXT = "Őszi szél"
         (b"\xef\xbb\xbf" + TEXT.encode(), "UTF-8"),
         (b"\xff\xfe" + TEXT.encode("utf-16-le"), "UTF-16LE"),
         (b"\xfe\xff" + TEXT.encode("utf-16-be"), "UTF-16BE"),
+        (b"\xff\xfe\x00\x00" + TEXT.encode("utf-32-le"), "UTF-32LE"),
+        (b"\x00\x00\xfe\xff" + TEXT.encode("utf-32-be"), "UTF-32BE"),
         (TEXT.encode("cp1250"), None),
     ],
 )

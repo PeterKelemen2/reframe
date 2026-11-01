@@ -28,6 +28,7 @@ from reframe.models import (
     Severity,
     ValidationIssue,
 )
+from reframe.textfile import NotARegularFileError, open_regular
 
 __all__ = [
     "EXTENSIONS",
@@ -45,10 +46,16 @@ MAX_CHAPTER_FILE = 4 * 2**20
 #: The file name ending of each format (OGM chapter files are plain text).
 EXTENSIONS: dict[ChapterFormat, str] = {"csv": ".csv", "ogm": ".txt", "xml": ".xml"}
 
-_OGM_TIME = re.compile(r"^CHAPTER(\d+)=(\d+):(\d{1,2}):(\d{1,2}(?:[.,]\d+)?)$", re.IGNORECASE)
-_OGM_NAME = re.compile(r"^CHAPTER(\d+)NAME=(.*)$", re.IGNORECASE)
-_XML_TIME = re.compile(r"^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$")
-_CSV_ROW = re.compile(r"^\s*\d+\s*,")
+# At most nine digits in a number, so that an absurd one is a bad line, not an int or float
+# overflow.
+_OGM_TIME = re.compile(
+    r"^CHAPTER(\d{1,9})=(\d{1,9}):(\d{1,2}):(\d{1,2}(?:[.,]\d+)?)$", re.IGNORECASE | re.ASCII
+)
+_OGM_NAME = re.compile(r"^CHAPTER(\d{1,9})NAME=(.*)$", re.IGNORECASE | re.ASCII)
+_XML_TIME = re.compile(r"^(\d{1,9}):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$", re.ASCII)
+_CSV_ROW = re.compile(r'^\s*"?\s*\d+\s*"?\s*,', re.ASCII)
+# mkvmerge ends a line at CR LF, CR or LF only, not at the other breaks of str.splitlines().
+_LINE_END = re.compile(r"\r\n|\r|\n")
 #: Characters XML 1.0 does not allow, not even as a reference.
 _NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
@@ -78,8 +85,15 @@ def _warning(code: str, message: str) -> ValidationIssue:
     return ValidationIssue(severity=Severity.WARNING, code=code, path="", message=message)
 
 
+def _shown(text: str, limit: int = 40) -> str:
+    return repr(text if len(text) <= limit else text[:limit] + "…")
+
+
 def _decode(data: bytes) -> tuple[str, list[ValidationIssue]]:
+    # UTF-32LE's mark starts with UTF-16LE's, so it is tested first.
     for bom, encoding in (
+        (codecs.BOM_UTF32_LE, "utf-32"),
+        (codecs.BOM_UTF32_BE, "utf-32"),
         (codecs.BOM_UTF8, "utf-8-sig"),
         (codecs.BOM_UTF16_LE, "utf-16"),
         (codecs.BOM_UTF16_BE, "utf-16"),
@@ -89,16 +103,22 @@ def _decode(data: bytes) -> tuple[str, list[ValidationIssue]]:
     try:
         return data.decode("utf-8"), []
     except UnicodeDecodeError:
-        warning = _warning(
-            "chapters.not_utf8",
-            "The file is not UTF-8, so it was read as Latin-1 (ISO 8859-1): check the names.",
-        )
-        return data.decode("latin-1"), [warning]
+        pass
+    # Windows-1252 has curly quotes, dashes and the euro sign where Latin-1 has control
+    # characters; only a byte that it leaves undefined makes Latin-1 the better guess.
+    try:
+        text, read_as = data.decode("cp1252"), "Windows-1252"
+    except UnicodeDecodeError:
+        text, read_as = data.decode("latin-1"), "Latin-1 (ISO 8859-1)"
+    warning = _warning(
+        "chapters.not_utf8", f"The file is not UTF-8, so it was read as {read_as}: check the names."
+    )
+    return text, [warning]
 
 
 def detect_format(text: str) -> ChapterFormat | None:
     """The format of a chapter file's text, from its first line that is not empty."""
-    for line in text.lstrip("﻿").splitlines():
+    for line in _LINE_END.split(text.lstrip("﻿")):
         stripped = line.strip()
         if not stripped:
             continue
@@ -131,7 +151,9 @@ def _parse_csv(text: str) -> _Read | ChapterFileError:
             try:
                 numbers.append(int(row[0].strip()))
             except ValueError:
-                return ChapterFileError("invalid", f"{row[0]!r} is not a chapter number", line)
+                return ChapterFileError(
+                    "invalid", f"{_shown(row[0])} is not a chapter number", line
+                )
             found.chapters.append(ImportedChapter(start=None, name=row[1].strip()))
     except csv.Error as exc:
         return ChapterFileError("invalid", str(exc), reader.line_num)
@@ -146,36 +168,43 @@ def _parse_csv(text: str) -> _Read | ChapterFileError:
     return found
 
 
+@dataclass(slots=True)
+class _OgmChapter:
+    start: float | None = None
+    name: str | None = None
+
+
 def _parse_ogm(text: str) -> _Read | ChapterFileError:
-    times: dict[int, float] = {}
-    names: dict[int, str] = {}
-    order: list[int] = []
-    for line_number, raw in enumerate(text.splitlines(), start=1):
+    """Chapters in the order of the file, as mkvmerge reads them. A time or a name joins the
+    last chapter of its number that has none yet, so a repeated number starts a new chapter."""
+    chapters: list[_OgmChapter] = []
+    last: dict[int, _OgmChapter] = {}
+    for line_number, raw in enumerate(_LINE_END.split(text), start=1):
         line = raw.strip()
         if not line:
             continue
         time = _OGM_TIME.match(line)
         name = _OGM_NAME.match(line) if time is None else None
-        if time is not None:
-            number = int(time[1])
-            times[number] = _seconds(time[2], time[3], time[4])
-        elif name is not None:
-            number = int(name[1])
-            names[number] = name[2].strip()
-        else:
+        found = time or name
+        if found is None:
             return ChapterFileError(
                 "invalid", "expected CHAPTERnn=hh:mm:ss.sss or CHAPTERnnNAME=name", line_number
             )
-        if number not in order:
-            order.append(number)
-    found = _Read()
-    for number in sorted(order):
-        found.chapters.append(ImportedChapter(start=times.get(number), name=names.get(number, "")))
-    if any(number not in times for number in order):
-        found.issues.append(
+        number = int(found[1])
+        chapter = last.get(number)
+        if chapter is None or (chapter.start if time else chapter.name) is not None:
+            chapter = last[number] = _OgmChapter()
+            chapters.append(chapter)
+        if time is not None:
+            chapter.start = _seconds(time[2], time[3], time[4])
+        else:
+            chapter.name = found[2]
+    read = _Read([ImportedChapter(start=c.start, name=c.name or "") for c in chapters])
+    if any(c.start is None for c in chapters):
+        read.issues.append(
             _warning("chapters.no_time", "A chapter has a name but no time (CHAPTERnn=).")
         )
-    return found
+    return read
 
 
 @dataclass(slots=True)
@@ -262,12 +291,13 @@ def _parse_xml(text: str) -> _Read | ChapterFileError:
         time = _XML_TIME.match(start_node.text.strip())
         if time is None:
             return ChapterFileError(
-                "invalid", f"{start_node.text.strip()!r} is not a time (hh:mm:ss.nnnnnnnnn)",
+                "invalid", f"{_shown(start_node.text.strip())} is not a time (hh:mm:ss.nnnnnnnnn)",
                 start_node.line,
             )  # fmt: skip
         display = atom.child("ChapterDisplay")
         string = display.child("ChapterString") if display is not None else None
-        name = string.text.strip() if string is not None else ""
+        # Not trimmed: mkvmerge keeps the spaces and line ends of a ChapterString.
+        name = string.text if string is not None else ""
         found.chapters.append(ImportedChapter(start=_seconds(*time.groups()), name=name))
         nested = nested or atom.child("ChapterAtom") is not None
     if nested:
@@ -299,15 +329,17 @@ def parse_chapters(
 def read_chapter_file(
     path: str | os.PathLike[str], chapter_format: ChapterFormat | None = None
 ) -> ChapterImport | ChapterFileError:
-    """:func:`parse_chapters` of a file (UTF-8 or UTF-16 with a byte order mark, UTF-8, else
-    Latin-1 with a warning). Blocks: call it in a worker thread."""
+    """:func:`parse_chapters` of a file (UTF-8, UTF-16 or UTF-32 with a byte order mark, UTF-8,
+    else Windows-1252 or Latin-1 with a warning). Blocks: call it in a worker thread."""
     try:
-        with open(path, "rb") as file:
+        with open_regular(path) as file:
             data = file.read(MAX_CHAPTER_FILE + 1)
     except FileNotFoundError:
         return ChapterFileError("unreadable", "The file does not exist.")
     except IsADirectoryError:
         return ChapterFileError("unreadable", "The path is a folder, not a file.")
+    except NotARegularFileError:
+        return ChapterFileError("unreadable", "The path is not a regular file.")
     except OSError as exc:
         return ChapterFileError("unreadable", f"The file cannot be read: {exc.strerror}.")
     if len(data) > MAX_CHAPTER_FILE:
