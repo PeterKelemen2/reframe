@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Check, LoaderCircle, Minus } from '@lucide/vue'
-import { useEventListener } from '@vueuse/core'
-import { computed, ref, useId, useTemplateRef, watch } from 'vue'
+import { computed, ref, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { AudioStream, SubtitleStream, TrackDecision } from '@/api/types'
@@ -80,65 +79,29 @@ function number(decision: TrackDecision): number {
   return stream ? trackNumber(stream) : decision.source_stream
 }
 
-/** The track whose Measure was started here, while the focus follows its row. */
-const measuring = ref<number | null>(null)
-const announcement = ref('')
-
-function rowOf(stream: number): HTMLElement | null {
-  return root.value?.querySelector<HTMLElement>(`tr[data-stream="${stream}"]`) ?? null
-}
-
-/**
- * Measure gives way to the scan's progress and that to the new reason: the focused control is
- * removed, and the focus would leave the dialog. It goes to what the row has now.
- */
-function keepFocus(stream: number): void {
-  const active = document.activeElement
-  if (active !== null && active !== document.body && active.isConnected) return
-  const row = rowOf(stream)
-  const control = row?.querySelector<HTMLElement>(
-    '[data-action="cancel-scan"], [data-action="start-scan"]',
-  )
-  ;(control ?? row?.querySelector<HTMLElement>('th'))?.focus()
-}
-
 function measure(decision: TrackDecision): void {
   const sourceId = defaults.sourceId
-  if (sourceId === null) return
-  measuring.value = decision.source_stream
   // A failure is the scans store's toast; the measured source comes back through the watcher.
-  void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
+  if (sourceId !== null)
+    void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
 }
 
-watch(
-  () => {
-    const stream = measuring.value
-    const sourceId = defaults.sourceId
-    if (stream === null || sourceId === null) return null
-    return [defaults.preview, scans.running(sourceId, 'bitrate', stream)] as const
-  },
-  (now) => {
-    const stream = measuring.value
-    if (now === null || stream === null) return
-    keepFocus(stream)
-    const decision = decisions.value.find((each) => each.source_stream === stream)
-    if (now[1] === undefined && decision !== undefined && !decision.measure) {
-      announcement.value = t('defaults.preview.measured', {
-        n: number(decision),
-        reason: decision.reason,
-      })
-      measuring.value = null
-    }
-  },
-  { flush: 'post' },
-)
+const announcement = ref('')
 
-// The user went elsewhere: the focus is theirs again.
-useEventListener(document, 'focusin', (event: FocusEvent) => {
-  const stream = measuring.value
-  if (stream === null || !(event.target instanceof Node)) return
-  if (!rowOf(stream)?.contains(event.target)) measuring.value = null
-})
+/**
+ * The measured reason replaced Measure, which had the focus: without a place in the row the
+ * focus would leave the dialog. Called while the new answer is shown.
+ */
+function measured(stream: number): void {
+  root.value?.querySelector<HTMLElement>(`tr[data-stream="${stream}"] th`)?.focus()
+  const decision = decisions.value.find((each) => each.source_stream === stream)
+  if (decision !== undefined && !decision.measure) {
+    announcement.value = t('defaults.preview.measured', {
+      n: number(decision),
+      reason: decision.reason,
+    })
+  }
+}
 </script>
 
 <template>
@@ -258,6 +221,7 @@ useEventListener(document, 'focusin', (event: FocusEvent) => {
                   :help="t('defaults.preview.measureHelp')"
                   @start="measure(decision)"
                   @cancel="scans.cancel($event)"
+                  @leave="measured(decision.source_stream)"
                 />
               </td>
             </tr>

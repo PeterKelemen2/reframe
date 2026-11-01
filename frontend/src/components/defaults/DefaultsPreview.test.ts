@@ -6,7 +6,7 @@ import { mountShell } from '@/components/shell/testing'
 import { probedSource, trackDefinitions } from '@/components/tracks/testing'
 import { useDefaultsStore } from '@/stores/defaults'
 import { useEditorStore } from '@/stores/editor'
-import { type ScanRun, useScansStore } from '@/stores/scans'
+import { useScansStore } from '@/stores/scans'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 import { sampleJob } from '@/editor/testing/samples'
@@ -65,22 +65,6 @@ function oneTrack(measure: boolean, reason: string): TrackDraft {
     issues: [],
     decisions: [decision({ source_stream: 1, measure, reason })],
   }
-}
-
-const RUN: ScanRun = {
-  sourceId: 'movie',
-  kind: 'bitrate',
-  streamIndex: 1,
-  taskId: 'task',
-  progress: null,
-}
-
-/** The preview with Measure on track 1 and a text field outside it; returns Measure. */
-async function mountMeasured(): Promise<HTMLButtonElement> {
-  await mountPreview(oneTrack(true, 'Bitrate unknown'))
-  vi.spyOn(useScansStore(), 'measureBitrate').mockResolvedValue()
-  document.body.append(document.createElement('input'))
-  return document.querySelector<HTMLButtonElement>('[data-action="start-scan"]')!
 }
 
 const rows = () =>
@@ -164,39 +148,15 @@ describe('the live preview', () => {
     start.focus()
     start.click()
     await flushPromises()
-    expect(document.activeElement?.getAttribute('data-action')).toBe('cancel-scan')
     scans.runs = []
     await flushPromises()
-    expect(document.activeElement?.getAttribute('data-action')).toBe('start-scan')
+    // The measured source's answer: the reason replaces Measure, which has the focus.
     useDefaultsStore().preview = oneTrack(false, 'AC-3, 5.1, 640 > 320 → encode at the max')
     await flushPromises()
     expect(document.activeElement).toBe(row.querySelector('th'))
     expect(document.querySelector('[data-role="announcement"]')?.textContent).toBe(
       'Track 1 measured: AC-3, 5.1, 640 > 320 → encode at the max',
     )
-  })
-
-  describe('leaves the focus to the user', () => {
-    it('when Measure was clicked without taking the focus from a field', async () => {
-      const start = await mountMeasured()
-      const field = document.querySelector<HTMLInputElement>('body > input')!
-      field.focus()
-      start.click()
-      useScansStore().runs = [RUN]
-      await flushPromises()
-      expect(document.activeElement).toBe(field)
-    })
-
-    it('once it went elsewhere, also when it is then lost', async () => {
-      const start = await mountMeasured()
-      start.focus()
-      start.click()
-      document.querySelector<HTMLInputElement>('body > input')!.focus()
-      ;(document.activeElement as HTMLElement).blur()
-      useScansStore().runs = [RUN]
-      await flushPromises()
-      expect(document.activeElement).toBe(document.body)
-    })
   })
 
   it('lists only the issues that no rule or field shows, and counts them all', async () => {
