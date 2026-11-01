@@ -6,9 +6,8 @@ import { latestRequest } from '@/editor/latest'
 import { EDIT_DEBOUNCE, useEditorStore } from '@/stores/editor'
 
 /**
- * `jobs/type` of the editor's job (encode, remux or metadata edit, why, and why it could not
- * edit its source in place): at once for a new job, 250 ms after the last edit, and only the
- * newest answer is shown.
+ * `jobs/type` of the editor's job: asked at once for a new job, after the edit debounce
+ * otherwise. Only the newest answer is shown.
  */
 export function useJobType() {
   const editor = useEditorStore()
@@ -36,8 +35,8 @@ export function useJobType() {
 
   let session: number | null = null
 
-  // Almost every part of a job counts (tracks, chapters, tags, container, the in-place switch),
-  // and an edit that changes nothing keeps the frozen job as it is.
+  // Almost every part of a job counts, and an edit that changes nothing keeps the frozen job
+  // as it is.
   watch(
     () => editor.job,
     (job) => {
