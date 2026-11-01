@@ -34,8 +34,16 @@ function dimensionsOf(
   }
 }
 
+/**
+ * The name the `generated` chapter name policy gives chapter `n`. It is written into the file,
+ * so it is the core's name in every language of the UI.
+ */
+export function numberedChapterName(n: number): string {
+  return `Chapter ${n}`
+}
+
 function generatedNames(names: readonly string[]): boolean {
-  return names.length > 0 && names.every((name, index) => name === `Chapter ${index + 1}`)
+  return names.length > 0 && names.every((name, index) => name === numberedChapterName(index + 1))
 }
 
 /** The preset's naming options, with the job's own template and name source over them. */
@@ -87,7 +95,9 @@ export function templateOf(
   if (job.chapters !== undefined) {
     const { names, ...chapters } = job.chapters
     template.chapters = chapters
-    if (names != null) template.chapter_name_policy = generatedNames(names) ? 'generated' : 'source'
+    // A preset holds no names: names other than these two cases are this file's own.
+    if (names == null) template.chapter_name_policy = 'source'
+    else if (generatedNames(names)) template.chapter_name_policy = 'generated'
   }
   if (job.tags !== undefined) template.tags = job.tags
   template.naming = namingOf(job, base.naming ?? null, settingsNaming)

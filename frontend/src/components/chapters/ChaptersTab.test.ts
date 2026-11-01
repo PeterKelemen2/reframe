@@ -6,6 +6,7 @@ import { deferred, FakeServer, problem } from '@/api/testing/fakes'
 import type {
   ChapterExport,
   ChapterImport,
+  Fix,
   JobSettings,
   MediaSource,
   OutputChapters,
@@ -426,5 +427,27 @@ describe('Generate chapters', () => {
     await flushPromises()
     await toggle().setValue(true)
     expect(editor.job?.chapters?.generate_every).toBe(5)
+  })
+
+  it('offers the fix of an interval issue at the field, then gives the field the focus', async () => {
+    const { wrapper, editor } = await mountTab({ source: { chapters: [] } })
+    await wrapper.find('[data-field="generate"] input').setValue(true)
+    const fix: Fix = {
+      label: 'Generate a chapter every 0.02 minutes',
+      target: 'job',
+      patch: [{ op: 'replace', path: '/chapters/generate_every', value: 0.02 }],
+    }
+    useValidationStore().issues = [
+      issue('chapters.too_many', 'chapters.generate_every', 'error', [fix]),
+    ]
+    await flushPromises()
+    const field = wrapper.find('[data-path="chapters.generate_every"]')
+    const button = field.findAll('button').find((b) => b.text() === fix.label)
+    expect(button).toBeDefined()
+    button!.element.focus()
+    await button!.trigger('click')
+    await flushPromises()
+    expect(editor.job?.chapters?.generate_every).toBe(0.02)
+    expect(document.activeElement).toBe(wrapper.find('[data-field="generate-every"] input').element)
   })
 })

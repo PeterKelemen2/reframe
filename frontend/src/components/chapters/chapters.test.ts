@@ -41,6 +41,11 @@ describe('namesWith', () => {
     ])
   })
 
+  it('leaves an untitled source chapter untitled when another one is renamed', () => {
+    const untitled = { ...chapter(2, 1, 2.5, '', 1), source_name: null }
+    expect(namesWith(null, [FULL[0]!, untitled], new Map([[0, 'Intro']]))).toEqual(['Intro', ''])
+  })
+
   it('names generated chapters by their place in the output', () => {
     expect(namesWith(null, GENERATED, new Map([[1, 'Second']]))).toEqual(['Chapter 1', 'Second'])
   })

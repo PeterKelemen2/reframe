@@ -9,7 +9,7 @@ import { computed, nextTick, reactive, ref, useId, useTemplateRef, watch } from 
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
-import type { ChapterFormat, OutputChapter } from '@/api/types'
+import type { ChapterFormat, Fix, OutputChapter } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import IssueList from '@/components/base/IssueList.vue'
 import Section from '@/components/base/Section.vue'
@@ -29,6 +29,7 @@ import FocusSafeButton from '@/components/shell/FocusSafeButton'
 import { focusLost } from '@/components/shell/focus'
 import { useJobSource } from '@/components/summary/useJobSource'
 import { useReveal } from '@/composables/useReveal'
+import { numberedChapterName } from '@/editor/template'
 import { platform } from '@/platform'
 import { useEditorStore } from '@/stores/editor'
 import { useValidationStore } from '@/stores/validation'
@@ -87,6 +88,22 @@ async function setEvery(value: number | null | undefined): Promise<void> {
   every.value = null
   await nextTick()
   every.value = current
+}
+
+/** The fixes of the interval's issues (*Generate a chapter every N minutes*), each one button. */
+const everyFixes = computed<Fix[]>(() => {
+  const seen = new Set<string>()
+  return validation
+    .issuesFor('chapters.generate_every')
+    .flatMap((issue) => issue.fixes ?? [])
+    .filter((fix) => !seen.has(fix.label) && seen.add(fix.label))
+})
+
+/** The button goes away with its issue: the interval it changed gets the focus. */
+async function applyEveryFix(fix: Fix): Promise<void> {
+  await editor.applyFix(fix)
+  await nextTick()
+  root.value?.querySelector<HTMLElement>('[data-field="generate-every"] input')?.focus()
 }
 
 /** Text typed into a name field that is still focused: the job may show it differently. */
@@ -158,9 +175,7 @@ const resetItems = computed(() =>
           command: () =>
             editor.set(
               '/chapters/names',
-              numberedNames(names.value, rows.value, (n) =>
-                t('chapters.reset.numberedName', { n }),
-              ),
+              numberedNames(names.value, rows.value, numberedChapterName),
             ),
         },
       ],
@@ -371,6 +386,17 @@ const hasRows = computed(() => rows.value.length > 0)
               </template>
             </i18n-t>
           </div>
+          <div v-if="everyFixes.length > 0" class="chapters-tab__fixes" data-role="interval-fixes">
+            <Button
+              v-for="fix in everyFixes"
+              :key="fix.label"
+              size="small"
+              severity="secondary"
+              outlined
+              :label="fix.label"
+              @click="applyEveryFix(fix)"
+            />
+          </div>
         </template>
       </Field>
 
@@ -472,6 +498,13 @@ const hasRows = computed(() => rows.value.length > 0)
 
 .chapters-tab__every {
   width: 6rem;
+}
+
+.chapters-tab__fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rf-space-1);
+  margin-top: var(--rf-space-1);
 }
 
 .chapters-tab__every :deep(input) {
