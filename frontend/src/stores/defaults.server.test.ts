@@ -94,6 +94,10 @@ function row(decision: TrackDecision | undefined) {
   ]
 }
 
+function tracks(audio: { source_stream?: number | null; encoder?: string | null }[]) {
+  return audio.map((track) => [track.source_stream, track.encoder])
+}
+
 describe('the defaults dialog against a real server', () => {
   it('previews the demo rules on dts-hd-ma: DTS-HD MA → AC-3 320, AC-3 224 passed through, stereo to the next rule', async () => {
     await jobOf('dts-hd-ma.mkv')
@@ -158,6 +162,51 @@ describe('the defaults dialog against a real server', () => {
     expect(defaults.audio!.codec_rules![0]!.max_bitrate).toBe(256)
     await previewed()
     expect(defaults.issuesAt(`audio_defaults.codec_rules[k${first}].max_bitrate`)).toEqual([])
+  })
+
+  it("previews what Apply writes when the job's preset has its own audio rules", async () => {
+    const presets = usePresetsStore()
+    await presets.load()
+    const ruled = await http<Preset>(server, 'POST', '/api/presets', {
+      template: {
+        ...templateOfPreset(presets.byId(BUILT_IN)!),
+        audio_rules: [
+          {
+            selector: { kind: 'audio', languages: ['en'] },
+            multiple: true,
+            settings: {
+              kind: 'audio',
+              action: 'encode',
+              encoder: 'aac',
+              mixdown: 'stereo',
+              bitrate: 96,
+            },
+          },
+        ],
+      },
+      name: `Rules ${Date.now()}`,
+      category: 'Custom',
+      description: '',
+    })
+    await presets.load()
+    await jobOf('dts-hd-ma.mkv')
+    const editor = useEditorStore()
+    await editor.applyPreset(ruled.id)
+    const defaults = useDefaultsStore()
+    await defaults.open('audio', { kind: 'job' })
+    await previewed()
+    expect(defaults.ruledByTemplate).toBe(true)
+    defaults.addRule()
+    defaults.setRule(0, rule({ languages: ['hu'] }))
+    await previewed()
+    const shown = tracks(defaults.preview?.audio ?? [])
+    expect(shown).toEqual([
+      [2, 'aac'],
+      [3, 'aac'],
+    ])
+    await defaults.apply()
+    expect(tracks(editor.job!.audio!)).toEqual(shown)
+    expect(editor.job!.audio!.map((track) => track.bitrate)).toEqual([96, 96])
   })
 
   it("saves a user preset's subtitle defaults into it, and nothing else", async () => {
