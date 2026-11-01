@@ -23,6 +23,40 @@ export interface BrowseRequest {
   defaultPath: string | null
 }
 
+// The server lists these without being asked: reframe.probe.MEDIA_EXTENSIONS.
+const MEDIA_EXTENSIONS = new Set([
+  '3gp',
+  'asf',
+  'avi',
+  'divx',
+  'flv',
+  'm2ts',
+  'm4v',
+  'mkv',
+  'mov',
+  'mp4',
+  'mpeg',
+  'mpg',
+  'mts',
+  'mxf',
+  'ogm',
+  'ogv',
+  'ts',
+  'vob',
+  'webm',
+  'wmv',
+])
+
+/**
+ * The extensions (`.srt`) the server lists instead of media files for `request`; `null` when
+ * it lists media files (no filter, or media extensions only, which the dialog narrows itself).
+ */
+export function listedExtensions(request: BrowseRequest): string[] | null {
+  const { filters } = request
+  if (filters.every((ext) => MEDIA_EXTENSIONS.has(ext))) return null
+  return filters.map((ext) => `.${ext}`)
+}
+
 interface Pending {
   request: BrowseRequest
   resolve(paths: string[] | null): void
