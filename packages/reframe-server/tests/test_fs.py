@@ -74,6 +74,23 @@ async def test_list_shows_folders_then_media_files_in_natural_order(api: Api) ->
     assert Path(body["parent"]) == api.media.resolve()
 
 
+async def test_list_with_extensions_shows_those_files_instead_of_media_files(api: Api) -> None:
+    for name in ("Show.en.srt", "Show.hu.ASS", "Show.mkv", "notes.txt", ".hidden.srt"):
+        (api.media / name).write_bytes(b"x")
+    (api.media / "Subs").mkdir()
+    params = {"path": str(api.media), "extensions": [".srt", "ass"]}
+    response = await api.client.get("/api/fs/list", params=params)
+    assert response.status_code == 200
+    assert _names(response.json()) == ["Subs", "Show.en.srt", "Show.hu.ASS"]
+
+
+@pytest.mark.parametrize("extension", ["", ".", "a/b", "srt.bak"])
+async def test_an_extension_that_names_no_extension_is_refused(api: Api, extension: str) -> None:
+    params = {"path": str(api.media), "extensions": [extension]}
+    response = await api.client.get("/api/fs/list", params=params)
+    assert (response.status_code, response.json()["code"]) == (422, "fs.bad_extension")
+
+
 async def test_in_desktop_mode_the_parent_goes_up_to_the_file_system_root(
     make_api: ApiFactory,
 ) -> None:

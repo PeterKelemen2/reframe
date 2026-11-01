@@ -1664,6 +1664,110 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[ChapterExport]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': "The output's chapters as the text of a chapter file.",
+    'properties': dict({
+      'content': dict({
+        'description': "The file's text (to be saved as UTF-8).",
+        'title': 'Content',
+        'type': 'string',
+      }),
+      'file_name': dict({
+        'description': '''
+          A file name to save it as: the output's name without its extension, then
+          ``.chapters.csv``, ``.chapters.txt`` (OGM) or ``.chapters.xml``.
+        ''',
+        'title': 'File Name',
+        'type': 'string',
+      }),
+      'format': dict({
+        'enum': list([
+          'csv',
+          'ogm',
+          'xml',
+        ]),
+        'title': 'Format',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'format',
+      'file_name',
+      'content',
+    ]),
+    'title': 'ChapterExport',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ChapterFormat]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'csv',
+      'ogm',
+      'xml',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[ChapterImport]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'CopyOp',
+      'Fix',
+      'ImportedChapter',
+      'JsonValue',
+      'MoveOp',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
+      'TestOp',
+      'ValidationIssue',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The chapters of a chapter file. The names are meant to be used by position; the times
+      only to compare with the output's chapters.
+    ''',
+    'properties': dict({
+      'chapters': dict({
+        'items': dict({
+          '$ref': '#/$defs/ImportedChapter',
+        }),
+        'title': 'Chapters',
+        'type': 'array',
+      }),
+      'format': dict({
+        'enum': list([
+          'csv',
+          'ogm',
+          'xml',
+        ]),
+        'title': 'Format',
+        'type': 'string',
+      }),
+      'issues': dict({
+        'description': 'What was read differently from the file (an encoding guessed, a part left out).',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'format',
+    ]),
+    'title': 'ChapterImport',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ChapterNamePolicy]
   dict({
     '$defs': list([
@@ -1703,6 +1807,18 @@
     }),
     'title': 'ChapterOptions',
     'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ChapterOrigin]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'source',
+      'generated',
+      'none',
+    ]),
+    'type': 'string',
   })
 # ---
 # name: test_json_schema_snapshot[ChapterRange]
@@ -3965,6 +4081,40 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[ImportedChapter]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'One chapter read from a chapter file, in file order.',
+    'properties': dict({
+      'name': dict({
+        'description': '``""`` when the file gives no name.',
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'start': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0.0,
+            'type': 'number',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': 'Seconds; ``null`` when the file has no time for it (CSV has none).',
+        'title': 'Start',
+      }),
+    }),
+    'required': list([
+      'start',
+      'name',
+    ]),
+    'title': 'ImportedChapter',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[JobDraft]
   dict({
     '$defs': list([
@@ -4661,6 +4811,51 @@
       }),
     }),
     'title': 'JobTemplate',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[JobTypeInfo]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The job type a job gets, and why.',
+    'properties': dict({
+      'in_place_blockers': dict({
+        'description': '''
+          Why this job could not edit its source in place, whether or not *Edit in place* is
+          chosen; each a sentence fragment (``the video is encoded``). Empty: it could. For a source
+          that is not MKV, the first one says so.
+        ''',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'In Place Blockers',
+        'type': 'array',
+      }),
+      'job_type': dict({
+        'enum': list([
+          'encode',
+          'remux',
+          'metadata_edit',
+        ]),
+        'title': 'Job Type',
+        'type': 'string',
+      }),
+      'reason': dict({
+        'description': '''
+          One sentence; two when *Edit in place* is chosen but cannot be used (the second says
+          why).
+        ''',
+        'title': 'Reason',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'job_type',
+      'reason',
+    ]),
+    'title': 'JobTypeInfo',
     'type': 'object',
   })
 # ---
@@ -5838,6 +6033,121 @@
         'type': 'string',
       }),
     ]),
+  })
+# ---
+# name: test_json_schema_snapshot[OutputChapter]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': "One chapter of the output, in output time (seconds from the output's start).",
+    'properties': dict({
+      'end': dict({
+        'minimum': 0.0,
+        'title': 'End',
+        'type': 'number',
+      }),
+      'name': dict({
+        'description': 'The name written; ``""``: none (a source chapter without a title, copied as it is).',
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'number': dict({
+        'description': '1-based position in the output.',
+        'minimum': 1,
+        'title': 'Number',
+        'type': 'integer',
+      }),
+      'source_index': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': '''
+          0-based index of the source chapter this one comes from: its slot in
+          ``ChapterSettings.names``, which is indexed by source chapter (a range leaves chapters out,
+          so it can differ from ``number - 1``). ``null`` for a generated chapter, whose name is
+          ``names[number - 1]``.
+        ''',
+        'title': 'Source Index',
+      }),
+      'source_name': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': '''
+          The source chapter's title; ``null`` for a generated chapter or a source chapter without
+          one.
+        ''',
+        'title': 'Source Name',
+      }),
+      'start': dict({
+        'minimum': 0.0,
+        'title': 'Start',
+        'type': 'number',
+      }),
+    }),
+    'required': list([
+      'number',
+      'start',
+      'end',
+      'name',
+      'source_name',
+      'source_index',
+    ]),
+    'title': 'OutputChapter',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[OutputChapters]
+  dict({
+    '$defs': list([
+      'OutputChapter',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The chapters the output gets, as the command writes them: the range, the renamed
+      chapters, the generated ones, the container and *Create chapter markers* applied.
+    ''',
+    'properties': dict({
+      'chapters': dict({
+        'items': dict({
+          '$ref': '#/$defs/OutputChapter',
+        }),
+        'title': 'Chapters',
+        'type': 'array',
+      }),
+      'origin': dict({
+        'enum': list([
+          'source',
+          'generated',
+          'none',
+        ]),
+        'title': 'Origin',
+        'type': 'string',
+      }),
+      'reason': dict({
+        'default': '',
+        'description': 'Why there are none (``origin`` ``none``); empty otherwise.',
+        'title': 'Reason',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'origin',
+    ]),
+    'title': 'OutputChapters',
+    'type': 'object',
   })
 # ---
 # name: test_json_schema_snapshot[OutputDefaults]
@@ -7386,6 +7696,56 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[RenderedTags]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'CopyOp',
+      'Fix',
+      'JsonValue',
+      'MoveOp',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
+      'TagValues',
+      'TestOp',
+      'ValidationIssue',
+    ]),
+    'additionalProperties': False,
+    'description': "The job's tags as they will be written, next to the source's.",
+    'properties': dict({
+      'issues': dict({
+        'description': 'Template errors, at ``tags.<name>``.',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'source': dict({
+        '$ref': '#/$defs/TagValues',
+        'description': '''
+          The source file's value of each tag: what *Passthru common metadata* copies when the
+          job does not set it.
+        ''',
+      }),
+      'values': dict({
+        '$ref': '#/$defs/TagValues',
+        'description': '''
+          Each set tag with the naming variables filled in (``{date}`` and ``{time}`` as of now);
+          ``null`` for a tag the job does not set. An unknown variable is empty; a template with a
+          syntax error is written as typed.
+        ''',
+      }),
+    }),
+    'required': list([
+      'values',
+      'source',
+    ]),
+    'title': 'RenderedTags',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ReplaceOp]
   dict({
     '$defs': list([
@@ -8083,6 +8443,93 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[SubtitleFileInfo]
+  dict({
+    '$defs': list([
+      'AddOp',
+      'CopyOp',
+      'Fix',
+      'JsonValue',
+      'MoveOp',
+      'RemoveOp',
+      'ReplaceOp',
+      'Severity',
+      'TestOp',
+      'ValidationIssue',
+    ]),
+    'additionalProperties': False,
+    'description': 'An external subtitle file, read before it is added to a job. A runtime model.',
+    'properties': dict({
+      'bitmap': dict({
+        'description': 'A bitmap format (PGS): it cannot be converted to text, and has no character encoding.',
+        'title': 'Bitmap',
+        'type': 'boolean',
+      }),
+      'charset': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': '''
+          The character encoding of a text file: ``UTF-8`` (with or without a byte order mark),
+          ``UTF-16LE`` or ``UTF-16BE`` (byte order mark). ``null``: not detected (another encoding,
+          which the user names) or a bitmap file.
+        ''',
+        'title': 'Charset',
+      }),
+      'events': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': '''
+          Subtitle events (a PGS file: display sets, as the subtitle scan counts them); ``null``
+          when they could not be counted.
+        ''',
+        'title': 'Events',
+      }),
+      'format': dict({
+        'description': '''
+          FFmpeg's codec name: ``subrip``, ``ass`` (also for ``.ssa``), ``webvtt``,
+          ``hdmv_pgs_subtitle``.
+        ''',
+        'title': 'Format',
+        'type': 'string',
+      }),
+      'issues': dict({
+        'description': 'What to look at before the file is added (an encoding that was not detected).',
+        'items': dict({
+          '$ref': '#/$defs/ValidationIssue',
+        }),
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'path': dict({
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'path',
+      'format',
+      'bitmap',
+      'charset',
+      'events',
+    ]),
+    'title': 'SubtitleFileInfo',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[SubtitleFormat]
   dict({
     '$defs': list([
@@ -8711,6 +9158,116 @@
       }),
     }),
     'title': 'TagSettings',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TagValues]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'One value per tag; ``null``: none.',
+    'properties': dict({
+      'actors': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Actors',
+      }),
+      'comment': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Comment',
+      }),
+      'description': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Description',
+      }),
+      'director': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Director',
+      }),
+      'genre': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Genre',
+      }),
+      'plot': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Plot',
+      }),
+      'release_date': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Release Date',
+      }),
+      'title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'title': 'Title',
+      }),
+    }),
+    'required': list([
+      'title',
+      'actors',
+      'director',
+      'release_date',
+      'comment',
+      'genre',
+      'description',
+      'plot',
+    ]),
+    'title': 'TagValues',
     'type': 'object',
   })
 # ---

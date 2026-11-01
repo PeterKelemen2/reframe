@@ -6,6 +6,7 @@ finds nothing.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import PurePath
 
 from reframe.definitions import ContainerDef, Definitions, load_definitions
@@ -15,11 +16,12 @@ from reframe.models import (
     FullRange,
     JobSettings,
     JobType,
+    JobTypeInfo,
     MediaSource,
     TagSettings,
 )
 
-__all__ = ["in_place_blockers", "is_matroska_source", "job_type"]
+__all__ = ["in_place_blockers", "is_matroska_source", "job_type", "job_type_info"]
 
 
 def _track_label(number: int, stream: AudioStream | None) -> str:
@@ -145,14 +147,10 @@ def _copy_type(job: JobSettings, source: MediaSource, defs: Definitions) -> tupl
     )
 
 
-def job_type(
-    job: JobSettings, source: MediaSource, *, definitions: Definitions | None = None
+def _typed(
+    job: JobSettings, source: MediaSource, defs: Definitions, blockers: Sequence[str]
 ) -> tuple[JobType, str]:
-    """The job type and why, in one sentence (two when *Edit in place* is chosen but not
-    possible: the second says why)."""
-    defs = definitions if definitions is not None else load_definitions()
     if job.output.edit_in_place:
-        blockers = in_place_blockers(job, source, definitions=defs)
         if not blockers:
             return "metadata_edit", (
                 "Metadata edit: only the track metadata changes, so mkvpropedit edits "
@@ -161,3 +159,32 @@ def job_type(
         kind, reason = _copy_type(job, source, defs)
         return kind, f"{reason} It cannot be edited in place: {blockers[0]}."
     return _copy_type(job, source, defs)
+
+
+def job_type(
+    job: JobSettings, source: MediaSource, *, definitions: Definitions | None = None
+) -> tuple[JobType, str]:
+    """The job type and why, in one sentence (two when *Edit in place* is chosen but not
+    possible: the second says why)."""
+    defs = definitions if definitions is not None else load_definitions()
+    blockers = in_place_blockers(job, source, definitions=defs) if job.output.edit_in_place else []
+    return _typed(job, source, defs, blockers)
+
+
+def job_type_info(
+    job: JobSettings,
+    source: MediaSource,
+    *,
+    definitions: Definitions | None = None,
+    write_blocker: str | None = None,
+) -> JobTypeInfo:
+    """:func:`job_type` with the in-place blockers, for any job. ``write_blocker``: why the
+    caller may not write the source (a server's folders); it comes after a source that is not
+    MKV, before the rest, and counts as a blocker of the job type too."""
+    defs = definitions if definitions is not None else load_definitions()
+    blockers = in_place_blockers(job, source, definitions=defs)
+    if write_blocker is not None:
+        at = 0 if is_matroska_source(source) else 1
+        blockers.insert(at, write_blocker)
+    kind, reason = _typed(job, source, defs, blockers)
+    return JobTypeInfo(job_type=kind, reason=reason, in_place_blockers=blockers)
