@@ -4,6 +4,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { api, ApiError, apiQuiet, unwrap } from '@/api/client'
 import { text } from '@/api/text'
 import type { Schemas, SourceEntry, TaskInfo } from '@/api/types'
+import { notBuilt } from '@/notBuilt'
 import { platform } from '@/platform'
 
 import { useEditorStore } from './editor'
@@ -326,6 +327,15 @@ export const useSourcesStore = defineStore('sources', () => {
     else await regroup()
   }
 
+  /**
+   * Reads one source again (`GET /api/sources/{id}`) and puts it in its place: a scan ended,
+   * or an in-place edit changed the file.
+   */
+  // oxlint-disable-next-line unicorn/consistent-function-scoping -- a stub; it uses the store once built
+  async function reload(id: string): Promise<void> {
+    return notBuilt('sources.reload', id)
+  }
+
   /** A new server instance forgot the sources: probe every open path again. */
   async function onServerRestart(): Promise<void> {
     if (entries.value.length === 0) return
@@ -346,6 +356,7 @@ export const useSourcesStore = defineStore('sources', () => {
     remove,
     removeMany,
     refresh,
+    reload,
     onServerRestart,
   }
 })

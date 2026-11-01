@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import type { JsonPatchOp } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
+import TrackMetadataEditor from '@/components/tracks/TrackMetadataEditor.vue'
 import ChoiceSelect from '@/components/video/ChoiceSelect.vue'
 import CommandPreview from '@/components/video/CommandPreview.vue'
 import EncoderBanner from '@/components/video/EncoderBanner.vue'
@@ -500,6 +501,10 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
             <code :id="id" class="video-tab__params" tabindex="0">{{ video.custom_params }}</code>
           </template>
         </Field>
+      </Section>
+
+      <Section :title="t('video.sections.metadata')">
+        <TrackMetadataEditor list="video" />
       </Section>
 
       <CommandPreview />

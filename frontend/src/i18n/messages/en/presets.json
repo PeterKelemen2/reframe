@@ -163,6 +163,8 @@
     "export": "Export",
     "delete": "Delete",
     "settings": "Settings",
+    "audioDefaults": "Audio defaults…",
+    "subtitleDefaults": "Subtitle defaults…",
     "category": "Category",
     "container": "Container",
     "video": "Video",

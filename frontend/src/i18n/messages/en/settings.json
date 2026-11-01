@@ -93,6 +93,9 @@
     },
     "naming": "File names and default folder"
   },
+  "languages": {
+    "title": "Languages"
+  },
   "queue": {
     "title": "Queue",
     "parallelJobs": "Parallel jobs",

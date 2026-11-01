@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 import { RouterView } from 'vue-router'
 
+import DefaultsDialog from '@/components/defaults/DefaultsDialog.vue'
 import PowerBanner from '@/components/queue/PowerBanner.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
@@ -41,6 +42,7 @@ watch(
   <BootScreen v-else :offline="system.phase === 'offline'" />
   <ShellToasts />
   <FileBrowserDialog />
+  <DefaultsDialog v-if="system.phase === 'ready'" />
 </template>
 
 <style scoped>

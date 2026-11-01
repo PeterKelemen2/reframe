@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ListPlus, Plus, RotateCcw } from '@lucide/vue'
+import { ListPlus, Plus, RotateCcw, SlidersHorizontal } from '@lucide/vue'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable, { type DataTableRowReorderEvent } from 'primevue/datatable'
@@ -19,6 +19,7 @@ import type {
 import Section from '@/components/base/Section.vue'
 import { type SourceStream, streamLabel } from '@/components/media/streams'
 import { useJobSource } from '@/components/summary/useJobSource'
+import { useDefaultsStore } from '@/stores/defaults'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -47,6 +48,7 @@ const id = useId()
 const root = useTemplateRef<HTMLElement>('root')
 const addMenu = useTemplateRef<InstanceType<typeof Menu>>('addMenu')
 const reloading = ref(false)
+const defaults = useDefaultsStore()
 const title = computed(() => t('tracks.output.title'))
 
 const audioTracks = computed<readonly AudioOutputTrack[]>(() => editor.job?.audio ?? [])
@@ -193,6 +195,17 @@ async function reload(): Promise<void> {
           @click="reload"
         >
           <template #icon><RotateCcw :size="16" aria-hidden="true" /></template>
+        </Button>
+        <Button
+          size="small"
+          severity="secondary"
+          data-action="defaults"
+          aria-haspopup="dialog"
+          :label="t('tracks.output.defaults')"
+          :disabled="editor.target?.kind !== 'job'"
+          @click="defaults.open(list, { kind: 'job' })"
+        >
+          <template #icon><SlidersHorizontal :size="16" aria-hidden="true" /></template>
         </Button>
       </template>
       <p v-if="rows.length === 0" class="output-tracks__empty" data-state="empty">

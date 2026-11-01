@@ -93,6 +93,7 @@
     "addAllHelp": "Adds an output track for every source track that has none yet",
     "reload": "Reload from preset rules",
     "reloadHelp": "Replaces these tracks with what the preset's rules choose for this source (Undo brings them back)",
+    "defaults": "Defaults…",
     "noAudio": "No audio tracks: the output will have no audio.",
     "noSubtitles": "No subtitle tracks.",
     "dragColumn": "Drag to reorder",

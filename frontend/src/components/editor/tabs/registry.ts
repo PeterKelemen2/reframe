@@ -41,4 +41,6 @@ export const EDITOR_TABS: readonly EditorTab[] = [
   tab('video', () => import('./VideoTab.vue')),
   tab('audio', () => import('./AudioTab.vue')),
   tab('subtitles', () => import('./SubtitlesTab.vue')),
+  tab('chapters', () => import('./ChaptersTab.vue')),
+  tab('tags', () => import('./TagsTab.vue')),
 ]

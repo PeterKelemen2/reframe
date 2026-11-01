@@ -46,11 +46,11 @@ const CONTROLS = [
 ]
 
 describe('the Settings view', () => {
-  it('shows the five sections', async () => {
+  it('shows the sections in the order of the plan', async () => {
     const { wrapper } = await mountView()
     expect(
       wrapper.findAll('[data-section]').map((section) => section.attributes('data-section')),
-    ).toEqual(['tools', 'encoders', 'output', 'queue', 'appearance'])
+    ).toEqual(['tools', 'encoders', 'output', 'languages', 'queue', 'appearance'])
   })
 
   it('shows read-only settings read-only, with a note', async () => {
