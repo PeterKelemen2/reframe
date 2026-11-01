@@ -139,20 +139,26 @@ export function inJob(op: JsonPatchOp): JsonPatchOp {
     : { ...op, path: `/job${op.path}` }
 }
 
-/** `/job/audio/1/source_stream` for an operation inside output track `/job/audio/1`. */
+/**
+ * What an operation's `test` guard checks: the whole output track (`/job/audio/1`) for an
+ * operation inside one, the rule's selector (`/audio_rules/1/selector`) for a hand pick.
+ */
 function guardPath(pointer: string): string | null {
-  const [member, list, index] = tokensOf(pointer)
-  if (member !== 'job' || index === undefined || !/^\d+$/.test(index)) return null
-  if (list === 'audio') return `/job/audio/${index}/source_stream`
-  if (list === 'subtitles') return `/job/subtitles/${index}/source`
+  const [first, second, third] = tokensOf(pointer)
+  if (first === 'job' && (second === 'audio' || second === 'subtitles')) {
+    return third !== undefined && /^\d+$/.test(third) ? `/job/${second}/${third}` : null
+  }
+  if ((first === 'audio_rules' || first === 'subtitle_rules') && third === 'selector') {
+    return second !== undefined && /^\d+$/.test(second) ? `/${first}/${second}/selector` : null
+  }
   return null
 }
 
 /**
- * The override in its order: the template part, the job operations outside output tracks,
- * then per track its `test` guard and its operations. A failed `test` skips the rest of the
- * override, so an unguarded operation must come before every guard. Guards left without an
- * operation are dropped.
+ * The override in its order: the operations without a guard, then per track or rule its `test`
+ * guard and its operations. A failed `test` skips the rest of its part (template or job), so
+ * an unguarded operation must come before every guard. Guards left without an operation are
+ * dropped.
  */
 export function ordered(ops: readonly JsonPatchOp[]): JsonPatchOp[] {
   const outside: JsonPatchOp[] = []
@@ -180,8 +186,9 @@ export function ordered(ops: readonly JsonPatchOp[]): JsonPatchOp[] {
 /**
  * `override` with `ops` (paths of the per-file document) merged in: an earlier operation on
  * the same path or below it is replaced. An operation inside an output track comes after a
- * `test` of that track's source in `job` (the file's job now), so that a template change that
- * moves the track makes the override stale instead of applying it to another track.
+ * `test` of the whole track as `job` (the file's job now) has it before the track's first
+ * operation, so that a template change of that track or of its place makes the override stale
+ * instead of applying it to another track. A later operation keeps that first guard.
  */
 export function mergeOverride(
   override: readonly JsonPatchOp[],

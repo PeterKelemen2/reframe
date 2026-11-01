@@ -7,6 +7,7 @@ import {
   inJob,
   mergedResolutions,
   mergeOverride,
+  ordered,
   perFileChange,
   perFilePointer,
   sectionsOf,
@@ -149,7 +150,7 @@ describe('changesTrackList', () => {
 describe('mergeOverride', () => {
   const job: JobSettings = sampleJob()
 
-  it('guards an operation inside an output track with a test of its source, after the unguarded ones', () => {
+  it('guards an operation inside an output track with a test of the whole track, after the unguarded ones', () => {
     const merged = mergeOverride(
       [],
       [
@@ -161,9 +162,9 @@ describe('mergeOverride', () => {
     )
     expect(merged).toEqual([
       { op: 'replace', path: '/job/video/encoder', value: 'libx264' },
-      { op: 'test', path: '/job/audio/1/source_stream', value: 2 },
+      { op: 'test', path: '/job/audio/1', value: job.audio?.[1] },
       { op: 'replace', path: '/job/audio/1/bitrate', value: 320 },
-      { op: 'test', path: '/job/subtitles/0/source', value: 4 },
+      { op: 'test', path: '/job/subtitles/0', value: job.subtitles?.[0] },
       { op: 'replace', path: '/job/subtitles/0/metadata/forced', value: true },
     ])
   })
@@ -174,15 +175,15 @@ describe('mergeOverride', () => {
       [inJob({ op: 'replace', path: '/audio/1/bitrate', value: 320 })],
       job,
     )
-    // The track's source changed in this file since: the guard stays the one made first.
-    const moved = applyOps(job, [{ op: 'replace', path: '/audio/1/source_stream', value: 3 }])
+    // The job now has the override: the guard stays the track without it.
+    const overridden = applyOps(job, [{ op: 'replace', path: '/audio/1/bitrate', value: 320 }])
     const merged = mergeOverride(
       first,
       [inJob({ op: 'replace', path: '/audio/1', value: { bitrate: 96 } })],
-      moved,
+      overridden,
     )
     expect(merged).toEqual([
-      { op: 'test', path: '/job/audio/1/source_stream', value: 2 },
+      { op: 'test', path: '/job/audio/1', value: job.audio?.[1] },
       { op: 'replace', path: '/job/audio/1', value: { bitrate: 96 } },
     ])
   })
@@ -197,6 +198,20 @@ describe('mergeOverride', () => {
       job,
     )
     expect(merged).toEqual([{ op: 'replace', path: '/job/video/encoder', value: 'libx264' }])
+  })
+})
+
+describe('ordered', () => {
+  it('puts each rule’s selector guard before its pick, after the unguarded operations', () => {
+    const guard: JsonPatchOp = { op: 'test', path: '/audio_rules/1/selector', value: {} }
+    const pick: JsonPatchOp = { op: 'replace', path: '/audio_rules/1/selector/stream', value: 3 }
+    const name: JsonPatchOp = {
+      op: 'add',
+      path: '/job/output/naming/field_overrides/episode',
+      value: '5',
+    }
+    expect(ordered([guard, pick, name])).toEqual([name, guard, pick])
+    expect(ordered([guard])).toEqual([])
   })
 })
 

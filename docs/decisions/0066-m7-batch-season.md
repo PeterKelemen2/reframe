@@ -51,9 +51,12 @@ No server route is missing; one core change is needed (item 2).
    - **Scope `file`**: the tabs show the shown file's job with its override; an edit becomes
      `/job/…` operations in that file's override (a later edit of the same path replaces the
      earlier one). An operation inside an output track (`/job/audio/<i>/…`,
-     `/job/subtitles/<i>/…`) comes after a `test` of that track's source
-     (`source_stream` / `source`), so a template change that moves the track makes the override
-     stale (`batch.override_stale`, a warning in its row), never applied to another track.
+     `/job/subtitles/<i>/…`) comes after a `test` of the whole track as the file's job has it
+     without its override (review fix FA, R1-2; first a `test` of the track's source alone, which
+     let a new track of the same source take the override), so a template change of that track
+     or its place makes the override stale (`batch.override_stale`, a warning in its row), never
+     applied to another track. A hand pick likewise comes after a `test` of its rule's selector
+     (R1-3).
      Adding, removing or moving an output track for one file is refused with a toast (the
      matrix's candidate picker does that, item 4).
    - **Undo / redo** work on the document `{template, overrides}`; the shown job and the matrix
@@ -488,3 +491,76 @@ Mutations (each made once, then the file restored and touched):
 | `_row` does not keep the override's path | 5 failed: the 3 service tests and the 2 route tests |
 | `resolve_batch` counts a kept path as a planned output | 1 failed: the `resolve_batch` case (E01 left out) |
 | `derive` fills the settings' naming for every naming derive | 1 failed: the naming test |
+
+### Fix round — FA (editor store)
+
+Fixed in `stores/editor.ts` and `editor/group.ts`. Each blocker and major has a test that failed
+on the store of `m7-batch-season` (f1b8a5a) and passes now: unit tests in
+`src/stores/editor.group.test.ts` and `src/editor/group.test.ts`, real-server tests (pinned FFmpeg,
+`anime-s01`) in `src/stores/editor.group.fixes.server.test.ts`.
+
+- **R1-1 (store part).** An edit of scope `group` (and *Apply to whole group*) that touches the
+  audio or the subtitles is refused while the shown file is not an exact member and the template
+  has no explicit rules of that kind: a toast names the file and the representative to show
+  instead ("E11's tracks do not match the group's" … "Show E01 to edit the group's tracks"), and
+  nothing changes. Other sections, and a kind the template has rules for, derive as before (the
+  core keeps the base rules, task FS).
+- **R1-2.** The `test` before an operation inside an output track checks the **whole track**
+  (`/job/audio/<i>`, `/job/subtitles/<i>`), as the file's job has it before the track's first
+  operation; later operations on that track keep that guard. This replaces item 1's "test of
+  that track's source". Checked on the real server: an unchanged track passes the test (the
+  API's JSON of the job is the core's model dump), an override survives a group change of
+  another track, and a track added above it makes it stale (`batch.override_stale`), never
+  applied to the new track.
+- **R1-3.** A hand pick or *No track* comes after `test /<kind>_rules/<r>/selector` with the
+  selector as the template has it when the pick is made (a new pick takes the newest selector).
+  On the real server the pick stays when a group edit derives the same rule again, and is stale
+  when the rules are moved (the Japanese rule never takes the dub's pick).
+- **R1-4.** `resolveNow()` flushes the pending edits and waits until none is on its way (a field's
+  edit that lands starts its derive, which is sent at once too), then waits for the derive queue,
+  then resolves. A pending edit that failed rejects with an `ApiError` (status 0, code
+  `edit.failed`, title `editor.group.editFailed`, detail the edit's failure). Its
+  `batch/resolve-run` goes through `apiQuiet` (the lead's addition): no toast, it rejects with the
+  `ApiError` and sets `matrixError`.
+- **R1-5.** Each kept state remembers its group's representative and member paths. When the
+  grouping changes, a state whose id is gone moves to the group that holds its representative,
+  else the one with most of its members, if that group has no state of its own; the edited
+  target's `groupId` follows at once (a synchronous watcher, so the group never looks gone), and
+  the matrix is asked again. With no such group the state stays under its old id and the editor
+  closes as before.
+- **R1-7.** An edit of scope `group` clears the steps to redo at once; `redo` with nothing to redo
+  no longer drops a waiting edit.
+- **R1-8 and the simplification.** One derive queue: the debounced edits (after their timer),
+  `mergeIntoGroup`, *Apply to whole group* and `patchTemplate` run one after the other in the
+  order asked for, all through `deriveInto`. `patchTemplate` returns a promise: with nothing on
+  its way it applies at once (a `PatchError` is thrown at once, as before), else it waits in the
+  queue (the promise rejects with it). A derive is derived again only when the template changed
+  while it was on its way (an undo during a merge), not on an override change.
+- **R1-14.** A preset whose template equals the group's (*Save as preset* then that preset) only
+  sets `presetId`: no undo step.
+- **R2-1 (store part).** `matrixError` (the problem's detail, else its title; for `source.stale`
+  the text `editor.group.sourceStale`, since that detail is for developers) is set by a failed
+  `batch/resolve-run`, `null` after an answer and when the group is left; the last `resolution`
+  stays. `retryMatrix()` asks again at once. A failure is no toast.
+
+**Changed in an existing test:** the real-server test's "a scope-`file` edit survives a template
+change" now changes another track (A2's mixdown); a change of the overridden track itself makes
+the override stale (R1-2).
+
+**Not built:** a stale track override taken up again by a new edit of that track. A later edit of
+a track whose guard failed keeps the stale guard, so it is stale too, until *Reset to group*
+removes the track's operations. Telling a stale track from an applied one in the store needs the
+server's stale issues or a local replay of the override, and a replay can disagree with the
+server's normalised job; for the lead to decide. Also not built: R1's optional simplification of
+the target copying the state; deleting a kept state that has no group any more.
+
+**Mutations** (each made once, the tests run, the code restored and touched): 24 on the unit tests
+(the near-member check and its kind check; the guard path back to the source; a pick without its
+guard; `ordered` not grouping rule guards; `resolveNow` not waiting, ignoring a failure, or not
+flushing a landed edit's derive; a gone state not following, the target keeping the old id, the
+first group instead of the most members, no matrix for the same state; `source.stale` shown raw;
+no redo clearing; `patchTemplate` not waiting; a saved preset as a step; `matrixError` not set,
+not cleared after an answer or on leaving; `retryMatrix` doing nothing; `api` instead of
+`apiQuiet`; a dropped derive committing; no re-derive; `endRun` ignored): each failed at least one
+test. On the real-server test: the source guard back and a pick without guard each fail their
+test.
