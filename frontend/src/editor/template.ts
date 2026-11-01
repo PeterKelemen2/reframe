@@ -34,11 +34,18 @@ function dimensionsOf(
   }
 }
 
-function generatedNames(names: readonly string[]): boolean {
-  return names.length > 0 && names.every((name, index) => name === `Chapter ${index + 1}`)
+/**
+ * The name the `generated` chapter name policy gives chapter `n`. It is written into the file,
+ * so it is the core's name in every language of the UI.
+ */
+export function numberedChapterName(n: number): string {
+  return `Chapter ${n}`
 }
 
-/** The preset's naming options, with the job's own template and name source over them. */
+function generatedNames(names: readonly string[]): boolean {
+  return names.length > 0 && names.every((name, index) => name === numberedChapterName(index + 1))
+}
+
 function namingOf(
   job: JobSettings,
   own: NamingOptions | null,
@@ -58,11 +65,9 @@ function namingOf(
 }
 
 /**
- * The preset-level settings of `job`, which was drafted from `preset`: what `presets/diff`
- * compares and *Save as preset* stores. The job's own parts (source, range, output path and
- * name, concrete tracks, chapter names, the video track's metadata) are not in it; the track
- * rules and defaults are the preset's. `settingsNaming`: the naming options of Settings →
- * Output, which a preset without its own uses.
+ * The preset-level settings of `job`, drafted from `preset`: the job's source, output name,
+ * chapter names and video metadata are left out, and the track rules stay the preset's.
+ * `settingsNaming` is the naming of Settings → Output, which a preset without its own uses.
  */
 export function templateOf(
   job: JobSettings,
@@ -87,7 +92,9 @@ export function templateOf(
   if (job.chapters !== undefined) {
     const { names, ...chapters } = job.chapters
     template.chapters = chapters
-    if (names != null) template.chapter_name_policy = generatedNames(names) ? 'generated' : 'source'
+    // A preset holds no names: names other than these two cases are this file's own.
+    if (names == null) template.chapter_name_policy = 'source'
+    else if (generatedNames(names)) template.chapter_name_policy = 'generated'
   }
   if (job.tags !== undefined) template.tags = job.tags
   template.naming = namingOf(job, base.naming ?? null, settingsNaming)

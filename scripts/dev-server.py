@@ -49,6 +49,12 @@ def _parser() -> argparse.ArgumentParser:
         help="comma-separated names in testdata/media (files with or without extension, or "
         "folders) copied into the media root; empty for none",
     )
+    parser.add_argument(
+        "--output-fixtures",
+        default="",
+        help="the same, copied into the output root, which is then a media root too: an "
+        "in-place metadata edit in web mode needs a source the server may read and write",
+    )
     parser.add_argument("--auth", choices=["token", "password", "none"], default="token")
     parser.add_argument("--token", help="the run's token (default: random)")
     parser.add_argument(
@@ -213,13 +219,14 @@ def _prepare(
     for folder in folders.values():
         folder.mkdir(exist_ok=True)
 
-    for name in filter(None, (part.strip() for part in args.fixtures.split(","))):
-        source = _fixture(name)
-        target = folders["media"] / source.name
-        if source.is_dir():
-            shutil.copytree(source, target)
-        else:
-            shutil.copyfile(source, target)
+    for root, names in (("media", args.fixtures), ("output", args.output_fixtures)):
+        for name in filter(None, (part.strip() for part in names.split(","))):
+            source = _fixture(name)
+            target = folders[root] / source.name
+            if source.is_dir():
+                shutil.copytree(source, target)
+            else:
+                shutil.copyfile(source, target)
 
     settings: dict[str, object] = {
         "encoders": {"hardware_tests": False},
@@ -283,6 +290,8 @@ def _prepare(
         "--output-root",
         str(folders["output"]),
     ]
+    if args.output_fixtures.strip():
+        command += ["--media-root", str(folders["output"])]
     return command, env, folders, token
 
 

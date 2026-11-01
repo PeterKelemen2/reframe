@@ -47,6 +47,16 @@ const tree: Record<string, { parent: string | null; entries: Entry[] }> = {
   '/srv/out': { parent: null, entries: [folder('/srv/out/done'), file('/srv/out/old.mkv')] },
   '/srv/out/done': { parent: '/srv/out', entries: [] },
 }
+/** What the server lists with `extensions=.srt&extensions=.ass` instead of media files. */
+const subtitles: Record<string, Entry[]> = {
+  '/srv/media': [
+    folder('/srv/media/extras'),
+    folder('/srv/media/season'),
+    file('/srv/media/a.en.srt', 900),
+    file('/srv/media/a.hu.ass', 1200),
+  ],
+  '/srv/media/season': [file('/srv/media/season/E01.srt', 800)],
+}
 
 let server: FakeServer
 const mounted: { unmount(): void }[] = []
@@ -60,8 +70,13 @@ beforeEach(() => {
       ],
     })
     .on('GET /api/fs/list', (request) => {
-      const path = new URLSearchParams(request.search).get('path') ?? ''
+      const query = new URLSearchParams(request.search)
+      const path = query.get('path') ?? ''
       const found = tree[path]
+      const extensions = query.getAll('extensions')
+      if (found !== undefined && extensions.join(',') === '.srt,.ass') {
+        return { path, parent: found.parent, entries: subtitles[path] ?? [] }
+      }
       if (found === undefined) {
         return problem(
           403,
@@ -100,6 +115,10 @@ const selected = () =>
 const crumbs = () => $$('[data-role="crumb"]').map((crumb) => crumb.textContent?.trim())
 const list = () => $('[role="listbox"]') as HTMLElement
 const entry = (name: string) => $(`.file-browser__entry[data-name="${name}"]`) as HTMLElement
+const listedExtensions = () =>
+  server.requests
+    .filter((request) => request.path === '/api/fs/list')
+    .map((request) => new URLSearchParams(request.search).getAll('extensions'))
 
 async function settled(): Promise<void> {
   await flushPromises()
@@ -271,6 +290,7 @@ describe('the file browser dialog', () => {
     await mountDialog()
     await open({ mode: 'files', multiple: true, filters: ['mp4'] })
     expect(names()).toEqual(['extras', 'season', 'b.mp4'])
+    expect(listedExtensions()).toEqual([[]])
     expect($('label[for$="-filter"]')?.textContent?.trim()).toBe('Only mp4')
     await click($('[data-field="filter"] input'))
     expect(names()).toEqual(['extras', 'season', 'a.mkv', 'b.mp4', 'c.mkv', 'd.mkv'])
@@ -280,6 +300,24 @@ describe('the file browser dialog', () => {
     await mountDialog()
     await open({ mode: 'files', multiple: true })
     expect($('[data-field="filter"]')).toBeNull()
+    expect(listedExtensions()).toEqual([[]])
+  })
+
+  it('asks the server for the filter’s files when they are not media files', async () => {
+    await mountDialog()
+    const { chosen } = await open({ mode: 'files', multiple: true, filters: ['.srt', 'ASS'] })
+    expect(names()).toEqual(['extras', 'season', 'a.en.srt', 'a.hu.ass'])
+    expect($('[data-field="filter"]')).toBeNull()
+    expect($('[data-field="filter-note"]')?.textContent?.trim()).toBe('Only srt, ass')
+    await click(entry('season'))
+    expect(names()).toEqual(['E01.srt'])
+    expect(listedExtensions()).toEqual([
+      ['.srt', '.ass'],
+      ['.srt', '.ass'],
+    ])
+    await click(entry('E01.srt'))
+    await click($('[data-action="confirm"]'))
+    await expect(chosen).resolves.toEqual(['/srv/media/season/E01.srt'])
   })
 
   it('gives the folder shown in folder mode; its files cannot be chosen', async () => {

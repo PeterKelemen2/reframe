@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { api, ApiError, apiQuiet, unwrap } from '@/api/client'
 import { text } from '@/api/text'
-import type { Schemas, SourceEntry, TaskInfo } from '@/api/types'
+import type { MediaSource, Schemas, SourceEntry, TaskInfo } from '@/api/types'
 import { platform } from '@/platform'
 
 import { useEditorStore } from './editor'
@@ -32,7 +32,7 @@ interface ProbeSummary {
   errors: ProbeFailure[]
 }
 
-/** The default strictness: type, codec, channels, language, role and order. */
+/** The grouping strictness the panel asks for. */
 export const GROUP_LEVEL: Schemas['BatchGroupRequest']['level'] = 'standard'
 
 const TOAST_LIFE = 10_000
@@ -60,7 +60,7 @@ function name(path: string): string {
   return path.split(/[/\\]/).findLast((part) => part !== '') ?? path
 }
 
-/** The message and its detail: after a sentence (ffprobe's "… (exit code 1).") a space, else ": ". */
+/** The message and its detail: a space after a sentence, else ": ". */
 function reason(failure: ProbeFailure): string {
   if (!failure.detail) return failure.message
   const joiner = /[.!?…]$/.test(failure.message) ? ' ' : ': '
@@ -77,7 +77,7 @@ export const useSourcesStore = defineStore('sources', () => {
   const entries = ref<SourceEntry[]>([])
   const activeId = ref<string | null>(null)
   const probing = ref<ProbeRun[]>([])
-  /** `POST /api/batch/group` over `entries` (the panel's collapsible groups). */
+  /** The batch grouping of the sources (the panel's collapsible groups). */
   const grouping = ref<Schemas['BatchGrouping'] | null>(null)
 
   const active = computed<SourceEntry | null>(
@@ -315,8 +315,8 @@ export const useSourcesStore = defineStore('sources', () => {
   }
 
   /**
-   * Reads `GET /api/sources` again: each open source gets the server's copy (`source` `null`:
-   * the file changed or is gone). Sources the server forgot are probed again.
+   * Each open source gets the server's copy (`source` `null`: the file changed or is gone).
+   * Sources the server forgot are probed again.
    */
   async function refresh(): Promise<void> {
     const known = await listed()
@@ -324,6 +324,38 @@ export const useSourcesStore = defineStore('sources', () => {
     const forgotten = entries.value.filter((entry) => !known.has(entry.id))
     if (forgotten.length > 0) await reprobe(forgotten)
     else await regroup()
+  }
+
+  /**
+   * Reads one source again and puts it in its place: a scan ended,
+   * or an in-place edit changed the file. The selection and the editor's job stay. A source the
+   * server forgot is probed again (same id); one whose file changed gets `source` `null`, as
+   * `refresh` gives it. Another refusal is a toast and rejects.
+   */
+  async function reload(id: string): Promise<void> {
+    const entry = entries.value.find((candidate) => candidate.id === id)
+    if (entry === undefined) return
+    const result = await apiQuiet.GET('/api/sources/{source_id}', {
+      params: { path: { source_id: id } },
+    })
+    if (result.response.status === 404) {
+      await reprobe([entry])
+      return
+    }
+    let source: MediaSource | null = null
+    if (result.response.status !== 409) {
+      try {
+        source = unwrap(result)
+      } catch (error) {
+        if (error instanceof ApiError) {
+          toast('error', error.problem.title, error.problem.detail ?? undefined)
+        }
+        throw error
+      }
+    }
+    entries.value = entries.value.map((other) => (other.id === id ? { ...other, source } : other))
+    // Measured values change the roles, which the grouping compares.
+    await regroup()
   }
 
   /** A new server instance forgot the sources: probe every open path again. */
@@ -346,6 +378,7 @@ export const useSourcesStore = defineStore('sources', () => {
     remove,
     removeMany,
     refresh,
+    reload,
     onServerRestart,
   }
 })

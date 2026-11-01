@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ListPlus, Plus, RotateCcw } from '@lucide/vue'
+import { FilePlus2, ListPlus, PencilLine, Plus, RotateCcw, SlidersHorizontal, X } from '@lucide/vue'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
 import DataTable, { type DataTableRowReorderEvent } from 'primevue/datatable'
 import Menu from 'primevue/menu'
 import vTooltip from 'primevue/tooltip'
-import { computed, nextTick, ref, useId, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { api, ApiError, unwrap } from '@/api/client'
@@ -19,12 +20,17 @@ import type {
 import Section from '@/components/base/Section.vue'
 import { type SourceStream, streamLabel } from '@/components/media/streams'
 import { useJobSource } from '@/components/summary/useJobSource'
+import { useDefaultsStore } from '@/stores/defaults'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
 import AudioTrackRow from './AudioTrackRow.vue'
+import BulkEditDialog from './BulkEditDialog.vue'
+import { pickSubtitleFiles } from './external'
+import { externalTrack } from './metadata'
 import {
   addOps,
+  followSelection,
   moveOp,
   newAudioTrack,
   type NewTrackContext,
@@ -35,7 +41,7 @@ import {
 } from './ops'
 import SubtitleTrackRow from './SubtitleTrackRow.vue'
 
-/** The job's output tracks of one list: add, remove, reorder (drag or buttons), reload. */
+/** The job's output tracks of one list. */
 const props = defineProps<{ list: TrackList }>()
 
 const { t } = useI18n()
@@ -47,6 +53,7 @@ const id = useId()
 const root = useTemplateRef<HTMLElement>('root')
 const addMenu = useTemplateRef<InstanceType<typeof Menu>>('addMenu')
 const reloading = ref(false)
+const defaults = useDefaultsStore()
 const title = computed(() => t('tracks.output.title'))
 
 const audioTracks = computed<readonly AudioOutputTrack[]>(() => editor.job?.audio ?? [])
@@ -61,6 +68,83 @@ const streams = computed<readonly SourceStream[]>(() =>
 /** DataTable rows: copies, since the job is frozen and the table must not hold it. */
 const rows = computed(() => tracks.value.map((track, index) => ({ index, track })))
 const unused = computed(() => unusedStreams(streams.value, tracks.value))
+
+/** The selected tracks' places; they follow the tracks through a reorder. */
+const selected = ref<number[]>([])
+const bulkVisible = ref(false)
+/** Bulk editing needs at least two tracks. */
+const selectable = computed(() => rows.value.length > 1)
+const allSelected = computed(
+  () => rows.value.length > 0 && selected.value.length === rows.value.length,
+)
+
+watch(
+  () => [editor.session, tracks.value] as const,
+  ([session, after], [previousSession, before]) => {
+    selected.value =
+      session === previousSession && after.length > 1
+        ? followSelection(before, after, selected.value)
+        : []
+  },
+)
+
+// The bulk buttons leave with the selection: the focus stays in the selection bar.
+async function focusSelectAll(): Promise<void> {
+  await nextTick()
+  document.getElementById(`${id}-all`)?.focus()
+}
+
+function clearSelection(): void {
+  selected.value = []
+  void focusSelectAll()
+}
+
+let applied = false
+
+function onApplied(): void {
+  selected.value = []
+  applied = true
+}
+
+function onBulkClosed(): void {
+  if (!applied) return
+  applied = false
+  void focusSelectAll()
+}
+
+function select(index: number, on: boolean): void {
+  const others = selected.value.filter((other) => other !== index)
+  selected.value = on ? [...others, index].toSorted((a, b) => a - b) : others
+}
+
+function selectAll(on: boolean): void {
+  selected.value = on ? rows.value.map((row) => row.index) : []
+}
+
+/** Picked subtitle files become copied tracks at the end of the list: one undo step. */
+const addingExternal = ref(false)
+
+async function addExternal(): Promise<void> {
+  if (addingExternal.value) return
+  const session = editor.session
+  addingExternal.value = true
+  try {
+    const infos = await pickSubtitleFiles()
+    if (infos.length === 0 || editor.session !== session || editor.job === null) return
+    editor.patch(
+      infos.map(
+        (info) =>
+          ({
+            op: 'add',
+            path: '/subtitles/-',
+            value: externalTrack(info, system.languages),
+          }) as JsonPatchOp,
+      ),
+    )
+  } finally {
+    addingExternal.value = false
+  }
+}
 
 function context(): NewTrackContext {
   return {
@@ -194,7 +278,83 @@ async function reload(): Promise<void> {
         >
           <template #icon><RotateCcw :size="16" aria-hidden="true" /></template>
         </Button>
+        <Button
+          v-if="list === 'subtitles'"
+          v-tooltip.top="t('tracks.external.addHelp')"
+          size="small"
+          severity="secondary"
+          data-action="add-external"
+          aria-haspopup="dialog"
+          :label="t('tracks.external.add')"
+          :loading="addingExternal"
+          :disabled="editor.target?.kind !== 'job'"
+          @click="addExternal"
+        >
+          <template #icon><FilePlus2 :size="16" aria-hidden="true" /></template>
+        </Button>
+        <Button
+          size="small"
+          severity="secondary"
+          data-action="defaults"
+          aria-haspopup="dialog"
+          :label="t('tracks.output.defaults')"
+          :disabled="editor.target?.kind !== 'job'"
+          @click="defaults.open(list, { kind: 'job' })"
+        >
+          <template #icon><SlidersHorizontal :size="16" aria-hidden="true" /></template>
+        </Button>
       </template>
+      <div
+        v-if="selectable"
+        class="output-tracks__selection"
+        :class="{ 'output-tracks__selection--active': selected.length > 0 }"
+        data-role="selection"
+      >
+        <div class="output-tracks__select-all">
+          <Checkbox
+            binary
+            :input-id="`${id}-all`"
+            :model-value="allSelected"
+            :indeterminate="selected.length > 0 && !allSelected"
+            data-select="all"
+            @update:model-value="selectAll"
+          />
+          <label :for="`${id}-all`">{{ t('tracks.bulk.selectAll') }}</label>
+        </div>
+        <span class="output-tracks__selection-count" aria-live="polite">
+          <template v-if="selected.length > 0">
+            {{ t('tracks.bulk.selected', { count: selected.length }, selected.length) }}
+          </template>
+        </span>
+        <template v-if="selected.length > 0">
+          <Button
+            size="small"
+            data-action="bulk-edit"
+            aria-haspopup="dialog"
+            :label="t('tracks.bulk.edit')"
+            @click="bulkVisible = true"
+          >
+            <template #icon><PencilLine :size="16" aria-hidden="true" /></template>
+          </Button>
+          <Button
+            size="small"
+            severity="secondary"
+            text
+            data-action="bulk-clear"
+            :label="t('tracks.bulk.clear')"
+            @click="clearSelection"
+          >
+            <template #icon><X :size="16" aria-hidden="true" /></template>
+          </Button>
+        </template>
+      </div>
+      <BulkEditDialog
+        v-model:visible="bulkVisible"
+        :list="list"
+        :indexes="selected"
+        @applied="onApplied"
+        @closed="onBulkClosed"
+      />
       <p v-if="rows.length === 0" class="output-tracks__empty" data-state="empty">
         {{ list === 'audio' ? t('tracks.output.noAudio') : t('tracks.output.noSubtitles') }}
       </p>
@@ -209,6 +369,24 @@ async function reload(): Promise<void> {
         <Column row-reorder body-class="output-tracks__handle" header-class="output-tracks__handle">
           <template #header>
             <span class="rf-sr-only">{{ t('tracks.output.dragColumn') }}</span>
+          </template>
+        </Column>
+        <Column
+          v-if="selectable"
+          body-class="output-tracks__select"
+          header-class="output-tracks__select"
+        >
+          <template #header>
+            <span class="rf-sr-only">{{ t('tracks.bulk.selectColumn') }}</span>
+          </template>
+          <template #body="{ data }">
+            <Checkbox
+              binary
+              :model-value="selected.includes(data.index)"
+              :ariaLabel="t('tracks.bulk.select', { n: data.index + 1 })"
+              :data-select="data.index"
+              @update:model-value="(on: boolean) => select(data.index, on)"
+            />
           </template>
         </Column>
         <Column body-class="output-tracks__editor">
@@ -242,6 +420,24 @@ async function reload(): Promise<void> {
 </template>
 
 <style scoped>
+/* The actions do not fit beside the title in a narrow panel: they go below it and wrap. */
+.output-tracks :deep(.rf-section__header) {
+  flex-wrap: wrap;
+  row-gap: var(--rf-space-2);
+}
+
+.output-tracks :deep(.rf-section__title) {
+  white-space: nowrap;
+}
+
+.output-tracks :deep(.rf-section__actions) {
+  flex-wrap: wrap;
+}
+
+.output-tracks :deep(.rf-section__actions .p-button) {
+  white-space: nowrap;
+}
+
 .output-tracks__empty {
   margin: 0;
   color: var(--rf-color-text-muted);
@@ -262,6 +458,39 @@ async function reload(): Promise<void> {
 
 .output-tracks__table :deep(.output-tracks__editor) {
   width: 100%;
+}
+
+.output-tracks__table :deep(.output-tracks__select) {
+  width: 2rem;
+  padding-inline: var(--rf-space-1);
+  padding-top: var(--rf-space-5);
+}
+
+.output-tracks__selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2);
+  min-height: 2.75rem;
+  margin-bottom: var(--rf-space-2);
+  padding: var(--rf-space-1) var(--rf-space-3);
+  border: 1px solid var(--rf-color-border);
+  border-radius: var(--rf-radius-md);
+}
+
+.output-tracks__selection--active {
+  border-color: var(--rf-color-primary);
+}
+
+.output-tracks__select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--rf-space-2);
+}
+
+.output-tracks__selection-count {
+  margin-inline-end: auto;
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .output-tracks__table :deep(.output-tracks__handle) {

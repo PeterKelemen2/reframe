@@ -23,6 +23,17 @@ function draftFor(sourceId: string, presetId: string | null): JobDraft {
   return sampleDraft(job)
 }
 
+/** The remux the fake server drafts: video passthrough, every track copied, in place at the source. */
+function remuxFor(sourceId: string, editInPlace: boolean): JobDraft {
+  const draft = draftFor(sourceId, null)
+  const job = draft.job
+  job.video!.passthrough = true
+  for (const track of job.audio ?? []) track.action = 'passthru'
+  job.output!.edit_in_place = editInPlace
+  if (editInPlace) job.output!.path = job.source.path
+  return { ...draft, decisions: [], subtitle_decisions: [] }
+}
+
 function presetNamed(id: string) {
   return { ...samplePreset(), id, name: id }
 }
@@ -429,6 +440,100 @@ describe('the editor store', () => {
 
     it('rejects without an open job', async () => {
       await expect(useEditorStore().applyPreset('h264')).rejects.toThrow(/no job is open/)
+    })
+  })
+
+  describe('applyRemuxDraft', () => {
+    beforeEach(() => {
+      server.on('POST /api/jobs/draft-remux', (request) => {
+        const { source_id, edit_in_place } = body(request) as {
+          source_id: string
+          edit_in_place: boolean
+        }
+        return remuxFor(source_id, edit_in_place)
+      })
+    })
+
+    it("drafts the remux with the job's preset as one undo step; undo brings back the job and its draft", async () => {
+      const editor = await opened()
+      editor.set('/video/rate_control/value', 19)
+      const edited = JSON.stringify(editor.job)
+      const firstDraft = editor.draft
+      await editor.applyRemuxDraft({ editInPlace: true })
+
+      expect(body(requests('POST /api/jobs/draft-remux').at(-1))).toEqual({
+        source_id: 'movie',
+        preset_id: DEFAULT_PRESET,
+        edit_in_place: true,
+      })
+      expect(editor.get('/video/passthrough')).toBe(true)
+      expect(editor.get('/output/edit_in_place')).toBe(true)
+      expect(editor.get('/output/path')).toBe('/media/movie.mkv')
+      const remuxDraft = editor.draft
+      expect(remuxDraft?.job).toBe(editor.job)
+      expect(Object.isFrozen(editor.job)).toBe(true)
+
+      editor.undo()
+      expect(JSON.stringify(editor.job)).toBe(edited)
+      expect(editor.draft).toBe(firstDraft)
+      editor.redo()
+      expect(editor.get('/output/edit_in_place')).toBe(true)
+      expect(editor.draft).toBe(remuxDraft)
+      editor.undo()
+      editor.undo()
+      expect(editor.get('/video/rate_control/value')).toBe(22)
+    })
+
+    it('asks for an in-place edit unless told not to', async () => {
+      const editor = await opened()
+      await editor.applyRemuxDraft()
+      await editor.applyRemuxDraft({ editInPlace: false })
+      expect(
+        requests('POST /api/jobs/draft-remux').map((request) => body(request).edit_in_place),
+      ).toEqual([true, false])
+      expect(editor.get('/output/edit_in_place')).toBe(false)
+      expect(editor.get('/output/path')).toBe('/output/multitrack.mkv')
+    })
+
+    it('keeps an edit made while the remux loads in the step it undoes to', async () => {
+      const slow = deferred<JobDraft>()
+      const editor = await opened()
+      server.on('POST /api/jobs/draft-remux', () => slow.promise)
+      const applying = editor.applyRemuxDraft()
+      editor.set('/video/preset', 'fast')
+      slow.resolve(remuxFor('movie', true))
+      await applying
+      editor.undo()
+      expect(editor.get('/video/preset')).toBe('fast')
+    })
+
+    it('drops its answer when another source was opened meanwhile', async () => {
+      const slow = deferred<JobDraft>()
+      const editor = await opened('first')
+      server.on('POST /api/jobs/draft-remux', () => slow.promise)
+      const applying = editor.applyRemuxDraft()
+      await editor.open('second')
+      slow.resolve(remuxFor('first', true))
+      await applying
+      expect(editor.target).toMatchObject({ sourceId: 'second' })
+      expect(editor.get('/video/passthrough')).toBe(false)
+      expect(editor.canUndo).toBe(false)
+    })
+
+    it('rejects when the server refuses and keeps the job as it was', async () => {
+      const editor = await opened()
+      const job = editor.job
+      server.on('POST /api/jobs/draft-remux', () =>
+        problem(409, 'source.stale', 'The file changed or is gone since it was probed'),
+      )
+      await expect(editor.applyRemuxDraft()).rejects.toBeInstanceOf(ApiError)
+      expect(editor.job).toBe(job)
+      expect(editor.canUndo).toBe(false)
+      expect(editor.loading).toBe(false)
+    })
+
+    it('rejects without an open job', async () => {
+      await expect(useEditorStore().applyRemuxDraft()).rejects.toThrow(/no job is open/)
     })
   })
 

@@ -2,12 +2,14 @@
 import { watch } from 'vue'
 import { RouterView } from 'vue-router'
 
+import DefaultsDialog from '@/components/defaults/DefaultsDialog.vue'
 import PowerBanner from '@/components/queue/PowerBanner.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
 import NavRail from '@/components/shell/NavRail.vue'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
 import FileBrowserDialog from '@/components/sources/FileBrowserDialog.vue'
+import { useInPlaceReload } from '@/components/summary/useInPlaceReload'
 import { useShortcuts } from '@/composables/useShortcuts'
 import { useTheme } from '@/composables/useTheme'
 import { platform } from '@/platform'
@@ -17,9 +19,10 @@ import { useSystemStore } from '@/stores/system'
 const system = useSystemStore()
 const queue = useQueueStore()
 
-// The first call starts following the theme and density saved in the server's settings.
+// Follows the theme and density saved in the server's settings.
 useTheme()
 useShortcuts()
+useInPlaceReload()
 
 watch(
   () => queue.overallProgress,
@@ -41,6 +44,7 @@ watch(
   <BootScreen v-else :offline="system.phase === 'offline'" />
   <ShellToasts />
   <FileBrowserDialog />
+  <DefaultsDialog v-if="system.phase === 'ready'" />
 </template>
 
 <style scoped>

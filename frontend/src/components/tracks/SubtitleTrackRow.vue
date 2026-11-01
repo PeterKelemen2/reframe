@@ -20,6 +20,10 @@ import {
   type SubtitleFormat,
   subtitleActionOps,
 } from './ops'
+import ExternalSubtitleFields from './ExternalSubtitleFields.vue'
+import { inspected } from './external'
+import { metadataPaths } from './metadata'
+import TrackMetadataEditor from './TrackMetadataEditor.vue'
 import TrackRowFrame from './TrackRowFrame.vue'
 
 const props = defineProps<{
@@ -46,22 +50,36 @@ const stream = computed(() =>
   props.streams.find((candidate) => candidate.index === props.track.source),
 )
 const container = computed(() => containerDef(system.definitions, editor.job?.output?.container))
-const bitmap = computed(() => stream.value?.subtitle_kind === 'bitmap')
+const externalInfo = computed(() => (external.value ? inspected(external.value.path) : undefined))
+const bitmap = computed(() =>
+  external.value
+    ? (externalInfo.value?.bitmap ?? external.value.path.toLowerCase().endsWith('.sup'))
+    : stream.value?.subtitle_kind === 'bitmap',
+)
+/** The codec the track reads: the source stream's, or the inspected file's. */
+const codec = computed(() =>
+  external.value ? externalInfo.value?.format : stream.value?.display_codec || stream.value?.codec,
+)
 const showForcedOnly = computed(() => props.track.action === 'burn' || props.track.forced_only)
 
 /** The paths of the fields shown: an issue elsewhere in the track is listed under the row. */
 const fieldPaths = computed(() => {
-  const fields = ['source', 'action']
+  const fields = external.value
+    ? ['source.path', 'source.offset_ms', 'source.charset', 'action']
+    : ['source', 'action']
   if (props.track.action === 'convert') fields.push('convert_to')
   if (showForcedOnly.value) fields.push('forced_only')
-  return fields.map((field) => `${path.value}.${field}`)
+  return [
+    ...fields.map((field) => `${path.value}.${field}`),
+    ...metadataPaths(`${path.value}.metadata`),
+  ]
 })
 
 /** A copied text track the container cannot hold is converted on the way (MP4: mov_text). */
 const convertedOnCopy = computed<string | null>(() => {
-  const codec = stream.value?.codec
-  if (props.track.action !== 'copy' || bitmap.value || !codec || !container.value) return null
-  if (canCopy(container.value.subtitles, codec)) return null
+  const raw = external.value ? externalInfo.value?.format : stream.value?.codec
+  if (props.track.action !== 'copy' || bitmap.value || !raw || !container.value) return null
+  if (canCopy(container.value.subtitles, raw)) return null
   return container.value.text_subtitle_target ?? null
 })
 
@@ -116,13 +134,21 @@ const formatOptions = computed(() =>
     @remove="emit('remove')"
   >
     <template #header>
-      <Field :label="t('tracks.output.source')" :path="`${path}.source`" stacked>
-        <template #default="{ id, labelId, invalid }">
-          <span v-if="external" :id="id" class="track-field__external">
-            {{ t('tracks.output.externalFile', { name: fileName(external.path) }) }}
+      <Field
+        v-if="external"
+        :label="t('tracks.external.file')"
+        :path="`${path}.source.path`"
+        stacked
+      >
+        <template #default="{ id }">
+          <span :id="id" class="track-field__external" :title="external.path" data-role="file">
+            {{ fileName(external.path) }}
           </span>
+        </template>
+      </Field>
+      <Field v-else :label="t('tracks.output.source')" :path="`${path}.source`" stacked>
+        <template #default="{ id, labelId, invalid }">
           <Select
-            v-else
             :input-id="id"
             :ariaLabelledby="labelId"
             class="track-field__control"
@@ -138,6 +164,7 @@ const formatOptions = computed(() =>
         </template>
       </Field>
     </template>
+    <ExternalSubtitleFields v-if="external" :index="index" :external="external" />
     <div class="track-fields">
       <Field
         class="track-field--fit"
@@ -203,10 +230,19 @@ const formatOptions = computed(() =>
       {{
         t('tracks.output.convertedOnCopy', {
           container: container?.label ?? '',
-          codec: stream?.display_codec || stream?.codec || '',
+          codec: codec ?? '',
           format: convertedOnCopy,
         })
       }}
+    </p>
+    <TrackMetadataEditor
+      list="subtitles"
+      :index="index"
+      :disabled="track.action === 'burn'"
+      collapsible
+    />
+    <p v-if="track.action === 'burn'" class="track-fields__note" data-note="burned">
+      {{ t('tracks.metadata.burned') }}
     </p>
   </TrackRowFrame>
 </template>

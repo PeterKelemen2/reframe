@@ -3,7 +3,8 @@
     "encoder": "Encoder",
     "quality": "Quality",
     "framerate": "Frame rate",
-    "encoderSettings": "Encoder settings"
+    "encoderSettings": "Encoder settings",
+    "metadata": "Track metadata"
   },
   "family": {
     "software": "Software",

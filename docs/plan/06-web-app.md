@@ -133,7 +133,9 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
 | Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown`. The server's config, data and cache folders show as `<config>`, `<data>`, `<cache>` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
-| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=` | Server-side file browser (media files and folders only). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
+| Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=&extensions=` | Server-side file browser (media files and folders only; with `extensions` (repeatable: `.srt`), the files with those extensions instead of the media files, [0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
+| Subtitles | `POST /api/subtitles/inspect` `{path}` | An external subtitle file before it is added: FFmpeg's format, text or bitmap, the character encoding (byte order mark or valid UTF-8, else `null`), the event count, issues; a file a job cannot take is `422 subtitles.unsupported` ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
+| Chapters | `POST /api/chapters/import` `{path, format?}` | Names (and times where the format has them) of a HandBrake CSV, OGM text or Matroska XML chapter file; the format from the content when not given; `422 chapters.unreadable` / `chapters.invalid` (with the line) ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
 | Sources | `POST /api/sources` `{paths, recursive?}` → 202 | Probe files/folders (task; its result names each `source_id` and each error). Every file found in a folder passes the read jail too: a link out of the roots is an error, never probed ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md#follow-up-review-2026-10-22)) |
 | | `GET /api/sources` · `GET /api/sources/{id}` · `DELETE /api/sources/{id}` | Probed sources |
 | | `POST /api/sources/{id}/streams/{index}/bitrate-scan` → 202 | Measure the bitrate |
@@ -158,6 +160,10 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft`; an in-place edit in web mode gets `inplace.not_allowed` instead (as `validate`) |
 | | `POST /api/jobs/dry-run` `{job}` | One-frame test of custom encoder parameters → `ValidationIssue[]`; an output outside the output roots or a refused in-place edit is `422 jobs.invalid` (as `plan`) |
 | | `POST /api/jobs/hdr-metadata` `{job}` | **Copy HDR metadata** → JSON patch for the job |
+| | `POST /api/jobs/type` `{job}` | The job type and its reason, and why the job could not be edited in place (for any job; a source the server may not write is a blocker, not a refusal) ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
+| | `POST /api/jobs/chapters` `{job}` | The chapters the output gets, in output time (`OutputChapters`; from the one function the command uses) |
+| | `POST /api/jobs/chapters/export` `{job, format}` | Those chapters as a CSV, OGM or XML file's text with a file name; none is `422 chapters.none` |
+| | `POST /api/jobs/tags` `{job}` | Each tag as it will be written, the source's values, the template errors at `tags.<name>` |
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
 | | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail inside the batch service, before it is named or validated. A row whose output is outside the output roots gets `output.folder_required` |
@@ -166,7 +172,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue (web mode: the store's failures name no server folder) |
 | | `POST /api/presets/{id}/default` · `POST /api/presets/import?on_conflict=` · `GET /api/presets/export?ids=` | Import: the export file as the body (at most 4 MiB), a report with the issues. Export: `{document, issues}` |
 | | `POST /api/presets/diff` `{template, preset_id}` | Changes for the "modified" marker |
-| | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source |
+| | `POST /api/presets/defaults/preview` `{audio_defaults, subtitle_defaults, source_ids, container?, template?}` | Track decisions with reasons, for the live preview: one `TrackDraft` per source. With `template` (the one *Apply* sends to `jobs/explain`), each preview is that template with the two defaults put in, so its explicit `audio_rules` / `subtitle_rules` apply as in *Apply*; its naming folder is jailed as in `jobs/explain` ([0065](../decisions/0065-m6-tracks-and-metadata.md#fix-round--fa-core-and-server)) |
 | Naming | `POST /api/naming/preview` `{naming?, source_ids, job?, container?}` | One `NameResult` per source: name source + reason, parsed fields with positions, rendered output paths, issues (web mode: `output.folder_required` with the settings fix). The variable list comes with `GET /api/definitions` |
 | Queue | `GET /api/queue` · `POST /api/queue` `{jobs, position?, attach?}` | Snapshot `{jobs, processing, only}` (whether the queue takes waiting jobs and which; each change is a `queue.processing` event, [0064](../decisions/0064-queue-processing-event.md)), add (server validates again: a job with errors is added `failed`). Every job passes the path jail before any is added; a job without `output.path` is refused (422 `output.no_path`). `attach`: a client id; the jobs follow that client's event connection (S-7); refused (409) unless it is open. Outside a job's `settings`, the server's folders show as in the task answers (`log_path`: `<data>/…`) ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
@@ -389,7 +395,11 @@ frontend/src/
 │   ├── naming/       # NamingOptionsEditor, JobNamingEditor
 │   ├── presets/      # PresetPicker, the preset drawer
 │   ├── media/        # FrameViewer, CropMagnifier, CropCheckGrid, SplitCompare, TrackTable
-│   ├── metadata/     # TrackMetadataEditor, LanguagePicker, FlagToggles, BulkEditDialog
+│   ├── language/     # LanguagePicker, LanguageListEditor
+│   ├── tracks/       # output track rows, TrackMetadataEditor, flag toggles, bulk edit
+│   ├── defaults/     # DefaultsDialog and its live preview
+│   ├── chapters/     # the Chapters tab's table, import and export
+│   ├── tags/         # the Tags tab's form
 │   ├── video/        # EncoderPicker, QualitySlider, AdvancedOptions, CommandPreview
 │   ├── batch/        # GroupBanner, ApplyToGroupDialog, ResolutionMatrix, OverrideDot
 │   ├── settings/     # the Settings sections
@@ -401,7 +411,9 @@ frontend/src/
 
 Each area of the app has its own message file and its own component folder, so that the M4
 tasks never share one ([decision 0063](../decisions/0063-m4-frontend-mvp.md)); the task
-breakdown and the store contracts are in [../m4-breakdown.md](../m4-breakdown.md).
+breakdown and the store contracts are in [../m4-breakdown.md](../m4-breakdown.md); M6's
+folders and contracts are in [../m6-breakdown.md](../m6-breakdown.md)
+([decision 0065](../decisions/0065-m6-tracks-and-metadata.md)).
 
 ## Platform adapter
 
@@ -484,8 +496,13 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Probe progress, warnings, batch groups (collapsible), near-match markers.
 
 ### F-6 Summary tab
-- [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields (the job
-      type line comes with M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
+- [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
+- [x] A **Job type** card (not a line): the job type (encode, remux, metadata edit) and why from
+      `jobs/type`, updated after each edit; *Edit in place*, why the job could not edit its source
+      in place, the `inplace.*` issues with their fixes; *Remux only* (`jobs/draft-remux`, one undo
+      step); the source read again after an in-place edit
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task D").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
 - [ ] Pipeline header from `jobs/geometry`.
@@ -510,22 +527,28 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
 
 ### F-10 Audio and subtitles tabs
-- [ ] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
-      button for unknown bitrates. (M4 built all but the "Measure" button, which is M6;
-      [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
-- [ ] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
-      (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I".)
-- [ ] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
-      (`hun · hu`).
-- [ ] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`).
-- [ ] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
+- [x] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
+      button for unknown bitrates. (M4 built the table, [decision 0063](../decisions/0063-m4-frontend-mvp.md),
+      "Task I"; M6 the "Measure" button, the subtitle event count and the loudness measurement,
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task B".)
+- [x] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.
+      (M4 built all but `TrackMetadataEditor`, which is M6; [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task I";
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task C".)
+- [x] `LanguagePicker`: search dialog, favourites on top, a preview of how it is written
+      (`hun · hu`). With `LanguageListEditor` for ordered language lists (M6,
+      [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
+- [x] Bulk edit for selected tracks. External subtitle import (file picker through `Platform`)
+      (M6, [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task C").
+- [x] **Defaults dialog** (audio and subtitles), opened from the tab and from the preset editor:
       selection settings, a codec-rule table (drag to reorder, the catch-all row is locked,
       expandable rows for optional settings), passthru check boxes, fallback encoder, and the
       **live preview** table (`presets/defaults/preview`, debounced). In a batch group, the preview
-      covers every file.
+      covers every file. From a tab, *Apply* replaces the job's tracks with what the defaults give
+      (the job keeps no defaults of its own); the batch-group case comes with F-13 (M7)
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), item 4 and "Task E").
 
 ### F-11 Chapters and tags tabs
-- [ ] Chapter table with inline name edits, import/export, generate. Tag form with templates.
+- [x] Chapter table with inline name edits, import/export, generate. Tag form with templates.
 
 ### F-12 Presets UI
 - [x] Preset drawer: tree by category, built-in lock, CRUD, default star, import/export,
@@ -552,6 +575,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
       `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
       its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
+- [x] Languages (M6): favourites, preferred audio and subtitle languages
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
@@ -568,7 +593,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
      `crop=` filter.
 
   (M4 built the set-up and flow 3, in headless Chromium and Firefox, each with its own server;
-  [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M".)
+  [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M". M6 built flow 1, which
+  probes the job's output through the server; [decision
+  0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).

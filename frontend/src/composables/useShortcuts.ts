@@ -11,8 +11,10 @@ import { useUiStore } from '@/stores/ui'
 
 import { useQueueActions } from './useQueueActions'
 
-function inModal(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[aria-modal="true"]') !== null
+// Not the key's target: after a click on a dialog's text the focus, and the target, is `<body>`.
+// A closing one (its Vue leave transition) is still in the page, but does not hold the keys.
+function modalOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]:not([class*="-leave-active"])') !== null
 }
 
 /** `Digit1` … `Digit8` (and the keypad's), whatever the keyboard layout prints on the key. */
@@ -29,9 +31,7 @@ function ignoreShown(promise: Promise<void>): void {
 }
 
 /**
- * The app's keyboard shortcuts: `Ctrl+O` open, `Ctrl+Enter` add to queue, `Ctrl+1…8` tabs,
- * `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo outside text fields. Called once, by the
- * app shell; removed when it unmounts.
+ * The app's keyboard shortcuts. Called once, by the app shell; removed when it unmounts.
  */
 export function useShortcuts(): void {
   const route = useRoute()
@@ -54,7 +54,7 @@ export function useShortcuts(): void {
 
   function onKeydown(event: KeyboardEvent): void {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
-    if (system.phase !== 'ready' || inModal(event.target)) return
+    if (system.phase !== 'ready' || modalOpen()) return
     const key = event.key.toLowerCase()
 
     if (key === 'o' && !event.shiftKey) {
@@ -69,7 +69,13 @@ export function useShortcuts(): void {
     if (digit !== null) {
       event.preventDefault()
       const tab = EDITOR_TABS.find((candidate) => candidate.shortcut === digit)
-      if (tab) ui.activeTab = tab.id
+      if (tab) {
+        ui.activeTab = tab.id
+        // The old tab's panel goes, and the focus in it with it: the new tab's button takes it.
+        document
+          .querySelector<HTMLElement>(`[role="tab"][data-tab="${tab.id}"]`)
+          ?.focus({ focusVisible: true })
+      }
       return
     }
     if (key === 'enter' && !event.shiftKey) {

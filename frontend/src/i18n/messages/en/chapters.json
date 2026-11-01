@@ -1,0 +1,55 @@
+{
+  "loading": "Loading the job…",
+  "noJob": "No job is open.",
+  "title": "Chapters",
+  "enabled": {
+    "label": "Create chapter markers",
+    "hint": "Write chapter markers into the output."
+  },
+  "generate": {
+    "label": "Generate chapters",
+    "help": "The source has no chapters. Reframe can make one every N minutes; the last one is merged into the one before it when it would be very short.",
+    "every": "every {field} min",
+    "minutes": "Minutes between generated chapters"
+  },
+  "origin": {
+    "source": "{count} chapter from the source | {count} chapters from the source",
+    "generated": "{count} generated chapter | {count} generated chapters"
+  },
+  "state": {
+    "asking": "Reading the output's chapters…",
+    "failed": "The output's chapters could not be read: {reason}",
+    "none": "The output gets no chapters."
+  },
+  "table": {
+    "caption": "The output's chapters",
+    "number": "#",
+    "start": "Start",
+    "duration": "Duration",
+    "name": "Name",
+    "nameLabel": "Name of chapter {n}",
+    "sourceName": "Source: {name}",
+    "noName": "No name"
+  },
+  "reset": {
+    "label": "Reset names",
+    "source": "To the source names",
+    "numbered": "To Chapter 1, Chapter 2, …"
+  },
+  "format": {
+    "csv": "CSV",
+    "ogm": "OGM text",
+    "xml": "Matroska XML"
+  },
+  "import": {
+    "label": "Import…",
+    "done": "No names imported from {file}. | {count} name imported from {file}. | {count} names imported from {file}.",
+    "failed": "The chapter file could not be imported: {reason}",
+    "count": "The file has {file} chapter and the output has {output}: the names were applied in order. | The file has {file} chapters and the output has {output}: the names were applied in order.",
+    "moved": "Chapter {n} starts at {file} in the file and at {output} in the output."
+  },
+  "export": {
+    "label": "Export",
+    "failed": "The chapters could not be exported: {reason}"
+  }
+}

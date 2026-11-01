@@ -86,7 +86,6 @@ function row(wrapper: VueWrapper, path: string) {
   return wrapper.find(`[data-path="${path}"]`)
 }
 
-/** The PrimeVue control of the field at `path`. */
 function control(
   wrapper: VueWrapper,
   path: string,
@@ -103,7 +102,7 @@ function encoderChoices(wrapper: VueWrapper): string[] {
   return options.map((option) => option.value)
 }
 
-/** What a screen reader names each list of the row at `path`: `aria-labelledby` wins over `aria-label`. */
+/** The accessible names of the row's comboboxes; `aria-labelledby` wins over `aria-label`. */
 function comboboxNames(wrapper: VueWrapper, path: string): (string | null)[] {
   return row(wrapper, path)
     .findAll('[role="combobox"]')
@@ -117,7 +116,6 @@ function comboboxNames(wrapper: VueWrapper, path: string): (string | null)[] {
     })
 }
 
-/** A copied subtitle track of the source stream `source`, not default. */
 function subtitle(source: number) {
   const track = sampleJob().subtitles![0]!
   return { ...track, source, metadata: { ...track.metadata!, default: false } }
@@ -363,6 +361,7 @@ describe('an output audio track', () => {
     useValidationStore().issues = [
       issue('container.codec_unsupported', 'audio[1].encoder', 'error'),
       issue('metadata.language_tag_lost', 'audio[1].metadata.language', 'warning'),
+      issue('audio.elsewhere', 'audio[1]', 'warning'),
     ]
     await nextTick()
     const second = row(wrapper, 'audio[1]')
@@ -371,9 +370,12 @@ describe('an output audio track', () => {
     const field = second.find('.rf-field[data-path="audio[1].encoder"]')
     expect(field.classes()).toContain('rf-field--error')
     expect(field.text()).toContain('container.codec_unsupported at audio[1].encoder')
+    const language = second.find('.rf-field[data-path="audio[1].metadata.language"]')
+    expect(language.text()).toContain('metadata.language_tag_lost')
     const listed = second.find('.track-row__issues').text()
-    expect(listed).toContain('metadata.language_tag_lost')
+    expect(listed).toContain('audio.elsewhere')
     expect(listed).not.toContain('container.codec_unsupported')
+    expect(listed).not.toContain('metadata.language_tag_lost')
   })
 
   it('is where a link to the track lands', async () => {

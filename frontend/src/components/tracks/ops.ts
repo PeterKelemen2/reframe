@@ -212,6 +212,48 @@ export function removeOp(list: TrackList, index: number): JsonPatchOp {
   return { op: 'remove', path: `/${list}/${index}` } as JsonPatchOp
 }
 
+type OutputTrack = AudioOutputTrack | SubtitleOutputTrack
+
+/** The track without what a metadata edit writes (an external file's own fields too). */
+function shapeOf(track: OutputTrack): string {
+  const { metadata: _metadata, ...rest } = track
+  if ('source' in rest && typeof rest.source === 'object') {
+    const { language: _language, name: _name, flags: _flags, ...file } = rest.source
+    return JSON.stringify({ ...rest, source: file })
+  }
+  return JSON.stringify(rest)
+}
+
+/**
+ * The selected places after the list changed from `before` to `after`. A reorder moves each
+ * selected track to its new place (equal tracks keep their order). An edit of one track keeps
+ * the places; any other change clears the selection, as a place may then hold another track.
+ */
+export function followSelection(
+  before: readonly OutputTrack[],
+  after: readonly OutputTrack[],
+  selected: readonly number[],
+): number[] {
+  if (selected.length === 0 || before.length !== after.length) return []
+  const was = before.map((track) => JSON.stringify(track))
+  const now = after.map((track) => JSON.stringify(track))
+
+  const placesOf = new Map<string, number[]>()
+  now.forEach((json, place) => placesOf.set(json, [...(placesOf.get(json) ?? []), place]))
+  const taken = new Map<string, number>()
+  const moved = was.map((json) => {
+    const nth = taken.get(json) ?? 0
+    taken.set(json, nth + 1)
+    return placesOf.get(json)?.[nth]
+  })
+  if (moved.every((place) => place !== undefined)) {
+    return selected.map((place) => moved[place]!).toSorted((a, b) => a - b)
+  }
+
+  const reshaped = before.filter((track, place) => shapeOf(track) !== shapeOf(after[place]!))
+  return reshaped.length <= 1 ? [...selected] : []
+}
+
 function replace(path: string, value: unknown): JsonPatchOp {
   return { op: 'replace', path, value } as JsonPatchOp
 }
@@ -246,8 +288,8 @@ function fittedBitrate(
 }
 
 /**
- * Another encoder: a mixdown it cannot make, a bitrate it cannot write and a VBR quality it
- * does not have are changed with it, so the track stays valid.
+ * Another encoder: a mixdown, bitrate or VBR quality it cannot take is changed with it, so the
+ * track stays valid.
  */
 export function encoderChangeOps(
   index: number,
@@ -305,8 +347,8 @@ export function rateModeOps(
 }
 
 /**
- * Another subtitle action: Convert gets the container's text format when it has none, and a
- * format or forced-only setting the new action does not use is cleared.
+ * Another subtitle action. Convert gets the container's text format if it has none; settings
+ * that the new action does not use are cleared.
  */
 export function subtitleActionOps(
   index: number,

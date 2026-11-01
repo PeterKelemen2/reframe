@@ -9,7 +9,6 @@ import { useSystemStore } from '@/stores/system'
 
 import WorkspaceView from './WorkspaceView.vue'
 
-// Test doubles of the stores and composables of other tasks that the workspace places.
 const entries = ref<SourceEntry[]>([])
 const activeId = ref<string | null>(null)
 const sources = reactive({
@@ -83,6 +82,8 @@ describe('the workspace', () => {
       'Video',
       'Audio',
       'Subtitles',
+      'Chapters',
+      'Tags',
     ])
     expect(wrapper.find('.preview-panel').exists()).toBe(true)
     expect(wrapper.find('.status-bar').exists()).toBe(true)

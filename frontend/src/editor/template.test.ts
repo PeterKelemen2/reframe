@@ -119,8 +119,17 @@ describe('the crop of the template', () => {
 describe('the chapter name policy of the template', () => {
   it.each([
     [['Chapter 1', 'Chapter 2', 'Chapter 3'], 'source', 'generated'],
-    [['Intro', 'Chapter 2'], 'generated', 'source'],
-    [null, 'generated', 'generated'],
+    [['Chapter 1'], 'source', 'generated'],
+    [['Chapter 1', 'Chapter 2', 'Chapter 3'], 'generated', 'generated'],
+    // The output gets the source's names: *To the source names* under a numbering preset.
+    [null, 'generated', 'source'],
+    [null, 'source', 'source'],
+    // One file's own names are no preset setting: the preset's policy stays.
+    [['Chapter 1', 'Chapter 2', 'End credits'], 'generated', 'generated'],
+    [['Intro', 'Chapter 2'], 'source', 'source'],
+    [['Chapter 2', 'Chapter 1'], 'source', 'source'],
+    [['', 'Chapter 2'], 'generated', 'generated'],
+    [[], 'source', 'source'],
   ] as const)('names %j over the policy %s give %s', (names, policy, expected) => {
     const preset = samplePreset()
     preset.chapter_name_policy = policy

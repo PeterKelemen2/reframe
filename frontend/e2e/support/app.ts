@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test'
 
-import type { QueueJob } from '../../src/api/types'
+import type { MediaSource, QueueJob, TaskInfo } from '../../src/api/types'
 import { TOKEN } from './servers'
 
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
@@ -65,7 +65,33 @@ export async function readQueue(request: APIRequestContext): Promise<QueueSnapsh
   return (await answer.json()) as QueueSnapshot
 }
 
-/** Sends a queue action (`/api/queue/stop`, `/api/queue/{id}/cancel`, …) and checks its answer. */
+/** Probes a file through the server and gives what the server read from it. */
+export async function probeFile(request: APIRequestContext, path: string): Promise<MediaSource> {
+  const accepted = await request.post('/api/sources', {
+    headers: AUTH,
+    data: { paths: [path], recursive: false },
+  })
+  expect(accepted.ok(), `POST /api/sources: ${accepted.status()}`).toBe(true)
+  const { task_id: taskId } = (await accepted.json()) as { task_id: string }
+  const task = async (): Promise<TaskInfo> => {
+    const answer = await request.get(`/api/tasks/${taskId}`, { headers: AUTH })
+    expect(answer.ok()).toBe(true)
+    return (await answer.json()) as TaskInfo
+  }
+  await expect
+    .poll(async () => (await task()).state, { message: `probe of ${path}` })
+    .not.toMatch(/^(queued|running)$/)
+  const ended = await task()
+  expect(ended.state, ended.error ?? undefined).toBe('done')
+  const summary = ended.result as { sources: { id: string; path: string }[] }
+  const id = summary.sources.find((source) => source.path === path)?.id
+  expect(id, `a source for ${path}`).toBeDefined()
+  const answer = await request.get(`/api/sources/${id}`, { headers: AUTH })
+  expect(answer.ok()).toBe(true)
+  return (await answer.json()) as MediaSource
+}
+
+/** Sends a queue action and checks its answer. */
 export async function queueAction(
   request: APIRequestContext,
   method: 'post' | 'delete',

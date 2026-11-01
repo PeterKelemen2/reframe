@@ -10,6 +10,7 @@ import { createAppRouter } from '@/router'
 import { installPlugins } from '@/setup'
 import { type AppPhase, useSystemStore } from '@/stores/system'
 import { useQueueStore } from '@/stores/queue'
+import { useSourcesStore } from '@/stores/sources'
 
 let app: VueApp | undefined
 
@@ -30,6 +31,15 @@ async function mountApp(phase: AppPhase, path = '/', mode: 'token' | 'password' 
   app.mount(host)
   await flushPromises()
   return { host, router }
+}
+
+function inPlaceJob(state: QueueJob['state']): QueueJob {
+  return {
+    id: 'edit',
+    state,
+    started_at: '2026-11-01T10:00:00Z',
+    settings: { source: { path: '/media/a.mkv' }, output: { edit_in_place: true } },
+  } as QueueJob
 }
 
 afterEach(() => {
@@ -140,5 +150,23 @@ describe('the app shell', () => {
     })
     await flushPromises()
     expect(setTaskbarProgress).toHaveBeenLastCalledWith(0.5)
+  })
+
+  it('reads an open source again when its in-place edit ends, whatever view is shown', async () => {
+    await mountApp('ready', '/queue')
+    const reload = app!.runWithContext(() => {
+      const sources = useSourcesStore()
+      sources.entries = [{ id: 's1', path: '/media/a.mkv', source: null } as never]
+      const queue = useQueueStore()
+      queue.loaded = true
+      queue.jobs = [inPlaceJob('running')]
+      return vi.spyOn(sources, 'reload').mockResolvedValue()
+    })
+    await flushPromises()
+    app!.runWithContext(() => {
+      useQueueStore().jobs = [inPlaceJob('done')]
+    })
+    await flushPromises()
+    expect(reload).toHaveBeenCalledWith('s1')
   })
 })

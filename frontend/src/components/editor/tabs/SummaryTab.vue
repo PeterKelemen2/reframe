@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import EstimateCard from '@/components/summary/EstimateCard.vue'
 import IssuesCard from '@/components/summary/IssuesCard.vue'
+import JobTypeCard from '@/components/summary/JobTypeCard.vue'
 import OutputCard from '@/components/summary/OutputCard.vue'
 import PictureCard from '@/components/summary/PictureCard.vue'
 import SourceCard from '@/components/summary/SourceCard.vue'
@@ -23,6 +24,7 @@ const editor = useEditorStore()
     </p>
     <div v-else class="summary-tab__grid">
       <SourceCard />
+      <JobTypeCard />
       <OutputCard />
       <PictureCard />
       <VideoCard />

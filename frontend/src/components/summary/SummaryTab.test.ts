@@ -81,6 +81,11 @@ async function mountSummary(options: { entry?: boolean; issues?: ValidationIssue
     .on('POST /api/jobs/geometry', (request) =>
       geometryFor((request.body as { job: JobSettings }).job),
     )
+    .on('POST /api/jobs/type', {
+      job_type: 'encode',
+      reason: 'Encode: the video is encoded with x265.',
+      in_place_blockers: ['the video is encoded'],
+    })
     .on('POST /api/preview/frames', {
       frames: [
         {
@@ -123,6 +128,7 @@ describe('the Summary tab', () => {
     const { wrapper } = await mountSummary()
     expect(wrapper.findAll('[data-card]').map((card) => card.attributes('data-card'))).toEqual([
       'source',
+      'job-type',
       'output',
       'picture',
       'video',
@@ -269,7 +275,6 @@ describe('the Summary tab', () => {
     ])
     expect(groups.map((group) => group.findAll('li').length)).toEqual([1, 2, 1])
     expect(groups[1]!.find('h4').text()).toBe('Warnings (2)')
-    // The track with an issue is marked.
     expect(wrapper.find('[data-path="audio[1]"]').classes()).toContain('summary-track--warning')
 
     await groups[0]!.find('.rf-issue__fix').trigger('click')
@@ -289,7 +294,7 @@ describe('the Summary tab', () => {
     editor.draft = null
     editor.target = { kind: 'job', sourceId: 'src', job: sampleJob() }
     await flushPromises()
-    expect(wrapper.findAll('[data-card]')).toHaveLength(7)
+    expect(wrapper.findAll('[data-card]')).toHaveLength(8)
     expect(text(wrapper, '[data-field="encoder"]')).toBe('x265')
   })
 

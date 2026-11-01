@@ -360,7 +360,8 @@ export interface paths {
         };
         /**
          * List
-         * @description The folders and media files in ``path``.
+         * @description The folders and media files in ``path``. With ``extensions`` (repeatable: ``.srt``,
+         *     ``ass``; any case), the files with these extensions instead of the media files.
          */
         get: operations["fs_list"];
         put?: never;
@@ -826,6 +827,136 @@ export interface paths {
          *     options. Empty when the source has none or the encoder has no such options.
          */
         post: operations["jobs_hdr_metadata"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/type": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Type
+         * @description The job type (encode, remux, metadata edit) and why, and why the job could not edit its
+         *     source in place, also when *Edit in place* is off. An in-place edit is not refused here
+         *     (validation reports ``inplace.*``); in web mode a source the server may not write is one
+         *     more blocker.
+         */
+        post: operations["jobs_type"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chapters
+         * @description The chapters the output gets, in output time, as the encode writes them: the range,
+         *     renamed and generated chapters, the container and *Create chapter markers* applied.
+         */
+        post: operations["jobs_chapters"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/chapters/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Chapters
+         * @description The output's chapters (as ``/jobs/chapters``) as the text of a chapter file. A job
+         *     whose output gets no chapters is a 422 ``chapters.none`` problem with the reason.
+         */
+        post: operations["jobs_export_chapters"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tags
+         * @description Each tag as it will be written (the naming variables filled in), the source's value of
+         *     each, and the tags' template errors.
+         */
+        post: operations["jobs_tags"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chapters/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import File
+         * @description The chapters of a chapter file: each name, and its start where the format has one. A
+         *     file that cannot be read is a 422 problem: ``chapters.unreadable`` (missing, too large),
+         *     ``chapters.invalid`` (its content; the detail names the line).
+         */
+        post: operations["chapters_import_file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subtitles/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect
+         * @description The format, event count and character encoding of a subtitle file. A file that a job
+         *     cannot take (another type, or no subtitles FFmpeg can read) is a 422
+         *     ``subtitles.unsupported`` problem; a missing file a 404 ``probe.not_found``.
+         */
+        post: operations["subtitles_inspect"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2464,6 +2595,66 @@ export interface components {
             };
         };
         /**
+         * ChapterExport
+         * @description The output's chapters as the text of a chapter file.
+         */
+        ChapterExport: {
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "csv" | "ogm" | "xml";
+            /**
+             * File Name
+             * @description A file name to save it as: the output's name without its extension, then
+             *     ``.chapters.csv``, ``.chapters.txt`` (OGM) or ``.chapters.xml``.
+             */
+            file_name: string;
+            /**
+             * Content
+             * @description The file's text (to be saved as UTF-8).
+             */
+            content: string;
+        };
+        /** ChapterExportRequest */
+        ChapterExportRequest: {
+            job: components["schemas"]["JobSettings"];
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "csv" | "ogm" | "xml";
+        };
+        /**
+         * ChapterImport
+         * @description The chapters of a chapter file. The names are meant to be used by position; the times
+         *     only to compare with the output's chapters.
+         */
+        ChapterImport: {
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "csv" | "ogm" | "xml";
+            /** Chapters */
+            chapters?: components["schemas"]["ImportedChapter"][];
+            /**
+             * Issues
+             * @description What was read differently from the file (an encoding guessed, a part left out).
+             */
+            issues?: components["schemas"]["ValidationIssue"][];
+        };
+        /** ChapterImportRequest */
+        ChapterImportRequest: {
+            /** Path */
+            path: string;
+            /**
+             * Format
+             * @description ``null``: from the file's content.
+             */
+            format?: ("csv" | "ogm" | "xml") | null;
+        };
+        /**
          * ChapterOptions
          * @description The chapter options of a template (chapter names are per file).
          */
@@ -2900,9 +3091,16 @@ export interface components {
             source_ids: string[];
             /**
              * Container
-             * @description The output container the codec rules check against; ``null``: a new template's.
+             * @description The output container the codec rules check against; ``null``: the template's, else a
+             *     new template's.
              */
             container?: ("mkv" | "mp4" | "webm") | null;
+            /**
+             * @description The template that *Apply* drafts with (``jobs/explain``): the preview is that template
+             *     with these two defaults put in, so its explicit ``audio_rules`` and ``subtitle_rules``
+             *     apply as they do there. ``null``: only the two defaults.
+             */
+            template?: components["schemas"]["JobTemplate"] | null;
         };
         /**
          * Definitions
@@ -3909,7 +4107,8 @@ export interface components {
         };
         /**
          * FsEntry
-         * @description A folder or a media file (other files and hidden entries are left out).
+         * @description A folder or a media file, or a file of the extensions asked for (other files and hidden
+         *     entries are left out).
          */
         FsEntry: {
             /** Name */
@@ -4177,6 +4376,22 @@ export interface components {
              *     server is the one that stops.
              */
             client_id: string;
+        };
+        /**
+         * ImportedChapter
+         * @description One chapter read from a chapter file, in file order.
+         */
+        ImportedChapter: {
+            /**
+             * Start
+             * @description Seconds; ``null`` when the file has no time for it (CSV has none).
+             */
+            start: number | null;
+            /**
+             * Name
+             * @description ``""`` when the file gives no name.
+             */
+            name: string;
         };
         /**
          * JobDraft
@@ -4451,6 +4666,30 @@ export interface components {
             tags?: components["schemas"]["TagSettings"];
             /** @description ``None`` = the naming options from Settings → Output. */
             naming?: components["schemas"]["NamingOptions"] | null;
+        };
+        /**
+         * JobTypeInfo
+         * @description The job type a job gets, and why.
+         */
+        JobTypeInfo: {
+            /**
+             * Job Type
+             * @enum {string}
+             */
+            job_type: "encode" | "remux" | "metadata_edit";
+            /**
+             * Reason
+             * @description One sentence; two when *Edit in place* is chosen but cannot be used (the second says
+             *     why).
+             */
+            reason: string;
+            /**
+             * In Place Blockers
+             * @description Why this job could not edit its source in place, whether or not *Edit in place* is
+             *     chosen; each a sentence fragment (``the video is encoded``). Empty: it could. For a source
+             *     that is not MKV, the first one says so.
+             */
+            in_place_blockers?: string[];
         };
         JsonValue: unknown;
         /**
@@ -4968,6 +5207,60 @@ export interface components {
             level: "info" | "success" | "warning" | "error";
             /** Job Id */
             job_id?: string | null;
+        };
+        /**
+         * OutputChapter
+         * @description One chapter of the output, in output time (seconds from the output's start).
+         */
+        OutputChapter: {
+            /**
+             * Number
+             * @description 1-based position in the output.
+             */
+            number: number;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+            /**
+             * Name
+             * @description The name written; ``""``: none (a source chapter without a title, copied as it is).
+             */
+            name: string;
+            /**
+             * Source Name
+             * @description The source chapter's title; ``null`` for a generated chapter or a source chapter without
+             *     one.
+             */
+            source_name: string | null;
+            /**
+             * Source Index
+             * @description 0-based index of the source chapter this one comes from: its slot in
+             *     ``ChapterSettings.names``, which is indexed by source chapter (a range leaves chapters out,
+             *     so it can differ from ``number - 1``). ``null`` for a generated chapter, whose name is
+             *     ``names[number - 1]``.
+             */
+            source_index: number | null;
+        };
+        /**
+         * OutputChapters
+         * @description The chapters the output gets, as the command writes them: the range, the renamed
+         *     chapters, the generated ones, the container and *Create chapter markers* applied.
+         */
+        OutputChapters: {
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "source" | "generated" | "none";
+            /** Chapters */
+            chapters?: components["schemas"]["OutputChapter"][];
+            /**
+             * Reason
+             * @description Why there are none (``origin`` ``none``); empty otherwise.
+             * @default
+             */
+            reason: string;
         };
         /**
          * OutputDefaults
@@ -5825,6 +6118,28 @@ export interface components {
             timestamp: number;
         };
         /**
+         * RenderedTags
+         * @description The job's tags as they will be written, next to the source's.
+         */
+        RenderedTags: {
+            /**
+             * @description Each set tag with the naming variables filled in (``{date}`` and ``{time}`` as of now);
+             *     ``null`` for a tag the job does not set. An unknown variable is empty; a template with a
+             *     syntax error is written as typed.
+             */
+            values: components["schemas"]["TagValues"];
+            /**
+             * @description The source file's value of each tag: what *Passthru common metadata* copies when the
+             *     job does not set it.
+             */
+            source: components["schemas"]["TagValues"];
+            /**
+             * Issues
+             * @description Template errors, at ``tags.<name>``.
+             */
+            issues?: components["schemas"]["ValidationIssue"][];
+        };
+        /**
          * ReplaceOp
          * @description RFC 6902 ``replace``.
          */
@@ -6096,6 +6411,51 @@ export interface components {
             burn_in: "none" | "foreign_audio" | "first" | "foreign_audio_then_first";
         };
         /**
+         * SubtitleFileInfo
+         * @description An external subtitle file, read before it is added to a job. A runtime model.
+         */
+        SubtitleFileInfo: {
+            /**
+             * Path
+             * Format: path
+             */
+            path: string;
+            /**
+             * Format
+             * @description FFmpeg's codec name: ``subrip``, ``ass`` (also for ``.ssa``), ``webvtt``,
+             *     ``hdmv_pgs_subtitle``.
+             */
+            format: string;
+            /**
+             * Bitmap
+             * @description A bitmap format (PGS): it cannot be converted to text, and has no character encoding.
+             */
+            bitmap: boolean;
+            /**
+             * Charset
+             * @description The character encoding of a text file: ``UTF-8`` (with or without a byte order mark),
+             *     ``UTF-16LE`` or ``UTF-16BE`` (byte order mark). ``null``: not detected (another encoding,
+             *     which the user names) or a bitmap file.
+             */
+            charset: string | null;
+            /**
+             * Events
+             * @description Subtitle events (a PGS file: display sets, as the subtitle scan counts them); ``null``
+             *     when they could not be counted.
+             */
+            events: number | null;
+            /**
+             * Issues
+             * @description What to look at before the file is added (an encoding that was not detected).
+             */
+            issues?: components["schemas"]["ValidationIssue"][];
+        };
+        /** SubtitleInspectRequest */
+        SubtitleInspectRequest: {
+            /** Path */
+            path: string;
+        };
+        /**
          * SubtitleOutputSettings
          * @description Fixed subtitle settings of a rule.
          */
@@ -6324,6 +6684,28 @@ export interface components {
             description?: string | null;
             /** Plot */
             plot?: string | null;
+        };
+        /**
+         * TagValues
+         * @description One value per tag; ``null``: none.
+         */
+        TagValues: {
+            /** Title */
+            title: string | null;
+            /** Actors */
+            actors: string | null;
+            /** Director */
+            director: string | null;
+            /** Release Date */
+            release_date: string | null;
+            /** Comment */
+            comment: string | null;
+            /** Genre */
+            genre: string | null;
+            /** Description */
+            description: string | null;
+            /** Plot */
+            plot: string | null;
         };
         /**
          * TaskAccepted
@@ -7963,6 +8345,7 @@ export interface operations {
         parameters: {
             query: {
                 path: string;
+                extensions?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -8792,6 +9175,204 @@ export interface operations {
                 };
                 content: {
                     "application/json": (components["schemas"]["AddOp"] | components["schemas"]["RemoveOp"] | components["schemas"]["ReplaceOp"] | components["schemas"]["MoveOp"] | components["schemas"]["CopyOp"] | components["schemas"]["TestOp"])[];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jobs_type: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobTypeInfo"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jobs_chapters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputChapters"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jobs_export_chapters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterExport"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jobs_tags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderedTags"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    chapters_import_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterImport"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    subtitles_inspect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubtitleInspectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubtitleFileInfo"];
                 };
             };
             /** @description An expected failure */

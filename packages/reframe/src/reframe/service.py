@@ -21,6 +21,7 @@ from types import TracebackType
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from reframe import analysis, paths, preview
+from reframe.analysis.subtitlefile import inspect_subtitle_file
 from reframe.batch.service import BatchService
 from reframe.capabilities import CapabilityService
 from reframe.definitions import load_definitions
@@ -31,7 +32,7 @@ from reframe.mediatask import MediaTaskContext
 from reframe.models.events import AppWarningEvent, ToolsChangedEvent
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings
-from reframe.models.media import MediaSource
+from reframe.models.media import MediaSource, SubtitleFileInfo
 from reframe.models.naming import NamingOptions
 from reframe.models.preset import FieldChange, Preset, PresetFile
 from reframe.models.settings import AppSettings
@@ -319,6 +320,31 @@ class SourceService:
             if isinstance(outcome, MediaSource):
                 self._remember(outcome)
             return outcome
+        finally:
+            self._leave(token)
+
+    async def inspect_subtitle(
+        self, path: str | os.PathLike[str], *, cancel: CancelToken | None = None
+    ) -> SubtitleFileInfo | ProbeError:
+        """An external subtitle file's format, event count and character encoding, before it is
+        added to a job. Never raises for problems with the file or the tool: a missing file is
+        ``NOT_FOUND``, a file that is not a subtitle file a job can take ``FAILED``."""
+        self._check_open()
+        token = cancel or CancelToken()
+        self._enter(token)
+        try:
+            try:
+                prober = await self._get_prober()
+            except ReframeClosedError:
+                return ProbeError(
+                    _absolute(path), ProbeErrorKind.CANCELLED, "Reframe is shutting down."
+                )
+            problem = await asyncio.to_thread(_check_file, path)
+            if problem is not None:
+                return problem
+            if isinstance(prober, ToolInfo):
+                return _tool_error(_absolute(path), prober)
+            return await inspect_subtitle_file(_absolute(path), prober.tool, cancel=token)
         finally:
             self._leave(token)
 

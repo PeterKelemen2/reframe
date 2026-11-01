@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppearanceSection from '@/components/settings/AppearanceSection.vue'
 import EncodersSection from '@/components/settings/EncodersSection.vue'
+import LanguagesSection from '@/components/settings/LanguagesSection.vue'
 import OutputSection from '@/components/settings/OutputSection.vue'
 import QueueSection from '@/components/settings/QueueSection.vue'
 import ToolsSection from '@/components/settings/ToolsSection.vue'
@@ -18,7 +19,7 @@ const router = useRouter()
 const system = useSystemStore()
 const settings = useSettingsStore()
 
-const SECTIONS = ['tools', 'encoders', 'output', 'queue', 'appearance'] as const
+const SECTIONS = ['tools', 'encoders', 'output', 'languages', 'queue', 'appearance'] as const
 type SectionId = (typeof SECTIONS)[number]
 
 function sectionTitle(id: SectionId): string {
@@ -29,6 +30,8 @@ function sectionTitle(id: SectionId): string {
       return t('settings.encoders.title')
     case 'output':
       return t('settings.output.title')
+    case 'languages':
+      return t('settings.languages.title')
     case 'queue':
       return t('settings.queue.title')
     case 'appearance':
@@ -40,7 +43,7 @@ const readOnly = computed(() => system.info?.settings_read_only === true)
 /** The sections need the server's tools and the settings. */
 const ready = computed(() => system.info !== null && settings.settings !== null)
 
-/** `/settings#tools` (the first-run screen's *Choose path*) moves the focus to that section. */
+/** Moves the focus to the section that the hash names. */
 async function focusHash(): Promise<void> {
   const id = route.hash.slice(1)
   if (!(SECTIONS as readonly string[]).includes(id)) return
@@ -97,6 +100,7 @@ watch([() => route.hash, ready], focusHash)
           <ToolsSection v-if="id === 'tools'" />
           <EncodersSection v-else-if="id === 'encoders'" />
           <OutputSection v-else-if="id === 'output'" />
+          <LanguagesSection v-else-if="id === 'languages'" />
           <QueueSection v-else-if="id === 'queue'" />
           <AppearanceSection v-else />
         </div>

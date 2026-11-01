@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { Copy, Download, Lock, Pencil, Play, RefreshCw, Star, Trash2 } from '@lucide/vue'
+import {
+  Copy,
+  Download,
+  Lock,
+  Pencil,
+  Play,
+  RefreshCw,
+  SlidersHorizontal,
+  Star,
+  Trash2,
+} from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,11 +17,11 @@ import type { Preset, Schemas } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import Section from '@/components/base/Section.vue'
 import FocusSafeButton from '@/components/shell/FocusSafeButton'
+import { useDefaultsStore } from '@/stores/defaults'
 import { useSystemStore } from '@/stores/system'
 
 import PresetNaming from './PresetNaming.vue'
 
-/** One preset: what its template does in short, its naming, and what can be done with it. */
 const props = defineProps<{
   preset: Preset
   isDefault: boolean
@@ -34,6 +44,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const system = useSystemStore()
+const defaultsDialog = useDefaultsStore()
 
 type CodecRule = Schemas['AudioCodecRule']
 type Selection = Schemas['TrackSelection']
@@ -251,6 +262,28 @@ const subtitles = computed(() => {
     </header>
 
     <Section :title="t('presets.details.settings')">
+      <template #actions>
+        <FocusSafeButton
+          size="small"
+          severity="secondary"
+          data-action="audio-defaults"
+          aria-haspopup="dialog"
+          :label="t('presets.details.audioDefaults')"
+          @click="defaultsDialog.open('audio', { kind: 'preset', presetId: preset.id })"
+        >
+          <template #icon><SlidersHorizontal :size="16" aria-hidden="true" /></template>
+        </FocusSafeButton>
+        <FocusSafeButton
+          size="small"
+          severity="secondary"
+          data-action="subtitle-defaults"
+          aria-haspopup="dialog"
+          :label="t('presets.details.subtitleDefaults')"
+          @click="defaultsDialog.open('subtitles', { kind: 'preset', presetId: preset.id })"
+        >
+          <template #icon><SlidersHorizontal :size="16" aria-hidden="true" /></template>
+        </FocusSafeButton>
+      </template>
       <dl class="rf-kv-list preset-details__summary">
         <KeyValue :label="t('presets.details.category')" :value="preset.category" />
         <KeyValue :label="t('presets.details.container')" :value="container" />

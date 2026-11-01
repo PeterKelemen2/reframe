@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  FilePenLine,
   FolderOpen,
   ListVideo,
   LoaderCircle,
@@ -47,7 +48,6 @@ import {
   stateLabel,
 } from './format'
 
-/** The queue's jobs in queue order, with their live progress and the actions of each state. */
 const emit = defineEmits<{ openLog: [jobId: string, opener: HTMLElement] }>()
 
 const { t } = useI18n()
@@ -81,12 +81,32 @@ const expanded = computed<Record<string, boolean>>(() =>
   ),
 )
 
-/** The video encoder the job uses: it may differ from its preset's (an edited job). */
+/**
+ * What the job's video does, by label: its own encoder (not the preset's), a copy, or a
+ * metadata edit.
+ */
 function encoderName(job: QueueJob): string | null {
+  if (job.settings.output?.edit_in_place) return t('queue.table.metadataEdit')
   const video = job.settings.video
   if (video === undefined) return null
   if (video.passthrough) return t('queue.table.videoCopy')
   return system.definitions?.video_encoders?.[video.encoder]?.label ?? video.encoder
+}
+
+function inPlaceTip(job: QueueJob): { value: string; id: string } {
+  return {
+    value: t('queue.table.inPlaceTip', { path: job.settings.source.path }),
+    id: `queue-in-place-${job.id}`,
+  }
+}
+
+// PrimeVue's tooltip shows on hover, or with `.focus` on focus only: this one does both.
+function showTip(event: FocusEvent): void {
+  event.target?.dispatchEvent(new MouseEvent('mouseenter'))
+}
+
+function hideTip(event: FocusEvent): void {
+  event.target?.dispatchEvent(new MouseEvent('mouseleave'))
 }
 
 /** A failed job's issues, without the ones its error already quotes. */
@@ -348,7 +368,21 @@ async function move(index: number, to: number): Promise<void> {
       <Column :header="t('queue.columns.output')" body-class="queue-table__name">
         <template #body="{ data }">
           <span
-            v-if="outputPath(data.job)"
+            v-if="data.job.settings.output?.edit_in_place"
+            v-tooltip.top="inPlaceTip(data.job)"
+            class="queue-table__in-place"
+            tabindex="0"
+            :aria-describedby="inPlaceTip(data.job).id"
+            data-field="output"
+            data-in-place
+            @focus="showTip"
+            @blur="hideTip"
+          >
+            <FilePenLine :size="14" aria-hidden="true" />
+            {{ t('queue.table.inPlace') }}
+          </span>
+          <span
+            v-else-if="outputPath(data.job)"
             v-tooltip.top="outputPath(data.job)"
             data-field="output"
             dir="ltr"
@@ -529,6 +563,16 @@ async function move(index: number, to: number): Promise<void> {
 .queue-table :deep(.queue-table__name) {
   max-width: 16rem;
   overflow-wrap: anywhere;
+}
+
+.queue-table__in-place {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+}
+
+.queue-table__in-place svg {
+  flex: none;
 }
 
 .queue-table :deep(.queue-table__progress) {

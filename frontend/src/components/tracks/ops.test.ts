@@ -9,6 +9,7 @@ import {
   bitrateTable,
   canCopy,
   encoderChangeOps,
+  followSelection,
   mixdownChangeOps,
   newAudioTrack,
   type NewTrackContext,
@@ -266,5 +267,59 @@ describe('another subtitle action', () => {
       { op: 'replace', path: '/subtitles/0/action', value: 'copy' },
       { op: 'replace', path: '/subtitles/0/forced_only', value: false },
     ])
+  })
+})
+
+function named(track: AudioOutputTrack, name: string): AudioOutputTrack {
+  return { ...track, metadata: { ...track.metadata!, name } }
+}
+
+function file(path: string, language: string | null): SubtitleOutputTrack {
+  return {
+    action: 'copy',
+    convert_to: null,
+    forced_only: false,
+    source: { path, language, name: null, offset_ms: 0, charset: null },
+    metadata: { ...audioTrack().metadata!, language },
+  }
+}
+
+describe('the bulk selection through a change of the list', () => {
+  const aac = audioTrack({ source_stream: 1, encoder: 'aac' })
+  const ac3 = audioTrack({ source_stream: 1, encoder: 'ac3', bitrate: 192 })
+  const other = audioTrack({ source_stream: 2 })
+
+  it('follows a selected track that changes place with another output of its stream', () => {
+    expect(followSelection([aac, ac3, other], [ac3, aac, other], [0])).toEqual([1])
+  })
+
+  it('keeps equal tracks in their order among themselves', () => {
+    expect(followSelection([aac, aac, other], [aac, other, aac], [1])).toEqual([2])
+  })
+
+  it('keeps the places when the metadata of several tracks changes', () => {
+    const after = [named(aac, 'A'), named(ac3, 'B'), other]
+    expect(followSelection([aac, ac3, other], after, [0, 2])).toEqual([0, 2])
+  })
+
+  it('keeps the places when the language of several external files changes', () => {
+    const before = [file('/a.srt', null), file('/b.srt', null)]
+    const after = [file('/a.srt', 'hu'), file('/b.srt', 'hu')]
+    expect(followSelection(before, after, [1])).toEqual([1])
+  })
+
+  it('keeps the places when the settings of one track change', () => {
+    const after = [aac, { ...ac3, bitrate: 384 }, other]
+    expect(followSelection([aac, ac3, other], after, [1])).toEqual([1])
+  })
+
+  it('clears it when the settings of several tracks change in one step', () => {
+    const before = [named(aac, 'A'), named(ac3, 'B'), other]
+    const after = [named(ac3, 'A'), named(aac, 'B'), other]
+    expect(followSelection(before, after, [0])).toEqual([])
+  })
+
+  it('clears it when a track is added or removed', () => {
+    expect(followSelection([aac, ac3, other], [aac, other], [0])).toEqual([])
   })
 })

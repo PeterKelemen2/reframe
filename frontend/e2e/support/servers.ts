@@ -10,16 +10,14 @@ export const TOKEN = 'reframe-e2e-token'
 
 const E2E = fileURLToPath(new URL('../', import.meta.url))
 const DEV_SERVER = fileURLToPath(new URL('../../../scripts/dev-server.py', import.meta.url))
-// Every hardware test encode fails with a captured real error, and every other call goes to the
-// real ffmpeg / ffprobe found on PATH: the encoder states, and so the closest match of an
-// unavailable encoder, are the same on every machine.
+// Hardware test encodes fail with a captured real error; every other call runs the real tools,
+// so the encoder states are the same on every machine.
 const SCENARIO = `${E2E}fake-ffmpeg.json`
 // Hardware test encodes on: without them a hardware encoder is only "not tested".
 const SETTINGS = `${E2E}settings.json`
 const FIRST_PORT = 8750
-// Longer than dev-server.py's own stop (10 s for the server, then the home's removal): Playwright
-// sends SIGKILL to the process group after this, which would leave the home behind. Shorter than
-// the 30 s after which Playwright exits anyway.
+// Longer than dev-server.py's own stop (10 s), so the home is removed before Playwright's
+// SIGKILL. Shorter than Playwright's 30 s exit.
 const STOP_TIMEOUT = 20_000
 
 /**
@@ -44,9 +42,8 @@ function toolsPath(): Record<string, string> {
 }
 
 /**
- * The `webServer` entries: `scripts/dev-server.py` for each project, in a new temporary home.
- * Playwright starts them one after the other, so the first one builds `dist/` for all. SIGTERM
- * to the process group stops them: dev-server.py then stops the server and removes the home.
+ * The `webServer` entries: `scripts/dev-server.py` for each project. Playwright starts them one
+ * after the other, so the first one builds `dist/` for all.
  */
 export function webServers(
   servers: Record<string, string>,
@@ -58,6 +55,8 @@ export function webServers(
       `--port ${new URL(baseURL).port}`,
       `--token ${TOKEN}`,
       '--fixtures multitrack',
+      // Makes the output root a media root too, so a flow can probe its job's output.
+      '--output-fixtures chapters',
       `--fake-ffmpeg ${quote(SCENARIO)}`,
       `--settings ${quote(SETTINGS)}`,
     ].join(' ')

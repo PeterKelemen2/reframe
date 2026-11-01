@@ -239,11 +239,12 @@ def derive_template(
         update["chapters"] = ChapterOptions(
             enabled=job.chapters.enabled, generate_every=job.chapters.generate_every
         )
-        generated = [f"Chapter {n}" for n in range(1, len(source.chapters) + 1)]
+        # A preset holds no names: other names than these two cases are this file's own.
         names = job.chapters.names
-        update["chapter_name_policy"] = (
-            "generated" if names is not None and names == generated and generated else "source"
-        )
+        if names is None:
+            update["chapter_name_policy"] = "source"
+        elif names and all(name == f"Chapter {n}" for n, name in enumerate(names, start=1)):
+            update["chapter_name_policy"] = "generated"
     if "tags" in sections:
         update["tags"] = job.tags.model_copy(deep=True)
     if "naming" in sections:

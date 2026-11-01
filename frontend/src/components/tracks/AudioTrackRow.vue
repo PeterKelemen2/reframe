@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { AudioOutputTrack, AudioStream } from '@/api/types'
 import Field from '@/components/base/Field.vue'
-import { kiloHertz, streamLabel } from '@/components/media/streams'
+import { groupedKbps, kiloHertz, streamLabel } from '@/components/media/streams'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -24,6 +24,8 @@ import {
   rateModeOps,
   sourceChangeOps,
 } from './ops'
+import { metadataPaths } from './metadata'
+import TrackMetadataEditor from './TrackMetadataEditor.vue'
 import TrackRowFrame from './TrackRowFrame.vue'
 
 const props = defineProps<{
@@ -36,7 +38,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ move: [to: number]; remove: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 
@@ -162,7 +164,10 @@ const fieldPaths = computed(() => {
   ]
   if (!lossless.value)
     fields.push(rateMode.value === 'quality' && encoder.value?.quality ? 'quality' : 'bitrate')
-  return fields.map((field) => `${path.value}.${field}`)
+  return [
+    ...fields.map((field) => `${path.value}.${field}`),
+    ...metadataPaths(`${path.value}.metadata`),
+  ]
 })
 
 const limits = computed(() => bitrateTable(encoder.value, props.track.mixdown, channels.value))
@@ -172,11 +177,13 @@ const bitrateOptions = computed(() => [
     label:
       limits.value === null
         ? t('tracks.output.encoderDefault')
-        : t('tracks.output.defaultBitrate', { value: limits.value.default }),
+        : t('tracks.output.defaultBitrate', {
+            value: groupedKbps(limits.value.default, locale.value),
+          }),
   },
   ...bitrateChoices(encoder.value, limits.value, props.track.bitrate).map((value) => ({
     value: String(value),
-    label: t('tracks.units.kbps', { value }),
+    label: t('tracks.units.kbps', { value: groupedKbps(value, locale.value) }),
   })),
 ])
 
@@ -443,6 +450,7 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         </template>
       </Field>
     </div>
+    <TrackMetadataEditor list="audio" :index="index" collapsible />
   </TrackRowFrame>
 </template>
 

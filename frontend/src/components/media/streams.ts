@@ -22,7 +22,7 @@ export const SHOWN_FLAGS = [
 ] as const satisfies readonly DispositionFlag[]
 export type ShownFlag = (typeof SHOWN_FLAGS)[number]
 
-/** A role badge that a disposition set already names that disposition. */
+/** The flags a role badge names: `shownFlags` leaves those out of the flag list. */
 const FLAGS_OF_ROLE: Partial<Record<Schemas['TrackRole'], readonly DispositionFlag[]>> = {
   commentary: ['comment'],
   sdh: ['hearing_impaired', 'captions'],
@@ -37,7 +37,7 @@ export function setDispositions(stream: SourceStream): DispositionFlag[] {
   return (Object.keys(disposition) as DispositionFlag[]).filter((flag) => disposition[flag])
 }
 
-/** The flags shown beside the role badges: a flag that a badge from that flag names is left out. */
+/** The flags shown beside the role badges; a flag that a badge already names is left out. */
 export function shownFlags(stream: SourceStream): ShownFlag[] {
   const named = new Set<DispositionFlag>()
   for (const role of stream.roles ?? []) {
@@ -77,6 +77,16 @@ export function kbps(bitsPerSecond: number): number {
   return Math.round(bitsPerSecond / 1000)
 }
 
+/** A number of kb/s with the locale's digit grouping (`2,140`). */
+export function groupedKbps(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value)
+}
+
+/** b/s as grouped kb/s. */
+export function kbpsText(bitsPerSecond: number, locale: string): string {
+  return groupedKbps(kbps(bitsPerSecond), locale)
+}
+
 /** The position among the source's tracks of its kind, from 1 (the table's `#`). */
 export function trackNumber(stream: SourceStream): number {
   return stream.type_index + 1
@@ -104,6 +114,17 @@ export function delayText(seconds: number): string {
   const sign = ms > 0 ? '+' : '−'
   const size = Math.abs(ms)
   return size < 10_000 ? `${sign}${size} ms` : `${sign}${Number((size / 1000).toFixed(3))} s`
+}
+
+/** `−22.5`, `2.2`: one decimal, with a real minus sign. */
+export function oneDecimal(value: number): string {
+  const fixed = value.toFixed(1)
+  return fixed.startsWith('-') ? `−${fixed.slice(1)}` : fixed
+}
+
+/** The subtitle formats whose events carry a forced flag, which a scan counts. */
+export function hasForcedEvents(stream: SubtitleStream): boolean {
+  return stream.codec === 'hdmv_pgs_subtitle' || stream.codec === 'dvd_subtitle'
 }
 
 /** `1:02:03.250`, `0:04.021`. */

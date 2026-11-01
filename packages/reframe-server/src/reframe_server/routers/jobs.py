@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from reframe.chapters import chapter_export
 from reframe.dimensions import compute_geometry, source_geometry
 from reframe.models import (
     AddOp,
+    ChapterExport,
+    ChapterFormat,
     Container,
     EncodePlan,
     Fix,
@@ -17,9 +21,12 @@ from reframe.models import (
     JobDraft,
     JobSettings,
     JobTemplate,
+    JobTypeInfo,
     JsonPatchOp,
     MediaSource,
     NamingOptions,
+    OutputChapters,
+    RenderedTags,
     ReplaceOp,
     Severity,
     SourceGeometry,
@@ -203,6 +210,13 @@ class ExplainRequest(BaseModel):
     """Replaces the template's container."""
 
 
+class ChapterExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    job: JobSettings
+    format: ChapterFormat
+
+
 class RemuxDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
@@ -318,6 +332,57 @@ async def hdr_metadata(
     jail_job(config, body.job)
     media = await job_source(reframe, body.job)
     return reframe.jobs.hdr_metadata(body.job, media)
+
+
+@router.post("/jobs/type", name="type")
+async def job_type(body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep) -> JobTypeInfo:
+    """The job type (encode, remux, metadata edit) and why, and why the job could not edit its
+    source in place, also when *Edit in place* is off. An in-place edit is not refused here
+    (validation reports ``inplace.*``); in web mode a source the server may not write is one
+    more blocker."""
+    jail_job(config, body.job)
+    media = await job_source(reframe, body.job)
+    write_blocker = None
+    if _outside(config, body.job.source.path):
+        write_blocker = f"{body.job.source.path.name} is in a folder that this server may only read"
+    return reframe.jobs.job_type(body.job, media, write_blocker=write_blocker)
+
+
+@router.post("/jobs/chapters", name="chapters")
+async def output_chapters(
+    body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep
+) -> OutputChapters:
+    """The chapters the output gets, in output time, as the encode writes them: the range,
+    renamed and generated chapters, the container and *Create chapter markers* applied."""
+    jail_job(config, body.job)
+    media = await job_source(reframe, body.job)
+    return await asyncio.to_thread(reframe.jobs.output_chapters, body.job, media)
+
+
+@router.post("/jobs/chapters/export", name="export_chapters")
+async def export_chapters(
+    body: ChapterExportRequest, reframe: ReframeDep, config: ConfigDep
+) -> ChapterExport:
+    """The output's chapters (as ``/jobs/chapters``) as the text of a chapter file. A job
+    whose output gets no chapters is a 422 ``chapters.none`` problem with the reason."""
+    jail_job(config, body.job)
+    media = await job_source(reframe, body.job)
+    chapters = await asyncio.to_thread(reframe.jobs.output_chapters, body.job, media)
+    if not chapters.chapters:
+        raise ProblemError(422, "chapters.none", "The output has no chapters", chapters.reason)
+    named_after = body.job.output.path or body.job.source.path
+    return chapter_export(chapters.chapters, body.format, named_after)
+
+
+@router.post("/jobs/tags", name="tags")
+async def rendered_tags(
+    body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep
+) -> RenderedTags:
+    """Each tag as it will be written (the naming variables filled in), the source's value of
+    each, and the tags' template errors."""
+    jail_job(config, body.job)
+    media = await job_source(reframe, body.job)
+    return reframe.jobs.rendered_tags(body.job, media)
 
 
 def _invalid(issues: list[ValidationIssue]) -> ProblemError:

@@ -1583,7 +1583,7 @@ CASES: list[Case] = [
 
 #: Cases in other files next to this one: each has ``cases(h) -> list[Case]``, where ``h``
 #: gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
-EXTRA_CASE_FILES = ("cases_inplace", "cases_options")
+EXTRA_CASE_FILES = ("cases_inplace", "cases_options", "cases_metadata")
 _HELPERS = SimpleNamespace(**globals())
 for _name in EXTRA_CASE_FILES:
     CASES.extend(_load(_name).cases(_HELPERS))
@@ -1693,3 +1693,21 @@ def test_burn_it_in_is_not_offered_next_to_another_burn_in() -> None:
     ]
     [issue] = [i for i in sc.check(s) if i.code == "subtitle.convert_bitmap"]
     assert "Burn it in" not in [f.label for f in issue.fixes]
+
+
+@pytest.mark.parametrize(
+    ("found", "charset", "fixes"),
+    [
+        ("UTF8", "UTF-16LE", ["Read it as UTF-8 (as detected)", "Remove this subtitle track"]),
+        ("UTF8", "CP1250", ["Read it as UTF-8 (as detected)", "Remove this subtitle track"]),
+        ("UNKNOWN", "UTF-16LE", ["Remove this subtitle track"]),
+    ],
+)
+def test_reading_as_utf8_is_offered_only_for_a_utf8_file(
+    found: str, charset: str, fixes: list[str]
+) -> None:
+    meta = _load("cases_metadata")
+    s = sc.base()
+    meta.external(getattr(meta, found), charset)(s)
+    [issue] = [i for i in sc.check(s) if i.path == meta.AT]
+    assert [f.label for f in issue.fixes] == fixes

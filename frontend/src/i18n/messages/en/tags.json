@@ -1,0 +1,29 @@
+{
+  "loading": "Loading the job…",
+  "noJob": "No job is open.",
+  "title": "Tags",
+  "intro": "A tag can use the naming variables: type {'{'} for the list. An empty field writes no tag.",
+  "passthru": "Passthru common metadata is on (Summary tab): the source's values are copied first, and a tag set here replaces the source's value.",
+  "failed": "The tag values could not be read: {reason}",
+  "name": {
+    "title": "Title",
+    "actors": "Actors",
+    "director": "Director",
+    "release_date": "Release date",
+    "comment": "Comment",
+    "genre": "Genre",
+    "description": "Description",
+    "plot": "Plot"
+  },
+  "written": {
+    "label": "Written:",
+    "unknown": "…",
+    "empty": "(empty)",
+    "copied": "{value} (copied from the source)",
+    "none": "Not written"
+  },
+  "source": {
+    "label": "Source:",
+    "none": "None"
+  }
+}

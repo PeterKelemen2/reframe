@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import type { JsonPatchOp } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
+import TrackMetadataEditor from '@/components/tracks/TrackMetadataEditor.vue'
 import ChoiceSelect from '@/components/video/ChoiceSelect.vue'
 import CommandPreview from '@/components/video/CommandPreview.vue'
 import EncoderBanner from '@/components/video/EncoderBanner.vue'
@@ -29,7 +30,6 @@ import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 import { useToastStore } from '@/stores/toasts'
 
-// Reads and writes the editor store; takes no props.
 const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
@@ -502,6 +502,10 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
         </Field>
       </Section>
 
+      <Section :title="t('video.sections.metadata')">
+        <TrackMetadataEditor list="video" />
+      </Section>
+
       <CommandPreview />
     </div>
   </section>
@@ -520,7 +524,7 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
   padding: var(--rf-space-4) var(--rf-space-4) 0;
 }
 
-/* The command drawer sits at the bottom of the panel, and stays there while the panel scrolls. */
+/* The command drawer stays at the panel's foot while the panel scrolls. */
 .video-tab__content > :last-child {
   margin-top: auto;
 }

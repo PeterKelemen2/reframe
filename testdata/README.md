@@ -2561,6 +2561,136 @@ Checked again on 2026-10-28 for the review of S-6 (same Docker and Compose, ngin
 - **`cp -r dist target`** into an existing `target` copies into `target/dist/`; the files of
   the first copy stay in `target/`.
 
+### Subtitle files, tags and chapter files (S-2 additions, M6 task S6)
+
+Checked on 2026-11-01 with both FFmpeg n9.0.2 builds (Arch and the pinned BtbN
+`n9.0.2-17-g2a571b6068-20260930`, the same results) and MKVToolNix v103.0. The routes that rely
+on it are tested in `packages/reframe-server/tests/test_subtitles.py` and
+`test_job_output.py`.
+
+**ffprobe on external subtitle files** (`ffprobe -v error -of json -show_streams -show_format
+-count_packets -i FILE`):
+
+| File | `format_name` | `codec_name` | `nb_read_packets` |
+|------|---------------|--------------|-------------------|
+| `text-subs.en.srt` (UTF-8), the same with a UTF-8 BOM, with CRLF | `srt` | `subrip` | 2 |
+| a Hungarian SRT in CP1250, a French one in Latin-1 | `srt` | `subrip` | 3, 2 (ffprobe does not decode the text) |
+| a Hungarian SRT in UTF-16LE or UTF-16BE with a BOM | `srt` | `subrip` | 3 |
+| `text-subs.en.ass`, and a `.ssa` (`ScriptType: v4.00`, `[V4 Styles]`) | `ass` | `ass` (never `ssa`) | 3 |
+| a `.vtt` | `webvtt` | `webvtt` | 2 |
+| the `ass` file named `.srt` | `ass` | `ass` | 3 (the demuxer goes by content) |
+| `.sup` of the `pgs` fixture's tracks (`mkvextract` or `ffmpeg -c copy -f sup`) | `sup` | `hdmv_pgs_subtitle` | 48 and 16: one packet per *segment*; 12 and 4 display sets (the subtitle scan's count) |
+| an empty `.srt`, a text file that is no subtitle file | exit 1, `Invalid data found when processing input` | | |
+
+**Decoding the text** (`ffmpeg -i FILE -c:s srt -f srt -`):
+
+- UTF-8, with or without a BOM, and `-sub_charenc UTF-8` on a BOM file: right.
+- CP1250 or Latin-1 without `-sub_charenc`: exit 69, `Invalid UTF-8 in decoded subtitles text;
+  maybe missing -sub_charenc option`. With `-sub_charenc CP1250` / `ISO-8859-1`: right
+  (`Árvíztűrő tükörfúrógép.`, `Café à la crème.`).
+- **UTF-16 with a BOM is read wrongly.** Without `-sub_charenc`, every event whose text starts
+  with a letter that is not ASCII fails to decode (`Invalid UTF-8 …`, exit 0, the other events
+  are written); copied into Matroska (`-c:s copy`), that first letter is U+FFFD as `mkvextract`
+  writes it back (`Árvíztűrő` → `�rvíztűrő`, `Őszi` → `�szi`; `ű`, `ő` later in a line are
+  kept). With `-sub_charenc UTF-16LE` or `UTF-16` every event fails (`Unable to recode subtitle
+  event … from UTF-16LE to UTF-8`, exit 69). So `subtitles/inspect` names the encoding from the
+  BOM and warns (`subtitle.utf16`: save the file as UTF-8); a detected `UTF-8` or `UTF-16*` is
+  not a value for `-sub_charenc`.
+
+**Tags as the builder writes them** (`-map_metadata:g -1 -metadata <key>=…` with the keys of
+`reframe.command.metadata.TAG_KEYS`), read back with `ffprobe -show_format`: Matroska gives
+`title` and `ARTIST`, `ALBUM_ARTIST`, `DATE`, `COMMENT`, `GENRE`, `DESCRIPTION`, `SYNOPSIS` (upper
+case); MP4 gives the same keys in lower case. `jobs/tags` looks the source's values up without
+case.
+
+**Chapter files and mkvmerge.** `mkvmerge -o out.mkv --chapters FILE --no-chapters chapters.mkv`
+reads the OGM and XML files that `jobs/chapters/export` writes (names such as
+`Árvíztűrő, "tükör"`, `Part = 1; #2`, `<Two> & more`); `ffprobe -show_chapters` shows them. An
+OGM file is read right as UTF-8 with and without a BOM, also under `LC_ALL=C`. OGM has no end
+times: the last chapter ends at the end of the file (5.034 s), while the XML end times are kept
+(5.000 s). `mkvextract FILE chapters out.xml` writes a UTF-8 BOM, a commented `<!DOCTYPE …>`,
+`EditionFlagDefault` and `ChapterUID`; `mkvextract FILE chapters -s out.txt` writes OGM text;
+`chapters/import` reads both.
+
+**HandBrake's chapter CSV** (HandBrake itself was not run; read from its source on GitHub,
+`master`, 2026-11-01): Windows (`ChaptersViewModel.Export`, `CsvHelper.Escape`) writes
+`number,name` per line, the name in double quotes when it holds `,`, `"`, a line end or a tab,
+`"` doubled, UTF-8 without a BOM, `Environment.NewLine`; its import (`CsvHelper.ParseFile`,
+`ChapterImporterCsv`) parses RFC 4180, needs an integer first column and takes the second
+column trimmed. macOS (`HBChapterTitlesController`) quotes for `,` and `"` only, writes LF and
+no final line end, and its import needs the rows numbered 1 … n with as many rows as the movie
+has chapters. Reframe writes RFC 4180 (Python's `csv`, minimal quoting, LF, a final line end),
+which both import, and reads with Python's `csv`: the second column trimmed, a warning when the
+numbers are not 1, 2, 3 ….
+
+### Subtitle encodings, tag arguments and chapter files (M6 fix round, task FA)
+
+Checked on 2026-11-01 with the pinned FFmpeg (BtbN `n9.0.2-17-g2a571b6068-20260930`), MKVToolNix
+v103.0 and Linux 7.3 (x86-64). Tests: `reframe-server/tests/test_subtitles.py`,
+`test_job_output.py`; `reframe/tests/validation/cases_metadata.py`, `test_chapters.py`,
+`command/test_output_chapters.py`.
+
+**An external SRT decoded with and without `-sub_charenc`** (`ffmpeg -i FILE -c:s srt -f srt -`,
+three events: `Árvíztűrő tükörfúrógép`, `Őszi ünnep`, `plain ű`). Without `-sub_charenc` FFmpeg
+copies a stream as it is (`-c:s copy`), so a file that is not UTF-8 reaches the output as invalid
+UTF-8 (shown as U+FFFD, R1's finding); decoding it gives:
+
+| File | none | `CP1250` | `UTF-8` | `UTF-16LE` / `UTF-16` | `CP1252` | `NOPE` |
+|------|------|----------|---------|-----------------------|----------|--------|
+| CP1250 | exit 69, `Invalid UTF-8 in decoded subtitles text` | right | exit 69, `Unable to recode … from UTF-8` | other characters (CJK), the last event lost, exit 0 | `Árvíztûrõ` (wrong letters), exit 0 | exit 234, `Unable to open iconv context` |
+| UTF-8, with or without a BOM | right | events with letters that are not ASCII lost (`Unable to recode`), `plain Ĺ±`, exit 0 | right | other characters, events lost, exit 0 | events lost, `plain Å±`, exit 0 | exit 234 |
+| UTF-16LE or UTF-16BE with a BOM | events that start with a letter that is not ASCII lost (`Invalid UTF-8`), exit 0 | `ĂrvĂ­ztĹ±rĹ‘` (mojibake), exit 0 | events that start with a letter that is not ASCII lost (`\xc3rvíztűrő`: that letter loses a byte), exit 0 | other characters, events lost, exit 0 | mojibake, exit 0 | exit 234 |
+| UTF-32 with a BOM | exit 183, `Invalid data found when processing input` (also with every `-sub_charenc`) | | | | | |
+| ASCII only | right, with every ASCII-based encoding | right | right | other characters | right | exit 234 |
+
+So validation (`jobs/validate`, the queue) reports, at `subtitles[i].source.charset`, as errors:
+`subtitle.charset_unknown` (no encoding chosen and the file is not UTF-8), `subtitle.utf16` (a
+UTF-16 or UTF-32 file whatever is chosen, or a UTF-16 / UTF-32 / UCS encoding chosen), and
+`subtitle.charset_mismatch` (UTF-8 chosen for a file that is not UTF-8, or another encoding
+chosen for a UTF-8 file with letters that are not ASCII). An ASCII-only file passes with any
+chosen encoding.
+
+**ffprobe `-count_packets` and an empty subtitle file.** A file that ffprobe opens but that has no
+event (`WEBVTT` with nothing after it, an `.ass` with only its header) gives its stream without
+`nb_read_packets` (the key is left out at 0 packets); `subtitles/inspect` counts that as 0 events
+(`subtitle.no_events`). An empty `.srt`, a BOM alone or blank lines: exit 1, as S6 found.
+
+**One argument on Linux.** `ffmpeg … -metadata synopsis=<value>` (Python `subprocess`): an
+argument of 131 071 bytes runs (FFmpeg writes the tag: 131 062 characters read back); 131 072
+bytes fail before FFmpeg starts (`OSError: [Errno 7] Argument list too long`, the kernel's
+`MAX_ARG_STRLEN` of 32 pages of 4096 bytes, NUL included); `ARG_MAX` is 2 097 152. A NUL character
+in an argument: `ValueError: embedded null byte` from Python. So a tag is at most 3000 characters
+(`metadata.tag_too_long`; at most 12 000 bytes in UTF-8) and a NUL in a tag or a track name is
+`metadata.nul_character`. The longest command line of the builder's snapshot jobs
+(`loudnorm_two_tracks_with_two_pass`) is 1 667 characters as `subprocess.list2cmdline` joins it
+for Windows; with all eight tags at 3 000 characters it is 25 821, below Windows' 32 767 (the
+`CreateProcess` limit from Microsoft's documentation; not checked on Windows yet, M10).
+
+**mkvmerge v103 and OGM chapter files** (`mkvmerge -o out.mkv --chapters FILE --no-chapters …`,
+read back with ffprobe): a line ends at CR LF, LF or a CR alone; U+2028, U+0085, `\x0b` and `\x1c`
+stay in a name. The pairs are taken in the file's order, the numbers ignored: a repeated
+`CHAPTER01` gives two chapters (`A` at 0, `B` at 2 s), `01, 03, 02` keeps that order (times 0,
+1, 2), and `CHAPTER01= …` with `CHAPTER02NAME=X` names chapter 1 `X`. A name keeps its leading
+spaces, its trailing white space is cut (`  lead and trail`); an empty name is written as
+`Chapter 02`. mkvmerge refuses (exit 2, `Unknown chapter file format`) a file whose first line is
+a name, a time without its name line, names only, and lower-case `chapter01=`; hours past 99
+(`100:00:00.000`) are taken. A CP1252 file is read as UTF-8 (U+FFFD for each byte that is not
+ASCII), and under `LC_ALL=C` each name is cut at its first such byte. `chapters/import` reads OGM
+in the file's order the same way; it also takes a name before its time and a lone name (a
+warning), and pairs a number's time and name where mkvmerge pairs by position. A file that is
+not UTF-8 is read as Windows-1252 where every byte is defined there (curly quotes, dashes and
+`€` come out right), else as Latin-1.
+
+**mkvmerge and XML chapter names**: a `ChapterString` is kept as it is (`  spaced  `,
+`\n  indented\n  `); CR LF becomes LF (XML's own line-end rule, which expat applies too).
+`chapters/import` reads the names the same way, not trimmed.
+
+**FFMETADATA chapters without a title.** A `[CHAPTER]` with no `title=` line, mapped with
+`-map_chapters 1` into Matroska, gives a chapter with no title (ffprobe shows none). So after one
+rename (names written through the FFMETADATA file) an untitled source chapter stays untitled in
+the encoded file, as when the chapters are copied (a copy of `chapters.mkv` with two chapters,
+`First` and an untitled one, names `["Renamed", ""]`: ffprobe `Renamed`, then no title).
+
 ### D-0 (4a)
 
 Checked on 2026-10-23 on CachyOS (kernel 7.2, KDE Plasma on Wayland), Python 3.14.8,
