@@ -77,6 +77,16 @@ export function kbps(bitsPerSecond: number): number {
   return Math.round(bitsPerSecond / 1000)
 }
 
+/** A number of kb/s with the locale's digit grouping (`2,140`). */
+export function groupedKbps(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value)
+}
+
+/** b/s as grouped kb/s. */
+export function kbpsText(bitsPerSecond: number, locale: string): string {
+  return groupedKbps(kbps(bitsPerSecond), locale)
+}
+
 /** The position among the source's tracks of its kind, from 1 (the table's `#`). */
 export function trackNumber(stream: SourceStream): number {
   return stream.type_index + 1

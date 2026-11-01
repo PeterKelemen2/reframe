@@ -3,12 +3,17 @@ import { X } from '@lucide/vue'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import vTooltip from 'primevue/tooltip'
+import { nextTick, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { ScanRun } from '@/stores/scans'
 
-/** A scan's start button, or while it runs its progress and a cancel button. */
-defineProps<{
+/**
+ * A scan's start button, or while it runs its progress and a cancel button. The focus moves
+ * between the two buttons as they replace each other; `leave` asks the parent to place it when
+ * the control goes away while it holds the focus.
+ */
+const props = defineProps<{
   run: ScanRun | undefined
   label: string
   /** The button's accessible name: which track it measures. */
@@ -19,13 +24,34 @@ defineProps<{
   disabled?: boolean
 }>()
 
-const emit = defineEmits<{ start: []; cancel: [run: ScanRun] }>()
+const emit = defineEmits<{ start: []; cancel: [run: ScanRun]; leave: [] }>()
 
 const { t } = useI18n()
+const root = useTemplateRef<HTMLElement>('root')
+
+function holdsFocus(): boolean {
+  const active = document.activeElement
+  return active !== null && root.value?.contains(active) === true
+}
+
+// A pre-flush watcher still sees the button that is about to be replaced.
+watch(
+  () => props.run !== undefined,
+  async (running) => {
+    if (!holdsFocus()) return
+    await nextTick()
+    const next = running ? 'cancel-scan' : 'start-scan'
+    root.value?.querySelector<HTMLElement>(`[data-action="${next}"]`)?.focus()
+  },
+)
+
+onBeforeUnmount(() => {
+  if (holdsFocus()) emit('leave')
+})
 </script>
 
 <template>
-  <span class="scan-control" :data-state="run ? 'running' : 'idle'" @click.stop>
+  <span ref="root" class="scan-control" :data-state="run ? 'running' : 'idle'" @click.stop>
     <template v-if="run">
       <ProgressBar
         class="scan-control__bar"

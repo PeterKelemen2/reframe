@@ -1,11 +1,12 @@
-import type { VueWrapper } from '@vue/test-utils'
+import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-import type { SubtitleStream } from '@/api/types'
+import type { AudioStream, SubtitleStream, TaskInfo } from '@/api/types'
 import { mountBase } from '@/components/base/testing'
 import { probedSource } from '@/components/tracks/testing'
 import { type ScanKind, type ScanRun, useScansStore } from '@/stores/scans'
+import { useTasksStore } from '@/stores/tasks'
 
 import TrackTable from './TrackTable.vue'
 
@@ -137,6 +138,16 @@ function run(kind: ScanKind, streamIndex: number | null, progress: number | null
   return { sourceId: 'src', kind, streamIndex, taskId: 'task', progress }
 }
 
+function endTask(state: TaskInfo['state']): void {
+  useTasksStore().tasks = { task: { id: 'task', kind: 'scan', state } }
+}
+
+function measuredBitrate(stream: AudioStream): AudioStream {
+  return { ...stream, bitrate: { value: 2_140_063, source: 'measured' } }
+}
+
+const pgsStreams = () => probedSource('pgs').subtitles as SubtitleStream[]
+
 const button = (wrapper: VueWrapper, name: string) =>
   wrapper.findAll('button').find((candidate) => candidate.attributes('aria-label') === name)
 
@@ -249,6 +260,104 @@ describe('the scans in the source tables', () => {
     expect(detail(wrapper, 'True peak')).toBe('−20.0 dBTP')
     expect(detail(wrapper, 'Loudness range')).toBe('2.2 LU')
     expect(button(wrapper, 'Measure the loudness of track 1')!.text()).toBe('Measure again')
+  })
+
+  it('keeps the focus on the scan’s buttons as they replace each other', async () => {
+    const { wrapper, scans } = mountScans('audio', probedSource('dts-hd-ma').audio!)
+    button(wrapper, 'Measure the bitrate of track 1')!.element.focus()
+    scans.runs = [run('bitrate', 1, null)]
+    await flushPromises()
+    const cancel = button(wrapper, 'Cancel the bitrate measurement of track 1')!
+    expect(document.activeElement).toBe(cancel.element)
+    scans.runs = []
+    await flushPromises()
+    expect(document.activeElement).toBe(button(wrapper, 'Measure the bitrate of track 1')!.element)
+  })
+
+  it('gives the focus to the row when the measured value replaces the scan', async () => {
+    const audio = probedSource('dts-hd-ma').audio!
+    const { wrapper, scans } = mountScans('audio', audio)
+    scans.runs = [run('bitrate', 1, null)]
+    await flushPromises()
+    button(wrapper, 'Cancel the bitrate measurement of track 1')!.element.focus()
+    await wrapper.setProps({ streams: [measuredBitrate(audio[0]!), ...audio.slice(1)] })
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.findAll('.track-table__toggle')[0]!.element)
+  })
+
+  it('groups the digits of a bitrate', () => {
+    const audio = probedSource('dts-hd-ma').audio!
+    const { wrapper } = mountScans('audio', [measuredBitrate(audio[0]!)])
+    expect(cells(wrapper, 0)[6]).toBe('2,140 kb/s measured')
+  })
+
+  const loud = { path: '/m.mkv', stream_index: 1, integrated: -22.47, true_peak: -20, lra: 2.2 }
+
+  it.each([
+    {
+      what: 'a measured bitrate',
+      ended: run('bitrate', 1, null),
+      streams: () => [measuredBitrate(probedSource('dts-hd-ma').audio![0]!)],
+      said: 'Track 1: 2,140 kb/s, measured.',
+    },
+    {
+      what: 'a bitrate scan that found none',
+      ended: run('bitrate', 1, null),
+      streams: () => probedSource('dts-hd-ma').audio!,
+      said: 'Track 1: no bitrate could be measured.',
+    },
+    {
+      what: 'a loudness',
+      ended: run('loudness', 1, null),
+      streams: () => probedSource('dts-hd-ma').audio!,
+      said: 'Track 1: integrated loudness −22.5 LUFS, true peak −20.0 dBTP, loudness range 2.2 LU.',
+    },
+    {
+      what: 'a track’s events with the forced ones',
+      ended: run('subtitle', 2, null),
+      streams: () => [{ ...pgsStreams()[1]!, event_count: 4, forced_event_count: 2 }],
+      said: 'Track 2: 4 events counted, 2 forced.',
+    },
+    {
+      what: 'a track’s events',
+      ended: run('subtitle', 2, null),
+      streams: () => [{ ...pgsStreams()[1]!, event_count: 1 }],
+      said: 'Track 2: one event counted.',
+    },
+    {
+      what: 'every track’s events',
+      ended: run('subtitle', null, null),
+      streams: pgsStreams,
+      said: 'The events of every subtitle track are counted.',
+    },
+  ])('announces what a finished scan found: $what', async ({ ended, streams, said }) => {
+    const list = streams()
+    const { wrapper, scans } = mountScans(ended.kind === 'subtitle' ? 'subtitle' : 'audio', list)
+    scans.runs = [ended]
+    await nextTick()
+    endTask('done')
+    if (ended.kind === 'loudness') scans.loudness = { 'src:1': loud }
+    scans.runs = []
+    await flushPromises()
+    expect(wrapper.find('[data-role="scan-status"]').text()).toBe(said)
+  })
+
+  it('announces a cancelled scan, and leaves a failed one to its error toast', async () => {
+    const { wrapper, scans } = mountScans('audio', probedSource('dts-hd-ma').audio!)
+    const status = () => wrapper.find('[data-role="scan-status"]').text()
+    scans.runs = [run('bitrate', 1, null)]
+    await nextTick()
+    endTask('cancelled')
+    scans.runs = []
+    await flushPromises()
+    expect(status()).toBe('Measuring the bitrate of track 1: cancelled.')
+
+    scans.runs = [{ ...run('loudness', 1, null), taskId: 'other' }]
+    await nextTick()
+    useTasksStore().tasks = { other: { id: 'other', kind: 'scan', state: 'failed' } }
+    scans.runs = []
+    await flushPromises()
+    expect(status()).toBe('Measuring the bitrate of track 1: cancelled.')
   })
 
   it('shows a dash for a loudness FFmpeg gives as infinite', async () => {
