@@ -484,7 +484,98 @@ near the bottom of the window closes if the page scrolls under it.
 
 ## Task E — F-10 the defaults dialog and its live preview
 
-(Written by E.)
+Built: `stores/defaults.ts` and `components/defaults/` (`DefaultsDialog`, `SelectionForm`,
+`CodecRuleTable` with `CodecRuleExtras`, `PassthruForm`, `SubtitleOptions`, `DefaultsPreview`,
+`IssueLines`; `model.ts`, `options.ts`, `codecs.ts`, `preview.ts`).
+
+**What the server gives** (checked 2026-11-01 against `scripts/dev-server.py` with the pinned
+FFmpeg; kept in `stores/defaults.server.test.ts`):
+
+- M6 demo 5 on `dts-hd-ma` with the rules `Hungarian 5.1 or more → AC-3 5.1, max 320`,
+  `English 5.1 or more → AC-3 5.1, max 384` above the built-in *H.265 MKV 1080p*'s catch-all
+  (AAC stereo 160, re-encode) and AC-3 ticked as a passthru codec (that preset allows none):
+  track 1 (hun DTS-HD MA 5.1) rule 1, AC-3 5.1 · 320 kb/s, "Lossless source → encode at the max",
+  with `measure` (no bitrate in the file); track 2 (eng AC-3 5.1 224 kb/s) rule 2, passthru,
+  "AC-3, 5.1, 224 ≤ 384: passthru"; track 3 (eng AC-3 2.0 192 kb/s) rule 3, AAC stereo 160,
+  "Rule 2 needs 5.1 or more. Rule 3 matches. The rule says re-encode, 192 > 160 → encode at the
+  max". With no language in the preset or Settings every track is kept, and burn-in and foreign
+  audio search do not run (0031 item 1).
+- Issue paths index the rules from 0 (`audio_defaults.codec_rules[1]`, `….max_bitrate`,
+  `….codec`, `….extras.extra_outputs[0].codec`, `audio_defaults.passthru.fallback_encoder`); the
+  messages count from 1 ("Rule 2 never applies"). Fixes target `template` and patch
+  `/audio_defaults/…`; a codec the container cannot hold also offers `/output/container`.
+
+**Choices.**
+
+1. **A copy is edited.** The dialog edits a copy of the defaults (`completeAudio` /
+   `completeSubtitles` fill what a hand-written preset leaves out and keep unknown members).
+   Nothing changes before *Apply* or *Save*; *Cancel* and Escape drop the copy.
+2. **The preview.** `presets/defaults/preview` with the edited defaults (the other kind is the
+   template's: the subtitle defaults need the audio language), the target's container and one
+   source: the editor's job, else the active source; none: the preview says why. It is sent at
+   once when the dialog opens, 250 ms after the last edit, and at once when the source is read
+   again (a **Measure** in the preview's reason cell, where the server sets `measure`). The
+   editor's `latestRequest` aborts a waiting or running request, so an older answer is never
+   shown; while a newer one is due the table is marked busy and the fixes are off (their paths
+   are the shown answer's). A refusal shows its detail instead of the table (no toast: the
+   preview runs at every edit).
+3. **Issues at their places.** Each rule has a stable key; an issue's rule index is turned into
+   the key of the request it answers, so it stays with its rule when the rules move before the
+   next answer. A rule's issues (its own and its fields') show in a line under the rule, with
+   their fixes; the selection, passthru and subtitle fields show theirs; the rest are listed under
+   the preview, whose header counts them all. A fix is offered only when each of its operations
+   stays inside the edited defaults: switching the container is not the dialog's to do.
+4. **Languages.** "Use the preferred … languages of Settings → Languages" is `languages: null`
+   (the list of Settings is shown); unticking it starts an own list with that list. An empty own
+   list means Settings too (0031), and the dialog says so.
+5. **The codec-rule table** is a plain table, one `tbody` per rule (its row, its issue line and its
+   expanded settings), dragged by its handle and moved by buttons that keep the focus. The
+   catch-all is locked: a lock instead of the handle, *Any language* and *Any*, no move or remove,
+   and the rule above it cannot move below it. *Add rule* inserts above the catch-all a rule with
+   *5.1 or more* and the catch-all's codec and max (a second *Any / Any* rule would make the
+   catch-all unreachable). One language is chosen in the row (`LanguagePicker`, *Any language* as
+   none); several are edited in the expanded row (`LanguageListEditor`), which also holds the
+   sample rate, gain, DRC, loudness, name template, *only for the first track of this language* and
+   the extra outputs. A snapped max bitrate is the server's `defaults.bitrate_snapped` note with
+   its fix; the client does not snap.
+6. **Targets** (decision item 4). *Job*: the defaults of the job's preset
+   (`editor.currentTemplate`). *Apply* sends `jobs/explain` with the template and the edited
+   defaults and sets `/audio` or `/subtitles` to the answer: one undo step; an answer that comes
+   after another job was opened is dropped, and the dialog closes when another job is opened.
+   *Save to preset…* (a user preset) asks first, then writes only this kind's defaults into it and
+   stays open, so that they can still be applied. A built-in preset offers *Save as new preset…*:
+   a new user preset from the job's template with the edited defaults (as *Save as new preset* of
+   the preset picker); the job keeps its preset. *Preset*: a user preset's *Save* (on once
+   something changed) writes only this kind's defaults and closes; a built-in's are read-only
+   (every control off, no fixes, *Close* only; *Measure* still works). *Group*: a toast says that
+   it is not built yet; no dialog.
+7. **Escape** is the dialog's own (on the dialog, and on the page when the focus is on no control
+   and no dialog of its own is above it), so that the language picker, the confirmation and the
+   name dialog close alone. PrimeVue's `Select` stops every Escape, open or not: Escape on a
+   focused select does not close the dialog.
+8. A window under 48rem wide or 40rem high gets one scroll area instead of the two panes.
+
+**Limits.** No lint without an open source (no route lints a template alone). *Apply* replaces
+every subtitle track, external files too, as *Reload from preset rules* does (one undo brings them
+back). The source cell names the track as the source table does and adds its stream index
+(`stream #4`), because the reasons name tracks by stream index (`best quality takes #4`).
+
+**Checked** in headless Chromium (Playwright 1.64.1) against `scripts/dev-server.py --port 8780
+--fixtures dts-hd-ma,multitrack,text-subs` with the pinned FFmpeg, light and dark at 1440 × 900,
+and 390 × 844: demo 5 built through the UI (rows as above); typing `320` (keys 60 ms apart) sent
+one preview, 387 ms after the first key; Escape in the language picker leaves the dialog open;
+keyboard and drag moves (a drop on the catch-all does nothing); a shadowed rule and a snapped
+max with their fixes at the rules; an extra output in the preview; **Measure** in the preview
+(the reason follows the measured bitrate); *Apply* (the Audio tab shows AC-3 320, passthru, AAC
+160), `Ctrl+Z` and `Ctrl+Shift+Z`; Escape after an edit leaves the job as it was; the subtitle
+dialog on `multitrack` (English, first track, foreign audio search, burn-in) and *Apply*; the
+presets view: a built-in read-only, a user preset's subtitle defaults saved (read back with
+`GET /api/presets/{id}`); the empty state without a source; the focus starts on the close button
+and returns to *Defaults…*. Tests: 58 unit tests (store 27, model 9, preview text 4, rule
+table 6, dialog 6, selection 2, preview table 4) and 4 in `stores/defaults.server.test.ts`
+against a real server; every test function was failed by a mutation of the code (62 mutations). One survived at first:
+the Escape test sent no `code`, which PrimeVue reads; the test was fixed and the confirmation's
+own Escape handler, which no mutation could break, removed.
 
 ## Task G — F-17 flow 1
 
