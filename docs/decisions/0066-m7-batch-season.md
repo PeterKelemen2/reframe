@@ -200,9 +200,8 @@ Built in `components/sources/` (group rows, the context menu) and `components/ba
   name is the server's refusal at the field). The name starts empty, as in the preset picker.
 - The banner finds its group in `sources.grouping` with the panel's `panelItems`, so its file
   labels are the panel's.
-- `useQueueGroup()` is called in the click handlers, not in setup: the skeleton's stub throws
-  when it is called, which would stop the workspace from mounting until task C's composable is
-  merged. Nothing shows the composable's `busy`.
+- The scope switch says `Group` and `This file only (E03)`: the words of the per-file refusal's
+  toast, with the shown file's label.
 
 Not built: *Group these* (04 §Grouping; not in M7's breakdown), pasting into several files that
 are not open (item 6).

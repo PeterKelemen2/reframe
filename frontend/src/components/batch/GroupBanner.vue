@@ -30,6 +30,7 @@ const sources = useSourcesStore()
 const presets = usePresetsStore()
 const toasts = useToastStore()
 const ui = useUiStore()
+const { busy: queueing, queueGroup: queueOne } = useQueueGroup()
 const id = useId()
 
 const root = useTemplateRef<HTMLElement>('root')
@@ -95,8 +96,7 @@ function editGroup(groupId: string): Promise<void> {
 }
 
 function queueGroup(groupId: string): Promise<void> {
-  // Called here, not in setup: its stub throws until it is built.
-  return quietly(() => useQueueGroup().queueGroup(groupId))
+  return quietly(() => queueOne(groupId))
 }
 
 function closeGroup(): Promise<void> {
@@ -197,6 +197,7 @@ watch(mode, async () => {
           size="small"
           severity="secondary"
           :label="t('group.actions.queue')"
+          :loading="queueing"
           data-action="queue-group"
           @click="queueGroup(groupTarget.groupId)"
         />

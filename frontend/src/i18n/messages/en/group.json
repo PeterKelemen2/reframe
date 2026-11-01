@@ -44,7 +44,7 @@
     "shown": "Shown file",
     "scope": "Edits go to",
     "scopeGroup": "Group",
-    "scopeFile": "{label} only",
+    "scopeFile": "This file only ({label})",
     "inGroup": "In group \"{name}\""
   },
   "apply": {
