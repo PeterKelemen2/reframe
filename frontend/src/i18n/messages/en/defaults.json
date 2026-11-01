@@ -12,6 +12,16 @@
     "preset": "The defaults of the preset “{name}”. Jobs drafted with it from now on use what you save here.",
     "builtIn": "“{name}” is a built-in preset: its defaults are shown read-only. Duplicate it in the presets list to change them."
   },
+  "ruled": {
+    "audio": "“{name}” has its own audio track rules. They decide the audio tracks instead of these defaults, so a change here changes no track until those rules are removed from the preset. The preview shows what the rules give.",
+    "subtitles": "“{name}” has its own subtitle track rules. They decide the subtitle tracks instead of these defaults, so a change here changes no track until those rules are removed from the preset. The preview shows what the rules give."
+  },
+  "shown": {
+    "on": "On",
+    "off": "Off",
+    "yes": "Yes",
+    "no": "No"
+  },
   "actions": {
     "cancel": "Cancel",
     "close": "Close",
@@ -44,13 +54,17 @@
   "units": {
     "kbpsSuffix": " kb/s",
     "dbSuffix": " dB",
-    "khz": "{value} kHz"
+    "khz": "{value} kHz",
+    "kbps": "{value} kb/s",
+    "db": "{value} dB"
   },
   "selection": {
     "title": "Which tracks to take",
     "languages": "Languages",
     "fromSettingsAudio": "Use the preferred audio languages of Settings → Languages",
     "fromSettings": "Use the preferred subtitle languages of Settings → Languages",
+    "settingsAudio": "The preferred audio languages of Settings → Languages",
+    "settingsSubtitles": "The preferred subtitle languages of Settings → Languages",
     "settingsList": "Settings → Languages: {languages}.",
     "noneSet": "Settings → Languages has none: every track is kept, in source order, and the settings below wait until a language is set.",
     "emptyList": "An empty list uses the preferred languages of Settings → Languages too.",
@@ -145,10 +159,25 @@
     "firstTrackOnly": "Only for the first track of this language",
     "extraOutputs": "Extra outputs",
     "extraOutputsHelp": "More tracks made from the same source track, for example an AAC stereo track for compatibility.",
+    "noExtraOutputs": "None",
+    "extraOutputShown": "{codec}, {mixdown}, {bitrate}",
+    "nameFromSource": "The source track's name",
     "bitrate": "Bitrate",
     "encoderDefault": "Encoder default",
     "addOutput": "Add extra output",
-    "removeOutput": "Remove extra output {n}",
+    "named": {
+      "samplerate": "Sample rate of rule {n}",
+      "gain": "Gain of rule {n}",
+      "drc": "Dynamic range compression of rule {n}",
+      "loudness": "Normalise loudness of rule {n}",
+      "nameTemplate": "Track name of rule {n}",
+      "firstTrackOnly": "Only for the first track of this language, in rule {n}",
+      "outputCodec": "Codec of extra output {output} of rule {n}",
+      "outputMixdown": "Mixdown of extra output {output} of rule {n}",
+      "outputBitrate": "Bitrate of extra output {output} of rule {n}",
+      "removeOutput": "Remove extra output {output} of rule {n}",
+      "addOutput": "Add extra output to rule {n}"
+    },
     "channelsChoice": {
       "any": "Any",
       "mono": "Mono",
@@ -177,6 +206,7 @@
   "passthru": {
     "title": "Passthru and fallback",
     "allowed": "Allowed passthru codecs",
+    "none": "None",
     "fallback": "Fallback encoder",
     "fallbackHelp": "Encodes a track whose rule says Passthru when its codec is not allowed or the container cannot hold it."
   },
@@ -223,6 +253,7 @@
       "warning": "no warnings | {n} warning | {n} warnings",
       "info": "no notes | {n} note | {n} notes"
     },
-    "measureHelp": "The bitrate is unknown and decides what the rule does: measure it to see the real outcome."
+    "measureHelp": "The bitrate is unknown and decides what the rule does: measure it to see the real outcome.",
+    "measured": "Track {n} measured: {reason}"
   }
 }

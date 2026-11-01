@@ -89,7 +89,7 @@ const BURN_IN: Choices<SubtitleDefaults['burn_in']> = [
 
 /** The labelled choices of the defaults' selects. */
 export function useDefaultsOptions() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
 
   function options<T extends string>(group: string, choices: Choices<T>): Option<T>[] {
     return choices.map(([value, key]) => ({ value, label: t(`defaults.${group}.${key}`) }))
@@ -101,6 +101,11 @@ export function useDefaultsOptions() {
     return options('selection.defaultTrackChoice', choices)
   }
 
+  /** Items as one list in the UI's language: `Hungarian, English`. */
+  function list(items: readonly string[]): string {
+    return new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(items)
+  }
+
   return {
     tracksPerLanguage: options('selection.tracksPerLanguageChoice', TRACKS_PER_LANGUAGE),
     tieBreak: options('selection.tieBreakChoice', TIE_BREAK),
@@ -110,6 +115,7 @@ export function useDefaultsOptions() {
     commentary: options('selection.commentaryChoice', COMMENTARY),
     order: options('selection.orderChoice', ORDER),
     defaultTrack,
+    list,
     sourceChannels: options('rules.channelsChoice', SOURCE_CHANNELS),
     mixdown: options('rules.mixdownChoice', MIXDOWN),
     ifFits: options('rules.ifFitsChoice', IF_FITS),

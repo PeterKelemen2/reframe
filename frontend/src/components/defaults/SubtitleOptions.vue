@@ -9,7 +9,8 @@ import Field from '@/components/base/Field.vue'
 import { useDefaultsStore } from '@/stores/defaults'
 
 import IssueLines from './IssueLines.vue'
-import { useDefaultsOptions } from './options'
+import { labelOf, useDefaultsOptions } from './options'
+import ShownValue from './ShownValue.vue'
 
 /** Foreign audio search and burn-in, the subtitle defaults' own settings. */
 const { t } = useI18n()
@@ -27,12 +28,20 @@ function set(next: Partial<SubtitleDefaults>): void {
 <template>
   <div class="subtitle-options">
     <div class="subtitle-options__search" data-path="subtitle_defaults.foreign_audio_search">
-      <span class="subtitle-options__check">
+      <template v-if="defaults.readOnly">
+        <span class="subtitle-options__label">{{
+          t('defaults.subtitles.foreignAudioSearch')
+        }}</span>
+        <ShownValue
+          :text="value.foreign_audio_search ? t('defaults.shown.on') : t('defaults.shown.off')"
+          data-field="foreign_audio_search"
+        />
+      </template>
+      <span v-else class="subtitle-options__check">
         <Checkbox
           :input-id="`${id}-search`"
           binary
           :model-value="value.foreign_audio_search"
-          :disabled="defaults.readOnly"
           :pt="{ input: { 'aria-describedby': `${id}-search-help` } }"
           data-field="foreign_audio_search"
           @update:model-value="set({ foreign_audio_search: $event === true })"
@@ -53,7 +62,13 @@ function set(next: Partial<SubtitleDefaults>): void {
       stacked
     >
       <template #default="{ id: inputId, labelId, invalid }">
+        <ShownValue
+          v-if="defaults.readOnly"
+          :text="labelOf(choices.burnIn, value.burn_in)"
+          data-field="burn_in"
+        />
         <Select
+          v-else
           :input-id="inputId"
           :ariaLabelledby="labelId"
           :invalid="invalid"
@@ -61,7 +76,6 @@ function set(next: Partial<SubtitleDefaults>): void {
           :options="choices.burnIn"
           option-label="label"
           option-value="value"
-          :disabled="defaults.readOnly"
           fluid
           data-field="burn_in"
           @update:model-value="set({ burn_in: $event })"
@@ -80,6 +94,10 @@ function set(next: Partial<SubtitleDefaults>): void {
 .subtitle-options__search {
   display: grid;
   gap: var(--rf-space-1);
+}
+
+.subtitle-options__label {
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .subtitle-options__check {

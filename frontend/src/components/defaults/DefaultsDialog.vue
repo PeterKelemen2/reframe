@@ -2,6 +2,7 @@
 import { useEventListener } from '@vueuse/core'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import Message from 'primevue/message'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -90,7 +91,11 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
     modal
     :header="title"
     class="defaults-dialog"
-    :style="{ width: 'min(84rem, calc(100vw - 2rem))', height: 'min(60rem, calc(100vh - 2rem))' }"
+    :style="{
+      width: 'min(84rem, calc(100vw - 2rem))',
+      height: 'min(60rem, calc(100vh - 2rem))',
+      maxHeight: 'calc(100vh - 2rem)',
+    }"
     :draggable="false"
     :close-on-escape="false"
     :pt="{
@@ -101,6 +106,18 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
   >
     <template v-if="ready">
       <p class="defaults-dialog__whose" data-role="whose">{{ whose }}</p>
+      <Message
+        v-if="defaults.ruledByTemplate"
+        class="defaults-dialog__ruled"
+        severity="warn"
+        data-role="ruled"
+      >
+        {{
+          audio
+            ? t('defaults.ruled.audio', { name: presetName })
+            : t('defaults.ruled.subtitles', { name: presetName })
+        }}
+      </Message>
       <div class="defaults-dialog__edit" data-role="edit">
         <Section :title="t('defaults.selection.title')">
           <SelectionForm />
@@ -239,9 +256,10 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
   overflow: auto;
 }
 
+/* The settings are what the dialog is for: the preview takes at most two fifths. */
 .defaults-dialog__preview {
   flex: 0 0 auto;
-  max-height: 50%;
+  max-height: 40%;
   padding-top: var(--rf-space-3);
   border-top: 1px solid var(--rf-color-border);
   overflow: auto;
@@ -252,6 +270,10 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--rf-space-2);
+}
+
+.defaults-dialog__ruled {
+  flex: none;
 }
 
 .defaults-confirm__text {

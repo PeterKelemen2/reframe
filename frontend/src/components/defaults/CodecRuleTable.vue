@@ -26,7 +26,8 @@ import CodecRuleExtras from './CodecRuleExtras.vue'
 import { useCodecOptions } from './codecs'
 import IssueLines from './IssueLines.vue'
 import { rulePath } from './model'
-import { useDefaultsOptions } from './options'
+import { labelOf, useDefaultsOptions } from './options'
+import ShownValue from './ShownValue.vue'
 
 /**
  * The codec rules, first match wins: drag or the arrow buttons reorder them, the catch-all stays
@@ -81,9 +82,14 @@ const issuesId = (key: number) => `${id}-issues-${key}`
 const labelled = (name: string, key: number) => `${col(name)} ${rowId(key)}`
 
 function names(rule: AudioCodecRule): string {
-  return (rule.languages ?? [])
-    .map((tag) => describeTag(system.languages, tag)?.english_name ?? tag)
-    .join(', ')
+  const tags = rule.languages ?? []
+  if (tags.length === 0) return t('defaults.rules.anyLanguage')
+  return choices.list(tags.map((tag) => describeTag(system.languages, tag)?.english_name ?? tag))
+}
+
+function maxText(rule: AudioCodecRule): string {
+  const max = rule.max_bitrate ?? null
+  return max === null ? t('defaults.rules.noMax') : t('defaults.units.kbps', { value: max })
 }
 
 function fieldError(row: Row, field: string): boolean {
@@ -253,10 +259,10 @@ function dropSide(index: number): 'before' | 'after' | null {
                 <Lock :size="16" aria-hidden="true" />
               </span>
               <span
-                v-else
+                v-else-if="!locked"
                 v-tooltip.top="t('defaults.rules.drag')"
                 class="rule-table__handle"
-                :draggable="!locked"
+                draggable="true"
                 data-role="drag"
                 @dragstart="onDragStart($event, row)"
                 @dragend="endDrag"
@@ -271,13 +277,13 @@ function dropSide(index: number): 'before' | 'after' | null {
               <span v-if="row.catchAll" class="rule-table__any">
                 {{ t('defaults.rules.anyLanguage') }}
               </span>
+              <ShownValue v-else-if="locked" :text="names(row.rule)" />
               <LanguagePicker
                 v-else-if="(row.rule.languages ?? []).length <= 1"
                 :model-value="row.rule.languages?.[0] ?? null"
                 clearable
                 :none-label="t('defaults.rules.anyLanguage')"
                 :labelledby="labelled('language', row.key)"
-                :disabled="locked"
                 :container="container"
                 :invalid="fieldError(row, 'languages')"
                 @update:model-value="setLanguage(row, $event)"
@@ -296,6 +302,10 @@ function dropSide(index: number): 'before' | 'after' | null {
               <span v-if="row.catchAll" class="rule-table__any">
                 {{ t('defaults.rules.anyChannels') }}
               </span>
+              <ShownValue
+                v-else-if="locked"
+                :text="labelOf(choices.sourceChannels, row.rule.source_channels)"
+              />
               <Select
                 v-else
                 :model-value="row.rule.source_channels"
@@ -303,37 +313,40 @@ function dropSide(index: number): 'before' | 'after' | null {
                 option-label="label"
                 option-value="value"
                 :ariaLabelledby="labelled('channels', row.key)"
-                :disabled="locked"
                 :invalid="fieldError(row, 'source_channels')"
                 @update:model-value="set(row, { source_channels: $event })"
               />
             </td>
             <td data-field="codec">
+              <ShownValue v-if="locked" :text="codecs.label(row.rule.codec)" />
               <Select
+                v-else
                 :model-value="row.rule.codec"
                 :options="codecs.options(row.rule.codec)"
                 option-label="label"
                 option-value="value"
                 :ariaLabelledby="labelled('codec', row.key)"
-                :disabled="locked"
                 :invalid="fieldError(row, 'codec')"
                 @update:model-value="set(row, { codec: $event })"
               />
             </td>
             <td data-field="mixdown">
+              <ShownValue v-if="locked" :text="labelOf(choices.mixdown, row.rule.mixdown)" />
               <Select
+                v-else
                 :model-value="row.rule.mixdown"
                 :options="choices.mixdown"
                 option-label="label"
                 option-value="value"
                 :ariaLabelledby="labelled('mixdown', row.key)"
-                :disabled="locked"
                 :invalid="fieldError(row, 'mixdown')"
                 @update:model-value="set(row, { mixdown: $event })"
               />
             </td>
             <td data-field="max_bitrate">
+              <ShownValue v-if="locked" :text="maxText(row.rule)" />
               <InputNumber
+                v-else
                 class="rule-table__number-input"
                 :model-value="row.rule.max_bitrate ?? null"
                 :min="1"
@@ -342,20 +355,20 @@ function dropSide(index: number): 'before' | 'after' | null {
                 :suffix="t('defaults.units.kbpsSuffix')"
                 :placeholder="t('defaults.rules.noMax')"
                 :ariaLabelledby="labelled('max', row.key)"
-                :disabled="locked"
                 :invalid="fieldError(row, 'max_bitrate')"
                 @input="setMax(row, $event.value)"
                 @update:model-value="setMax(row, $event)"
               />
             </td>
             <td data-field="if_fits">
+              <ShownValue v-if="locked" :text="labelOf(choices.ifFits, row.rule.if_fits)" />
               <Select
+                v-else
                 :model-value="row.rule.if_fits"
                 :options="choices.ifFits"
                 option-label="label"
                 option-value="value"
                 :ariaLabelledby="labelled('fits', row.key)"
-                :disabled="locked"
                 @update:model-value="set(row, { if_fits: $event })"
               />
             </td>
@@ -376,42 +389,44 @@ function dropSide(index: number): 'before' | 'after' | null {
                   <ChevronRight v-else :size="16" aria-hidden="true" />
                 </template>
               </Button>
-              <Button
-                text
-                rounded
-                size="small"
-                severity="secondary"
-                data-move="up"
-                :disabled="locked || row.catchAll || row.index === 0"
-                :aria-label="t('defaults.rules.moveUp', { n: row.number })"
-                @click="move(row, row.index - 1)"
-              >
-                <template #icon><ArrowUp :size="16" aria-hidden="true" /></template>
-              </Button>
-              <Button
-                text
-                rounded
-                size="small"
-                severity="secondary"
-                data-move="down"
-                :disabled="locked || row.catchAll || row.index >= lastMovable"
-                :aria-label="t('defaults.rules.moveDown', { n: row.number })"
-                @click="move(row, row.index + 1)"
-              >
-                <template #icon><ArrowDown :size="16" aria-hidden="true" /></template>
-              </Button>
-              <Button
-                text
-                rounded
-                size="small"
-                severity="secondary"
-                data-action="remove"
-                :disabled="locked || row.catchAll"
-                :aria-label="t('defaults.rules.remove', { n: row.number })"
-                @click="remove(row)"
-              >
-                <template #icon><Trash2 :size="16" aria-hidden="true" /></template>
-              </Button>
+              <template v-if="!locked">
+                <Button
+                  text
+                  rounded
+                  size="small"
+                  severity="secondary"
+                  data-move="up"
+                  :disabled="row.catchAll || row.index === 0"
+                  :aria-label="t('defaults.rules.moveUp', { n: row.number })"
+                  @click="move(row, row.index - 1)"
+                >
+                  <template #icon><ArrowUp :size="16" aria-hidden="true" /></template>
+                </Button>
+                <Button
+                  text
+                  rounded
+                  size="small"
+                  severity="secondary"
+                  data-move="down"
+                  :disabled="row.catchAll || row.index >= lastMovable"
+                  :aria-label="t('defaults.rules.moveDown', { n: row.number })"
+                  @click="move(row, row.index + 1)"
+                >
+                  <template #icon><ArrowDown :size="16" aria-hidden="true" /></template>
+                </Button>
+                <Button
+                  text
+                  rounded
+                  size="small"
+                  severity="secondary"
+                  data-action="remove"
+                  :disabled="row.catchAll"
+                  :aria-label="t('defaults.rules.remove', { n: row.number })"
+                  @click="remove(row)"
+                >
+                  <template #icon><Trash2 :size="16" aria-hidden="true" /></template>
+                </Button>
+              </template>
             </td>
           </tr>
           <tr v-if="row.issues.length > 0" class="rule-table__issues">
@@ -439,13 +454,13 @@ function dropSide(index: number): 'before' | 'after' | null {
       </table>
     </div>
     <Button
+      v-if="!locked"
       class="rule-table__add"
       size="small"
       severity="secondary"
       outlined
       data-action="add-rule"
       :label="t('defaults.rules.add')"
-      :disabled="locked"
       @click="add"
     >
       <template #icon><Plus :size="16" aria-hidden="true" /></template>
@@ -517,10 +532,6 @@ function dropSide(index: number): 'before' | 'after' | null {
   display: inline-flex;
   color: var(--rf-color-text-muted);
   cursor: grab;
-}
-
-.rule-table__handle[draggable='false'] {
-  cursor: default;
 }
 
 .rule-table__lock {

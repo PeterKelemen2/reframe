@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, LoaderCircle, Minus } from '@lucide/vue'
-import { computed, useId } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { computed, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { AudioStream, SubtitleStream, TrackDecision } from '@/api/types'
@@ -25,6 +26,7 @@ const defaults = useDefaultsStore()
 const scans = useScansStore()
 const system = useSystemStore()
 const id = useId()
+const root = useTemplateRef<HTMLElement>('root')
 
 const audio = computed(() => defaults.kind === 'audio')
 const decisions = computed<TrackDecision[]>(() => {
@@ -73,21 +75,75 @@ function measureRun(decision: TrackDecision) {
   return sourceId === null ? undefined : scans.running(sourceId, 'bitrate', decision.source_stream)
 }
 
-function measure(decision: TrackDecision): void {
-  const sourceId = defaults.sourceId
-  // A failure is the scans store's toast; the measured source comes back through the watcher.
-  if (sourceId !== null)
-    void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
-}
-
 function number(decision: TrackDecision): number {
   const stream = streamOf(decision)
   return stream ? trackNumber(stream) : decision.source_stream
 }
+
+/** The track whose Measure was started here, while the focus follows its row. */
+const measuring = ref<number | null>(null)
+const announcement = ref('')
+
+function rowOf(stream: number): HTMLElement | null {
+  return root.value?.querySelector<HTMLElement>(`tr[data-stream="${stream}"]`) ?? null
+}
+
+/**
+ * Measure gives way to the scan's progress and that to the new reason: the focused control is
+ * removed, and the focus would leave the dialog. It goes to what the row has now.
+ */
+function keepFocus(stream: number): void {
+  const active = document.activeElement
+  if (active !== null && active !== document.body && active.isConnected) return
+  const row = rowOf(stream)
+  const control = row?.querySelector<HTMLElement>(
+    '[data-action="cancel-scan"], [data-action="start-scan"]',
+  )
+  ;(control ?? row?.querySelector<HTMLElement>('th'))?.focus()
+}
+
+function measure(decision: TrackDecision): void {
+  const sourceId = defaults.sourceId
+  if (sourceId === null) return
+  measuring.value = decision.source_stream
+  // A failure is the scans store's toast; the measured source comes back through the watcher.
+  void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
+}
+
+watch(
+  () => {
+    const stream = measuring.value
+    const sourceId = defaults.sourceId
+    if (stream === null || sourceId === null) return null
+    return [defaults.preview, scans.running(sourceId, 'bitrate', stream)] as const
+  },
+  (now) => {
+    const stream = measuring.value
+    if (now === null || stream === null) return
+    keepFocus(stream)
+    const decision = decisions.value.find((each) => each.source_stream === stream)
+    if (now[1] === undefined && decision !== undefined && !decision.measure) {
+      announcement.value = t('defaults.preview.measured', {
+        n: number(decision),
+        reason: decision.reason,
+      })
+      measuring.value = null
+    }
+  },
+  { flush: 'post' },
+)
+
+// The user went elsewhere: the focus is theirs again.
+useEventListener(document, 'focusin', (event: FocusEvent) => {
+  const stream = measuring.value
+  if (stream === null || !(event.target instanceof Node)) return
+  if (!rowOf(stream)?.contains(event.target)) measuring.value = null
+})
 </script>
 
 <template>
   <section
+    ref="root"
     class="defaults-preview"
     :aria-labelledby="`${id}-title`"
     :aria-busy="defaults.previewing"
@@ -151,7 +207,7 @@ function number(decision: TrackDecision): number {
               :data-stream="decision.source_stream"
               :data-selected="decision.selected"
             >
-              <th scope="row" class="defaults-preview__source">
+              <th scope="row" class="defaults-preview__source" tabindex="-1">
                 <span>{{ sourceText(decision) }}</span
                 >{{ ' ' }}
                 <span class="defaults-preview__muted">
@@ -216,6 +272,7 @@ function number(decision: TrackDecision): number {
     <p v-else class="defaults-preview__empty" data-state="loading">
       {{ t('defaults.preview.loading') }}
     </p>
+    <span class="rf-sr-only" aria-live="polite" data-role="announcement">{{ announcement }}</span>
   </section>
 </template>
 
@@ -305,11 +362,36 @@ function number(decision: TrackDecision): number {
 }
 
 .defaults-preview__scroll {
+  position: relative;
   overflow-x: auto;
 }
 
-.defaults-preview[aria-busy='true'] .defaults-preview__table {
-  opacity: 0.6;
+/* Busy: a bar runs along the table's top. Fading the table would take its text below AA. */
+.defaults-preview[aria-busy='true'] .defaults-preview__scroll::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(var(--rf-color-primary), var(--rf-color-primary)) no-repeat;
+  background-size: 40% 100%;
+  animation: defaults-preview-busy 1.2s linear infinite;
+  content: '';
+}
+
+@keyframes defaults-preview-busy {
+  from {
+    background-position: -50% 0;
+  }
+
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .defaults-preview[aria-busy='true'] .defaults-preview__scroll::before {
+    background-size: 100% 100%;
+    animation: none;
+  }
 }
 
 .defaults-preview__table {
