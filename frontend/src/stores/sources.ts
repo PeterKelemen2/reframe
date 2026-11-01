@@ -32,7 +32,7 @@ interface ProbeSummary {
   errors: ProbeFailure[]
 }
 
-/** The default strictness: type, codec, channels, language, role and order. */
+/** The grouping strictness the panel asks for. */
 export const GROUP_LEVEL: Schemas['BatchGroupRequest']['level'] = 'standard'
 
 const TOAST_LIFE = 10_000
@@ -60,7 +60,7 @@ function name(path: string): string {
   return path.split(/[/\\]/).findLast((part) => part !== '') ?? path
 }
 
-/** The message and its detail: after a sentence (ffprobe's "… (exit code 1).") a space, else ": ". */
+/** The message and its detail: a space after a sentence, else ": ". */
 function reason(failure: ProbeFailure): string {
   if (!failure.detail) return failure.message
   const joiner = /[.!?…]$/.test(failure.message) ? ' ' : ': '
@@ -77,7 +77,7 @@ export const useSourcesStore = defineStore('sources', () => {
   const entries = ref<SourceEntry[]>([])
   const activeId = ref<string | null>(null)
   const probing = ref<ProbeRun[]>([])
-  /** `POST /api/batch/group` over `entries` (the panel's collapsible groups). */
+  /** The batch grouping of the sources (the panel's collapsible groups). */
   const grouping = ref<Schemas['BatchGrouping'] | null>(null)
 
   const active = computed<SourceEntry | null>(
@@ -315,8 +315,8 @@ export const useSourcesStore = defineStore('sources', () => {
   }
 
   /**
-   * Reads `GET /api/sources` again: each open source gets the server's copy (`source` `null`:
-   * the file changed or is gone). Sources the server forgot are probed again.
+   * Each open source gets the server's copy (`source` `null`: the file changed or is gone).
+   * Sources the server forgot are probed again.
    */
   async function refresh(): Promise<void> {
     const known = await listed()
@@ -327,7 +327,7 @@ export const useSourcesStore = defineStore('sources', () => {
   }
 
   /**
-   * Reads one source again (`GET /api/sources/{id}`) and puts it in its place: a scan ended,
+   * Reads one source again and puts it in its place: a scan ended,
    * or an in-place edit changed the file. The selection and the editor's job stay. A source the
    * server forgot is probed again (same id); one whose file changed gets `source` `null`, as
    * `refresh` gives it. Another refusal is a toast and rejects.
