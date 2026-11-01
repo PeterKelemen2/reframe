@@ -741,9 +741,25 @@ assertion changed to `fin`: 2 failed at the probe, 16 passed; restored) and afte
 the process group of `npm run e2e` 2.5 s into flow 1 (2 interrupted, 16 did not run, npm exit
 130).
 
-## Review
+## Review, 2026-11-01
 
-(Written by the lead after the reviews: the findings, their outcomes, the fix rounds.)
+Two fresh `xhigh` reviews of the merged branch (44de4b0). R1 covered logic, data and state, with a Python sub-review of S6's code. R2 covered the screens. No blocker was found. Majors: R1-M1 (an external subtitle with an unknown encoding is queued and written broken), R1-M2 (the defaults preview ignores a preset's explicit track rules, *Apply* does not), R2-M1 (tag template errors are not validation issues), R2-M2 (the cleared *Generate chapters* field disagrees with the job). The lead reproduced each against a real server. The full list, the minors and the fix tasks are in [m6-breakdown.md](../m6-breakdown.md) ("Fix round").
+
+### Fix round — FA (core and server)
+
+(Written by FA.)
+
+### Fix round — FB (defaults dialog, shortcuts)
+
+(Written by FB.)
+
+### Fix round — FC (tracks, scans, language)
+
+(Written by FC.)
+
+### Fix round — FD (chapters, tags, summary, queue)
+
+(Written by FD.)
 
 ## M6 demo
 
