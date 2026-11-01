@@ -671,7 +671,75 @@ own Escape handler, which no mutation could break, removed.
 
 ## Task G — F-17 flow 1
 
-(Written by G.)
+Built: `frontend/e2e/flow1-audio-language-commentary.spec.ts`, `probeFile` in
+`e2e/support/app.ts` (`POST /api/sources`, the probe task, `GET /api/sources/{id}`), and one
+option more for the servers in `e2e/support/servers.ts`: `--output-fixtures chapters`.
+
+The flow: `Ctrl+O` → the file browser → `multitrack.mkv`; the preset *H.264 MKV 1080p* from the
+header's picker; Audio; the metadata block of output track 2 (*English Stereo*, source stream 2)
+unfolded; the `LanguagePicker` → search "Hungarian" → the option labelled *Hungarian* (its
+`data-tag` is `hu`); *Commentary* on; *Add to queue*; *Start*; `done`; the job's `output_path`
+probed through the server.
+
+### Choices where the plan leaves one
+
+1. **The probe goes through the API, not the UI.** The server's probe is what the source table
+   would show, and opening the output through the file browser would add a second root and a
+   second source to the flow without checking more. The output root is a media root only when
+   `dev-server.py` copies at least one fixture into it, so the servers copy `chapters`, which no
+   flow opens. Flow 3 and the layout checks are unchanged by it (both runs below).
+2. **The checks between the edits and the probe wait only for the controls** (the block is
+   open, the option has the tag, the picker has closed), never for the value in the editor or
+   the job: a defect anywhere between the click and the file then fails at the probe, with the
+   probe's values in the message.
+3. **The probe assertion covers all three audio tracks** (language, `language_ietf`, title,
+   default, commentary), so an edit that lands on another track fails too, and so does a change
+   of a track the flow did not touch.
+4. **The preset is named** (*H.264 MKV 1080p*: MKV, libx264 `medium` CRF 22, AAC 160 kb/s stereo
+   for each track) so that the flow does not follow a change of the default preset (*H.265 MKV
+   1080p*). The fixture is 4 s at 320x180: a comparable command line of the pinned FFmpeg takes
+   0.25 s with libx264 `medium` and 0.42 s with libx265 `medium`; the whole flow takes about 4.5 s in Chromium and 5.2 s in Firefox.
+5. **The FFmpeg** is the pass-through fake of flow 3 (`e2e/fake-ffmpeg.json`), so the probe and
+   the encode are the real FFmpeg. The runs below used the pinned build through
+   `REFRAME_TEST_TOOLS_DIR` (a worktree has no `.tools/`); one run of flow 1 with the system
+   FFmpeg (n9.0.2 on this machine) passed too.
+
+### Checked against the real tools (2026-11-01)
+
+The output of a run, copied out before the server removed its home, read with the pinned
+ffprobe (n9.0.2) and `mkvmerge -J` (v103.0), agrees with the server's probe: audio 1 `jpn`
+"Japanese 5.1" default; audio 2 `hun` "English Stereo" comment (mkvmerge: `flag_commentary`
+true); audio 3 `eng` "Director's Commentary" comment. No track has a `LanguageIETF` element
+(mkvmerge has no `language_ietf`; the server's `language_ietf` is `null`): `hu` is written as
+`hun` only, and the flow asserts `null`.
+
+### Mutations
+
+Each one made once in the app, `dist/` rebuilt (the first `webServer` command builds it), flow 1
+run in Chromium and Firefox, then the code restored:
+
+| Mutation | Result |
+|----------|--------|
+| `metadataOps` drops the `commentary` change (the flag not written into the job) | failed at the probe: audio 2 `commentary` false |
+| `LanguagePicker` writes `fi` for any chosen language | failed at the probe: audio 2 `fin` |
+| `metadataPlace` points the patch at the next track (`/audio/2/metadata` for row 2) | failed at the probe: audio 2 `eng` without the flag, audio 3 `hun` without it (the click turned off audio 3's own flag) |
+| the core's `dispositions` drops `comment` (`command/metadata.py`) | failed at the probe: audio 2 and 3 `commentary` false |
+
+Under the first mutation the *Commentary* switch shows "on" while the block's summary says "no
+flags": PrimeVue's `ToggleSwitch` keeps its own state when its `modelValue` does not follow.
+With the app as it is the switch follows the job; it matters only if a flag edit is ever
+refused.
+
+### Runs and clean-up
+
+`npm run e2e` (flow 1, flow 3 and the 7 layout checks in each browser): 18 passed, 27.5 s, then
+18 passed, 26.9 s. Flows 1 and 3 with `--repeat-each 2` on the same servers: 8 passed (a later
+output of the same name gets another name, `collision: auto_rename`, and the flow probes the
+job's own `output_path`). No `dev-server.py` / `reframe_server` process
+and no `/tmp/reframe-dev-*` folder after the passes, after a forced failure (the `hun`
+assertion changed to `fin`: 2 failed at the probe, 16 passed; restored) and after SIGINT to
+the process group of `npm run e2e` 2.5 s into flow 1 (2 interrupted, 16 did not run, npm exit
+130).
 
 ## Review
 
