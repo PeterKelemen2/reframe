@@ -3,6 +3,7 @@ import Select from 'primevue/select'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
+import { ApiError } from '@/api/client'
 import type { SystemInfo, WhenDone } from '@/api/types'
 
 import PowerBanner from './PowerBanner.vue'
@@ -205,6 +206,22 @@ describe('the when-done selector', () => {
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'nothing')
     await flushPromises()
     expect(queue.setWhenDone).toHaveBeenCalledOnce()
+  })
+
+  it('shows the queue’s choice again when the server refuses another', async () => {
+    queue.whenDone = 'nothing'
+    queue.setWhenDone.mockRejectedValueOnce(
+      new ApiError(409, { type: 'about:blank', title: 'Refused', status: 409, code: 'refused' }),
+    )
+    await mountIt(WhenDoneSelect)
+    await options()
+    const sleep = [...document.querySelectorAll<HTMLElement>('.p-select-option')].find(
+      (option) => option.textContent?.trim() === 'Sleep',
+    )
+    sleep?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+    expect(queue.setWhenDone).toHaveBeenCalledWith('sleep' satisfies WhenDone)
+    expect(text('[data-field="when-done"] .p-select-label')).toBe('Do nothing')
   })
 })
 
