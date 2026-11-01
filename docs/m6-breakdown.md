@@ -81,7 +81,7 @@ or `packages/`.
 | **B** | `components/media/**`, `stores/scans.ts`, `sources.reload` in `stores/sources.ts` (that function only), `i18n/messages/en/media.json` | the rest of `stores/sources.ts`, `components/tracks/**` |
 | **F** | `components/editor/tabs/{ChaptersTab,TagsTab}.vue`, `components/chapters/**`, `components/tags/**`, `i18n/messages/en/{chapters,tags}.json` | `components/naming/**` (use it) |
 | **C** | `components/tracks/**`, `components/editor/tabs/{AudioTab,SubtitlesTab}.vue`, `i18n/messages/en/tracks.json` | `components/language/**` (use it), `components/media/**`, `components/editor/tabs/VideoTab.vue` (the lead placed the video track's `TrackMetadataEditor`) |
-| **D** | `components/summary/**`, `components/editor/tabs/SummaryTab.vue`, `components/queue/**` (only for an in-place job's line), `i18n/messages/en/{summary,queue}.json` | `stores/editor.ts`, `stores/sources.ts` (use them) |
+| **D** | `components/summary/**`, `components/editor/tabs/SummaryTab.vue`, `components/queue/**` (only for an in-place job's line), `i18n/messages/en/{summary,queue}.json`, one new action in `stores/editor.ts` (the remux-only draft as one undo step, modelled on `applyPreset`) and its tests | the rest of `stores/editor.ts`, `stores/{sources,queue,validation}.ts` (use them), `App.vue` (the lead mounts D's after-edit reload composable) |
 | **E** | `components/defaults/**`, `stores/defaults.ts`, `i18n/messages/en/defaults.json` | `components/language/**` (use it), `components/tracks/**`, `components/presets/**` |
 | **G** | `frontend/e2e/**` except `frontend/e2e/layout.spec.ts` and `frontend/playwright.config.ts` | every file of `src/`, `frontend/package.json` |
 
