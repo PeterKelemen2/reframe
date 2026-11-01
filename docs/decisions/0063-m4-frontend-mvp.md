@@ -1968,3 +1968,62 @@ text (checked by putting it back). Before and after: `curl` against `scripts/dev
    (web mode, an empty `PATH`: both optional tools missing, the variable named, no
    "Settings"), and `test_discovery.py::test_nothing_found` names the variable.
 
+
+## M4 demo, 2026-11-01 (headless)
+
+The roadmap's M4 flow, run against the real server and the real pinned FFmpeg (n9.0.2): a
+throwaway Playwright script (not committed), headless Chromium at 1440×900, `scripts/dev-server.py`
+with `--tools-dir` (no fake FFmpeg) and the `multitrack` and `hdr10-4k` fixtures. 28 screenshots,
+17 of them read. No console error or warning in any run. The headed demo on `HDMI-A-1` is **not**
+run.
+
+**The flow, as it ran**
+
+1. `Ctrl+O`, the server's file browser, `multitrack.mkv`: the Summary shows the source (320×180,
+   25 fps, 3 audio and 3 subtitle tracks), the picture pipeline and the output; the status bar
+   shows the output path and "1 note" (crop detection did not run).
+2. The preset list, then *Fast 1080p30*. Video tab: encoder list with each encoder's state,
+   *x265* chosen, quality typed as RF 24. The command drawer shows the real command
+   (`-c:v:0 libx265 -crf:v:0 24 -preset:v:0 fast …`).
+3. Audio tab: *Remove track 3*, *Add track* (a menu of the three source streams), *Remove track 3*
+   again: two output tracks.
+4. *Add to queue*, Queue view, *Start*: Waiting, Running, Done (100 %) in 0.5 s. *Show the log*:
+   125 lines of the real FFmpeg output, ending "Job done after 0.5 s".
+5. The finished file read with the pinned `ffprobe`: MP4; HEVC (`hvc1`) 320×180; two AAC tracks
+   (`jpn`, `eng`; the removed commentary track is not there); three `mov_text` subtitles with
+   their dispositions; no `.part` file left.
+6. A job that takes time, so that progress can be watched: `hdr10-4k.mkv`, *Fast 2160p60 4K HEVC*
+   (10-bit, HDR10). The row went from 3.3 % (0.7 fps, 0.11×, 3:59 left, 256 KiB) through 62.5 %
+   (7.0 fps, 0.54×, 0:07, 4.8 MiB) to Done, and its log was open and growing (50 lines) while it
+   ran.
+7. Validation inline and on Summary, with `{"encoders": {"hardware_tests": true}}` (flow 3 on real
+   hardware; this machine has an AMD GPU): the preset *H.265 NVENC 1080p* gives the banner "The
+   video encoder is not available … NVIDIA driver not found", an error under the encoder field
+   with its bar, "1 error" in the status bar, a disabled *Add to queue*, and "Error (1)" with
+   *Show* and the fix on Summary. *Use hevc_amf (closest match; quality CQ 27 → CQ 25,
+   approximate)* clears the banner, enables *Add to queue*, and the job runs to Done with a real
+   `hevc_amf` encode. *Show* on the Summary error switches to the Video tab and the encoder field
+   is in view and marked.
+
+**Defect found and fixed**
+
+- **The tabs shared one scroll offset.** After *Remove track 3* on the Audio tab, *Summary*
+  opened scrolled down (155 px in that run, 300 px when measured), with the top of the Source card
+  cut off (the panel is the one scroller of every tab). `EditorTabs.vue` now resets it when the tab changes. Failing first:
+  `components/shell/EditorTabs.test.ts` got 300 instead of 0. Checked in the browser as above,
+  and *Show* still lands on its field.
+
+**Looked at, not changed**
+
+- The queue table at 1440 px: the Source and Output cells are exactly as wide as a 14-character
+  name (`multitrack.mkv` fits, one character more breaks it, and in one run `multitrack.mk` / `v`
+  did), because FPS, Speed, Time left, Size and the progress bar keep 60–144 px each while they
+  are empty. No failing check could be written (the e2e run at 1440 px keeps the name on one
+  line), so it stays a layout question for the queue table, not a defect with a test.
+- Summary lists the issues in its last card, below Output; an error shows at once in the status
+  bar and inline on its field, so only the list is out of sight until the tab is scrolled.
+- Opening a second file does not select it while another file is open (the store selects the
+  first one only: `activeId === null`); the new file is listed in the sources panel.
+
+Checks after the fix: frontend lint, format, typecheck, 1008 unit tests, `build:web`,
+`npm run e2e` (14 passed).

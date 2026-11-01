@@ -648,14 +648,17 @@ blocker and major found is fixed with a test. Since the stop (2026-11-01): R2-25
 the CI jobs for `npm run test:server` and `npm run e2e` are in `ci.yml` (never run). What is
 left before the owner can merge:
 
-1. **The M4 demo**, run for real: in the browser, open a file from the server file browser →
+1. **The M4 demo**: the headless run is done (2026-11-01, 0063 "M4 demo, 2026-11-01": one defect
+   fixed, three observations recorded). What is left is the headed run. The flow, for reference: in the browser, open a file from the server file browser →
    choose a preset → change the encoder and quality → add and remove audio tracks → add to queue
    → watch progress → open the log; validation issues inline and on Summary; plus flow 3. First
-   headless (Playwright, screenshots read), then once headed by the lead on `HDMI-A-1` through the
+   headless (Playwright, screenshots read; done), then once headed by the lead on `HDMI-A-1` through the
    spike's window guard (ask the owner first to put the mouse and the active window there).
 2. **Recorded, not fixed in M4**: L5 (a `fs/list` option for other files: M6), L7 (the desktop
    platform stub: M5), L14 (an output another waiting job claims is known only at the add), a
-   duplicate's automatic free name.
+   duplicate's automatic free name; from the headless demo: the queue table's narrow Source and
+   Output columns at 1440 px, Summary's issue list below the Output card, a second opened file
+   not selected while another is open.
 3. **A flaky test**:
    `packages/reframe/tests/remote/test_cli_client.py::test_ctrl_z_pauses_the_commands_jobs_and_fg_resumes_them`
    fails about 1 run in 12, also alone: `seen == [(PAUSED, 0)]` gets `(RUNNING, 0)`. Unverified
