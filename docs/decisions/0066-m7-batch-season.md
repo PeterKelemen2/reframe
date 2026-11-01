@@ -69,6 +69,14 @@ No server route is missing; one core change is needed (item 2).
    selector and is required again (04's default). Test:
    `test_a_rule_made_optional_stays_optional_when_its_section_is_derived_again` (fails when
    the carry-over is removed).
+   **Follow-up (2026-11-01, task D's finding, fixed by the lead):** a naming edit of a group
+   whose template has no naming (the default preset has none) derived `NamingOptions()`
+   defaults, so the output folder became `same_as_source` and every output moved next to its
+   source (seen on the real server: `<output>/…` → `<media>/Anime.Show.S01…/…`).
+   `BatchService.derive` now derives the naming section on Settings → Output when the base has
+   no naming (as `resolve` names such a template); other sections leave `naming` empty. Test:
+   `test_a_naming_edit_on_a_base_without_naming_keeps_the_settings_output_folder` (fails
+   before; a mutation that fills the naming for every section fails it too).
 3. **The matrix uses `batch/resolve-run`** with the edited group's member ids and its level;
    the rows of every resolution in the answer are shown (normally one). It is the route that
    marks near members and checks names across the request; `batch/resolve` is not used by the

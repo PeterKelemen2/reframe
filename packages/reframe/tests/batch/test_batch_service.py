@@ -316,3 +316,30 @@ async def test_a_check_sees_each_resolved_job_before_it_is_named_or_validated(
         await app.batch.resolve_batch(None, files, overrides=patch, check=refuse)
     assert checked == ["veryslow", "veryslow"]
     assert named == []
+
+
+async def test_a_naming_edit_on_a_base_without_naming_keeps_the_settings_output_folder(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    out = tmp_path / "out"
+    result = await app.settings.update(
+        [
+            {"op": "replace", "path": "/output/naming/output_folder_mode", "value": "fixed"},
+            {"op": "replace", "path": "/output/naming/output_folder", "value": str(out)},
+        ]
+    )
+    assert result.ok
+    files = season(fixture_media, tmp_path, 1)
+    source = await app.sources.probe(files[0])
+    assert isinstance(source, MediaSource)
+    draft = await app.jobs.draft(source, None)
+    assert isinstance(draft, JobDraft)
+    job = draft.job.model_copy(deep=True)
+    job.output.naming.template = "{name} - S{season:02}E{episode:02}"
+    base = JobTemplate()  # as a preset without naming of its own
+    derived = app.batch.derive(job, source, {"naming"}, base=base)
+    assert derived.naming is not None
+    assert derived.naming.movie_template == "{name} - S{season:02}E{episode:02}"
+    assert (derived.naming.output_folder_mode, derived.naming.output_folder) == ("fixed", out)
+    # Other sections leave a template without naming as it is: it follows the settings.
+    assert app.batch.derive(job, source, {"video"}, base=base).naming is None
