@@ -137,6 +137,7 @@ describe('the defaults dialog', () => {
     await openDialog('preset', BUILT_IN)
     expect(footer()).toEqual(['close'])
     expect(document.querySelector('[data-role="whose"]')?.textContent).toContain('read-only')
+    expect(shown('[data-field="allowed"]')).toBe('None')
   })
 
   it("shows a built-in preset's audio values as whole text, not as faded disabled controls", async () => {
