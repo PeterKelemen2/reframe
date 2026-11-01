@@ -1109,6 +1109,31 @@ Tests: `template.test.ts` (the policy table, both wrong cases fail before), `Cha
 +1 (the interval's fix, fails before), `chapters.test.ts` +1 (an untitled chapter stays
 untitled). 8 more mutations (M27–M34), all killed. `npm run e2e`: 18 passed.
 
-## M6 demo
+## M6 demo, 2026-11-01 (headless)
 
-(Written by the lead.)
+Run by the lead on the merged branch (after the fix round, 1ee81a1), with a script of his own (`demo.mjs` in the session's scratchpad), in headless Chromium (light, then dark) and Firefox (light). The server was `scripts/dev-server.py --port 8766 --fixtures dts-hd-ma,multitrack --output-fixtures multitrack` with the pinned FFmpeg n9.0.2. Everything ran through the UI except two steps: demo 4's file was opened through the sources store (the writable copy is in the output root), and the re-probes went through the API.
+
+1. **Measure.** `dts-hd-ma`, Audio, track 1 before: `— Unknown Measure`. After *Measure*: `2,140 kb/s measured`. In the later runs the server still held the measured value, so no *Measure* was offered (expected: the source keeps a scan's result).
+2. **Commentary badge.** `multitrack` track 3 shows `Commentary` with no click, as a solid badge (`evidence=flag`). Its tooltip reads "Set by a disposition flag in the file / disposition comment".
+3. **Languages, names and flags.** Set through each track's metadata block, then queued and run to `done`:
+   - audio 1: Hungarian, *Original language*, name "Magyar 5.1";
+   - audio 2: `pt-BR`, name "Comentário", *Commentary*;
+   - subtitle 1: Hungarian, name "Magyar SDH", *Hearing impaired*.
+
+   The re-probed output shows:
+   - audio `hun` "Magyar 5.1" `default,original`;
+   - `por` with `language_ietf` **`pt-BR`**, "Comentário", `comment`;
+   - subtitle `hun` "Magyar SDH" `default,hearing_impaired`.
+4. **Flags only.** The writable copy of `multitrack.mkv` was used.
+   - Steps: *Edit in place* on, then *Remux only*, then audio 1 *Default* off and audio 2 *Default* on (these steps follow FD's change of *Remux only*).
+   - Summary: *Metadata edit*, "only the track metadata changes, so mkvpropedit edits multitrack.mkv in place, in seconds".
+   - Result: `done` in **0.076 s** (Chromium light), 0.076 s (dark) and 0.083 s (Firefox), each time with `plan.job_type` `metadata_edit`.
+   - Re-probe: `default` went from `[true,false,false]` to `[false,true,false]`, and the Audio tab's source table showed track 2 *Default*.
+5. **Defaults preview.** On `dts-hd-ma`, the rules were built in the dialog (Hungarian 5.1 or more → AC-3 5.1 max 320; English 5.1 or more → AC-3 5.1 max 384; AC-3 ticked as passthru). The preview rows, each with its reason:
+   - track 1 DTS-HD MA → rule 1 → AC-3 5.1 · 320 kb/s, "Lossless source → encode at the max";
+   - track 2 AC-3 5.1 224 → rule 2 → Passthru (AC-3), "AC-3, 5.1, 224 ≤ 384: passthru";
+   - track 3 AC-3 2.0 → rule 3 → AAC Stereo · 160 kb/s, "Rule 2 needs 5.1 or more. Rule 3 matches. The rule says re-encode, 192 > 160 → encode at the max".
+
+   The same in dark Chromium and in Firefox.
+
+F-17 flow 1 ran in `npm run e2e` (18 passed, Chromium and Firefox, 27.5 s), nothing left behind. Also checked at the API: a UTF-8 SRT with `charset: CP1250` gives `error subtitle.charset_mismatch` at `subtitles[3].source.charset`, with *Read it as UTF-8 (as detected)* and *Remove this subtitle track* (the case FC did not run in a browser). The server and its home were removed afterwards.
