@@ -122,6 +122,18 @@ export function rulePath(key: number): string {
   return `audio_defaults.codec_rules[k${key}]`
 }
 
+const SHOWN_AT_FIELD = [
+  /^audio_defaults\.codec_rules\[k\d+\]/,
+  /^(audio|subtitle)_defaults\.selection\.(languages|tracks_per_language|tie_break|undetermined|other_languages|no_match|commentary|order|default_track)$/,
+  /^audio_defaults\.passthru\.(allowed|fallback_encoder)$/,
+  /^subtitle_defaults\.(foreign_audio_search|burn_in)$/,
+]
+
+/** The dialog shows an issue at this keyed path beside its rule or field. */
+export function shownAtField(at: string): boolean {
+  return SHOWN_AT_FIELD.some((pattern) => pattern.test(at))
+}
+
 const RULE_POINTER = /^\/audio_defaults\/codec_rules\/(\d+|-)$/
 
 function ruleIndex(pointer: string | undefined, length: number): number | null {

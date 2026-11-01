@@ -266,6 +266,7 @@ async function removeOutput(at: number): Promise<void> {
                 option-label="label"
                 option-value="value"
                 :disabled="defaults.readOnly"
+                fluid
                 data-field="codec"
                 @update:model-value="setOutput(at, { codec: $event })"
               />
@@ -286,6 +287,7 @@ async function removeOutput(at: number): Promise<void> {
                 option-label="label"
                 option-value="value"
                 :disabled="defaults.readOnly"
+                fluid
                 @update:model-value="setOutput(at, { mixdown: $event })"
               />
             </template>
@@ -306,6 +308,7 @@ async function removeOutput(at: number): Promise<void> {
                 :placeholder="t('defaults.rules.encoderDefault')"
                 :disabled="defaults.readOnly"
                 :invalid="invalid"
+                fluid
                 @update:model-value="onOutputBitrate(at, $event)"
               />
             </template>

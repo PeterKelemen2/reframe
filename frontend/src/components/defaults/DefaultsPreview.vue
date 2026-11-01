@@ -4,7 +4,7 @@ import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { AudioStream, SubtitleStream, TrackDecision } from '@/api/types'
-import { bySeverity } from '@/components/base/severity'
+import { bySeverity, SEVERITY_ICON } from '@/components/base/severity'
 import ScanControl from '@/components/media/ScanControl.vue'
 import { streamLabel, trackNumber } from '@/components/media/streams'
 import { useDefaultsStore } from '@/stores/defaults'
@@ -12,6 +12,7 @@ import { useScansStore } from '@/stores/scans'
 import { useSystemStore } from '@/stores/system'
 
 import IssueLines from './IssueLines.vue'
+import { shownAtField } from './model'
 import { outputLines } from './preview'
 
 /**
@@ -35,7 +36,23 @@ const streams = computed<(AudioStream | SubtitleStream)[]>(() =>
   audio.value ? (defaults.source?.audio ?? []) : (defaults.source?.subtitles ?? []),
 )
 const fileName = computed(() => defaults.source?.ref?.path?.split(/[\\/]/).at(-1) ?? null)
-const issues = computed(() => bySeverity(defaults.issues.map((placed) => placed.issue)))
+const member = computed(() => (audio.value ? 'audio_defaults' : 'subtitle_defaults'))
+/** The issues of the defaults this dialog edits; the other kind's are not editable here. */
+const own = computed(() =>
+  defaults.issues.filter(({ at }) => at === '' || at.split(/[.[]/)[0] === member.value),
+)
+/** The rules and fields show their own issues; the rest are listed under the table. */
+const unplaced = computed(() =>
+  bySeverity(own.value.filter(({ at }) => !shownAtField(at)).map(({ issue }) => issue)),
+)
+const counts = computed(() =>
+  (['error', 'warning', 'info'] as const)
+    .map((severity) => ({
+      severity,
+      count: own.value.filter(({ issue }) => issue.severity === severity).length,
+    }))
+    .filter(({ count }) => count > 0),
+)
 
 function streamOf(decision: TrackDecision) {
   return streams.value.find((stream) => stream.index === decision.source_stream)
@@ -82,6 +99,21 @@ function number(decision: TrackDecision): number {
         {{ t('defaults.preview.title') }}
       </h2>
       <span v-if="fileName" class="defaults-preview__file">{{ fileName }}</span>
+      <span
+        v-if="counts.length > 0 && defaults.preview !== null"
+        class="defaults-preview__counts"
+        data-role="issue-counts"
+      >
+        <span
+          v-for="{ severity, count } in counts"
+          :key="severity"
+          class="defaults-preview__count"
+          :class="`defaults-preview__count--${severity}`"
+        >
+          <component :is="SEVERITY_ICON[severity]" :size="14" aria-hidden="true" />
+          {{ t(`defaults.preview.count.${severity}`, count) }}
+        </span>
+      </span>
       <span v-if="defaults.previewing" class="defaults-preview__updating">
         <LoaderCircle class="defaults-preview__spinner" :size="14" aria-hidden="true" />
         {{ t('defaults.preview.updating') }}
@@ -175,9 +207,9 @@ function number(decision: TrackDecision): number {
           </tbody>
         </table>
       </div>
-      <div v-if="issues.length > 0" class="defaults-preview__issues">
+      <div v-if="unplaced.length > 0" class="defaults-preview__issues">
         <h3 class="defaults-preview__subtitle">{{ t('defaults.preview.issues') }}</h3>
-        <IssueLines :issues="issues" fixes />
+        <IssueLines :issues="unplaced" fixes />
       </div>
     </template>
     <p v-else class="defaults-preview__empty" data-state="loading">
@@ -217,6 +249,31 @@ function number(decision: TrackDecision): number {
 .defaults-preview__muted,
 .defaults-preview__notes {
   font-size: var(--rf-font-size-sm);
+}
+
+.defaults-preview__counts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--rf-space-3);
+  font-size: var(--rf-font-size-sm);
+}
+
+.defaults-preview__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+}
+
+.defaults-preview__count--error svg {
+  color: var(--p-status-error-color);
+}
+
+.defaults-preview__count--warning svg {
+  color: var(--p-status-warn-color);
+}
+
+.defaults-preview__count--info svg {
+  color: var(--p-status-info-color);
 }
 
 .defaults-preview__updating {

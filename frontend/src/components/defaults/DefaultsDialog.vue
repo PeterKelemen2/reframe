@@ -221,11 +221,11 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
 .defaults-dialog__hint {
   margin: 0;
   color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
 }
 
 .defaults-dialog__hint {
   margin-bottom: var(--rf-space-2);
-  font-size: var(--rf-font-size-sm);
 }
 
 .defaults-dialog__edit {
@@ -256,6 +256,15 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
 .defaults-confirm__text {
   margin: 0;
 }
+
+@media (width < 48rem), (height < 40rem) {
+  .defaults-dialog__edit,
+  .defaults-dialog__preview {
+    flex: none;
+    max-height: none;
+    overflow: visible;
+  }
+}
 </style>
 
 <style>
@@ -267,5 +276,12 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
   gap: var(--rf-space-3);
   min-height: 0;
   overflow: hidden;
+}
+
+/* Too small for two scrolling panes: one scroll, the preview below the settings. */
+@media (width < 48rem), (height < 40rem) {
+  .defaults-dialog__content {
+    overflow: auto;
+  }
 }
 </style>

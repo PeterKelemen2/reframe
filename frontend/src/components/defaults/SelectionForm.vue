@@ -210,6 +210,7 @@ const fields = computed<SelectField[]>(() => [
 
 .defaults-selection__grid {
   display: grid;
+  align-items: end;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: var(--rf-space-3) var(--rf-space-4);
 }

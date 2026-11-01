@@ -218,6 +218,11 @@
     "burnForced": "Burn in (forced only)",
     "convert": "Convert to {format}",
     "issues": "Issues of these defaults",
+    "count": {
+      "error": "no errors | {n} error | {n} errors",
+      "warning": "no warnings | {n} warning | {n} warnings",
+      "info": "no notes | {n} note | {n} notes"
+    },
     "measureHelp": "The bitrate is unknown and decides what the rule does: measure it to see the real outcome."
   }
 }
