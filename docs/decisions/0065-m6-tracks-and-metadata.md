@@ -844,16 +844,19 @@ same fixes), plus `metadata.nul_character` and `metadata.tag_too_long`; `chapter
 ### Fix round — FB (defaults dialog, shortcuts)
 
 2026-11-01. Checked in headless Chromium against `scripts/dev-server.py --port 8740` with the
-pinned FFmpeg, light and dark, 1440 × 900 and 1280 × 800. Until FA's server part is merged, the
-server refuses the preview's `template`; the checks of the other findings strip it in the test
-script (a Playwright route), and the R1-M2 checks wait for FA.
+pinned FFmpeg, light and dark, 1440 × 900 and 1280 × 800. Before FA's server part was merged,
+the server refused the preview's `template`, so the checks of the other findings removed it in
+the test script (a Playwright route). The R1-M2 checks ran after FA's merge, on port 8741 and
+without that route.
 
 1. **R1-M2, the frontend part.** The preview sends `template`: the same edited template that
    *Apply* sends to `jobs/explain` (`container` stays; it is the template's own). When the
    template has its own `audio_rules` (or `subtitle_rules`, for the subtitle dialog), a warning
    in the dialog says that those rules decide the tracks, and that a change of the defaults
-   changes no track until the rules are removed from the preset. `PreviewRequest` in
-   `stores/defaults.ts` types the new member until `schema.d.ts` has it.
+   changes no track until the rules are removed from the preset. After FA's merge (the body is
+   the generated `DefaultsPreviewRequest`), R1's repro on a preset whose own rule is "English →
+   AAC stereo 96" gives the same tracks in the preview and after *Apply*, through the API and in
+   the browser, light and dark: `[(2, aac, 96), (3, aac, 96)]`.
 2. **R1-m1.** No app shortcut while a modal is open: any `[aria-modal="true"]` element in the
    page, not the key's target (after a click on a dialog's text the target is `<body>`).
    PrimeVue gives a Dialog, a Drawer and an open Popover `aria-modal="true"`. An element in its
