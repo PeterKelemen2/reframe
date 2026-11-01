@@ -373,6 +373,7 @@ async function removeOutput(at: number): Promise<void> {
 
 .rule-extras__grid {
   display: grid;
+  align-items: end;
   grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   gap: var(--rf-space-3) var(--rf-space-4);
 }
