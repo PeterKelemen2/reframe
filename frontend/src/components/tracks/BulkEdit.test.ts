@@ -80,13 +80,77 @@ describe('bulk edit of the selected output tracks', () => {
     expect(wrapper.find('[data-action="bulk-edit"]').exists()).toBe(false)
   })
 
-  it('forgets the selection when the tracks are moved, so it never hits other tracks', async () => {
-    const { wrapper } = await mountEditor(AudioTab)
+  it('edits only the selected track after it changed place with another output of its stream', async () => {
+    const { wrapper, editor } = await mountEditor(AudioTab, {
+      job(job) {
+        const first = job.audio![0]!
+        const copy = { ...first, encoder: 'ac3', metadata: { ...first.metadata!, name: 'AC-3' } }
+        job.audio!.splice(1, 0, copy)
+      },
+    })
     await checkbox(wrapper, '0').setValue(true)
-    wrapper.findComponent(DataTable).vm.$emit('row-reorder', { dragIndex: 0, dropIndex: 2 })
+    wrapper.findComponent(DataTable).vm.$emit('row-reorder', { dragIndex: 1, dropIndex: 0 })
     await nextTick()
-    expect(wrapper.find('[data-action="bulk-edit"]').exists()).toBe(false)
-    expect((checkbox(wrapper, '2').element as HTMLInputElement).checked).toBe(false)
+    expect((checkbox(wrapper, '0').element as HTMLInputElement).checked).toBe(false)
+    expect((checkbox(wrapper, '1').element as HTMLInputElement).checked).toBe(true)
+    const before = editor.job?.audio ?? []
+    expect(before[1]?.metadata?.original).not.toBe(true)
+    const dialog = await openDialog(wrapper)
+    flagChoice(dialog as unknown as VueWrapper, 'original', 'on')
+    await nextTick()
+    apply().click()
+    await flushPromises()
+    const audio = editor.job?.audio ?? []
+    expect(audio[0]).toEqual(before[0])
+    expect(audio[0]?.encoder).toBe('ac3')
+    expect(audio[1]?.metadata?.original).toBe(true)
+    expect(audio.slice(2)).toEqual(before.slice(2))
+  })
+
+  it('offers no selection for a single track, where it would do nothing', async () => {
+    const { wrapper } = await mountEditor(AudioTab, {
+      job(job) {
+        job.audio!.splice(1)
+      },
+    })
+    expect(wrapper.find('[data-path="audio[0]"]').exists()).toBe(true)
+    expect(wrapper.find('[data-select]').exists()).toBe(false)
+  })
+
+  it('leaves the focus in the selection bar when Clear the selection removes its button', async () => {
+    const { wrapper } = await mountEditor(AudioTab)
+    await checkbox(wrapper, '1').setValue(true)
+    const clear = wrapper.find<HTMLButtonElement>('[data-action="bulk-clear"]')
+    clear.element.focus()
+    await clear.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(checkbox(wrapper, 'all').element)
+  })
+
+  it('leaves the focus in the selection bar after Apply', async () => {
+    const { wrapper } = await mountEditor(AudioTab)
+    await checkbox(wrapper, '1').setValue(true)
+    const dialog = await openDialog(wrapper)
+    flagChoice(dialog as unknown as VueWrapper, 'forced', 'on')
+    await nextTick()
+    apply().focus()
+    apply().click()
+    await flushPromises()
+    dialog.findComponent({ name: 'Dialog' }).vm.$emit('after-hide')
+    await flushPromises()
+    expect(document.activeElement).toBe(checkbox(wrapper, 'all').element)
+  })
+
+  it('does not move the focus after Cancel, since Edit selected… is still there', async () => {
+    const { wrapper } = await mountEditor(AudioTab)
+    await checkbox(wrapper, '1').setValue(true)
+    const dialog = await openDialog(wrapper)
+    document.querySelector<HTMLButtonElement>('[data-action="bulk-cancel"]')!.click()
+    await flushPromises()
+    dialog.findComponent({ name: 'Dialog' }).vm.$emit('after-hide')
+    await flushPromises()
+    expect(wrapper.find('[data-action="bulk-edit"]').exists()).toBe(true)
+    expect(document.activeElement).not.toBe(checkbox(wrapper, 'all').element)
   })
 
   it('keeps the selection while a selected track is edited', async () => {

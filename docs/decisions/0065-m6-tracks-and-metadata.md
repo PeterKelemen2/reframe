@@ -755,11 +755,180 @@ Two fresh `xhigh` reviews of the merged branch (44de4b0). R1 covered logic, data
 
 ### Fix round — FC (tracks, scans, language)
 
-(Written by FC.)
+2026-11-01. Checked in headless Chromium against `scripts/dev-server.py --port 8750` with the
+pinned FFmpeg, light and dark, 1440 × 900, 1280 × 800 and 390 × 844.
+
+1. **The bulk selection follows the tracks** (R1-m3). Tracks have no ids and every patch clones
+   the job, so the list compares each step's tracks as JSON (`followSelection` in
+   `tracks/ops.ts`): a reorder (the same tracks in another order; equal tracks keep their order
+   among themselves) carries each selected place to the track's new place; a step that changes
+   metadata only (the external file's own language, name and flags count as metadata), or the
+   settings of one track, keeps the places; anything else (an add, a remove, *Reload from preset
+   rules*, *Apply* of the defaults, an undo of these) clears the selection. R1's script now
+   sets *Commentary* on the selected AAC track after it changed place with the AC-3 output of
+   the same stream.
+2. **One track has no selection** (R2-3): the selection column and bar are shown from two
+   output tracks on.
+3. **The toolbar wraps** (R2-6): the output tracks' actions go below the title when they do not
+   fit beside it, and wrap among themselves; a label never breaks. At 1280 × 800 the Subtitles
+   tab shows the title on one line and the five buttons on the next line; at 390 the panel does
+   not scroll sideways (302 px wide, 302 px of content).
+4. **Focus** (R2-1). `ScanControl` moves the focus between *Measure* / *Count* and *Cancel* as
+   they replace each other, only when it holds the focus. A control that goes away while it
+   holds the focus (the measured bitrate or the counted events replace it) emits `leave`, and the
+   table focuses the row's toggle; *Measure loudness* stays and keeps the focus. After *Clear
+   the selection* and after *Apply* in the bulk dialog the focus is on *Select all tracks* (the
+   bulk buttons go with the selection); *Cancel* and Escape leave it to the dialog, which returns
+   it to *Edit selected…*. A polite live region in each source table says what a finished scan
+   found ("Track 2: 49 kb/s, measured.", "Track 1: 12 events counted, 2 forced.", the three
+   loudness values, "The events of every subtitle track are counted.") or that it was
+   cancelled; a failed scan is left to its error toast. `DefaultsPreview` (FB) uses the same
+   `ScanControl`, so it gets the start / cancel hand-over; it can listen to `leave` for the
+   moment the measured value replaces the control.
+5. **The language list missing** (R2-8). When `GET /api/languages` failed (the boot reads it
+   once with the definitions and does not retry a 500), the picker says so above its list
+   ("The list of languages could not be read from the server, so no language can be chosen.",
+   the search field described by it) with *Read the list again*, which calls
+   `system.loadDefinitions()` (the only reader of the list; `system.resync` reads the system
+   and the encoders only) and puts the focus back in the search. A trigger shows the raw tag
+   with "(not named: the language list is missing)". The live count counts languages, not
+   *None*.
+6. **The encoding issue of validation** (FA's `subtitles[i].source.charset`). The encoding
+   field shows validation's issues at that path, with their fixes as buttons below it; while
+   validation reports one, the `subtitles/inspect` warnings about the encoding (`not detected`,
+   `UTF-16`) are not shown there, so the field says it once whatever FA's codes are. Before FA,
+   the field showed only the inspection's warnings (its `issues` prop replaced the validation
+   store's), so a validation error there would not have been shown at all. **A correction of
+   Task C's note** above: a job with an external text file whose encoding was not detected and
+   no `charset` does not fail in FFmpeg; it ends `done` and writes broken text (U+FFFD), as R1
+   found (R1-M1).
+7. **Nits.** The metadata line (`{language} · “{name}” · {flags}`, "und (not set)") and the
+   external file line (`SRT · 2 events · UTF-8`) are messages; the flags are joined with
+   `Intl.ListFormat`. Bitrates in the source table, the scans' announcements and the output
+   bitrate list use the locale's digit grouping (`Intl.NumberFormat`; en: `2,140 kb/s`).
+
+Not changed here: a refused language in Settings → Languages shows the server's Pydantic
+message at its field; `LanguagesSection` is not in FC's files (reported to the lead).
 
 ### Fix round — FD (chapters, tags, summary, queue)
 
-(Written by FD.)
+2026-11-01. Checked in headless Chromium against `scripts/dev-server.py --port 8770 --fixtures
+multitrack,chapters,season --output-fixtures multitrack` with the pinned FFmpeg n9.0.2, light
+and dark, 1440 × 900 and 390 × 844. Every in-place edit went to the server's
+`<home>/output/multitrack.mkv`.
+
+1. **R2-M2: a cleared *Generate chapters* interval shows the job's interval again** when the
+   field is left (blur, Tab or Enter). Clearing does not turn generation off: the switch beside
+   the field does that, and a cleared field is more often a value being retyped than a request
+   to stop. PrimeVue's `InputNumber` emits `null` only when the field is left and then keeps
+   showing the empty field, because its `modelValue` did not change. The tab binds the field
+   to its own copy of the job's value and changes that copy to `null` and back. R2's script
+   now gives `after clearing — field: "5" | job: {"generate_every":5}` (before: `""`).
+2. **The same pattern elsewhere in these screens** (a control that shows a value the job or
+   store does not hold). The switches of the Chapters tab, the Summary's switches and *Edit in
+   place* always write what they emit. The container `SelectButton` has `allow-empty` off. A
+   tag field writes every keystroke. A focused chapter name shows what was typed, and the job
+   holds it too (Task F, choice 1). One more case was found: **the queue's *When done*
+   select** kept a choice that the server refused (`setWhenDone` is not optimistic). It now
+   shows the choice on its way and then the queue's value. Checked with a 409 from
+   `PUT /api/queue/when-done`: the select shows *Do nothing* again.
+3. **R2-M1, UI part: a tag issue shows once, at its field, with the validation's severity.**
+   The field lists the validation's issues at `tags.<name>`, and the issues of `jobs/tags` at
+   that path only when their code is not one the validation reports there (the FA → FC, FD
+   contract). So the field and the status bar and the Issues card count the same issue.
+   `jobs/tags` still fills the gap while the validation's answer is on its way, and it still
+   reports a code that the validation does not have. Built against the contract: the
+   real-server check (`task-r2/tagerror.mjs`) waits for FA's merge.
+4. **R1-m2 / R2-7: *Remux only* keeps the *Edit in place* choice.** It asks `jobs/draft-remux`
+   for an in-place edit only when the switch is already on and the source is Matroska (not
+   WebM). Otherwise it drafts a remux into a new file. Its help says which: "… copied as they
+   are into a new file …", or "Edit in place is on: the source file itself is edited, and no
+   new file is written." The plan's metadata edit needs *Edit in place* "chosen", and the
+   switch is where it is chosen. The switch already lists every blocker before it is on,
+   including "… is in a folder that this server may only read". This replaces Task D's
+   choice 6. Real server (`jobs/draft-remux` → `jobs/type` / `jobs/validate`):
+   - The read-only media root's MKV with the switch off: `remux` into
+     `<output>/multitrack.mkv`, only `output.renamed` (info), no error job. With the switch on:
+     `inplace.not_allowed` with its fix, as before. That is the user's explicit choice, and
+     the job had the same error before the button was pressed.
+   - The writable copy with the switch off: `remux` into `multitrack (1).mkv`. The card then
+     says "Only metadata changes: with Edit in place, multitrack.mkv itself is changed in
+     seconds …". Turning the switch on after that gives `metadata_edit` with the warning
+     `inplace.output_ignored` and its fix *Edit multitrack.mkv*.
+   - With the switch on first: `metadata_edit` at the source's own path, with no issue.
+   - **M6 demo 4's steps change**: turn *Edit in place* on, then *Remux only*, then the flags.
+     Run so through the UI: `metadata_edit`, `done` in 0.099 s, and the source read again with
+     audio 2 *Default*.
+5. **R2-2: plurals.** "The file has 1 chapter and the output has 4: …" takes its plural form
+   from the file's count. The output's number has no noun, so it needs none.
+6. **R2-5: busy states at AA.** A pending chapter table or tag answer no longer fades to 0.7
+   opacity. The chapter times and the tag values turn to the muted text colour, and the name
+   fields keep their colours. Measured while the request was held: 7.58:1 light and 6.91:1
+   dark (R2: 3.59 and 4.30). `aria-busy` is as before.
+7. **R2-1: where the focus goes.**
+   - *Import…* and *Export* are `FocusSafeButton`s: focused while busy, they stay focusable
+     with `aria-disabled`. When the page took the focus (the file browser closed, or a menu
+     item was clicked with the pointer), the button gets it back when the action ends.
+   - **Enter in a chapter name** ends the edit (one undo step) and keeps the focus in the
+     field, which then shows the name as it is written. Tab moves on. Moving to the next row
+     was not chosen: a stray keystroke there would rename another chapter.
+   - ***Remux only*** stays focused while drafting (a `FocusSafeButton` with its own spinner
+     and `aria-busy`: PrimeVue's `loading` disables the button).
+   - **The in-place fix in the card**: when the focused issue button goes away with its issue
+     (after the next validation answer), the focus goes to the *Edit in place* switch. This
+     happens only when the page had the focus.
+   - **The tag fix** puts the focus into the tag's field at once.
+
+   Each was checked by keyboard with R2's scripts: the focus is on *Name of chapter 2*,
+   *Export*, *Import…*, *Remux only*, the switch and the Genre field.
+8. **L3: the *modified* marker after a chapter rename.** A preset cannot hold chapter names.
+   `JobTemplate` has only `chapter_name_policy` (`source` / `generated`), and `templateOf`
+   derives it from the job's names. With the built-in presets (`source`) a rename does not set
+   the marker (real server: `presetChanges` stays `[]`). The marker shows when the names are
+   exactly *Chapter 1 … Chapter N* (*To Chapter 1, Chapter 2, …*):
+   `chapter_name_policy: source → generated`. That is right: it is the preset-level form of
+   that choice, *Save as preset* stores it, and the core's `derive_template` decides the same.
+   Two cases are wrong, both under a preset whose policy is `generated`. They were checked
+   with a user preset of that policy on `chapters.mkv`, and both are in `editor/template.ts`
+   (lead-owned; its test `template.test.ts` asserts the current behaviour):
+   - A rename of one chapter (`["Chapter 1", …, "End credits"]`) sets the marker
+     (`generated → source`). Per-file names are not a preset setting, as a track's language
+     is not.
+   - *To the source names* (`names: null`) shows no marker, although the output gets the
+     source names (`Opening, Part One, Part Two, Credits`) and *Save as preset* would keep
+     `generated`. The core's `derive_template` gives `source` for `null`.
+
+   Proposed for the lead: `null` → `source`; all *Chapter N* → `generated`; any other names →
+   the preset's own policy. Make the same change in `derive_template`. Also: the reset writes
+   the translated `chapters.reset.numberedName`, while `templateOf` and the core compare with
+   the English `Chapter N`. Nothing differs while English is the only locale. No change in
+   FD's files.
+9. **Nits.**
+   - A failed import or export is one sentence with the server's reason ("The chapter file
+     could not be imported: this is not a chapter file (CSV, OGM text or Matroska XML)"),
+     not a bullet that starts in lower case.
+   - The interval line is one message with the field as a slot (`every {field} min`). The
+     unit is no longer a suffix in the field.
+   - The queue's in-place target can be reached with Tab. It shows its tooltip on focus too
+     (PrimeVue's tooltip shows on hover, or with `.focus` only on focus, so the focus sends
+     it the hover events), and the tooltip describes it (`aria-describedby`). Escape hides it.
+   - Under an in-place job's preset the queue says "Metadata edit", not "Video copied".
+
+**Tests** (each failed before its fix): `ChaptersTab.test.ts` +7 and 2 changed (Enter keeps
+the focus, "1 chapter", the import and export failures as one sentence, the focus back to
+*Import…* and to *Export*, a focused *Export* stays focusable, the cleared interval left by
+blur and by Enter); `TagsTab.test.ts` +3 (once with the validation's severity, a code only `jobs/tags`
+reports, the focus after a fix); `JobTypeCard.test.ts` +4 and the remux-only cases rewritten
+(4 cases: switch off / on × MKV, MP4, not open; the help text; the focus while drafting; the
+focus to the switch; the focus left alone elsewhere); `QueueTable.test.ts` +2;
+`QueueControls.test.ts` +1. **27 mutations**, each failed its test and passed again when
+restored (M3, the plural argument dropped, survived the "1 chapter" test, because vue-i18n
+then takes the first form. The "2 chapters" test kills it, and M3b, the plural by the
+output's count, kills the "1 chapter" test).
+
+**Not changed, seen at 390 px**: the Chapters tab's header buttons (*Import…*, *Export*,
+*Reset names*) do not wrap, so the tab is wider than the window. That is `Section`'s header
+(`components/base/`), not FD's files.
 
 ## M6 demo
 

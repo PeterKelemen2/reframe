@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import InputNumber from 'primevue/inputnumber'
+import Button from 'primevue/button'
 import Select from 'primevue/select'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { ExternalSubtitle, ValidationIssue } from '@/api/types'
+import type { ExternalSubtitle, Fix, ValidationIssue } from '@/api/types'
 import { SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
 import Field from '@/components/base/Field.vue'
 import { useEditorStore } from '@/stores/editor'
+import { useValidationStore } from '@/stores/validation'
 
 import { inspect, inspected, useSubtitleFormatName } from './external'
 import { CHARSETS } from './metadata'
@@ -21,6 +23,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const editor = useEditorStore()
+const validation = useValidationStore()
 const severityLabel = useSeverityLabel()
 const formatName = useSubtitleFormatName()
 
@@ -48,16 +51,18 @@ const described = computed(() => {
   const found = info.value
   if (found === undefined) return t('tracks.external.inspecting')
   if (found === null) return t('tracks.external.unreadable')
-  const parts = [formatName(found.format)]
+  const format = formatName(found.format)
+  let events: string
   if (found.events === null || found.events === undefined) {
-    parts.push(t('tracks.external.eventsUnknown'))
+    events = t('tracks.external.eventsUnknown')
   } else if (found.bitmap) {
-    parts.push(t('tracks.external.displaySets', { count: found.events }, found.events))
+    events = t('tracks.external.displaySets', { count: found.events }, found.events)
   } else {
-    parts.push(t('tracks.external.events', { count: found.events }, found.events))
+    events = t('tracks.external.events', { count: found.events }, found.events)
   }
-  if (found.charset) parts.push(found.charset)
-  return parts.join(' · ')
+  return found.charset
+    ? t('tracks.external.describedCharset', { format, events, charset: found.charset })
+    : t('tracks.external.described', { format, events })
 })
 
 /** The inspection's warnings about the file itself (another format than its name, no events). */
@@ -65,11 +70,34 @@ const fileIssues = computed<ValidationIssue[]>(
   () => info.value?.issues?.filter((issue) => issue.path !== 'charset') ?? [],
 )
 
-/** "Not detected" and "UTF-16" stand at the encoding while the track names none. */
+/**
+ * Validation's issues at the encoding; without them, the inspection's "not detected" and
+ * "UTF-16" while the track names none. Both say the same about the file, so never both.
+ */
 const charsetIssues = computed<ValidationIssue[]>(() => {
+  const validated = validation.issuesFor(`${path.value}.charset`)
+  if (validated.length > 0) return validated
   if (props.external.charset) return []
   return (info.value?.issues ?? []).filter((issue) => issue.path === 'charset')
 })
+
+const charsetFixes = computed<Fix[]>(() => {
+  const seen = new Set<string>()
+  return charsetIssues.value
+    .flatMap((issue) => issue.fixes ?? [])
+    .filter((fix) => !seen.has(fix.label) && seen.add(fix.label))
+})
+const applying = ref(false)
+
+async function applyFix(fix: Fix): Promise<void> {
+  if (applying.value) return
+  applying.value = true
+  try {
+    await editor.applyFix(fix)
+  } finally {
+    applying.value = false
+  }
+}
 
 const charsetOptions = computed(() => {
   const detected = info.value?.charset
@@ -134,31 +162,49 @@ function onOffset(value: number | null): void {
           />
         </template>
       </Field>
-      <Field
-        v-if="!bitmap"
-        :label="t('tracks.external.charset')"
-        :path="`${path}.charset`"
-        :help="t('tracks.external.charsetHelp')"
-        :issues="charsetIssues"
-        stacked
-      >
-        <template #default="{ id, labelId }">
-          <Select
-            :input-id="id"
-            :ariaLabelledby="labelId"
-            class="external-fields__charset"
-            :model-value="external.charset ?? AUTO"
-            :options="charsetOptions"
-            option-label="label"
-            option-value="value"
-            editable
-            :disabled="disabled"
-            data-role="charset"
-            @update:model-value="onCharset"
-            @blur="editor.endCoalescing()"
+      <div v-if="!bitmap" class="external-fields__charset-field">
+        <Field
+          :label="t('tracks.external.charset')"
+          :path="`${path}.charset`"
+          :help="t('tracks.external.charsetHelp')"
+          :issues="charsetIssues"
+          stacked
+        >
+          <template #default="{ id, labelId, invalid }">
+            <Select
+              :input-id="id"
+              :ariaLabelledby="labelId"
+              class="external-fields__charset"
+              :model-value="external.charset ?? AUTO"
+              :options="charsetOptions"
+              option-label="label"
+              option-value="value"
+              editable
+              :invalid="invalid"
+              :disabled="disabled"
+              data-role="charset"
+              @update:model-value="onCharset"
+              @blur="editor.endCoalescing()"
+            />
+          </template>
+        </Field>
+        <div
+          v-if="charsetFixes.length > 0"
+          class="external-fields__fixes"
+          data-role="charset-fixes"
+        >
+          <Button
+            v-for="fix in charsetFixes"
+            :key="fix.label"
+            size="small"
+            severity="secondary"
+            outlined
+            :label="fix.label"
+            :disabled="applying || disabled"
+            @click="applyFix(fix)"
           />
-        </template>
-      </Field>
+        </div>
+      </div>
       <p v-else class="external-fields__note" data-note="bitmap">
         {{ t('tracks.external.charsetBitmap') }}
       </p>
@@ -221,6 +267,13 @@ function onOffset(value: number | null): void {
 /* A label with a help button is taller: every label gets its height, so the controls line up. */
 .external-fields__row :deep(.rf-field__label) {
   min-height: 1.75rem;
+}
+
+.external-fields__fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rf-space-2);
+  margin-top: var(--rf-space-2);
 }
 
 .external-fields__number,

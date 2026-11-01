@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { Clapperboard, Files, FilePenLine, TriangleAlert } from '@lucide/vue'
-import Button from 'primevue/button'
+import { Clapperboard, Files, FilePenLine, LoaderCircle, TriangleAlert } from '@lucide/vue'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { computed, ref, useId } from 'vue'
+import { computed, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
@@ -10,6 +9,8 @@ import type { JobType } from '@/api/types'
 import Card from '@/components/base/Card.vue'
 import Field from '@/components/base/Field.vue'
 import IssueList from '@/components/base/IssueList.vue'
+import FocusSafeButton from '@/components/shell/FocusSafeButton'
+import { focusLost } from '@/components/shell/focus'
 import { fileName } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 import { useValidationStore } from '@/stores/validation'
@@ -55,13 +56,16 @@ function setEditInPlace(value: boolean): void {
 
 const drafting = ref(false)
 const remuxHelpId = `${useId()}-remux-help`
+/** *Remux only* keeps the switch's choice; only a Matroska source can be edited in place. */
+const remuxInPlace = computed(
+  () => editInPlace.value && source.value !== null && isMatroska(source.value),
+)
 
 async function remuxOnly(): Promise<void> {
   if (drafting.value) return
   drafting.value = true
   try {
-    // An in-place edit is asked for only where it can work: any other source would get an error.
-    await editor.applyRemuxDraft({ editInPlace: source.value !== null && isMatroska(source.value) })
+    await editor.applyRemuxDraft({ editInPlace: remuxInPlace.value })
   } catch (failure) {
     // The API client has shown the problem as a toast.
     if (!(failure instanceof ApiError)) throw failure
@@ -69,6 +73,26 @@ async function remuxOnly(): Promise<void> {
     drafting.value = false
   }
 }
+
+const body = useTemplateRef<HTMLElement>('body')
+/** The issue button that had the focus: it goes away with its issue once a fix is checked. */
+let focusedIssue: HTMLElement | null = null
+
+function onIssueFocus(event: FocusEvent): void {
+  focusedIssue = event.target instanceof HTMLElement ? event.target : null
+}
+
+watch(
+  issues,
+  () => {
+    if (focusedIssue === null || focusedIssue.isConnected) return
+    focusedIssue = null
+    if (focusLost()) {
+      body.value?.querySelector<HTMLElement>('[data-field="edit-in-place"] input')?.focus()
+    }
+  },
+  { flush: 'post' },
+)
 </script>
 
 <template>
@@ -82,7 +106,7 @@ async function remuxOnly(): Promise<void> {
         t('summary.jobType.updating')
       }}</span>
     </template>
-    <div class="summary-job-type__body">
+    <div ref="body" class="summary-job-type__body">
       <p v-if="error !== null" class="summary-job-type__failed" data-state="failed">
         {{ t('summary.jobType.failed', { reason: error }) }}
       </p>
@@ -137,22 +161,32 @@ async function remuxOnly(): Promise<void> {
         </ul>
       </div>
 
-      <IssueList v-if="issues.length > 0" :issues="issues" />
+      <div v-if="issues.length > 0" @focusin="onIssueFocus">
+        <IssueList :issues="issues" />
+      </div>
 
       <div class="summary-job-type__remux">
-        <Button
+        <FocusSafeButton
           size="small"
           severity="secondary"
           outlined
           :label="t('summary.jobType.remuxOnly')"
-          :loading="drafting"
           :disabled="drafting || editor.job === null"
+          :aria-busy="drafting || undefined"
           :aria-describedby="remuxHelpId"
           data-action="remux-only"
           @click="remuxOnly"
-        />
+        >
+          <template v-if="drafting" #icon>
+            <LoaderCircle class="summary-job-type__spin" :size="16" aria-hidden="true" />
+          </template>
+        </FocusSafeButton>
         <p :id="remuxHelpId" class="summary-card__note">
-          {{ t('summary.jobType.remuxOnlyHelp') }}
+          {{
+            remuxInPlace
+              ? t('summary.jobType.remuxOnlyInPlaceHelp')
+              : t('summary.jobType.remuxOnlyHelp')
+          }}
         </p>
       </div>
     </div>
@@ -241,5 +275,15 @@ async function remuxOnly(): Promise<void> {
 
 .summary-job-type__remux .summary-card__note {
   flex: 1 1 14rem;
+}
+
+.summary-job-type__spin {
+  animation: summary-job-type-spin 1s linear infinite;
+}
+
+@keyframes summary-job-type-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

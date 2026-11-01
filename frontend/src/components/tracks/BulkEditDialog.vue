@@ -23,7 +23,7 @@ const props = defineProps<{
 }>()
 
 const visible = defineModel<boolean>('visible', { required: true })
-const emit = defineEmits<{ applied: [] }>()
+const emit = defineEmits<{ applied: []; closed: [] }>()
 
 const { t } = useI18n()
 const editor = useEditorStore()
@@ -83,6 +83,7 @@ function apply(): void {
     :header="t('tracks.bulk.title', { count: indexes.length }, indexes.length)"
     :style="{ width: 'min(36rem, calc(100vw - 2rem))' }"
     data-dialog="bulk-edit"
+    @after-hide="emit('closed')"
   >
     <div class="bulk-edit__body">
       <p class="bulk-edit__intro">{{ t('tracks.bulk.intro') }}</p>

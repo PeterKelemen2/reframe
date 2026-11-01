@@ -54,7 +54,7 @@ const props = defineProps<{
   collapsible?: boolean
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const validation = useValidationStore()
@@ -237,16 +237,21 @@ watch(
 const summary = computed(() => {
   const value = metadata.value
   const language =
-    languageName(value?.language ?? null) ?? languageName(sourceLanguage.value) ?? 'und'
+    languageName(value?.language ?? null) ??
+    languageName(sourceLanguage.value) ??
+    t('tracks.metadata.summaryUnd')
   const name = value?.name ?? sourceTitle.value
   const flags = FLAGS.filter((flag) => value?.[flag]).map((flag) =>
     t(`tracks.metadata.flag.${flag}`),
   )
-  return [
+  return t('tracks.metadata.summary', {
     language,
-    name ? `“${name}”` : t('tracks.metadata.summaryNoName'),
-    flags.length > 0 ? flags.join(', ') : t('tracks.metadata.summaryNoFlags'),
-  ].join(' · ')
+    name: name ? t('tracks.metadata.summaryName', { name }) : t('tracks.metadata.summaryNoName'),
+    flags:
+      flags.length > 0
+        ? new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(flags)
+        : t('tracks.metadata.summaryNoFlags'),
+  })
 })
 </script>
 

@@ -191,20 +191,20 @@ describe('the Job type card', () => {
     expect(editor.get('/output/path')).toBe('/output/multitrack.mkv')
   })
 
+  const MP4 = { ...multitrackSource(), container: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' } }
+
   it.each([
-    ['an MKV source', multitrackSource(), true],
-    [
-      'an MP4 source',
-      { ...multitrackSource(), container: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' } },
-      false,
-    ],
-    ['a source that is not open here', null, false],
+    ['an MKV source, Edit in place off', multitrackSource(), false, false],
+    ['an MKV source, Edit in place on', multitrackSource(), true, true],
+    ['an MP4 source, Edit in place on', MP4, true, false],
+    ['a source that is not open here, Edit in place on', null, true, false],
   ])(
-    'drafts the remux-only job as one undo step, in place only for %s',
-    async (_name, source, inPlace) => {
+    'drafts the remux-only job as one undo step, in place only when asked: %s',
+    async (_name, source, switchOn, inPlace) => {
       const { wrapper, editor } = await mountCard(() => REMUX, {
         source: source as MediaSource | null,
       })
+      if (switchOn) editor.set('/output/edit_in_place', true)
       await wrapper.find('[data-action="remux-only"]').trigger('click')
       await vi.waitFor(() => expect(editor.get('/video/passthrough')).toBe(true), SOON)
       const sent = server.requests.filter((request) => request.path === '/api/jobs/draft-remux')
@@ -215,6 +215,64 @@ describe('the Job type card', () => {
       expect(editor.get('/video/passthrough')).toBe(false)
     },
   )
+
+  it('says what Remux only writes: a new file, or the source itself with Edit in place', async () => {
+    const { wrapper, editor } = await mountCard(() => REMUX)
+    const help = () => text(wrapper, '[data-action="remux-only"] ~ p')
+    expect(help()).toContain('into a new file')
+    expect(help()).not.toContain('source file itself')
+    editor.set('/output/edit_in_place', true)
+    await flushPromises()
+    expect(help()).toContain('the source file itself is edited')
+  })
+
+  it('keeps the focus on Remux only while the job is drafted', async () => {
+    const { wrapper, editor } = await mountCard(() => REMUX)
+    const late = deferred<unknown>()
+    const remux = sampleJob()
+    remux.video!.passthrough = true
+    server.on('POST /api/jobs/draft-remux', () => late.promise)
+    const button = wrapper.find<HTMLButtonElement>('[data-action="remux-only"]')
+    button.element.focus()
+    await button.trigger('click')
+    expect(button.element.disabled).toBe(false)
+    expect(button.attributes('aria-disabled')).toBe('true')
+    expect(button.attributes('aria-busy')).toBe('true')
+    late.resolve({ ...sampleDraft(remux), decisions: [], subtitle_decisions: [] })
+    await vi.waitFor(() => expect(editor.get('/video/passthrough')).toBe(true), SOON)
+    await flushPromises()
+    expect(document.activeElement).toBe(button.element)
+    expect(button.attributes('aria-busy')).toBeUndefined()
+  })
+
+  it('moves the focus to the switch when an in-place fix took its button away', async () => {
+    const { wrapper, editor } = await mountCard(() => REMUX)
+    editor.set('/output/edit_in_place', true)
+    useValidationStore().issues = [NOT_ALLOWED]
+    await flushPromises()
+    const fix = wrapper.find<HTMLButtonElement>('.rf-issue__fix')
+    fix.element.focus()
+    await fix.trigger('click')
+    await flushPromises()
+    // The next validation answer has no in-place issue: the button goes with it.
+    useValidationStore().issues = []
+    await flushPromises()
+    expect(document.activeElement).toBe(toggle(wrapper).element)
+  })
+
+  it('leaves the focus alone when it is elsewhere as an in-place issue goes', async () => {
+    const { wrapper, editor } = await mountCard(() => REMUX)
+    editor.set('/output/edit_in_place', true)
+    useValidationStore().issues = [NOT_ALLOWED]
+    await flushPromises()
+    const fix = wrapper.find<HTMLButtonElement>('.rf-issue__fix')
+    fix.element.focus()
+    const remux = wrapper.find<HTMLButtonElement>('[data-action="remux-only"]')
+    remux.element.focus()
+    useValidationStore().issues = []
+    await flushPromises()
+    expect(document.activeElement).toBe(remux.element)
+  })
 
   it('keeps the job and its button when the remux draft is refused', async () => {
     const { wrapper, editor } = await mountCard(() => REMUX)

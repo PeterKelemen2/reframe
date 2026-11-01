@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Check, ChevronDown } from '@lucide/vue'
+import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { ApiError } from '@/api/client'
 import type { Language } from '@/api/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
@@ -45,6 +47,7 @@ const id = useId()
 const ownLabelId = `${id}-label`
 const valueId = `${id}-value`
 const listId = `${id}-list`
+const searchId = `${id}-search`
 
 const open = ref(false)
 const query = ref('')
@@ -110,6 +113,29 @@ const groups = computed<Group[]>(() => {
   return result
 })
 const options = computed(() => groups.value.flatMap((group) => group.options.map((o) => o.option)))
+const languageCount = computed(() => options.value.filter((option) => option.language).length)
+
+/** `GET /api/languages` failed at the start: nothing can be offered or named. */
+const listMissing = computed(() => system.languages.length === 0)
+const reading = ref(false)
+
+async function readAgain(): Promise<void> {
+  if (reading.value) return
+  reading.value = true
+  try {
+    await system.loadDefinitions()
+  } catch (error) {
+    // The API client has shown the problem.
+    if (!(error instanceof ApiError)) throw error
+  } finally {
+    reading.value = false
+  }
+  // The button goes with the message: the focus goes back to the search.
+  if (!listMissing.value) {
+    await nextTick()
+    document.getElementById(searchId)?.focus()
+  }
+}
 
 function codesText(written: WrittenAs): string {
   return ` · ${t('language.picker.codes', { iso: written.iso639_2, tag: written.tag })}`
@@ -227,7 +253,12 @@ function onDialogKey(event: KeyboardEvent): void {
           <!-- The space keeps the name and the codes apart for a screen reader. -->
           <span class="language-picker__codes">{{ ` ${shortCodes}` }}</span>
         </template>
-        <span v-else-if="model" class="language-picker__name">{{ model }}</span>
+        <template v-else-if="model">
+          <span class="language-picker__name">{{ model }}</span>
+          <span v-if="listMissing" class="language-picker__codes" data-state="unnamed">{{
+            ` ${t('language.picker.notNamed')}`
+          }}</span>
+        </template>
         <span v-else class="language-picker__empty">{{ emptyText }}</span>
       </span>
       <ChevronDown class="language-picker__chevron" :size="16" aria-hidden="true" />
@@ -244,6 +275,7 @@ function onDialogKey(event: KeyboardEvent): void {
     >
       <div class="language-picker__panel">
         <InputText
+          :id="searchId"
           :model-value="query"
           autofocus
           fluid
@@ -252,6 +284,7 @@ function onDialogKey(event: KeyboardEvent): void {
           aria-expanded="true"
           :aria-controls="listId"
           :aria-activedescendant="activeOption ? optionId(activeOption) : undefined"
+          :aria-describedby="listMissing ? `${id}-failed` : undefined"
           :aria-label="t('language.picker.search')"
           :placeholder="t('language.picker.searchPlaceholder')"
           autocomplete="off"
@@ -261,8 +294,19 @@ function onDialogKey(event: KeyboardEvent): void {
           @keydown="onSearchKey"
         />
         <span class="rf-sr-only" aria-live="polite">
-          {{ t('language.picker.count', options.length) }}
+          {{ listMissing ? '' : t('language.picker.count', languageCount) }}
         </span>
+        <div v-if="listMissing" class="language-picker__failed" data-state="failed">
+          <p :id="`${id}-failed`">{{ t('language.picker.failed') }}</p>
+          <Button
+            size="small"
+            severity="secondary"
+            :label="t('language.picker.readAgain')"
+            :loading="reading"
+            data-action="read-languages"
+            @click="readAgain"
+          />
+        </div>
         <div
           :id="listId"
           class="language-picker__list"
@@ -320,7 +364,11 @@ function onDialogKey(event: KeyboardEvent): void {
             </div>
           </div>
         </div>
-        <p v-if="options.length === 0" class="language-picker__no-match" data-state="empty">
+        <p
+          v-if="options.length === 0 && !listMissing"
+          class="language-picker__no-match"
+          data-state="empty"
+        >
           {{ t('language.picker.noMatch', { query: query.trim() }) }}
         </p>
       </div>
@@ -482,6 +530,22 @@ function onDialogKey(event: KeyboardEvent): void {
 .language-picker__native {
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
+}
+
+.language-picker__failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2) var(--rf-space-3);
+  padding: var(--rf-space-3);
+  border-radius: var(--rf-radius-md);
+  background: var(--p-status-error-background);
+  color: var(--p-status-error-color);
+}
+
+.language-picker__failed p {
+  flex: 1 1 14rem;
+  margin: 0;
 }
 
 .language-picker__no-match {

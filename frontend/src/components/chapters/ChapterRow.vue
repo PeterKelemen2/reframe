@@ -18,7 +18,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   rename: [name: string]
-  /** The field lost the focus: the edit is over. */
+  /** The edit is over (Enter, or the field lost the focus). */
   done: []
 }>()
 
@@ -27,10 +27,6 @@ const root = useTemplateRef<HTMLElement>('root')
 
 const path = computed(() => `chapters.names[${nameSlot(props.chapter)}]`)
 useReveal(path, root)
-
-function leave(event: KeyboardEvent): void {
-  ;(event.target as HTMLElement).blur()
-}
 </script>
 
 <template>
@@ -49,7 +45,7 @@ function leave(event: KeyboardEvent): void {
         spellcheck="false"
         data-field="name"
         @update:model-value="emit('rename', $event ?? '')"
-        @keydown.enter.prevent="leave"
+        @keydown.enter.prevent="emit('done')"
         @blur="emit('done')"
       />
       <span

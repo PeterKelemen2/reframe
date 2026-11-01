@@ -222,6 +222,41 @@ describe('the language picker', () => {
     expect(isOpen()).toBe(false)
   })
 
+  it('counts the languages listed, not None', async () => {
+    await mountPicker({ clearable: true })
+    await open()
+    const live = [...document.querySelectorAll('[aria-live="polite"]')].at(-1)
+    expect(live?.textContent?.trim()).toBe(`${optionTags().length - 1} languages`)
+    await type('magyar')
+    expect(live?.textContent?.trim()).toBe('One language')
+  })
+
+  it('says when the language list could not be read, and reads it again', async () => {
+    await mountPicker({ modelValue: 'hun', clearable: true })
+    const system = useSystemStore()
+    system.languages = []
+    await flushPromises()
+    expect(trigger().textContent).toContain('hun')
+    expect(trigger().textContent).toContain('not named: the language list is missing')
+    await open()
+    const failed = $('[data-state="failed"] p')
+    expect(failed?.textContent).toContain('could not be read from the server')
+    expect(search()?.getAttribute('aria-describedby')).toBe(failed?.id)
+    const read = vi.spyOn(system, 'loadDefinitions').mockImplementation(async () => {
+      system.languages = languages()
+    })
+    const readAgain = $<HTMLButtonElement>('[data-action="read-languages"]')!
+    readAgain.focus()
+    // jsdom does not drop the focus to body when the button goes, as a browser does.
+    const focused = vi.spyOn(search()!, 'focus')
+    readAgain.click()
+    await flushPromises()
+    expect(read).toHaveBeenCalledOnce()
+    expect($('[data-state="failed"]')).toBeNull()
+    expect(optionTags()).toContain('hu')
+    expect(focused).toHaveBeenCalled()
+  })
+
   it('is named by its label and its value', async () => {
     await mountPicker({ modelValue: 'hu', labelledby: 'outer-label' })
     const ids = trigger().getAttribute('aria-labelledby')?.split(' ')

@@ -25,6 +25,7 @@
   "table": {
     "label": "Jobs in the queue",
     "videoCopy": "Video copied",
+    "metadataEdit": "Metadata edit",
     "inPlace": "Source, edited in place",
     "inPlaceTip": "mkvpropedit changes {path} itself: no new file is written."
   },
