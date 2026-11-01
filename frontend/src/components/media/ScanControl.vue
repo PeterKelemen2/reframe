@@ -9,9 +9,8 @@ import { useI18n } from 'vue-i18n'
 import type { ScanRun } from '@/stores/scans'
 
 /**
- * A scan's start button, or while it runs its progress and a cancel button. The focus moves
- * between the two buttons as they replace each other; `leave` asks the parent to place it when
- * the control goes away while it holds the focus.
+ * A scan's start button; while it runs, a progress bar and a cancel button. It emits `leave`
+ * when it goes away with the focus on it, so that the parent can place the focus.
  */
 const props = defineProps<{
   run: ScanRun | undefined

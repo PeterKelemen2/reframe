@@ -22,7 +22,7 @@ export const SHOWN_FLAGS = [
 ] as const satisfies readonly DispositionFlag[]
 export type ShownFlag = (typeof SHOWN_FLAGS)[number]
 
-/** A role badge that a disposition set already names that disposition. */
+/** The flags a role badge names: `shownFlags` leaves those out of the flag list. */
 const FLAGS_OF_ROLE: Partial<Record<Schemas['TrackRole'], readonly DispositionFlag[]>> = {
   commentary: ['comment'],
   sdh: ['hearing_impaired', 'captions'],
@@ -37,7 +37,7 @@ export function setDispositions(stream: SourceStream): DispositionFlag[] {
   return (Object.keys(disposition) as DispositionFlag[]).filter((flag) => disposition[flag])
 }
 
-/** The flags shown beside the role badges: a flag that a badge from that flag names is left out. */
+/** The flags shown beside the role badges; a flag that a badge already names is left out. */
 export function shownFlags(stream: SourceStream): ShownFlag[] {
   const named = new Set<DispositionFlag>()
   for (const role of stream.roles ?? []) {

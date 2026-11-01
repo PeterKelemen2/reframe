@@ -1,13 +1,12 @@
-// Media files the `*.server.test.ts` files make with FFmpeg. Plain JavaScript: it needs Node's
-// types, which the app's tsconfig does not have.
+// Test media for `*.server.test.ts`. Plain JavaScript: the app's tsconfig has no Node types.
 import { execFileSync } from 'node:child_process'
 
 import { pinnedTools } from '../../../editor/testing/tools.mjs'
 
 /**
- * Writes an MKV with an English AC-3 5.1 track (its bitrate in the stream) and an untitled
- * English Opus 2.0 track at 48 kb/s that ffprobe gives no bitrate for. The Opus packets are
- * 2.5 ms long, so a bitrate scan of it takes about a second per ten minutes.
+ * An MKV with an English AC-3 5.1 track and an untitled English Opus 2.0 track. ffprobe gives no
+ * bitrate for the Opus track, so a bitrate scan has to measure it; the 2.5 ms Opus packets make
+ * that scan slow enough to cancel.
  */
 export function makeCommentaryFile(path, seconds = 600) {
   const tools = pinnedTools()
