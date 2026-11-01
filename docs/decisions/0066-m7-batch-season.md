@@ -171,7 +171,41 @@ in `stores/sources.ts` and `composables/useValidation.ts`, and the `editor.group
 
 ## Task B — F-13 group rows, banner, *Apply to group*, copy / paste, *Save as preset*
 
-(placeholder: task B writes this section)
+Built in `components/sources/` (group rows, the context menu) and `components/batch/`
+(`GroupBanner`, `ApplyToGroupDialog`, `clipboard.ts`). Choices where the plan leaves one:
+
+- **Keyboard.** A group row's *Edit group*, *Check group* and *Add group to queue* buttons are
+  out of the Tab order, as the M4 rows' remove buttons are; the keyboard reaches them, and copy /
+  paste and *Apply to group…*, through the row's context menu (`Shift+F10`, the context menu
+  key, or a right click). The menu gives the focus back to its row when it closes.
+- **The menu.** The eight *Copy … settings* items are on every row, enabled on the open job's
+  row and on the edited group's row only; one *Paste … settings* item shows while the clipboard
+  holds a section (it holds one).
+- **Paste into a group.** From a job: `mergeIntoGroup` (the group is not edited for it). From a
+  group's template: the target group is edited first, since `patchTemplate` changes the edited
+  group's template. Either way a toast says what was pasted where.
+- **Paste into a file.** The fields replaced per section are the job's `dimensions`, `filters`,
+  `video` (its metadata stays the file's), `audio`, `subtitles` (the file's external subtitle
+  files stay, after the pasted tracks), `chapters` (the file's names stay unless the resolved
+  job generates `Chapter N` names), `tags`, and for naming `/output/naming/template` and
+  `name_source` only (the output path, a manual name and the corrected fields stay). A resolved
+  job has no naming fields of its own (the server names it with the template's naming
+  options), so the job's template is the one that named the resolved row (`naming.template`)
+  and its name source the template's; a template without naming gives both `null` (the
+  settings' naming).
+- **The toast of *Apply to group…*** has no *Edit group* button: the toast store has no
+  actions (a lead-owned file). The banner's slim line, next to the *Apply to group…* button
+  that was used, has *Edit group*.
+- ***Save as preset*** reuses `PresetNameDialog` (name, category `Custom`, description; a taken
+  name is the server's refusal at the field). The name starts empty, as in the preset picker.
+- The banner finds its group in `sources.grouping` with the panel's `panelItems`, so its file
+  labels are the panel's.
+- `useQueueGroup()` is called in the click handlers, not in setup: the skeleton's stub throws
+  when it is called, which would stop the workspace from mounting until task C's composable is
+  merged. Nothing shows the composable's `busy`.
+
+Not built: *Group these* (04 §Grouping; not in M7's breakdown), pasting into several files that
+are not open (item 6).
 
 ## Task C — F-13 the resolution matrix and queueing a group, F-18 the naming column
 

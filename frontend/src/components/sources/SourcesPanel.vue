@@ -2,6 +2,8 @@
 // The workspace's sources column: open, probe progress, warnings, groups. Takes no props.
 import { ChevronDown, ChevronRight, FilePlus, FolderOpen, FolderTree } from '@lucide/vue'
 import Button from 'primevue/button'
+import ContextMenu from 'primevue/contextmenu'
+import type { MenuItem } from 'primevue/menuitem'
 import ProgressBar from 'primevue/progressbar'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -9,15 +11,31 @@ import { useI18n } from 'vue-i18n'
 import { ApiError } from '@/api/client'
 import type { SourceEntry } from '@/api/types'
 import StatusDot from '@/components/base/StatusDot.vue'
+import ApplyToGroupDialog from '@/components/batch/ApplyToGroupDialog.vue'
+import {
+  clipboard,
+  type Copied,
+  pasteIntoFile,
+  pasteIntoGroup,
+  SECTIONS,
+} from '@/components/batch/clipboard'
+import { focusLost } from '@/components/shell/focus'
 import { fileName } from '@/components/shell/format'
+import { useQueueGroup } from '@/composables/useQueueGroup'
 import { platform } from '@/platform'
+import { useEditorStore } from '@/stores/editor'
 import { type ProbeRun, useSourcesStore } from '@/stores/sources'
+import { useToastStore } from '@/stores/toasts'
+import { useUiStore } from '@/stores/ui'
 
 import { type PanelItem, panelItems } from './panel'
 import SourceItem from './SourceItem.vue'
 
 const { t } = useI18n()
 const sources = useSourcesStore()
+const editor = useEditorStore()
+const ui = useUiStore()
+const toasts = useToastStore()
 const id = useId() ?? 'sources'
 
 function itemId(entryId: string): string {
@@ -152,9 +170,32 @@ function focusNode(key: string | null | undefined): void {
   void nextTick(() => element(key)?.focus())
 }
 
-function choose(entryId: string): Promise<void> {
+function editedGroup(groupId: string | null): boolean {
+  const target = editor.target
+  return target?.kind === 'group' && target.groupId === groupId
+}
+
+/** A member of the edited group is shown in the group; any other source opens as one job. */
+function choose(entryId: string, groupId: string | null): Promise<void> {
   focusKey.value = sourceKey(entryId)
+  if (editedGroup(groupId)) return quietly(() => editor.showFile(entryId))
   return quietly(() => sources.select(entryId))
+}
+
+function editGroup(groupId: string): Promise<void> {
+  return quietly(() => editor.editGroup(groupId))
+}
+
+function checkGroup(groupId: string): Promise<void> {
+  return quietly(async () => {
+    if (!editedGroup(groupId)) await editor.editGroup(groupId)
+    ui.openMatrix()
+  })
+}
+
+function queue(groupId: string): Promise<void> {
+  // Called here, not in setup: its stub throws until it is built.
+  return quietly(() => useQueueGroup().queueGroup(groupId))
 }
 
 function toggle(groupId: string): void {
@@ -249,7 +290,14 @@ function onKeydown(event: KeyboardEvent): void {
     case 'Enter':
     case ' ':
       if (node.kind === 'group' && node.groupId !== null) toggle(node.groupId)
-      else if (node.ids[0] !== undefined) void choose(node.ids[0])
+      else if (node.ids[0] !== undefined) void choose(node.ids[0], node.groupId)
+      break
+    case 'ContextMenu':
+      openMenuAt(node)
+      break
+    case 'F10':
+      if (!event.shiftKey) return
+      openMenuAt(node)
       break
     case 'Delete':
     case 'Backspace':
@@ -264,6 +312,140 @@ function onKeydown(event: KeyboardEvent): void {
 function onFocusin(event: FocusEvent): void {
   const node = nodeOf(event)
   if (node !== undefined) focusKey.value = node.key
+}
+
+const menu = useTemplateRef<InstanceType<typeof ContextMenu>>('menu')
+/** The tree item whose context menu is open. */
+const menuNode = ref<Node | null>(null)
+const apply = ref<{ groupId: string; name: string; key: string } | null>(null)
+const applyOpen = ref(false)
+
+function groupName(groupId: string): string {
+  return sources.grouping?.groups?.find((group) => group.id === groupId)?.name ?? ''
+}
+
+function copyItems(copy: ((section: Copied['section']) => Copied) | null): MenuItem[] {
+  return SECTIONS.map((section) => ({
+    label: t(`group.copy.${section}`),
+    disabled: copy === null,
+    command: () => {
+      if (copy !== null) clipboard.value = copy(section)
+    },
+  }))
+}
+
+async function paste(copied: Copied, into: () => Promise<void>, name: string): Promise<void> {
+  await quietly(async () => {
+    await into()
+    toasts.push({
+      severity: 'success',
+      summary: t('group.pasted', { section: t(`group.sections.${copied.section}`), name }),
+      life: 5000,
+    })
+  })
+}
+
+function groupMenu(groupId: string): MenuItem[] {
+  const target = editor.target
+  const edited = target?.kind === 'group' && target.groupId === groupId ? target : null
+  const copied = clipboard.value
+  return [
+    {
+      label: t('group.actions.edit'),
+      disabled: edited !== null,
+      command: () => editGroup(groupId),
+    },
+    { label: t('group.actions.check'), command: () => checkGroup(groupId) },
+    { label: t('group.actions.queue'), command: () => queue(groupId) },
+    { separator: true },
+    ...copyItems(
+      edited === null
+        ? null
+        : (section) => ({ from: 'group', section, template: edited.template, groupId }),
+    ),
+    ...(copied === null
+      ? []
+      : [
+          {
+            label: t(`group.paste.${copied.section}`),
+            command: () => paste(copied, () => pasteIntoGroup(groupId, copied), groupName(groupId)),
+          },
+        ]),
+  ]
+}
+
+function sourceMenu(node: Node, entryId: string): MenuItem[] {
+  const target = editor.target
+  const open = target?.kind === 'job' && target.sourceId === entryId ? target : null
+  const copied = clipboard.value
+  const entry = sources.entries.find((other) => other.id === entryId)
+  const found: MenuItem[] = copyItems(
+    open === null
+      ? null
+      : (section) => ({ from: 'job', section, job: open.job, sourceId: entryId }),
+  )
+  if (copied !== null) {
+    found.push({
+      label: t(`group.paste.${copied.section}`),
+      command: () =>
+        paste(copied, () => pasteIntoFile(entryId, copied), fileName(entry?.path ?? entryId)),
+    })
+  }
+  const groupId = node.groupId
+  if (open !== null && groupId !== null) {
+    found.push(
+      { separator: true },
+      {
+        label: t('group.actions.applyToGroup'),
+        command: () => {
+          apply.value = { groupId, name: groupName(groupId), key: node.key }
+          applyOpen.value = true
+        },
+      },
+    )
+  }
+  return found
+}
+
+const menuItems = computed<MenuItem[]>(() => {
+  const node = menuNode.value
+  if (node === null) return []
+  if (node.kind === 'group' && node.groupId !== null) return groupMenu(node.groupId)
+  const [entryId] = node.ids
+  return entryId === undefined ? [] : sourceMenu(node, entryId)
+})
+
+function onContextmenu(event: MouseEvent): void {
+  const node = nodeOf(event)
+  if (node === undefined) return
+  menuNode.value = node
+  focusKey.value = node.key
+  menu.value?.show(event)
+}
+
+/** The context menu key and Shift+F10: the menu opens at the item's corner. */
+function openMenuAt(node: Node): void {
+  const box = element(node.key)?.getBoundingClientRect()
+  menuNode.value = node
+  menu.value?.show(
+    new MouseEvent('contextmenu', {
+      clientX: (box?.left ?? 0) + 16,
+      clientY: (box?.top ?? 0) + 16,
+    }),
+  )
+}
+
+// The menu leaves with the focus in it, or the focus went with a removed item.
+function menuHidden(): void {
+  const node = menuNode.value
+  setTimeout(() => {
+    const active = document.activeElement
+    if (node !== null && (focusLost() || active?.closest('.p-contextmenu'))) focusNode(node.key)
+  })
+}
+
+function applyClosed(): void {
+  if (apply.value !== null && focusLost()) focusNode(apply.value.key)
 }
 
 function reprobe(entry: SourceEntry): Promise<void> {
@@ -370,6 +552,7 @@ onBeforeUnmount(() => stopDrops?.())
       :aria-label="t('sources.panel.label')"
       @keydown="onKeydown"
       @focusin="onFocusin"
+      @contextmenu="onContextmenu"
     >
       <template v-for="item in items" :key="item.kind === 'group' ? item.group.id : item.entry.id">
         <li
@@ -383,7 +566,7 @@ onBeforeUnmount(() => stopDrops?.())
           :data-key="sourceKey(item.entry.id)"
           :aria-labelledby="`${itemId(item.entry.id)}-title`"
           :aria-describedby="`${itemId(item.entry.id)}-details`"
-          @click="choose(item.entry.id)"
+          @click="choose(item.entry.id, null)"
         >
           <SourceItem
             :entry="item.entry"
@@ -396,6 +579,8 @@ onBeforeUnmount(() => stopDrops?.())
           v-else
           role="treeitem"
           class="sources-panel__node sources-panel__group"
+          :class="{ 'sources-panel__group--edited': editedGroup(item.group.id) }"
+          :aria-current="editedGroup(item.group.id) ? 'true' : undefined"
           :aria-expanded="!isCollapsed(item)"
           :aria-level="1"
           :tabindex="tabKey === groupKey(item.group.id) ? 0 : -1"
@@ -407,6 +592,12 @@ onBeforeUnmount(() => stopDrops?.())
             <ChevronRight v-if="isCollapsed(item)" :size="16" aria-hidden="true" />
             <ChevronDown v-else :size="16" aria-hidden="true" />
             <span class="sources-panel__group-name">{{ item.group.name }}</span>
+            <span
+              v-if="editedGroup(item.group.id)"
+              class="sources-panel__group-editing"
+              data-field="editing"
+              >{{ t('sources.group.editing') }}</span
+            >
           </div>
           <div class="sources-panel__group-meta" @click="toggle(item.group.id)">
             <span data-field="count">{{ t('sources.group.files', item.rows.length) }}</span>
@@ -432,6 +623,34 @@ onBeforeUnmount(() => stopDrops?.())
               data-field="near-count"
             />
           </div>
+          <!-- Out of the Tab order as the rows' other buttons: the keyboard has the context menu. -->
+          <div class="sources-panel__group-actions" @click.stop>
+            <Button
+              v-if="!editedGroup(item.group.id)"
+              size="small"
+              text
+              tabindex="-1"
+              :label="t('group.actions.edit')"
+              data-action="edit-group"
+              @click="editGroup(item.group.id)"
+            />
+            <Button
+              size="small"
+              text
+              tabindex="-1"
+              :label="t('group.actions.check')"
+              data-action="check-group"
+              @click="checkGroup(item.group.id)"
+            />
+            <Button
+              size="small"
+              text
+              tabindex="-1"
+              :label="t('group.actions.queue')"
+              data-action="queue-group"
+              @click="queue(item.group.id)"
+            />
+          </div>
           <ul v-if="!isCollapsed(item)" role="group" class="sources-panel__members">
             <li
               v-for="row in item.rows"
@@ -446,7 +665,7 @@ onBeforeUnmount(() => stopDrops?.())
               :data-match="row.member.match"
               :aria-labelledby="`${itemId(row.entry.id)}-title`"
               :aria-describedby="`${itemId(row.entry.id)}-details`"
-              @click.stop="choose(row.entry.id)"
+              @click.stop="choose(row.entry.id, item.group.id)"
             >
               <SourceItem
                 :entry="row.entry"
@@ -470,6 +689,21 @@ onBeforeUnmount(() => stopDrops?.())
       <p class="sources-panel__empty-title">{{ t('sources.panel.emptyTitle') }}</p>
       <p class="sources-panel__empty-text">{{ t('sources.panel.emptyText') }}</p>
     </div>
+
+    <ContextMenu
+      ref="menu"
+      :model="menuItems"
+      :ariaLabel="t('sources.panel.menu')"
+      data-menu="sources"
+      @hide="menuHidden"
+    />
+    <ApplyToGroupDialog
+      v-if="apply"
+      v-model:visible="applyOpen"
+      :group-id="apply.groupId"
+      :group-name="apply.name"
+      @closed="applyClosed"
+    />
   </aside>
 </template>
 
@@ -584,6 +818,24 @@ onBeforeUnmount(() => stopDrops?.())
   padding-inline-start: calc(var(--rf-space-2) + 16px + var(--rf-space-2));
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
+}
+
+.sources-panel__group--edited {
+  box-shadow: inset 3px 0 0 var(--rf-color-primary);
+}
+
+.sources-panel__group-editing {
+  flex: none;
+  color: var(--rf-color-primary);
+  font-size: var(--rf-font-size-sm);
+  font-weight: var(--rf-font-weight-medium);
+}
+
+.sources-panel__group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--rf-space-1);
+  padding-inline-start: calc(var(--rf-space-2) + 16px);
 }
 
 .sources-panel__group-meta > span + span::before {

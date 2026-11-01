@@ -13,7 +13,8 @@
     "keep": "Keep",
     "warning": "Probe warning",
     "stale": "The file changed or is gone since it was read.",
-    "reprobe": "Read it again"
+    "reprobe": "Read it again",
+    "menu": "Source actions"
   },
   "probe": {
     "one": "Reading {name}…",
@@ -28,7 +29,8 @@
       "strict": "strict match",
       "standard": "standard match",
       "loose": "loose match"
-    }
+    },
+    "editing": "Editing"
   },
   "errors": {
     "probeFailed": "The files could not be read",
