@@ -755,7 +755,60 @@ Two fresh `xhigh` reviews of the merged branch (44de4b0). R1 covered logic, data
 
 ### Fix round — FC (tracks, scans, language)
 
-(Written by FC.)
+2026-11-01. Checked in headless Chromium against `scripts/dev-server.py --port 8750` with the
+pinned FFmpeg, light and dark, 1440 × 900, 1280 × 800 and 390 × 844.
+
+1. **The bulk selection follows the tracks** (R1-m3). Tracks have no ids and every patch clones
+   the job, so the list compares each step's tracks as JSON (`followSelection` in
+   `tracks/ops.ts`): a reorder (the same tracks in another order; equal tracks keep their order
+   among themselves) carries each selected place to the track's new place; a step that changes
+   metadata only (the external file's own language, name and flags count as metadata), or the
+   settings of one track, keeps the places; anything else (an add, a remove, *Reload from preset
+   rules*, *Apply* of the defaults, an undo of these) clears the selection. R1's script now
+   sets *Commentary* on the selected AAC track after it changed place with the AC-3 output of
+   the same stream.
+2. **One track has no selection** (R2-3): the selection column and bar are shown from two
+   output tracks on.
+3. **The toolbar wraps** (R2-6): the output tracks' actions go below the title when they do not
+   fit beside it, and wrap among themselves; a label never breaks. At 1280 × 800 the Subtitles
+   tab shows the title on one line and the five buttons on the next line; at 390 the panel does
+   not scroll sideways (302 px wide, 302 px of content).
+4. **Focus** (R2-1). `ScanControl` moves the focus between *Measure* / *Count* and *Cancel* as
+   they replace each other, only when it holds the focus. A control that goes away while it
+   holds the focus (the measured bitrate or the counted events replace it) emits `leave`, and the
+   table focuses the row's toggle; *Measure loudness* stays and keeps the focus. After *Clear
+   the selection* and after *Apply* in the bulk dialog the focus is on *Select all tracks* (the
+   bulk buttons go with the selection); *Cancel* and Escape leave it to the dialog, which returns
+   it to *Edit selected…*. A polite live region in each source table says what a finished scan
+   found ("Track 2: 49 kb/s, measured.", "Track 1: 12 events counted, 2 forced.", the three
+   loudness values, "The events of every subtitle track are counted.") or that it was
+   cancelled; a failed scan is left to its error toast. `DefaultsPreview` (FB) uses the same
+   `ScanControl`, so it gets the start / cancel hand-over; it can listen to `leave` for the
+   moment the measured value replaces the control.
+5. **The language list missing** (R2-8). When `GET /api/languages` failed (the boot reads it
+   once with the definitions and does not retry a 500), the picker says so above its list
+   ("The list of languages could not be read from the server, so no language can be chosen.",
+   the search field described by it) with *Read the list again*, which calls
+   `system.loadDefinitions()` (the only reader of the list; `system.resync` reads the system
+   and the encoders only) and puts the focus back in the search. A trigger shows the raw tag
+   with "(not named: the language list is missing)". The live count counts languages, not
+   *None*.
+6. **The encoding issue of validation** (FA's `subtitles[i].source.charset`). The encoding
+   field shows validation's issues at that path, with their fixes as buttons below it; while
+   validation reports one, the `subtitles/inspect` warnings about the encoding (`not detected`,
+   `UTF-16`) are not shown there, so the field says it once whatever FA's codes are. Before FA,
+   the field showed only the inspection's warnings (its `issues` prop replaced the validation
+   store's), so a validation error there would not have been shown at all. **A correction of
+   Task C's note** above: a job with an external text file whose encoding was not detected and
+   no `charset` does not fail in FFmpeg; it ends `done` and writes broken text (U+FFFD), as R1
+   found (R1-M1).
+7. **Nits.** The metadata line (`{language} · “{name}” · {flags}`, "und (not set)") and the
+   external file line (`SRT · 2 events · UTF-8`) are messages; the flags are joined with
+   `Intl.ListFormat`. Bitrates in the source table, the scans' announcements and the output
+   bitrate list use the locale's digit grouping (`Intl.NumberFormat`; en: `2,140 kb/s`).
+
+Not changed here: a refused language in Settings → Languages shows the server's Pydantic
+message at its field; `LanguagesSection` is not in FC's files (reported to the lead).
 
 ### Fix round — FD (chapters, tags, summary, queue)
 
