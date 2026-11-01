@@ -121,7 +121,53 @@ No server route is missing; one core change is needed (item 2).
 
 ## Task A — F-4 the group target (editor state)
 
-(placeholder: task A writes this section)
+Built in `stores/editor.ts` (the group target), `editor/group.ts` (pure helpers: per-file
+fields, derive sections, track-list changes, override merge with `test` guards), small changes
+in `stores/sources.ts` and `composables/useValidation.ts`, and the `editor.group.*` messages.
+
+**API answers checked against a real server** (2026-11-01, pinned FFmpeg, `anime-s01`, port
+8711):
+
+- `batch/resolve-run` with the default preset: 12 rows, E05 **and E11** `warning` with
+  `batch.near_match` (E11 lacks the dub: "1 track missing (eng DTS-HD MA 5.1 "English Dub")"),
+  the rest `ok`; `batch/resolve` of one file gives no `batch.near_match` (E05 alone is `ok`).
+  So the matrix of "*Edit group* on the season" has E05 ⚠ and E11 ⚠, not "the rest ✓"; the
+  real-server test checks the real answer.
+- `batch/derive` with `sections: []` returns the base unchanged, and never carries
+  `output` (a job with `container: mp4` derived into an `mkv` base keeps `mkv`): the store
+  copies the output options itself.
+- E01's audio derived (A1 Opus 5.1 448 `Japanese 5.1`, A2 AC-3 5.1 640) gives two explicit
+  rules; with the subtitles derived too, the matrix is 04's: E11 `A2 missing` (fix `replace
+  /audio_rules/1/required false`, target `template`) and `S1 relaxed` ("matched without
+  title"). After the fix E11 is `warning` with `A2 skipped`.
+- The resolved subtitles of E01 are already S1 forced and S2 default, so "S1 = Signs (forced),
+  S2 = Full (default)" through `editor.patch` changes nothing and derives nothing; the
+  real-server test makes a real subtitle edit (S2's name) to get explicit subtitle rules.
+- Overrides: `replace /subtitle_rules/0/selector/stream 4` and `replace
+  /audio_rules/1/selector/languages []` change only that row ("#4 picked by hand", "the rule
+  takes no track"); `add /job/output/naming/field_overrides/sub_title "Signal Fire"` changes
+  only that file's output name; a failed `test /job/audio/1/source_stream` gives
+  `batch.override_stale` and skips the rest of the job part.
+
+**Choices** (none changes the contract; members were added only):
+
+1. The undo document is `{template, overrides, presetId}`: undoing a preset applied to a group
+   brings the old preset back, as for a job.
+2. The shown job is always `batch/resolve` of the shown file (with its override in scope
+   `file`), not the matrix row, so it never waits for the whole group.
+3. A derive whose template changed while it was on its way (a pick, a fix, another merge) is
+   derived again on the new template, not dropped: only an undo drops an edit. Leaving a group
+   with an edit waiting sends its derive into the kept state.
+4. The per-file refusal compares the per-file fields of the job before and after the patch, so
+   any operation shape (a `replace` of the whole `/output`, a `move`) is caught.
+5. `editGroup` places the target once the shown job is resolved (the target holds a job).
+6. A failed derive: its `PendingEdit` keeps the failure; its `flush` removes it (the shown job
+   is already back, there is nothing to send again).
+7. While a group is edited, validation keeps the template fixes of the shown file's issues
+   (`applyFix` puts them into the template); `sources.select`'s failure path and `removeMany`
+   keep the shown file active and the group open when the shown file is removed.
+8. The group's id contains its representative's path: removing the representative makes a new
+   group, so the editor closes, as "the edited group is no longer in `sources.grouping`" says.
 
 ## Task B — F-13 group rows, banner, *Apply to group*, copy / paste, *Save as preset*
 

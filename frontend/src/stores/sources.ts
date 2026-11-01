@@ -242,10 +242,7 @@ export const useSourcesStore = defineStore('sources', () => {
     try {
       await editor.open(id, editor.presetId)
     } catch (error) {
-      if (activeId.value === id) {
-        const current = editor.target
-        activeId.value = current?.kind === 'job' ? current.sourceId : null
-      }
+      if (activeId.value === id) activeId.value = editor.target?.sourceId ?? null
       throw error
     }
   }
@@ -259,7 +256,9 @@ export const useSourcesStore = defineStore('sources', () => {
     const gone = new Set(ids.filter((_, index) => results[index]?.status === 'fulfilled'))
     entries.value = entries.value.filter((entry) => !gone.has(entry.id))
     const target = editor.target
-    const activeGone = activeId.value !== null && gone.has(activeId.value)
+    // While a group is edited the active source is its shown file: the editor shows another one.
+    const activeGone =
+      target?.kind !== 'group' && activeId.value !== null && gone.has(activeId.value)
     // A removed active source may still be drafting: closing drops that draft too. The draft of
     // an active source that stays (selected while the editor's source goes) must still come in.
     if (activeGone) editor.close()

@@ -19,6 +19,7 @@ function draftOnly(issue: ValidationIssue): boolean {
 
 /** The job editor applies fixes to the job and the settings; a template fix needs a group. */
 function forJob(issues: readonly ValidationIssue[]): ValidationIssue[] {
+  if (useEditorStore().target?.kind === 'group') return [...issues]
   return issues.map((issue) =>
     issue.fixes?.some((fix) => fix.target === 'template')
       ? { ...issue, fixes: issue.fixes.filter((fix) => fix.target !== 'template') }
