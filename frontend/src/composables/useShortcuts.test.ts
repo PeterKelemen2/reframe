@@ -155,6 +155,19 @@ describe('Ctrl+1…8', () => {
     press('6', { code: 'Digit6', shift: true })
     expect(ui.activeTab).toBe('summary')
   })
+
+  it("gives the focus to the selected tab's button, not to the page", async () => {
+    await mountAt()
+    const field = element(
+      '<div role="tablist"><button role="tab" data-tab="summary"></button><button role="tab" data-tab="video"></button></div><input data-target type="checkbox">',
+    )
+    field.focus()
+    press('4', { code: 'Digit4', target: field })
+    expect(document.activeElement).toBe(document.querySelector('[data-tab="video"]'))
+    // A tab that is not built takes no focus either.
+    press('2', { code: 'Digit2' })
+    expect(document.activeElement).toBe(document.querySelector('[data-tab="video"]'))
+  })
 })
 
 describe('undo and redo', () => {
@@ -228,6 +241,30 @@ describe('undo and redo', () => {
     press('o', { target })
     expect(editor.undo).not.toHaveBeenCalled()
     expect(sources.pick).not.toHaveBeenCalled()
+  })
+
+  it('acts on nothing behind an open modal dialog after a click on its text left the focus on the page', async () => {
+    await mountAt()
+    const ui = useUiStore()
+    const before = ui.activeTab
+    element('<div role="dialog" aria-modal="true"><p data-target>Text</p></div>')
+    press('z')
+    press('Enter')
+    press('5', { code: 'Digit5' })
+    press('o')
+    expect(editor.undo).not.toHaveBeenCalled()
+    expect(addCurrent).not.toHaveBeenCalled()
+    expect(ui.activeTab).toBe(before)
+    expect(sources.pick).not.toHaveBeenCalled()
+  })
+
+  it('works again while the last modal closes: a picked preset leaves its list fading out', async () => {
+    await mountAt()
+    element(
+      '<div data-target role="dialog" aria-modal="true" class="p-popover p-anchored-overlay-leave-active"></div>',
+    )
+    press('5', { code: 'Digit5' })
+    expect(useUiStore().activeTab).toBe('audio')
   })
 })
 
