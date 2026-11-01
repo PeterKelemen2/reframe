@@ -110,7 +110,12 @@ class DefaultsPreviewRequest(BaseModel):
     subtitle_defaults: SubtitleDefaults
     source_ids: list[str]
     container: Container | None = None
-    """The output container the codec rules check against; ``null``: a new template's."""
+    """The output container the codec rules check against; ``null``: the template's, else a
+    new template's."""
+    template: JobTemplate | None = None
+    """The template that *Apply* drafts with (``jobs/explain``): the preview is that template
+    with these two defaults put in, so its explicit ``audio_rules`` and ``subtitle_rules``
+    apply as they do there. ``null``: only the two defaults."""
 
 
 class RenamedPreset(BaseModel):
@@ -218,12 +223,13 @@ async def diff(
 
 @router.post("/presets/defaults/preview")
 async def preview_defaults(
-    body: DefaultsPreviewRequest, reframe: ReframeDep, registry: SourcesDep
+    body: DefaultsPreviewRequest, reframe: ReframeDep, registry: SourcesDep, config: ConfigDep
 ) -> list[TrackDraft]:
     """What the audio and subtitle defaults do with each source, in the order of
     ``source_ids``: one decision per source track, with the reason."""
-    template = JobTemplate(
-        audio_defaults=body.audio_defaults, subtitle_defaults=body.subtitle_defaults
+    jail_template(config, body.template)
+    template = (body.template or JobTemplate()).model_copy(
+        update={"audio_defaults": body.audio_defaults, "subtitle_defaults": body.subtitle_defaults}
     )
     sources = await sources_of(reframe, registry, body.source_ids)
     return [

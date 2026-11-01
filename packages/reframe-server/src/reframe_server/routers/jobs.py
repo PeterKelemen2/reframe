@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -355,7 +356,7 @@ async def output_chapters(
     renamed and generated chapters, the container and *Create chapter markers* applied."""
     jail_job(config, body.job)
     media = await job_source(reframe, body.job)
-    return reframe.jobs.output_chapters(body.job, media)
+    return await asyncio.to_thread(reframe.jobs.output_chapters, body.job, media)
 
 
 @router.post("/jobs/chapters/export", name="export_chapters")
@@ -366,7 +367,7 @@ async def export_chapters(
     whose output gets no chapters is a 422 ``chapters.none`` problem with the reason."""
     jail_job(config, body.job)
     media = await job_source(reframe, body.job)
-    chapters = reframe.jobs.output_chapters(body.job, media)
+    chapters = await asyncio.to_thread(reframe.jobs.output_chapters, body.job, media)
     if not chapters.chapters:
         raise ProblemError(422, "chapters.none", "The output has no chapters", chapters.reason)
     named_after = body.job.output.path or body.job.source.path

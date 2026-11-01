@@ -747,7 +747,99 @@ Two fresh `xhigh` reviews of the merged branch (44de4b0). R1 covered logic, data
 
 ### Fix round — FA (core and server)
 
-(Written by FA.)
+2026-11-01, on branch `worktree-agent-a3a68a1ffe91fd0eb`. Tool behaviour: testdata/README.md
+"Subtitle encodings, tag arguments and chapter files (M6 fix round, task FA)".
+
+1. **The encoding of an external text subtitle is validated (R1-M1, L1).** Validation reads the
+   file through the one I/O interface it has, `FileSystemView`, which gains
+   `text_charset(path) -> TextCharset | None` (`None`: not a regular file, or unreadable).
+   `LocalFileSystem` reads it with the same detection as `subtitles/inspect`
+   (`reframe.textfile.read_charset`: a byte order mark, else valid UTF-8 in the first 16 MiB, and
+   whether the text is ASCII only), and keeps the answer per path, device, inode, size, mtime and
+   ctime (256 files), so a file is read again only when it changes and an edit's validation
+   costs a `stat`. It never blocks: `open_regular` opens with `O_NONBLOCK` and refuses anything
+   but a regular file. Validation stays in its worker thread; no ffprobe runs (the encoding needs
+   none). The new rule `charsets` (area `subtitles`) gives errors at
+   `subtitles[i].source.charset`, for copy, convert and burn alike:
+   - `subtitle.charset_unknown`: no encoding chosen and the file is not UTF-8. FFmpeg copies its
+     bytes into the output (U+FFFD on screen, the job `done`), or stops with exit 69 when it
+     decodes (convert, burn, MP4).
+   - `subtitle.utf16`: a UTF-16 (or UTF-32) file, whatever encoding is chosen (FFmpeg loses the
+     lines or letters, or garbles them; UTF-32 it cannot open), or a UTF-16 / UTF-32 / UCS
+     encoding chosen for any file (other characters, events lost, exit 0).
+   - `subtitle.charset_mismatch`: UTF-8 chosen for a file that is not UTF-8 (exit 69 at the first
+     letter that is not ASCII), or another encoding chosen for a UTF-8 file that has letters that
+     are not ASCII (events lost or garbled, exit 0). An ASCII-only file passes with any encoding.
+
+   Fixes: *Read it as UTF-8 (as detected)* (`charset` → `null`) only where the file is UTF-8,
+   and *Remove this subtitle track*. No encoding is offered for a file that was not detected: any
+   one would be a guess. **No "convert to UTF-8" fix**: no FFmpeg option reads a UTF-16 subtitle
+   file right (checked), a fix is a patch of the job and cannot write a file, and the builder is
+   pure and cannot read one; a UTF-8 copy written by the runner before the encode would be a new
+   plan step, not a fix-round change. The message says to save the file as UTF-8.
+   `subtitles/inspect` keeps its warnings (`subtitle.charset_unknown`, `subtitle.utf16` at
+   `charset`): they describe the file; the job's errors describe what the job would write.
+2. **Tag template errors are validation errors (R2-M1, R1-m5).** One function,
+   `command.metadata.tag_template_issues`, gives `jobs/tags` and the new rule `tags` (area
+   `metadata`) the same issues: `naming.template_syntax`, `naming.unknown_variable` (with its
+   "did you mean" fixes), `naming.bad_format_spec`, errors at `tags.<name>`; a preset's tag
+   templates are checked too (`template_rule`, fixes on the template). The run-time failures
+   become errors too, on the rendered value: `metadata.nul_character` at `tags.<name>` (fix:
+   *Remove the NUL characters* when the template has them), also for a track name at
+   `<track>.metadata.name` and an external file's `subtitles[i].source.name`; and
+   `metadata.tag_too_long` at `tags.<name>` above **3000 characters**. The limit: Linux takes
+   131 071 bytes in one argument (checked); 3000 characters are at most 12 000 bytes; the
+   longest snapshot command is 1 667 characters, and with all eight tags at the limit 25 821,
+   below the 32 767 of a Windows command line. 3000 characters hold a long plot summary.
+3. **`presets/defaults/preview` takes the template (R1-M2, server part; the contract with FB).**
+   `DefaultsPreviewRequest.template: JobTemplate | null`. With it, each source's preview is
+   `jobs.explain(source, template with the request's audio_defaults and subtitle_defaults put
+   in, container)`; the template's naming folder passes the write jail as in `jobs/explain` (a
+   row of the jail sweep). Without it nothing changes. `API_VERSION` stays 1 (an optional field).
+   The 06 route table says so.
+4. **S6 minors.** s1: a number of more than nine digits in an OGM or XML time or chapter number
+   is a bad line (422 `chapters.invalid`), and a long value in a message is cut. s2:
+   `chapters/import` of a FIFO is a 422 `chapters.unreadable` at once; `subtitles/inspect` already
+   answered a FIFO at once (404 `probe.not_a_file`, its stat check; now also its encoding read
+   goes through `open_regular`). s3: OGM lines end only at CR LF, CR or LF (as mkvmerge); a file
+   that is not UTF-8 is read as **Windows-1252** where every byte is defined there, else Latin-1,
+   and the warning names which (CP1252 is Latin-1 plus letters and punctuation where Latin-1 has
+   control characters, so it is the better guess for a Western file; a Central European file
+   still needs checking, as the warning says). s4: ffprobe leaves `nb_read_packets` out at 0
+   packets, so a missing count is 0 and `subtitle.no_events` fires. s5: at most **1000**
+   generated chapters (`MAX_GENERATED_CHAPTERS`, `generated_starts`, whose work is bounded by the
+   limit whatever the interval, also `1e-300`); more gives no chapters, with the reason, and the
+   error `chapters.too_many` at `chapters.generate_every` with the fix *Generate a chapter every N
+   minutes* (the shortest interval in hundredths of a minute that fits). `jobs/chapters` and the
+   export compute off the event loop. No persisted model changed (no new `Field` bound), so no
+   migration.
+5. **L2, decided: an untitled chapter stays untitled.** After a rename (and when a range cuts a
+   chapter), the names go through the FFMETADATA file, where `_renamed` wrote `Chapter N` for a
+   source chapter without a title, while copied chapters keep none. Now it writes none (no
+   `title=` line; checked: the encoded file's chapter has no title), so renaming one chapter does
+   not name the others, and the table shows *No name* before and after. *Reset names → To
+   Chapter 1, Chapter 2, …* names them on purpose. Generated chapters keep `Chapter N`: they have
+   no source title.
+6. **L3, the lead's rule.** `batch.derive_template` (a template from a job): `names: null` →
+   `chapter_name_policy: source`; names that are exactly `Chapter 1 … Chapter N` (N ≥ 1, by
+   position) → `generated`; any other names keep the base preset's own policy. A preset holds no
+   names, so renaming one chapter is no preset-level change. The frontend's twin
+   (`editor/template.ts`) is FD's, after this merge.
+7. **Nits.** Done: a CSV with quoted numbers is told from its content; OGM chapters keep the
+   file's order and a repeated number starts a new chapter (mkvmerge pairs by position, so a file
+   whose numbers do not match differs: it is malformed for both); OGM names keep their leading
+   spaces and XML names are not trimmed (both as mkvmerge; CSV still trims, as HandBrake's
+   import does); a UTF-32 byte order mark is read as UTF-32 (chapters) and named so
+   (subtitles). Not changed: XML's CR LF → LF is XML's own rule, which mkvmerge follows too. Left
+   as it is: a Matroska file named `.srt` is still 200 with `subtitle.format_mismatch` (ffprobe
+   finds subtitles in it); the warning names what it holds.
+
+**For FB, FC, FD.** FB: send `template` with the preview, the same one *Apply* sends. FC: the
+encoding issues are errors at `subtitles[i].source.charset` with the codes above; the inspect
+warning with the same code (`subtitle.charset_unknown`, `subtitle.utf16`) at `charset` is the
+same finding. FD: tag issues are errors at `tags.<name>` with the `jobs/tags` codes (and the
+same fixes), plus `metadata.nul_character` and `metadata.tag_too_long`; `chapters.too_many` at
+`chapters.generate_every`; the L3 rule above for `editor/template.ts`.
 
 ### Fix round — FB (defaults dialog, shortcuts)
 

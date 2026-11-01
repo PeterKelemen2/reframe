@@ -11,7 +11,7 @@ from reframe.definitions import ContainerDef
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import TrackMetadata
 from reframe.models.tools import ToolStatus
-from reframe.validation.common import fix, replace, warning
+from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 
@@ -92,6 +92,30 @@ def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
                 target=ctx.target,
             ),
         )
+
+
+@job_rule("metadata", "metadata.nul_character")
+def track_names(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """A track name is a process argument, which cannot hold a NUL character."""
+    names = [(f"{prefix}.name", metadata.name) for prefix, metadata in _blocks(ctx)]
+    names += [
+        (f"subtitles[{index}].source.name", track.source.name)
+        for index, track in enumerate(ctx.job.subtitles)
+        if not isinstance(track.source, int)
+    ]
+    for at, name in names:
+        if name is not None and "\0" in name:
+            yield error(
+                "metadata.nul_character",
+                at,
+                "The track name has a NUL character, which FFmpeg cannot be given: the job "
+                "would fail.",
+                fix(
+                    "Remove the NUL characters",
+                    replace(at, name.replace("\0", "")),
+                    target=ctx.target,
+                ),
+            )
 
 
 def _written_default(ctx: JobContext, container: ContainerDef, metadata: TrackMetadata) -> bool:

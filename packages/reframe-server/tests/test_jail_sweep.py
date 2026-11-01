@@ -236,6 +236,21 @@ INPUTS = [
         ),
     ),
     PathInput(
+        "presets_preview_defaults",
+        "template",
+        "output",
+        lambda _, p, __: Request(
+            "post",
+            "/api/presets/defaults/preview",
+            {
+                "audio_defaults": {},
+                "subtitle_defaults": {},
+                "source_ids": [NO_SOURCE],
+                "template": {"naming": naming(p)},
+            },
+        ),
+    ),
+    PathInput(
         "presets_import",
         "file",
         "output",

@@ -290,6 +290,14 @@ CASES: list[Case] = [
         lambda s: setattr(s.template, "naming", NamingOptions(movie_template="{title}")),
     ),
     Case(
+        "unknown variable in a tag",
+        "naming.unknown_variable",
+        "tags.title",
+        ERR,
+        lambda s: setattr(s.template.tags, "title", "{nme}"),
+        lambda s: setattr(s.template.tags, "title", "{name}"),
+    ),
+    Case(
         "fixed output folder not chosen",
         "naming.no_output_folder",
         "naming.output_folder",

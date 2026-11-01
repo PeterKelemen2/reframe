@@ -22,6 +22,7 @@ from reframe.models.tools import ToolSet
 
 # Importing a rule module registers its rules (the order of the areas is fixed by AREAS).
 from reframe.validation import audio as _audio  # noqa: F401
+from reframe.validation import chapters as _chapters  # noqa: F401
 from reframe.validation import container as _container  # noqa: F401
 from reframe.validation import dimensions as _dimensions  # noqa: F401
 from reframe.validation import encoder as _encoder  # noqa: F401
@@ -34,6 +35,7 @@ from reframe.validation import output as _output  # noqa: F401
 from reframe.validation import range as _range  # noqa: F401
 from reframe.validation import source as _source  # noqa: F401
 from reframe.validation import subtitles as _subtitles  # noqa: F401
+from reframe.validation import tags as _tags  # noqa: F401
 from reframe.validation import tools as _tools  # noqa: F401
 from reframe.validation.common import error
 from reframe.validation.context import JobContext, TemplateContext

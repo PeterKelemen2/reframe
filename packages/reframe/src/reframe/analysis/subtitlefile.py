@@ -5,7 +5,6 @@ or of a type a job cannot take, is a :class:`~reframe.probe.ProbeError`."""
 from __future__ import annotations
 
 import asyncio
-import codecs
 import os
 from pathlib import Path
 from typing import Any
@@ -15,43 +14,17 @@ from reframe.command.subtitles import EXTERNAL_CODECS
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.media import SubtitleFileInfo
 from reframe.probe.ffprobe import PROBE_TIMEOUT, ProbeError, ProbeErrorKind, ProbeTool, run_json
+from reframe.textfile import ENCODING_SAMPLE, detect_charset, open_regular, read_charset
 from reframe.tools import CancelToken
 
 __all__ = ["BITMAP_CODECS", "ENCODING_SAMPLE", "detect_charset", "inspect_subtitle_file"]
 
 BITMAP_CODECS = frozenset({PGS, "dvd_subtitle", "dvb_subtitle", "xsub"})
-#: Bytes read to tell the character encoding; a subtitle file is rarely larger.
-ENCODING_SAMPLE = 16 * 2**20
-_BOMS = (
-    (codecs.BOM_UTF8, "UTF-8"),
-    (codecs.BOM_UTF16_LE, "UTF-16LE"),
-    (codecs.BOM_UTF16_BE, "UTF-16BE"),
-)
-
-
-def detect_charset(data: bytes, *, complete: bool = True) -> str | None:
-    """``UTF-8`` or ``UTF-16LE`` / ``UTF-16BE`` from a byte order mark, else ``UTF-8`` when
-    ``data`` is valid UTF-8; ``None``: not detected. ``complete`` ``False``: ``data`` is the
-    start of a longer file, so a character cut at its end does not count."""
-    for bom, name in _BOMS:
-        if data.startswith(bom):
-            return name
-    try:
-        codecs.getincrementaldecoder("utf-8")().decode(data, final=complete)
-    except UnicodeDecodeError:
-        return None
-    return "UTF-8"
-
-
-def _read_start(path: Path) -> tuple[bytes, bool]:
-    with path.open("rb") as file:
-        data = file.read(ENCODING_SAMPLE + 1)
-    return data[:ENCODING_SAMPLE], len(data) <= ENCODING_SAMPLE
 
 
 def _display_sets(path: Path) -> int | None:
     try:
-        with path.open("rb") as file:
+        with open_regular(path) as file:
             return read_display_sets(file).count
     except (OSError, SupError):
         return None
@@ -72,6 +45,9 @@ def _subtitle_stream(data: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _count(value: object) -> int | None:
+    # With -count_packets, ffprobe leaves nb_read_packets out when it read no packet.
+    if value is None:
+        return 0
     try:
         count = int(str(value))
     except ValueError:
@@ -124,10 +100,9 @@ async def inspect_subtitle_file(
     charset: str | None = None
     if not bitmap:
         try:
-            sample, complete = await asyncio.to_thread(_read_start, file)
+            charset = (await asyncio.to_thread(read_charset, file)).name
         except OSError as exc:
             return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
-        charset = detect_charset(sample, complete=complete)
         if charset is None:
             issues.append(
                 _warning(
