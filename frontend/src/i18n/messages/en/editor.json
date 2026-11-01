@@ -18,6 +18,10 @@
     "trackListPerFileDetail": "Nothing was changed. To use another track or no track in one file, pick it in the matrix.",
     "notForGroup": "Not applied to the group",
     "notForGroupDetail": "This value is set per file: the group's template cannot hold it.",
+    "nearMember": "{file}'s tracks do not match the group's",
+    "nearMemberDetail": "Nothing was changed. The group's tracks still follow the defaults, so an edit here would make the group's tracks from {file} alone, and the other files would lose the tracks it does not have. Show {representative} to edit the group's tracks.",
+    "editFailed": "An edit did not reach the group",
+    "sourceStale": "A file of the group changed on disk since it was opened: remove it from the sources and open it again.",
     "fields": {
       "range": "The range",
       "source": "The source",

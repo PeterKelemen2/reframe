@@ -16,6 +16,7 @@ import type {
   Resolution,
   TemplateSection,
 } from '@/api/types'
+import { panelItems } from '@/components/sources/panel'
 import {
   changesTrackList,
   inJob,
@@ -39,7 +40,7 @@ import {
   undoStep,
 } from '@/editor/history'
 import { latestRequest } from '@/editor/latest'
-import { applyOps, cloneJson, deepFreeze, diffJson, PatchError } from '@/editor/patch'
+import { applyOps, cloneJson, deepFreeze, diffJson, PatchError, sameJson } from '@/editor/patch'
 import { pointerOf, valueAt } from '@/editor/pointer'
 import { outputOptionsOf, templateOf } from '@/editor/template'
 
@@ -100,25 +101,36 @@ interface GroupDocument {
 /** A group's state, kept in the page while other files or groups are edited. */
 interface GroupState {
   groupId: string
+  /** Paths of the group's representative and members: they find it in a new grouping. */
+  representative: string
+  members: string[]
   document: GroupDocument
   sourceId: string
   scope: GroupScope
   history: History
-  /** +1 for each change of `document`: a derive sent before the change is sent again. */
+  /** +1 for each change of `document`: a shown job asked for before the change is asked again. */
   version: number
 }
 
-/** Edits of scope `group` on their way into the template. */
-interface DeriveBatch {
+/** A derive of `sections` of `job` into the state's template, one undo step. */
+interface Derive {
   state: GroupState
-  /** The shown job with the edits. */
   job: JobSettings
   sourceId: string
   sections: Set<TemplateSection>
+  /** The job's output options go into the template too. */
   output: boolean
   key: string | null
-  /** `endCoalescing` came while the edits waited: their step ends the run. */
+  /** `endCoalescing` came while the derive was on its way: its step ends the run. */
   endRun: boolean
+  /** An undo dropped the edits: the answer changes nothing. */
+  dropped: boolean
+  /** What goes into the same undo step. */
+  change?: (document: GroupDocument) => GroupDocument
+}
+
+/** Edits of scope `group` on their way into the template: the shown job with the edits. */
+interface DeriveBatch extends Derive {
   edit: { flush(): void; failure: string | null }
 }
 
@@ -210,6 +222,10 @@ function overriddenWith(
 function representativeOf(found: BatchGroup, sources: SourcesStore): string {
   const ids = memberIdsOf(found, sources)
   return sources.entries.find((entry) => entry.path === found.representative)?.id ?? ids[0] ?? ''
+}
+
+function memberPaths(found: BatchGroup): string[] {
+  return (found.members ?? []).map((member) => member.path)
 }
 
 /** The open sources of the group, in its order. */
@@ -333,8 +349,14 @@ export const useEditorStore = defineStore('editor', () => {
       await load(
         () => presetTemplate(preset),
         (template) => {
-          if (editedState() === state)
-            commit(state, { ...state.document, template, presetId: preset })
+          if (editedState() !== state) return
+          // The preset was just saved from this template: only its name changes, no undo step.
+          if (sameJson(template, state.document.template)) {
+            state.document = deepFreeze({ ...state.document, presetId: preset })
+            target.value = groupTarget(state, (target.value as GroupTarget).job)
+            return
+          }
+          commit(state, { ...state.document, template, presetId: preset })
         },
       )
       return
@@ -448,7 +470,7 @@ export const useEditorStore = defineStore('editor', () => {
   function endCoalescing(): void {
     history.value = endRun(history.value)
     if (waiting !== null) waiting.endRun = true
-    if (flying !== null) flying.batch.endRun = true
+    for (const batch of sent) batch.endRun = true
   }
 
   /**
@@ -461,7 +483,7 @@ export const useEditorStore = defineStore('editor', () => {
         throw new Error('editor.applyFix: a template fix needs a group target')
       }
       try {
-        patchTemplate(fix.patch)
+        await patchTemplate(fix.patch)
       } catch (error) {
         if (!(error instanceof PatchError)) throw error
         toast(text('editor.fixFailed'), text('editor.fixStale'))
@@ -538,8 +560,10 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function redo(): void {
-    if (target.value?.kind === 'group') moveGroup(redoStep, (step) => step.redo)
-    else move(redoStep(history.value), (step) => step.redo, 'after')
+    // An edit waiting for its derive has cleared the steps to redo: it is not dropped.
+    if (target.value?.kind === 'group') {
+      if (canRedo.value) moveGroup(redoStep, (step) => step.redo)
+    } else move(redoStep(history.value), (step) => step.redo, 'after')
   }
 
   /** No job. `keepLoading`: a draft on its way (another source being opened) still comes in. */
@@ -671,6 +695,11 @@ export const useEditorStore = defineStore('editor', () => {
   const resolution = shallowRef<BatchResolution | null>(null)
   /** A resolve is on its way: `resolution` may describe an older template. */
   const resolving = ref(false)
+  /**
+   * Why the newest `batch/resolve-run` failed (the problem's detail, else its title); `null`
+   * after an answer and while no group is edited. `resolution` is then the last answer.
+   */
+  const matrixError = ref<string | null>(null)
 
   function editedState(): GroupState | null {
     const current = target.value
@@ -732,7 +761,8 @@ export const useEditorStore = defineStore('editor', () => {
   let matrixAsks = 0
   let matrixTimer: ReturnType<typeof setTimeout> | undefined
 
-  async function askMatrix(client: typeof api): Promise<BatchResolution> {
+  /** Rejects with the `ApiError` of a failed request, without a toast. */
+  async function askMatrix(): Promise<BatchResolution> {
     clearTimeout(matrixTimer)
     matrixTimer = undefined
     const state = requireGroup('resolve')
@@ -753,21 +783,45 @@ export const useEditorStore = defineStore('editor', () => {
     resolving.value = true
     try {
       const answer = deepFreeze(
-        mergedResolutions(unwrap(await client.POST('/api/batch/resolve-run', { body }))),
+        mergedResolutions(unwrap(await apiQuiet.POST('/api/batch/resolve-run', { body }))),
       )
-      if (mine === matrixAsks) resolution.value = answer
+      if (mine === matrixAsks) {
+        resolution.value = answer
+        matrixError.value = null
+      }
       return answer
+    } catch (error) {
+      if (error instanceof ApiError && mine === matrixAsks) {
+        // The server's detail of a stale source is meant for a developer.
+        matrixError.value =
+          error.problem.code === 'source.stale'
+            ? text('editor.group.sourceStale')
+            : (error.problem.detail ?? error.problem.title)
+      }
+      throw error
     } finally {
       if (mine === matrixAsks) resolving.value = false
     }
+  }
+
+  function askQuietly(): void {
+    // The screens show the failure (`matrixError`).
+    askMatrix().catch((error: unknown) => {
+      if (!(error instanceof ApiError)) throw error
+    })
   }
 
   /** Asks for the matrix again; changes in one turn make one request. */
   function requestMatrix(): void {
     resolving.value = true
     clearTimeout(matrixTimer)
-    // A failure keeps the last matrix; the next change asks again.
-    matrixTimer = setTimeout(() => void askMatrix(apiQuiet).catch(() => undefined), 0)
+    matrixTimer = setTimeout(askQuietly, 0)
+  }
+
+  /** Asks for the matrix again at once (after a failure). */
+  function retryMatrix(): void {
+    requireGroup('retryMatrix')
+    askQuietly()
   }
 
   /** The document changed: the target shows it, the shown job and the matrix are asked again. */
@@ -805,73 +859,58 @@ export const useEditorStore = defineStore('editor', () => {
     clearTimeout(matrixTimer)
     resolution.value = null
     resolving.value = false
+    matrixError.value = null
     shownRow = null
   }
 
   let waiting: DeriveBatch | null = null
-  let flying: { batch: DeriveBatch; dropped: boolean } | null = null
-  let flight: Promise<void> | null = null
+  /** Batches in the derive queue, not answered yet. */
+  const sent = new Set<DeriveBatch>()
   let deriveTimer: ReturnType<typeof setTimeout> | undefined
   let failedEdit: PendingEdit | null = null
+  // Derives and template changes run one after the other, in the order they were asked for, so
+  // that a derive never writes over a change made after its edit.
+  let queue: Promise<unknown> = Promise.resolve()
+  let queued = 0
 
-  function pendingDerive(state: GroupState): boolean {
-    return waiting?.state === state || flying?.batch.state === state
+  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+    queued += 1
+    const run = queue.then(task).finally(() => {
+      queued -= 1
+    })
+    queue = run.catch(() => undefined)
+    return run
   }
 
-  /** The waiting edits go to `batch/derive`; one derive at a time, the next after it. */
+  function pendingDerive(state: GroupState): boolean {
+    return waiting?.state === state || [...sent].some((batch) => batch.state === state)
+  }
+
+  /** The waiting edits go into the derive queue. */
   function sendDerive(): void {
     clearTimeout(deriveTimer)
     deriveTimer = undefined
-    if (flight !== null || waiting === null) return
     const batch = waiting
+    if (batch === null) return
     waiting = null
-    const trip = { batch, dropped: false }
-    flying = trip
-    const version = batch.state.version
-    flight = (async () => {
+    sent.add(batch)
+    void enqueue(async () => {
       try {
-        const sections = [...batch.sections]
-        let template = await derived(
-          batch.job,
-          batch.sourceId,
-          sections,
-          batch.state.document.template,
-        )
-        if (trip.dropped) return
-        if (batch.state.version !== version) {
-          deriveAgain(batch)
-          return
-        }
-        if (batch.output && batch.job.output !== undefined) {
-          template = { ...template, output: outputOptionsOf(batch.job.output) }
-        }
-        commit(batch.state, { ...batch.state.document, template }, batch.key)
-        if (batch.endRun) endRunOf(batch.state)
-        endEdit(batch.edit)
+        await deriveInto(batch)
       } catch (error) {
         if (!(error instanceof ApiError)) throw error
-        if (trip.dropped) return
-        batch.edit.failure = error.problem.detail ?? error.problem.title
-        failedEdit = batch.edit
-        if (editedState() === batch.state && waiting === null && shownRow !== null)
-          showRow(shownRow)
+        if (!batch.dropped) batch.edit.failure = error.problem.detail ?? error.problem.title
       } finally {
-        flight = null
-        flying = null
-        if (waiting !== null && deriveTimer === undefined) sendDerive()
+        sent.delete(batch)
       }
-    })()
-  }
-
-  /** The template changed while `batch` was derived: it goes again, with any newer edits. */
-  function deriveAgain(batch: DeriveBatch): void {
-    if (waiting === null) {
-      waiting = batch
-      return
-    }
-    for (const section of batch.sections) waiting.sections.add(section)
-    waiting.output ||= batch.output
-    endEdit(batch.edit)
+      if (batch.edit.failure === null) {
+        endEdit(batch.edit)
+        return
+      }
+      failedEdit = batch.edit
+      if (editedState() === batch.state && !pendingDerive(batch.state) && shownRow !== null)
+        showRow(shownRow)
+    })
   }
 
   function endRunOf(state: GroupState): void {
@@ -890,20 +929,57 @@ export const useEditorStore = defineStore('editor', () => {
     deriveTimer = undefined
     if (waiting !== null) endEdit(waiting.edit)
     waiting = null
-    if (flying !== null) {
-      flying.dropped = true
-      endEdit(flying.batch.edit)
+    for (const batch of sent) {
+      if (batch.state !== state) continue
+      batch.dropped = true
+      endEdit(batch.edit)
     }
     if (shownRow !== null) showRow(shownRow)
     return true
   }
 
-  /** Until the edits on their way are derived. */
+  /** Until the edits on their way and everything queued before them are done. */
   async function settled(): Promise<void> {
-    if (waiting !== null && flight === null) sendDerive()
-    if (flight === null) return
-    await flight
-    return settled()
+    sendDerive()
+    await queue
+  }
+
+  /** The shown file's label in the group (`E11`), as the sources panel shows it. */
+  function labelOf(sources: SourcesStore, groupId: string, sourceId: string): string {
+    const item = panelItems(sources.entries, sources.grouping).find(
+      (found) => found.kind === 'group' && found.group.id === groupId,
+    )
+    const rows = item?.kind === 'group' ? item.rows : []
+    return rows.find((row) => row.entry.id === sourceId)?.label ?? ''
+  }
+
+  /**
+   * Refuses (a toast) a track edit of the shown file when it is not an exact member and the
+   * template has no explicit rules of that kind: the rules would be derived from this file
+   * alone, and the other files would lose the tracks it lacks.
+   */
+  function refusedNear(state: GroupState, sections: Iterable<TemplateSection>): boolean {
+    const template = state.document.template
+    const derivesRules = [...sections].some(
+      (section) =>
+        (section === 'audio' && (template.audio_rules ?? []).length === 0) ||
+        (section === 'subtitles' && (template.subtitle_rules ?? []).length === 0),
+    )
+    const found = group.value
+    const sources = sourcesStore.value
+    if (!derivesRules || found === null || sources === null) return false
+    const path = sources.entries.find((entry) => entry.id === state.sourceId)?.path
+    const member = found.members?.find((candidate) => candidate.path === path)
+    if (member === undefined || member.match === 'exact') return false
+    const file = labelOf(sources, state.groupId, state.sourceId)
+    refuse(
+      text('editor.group.nearMember', { file }),
+      text('editor.group.nearMemberDetail', {
+        file,
+        representative: labelOf(sources, state.groupId, representativeOf(found, sources)),
+      }),
+    )
+    return true
   }
 
   /** An edit of scope `group`: shown at once, derived into the template after a pause. */
@@ -917,10 +993,14 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
     const state = requireGroup('patch')
+    const { sections, output } = sectionsOf(diffJson(current.job, next))
+    if (refusedNear(state, sections)) return
     if (failedEdit !== null) {
       endEdit(failedEdit)
       failedEdit = null
     }
+    // As for a job, an edit ends what there was to redo; its step comes with the derive.
+    if (history.value.undone.length > 0) history.value = { ...history.value, undone: [] }
     if (waiting === null) {
       const edit: DeriveBatch['edit'] = reactive({
         flush: () => (edit.failure === null ? sendDerive() : endEdit(edit)),
@@ -934,11 +1014,11 @@ export const useEditorStore = defineStore('editor', () => {
         output: false,
         key,
         endRun: false,
+        dropped: false,
         edit,
       }
       beginEdit(edit)
     }
-    const { sections, output } = sectionsOf(diffJson(current.job, next))
     for (const section of sections) waiting.sections.add(section)
     waiting.output ||= output
     waiting.job = next
@@ -986,6 +1066,8 @@ export const useEditorStore = defineStore('editor', () => {
     const id = preset ?? (presets.defaultId as string)
     return {
       groupId: found.id,
+      representative: found.representative,
+      members: memberPaths(found),
       document: { template: await presetTemplate(id), overrides: {}, presetId: id },
       sourceId: representativeOf(found, sources),
       scope: 'group',
@@ -1063,34 +1145,41 @@ export const useEditorStore = defineStore('editor', () => {
     await reshow(state, state.sourceId, scope)
   }
 
-  /** A change of the group's template (a fix, the defaults dialog): one undo step. */
-  function patchTemplate(ops: JsonPatchOp[], options?: PatchOptions): void {
+  /**
+   * A change of the group's template (a fix, the defaults dialog, a paste): one undo step, after
+   * the edits and derives on their way. Ops that do not apply throw `PatchError` (or reject with
+   * it, when the change waited).
+   */
+  function patchTemplate(ops: JsonPatchOp[], options?: PatchOptions): Promise<void> {
     const state = requireGroup('patchTemplate')
-    const template = applyOps(state.document.template, ops)
-    commit(state, { ...state.document, template }, options?.coalesce ?? null)
+    const change = (): void => {
+      const template = applyOps(state.document.template, ops)
+      commit(state, { ...state.document, template }, options?.coalesce ?? null)
+    }
+    sendDerive()
+    if (queued > 0) return enqueue(async () => change())
+    change()
+    return Promise.resolve()
   }
 
   /**
-   * The `sections` of `job` derived into the state's template, with its output options when
-   * `output`; `change` adds what goes with it into the same undo step. A template changed while
-   * the derive was on its way is derived again.
+   * The derive's sections of its job into its state's template, with the job's output options
+   * when `output`: one undo step with what `change` adds. A template changed while the derive
+   * was on its way is derived again.
    */
-  async function deriveInto(
-    state: GroupState,
-    from: JobSettings,
-    sourceId: string,
-    sections: TemplateSection[],
-    output: boolean,
-    change: (document: GroupDocument) => GroupDocument = (document) => document,
-  ): Promise<void> {
-    const version = state.version
-    let template = await derived(from, sourceId, sections, state.document.template)
-    if (state.version !== version)
-      return deriveInto(state, from, sourceId, sections, output, change)
-    if (output && from.output !== undefined) {
-      template = { ...template, output: outputOptionsOf(from.output) }
+  async function deriveInto(derive: Derive): Promise<void> {
+    if (derive.dropped) return
+    const { state } = derive
+    const base = state.document.template
+    let template = await derived(derive.job, derive.sourceId, [...derive.sections], base)
+    if (derive.dropped) return
+    if (state.document.template !== base) return deriveInto(derive)
+    if (derive.output && derive.job.output !== undefined) {
+      template = { ...template, output: outputOptionsOf(derive.job.output) }
     }
-    commit(state, change({ ...state.document, template }))
+    const document = { ...state.document, template }
+    commit(state, derive.change?.(document) ?? document, derive.key)
+    if (derive.endRun) endRunOf(state)
   }
 
   /**
@@ -1113,8 +1202,18 @@ export const useEditorStore = defineStore('editor', () => {
       state = groups.get(groupId) ?? created
       groups.set(groupId, state)
     }
-    if (editedState() === state) await settled()
-    await deriveInto(state, from, sourceId, sections, false)
+    const derive: Derive = {
+      state,
+      job: from,
+      sourceId,
+      sections: new Set(sections),
+      output: false,
+      key: null,
+      endRun: false,
+      dropped: false,
+    }
+    sendDerive()
+    await enqueue(() => deriveInto(derive))
   }
 
   function changeOverride(sourceId: string, change: (ops: JsonPatchOp[]) => JsonPatchOp[]): void {
@@ -1128,12 +1227,14 @@ export const useEditorStore = defineStore('editor', () => {
   /**
    * A matrix cell picked by hand: rule `rule` of `kind` takes `stream` (an absolute stream
    * index) in this file, or no track (`null`). One undo step. Throws when the template has no
-   * explicit rule there: a hand pick cannot change the rules the defaults compile to.
+   * explicit rule there: a hand pick cannot change the rules the defaults compile to. The pick
+   * is guarded by the rule's selector: once the template changes or moves that rule, the pick
+   * is stale instead of taking a track for another rule.
    */
   function pickTrack(sourceId: string, kind: RuleKind, rule: number, stream: number | null): void {
     const template = requireGroup('pickTrack').document.template
-    const rules = kind === 'audio' ? template.audio_rules : template.subtitle_rules
-    if (rules?.[rule] === undefined) {
+    const found = (kind === 'audio' ? template.audio_rules : template.subtitle_rules)?.[rule]
+    if (found === undefined) {
       throw new Error(`editor.pickTrack: the template has no explicit ${kind} rule ${rule}`)
     }
     const selector = `/${kind}_rules/${rule}/selector`
@@ -1141,8 +1242,9 @@ export const useEditorStore = defineStore('editor', () => {
       stream === null
         ? { op: 'replace', path: `${selector}/languages`, value: [] }
         : { op: 'replace', path: `${selector}/stream`, value: stream }
+    const guard = { op: 'test', path: selector, value: found.selector } as JsonPatchOp
     changeOverride(sourceId, (ops) =>
-      ordered([...ops.filter((earlier) => !within(earlier.path, selector)), op]),
+      ordered([...ops.filter((earlier) => !within(earlier.path, selector)), guard, op]),
     )
   }
 
@@ -1239,40 +1341,122 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
     const { sections, output } = sectionsOf(diffJson(groupJob, from))
+    if (refusedNear(state, sections)) return
     const inJobPointer = `/job${pointer}`
-    await deriveInto(state, from, sourceId, sections, output, (document) =>
-      overriddenWith(
-        document,
-        sourceId,
-        withoutOps(document.overrides[sourceId] ?? [], (op) => related(op.path, inJobPointer)),
-      ),
-    )
+    const derive: Derive = {
+      state,
+      job: from,
+      sourceId,
+      sections: new Set(sections),
+      output,
+      key: null,
+      endRun: false,
+      dropped: false,
+      change: (document) =>
+        overriddenWith(
+          document,
+          sourceId,
+          withoutOps(document.overrides[sourceId] ?? [], (op) => related(op.path, inJobPointer)),
+        ),
+    }
+    await enqueue(() => deriveInto(derive))
   }
 
   /**
-   * The group resolved now, after the edits on their way: what *Add group to queue* queues.
-   * Rejects with an `ApiError` (already a toast).
+   * The group resolved now, after every edit on its way (a field's pending edit too): what
+   * *Add group to queue* queues. Rejects with an `ApiError` and shows no toast: a failed
+   * resolve (also `matrixError`), or an edit that could not reach the group.
    */
   async function resolveNow(): Promise<BatchResolution> {
     requireGroup('resolveNow')
+    flushEdits()
+    if (editing.value) {
+      await new Promise<void>((resolve) => {
+        // A field's edit that lands starts its derive: that one goes at once too.
+        const stop = watch([pendingEdits, editing], () => {
+          if (editing.value) {
+            flushEdits()
+            return
+          }
+          stop()
+          resolve()
+        })
+      })
+    }
     await settled()
-    return askMatrix(api)
+    const failure = editFailure.value
+    if (failure !== null) {
+      const title = text('editor.group.editFailed')
+      throw new ApiError(0, {
+        type: 'about:blank',
+        title,
+        detail: failure,
+        status: 0,
+        code: 'edit.failed',
+      })
+    }
+    return askMatrix()
   }
+
+  /** The group that holds a state's representative now, else the most of its members. */
+  function successorOf(state: GroupState, found: readonly BatchGroup[]): BatchGroup | undefined {
+    const shared = (candidate: BatchGroup): number =>
+      memberPaths(candidate).filter((path) => state.members.includes(path)).length
+    return (
+      found.find((candidate) => memberPaths(candidate).includes(state.representative)) ??
+      found
+        .filter((candidate) => shared(candidate) > 0)
+        .toSorted((a, b) => shared(b) - shared(a))[0]
+    )
+  }
+
+  // A group's id names its representative, so opening an earlier episode makes a new id: a
+  // kept state follows its files. Synchronous, so the edited group never looks gone.
+  watch(
+    () => sourcesStore.value?.grouping?.groups,
+    (found) => {
+      if (found === undefined) return
+      const edited = editedState()
+      const gone = [...groups.values()]
+        .filter((state) => !found.some((candidate) => candidate.id === state.groupId))
+        .toSorted((a, b) => Number(b === edited) - Number(a === edited))
+      for (const state of gone) {
+        const next = successorOf(state, found)
+        if (next === undefined || groups.has(next.id)) continue
+        groups.delete(state.groupId)
+        groups.set(next.id, state)
+        state.groupId = next.id
+        if (state === edited) target.value = { ...(target.value as GroupTarget), groupId: next.id }
+      }
+      for (const state of groups.values()) {
+        const same = found.find((candidate) => candidate.id === state.groupId)
+        if (same === undefined) continue
+        state.representative = same.representative
+        state.members = memberPaths(same)
+      }
+    },
+    { flush: 'sync' },
+  )
 
   // A member removed or added: the matrix again; the shown file gone: the representative; the
   // group gone: the editor closes.
+  let watched: GroupState | null = null
   watch(
     () => (group.value === null ? null : `${group.value.id}\n${members.value.join('\n')}`),
-    (now, before) => {
+    (now) => {
       const state = editedState()
+      // Another group edited: `editGroup` has asked for its matrix.
+      const same = state === watched
+      watched = state
       if (state === null) return
       const sources = sourcesStore.value as SourcesStore
       if (now === null) {
         close()
+        watched = null
         sources.activeId = null
         return
       }
-      if (before?.split('\n')[0] !== state.groupId) return
+      if (!same) return
       const found = group.value as BatchGroup
       if (!members.value.includes(state.sourceId)) {
         showFile(representativeOf(found, sources)).catch((error: unknown) => {
@@ -1318,6 +1502,8 @@ export const useEditorStore = defineStore('editor', () => {
     group,
     resolution,
     resolving,
+    matrixError,
+    retryMatrix,
     editGroup,
     showFile,
     setScope,

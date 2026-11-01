@@ -15,6 +15,7 @@ from reframe.batch import (
     derive_selector,
     derive_template,
     merge_template,
+    resolve,
     resolve_tracks,
 )
 from reframe.batch.derive import SECTION_FIELDS
@@ -31,6 +32,7 @@ from reframe.models import (
     JobTemplate,
     MediaSource,
     NamingOptions,
+    OutputTrackRule,
     SourceRef,
     SubtitleOutputSettings,
     SubtitleOutputTrack,
@@ -267,6 +269,11 @@ def test_a_job_without_tracks_of_a_kind() -> None:
     assert (cell.status, cell.message) == ("skipped", "the rule takes no track")
     assert [i.code for i in result.draft.issues] == []
     assert all(not d.selected for d in result.draft.decisions)
+    # Derived again on that template: still one rule, and a track added replaces it.
+    assert derive_template(job, e01, {"audio"}, base=template).audio_rules == [rule]
+    job.audio = A.example_job(e01).audio[:1]
+    (again,) = derive_template(job, e01, {"audio"}, base=template).audio_rules
+    assert again.selector.languages == ["ja"]
 
 
 def test_a_rule_made_optional_stays_optional_when_its_section_is_derived_again() -> None:
@@ -291,3 +298,50 @@ def test_a_rule_made_optional_stays_optional_when_its_section_is_derived_again()
     assert [
         r.required for r in derive_template(other, e01, {"audio"}, base=optional).audio_rules
     ] == [False]
+
+
+def test_a_rule_that_takes_no_track_in_the_shown_file_is_kept() -> None:
+    """E11 has no dub: a group edit shown on E11 must not drop the dub's rule for the season."""
+    template = A.optional_dub_template()
+    e01, e11 = A.recorded(1, 1), A.recorded(1, 11)
+    job = resolve(template, e11).job
+    assert job is not None
+    job.audio[0].bitrate = 384
+    derived = derive_template(job, e11, {"audio"}, base=template)
+    a1, a2 = derived.audio_rules
+    assert a1.settings.bitrate == 384  # type: ignore[union-attr]
+    assert a2 == template.audio_rules[1]
+    assert a2.required is False
+    resolved = resolve(derived, e01).job
+    assert resolved is not None
+    assert [track.source_stream for track in resolved.audio] == [1, 2]
+
+
+def test_a_subtitle_rule_that_takes_no_track_keeps_its_place() -> None:
+    german = OutputTrackRule(
+        selector=TrackSelector(kind="subtitle", languages=["de"]),
+        settings=SubtitleOutputSettings(),
+        required=False,
+    )
+    base = A.optional_dub_template()
+    s1, s2 = base.subtitle_rules
+    template = base.model_copy(update={"subtitle_rules": [s1, german, s2]})
+    e11 = A.recorded(1, 11)
+    job = resolve(template, e11).job
+    assert job is not None
+    job.subtitles[1].metadata.default = False
+    derived = derive_template(job, e11, {"subtitles"}, base=template)
+    assert len(derived.subtitle_rules) == 3
+    assert derived.subtitle_rules[1] == german
+    assert derived.subtitle_rules[2].metadata.default is False
+
+
+def test_a_removed_track_removes_its_rule() -> None:
+    """E01 has the dub and the user removed it: that removal is the edit."""
+    template = A.optional_dub_template()
+    e01 = A.recorded(1, 1)
+    job = resolve(template, e01).job
+    assert job is not None
+    job.audio = job.audio[:1]
+    (rule,) = derive_template(job, e01, {"audio"}, base=template).audio_rules
+    assert rule == template.audio_rules[0]

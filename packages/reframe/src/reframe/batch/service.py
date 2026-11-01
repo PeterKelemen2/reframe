@@ -233,9 +233,12 @@ class BatchService:
         if base is None:
             found = self._presets.find(job.preset_id) if job.preset_id else None
             base = found if found is not None else self._presets.default()
-        if "naming" in sections and base.naming is None:
+        own = job.output.naming
+        sets_naming = own.template is not None or own.name_source is not None
+        if "naming" in sections and base.naming is None and sets_naming:
             # A template without naming is named with Settings → Output: a naming edit starts
-            # from those options, not from the defaults (another output folder).
+            # from those options, not from the defaults (another output folder). A job without
+            # naming of its own leaves the template following the settings.
             base = base.model_copy(update={"naming": self._settings().output.naming})
         return derive_template(job, source, sections, base=base)
 
@@ -307,7 +310,8 @@ class BatchService:
             first = list(template_issues)
             if key in near:
                 first.append(_near_issue(near[key]))
-            rows.append(await self._row(chosen, found, patches.get(key), naming, first, check))
+            row, _ = await self._row(chosen, found, patches.get(key), naming, first, check)
+            rows.append(row)
         rows, batch_issues = await asyncio.to_thread(_collisions, rows)
         columns = await asyncio.to_thread(
             matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
@@ -345,13 +349,17 @@ class BatchService:
         files = {key: path for key, path, _ in keyed}
         key_of = {path: key for key, path, _ in keyed}
         rows: dict[str, Resolution] = {}
+        planned_rows: dict[str, Resolution] = {}
         for key, _path, found in keyed:
             if isinstance(found, MediaSource):
-                rows[key] = await self._row(
+                rows[key], own_path = await self._row(
                     chosen, found, patches.get(key), naming, template_issues, check
                 )
+                if not own_path:
+                    planned_rows[key] = rows[key]
         # An earlier run's output is not encoded again: it is a planned output of another file.
-        outputs = await asyncio.to_thread(_output_keys, rows)
+        # A path that a file's override chose is no plan of the preset: it is checked below.
+        outputs = await asyncio.to_thread(_output_keys, planned_rows)
         owners: dict[str, Path] = {}
         planned: dict[str, Path] = {}
         for key, (output, out_key) in outputs.items():
@@ -414,8 +422,10 @@ class BatchService:
         naming: NamingOptions,
         template_issues: Sequence[ValidationIssue],
         check: Callable[[JobSettings], None] | None = None,
-    ) -> Resolution:
-        """One file: the pure resolution, ``check`` on its job, then its name and validation."""
+    ) -> tuple[Resolution, bool]:
+        """One file: the pure resolution, ``check`` on its job, then its name and validation;
+        and whether its override chose the output path (naming then gives only the name
+        fields)."""
         languages = self._settings().languages
 
         def resolved() -> tuple[Resolution, JobSettings]:
@@ -434,9 +444,14 @@ class BatchService:
 
         resolution, resolved_job = await asyncio.to_thread(resolved)
         job, name, notes = await self._jobs.name_job(resolved_job, source, naming=naming)
+        # A resolved job has no output path, so one here is the override's.
+        chosen = resolved_job.output.path
+        if chosen is not None:
+            job.output.path = chosen
+            notes = []  # they are about the path that naming gave
         checks = await self._jobs.validate(job, source, naming=naming)
         issues = [*template_issues, *resolution.issues, *checks]
-        return resolution.model_copy(
+        row = resolution.model_copy(
             update={
                 "job": job,
                 "naming": name,
@@ -445,6 +460,7 @@ class BatchService:
                 "status": row_status(resolution.matches, issues),
             }
         )
+        return row, chosen is not None
 
     async def save_preset(
         self,
