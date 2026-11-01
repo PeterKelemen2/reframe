@@ -660,7 +660,7 @@ left before the owner can merge:
    duplicate's automatic free name; from the headless demo: the queue table's narrow Source and
    Output columns at 1440 px, Summary's issue list below the Output card, a second opened file
    not selected while another is open.
-3. **The docs reconciliation and the final checks** before a merge: the F rows say "on
-   `m4-frontend-mvp`"; the roadmap's M4; a final run of all the checks after the changes above,
-   with the full Python suite (the last full run, 2026-11-01: 7393 passed, 2 skipped, 1 failed:
-   the flaky test), `npm run test:server` and `npm run e2e`.
+3. **The docs reconciliation** before a merge: the F rows say "on `m4-frontend-mvp`"; the
+   roadmap's M4. The final checks are done (2026-11-01, run alone, on Linux): the full Python
+   suite 7395 passed, 2 skipped, 26 deselected; `npm run test:server` 38 passed; `npm run e2e`
+   14 passed; the other commands from `CLAUDE.md` clean. The two CI jobs have not run on GitHub.
