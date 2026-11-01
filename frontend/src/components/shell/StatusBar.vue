@@ -84,7 +84,7 @@ const queueSummary = computed(() => {
       <FocusSafeButton
         class="status-bar__add"
         size="small"
-        :label="t('shell.queue.add')"
+        :label="editor.target?.kind === 'group' ? t('matrix.queue.add') : t('shell.queue.add')"
         :disabled="!canAdd"
         :aria-busy="(busy && !addingAll) || undefined"
         aria-keyshortcuts="Control+Enter"

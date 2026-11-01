@@ -41,6 +41,11 @@ const sources = reactive({ entries: [] as SourceEntry[] })
 vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
 vi.mock('@/stores/validation', () => ({ useValidationStore: () => validation }))
 vi.mock('@/stores/sources', () => ({ useSourcesStore: () => sources }))
+const groupBusy = ref(false)
+const queueGroup = vi.fn<(groupId: string) => Promise<void>>(async () => {})
+vi.mock('./useQueueGroup', () => ({
+  useQueueGroup: () => ({ busy: computed(() => groupBusy.value), queueGroup }),
+}))
 
 function settings(path: string, output: string | null = `/out/${path}.mkv`): JobSettings {
   return {
@@ -115,6 +120,8 @@ beforeEach(() => {
   validation.failed = false
   validation.flush.mockReset()
   sources.entries = []
+  groupBusy.value = false
+  queueGroup.mockClear()
   server = new FakeServer()
     .on('GET /api/queue', { jobs: [] })
     .on('GET /api/power', { pending: null })
@@ -552,5 +559,39 @@ describe('start and canStart', () => {
       reason: 'start',
     })
     expect(canStart.value).toBe(true)
+  })
+})
+
+function editGroup(): void {
+  editor.target = {
+    kind: 'group',
+    groupId: 'g1',
+    sourceId: 's1',
+    // The shown file's job does not decide: the group's files are checked when queued.
+    job: settings('a', null),
+    template: {} as never,
+    presetId: null,
+    overrides: {},
+    scope: 'group',
+  }
+  issues.value = [issue('error', 'Shown job')]
+}
+
+describe('while a group is edited', () => {
+  it('adds the group to the queue, not the shown job', async () => {
+    editGroup()
+    const { canAdd, addCurrent } = actions()
+    expect(canAdd.value).toBe(true)
+    await addCurrent()
+    expect(queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
+    expect(queueBodies()).toEqual([])
+  })
+
+  it('cannot add while the group is being queued, and shows the wait', () => {
+    editGroup()
+    groupBusy.value = true
+    const { canAdd, busy } = actions()
+    expect(canAdd.value).toBe(false)
+    expect(busy.value).toBe(true)
   })
 })

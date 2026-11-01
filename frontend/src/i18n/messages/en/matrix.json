@@ -1,0 +1,72 @@
+{
+  "title": "Check group \"{name}\"",
+  "titleNoName": "Check group",
+  "files": "{n} file | {n} files",
+  "resolving": "Updating…",
+  "loading": "Resolving the group…",
+  "problemsOnly": "Problems only",
+  "noProblems": "No file has a problem.",
+  "batchIssues": "Problems of the whole group",
+  "table": "Resolution matrix",
+  "keyboard": "Tab moves through the cells; Enter opens a cell.",
+  "column": {
+    "file": "File"
+  },
+  "row": {
+    "ok": "No problems",
+    "warning": "Warnings",
+    "error": "Errors",
+    "issues": "{label}: {status}. Show the issues",
+    "unreadable": "Not resolved"
+  },
+  "match": {
+    "exact": "Exact match",
+    "relaxed": "Matched after relaxing",
+    "ambiguous": "Several candidates",
+    "missing": "No matching track",
+    "skipped": "Skipped"
+  },
+  "cell": {
+    "none": "none",
+    "picked": "Picked by hand",
+    "open": "{column}, {label}: {state}. Choose the track",
+    "video": "{column}, {label}: {state}"
+  },
+  "picker": {
+    "title": "{column} in {label}",
+    "candidate": "matches the rule",
+    "taken": "taken",
+    "noTrack": "No track",
+    "reset": "Back to the group's rule",
+    "noTracks": "This file has no track of this kind.",
+    "defaultsAudio": "This column comes from the group's audio defaults, which cannot be changed for one file. Edit the group's audio once to turn the defaults into rules that can be picked per file.",
+    "defaultsSubtitle": "This column comes from the group's subtitle defaults, which cannot be changed for one file. Edit the group's subtitles once to turn the defaults into rules that can be picked per file."
+  },
+  "issues": {
+    "title": "{label}",
+    "none": "No errors or warnings.",
+    "notes": "{n} note | {n} notes"
+  },
+  "name": {
+    "file": "File name",
+    "folder": "Folder name",
+    "edit": "Edit the name fields of {label}",
+    "title": "Name fields of {label}",
+    "hint": "An edit applies to this file only. Clear a field to use the parsed value again.",
+    "corrected": "corrected"
+  },
+  "queue": {
+    "add": "Add group to queue",
+    "queued": "Queued {n} job | Queued {n} jobs",
+    "notQueued": "{n} job was not queued | {n} jobs were not queued",
+    "notQueuedLine": "{name}: {reason}",
+    "failed": "The queue refused the job",
+    "dialog": {
+      "title": "Some files have errors",
+      "text": "{n} file of the group has errors and cannot be queued as it is: | {n} files of the group have errors and cannot be queued as they are:",
+      "valid": "Queue the valid files, skip the others",
+      "matrix": "Open matrix",
+      "cancel": "Cancel"
+    }
+  }
+}
