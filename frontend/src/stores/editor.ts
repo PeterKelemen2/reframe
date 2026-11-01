@@ -4,6 +4,8 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { api, ApiError, apiQuiet, unwrap } from '@/api/client'
 import { text } from '@/api/text'
 import type {
+  BatchGroup,
+  BatchResolution,
   FieldChange,
   Fix,
   JobDraft,
@@ -11,6 +13,7 @@ import type {
   JobTemplate,
   JsonPatchOp,
   Preset,
+  TemplateSection,
 } from '@/api/types'
 import {
   EMPTY_HISTORY,
@@ -25,6 +28,7 @@ import { latestRequest } from '@/editor/latest'
 import { applyOps, cloneJson, deepFreeze, diffJson, PatchError } from '@/editor/patch'
 import { valueAt } from '@/editor/pointer'
 import { templateOf } from '@/editor/template'
+import { notBuilt } from '@/notBuilt'
 
 import { usePresetsStore } from './presets'
 import { hasPointer, useSettingsStore } from './settings'
@@ -32,6 +36,15 @@ import { useToastStore } from './toasts'
 
 export { pathOf, pointerOf } from '@/editor/pointer'
 export { PatchError } from '@/editor/patch'
+
+/**
+ * Where an edit of a group goes: into the template (every file), or into the shown file's
+ * override (that file only).
+ */
+export type GroupScope = 'group' | 'file'
+
+/** A source track rule's kind, as the matrix's columns and `TrackMatch.kind` name it. */
+export type RuleKind = 'audio' | 'subtitle'
 
 /**
  * What the tabs edit: one job, or a batch group (a template with per-file overrides). The
@@ -42,9 +55,22 @@ export type EditorTarget =
   | {
       kind: 'group'
       groupId: string
+      /** The file the tabs show: the group's representative until another is chosen. */
+      sourceId: string
+      /**
+       * What the tabs show and edit. Scope `group`: the template resolved in `sourceId` without
+       * its override; scope `file`: that file's job with its override.
+       */
+      job: JobSettings
       template: JobTemplate
-      /** Per source id: a JSON patch on that file's job. */
+      /** The preset the template came from (the header's picker, the *modified* marker). */
+      presetId: string | null
+      /**
+       * Per source id: a JSON patch on that file's document, the template plus a member `job`
+       * (`/audio_rules/1/selector/stream`, `/job/output/naming/field_overrides/episode`).
+       */
       overrides: Record<string, JsonPatchOp[]>
+      scope: GroupScope
     }
 
 export interface PatchOptions {
@@ -434,6 +460,105 @@ export const useEditorStore = defineStore('editor', () => {
     { flush: 'sync' },
   )
 
+  /* oxlint-disable unicorn/consistent-function-scoping -- the group stubs until task A builds them */
+  /** The batch group being edited, as `sources.grouping` has it; `null` for a job. */
+  const group = computed<BatchGroup | null>(() => null)
+  /**
+   * The edited group's matrix: `batch/resolve-run` of its members with the template and the
+   * overrides, the rows of every file in episode order; the newest answer only.
+   */
+  const resolution = shallowRef<BatchResolution | null>(null)
+  /** A resolve is on its way: `resolution` may describe an older template. */
+  const resolving = ref(false)
+
+  /**
+   * Edits the group: its last state when it was edited before in this page, else a template
+   * from the editor's preset (else the default preset). The job that was open is left as it
+   * was. Rejects with the `ApiError` of a failed request (already a toast).
+   */
+  async function editGroup(groupId: string): Promise<void> {
+    notBuilt('editor.editGroup', groupId)
+  }
+
+  /** Shows another file of the group (the representative switcher). */
+  async function showFile(sourceId: string): Promise<void> {
+    notBuilt('editor.showFile', sourceId)
+  }
+
+  /** Where the next edits go. */
+  async function setScope(scope: GroupScope): Promise<void> {
+    notBuilt('editor.setScope', scope)
+  }
+
+  /** A change of the group's template (a fix, the defaults dialog): one undo step. */
+  function patchTemplate(ops: JsonPatchOp[], options?: PatchOptions): void {
+    notBuilt('editor.patchTemplate', ops, options)
+  }
+
+  /**
+   * *Apply to group* and *Paste*: `batch/derive` of the `sections` of `from` (a job of
+   * `sourceId`) into the template of the group `groupId` (edited now or before; else one from
+   * the job's preset), one undo step of that group. Rejects as `editGroup`.
+   */
+  async function mergeIntoGroup(
+    groupId: string,
+    from: JobSettings,
+    sourceId: string,
+    sections: TemplateSection[],
+  ): Promise<void> {
+    notBuilt('editor.mergeIntoGroup', groupId, from, sourceId, sections)
+  }
+
+  /**
+   * A matrix cell picked by hand: rule `rule` of `kind` takes `stream` (an absolute stream
+   * index) in this file, or no track (`null`). One undo step.
+   */
+  function pickTrack(sourceId: string, kind: RuleKind, rule: number, stream: number | null): void {
+    notBuilt('editor.pickTrack', sourceId, kind, rule, stream)
+  }
+
+  /** The cell back to the group's rule. One undo step. */
+  function resetTrack(sourceId: string, kind: RuleKind, rule: number): void {
+    notBuilt('editor.resetTrack', sourceId, kind, rule)
+  }
+
+  /**
+   * A parsed-name field of this file (`episode`, `sub_title`) corrected by hand; `null` takes
+   * the parsed value again. One undo step.
+   */
+  function setNameField(sourceId: string, field: string, value: string | null): void {
+    notBuilt('editor.setNameField', sourceId, field, value)
+  }
+
+  /** A fix of one matrix row's issue: `template`, the group; `job`, that file; `settings`. */
+  async function applyRowFix(sourceId: string, fix: Fix): Promise<void> {
+    notBuilt('editor.applyRowFix', sourceId, fix)
+  }
+
+  /** Scope `file`: the shown file's override sets the value at `path` (`audio[1].bitrate`). */
+  function overriddenAt(path: string): boolean {
+    return notBuilt('editor.overriddenAt', path)
+  }
+
+  /** *Reset to group*: the shown file takes the group's value at `path` again. One undo step. */
+  function resetToGroup(path: string): void {
+    notBuilt('editor.resetToGroup', path)
+  }
+
+  /** *Apply to whole group*: the shown file's value at `path` goes into the template. */
+  async function applyToWholeGroup(path: string): Promise<void> {
+    notBuilt('editor.applyToWholeGroup', path)
+  }
+
+  /**
+   * The group resolved now, after the edits on their way: what *Add group to queue* queues.
+   * Rejects with an `ApiError` (already a toast).
+   */
+  async function resolveNow(): Promise<BatchResolution> {
+    return notBuilt('editor.resolveNow')
+  }
+  /* oxlint-enable unicorn/consistent-function-scoping */
+
   return {
     target,
     draft,
@@ -465,5 +590,21 @@ export const useEditorStore = defineStore('editor', () => {
     endEdit,
     flushEdits,
     refreshPresetChanges,
+    group,
+    resolution,
+    resolving,
+    editGroup,
+    showFile,
+    setScope,
+    patchTemplate,
+    mergeIntoGroup,
+    pickTrack,
+    resetTrack,
+    setNameField,
+    applyRowFix,
+    overriddenAt,
+    resetToGroup,
+    applyToWholeGroup,
+    resolveNow,
   }
 })

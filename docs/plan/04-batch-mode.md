@@ -71,7 +71,9 @@ files joins it as a near member ([0040](../decisions/0040-batch-engine-and-refra
    template.
 3. **Copy / paste sections** between any files, even files in no group: right-click a file →
    **Copy audio settings**, then select other files → **Paste audio settings**. This uses the
-   same rule derivation.
+   same rule derivation. A paste goes into the open file or into a group; a file that is not
+   open is opened first, and a paste into several files that are not open is not built
+   ([0066](../decisions/0066-m7-batch-season.md) item 6).
 
 ## Track rules
 

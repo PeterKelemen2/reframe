@@ -190,6 +190,19 @@ def _no_track(kind: Literal["audio", "subtitle"]) -> OutputTrackRule:
     )
 
 
+def _kept_required(
+    rules: list[OutputTrackRule], base: Sequence[OutputTrackRule]
+) -> list[OutputTrackRule]:
+    """A derived rule that selects exactly as a rule of the base keeps that rule's
+    ``required``: a group edit derives the whole section again from one file, and must not
+    undo a rule made optional for the files that lack its track."""
+    found: list[OutputTrackRule] = []
+    for rule in rules:
+        same = next((b for b in base if b.selector == rule.selector), None)
+        found.append(rule if same is None else rule.model_copy(update={"required": same.required}))
+    return found
+
+
 def _naming(job: JobSettings, base: NamingOptions | None) -> NamingOptions | None:
     own = job.output.naming
     if own.template is None and own.name_source is None:
@@ -232,9 +245,11 @@ def derive_template(
         video.metadata = TrackMetadata()
         update["video"] = video
     if "audio" in sections:
-        update["audio_rules"] = _audio_rules(job.audio, source) or [_no_track("audio")]
+        rules = _audio_rules(job.audio, source) or [_no_track("audio")]
+        update["audio_rules"] = _kept_required(rules, template.audio_rules)
     if "subtitles" in sections:
-        update["subtitle_rules"] = _subtitle_rules(job.subtitles, source) or [_no_track("subtitle")]
+        rules = _subtitle_rules(job.subtitles, source) or [_no_track("subtitle")]
+        update["subtitle_rules"] = _kept_required(rules, template.subtitle_rules)
     if "chapters" in sections:
         update["chapters"] = ChapterOptions(
             enabled=job.chapters.enabled, generate_every=job.chapters.generate_every

@@ -267,3 +267,27 @@ def test_a_job_without_tracks_of_a_kind() -> None:
     assert (cell.status, cell.message) == ("skipped", "the rule takes no track")
     assert [i.code for i in result.draft.issues] == []
     assert all(not d.selected for d in result.draft.decisions)
+
+
+def test_a_rule_made_optional_stays_optional_when_its_section_is_derived_again() -> None:
+    e01 = A.recorded(1, 1)
+    job = A.example_job(e01)
+    first = derive_template(job, e01, {"audio"}, base=A.builtin("h265-mkv-1080p"))
+    optional = first.model_copy(
+        update={
+            "audio_rules": [
+                first.audio_rules[0],
+                first.audio_rules[1].model_copy(update={"required": False}),
+            ]
+        }
+    )
+    edited = job.model_copy(deep=True)
+    edited.audio[0].bitrate = 384
+    again = derive_template(edited, e01, {"audio"}, base=optional)
+    assert [rule.required for rule in again.audio_rules] == [True, False]
+    assert again.audio_rules[0].settings.bitrate == 384  # type: ignore[union-attr]
+    other = job.model_copy(deep=True)
+    other.audio = [other.audio[1]]  # the dub alone: its rule moved to the first place
+    assert [
+        r.required for r in derive_template(other, e01, {"audio"}, base=optional).audio_rules
+    ] == [False]

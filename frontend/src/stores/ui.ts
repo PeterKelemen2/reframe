@@ -27,7 +27,7 @@ export interface RevealRequest {
   at: number
 }
 
-/** UI state that several areas share: the editor's tab and "show me this field". */
+/** UI state that several areas share: the editor's tab, "show me this field", the matrix. */
 export const useUiStore = defineStore('ui', () => {
   const activeTab = ref<EditorTabId>('summary')
   const revealed = ref<RevealRequest | null>(null)
@@ -43,5 +43,15 @@ export const useUiStore = defineStore('ui', () => {
     if (revealed.value === request) revealed.value = null
   }
 
-  return { activeTab, revealed, reveal, revealDone }
+  /** The resolution matrix of the edited group is open. */
+  const matrixOpen = ref(false)
+  /** The file whose row the matrix scrolls to and focuses when it opens. */
+  const matrixFocus = ref<string | null>(null)
+
+  function openMatrix(focus: string | null = null): void {
+    matrixFocus.value = focus
+    matrixOpen.value = true
+  }
+
+  return { activeTab, revealed, reveal, revealDone, matrixOpen, matrixFocus, openMatrix }
 })

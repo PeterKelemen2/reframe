@@ -6,6 +6,8 @@ import { computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
+import GroupBanner from '@/components/batch/GroupBanner.vue'
+import MatrixDialog from '@/components/matrix/MatrixDialog.vue'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
 import EditorTabs from '@/components/shell/EditorTabs.vue'
 import FirstRunScreen from '@/components/shell/FirstRunScreen.vue'
@@ -16,12 +18,14 @@ import StatusBar from '@/components/shell/StatusBar.vue'
 import SourcesPanel from '@/components/sources/SourcesPanel.vue'
 import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
+import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 
 const { t } = useI18n()
 const system = useSystemStore()
 const sources = useSourcesStore()
+const editor = useEditorStore()
 
 useValidation()
 
@@ -79,6 +83,7 @@ async function open(): Promise<void> {
       >
         <SourcesPanel />
         <section class="workspace__editor" :aria-label="t('shell.workspace.tabs')">
+          <GroupBanner v-if="editor.target?.kind === 'group'" />
           <EditorTabs v-if="sources.active !== null" />
           <div v-else class="workspace__empty" data-state="empty">
             <FolderOpen class="workspace__empty-icon" :size="40" aria-hidden="true" />
@@ -106,6 +111,7 @@ async function open(): Promise<void> {
         <PreviewPanel v-model:collapsed="previewCollapsed" />
       </div>
       <StatusBar />
+      <MatrixDialog />
     </template>
   </main>
 </template>
