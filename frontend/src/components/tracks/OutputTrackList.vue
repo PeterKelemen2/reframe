@@ -20,7 +20,7 @@ import type {
 import Section from '@/components/base/Section.vue'
 import { type SourceStream, streamLabel } from '@/components/media/streams'
 import { useJobSource } from '@/components/summary/useJobSource'
-import { useDefaultsStore } from '@/stores/defaults'
+import { type DefaultsTarget, useDefaultsStore } from '@/stores/defaults'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -55,6 +55,13 @@ const addMenu = useTemplateRef<InstanceType<typeof Menu>>('addMenu')
 const reloading = ref(false)
 const defaults = useDefaultsStore()
 const title = computed(() => t('tracks.output.title'))
+const inGroup = computed(() => editor.target?.kind === 'group')
+/** Scope `file` of a group: the template's rules fix the track list, the matrix picks per file. */
+const fixedList = computed(() => editor.target?.kind === 'group' && editor.target.scope === 'file')
+const defaultsTarget = computed<DefaultsTarget>(() => {
+  const target = editor.target
+  return target?.kind === 'group' ? { kind: 'group', groupId: target.groupId } : { kind: 'job' }
+})
 
 const audioTracks = computed<readonly AudioOutputTrack[]>(() => editor.job?.audio ?? [])
 const subtitleTracks = computed<readonly SubtitleOutputTrack[]>(() => editor.job?.subtitles ?? [])
@@ -243,63 +250,73 @@ async function reload(): Promise<void> {
   <div ref="root" class="output-tracks" :data-list="list">
     <Section :title="title">
       <template #actions>
-        <Button
-          size="small"
-          data-action="add"
-          :label="t('tracks.output.add')"
-          :disabled="streams.length === 0"
-          aria-haspopup="menu"
-          :aria-controls="`${id}-add`"
-          @click="addMenu?.toggle($event)"
-        >
-          <template #icon><Plus :size="16" aria-hidden="true" /></template>
-        </Button>
+        <!-- A disabled button gets no pointer events: its wrapper's tooltip says why. -->
+        <span v-tooltip.top="fixedList ? t('tracks.output.fileScopeHelp') : undefined">
+          <Button
+            size="small"
+            data-action="add"
+            :label="t('tracks.output.add')"
+            :disabled="streams.length === 0 || fixedList"
+            aria-haspopup="menu"
+            :aria-controls="`${id}-add`"
+            @click="addMenu?.toggle($event)"
+          >
+            <template #icon><Plus :size="16" aria-hidden="true" /></template>
+          </Button>
+        </span>
         <Menu ref="addMenu" :pt="{ root: { id: `${id}-add` } }" :model="addItems" popup />
-        <Button
-          v-tooltip.top="t('tracks.output.addAllHelp')"
-          size="small"
-          severity="secondary"
-          data-action="add-all"
-          :label="t('tracks.output.addAll')"
-          :disabled="unused.length === 0"
-          @click="addAll"
-        >
-          <template #icon><ListPlus :size="16" aria-hidden="true" /></template>
-        </Button>
-        <Button
-          v-tooltip.top="t('tracks.output.reloadHelp')"
-          size="small"
-          severity="secondary"
-          data-action="reload"
-          :label="t('tracks.output.reload')"
-          :loading="reloading"
-          :disabled="editor.target?.kind !== 'job'"
-          @click="reload"
-        >
-          <template #icon><RotateCcw :size="16" aria-hidden="true" /></template>
-        </Button>
-        <Button
+        <span v-tooltip.top="fixedList ? t('tracks.output.fileScopeHelp') : undefined">
+          <Button
+            v-tooltip.top="t('tracks.output.addAllHelp')"
+            size="small"
+            severity="secondary"
+            data-action="add-all"
+            :label="t('tracks.output.addAll')"
+            :disabled="unused.length === 0 || fixedList"
+            @click="addAll"
+          >
+            <template #icon><ListPlus :size="16" aria-hidden="true" /></template>
+          </Button>
+        </span>
+        <span v-tooltip.top="inGroup ? t('tracks.output.reloadGroup') : undefined">
+          <Button
+            v-tooltip.top="t('tracks.output.reloadHelp')"
+            size="small"
+            severity="secondary"
+            data-action="reload"
+            :label="t('tracks.output.reload')"
+            :loading="reloading"
+            :disabled="inGroup"
+            @click="reload"
+          >
+            <template #icon><RotateCcw :size="16" aria-hidden="true" /></template>
+          </Button>
+        </span>
+        <span
           v-if="list === 'subtitles'"
-          v-tooltip.top="t('tracks.external.addHelp')"
-          size="small"
-          severity="secondary"
-          data-action="add-external"
-          aria-haspopup="dialog"
-          :label="t('tracks.external.add')"
-          :loading="addingExternal"
-          :disabled="editor.target?.kind !== 'job'"
-          @click="addExternal"
+          v-tooltip.top="inGroup ? t('tracks.external.addGroup') : undefined"
         >
-          <template #icon><FilePlus2 :size="16" aria-hidden="true" /></template>
-        </Button>
+          <Button
+            v-tooltip.top="t('tracks.external.addHelp')"
+            size="small"
+            severity="secondary"
+            data-action="add-external"
+            aria-haspopup="dialog"
+            :label="t('tracks.external.add')"
+            :loading="addingExternal"
+            :disabled="inGroup"
+            @click="addExternal"
+          >
+            <template #icon><FilePlus2 :size="16" aria-hidden="true" /></template>
+          </Button>
+        </span>
         <Button
           size="small"
           severity="secondary"
           data-action="defaults"
           aria-haspopup="dialog"
           :label="t('tracks.output.defaults')"
-          :disabled="editor.target?.kind !== 'job'"
-          @click="defaults.open(list, { kind: 'job' })"
+          @click="defaults.open(list, defaultsTarget)"
         >
           <template #icon><SlidersHorizontal :size="16" aria-hidden="true" /></template>
         </Button>
@@ -348,6 +365,9 @@ async function reload(): Promise<void> {
           </Button>
         </template>
       </div>
+      <p v-if="fixedList" class="output-tracks__note" data-role="file-scope">
+        {{ t('tracks.output.fileScope') }}
+      </p>
       <BulkEditDialog
         v-model:visible="bulkVisible"
         :list="list"
@@ -366,7 +386,12 @@ async function reload(): Promise<void> {
         :table-props="{ 'aria-label': title }"
         @row-reorder="onReorder"
       >
-        <Column row-reorder body-class="output-tracks__handle" header-class="output-tracks__handle">
+        <Column
+          v-if="!fixedList"
+          row-reorder
+          body-class="output-tracks__handle"
+          header-class="output-tracks__handle"
+        >
           <template #header>
             <span class="rf-sr-only">{{ t('tracks.output.dragColumn') }}</span>
           </template>
@@ -438,9 +463,15 @@ async function reload(): Promise<void> {
   white-space: nowrap;
 }
 
-.output-tracks__empty {
+.output-tracks__empty,
+.output-tracks__note {
   margin: 0;
   color: var(--rf-color-text-muted);
+}
+
+.output-tracks__note {
+  margin-bottom: var(--rf-space-2);
+  font-size: var(--rf-font-size-sm);
 }
 
 /* DataTable makes its header sticky with an inline style. */
