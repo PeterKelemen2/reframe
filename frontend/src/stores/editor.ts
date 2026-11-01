@@ -197,6 +197,37 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
+   * Drafts the open source again as a remux-only job with the job's preset (`jobs/draft-remux`:
+   * every track copied with its metadata); one undo step. `editInPlace` (default `true`) turns
+   * *Edit in place* on, also for a source that is not MKV (validation then refuses it). Rejects
+   * as `open`.
+   */
+  async function applyRemuxDraft(options?: { editInPlace?: boolean }): Promise<void> {
+    const opened = target.value
+    if (opened?.kind !== 'job') throw new Error('editor.applyRemuxDraft: no job is open')
+    const body = {
+      source_id: opened.sourceId,
+      preset_id: opened.job.preset_id ?? null,
+      edit_in_place: options?.editInPlace ?? true,
+    }
+    await load(
+      async () => deepFreeze(cloneJson(unwrap(await api.POST('/api/jobs/draft-remux', { body })))),
+      (answer) => {
+        const current = target.value
+        if (current?.kind !== 'job') return
+        const last = history.value.done.at(-1)
+        history.value = record(history.value, current.job, answer.job)
+        const step = history.value.done.at(-1)
+        if (step !== undefined && step !== last) {
+          stepDrafts.set(step, { before: draft.value, after: answer })
+        }
+        diffAtOnce = true
+        place({ ...current, job: answer.job }, answer, false)
+      },
+    )
+  }
+
+  /**
    * A queued job back into the editor: its source is opened when it is not, and made the active
    * one. Clears the history. Rejects when the source cannot be opened.
    */
@@ -421,6 +452,7 @@ export const useEditorStore = defineStore('editor', () => {
     editFailure,
     open,
     applyPreset,
+    applyRemuxDraft,
     loadJob,
     get,
     patch,

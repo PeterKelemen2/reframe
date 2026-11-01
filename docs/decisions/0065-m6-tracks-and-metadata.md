@@ -480,7 +480,99 @@ near the bottom of the window closes if the page scrolls under it.
 
 ## Task D — F-6 the job type, remux and in-place edits
 
-(Written by D.)
+Built: the Summary's **Job type** card (`components/summary/JobTypeCard.vue`, `useJobType.ts`,
+`inPlace.ts`), `editor.applyRemuxDraft`, `components/summary/useInPlaceReload.ts` (mounted once
+in `App.vue` by the lead) and the in-place line of the queue table.
+
+**What the server does** (checked 2026-11-01 against `scripts/dev-server.py --fixtures
+multitrack --output-fixtures multitrack` with the pinned FFmpeg n9.0.2 and mkvpropedit 101.0;
+`src/components/summary/jobType.server.test.ts` repeats it):
+
+- `jobs/type` for the default draft of the writable copy: `encode`, "Encode: the video is
+  encoded with x265.", blockers `the video is encoded`, `audio track 1 (AC-3) is encoded`.
+  `jobs/draft-remux {edit_in_place: true}` of that MKV gives the output path = the source and
+  `metadata_edit` ("Metadata edit: only the track metadata changes, so mkvpropedit edits
+  multitrack.mkv in place, in seconds."); changed flags stay `metadata_edit`; a removed audio
+  track is `remux` with "… It cannot be edited in place: the audio tracks are not the source's
+  audio tracks in source order." and `inplace.not_possible` (fix "Write a new file (multitrack
+  (1).mkv)") plus `output.same_as_source`; MP4 is `remux` with two blockers (the container, a
+  subtitle MP4 cannot copy). The media root's copy: the first blocker is "multitrack.mkv is in a
+  folder that this server may only read", also for an encode; its remux draft already carries
+  `inplace.not_allowed` with the fix "Write a new file in <output root>", which sets
+  `<output root>/multitrack.mkv`: there the file exists, and validation then says
+  `output.renamed` (info).
+- **The core sets `edit_in_place` for any source** in `remux_job`; only the path and container
+  change is MKV-only. A remux draft of an MP4 with `edit_in_place: true` is therefore an
+  `inplace.not_possible` error.
+- After an in-place job ends `done`, the queue snapshot keeps `plan.job_type`
+  `metadata_edit` and `output_path` = the source, and **`GET /api/sources/{id}` gives the
+  edited file at once** (200, not a 409 `source.stale`): the runner's uncached re-probe replaces
+  the source the service knows. So `sources.reload` is enough; no probe task is needed.
+- **M6 demo 4**: flags only (audio 1 default off, audio 2 default on, subtitle 2 forced) →
+  `metadata_edit`; from *Add to queue* and *Start* in the browser the job ran 0.076 s
+  (`started_at` 16:52:57.399596 → `finished_at` 16:52:57.475584; 0.074 s and 0.083 s in the
+  other runs), the source was read again and the Audio tab's source table showed *Default* on
+  track 2 instead of track 1.
+
+**Choices.**
+
+1. **A card, not a line of the Output card**, second in the grid (beside Source on a wide
+   screen): the type as a badge (Encode neutral, Remux info, Metadata edit ok colour) with the
+   server's reason as it is; then *Edit in place*; then what is in its way; then *Remux only*.
+   06 §F-6 said "the job type line"; the plan is updated in this commit.
+2. **When it asks**: `jobs/type` with the whole job (nearly every part counts: tracks,
+   chapters, tags, container, the switch), at once for a new job and when the card mounts (the
+   tabs are mounted only while shown, so coming back to Summary after edits on other tabs asks
+   at once), 250 ms after the last edit, through `latestRequest` (only the newest answer). The
+   last answer stays with *Updating…* while a newer one is on its way; another job's answer is
+   cleared at once. A refused request shows "The job type cannot be found: <problem title>".
+3. **The blockers** (`in_place_blockers`, all of them) show whenever there are any, with the
+   switch on or off ("Edit in place is not possible because: …"): the issue names only the
+   first ("(and 1 more)"). With none and the switch off, the card says that only metadata
+   changes and that Edit in place would change the file in seconds.
+4. **The switch** writes only `/output/edit_in_place` (one undo step each way). A path that is
+   not the source is left to the server's `inplace.output_ignored` and its fixes (*Edit
+   <source>* / *Write a new file*), so the switch never moves the user's path. Its `Field` is
+   the reveal target of `output.edit_in_place` but lists no issues itself; the card lists the
+   in-place issues (`inplace.*`, and any other at `output.edit_in_place`, such as
+   `tool.mkvpropedit_missing`) through `IssueList` with their fix buttons, and marks the switch
+   invalid on an error. The Issues card still lists them too.
+5. **The plain notice** ("The source file itself is changed: <path>. No new file is written,
+   so the output name and folder are not used.") shows while the switch is on *and* the answer
+   is `metadata_edit`, so it goes at once when the switch is turned off, before the next answer.
+6. **Remux only** calls `editor.applyRemuxDraft({ editInPlace })` with the job's preset (one
+   undo step that also brings the earlier draft back, as `applyPreset`). `editInPlace` is true
+   only for a Matroska source that is not WebM (`isMatroska`, the core's `is_matroska_source`
+   rule), because of the core's behaviour above. A writable-ness check is not made: in web mode
+   a source in a read-only folder gets `inplace.not_allowed` with the server's fix (decision
+   item 5). A refused draft is the API client's toast; the job stays.
+7. **After an in-place edit** (`useInPlaceReload`, for the lead's `App.vue`): when a job with
+   `settings.output.edit_in_place` that has run (`started_at`) enters an ended state, the open
+   source with that path is read again (`sources.reload`). Every ended state counts, not only
+   `done`: a cancelled or interrupted edit may already have written the file (0034, R4-7), and
+   reading an unchanged file gives the same source back, a changed and unchecked one a 409 that
+   the panel shows as changed. Ends that came before the window's first read of the queue do
+   not count; a job first seen already ended after it (another window ran it) does; a retry
+   counts again; the server's times arriving after the end do not.
+8. **The queue table** shows an in-place job's target as "Source, edited in place" (pen icon;
+   the tooltip names the source path: "mkvpropedit changes … itself: no new file is
+   written."), never the output path, which such a job does not write.
+
+**Checked** in headless Chromium (Playwright 1.64.1, 1440 × 1000 and 390 × 844) against
+`scripts/dev-server.py --port 8771 --fixtures multitrack,text-subs --output-fixtures
+multitrack,chapters` with the pinned FFmpeg, light and dark, a fresh server home for each run.
+The flags (and in a second step a language) were changed through the editor store with
+`page.evaluate`, since the tracks' metadata block is task C's; everything else through the UI.
+For this check only, `useInPlaceReload()` was added to `App.vue` in the build and taken out
+again (not committed). Every in-place edit went to `<server home>/output/multitrack.mkv` (the
+script refused any other path). Three edits 80 ms apart sent one `jobs/type` request. A second
+opened file is not selected (M4's recorded limit), so the check selected it in the sources panel.
+
+Tests: `useJobType.test.ts` (6), `JobTypeCard.test.ts` (13), `useInPlaceReload.test.ts` (9),
+`inPlace.test.ts` (2), `stores/editor.test.ts` (6 for `applyRemuxDraft`), `QueueTable.test.ts`
+(1), `SummaryTab.test.ts` (the card in the grid), `jobType.server.test.ts` (3, real server).
+44 mutations, each failed its test file (two survived the first run: an equivalent mutant,
+replaced, and a queue test whose output path was the source, strengthened).
 
 ## Task E — F-10 the defaults dialog and its live preview
 

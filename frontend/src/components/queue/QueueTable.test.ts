@@ -315,6 +315,26 @@ describe('the queue table', () => {
     expect(wrapper.emitted('openLog')?.[0]).toEqual(['a', button('a', '[data-action="log"]')])
   })
 
+  it('shows an in-place job’s target as its source edited in place, not as an output file', async () => {
+    // The output path an in-place edit does not use (validation warns about it).
+    const inPlace = job('a', 'waiting')
+    inPlace.settings = {
+      ...inPlace.settings,
+      output: { path: '/out/a.mkv', edit_in_place: true },
+    } as JobSettings
+    queue.jobs = [inPlace, job('b', 'waiting')]
+    await mountTable()
+    const target = row('a').querySelector<HTMLElement>('[data-field="output"]')!
+    expect(target.textContent?.trim()).toBe('Source, edited in place')
+    target.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.p-tooltip')?.textContent).toBe(
+        'mkvpropedit changes /media/a.mkv itself: no new file is written.',
+      ),
+    )
+    expect(row('b').querySelector('[data-field="output"]')?.textContent?.trim()).toBe('b.mkv')
+  })
+
   it('shows the error and the issues of a failed job under its row', async () => {
     queue.jobs = [
       job('a', 'failed', {

@@ -9,6 +9,7 @@ import LoginScreen from '@/components/shell/LoginScreen.vue'
 import NavRail from '@/components/shell/NavRail.vue'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
 import FileBrowserDialog from '@/components/sources/FileBrowserDialog.vue'
+import { useInPlaceReload } from '@/components/summary/useInPlaceReload'
 import { useShortcuts } from '@/composables/useShortcuts'
 import { useTheme } from '@/composables/useTheme'
 import { platform } from '@/platform'
@@ -21,6 +22,7 @@ const queue = useQueueStore()
 // The first call starts following the theme and density saved in the server's settings.
 useTheme()
 useShortcuts()
+useInPlaceReload()
 
 watch(
   () => queue.overallProgress,

@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  FilePenLine,
   FolderOpen,
   ListVideo,
   LoaderCircle,
@@ -348,7 +349,17 @@ async function move(index: number, to: number): Promise<void> {
       <Column :header="t('queue.columns.output')" body-class="queue-table__name">
         <template #body="{ data }">
           <span
-            v-if="outputPath(data.job)"
+            v-if="data.job.settings.output?.edit_in_place"
+            v-tooltip.top="t('queue.table.inPlaceTip', { path: data.job.settings.source.path })"
+            class="queue-table__in-place"
+            data-field="output"
+            data-in-place
+          >
+            <FilePenLine :size="14" aria-hidden="true" />
+            {{ t('queue.table.inPlace') }}
+          </span>
+          <span
+            v-else-if="outputPath(data.job)"
             v-tooltip.top="outputPath(data.job)"
             data-field="output"
             dir="ltr"
@@ -529,6 +540,16 @@ async function move(index: number, to: number): Promise<void> {
 .queue-table :deep(.queue-table__name) {
   max-width: 16rem;
   overflow-wrap: anywhere;
+}
+
+.queue-table__in-place {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+}
+
+.queue-table__in-place svg {
+  flex: none;
 }
 
 .queue-table :deep(.queue-table__progress) {
