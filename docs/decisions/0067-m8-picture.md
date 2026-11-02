@@ -109,7 +109,47 @@ pinned FFmpeg n9.0.2 and the fixtures `letterbox`, `hdr10`, `hdr10-4k`, `multitr
 
 ## Task A — F-7 the preview panel, `FrameViewer`, `SplitCompare`
 
-(Task A writes this section.)
+- **Store members added** (the contract's members are as the skeleton has them): `sought` (the
+  frame of the last seek), `seeking`, `seekNote` (why a seek shows no frame: the server's note or
+  the problem's title), `renderNotes` (the render's notes), `panelOpen` (set by `PreviewPanel`
+  from its `collapsed` model; `false` when it unmounts) and `imageFailed(frame): boolean`.
+- **When the output frame is out of date.** Its key is the current frame's key and the job's
+  `source`, `dimensions`, `filters`, `video` and `subtitles` (what the server's output graph
+  reads); an audio, chapter or naming edit keeps the frame. A new frame, view mode, opened panel
+  or job asks at once; an edit 250 ms after the last one.
+- **An image that does not load** (a link expires after 300 s) asks again once per frame shown:
+  a strip image reloads the strip (one request for all thumbnails), the seek frame is asked for
+  again, the output frame is rendered again. A second failure of the same frame shows "The frame
+  could not be loaded."; choosing another frame or seeking allows a new attempt, so a link that
+  never loads cannot ask in a loop.
+- **The tab and the view mode.** `PreviewPanel` keeps the view the user chose on a tab without
+  its own view (item 5) and shows it again there; a view chosen on Dimensions or Filters is not
+  remembered.
+- **The arrow keys** (item 6) are left alone when another handler took them (`defaultPrevented`),
+  with a modifier key, in a text field, on a slider (`role="slider"`, `input[type=range]`, the
+  split slider) and on or inside an element with `data-crop-handle` (task B's handles).
+- **Sizes.** *Fit* is the panel's width, at most 60 % of the window's height; 100 % and 200 %
+  are 1 and 2 CSS pixels per picture pixel (output pixels in the Output, Split and Side views).
+  The overlay layer is the picture box itself (`aspect-ratio` of the frame), so a percentage of
+  the layer is the same percentage of the source picture; `preview.pointer` is the pointer in
+  source pixels.
+- **`SplitCompare`** draws `before` in an SVG whose view box is the cropped and turned source
+  (the crop from `geometry.crop`, then `filter_rotation` clockwise, then the horizontal flip),
+  stretched to the output's box, so both halves show the same picture area. Without a geometry
+  (the crop store's stub) the source is shown whole. The split is a native range input over the
+  picture (arrow keys, Home, End). An image that fails emits `failed`.
+- **Checked on the real server** (pinned FFmpeg n9.0.2, `scripts/dev-server.py`): 10 `letterbox`
+  frames without a `count` in the request; a seek to 99 s on `letterbox` is a `422` with the title
+  "No frame of letterbox.mkv could be made: FFmpeg gave no picture at this time (after the last
+  frame?)" (a single timestamp without a picture fails the task; 0033 §2), shown under the seek
+  field; a custom filter FFmpeg cannot use gives no output frame and its reason; a render of
+  `hdr10-4k` without tone mapping repeats the source's HDR note and adds "The output stays HDR:
+  …" (shown once each); an aborted strip request of `hdr10-4k` (cold cache) is cancelled on the
+  server (`GET /api/tasks` lists the `frames` task as `cancelled`).
+- **Not built**: a time field in `h:mm:ss` (the seek field takes seconds), previous / next
+  buttons (the strip and the arrow keys do it), wheel or pinch zoom.
+- **Plan box**: 06 §F-7's `FrameViewer` box needs task B's drag handles in the overlay layer; it
+  is left for the lead.
 
 ## Task B — F-7 the Dimensions tab, the crop store, the crop overlay
 
