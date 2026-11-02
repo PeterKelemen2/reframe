@@ -42,7 +42,7 @@ export function numberedChapterName(n: number): string {
   return `Chapter ${n}`
 }
 
-function generatedNames(names: readonly string[]): boolean {
+export function generatedNames(names: readonly string[]): boolean {
   return names.length > 0 && names.every((name, index) => name === numberedChapterName(index + 1))
 }
 
@@ -61,6 +61,12 @@ function namingOf(
     options.episode_template = template
   }
   if (source !== null) options.name_source = source
+  return options
+}
+
+/** The job's output options: its output without the path, the name and the in-place switch. */
+export function outputOptionsOf(output: NonNullable<JobSettings['output']>): JobTemplate['output'] {
+  const { path: _path, naming: _naming, edit_in_place: _inPlace, ...options } = output
   return options
 }
 
@@ -83,10 +89,7 @@ export function templateOf(
     ...base
   } = preset
   const template: JobTemplate = { ...base, ...dimensionsOf(job, base) }
-  if (job.output !== undefined) {
-    const { path: _path, naming: _naming, edit_in_place: _inPlace, ...output } = job.output
-    template.output = output
-  }
+  if (job.output !== undefined) template.output = outputOptionsOf(job.output)
   if (job.filters !== undefined) template.filters = job.filters
   if (job.video !== undefined) template.video = { ...job.video, metadata: base.video?.metadata }
   if (job.chapters !== undefined) {

@@ -6,7 +6,11 @@
   },
   "field": {
     "help": "About {label}",
-    "overridden": "Differs from the group"
+    "overridden": "Differs from the group",
+    "overrideMenu": "{label} differs from the group",
+    "resetToGroup": "Reset to group",
+    "applyToGroup": "Apply to whole group",
+    "perFile": "Set per file: the group's template cannot hold it."
   },
   "role": {
     "main": "Main",

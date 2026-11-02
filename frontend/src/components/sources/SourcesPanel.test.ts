@@ -1,10 +1,19 @@
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { computed } from 'vue'
 
-import type { MediaSource, Schemas, SourceEntry } from '@/api/types'
+import { configureClient } from '@/api/client'
+import { FakeServer } from '@/api/testing/fakes'
+import type { JobSettings, MediaSource, Schemas, SourceEntry } from '@/api/types'
+import { clipboard } from '@/components/batch/clipboard'
 import { mountShell } from '@/components/shell/testing'
+import { sampleJob, samplePreset } from '@/editor/testing/samples'
 import { platform } from '@/platform'
+import { type EditorTarget, useEditorStore } from '@/stores/editor'
+import { templateOfPreset } from '@/stores/presets'
 import { useSourcesStore } from '@/stores/sources'
+import { useToastStore } from '@/stores/toasts'
+import { useUiStore } from '@/stores/ui'
 
 import SourcesPanel from './SourcesPanel.vue'
 
@@ -58,7 +67,20 @@ const grouping: Schemas['BatchGrouping'] = {
   issues: [],
 }
 
+const queue = vi.hoisted(() => ({ queueGroup: vi.fn<(id: string) => Promise<void>>() }))
+vi.mock('@/composables/useQueueGroup', () => ({
+  useQueueGroup: () => ({ busy: computed(() => false), queueGroup: queue.queueGroup }),
+}))
+
 const mounted: { unmount(): void }[] = []
+let server: FakeServer
+
+beforeEach(() => {
+  server = new FakeServer()
+  configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
+  queue.queueGroup.mockReset().mockResolvedValue()
+  clipboard.value = null
+})
 
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
@@ -66,22 +88,34 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function mountPanel(state: (sources: ReturnType<typeof useSourcesStore>) => void = () => {}) {
+async function mountPanel(
+  state: (
+    sources: ReturnType<typeof useSourcesStore>,
+    editor: ReturnType<typeof useEditorStore>,
+  ) => void = () => {},
+) {
   let store: ReturnType<typeof useSourcesStore> | undefined
+  let editorStore: ReturnType<typeof useEditorStore> | undefined
   const result = await mountShell(SourcesPanel, {
     setup: () => {
       store = useSourcesStore()
-      state(store)
+      editorStore = useEditorStore()
+      state(store, editorStore)
     },
   })
   mounted.push(result.wrapper)
-  if (store === undefined) throw new Error('no store')
+  if (store === undefined || editorStore === undefined) throw new Error('no store')
   const sources = store
+  const editor = editorStore
   return {
     wrapper: result.wrapper,
     sources,
+    editor,
     select: vi.spyOn(sources, 'select').mockResolvedValue(),
     removeMany: vi.spyOn(sources, 'removeMany').mockResolvedValue(),
+    showFile: vi.spyOn(editor, 'showFile').mockResolvedValue(),
+    editGroup: vi.spyOn(editor, 'editGroup').mockResolvedValue(),
+    mergeIntoGroup: vi.spyOn(editor, 'mergeIntoGroup').mockResolvedValue(),
   }
 }
 
@@ -175,6 +209,14 @@ describe('the sources panel', () => {
     expect($$('[data-field="difference"]').map(text)).toEqual([
       '1 extra track (eng AC-3 2.0 "Commentary")',
     ])
+  })
+
+  it('names a group by its name and its lines, without its buttons or members', async () => {
+    await mountPanel(editing)
+    expect(referenced(groupItem(), 'aria-labelledby')).toBe(
+      'Show S01 Editing 3 files standard match 1 near match',
+    )
+    expect($('.sources-panel__group-name')?.title).toBe('Show S01')
   })
 
   it('collapses and expands a group with a click and with the arrow keys', async () => {
@@ -335,5 +377,236 @@ describe('the sources panel', () => {
     $('[data-action="reprobe"]')?.click()
     await flushPromises()
     expect(open).toHaveBeenCalledExactlyOnceWith(['/m/gone.mkv'], { select: false })
+  })
+})
+
+const TEMPLATE = templateOfPreset(samplePreset())
+
+function editing(
+  sources: ReturnType<typeof useSourcesStore>,
+  editor: ReturnType<typeof useEditorStore>,
+): void {
+  withShow(sources)
+  sources.activeId = 'Show.S01E01.mkv'
+  editor.target = {
+    kind: 'group',
+    groupId: 'g1',
+    sourceId: 'Show.S01E01.mkv',
+    job: sampleJob(),
+    template: TEMPLATE,
+    presetId: null,
+    overrides: {},
+    scope: 'group',
+  }
+}
+
+function jobOf(id: string): JobSettings {
+  const job = sampleJob()
+  job.source = { path: `/m/${id}`, fingerprint: null }
+  return job
+}
+
+function openJob(id: string) {
+  return (
+    sources: ReturnType<typeof useSourcesStore>,
+    editor: ReturnType<typeof useEditorStore>,
+  ) => {
+    withShow(sources)
+    sources.activeId = id
+    editor.target = { kind: 'job', sourceId: id, job: jobOf(id) }
+  }
+}
+
+const menuItems = () => $$('.p-contextmenu [role="menuitem"]')
+const menuItem = (label: string) =>
+  menuItems().find((found) => found.getAttribute('aria-label') === label) as HTMLElement
+
+async function menuKey(name: string, code: string): Promise<void> {
+  const list = $('.p-contextmenu [role="menubar"]') as HTMLElement
+  list.focus()
+  list.dispatchEvent(new KeyboardEvent('keydown', { key: name, code, bubbles: true }))
+  await flushPromises()
+}
+
+async function rightClick(element: HTMLElement): Promise<void> {
+  element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  await flushPromises()
+}
+
+async function choose(label: string): Promise<void> {
+  menuItem(label).querySelector<HTMLElement>('.p-contextmenu-item-content')?.click()
+  await flushPromises()
+}
+
+describe('a batch group in the sources panel', () => {
+  it('marks the edited group, and shows its members in the group rather than as jobs', async () => {
+    const { select, showFile } = await mountPanel(editing)
+    expect(groupItem().getAttribute('aria-current')).toBe('true')
+    expect(text(groupItem().querySelector('[data-field="editing"]'))).toBe('Editing')
+    item('Show.S01E05.mkv').click()
+    await flushPromises()
+    item('Show.S01E02.mkv').focus()
+    await key('Enter')
+    expect(showFile.mock.calls).toEqual([['Show.S01E05.mkv'], ['Show.S01E02.mkv']])
+    item('movie.mkv').click()
+    await flushPromises()
+    expect(select).toHaveBeenCalledExactlyOnceWith('movie.mkv')
+  })
+
+  it('opens a member as one job while no group is edited', async () => {
+    const { select, showFile } = await mountPanel(openJob('movie.mkv'))
+    expect(groupItem().getAttribute('aria-current')).toBeNull()
+    item('Show.S01E02.mkv').click()
+    await flushPromises()
+    expect(select).toHaveBeenCalledExactlyOnceWith('Show.S01E02.mkv')
+    expect(showFile).not.toHaveBeenCalled()
+  })
+
+  it('edits, checks and queues a group from its row', async () => {
+    const { editGroup } = await mountPanel(withShow)
+    const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
+    groupItem().querySelector<HTMLElement>('[data-action="edit-group"]')?.click()
+    await flushPromises()
+    expect(editGroup).toHaveBeenCalledExactlyOnceWith('g1')
+    groupItem().querySelector<HTMLElement>('[data-action="check-group"]')?.click()
+    await flushPromises()
+    expect(editGroup).toHaveBeenCalledTimes(2)
+    expect(openMatrix).toHaveBeenCalledOnce()
+    groupItem().querySelector<HTMLElement>('[data-action="queue-group"]')?.click()
+    await flushPromises()
+    expect(queue.queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
+    expect(groupItem().getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('checks the edited group without editing it again', async () => {
+    const { editGroup } = await mountPanel(editing)
+    const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
+    expect(groupItem().querySelector('[data-action="edit-group"]')).toBeNull()
+    groupItem().querySelector<HTMLElement>('[data-action="check-group"]')?.click()
+    await flushPromises()
+    expect(editGroup).not.toHaveBeenCalled()
+    expect(openMatrix).toHaveBeenCalledOnce()
+  })
+
+  it('opens the context menu with Shift+F10 and the context menu key, and its actions work', async () => {
+    const { editGroup } = await mountPanel(withShow)
+    groupItem().focus()
+    groupItem().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }),
+    )
+    await flushPromises()
+    expect(
+      menuItems()
+        .slice(0, 3)
+        .map((found) => found.getAttribute('aria-label')),
+    ).toEqual(['Edit group', 'Check group', 'Add group to queue'])
+    await menuKey('ArrowDown', 'ArrowDown')
+    await menuKey('Enter', 'Enter')
+    expect(editGroup).toHaveBeenCalledExactlyOnceWith('g1')
+
+    item('movie.mkv').focus()
+    await key('ContextMenu')
+    expect(menuItem('Copy audio settings')).toBeDefined()
+    await menuKey('Escape', 'Escape')
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(document.activeElement).toBe(item('movie.mkv'))
+  })
+
+  it('copies a section of the open job from its row only', async () => {
+    await mountPanel(openJob('Show.S01E01.mkv'))
+    await rightClick(item('Show.S01E02.mkv'))
+    expect(menuItem('Copy audio settings').getAttribute('aria-disabled')).toBe('true')
+    await rightClick(item('Show.S01E01.mkv'))
+    expect(menuItems().map((found) => found.getAttribute('aria-label'))).toEqual([
+      'Copy dimensions settings',
+      'Copy filters settings',
+      'Copy video settings',
+      'Copy audio settings',
+      'Copy subtitles settings',
+      'Copy chapter options',
+      'Copy tags',
+      'Copy output naming settings',
+      'Apply to group…',
+    ])
+    await choose('Copy audio settings')
+    expect(clipboard.value).toEqual({
+      from: 'job',
+      section: 'audio',
+      job: jobOf('Show.S01E01.mkv'),
+      sourceId: 'Show.S01E01.mkv',
+    })
+  })
+
+  it('copies a section of the edited group’s template from the group’s row only', async () => {
+    await mountPanel(editing)
+    await rightClick(item('Show.S01E01.mkv'))
+    expect(menuItem('Copy audio settings').getAttribute('aria-disabled')).toBe('true')
+    await rightClick(groupItem())
+    await choose('Copy subtitles settings')
+    expect(clipboard.value).toEqual({
+      from: 'group',
+      section: 'subtitles',
+      template: TEMPLATE,
+      groupId: 'g1',
+    })
+  })
+
+  it('pastes a job’s section into a group', async () => {
+    const { mergeIntoGroup } = await mountPanel(openJob('movie.mkv'))
+    await rightClick(groupItem())
+    expect(menuItems().some((found) => found.getAttribute('aria-label')?.startsWith('Paste'))).toBe(
+      false,
+    )
+    const job = jobOf('Show.S01E05.mkv')
+    clipboard.value = { from: 'job', section: 'audio', job, sourceId: 'Show.S01E05.mkv' }
+    await rightClick(groupItem())
+    await choose('Paste audio settings')
+    expect(mergeIntoGroup).toHaveBeenCalledExactlyOnceWith('g1', job, 'Show.S01E05.mkv', ['audio'])
+    expect(useToastStore().items.map((toast) => toast.summary)).toEqual([
+      'Audio pasted into Show S01',
+    ])
+  })
+
+  it('pastes a section into another file: opened first, then one undo step', async () => {
+    const { editor, select } = await mountPanel(openJob('movie.mkv'))
+    const before = jobOf('Show.S01E02.mkv')
+    select.mockImplementation(async (id) => {
+      editor.target = { kind: 'job', sourceId: id, job: before } as EditorTarget
+    })
+    const resolved = jobOf('Show.S01E02.mkv')
+    resolved.audio = [{ ...resolved.audio![0]!, encoder: 'libopus', bitrate: 448 }]
+    server
+      .on('POST /api/batch/derive', TEMPLATE)
+      .on('POST /api/batch/resolve', { rows: [{ path: '/m/x', job: resolved, status: 'ok' }] })
+    clipboard.value = {
+      from: 'job',
+      section: 'audio',
+      job: jobOf('movie.mkv'),
+      sourceId: 'movie.mkv',
+    }
+    await rightClick(item('Show.S01E02.mkv'))
+    await choose('Paste audio settings')
+    expect(select).toHaveBeenCalledExactlyOnceWith('Show.S01E02.mkv')
+    expect(editor.job?.audio).toEqual(resolved.audio)
+    expect(editor.job?.subtitles).toEqual(before.subtitles)
+    editor.undo()
+    expect(editor.job?.audio).toEqual(before.audio)
+    expect(editor.canUndo).toBe(false)
+  })
+
+  it('offers Apply to group only on the open job’s row of a group member', async () => {
+    await mountPanel(openJob('movie.mkv'))
+    await rightClick(item('movie.mkv'))
+    expect(menuItem('Apply to group…')).toBeUndefined()
+    await rightClick(item('Show.S01E02.mkv'))
+    expect(menuItem('Apply to group…')).toBeUndefined()
+
+    mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+    await mountPanel(openJob('Show.S01E02.mkv'))
+    await rightClick(item('Show.S01E02.mkv'))
+    await choose('Apply to group…')
+    expect(text($('[data-dialog="apply-to-group"] .p-dialog-title'))).toBe(
+      'Apply to group “Show S01”',
+    )
   })
 })

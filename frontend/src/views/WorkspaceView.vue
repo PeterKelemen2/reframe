@@ -6,6 +6,8 @@ import { computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
+import GroupBanner from '@/components/batch/GroupBanner.vue'
+import MatrixDialog from '@/components/matrix/MatrixDialog.vue'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
 import EditorTabs from '@/components/shell/EditorTabs.vue'
 import FirstRunScreen from '@/components/shell/FirstRunScreen.vue'
@@ -79,6 +81,7 @@ async function open(): Promise<void> {
       >
         <SourcesPanel />
         <section class="workspace__editor" :aria-label="t('shell.workspace.tabs')">
+          <GroupBanner />
           <EditorTabs v-if="sources.active !== null" />
           <div v-else class="workspace__empty" data-state="empty">
             <FolderOpen class="workspace__empty-icon" :size="40" aria-hidden="true" />
@@ -106,6 +109,7 @@ async function open(): Promise<void> {
         <PreviewPanel v-model:collapsed="previewCollapsed" />
       </div>
       <StatusBar />
+      <MatrixDialog />
     </template>
   </main>
 </template>

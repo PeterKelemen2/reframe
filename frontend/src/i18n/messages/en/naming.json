@@ -124,6 +124,8 @@
     "useDefaultFolder": "Use the naming options' folder",
     "stale": "The naming now gives {path}.",
     "updatePath": "Use this path",
-    "notApplied": "The output name was not changed"
+    "notApplied": "The output name was not changed",
+    "perFileInGroup": "The output folder, a manual name and corrected name fields are set per file: to change them for the shown file, set Edits go to This file only.",
+    "groupNaming": "The group has a template and a name source of its own: they start from the preset's naming options (else Settings → Output) and are changed here, for every file of the group."
   }
 }

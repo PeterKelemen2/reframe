@@ -481,9 +481,11 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
 ### F-4 Editor state
-- [ ] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
+- [x] `editor` store: an **EditorTarget** is either a single `JobSettings` or a group
       (`JobTemplate` + overrides). The tabs use one API for both. (M4 builds the job target;
-      the group target is typed and comes with F-13.)
+      the group target is typed and comes with F-13. It also holds the file the tabs show and
+      that file's job, and a scope: an edit goes into the template or into that file's
+      override; [0066](../decisions/0066-m7-batch-season.md) item 1.)
 - [x] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
 - [x] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
 - [x] "Modified vs preset" uses `presets/diff` (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task D").
@@ -544,8 +546,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       expandable rows for optional settings), passthru check boxes, fallback encoder, and the
       **live preview** table (`presets/defaults/preview`, debounced). In a batch group, the preview
       covers every file. From a tab, *Apply* replaces the job's tracks with what the defaults give
-      (the job keeps no defaults of its own); the batch-group case comes with F-13 (M7)
-      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), item 4 and "Task E").
+      (the job keeps no defaults of its own); in a group, *Apply* puts the defaults into the
+      template and drops its explicit rules of that kind
+      ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), item 4 and "Task E";
+      the group case [decision 0066](../decisions/0066-m7-batch-season.md) item 10 and "Task D").
 
 ### F-11 Chapters and tags tabs
 - [x] Chapter table with inline name edits, import/export, generate. Tag form with templates.
@@ -556,13 +560,14 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       popover opens on a click ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task J").
 
 ### F-13 Batch UI
-- [ ] Group rows in the sources panel. **Edit group** mode with banner and representative-file
+- [x] Group rows in the sources panel. **Edit group** mode with banner and representative-file
       switcher.
-- [ ] `ApplyToGroupDialog` (section checkboxes). Copy/paste sections from the context menu.
-- [ ] `ResolutionMatrix`: virtualised table with ✓/≈/✗ cells, a candidate picker per cell, a
+- [x] `ApplyToGroupDialog` (section checkboxes). Copy/paste sections from the context menu.
+- [x] `ResolutionMatrix`: virtualised table with ✓/≈/✗ cells, a candidate picker per cell, a
       "problems only" filter, and an editable naming column.
-- [ ] Override dots on `Field` with **Reset to group** and **Apply to whole group**.
-- [ ] Queue-group flow with the error dialog.
+- [x] Override dots on `Field` with **Reset to group** and **Apply to whole group**
+      ([decision 0066](../decisions/0066-m7-batch-season.md), "Task D").
+- [x] Queue-group flow with the error dialog.
 
 ### F-14 Queue and activity
 - [x] Queue table: drag reorder, live progress, per-job and global controls, edit-back,
@@ -595,7 +600,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   (M4 built the set-up and flow 3, in headless Chromium and Firefox, each with its own server;
   [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M". M6 built flow 1, which
   probes the job's output through the server; [decision
-  0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G".)
+  0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G". M7 built flow 2, which reads
+  the queued group through the server; [decision 0066](../decisions/0066-m7-batch-season.md),
+  "Task E".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
@@ -604,5 +611,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Template field with `{` autocomplete and variable chips (current values, click to insert).
 - [x] **Parsed name** panel: name source + reason, coloured spans over the original name,
       editable fields (per-file override).
-- [ ] Live preview (`naming/preview`, debounced). Used in Settings → Output, the preset editor,
+- [x] Live preview (`naming/preview`, debounced). Used in Settings → Output, the preset editor,
       the Summary Output card, and the batch matrix naming column.
+      (The matrix's naming column shows the names of `batch/resolve-run`, which names each file
+      with the same naming code, again after each change: [0066](../decisions/0066-m7-batch-season.md), "Task C".)

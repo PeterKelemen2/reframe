@@ -3,12 +3,19 @@ import { Check, LoaderCircle, Minus } from '@lucide/vue'
 import { computed, ref, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { AudioStream, SubtitleStream, TrackDecision } from '@/api/types'
+import type {
+  AudioStream,
+  MediaSource,
+  SubtitleStream,
+  TrackDecision,
+  TrackDraft,
+} from '@/api/types'
 import { bySeverity, SEVERITY_ICON } from '@/components/base/severity'
 import ScanControl from '@/components/media/ScanControl.vue'
 import { streamLabel, trackNumber } from '@/components/media/streams'
 import { useDefaultsStore } from '@/stores/defaults'
 import { useScansStore } from '@/stores/scans'
+import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 
 import IssueLines from './IssueLines.vue'
@@ -16,26 +23,44 @@ import { shownAtField } from './model'
 import { outputLines } from './preview'
 
 /**
- * One row per source track: what the edited defaults take or drop, and why. Only the newest
- * answer is shown.
+ * One row per source track: what the edited defaults take or drop, and why; in a group, one
+ * table per file. Only the newest answer is shown.
  */
 const { t } = useI18n()
 const defaults = useDefaultsStore()
 const scans = useScansStore()
+const sources = useSourcesStore()
 const system = useSystemStore()
 const id = useId()
 const root = useTemplateRef<HTMLElement>('root')
 
+/** One file's answer; `label` names the file in a group. */
+interface FileTable {
+  sourceId: string | null
+  label: string | null
+  source: MediaSource | null
+  draft: TrackDraft
+}
+
 const audio = computed(() => defaults.kind === 'audio')
-const decisions = computed<TrackDecision[]>(() => {
+const group = computed(() => defaults.target?.kind === 'group')
+const tables = computed<FileTable[]>(() => {
+  if (group.value) {
+    return defaults.previews.map((file) => ({
+      sourceId: file.id,
+      label: file.label,
+      source: sources.entries.find((entry) => entry.id === file.id)?.source ?? null,
+      draft: file.draft,
+    }))
+  }
   const draft = defaults.preview
-  if (draft === null) return []
-  return (audio.value ? draft.decisions : draft.subtitle_decisions) ?? []
+  return draft === null
+    ? []
+    : [{ sourceId: defaults.sourceId, label: null, source: defaults.source, draft }]
 })
-const streams = computed<(AudioStream | SubtitleStream)[]>(() =>
-  audio.value ? (defaults.source?.audio ?? []) : (defaults.source?.subtitles ?? []),
+const fileName = computed(() =>
+  group.value ? null : (defaults.source?.ref?.path?.split(/[\\/]/).at(-1) ?? null),
 )
-const fileName = computed(() => defaults.source?.ref?.path?.split(/[\\/]/).at(-1) ?? null)
 const member = computed(() => (audio.value ? 'audio_defaults' : 'subtitle_defaults'))
 /** The issues of the defaults this dialog edits; the other kind's are not editable here. */
 const own = computed(() =>
@@ -54,32 +79,38 @@ const counts = computed(() =>
     .filter(({ count }) => count > 0),
 )
 
-function streamOf(decision: TrackDecision) {
-  return streams.value.find((stream) => stream.index === decision.source_stream)
+function decisionsOf(table: FileTable): TrackDecision[] {
+  return (audio.value ? table.draft.decisions : table.draft.subtitle_decisions) ?? []
 }
 
-function sourceText(decision: TrackDecision): string {
-  const stream = streamOf(decision)
+function streamOf(table: FileTable, decision: TrackDecision) {
+  const streams: (AudioStream | SubtitleStream)[] =
+    (audio.value ? table.source?.audio : table.source?.subtitles) ?? []
+  return streams.find((stream) => stream.index === decision.source_stream)
+}
+
+function sourceText(table: FileTable, decision: TrackDecision): string {
+  const stream = streamOf(table, decision)
   return stream ? streamLabel(stream) : t('defaults.preview.unknownStream')
 }
 
-function outputs(decision: TrackDecision): string[] {
-  const stream = streamOf(decision)
+function outputs(table: FileTable, decision: TrackDecision): string[] {
+  const stream = streamOf(table, decision)
   return outputLines(decision, stream?.kind === 'audio' ? stream : undefined, system.definitions, t)
 }
 
-function measureRun(decision: TrackDecision) {
-  const sourceId = defaults.sourceId
+function measureRun(table: FileTable, decision: TrackDecision) {
+  const sourceId = table.sourceId
   return sourceId === null ? undefined : scans.running(sourceId, 'bitrate', decision.source_stream)
 }
 
-function number(decision: TrackDecision): number {
-  const stream = streamOf(decision)
+function number(table: FileTable, decision: TrackDecision): number {
+  const stream = streamOf(table, decision)
   return stream ? trackNumber(stream) : decision.source_stream
 }
 
-function measure(decision: TrackDecision): void {
-  const sourceId = defaults.sourceId
+function measure(table: FileTable, decision: TrackDecision): void {
+  const sourceId = table.sourceId
   // The scans store shows a failure as a toast, so nothing is shown here.
   if (sourceId !== null)
     void scans.measureBitrate(sourceId, decision.source_stream).catch(() => undefined)
@@ -91,12 +122,15 @@ const announcement = ref('')
  * The reason replaced the Measure button, which had the focus: the row header takes it, so the
  * focus stays in the dialog. The new answer must already be shown for the announcement.
  */
-function measured(stream: number): void {
-  root.value?.querySelector<HTMLElement>(`tr[data-stream="${stream}"] th`)?.focus()
-  const decision = decisions.value.find((each) => each.source_stream === stream)
-  if (decision !== undefined && !decision.measure) {
+function measured(index: number, stream: number): void {
+  root.value
+    ?.querySelector<HTMLElement>(`[data-table="${index}"] tr[data-stream="${stream}"] th`)
+    ?.focus()
+  const table = tables.value[index]
+  const decision = table && decisionsOf(table).find((each) => each.source_stream === stream)
+  if (table && decision && !decision.measure) {
     announcement.value = t('defaults.preview.measured', {
-      n: number(decision),
+      n: number(table, decision),
       reason: decision.reason,
     })
   }
@@ -148,84 +182,114 @@ function measured(stream: number): void {
       {{ t('defaults.preview.failed', { detail: defaults.previewFailure }) }}
     </p>
     <template v-else-if="defaults.preview !== null">
-      <p v-if="decisions.length === 0" class="defaults-preview__empty" data-state="no-tracks">
-        {{ audio ? t('defaults.preview.noAudio') : t('defaults.preview.noSubtitles') }}
-      </p>
-      <div v-else class="defaults-preview__scroll">
-        <table class="defaults-preview__table" :aria-labelledby="`${id}-title`">
-          <thead>
-            <tr>
-              <th scope="col">{{ t('defaults.preview.source') }}</th>
-              <th scope="col">{{ t('defaults.preview.selected') }}</th>
-              <th v-if="audio" scope="col">{{ t('defaults.preview.rule') }}</th>
-              <th scope="col">{{ t('defaults.preview.output') }}</th>
-              <th scope="col">{{ t('defaults.preview.reason') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="decision in decisions"
-              :key="decision.source_stream"
-              :data-stream="decision.source_stream"
-              :data-selected="decision.selected"
-            >
-              <th scope="row" class="defaults-preview__source" tabindex="-1">
-                <span>{{ sourceText(decision) }}</span
-                >{{ ' ' }}
-                <span class="defaults-preview__muted">
-                  {{ t('defaults.preview.stream', { index: decision.source_stream }) }}
-                </span>
-              </th>
-              <td class="defaults-preview__selection" data-column="selected">
-                <span class="defaults-preview__taken">
-                  <Check v-if="decision.selected" :size="14" aria-hidden="true" />
-                  <Minus v-else :size="14" aria-hidden="true" />
-                  {{
-                    decision.selected ? t('defaults.preview.taken') : t('defaults.preview.dropped')
-                  }} </span
-                >{{ ' ' }}
-                <span v-if="decision.selection" class="defaults-preview__muted">
-                  {{ decision.selection }}
-                </span>
-              </td>
-              <td v-if="audio" class="defaults-preview__rule" data-column="rule">
-                {{ decision.rule ?? '—' }}
-              </td>
-              <td data-column="output">
-                <template v-if="outputs(decision).length > 0">
-                  <span
-                    v-for="(line, index) in outputs(decision)"
-                    :key="index"
-                    class="defaults-preview__output"
-                    :class="{ 'defaults-preview__muted': index > 0 }"
-                  >
-                    {{ index > 0 ? t('defaults.preview.extra', { output: line }) : line }}
+      <div
+        v-for="(table, index) in tables"
+        :key="table.sourceId ?? index"
+        class="defaults-preview__one-file"
+        :data-table="index"
+        :data-source="table.sourceId"
+      >
+        <h3
+          v-if="table.label !== null"
+          :id="`${id}-file-${index}`"
+          class="defaults-preview__subtitle"
+        >
+          {{ table.label }}
+        </h3>
+        <p
+          v-if="decisionsOf(table).length === 0"
+          class="defaults-preview__empty"
+          data-state="no-tracks"
+        >
+          {{ audio ? t('defaults.preview.noAudio') : t('defaults.preview.noSubtitles') }}
+        </p>
+        <div v-else class="defaults-preview__scroll">
+          <table
+            class="defaults-preview__table"
+            :aria-labelledby="
+              table.label === null ? `${id}-title` : `${id}-title ${id}-file-${index}`
+            "
+          >
+            <thead>
+              <tr>
+                <th scope="col">{{ t('defaults.preview.source') }}</th>
+                <th scope="col">{{ t('defaults.preview.selected') }}</th>
+                <th v-if="audio" scope="col">{{ t('defaults.preview.rule') }}</th>
+                <th scope="col">{{ t('defaults.preview.output') }}</th>
+                <th scope="col">{{ t('defaults.preview.reason') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="decision in decisionsOf(table)"
+                :key="decision.source_stream"
+                :data-stream="decision.source_stream"
+                :data-selected="decision.selected"
+              >
+                <th scope="row" class="defaults-preview__source" tabindex="-1">
+                  <span>{{ sourceText(table, decision) }}</span
+                  >{{ ' ' }}
+                  <span class="defaults-preview__muted">
+                    {{ t('defaults.preview.stream', { index: decision.source_stream }) }}
                   </span>
-                </template>
-                <span v-else>—</span>
-              </td>
-              <td data-column="reason">
-                <span class="defaults-preview__reason">{{ decision.reason }}</span>
-                <ul v-if="(decision.notes ?? []).length > 0" class="defaults-preview__notes">
-                  <li v-for="(note, index) in decision.notes" :key="index">{{ note }}</li>
-                </ul>
-                <ScanControl
-                  v-if="decision.measure && audio"
-                  class="defaults-preview__measure"
-                  :run="measureRun(decision)"
-                  :label="t('media.scan.measure')"
-                  :start-label="t('media.scan.measureBitrate', { n: number(decision) })"
-                  :progress-label="t('media.scan.measuringBitrate', { n: number(decision) })"
-                  :cancel-label="t('media.scan.cancelBitrate', { n: number(decision) })"
-                  :help="t('defaults.preview.measureHelp')"
-                  @start="measure(decision)"
-                  @cancel="scans.cancel($event)"
-                  @leave="measured(decision.source_stream)"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </th>
+                <td class="defaults-preview__selection" data-column="selected">
+                  <span class="defaults-preview__taken">
+                    <Check v-if="decision.selected" :size="14" aria-hidden="true" />
+                    <Minus v-else :size="14" aria-hidden="true" />
+                    {{
+                      decision.selected
+                        ? t('defaults.preview.taken')
+                        : t('defaults.preview.dropped')
+                    }} </span
+                  >{{ ' ' }}
+                  <span v-if="decision.selection" class="defaults-preview__muted">
+                    {{ decision.selection }}
+                  </span>
+                </td>
+                <td v-if="audio" class="defaults-preview__rule" data-column="rule">
+                  {{ decision.rule ?? '—' }}
+                </td>
+                <td data-column="output">
+                  <template v-if="outputs(table, decision).length > 0">
+                    <span
+                      v-for="(line, lineIndex) in outputs(table, decision)"
+                      :key="lineIndex"
+                      class="defaults-preview__output"
+                      :class="{ 'defaults-preview__muted': lineIndex > 0 }"
+                    >
+                      {{ lineIndex > 0 ? t('defaults.preview.extra', { output: line }) : line }}
+                    </span>
+                  </template>
+                  <span v-else>—</span>
+                </td>
+                <td data-column="reason">
+                  <span class="defaults-preview__reason">{{ decision.reason }}</span>
+                  <ul v-if="(decision.notes ?? []).length > 0" class="defaults-preview__notes">
+                    <li v-for="(note, noteIndex) in decision.notes" :key="noteIndex">
+                      {{ note }}
+                    </li>
+                  </ul>
+                  <ScanControl
+                    v-if="decision.measure && audio"
+                    class="defaults-preview__measure"
+                    :run="measureRun(table, decision)"
+                    :label="t('media.scan.measure')"
+                    :start-label="t('media.scan.measureBitrate', { n: number(table, decision) })"
+                    :progress-label="
+                      t('media.scan.measuringBitrate', { n: number(table, decision) })
+                    "
+                    :cancel-label="t('media.scan.cancelBitrate', { n: number(table, decision) })"
+                    :help="t('defaults.preview.measureHelp')"
+                    @start="measure(table, decision)"
+                    @cancel="scans.cancel($event)"
+                    @leave="measured(index, decision.source_stream)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div v-if="unplaced.length > 0" class="defaults-preview__issues">
         <h3 class="defaults-preview__subtitle">{{ t('defaults.preview.issues') }}</h3>
@@ -417,6 +481,7 @@ function measured(stream: number): void {
   margin-top: var(--rf-space-1);
 }
 
+.defaults-preview__one-file,
 .defaults-preview__issues {
   display: grid;
   gap: var(--rf-space-2);

@@ -12,7 +12,7 @@ from collections.abc import Collection, Sequence
 from typing import Literal
 
 from reframe.batch.rules import literal_title
-from reframe.batch.selectors import candidates, describe_kind, title_regex
+from reframe.batch.selectors import candidates, describe_kind, match_rules, title_regex
 from reframe.models.batch import TemplateSection
 from reframe.models.geometry import CropSettings
 from reframe.models.job import (
@@ -190,6 +190,38 @@ def _no_track(kind: Literal["audio", "subtitle"]) -> OutputTrackRule:
     )
 
 
+def _kept_required(
+    rules: list[OutputTrackRule], base: Sequence[OutputTrackRule]
+) -> list[OutputTrackRule]:
+    """A derived rule that selects exactly as a rule of the base keeps that rule's
+    ``required``: a group edit derives the whole section again from one file, and must not
+    undo a rule made optional for the files that lack its track."""
+    found: list[OutputTrackRule] = []
+    for rule in rules:
+        same = next((b for b in base if b.selector == rule.selector), None)
+        found.append(rule if same is None else rule.model_copy(update={"required": same.required}))
+    return found
+
+
+def _with_absent(
+    rules: list[OutputTrackRule],
+    base: Sequence[OutputTrackRule],
+    source: MediaSource,
+    kind: Literal["audio", "subtitle"],
+) -> list[OutputTrackRule]:
+    """``rules`` with each base rule that takes no track in ``source``, unchanged, at its place
+    in the base: a job says nothing about a track its file lacks, so the other files keep that
+    rule. A ``languages: []`` rule only says a job had no tracks, so it is not kept."""
+    tracks = describe_kind(source.audio if kind == "audio" else source.subtitles)
+    picks, _ = match_rules(base, tracks, kind, labels=[""] * len(base), list_path="")
+    found = list(rules)
+    for pick in picks:
+        rule = base[pick.rule]
+        if not pick.tracks and rule.selector.languages != []:
+            found.insert(pick.rule, rule)
+    return found
+
+
 def _naming(job: JobSettings, base: NamingOptions | None) -> NamingOptions | None:
     own = job.output.naming
     if own.template is None and own.name_source is None:
@@ -232,9 +264,13 @@ def derive_template(
         video.metadata = TrackMetadata()
         update["video"] = video
     if "audio" in sections:
-        update["audio_rules"] = _audio_rules(job.audio, source) or [_no_track("audio")]
+        rules = _kept_required(_audio_rules(job.audio, source), template.audio_rules)
+        rules = _with_absent(rules, template.audio_rules, source, "audio")
+        update["audio_rules"] = rules or [_no_track("audio")]
     if "subtitles" in sections:
-        update["subtitle_rules"] = _subtitle_rules(job.subtitles, source) or [_no_track("subtitle")]
+        rules = _kept_required(_subtitle_rules(job.subtitles, source), template.subtitle_rules)
+        rules = _with_absent(rules, template.subtitle_rules, source, "subtitle")
+        update["subtitle_rules"] = rules or [_no_track("subtitle")]
     if "chapters" in sections:
         update["chapters"] = ChapterOptions(
             enabled=job.chapters.enabled, generate_every=job.chapters.generate_every

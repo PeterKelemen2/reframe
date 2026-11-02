@@ -11,6 +11,8 @@ import { useSourcesStore } from '@/stores/sources'
 import { useToastStore } from '@/stores/toasts'
 import { useValidationStore } from '@/stores/validation'
 
+import { useQueueGroup } from './useQueueGroup'
+
 export interface QueueActions {
   /**
    * The editor's job had no error at its last check, and nothing is in the way of adding it. A
@@ -26,7 +28,8 @@ export interface QueueActions {
   /**
    * Adds the editor's job as the screen shows it (`Ctrl+Enter`, *Add to queue*): first the
    * focused field's value and the edits on their way go into the job and the job is checked.
-   * A job that cannot be added then is a toast that says why.
+   * A job that cannot be added then is a toast that says why. While a group is edited, it is
+   * *Add group to queue* of that group.
    */
   addCurrent(): Promise<void>
   /** Drafts every open source with the editor's preset and adds those without errors. */
@@ -76,17 +79,19 @@ export function useQueueActions(): QueueActions {
   const queue = useQueueStore()
   const sources = useSourcesStore()
   const toasts = useToastStore()
+  const group = useQueueGroup()
 
   // A check or an edit on its way does not turn it off: a click on the button blurs the field
   // that was typed in, its value goes into the job, and the button must stay enabled under the
   // pointer. The add waits for them.
-  const canAdd = computed(
-    () =>
-      editor.job !== null &&
-      !editor.loading &&
-      !validation.hasErrors &&
-      Boolean(editor.job.output?.path) &&
-      !busy.value,
+  const canAdd = computed(() =>
+    editor.target?.kind === 'group'
+      ? !busy.value && !group.busy.value
+      : editor.job !== null &&
+        !editor.loading &&
+        !validation.hasErrors &&
+        Boolean(editor.job.output?.path) &&
+        !busy.value,
   )
   const canAddAll = computed(() => sources.entries.length > 0 && !busy.value)
   const canStart = computed(
@@ -189,6 +194,11 @@ export function useQueueActions(): QueueActions {
   }
 
   async function addCurrent(): Promise<void> {
+    const target = editor.target
+    if (target?.kind === 'group') {
+      if (!busy.value) await group.queueGroup(target.groupId)
+      return
+    }
     if (busy.value || editor.job === null || editor.loading) return
     busy.value = true
     try {
@@ -322,7 +332,7 @@ export function useQueueActions(): QueueActions {
     canAdd,
     canAddAll,
     canStart,
-    busy: computed(() => busy.value),
+    busy: computed(() => busy.value || group.busy.value),
     addCurrent,
     addAll,
     start,

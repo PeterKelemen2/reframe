@@ -13,8 +13,13 @@ import { useQueueActions } from './useQueueActions'
 
 // Not the key's target: after a click on a dialog's text the focus, and the target, is `<body>`.
 // A closing one (its Vue leave transition) is still in the page, but does not hold the keys.
-function modalOpen(): boolean {
-  return document.querySelector('[aria-modal="true"]:not([class*="-leave-active"])') !== null
+function topModal(): Element | undefined {
+  return [...document.querySelectorAll('[aria-modal="true"]:not([class*="-leave-active"])')].at(-1)
+}
+
+/** Picks, fixes and name corrections are made in the matrix and its popovers: undo them there. */
+function undoesInModal(modal: Element): boolean {
+  return modal.matches('.matrix-dialog, .matrix-popover')
 }
 
 /** `Digit1` … `Digit8` (and the keypad's), whatever the keyboard layout prints on the key. */
@@ -54,8 +59,12 @@ export function useShortcuts(): void {
 
   function onKeydown(event: KeyboardEvent): void {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
-    if (system.phase !== 'ready' || modalOpen()) return
+    if (system.phase !== 'ready') return
     const key = event.key.toLowerCase()
+    const undo = key === 'z' && !event.shiftKey
+    const redo = (key === 'z' && event.shiftKey) || (key === 'y' && !event.shiftKey)
+    const modal = topModal()
+    if (modal !== undefined && !((undo || redo) && undoesInModal(modal))) return
 
     if (key === 'o' && !event.shiftKey) {
       event.preventDefault()
@@ -84,8 +93,6 @@ export function useShortcuts(): void {
       if (!event.repeat) void actions.addCurrent()
       return
     }
-    const undo = key === 'z' && !event.shiftKey
-    const redo = (key === 'z' && event.shiftKey) || (key === 'y' && !event.shiftKey)
     if (!undo && !redo) return
     // Left to the browser: it undoes the typing.
     if (isTextField(event.target)) return

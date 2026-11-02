@@ -156,6 +156,35 @@ async def test_a_row_saved_in_an_output_root_has_no_folder_issue(api: Api) -> No
     assert "output.folder_required" not in [issue["code"] for issue in row["issues"]]
 
 
+@pytest.mark.parametrize("route", ["resolve", "resolve-run"])
+async def test_an_output_path_of_a_files_override(api: Api, route: str) -> None:
+    [sid] = await add_sources(api, 1)
+    inside = str(api.output / "Mine.mkv")
+    response = await api.client.post(
+        f"/api/batch/{route}",
+        json={
+            "source_ids": [sid],
+            "overrides": {sid: [{"op": "replace", "path": "/job/output/path", "value": inside}]},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    [row] = body["rows"] if route == "resolve" else body["resolutions"][0]["rows"]
+    assert row["job"]["output"]["path"] == inside
+    assert "output.folder_required" not in [issue["code"] for issue in row["issues"]]
+
+    outside = str(api.outside / "Mine.mkv")
+    response = await api.client.post(
+        f"/api/batch/{route}",
+        json={
+            "source_ids": [sid],
+            "overrides": {sid: [{"op": "replace", "path": "/job/output/path", "value": outside}]},
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "path.outside_roots"
+
+
 def outside_subtitle_if(api: Api, encoder: str) -> list[dict[str, Any]]:
     """An override that adds a subtitle outside the roots when the job encodes with
     ``encoder``."""

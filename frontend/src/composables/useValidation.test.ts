@@ -108,7 +108,10 @@ describe('useValidation', () => {
     const fetch = server.fetch
     configureClient({
       fetch: async (input, init) => {
-        if (input instanceof Request) signals.push(input.signal)
+        // Only the validations: a presets/diff may go out in between.
+        if (input instanceof Request && input.url.endsWith('/api/jobs/validate')) {
+          signals.push(input.signal)
+        }
         return fetch(input, init)
       },
     })

@@ -257,6 +257,39 @@ describe('undo and redo', () => {
     expect(sources.pick).not.toHaveBeenCalled()
   })
 
+  it('undoes and redoes in the matrix and its popovers, where picks and fixes are made', async () => {
+    await mountAt()
+    const ui = useUiStore()
+    const before = ui.activeTab
+    element('<div role="dialog" aria-modal="true" class="matrix-dialog"><p data-target>M</p></div>')
+    press('z')
+    press('Z', { shift: true })
+    press('Enter')
+    press('5', { code: 'Digit5' })
+    press('o')
+    expect(editor.undo).toHaveBeenCalledTimes(1)
+    expect(editor.redo).toHaveBeenCalledTimes(1)
+    expect(addCurrent).not.toHaveBeenCalled()
+    expect(ui.activeTab).toBe(before)
+    expect(sources.pick).not.toHaveBeenCalled()
+
+    const field = element(
+      '<div role="dialog" aria-modal="true" class="matrix-popover"><input data-target type="text"></div>',
+    )
+    press('z')
+    expect(editor.undo).toHaveBeenCalledTimes(2)
+    press('z', { target: field })
+    expect(editor.undo).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves the keys to a dialog opened over the matrix', async () => {
+    await mountAt()
+    element('<div role="dialog" aria-modal="true" class="matrix-dialog"></div>')
+    element('<div role="dialog" aria-modal="true"><p data-target>Queue?</p></div>')
+    press('z')
+    expect(editor.undo).not.toHaveBeenCalled()
+  })
+
   it('works again while the last modal closes: a picked preset leaves its list fading out', async () => {
     await mountAt()
     element(

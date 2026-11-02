@@ -10,5 +10,30 @@
     "edit": "The output name could not be updated: {reason}",
     "editLine": "its output name could not be updated: {reason}",
     "noPath": "The job has no output path."
+  },
+  "group": {
+    "perFile": "{field} is set per file",
+    "perFileDetail": "The group's template cannot hold it, so nothing was changed. Switch the scope to “This file only” to change it for the shown file.",
+    "trackListPerFile": "Tracks are added, removed and moved for the whole group",
+    "trackListPerFileDetail": "Nothing was changed. To use another track or no track in one file, pick it in the matrix.",
+    "notForGroup": "Not applied to the group",
+    "notForGroupDetail": "This value is set per file: the group's template cannot hold it.",
+    "nearMember": "{file}'s tracks do not match the group's",
+    "nearMemberDetail": "Nothing was changed. The group's tracks still follow the defaults, so an edit here would make the group's tracks from {file} alone, and the other files would lose the tracks it does not have. Show {representative} to edit the group's tracks.",
+    "editFailed": "An edit did not reach the group",
+    "sourceStale": "A file of the group changed on disk since it was opened: remove it from the sources and open it again.",
+    "fields": {
+      "range": "The range",
+      "source": "The source",
+      "outputPath": "The output path",
+      "editInPlace": "Edit in place",
+      "namingMode": "The naming mode",
+      "manualName": "A manual output name",
+      "nameFields": "A corrected name field",
+      "videoMetadata": "The video track's metadata",
+      "chapterNames": "Chapter names",
+      "preset": "The preset",
+      "externalSubtitle": "An external subtitle file"
+    }
   }
 }

@@ -1,0 +1,83 @@
+{
+  "title": "Check group “{name}”",
+  "titleNoName": "Check group",
+  "files": "{n} file | {n} files",
+  "resolving": "Updating…",
+  "loading": "Resolving the group…",
+  "failed": "The matrix could not be updated: {reason}",
+  "outdated": "The matrix below is out of date: it shows the group before the last change.",
+  "none": "There is no matrix yet.",
+  "retry": "Try again",
+  "maximize": "Maximize",
+  "restore": "Restore size",
+  "problemsOnly": "Problems only",
+  "noProblems": "No file has a problem.",
+  "batchIssues": "Problems of the whole group",
+  "table": "Resolution matrix",
+  "keyboard": "Tab moves through the cells; Enter opens a cell.",
+  "column": {
+    "file": "File"
+  },
+  "row": {
+    "ok": "No problems",
+    "warning": "Warnings",
+    "error": "Errors",
+    "issues": "{label}: {status}. Show the issues",
+    "unreadable": "Not resolved"
+  },
+  "match": {
+    "exact": "Exact match",
+    "relaxed": "Matched after relaxing",
+    "ambiguous": "Several candidates",
+    "missing": "No matching track",
+    "skipped": "Skipped"
+  },
+  "cell": {
+    "none": "none",
+    "picked": "Picked by hand",
+    "open": "{column}, {label}: {state}. Choose the track",
+    "video": "{column}, {label}: {state}, {size}"
+  },
+  "picker": {
+    "title": "{column} in {label}",
+    "candidate": "matches the rule",
+    "taken": "taken",
+    "noTrack": "No track",
+    "reset": "Back to the group's rule",
+    "noTracks": "This file has no track of this kind.",
+    "defaultsAudio": "This column comes from the group's audio defaults, which cannot be changed for one file. Edit the group's audio once to turn the defaults into rules that can be picked per file.",
+    "defaultsSubtitle": "This column comes from the group's subtitle defaults, which cannot be changed for one file. Edit the group's subtitles once to turn the defaults into rules that can be picked per file."
+  },
+  "issues": {
+    "title": "{label}",
+    "none": "No errors or warnings.",
+    "notes": "{n} note | {n} notes"
+  },
+  "name": {
+    "file": "File name",
+    "folder": "Folder name",
+    "edit": "Edit the name fields of {label}",
+    "title": "Name fields of {label}",
+    "hint": "An edit applies to this file only. Clear a field to use the parsed value again.",
+    "corrected": "corrected"
+  },
+  "queue": {
+    "add": "Add group to queue",
+    "queued": "Queued {n} job | Queued {n} jobs",
+    "addedFailed": "{n} job added to the queue; it failed | {n} jobs added to the queue; {failed} of them failed",
+    "failedLine": "{name}: {reason}",
+    "failed": "no reason given",
+    "moreFailed": "… and {n} more failed job: the queue lists it. | … and {n} more failed jobs: the queue lists them.",
+    "stale": "{n} file is queued without part of its per-file changes: they were made for an earlier version of the group (its warning in the matrix says which). | {n} files are queued without part of their per-file changes: they were made for an earlier version of the group (their warnings in the matrix say which).",
+    "changed": "{n} file of the group changed since it was opened | {n} files of the group changed since they were opened",
+    "changedHelp": "Remove it from the sources and open it again: | Remove them from the sources and open them again:",
+    "dialog": {
+      "title": "Some files have errors",
+      "text": "{n} file of the group has errors and cannot be queued as it is: | {n} files of the group have errors and cannot be queued as they are:",
+      "valid": "Queue the valid files, skip the others",
+      "matrix": "Open matrix",
+      "cancel": "Cancel",
+      "stale": "{n} of the valid files loses part of its per-file changes: they were made for an earlier version of the group. | {n} of the valid files lose part of their per-file changes: they were made for an earlier version of the group."
+    }
+  }
+}

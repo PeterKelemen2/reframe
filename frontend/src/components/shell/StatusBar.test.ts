@@ -4,6 +4,7 @@ import { computed, reactive, ref } from 'vue'
 
 import { deferred } from '@/api/testing/fakes'
 import type { JobSettings, QueueJob, Severity, ValidationIssue } from '@/api/types'
+import type { EditorTarget } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
@@ -12,7 +13,11 @@ import StatusBar from './StatusBar.vue'
 import { mountShell } from './testing'
 
 // Test doubles of the editor and validation stores and of the queue actions.
-const editor = reactive({ job: null as JobSettings | null, applyFix: vi.fn<() => Promise<void>>() })
+const editor = reactive({
+  job: null as JobSettings | null,
+  target: null as EditorTarget | null,
+  applyFix: vi.fn<() => Promise<void>>(),
+})
 const validation = reactive({
   issues: [] as ValidationIssue[],
   pending: false,
@@ -38,6 +43,7 @@ vi.mock('@/composables/useQueueActions', () => ({ useQueueActions: () => actions
 const mounted: { unmount(): void }[] = []
 
 beforeEach(() => {
+  editor.target = null
   editor.job = {
     schema_version: 1,
     source: { path: '/m/a.mkv' },
@@ -250,6 +256,14 @@ describe('the status bar', () => {
     expect(actions.addCurrent).toHaveBeenCalledTimes(1)
     expect(actions.addAll).toHaveBeenCalledTimes(1)
     expect(actions.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the add Add group to queue while a group is edited', async () => {
+    const wrapper = await mountBar()
+    expect(wrapper.find('.status-bar__add').text()).toBe('Add to queue')
+    editor.target = { kind: 'group' } as EditorTarget
+    await flushPromises()
+    expect(wrapper.find('.status-bar__add').text()).toBe('Add group to queue')
   })
 
   // A browser moves the focus of a button that turns disabled to the page.

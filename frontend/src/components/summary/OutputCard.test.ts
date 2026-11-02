@@ -8,6 +8,7 @@ import { mountBase } from '@/components/base/testing'
 import { hacksawResult, stubDom } from '@/components/naming/testing/samples'
 import { sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 import { useEditorStore } from '@/stores/editor'
+import { templateOfPreset } from '@/stores/presets'
 import { useSystemStore } from '@/stores/system'
 
 import OutputCard from './OutputCard.vue'
@@ -125,6 +126,25 @@ describe('the Output card’s container', () => {
     await flushPromises()
     expect(editor.job?.output?.path).toBe('/output/multitrack.mp4')
     expect(editor.editing).toBe(false)
+  })
+
+  it('in a group changes only the container: the server names each file', async () => {
+    const { wrapper, editor } = await mountCard()
+    editor.target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'src',
+      job: editor.job!,
+      template: templateOfPreset(samplePreset()),
+      presetId: null,
+      overrides: {},
+      scope: 'group',
+    }
+    const patch = vi.spyOn(editor, 'patch').mockImplementation(() => undefined)
+    await choose(wrapper, 'MP4')
+    await flushPromises()
+    expect(patch.mock.calls).toEqual([[[{ op: 'add', path: '/output/container', value: 'mp4' }]]])
+    expect(server.count(PREVIEW)).toBe(0)
   })
 
   it('asks nothing for a container with one extension', async () => {

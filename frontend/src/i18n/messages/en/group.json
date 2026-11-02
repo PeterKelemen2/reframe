@@ -1,0 +1,65 @@
+{
+  "sections": {
+    "dimensions": "Dimensions",
+    "filters": "Filters",
+    "video": "Video",
+    "audio": "Audio",
+    "subtitles": "Subtitles",
+    "chapters": "Chapter options",
+    "tags": "Tags",
+    "naming": "Output naming"
+  },
+  "copy": {
+    "dimensions": "Copy dimensions settings",
+    "filters": "Copy filters settings",
+    "video": "Copy video settings",
+    "audio": "Copy audio settings",
+    "subtitles": "Copy subtitles settings",
+    "chapters": "Copy chapter options",
+    "tags": "Copy tags",
+    "naming": "Copy output naming settings"
+  },
+  "paste": {
+    "dimensions": "Paste dimensions settings",
+    "filters": "Paste filters settings",
+    "video": "Paste video settings",
+    "audio": "Paste audio settings",
+    "subtitles": "Paste subtitles settings",
+    "chapters": "Paste chapter options",
+    "tags": "Paste tags",
+    "naming": "Paste output naming settings"
+  },
+  "pasted": "{section} pasted into {name}",
+  "actions": {
+    "edit": "Edit group",
+    "check": "Check group",
+    "queue": "Add group to queue",
+    "close": "Close group",
+    "saveAsPreset": "Save as preset",
+    "applyToGroup": "Apply to group…"
+  },
+  "banner": {
+    "label": "Batch group",
+    "editing": "Editing group “{name}” ({count} file) — showing {label} | Editing group “{name}” ({count} files) — showing {label}",
+    "shown": "Shown file",
+    "scope": "Edits go to",
+    "scopeGroup": "Group",
+    "scopeFile": "This file only ({label})",
+    "inGroup": "In group “{name}”",
+    "matrixError": "The group could not be checked: {reason}",
+    "retry": "Try again"
+  },
+  "apply": {
+    "title": "Apply to group “{name}”",
+    "intro": "The checked sections of this file go into the group's template, for every file of the group.",
+    "sections": "Sections",
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "applied": "Applied to “{name}”: {sections}"
+  },
+  "preset": {
+    "title": "Save the group as a preset",
+    "save": "Save preset",
+    "saved": "Preset “{name}” saved"
+  }
+}
