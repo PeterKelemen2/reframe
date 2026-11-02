@@ -597,7 +597,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       Respect `prefers-reduced-motion`.
 
 ### F-17 End-to-end tests
-- [ ] Playwright against `reframe-server` with fixture media and fake FFmpeg:
+- [x] Playwright against `reframe-server` with fixture media and fake FFmpeg:
   1. Open a file → set an audio language and commentary flag → queue → done → re-probe shows
      the flags.
   2. Open a season folder → edit group → check the matrix → queue the group.
@@ -610,7 +610,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   probes the job's output through the server; [decision
   0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G". M7 built flow 2, which reads
   the queued group through the server; [decision 0066](../decisions/0066-m7-batch-season.md),
-  "Task E".)
+  "Task E". M8 built flow 4, which reads the magnifier's canvases back against the frame;
+  [decision 0067](../decisions/0067-m8-picture.md), "Task F".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).

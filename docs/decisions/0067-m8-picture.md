@@ -442,4 +442,82 @@ No change of task D's files was needed.
 
 ## Task F — F-17 flow 4
 
-(Task F writes this section.)
+Built: `frontend/e2e/flow4-manual-crop.spec.ts`, and one fixture more for the servers in
+`e2e/support/servers.ts`: `--fixtures multitrack,Anime.Show.S01.BluRay.x264-GRP,letterbox`.
+
+The flow: `Ctrl+O` → the file browser → `letterbox.mkv`; Dimensions shows `Detected 22 / 24 /
+0 / 0 on 5 of 10 frames`; *Manual*; top `23` (the note `Top 23 → 22 (4:2:0 chroma grid)`, the
+input 22), bottom `24`, left `17` (`Left 17 → 16 …`, 16), each committed by leaving the field;
+on the panel's focused right handle (`[data-crop-handle="right"]`) Shift+← and ← (aria value 18;
+the magnifier still says `Frame 1 / 10`, so the arrows did not step the frame); the inputs read
+22 / 24 / 16 / 18; the magnifier's four strips at 4×, then 8×; Video → *FFmpeg command* → the
+drawer's text has exactly one `crop=`, and it is `crop=286:134:16:22` (width and height worked
+out from the inputs and the 320×180 source).
+
+### Choices where the plan and the brief leave one
+
+1. **The crop is not the detected one.** 22 / 24 / 0 / 0 is what Automatic already wrote, so a
+   crop that never left the detection would pass. Top and left are typed off the grid (the snap
+   and its note are checked), bottom typed, right moved with the keys only, so each edge of the
+   command comes from a different path and a mix-up of edges shows.
+2. **The strips are read back against the frame itself.** The test reads each strip canvas
+   (`getImageData`) and decodes the panel's frame PNG (`img[data-field="frame"]`, fetched and
+   decoded with `createImageBitmap(…, { colorSpaceConversion: "none" })`, as the magnifier
+   does). Each line of the strip across its crop line (canvas rows of top and bottom, columns of
+   left and right) is classed `kept` (every pixel equals the source pixel at the zoom, ±3),
+   `tinted` (the source under `rgb(255 0 90 / 35 %)`), `line` (`#ffd400`) or `other`; the
+   expected sequence comes from the crop the inputs show and the strip's label (`Rows 10–33`):
+   at 4× the top strip must be `tinted×47 line×2 kept×47`, the bottom `kept×47 line×2
+   tinted×47`, and so on. Where the strip starts along its line (it follows the pointer) is found
+   by trying every start; it is not what the flow checks. The comparison runs in Node, the pixel
+   reading in the page.
+3. **The command is the Video tab's drawer** (`jobs/plan` with the job the editor holds), what a
+   user reads, rather than a second request from the test. The drawer's open state is per
+   browser context (`localStorage`), so the next test starts with it closed.
+4. **No *Check crop on all frames*.** Flow 4 of 06 is the magnifier and the command; the check is
+   08's demo point 1 and task C's tests. With 22 / 24 / 16 / 18 every frame loses picture, so it
+   would show nothing the flow cares about.
+5. **Nothing to give back.** The flow changes no setting and queues no job (the `ownQueue`
+   fixture still checks the queue); the job edits live in the page.
+
+### Mutations
+
+Each made once in `src/` (or the core), flow 4 run in Chromium and Firefox against servers
+started like `npm run e2e`'s (the first `webServer` command rebuilds `dist/`), then the file
+restored and touched (script: the task's scratchpad `task-f/mutate.py`):
+
+| Mutation | Result (both browsers) |
+|----------|--------|
+| `CropOverlay`: the right handle's arrow keys move the left edge | failed: the handle's value 0, expected 18 |
+| `drawView`: the crop line one source pixel off (`strokeRect(crop.x + zoom, crop.y + zoom, …)`) | failed: top strip `tinted×48 kept×3 line×2 kept×43`; left strip the same |
+| `viewLayout`: the kept rectangle one row low (`y: rect.top + 1`, tint and line) | failed: top strip `tinted×51 line×2 kept×43` |
+| `drawView`: the picture rectangle left out of the tint path (the kept area tinted) | failed: bottom and right strips `tinted×47 line×2 kept×47`, expected `kept×47 line×2 tinted×47` |
+| `grid.ts`: the snap rounds up (`Math.ceil`) | failed: the note `Top 23 → 24 (the height must be a multiple of 2)` |
+| `CropSection`: a typed value is not written (`setRect({ ...shown.value })`) | failed: no snap note |
+| `useCommandPlan`: the job sent without `dimensions` | failed: the command's `crop=` list |
+| core `filtergraph.py`: `crop=w:h:y:x` | failed: the command's `crop=` list |
+
+One more, not a defect: the magnifier's strip window centred one row lower (`boundary` of `top`
++ 1) passes, because the line and the tint are still drawn on the right row and the label says
+which rows are shown (`Rows 11–34`).
+
+### Checked in a browser
+
+Screenshots of the flow (headless Chromium and Firefox, light and dark, the task's scratchpad):
+the Dimensions tab with the four strips at 4× (the tinted bar rows dark magenta, the yellow line
+between them and the picture, the 4:3 bars of the right strip) beside the panel with the crop
+frame and the handles; the Video tab's drawer with `…,crop=286:134:16:22,scale=286:134:…`. The
+default preset (*H.265 MKV 1080p*) gives no other `crop=` and a `scale=` to the same size
+(upscaling is off).
+
+### Runs and clean-up
+
+`npm run e2e` (flows 1–4 and the 7 layout checks in each browser): 22 passed, 44.6 s, then 22
+passed, 44.5 s; flow 4 takes about 7 s in each browser. Flow 4 with `--repeat-each 2` on the same
+servers: 4 passed. No `dev-server.py` process and no `/tmp/reframe-dev-*` folder after the
+passes, after a forced failure (the expected right edge 20: flow 4 failed at the handle's value in
+both browsers, the other tests passed; restored) and after SIGINT to the process group of
+`npm run e2e -- flow4` 3 s into the flow (2 interrupted).
+
+Not built: *Check crop on all frames* in the flow (item 4), a drag of a handle (keyboard only, as
+the plan's flow asks for no drag), the 2× zoom and the pixel grid.
