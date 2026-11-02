@@ -159,4 +159,58 @@ None yet.
 
 ## Task B — F-9 custom parameters and Copy HDR metadata
 
-(Task B writes this section.)
+Built in `components/video/advanced/` (`CustomParams.vue`, `useParamsCheck.ts`,
+`CopyHdrMetadata.vue`, `i18n/messages/en/params.json`), checked in the skeleton's stub panel.
+
+- **Custom parameters** (item 8): a `Field` at `video.custom_params` with a monospace text box. A
+  typing run is one undo step (`coalesce: 'video.custom_params'`, the blur ends it).
+  `useParamsCheck` sends `POST /api/jobs/dry-run` `CHECK_DELAY` (500 ms, the Filters tab's
+  constant) after the text stops changing, when the field opens with a text, and again for
+  another job (`editor.session`); `latestRequest` keeps only the newest text's answer. The field
+  shows validation's issues at the path and the dry run's issues at `video.custom_params` and
+  `video.encoder` (a test encode that cannot start is reported at the encoder: with parameters
+  typed, they are the likely cause); a dry-run issue that validation already reports (the file
+  rule) shows once. A status line says "Checking…" and, with no issue, that the encoder accepts
+  them; a failed dry run is a warning at the field with the problem's text.
+- **Why not `useCustomCheck` itself**: it checks only on a typing event (not a field that opens
+  with a text, nor an undo), keeps every error of the dry run whatever its path (a refused custom
+  filter would show at this field), and drops a failed request without a word. Its
+  `CHECK_DELAY` and its `latestRequest` pattern are reused.
+- **Copy HDR metadata** (item 9): a button at the top of *HDR / colour*. `POST
+  /api/jobs/hdr-metadata` with the job; the patch goes in with one `editor.patch` (one undo step;
+  in a group at the page's scope). A note says what was copied ("Copied master-display,
+  max-cll."), or why nothing was: the source has no HDR10 metadata (the probe's
+  `hdr.mastering_display` and `hdr.content_light` are missing), a hardware encoder takes it from
+  the frames, or a software encoder without such options (x264, VP9) cannot write it. 03 names
+  only the hardware case; 0035 §6 says x264 and VP9 cannot carry the metadata, so saying they
+  take it from the frames would be wrong. A failed request is the note in the error colour with
+  the problem's text (`apiQuiet`, no toast). An answer for a job that is no longer open is
+  dropped; the note goes when the job or the encoder changes. Both controls are off while the
+  video is passed through.
+- **Checked against the real server** (pinned FFmpeg n9.0.2, `hdr10`, `h265-mkv-1080p`): the
+  dry-run answers and HDR values of the Context above, again; SVT-AV1 gives
+  `mastering-display` `G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)` and
+  `content-light` `1000,400`; `hevc_nvenc`, `libx264` and `multitrack` give `[]`. A job whose
+  encoder is changed to SVT-AV1 without the picker's conversion dry-runs to `error
+  encoder.dry_run_failed` at `video.encoder` ("this encoder has no profile setting"). Recorded in
+  `CustomParams.server.test.ts` and `CopyHdrMetadata.server.test.ts`.
+- **Deviation, the real-server tests**: they run in the `server` project's Node environment and
+  test `useParamsCheck` and the button's request and patch through the editor store, not the
+  mounted components. A `*.server.test.ts` with `@vitest-environment jsdom` cannot start the
+  server: Vite's asset-URL transform rewrites `devServer.mjs`'s `new URL('../../../../',
+  import.meta.url)` to an `http://localhost:3000/` URL there. The components are checked against
+  the real server in the browser (headless Chromium and Firefox, light and dark).
+- **In task A's panel** (phase 2, headless Chromium and Firefox, light and dark, `hdr10`,
+  `h265-mkv-1080p`): *Copy HDR metadata* shows in *HDR / colour* only; a copy highlights the
+  master-display and max-cll rows and puts *HDR / colour*'s count from 0 to 2, and one `Ctrl+Z`
+  takes both away; the field is the *Custom parameters* category, its dry-run error is visible
+  above the open command drawer (issue line bottom 445 px, drawer top 556 px at 1440×1000); the
+  search "custom" shows it, *Show only changed* keeps it while the text is not empty; the keyboard
+  reaches the button and the field from their categories.
+- **The help is a line under the field, not `Field`'s ⓘ**: a reveal focuses the first focusable
+  element of a `Field`, which is the ⓘ button when the field has help, so Summary's link to
+  `video.custom_params` left the focus on ⓘ instead of in the text. (`Field` and `useReveal` are
+  the lead's: every field with help has this; recorded for the review.)
+- **Not built**: the dry-run issues' fix buttons at the field (`Field` shows none; the Summary
+  lists validation's issues, which have no dry run); a dry run in `jobs/validate` or at *Add to
+  queue* (Consequences).
