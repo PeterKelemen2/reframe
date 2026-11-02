@@ -705,3 +705,36 @@ capped toast inside the window.
 
 Not built: a different wording of *Add all*'s toast (the same "not added" for jobs added as
 failed; not this finding's); a per-member check of which file changed beyond `GET /api/sources`.
+
+## M7 demo, 2026-11-02 (headless)
+
+The lead's script (`demo.mjs` in that session's scratchpad `lead/`) against a fresh
+`scripts/dev-server.py` per run with the pinned FFmpeg n9.0.2 (no fake FFmpeg) and both anime
+folders; headless Chromium light and dark, Firefox light and dark; every run passed with no page
+error and left no server or `/tmp/reframe-dev-*` folder. Each run:
+
+1. Settings → Output's word separator set to a space (the default `keep` gives `Anime.Show`).
+2. *Open folder…* → `Anime.Show.S01.BluRay.x264-GRP` → one group `Anime Show S01` of 12 files;
+   E05 `1 extra track (eng AC-3 2.0 "Commentary")`.
+3. *Edit group* → banner `Editing group “Anime Show S01” (12 files) — showing E01`; Audio: A1
+   Opus 5.1 448 kb/s `Japanese 5.1`, A2 AC-3 5.1 640 kb/s `English 5.1`; Subtitles: S2 renamed
+   `English Full` (E01's flags are 04's already, so a flag change derives nothing).
+4. *Check group*: columns `A1 jpn TrueHD→Opus 5.1`, `A2 eng DTS-HD MA→AC-3 5.1`, `S1 eng Signs &
+   Songs`, `S2 eng Full`, Output name; marks `✓ ✓ ✓ ✓ ⚠ ✓ ✓ ✓ ✓ ✓ ✗ ✓` (E11 "✗ none", "≈ #2
+   matched without title"); E11's fix *Make the rule optional* → `✓ ✓ ✓ ✓ ⚠ ✓ ✓ ✓ ✓ ✓ ⚠ ✓`
+   (E11 "– none … skipped").
+5. Naming template `{name} - S{season:02}E{episode:02}< - {sub_title}>` on the Output card →
+   *Add group to queue* → `Queued 12 jobs`: `Anime Show - S01E01 - Pilot.mkv` …
+   `Anime Show - S01E12 - Homecoming.mkv` in episode order; the queue started; all 12 `done`.
+   ffprobe of E01's output: `opus 6ch jpn "Japanese 5.1" default`, `ac3 6ch eng "English 5.1"`,
+   `ass eng "Signs & Songs" forced`, `ass eng "English Full" default`; E11's: no dub, its signs
+   track keeps its own title `"Signs"` (forced).
+6. *Save as preset* → a user preset with 2 audio and 2 subtitle rules.
+7. S01 removed from the list, *Open folder…* → `Anime.Show.S02.BluRay.x264-GRP` → *Edit group* →
+   the saved preset picked in the header (one pick) → *Check group*: 3 rows ✓ under the same rule
+   columns, names `Anime Show - S02E01 - Return.mkv`, `… S02E02 - Ashes.mkv`, `… S02E03 -
+   Northbound.mkv`.
+
+Observation (owner question, default kept): with S01 and S02 open together, S02's three files
+join S01's group (one fingerprint; grouping is by fingerprint, not by season, 0040 §3), which then
+has 15 files named `Anime Show S01` and labels `S01E01` … `S02E03`. The demo removes S01 first.
