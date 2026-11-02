@@ -364,3 +364,4 @@ test.
 | Date | What |
 |------|------|
 | 2026-11-02 | **Wave 0.** Branch `m9-advanced-options` from `main` 7fbda7c. API check against a real server with the pinned FFmpeg (0068 Context): every route the panel needs is there; no server task. The lead built the skeleton (`EncoderOption`, `ui.advancedOpen` and the reveal that opens it (+ `stores/ui.test.ts`; a mutation without the open fails it), the collapsible *Advanced options* section in the Video tab with the stubs, the read-only custom parameters field removed), this file, 0068 with placeholders |
+| 2026-11-02 | **Wave 1 launched**: A (871x), B (872x), each `opus` / `high` in its own worktree. B stops after phase 1 and is resumed for its checks in A's panel after A merges. Briefs in the lead's scratchpad `briefs/` |
