@@ -234,7 +234,91 @@ without a crop (item 8), and a snap note stayed after an undo (item 9).
 
 ## Task C — F-7 `CropMagnifier`, the loupe, `CropCheckGrid`
 
-(Task C writes this section.)
+Built in `components/crop/`; checked headless in Chromium and Firefox, light and dark, against
+a real `reframe-server` (`scripts/dev-server.py`, the pinned FFmpeg, the fixtures `letterbox`,
+`hdr10`, `hdr10-4k`, `multitrack`; scripts in the scratchpad `task-c/check.mjs`).
+
+- **The edge strips.** Each strip is a canvas of 384 × 96 CSS pixels (top, bottom) or 96 × 384
+  (left, right): the crop line in the middle of its depth, 48 / *zoom* source pixels on each
+  side (24, 12 or 6 at 2×, 4×, 8×), and along the line as many source pixels as fit (192, 96,
+  48; the whole picture when it is shorter). Along the line the strip is centred on the pointer
+  over the panel's picture (`preview.pointer`), else on the middle, and kept inside the picture.
+  The pixels are drawn with `imageSmoothingEnabled = false`; everything outside the kept
+  rectangle is tinted; the crop lines are a 2-pixel stroke centred on the boundary between the
+  last removed and the first kept pixel (one canvas pixel on each side of it); the pixel grid
+  is a 1-pixel line at every source pixel boundary. The label gives the source rows (top,
+  bottom) or columns (left, right) shown, from 0 and inclusive (`Rows 10–33`). Top and bottom
+  are stacked, left and right stand beside them. The strips and the loupe draw once per
+  `requestAnimationFrame`, from the last pointer position.
+- **Colours.** The magnifier, the loupe and the check tint the removed area magenta
+  (`rgb(255 0 90 / 35 %)`) and draw the crop lines yellow (`#ffd400`), not like the panel's
+  overlay (task B: black at 55 %, white lines). A dark tint does not show on black bars, and on
+  bars the magnifier's job is to show which black rows go: a tinted bar row reads back as
+  (89, 0, 31), an untinted one as (0, 0, 0). The check's detected bars are hatched cyan, so
+  that they read apart from the tint; its intro says which is which.
+- **The loupe** is a 160-pixel round canvas at a fixed 4× (40 × 40 source pixels around the
+  pixel under the pointer) with the same tint and lines, placed in percent of `crop.sourceSize`
+  in A's overlay layer, `pointer-events: none`. It loads the frame only on the Dimensions tab in
+  manual crop. It does not follow the magnifier's zoom control (that is in the tab, the loupe in
+  the panel; no shared state was added for it).
+- **The frame loader** (`frames.ts`) fetches the signed PNG URL against the server's base URL
+  (the desktop app's page is not on the server's origin) and decodes it with
+  `createImageBitmap(blob, { colorSpaceConversion: "none" })`. One bitmap per frame **key**,
+  shared by its users (the magnifier and the loupe show the same frame) and closed when the last
+  one lets go: new links to the same frame after a reload keep the decoded pixels. A failed
+  fetch goes to the preview store's `imageFailed(frame)` (task A: the strip, a sought frame or
+  an output frame is asked for once more); when it will not ask again, *The frame could not be
+  loaded.* This is the brief's "`reload()` once", through A's own retry, so that the panel's
+  image and the magnifier do not each ask.
+- **The check of all frames** fetches each strip frame's PNG once, shows it through an object
+  URL and posts the same `Blob` to a module worker (`cropCheck.worker.ts`), which decodes it,
+  reads each removed band through an `OffscreenCanvas` and answers the bands' luma variance and
+  whether the frame loses content. The grid does not hold ten decoded bitmaps: at 4K that would
+  be about 330 MB. The bands are the removed parts without overlaps (top and bottom full width,
+  left and right between them). Luma is BT.709 from the PNG's RGB (`0.2126 R + 0.7152 G +
+  0.0722 B`, 0–255). A frame loses content when **any** band's variance is **above 64**. Each
+  frame shows the crop (tint and line) and the bars that crop detection found at its timestamp
+  (`detection.samples`, matched by the exact timestamp: both come from `sample_times`; checked
+  on `hdr10-4k`, whose times are 0.25, 0.751, … 4.755), hatched, with the numbers in text
+  (*Detecting the bars…* while detection runs); the badge says *Removes picture* with an icon.
+  A click on a frame selects it in the panel (`preview.select`) and closes the dialog. Closing
+  terminates the worker and revokes the object URLs; another crop or strip runs the check again.
+- **Threshold calibration** (2026-11-02). The server's frames go through
+  `scale=flags=bicubic+accurate_rnd+full_chroma_int,format=rgb24` (`preview/graph.py`), whose
+  bicubic chroma rings into the black rows next to the picture: the bars measure up to 6.1, not
+  the 0.46 of a plain `format=rgb24`. Measured by the worker in the browser on the server's PNGs
+  of `letterbox` (the same numbers as the pinned FFmpeg with that chain and the formula in
+  Python):
+
+  | Crop | Band | 0.2–1.8 s (letterbox) | 2.2–3.8 s (4:3) |
+  |------|------|------|------|
+  | 22 / 24 / 0 / 0 | top | 5.7–6.1 | 6 143–6 358 |
+  | 22 / 24 / 0 / 0 | bottom | 4.9–5.4 | 6 591–8 591 |
+  | 0 / 0 / 40 / 40 | left | 793–3 523 | 2.0–2.2 |
+  | 0 / 0 / 40 / 40 | right | 7 469–7 893 | 3.7–4.1 |
+  | 24 / 24 / 0 / 0 (2 rows into the picture; FFmpeg only) | top | 1 718–1 719 | 6 120–6 343 |
+
+  64 (a standard deviation of 8 luma steps) is 10× the noisiest bars and 12× under the
+  narrowest band of picture. `hdr10-4k` (a full picture) with 140 / 140 / 0 / 0: 4 424–4 644
+  on every frame, all ten flagged, the check done in 0.6–1.4 s. Known limit: a band of flat
+  picture (one colour) or of a very dark scene has a low variance and is not flagged.
+- **Browser checks** (each in Chromium 156 and Firefox 157, light and dark, `letterbox`):
+  - Manual 22 / 24 / 0 / 0. Each strip's canvas is read back pixel by pixel against the frame's
+    own pixels at 4×, 2× and 8×. Every kept pixel equals the source. Every removed pixel is the
+    source under the tint. The 2-pixel crop line covers canvas rows 47 and 48 of the top and
+    bottom strips (the boundary is at 48). The left and right lines are at the picture's edge.
+  - The labels read Rows 10–33 at 4×, Rows 0–45 at 2× and Rows 16–27 at 8×.
+  - The loupe sits at the pointer's percent (25 % / 12 %, then 70 % / 50 %) and shows the
+    pixel under the pointer. It goes when the pointer leaves.
+  - *Check crop on all frames* shows 10 frames, each with its two detected bars. The badges are
+    on frames 5–9 (2.2–3.8 s), and the summary reads *5 of 10*. With 0 / 0 / 40 / 40 the badges
+    are on frames 0–4.
+  - The worker `assets/cropCheck.worker-….js` appears in `page.on('worker')`.
+  - Keyboard alone: Tab goes 2× → 4× → 8× → pixel grid → previous → next → *Check*. Space picks
+    a zoom and toggles the grid, and Enter steps a frame. In the dialog, the focus lands on
+    *Close* once the dialog has opened, then Tab reaches each frame and Enter selects it.
+    Escape closes the dialog.
+  - No page errors.
 
 ## Task D — F-8 the Filters tab
 
