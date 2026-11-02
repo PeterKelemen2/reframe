@@ -108,5 +108,6 @@ describe('the helpers', () => {
     expect(fractionDigits(option('aq-strength'))).toBe(2)
     expect(fractionDigits(option('psy-rd'))).toBe(1)
     expect(fractionDigits(option('bframes'))).toBe(0)
+    expect(fractionDigits({ ...option('bframes'), step: null })).toBe(0)
   })
 })

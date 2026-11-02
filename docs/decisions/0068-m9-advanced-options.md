@@ -107,7 +107,55 @@ None yet.
 
 ## Task A — F-9 the advanced panel
 
-(Task A writes this section.)
+- **Files**: `AdvancedOptions.vue` (the panel), `OptionRow.vue` (one option), `options.ts` (the
+  category order, the default text, the JSON pointer of a key), `useOptionSearch.ts` (the search
+  request, so that the real-server test can run it), in `components/video/advanced/`. The Video
+  tab needed nothing more: the panel reads passthrough from the job itself.
+- **Layout** (item 1): the search, *Show only changed* and the category list on the left, the
+  shown category's options on the right; in a column narrower than 40rem the categories go above
+  the options (side by side, wrapping), and in one narrower than 30rem a row's label goes above
+  its control. The category with the selection has `aria-current`; a count shows only when it is
+  above 0 (`data-count` always; the screen-reader text says "2 changed options").
+- **Show only changed** filters the shown category's options (and the search's matches); the
+  category list and its counts stay, so the counts say where to look. A category without a
+  changed option says so. Custom parameters count as changed while the text is not empty (they
+  stay shown); their category has no count.
+- **Controls by type**: int and float are an `InputNumber` that writes on commit (Enter, Tab,
+  blur, an arrow-key step), each commit one undo step; float digits are the step's (0.05 → 2).
+  A bool is a switch that shows the default's value while the option is not set (off when the
+  encoder decides) and writes the other value. An enum is `ChoiceSelect` with "Default: …" as its
+  first entry (choosing it removes the key). A string is a text field that writes while typing,
+  one undo step per typing run. Emptying a field removes the key (item 2). ↺ shows on a changed
+  option only (03's mock-up), then the focus goes to the option's control.
+- **The default text** (item 6) is the placeholder of a number or text field and the "Default:"
+  entry of a choice; a switch, and every changed option, has it beside the control
+  ("default: 4 frames (preset Slow)"). The preset is named by its label (the speed slider's
+  "Slow"), values carry their unit, enum values their choice label, bools "on"/"off"; an
+  `encoder` default reads "the encoder decides (auto, from the frame rate)".
+- **Help**: ⓘ shows the option's help and its command-line name ("Command line: rc-lookahead"),
+  so that a search by CLI name shows why it matched.
+- **The search** (item 4) is asked 200 ms after the last key press; while it is on its way the
+  status says "Searching…", then how many match. Choosing a category leaves the search. An
+  encoder without options (one the definitions do not know) matches nothing without asking.
+- **A reveal** of `video.advanced.<key>` selects the option's category, turns *Show only
+  changed* off when the option is not changed, and clears a search whose matches do not hold it;
+  `video.custom_params` selects *Custom parameters* the same way. A key the encoder does not
+  define (item 7) is in the "Not options of <encoder>" group under the shown options, in every
+  view, so its reveal needs nothing more.
+- **Checked on the real server** (pinned FFmpeg n9.0.2, `hdr10`, preset `h265-mkv-1080p`:
+  libx265 at `slow`): "psy" → psy-rd, psy-rdoq, nr-intra, nr-inter; "rc-lookahead" →
+  rc-lookahead; "consecutive" (bframes' help) → bframes; B-frames 6 → `:bframes=6` in the
+  drawer's command; `{rect: false, amp: true}` → the `encoder.option_inactive` warning at the amp
+  row and in Summary, whose link opens the panel at amp; the `h265-nvenc-1080p` preset on this
+  machine (no NVIDIA device) still shows `hevc_nvenc`'s schema (Basic first; one changed option
+  from the preset in Rate control).
+- **Not built**: a count on *Custom parameters*; a changed-option count in the collapsed
+  section's header; a way to type a value outside an option's min/max (the field clamps it, so
+  `encoder.option_invalid` comes only from an imported job).
+- **Known, not mine**: the Video tab is wider than its column at 1280 px (5 px: the frame-rate
+  mode buttons) and at 1024 px (the column is 228 px; the encoder settings' inline fields), with
+  the panel closed too; the panel itself fits at 1920, 1440, 1280 and 1024 px.
+- **Plan box**: 06 §F-9's `AdvancedOptions` box waits for task B's components in the panel.
 
 ## Task B — F-9 custom parameters and Copy HDR metadata
 

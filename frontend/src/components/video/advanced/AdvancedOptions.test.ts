@@ -78,6 +78,10 @@ async function choose(wrapper: VueWrapper, category: string): Promise<void> {
   await wrapper.find(`[data-category="${category}"]`).trigger('click')
 }
 
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function search(wrapper: VueWrapper, text: string): Promise<void> {
   await wrapper.find('[data-role="search"]').setValue(text)
 }
@@ -116,7 +120,9 @@ describe('the advanced options panel', () => {
   it('searches once the typing stops, with each match in its category', async () => {
     const { wrapper, server } = await mountPanel()
     await search(wrapper, 'b')
+    await pause(50)
     await search(wrapper, 'bf')
+    await pause(50)
     await search(wrapper, 'bfr')
     await vi.waitFor(() => expect(shownKeys(wrapper)).toEqual(['bframes']), SOON)
     expect(server.count(SEARCH)).toBe(1)
@@ -165,9 +171,10 @@ describe('the advanced options panel', () => {
     expect(wrapper.findComponent(CustomParams).exists()).toBe(false)
   })
 
-  it('writes a committed number in one undo step, highlights and counts it, and resets it', async () => {
+  it('writes each committed number in one undo step, highlights and counts it, and resets it', async () => {
     const { wrapper, editor } = await mountPanel()
     await choose(wrapper, 'Frame types / GOP')
+    control(wrapper, 'bframes', InputNumber).emit(5)
     control(wrapper, 'bframes', InputNumber).emit(6)
     await flushPromises()
     expect(editor.job?.video?.advanced).toEqual({ bframes: 6 })
@@ -180,6 +187,8 @@ describe('the advanced options panel', () => {
     expect(count(wrapper, 'Frame types / GOP')).toBe('0')
     editor.undo()
     expect(editor.job?.video?.advanced).toEqual({ bframes: 6 })
+    editor.undo()
+    expect(editor.job?.video?.advanced).toEqual({ bframes: 5 })
     editor.undo()
     expect(editor.job?.video?.advanced).toEqual({})
     expect(editor.canUndo).toBe(false)
@@ -217,6 +226,16 @@ describe('the advanced options panel', () => {
     await flushPromises()
     expect(editor.job?.video?.advanced).toEqual({ 'b-intra': true })
     expect(control(wrapper, 'b-intra', ToggleSwitch).prop('modelValue')).toBe(true)
+    // On at preset slower: switching it off stores `false`.
+    editor.patch([
+      { op: 'remove', path: '/video/advanced/b-intra' },
+      { op: 'replace', path: '/video/preset', value: 'slower' },
+    ])
+    await flushPromises()
+    expect(control(wrapper, 'b-intra', ToggleSwitch).prop('modelValue')).toBe(true)
+    control(wrapper, 'b-intra', ToggleSwitch).emit(false)
+    await flushPromises()
+    expect(editor.job?.video?.advanced).toEqual({ 'b-intra': false })
   })
 
   it('makes one undo step of a typing run in a text option', async () => {
