@@ -438,6 +438,7 @@ test.
 | Date | What |
 |------|------|
 | 2026-11-02 | **Wave 0.** Branch `m8-picture` from `m7-batch-season` d3c2467 (M7 is not in `main`). API check against a real server with the pinned FFmpeg (0067 Context): every preview route works; headless Chromium 156 and Firefox 157 play H.264 (MP4, MKV) and AV1 clips, Chromium refuses HEVC; missing: frames of a clip, a detected crop written into the job, a detected crop not counted as *modified*. The lead built: `POST /api/preview/clips/{id}/frames` (+ 2 tests, OpenAPI regenerated; a mutation without the 404 fails), `presets.diff` without a detected `rect` (+ 2 tests; two mutations fail), `editor.amend` (+ 3 tests; three mutations fail), this file, 0067 with placeholders and the 06 §S-2 row, the skeleton (types, `stores/preview.ts` and `stores/crop.ts` stubs, component stubs and mounts, Dimensions and Filters in the tab registry, Settings → Preview's section, the panel shown by default, the workspace starts the crop store with a test; the Picture card's fallback for unbuilt tabs removed). Checks: lint, format, typecheck, 1547 unit tests, `build:web`; `reframe` presets tests 208, server `test_preview.py` and the OpenAPI, facade and jail tests 57 passed; ruff, mypy |
+| 2026-11-02 | **Wave 1 launched**: A (871x), B (872x), C (873x), D (874x), each `opus` / `high` in its own worktree. B, C and D stop after phase 1 and are resumed for their browser checks after the stores they use are merged (B and D: A; C: A and B). A was told the crop handles carry `data-crop-handle` (B gives it) |
 
 ## Where M8 ended
 
