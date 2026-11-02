@@ -508,7 +508,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task D").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
-- [ ] Pipeline header from `jobs/geometry`.
+- [x] Pipeline header from `jobs/geometry`.
 - [ ] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay with drag handles.
 - [ ] `CropMagnifier`: canvas-based. It loads the full-resolution PNG and draws 4 edge strips at
       2×/4×/8× with `imageSmoothingEnabled = false`, a removed-area tint, the crop lines, and a

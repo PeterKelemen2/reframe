@@ -268,7 +268,13 @@ describe('a manual crop', () => {
     expect(setup.crop.snapNote).toBe('Top 141 → 140 (4:2:0 chroma grid)')
     setup.crop.setRect({ top: 140, bottom: 24, left: 0, right: 0 })
     expect(setup.crop.snapNote).toBeNull()
+    setup.crop.setRect({ top: 141, bottom: 24, left: 0, right: 0 })
+    await settle()
+    expect(setup.crop.snapNote).toBe('Top 141 → 140 (4:2:0 chroma grid)')
+    // An undo takes the explained values away, and the note with them.
     setup.editor.undo()
+    await settle()
+    expect(setup.crop.snapNote).toBeNull()
     setup.editor.undo()
     expect(setup.editor.get('/dimensions/crop/rect')).toEqual({
       top: 0,

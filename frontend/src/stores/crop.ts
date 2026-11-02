@@ -186,10 +186,13 @@ export const useCropStore = defineStore('crop', () => {
     { immediate: true },
   )
 
+  // The note explains the rectangle that `setRect` stored; an undo, another mode or another job
+  // takes it away.
+  let noted: string | null = null
   watch(
-    () => editor.session,
-    () => {
-      snapNote.value = null
+    () => JSON.stringify(editor.job?.dimensions?.crop ?? null),
+    (crop) => {
+      if (crop !== noted) snapNote.value = null
     },
   )
 
@@ -203,7 +206,9 @@ export const useCropStore = defineStore('crop', () => {
     const current = grid.value
     snapNote.value =
       changes.length === 0 ? null : changes.map((change) => noteOf(change, current)).join(' · ')
-    editor.set('/dimensions/crop', { mode: 'manual', rect: snapped }, options)
+    const crop = { mode: 'manual', rect: snapped }
+    noted = JSON.stringify(crop)
+    editor.set('/dimensions/crop', crop, options)
   }
 
   /**
@@ -214,7 +219,6 @@ export const useCropStore = defineStore('crop', () => {
   async function setMode(next: CropMode): Promise<void> {
     const target = editor.target
     if (target === null || next === mode.value) return
-    snapNote.value = null
     if (!detected(next)) {
       const kept = next === 'manual' ? (rect.value ?? { ...NO_CROP }) : null
       editor.set('/dimensions/crop', { mode: next, rect: kept })

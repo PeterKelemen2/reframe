@@ -200,7 +200,11 @@ Built: `stores/crop.ts`, `components/editor/tabs/DimensionsTab.vue`, `components
    arrow key on a handle is stopped there (`preventDefault`, `stopPropagation`), so the panel's
    `←` / `→` never also step the frame. A drag is one undo step (a coalesce key per drag,
    `editor.endCoalescing()` when the pointer is let go); a run of key presses on one handle is
-   one (a key per edge, ended when the handle loses the focus).
+   one (a key per edge, ended when the handle loses the focus). Each handle sits on the kept
+   side of its line, so it stays inside the picture's box (the panel's stage clips what is
+   outside it) also on an edge without a crop.
+9. **The snap note** explains the rectangle `setRect` stored; it goes away when the crop changes
+   any other way (an undo, another mode, another job).
 
 Tests: `stores/crop.test.ts` (17), `components/dimensions/grid.test.ts` (16),
 `header.test.ts` (4), `CropOverlay.test.ts` (4), `components/editor/tabs/DimensionsTab.test.ts`
@@ -208,6 +212,25 @@ Tests: `stores/crop.test.ts` (17), `components/dimensions/grid.test.ts` (16),
 `letterbox` and its amend without an undo step and without *modified*; the header against
 `jobs/plan` for a manual crop, a rotation, a flip, an exact width, an upscaled exact height with
 a 270° turn and a custom pixel aspect).
+
+Checked in a browser (headless Chromium 156 and Firefox 157, light and dark, a real server from
+`scripts/dev-server.py` with the pinned FFmpeg and the fixtures `letterbox`, `hdr10`, `hdr10-4k`,
+`multitrack`, `Anime.Show.S01.BluRay.x264-GRP`; `hdr10` and `hdr10-4k` detect `0 / 0 / 0 / 0 on
+10 of 10 frames`, `hdr10-4k`'s header is `Source 3840×2160 … → Output 1920×1080`): on `letterbox` Automatic shows `Detected 22 / 24 / 0 / 0 on 5
+of 10 frames` and the header `… → Crop 320×134 → Output 320×134 · 2.39:1 …`, the job holds the
+rectangle with no undo step and without the *modified* marker; Conservative `Black on every
+frame: 0 / 0 / 0 / 0 (10 frames)` with "The frames disagree: …" and the header without a crop;
+the switch back is one undo step; Manual starts at 22 / 24 / 0 / 0, `141` becomes `140` with
+`Top 141 → 140 (4:2:0 chroma grid)`, the magnifier is mounted; on a focused top handle three ↓
+and one Shift+↓ give 44 (the frame index unchanged), one `Ctrl+Z` gives 22; a drag of the left
+handle moves only the left edge onto the grid, one `Ctrl+Z` undoes it; Rotate 90° and Flip,
+exact width 160 (158×66), upscaling to 640 (amber), Custom PAR 4:3 and 0 (red, with the field's
+error) and modulus 16 change the header; the keyboard alone reaches the mode, the top input
+(`31` → `30`) and the bottom handle; in the `Anime Show S01` group the shown file's detection
+(`0 / 0 / 0 / 0 on 10 of 10 frames`) and the group line show, and neither the shown job nor the
+template gets a rectangle; Conservative there sets `{mode: "conservative", rect: null}`. Two
+defects found and fixed: the left and right handles were half outside the picture at an edge
+without a crop (item 8), and a snap note stayed after an undo (item 9).
 
 ## Task C — F-7 `CropMagnifier`, the loupe, `CropCheckGrid`
 

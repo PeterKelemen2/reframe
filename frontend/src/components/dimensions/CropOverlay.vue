@@ -153,7 +153,10 @@ function onPointerUp(): void {
         v-for="edge in EDGES"
         :key="edge"
         class="crop-overlay__handle"
-        :class="`crop-overlay__handle--${across(edge) ? 'across' : 'down'}`"
+        :class="[
+          `crop-overlay__handle--${across(edge) ? 'across' : 'down'}`,
+          `crop-overlay__handle--${edge}`,
+        ]"
         :style="handleStyle(edge)"
         role="slider"
         tabindex="0"
@@ -199,9 +202,26 @@ function onPointerUp(): void {
   border: 1px solid rgb(0 0 0 / 70%);
   border-radius: 999px;
   background: rgb(255 255 255 / 95%);
-  transform: translate(-50%, -50%);
   pointer-events: auto;
   touch-action: none;
+}
+
+/* Each handle sits on the kept side of its line, so that it stays inside the picture's box
+   (the stage clips what is outside) even with no crop on that edge. */
+.crop-overlay__handle--top {
+  transform: translate(-50%, 0);
+}
+
+.crop-overlay__handle--bottom {
+  transform: translate(-50%, -100%);
+}
+
+.crop-overlay__handle--left {
+  transform: translate(0, -50%);
+}
+
+.crop-overlay__handle--right {
+  transform: translate(-100%, -50%);
 }
 
 .crop-overlay__handle--down {
