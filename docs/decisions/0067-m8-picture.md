@@ -49,7 +49,9 @@ pinned FFmpeg n9.0.2 and the fixtures `letterbox`, `hdr10`, `hdr10-4k`, `multitr
   (`preview/frames` takes a source id); (2) nothing writes a detected crop into a job: a job in
   automatic mode without `rect` is encoded uncropped with the info issue
   `dimensions.crop_not_detected`; (3) a detected `rect` would mark the job *modified* against
-  its preset (`presets/diff` compared `dimensions.crop.rect`).
+  its preset (`presets/diff` compared `dimensions.crop.rect`). (Review R1 corrected (3): the
+  editor sends `templateOf(job)`, which already drops a detected rect, so the editor was never
+  affected; item 2 holds for other callers of the route.)
 
 ## Decision
 
@@ -521,3 +523,44 @@ both browsers, the other tests passed; restored) and after SIGINT to the process
 
 Not built: *Check crop on all frames* in the flow (item 4), a drag of a handle (keyboard only, as
 the plan's flow asks for no drag), the 2× zoom and the pixel grid.
+
+## Review, 2026-11-02
+
+Two fresh reviews (R1: state, crop maths, the worker, server calls, undo, stale requests; R2:
+screens, i18n, keyboard, focus, contrast, empty and error states), both `claude-opus-5-5`.
+R1: 1 major, 3 minors; R2: 7 majors, 8 minors, 6 nits. The lead reproduced every major
+([m8-breakdown.md](../m8-breakdown.md) Progress). The lead's decisions for the fixes:
+
+1. **A group's automatic crop** (R2-2): nothing detects the crop of a group's files when they
+   are queued (0067 Consequences), so the tab must not say they do. It says that the group's files
+   are queued without a crop in automatic and conservative mode and that *Manual* crops them all
+   the same way, once (not three lines that disagree). Detection per file at queue time is not
+   built (no M8 step gives it; core and queue); an owner question.
+2. **Arrow keys on a zoomed picture** (R2-7): while the stage has the focus and its picture is
+   larger than the stage (100 % or 200 %), the arrow keys scroll it; elsewhere in the panel `←` /
+   `→` step through the frames (item 6). The stage keeps the focus when the frame changes.
+3. **No picture to edit** (R2-1, R2-9, R2-12): while the job copies the video or the file has no
+   video, the Dimensions and Filters controls are off with a note (03 §Video: "All dimension and
+   filter controls are then disabled, with a note"); the crop overlay, handles, loupe and
+   magnifier are hidden; the filter rows stay reachable so that their help can be read; the panel
+   says the file has no video, without *Try again*, and no strip or detection is asked for.
+4. **A clip made right after opening a file** (R2-13): the clip waits for the shown file's crop
+   detection to be written before it is sent, and its frame compare uses the geometry of the job
+   it was made from, not the current one.
+
+### Fix round — FA (preview panel)
+
+(Task FA writes this section.)
+
+### Fix round — FB (crop store and Dimensions tab)
+
+(Task FB writes this section.)
+
+### Fix round — FC (magnifier and check grid)
+
+(Task FC writes this section.)
+
+### Fix round — FD (filters, clip, Settings → Preview)
+
+(Task FD writes this section.)
+

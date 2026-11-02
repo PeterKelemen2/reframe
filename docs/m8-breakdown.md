@@ -284,9 +284,33 @@ As [m6-breakdown.md](m6-breakdown.md#commands). The fixtures:
 B 872x, C 873x, D 874x, E 877x, F 879x, the lead 876x, R1 878x, R2 and the fix agents the
 ranges free at the time.
 
-## Fix round
+## Fix round (binding for the fix agents)
 
-(After the reviews.)
+The two reviews (R1: 1 major, 3 minors, 7 suspicions; R2: 7 majors, 8 minors, 6 nits) and the
+lead's L1–L3. The lead reproduced every major (Progress, 2026-11-02). Four fix tasks with disjoint
+files, each `opus` / `high`. A fix of a major comes with a test that fails before it. Each task
+writes its own subsection "Fix round — FX" under 0067's `## Review, 2026-11-02`.
+
+| Task | Findings | Owns |
+|------|----------|------|
+| **FA** preview panel | R2-7 (0067 review item 2), R2-9 (the panel's part: a file without video says so, no strip request, no *Try again*), R2-11, R2-14, R2-15, R2-18, R2-17 (`preview.*` keys), R1's suspicion "a second expiry is never asked again", the simplifications of `SplitCompare` (one picture block) and `FrameViewer` (`output` alias) | `stores/preview.ts` (+ tests), `components/shell/PreviewPanel.vue`, `components/media/{FrameViewer,SplitCompare}.vue` (+ tests), `components/preview/**`, `i18n/messages/en/preview.json` |
+| **FB** crop store and Dimensions tab | R1-1, R1-2, R1-3, R1-4, R2-1 (the Dimensions part, 0067 review item 3), R2-2 (0067 review item 1), R2-8, R2-9 (the Dimensions part), R2-10, R2-6 (the crop mode control and the Field rows fit the column), R2-17 (`dimensions.crop.unit`), R1's suspicions "negative values in snap notes" and the weak `dimensions.server.test.ts` *modified* check, the simplifications `crop.ts` derived refs and `CropSection.vue` `values()` | `stores/crop.ts` (+ tests), `components/editor/tabs/DimensionsTab.vue` (+ test), `components/dimensions/**`, `i18n/messages/en/dimensions.json` |
+| **FC** magnifier and check grid | R2-4, R2-5, R2-6 (the strips fit the column), R1's suspicions "a failed worker leaves the check spinning" and "the loupe off centre", the simplifications (`magnifier.ts` takes `Edge`, `EDGES`, `NO_CROP` from `dimensions/grid.ts`; `frames.ts` fetches the store's absolute URL as it is; `CropCheckGrid.vue`'s watch) | `components/crop/**`, `i18n/messages/en/crop.json` |
+| **FD** filters, clip, Settings → Preview | R2-3, R2-12, R2-9 (the Filters part), R2-13 (0067 review item 4), R2-19, R2-20, R2-21, R2-17 (`filters.help.label`) | `components/editor/tabs/FiltersTab.vue` (+ test), `components/filters/**`, `components/clip/**`, `components/settings/PreviewSection.vue` (+ test), `i18n/messages/en/{filters,clip}.json`, the `settings.preview.*` keys |
+
+**Contract FB → FC, FD (no picture to edit).** The crop store gains `pictureEditable:
+ComputedRef<boolean>`: `false` while the job copies the video (`video.passthrough`) or the
+shown file has no video stream; `editable` is then `false` too (so the loupe and the magnifier,
+which show only in manual crop, stay hidden). FD's Filters tab and FA's panel use their own
+reads of the job and the source (they do not wait for FB). FC and FD code against the member
+name; FB merges first.
+
+Recorded, not fixed: L1 (the `403 filter.not_allowed` of `jobs/validate`), L2 (a custom filter
+FFmpeg refuses passes `jobs/validate`; the dry run and the encode refuse it), L3 (not a defect),
+R2-16 (three ways of writing a frame's time), R1's suspicions "a failed geometry blanks the crop"
+(not reachable from the UI) and "an anamorphic source shown squeezed" (the plan does not say),
+R2's suspicions (Home / End on handles, the help not linked to the row, the sticky header under
+60 rem).
 
 ## Rules for every agent (word for word in each brief)
 
@@ -447,6 +471,8 @@ test.
 | 2026-11-02 | **Merged E** (29eab4c; 13d2e40, 21e963c): Settings → Preview (count, limit in MiB, cache size, *Clear cache*) and the live preview clip (10 / 15 / 30 / 60 s, progress, *Cancel*, the player with a new link then the frame compare on a video error, *Compare frames*, *Open in external player*, out of date after an edit); 42 mutations caught; Chromium plays H.264 and AV1 and falls back for HEVC, Firefox plays all. E ticked 06 §F-15 (every section of 03 §Settings now built). The F-7 row was rebuilt by the lead to three columns (A's row had kept a stray `M8` cell that B wrote into); the lead's first resolution committed conflict markers when a script assertion failed in a `;` chain, fixed by amending the merge before anything else. 1689 unit tests, lint, typecheck, build. The lead's mutation (a fixed 10 s length) fails `PreviewClip.test.ts`; restored, touched. Worktree removed |
 | 2026-11-02 | **Merged C** (f107ea4; 6fa7da0, f927167): `CropMagnifier`, `CropLoupe`, `CropCheckGrid` and its worker; every Done-when line in Chromium and Firefox, light and dark (strip canvases read back pixel by pixel; badges on frames 5–9 at 22 / 24 / 0 / 0 and 0–4 at 0 / 0 / 40 / 40; 4K `hdr10-4k` checked in 0.6–1.4 s). The threshold became 64: the server's bicubic RGB conversion rings into the bars (4.9–6.1; picture at least 793; `testdata/README.md`). Retries go through A's `imageFailed`. C ticked 06 §F-7's two boxes, so every F-7 box is ticked. The F-7 row: C's sentence added to the three-column row. 1735 unit tests, lint, typecheck, build (the worker chunk is in `dist/`). The lead's mutation (the threshold back at 4) fails `cropCheck.test.ts`; restored, touched. The lead fixed 06's folder tree (the magnifier is in `crop/`; 0067 Plan changes). No worktree left; **F launched** (879x) |
 | 2026-11-02 | **Merged F** (5227020; e655196): flow 4 (`e2e/flow4-manual-crop.spec.ts`; `letterbox` added to the e2e servers): detection line, *Manual*, typed 23 → 22 and 17 → 16 with their notes, the right handle moved with Shift+← and ←, the magnifier strips read back pixel by pixel at 4× and 8×, the Video tab's command holds exactly `crop=286:134:16:22`. F's runs: 22 passed twice (44.6 s, 44.5 s); clean-up after pass, forced failure and SIGINT; 8 mutations fail it (one, the strip window one row lower, rightly passes). F ticked 06 §F-17's first box (all four flows built). The lead's run: `npm run e2e` 22 passed (44.7 s); the lead's mutation (a handle key moving one pixel, not one chroma step) fails flow 4 in both browsers; restored, touched, `dist/` rebuilt. Worktree removed; no agent worktree left. **Reviews R1 and R2 launched** |
+| 2026-11-02 | **R1 report** (`claude-opus-5-5`): 1 major, 3 minors, 7 suspicions, 5 simplifications. **Reproduced by the lead** (R1's repro tests run in its worktree, all four fail; saved in the scratchpad `review-r1/repro/`): **R1-1** (major) Automatic clicked while detection runs, then Manual typed: when detection ends the late click wins and the typed crop is replaced; R1-2 two typed values of one edge are one undo step; R1-3 a crop change drops unknown crop fields; R1-4 a new sample count re-takes the strip but not the detection. R1's simplification 1 holds: `templateOf` already drops a detected rect, so 0067 item 2's diff change does nothing for the editor (0067 corrected) |
+| 2026-11-02 | **R2 report** (`claude-opus-5-5`): 7 majors, 8 minors, 6 nits; contrast measured (muted text 7.58 / 6.91, badge 6.84 / 10.39; the handle focus ring 1.37:1 on blue). **Reproduced by the lead** with R2's scripts on the lead's own server (port 8710): **R2-1** passthrough: rotate 90° written, 4 handles, the magnifier shown; **R2-2** a group's 12 jobs queued `{mode: auto, rect: null}` with `dimensions.crop_not_detected`, no `crop=`, while the tab says each file detects its own crop; **R2-3** focus to `<body>` after *Enable tone mapping*; **R2-4** focus to `<body>` at the magnifier's first / last frame (Firefox); **R2-5** 0 of 5 badged frames name "Removes picture"; **R2-6** at 1280 px the Dimensions content is 648 px in a 520 px column (Manual hidden, the right strip cut); **R2-7** arrows on the zoomed stage step frames and lose the focus. Fix round planned (section "Fix round") |
 
 ## Where M8 ended
 
