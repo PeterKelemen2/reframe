@@ -117,7 +117,59 @@ pinned FFmpeg n9.0.2 and the fixtures `letterbox`, `hdr10`, `hdr10-4k`, `multitr
 
 ## Task C — F-7 `CropMagnifier`, the loupe, `CropCheckGrid`
 
-(Task C writes this section.)
+Built in `components/crop/` (phase 1: unit tests against the store stubs; the browser checks
+come after tasks A and B are merged).
+
+- **The edge strips.** Each strip is a canvas of 384 × 96 CSS pixels (top, bottom) or 96 × 384
+  (left, right): the crop line in the middle of its depth, 48 / *zoom* source pixels on each
+  side (24, 12 or 6 at 2×, 4×, 8×), and along the line as many source pixels as fit (192, 96,
+  48; the whole picture when it is shorter). Along the line the strip is centred on the pointer
+  over the panel's picture (`preview.pointer`), else on the middle, and kept inside the picture.
+  The pixels are drawn with `imageSmoothingEnabled = false`; everything outside the kept
+  rectangle is tinted; the crop line is a 2-pixel stroke centred on the boundary between the
+  last removed and the first kept pixel (so one canvas pixel on each side of it); the pixel grid
+  is a 1-pixel line at every source pixel boundary. The label gives the source rows (top,
+  bottom) or columns (left, right) shown, from 0 and inclusive (`Rows 10–33`). The strips and
+  the loupe draw once per `requestAnimationFrame`, from the last pointer position.
+- **The loupe** is a 160-pixel round canvas at a fixed 4× (40 × 40 source pixels around the
+  pixel under the pointer) with the same tint and lines, placed in percent of `crop.sourceSize`
+  in A's overlay layer, `pointer-events: none`. It loads the frame only on the Dimensions tab in
+  manual crop. It does not follow the magnifier's zoom control (that is in the tab, the loupe in
+  the panel; no shared state was added for it).
+- **The frame loader** (`frames.ts`) fetches the signed PNG URL against the server's base URL
+  (the desktop app's page is not on the server's origin) and decodes it with
+  `createImageBitmap(blob, { colorSpaceConversion: "none" })`. One bitmap per frame **key**,
+  shared by its users (the magnifier and the loupe show the same frame) and closed when the last
+  one lets go: new links to the same frame after `preview.reload()` keep the decoded pixels. A
+  failed fetch asks `preview.reload()` once; a second failure in a row shows *The frame could
+  not be loaded.*
+- **The check of all frames** fetches each strip frame's PNG once, shows it through an object
+  URL and posts the same `Blob` to a module worker (`cropCheck.worker.ts`), which decodes it,
+  reads each removed band through an `OffscreenCanvas` and answers the bands' luma variance and
+  whether the frame loses content. The grid does not hold ten decoded bitmaps: at 4K that would
+  be about 330 MB. The bands are the removed parts without overlaps (top and bottom full width,
+  left and right between them). Luma is BT.709 from the PNG's RGB (`0.2126 R + 0.7152 G +
+  0.0722 B`, 0–255). A frame loses content when **any** band's variance is **above 4**. Each
+  frame shows the crop (tint and line) and the bars that crop detection found at its timestamp
+  (`detection.samples`, matched by the exact timestamp: both come from `sample_times`), hatched,
+  with the numbers in text; the badge says *Removes picture* with an icon. A click on a frame
+  selects it in the panel (`preview.select`) and closes the dialog. Closing terminates the
+  worker and revokes the object URLs; another crop or strip runs the check again.
+- **Threshold calibration** (2026-11-02, the pinned FFmpeg n9.0.2, `ffmpeg -ss t -i
+  letterbox.mkv -frames:v 1 -vf format=rgb24` for the ten strip times, the same formula in
+  Python; to be confirmed on the server's PNGs in the browser):
+
+  | Crop | Band | 0.2–1.8 s (letterbox) | 2.2–3.8 s (4:3) |
+  |------|------|------|------|
+  | 22 / 24 / 0 / 0 | top | 0.34–0.44 | 6 138–6 355 |
+  | 22 / 24 / 0 / 0 | bottom | 0.33–0.46 | 6 598–8 610 |
+  | 0 / 0 / 40 / 40 | left | 802–3 544 | 0.00 |
+  | 0 / 0 / 40 / 40 | right | 7 475–7 910 | 0.00 |
+  | 24 / 24 / 0 / 0 (2 rows into the picture) | top | 1 720–1 724 | 6 115–6 341 |
+
+  The bars' noise stays under 0.5 and two picture rows in a 24-row band give 1 720, so 4 (a
+  standard deviation of 2 luma steps) leaves a wide margin on both sides. Known limit: a band
+  of flat picture (one colour) or of a very dark scene has a low variance and is not flagged.
 
 ## Task D — F-8 the Filters tab
 
