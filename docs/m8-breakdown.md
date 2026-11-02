@@ -7,7 +7,8 @@ filters). The plan ([plan/08-roadmap.md](plan/08-roadmap.md) §M8, [plan/03-feat
 which part, in which order, and what each part must offer to the others. Decision:
 [0067](decisions/0067-m8-picture.md) (the lead's choices and one section per task). Status:
 [status.md](status.md). The template is [m7-breakdown.md](m7-breakdown.md). If the lead's
-context is summarised, this file and `status.md` are the source of truth.
+context is summarised, this file and `status.md` are the source of truth. M8 is done on Linux on
+the branch `m8-picture`; it is **not merged into `main`** (the owner decides), and neither is M7.
 
 M8's core part (C-5, C-10, [0033](decisions/0033-preview-frames-crop-and-clips.md)) and the
 preview routes ([0049](decisions/0049-s2-system-fs-settings-sources-preview.md)) are done and
@@ -477,7 +478,68 @@ test.
 | 2026-11-02 | **Merged FC** (a55b6f4; b790f30): R2-4 (`aria-disabled` keeps the focus at the ends), R2-5 (the frame buttons' names carry the bars and the badge), R2-6 strips (the top and bottom strips as long as the column; side strips beside or below), a failed worker answers an error, the loupe centred on the pixel, the simplifications; 18 mutations; flow 4 run by the lead after the merge: 2 passed. The lead's mutation (Next `disabled` again) fails `CropMagnifier.test.ts`. **Merged FB** (f2b374d; fcec448): R1-1 (a waiting Automatic gives up when another crop was chosen; a value comparison, since `applyOps` clones the job), R1-2, R1-3, R1-4 (detection per file and sample count), R2-1 / R2-9 (`pictureEditable`; controls off with a note, no overlay or detection), R2-2 (one line: a group's files are queued without a crop in Automatic / Conservative; *Manual* crops all), R2-6 controls, R2-8, R2-10, R2-17, quiet handle moves, the `presets/diff` wait in the server test; 21 mutations. The lead's mutation (no crop check after the await) fails 2 tests. **Merged FA** (bee24fe; 2ed5be5): R2-7 (a focused stage wider than its box scrolls with the arrows and keeps the focus), R2-9 panel (`noVideo`: no strip, no render, no *Try again*), R2-11, R2-14 (live regions), R2-15 (*Try again* on a failed render, focus to the stage), R2-17, R2-18 (no view / zoom buttons without a file), a second expiry asks again once a new link has loaded; FD's passthrough observation is not a defect (the server answers the source key; the two halves of `hdr10`'s pattern differ); 17 mutations. The lead's mutation (a wide stage stepping frames) fails `PreviewPanel.test.ts`. Each `status.md` conflict resolved per row (only the owner's sentence taken from its side). 1782 unit tests, lint, typecheck, build. **The lead re-ran R2's major repros** on the merged branch (port 8710): R2-1 the 90° button disabled in passthrough, R2-3 focus on the colour box's sentence, R2-4 focus kept on Next / Previous at the ends (Chromium, Firefox), R2-5 5 of 5 badged frames named, R2-6 content = column at 1920 / 1600 / 1440 / 1280 / 1024 px (strips 452 / 452, 196 / 196), R2-7 the stage scrolls and keeps the focus, R2-8 focus to *Automatic*, R2-2 one group line. No worktree left. Recorded: the clip still offers *Encode preview* for a file without video (FA's note; an audio-only clip, minor) |
 | 2026-11-02 | **Final checks, run alone on Linux**: `npm run lint`, `fmt:check`, `typecheck` clean; `npm test` 1782 passed; `build:web` built; `gen-api.sh --check` up to date; `npm run test:server` 62 passed in three runs out of four (the first run: 1 failed, `editor.group.server.test.ts` "edits the anime season as 04 says…", which passed alone and in the three runs after; its log was not kept, cause not found; recorded); `npm run e2e` 22 passed twice (44.9 s, 45.2 s), no server and no `/tmp/reframe-dev-*` left; Python `pytest -m "not needs_gpu"` in four chunks 1750 + 2406 + 2648 + 824 = **7628 passed**, 2 skipped, 26 deselected; ruff, ruff format, mypy, mypy `--platform win32` clean |
 | 2026-11-02 | **M8 demo, headless** (0067 "M8 demo, 2026-11-02 (headless)"): all four points pass in Chromium light and dark and Firefox light and dark against a real server and the pinned FFmpeg (12 of 12 checks each) |
+| 2026-11-02 | **M8 demo, headed** once in Chromium on `HDMI-A-1` through the window guard after the owner placed the cursor and the active window there (0067 "M8 demo, 2026-11-02 (headed)"): every point passed; headed Chromium plays the HEVC clip (headless does not); nothing on `DP-1`. **Docs reconciled**: `status.md` (the M8 row Done, not merged; M9 row; F-7 Done; the two feature rows), the plan boxes (every F-7, F-8 and F-15 box; F-17's first, its second waits for M10), 0067 "Not built in M8", "Where M8 ended" below. **Not merged into `main`, not pushed** |
 
-## Where M8 ended
+## Where M8 ended (2026-11-02)
 
-(Written at the end of the milestone.)
+M8 is done on Linux on the branch `m8-picture` (from `m7-batch-season`). It is **not merged into
+`main`** and nothing is pushed: the owner decides (M7 is not merged either). Built: A (the preview
+store and panel, `FrameViewer`, `SplitCompare`), B (the crop store, the Dimensions tab,
+`CropOverlay`), C (`CropMagnifier`, `CropLoupe`, `CropCheckGrid` and its worker), D (the Filters
+tab), E (Settings → Preview, the live preview clip), F (flow 4), and the lead's wave-0 route,
+diff change and `editor.amend`. Two fresh reviews found 8 majors; the lead reproduced each, FA,
+FB, FC and FD fixed each with a test that fails before it, and the lead re-ran the majors on the
+merged branch. The demo ran headless (Chromium and Firefox, light and dark) and once headed on
+`HDMI-A-1`.
+
+| Check (alone, Linux, 2026-11-02) | Result |
+|-------|--------|
+| `npm test` | 1782 passed |
+| `npm run test:server` | 62 passed (3 runs); 1 failure in an earlier run, not reproduced |
+| `npm run e2e` | 22 passed, twice |
+| Python `pytest -m "not needs_gpu"` | 7628 passed, 2 skipped, 26 deselected |
+| lint, format, typecheck, `build:web`, `gen-api.sh --check`, ruff, mypy ×2 | clean |
+
+1. **Recorded, not fixed**:
+   - L1: a custom filter the server's filter-text check refuses makes `jobs/validate` answer
+     `403 filter.not_allowed`; `useValidation` then keeps its old counts and no field shows it
+     (the Filters tab's own check shows it); `jobs/plan` and `preview/render` refuse that job too;
+   - L2: a custom filter that FFmpeg refuses (`eq=nosuch=1`) passes `jobs/validate`; the Filters
+     tab's dry run and the encode refuse it, so such a job can be queued and fails at the encode;
+   - L3: Colorspace without tone mapping clips the synthetic `hdr10` pattern (red → yellow);
+     the warning's "washed out" (03's wording) undersells it; not a preview defect;
+   - `npm run test:server`: `editor.group.server.test.ts` (M7) failed once under the full
+     parallel run and passed alone and in three full runs after; the first run's log was not
+     kept;
+   - R2-16: a frame's time is written three ways (panel, magnifier, check grid);
+   - the preview clip offers *Encode preview* for a file without video (an audio-only clip);
+   - a job's crop rectangle written from the old sample count's detection is not replaced when
+     the count changes (the detection line and the check grid update);
+   - a worker script that fails to load (the worker's `error` event) is not handled; an exception
+     inside it is;
+   - R1's suspicions: an anamorphic source is shown with its stored pixels (720×480 at 3:2; the
+     plan does not say which aspect to show); a failed `jobs/geometry` blanks the crop inputs
+     (not reachable from the UI);
+   - R2's suspicions: no Home / End on the crop handles, the filter help not linked to its row
+     for a screen reader, the sticky pipeline header under 60 rem;
+   - observations outside M8 (M6 / M7): a file opened while another is open joins it in a group
+     and is not the one shown; a group of loose files in the media root names its outputs after
+     the folder (`media.mkv`).
+2. **Not built** (0067 "Not built in M8"): the Range selector; crop detection for a group's files
+   and for files never shown in the editor; the detached preview window (D-x); burned-in subtitles
+   on output frames.
+3. **Owner questions**, with their defaults kept:
+   - automatic / conservative crop for a group's files and for *Add all*: queued without a crop
+     (the tab says so for a group; *Manual* crops every file the same way); should the queue
+     detect per file?
+   - the Range selector has no step: which milestone builds it?
+   - L1 and L2 (the custom filter's two refusals): fix in the server and core (a validation issue
+     instead of the 403; a dry run in validation), or keep?
+   - Fit within 576p / 480p are 16:9 boxes (1024×576, 854×480), not HandBrake's 720×576 /
+     720×480;
+   - the warning text "the picture will look washed out" (03) for an HDR → SDR conversion without
+     tone mapping, which clips;
+   - a detected crop is written into the job without an undo step (0067 item 3);
+   - the preview panel is shown by default now (it was collapsed while it was a placeholder).
+4. **Not verified**: GitHub CI (nothing pushed); Windows and WebKit (M10); the desktop webviews'
+   playback of H.264 / HEVC clips.

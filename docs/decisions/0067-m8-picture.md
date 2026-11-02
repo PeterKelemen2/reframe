@@ -808,3 +808,26 @@ Flow 4 (`npm run e2e`) passed in the final checks. Observation (M7, not changed)
 while another is open joins it in a group ("media", 2 files), and the newly opened file is not
 the one shown; the demo shows it from the sources panel.
 
+## M8 demo, 2026-11-02 (headed)
+
+Once, by the lead, in Chromium (Playwright's chromium-1248) light, started through the spike's
+window guard (`windows.Session`, `session.wrapper(chromium, (40, 40))` as `executablePath`;
+driver `lead/headed.py` with the same `lead/demo.mjs`) after the owner put the cursor and the
+active window on `HDMI-A-1`; Playwright's own input only, no native dialog. KWin added the window
+on `HDMI-A-1` (176,61, 1568×958), the guard placed and showed it at 40,40 and it read back there;
+the guard's `failure` was `null` and both scripts were unloaded afterwards; nothing was left
+running. All checks passed as in the headless runs, with one real difference: **headed Chromium
+plays the HEVC clip** (0.79 s played) where headless Chromium refuses it (0067 Context). The page
+followed item 4 (the `<video>` decides): the clip played, and *Compare frames* worked for AV1.
+So the frame compare of demo point 4 depends on the browser, as the plan's "plays in-app or
+compares frames" allows.
+
+## Not built in M8
+
+- The Range selector of 03 §App layout's source header: no M4–M9 step builds it (06 has no box
+  for it); status.md lists it as missing.
+- Crop detection for the files of a group and for files never shown in the editor (*Add all*):
+  they are queued without a crop in automatic and conservative mode (review item 1).
+- The detached preview window (03 §App layout, "desktop: separate window"): desktop, D-x.
+- Burned-in subtitles on output frames (0033 §4; a clip shows them).
+
