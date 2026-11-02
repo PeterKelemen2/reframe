@@ -1,0 +1,72 @@
+{
+  "loading": "Loading the job…",
+  "noJob": "No job is open.",
+  "list": "Filters, in the order they are applied",
+  "passthrough": "Video passthrough copies the video stream unchanged: the filters do not apply.",
+  "field": {
+    "implementation": "Implementation",
+    "preset": "Preset",
+    "tune": "Tune",
+    "custom": "Parameters",
+    "chain": "Filter chain"
+  },
+  "tune": {
+    "none": "Default"
+  },
+  "implementation": {
+    "option": "{label} ({status})",
+    "notInBuild": "cannot run: {filter} is not in this FFmpeg build",
+    "failed": "cannot run: {reason}",
+    "untested": "not tested on this computer",
+    "untestedVulkan": "needs Vulkan, not tested on this computer: the test runs with the hardware tests"
+  },
+  "check": {
+    "checking": "Checking with a one-frame test…",
+    "accepted": "FFmpeg accepts it (one-frame test)."
+  },
+  "help": {
+    "label": "Help: {filter}",
+    "what": "What it does",
+    "useWhen": "Use it when",
+    "avoidWhen": "Avoid when",
+    "speedCost": "Speed cost",
+    "settings": "Settings explained",
+    "presets": "Presets",
+    "tunes": "Tunes",
+    "speed": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    }
+  },
+  "colour": {
+    "title": "Source colour",
+    "primaries": "Primaries",
+    "transfer": "Transfer",
+    "matrix": "Matrix",
+    "range": "Range",
+    "bitDepth": "Bit depth",
+    "hdr": "HDR format",
+    "mastering": "Mastering display",
+    "luminance": "Mastering luminance",
+    "contentLight": "MaxCLL / MaxFALL",
+    "notTagged": "Not tagged",
+    "sdr": "None (SDR)",
+    "limited": "Limited ({range})",
+    "full": "Full ({range})",
+    "bits": "{bits}-bit",
+    "named": "{name} ({value})",
+    "primariesValue": "R {rx}, {ry} · G {gx}, {gy} · B {bx}, {by} · WP {wx}, {wy}",
+    "luminanceValue": "{min}–{max} cd/m²",
+    "contentLightValue": "{cll} / {fall} cd/m²",
+    "noSource": "The source's colours are known once the file is probed.",
+    "untagged": "the untagged source colours",
+    "keep": "Off: the output keeps the source's colours ({from}).",
+    "tonemapOnly": "Tone mapping converts {from} to BT.709 SDR.",
+    "custom": "Converts {from} with your parameters.",
+    "convert": "Converts {from} to {to}.",
+    "convertSdr": "Converts {from} to {to} SDR.",
+    "convertToneMapped": "Converts {from} to {to} SDR, with tone mapping.",
+    "washedOut": "Without tone mapping, the picture will look washed out."
+  }
+}

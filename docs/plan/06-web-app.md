@@ -519,7 +519,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 ### F-8 Filters tab
 - [ ] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
       before/after on the current frame (`preview/render`).
-- [ ] Colorspace source-colour box and the "what will happen" sentence.
+- [x] Colorspace source-colour box and the "what will happen" sentence.
 
 ### F-9 Video tab and advanced options
 - [x] `EncoderPicker` grouped by family, with status dots and reasons. The
