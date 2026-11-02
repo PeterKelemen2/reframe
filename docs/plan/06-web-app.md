@@ -395,7 +395,11 @@ frontend/src/
 │   ├── sources/      # SourcesPanel, FileBrowserDialog (web)
 │   ├── naming/       # NamingOptionsEditor, JobNamingEditor
 │   ├── presets/      # PresetPicker, the preset drawer
-│   ├── media/        # FrameViewer, CropMagnifier, CropCheckGrid, SplitCompare, TrackTable
+│   ├── media/        # FrameViewer, SplitCompare, TrackTable
+│   ├── dimensions/   # the Dimensions tab's sections, CropOverlay
+│   ├── crop/         # CropMagnifier, CropLoupe, CropCheckGrid (and its worker)
+│   ├── filters/      # the Filters tab's rows, help and source colour box
+│   ├── clip/         # the live preview clip and its frame compare
 │   ├── language/     # LanguagePicker, LanguageListEditor
 │   ├── tracks/       # output track rows, TrackMetadataEditor, flag toggles, bulk edit
 │   ├── defaults/     # DefaultsDialog and its live preview
@@ -414,7 +418,8 @@ Each area of the app has its own message file and its own component folder, so t
 tasks never share one ([decision 0063](../decisions/0063-m4-frontend-mvp.md)); the task
 breakdown and the store contracts are in [../m4-breakdown.md](../m4-breakdown.md); M6's
 folders and contracts are in [../m6-breakdown.md](../m6-breakdown.md)
-([decision 0065](../decisions/0065-m6-tracks-and-metadata.md)).
+([decision 0065](../decisions/0065-m6-tracks-and-metadata.md)); M8's are in [../m8-breakdown.md](../m8-breakdown.md)
+([decision 0067](../decisions/0067-m8-picture.md)).
 
 ## Platform adapter
 

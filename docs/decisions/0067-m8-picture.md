@@ -106,6 +106,8 @@ pinned FFmpeg n9.0.2 and the fixtures `letterbox`, `hdr10`, `hdr10-4k`, `multitr
 
 - [06 §S-2](../plan/06-web-app.md#s-2-rest-api), Preview: the row of
   `POST /api/preview/clips/{id}/frames`.
+- [06 Part B §Structure](../plan/06-web-app.md#structure): the M8 folders (`dimensions/`, `crop/`,
+  `filters/`, `clip/`); the magnifier and the check grid are in `crop/`, not `media/`.
 
 ## Task A — F-7 the preview panel, `FrameViewer`, `SplitCompare`
 
