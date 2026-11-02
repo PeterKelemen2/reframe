@@ -37,9 +37,25 @@ afterAll(async () => {
   await server.stop()
 })
 
+/** Each `presets/diff` the editor asked, with the server's answer. */
+let diffs: { template: unknown; changes: unknown }[] = []
+
 beforeEach(() => {
   setActivePinia(createPinia())
-  configureClient({ baseUrl: server.url, token: server.token })
+  diffs = []
+  configureClient({
+    baseUrl: server.url,
+    token: server.token,
+    fetch: async (input, init) => {
+      const request = new Request(input, init)
+      const response = await fetch(request.clone())
+      if (new URL(request.url).pathname === '/api/presets/diff' && response.ok) {
+        const body = (await request.json()) as { template: unknown }
+        diffs.push({ template: body.template, changes: await response.clone().json() })
+      }
+      return response
+    },
+  })
 })
 
 async function opened() {
@@ -81,7 +97,10 @@ describe('the Dimensions tab against a real server', () => {
       rect: { top: 22, bottom: 24, left: 0, right: 0 },
     })
     expect(editor.canUndo).toBe(false)
-    await vi.waitFor(() => expect(editor.modified).toBe(false), SOON)
+    // The server's answer for the job as it is now, the detected crop in it.
+    await vi.waitFor(() => expect(diffs.at(-1)?.template).toEqual(editor.currentTemplate), SOON)
+    expect(diffs.at(-1)?.changes).toEqual([])
+    expect(editor.modified).toBe(false)
   })
 
   it.each<[string, JsonPatchOp[]]>([

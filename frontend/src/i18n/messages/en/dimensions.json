@@ -17,6 +17,10 @@
     "upscaled": "The picture is enlarged: it gains no detail.",
     "invalid": "A picture setting is not valid: see the marked field."
   },
+  "locked": {
+    "passthrough": "The video is copied unchanged, so these settings are not used. Turn off Video passthrough on the Video tab to change the picture.",
+    "noVideo": "These settings are off: there is no picture to change."
+  },
   "sections": {
     "orientation": "Orientation",
     "crop": "Crop",
@@ -45,8 +49,7 @@
       "bottom": "Bottom",
       "left": "Left",
       "right": "Right"
-    },
-    "unit": "px"
+    }
   },
   "detection": {
     "running": "Detecting the black bars…",
@@ -55,7 +58,8 @@
     "failed": "Crop detection failed: {reason}",
     "cancelled": "The crop detection was cancelled.",
     "again": "Detect again",
-    "group": "The detection of the shown file. Each file of the group detects its own crop when it is queued."
+    "group": "In a group, Automatic and Conservative queue the files without a crop: their black bars are not detected. Choose Manual to crop every file the same way.",
+    "shownFile": "This file: {line}"
   },
   "snap": {
     "grid": "{edge} {from} → {to} ({grid} chroma grid)",

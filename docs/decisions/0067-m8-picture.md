@@ -554,7 +554,57 @@ R1: 1 major, 3 minors; R2: 7 majors, 8 minors, 6 nits. The lead reproduced every
 
 ### Fix round — FB (crop store and Dimensions tab)
 
-(Task FB writes this section.)
+Fixed (each with a test that failed before the fix):
+
+- **R1-1** `setMode` keeps the crop it was chosen on and gives up after the detection when the
+  mode or a rectangle the user set has changed since; the detected rectangle that `amend` fills
+  in meanwhile does not count, so a Conservative clicked while an automatic job detects still
+  applies. Not R1's object identity: every patch clones the whole job, so any other edit would
+  drop the click.
+- **R1-2** the edge inputs end the coalescing run on blur.
+- **R1-3** `setRect` and `setMode` write `{...crop, mode, rect}`: a crop field of a newer version
+  stays.
+- **R1-4** a detection is kept per file *and* sample count: a new Settings → Preview count
+  detects again on the strip's new times; the old count's result stays for the page. A job's
+  rectangle already written from the old count is not replaced (it is the job's crop now).
+- **R2-1, R2-9** (review item 3) the store's `pictureEditable` (the contract for FC and FD):
+  `false` while `video.passthrough` or when the shown file has no video stream (its probe in the
+  sources store, or `jobs/geometry` without a source); `editable` is then `false`. The tab shows
+  a note under the header and every control is disabled (help buttons and the advanced part's
+  toggle stay); the edge inputs show disabled in manual mode; no detection line, magnifier,
+  overlay or handles; no detection is asked for a file without video. A disabled checked choice
+  is outlined: the theme kept its primary fill with grey text, which left the chosen value
+  unreadable.
+- **R2-2** (review item 1) in a group in a detected mode the crop part says once that the files
+  are queued without a crop and that *Manual* crops them all the same way, then `This file: …`
+  with the shown file's detection; the server's `dimensions.crop_not_detected` shows once (its
+  field). The header keeps the geometry's own note ("detection has not run yet"), which now agrees.
+  Task B item 5's group line is replaced by this.
+- **R2-6** every Dimensions field has its label above the control, and the segmented controls
+  wrap: at 1024 / 1280 / 1440 / 1920 px the tab content is as wide as its column (264 / 520 /
+  680 / 1160 px) in Chromium and Firefox; the magnifier strips are FC's.
+- **R2-8** an undo that takes the handles away while one has the focus gives it to the chosen
+  crop mode.
+- **R2-10** the handle focus ring is white inside black (3 px each), as the crop frame.
+- **R2-17** `dimensions.crop.unit` removed.
+- **R1's suspicions**: a handle's move writes no snap note (`setRect`'s `quiet`): a key at 0 or
+  a drag past the picture is kept in silently, the user sees the line stop; typed values keep
+  their note. `dimensions.server.test.ts` waits for the `presets/diff` answer of the job as it is
+  now and checks it is empty (a mutation that makes the amend a preset change passed the old
+  check and fails the new one).
+- **Simplifications**: `detection`, `detecting` and `detectionError` are computeds of the
+  per-file map; `CropSection`'s `values()` is gone.
+
+Tests: `stores/crop.test.ts` (26), `DimensionsTab.test.ts` (11), `CropOverlay.test.ts` (7), the
+real-server `dimensions.server.test.ts` (7); 21 mutations, each caught. Checked headless in
+Chromium and Firefox, light and dark, against a real server (port 8720, the pinned FFmpeg): R1's
+race on `hdr10-4k` keeps `{mode: manual, rect: {top: 100, …}}` after the detection; passthrough
+on `letterbox`: 24 controls, none enabled, the note, a click on 90° changes nothing, no overlay,
+handles or magnifier; `audio-only.mkv`: every control off, the note, no detection line, no
+`preview/cropdetect` request; the `Anime Show S01` group: one group line, the issue once,
+`This file: Detected 0 / 0 / 0 / 0 on 10 of 10 frames`; the widths above; the focus after two
+`Ctrl+Z` on a handle is on *Automatic*; the ring read on red, cyan, blue and yellow and the
+black bars.
 
 ### Fix round — FC (magnifier and check grid)
 

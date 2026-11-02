@@ -13,8 +13,10 @@ import {
   type SnapChange,
 } from '@/components/dimensions/grid'
 import { useGeometry } from '@/components/summary/useGeometry'
+import { useJobSource } from '@/components/summary/useJobSource'
 
 import { type PatchOptions, useEditorStore } from './editor'
+import { useSettingsStore } from './settings'
 import { useTasksStore } from './tasks'
 
 export type CropMode = CropSettings['mode']
@@ -22,6 +24,11 @@ export type CropMode = CropSettings['mode']
 export interface PictureSize {
   width: number
   height: number
+}
+
+export interface RectOptions extends PatchOptions {
+  /** A handle moved the edge: the user sees where it went, so no note explains it. */
+  quiet?: boolean
 }
 
 /** One file's crop detection: kept for the page. */
@@ -33,6 +40,12 @@ interface FileDetection {
 
 function detected(mode: CropMode | null): mode is 'auto' | 'conservative' {
   return mode === 'auto' || mode === 'conservative'
+}
+
+/** The crop a mode was chosen on is still there; the detected rectangle filled in does not count. */
+function unchanged(before: CropSettings | undefined, now: CropSettings | undefined): boolean {
+  if (before?.mode !== now?.mode) return false
+  return before?.rect == null || JSON.stringify(before.rect) === JSON.stringify(now?.rect)
 }
 
 function noteOf(change: SnapChange, grid: CropGrid): string {
@@ -66,7 +79,9 @@ function noteOf(change: SnapChange, grid: CropGrid): string {
 export const useCropStore = defineStore('crop', () => {
   const editor = useEditorStore()
   const tasks = useTasksStore()
+  const settings = useSettingsStore()
   const answer = useGeometry()
+  const { source } = useJobSource()
 
   /** `jobs/geometry` of the editor's job, the newest answer: the pipeline header, the grid. */
   const geometry = answer.answer
@@ -82,12 +97,24 @@ export const useCropStore = defineStore('crop', () => {
 
   /** The job's crop mode; `null` when no job is open. */
   const mode = computed<CropMode | null>(() => editor.job?.dimensions?.crop?.mode ?? null)
-  /** Crop detection of the shown file on the strip's sample times, kept per file for the page. */
-  const detection = shallowRef<CropDetection | null>(null)
-  const detecting = ref(false)
-  const detectionError = ref<string | null>(null)
   /** Why the last change was moved onto the chroma grid; `null` when nothing moved. */
   const snapNote = ref<string | null>(null)
+
+  const files = shallowRef<Record<string, FileDetection>>({})
+  const shownId = computed(() => editor.target?.sourceId ?? null)
+
+  /** A detection is of a file and of the sample count: it runs on the strip's sample times. */
+  function keyOf(sourceId: string): string {
+    return `${sourceId} ${settings.settings?.preview?.sample_frames ?? ''}`
+  }
+
+  const shown = computed<FileDetection | null>(() =>
+    shownId.value === null ? null : (files.value[keyOf(shownId.value)] ?? null),
+  )
+  /** Crop detection of the shown file on the strip's sample times, kept per file for the page. */
+  const detection = computed<CropDetection | null>(() => shown.value?.result ?? null)
+  const detecting = computed(() => (shown.value?.running ?? null) !== null)
+  const detectionError = computed<string | null>(() => shown.value?.error ?? null)
 
   /**
    * The crop the job applies, on the chroma grid: the manual rectangle, or the detected one in
@@ -103,15 +130,23 @@ export const useCropStore = defineStore('crop', () => {
   const sourceSize = computed<PictureSize | null>(() =>
     grid.value === null ? null : { width: grid.value.width, height: grid.value.height },
   )
+
+  /** The shown file has no video stream, as its probe or `jobs/geometry` says. */
+  const noVideo = computed(
+    () =>
+      (source.value !== null && (source.value.video ?? []).length === 0) ||
+      geometry.value?.source === null,
+  )
+  /** The job changes the picture: it does not copy the video, and the file has a video stream. */
+  const pictureEditable = computed(
+    () => editor.job !== null && editor.job.video?.passthrough !== true && !noVideo.value,
+  )
   /** Manual mode: the inputs, the drag handles and the arrow keys change the crop. */
-  const editable = computed(() => mode.value === 'manual')
+  const editable = computed(() => mode.value === 'manual' && pictureEditable.value)
 
-  const files = shallowRef<Record<string, FileDetection>>({})
-  const shownId = computed(() => editor.target?.sourceId ?? null)
-
-  function put(sourceId: string, change: Partial<FileDetection>): void {
-    const known = files.value[sourceId] ?? { result: null, error: null, running: null }
-    files.value = { ...files.value, [sourceId]: { ...known, ...change } }
+  function put(key: string, change: Partial<FileDetection>): void {
+    const known = files.value[key] ?? { result: null, error: null, running: null }
+    files.value = { ...files.value, [key]: { ...known, ...change } }
   }
 
   async function run(sourceId: string): Promise<CropDetection> {
@@ -126,20 +161,21 @@ export const useCropStore = defineStore('crop', () => {
   }
 
   function detectFile(sourceId: string): Promise<CropDetection> {
-    const known = files.value[sourceId]?.running
+    const key = keyOf(sourceId)
+    const known = files.value[key]?.running
     if (known) return known
     const running = run(sourceId).then(
       (result) => {
-        put(sourceId, { result, error: null, running: null })
+        put(key, { result, error: null, running: null })
         return result
       },
       (error: Error) => {
         const reason = error instanceof ApiError ? error.problem.title : error.message
-        put(sourceId, { error: reason, running: null })
+        put(key, { error: reason, running: null })
         throw error
       },
     )
-    put(sourceId, { error: null, running })
+    put(key, { error: null, running })
     return running
   }
 
@@ -150,24 +186,14 @@ export const useCropStore = defineStore('crop', () => {
     return detectFile(sourceId)
   }
 
-  // Once per file for the page: a file shown again keeps its detection (or its failure).
+  // Once per file and sample count for the page: a file shown again keeps its detection (or its
+  // failure).
   watch(
-    shownId,
-    (sourceId) => {
-      if (sourceId !== null && files.value[sourceId] === undefined) {
+    [shownId, () => settings.settings?.preview?.sample_frames, noVideo],
+    ([sourceId, , none]) => {
+      if (sourceId !== null && !none && files.value[keyOf(sourceId)] === undefined) {
         detectFile(sourceId).catch(() => {})
       }
-    },
-    { immediate: true },
-  )
-
-  watch(
-    [shownId, files],
-    ([sourceId, all]) => {
-      const file = sourceId === null ? undefined : all[sourceId]
-      detection.value = file?.result ?? null
-      detecting.value = (file?.running ?? null) !== null
-      detectionError.value = file?.error ?? null
     },
     { immediate: true },
   )
@@ -179,7 +205,7 @@ export const useCropStore = defineStore('crop', () => {
     ([target, all]) => {
       if (target?.kind !== 'job') return
       const crop = target.job.dimensions?.crop
-      const found = all[target.sourceId]?.result
+      const found = all[keyOf(target.sourceId)]?.result
       if (!crop || !detected(crop.mode) || crop.rect || !found) return
       editor.amend([{ op: 'add', path: '/dimensions/crop/rect', value: found[crop.mode] }])
     },
@@ -196,44 +222,52 @@ export const useCropStore = defineStore('crop', () => {
     },
   )
 
-  /**
-   * A manual crop: snapped down to the chroma grid and kept inside the picture, the mode set to
-   * manual; one undo step, or part of the run of `options.coalesce` (a drag, held arrow keys).
-   */
-  function setRect(next: CropRect, options?: PatchOptions): void {
-    if (grid.value === null) return
-    const { rect: snapped, changes } = snapCrop(next, rect.value ?? NO_CROP, grid.value)
-    const current = grid.value
-    snapNote.value =
-      changes.length === 0 ? null : changes.map((change) => noteOf(change, current)).join(' · ')
-    const crop = { mode: 'manual', rect: snapped }
+  /** The crop with `mode` and `rect` replaced: a field of a newer version stays. */
+  function writeCrop(next: Pick<CropSettings, 'mode' | 'rect'>, options?: PatchOptions): void {
+    const crop = { ...editor.job?.dimensions?.crop, ...next }
     noted = JSON.stringify(crop)
     editor.set('/dimensions/crop', crop, options)
   }
 
   /**
+   * A manual crop: snapped down to the chroma grid and kept inside the picture, the mode set to
+   * manual; one undo step, or part of the run of `options.coalesce` (a drag, held arrow keys).
+   */
+  function setRect(next: CropRect, options?: RectOptions): void {
+    if (grid.value === null) return
+    const { rect: snapped, changes } = snapCrop(next, rect.value ?? NO_CROP, grid.value)
+    const current = grid.value
+    snapNote.value =
+      changes.length === 0 || options?.quiet
+        ? null
+        : changes.map((change) => noteOf(change, current)).join(' · ')
+    writeCrop({ mode: 'manual', rect: snapped }, { coalesce: options?.coalesce })
+  }
+
+  /**
    * Another mode, one undo step. Automatic and conservative take the detected rectangle; the
-   * detection runs first when it has not. A group's files detect their own crop: it gets the
-   * mode only.
+   * detection runs first when it has not. A group's files are queued without detection: it gets
+   * the mode only.
    */
   async function setMode(next: CropMode): Promise<void> {
     const target = editor.target
     if (target === null || next === mode.value) return
     if (!detected(next)) {
       const kept = next === 'manual' ? (rect.value ?? { ...NO_CROP }) : null
-      editor.set('/dimensions/crop', { mode: next, rect: kept })
+      writeCrop({ mode: next, rect: kept })
       return
     }
     if (target.kind === 'group') {
-      editor.set('/dimensions/crop', { mode: next, rect: null })
+      writeCrop({ mode: next, rect: null })
       return
     }
     const session = editor.session
-    let found = files.value[target.sourceId]?.result ?? null
+    const before = target.job.dimensions?.crop
+    let found = files.value[keyOf(target.sourceId)]?.result ?? null
     if (found === null) found = await detect().catch(() => null)
-    // Another job opened while the detection ran: the mode was meant for the last one.
-    if (editor.session !== session) return
-    editor.set('/dimensions/crop', { mode: next, rect: found?.[next] ?? null })
+    // Another job, or another crop chosen while the detection ran: the last choice stands.
+    if (editor.session !== session || !unchanged(before, editor.job?.dimensions?.crop)) return
+    writeCrop({ mode: next, rect: found?.[next] ?? null })
   }
 
   return {
@@ -245,6 +279,7 @@ export const useCropStore = defineStore('crop', () => {
     rect,
     sourceSize,
     editable,
+    pictureEditable,
     detection,
     detecting,
     detectionError,

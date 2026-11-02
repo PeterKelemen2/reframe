@@ -30,6 +30,7 @@ const BOXES = [
 const CUSTOM = 'custom'
 
 const size = computed<Size | null>(() => editor.job?.dimensions?.size ?? null)
+const locked = computed(() => !crop.pictureEditable)
 const MODES: SizeMode[] = ['source', 'fit', 'width', 'height']
 const modes = computed(() =>
   MODES.map((value) => ({ value, label: t(`dimensions.size.modes.${value}`) })),
@@ -101,6 +102,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
       :label="t('dimensions.size.mode')"
       path="dimensions.size"
       :help="t('dimensions.size.modeHelp')"
+      stacked
     >
       <template #default="{ id, labelId, invalid }">
         <div class="size-section__row">
@@ -110,6 +112,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
             :options="modes"
             option-label="label"
             option-value="value"
+            :disabled="locked"
             :ariaLabelledby="labelId"
             :invalid="invalid"
             data-control="size-mode"
@@ -122,6 +125,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
             :options="boxes"
             option-label="label"
             option-value="value"
+            :disabled="locked"
             :ariaLabel="t('dimensions.size.box')"
             data-control="size-box"
             @update:model-value="setBox"
@@ -131,6 +135,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
               :model-value="size.width"
               :min="1"
               :use-grouping="false"
+              :disabled="locked"
               :ariaLabel="t('dimensions.size.width')"
               :invalid="invalid"
               data-input="width"
@@ -141,6 +146,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
               :model-value="size.height"
               :min="1"
               :use-grouping="false"
+              :disabled="locked"
               :ariaLabel="t('dimensions.size.height')"
               :invalid="invalid"
               data-input="height"
@@ -152,6 +158,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
             :model-value="size.width"
             :min="1"
             :use-grouping="false"
+            :disabled="locked"
             :ariaLabel="t('dimensions.size.width')"
             :invalid="invalid"
             data-input="width"
@@ -162,6 +169,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
             :model-value="size.height"
             :min="1"
             :use-grouping="false"
+            :disabled="locked"
             :ariaLabel="t('dimensions.size.height')"
             :invalid="invalid"
             data-input="height"
@@ -174,11 +182,13 @@ function setNumber(pointer: string, value: number | null | undefined): void {
       :label="t('dimensions.size.upscale')"
       path="dimensions.allow_upscaling"
       :help="t('dimensions.size.upscaleHelp')"
+      stacked
     >
       <template #default="{ id, labelId }">
         <ToggleSwitch
           :input-id="id"
           :model-value="editor.job?.dimensions?.allow_upscaling ?? false"
+          :disabled="locked"
           :ariaLabelledby="labelId"
           data-control="upscale"
           @update:model-value="editor.set('/dimensions/allow_upscaling', $event)"

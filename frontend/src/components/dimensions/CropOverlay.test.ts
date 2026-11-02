@@ -1,8 +1,10 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import { getActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { settle } from '@/api/testing/fakes'
 import type { JobSettings } from '@/api/types'
+import DimensionsTab from '@/components/editor/tabs/DimensionsTab.vue'
 import { mountShell } from '@/components/shell/testing'
 import { sampleJob } from '@/editor/testing/samples'
 import { useCropStore } from '@/stores/crop'
@@ -102,6 +104,43 @@ describe('the crop overlay', () => {
     editor.undo()
     editor.undo()
     expect(editor.get('/dimensions/crop/rect')).toMatchObject({ top: 22, bottom: 24 })
+  })
+
+  it('shows nothing while the video is copied', async () => {
+    const job = manualJob()
+    job.video = { ...job.video!, passthrough: true }
+    const { wrapper } = await mountOverlay(job)
+    expect(wrapper.find('[data-overlay="crop"]').exists()).toBe(false)
+  })
+
+  it('gives the focus to the crop mode when an undo takes the handles away', async () => {
+    const job = manualJob()
+    job.dimensions!.crop = { mode: 'conservative', rect: null }
+    const { wrapper, editor, crop } = await mountOverlay(job)
+    const { wrapper: tab } = await mountShell(DimensionsTab, { pinia: getActivePinia() })
+    mounted.push(tab)
+    await crop.setMode('manual')
+    await flushPromises()
+    ;(handle(wrapper, 'top').element as HTMLElement).focus()
+    editor.undo()
+    await flushPromises()
+    expect(document.activeElement?.closest('[data-control="crop-mode"]')).not.toBeNull()
+    expect(document.activeElement?.textContent).toBe('Conservative')
+  })
+
+  it('writes no note for a value the user did not type', async () => {
+    const { wrapper, crop } = await mountOverlay(manualJob())
+    await handle(wrapper, 'left').trigger('keydown', { key: 'ArrowLeft' })
+    expect(crop.snapNote).toBeNull()
+    const left = handle(wrapper, 'left')
+    left.element.setPointerCapture = () => {}
+    const send = (type: string, clientX = 0) =>
+      left.element.dispatchEvent(new MouseEvent(type, { button: 0, clientX, clientY: 200 }))
+    send('pointerdown')
+    send('pointermove', 20)
+    send('pointerup')
+    await flushPromises()
+    expect(crop.snapNote).toBeNull()
   })
 
   it('drags an edge to the pointer, one undo step per drag', async () => {

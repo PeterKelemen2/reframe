@@ -12,14 +12,22 @@ import Section from '@/components/base/Section.vue'
 import CropSection from '@/components/dimensions/CropSection.vue'
 import PipelineHeader from '@/components/dimensions/PipelineHeader.vue'
 import SizeSection from '@/components/dimensions/SizeSection.vue'
+import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { useUiStore } from '@/stores/ui'
 
 const { t } = useI18n()
+const crop = useCropStore()
 const editor = useEditorStore()
 const ui = useUiStore()
 
 const dimensions = computed<DimensionSettings | null>(() => editor.job?.dimensions ?? null)
+const locked = computed(() => !crop.pictureEditable)
+const lockedNote = computed(() =>
+  editor.job?.video?.passthrough
+    ? t('dimensions.locked.passthrough')
+    : t('dimensions.locked.noVideo'),
+)
 
 const rotations = computed(() =>
   [0, 90, 180, 270].map((degrees) => ({
@@ -81,6 +89,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
     <template v-else>
       <div class="dimensions-tab__header">
         <PipelineHeader />
+        <p v-if="locked" class="dimensions-tab__locked" data-state="locked">{{ lockedNote }}</p>
       </div>
       <div class="dimensions-tab__content">
         <Section :title="t('dimensions.sections.orientation')">
@@ -99,6 +108,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                   option-label="label"
                   option-value="value"
                   :allow-empty="false"
+                  :disabled="locked"
                   :ariaLabelledby="labelId"
                   data-control="rotate"
                   @update:model-value="editor.set('/dimensions/rotate', $event)"
@@ -115,6 +125,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                 <ToggleSwitch
                   :input-id="id"
                   :model-value="dimensions.flip_horizontal"
+                  :disabled="locked"
                   :ariaLabelledby="labelId"
                   data-control="flip"
                   @update:model-value="editor.set('/dimensions/flip_horizontal', $event)"
@@ -141,6 +152,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
             :label="t('dimensions.advanced.pixelAspect')"
             path="dimensions.pixel_aspect"
             :help="t('dimensions.advanced.pixelAspectHelp')"
+            stacked
           >
             <template #default="{ id, labelId }">
               <SelectButton
@@ -150,6 +162,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                 option-label="label"
                 option-value="value"
                 :allow-empty="false"
+                :disabled="locked"
                 :ariaLabelledby="labelId"
                 data-control="pixel-aspect"
                 @update:model-value="setPixelAspect"
@@ -160,6 +173,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
             v-if="dimensions.pixel_aspect === 'custom'"
             :label="t('dimensions.advanced.customPar')"
             path="dimensions.custom_par"
+            stacked
           >
             <template #default="{ id, invalid }">
               <div class="dimensions-tab__row">
@@ -168,6 +182,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                   :model-value="dimensions.custom_par?.num ?? null"
                   :min="0"
                   :use-grouping="false"
+                  :disabled="locked"
                   :ariaLabel="t('dimensions.advanced.parWidth')"
                   :invalid="invalid"
                   data-input="par-num"
@@ -178,6 +193,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                   :model-value="dimensions.custom_par?.den ?? null"
                   :min="1"
                   :use-grouping="false"
+                  :disabled="locked"
                   :ariaLabel="t('dimensions.advanced.parHeight')"
                   :invalid="invalid"
                   data-input="par-den"
@@ -190,6 +206,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
             :label="t('dimensions.advanced.modulus')"
             path="dimensions.modulus"
             :help="t('dimensions.advanced.modulusHelp')"
+            stacked
           >
             <template #default="{ id, labelId }">
               <SelectButton
@@ -199,6 +216,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                 option-label="label"
                 option-value="value"
                 :allow-empty="false"
+                :disabled="locked"
                 :ariaLabelledby="labelId"
                 data-control="modulus"
                 @update:model-value="editor.set('/dimensions/modulus', $event)"
@@ -209,6 +227,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
             :label="t('dimensions.advanced.scaler')"
             path="dimensions.scaler"
             :help="t('dimensions.advanced.scalerHelp')"
+            stacked
           >
             <template #default="{ id, labelId, invalid }">
               <Select
@@ -217,6 +236,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                 :options="scalers"
                 option-label="label"
                 option-value="value"
+                :disabled="locked"
                 :ariaLabelledby="labelId"
                 :invalid="invalid"
                 data-control="scaler"
@@ -247,6 +267,11 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
   background: var(--rf-color-surface);
 }
 
+.dimensions-tab__locked {
+  margin: var(--rf-space-2) 0 0;
+  font-size: var(--rf-font-size-sm);
+}
+
 .dimensions-tab__content {
   display: flex;
   flex-direction: column;
@@ -263,5 +288,18 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
 
 .dimensions-tab__row :deep(.p-inputnumber-input) {
   width: 5rem;
+}
+
+/* A narrow tab column wraps the segmented controls instead of cutting off their last choices. */
+.dimensions-tab :deep(.p-selectbutton) {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+/* The theme greys the text of a disabled choice but keeps the checked one's primary fill, which
+   leaves the chosen value unreadable; an outline marks it instead. */
+.dimensions-tab :deep(.p-togglebutton-checked:disabled .p-togglebutton-content) {
+  background: var(--rf-color-surface);
+  box-shadow: inset 0 0 0 1px currentcolor;
 }
 </style>
