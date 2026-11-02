@@ -63,11 +63,11 @@ export function cliName(option: EncoderOption): string {
   return option.mapping.kind === 'ffmpeg_arg' ? option.mapping.arg : option.mapping.name
 }
 
-/** Decimals a float option is typed with: those of its step. */
-export function fractionDigits(option: EncoderOption): number {
-  if (option.type !== 'float') return 0
-  return String(option.step ?? 0.01).split('.')[1]?.length ?? 0
-}
+/**
+ * Decimals a float option holds as typed, whatever its step: the core takes any. A double keeps
+ * this many exactly for the options' values (below 10⁵).
+ */
+export const FLOAT_DIGITS = 10
 
 function choiceLabel(setting: ChoiceSetting | null | undefined, value: string): string {
   return setting?.choices.find((choice) => choice.value === value)?.label ?? value

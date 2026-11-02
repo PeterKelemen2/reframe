@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { RotateCcw } from '@lucide/vue'
-import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import ToggleSwitch from 'primevue/toggleswitch'
-import vTooltip from 'primevue/tooltip'
-import { computed, nextTick, useTemplateRef } from 'vue'
+import { computed, nextTick, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { EncoderOption } from '@/api/types'
@@ -18,11 +15,12 @@ import {
   cliName,
   defaultText,
   defaultValue,
-  fractionDigits,
+  FLOAT_DIGITS,
   type OptionValue,
   optionPath,
   optionPointer,
 } from './options'
+import ResetButton from './ResetButton.vue'
 
 /** One advanced option: its control, the default, reset and help. Absent from the job = default. */
 const props = defineProps<{
@@ -36,6 +34,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const editor = useEditorStore()
 const root = useTemplateRef<HTMLElement>('root')
+const defaultId = useId()
 
 const video = computed(() => editor.job?.video ?? null)
 const path = computed(() => optionPath(props.option.key))
@@ -45,8 +44,9 @@ const changed = computed(() => stored.value !== undefined)
 const fallback = computed(() =>
   video.value === null ? '' : defaultText(props.option, video.value, props.encoder, t),
 )
-const help = computed(
-  () => `${props.option.help} ${t('advanced.commandLine', { name: cliName(props.option) })}`,
+const defaultShown = computed(() => changed.value || props.option.type === 'bool')
+const help = computed(() =>
+  t('advanced.help', { help: props.option.help, name: cliName(props.option) }),
 )
 const enumSetting = computed(() => ({
   choices: props.option.choices ?? [],
@@ -88,6 +88,23 @@ function setChoice(value: string | null): void {
   else write(value)
 }
 
+const COMMIT_KEYS = new Set(['Tab', 'Enter', 'NumpadEnter'])
+let focusText = ''
+
+function keepText(event: FocusEvent): void {
+  focusText = (event.target as HTMLInputElement).value
+}
+
+/**
+ * PrimeVue's InputNumber commits its text, clamped and rounded, on every Tab, Enter and blur: a
+ * stored value outside the range or with more decimals would be rewritten by a pass through the
+ * field. Unchanged text never reaches it.
+ */
+function skipUnchanged(event: Event): void {
+  if (event instanceof KeyboardEvent && !COMMIT_KEYS.has(event.code || event.key)) return
+  if ((event.target as HTMLInputElement).value === focusText) event.stopPropagation()
+}
+
 /** The reset button goes with the change: the focus goes to the option's control. */
 async function reset(): Promise<void> {
   remove()
@@ -107,27 +124,38 @@ async function reset(): Promise<void> {
     :data-changed="changed"
   >
     <span v-if="category" class="advanced-row__category">{{ category }}</span>
-    <Field :label="option.label" :path="path" :help="help">
+    <Field
+      :label="option.label"
+      :path="path"
+      :help="help"
+      :description="defaultShown ? defaultId : undefined"
+    >
       <template #default="{ id, labelId, invalid }">
         <div class="advanced-row__control">
-          <InputNumber
+          <span
             v-if="option.type === 'int' || option.type === 'float'"
             class="advanced-row__input"
-            :input-id="id"
-            :model-value="typeof stored === 'number' ? stored : null"
-            :min="option.min ?? undefined"
-            :max="option.max ?? undefined"
-            :step="option.step ?? 1"
-            :min-fraction-digits="0"
-            :max-fraction-digits="fractionDigits(option)"
-            :use-grouping="false"
-            :suffix="option.unit ? ` ${option.unit}` : undefined"
-            :placeholder="fallback"
-            :invalid="invalid"
-            :disabled="disabled"
-            fluid
-            @update:model-value="setNumber"
-          />
+            @focusin="keepText"
+            @keydown.capture="skipUnchanged"
+            @blur.capture="skipUnchanged"
+          >
+            <InputNumber
+              :input-id="id"
+              :model-value="typeof stored === 'number' ? stored : null"
+              :min="option.min ?? undefined"
+              :max="option.max ?? undefined"
+              :step="option.step ?? 1"
+              :min-fraction-digits="0"
+              :max-fraction-digits="option.type === 'float' ? FLOAT_DIGITS : 0"
+              :use-grouping="false"
+              :suffix="option.unit ? ` ${option.unit}` : undefined"
+              :placeholder="fallback"
+              :invalid="invalid"
+              :disabled="disabled"
+              fluid
+              @update:model-value="setNumber"
+            />
+          </span>
           <ToggleSwitch
             v-else-if="option.type === 'bool'"
             :input-id="id"
@@ -163,27 +191,15 @@ async function reset(): Promise<void> {
             @update:model-value="setText"
             @blur="editor.endCoalescing()"
           />
+          <ResetButton v-if="changed" :label="option.label" :disabled="disabled" @click="reset" />
           <span
-            v-if="changed || option.type === 'bool'"
+            v-if="defaultShown"
+            :id="defaultId"
             class="advanced-row__default"
             data-role="default"
           >
             {{ t('advanced.default.beside', { text: fallback }) }}
           </span>
-          <Button
-            v-if="changed"
-            v-tooltip.top="t('advanced.reset', { label: option.label })"
-            class="advanced-row__reset"
-            text
-            rounded
-            size="small"
-            :disabled="disabled"
-            :aria-label="t('advanced.reset', { label: option.label })"
-            data-action="reset"
-            @click="reset"
-          >
-            <template #icon><RotateCcw :size="16" aria-hidden="true" /></template>
-          </Button>
         </div>
       </template>
     </Field>
@@ -231,15 +247,12 @@ async function reset(): Promise<void> {
   font-family: var(--rf-font-family);
 }
 
+/* Beside a switch the text wraps in its own box instead of going under the switch. */
 .advanced-row__default {
+  flex: 1 1 10rem;
+  min-width: 0;
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
-}
-
-.advanced-row__reset {
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
 }
 
 /* In a narrow column the label goes above its control. */

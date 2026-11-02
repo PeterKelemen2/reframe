@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Check, ChevronUp, Copy, SquareTerminal } from '@lucide/vue'
-import { useClipboard, useLocalStorage } from '@vueuse/core'
+import { useClipboard, useLocalStorage, useResizeObserver } from '@vueuse/core'
 import Button from 'primevue/button'
-import { computed, useId } from 'vue'
+import { computed, onBeforeUnmount, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import IssueList from '@/components/base/IssueList.vue'
@@ -23,10 +23,19 @@ const lines = computed(() => (plan.value === null ? [] : stepLines(tokenize(plan
 async function copyCommand(): Promise<void> {
   if (plan.value !== null) await copy(plan.value.display)
 }
+
+// The tab's scroller keeps a focused control clear of the drawer by its height.
+const DRAWER_HEIGHT = '--video-command-drawer-height'
+const root = useTemplateRef<HTMLElement>('root')
+useResizeObserver(root, ([entry]) => {
+  const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height ?? 0
+  document.documentElement.style.setProperty(DRAWER_HEIGHT, `${Math.ceil(height)}px`)
+})
+onBeforeUnmount(() => document.documentElement.style.removeProperty(DRAWER_HEIGHT))
 </script>
 
 <template>
-  <aside class="command-preview" :class="{ 'command-preview--open': open }">
+  <aside ref="root" class="command-preview" :class="{ 'command-preview--open': open }">
     <div class="command-preview__bar">
       <button
         type="button"
@@ -118,6 +127,7 @@ async function copyCommand(): Promise<void> {
 }
 
 .command-preview__bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--rf-space-3);
@@ -153,8 +163,15 @@ async function copyCommand(): Promise<void> {
   font-size: var(--rf-font-size-sm);
 }
 
+/* The tab's height (a size container), or the viewport's without one: the options stay in view. */
+.command-preview--open {
+  display: flex;
+  flex-direction: column;
+  max-height: 40cqh;
+}
+
 .command-preview__body {
-  max-height: min(40vh, 22rem);
+  min-height: 0;
   overflow: auto;
   border-top: 1px solid var(--rf-color-border);
   padding: var(--rf-space-3);

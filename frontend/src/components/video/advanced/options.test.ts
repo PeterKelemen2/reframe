@@ -5,14 +5,7 @@ import { encoderDefs, videoOf } from '@/components/video/testing'
 import { sampleJob } from '@/editor/testing/samples'
 import { createAppI18n } from '@/i18n'
 
-import {
-  categoriesOf,
-  categoryName,
-  CUSTOM_CATEGORY,
-  defaultText,
-  fractionDigits,
-  optionPointer,
-} from './options'
+import { categoriesOf, categoryName, CUSTOM_CATEGORY, defaultText, optionPointer } from './options'
 import recorded from './testing/x265-options.json'
 
 const t = createAppI18n().global.t as (key: string, named?: Record<string, unknown>) => string
@@ -102,12 +95,5 @@ describe('the helpers', () => {
   it('escapes a key as a JSON pointer token', () => {
     expect(optionPointer('psy-rd')).toBe('/video/advanced/psy-rd')
     expect(optionPointer('a/b~c')).toBe('/video/advanced/a~1b~0c')
-  })
-
-  it("types a float with its step's decimals and an int with none", () => {
-    expect(fractionDigits(option('aq-strength'))).toBe(2)
-    expect(fractionDigits(option('psy-rd'))).toBe(1)
-    expect(fractionDigits(option('bframes'))).toBe(0)
-    expect(fractionDigits({ ...option('bframes'), step: null })).toBe(0)
   })
 })

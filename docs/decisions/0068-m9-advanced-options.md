@@ -274,7 +274,58 @@ filled (a transition). Confirmed fixed: the reveal's focus (96b456c).
 
 ### Fix round — FA (the panel, focus and layout)
 
-(FA writes this section.)
+Checked headless (Chromium and Firefox, light and dark) against `scripts/dev-server.py` with the
+pinned FFmpeg n9.0.2, `hdr10`, `h265-mkv-1080p`; the reviewers' scripts run again on the branch.
+Each test below failed on the code before the fix.
+
+- **R1-M1, R1-m3** (`OptionRow.vue`, `options.ts`): a float field holds up to 10 decimals
+  (`FLOAT_DIGITS`; a double keeps them exactly below 10⁵, and every float option's maximum is at
+  most 50), whatever its step. PrimeVue's `InputNumber` commits its text, clamped and rounded, on
+  every Tab, Enter and blur; the row now stops those events (capture phase, before PrimeVue) when
+  the text is the one the field had when it got the focus, so a pass through the field writes
+  nothing and the shown text stays. `probe1.mjs`: typed 1.75 → stored 1.75; a stored 1.75 shows
+  "1.75" and a Tab through keeps it; a stored 99 shows "99 frames" and a Tab through keeps 99;
+  typing 12 + Enter and three ArrowUp are still one undo step each. Ctrl+Z / Ctrl+Shift+Z inside
+  the field (80ff653) still undo and redo.
+- **R2-M1, L1** (`CommandPreview.vue`, `EditorTabs.vue`): the drawer publishes its height
+  (`--video-command-drawer-height` on the root, as the status bar does) and the tab's scroller has
+  `scroll-padding-bottom` of that height plus `--rf-space-3`. The scroller is a size container;
+  the open drawer is at most `40cqh` (40 % of the tab, 40 % of the viewport without the container)
+  and its command scrolls inside it. `tab.mjs` (`DRAWER=1 STEPS=22 WIDTH=1440 HEIGHT=1000`): 0 of 22
+  stops under the drawer (before: 20); 60 stops, open and collapsed, Chromium and Firefox, 1920 ×
+  1080 and 1440 × 1000: only the drawer's own controls. At 1440 × 1000 the drawer is 335 of 852 px
+  (0.39).
+- **R2-M2** (`AdvancedOptions.vue`): when an update removes the focused element of the options
+  column, the focus goes to the selected category (or to the search during a search). Chromium
+  blurs a removed element during the update and the text field's blur handler starts a second
+  update before the first one's `updated` hook, so the element is kept until a later focus
+  replaces it (the unit test emulates that blur; Firefox does not blur). `focus.mjs` 4 and 4c: the
+  category button (before: `BODY`).
+- **R1-n1, R2-m2**: the status counts the custom parameters as a match ("1 option matches" for
+  "custom"); matches hidden by *Show only changed* say "No matching option is changed." instead of
+  "No option matches …". `states.mjs`, `probe9.mjs`.
+- **R2-m1**: a long unknown value wraps, and the unknown keys' fields put the key above the value
+  in a column under 30rem, as the option rows. `layout.mjs` at 1024 px with the preview open: the
+  panel's overflow 0 (before: 86 px). The Video tab's own overflow there (encoder picker, hints) is
+  task A's "Known, not mine".
+- **R2-m5** (`view.ts`): the category, the search and *Show only changed* are a reactive object of
+  the module, for the page. `persist.mjs`: kept across Audio → Video.
+- **R2-m6** (`Field.vue`): the help popup has an id that the ⓘ button names in `aria-controls`,
+  `aria-modal="false"` and `aria-labelledby` the button ("About B-frames"). `pop.mjs`: Escape and
+  Tab as before; the focus stays on the button.
+- **R2-m7**: the selected category has a 3 px bar in the primary colour: 6.29:1 on the light
+  panel, 5.94:1 on the dark one (`fa-mark.mjs`).
+- **Nits**: no "Custom parameters" heading above the field of the same label; the help and its
+  "Command line" are one message (`advanced.help`); the "default: …" line is in the control's
+  `aria-describedby` (`Field`'s new optional `description`, joined before the issues' id); ↺ is one
+  component (`ResetButton.vue`) for the option rows and the unknown keys.
+- **L2**: the "default: …" text beside a switch wraps in its own box (`flex: 1 1 10rem`); ↺ comes
+  right after the control. *Repeat headers*' text is beside its switch at 1920, 1440 and 1280 px;
+  in the 196 px column at 1024 px with the preview open it goes under it.
+- **Outside "the popover only"**: `Field`'s `description` prop (for the nit on the default line;
+  the slot's `describedBy` and the attribute `Field` sets carry it).
+- **Not built**: the focus goes to the category, not to the next row; no unit test of the CSS
+  (scroll padding, `40cqh`, the bar, wrapping): the browser runs above check them.
 
 ### Fix round — FB (Copy HDR metadata, custom parameters)
 
