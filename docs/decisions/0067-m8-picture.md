@@ -774,3 +774,37 @@ group nothing writes the crop, so the clip waits for the detection and is then s
 Noticed, not looked into (the panel is FA's): in passthrough on `hdr10` the split's output half
 still differs from its source half (`fix-fd/shots/filters-passthrough-*.png`).
 
+## M8 demo, 2026-11-02 (headless)
+
+Run by the lead on `m8-picture` (afaf32e) against a real `reframe-server` (`scripts/dev-server.py
+--port 8762 --fixtures letterbox,hdr10,multitrack`, the pinned FFmpeg n9.0.2,
+`REFRAME_POWER_DRY_RUN=1`), headless Playwright in Chromium 156 and Firefox 157, light and dark;
+the driver is the lead's scratchpad `lead/demo.mjs`, its output `lead/demo-<browser>-<theme>.out`,
+its screenshots `lead/demo-shots/` (read by the lead). All four runs: 12 of 12 checks pass, no
+page error.
+
+1. Manual crop `22 / 24 / 0 / 0` on `letterbox`: the magnifier at 4× with four strips ("Rows
+   10–33", "Rows 144–167", "Columns 0–11", "Columns 308–319"), the removed rows tinted outside a
+   yellow line on the pixel boundary. *Check crop on all frames*: "The crop removes picture
+   content on 5 of 10 frames.", the badges on frames 5–9 (2.2–3.8 s, the 4:3 frames).
+2. Automatic: `Detected 22 / 24 / 0 / 0 on 5 of 10 frames`, the job's crop
+   `{mode: auto, rect: 22 / 24 / 0 / 0}` (no undo step), header `Source 320×180 (16:9, square) →
+   Crop 320×134 → Output 320×134 · 2.39:1 · square pixels`. Conservative: `Black on every frame:
+   0 / 0 / 0 / 0 (10 frames)`, header `Source 320×180 (16:9, square) → Output 320×180 · 1.78:1 ·
+   square pixels`.
+3. Filters: all 11 filters show the five parts of their help; the panel shows *Split* on the
+   tab and its output half is rendered again after Grayscale; on `hdr10` Colorspace (BT.709)
+   gives the source colour box (BT.2020 / PQ / bt2020nc / Limited / 10-bit / HDR10, the
+   mastering display, 0.0001–1000 cd/m², MaxCLL / MaxFALL 1000 / 400) with "… will look washed
+   out" and *Enable tone mapping*; the fix gives "Converts BT.2020 PQ (HDR10) to BT.709 SDR, with
+   tone mapping.", the focus on that sentence, and the split shows the mapped frame.
+4. Preview clip on `letterbox` (3.8 s from 0.2 s: the file is 4 s long): H.264 (`h264-mkv-1080p`)
+   plays in the panel in both browsers (0.76–0.80 s played); HEVC (`h265-mkv-1080p`) in Chromium:
+   "The clip does not play here: this browser cannot play hevc video…" and the frame compare;
+   in Firefox it plays; AV1 (`av1-mkv-2160p-4k`) plays in both, and *Compare frames* shows
+   "Frame 1 of 5 · 0.58 s".
+
+Flow 4 (`npm run e2e`) passed in the final checks. Observation (M7, not changed): a file opened
+while another is open joins it in a group ("media", 2 files), and the newly opened file is not
+the one shown; the demo shows it from the sources panel.
+
