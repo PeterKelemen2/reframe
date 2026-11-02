@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight } from '@lucide/vue'
+import { useElementSize } from '@vueuse/core'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import SelectButton from 'primevue/selectbutton'
-import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { formatTime } from '@/components/chapters/chapters'
+import { type Edge, EDGES, NO_CROP } from '@/components/dimensions/grid'
 import { useCropStore } from '@/stores/crop'
 import { usePreviewStore } from '@/stores/preview'
 
@@ -14,11 +16,11 @@ import CropCheckGrid from './CropCheckGrid.vue'
 import { useFrameBitmap } from './frames'
 import {
   drawView,
-  type Edge,
-  EDGES,
+  fittedLength,
+  isHorizontal,
   type MagnifierZoom,
-  NO_CROP,
   prepareCanvas,
+  STRIP_LENGTH,
   stripRange,
   stripView,
   viewLayout,
@@ -40,16 +42,25 @@ const zoomOptions = computed(() =>
 const { bitmap, failed } = useFrameBitmap(() => preview.current)
 const rect = computed(() => crop.rect ?? NO_CROP)
 
+// The top and bottom strips are as long as their column is wide, less the canvas border.
+const topFigure = shallowRef<HTMLElement | null>(null)
+const { width: room } = useElementSize(topFigure)
+const horizontalLength = computed(() => fittedLength(room.value - 2))
+
+function lengthOf(edge: Edge): number {
+  return isHorizontal(edge) ? horizontalLength.value : STRIP_LENGTH
+}
+
 const strips = computed(() => {
   const size = crop.sourceSize
   if (size === null) return []
   return EDGES.map((edge) => {
-    const view = stripView(edge, rect.value, size, zoom.value, null)
+    const view = stripView(edge, rect.value, size, zoom.value, null, lengthOf(edge))
     const [first, last] = stripRange(edge, view, size)
-    const range = t(
-      edge === 'top' || edge === 'bottom' ? 'crop.magnifier.rows' : 'crop.magnifier.columns',
-      { first, last },
-    )
+    const range = t(isHorizontal(edge) ? 'crop.magnifier.rows' : 'crop.magnifier.columns', {
+      first,
+      last,
+    })
     return {
       edge,
       range,
@@ -70,11 +81,20 @@ const frameLabel = computed(() => {
     : t('crop.magnifier.frameAt', { time: formatTime(current.timestamp) })
 })
 
+const atStart = computed(() => preview.strip.length === 0 || preview.index === 0)
+const atEnd = computed(
+  () => preview.strip.length === 0 || preview.index === preview.strip.length - 1,
+)
+
 const canvases: Partial<Record<Edge, HTMLCanvasElement>> = {}
 
 function keep(edge: Edge, element: unknown): void {
   if (element instanceof HTMLCanvasElement) canvases[edge] = element
   else delete canvases[edge]
+}
+
+function keepFigure(edge: Edge, element: unknown): void {
+  if (edge === 'top') topFigure.value = element instanceof HTMLElement ? element : null
 }
 
 function draw(): void {
@@ -86,9 +106,8 @@ function draw(): void {
     const canvas = canvases[edge]
     if (canvas === undefined) continue
     // Along the line the strip follows the pointer over the panel's picture.
-    const centre =
-      pointer === null ? null : edge === 'top' || edge === 'bottom' ? pointer.x : pointer.y
-    const view = stripView(edge, rect.value, size, zoom.value, centre)
+    const centre = pointer === null ? null : isHorizontal(edge) ? pointer.x : pointer.y
+    const view = stripView(edge, rect.value, size, zoom.value, centre, lengthOf(edge))
     const layout = viewLayout(view, rect.value, size)
     drawView(
       prepareCanvas(canvas, layout.width, layout.height),
@@ -110,9 +129,11 @@ function schedule(): void {
   })
 }
 
-watch([bitmap, rect, () => crop.sourceSize, zoom, grid, () => preview.pointer], schedule, {
-  flush: 'post',
-})
+watch(
+  [bitmap, rect, () => crop.sourceSize, zoom, grid, () => preview.pointer, horizontalLength],
+  schedule,
+  { flush: 'post' },
+)
 onBeforeUnmount(() => cancelAnimationFrame(pending))
 </script>
 
@@ -144,6 +165,7 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
       <figure
         v-for="strip in strips"
         :key="strip.edge"
+        :ref="(element) => keepFigure(strip.edge, element)"
         class="crop-magnifier__strip"
         :class="`crop-magnifier__strip--${strip.edge}`"
         :data-edge="strip.edge"
@@ -168,12 +190,15 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
       </figure>
     </div>
     <nav class="crop-magnifier__frames" :aria-label="t('crop.magnifier.frames')">
+      <!-- Not `disabled`: a button disabled under the focus drops it to the page. The store
+           does not step past the ends. -->
       <Button
         severity="secondary"
         outlined
         size="small"
+        class="crop-magnifier__step"
         :aria-label="t('crop.magnifier.previous')"
-        :disabled="preview.strip.length === 0 || preview.index === 0"
+        :aria-disabled="atStart || undefined"
         data-action="frame-previous"
         @click="preview.step(-1)"
       >
@@ -186,8 +211,9 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
         severity="secondary"
         outlined
         size="small"
+        class="crop-magnifier__step"
         :aria-label="t('crop.magnifier.next')"
-        :disabled="preview.strip.length === 0 || preview.index === preview.strip.length - 1"
+        :aria-disabled="atEnd || undefined"
         data-action="frame-next"
         @click="preview.step(1)"
       >
@@ -209,6 +235,7 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
 .crop-magnifier {
   display: grid;
   gap: var(--rf-space-3);
+  container-type: inline-size;
 }
 
 .crop-magnifier__controls,
@@ -242,10 +269,23 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
     'bottom left right'
     '. left right';
   grid-template-rows: auto auto 1fr;
-  grid-template-columns: repeat(3, max-content);
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
   align-items: start;
   gap: var(--rf-space-3) var(--rf-space-4);
-  overflow-x: auto;
+}
+
+/* Beside the side strips the top and bottom ones would be too short to show much: they take
+   the whole width, and the side strips go below them, side by side when they fit. */
+@container (width < 31rem) {
+  .crop-magnifier__strips {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .crop-magnifier__strip--top,
+  .crop-magnifier__strip--bottom {
+    flex-basis: 100%;
+  }
 }
 
 .crop-magnifier__strip {
@@ -292,6 +332,11 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
   display: block;
   border: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);
+}
+
+.crop-magnifier__step[aria-disabled='true'] {
+  opacity: var(--p-disabled-opacity);
+  pointer-events: none;
 }
 
 .crop-magnifier__frame {

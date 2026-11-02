@@ -558,7 +558,60 @@ R1: 1 major, 3 minors; R2: 7 majors, 8 minors, 6 nits. The lead reproduced every
 
 ### Fix round — FC (magnifier and check grid)
 
-(Task FC writes this section.)
+- **R2-4, the focus at the ends of the strip.** *Previous* and *Next* are not `disabled` at the
+  first and last frame: they get `aria-disabled="true"`, look disabled (PrimeVue's disabled
+  opacity, no pointer events) and keep the focus. A click or Enter does nothing, because the
+  preview store does not step past the ends. Not chosen: going round as `ClipCompare` does. In
+  the panel, `←` / `→` stop at the ends, so the magnifier's buttons stop there too, and the label
+  (*Frame 10 / 10*) shows where the user is.
+- **R2-5, the frame buttons' names.** The button has no `aria-label`, so its text is its name: a
+  visually hidden *Show the frame at 0:00:02.200*, then the bars and the badge
+  (`Show the frame at 0:00:02.200 Bars 0 / 0 / 40 / 40 Removes picture`). The time that is shown
+  is `aria-hidden`, so it is not read twice.
+- **R2-6, the strips fit the column.** The top and bottom strips are as long as their column is
+  wide: the top strip's figure is measured (`useElementSize`). The length is that width less the
+  2-pixel canvas border, rounded down to a multiple of 8 (`fittedLength`), so that every zoom shows
+  whole source pixels. The depth (96 CSS pixels, the crop line in the middle) does not change, and
+  the left and right strips stay 96 × 384. When the magnifier is at least 31 rem wide, the side
+  strips stand beside the top and bottom ones, which take the rest of the width
+  (`minmax(0, 1fr)`). When it is narrower (a container query), the top and bottom strips take the
+  whole width, and the side strips go below them, side by side when they fit. Measured
+  (magnifier width → top and bottom canvas length): 196 → 192 (1024 px window), 452 → 448
+  (1280 px), 772 → 520 beside the side strips (1600 px). No canvas goes past the column. Before,
+  every strip had a fixed size, and the strips were 629 pixels wide.
+- **The worker answers a frame it cannot read** (R1's suspicion). Before, an exception in the
+  worker (`createImageBitmap` of a frame it cannot decode) gave no answer, and the dialog stayed on
+  *Checking the frames…*. Now the worker catches any exception and answers
+  `{ key, error }`. The dialog then shows *A frame could not be checked: {reason}* as an alert in
+  place of the summary. The real messages from the built worker are
+  `InvalidStateError: The source image could not be decoded.` (Chromium 156) and
+  `InvalidStateError: The image could not be decoded` (Firefox 157). The dialog does not listen
+  for the worker's `error` event (a worker script that does not load), because the built chunk is
+  checked in `dist/` and by `page.on('worker')`. The desktop webviews are M10's.
+- **The loupe** (R1's nit) puts the middle of the pointer's pixel at its centre: its source box
+  starts at `floor(x) + 0.5 − 20`. The half pixels at its edges are drawn from a fractional source
+  rectangle. Read back in both browsers: the pointer's pixel fills canvas pixels 78–81 on both
+  axes, and its neighbours fill 74–77 and 82–85 (Firefox gives whole CSS pixels for the pointer,
+  so the check uses `preview.pointer`).
+- **Simplifications.** `Edge`, `EDGES` and `NO_CROP` come from `components/dimensions/grid.ts`.
+  `fetchFrame` fetches the preview store's absolute URL as it is. The check grid's watch uses
+  the form with an array of sources.
+- **Tests that failed before the fix** (9): `magnifier.test.ts` (the strip's length, `fittedLength`
+  ×2, the loupe's centre), `CropMagnifier.test.ts` (the ends keep the focus, the strips fit the
+  width), `CropCheckGrid.test.ts` (the frame names, a frame that could not be checked), and
+  `cropCheck.worker.test.ts` (new: the error answer). 18 mutations, all caught. One mutation (no
+  redraw when the width changes) first survived. A resize step was then added to the width test.
+- **Checked in a browser** (headless Chromium 156 and Firefox 157, light and dark, `letterbox`, a
+  real server with the pinned FFmpeg). Each strip canvas is checked pixel by pixel against a model
+  of the frame at 2×, 4× and 8×, at 1024, 1280 and 1600 px windows, and at device pixel ratio 2
+  (1280 px). The model covers kept, tinted, the 2-pixel lines on both axes, and off-picture empty.
+  The manual crop is 22 / 24 / 16 / 18: 0 pixels differ. The check grid's badges are on frames
+  5–9 at 22 / 24 / 0 / 0 and on 0–4 at 0 / 0 / 40 / 40. Five buttons are named with
+  *Removes picture* each time. Ten Enters on *Next* reach *Frame 10 / 10*, and the focus stays on
+  *Next*. The same is true for *Previous*. R2's `focus.mjs`, `overflow.mjs` and `layout.mjs`: the
+  focus stays on the button, the names hold *Removes picture* 5 times, and the strips are
+  452 / 452 and 196 / 196. The Dimensions column still overflows at 1280 and 1024 px. That is the
+  crop mode control, which is FB's part. Scripts: the scratchpad `fix-fc/`.
 
 ### Fix round — FD (filters, clip, Settings → Preview)
 

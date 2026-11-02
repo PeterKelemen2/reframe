@@ -37,9 +37,13 @@ class FakeWorker {
   answer(key: string, lost: boolean): void {
     this.listener?.({ data: { key, variances: [lost ? 6000 : 0.4], lost } } as MessageEvent)
   }
+
+  fail(key: string, error: string): void {
+    this.listener?.({ data: { key, error } } as MessageEvent)
+  }
 }
 
-const fetchMock = vi.fn<(url: URL) => Promise<Response>>()
+const fetchMock = vi.fn<(url: string) => Promise<Response>>()
 const revoked: string[] = []
 const mounted: VueWrapper[] = []
 
@@ -85,6 +89,20 @@ function frame(index: number): HTMLElement {
   return document.querySelector<HTMLElement>(`[data-frame="${index}"]`)!
 }
 
+/** The accessible name of a button: its `aria-label`, else its text outside `aria-hidden`. */
+function nameOf(element: Element): string {
+  const label = element.getAttribute('aria-label')
+  if (label !== null) return label
+  const parts: string[] = []
+  const walk = (node: Node): void => {
+    if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return
+    if (node.nodeType === Node.TEXT_NODE) parts.push(node.textContent ?? '')
+    node.childNodes.forEach(walk)
+  }
+  walk(element)
+  return parts.join(' ').replaceAll(/\s+/g, ' ').trim()
+}
+
 function worker(): FakeWorker {
   return FakeWorker.started.at(-1)!
 }
@@ -114,6 +132,31 @@ describe('the crop check', () => {
     expect(document.querySelector('[data-check-summary]')!.textContent).toContain(
       'The crop removes picture content on 5 of 10 frames.',
     )
+  })
+
+  it('names on each frame button its time, its detected bars and the badge', async () => {
+    await mountGrid()
+    preview.strip.forEach((link, i) => worker().answer(link.key, i >= 5))
+    await flushPromises()
+    const lost = nameOf(frame(5))
+    expect(lost).toContain('0:00:02.200')
+    expect(lost).toContain('Bars 0 / 0 / 40 / 40')
+    expect(lost).toContain('Removes picture')
+    const kept = nameOf(frame(0))
+    expect(kept).toContain('0:00:00.200')
+    expect(kept).toContain('Bars 22 / 24 / 0 / 0')
+    expect(kept).not.toContain('Removes picture')
+  })
+
+  it('says a frame could not be checked, with the reason, and stops saying it is checking', async () => {
+    await mountGrid()
+    worker().answer('f0', false)
+    worker().fail('f1', 'InvalidStateError: The source image could not be decoded.')
+    await flushPromises()
+    expect(document.querySelector('[role="alert"]')!.textContent).toContain(
+      'A frame could not be checked: InvalidStateError: The source image could not be decoded.',
+    )
+    expect(document.body.textContent).not.toContain('Checking')
   })
 
   it('says it is checking until every frame has its answer', async () => {
@@ -176,7 +219,7 @@ describe('the crop check', () => {
     expect(document.querySelector('[role="alert"]')).toBeNull()
     preview.strip = strip('new')
     await flushPromises()
-    expect(fetchMock.mock.calls.at(-1)![0].href).toContain('sig=new')
+    expect(fetchMock.mock.calls.at(-1)![0]).toContain('sig=new')
     expect(worker().posted).toHaveLength(10)
   })
 

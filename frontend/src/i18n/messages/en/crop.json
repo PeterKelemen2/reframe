@@ -32,6 +32,7 @@
     "detecting": "Detecting the bars…",
     "noResult": "No detection result",
     "show": "Show the frame at {time}",
-    "failed": "The frames could not be loaded."
+    "failed": "The frames could not be loaded.",
+    "unreadable": "A frame could not be checked: {reason}"
   }
 }

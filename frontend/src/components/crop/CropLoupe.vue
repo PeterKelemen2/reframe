@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 
+import { NO_CROP } from '@/components/dimensions/grid'
 import { useCropStore } from '@/stores/crop'
 import { usePreviewStore } from '@/stores/preview'
 import { useUiStore } from '@/stores/ui'
 
 import { useFrameBitmap } from './frames'
-import { drawView, LOUPE_SIZE, loupeView, NO_CROP, prepareCanvas, viewLayout } from './magnifier'
+import { drawView, LOUPE_SIZE, loupeView, prepareCanvas, viewLayout } from './magnifier'
 
 /** The source pixels under the pointer, magnified, in manual crop on the Dimensions tab. */
 const preview = usePreviewStore()

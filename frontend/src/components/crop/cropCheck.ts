@@ -16,12 +16,20 @@ export interface CheckRequest {
   bands: Box[]
 }
 
-export interface CheckAnswer {
+export interface CheckResult {
   key: string
   /** The luma variance of each band, in the order asked. */
   variances: number[]
   lost: boolean
 }
+
+/** The worker could not read the frame. */
+export interface CheckFailure {
+  key: string
+  error: string
+}
+
+export type CheckAnswer = CheckResult | CheckFailure
 
 /**
  * Above this luma variance (0–255 scale) a removed band holds picture. The black bars of the

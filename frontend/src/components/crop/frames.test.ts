@@ -2,7 +2,6 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, type EffectScope, ref } from 'vue'
 
-import { configureClient } from '@/api/client'
 import { deferred } from '@/api/testing/fakes'
 import type { FrameLink } from '@/api/types'
 
@@ -12,12 +11,11 @@ import { fakeBitmap, fakePreview, strip } from './testing'
 const preview = fakePreview()
 vi.mock('@/stores/preview', () => ({ usePreviewStore: () => preview }))
 
-const fetchMock = vi.fn<(url: URL) => Promise<Response>>()
+const fetchMock = vi.fn<(url: string) => Promise<Response>>()
 const decode = vi.fn<(blob: Blob, options: ImageBitmapOptions) => Promise<ImageBitmap>>()
 const scopes: EffectScope[] = []
 
 beforeEach(() => {
-  configureClient({ baseUrl: 'http://server:8730' })
   fetchMock.mockReset().mockImplementation(async () => new Response(new Blob(['png'])))
   decode.mockReset().mockImplementation(async () => fakeBitmap())
   vi.stubGlobal('fetch', fetchMock)
@@ -28,7 +26,6 @@ beforeEach(() => {
 afterEach(() => {
   for (const scope of scopes.splice(0)) scope.stop()
   vi.unstubAllGlobals()
-  configureClient({ baseUrl: '' })
 })
 
 function use(link: () => FrameLink | null) {
@@ -39,12 +36,11 @@ function use(link: () => FrameLink | null) {
 
 describe('useFrameBitmap', () => {
   it('fetches the frame from the server and decodes it without colour conversion', async () => {
-    const [frame] = strip()
-    const { bitmap } = use(() => frame!)
+    // The preview store's links are absolute: the server is not the page's origin in the desktop app.
+    const frame = { ...strip()[0]!, url: 'http://server:8730/api/preview/frames/f0.png?sig=a' }
+    const { bitmap } = use(() => frame)
     await flushPromises()
-    expect(fetchMock.mock.calls[0]![0].href).toBe(
-      'http://server:8730/api/preview/frames/f0.png?exp=1&sig=a',
-    )
+    expect(fetchMock.mock.calls[0]![0]).toBe(frame.url)
     expect(decode.mock.calls[0]![1]).toEqual({ colorSpaceConversion: 'none' })
     expect(bitmap.value).not.toBeNull()
   })
