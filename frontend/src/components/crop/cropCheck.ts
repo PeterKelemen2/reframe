@@ -25,9 +25,10 @@ export interface CheckAnswer {
 
 /**
  * Above this luma variance (0–255 scale) a removed band holds picture. The black bars of the
- * `letterbox` fixture measure at most 0.46; two rows of its picture in a 24-row band, 1 720.
+ * `letterbox` fixture's frames measure at most 6.1 (the bicubic chroma rings into them); its
+ * narrowest band of picture, 443; two rows of picture in a 24-row band, 1 718.
  */
-export const LOSES_CONTENT_VARIANCE = 4
+export const LOSES_CONTENT_VARIANCE = 64
 
 /** The parts of the picture the crop removes, without overlaps; none for an edge of 0. */
 export function removedBands(rect: CropRect, size: PictureSize): Box[] {

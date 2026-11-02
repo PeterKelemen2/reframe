@@ -42,7 +42,8 @@ export function fakePreview() {
     pointer: null as SourcePoint | null,
     select: vi.fn<(at: number) => void>(),
     step: vi.fn<(delta: 1 | -1) => void>(),
-    reload: vi.fn<() => Promise<void>>(async () => {}),
+    /** Says whether the store asks for the frame again. */
+    imageFailed: vi.fn<(frame: FrameLink) => boolean>(() => true),
   })
 }
 
@@ -53,6 +54,7 @@ export function fakeCrop() {
     sourceSize: null as PictureSize | null,
     editable: false,
     detection: null as CropDetection | null,
+    detecting: false,
   })
 }
 

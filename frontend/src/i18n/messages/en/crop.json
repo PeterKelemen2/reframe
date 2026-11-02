@@ -24,11 +24,12 @@
   },
   "check": {
     "title": "Crop on all frames",
-    "intro": "Each frame shows the crop and the black bars that crop detection found on it.",
+    "intro": "On each frame the tint is what the crop removes, and the hatching is the black bars that crop detection found there.",
     "summary": "The crop removes picture content on no frame. | The crop removes picture content on {n} of {count} frames. | The crop removes picture content on {n} of {count} frames.",
     "checking": "Checking the frames…",
     "lost": "Removes picture",
     "bars": "Bars {top} / {bottom} / {left} / {right}",
+    "detecting": "Detecting the bars…",
     "noResult": "No detection result",
     "show": "Show the frame at {time}",
     "failed": "The frames could not be loaded."

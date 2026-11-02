@@ -43,9 +43,9 @@ describe('lumaVariance', () => {
 
 describe('losesContent', () => {
   it('passes the noise of black bars and flags a band with picture in it', () => {
-    // The highest band variance of the letterbox fixture's bars, and two picture rows in a bar.
-    expect(losesContent([0.46, 0.39])).toBe(false)
-    expect(losesContent([0.39, 1720])).toBe(true)
+    // The letterbox fixture's noisiest bars, and its narrowest band of picture.
+    expect(losesContent([6.06, 5.3])).toBe(false)
+    expect(losesContent([5.3, 443])).toBe(true)
     expect(losesContent([LOSES_CONTENT_VARIANCE])).toBe(false)
   })
 

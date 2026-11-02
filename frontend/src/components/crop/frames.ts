@@ -53,15 +53,14 @@ function release(entry: Entry): void {
 }
 
 /**
- * The decoded pixels of the frame `link()` gives, `null` while they load. A link that has
- * expired asks the preview store for new links once; `failed` when that did not help either.
+ * The decoded pixels of the frame `link()` gives, `null` while they load. A failed fetch (an
+ * expired link) goes to the preview store, which asks for new links once; `failed` when it will not.
  */
 export function useFrameBitmap(link: () => FrameLink | null) {
   const preview = usePreviewStore()
   const bitmap = shallowRef<ImageBitmap | null>(null)
   const failed = ref(false)
   let held: Entry | null = null
-  let retried = false
 
   async function show(next: FrameLink | null): Promise<void> {
     const previous = held
@@ -70,20 +69,14 @@ export function useFrameBitmap(link: () => FrameLink | null) {
     bitmap.value = null
     failed.value = false
     const own = held
-    if (own === null) return
+    if (own === null || next === null) return
     try {
       const decoded = await own.bitmap
       if (held !== own) return
       bitmap.value = decoded
-      retried = false
     } catch {
       if (held !== own) return
-      if (retried) {
-        failed.value = true
-        return
-      }
-      retried = true
-      void preview.reload()
+      if (!preview.imageFailed(next)) failed.value = true
     }
   }
 

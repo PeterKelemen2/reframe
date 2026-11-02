@@ -236,10 +236,16 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
 }
 
 .crop-magnifier__strips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--rf-space-4);
+  display: grid;
+  grid-template-areas:
+    'top left right'
+    'bottom left right'
+    '. left right';
+  grid-template-rows: auto auto 1fr;
+  grid-template-columns: repeat(3, max-content);
+  align-items: start;
+  gap: var(--rf-space-3) var(--rf-space-4);
+  overflow-x: auto;
 }
 
 .crop-magnifier__strip {
@@ -248,11 +254,33 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
   margin: 0;
 }
 
+.crop-magnifier__strip--top {
+  grid-area: top;
+}
+
+.crop-magnifier__strip--bottom {
+  grid-area: bottom;
+}
+
+.crop-magnifier__strip--left {
+  grid-area: left;
+}
+
+.crop-magnifier__strip--right {
+  grid-area: right;
+}
+
 .crop-magnifier__caption {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--rf-space-2);
+  gap: 0 var(--rf-space-2);
   font-size: var(--rf-font-size-sm);
+}
+
+.crop-magnifier__strip--left .crop-magnifier__caption,
+.crop-magnifier__strip--right .crop-magnifier__caption {
+  flex-direction: column;
 }
 
 .crop-magnifier__range {

@@ -46,10 +46,11 @@ const mounted: VueWrapper[] = []
 beforeEach(() => {
   preview.strip = strip()
   preview.select.mockReset()
-  preview.reload.mockReset()
+  preview.imageFailed.mockReset().mockReturnValue(true)
   crop.rect = LETTERBOX
   crop.sourceSize = SIZE
   crop.detection = detection()
+  crop.detecting = false
   FakeWorker.started = []
   revoked.length = 0
   fetchMock.mockReset().mockImplementation(async () => new Response(new Blob(['png'])))
@@ -132,6 +133,13 @@ describe('the crop check', () => {
     expect(frame(0).querySelectorAll('[data-bar]')).toHaveLength(0)
   })
 
+  it('says the bars are being detected while detection runs', async () => {
+    crop.detection = null
+    crop.detecting = true
+    await mountGrid()
+    expect(frame(0).textContent).toContain('Detecting the bars…')
+  })
+
   it('shows a frame in the panel when it is chosen, and closes', async () => {
     const wrapper = await mountGrid()
     frame(7).click()
@@ -161,15 +169,21 @@ describe('the crop check', () => {
     expect(frame(0).querySelector('[data-badge="lost"]')).toBeNull()
   })
 
-  it('asks for new links once when they have expired, then says the frames failed', async () => {
-    fetchMock.mockImplementation(async () => new Response(null, { status: 401 }))
+  it('hands expired links to the preview store and checks the new strip', async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(null, { status: 401 }))
     await mountGrid()
-    expect(preview.reload).toHaveBeenCalledTimes(1)
+    expect(preview.imageFailed).toHaveBeenCalledWith(preview.strip[0])
     expect(document.querySelector('[role="alert"]')).toBeNull()
     preview.strip = strip('new')
     await flushPromises()
     expect(fetchMock.mock.calls.at(-1)![0].href).toContain('sig=new')
-    expect(preview.reload).toHaveBeenCalledTimes(1)
+    expect(worker().posted).toHaveLength(10)
+  })
+
+  it('says the frames failed when the preview store will not ask again', async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 401 }))
+    preview.imageFailed.mockReturnValueOnce(false)
+    await mountGrid()
     expect(document.querySelector('[role="alert"]')!.textContent).toContain(
       'The frames could not be loaded.',
     )

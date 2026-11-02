@@ -22,7 +22,7 @@ beforeEach(() => {
   decode.mockReset().mockImplementation(async () => fakeBitmap())
   vi.stubGlobal('fetch', fetchMock)
   vi.stubGlobal('createImageBitmap', decode)
-  preview.reload.mockReset()
+  preview.imageFailed.mockReset().mockReturnValue(true)
 })
 
 afterEach(() => {
@@ -65,18 +65,20 @@ describe('useFrameBitmap', () => {
     expect(shown.close).toHaveBeenCalled()
   })
 
-  it('asks for new links once when a link has expired, then says the frame failed', async () => {
+  it('hands a failed fetch to the preview store, which asks for new links', async () => {
     fetchMock.mockImplementation(async () => new Response(null, { status: 401 }))
-    const links = ref(strip('old'))
-    const { bitmap, failed } = use(() => links.value[0]!)
+    const links = strip('old')
+    const { failed } = use(() => links[0]!)
     await flushPromises()
-    expect(preview.reload).toHaveBeenCalledTimes(1)
+    expect(preview.imageFailed).toHaveBeenCalledWith(links[0])
     expect(failed.value).toBe(false)
+  })
 
-    links.value = strip('new')
+  it('says the frame failed when the preview store will not ask again', async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 401 }))
+    preview.imageFailed.mockReturnValueOnce(false)
+    const { bitmap, failed } = use(() => strip()[0]!)
     await flushPromises()
-    expect(fetchMock.mock.calls[1]![0].href).toContain('sig=new')
-    expect(preview.reload).toHaveBeenCalledTimes(1)
     expect(failed.value).toBe(true)
     expect(bitmap.value).toBeNull()
   })
@@ -89,23 +91,6 @@ describe('useFrameBitmap', () => {
     links.value = strip('new')
     await flushPromises()
     expect(bitmap.value).not.toBeNull()
-    expect(failed.value).toBe(false)
-  })
-
-  it('asks for new links again when links that worked expire later', async () => {
-    fetchMock.mockImplementationOnce(async () => new Response(null, { status: 401 }))
-    const links = ref(strip('a'))
-    const index = ref(0)
-    const { bitmap, failed } = use(() => links.value[index.value]!)
-    await flushPromises()
-    links.value = strip('b')
-    await flushPromises()
-    expect(bitmap.value).not.toBeNull()
-
-    fetchMock.mockImplementationOnce(async () => new Response(null, { status: 401 }))
-    index.value = 1
-    await flushPromises()
-    expect(preview.reload).toHaveBeenCalledTimes(2)
     expect(failed.value).toBe(false)
   })
 

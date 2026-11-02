@@ -26,7 +26,6 @@ const answers = shallowRef(new Map<string, CheckAnswer>())
 const failed = ref(false)
 let worker: Worker | null = null
 let run = 0
-let retried = false
 
 function stop(): void {
   run += 1
@@ -46,18 +45,11 @@ async function check(links: FrameLink[], size: PictureSize): Promise<void> {
   try {
     blobs = await Promise.all(links.map(fetchFrame))
   } catch {
-    if (own !== run) return
-    if (retried) {
-      failed.value = true
-      return
-    }
-    // The links expire after a few minutes; the new strip runs the check again.
-    retried = true
-    void preview.reload()
+    // The links expire after a few minutes; a new strip runs the check again.
+    if (own === run && !preview.imageFailed(links[0]!)) failed.value = true
     return
   }
   if (own !== run) return
-  retried = false
   images.value = new Map(links.map((link, i) => [link.key, URL.createObjectURL(blobs[i]!)]))
   const started = new Worker(new URL('./cropCheck.worker.ts', import.meta.url), {
     type: 'module',
@@ -82,7 +74,6 @@ watch(
       return
     }
     stop()
-    retried = false
   },
   { immediate: true },
 )
@@ -181,7 +172,13 @@ function show(index: number): void {
           <span class="crop-check__caption">
             <span>{{ item.time }}</span>
             <span class="crop-check__bars">
-              {{ item.bars === null ? t('crop.check.noResult') : t('crop.check.bars', item.bars) }}
+              {{
+                item.bars !== null
+                  ? t('crop.check.bars', item.bars)
+                  : crop.detecting
+                    ? t('crop.check.detecting')
+                    : t('crop.check.noResult')
+              }}
             </span>
           </span>
           <span v-if="item.answer?.lost" class="crop-check__badge" data-badge="lost">
