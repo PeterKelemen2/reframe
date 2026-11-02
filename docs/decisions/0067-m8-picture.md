@@ -113,7 +113,61 @@ pinned FFmpeg n9.0.2 and the fixtures `letterbox`, `hdr10`, `hdr10-4k`, `multitr
 
 ## Task B — F-7 the Dimensions tab, the crop store, the crop overlay
 
-(Task B writes this section.)
+Built: `stores/crop.ts`, `components/editor/tabs/DimensionsTab.vue`, `components/dimensions/`
+(`PipelineHeader`, `CropSection`, `SizeSection`, `CropOverlay`, the pure `grid.ts` and
+`header.ts`), `i18n/messages/en/dimensions.json`. Choices where the plan leaves one:
+
+1. **The client applies the core's crop rules.** `grid.ts` `appliedCrop` is `_crop` of
+   `reframe.dimensions` (snap down, the right or bottom edge grown on an off-grid frame, no crop
+   on an axis that is removed or left with less than one step; interlaced doubles the vertical
+   step; a 90° / 270° display matrix swaps the sides and the steps), tested with the core's own
+   cases. `crop.rect` is that crop of the job's rectangle (or, in a detected mode without one,
+   of the shown file's detection).
+2. **A manual crop is stored as the server applies it.** `setRect` first keeps each axis at
+   least one grid step wide (the edge that moved gives way, so a dragged edge stops at the other
+   one), then applies the rules above and stores the result. The server never changes it (no
+   `dimensions.crop_snapped`; checked against the real server). `snapNote` names each moved
+   value and why: `Top 141 → 140 (4:2:0 chroma grid)`, `… (interlaced 4:2:0 chroma grid)`,
+   `Right 0 → 1 (the width must be a multiple of 2)`, `Bottom 500 → 172 (kept inside the
+   picture)`.
+3. **Modes.** None stores `{mode: "none", rect: null}`; Manual starts from `crop.rect` (zeros
+   without one). In a group Manual also starts from what is shown, the shown file's detection
+   included: it is the user's manual crop for the group from then on. Automatic and conservative
+   in a group store the mode with `rect: null` (item 3 of this record).
+4. **The pipeline header** is 03's line from `pipelineOf` (the Summary's): `Source W×H (ratio,
+   square | pixel aspect n:m) → Crop W×H → Rotate N°, Flip → Output W×H · aspect · square
+   pixels | pixel aspect n:m`. The crop step is left out when nothing is cropped (as on the
+   Summary); the rotation is the total one, as on the Summary. A ratio is named (`16:9`) when it
+   is one of the common ones, else written as `2.39:1`. Amber when `upscaled`; red when
+   `jobs/geometry` fails or a `dimensions.*` issue is an error; a sentence under the line says
+   which, so colour is not the only cue.
+5. **The detection line**: Automatic `Detected 22 / 24 / 0 / 0 on 5 of 10 frames`;
+   Conservative `Black on every frame: 0 / 0 / 0 / 0 (10 frames)`; then the detection's notes.
+   A failed detection shows its reason with *Detect again* (`crop.detect()`); in a group a line
+   says that each file detects its own crop when it is queued.
+6. **Inputs.** The edge inputs commit on `change` (Enter, Tab, leaving the field, the arrow
+   keys of the number input, whose step is the chroma step); a run of edits of one edge is one
+   undo step. Exact width and exact height start from the current output size; Custom PAR starts
+   at 1:1; the advanced part opens when one of its fields is revealed.
+7. **Fit within boxes** are 16:9 like the names' usual frames: 2160p 3840×2160, 1440p
+   2560×1440, 1080p 1920×1080, 720p 1280×720, 576p 1024×576, 480p 854×480 (HandBrake's
+   resolution limits use 720×576 and 720×480; with square pixels those boxes give a 16:9 film
+   404 lines, which is not "576p"). Any other box is *Custom W×H*.
+8. **The handles** (`CropOverlay`, in A's overlay layer, positioned in percent of
+   `crop.sourceSize`): one `role="slider"` per edge with `tabindex="0"`, `data-crop-handle="top"`
+   (`bottom`, `left`, `right`), an accessible name (`Top crop edge`) and value. The arrow keys
+   move the edge in the arrow's direction, one chroma step per press, 8 steps with Shift; every
+   arrow key on a handle is stopped there (`preventDefault`, `stopPropagation`), so the panel's
+   `←` / `→` never also step the frame. A drag is one undo step (a coalesce key per drag,
+   `editor.endCoalescing()` when the pointer is let go); a run of key presses on one handle is
+   one (a key per edge, ended when the handle loses the focus).
+
+Tests: `stores/crop.test.ts` (17), `components/dimensions/grid.test.ts` (16),
+`header.test.ts` (4), `CropOverlay.test.ts` (4), `components/editor/tabs/DimensionsTab.test.ts`
+(7), and the real-server `components/dimensions/dimensions.server.test.ts` (7: the detection of
+`letterbox` and its amend without an undo step and without *modified*; the header against
+`jobs/plan` for a manual crop, a rotation, a flip, an exact width, an upscaled exact height with
+a 270° turn and a custom pixel aspect).
 
 ## Task C — F-7 `CropMagnifier`, the loupe, `CropCheckGrid`
 
