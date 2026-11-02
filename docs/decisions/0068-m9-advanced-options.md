@@ -214,3 +214,72 @@ Built in `components/video/advanced/` (`CustomParams.vue`, `useParamsCheck.ts`,
 - **Not built**: the dry-run issues' fix buttons at the field (`Field` shows none; the Summary
   lists validation's issues, which have no dry run); a dry run in `jobs/validate` or at *Add to
   queue* (Consequences).
+
+## Review, 2026-11-02
+
+Two fresh reviews of `m9-advanced-options` at 96b456c (both `claude-opus-5-5`, `high`): R1 (the
+option schema, state, undo, persistence, validation) 2 blockers, 2 majors, 3 minors, 1 nit; R2
+(UI, keyboard, a11y, i18n, layout) 1 blocker (R1's B2), 2 majors, 7 minors, 5 nits. The lead
+reproduced every blocker and major on the merged branch (port 8762; R1's and R2's scripts in the
+lead's scratchpad `lead/r1repro/`, `lead/r2repro/`):
+
+- **R1-B1** (blocker) *Copy HDR metadata* in a group writes the shown file's metadata into the
+  template: a group of `hdr10` and a copy with MaxCLL 500,100 (`mkvpropedit`) encodes E02 with
+  `max-cll=1000,400` after a copy while E01 is shown (without the copy each file's command holds
+  its own). Item 9 ("at the page's scope") was wrong.
+- **R1-B2 = R2-B1** (blocker) ten built-in presets set panel options in `custom_params`, which
+  come last and win: on `h265-mkv-1080p` psy-rd shows "2 (preset Slow)" and psy-rd 1.5 set in the
+  panel gives `…:psy-rd=1.5:…:psy-rd=0.75:…`, no issue. Checked by the lead with the pinned
+  FFmpeg: `-x265-params psy-rd=1.5:aq-mode=2:psy-rd=0.75:aq-mode=1` writes `psy-rd=0.75`,
+  `aq-mode=1` into the stream's settings SEI. Every key of those presets is a modelled option
+  except SVT-AV1 `keyint=10s` (the option is an int) and x264 `deblock=-2,-2` (two parts).
+- **R1-M1** (major) a float field keeps only its step's decimals: psy-rd (step 0.1) typed 1.75 is
+  stored 1.7; a stored 1.75 shows 1.8 and a Tab through the field stores 1.8 (PrimeVue's
+  `InputNumber` writes on every blur). R1-m3: a Tab through an imported `bframes: 99` stores 16.
+- **R1-M2** (major) master-display / max-cll say "the encoder decides (not written)" while the
+  command without them already holds the source's values (the core's definition notes).
+- **R2-M1** (major) Tab moves the focus to controls hidden under the sticky command drawer: 20 of
+  22 stops at 1440 × 1000 with the drawer open (the tab's scroller has no `scroll-padding-bottom`).
+- **R2-M2** (major) with *Show only changed*, ↺ or an emptied text field removes the focused row
+  and the focus falls to `<body>`.
+
+Minors and nits: R1-m1 (a Copy HDR answer applied after the encoder changed), R1-m2 = R2-m3
+(Ctrl+Z inside a number field did nothing: **fixed by the lead**, 80ff653, `useShortcuts`, with
+a test that failed before), R1-n1 = R2-m2 (the search status says "No option matches" while the
+custom field or a changed-only-hidden match shows), R2-m1 (a long unknown value overflows), R2-m4
+(a dry-run refusal is not announced), R2-m5 (the panel forgets its category, search and filter on
+a tab switch), R2-m6 (`Field`'s ⓘ popover is an unnamed modal dialog), R2-m7 (the selected
+category only by a 1.28:1 tint), the nits (the custom category's heading repeats the field's
+label; built-up texts; the "default" line not in the control's description; duplicate reset CSS),
+and the lead's L1 (the open drawer leaves about 200 px of options at 960 px) and L2 (*Repeat
+headers*' default text wraps under its switch). Refuted: the *Show only changed* box that looked
+filled (a transition). Confirmed fixed: the reveal's focus (96b456c).
+
+### Decisions of the review round
+
+10. **Built-in presets set modelled options in `advanced`, not in `custom_params`** (C-6 data):
+    each entry whose key is an option of the preset's encoder moves into `video.advanced` with the
+    option's type; only what no option can hold stays a custom parameter. The command keeps the
+    same values.
+11. **A custom parameter that sets a modelled option is an issue at that option's row**
+    (`encoder.custom_param_overrides`, path `video.advanced.<key>`): a `warning` when
+    `video.advanced` sets the same option (the panel's value is not used), `info` otherwise (the
+    panel's default is not used). It extends 0035's rule that a combination the encoder silently
+    changes is a warning.
+12. **Copy HDR metadata is not offered in a group** (supersedes item 9's group case): each file's
+    encode already writes its own source's HDR10 metadata, and one file's values must not become
+    the template's. The button is off there with a note that says so.
+13. The definitions' default notes of the HDR options say that Reframe writes the source's
+    metadata when the option is not set.
+
+### Fix round — FA (the panel, focus and layout)
+
+(FA writes this section.)
+
+### Fix round — FB (Copy HDR metadata, custom parameters)
+
+(FB writes this section.)
+
+### Fix round — FC (core: built-in presets, the override issue, HDR notes)
+
+(FC writes this section.)

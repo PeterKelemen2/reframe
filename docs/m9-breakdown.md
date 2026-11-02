@@ -215,6 +215,24 @@ As [m6-breakdown.md](m6-breakdown.md#commands). The fixtures:
 **Ports** (rule 7): agent N uses 87N0 to 87N9; 8750 and 8751 belong to `npm run e2e`. A 871x,
 B 872x, R1 873x, R2 874x, the lead 876x, the fix agents 877x, 878x, 879x.
 
+## Fix round (binding for the fix agents)
+
+The two reviews (R1: 2 blockers, 2 majors, 3 minors, 1 nit; R2: 1 blocker (R1's), 2 majors, 7
+minors, 5 nits) and the lead's L1, L2: 0068 "Review, 2026-11-02" (read it; its decisions 10–13
+are binding). The lead reproduced every blocker and major and fixed R1-m2 / R2-m3 (80ff653).
+Three fix tasks with disjoint files, each `opus` / `high`. A fix of a blocker or major comes with
+a test that fails before it. Each task writes its own subsection "Fix round — FX" in 0068.
+
+| Task | Findings | Owns |
+|------|----------|------|
+| **FA** panel, focus, layout | R1-M1 and R1-m3 (decimals; a blur that did not change the text writes nothing), R2-M1 (focus never under the drawer: `scroll-padding-bottom` of the tab's scroller follows the drawer's height) with L1 (the open drawer takes at most about 40 % of the tab's height; its command scrolls inside it), R2-M2 (the focus stays in the panel when its row goes), R1-n1 / R2-m2 (the search status), R2-m1, R2-m5 (category, search and *Show only changed* kept for the page), R2-m6 (`Field`'s ⓘ popover: named, not modal, `aria-controls`), R2-m7 (the selected category also by a mark of at least 3:1), the nits (the custom category without a heading that repeats the label; the help and its "Command line" as one i18n message; the "default" line in the control's `aria-describedby`; one reset style), L2 | `components/video/advanced/**` except FB's files, `components/editor/tabs/VideoTab.vue` (+ test), `components/shell/EditorTabs.vue` (+ test), `components/video/CommandPreview.vue` (+ test), `components/base/Field.vue` (+ test; the popover only), `i18n/messages/en/advanced.json` |
+| **FB** Copy HDR, custom parameters | R1-B1 (decision 12: off in a group, with its note), R1-m1 (an answer for a job whose encoder or shown file changed is dropped), R2-m4 (a dry-run refusal is announced: a live region), the nit (the copy's note names the rows' labels, not CLI keys, without a built-up list) | `components/video/advanced/{CustomParams,CopyHdrMetadata}.vue`, `useParamsCheck.ts`, their tests, `i18n/messages/en/params.json` |
+| **FC** core | R1-B2 / R2-B1 (decisions 10 and 11), R1-M2 (decision 13) | `packages/reframe/**` (the built-in presets' data, validation, the definitions' notes, their tests), `testdata/README.md` (its own heading); runs the frontend checks too |
+
+FA, FB and FC do not depend on each other: the override issue of FC shows at the option's row
+through `Field` (by path), with no frontend change. Merge order: FC, FB, FA. Ports: FA 878x, FB
+879x, FC 877x.
+
 ## Rules for every agent (word for word in each brief)
 
 ### Rule 5: the code
@@ -368,3 +386,4 @@ test.
 | 2026-11-02 | **Merged A** (f8050b7; f90105b, ea763cf): `AdvancedOptions`, `OptionRow`, `options.ts`, `useOptionSearch.ts`; 29 checks in Chromium and Firefox, light and dark; views of SVT-AV1, NVENC, VP9; group override; 35 mutations caught. 1808 unit tests, lint, typecheck. The lead's mutation (the default text reads the encoder's default preset before the job's) fails 7 tests; restored, touched. Worktree removed. A's observation: with the panel closed, the Video tab already overflows its column by 5 px at 1280 and 253 px at 1024 (the column is 228 px there; `Field`'s inline layout and the M4 controls), for R2. **B phase 1 reported** (51dcd30): both components and tests; real-server tests drive `useParamsCheck` and the store in Node, because in jsdom Vite rewrites `devServer.mjs`'s `new URL('../../../../', import.meta.url)` (a lead-owned file); B resumed for phase 2 |
 | 2026-11-02 | **Merged B** (f447955; 57635ff, 51dcd30, merge 43c490a, ffa09d0): `CustomParams`, `useParamsCheck`, `CopyHdrMetadata`; phase 2 inside A's panel, 15 checks in Chromium and Firefox, light and dark (the copy's rows highlighted and *HDR / colour* 0 → 2, one undo step; the dry-run error above the drawer; the reveal of `video.custom_params`). 1826 unit tests, lint, typecheck. The lead's mutation (an emptied text keeps the waiting check) fails `CustomParams.test.ts`; restored, touched. Worktree removed. B found that a reveal focused a field's ⓘ button rather than its control (its field shows the help as a line now); **the lead fixed `useReveal`** (the field's control first; a test in `Field.test.ts` that failed before) |
 | 2026-11-02 | **Reviews R1 and R2 launched** (873x, 874x; `opus` / `high`, fresh, worktrees) on 96b456c. Briefs in the lead's scratchpad `briefs/R1.md`, `R2.md` |
+| 2026-11-02 | **R1 and R2 reported** (`claude-opus-5-5` each); every blocker and major reproduced by the lead (0068 "Review, 2026-11-02"; `lead/r1repro/`, `lead/r2repro/`): R1-B1 (Copy HDR in a group), R1-B2 = R2-B1 (built-in presets' custom parameters win over the panel; x265 last-wins checked with the pinned FFmpeg), R1-M1, R1-M2, R2-M1 (20 of 22 focus stops under the drawer), R2-M2 (focus to `<body>`). The lead fixed R1-m2 / R2-m3 (80ff653: Ctrl+Z in a number field). Fix round planned (section "Fix round"; 0068 decisions 10–13) |
