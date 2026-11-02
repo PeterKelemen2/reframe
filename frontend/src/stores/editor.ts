@@ -466,6 +466,18 @@ export const useEditorStore = defineStore('editor', () => {
     patch([{ op, path: pointer, value } as JsonPatchOp], options)
   }
 
+  /**
+   * Puts a value the server worked out (a detected crop) into the open job without an undo step,
+   * so an undo never takes it back out. It ends the coalescing run, whose step would otherwise
+   * carry it. A group's files are not changed: their crop is detected for each file.
+   */
+  function amend(ops: JsonPatchOp[]): void {
+    const current = target.value
+    if (current === null || current.kind !== 'job') return
+    history.value = endRun(history.value)
+    target.value = { ...current, job: applyOps(current.job, ops) }
+  }
+
   /** Ends the coalescing run: the next patch starts a step of its own (a slider let go). */
   function endCoalescing(): void {
     history.value = endRun(history.value)
@@ -1490,6 +1502,7 @@ export const useEditorStore = defineStore('editor', () => {
     get,
     patch,
     set,
+    amend,
     endCoalescing,
     applyFix,
     undo,

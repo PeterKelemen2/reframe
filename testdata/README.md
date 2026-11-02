@@ -2914,3 +2914,12 @@ Checked on 2026-10-27 on the same set-up as 4b-i (KDE Plasma 6.8.1 on Wayland, W
   (`chromium_headless_shell-1248`), not the headed binary.
 - **Node keeps running while a timer is pending**: a Playwright script whose waits leave
   `setTimeout` timers behind does not exit until they fire, even after `browser.close()`.
+
+### Preview frames: black bars after the display chain (M8 task C)
+
+- The server's frames go through `scale=flags=bicubic+accurate_rnd+full_chroma_int,format=rgb24`.
+  Its bicubic chroma upsampling rings into the black rows next to the picture. On `letterbox`
+  (pinned FFmpeg n9.0.2) the BT.709 luma variance of the bars is up to 6.1 per band (22-row top,
+  24-row bottom) and 2.0–4.1 for the 40-column pillarbox bars. A plain `format=rgb24` gives at
+  most 0.46. `CropCheckGrid`'s threshold (64) is set from the first numbers (decision 0067
+  "Task C").

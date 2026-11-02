@@ -1,0 +1,1234 @@
+{
+  "filters": {
+    "detelecine": {
+      "id": "detelecine",
+      "label": "Detelecine",
+      "position": 0,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "fieldmatch",
+          "label": "Field match",
+          "filters": ["fieldmatch", "decimate"],
+          "note": "",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "Default",
+              "help": "",
+              "chain": "fieldmatch,decimate",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "skip-top=4:skip-bottom=4:skip-left=1:skip-right=1:plane=0 (pullup; no fieldmatch equivalent)"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "fieldmatch={custom},decimate",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "default"
+        }
+      ],
+      "help": {
+        "what": "Undoes 3:2 pulldown: rebuilds the original 24 fps film frames from 29.97 fps telecined video and drops the duplicates.",
+        "use_when": "NTSC DVDs and broadcasts of film or TV series that show combing in a regular 3-of-5 frame pattern.",
+        "avoid_when": "The source is already progressive, true interlaced video (sports, news), or PAL.",
+        "speed_cost": "low",
+        "settings": "Default: field matching with FFmpeg's defaults, then one frame in five dropped. Custom: your fieldmatch parameters."
+      }
+    },
+    "interlace_detection": {
+      "id": "interlace_detection",
+      "label": "Interlace detection",
+      "position": 1,
+      "analysis": true,
+      "implementations": [
+        {
+          "id": "idet",
+          "label": "idet",
+          "filters": ["idet"],
+          "note": "",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "Default",
+              "help": "",
+              "chain": "idet",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "mode=3:spatial-metric=2:motion-thresh=1:spatial-thresh=1:filter-mode=2:block-thresh=40:block-width=16:block-height=16"
+            },
+            {
+              "id": "permissive",
+              "label": "Less sensitive",
+              "help": "",
+              "chain": "idet=intl_thres=1.5",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "mode=3:spatial-metric=2:motion-thresh=3:spatial-thresh=3:filter-mode=2:block-thresh=40:block-width=16:block-height=16"
+            },
+            {
+              "id": "fast",
+              "label": "Fast",
+              "help": "",
+              "chain": "idet",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "mode=0:spatial-metric=2:motion-thresh=2:spatial-thresh=3:filter-mode=1:block-thresh=80:block-width=16:block-height=16"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "idet={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "default"
+        }
+      ],
+      "help": {
+        "what": "Finds interlaced frames, so that Deinterlace processes only those and leaves progressive frames untouched.",
+        "use_when": "Mixed sources: progressive video with some interlaced parts (DVD extras, broadcasts).",
+        "avoid_when": "The whole source is interlaced (deinterlace everything instead) or fully progressive.",
+        "speed_cost": "low",
+        "settings": "Default: FFmpeg's idet thresholds. Less sensitive: fewer frames count as interlaced. Fast: the same as Default (idet has no faster mode). Custom: your idet parameters."
+      }
+    },
+    "deinterlace": {
+      "id": "deinterlace",
+      "label": "Deinterlace",
+      "position": 2,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "bwdif",
+          "label": "Bwdif",
+          "filters": ["bwdif"],
+          "note": "Bob Weaver: sharper than yadif, the default.",
+          "requires_tagged_input": false,
+          "combed_only": "deint=interlaced",
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "Default",
+              "help": "",
+              "chain": "bwdif=mode=send_frame:parity=auto",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "bwdif mode=3 (send_frame)"
+            },
+            {
+              "id": "bob",
+              "label": "Bob",
+              "help": "",
+              "chain": "bwdif=mode=send_field:parity=auto",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "bwdif mode=7 (send_field)"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "bwdif={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "default"
+        },
+        {
+          "id": "yadif",
+          "label": "Yadif",
+          "filters": ["yadif"],
+          "note": "Yet Another Deinterlacing Filter: HandBrake's classic.",
+          "requires_tagged_input": false,
+          "combed_only": "deint=interlaced",
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "Default",
+              "help": "",
+              "chain": "yadif=mode=send_frame:parity=auto",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "yadif mode=3 (send_frame)"
+            },
+            {
+              "id": "skip-spatial",
+              "label": "Skip spatial check",
+              "help": "",
+              "chain": "yadif=mode=send_frame_nospatial:parity=auto",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "yadif mode=1 (send_frame_nospatial)"
+            },
+            {
+              "id": "bob",
+              "label": "Bob",
+              "help": "",
+              "chain": "yadif=mode=send_field:parity=auto",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "yadif mode=7 (send_field)"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "yadif={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "default"
+        }
+      ],
+      "help": {
+        "what": "Turns interlaced video (two half-pictures per frame) into progressive frames, removing the comb artefacts.",
+        "use_when": "DVDs and broadcasts that show combing on motion. With Interlace detection on, only the detected frames are processed.",
+        "avoid_when": "Progressive sources: deinterlacing them only softens the picture.",
+        "speed_cost": "low",
+        "settings": "Bwdif (the default) or Yadif. Default: one output frame per frame. Bob: one frame per field, double frame rate, smoother motion. Skip spatial check (Yadif): faster. Custom: your bwdif / yadif parameters."
+      }
+    },
+    "denoise": {
+      "id": "denoise",
+      "label": "Denoise",
+      "position": 3,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "nlmeans",
+          "label": "NLMeans",
+          "filters": ["nlmeans"],
+          "note": "Non-local means: the best quality, slow.",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "ultralight",
+              "label": "Ultralight",
+              "help": "",
+              "chain": "nlmeans=s=1.05:p=7:pc=7:r=3:rc=3",
+              "tune_chains": {
+                "film": "nlmeans=s=1.05:p=7:pc=7:r=3:rc=3",
+                "grain": "nlmeans=s=1:p=7:pc=7:r=3:rc=3",
+                "highmotion": "nlmeans=s=1.05:p=7:pc=7:r=3:rc=5",
+                "animation": "nlmeans=s=1.25:p=5:pc=5:r=7:rc=7",
+                "tape": "nlmeans=s=1:p=3:pc=5:r=5:rc=5",
+                "sprite": "nlmeans=s=1:p=5:pc=5:r=5:rc=7"
+              },
+              "custom": false,
+              "handbrake": "NLMeans ultralight: y-strength=1.5, cb-strength=1.5, patch 7/7, range 3/3"
+            },
+            {
+              "id": "light",
+              "label": "Light",
+              "help": "",
+              "chain": "nlmeans=s=2.1:p=7:pc=7:r=3:rc=3",
+              "tune_chains": {
+                "film": "nlmeans=s=2.1:p=7:pc=7:r=3:rc=3",
+                "grain": "nlmeans=s=1:p=7:pc=7:r=3:rc=3",
+                "highmotion": "nlmeans=s=2.1:p=7:pc=7:r=3:rc=5",
+                "animation": "nlmeans=s=1.5:p=5:pc=5:r=7:rc=7",
+                "tape": "nlmeans=s=1:p=3:pc=5:r=5:rc=5",
+                "sprite": "nlmeans=s=1:p=5:pc=5:r=5:rc=9"
+              },
+              "custom": false,
+              "handbrake": "NLMeans light: y-strength=3, cb-strength=3, patch 7/7, range 3/3"
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "",
+              "chain": "nlmeans=s=4.2:p=7:pc=7:r=3:rc=3",
+              "tune_chains": {
+                "film": "nlmeans=s=4.2:p=7:pc=7:r=3:rc=3",
+                "grain": "nlmeans=s=1:p=7:pc=7:r=3:rc=3",
+                "highmotion": "nlmeans=s=4.2:p=7:pc=7:r=3:rc=5",
+                "animation": "nlmeans=s=2.5:p=5:pc=5:r=7:rc=7",
+                "tape": "nlmeans=s=1:p=3:pc=5:r=5:rc=5",
+                "sprite": "nlmeans=s=1.5:p=5:pc=5:r=5:rc=9"
+              },
+              "custom": false,
+              "handbrake": "NLMeans medium: y-strength=6, cb-strength=6, patch 7/7, range 3/3"
+            },
+            {
+              "id": "strong",
+              "label": "Strong",
+              "help": "",
+              "chain": "nlmeans=s=7:p=7:pc=7:r=3:rc=3",
+              "tune_chains": {
+                "film": "nlmeans=s=5.6:p=7:pc=7:r=3:rc=3",
+                "grain": "nlmeans=s=1:p=7:pc=7:r=3:rc=3",
+                "highmotion": "nlmeans=s=5.6:p=7:pc=7:r=3:rc=5",
+                "animation": "nlmeans=s=5:p=5:pc=5:r=7:rc=7",
+                "tape": "nlmeans=s=1.75:p=5:pc=5:r=5:rc=5",
+                "sprite": "nlmeans=s=1.5:p=5:pc=5:r=7:rc=11"
+              },
+              "custom": false,
+              "handbrake": "NLMeans strong: y-strength=10, cb-strength=10, patch 7/7, range 3/3"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "nlmeans={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [
+            {
+              "id": "film",
+              "label": "Film",
+              "help": "Most content, live action."
+            },
+            {
+              "id": "grain",
+              "label": "Grain",
+              "help": "Keeps luma grain; FFmpeg's nlmeans cannot leave luma alone, so it denoises very lightly."
+            },
+            {
+              "id": "highmotion",
+              "label": "High motion",
+              "help": "Avoids colour smearing in fast motion."
+            },
+            {
+              "id": "animation",
+              "label": "Animation",
+              "help": "Cel animation: cartoons, anime."
+            },
+            {
+              "id": "tape",
+              "label": "Tape",
+              "help": "Analogue tape: VHS."
+            },
+            {
+              "id": "sprite",
+              "label": "Sprite",
+              "help": "1- to 16-bit 2D games."
+            }
+          ],
+          "default_preset": "light"
+        },
+        {
+          "id": "hqdn3d",
+          "label": "HQDN3D",
+          "filters": ["hqdn3d"],
+          "note": "High-quality 3D denoiser: fast, can smear at high strength.",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "ultralight",
+              "label": "Ultralight",
+              "help": "",
+              "chain": "hqdn3d=luma_spatial=1:chroma_spatial=0.7:luma_tmp=1:chroma_tmp=2",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "HQDN3D ultralight: y-spatial=1, cb/cr-spatial=0.7, y-temporal=1, cb/cr-temporal=2"
+            },
+            {
+              "id": "light",
+              "label": "Light",
+              "help": "",
+              "chain": "hqdn3d=luma_spatial=2:chroma_spatial=1:luma_tmp=2:chroma_tmp=3",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "HQDN3D light: y-spatial=2, cb/cr-spatial=1, y-temporal=2, cb/cr-temporal=3"
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "",
+              "chain": "hqdn3d=luma_spatial=3:chroma_spatial=2:luma_tmp=2:chroma_tmp=3",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "HQDN3D medium: y-spatial=3, cb/cr-spatial=2, y-temporal=2, cb/cr-temporal=3"
+            },
+            {
+              "id": "strong",
+              "label": "Strong",
+              "help": "",
+              "chain": "hqdn3d=luma_spatial=7:chroma_spatial=7:luma_tmp=5:chroma_tmp=5",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "HQDN3D strong: y-spatial=7, cb/cr-spatial=7, y-temporal=5, cb/cr-temporal=5"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "hqdn3d={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "light"
+        }
+      ],
+      "help": {
+        "what": "Removes noise and grain. A cleaner picture compresses much better.",
+        "use_when": "Noisy sources: old films, low-light video, VHS, DVD with visible noise.",
+        "avoid_when": "Clean sources, or grain you want to keep (use the encoder's grain tune or SVT-AV1 film grain instead).",
+        "speed_cost": "high",
+        "settings": "NLMeans (the default): Ultralight to Strong (HandBrake's presets); tunes adapt it to the content. HQDN3D: the same strengths, much faster, can smear at high strength. Custom: your nlmeans or hqdn3d parameters."
+      }
+    },
+    "deblock": {
+      "id": "deblock",
+      "label": "Deblock",
+      "position": 4,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "deblock",
+          "label": "Deblock",
+          "filters": ["deblock"],
+          "note": "",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "ultralight",
+              "label": "Ultralight",
+              "help": "",
+              "chain": "deblock=filter=weak:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1",
+              "tune_chains": {
+                "small": "deblock=filter=weak:block=4:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1",
+                "medium": "deblock=filter=weak:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1",
+                "large": "deblock=filter=weak:block=16:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1"
+              },
+              "custom": false,
+              "handbrake": "strength=weak:thresh=20"
+            },
+            {
+              "id": "light",
+              "label": "Light",
+              "help": "",
+              "chain": "deblock=filter=weak:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25",
+              "tune_chains": {
+                "small": "deblock=filter=weak:block=4:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25",
+                "medium": "deblock=filter=weak:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25",
+                "large": "deblock=filter=weak:block=16:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25"
+              },
+              "custom": false,
+              "handbrake": "strength=weak:thresh=50"
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "",
+              "chain": "deblock=filter=strong:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1",
+              "tune_chains": {
+                "small": "deblock=filter=strong:block=4:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1",
+                "medium": "deblock=filter=strong:block=8:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1",
+                "large": "deblock=filter=strong:block=16:alpha=0.2:beta=0.1:gamma=0.1:delta=0.1"
+              },
+              "custom": false,
+              "handbrake": "strength=strong:thresh=20"
+            },
+            {
+              "id": "strong",
+              "label": "Strong",
+              "help": "",
+              "chain": "deblock=filter=strong:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25",
+              "tune_chains": {
+                "small": "deblock=filter=strong:block=4:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25",
+                "medium": "deblock=filter=strong:block=8:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25",
+                "large": "deblock=filter=strong:block=16:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25"
+              },
+              "custom": false,
+              "handbrake": "strength=strong:thresh=50"
+            },
+            {
+              "id": "stronger",
+              "label": "Stronger",
+              "help": "",
+              "chain": "deblock=filter=strong:block=8:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375",
+              "tune_chains": {
+                "small": "deblock=filter=strong:block=4:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375",
+                "medium": "deblock=filter=strong:block=8:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375",
+                "large": "deblock=filter=strong:block=16:alpha=0.75:beta=0.375:gamma=0.375:delta=0.375"
+              },
+              "custom": false,
+              "handbrake": "strength=strong:thresh=75"
+            },
+            {
+              "id": "verystrong",
+              "label": "Very strong",
+              "help": "",
+              "chain": "deblock=filter=strong:block=8:alpha=1:beta=0.5:gamma=0.5:delta=0.5",
+              "tune_chains": {
+                "small": "deblock=filter=strong:block=4:alpha=1:beta=0.5:gamma=0.5:delta=0.5",
+                "medium": "deblock=filter=strong:block=8:alpha=1:beta=0.5:gamma=0.5:delta=0.5",
+                "large": "deblock=filter=strong:block=16:alpha=1:beta=0.5:gamma=0.5:delta=0.5"
+              },
+              "custom": false,
+              "handbrake": "strength=strong:thresh=100"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "deblock={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [
+            {
+              "id": "small",
+              "label": "Small (4×4)",
+              "help": "Blocks of 4×4 pixels."
+            },
+            {
+              "id": "medium",
+              "label": "Medium (8×8)",
+              "help": "The default: MPEG-2 and MPEG-4 blocks."
+            },
+            {
+              "id": "large",
+              "label": "Large (16×16)",
+              "help": "Large blocks, for heavily upscaled sources."
+            }
+          ],
+          "default_preset": "medium"
+        }
+      ],
+      "help": {
+        "what": "Smooths the block edges of heavily compressed sources.",
+        "use_when": "Low-bitrate sources with visible 8×8 blocks: old web video, low-quality DVDs.",
+        "avoid_when": "Good sources: it softens real detail.",
+        "speed_cost": "low",
+        "settings": "Ultralight to Very strong: weak or strong filter with a higher threshold (HandBrake's presets). Tunes: block size. Custom: your deblock parameters."
+      }
+    },
+    "custom": {
+      "id": "custom",
+      "label": "Custom filter",
+      "position": 6,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "custom",
+          "label": "Custom",
+          "filters": [],
+          "note": "",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "Custom",
+              "help": "",
+              "chain": "{custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "default"
+        }
+      ],
+      "help": {
+        "what": "Your own FFmpeg filter chain, inserted after cropping and before scaling.",
+        "use_when": "A filter Reframe has no control for.",
+        "avoid_when": "A built-in filter does the job: the built-in ones are checked and explained.",
+        "speed_cost": "medium",
+        "settings": "Default: the text is used as it is (validated with a dry run)."
+      }
+    },
+    "tonemap": {
+      "id": "tonemap",
+      "label": "HDR → SDR tone mapping",
+      "position": 8,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "libplacebo",
+          "label": "libplacebo",
+          "filters": ["libplacebo"],
+          "note": "GPU (Vulkan) tone mapping with dynamic peak detection. Needs a working Vulkan driver.",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": true,
+          "presets": [
+            {
+              "id": "default",
+              "label": "On",
+              "help": "",
+              "chain": "libplacebo=tonemapping=bt.2390:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+              "tune_chains": {
+                "bt2390": "libplacebo=tonemapping=bt.2390:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "hable": "libplacebo=tonemapping=hable:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "mobius": "libplacebo=tonemapping=mobius:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "reinhard": "libplacebo=tonemapping=reinhard:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+              },
+              "custom": false,
+              "handbrake": "HandBrake tone maps inside its colorspace filter with tonemap=hable:desat=0"
+            },
+            {
+              "id": "static",
+              "label": "On, no peak detection",
+              "help": "",
+              "chain": "libplacebo=tonemapping=bt.2390:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+              "tune_chains": {
+                "bt2390": "libplacebo=tonemapping=bt.2390:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "hable": "libplacebo=tonemapping=hable:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "mobius": "libplacebo=tonemapping=mobius:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "reinhard": "libplacebo=tonemapping=reinhard:peak_detect=0:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+              },
+              "custom": false,
+              "handbrake": null
+            }
+          ],
+          "tunes": [
+            {
+              "id": "bt2390",
+              "label": "BT.2390",
+              "help": "The ITU recommendation: natural, keeps highlights. The default."
+            },
+            {
+              "id": "hable",
+              "label": "Hable",
+              "help": "Filmic curve, a little darker and more contrast."
+            },
+            {
+              "id": "mobius",
+              "label": "Mobius",
+              "help": "Keeps colours and contrast in the mid tones."
+            },
+            {
+              "id": "reinhard",
+              "label": "Reinhard",
+              "help": "Simple, brighter highlights."
+            }
+          ],
+          "default_preset": "default"
+        },
+        {
+          "id": "zscale",
+          "label": "zscale + tonemap",
+          "filters": ["zscale", "tonemap"],
+          "note": "CPU tone mapping (zscale + tonemap); no BT.2390 curve, no peak detection.",
+          "requires_tagged_input": true,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "On",
+              "help": "",
+              "chain": "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv",
+              "tune_chains": {
+                "hable": "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv",
+                "mobius": "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv",
+                "reinhard": "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=reinhard:desat=0,zscale=t=bt709:m=bt709:r=tv"
+              },
+              "custom": false,
+              "handbrake": "tonemap=hable:desat=0 (HandBrake's colorspace filter)"
+            }
+          ],
+          "tunes": [
+            {
+              "id": "hable",
+              "label": "Hable",
+              "help": "Filmic curve, a little darker and more contrast. The default."
+            },
+            {
+              "id": "mobius",
+              "label": "Mobius",
+              "help": "Keeps colours and contrast in the mid tones."
+            },
+            {
+              "id": "reinhard",
+              "label": "Reinhard",
+              "help": "Simple, brighter highlights."
+            }
+          ],
+          "default_preset": "default"
+        }
+      ],
+      "help": {
+        "what": "Converts HDR (BT.2020 PQ or HLG) to SDR BT.709, compressing the highlights so they fit, instead of clipping and washing out the picture.",
+        "use_when": "An HDR source must play on SDR screens or players.",
+        "avoid_when": "The output stays HDR (encode 10-bit H.265 or AV1 with HDR metadata instead), or the source is SDR.",
+        "speed_cost": "medium",
+        "settings": "libplacebo (the default, needs Vulkan): dynamic peak detection, or Static with the mastering metadata only; tunes pick the curve. zscale + tonemap (CPU): Hable, Mobius or Reinhard, no peak detection."
+      }
+    },
+    "colorspace": {
+      "id": "colorspace",
+      "label": "Colorspace",
+      "position": 9,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "zscale",
+          "label": "zscale",
+          "filters": ["zscale"],
+          "note": "CPU conversion (zimg).",
+          "requires_tagged_input": true,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "bt709",
+              "label": "BT.709",
+              "help": "",
+              "chain": "zscale=p=bt709:t=bt709:m=bt709",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=bt709:transfer=bt709:matrix=bt709"
+            },
+            {
+              "id": "bt2020",
+              "label": "BT.2020",
+              "help": "",
+              "chain": "zscale=p=bt2020:t=bt2020-10:m=bt2020nc",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=bt2020:transfer=bt2020-10:matrix=bt2020ncl"
+            },
+            {
+              "id": "bt601-6-525",
+              "label": "BT.601 SMPTE-C (NTSC)",
+              "help": "",
+              "chain": "zscale=p=smpte170m:t=bt709:m=smpte170m",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=smpte170m:transfer=bt709:matrix=smpte170m"
+            },
+            {
+              "id": "bt601-6-625",
+              "label": "BT.601 EBU (PAL)",
+              "help": "",
+              "chain": "zscale=p=bt470bg:t=bt709:m=smpte170m",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=bt470bg:transfer=bt709:matrix=smpte170m"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "zscale={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "bt709"
+        },
+        {
+          "id": "libplacebo",
+          "label": "libplacebo",
+          "filters": ["libplacebo"],
+          "note": "GPU (Vulkan) conversion. Needs a working Vulkan driver.",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": true,
+          "presets": [
+            {
+              "id": "bt709",
+              "label": "BT.709",
+              "help": "",
+              "chain": "libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=bt709:transfer=bt709:matrix=bt709"
+            },
+            {
+              "id": "bt2020",
+              "label": "BT.2020",
+              "help": "",
+              "chain": "libplacebo=colorspace=bt2020nc:color_primaries=bt2020:color_trc=bt2020-10",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=bt2020:transfer=bt2020-10:matrix=bt2020ncl"
+            },
+            {
+              "id": "bt601-6-525",
+              "label": "BT.601 SMPTE-C (NTSC)",
+              "help": "",
+              "chain": "libplacebo=colorspace=smpte170m:color_primaries=smpte170m:color_trc=bt709",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=smpte170m:transfer=bt709:matrix=smpte170m"
+            },
+            {
+              "id": "bt601-6-625",
+              "label": "BT.601 EBU (PAL)",
+              "help": "",
+              "chain": "libplacebo=colorspace=smpte170m:color_primaries=bt470bg:color_trc=bt709",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": "primaries=bt470bg:transfer=bt709:matrix=smpte170m"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "libplacebo={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "bt709"
+        }
+      ],
+      "help": {
+        "what": "Converts the colour primaries, transfer and matrix to another standard, and tags the output so that players do not have to guess.",
+        "use_when": "SD sources (BT.601) for modern players that assume BT.709, or a deliberate BT.2020 output.",
+        "avoid_when": "The source already has the target colours. HDR to SDR needs Tone mapping, not only this filter.",
+        "speed_cost": "low",
+        "settings": "BT.709: HD and SDR standard. BT.2020: UHD (SDR, 10-bit transfer). BT.601 SMPTE-C: NTSC SD. BT.601 EBU: PAL SD. zscale (the default, CPU) or libplacebo (Vulkan)."
+      }
+    },
+    "sharpen": {
+      "id": "sharpen",
+      "label": "Sharpen",
+      "position": 10,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "unsharp",
+          "label": "Unsharp",
+          "filters": ["unsharp"],
+          "note": "Unsharp mask (HandBrake's Unsharp).",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "ultralight",
+              "label": "Ultralight",
+              "help": "",
+              "chain": "unsharp=lx=7:ly=7:la=0.05:cx=7:cy=7:ca=0.05",
+              "tune_chains": {
+                "ultrafine": "unsharp=lx=3:ly=3:la=0.15:cx=3:cy=3:ca=0.1",
+                "fine": "unsharp=lx=7:ly=7:la=0.055:cx=5:cy=5:ca=0.033",
+                "medium": "unsharp=lx=9:ly=9:la=0.055:cx=7:cy=7:ca=0.033",
+                "coarse": "unsharp=lx=11:ly=11:la=0.055:cx=7:cy=7:ca=0.033",
+                "verycoarse": "unsharp=lx=13:ly=13:la=0.055:cx=9:cy=9:ca=0.033"
+              },
+              "custom": false,
+              "handbrake": "Unsharp ultralight: y-strength=0.05, cb-strength=0.05, size 7/7"
+            },
+            {
+              "id": "light",
+              "label": "Light",
+              "help": "",
+              "chain": "unsharp=lx=7:ly=7:la=0.15:cx=7:cy=7:ca=0.15",
+              "tune_chains": {
+                "ultrafine": "unsharp=lx=3:ly=3:la=0.25:cx=3:cy=3:ca=0.15",
+                "fine": "unsharp=lx=7:ly=7:la=0.165:cx=5:cy=5:ca=0.1",
+                "medium": "unsharp=lx=9:ly=9:la=0.165:cx=7:cy=7:ca=0.1",
+                "coarse": "unsharp=lx=11:ly=11:la=0.165:cx=7:cy=7:ca=0.1",
+                "verycoarse": "unsharp=lx=13:ly=13:la=0.165:cx=9:cy=9:ca=0.1"
+              },
+              "custom": false,
+              "handbrake": "Unsharp light: y-strength=0.15, cb-strength=0.15, size 7/7"
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "",
+              "chain": "unsharp=lx=7:ly=7:la=0.25:cx=7:cy=7:ca=0.25",
+              "tune_chains": {
+                "ultrafine": "unsharp=lx=3:ly=3:la=0.4:cx=3:cy=3:ca=0.25",
+                "fine": "unsharp=lx=7:ly=7:la=0.275:cx=5:cy=5:ca=0.165",
+                "medium": "unsharp=lx=9:ly=9:la=0.275:cx=7:cy=7:ca=0.165",
+                "coarse": "unsharp=lx=11:ly=11:la=0.275:cx=7:cy=7:ca=0.165",
+                "verycoarse": "unsharp=lx=13:ly=13:la=0.275:cx=9:cy=9:ca=0.165"
+              },
+              "custom": false,
+              "handbrake": "Unsharp medium: y-strength=0.25, cb-strength=0.25, size 7/7"
+            },
+            {
+              "id": "strong",
+              "label": "Strong",
+              "help": "",
+              "chain": "unsharp=lx=7:ly=7:la=0.5:cx=7:cy=7:ca=0.5",
+              "tune_chains": {
+                "ultrafine": "unsharp=lx=3:ly=3:la=0.8:cx=3:cy=3:ca=0.5",
+                "fine": "unsharp=lx=7:ly=7:la=0.55:cx=5:cy=5:ca=0.33",
+                "medium": "unsharp=lx=9:ly=9:la=0.55:cx=7:cy=7:ca=0.33",
+                "coarse": "unsharp=lx=11:ly=11:la=0.55:cx=7:cy=7:ca=0.33",
+                "verycoarse": "unsharp=lx=13:ly=13:la=0.55:cx=9:cy=9:ca=0.33"
+              },
+              "custom": false,
+              "handbrake": "Unsharp strong: y-strength=0.5, cb-strength=0.5, size 7/7"
+            },
+            {
+              "id": "stronger",
+              "label": "Stronger",
+              "help": "",
+              "chain": "unsharp=lx=7:ly=7:la=0.8:cx=7:cy=7:ca=0.8",
+              "tune_chains": {
+                "ultrafine": "unsharp=lx=3:ly=3:la=1.2:cx=3:cy=3:ca=0.75",
+                "fine": "unsharp=lx=7:ly=7:la=0.9:cx=5:cy=5:ca=0.6",
+                "medium": "unsharp=lx=9:ly=9:la=0.9:cx=7:cy=7:ca=0.6",
+                "coarse": "unsharp=lx=11:ly=11:la=0.9:cx=7:cy=7:ca=0.6",
+                "verycoarse": "unsharp=lx=13:ly=13:la=0.9:cx=9:cy=9:ca=0.6"
+              },
+              "custom": false,
+              "handbrake": "Unsharp stronger: y-strength=0.8, cb-strength=0.8, size 7/7"
+            },
+            {
+              "id": "verystrong",
+              "label": "Very strong",
+              "help": "",
+              "chain": "unsharp=lx=7:ly=7:la=1.2:cx=7:cy=7:ca=1.2",
+              "tune_chains": {
+                "ultrafine": "unsharp=lx=3:ly=3:la=1.5:cx=3:cy=3:ca=0.9",
+                "fine": "unsharp=lx=7:ly=7:la=1.35:cx=5:cy=5:ca=0.9",
+                "medium": "unsharp=lx=9:ly=9:la=1.35:cx=7:cy=7:ca=0.9",
+                "coarse": "unsharp=lx=11:ly=11:la=1.35:cx=7:cy=7:ca=0.9",
+                "verycoarse": "unsharp=lx=13:ly=13:la=1.35:cx=9:cy=9:ca=0.9"
+              },
+              "custom": false,
+              "handbrake": "Unsharp verystrong: y-strength=1.2, cb-strength=1.2, size 7/7"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "unsharp={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [
+            {
+              "id": "ultrafine",
+              "label": "Ultrafine",
+              "help": "3×3: the finest detail."
+            },
+            {
+              "id": "fine",
+              "label": "Fine",
+              "help": ""
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": ""
+            },
+            {
+              "id": "coarse",
+              "label": "Coarse",
+              "help": ""
+            },
+            {
+              "id": "verycoarse",
+              "label": "Very coarse",
+              "help": "13×13: large structures."
+            }
+          ],
+          "default_preset": "light"
+        },
+        {
+          "id": "cas",
+          "label": "CAS",
+          "filters": ["cas"],
+          "note": "AMD FidelityFX Contrast Adaptive Sharpening: sharpens low-contrast detail more, with fewer halos. No HandBrake equivalent (HandBrake's second sharpener, LapSharp, is not in FFmpeg).",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "light",
+              "label": "Light",
+              "help": "",
+              "chain": "cas=strength=0.25",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": null
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "",
+              "chain": "cas=strength=0.5",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": null
+            },
+            {
+              "id": "strong",
+              "label": "Strong",
+              "help": "",
+              "chain": "cas=strength=0.75",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": null
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "cas={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "light"
+        }
+      ],
+      "help": {
+        "what": "Makes edges and detail look crisper.",
+        "use_when": "Soft sources, or after downscaling or denoising.",
+        "avoid_when": "Noisy or grainy sources (it sharpens the noise) and when file size matters: sharp pictures need more bits.",
+        "speed_cost": "low",
+        "settings": "Unsharp (the default): Ultralight to Very strong (HandBrake's presets); tunes set the size of the detail that is sharpened. CAS: contrast adaptive sharpening, Light / Medium / Strong (0.25 / 0.5 / 0.75). Custom: your unsharp or cas parameters."
+      }
+    },
+    "chroma_smooth": {
+      "id": "chroma_smooth",
+      "label": "Chroma smooth",
+      "position": 11,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "unsharp",
+          "label": "Unsharp (chroma)",
+          "filters": ["unsharp"],
+          "note": "Unsharp with a negative amount on the chroma planes only.",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "ultralight",
+              "label": "Ultralight",
+              "help": "",
+              "chain": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.4",
+              "tune_chains": {
+                "tiny": "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-0.4",
+                "small": "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-0.4",
+                "medium": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.4",
+                "wide": "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-0.4",
+                "verywide": "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-0.4"
+              },
+              "custom": false,
+              "handbrake": "cb-strength=0.4, cb-size=7 (tune: size)"
+            },
+            {
+              "id": "light",
+              "label": "Light",
+              "help": "",
+              "chain": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.8",
+              "tune_chains": {
+                "tiny": "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-0.8",
+                "small": "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-0.8",
+                "medium": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-0.8",
+                "wide": "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-0.8",
+                "verywide": "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-0.8"
+              },
+              "custom": false,
+              "handbrake": "cb-strength=0.8, cb-size=7 (tune: size)"
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "",
+              "chain": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.2",
+              "tune_chains": {
+                "tiny": "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-1.2",
+                "small": "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-1.2",
+                "medium": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.2",
+                "wide": "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-1.2",
+                "verywide": "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-1.2"
+              },
+              "custom": false,
+              "handbrake": "cb-strength=1.2, cb-size=7 (tune: size)"
+            },
+            {
+              "id": "strong",
+              "label": "Strong",
+              "help": "",
+              "chain": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.6",
+              "tune_chains": {
+                "tiny": "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-1.6",
+                "small": "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-1.6",
+                "medium": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-1.6",
+                "wide": "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-1.6",
+                "verywide": "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-1.6"
+              },
+              "custom": false,
+              "handbrake": "cb-strength=1.6, cb-size=7 (tune: size)"
+            },
+            {
+              "id": "stronger",
+              "label": "Stronger",
+              "help": "",
+              "chain": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2",
+              "tune_chains": {
+                "tiny": "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-2",
+                "small": "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-2",
+                "medium": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2",
+                "wide": "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-2",
+                "verywide": "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-2"
+              },
+              "custom": false,
+              "handbrake": "cb-strength=2, cb-size=7 (tune: size)"
+            },
+            {
+              "id": "verystrong",
+              "label": "Very strong",
+              "help": "",
+              "chain": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2",
+              "tune_chains": {
+                "tiny": "unsharp=lx=3:ly=3:la=0:cx=3:cy=3:ca=-2",
+                "small": "unsharp=lx=3:ly=3:la=0:cx=5:cy=5:ca=-2",
+                "medium": "unsharp=lx=3:ly=3:la=0:cx=7:cy=7:ca=-2",
+                "wide": "unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-2",
+                "verywide": "unsharp=lx=3:ly=3:la=0:cx=11:cy=11:ca=-2"
+              },
+              "custom": false,
+              "handbrake": "cb-strength=2.4, cb-size=7 (tune: size)"
+            },
+            {
+              "id": "custom",
+              "label": "Custom",
+              "help": "",
+              "chain": "unsharp={custom}",
+              "tune_chains": {},
+              "custom": true,
+              "handbrake": null
+            }
+          ],
+          "tunes": [
+            {
+              "id": "tiny",
+              "label": "Tiny",
+              "help": "3×3."
+            },
+            {
+              "id": "small",
+              "label": "Small",
+              "help": "5×5."
+            },
+            {
+              "id": "medium",
+              "label": "Medium",
+              "help": "7×7, the default."
+            },
+            {
+              "id": "wide",
+              "label": "Wide",
+              "help": "9×9."
+            },
+            {
+              "id": "verywide",
+              "label": "Very wide",
+              "help": "11×11."
+            }
+          ],
+          "default_preset": "light"
+        }
+      ],
+      "help": {
+        "what": "Blurs only the colour information: removes colour noise and rainbow artefacts, keeps luma detail.",
+        "use_when": "Colour noise, chroma blocking or dot crawl (analogue sources, low-quality DVDs).",
+        "avoid_when": "Clean sources: it makes colours bleed.",
+        "speed_cost": "low",
+        "settings": "Ultralight to Very strong: blur amount (HandBrake's presets; Very strong is limited to FFmpeg's maximum). Tunes: blur size. Custom: your unsharp parameters."
+      }
+    },
+    "grayscale": {
+      "id": "grayscale",
+      "label": "Grayscale",
+      "position": 12,
+      "analysis": false,
+      "implementations": [
+        {
+          "id": "hue",
+          "label": "hue",
+          "filters": ["hue"],
+          "note": "hue=s=0 keeps 4:2:0, so every encoder and player accepts it.",
+          "requires_tagged_input": false,
+          "combed_only": null,
+          "needs_vulkan": false,
+          "presets": [
+            {
+              "id": "default",
+              "label": "On",
+              "help": "",
+              "chain": "hue=s=0",
+              "tune_chains": {},
+              "custom": false,
+              "handbrake": null
+            }
+          ],
+          "tunes": [],
+          "default_preset": "default"
+        }
+      ],
+      "help": {
+        "what": "Removes all colour.",
+        "use_when": "Black-and-white films that carry colour noise or a colour cast.",
+        "avoid_when": "Colour sources.",
+        "speed_cost": "low",
+        "settings": "On: saturation 0."
+      }
+    }
+  },
+  "filter_order": [
+    "detelecine",
+    "interlace_detection",
+    "deinterlace",
+    "denoise",
+    "deblock",
+    "crop",
+    "custom",
+    "scale",
+    "tonemap",
+    "colorspace",
+    "sharpen",
+    "chroma_smooth",
+    "grayscale",
+    "format"
+  ]
+}

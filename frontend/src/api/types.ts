@@ -17,18 +17,32 @@ export type BatchRun = Schemas['BatchRun']
 export type CapabilitySnapshot = Schemas['CapabilitySnapshot']
 export type Chapter = Schemas['Chapter']
 export type ChapterSettings = Schemas['ChapterSettings']
+export type ColorInfo = Schemas['ColorInfo']
+export type CropRect = Schemas['CropRect']
+export type CropSettings = Schemas['CropSettings']
 export type DefaultsPreviewRequest = Schemas['DefaultsPreviewRequest']
 export type Definitions = Schemas['Definitions']
+export type DimensionSettings = Schemas['DimensionSettings']
 export type EncoderState = Schemas['EncoderState']
 export type EncoderStatus = Schemas['EncoderStatus']
 export type EncodePlan = Schemas['EncodePlan']
 export type ExternalSubtitle = Schemas['ExternalSubtitle']
 export type FieldChange = Schemas['FieldChange']
+export type FilterConfig = Schemas['FilterConfig']
+export type FilterDef = Schemas['FilterDef']
+export type FilterSettings = Schemas['FilterSettings']
 export type Fix = Schemas['Fix']
+/** One PNG frame: a signed URL that works for a few minutes. */
+export type FrameLink = Schemas['FrameLink']
+export type Frames = Schemas['Frames']
+export type Geometry = Schemas['Geometry']
+export type HdrInfo = Schemas['HdrInfo']
 export type FsListing = Schemas['FsListing']
 export type FsRoot = Schemas['FsRoot']
 export type GroupMember = Schemas['GroupMember']
 export type JobDraft = Schemas['JobDraft']
+/** `jobs/geometry`: the source picture and the geometry the command builder uses. */
+export type JobGeometry = Schemas['JobGeometry']
 export type JobLogChunk = Schemas['JobLogChunk']
 export type JobNaming = Schemas['JobNaming']
 export type JobProgress = Schemas['JobProgress']
@@ -46,6 +60,7 @@ export type MediaSource = Schemas['MediaSource']
 export type NameResult = Schemas['NameResult']
 export type NamingOptions = Schemas['NamingOptions']
 export type Preset = Schemas['Preset']
+export type PreviewSettings = Schemas['PreviewSettings']
 export type PresetCreateRequest = Schemas['PresetCreateRequest']
 export type Problem = Schemas['Problem']
 export type QueueJob = Schemas['QueueJob']
@@ -54,6 +69,7 @@ export type Resolution = Schemas['Resolution']
 export type SettingsChange = Schemas['SettingsChange']
 export type Severity = Schemas['Severity']
 export type SourceEntry = Schemas['SourceEntry']
+export type SourceGeometry = Schemas['SourceGeometry']
 export type SubtitleDefaults = Schemas['SubtitleDefaults']
 export type SubtitleOutputTrack = Schemas['SubtitleOutputTrack']
 export type SubtitleStream = Schemas['SubtitleStream']
@@ -69,6 +85,7 @@ export type TrackMatch = Schemas['TrackMatch']
 export type TrackMetadata = Schemas['TrackMetadata']
 export type TrackRoleInfo = Schemas['TrackRoleInfo']
 export type ValidationIssue = Schemas['ValidationIssue']
+export type VideoStream = Schemas['VideoStream']
 export type WhenDone = Schemas['WhenDoneSetting']['when_done']
 
 /** A message of `WS /api/events`, server to client. */
@@ -122,6 +139,36 @@ export interface LoudnessMeasurement {
   threshold?: number | null
   start?: number | null
   duration?: number | null
+}
+
+/** `cropdetect` on one sample frame; `crop` is `null` where the frame gave no result (black). */
+export interface CropSample {
+  timestamp: number
+  crop?: CropRect | null
+}
+
+/** The result of a `cropdetect` task, on the frame strip's sample times. */
+export interface CropDetection {
+  samples: CropSample[]
+  /** The most common result: automatic crop. */
+  auto: CropRect
+  /** Samples that gave `auto`: `Detected … on 9 of 10 frames`. */
+  auto_frames: number
+  /** Only what is black on every sample: conservative crop. */
+  conservative: CropRect
+  notes: string[]
+}
+
+/** The result of a `preview_clip` task (its `path` is the server's; the client uses `id`). */
+export interface PreviewClip {
+  id: string
+  /** Seconds from the start of the source: the clip's frame at `t` is the source's at `start + t`. */
+  start: number
+  duration: number
+  container: string
+  /** `h264`, `hevc`, `av1`, …, or `null` for a job without video. */
+  video_codec?: string | null
+  size: number
 }
 
 export type ChapterExport = Schemas['ChapterExport']

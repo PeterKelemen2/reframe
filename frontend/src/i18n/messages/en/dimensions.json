@@ -1,0 +1,114 @@
+{
+  "header": {
+    "label": "Picture pipeline",
+    "source": "Source {size} ({aspect}, {pixels})",
+    "sourceSquare": "square",
+    "sourcePar": "pixel aspect {par}",
+    "crop": "Crop {size}",
+    "rotate": "Rotate {degrees}°",
+    "flip": "Flip",
+    "output": "Output {size}",
+    "square": "square pixels",
+    "par": "pixel aspect {par}",
+    "copied": "Source {size}: the video is copied, so the picture is not changed",
+    "noVideo": "The source has no video.",
+    "computing": "Computing the picture size…",
+    "failed": "The picture size cannot be computed: {reason}",
+    "upscaled": "The picture is enlarged: it gains no detail.",
+    "invalid": "A picture setting is not valid: see the marked field."
+  },
+  "locked": {
+    "passthrough": "The video is copied unchanged, so these settings are not used. Turn off Video passthrough on the Video tab to change the picture.",
+    "noVideo": "These settings are off: there is no picture to change."
+  },
+  "sections": {
+    "orientation": "Orientation",
+    "crop": "Crop",
+    "size": "Output size",
+    "advanced": "Advanced"
+  },
+  "orientation": {
+    "rotate": "Rotate",
+    "degrees": "{degrees}°",
+    "rotateHelp": "Turns the picture clockwise.",
+    "flip": "Flip horizontally",
+    "flipHelp": "Mirrors the picture left to right, after the rotation."
+  },
+  "crop": {
+    "mode": "Crop mode",
+    "modes": {
+      "auto": "Automatic",
+      "conservative": "Conservative",
+      "none": "None",
+      "manual": "Manual"
+    },
+    "modeHelp": "Automatic finds the black bars on the sample frames and takes the most common result. Conservative removes only what is black on every sample frame, which is safe for films whose aspect ratio changes. Manual takes your values.",
+    "values": "Crop values",
+    "edges": {
+      "top": "Top",
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right"
+    }
+  },
+  "detection": {
+    "running": "Detecting the black bars…",
+    "auto": "Detected {top} / {bottom} / {left} / {right} on {frames} of {total} frames",
+    "conservative": "Black on every frame: {top} / {bottom} / {left} / {right} ({total} frames)",
+    "failed": "Crop detection failed: {reason}",
+    "cancelled": "The crop detection was cancelled.",
+    "again": "Detect again",
+    "group": "In a group, Automatic and Conservative queue the files without a crop: their black bars are not detected. Choose Manual to crop every file the same way.",
+    "shownFile": "This file: {line}"
+  },
+  "snap": {
+    "grid": "{edge} {from} → {to} ({grid} chroma grid)",
+    "gridInterlaced": "{edge} {from} → {to} (interlaced {grid} chroma grid)",
+    "width": "{edge} {from} → {to} (the width must be a multiple of {step})",
+    "height": "{edge} {from} → {to} (the height must be a multiple of {step})",
+    "inside": "{edge} {from} → {to} (kept inside the picture)"
+  },
+  "size": {
+    "mode": "Size",
+    "modes": {
+      "source": "Same as cropped source",
+      "fit": "Fit within",
+      "width": "Exact width",
+      "height": "Exact height"
+    },
+    "modeHelp": "Fit within keeps the aspect ratio and fits the picture inside the box. A portrait picture fits inside the turned box.",
+    "box": "Box",
+    "custom": "Custom W×H",
+    "width": "Width",
+    "height": "Height",
+    "upscale": "Allow upscaling",
+    "upscaleHelp": "Off: the output is never larger than the source picture's display size."
+  },
+  "advanced": {
+    "pixelAspect": "Pixel aspect",
+    "pixelAspects": {
+      "square": "Square pixels",
+      "keep": "Keep source (anamorphic)",
+      "custom": "Custom PAR"
+    },
+    "pixelAspectHelp": "Square pixels play correctly everywhere. Keep source only for DVD-style anamorphic video that you want to store at its original resolution.",
+    "customPar": "Custom PAR",
+    "parWidth": "Pixel aspect width",
+    "parHeight": "Pixel aspect height",
+    "modulus": "Modulus",
+    "modulusHelp": "Rounds the output size to a multiple of this number. Most encoders need 2.",
+    "scaler": "Scaler",
+    "scalers": {
+      "lanczos": "Lanczos",
+      "bicubic": "Bicubic",
+      "spline": "Spline",
+      "bilinear": "Bilinear"
+    },
+    "scalerHelp": "Lanczos and Spline are the sharpest and a little slower; Bicubic is a balance; Bilinear is the fastest and the softest."
+  },
+  "overlay": {
+    "handle": "{edge} crop edge",
+    "handleValue": "{value} pixels"
+  },
+  "noJob": "No job is open."
+}

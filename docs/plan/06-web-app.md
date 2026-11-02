@@ -148,6 +148,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/preview/clip` `{job, start, seconds}` → 202 | Encoded preview clip |
 | | `GET /api/preview/clips/{id}/link` | A signed clip URL for `<video>` (one hour) |
 | | `GET /api/preview/clips/{id}` | Clip file (HTTP Range: one range → 206, outside the file → 416) |
+| | `POST /api/preview/clips/{id}/frames` `{timestamps}` | Frames decoded from a cached clip, for the encoded frame compare (as `frames`: the request waits; [0067](../decisions/0067-m8-picture.md) item 1) |
 | | `GET /api/preview/cache` · `DELETE /api/preview/cache` | Size of the frame and clip cache; clear it |
 | Definitions | `GET /api/definitions` | `{definitions, naming_variables}`: encoders, option schemas, filters, containers, the naming variables (cached, ETag; `304` on `If-None-Match`) |
 | | `GET /api/languages` | Language list for the picker (cached, ETag) |
@@ -394,7 +395,11 @@ frontend/src/
 │   ├── sources/      # SourcesPanel, FileBrowserDialog (web)
 │   ├── naming/       # NamingOptionsEditor, JobNamingEditor
 │   ├── presets/      # PresetPicker, the preset drawer
-│   ├── media/        # FrameViewer, CropMagnifier, CropCheckGrid, SplitCompare, TrackTable
+│   ├── media/        # FrameViewer, SplitCompare, TrackTable
+│   ├── dimensions/   # the Dimensions tab's sections, CropOverlay
+│   ├── crop/         # CropMagnifier, CropLoupe, CropCheckGrid (and its worker)
+│   ├── filters/      # the Filters tab's rows, help and source colour box
+│   ├── clip/         # the live preview clip and its frame compare
 │   ├── language/     # LanguagePicker, LanguageListEditor
 │   ├── tracks/       # output track rows, TrackMetadataEditor, flag toggles, bulk edit
 │   ├── defaults/     # DefaultsDialog and its live preview
@@ -413,7 +418,8 @@ Each area of the app has its own message file and its own component folder, so t
 tasks never share one ([decision 0063](../decisions/0063-m4-frontend-mvp.md)); the task
 breakdown and the store contracts are in [../m4-breakdown.md](../m4-breakdown.md); M6's
 folders and contracts are in [../m6-breakdown.md](../m6-breakdown.md)
-([decision 0065](../decisions/0065-m6-tracks-and-metadata.md)).
+([decision 0065](../decisions/0065-m6-tracks-and-metadata.md)); M8's are in [../m8-breakdown.md](../m8-breakdown.md)
+([decision 0067](../decisions/0067-m8-picture.md)).
 
 ## Platform adapter
 
@@ -507,18 +513,18 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task D").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
-- [ ] Pipeline header from `jobs/geometry`.
-- [ ] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay with drag handles.
-- [ ] `CropMagnifier`: canvas-based. It loads the full-resolution PNG and draws 4 edge strips at
+- [x] Pipeline header from `jobs/geometry`.
+- [x] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay with drag handles.
+- [x] `CropMagnifier`: canvas-based. It loads the full-resolution PNG and draws 4 edge strips at
       2×/4×/8× with `imageSmoothingEnabled = false`, a removed-area tint, the crop lines, and a
       cursor loupe.
-- [ ] `CropCheckGrid`: every sample with the overlay. A Web Worker computes the luma variance
+- [x] `CropCheckGrid`: every sample with the overlay. A Web Worker computes the luma variance
       of the removed band and puts a warning badge on frames that lose content.
 
 ### F-8 Filters tab
-- [ ] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
+- [x] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
       before/after on the current frame (`preview/render`).
-- [ ] Colorspace source-colour box and the "what will happen" sentence.
+- [x] Colorspace source-colour box and the "what will happen" sentence.
 
 ### F-9 Video tab and advanced options
 - [x] `EncoderPicker` grouped by family, with status dots and reasons. The
@@ -575,13 +581,15 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Job log viewer (virtual scroll, follow mode, copy all). Global activity log.
 
 ### F-15 Settings view
-- [ ] The sections from [03 §Settings](03-features.md#settings). The encoder table has a re-scan
+- [x] The sections from [03 §Settings](03-features.md#settings). The encoder table has a re-scan
       button. Tool paths have a **Test** button.
 - [x] M4 ("basic") builds Tools, Encoders, Output, Queue and Appearance. Languages needs the
       `LanguagePicker` (F-10, M6) and Preview needs the preview panel (F-7, M8); each comes with
       its milestone ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 - [x] Languages (M6): favourites, preferred audio and subtitle languages
       ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task A").
+- [x] Preview (M8): number of sample frames, cache size limit, the cache size and *Clear cache*
+      ([decision 0067](../decisions/0067-m8-picture.md), "Task E").
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
@@ -589,7 +597,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       Respect `prefers-reduced-motion`.
 
 ### F-17 End-to-end tests
-- [ ] Playwright against `reframe-server` with fixture media and fake FFmpeg:
+- [x] Playwright against `reframe-server` with fixture media and fake FFmpeg:
   1. Open a file → set an audio language and commentary flag → queue → done → re-probe shows
      the flags.
   2. Open a season folder → edit group → check the matrix → queue the group.
@@ -602,7 +610,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   probes the job's output through the server; [decision
   0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G". M7 built flow 2, which reads
   the queued group through the server; [decision 0066](../decisions/0066-m7-batch-season.md),
-  "Task E".)
+  "Task E". M8 built flow 4, which reads the magnifier's canvases back against the frame;
+  [decision 0067](../decisions/0067-m8-picture.md), "Task F".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).

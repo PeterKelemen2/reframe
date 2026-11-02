@@ -1,4 +1,5 @@
 import { flushPromises } from '@vue/test-utils'
+import { getActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
@@ -79,6 +80,8 @@ describe('the workspace', () => {
     expect(wrapper.find('.sources-panel').exists()).toBe(true)
     expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual([
       'Summary',
+      'Dimensions',
+      'Filters',
       'Video',
       'Audio',
       'Subtitles',
@@ -134,21 +137,26 @@ describe('the workspace', () => {
     expect(document.activeElement?.textContent?.trim()).toBe('Summary')
   })
 
-  it('starts with the preview collapsed, and keeps the user’s choice next time', async () => {
+  it('starts with the preview shown, and keeps the user’s choice next time', async () => {
     const wrapper = await mountWorkspace(openSource)
     const toggle = () => wrapper.find('.preview-panel__toggle')
-    expect(wrapper.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
-    expect(toggle().attributes('aria-expanded')).toBe('false')
-    expect(toggle().attributes('aria-label')).toBe('Show the preview')
-    await toggle().trigger('click')
     expect(wrapper.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
     expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(toggle().attributes('aria-label')).toBe('Hide the preview')
+    await toggle().trigger('click')
+    expect(wrapper.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
+    expect(toggle().attributes('aria-expanded')).toBe('false')
 
-    const opened = await mountWorkspace(openSource)
-    expect(opened.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
-    await opened.find('.preview-panel__toggle').trigger('click')
     const closed = await mountWorkspace(openSource)
     expect(closed.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
+    await closed.find('.preview-panel__toggle').trigger('click')
+    const opened = await mountWorkspace(openSource)
+    expect(opened.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
+  })
+
+  it('starts the crop store, which detects the crop whichever tab is shown', async () => {
+    await mountWorkspace()
+    expect(getActivePinia()?.state.value.crop).toBeDefined()
   })
 
   it('shows the first-run screen instead while FFmpeg cannot be used', async () => {

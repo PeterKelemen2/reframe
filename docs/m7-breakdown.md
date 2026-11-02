@@ -6,7 +6,7 @@ The plan ([plan/08-roadmap.md](plan/08-roadmap.md) §M7, [plan/04-batch-mode.md]
 this file says who builds which part, in which order, and what each part must offer to the
 others. Decision: [0066](decisions/0066-m7-batch-season.md) (the lead's choices and one section
 per task). Status: [status.md](status.md). The template is [m6-breakdown.md](m6-breakdown.md).
-If the lead's context is summarised, this file and `status.md` are the source of truth. M7 is done on Linux on the branch `m7-batch-season`; it is **not merged into `main`** (the owner decides).
+If the lead's context is summarised, this file and `status.md` are the source of truth. M7 is done on Linux on the branch `m7-batch-season`; at the owner's request it was merged into `main` on 2026-11-02, before M8.
 
 M7's core part (C-12, [0040](decisions/0040-batch-engine-and-reframe-batch.md)) and the batch
 routes are done and merged. M7 builds the UI on them. No route is missing (0066 Context); one
@@ -416,8 +416,8 @@ test.
 
 ## Where M7 ended (2026-11-02)
 
-M7 is done on Linux on the branch `m7-batch-season`. It is **not merged into `main`** and nothing is
-pushed: the owner decides. Built: A (the group target), B (group rows, banner, *Apply to group*,
+M7 is done on Linux on the branch `m7-batch-season`. At the owner's request it was merged into
+`main` on 2026-11-02, before M8 (nothing pushed by the lead). Built: A (the group target), B (group rows, banner, *Apply to group*,
 copy / paste, *Save as preset*), C (the matrix and queueing a group), D (override dots, the
 defaults dialog for a group, the cards in a group), E (flow 2), and the C-12 changes of 0066 item 2,
 its follow-up and FS. Two fresh reviews found 1 blocker and 7 majors; the lead reproduced each, and

@@ -583,6 +583,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/preview/clips/{clip_id}/frames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clip Frames
+         * @description Frames decoded from a cached clip, for the encoded frame compare when a ``<video>``
+         *     cannot play it: waits for the frames task. A client that goes away cancels it.
+         */
+        post: operations["preview_clip_frames"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/preview/cache": {
         parameters: {
             query?: never;
@@ -2774,6 +2795,15 @@ export interface components {
          *     an ``AuthMessage``.
          */
         ClientMessage: components["schemas"]["AuthMessage"] | components["schemas"]["DetachMessage"];
+        /** ClipFramesRequest */
+        ClipFramesRequest: {
+            /**
+             * Timestamps
+             * @description Seconds from the start of the clip: its frame at ``t`` is the source frame at
+             *     ``start + t``.
+             */
+            timestamps: number[];
+        };
         /** ClipRequest */
         ClipRequest: {
             job: components["schemas"]["JobSettings"];
@@ -8748,6 +8778,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaLink"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview_clip_frames: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipFramesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Frames"];
                 };
             };
             /** @description An expected failure */

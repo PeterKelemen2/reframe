@@ -84,8 +84,7 @@
   "preview": {
     "title": "Preview",
     "show": "Show the preview",
-    "hide": "Hide the preview",
-    "later": "The frame preview comes in a later version of Reframe."
+    "hide": "Hide the preview"
   },
   "status": {
     "label": "Status and queue actions",

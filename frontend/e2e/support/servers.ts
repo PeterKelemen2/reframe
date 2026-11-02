@@ -55,7 +55,8 @@ export function webServers(
       `--port ${new URL(baseURL).port}`,
       `--token ${TOKEN}`,
       // Flow 2's season folder: twelve episodes, E05 with an extra track, E11 without the dub.
-      '--fixtures multitrack,Anime.Show.S01.BluRay.x264-GRP',
+      // Flow 4's letterbox: black bars to crop.
+      '--fixtures multitrack,Anime.Show.S01.BluRay.x264-GRP,letterbox',
       // Makes the output root a media root too, so a flow can probe its job's output.
       '--output-fixtures chapters',
       `--fake-ffmpeg ${quote(SCENARIO)}`,

@@ -231,6 +231,43 @@ async def test_a_clip_task_result_leads_to_a_playable_url(
     assert (part.status_code, len(part.content)) == (206, 10)
 
 
+@pytest.mark.needs_ffmpeg
+async def test_frames_of_a_clip_are_decoded_from_the_clip(
+    api: Api, fixture_media: FixtureMedia
+) -> None:
+    file = api.add_fixture("letterbox", fixture_media)
+    await _source(api, file)
+    job = await _job(api, file)
+    job["dimensions"]["crop"] = {
+        "mode": "manual",
+        "rect": {"top": 22, "bottom": 24, "left": 0, "right": 0},
+    }
+    body = {"job": job, "start": 0.5, "seconds": 1.0}
+    response = await api.client.post("/api/preview/clip", json=body)
+    info = await api.reframe.tasks.wait(response.json()["task_id"])
+    assert info.state is TaskState.DONE, info.error
+    clip_id = PreviewClip.model_validate(info.result).id
+    answer = await api.client.post(
+        f"/api/preview/clips/{clip_id}/frames", json={"timestamps": [0.0, 0.5]}
+    )
+    assert answer.status_code == 200, answer.text
+    assert str(api.reframe.cache_dir) not in answer.text
+    frames = answer.json()["frames"]
+    # The clip's picture, not the source's: the crop made it 320x134.
+    assert [(f["kind"], f["timestamp"], f["width"], f["height"]) for f in frames] == [
+        ("source", 0.0, 320, 134),
+        ("source", 0.5, 320, 134),
+    ]
+    png = await api.anonymous.get(frames[1]["url"])
+    assert (png.status_code, png.headers["content-type"]) == (200, "image/png")
+
+
+async def test_frames_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
+    body = {"timestamps": [0.0]}
+    response = await api.client.post(f"/api/preview/clips/{'a' * 32}/frames", json=body)
+    assert (response.status_code, response.json()["code"]) == (404, "preview.unknown_clip")
+
+
 async def test_the_link_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
     response = await api.client.get(f"/api/preview/clips/{'a' * 32}/link")
     assert (response.status_code, response.json()["code"]) == (404, "preview.unknown_clip")

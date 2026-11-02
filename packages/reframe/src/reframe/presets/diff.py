@@ -18,6 +18,8 @@ __all__ = ["diff", "diff_documents"]
 DISCRIMINATORS = ("mode", "kind")
 #: ``JobTemplate`` fields that are not settings.
 IGNORED_FIELDS = frozenset({"schema_version"})
+#: Crop modes whose rectangle is a detection result, not a setting.
+DETECTED_CROP_MODES = frozenset({"auto", "conservative"})
 
 
 def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]:
@@ -31,7 +33,13 @@ def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]:
     changes: list[FieldChange] = []
     for name in fields:
         _walk(name, before.get(name), after.get(name), name in before, name in after, changes)
+    if _crop_mode(after) in DETECTED_CROP_MODES and _crop_mode(after) == _crop_mode(before):
+        changes = [c for c in changes if not c.path.startswith("dimensions.crop.rect")]
     return changes
+
+
+def _crop_mode(template: Mapping[str, Any]) -> Any:
+    return (template.get("dimensions") or {}).get("crop", {}).get("mode")
 
 
 def diff_documents(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[FieldChange]:

@@ -137,15 +137,14 @@ describe('Ctrl+Enter', () => {
 })
 
 describe('Ctrl+1…8', () => {
-  it('selects the tab with that shortcut; a tab that is not built changes nothing', async () => {
+  it('selects the tab with that shortcut', async () => {
     await mountAt()
     const ui = useUiStore()
     press('4', { code: 'Digit4' })
     expect(ui.activeTab).toBe('video')
-    // Shortcut 2 has no built tab: the key does nothing, and the browser must not switch its
-    // own tab either.
+    // The browser must not switch its own tab.
     expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(true)
-    expect(ui.activeTab).toBe('video')
+    expect(ui.activeTab).toBe('dimensions')
     press('5', { code: 'Numpad5' })
     expect(ui.activeTab).toBe('audio')
     // A layout where the key prints another character: the physical key counts.
