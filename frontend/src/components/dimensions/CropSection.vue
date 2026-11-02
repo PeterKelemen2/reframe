@@ -25,10 +25,7 @@ const modes = computed(() =>
 
 const shown = computed<CropRect>(() => crop.rect ?? NO_CROP)
 const inGroup = computed(() => editor.target?.kind === 'group')
-
-function values(rect: CropRect) {
-  return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }
-}
+const locked = computed(() => !crop.pictureEditable)
 
 const detectionLine = computed(() => {
   const found = crop.detection
@@ -36,13 +33,13 @@ const detectionLine = computed(() => {
   switch (crop.mode) {
     case 'auto':
       return t('dimensions.detection.auto', {
-        ...values(found.auto),
+        ...found.auto,
         frames: found.auto_frames,
         total: found.samples.length,
       })
     case 'conservative':
       return t('dimensions.detection.conservative', {
-        ...values(found.conservative),
+        ...found.conservative,
         total: found.samples.length,
       })
     default:
@@ -50,7 +47,9 @@ const detectionLine = computed(() => {
   }
 })
 
-const detectedMode = computed(() => crop.mode === 'auto' || crop.mode === 'conservative')
+const detectedMode = computed(
+  () => crop.pictureEditable && (crop.mode === 'auto' || crop.mode === 'conservative'),
+)
 
 function setMode(mode: unknown): void {
   void crop.setMode(mode as CropMode)
@@ -94,6 +93,7 @@ function redetect(): void {
       :label="t('dimensions.crop.mode')"
       path="dimensions.crop"
       :help="t('dimensions.crop.modeHelp')"
+      stacked
     >
       <template #default="{ id, labelId }">
         <SelectButton
@@ -103,6 +103,7 @@ function redetect(): void {
           option-label="label"
           option-value="value"
           :allow-empty="false"
+          :disabled="locked"
           :ariaLabelledby="labelId"
           data-control="crop-mode"
           @update:model-value="setMode"
@@ -111,6 +112,9 @@ function redetect(): void {
     </Field>
 
     <div v-if="detectedMode" class="crop-section__detection" aria-live="polite" data-detection>
+      <p v-if="inGroup" class="crop-section__group" data-line="group">
+        {{ t('dimensions.detection.group') }}
+      </p>
       <p v-if="crop.detecting" class="crop-section__line">
         {{ t('dimensions.detection.running') }}
       </p>
@@ -128,16 +132,19 @@ function redetect(): void {
         />
       </p>
       <template v-else-if="detectionLine !== null">
-        <p class="crop-section__line" data-line="detection">{{ detectionLine }}</p>
+        <p class="crop-section__line" data-line="detection">
+          {{
+            inGroup ? t('dimensions.detection.shownFile', { line: detectionLine }) : detectionLine
+          }}
+        </p>
         <ul v-if="(crop.detection?.notes ?? []).length > 0" class="crop-section__notes">
           <li v-for="note in crop.detection?.notes" :key="note">{{ note }}</li>
         </ul>
       </template>
-      <p v-if="inGroup" class="crop-section__hint">{{ t('dimensions.detection.group') }}</p>
     </div>
 
-    <template v-if="crop.editable">
-      <Field :label="t('dimensions.crop.values')" path="dimensions.crop.rect">
+    <template v-if="crop.mode === 'manual'">
+      <Field :label="t('dimensions.crop.values')" path="dimensions.crop.rect" stacked>
         <template #default="{ id, invalid }">
           <div class="crop-section__edges">
             <div v-for="(edge, index) in EDGES" :key="edge" class="crop-section__edge">
@@ -152,9 +159,11 @@ function redetect(): void {
                 :step="stepOf(edge)"
                 :model-value="drafts[edge]"
                 :invalid="invalid"
+                :disabled="locked"
                 :data-edge="edge"
                 @update:model-value="drafts[edge] = $event ?? ''"
                 @change="commit(edge)"
+                @blur="editor.endCoalescing()"
               />
             </div>
           </div>
@@ -168,7 +177,7 @@ function redetect(): void {
       >
         {{ crop.snapNote }}
       </p>
-      <CropMagnifier />
+      <CropMagnifier v-if="crop.editable" />
     </template>
   </div>
 </template>
@@ -206,7 +215,11 @@ function redetect(): void {
   font-size: var(--rf-font-size-sm);
 }
 
-.crop-section__hint,
+.crop-section__group {
+  margin: 0;
+  font-size: var(--rf-font-size-sm);
+}
+
 .crop-section__snap {
   margin: 0;
   color: var(--rf-color-text-muted);

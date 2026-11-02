@@ -1,12 +1,13 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { settle } from '@/api/testing/fakes'
-import type { JobGeometry, JobSettings } from '@/api/types'
+import type { JobGeometry, JobSettings, JobTemplate } from '@/api/types'
 import CropMagnifier from '@/components/crop/CropMagnifier.vue'
 import { geometryOf, LETTERBOX, setUpCrop } from '@/components/dimensions/testing'
 import { mountShell } from '@/components/shell/testing'
@@ -126,6 +127,75 @@ describe('the Dimensions tab', () => {
     await top.setValue('141')
     await flushPromises()
     expect((top.element as HTMLInputElement).value).toBe('140')
+  })
+
+  it('makes a crop value typed after leaving the field an undo step of its own', async () => {
+    const { wrapper, editor } = await mountTab({
+      job: jobWith({ crop: { mode: 'manual', rect: { top: 0, bottom: 0, left: 0, right: 0 } } }),
+    })
+    const top = wrapper.find('input[data-edge="top"]')
+    await top.trigger('focus')
+    await top.setValue('10')
+    await top.trigger('blur')
+    await top.trigger('focus')
+    await top.setValue('20')
+    await top.trigger('blur')
+    await flushPromises()
+    editor.undo()
+    expect(editor.get('/dimensions/crop/rect/top')).toBe(10)
+  })
+
+  it('turns every control off with a note while the video is copied', async () => {
+    const job = jobWith({
+      crop: { mode: 'manual', rect: { top: 22, bottom: 24, left: 0, right: 0 } },
+    })
+    job.video = { ...job.video!, passthrough: true }
+    const { wrapper } = await mountTab({ job })
+    expect(wrapper.find('[data-state="locked"]').text()).toBe(
+      'The video is copied unchanged, so these settings are not used. Turn off Video passthrough on the Video tab to change the picture.',
+    )
+    const controls = [SelectButton, ToggleSwitch, Select, InputNumber, InputText].flatMap(
+      (component) => wrapper.findAllComponents(component as never) as unknown as VueWrapper[],
+    )
+    expect(controls.length).toBeGreaterThan(6)
+    expect(
+      controls.filter((found) => (found.props() as { disabled?: boolean }).disabled !== true),
+    ).toEqual([])
+    expect(wrapper.findComponent(CropMagnifier).exists()).toBe(false)
+  })
+
+  it('turns every control off with a note, and shows no detection, for a file without video', async () => {
+    const { wrapper } = await mountTab({ geometry: { source: null, geometry: null } })
+    expect(wrapper.find('[data-state="locked"]').text()).toBe(
+      'These settings are off: there is no picture to change.',
+    )
+    expect(
+      wrapper
+        .findAllComponents(SelectButton)
+        .filter((found) => (found.props() as { disabled?: boolean }).disabled !== true),
+    ).toEqual([])
+    expect(wrapper.find('[data-detection]').exists()).toBe(false)
+  })
+
+  it("says that a group's files are queued without a crop, and shows the shown file's detection", async () => {
+    const { wrapper, editor } = await mountTab()
+    editor.target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'letterbox',
+      job: editor.job!,
+      template: {} as JobTemplate,
+      presetId: null,
+      overrides: {},
+      scope: 'group',
+    }
+    await flushPromises()
+    expect(wrapper.find('[data-line="group"]').text()).toBe(
+      'In a group, Automatic and Conservative queue the files without a crop: their black bars are not detected. Choose Manual to crop every file the same way.',
+    )
+    expect(wrapper.find('[data-line="detection"]').text()).toBe(
+      'This file: Detected 22 / 24 / 0 / 0 on 5 of 10 frames',
+    )
   })
 
   it('shows the magnifier in manual mode only', async () => {

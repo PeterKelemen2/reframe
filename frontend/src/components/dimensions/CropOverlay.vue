@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { useCropStore } from '@/stores/crop'
@@ -30,7 +30,22 @@ const OUTWARD: Record<Edge, string> = {
 }
 
 const shown = computed(
-  () => ui.activeTab === 'dimensions' && crop.rect !== null && crop.sourceSize !== null,
+  () =>
+    ui.activeTab === 'dimensions' &&
+    crop.pictureEditable &&
+    crop.rect !== null &&
+    crop.sourceSize !== null,
+)
+
+// Handles that go away with the focus (an undo past *Manual*) hand it to the crop mode.
+watch(
+  () => crop.editable,
+  async (editable) => {
+    const focused = document.activeElement
+    if (editable || !(focused instanceof HTMLElement) || !root.value?.contains(focused)) return
+    await nextTick()
+    document.querySelector<HTMLElement>('[data-control="crop-mode"] [aria-pressed="true"]')?.focus()
+  },
 )
 
 /** Each edge in percent of the picture's box. */
@@ -66,7 +81,7 @@ function handleStyle(edge: Edge): Record<string, string> {
 
 function move(edge: Edge, value: number, key: string): void {
   if (crop.rect === null) return
-  crop.setRect({ ...crop.rect, [edge]: value }, { coalesce: key })
+  crop.setRect({ ...crop.rect, [edge]: value }, { coalesce: key, quiet: true })
 }
 
 function onKey(edge: Edge, event: KeyboardEvent): void {
@@ -236,8 +251,10 @@ function onPointerUp(): void {
   cursor: ew-resize;
 }
 
+/* White inside black, as the crop frame: one of them stands out on any picture. */
 .crop-overlay__handle:focus-visible {
-  outline: 3px solid var(--p-focus-ring-color);
-  outline-offset: 2px;
+  outline: 3px solid #fff;
+  outline-offset: 0;
+  box-shadow: 0 0 0 6px #000;
 }
 </style>
