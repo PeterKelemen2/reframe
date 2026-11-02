@@ -1,0 +1,132 @@
+import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { problem, type FakeServer } from '@/api/testing/fakes'
+import type { FrameLink, Frames, PreviewClip } from '@/api/types'
+import SplitCompare from '@/components/media/SplitCompare.vue'
+import { frameLink, previewServer } from '@/components/preview/testing'
+import { mountShell } from '@/components/shell/testing'
+
+import ClipCompare from './ClipCompare.vue'
+
+const mounted: VueWrapper[] = []
+
+afterEach(() => {
+  for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  document.body.replaceChildren()
+})
+
+const CLIP: PreviewClip = {
+  id: 'clip-1',
+  start: 0.2,
+  duration: 3,
+  container: 'mkv',
+  video_codec: 'hevc',
+  size: 2048,
+}
+
+function clipFrame(timestamp: number): FrameLink {
+  const key = `clip-${Math.round(timestamp * 1000)}`
+  return { ...frameLink(timestamp), key, url: `/frames/${key}.png` }
+}
+
+function clipFrames(server: FakeServer, id = 'clip-1', leaveOut: number[] = []): void {
+  server.on(`POST /api/preview/clips/${id}/frames`, (request): Frames => {
+    const times = (request.body as { timestamps: number[] }).timestamps
+    return {
+      frames: times.filter((time) => !leaveOut.includes(time)).map(clipFrame),
+      notes: leaveOut.map((time) => `No frame at ${time} s`),
+    }
+  })
+}
+
+async function compare(setup?: (server: FakeServer) => void) {
+  const server = previewServer()
+  clipFrames(server)
+  setup?.(server)
+  const { wrapper } = await mountShell(ClipCompare, {
+    props: { clip: CLIP, sourceId: 'movie' },
+  })
+  mounted.push(wrapper)
+  await flushPromises()
+  const split = () => wrapper.findComponent(SplitCompare)
+  return { wrapper, server, split }
+}
+
+function bodyOf(server: FakeServer, path: string): unknown {
+  return server.requests.findLast((request) => request.path === path)?.body
+}
+
+describe('the frame compare of a clip', () => {
+  it('shows evenly spaced clip frames next to the source frames at the same times', async () => {
+    const { server, split, wrapper } = await compare()
+    expect(bodyOf(server, '/api/preview/clips/clip-1/frames')).toEqual({
+      timestamps: [0.3, 0.9, 1.5, 2.1, 2.7],
+    })
+    expect(bodyOf(server, '/api/preview/frames')).toEqual({
+      source_id: 'movie',
+      timestamps: [0.5, 1.1, 1.7, 2.3, 2.9],
+    })
+    expect(split().props('before').url).toBe('http://server/frames/movie-500-source.png')
+    expect(split().props('after').url).toBe('http://server/frames/clip-300.png')
+    expect(wrapper.find('[data-field="compare-position"]').text()).toBe('Frame 1 of 5 · 0.5 s')
+  })
+
+  it('steps through the times, round from the last to the first', async () => {
+    const { split, wrapper } = await compare()
+    await wrapper.find('[data-action="compare-previous"]').trigger('click')
+    expect(split().props('after').url).toBe('http://server/frames/clip-2700.png')
+    expect(split().props('before').url).toBe('http://server/frames/movie-2900-source.png')
+    await wrapper.find('[data-action="compare-next"]').trigger('click')
+    expect(wrapper.find('[data-field="compare-position"]').text()).toBe('Frame 1 of 5 · 0.5 s')
+  })
+
+  it('leaves out a time the clip gave no frame for, with its note', async () => {
+    const { wrapper, split } = await compare((server) => clipFrames(server, 'clip-1', [0.3]))
+    expect(wrapper.find('[data-field="compare-position"]').text()).toBe('Frame 1 of 4 · 1.1 s')
+    expect(split().props('before').url).toBe('http://server/frames/movie-1100-source.png')
+    expect(wrapper.find('[data-field="compare-notes"]').text()).toBe('No frame at 0.3 s')
+  })
+
+  it('shows why the frames could not be made, and tries again', async () => {
+    const { wrapper, server } = await compare((fake) =>
+      fake.on('POST /api/preview/clips/clip-1/frames', () =>
+        problem(404, 'preview.unknown_clip', 'The clip is not in the cache'),
+      ),
+    )
+    expect(wrapper.find('[data-state="compare-failed"]').text()).toContain(
+      'The frames could not be compared: The clip is not in the cache',
+    )
+    clipFrames(server)
+    await wrapper.find('[data-action="retry-compare"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(SplitCompare).exists()).toBe(true)
+  })
+
+  it('asks for the frames again once when an image fails, then says it failed', async () => {
+    const { wrapper, server, split } = await compare()
+    split().vm.$emit('failed', split().props('after'))
+    await flushPromises()
+    expect(server.count('POST /api/preview/clips/clip-1/frames')).toBe(2)
+    expect(split().exists()).toBe(true)
+    split().vm.$emit('failed', split().props('after'))
+    await flushPromises()
+    expect(server.count('POST /api/preview/clips/clip-1/frames')).toBe(2)
+    expect(wrapper.find('[data-state="image-failed"]').exists()).toBe(true)
+    clipFrames(server, 'clip-2')
+    await wrapper.setProps({ clip: { ...CLIP, id: 'clip-2' } })
+    await flushPromises()
+    expect(split().exists()).toBe(true)
+  })
+
+  it('starts again at the first frame for another clip', async () => {
+    const { wrapper, server } = await compare((fake) => clipFrames(fake, 'clip-2'))
+    await wrapper.find('[data-action="compare-next"]').trigger('click')
+    await wrapper.setProps({ clip: { ...CLIP, id: 'clip-2', start: 1, duration: 1 } })
+    await flushPromises()
+    expect(bodyOf(server, '/api/preview/clips/clip-2/frames')).toEqual({
+      timestamps: [0.1, 0.3, 0.5, 0.7, 0.9],
+    })
+    expect(wrapper.find('[data-field="compare-position"]').text()).toBe('Frame 1 of 5 · 1.1 s')
+  })
+})

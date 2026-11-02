@@ -307,7 +307,52 @@ No change of task D's files was needed.
 
 ## Task E — F-15 Settings → Preview, the preview clip
 
-(Task E writes this section.)
+- **Settings → Preview** (`components/settings/PreviewSection.vue`): the number of sample frames
+  (1–60) and the cache size limit, each saved at once through `useSetting` as the other sections
+  do (an emptied field keeps the saved number). The limit is labelled MiB: the setting's MB is
+  2**20 bytes (0033 §1) and the cache size is shown in MiB too. *Clear cache* is not a setting,
+  so it stays on while the settings are read-only; it says what was freed and reads the size
+  again.
+- **The clip is the panel's, not a store's** (`components/clip/PreviewClip.vue`): its state
+  lives in the component under `FrameViewer`, so it lasts while the workspace is shown (the
+  panel collapses with `v-show`) and goes when the view changes. It is out of date when
+  `JSON.stringify(editor.job)` differs from the job that was sent: that covers every setting
+  and the source's fingerprint (a changed file). Another shown file drops it and cancels an
+  encode of the last one; *Cancel* pressed before the server answered with the task id cancels
+  the task once it is named. The length choice stays enabled during an encode (it is for the
+  next one; PrimeVue's disabled selected option was unreadable).
+- **Playback** (item 4): a `<video controls>` with the signed link resolved against the API
+  base. Its first `error` asks for a new link (an hour has passed), the second shows the frame
+  compare with the reason (`MEDIA_ERR_SRC_NOT_SUPPORTED`: "this browser cannot play hevc
+  video", else the element's message); a `loadeddata` allows a new link again. *Compare frames*
+  and *Play the clip* are one button, so the focus stays on it; *Open in external player* passes
+  the absolute signed link to `platform.openExternal`.
+- **The frame compare** (`ClipCompare.vue`): five times at the middle of each fifth of the
+  clip's `duration` (a time at the clip's end has no frame, and the server fails such a request),
+  `POST /api/preview/clips/{id}/frames` next to `POST /api/preview/frames` at `start + t` (both
+  rounded to milliseconds), paired by the source time in milliseconds, so a time the clip gave
+  no frame for is left out with the server's note. `SplitCompare` with the crop store's geometry;
+  the previous / next buttons go round, so a focused button is never disabled. A failed image
+  asks for both sets again once.
+- **Checked on the real server** (`scripts/dev-server.py`, pinned FFmpeg n9.0.2, the fixtures
+  `letterbox`, `hdr10`, `hdr10-4k`, `multitrack`; headless Chromium and Firefox, light and dark;
+  scripts in the task's scratchpad `task-e/clip.mjs`, `flow.mjs`, `err.mjs`, `progress.mjs`): a
+  15 s clip from the frame at 1 s of `letterbox` is `3 s from 1 s` (the file ends at 4 s); H.264
+  in MKV (`h264-mkv-1080p`) and MP4 (`very-fast-1080p30`) and AV1 (`av1-mkv-2160p-4k`) play in
+  both browsers (`readyState` 4, 0.7 s played); HEVC (`h265-mkv-1080p`) plays in Firefox and in
+  Chromium gives the error twice and the frame compare. The clip frames' `timestamp` is the time
+  in the clip (0.3 s … 2.7 s), the source frames' the time in the source. A 10 s AV1 clip of
+  `hdr10-4k` reports progress 0 for about 4.5 s (SVT-AV1 starting), then climbs to 81 % at
+  12.7 s and is done at 13.2 s; *Cancel* at 21–28 % leaves the task `cancelled`. The count 5
+  gives a strip of 5 frames; *Clear cache* frees the whole cache (`{size: 0}` after it). A clip
+  with `h265-nvenc-1080p` on this machine fails with FFmpeg's reason (no `libcuda.so.1`), shown
+  under the buttons. Two links asked within one second are the same URL (the signature covers
+  the expiry in seconds); the `<video>` is mounted again, so it loads again.
+- **Not built**: a clip kept across views or files, the task's step text (`Encode (SVT-AV1)`)
+  next to the progress, a choice of the compare's times or count, the side-by-side layout in
+  the compare (the split only).
+- **Plan box**: 06 §F-15's first box is ticked: every section of 03 §Settings is built (Tools,
+  Encoders, Output, Languages, Preview, Queue, Appearance).
 
 ## Task F — F-17 flow 4
 
