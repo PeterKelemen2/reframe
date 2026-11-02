@@ -7,6 +7,7 @@ import FilterHelp from '@/components/filters/FilterHelp.vue'
 import FilterRow from '@/components/filters/FilterRow.vue'
 import { filtersInOrder } from '@/components/filters/filters'
 import { useCustomCheck } from '@/components/filters/useCustomCheck'
+import { useJobSource } from '@/components/summary/useJobSource'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -14,9 +15,12 @@ const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const checks = useCustomCheck()
+const { source } = useJobSource()
 
 const filters = computed(() => filtersInOrder(system.definitions))
+const noVideo = computed(() => source.value !== null && (source.value.video ?? []).length === 0)
 const passthrough = computed(() => editor.job?.video?.passthrough === true)
+const disabled = computed(() => noVideo.value || passthrough.value)
 const selectedId = ref<string | null>(null)
 const selected = computed(
   () => filters.value.find((filter) => filter.id === selectedId.value) ?? filters.value[0] ?? null,
@@ -29,7 +33,10 @@ const selected = computed(
       {{ editor.loading ? t('filters.loading') : t('filters.noJob') }}
     </p>
     <template v-else>
-      <p v-if="passthrough" class="filters-tab__note" data-note="passthrough">
+      <p v-if="noVideo" class="filters-tab__note" data-note="no-video">
+        {{ t('filters.noVideo') }}
+      </p>
+      <p v-else-if="passthrough" class="filters-tab__note" data-note="passthrough">
         {{ t('filters.passthrough') }}
       </p>
       <div class="filters-tab__columns">
@@ -39,12 +46,12 @@ const selected = computed(
             :key="filter.id"
             :filter="filter"
             :selected="filter.id === selected?.id"
-            :disabled="passthrough"
+            :disabled="disabled"
             :check="checks.of(filter.id, editor.job.filters?.[filter.id]?.custom ?? '')"
             @select="selectedId = filter.id"
             @typed="checks.changed(filter.id, $event)"
           >
-            <ColourBox v-if="filter.id === 'colorspace'" :filter="filter" :disabled="passthrough" />
+            <ColourBox v-if="filter.id === 'colorspace'" :filter="filter" :disabled="disabled" />
           </FilterRow>
         </div>
         <FilterHelp v-if="selected !== null" class="filters-tab__help" :filter="selected" />

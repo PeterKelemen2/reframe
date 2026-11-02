@@ -139,6 +139,9 @@ function setCustom(value: string | undefined): void {
     :class="{ 'filter-row--selected': selected }"
     :data-filter="filter.id"
     :data-on="config !== null"
+    :tabindex="disabled ? 0 : undefined"
+    :role="disabled ? 'group' : undefined"
+    :aria-label="disabled ? filter.label : undefined"
     @focusin="emit('select')"
     @click="emit('select')"
   >
@@ -158,6 +161,7 @@ function setCustom(value: string | undefined): void {
         v-if="filter.implementations.length > 1"
         :label="t('filters.field.implementation')"
         :path="`${base}.implementation`"
+        stacked
       >
         <template #default="{ id, labelId, invalid }">
           <Select
@@ -180,6 +184,7 @@ function setCustom(value: string | undefined): void {
         v-if="implementation.presets.length > 1"
         :label="t('filters.field.preset')"
         :path="`${base}.preset`"
+        stacked
       >
         <template #default="{ id, labelId, invalid }">
           <Select
@@ -196,7 +201,12 @@ function setCustom(value: string | undefined): void {
           />
         </template>
       </Field>
-      <Field v-if="tunes.length > 0" :label="t('filters.field.tune')" :path="`${base}.tune`">
+      <Field
+        v-if="tunes.length > 0"
+        :label="t('filters.field.tune')"
+        :path="`${base}.tune`"
+        stacked
+      >
         <template #default="{ id, labelId, invalid }">
           <Select
             :input-id="id"
@@ -217,6 +227,7 @@ function setCustom(value: string | undefined): void {
         :label="filter.id === 'custom' ? t('filters.field.chain') : t('filters.field.custom')"
         :path="`${base}.custom`"
         :issues="customIssues"
+        stacked
       >
         <template #default="{ id, invalid }">
           <InputText
@@ -258,6 +269,12 @@ function setCustom(value: string | undefined): void {
 .filter-row--selected {
   border-color: var(--rf-color-border);
   background: var(--rf-color-surface-hover);
+}
+
+/* With its controls off, the row itself takes the focus, so that its help can be read. */
+.filter-row:focus-visible {
+  outline: 2px solid var(--rf-color-primary);
+  outline-offset: 2px;
 }
 
 .filter-row__settings {
