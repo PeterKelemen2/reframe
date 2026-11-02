@@ -560,9 +560,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       popover opens on a click ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task J").
 
 ### F-13 Batch UI
-- [ ] Group rows in the sources panel. **Edit group** mode with banner and representative-file
+- [x] Group rows in the sources panel. **Edit group** mode with banner and representative-file
       switcher.
-- [ ] `ApplyToGroupDialog` (section checkboxes). Copy/paste sections from the context menu.
+- [x] `ApplyToGroupDialog` (section checkboxes). Copy/paste sections from the context menu.
 - [x] `ResolutionMatrix`: virtualised table with ✓/≈/✗ cells, a candidate picker per cell, a
       "problems only" filter, and an editable naming column.
 - [x] Override dots on `Field` with **Reset to group** and **Apply to whole group**
@@ -611,5 +611,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Template field with `{` autocomplete and variable chips (current values, click to insert).
 - [x] **Parsed name** panel: name source + reason, coloured spans over the original name,
       editable fields (per-file override).
-- [ ] Live preview (`naming/preview`, debounced). Used in Settings → Output, the preset editor,
+- [x] Live preview (`naming/preview`, debounced). Used in Settings → Output, the preset editor,
       the Summary Output card, and the batch matrix naming column.
+      (The matrix's naming column shows the names of `batch/resolve-run`, which names each file
+      with the same naming code, again after each change: [0066](../decisions/0066-m7-batch-season.md), "Task C".)

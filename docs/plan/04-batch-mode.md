@@ -27,7 +27,7 @@ map correctly. Show every file where the mapping is uncertain.
 ## Grouping
 
 Grouping runs automatically when you add a folder or several files. You can also select files
-and choose **Group these**.
+and choose **Group these** (not built yet: [0066](../decisions/0066-m7-batch-season.md), "Not built in M7").
 
 Strictness levels:
 

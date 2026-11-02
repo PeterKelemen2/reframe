@@ -738,3 +738,20 @@ error and left no server or `/tmp/reframe-dev-*` folder. Each run:
 Observation (owner question, default kept): with S01 and S02 open together, S02's three files
 join S01's group (one fingerprint; grouping is by fingerprint, not by season, 0040 §3), which then
 has 15 files named `Anime Show S01` and labels `S01E01` … `S02E03`. The demo removes S01 first.
+
+## M7 demo, 2026-11-02 (headed)
+
+Once, by the lead, after the owner put the cursor and VS Code on `HDMI-A-1`: Chromium (Playwright
+1.64.1's chromium-1248) started through the spike's window guard (`windows.Session.wrapper`, spot
+40,40 1600×1000 on `HDMI-A-1`, `CHROME_DESKTOP` unset), the same script and a fresh server with
+the pinned FFmpeg. The whole demo passed (the matrix maximized so its 12 rows fit the window); the
+guard kept the keyboard on VS Code (`kept_active` records), placed the window on `HDMI-A-1`
+510 ms after admission, and unloaded its scripts. Nothing opened on `DP-1`. Seen: a horizontal
+scroll bar in the maximized matrix at 1580 px although the table fits (its thumb spans nearly the
+whole width) — a nit, recorded.
+
+## Not built in M7
+
+- *Group these* (04 §Grouping: select files and group them by hand) is in neither 06 §F-13 nor
+  08 §M7's demo; grouping is automatic when files are opened. Not built; 04 says so.
+- Pasting into several files that are not open (item 6).

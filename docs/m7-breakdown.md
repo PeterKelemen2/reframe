@@ -6,7 +6,7 @@ The plan ([plan/08-roadmap.md](plan/08-roadmap.md) §M7, [plan/04-batch-mode.md]
 this file says who builds which part, in which order, and what each part must offer to the
 others. Decision: [0066](decisions/0066-m7-batch-season.md) (the lead's choices and one section
 per task). Status: [status.md](status.md). The template is [m6-breakdown.md](m6-breakdown.md).
-If the lead's context is summarised, this file and `status.md` are the source of truth.
+If the lead's context is summarised, this file and `status.md` are the source of truth. M7 is done on Linux on the branch `m7-batch-season`; it is **not merged into `main`** (the owner decides).
 
 M7's core part (C-12, [0040](decisions/0040-batch-engine-and-reframe-batch.md)) and the batch
 routes are done and merged. M7 builds the UI on them. No route is missing (0066 Context); one
@@ -412,3 +412,47 @@ test.
 | 2026-11-02 | **Merged FU1** (153c943): R2-1 matrix part (an alert line with *Try again*; the kept matrix dimmed and `inert`, so no pick lands on an older template's columns), R2-2 (`source.stale` toast names the changed files; `edit.failed` not toasted twice), R2-4 (undo / redo in the matrix and its popovers, not in text fields), R2-5, R2-6 (names set through `maximizeButtonProps`: PrimeVue 4.5.5 reads no locale text for it; `primevueLocale.ts` unchanged), R2-7, R2-10, R2-11, R2-12, R2-14, R2-15, R1-10 (the toast says what the queue did, capped at three failed files). R2-1's tests failed before; 29 mutations caught. The lead updated flow 2's matrix title for the curly quotes. The lead's mutation (undo blocked in the matrix again) fails `useShortcuts.test.ts`; restored, touched. Worktree removed; no worktree left |
 | 2026-11-02 | **Final checks, run alone on Linux**: `npm run lint`, `fmt:check`, `typecheck` clean; `npm test` 1543 passed; `build:web` built; `npm run e2e` 20 passed twice (34.9 s, 35.0 s; no server, no `/tmp/reframe-dev-*` left); `npm run test:server` 55 passed; Python `pytest -m "not needs_gpu"` in four chunks 3166 + 988 + 2648 + 822 = **7624 passed**, 2 skipped, 26 deselected; ruff, ruff format, mypy, mypy `--platform win32`, `gen-api.sh --check` clean |
 | 2026-11-02 | **M7 demo, headless** (0066 "M7 demo, 2026-11-02 (headless)"): passes in Chromium light and dark and Firefox light and dark against a real server and the pinned FFmpeg: one group of 12, the audio and subtitle edits once, the matrix as 04 (E11's fix → ✓ everywhere, E05 / E11 ⚠), 12 jobs with 04's names encoded `done` (ffprobe of the outputs as 04's example), *Save as preset*, season 2 in one preset pick → 3 × ✓. Observation for the owner: both seasons open at once form one group (same fingerprint) |
+| 2026-11-02 | **M7 demo, headed** once on `HDMI-A-1` through the window guard after the owner placed the cursor and VS Code there: the whole demo passed; nothing on `DP-1`; the keyboard stayed on VS Code. **Docs reconciled**: `status.md` (an M7 milestone row; F-13 **Done**; F-18's matrix column; M8 – M9 row), the plan boxes (F-13 all, F-18's live preview with a note; F-17 stays open for flow 4), 04 §Grouping says *Group these* is not built (0066 "Not built in M7"), 0066's headed demo, "Where M7 ended" below. **Not merged into `main`** |
+
+## Where M7 ended (2026-11-02)
+
+M7 is done on Linux on the branch `m7-batch-season`. It is **not merged into `main`** and nothing is
+pushed: the owner decides. Built: A (the group target), B (group rows, banner, *Apply to group*,
+copy / paste, *Save as preset*), C (the matrix and queueing a group), D (override dots, the
+defaults dialog for a group, the cards in a group), E (flow 2), and the C-12 changes of 0066 item 2,
+its follow-up and FS. Two fresh reviews found 1 blocker and 7 majors; the lead reproduced each, and
+FS, FA, FU1 and FU2 fixed each with a test that fails before it. The demo ran headless (Chromium and
+Firefox, light and dark) and once headed on `HDMI-A-1`.
+
+| Check (alone, Linux, 2026-11-02) | Result |
+|-------|--------|
+| `npm test` | 1543 passed |
+| `npm run test:server` | 55 passed |
+| `npm run e2e` | 20 passed, twice |
+| Python `pytest -m "not needs_gpu"` | 7624 passed, 2 skipped, 26 deselected |
+| lint, format, typecheck, `build:web`, `gen-api.sh --check`, ruff, mypy ×2 | clean |
+
+1. **Recorded, not fixed**:
+   - R1-12: the core stops a file's whole job part at its first failed `test` (0040 §5), so one
+     stale track guard skips the valid operations of later tracks;
+   - R1-13: the matrix's V cell is always ✓ (no video match data);
+   - a track override that went stale keeps its old guard when that track is edited again for that
+     file (stale until *Reset to group*; never applied to another track);
+   - a rate-mode switch overrides two members and is reset in two steps;
+   - the *Apply to group…* toast has no *Edit group* action (the toast store has none);
+   - *Add all*'s toast says "not added" for jobs the queue added as failed (as R1-10 was);
+   - a horizontal scroll bar in the maximized matrix although the table fits;
+   - R2's three suspicions (a picker after a programmatic focus, the dot's Enter twice,
+     `Shift+F10` handled twice), not reproduced.
+2. **Not built**: *Group these* (04 §Grouping); pasting into several files that are not open
+   (0066 item 6).
+3. **Owner questions**, with their defaults kept:
+   - two seasons open at once form one group (same fingerprint; grouping is not by season);
+   - hand picks only in explicit-rule columns (0066 item 4);
+   - in scope `group`, an edit of a per-file field is refused, not saved for the shown file
+     (0066 item 1);
+   - a near member's track edit is refused while the template has no rules of that kind (FA);
+   - names in curly quotes everywhere (R2-12);
+   - the default word separator `keep` gives `Anime.Show - S01E01 …`; 04's names need Settings →
+     Output's separator set to a space.
+4. **Not verified**: GitHub CI (nothing pushed); Windows (M10).
