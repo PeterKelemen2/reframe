@@ -63,11 +63,18 @@ watch(active, () => {
   height: 100%;
 }
 
+/*
+ * Tab and a reveal scroll a control into view only above the scroll padding: the sticky command
+ * drawer (`--video-command-drawer-height` while shown) would cover it otherwise. A size container,
+ * so that what sticks to the foot can size itself by the tab's height.
+ */
 .editor-tabs__panels {
+  container-type: size;
   flex: 1;
   min-height: 0;
   padding-bottom: 0;
   overflow: auto;
+  scroll-padding-bottom: calc(var(--video-command-drawer-height, 0px) + var(--rf-space-3));
 }
 
 /*

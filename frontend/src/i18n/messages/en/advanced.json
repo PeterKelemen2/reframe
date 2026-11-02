@@ -6,7 +6,8 @@
     "title": "Search results",
     "searching": "Searching…",
     "count": "No option matches | 1 option matches | {n} options match",
-    "none": "No option matches “{query}”."
+    "none": "No option matches “{query}”.",
+    "noneChanged": "No matching option is changed."
   },
   "changedOnly": "Show only changed",
   "categories": "Option categories",
@@ -38,7 +39,7 @@
     "off": "off"
   },
   "reset": "Reset {label} to the default",
-  "commandLine": "Command line: {name}",
+  "help": "{help} Command line: {name}",
   "unknown": {
     "title": "Not options of {encoder}",
     "hint": "The job sets these, but the encoder has no such option. Reset them to remove them."

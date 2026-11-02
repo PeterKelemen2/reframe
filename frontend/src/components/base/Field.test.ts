@@ -183,6 +183,24 @@ describe('Field', () => {
     expect(button.attributes('aria-expanded')).toBe('true')
   })
 
+  it('shows its help as a named, non-modal popup that its button controls', async () => {
+    const wrapper = mountField({ help: 'Lower is better.' })
+    const button = wrapper.get('button[aria-label="About Encoder"]')
+    await button.trigger('click')
+    await flushPromises()
+    const popup = document.getElementById(button.attributes('aria-controls') ?? '')
+    expect(popup?.textContent).toContain('Lower is better.')
+    expect(popup?.getAttribute('aria-modal')).not.toBe('true')
+    expect(popup?.getAttribute('aria-labelledby')).toBe(button.attributes('id'))
+  })
+
+  it('describes its control with its description and its issues', async () => {
+    const wrapper = mountField({ description: 'hint', issues: [issue('error', 'Not available')] })
+    await flushPromises()
+    const described = wrapper.get('input.control').attributes('aria-describedby')
+    expect(described).toBe(`hint ${wrapper.get('ul').attributes('id')}`)
+  })
+
   it('is the target of ui.reveal for its path', async () => {
     Element.prototype.scrollIntoView = vi.fn<() => void>()
     const wrapper = mountField({ path: 'video.encoder' })

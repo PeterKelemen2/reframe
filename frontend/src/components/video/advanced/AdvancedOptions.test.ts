@@ -17,6 +17,7 @@ import AdvancedOptions from './AdvancedOptions.vue'
 import CopyHdrMetadata from './CopyHdrMetadata.vue'
 import CustomParams from './CustomParams.vue'
 import recorded from './testing/x265-options.json'
+import { panelView } from './view'
 
 const OPTIONS = recorded as unknown as EncoderOption[]
 const SEARCH = 'GET /api/definitions/encoders/libx265/options'
@@ -31,6 +32,7 @@ afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
   localStorage.clear()
+  Object.assign(panelView, { category: null, query: '', changedOnly: false })
 })
 
 function jobWith(video: Partial<NonNullable<JobSettings['video']>>): JobSettings {
@@ -318,5 +320,148 @@ describe('the advanced options panel', () => {
     await choose(wrapper, 'HDR / colour')
     expect(wrapper.findComponent(CopyHdrMetadata).exists()).toBe(true)
     expect(shownKeys(wrapper)).toEqual(['master-display'])
+  })
+})
+
+describe('a number option', () => {
+  it('keeps every decimal entered, whatever its step', async () => {
+    const { wrapper, editor } = await mountPanel()
+    await choose(wrapper, 'Psycho-visual')
+    const input = row(wrapper, 'psy-rd').find('input')
+    ;(input.element as HTMLInputElement).focus()
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => '1.75' } })
+    input.element.dispatchEvent(paste)
+    await input.trigger('keydown', { key: 'Enter', code: 'Enter' })
+    expect(editor.job?.video?.advanced).toEqual({ 'psy-rd': 1.75 })
+  })
+
+  it('shows a stored value with all its decimals', async () => {
+    const { wrapper } = await mountPanel(jobWith({ advanced: { 'psy-rd': 1.75 } }))
+    await choose(wrapper, 'Psycho-visual')
+    expect(row(wrapper, 'psy-rd').find('input').element).toHaveProperty('value', '1.75')
+  })
+
+  it('writes nothing when the focus passes through without a change', async () => {
+    const { wrapper, editor } = await mountPanel(jobWith({ advanced: { bframes: 99 } }))
+    await choose(wrapper, 'Frame types / GOP')
+    const input = row(wrapper, 'bframes').find('input')
+    ;(input.element as HTMLInputElement).focus()
+    await input.trigger('keydown', { key: 'Tab', code: 'Tab' })
+    await input.trigger('blur')
+    ;(input.element as HTMLInputElement).focus()
+    await input.trigger('keydown', { key: 'Enter', code: 'Enter' })
+    await flushPromises()
+    expect(editor.job?.video?.advanced).toEqual({ bframes: 99 })
+    expect(editor.canUndo).toBe(false)
+    expect(input.element).toHaveProperty('value', '99 frames')
+  })
+})
+
+describe('the focus', () => {
+  it('stays in the panel when a reset under "Show only changed" takes its row away', async () => {
+    const { wrapper } = await mountPanel(jobWith({ advanced: { bframes: 6 } }))
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await choose(wrapper, 'Frame types / GOP')
+    const reset = row(wrapper, 'bframes').find<HTMLButtonElement>('[data-action="reset"]')
+    reset.element.focus()
+    await reset.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.find('[aria-current="true"]').element)
+  })
+
+  it('stays in the panel when an emptied text field under "Show only changed" goes', async () => {
+    const { wrapper } = await mountPanel(jobWith({ advanced: { pools: '4' } }))
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await choose(wrapper, 'Performance')
+    const text = row(wrapper, 'pools').findComponent(InputText)
+    ;(text.element as HTMLInputElement).focus()
+    // Chromium blurs a focused element as it is removed (jsdom does not); the field's blur
+    // handler then runs in the middle of the panel's update.
+    const original = Node.prototype.removeChild
+    const removeChild = vi.spyOn(Node.prototype, 'removeChild').mockImplementation(function <
+      T extends Node,
+    >(this: Node, child: T): T {
+      if (child.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+      return original.call(this, child) as T
+    })
+    try {
+      text.vm.$emit('update:modelValue', '')
+      await flushPromises()
+    } finally {
+      removeChild.mockRestore()
+    }
+    expect(document.activeElement).toBe(wrapper.find('[aria-current="true"]').element)
+  })
+
+  it('goes to the search when a reset takes a search result away', async () => {
+    const { wrapper } = await mountPanel(jobWith({ advanced: { bframes: 6 } }))
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await search(wrapper, 'bfr')
+    await vi.waitFor(() => expect(shownKeys(wrapper)).toEqual(['bframes']), SOON)
+    const reset = row(wrapper, 'bframes').find<HTMLButtonElement>('[data-action="reset"]')
+    reset.element.focus()
+    await reset.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.find('[data-role="search"]').element)
+  })
+})
+
+function status(wrapper: VueWrapper): string {
+  return wrapper.find('[data-role="search-status"]').text()
+}
+
+describe('the search status', () => {
+  it('counts the custom parameters field when it is the match', async () => {
+    const { wrapper } = await mountPanel()
+    await search(wrapper, 'custom')
+    await vi.waitFor(() => expect(status(wrapper)).toBe('1 option matches'), SOON)
+    expect(wrapper.find('[data-state="no-match"]').exists()).toBe(false)
+  })
+
+  it('says that the matches are not changed when "Show only changed" hides them', async () => {
+    const { wrapper } = await mountPanel()
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await search(wrapper, 'psy')
+    await vi.waitFor(() => expect(status(wrapper)).toBe('1 option matches'), SOON)
+    expect(wrapper.find('[data-state="no-match"]').exists()).toBe(false)
+    expect(wrapper.find('[data-state="none-changed"]').text()).toBe(
+      'No matching option is changed.',
+    )
+  })
+})
+
+describe('the panel', () => {
+  it('keeps its category, search and "Show only changed" when it is mounted again', async () => {
+    const { wrapper, pinia } = await mountPanel()
+    await choose(wrapper, 'Performance')
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await search(wrapper, 'psy')
+    wrapper.unmount()
+    mounted.splice(0)
+    const { wrapper: again } = await mountShell(AdvancedOptions, { pinia })
+    mounted.push(again)
+    await flushPromises()
+    expect(again.find('[data-role="search"]').element).toHaveProperty('value', 'psy')
+    expect(again.find('input[type="checkbox"]').element).toHaveProperty('checked', true)
+    await search(again, '')
+    expect(again.find('[aria-current="true"]').text()).toBe('Performance')
+  })
+
+  it('does not repeat the custom parameters field label as a heading', async () => {
+    const { wrapper } = await mountPanel()
+    await choose(wrapper, '(custom)')
+    expect(wrapper.findAll('h3').map((heading) => heading.text())).not.toContain(
+      'Custom parameters',
+    )
+  })
+
+  it("describes a changed option's control with its default", async () => {
+    const { wrapper } = await mountPanel(jobWith({ advanced: { bframes: 6 } }))
+    await choose(wrapper, 'Frame types / GOP')
+    const described = row(wrapper, 'bframes').find('input').attributes('aria-describedby') ?? ''
+    const line = row(wrapper, 'bframes').find('[data-role="default"]')
+    expect(described.split(' ')).toContain(line.attributes('id'))
+    expect(line.text()).toBe('default: 4 frames (preset Slow)')
   })
 })

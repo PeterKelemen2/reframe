@@ -23,6 +23,8 @@ const props = withDefaults(
     path?: string
     /** The ⓘ popover's text; already translated. */
     help?: string
+    /** The id of an element that describes the control, read before its issues. */
+    description?: string
     /** Shown instead of the validation store's issues for `path` (settings forms, the sandbox). */
     issues?: ValidationIssue[]
     /**
@@ -46,6 +48,7 @@ const editor = useEditorStore()
 const id = useId()
 const labelId = `${id}-label`
 const issuesId = `${id}-issues`
+const helpId = `${id}-help`
 const root = useTemplateRef<HTMLElement>('root')
 const helpPopover = useTemplateRef<InstanceType<typeof Popover>>('helpPopover')
 const helpOpen = ref(false)
@@ -65,7 +68,10 @@ const slotProps = computed<FieldSlotProps>(() => ({
   id,
   labelId,
   invalid: severity.value === 'error',
-  describedBy: shown.value.length > 0 ? issuesId : undefined,
+  describedBy:
+    [props.description, shown.value.length > 0 ? issuesId : undefined]
+      .filter((part) => part !== undefined)
+      .join(' ') || undefined,
 }))
 
 // Several PrimeVue controls (InputNumber, Select, ToggleSwitch) do not pass
@@ -169,19 +175,29 @@ const overrideItems = computed(() => {
       </template>
       <template v-if="help">
         <Button
+          :id="`${helpId}-button`"
           class="rf-field__help"
           text
           rounded
           size="small"
           :aria-label="t('base.field.help', { label })"
           :aria-expanded="helpOpen"
+          :aria-controls="helpId"
           @click="toggleHelp"
         >
           <template #icon>
             <Info :size="16" aria-hidden="true" />
           </template>
         </Button>
-        <Popover ref="helpPopover" @show="helpOpen = true" @hide="helpOpen = false">
+        <!-- Not modal: the help is a note beside its field, and the page stays usable. -->
+        <Popover
+          ref="helpPopover"
+          :pt="{
+            root: { id: helpId, 'aria-modal': false, 'aria-labelledby': `${helpId}-button` },
+          }"
+          @show="helpOpen = true"
+          @hide="helpOpen = false"
+        >
           <p class="rf-field__help-text">{{ help }}</p>
         </Popover>
       </template>
