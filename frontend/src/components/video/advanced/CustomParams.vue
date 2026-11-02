@@ -39,14 +39,7 @@ function setText(value: string | undefined): void {
 </script>
 
 <template>
-  <Field
-    class="custom-params"
-    :label="t('params.label')"
-    :path="PATH"
-    :help="t('params.help')"
-    :issues="issues"
-    stacked
-  >
+  <Field class="custom-params" :label="t('params.label')" :path="PATH" :issues="issues" stacked>
     <template #default="{ id, invalid }">
       <InputText
         :id="id"
@@ -61,6 +54,8 @@ function setText(value: string | undefined): void {
         @update:model-value="setText"
         @blur="editor.endCoalescing()"
       />
+      <!-- Not Field's ⓘ: a reveal focuses the field's first button, and it must reach the text. -->
+      <p class="custom-params__hint">{{ t('params.help') }}</p>
       <p
         v-if="check?.state === 'checking' || (check?.state === 'done' && check.issues.length === 0)"
         class="custom-params__check"
@@ -78,6 +73,7 @@ function setText(value: string | undefined): void {
   font-family: var(--rf-font-mono);
 }
 
+.custom-params__hint,
 .custom-params__check {
   margin: var(--rf-space-1) 0 0;
   color: var(--rf-color-text-muted);

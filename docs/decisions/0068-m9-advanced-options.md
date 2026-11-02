@@ -176,7 +176,7 @@ Built in `components/video/advanced/` (`CustomParams.vue`, `useParamsCheck.ts`,
   with a text, nor an undo), keeps every error of the dry run whatever its path (a refused custom
   filter would show at this field), and drops a failed request without a word. Its
   `CHECK_DELAY` and its `latestRequest` pattern are reused.
-- **Copy HDR metadata** (item 9): a button above the custom parameters. `POST
+- **Copy HDR metadata** (item 9): a button at the top of *HDR / colour*. `POST
   /api/jobs/hdr-metadata` with the job; the patch goes in with one `editor.patch` (one undo step;
   in a group at the page's scope). A note says what was copied ("Copied master-display,
   max-cll."), or why nothing was: the source has no HDR10 metadata (the probe's
@@ -200,6 +200,17 @@ Built in `components/video/advanced/` (`CustomParams.vue`, `useParamsCheck.ts`,
   server: Vite's asset-URL transform rewrites `devServer.mjs`'s `new URL('../../../../',
   import.meta.url)` to an `http://localhost:3000/` URL there. The components are checked against
   the real server in the browser (headless Chromium and Firefox, light and dark).
+- **In task A's panel** (phase 2, headless Chromium and Firefox, light and dark, `hdr10`,
+  `h265-mkv-1080p`): *Copy HDR metadata* shows in *HDR / colour* only; a copy highlights the
+  master-display and max-cll rows and puts *HDR / colour*'s count from 0 to 2, and one `Ctrl+Z`
+  takes both away; the field is the *Custom parameters* category, its dry-run error is visible
+  above the open command drawer (issue line bottom 445 px, drawer top 556 px at 1440×1000); the
+  search "custom" shows it, *Show only changed* keeps it while the text is not empty; the keyboard
+  reaches the button and the field from their categories.
+- **The help is a line under the field, not `Field`'s ⓘ**: a reveal focuses the first focusable
+  element of a `Field`, which is the ⓘ button when the field has help, so Summary's link to
+  `video.custom_params` left the focus on ⓘ instead of in the text. (`Field` and `useReveal` are
+  the lead's: every field with help has this; recorded for the review.)
 - **Not built**: the dry-run issues' fix buttons at the field (`Field` shows none; the Summary
   lists validation's issues, which have no dry run); a dry run in `jobs/validate` or at *Add to
   queue* (Consequences).

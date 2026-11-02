@@ -8,6 +8,7 @@ import { CHECK_DELAY } from '@/components/filters/useCustomCheck'
 import { mountShell } from '@/components/shell/testing'
 import { issue, sampleJob } from '@/editor/testing/samples'
 import { useEditorStore } from '@/stores/editor'
+import { useUiStore } from '@/stores/ui'
 import { useValidationStore } from '@/stores/validation'
 
 import { openJob, setUpVideo } from '../testing'
@@ -164,6 +165,14 @@ describe('the custom parameters field', () => {
         'The one-frame test did not run: out.mkv is outside the output folders',
       ),
     ])
+  })
+
+  it('takes the focus into its text when revealed', async () => {
+    Element.prototype.scrollIntoView = vi.fn<() => void>()
+    const { wrapper } = await mountParams({ text: 'csv=out.csv' })
+    useUiStore().reveal('video.custom_params')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.find('input').element)
   })
 
   it('cannot be edited while the video is passed through', async () => {
