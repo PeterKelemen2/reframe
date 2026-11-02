@@ -307,7 +307,7 @@ VBV_MAXRATE = "video.advanced.vbv-maxrate"
             "libx264",
             "vbv-maxrate=1000",
             {},
-            [],
+            [("encoder.custom_param_overrides", VBV_MAXRATE)],
             [("encoder.dry_run_warning", "video.custom_params")],
         ),
         ("libx264", "", {"vbv-maxrate": 1000}, [("encoder.option_inactive", VBV_MAXRATE)], []),

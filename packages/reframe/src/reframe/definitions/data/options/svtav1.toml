@@ -463,7 +463,7 @@ type = "string"
 # OBUs (side data "Mastering display metadata").
 help = "SMPTE ST 2086 mastering display as G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min): chromaticities as plain numbers (0.265) and luminance in cd/m² (1000, 0.0001). Copy HDR metadata from source fills it."
 mapping = { kind = "x26x_param", name = "mastering-display" }
-default = { kind = "encoder", note = "not written" }
+default = { kind = "encoder", note = "Reframe writes the source's metadata" }
 
 [[set.svtav1]]
 key = "content-light"
@@ -472,7 +472,7 @@ category = "HDR / colour"
 type = "string"
 help = "Content light level as \"MaxCLL,MaxFALL\" in cd/m² (for example 1000,400). Copy HDR metadata from source fills it."
 mapping = { kind = "x26x_param", name = "content-light" }
-default = { kind = "encoder", note = "not written" }
+default = { kind = "encoder", note = "Reframe writes the source's metadata" }
 
 [[set.svtav1]]
 key = "lp"

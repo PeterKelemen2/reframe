@@ -2923,3 +2923,24 @@ Checked on 2026-10-27 on the same set-up as 4b-i (KDE Plasma 6.8.1 on Wayland, W
   24-row bottom) and 2.0–4.1 for the 40-column pillarbox bars. A plain `format=rgb24` gives at
   most 0.46. `CropCheckGrid`'s threshold (64) is set from the first numbers (decision 0067
   "Task C").
+
+### Custom parameters over advanced options (M9 fix round, task FC)
+
+Pinned FFmpeg n9.0.2 (x264 core 165, x265 4.3+49), `testsrc2` 320×240, 3 frames, read back from
+the stream's encoder settings SEI:
+
+- The custom parameters come after the advanced options in the command, and the last value
+  wins: `-x265-params psy-rd=1.5:psy-rd=0.75` writes `psy-rd=0.75`; `-g:v:0 10 … -g:v:0 50`
+  (a generic option) writes `keyint=50`, `-aq-mode:v:0 1 … -aq-mode:v:0 2` (a private option)
+  `aq=2:1.00`. So a custom parameter that sets an option overrides the panel's value
+  (`encoder.custom_param_overrides`), with a params argument and without one.
+- x265 reads `psy_rd=0.5` as `psy-rd=0.50` and `no-rect=1` as `no-rect`, the key forms
+  `library_key_forms` gives.
+- x264 reads `b-pyramid=0` as `b-pyramid=none` (`b_pyramid=0` in the SEI; `normal` is 2): it
+  takes a choice's name or its index. The built-in *Social 25 MB* preset stores HandBrake's
+  `b-pyramid=0` as the option's `none`.
+- Every x264 and x265 built-in preset writes the same settings SEI with its options in
+  `advanced` as with HandBrake's `VideoOptionExtra` string as custom parameters
+  (`tests/presets/test_builtin.py`). SVT-AV1 writes no such SEI; its params argument is the same
+  key by key. `keyint=10s` (seconds) stays a custom parameter: the keyint option is a number of
+  frames.

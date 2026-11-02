@@ -1159,8 +1159,7 @@ def needs_dry_run(job: JobSettings, preset: Preset | None = None) -> bool:
     that are used (not with video passthrough): validation cannot check them.
 
     Not for the unchanged parameters of a built-in preset: Reframe's own tests check those
-    against the pinned FFmpeg build, and most built-in x265 / SVT-AV1 presets have some, so
-    every ``reframe plan`` would encode a frame."""
+    against the pinned FFmpeg build."""
     video = job.video
     if video.passthrough or not video.custom_params.strip():
         return False

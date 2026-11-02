@@ -264,6 +264,15 @@ def test_hdr_params_yield_to_advanced_options() -> None:
     assert "max-cll=1200,350" not in out[-1]
 
 
+def test_options_filled_from_the_source_say_so_in_their_default() -> None:
+    for encoder in DEFS.video_encoders.values():
+        written = hdr_params(encoder, HDR_STREAM)
+        for option in encoder.options:
+            if option.mapping.kind == "x26x_param" and option.mapping.name in written:
+                assert isinstance(option.default, EncoderDefault), option.key
+                assert "the source's" in option.default.note, (encoder.id, option.key)
+
+
 def test_frame_rate_modes() -> None:
     vfr = video_stream(frame_rate=Rational(num=120, den=1), avg_frame_rate=Rational(num=38, den=1))
     rate = Rational(num=30000, den=1001)
