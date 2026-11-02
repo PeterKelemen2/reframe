@@ -6,9 +6,8 @@ import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { apiQuiet, unwrap } from '@/api/client'
-import type { FrameLink, PreviewClip } from '@/api/types'
+import type { FrameLink, Geometry, JobSettings, PreviewClip } from '@/api/types'
 import SplitCompare from '@/components/media/SplitCompare.vue'
-import { useCropStore } from '@/stores/crop'
 
 import { absolute, compareTimes, millis, reason } from './clip'
 
@@ -16,10 +15,11 @@ const props = defineProps<{
   clip: PreviewClip
   /** The file the clip was made from. */
   sourceId: string
+  /** The job the clip was made from: the source frames are cropped and turned as it says. */
+  job: JobSettings
 }>()
 
 const { t, n } = useI18n()
-const crop = useCropStore()
 
 interface Pair {
   /** Seconds from the start of the clip. */
@@ -29,6 +29,7 @@ interface Pair {
 }
 
 const pairs = shallowRef<Pair[]>([])
+const geometry = shallowRef<Geometry | null>(null)
 const at = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -47,7 +48,7 @@ async function load(): Promise<void> {
   const { id, start, duration } = props.clip
   const times = compareTimes(duration)
   try {
-    const [clipFrames, sourceFrames] = await Promise.all([
+    const [clipFrames, sourceFrames, picture] = await Promise.all([
       apiQuiet
         .POST('/api/preview/clips/{clip_id}/frames', {
           params: { path: { clip_id: id } },
@@ -64,8 +65,12 @@ async function load(): Promise<void> {
           signal: own.signal,
         })
         .then(unwrap),
+      apiQuiet
+        .POST('/api/jobs/geometry', { body: { job: props.job }, signal: own.signal })
+        .then(unwrap),
     ])
     if (request !== own) return
+    geometry.value = picture.geometry
     const sources = new Map(sourceFrames.frames.map((frame) => [millis(frame.timestamp), frame]))
     pairs.value = clipFrames.frames.flatMap((after) => {
       const before = sources.get(millis(start + after.timestamp))
@@ -146,7 +151,7 @@ function time(seconds: number): string {
       <SplitCompare
         :before="pair.before"
         :after="pair.after"
-        :geometry="crop.geometry?.geometry ?? null"
+        :geometry="geometry"
         @failed="failed"
       />
       <div class="clip-compare__nav">

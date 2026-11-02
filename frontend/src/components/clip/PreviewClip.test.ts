@@ -2,7 +2,8 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { deferred, problem, type FakeServer } from '@/api/testing/fakes'
-import type { FrameLink, PreviewClip as Clip, TaskInfo } from '@/api/types'
+import type { FrameLink, JobSettings, PreviewClip as Clip, TaskInfo } from '@/api/types'
+import { geometryOf, letterboxDetection } from '@/components/dimensions/testing'
 import { previewServer } from '@/components/preview/testing'
 import { mountShell } from '@/components/shell/testing'
 import { platform } from '@/platform'
@@ -91,6 +92,27 @@ async function videoError(wrapper: VueWrapper, code: number): Promise<void> {
   await flushPromises()
 }
 
+/** A crop detection that ends with the letterbox bars once the test resolves it. */
+function detection(server: FakeServer) {
+  const answer = deferred<void>()
+  server.on('POST /api/preview/cropdetect', async () => {
+    await answer.promise
+    useTasksStore().tasks['crop-1'] = {
+      id: 'crop-1',
+      kind: 'cropdetect',
+      state: 'done',
+      result: letterboxDetection() as never,
+    }
+    return { task_id: 'crop-1' }
+  })
+  return answer
+}
+
+function sentJob(server: FakeServer): JobSettings | undefined {
+  const sent = server.requests.find((request) => request.path === '/api/preview/clip')
+  return (sent?.body as { job: JobSettings } | undefined)?.job
+}
+
 describe('the preview clip', () => {
   it('encodes the chosen length from the current frame with the editor job', async () => {
     const { wrapper, server } = await panel()
@@ -100,6 +122,54 @@ describe('the preview clip', () => {
     await flushPromises()
     const sent = server.requests.find((request) => request.path === '/api/preview/clip')
     expect(sent?.body).toEqual({ job: useEditorStore().job, start: 1, seconds: 30 })
+  })
+
+  it('waits for the crop detection of the file, then sends the job with the detected crop', async () => {
+    let detected = deferred<void>()
+    const { wrapper, server } = await panel((fake) => (detected = detection(fake)))
+    await wrapper.find('[data-action="encode-clip"]').trigger('click')
+    await flushPromises()
+    expect(server.count('POST /api/preview/clip')).toBe(0)
+    expect(wrapper.find('[data-field="clip-status"]').text()).toBe(
+      'Waiting for crop detection, so that the clip is cropped…',
+    )
+    detected.resolve()
+    await flushPromises()
+    expect(sentJob(server)?.dimensions?.crop).toEqual({
+      mode: 'auto',
+      rect: { top: 22, bottom: 24, left: 0, right: 0 },
+    })
+    end({ progress: 100, result: CLIP as never })
+    await flushPromises()
+    expect(wrapper.find('[data-field="clip-out-of-date"]').exists()).toBe(false)
+  })
+
+  it('sends nothing when Cancel comes while it waits for the crop detection', async () => {
+    let detected = deferred<void>()
+    const { wrapper, server } = await panel((fake) => (detected = detection(fake)))
+    await wrapper.find('[data-action="encode-clip"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-action="cancel-clip"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-field="clip-cancelled"]').exists()).toBe(true)
+    detected.resolve()
+    await flushPromises()
+    expect(server.count('POST /api/preview/clip')).toBe(0)
+  })
+
+  it('compares the frames with the geometry of the job the clip was made from', async () => {
+    const { wrapper, server } = await encoded((fake) =>
+      fake.on('POST /api/jobs/geometry', geometryOf()),
+    )
+    const sent = sentJob(server)
+    useEditorStore().set('/dimensions/rotate', 90)
+    const from = server.requests.length
+    await wrapper.find('[data-action="compare-frames"]').trigger('click')
+    await flushPromises()
+    const asked = server.requests
+      .slice(from)
+      .filter((request) => request.path === '/api/jobs/geometry')
+    expect(asked.map((request) => request.body)).toContainEqual({ job: sent })
   })
 
   it('shows the progress of the task, and Cancel cancels it', async () => {

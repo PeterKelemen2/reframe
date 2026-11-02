@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ExternalLink, X } from '@lucide/vue'
+import { until } from '@vueuse/core'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import ProgressBar from 'primevue/progressbar'
@@ -8,9 +9,10 @@ import { computed, nextTick, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
-import type { PreviewClip } from '@/api/types'
+import type { JobSettings, PreviewClip } from '@/api/types'
 import { formatBytes } from '@/components/summary/format'
 import { platform } from '@/platform'
+import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { usePreviewStore } from '@/stores/preview'
 import { TaskLostError, useTasksStore } from '@/stores/tasks'
@@ -23,6 +25,7 @@ const SRC_NOT_SUPPORTED = 4
 
 const { t, n } = useI18n()
 const editor = useEditorStore()
+const crop = useCropStore()
 const preview = usePreviewStore()
 const tasks = useTasksStore()
 const root = useTemplateRef<HTMLElement>('root')
@@ -32,7 +35,7 @@ interface Made {
   clip: PreviewClip
   sourceId: string
   /** The job as it was sent: a later edit makes the clip out of date. */
-  job: string
+  job: JobSettings
 }
 
 const length = ref<number>(CLIP_LENGTHS[0])
@@ -47,7 +50,7 @@ const linkError = ref<string | null>(null)
 const playError = ref<string | null>(null)
 const comparing = ref(false)
 // Cancel came before the server named the task.
-let stopAsked = false
+const stopAsked = ref(false)
 // A clip link works for an hour: the first failure asks for a new one before giving up.
 let linkRetried = false
 
@@ -60,8 +63,20 @@ const progress = computed(() => {
   return typeof value === 'number' ? value : null
 })
 const outOfDate = computed(
-  () => made.value !== null && editor.job !== null && JSON.stringify(editor.job) !== made.value.job,
+  () =>
+    made.value !== null &&
+    editor.job !== null &&
+    JSON.stringify(editor.job) !== JSON.stringify(made.value.job),
 )
+// A detected crop enters the job when its detection ends: a clip sent before that keeps the bars.
+const cropPending = computed(() => {
+  const settings = editor.job?.dimensions?.crop
+  return (
+    (settings?.mode === 'auto' || settings?.mode === 'conservative') &&
+    !settings.rect &&
+    crop.detecting
+  )
+})
 
 function time(seconds: number): string {
   return t('preview.seconds', { seconds: n(seconds, { maximumFractionDigits: 3 }) })
@@ -79,17 +94,22 @@ const summary = computed(() => {
 })
 
 async function encode(): Promise<void> {
-  const job = editor.job
   const frame = preview.current
   const sourceId = preview.sourceId
-  if (job === null || frame === null || sourceId === null) return
-  const sent = JSON.stringify(job)
+  if (editor.job === null || frame === null || sourceId === null) return
   encodeError.value = null
   cancelled.value = false
-  stopAsked = false
+  stopAsked.value = false
   starting.value = true
   let id: string
+  let job: JobSettings
   try {
+    await until(() => !cropPending.value || stopAsked.value).toBe(true)
+    if (stopAsked.value || editor.job === null) {
+      cancelled.value = preview.sourceId === sourceId
+      return
+    }
+    job = editor.job
     id = unwrap(
       await apiQuiet.POST('/api/preview/clip', {
         body: { job, start: frame.timestamp, seconds: length.value },
@@ -101,7 +121,7 @@ async function encode(): Promise<void> {
   } finally {
     starting.value = false
   }
-  if (stopAsked || preview.sourceId !== sourceId) {
+  if (stopAsked.value || preview.sourceId !== sourceId) {
     void stop(id)
     cancelled.value = preview.sourceId === sourceId
     return
@@ -111,7 +131,7 @@ async function encode(): Promise<void> {
     const task = await tasks.wait(id)
     if (taskId.value !== id) return
     if (task.state === 'done') {
-      show({ clip: task.result as unknown as PreviewClip, sourceId, job: sent })
+      show({ clip: task.result as unknown as PreviewClip, sourceId, job })
     } else if (task.state === 'failed') {
       encodeError.value = task.error ?? t('clip.failedWithoutReason')
     } else {
@@ -126,7 +146,7 @@ async function encode(): Promise<void> {
 }
 
 async function cancel(): Promise<void> {
-  if (taskId.value === null) stopAsked = true
+  if (taskId.value === null) stopAsked.value = true
   else await stop(taskId.value)
 }
 
@@ -265,9 +285,11 @@ watch(running, async (now) => {
     </p>
     <p v-if="running" class="preview-clip__hint" data-field="clip-status" aria-live="polite">
       {{
-        progress === null
-          ? t('clip.encoding')
-          : t('clip.encodingPercent', { percent: Math.round(progress) })
+        starting && cropPending
+          ? t('clip.waitingForCrop')
+          : progress === null
+            ? t('clip.encoding')
+            : t('clip.encodingPercent', { percent: Math.round(progress) })
       }}
     </p>
     <Message v-if="encodeError !== null" severity="error" :closable="false" data-field="clip-error">
@@ -315,7 +337,7 @@ watch(running, async (now) => {
           <template #icon><ExternalLink :size="16" aria-hidden="true" /></template>
         </Button>
       </div>
-      <ClipCompare v-if="comparing" :clip="made.clip" :source-id="made.sourceId" />
+      <ClipCompare v-if="comparing" :clip="made.clip" :source-id="made.sourceId" :job="made.job" />
       <video
         v-else-if="link !== null"
         class="preview-clip__video"

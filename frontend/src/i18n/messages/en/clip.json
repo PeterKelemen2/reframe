@@ -4,6 +4,7 @@
   "seconds": "{seconds} s",
   "encode": "Encode preview",
   "from": "From the current frame at {start}, with the job's settings.",
+  "waitingForCrop": "Waiting for crop detection, so that the clip is cropped…",
   "encoding": "Encoding the preview…",
   "encodingPercent": "Encoding the preview… {percent} %",
   "cancel": "Cancel",
