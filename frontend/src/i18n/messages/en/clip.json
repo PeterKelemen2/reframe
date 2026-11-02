@@ -1,0 +1,32 @@
+{
+  "title": "Preview clip",
+  "length": "Clip length",
+  "seconds": "{seconds} s",
+  "encode": "Encode preview",
+  "from": "From the current frame at {start}, with the job's settings.",
+  "encoding": "Encoding the preview…",
+  "encodingPercent": "Encoding the preview… {percent} %",
+  "cancel": "Cancel",
+  "cancelled": "The preview encode was cancelled.",
+  "failed": "The preview could not be encoded: {reason}",
+  "failedWithoutReason": "the server gave no reason",
+  "summary": "{duration} from {start} · {codec} · {size}",
+  "outOfDate": "The job or the file has changed since this clip was made: it is out of date. Encode it again to see the changes.",
+  "linkFailed": "The clip cannot be opened: {reason}",
+  "compareFrames": "Compare frames",
+  "play": "Play the clip",
+  "openExternal": "Open in external player",
+  "playback": {
+    "unsupported": "this browser cannot play {codec} video",
+    "failed": "the player stopped with an error ({reason})",
+    "fallback": "The clip does not play here: {reason}. Its frames are shown next to the source frames instead; Open in external player plays it."
+  },
+  "compare": {
+    "loading": "Decoding the clip's frames…",
+    "failed": "The frames could not be compared: {reason}",
+    "none": "The clip gave no frames to compare.",
+    "previous": "Previous frame",
+    "next": "Next frame",
+    "position": "Frame {n} of {count} · {time}"
+  }
+}
