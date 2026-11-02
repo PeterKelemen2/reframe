@@ -1,9 +1,15 @@
 {
-  "title": "Check group \"{name}\"",
+  "title": "Check group “{name}”",
   "titleNoName": "Check group",
   "files": "{n} file | {n} files",
   "resolving": "Updating…",
   "loading": "Resolving the group…",
+  "failed": "The matrix could not be updated: {reason}",
+  "outdated": "The matrix below is out of date: it shows the group before the last change.",
+  "none": "There is no matrix yet.",
+  "retry": "Try again",
+  "maximize": "Maximize",
+  "restore": "Restore size",
   "problemsOnly": "Problems only",
   "noProblems": "No file has a problem.",
   "batchIssues": "Problems of the whole group",
@@ -30,7 +36,7 @@
     "none": "none",
     "picked": "Picked by hand",
     "open": "{column}, {label}: {state}. Choose the track",
-    "video": "{column}, {label}: {state}"
+    "video": "{column}, {label}: {state}, {size}"
   },
   "picker": {
     "title": "{column} in {label}",
@@ -58,15 +64,20 @@
   "queue": {
     "add": "Add group to queue",
     "queued": "Queued {n} job | Queued {n} jobs",
-    "notQueued": "{n} job was not queued | {n} jobs were not queued",
-    "notQueuedLine": "{name}: {reason}",
-    "failed": "The queue refused the job",
+    "addedFailed": "{n} job added to the queue; it failed | {n} jobs added to the queue; {failed} of them failed",
+    "failedLine": "{name}: {reason}",
+    "failed": "no reason given",
+    "moreFailed": "… and {n} more failed job: the queue lists it. | … and {n} more failed jobs: the queue lists them.",
+    "stale": "{n} file is queued without part of its per-file changes: they were made for an earlier version of the group (its warning in the matrix says which). | {n} files are queued without part of their per-file changes: they were made for an earlier version of the group (their warnings in the matrix say which).",
+    "changed": "{n} file of the group changed since it was opened | {n} files of the group changed since they were opened",
+    "changedHelp": "Remove it from the sources and open it again: | Remove them from the sources and open them again:",
     "dialog": {
       "title": "Some files have errors",
       "text": "{n} file of the group has errors and cannot be queued as it is: | {n} files of the group have errors and cannot be queued as they are:",
       "valid": "Queue the valid files, skip the others",
       "matrix": "Open matrix",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "stale": "{n} of the valid files loses part of its per-file changes: they were made for an earlier version of the group. | {n} of the valid files lose part of their per-file changes: they were made for an earlier version of the group."
     }
   }
 }

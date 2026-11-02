@@ -8,7 +8,13 @@ import { bySeverity, SEVERITY_ICON, useSeverityLabel } from '@/components/base/s
 import { useEditorStore } from '@/stores/editor'
 
 /** One matrix row's errors and warnings with their fixes; its notes folded. */
-const props = defineProps<{ sourceId: string; label: string; issues: ValidationIssue[] }>()
+const props = defineProps<{
+  sourceId: string
+  label: string
+  issues: ValidationIssue[]
+  /** The id of the title, which names the popover. */
+  titleId: string
+}>()
 
 const emit = defineEmits<{ done: [] }>()
 
@@ -35,7 +41,7 @@ async function apply(fix: Fix): Promise<void> {
 
 <template>
   <div class="row-issues">
-    <p class="row-issues__title">{{ t('matrix.issues.title', { label }) }}</p>
+    <p :id="titleId" class="row-issues__title">{{ t('matrix.issues.title', { label }) }}</p>
     <p v-if="problems.length === 0" class="row-issues__none">{{ t('matrix.issues.none') }}</p>
     <ul v-else class="row-issues__list">
       <li

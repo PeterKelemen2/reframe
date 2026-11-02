@@ -3,7 +3,7 @@ import { Hand, Pencil } from '@lucide/vue'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Popover from 'primevue/popover'
-import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type {
@@ -163,6 +163,7 @@ type Panel =
   | { kind: 'name'; path: string }
 
 const popover = useTemplateRef<InstanceType<typeof Popover>>('popover')
+const titleId = `${useId()}-title`
 const panel = ref<Panel | null>(null)
 const popoverOpen = ref(false)
 /** The `data-focus-key` of the button the popover belongs to. */
@@ -279,7 +280,10 @@ onMounted(async () => {
             :data-row-mark="data.entry?.id"
             :data-focus-key="`${data.path}|file`"
             :disabled="data.entry === undefined"
-            :autofocus="(focus !== null && data.entry?.id === focus) || undefined"
+            :autofocus="
+              (focus === null ? data.path === shownRows[0]?.path : data.entry?.id === focus) ||
+              undefined
+            "
             :aria-label="t('matrix.row.issues', { label: data.label, status: rowState(data.row) })"
             @click="openPanel({ kind: 'issues', path: data.path }, $event)"
           >
@@ -309,6 +313,7 @@ onMounted(async () => {
                 column: column.label,
                 label: data.label,
                 state: t('matrix.match.exact'),
+                size: videoSize(data),
               })
             "
           >
@@ -368,7 +373,9 @@ onMounted(async () => {
               <span>{{ streamsText(data.cells[index].streams) || t('matrix.cell.none') }}</span>
               <Hand v-if="picked(data, column)" :size="14" aria-hidden="true" data-role="picked" />
             </span>
-            <span class="matrix__message">{{ data.cells[index].message }}</span>
+            <span class="matrix__message" :title="data.cells[index].message">
+              {{ data.cells[index].message }}
+            </span>
           </button>
         </template>
       </Column>
@@ -377,12 +384,14 @@ onMounted(async () => {
     <Popover
       ref="popover"
       class="matrix-popover"
+      :pt="{ root: { 'aria-labelledby': titleId } }"
       @show="popoverOpen = true"
       @hide="popoverOpen = false"
     >
       <template v-if="panel !== null && panelRow?.entry !== undefined">
         <CandidatePicker
           v-if="cellPanel !== null"
+          :title-id="titleId"
           :source-id="panelRow.entry.id"
           :label="panelRow.label"
           :column="cellPanel.column"
@@ -393,6 +402,7 @@ onMounted(async () => {
         />
         <RowIssues
           v-else-if="panel.kind === 'issues'"
+          :title-id="titleId"
           :source-id="panelRow.entry.id"
           :label="panelRow.label"
           :issues="panelRow.row.issues ?? []"
@@ -400,6 +410,7 @@ onMounted(async () => {
         />
         <NameFields
           v-else-if="panel.kind === 'name' && panelRow.row.naming"
+          :title-id="titleId"
           :source-id="panelRow.entry.id"
           :label="panelRow.label"
           :naming="panelRow.row.naming"

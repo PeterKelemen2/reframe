@@ -6,7 +6,14 @@ import { defineComponent, h, reactive } from 'vue'
 
 import { ApiError, configureClient } from '@/api/client'
 import { deferred, FakeServer } from '@/api/testing/fakes'
-import type { BatchResolution, JobSettings, QueueJob, SourceEntry } from '@/api/types'
+import type {
+  BatchGroup,
+  BatchResolution,
+  JobSettings,
+  QueueJob,
+  Resolution,
+  SourceEntry,
+} from '@/api/types'
 import QueueGroupDialog from '@/components/matrix/QueueGroupDialog.vue'
 import {
   animeResolution,
@@ -25,6 +32,7 @@ import { type QueueGroup, useQueueGroup } from './useQueueGroup'
 // Test doubles of the editor and sources stores: the members their contracts give.
 const editor = reactive({
   target: null as EditorTarget | null,
+  group: null as BatchGroup | null,
   editGroup: vi.fn<(groupId: string) => Promise<void>>(async () => {}),
   resolveNow: vi.fn<() => Promise<BatchResolution>>(),
 })
@@ -104,6 +112,7 @@ function button(role: string): HTMLButtonElement {
 beforeEach(() => {
   setActivePinia(createPinia())
   editor.target = editing('g1')
+  editor.group = animeResolution().group ?? null
   editor.editGroup.mockClear()
   editor.resolveNow.mockReset()
   editor.resolveNow.mockImplementation(async () => withRow(animeResolution(), fixedE11()))
@@ -191,35 +200,128 @@ describe('queueGroup without errors', () => {
     expect(queueBodies()).toHaveLength(1)
   })
 
-  it('queues nothing when the resolve fails (the API toast says why) and can run again', async () => {
+  it('queues nothing when the resolve fails, says why, and can run again', async () => {
     editor.resolveNow.mockRejectedValueOnce(
-      new ApiError(500, { title: 'No', status: 500 } as never),
+      new ApiError(500, { title: 'No', detail: 'Broken', status: 500, code: 'x' } as never),
     )
     const group = setup()
     await group.queueGroup('g1')
     expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([{ severity: 'error', summary: 'No', detail: 'Broken' }])
     expect(group.busy.value).toBe(false)
     await group.queueGroup('g1')
     expect(queueBodies()).toHaveLength(1)
   })
 
-  it('lists the jobs the queue refused', async () => {
+  it('adds no toast when an edit did not reach the group: the edit showed its own', async () => {
+    editor.resolveNow.mockRejectedValueOnce(
+      new ApiError(0, {
+        title: 'An edit did not reach the group',
+        status: 0,
+        code: 'edit.failed',
+      } as never),
+    )
+    await setup().queueGroup('g1')
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
+  })
+
+  it('names the files that changed on disk when the resolve finds a changed file', async () => {
+    const listed = animeSources()
+    ;(listed[1] as SourceEntry).source = null
+    // Another open file, not of the group, changed too.
+    listed.push({ id: 'other', path: '/media/Other.mkv', source: null } as SourceEntry)
+    server.on('GET /api/sources', listed)
+    editor.resolveNow.mockRejectedValueOnce(
+      new ApiError(409, {
+        title: 'The file changed or is gone since it was probed',
+        detail: 'Probe it again with POST /api/sources.',
+        status: 409,
+        code: 'source.stale',
+      } as never),
+    )
+    await setup().queueGroup('g1')
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([
+      {
+        severity: 'error',
+        summary: '1 file of the group changed since it was opened',
+        detail:
+          'Remove it from the sources and open it again:\nAnime.Show.S01E02.Departure.BluRay.x264-GRP.mkv',
+      },
+    ])
+  })
+
+  it('says what the queue did when it added some jobs as failed', async () => {
     server.on('POST /api/queue', (request) =>
       (request.body as { jobs: JobSettings[] }).jobs.map((job, index) =>
-        queued(job, index === 2 ? { state: 'failed', error: 'Disk full' } : {}),
+        queued(
+          job,
+          index < 2 ? { state: 'failed', error: 'Its output is already planned in the queue' } : {},
+        ),
       ),
     )
     await setup().queueGroup('g1')
     expect(toasts()).toEqual([
-      { severity: 'success', summary: 'Queued 11 jobs', detail: undefined },
       {
         severity: 'warn',
-        summary: '1 job was not queued',
-        detail: 'Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv: Disk full',
+        summary: '12 jobs added to the queue; 2 of them failed',
+        detail: [
+          'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv: Its output is already planned in the queue',
+          'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv: Its output is already planned in the queue',
+        ].join('\n'),
+      },
+    ])
+  })
+
+  it('keeps the toast short when the queue adds every job as failed', async () => {
+    server.on('POST /api/queue', (request) =>
+      (request.body as { jobs: JobSettings[] }).jobs.map((job) =>
+        queued(job, { state: 'failed', error: 'Planned already' }),
+      ),
+    )
+    await setup().queueGroup('g1')
+    const [toast] = toasts()
+    expect(toast?.summary).toBe('12 jobs added to the queue; 12 of them failed')
+    expect(toast?.detail?.split('\n')).toEqual([
+      'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv: Planned already',
+      'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv: Planned already',
+      'Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv: Planned already',
+      '… and 9 more failed jobs: the queue lists them.',
+    ])
+  })
+
+  it('says how many files are queued without part of their stale override', async () => {
+    editor.resolveNow.mockImplementation(async () =>
+      withRow(withRow(animeResolution(), fixedE11()), staleRow(3)),
+    )
+    await setup().queueGroup('g1')
+    expect(queueBodies()[0]).toHaveLength(12)
+    expect(toasts()).toEqual([
+      {
+        severity: 'warn',
+        summary: 'Queued 12 jobs',
+        detail: expect.stringMatching(/^1 file is queued without part of its per-file changes/),
       },
     ])
   })
 })
+
+/** Episode `episode`'s row with a stale override's warning. */
+function staleRow(episode: number): Resolution {
+  const row = animeResolution().rows?.[episode - 1] as Resolution
+  row.status = 'warning'
+  row.issues = [
+    ...(row.issues ?? []),
+    {
+      severity: 'warning',
+      code: 'batch.override_stale',
+      path: 'override.job.audio.0',
+      message: 'The override was made for another template.',
+    },
+  ]
+  return row
+}
 
 async function asked(group: QueueGroup): Promise<{ running: Promise<void> }> {
   editor.resolveNow.mockImplementation(async () => animeResolution())
@@ -266,6 +368,48 @@ describe('queueGroup with errors', () => {
     expect(useUiStore().matrixOpen).toBe(true)
     expect(useUiStore().matrixFocus).toBe(sourceIdOf(11))
     expect(queueBodies()).toEqual([])
+  })
+
+  it('gives the first focus to Open matrix, not to queueing', async () => {
+    const group = setup()
+    const { running } = await asked(group)
+    await vi.waitFor(() => expect(document.activeElement).toBe(button('matrix')))
+    button('cancel').click()
+    await running
+  })
+
+  it('gives the focus back to what started it after Cancel and after queueing', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    const group = setup()
+    // The button that started it is disabled while busy: the page has the focus meanwhile.
+    editor.resolveNow.mockImplementation(async () => {
+      opener.blur()
+      return animeResolution()
+    })
+    async function answered(choice: string): Promise<void> {
+      opener.focus()
+      const running = group.queueGroup('g1')
+      await vi.waitFor(() => expect(document.activeElement).toBe(button('matrix')))
+      button(choice).click()
+      await running
+      expect(document.activeElement).toBe(opener)
+    }
+    await answered('cancel')
+    await answered('valid')
+  })
+
+  it('says how many valid files lose part of their stale override', async () => {
+    const group = setup()
+    editor.resolveNow.mockImplementation(async () => withRow(animeResolution(), staleRow(3)))
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    expect(group.question.value?.stale).toBe(1)
+    expect(document.querySelector('[data-role="stale"]')?.textContent).toContain(
+      '1 of the valid files loses part of its per-file changes',
+    )
+    button('cancel').click()
+    await running
   })
 
   it('queues nothing on Cancel, and a second call while asking does nothing', async () => {

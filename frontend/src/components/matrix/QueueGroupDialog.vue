@@ -30,6 +30,9 @@ const { question, answer } = useQueueGroup()
           <span>{{ file.message }}</span>
         </li>
       </ul>
+      <p v-if="question.stale > 0" class="queue-group-dialog__stale" data-role="stale">
+        {{ t('matrix.queue.dialog.stale', question.stale) }}
+      </p>
     </template>
     <template #footer>
       <Button
@@ -41,15 +44,15 @@ const { question, answer } = useQueueGroup()
       />
       <Button
         :label="t('matrix.queue.dialog.matrix')"
-        severity="secondary"
-        outlined
+        autofocus
         data-role="matrix"
         @click="answer('matrix')"
       />
       <Button
         :label="t('matrix.queue.dialog.valid')"
         :disabled="question === null || question.valid === 0"
-        autofocus
+        severity="secondary"
+        outlined
         data-role="valid"
         @click="answer('valid')"
       />
@@ -60,6 +63,10 @@ const { question, answer } = useQueueGroup()
 <style scoped>
 .queue-group-dialog__text {
   margin: 0 0 var(--rf-space-3);
+}
+
+.queue-group-dialog__stale {
+  margin: var(--rf-space-3) 0 0;
 }
 
 .queue-group-dialog__files {

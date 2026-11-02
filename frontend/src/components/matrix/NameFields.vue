@@ -12,6 +12,8 @@ import type { NameField } from './matrix'
 const props = defineProps<{
   sourceId: string
   label: string
+  /** The id of the title, which names the popover. */
+  titleId: string
   naming: NameResult
   /** The file's corrections (`field_overrides` of its job). */
   overrides: Record<string, string>
@@ -74,7 +76,7 @@ function issuesOf(field: NameField): ValidationIssue[] {
 
 <template>
   <div class="name-fields">
-    <p class="name-fields__title">{{ t('matrix.name.title', { label }) }}</p>
+    <p :id="titleId" class="name-fields__title">{{ t('matrix.name.title', { label }) }}</p>
     <p class="name-fields__reason">{{ naming.reason }}</p>
     <p class="name-fields__hint">{{ t('matrix.name.hint') }}</p>
     <div

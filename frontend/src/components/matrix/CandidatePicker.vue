@@ -12,6 +12,8 @@ import { trackText } from './matrix'
 const props = defineProps<{
   sourceId: string
   label: string
+  /** The id of the title, which names the popover. */
+  titleId: string
   column: MatrixColumn
   match: TrackMatch
   tracks: (AudioStream | SubtitleStream)[]
@@ -40,8 +42,11 @@ function reset(): void {
 
 <template>
   <div class="candidate-picker" :data-column="column.label">
-    <p class="candidate-picker__title">
+    <p :id="titleId" class="candidate-picker__title">
       {{ t('matrix.picker.title', { column: column.label, label }) }}
+    </p>
+    <p v-if="match.message" class="candidate-picker__message" data-role="message">
+      {{ match.message }}
     </p>
     <p v-if="match.defaults" class="candidate-picker__defaults" data-role="defaults">
       {{
@@ -113,6 +118,7 @@ function reset(): void {
   font-weight: var(--rf-font-weight-medium);
 }
 
+.candidate-picker__message,
 .candidate-picker__defaults,
 .candidate-picker__none {
   color: var(--rf-color-text-muted);
