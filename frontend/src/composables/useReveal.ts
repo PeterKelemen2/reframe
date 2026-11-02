@@ -28,7 +28,11 @@ export function useReveal(
       await nextTick()
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
       node.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
-      const focusable = node.matches(FOCUSABLE) ? node : node.querySelector<HTMLElement>(FOCUSABLE)
+      // A field's label row comes first and may hold its help button: the control is what was asked for.
+      const focusable = node.matches(FOCUSABLE)
+        ? node
+        : (node.querySelector<HTMLElement>(`.rf-field__control :is(${FOCUSABLE})`) ??
+          node.querySelector<HTMLElement>(FOCUSABLE))
       focusable?.focus({ preventScroll: true })
       node.classList.add(REVEALED_CLASS)
       setTimeout(() => node.classList.remove(REVEALED_CLASS), REVEALED_MS)

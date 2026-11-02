@@ -192,4 +192,13 @@ describe('Field', () => {
     expect(wrapper.classes()).toContain(REVEALED_CLASS)
     expect(document.activeElement).toBe(wrapper.get('input.control').element)
   })
+
+  it('gives the focus to its control, not to the help button, when revealed', async () => {
+    Element.prototype.scrollIntoView = vi.fn<() => void>()
+    const wrapper = mountField({ path: 'video.encoder', help: 'Lower is better.' })
+    useUiStore().reveal('video.encoder')
+    await flushPromises()
+    await nextTick()
+    expect(document.activeElement).toBe(wrapper.get('input.control').element)
+  })
 })
