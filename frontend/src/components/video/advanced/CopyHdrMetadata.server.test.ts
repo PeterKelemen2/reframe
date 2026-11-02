@@ -55,8 +55,11 @@ describe('Copy HDR metadata against the real server', () => {
     const editor = useEditorStore()
     await editor.open(sourceId, 'h265-mkv-1080p')
     const steps = editor.canUndo
+    // The preset sets options of its own: the copy adds to them.
+    const preset = { ...editor.job?.video?.advanced }
     await copyHdr()
     expect(editor.job?.video?.advanced).toEqual({
+      ...preset,
       'master-display': 'G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)',
       'max-cll': '1000,400',
     })
@@ -67,7 +70,7 @@ describe('Copy HDR metadata against the real server', () => {
       /-x265-params\S* '\S*master-display=G\(13250,34500\)B\(7500,3000\)R\(34000,16000\)WP\(15635,16450\)L\(10000000,1\):max-cll=1000,400/,
     )
     editor.undo()
-    expect(editor.job?.video?.advanced).toEqual({})
+    expect(editor.job?.video?.advanced).toEqual(preset)
     expect(editor.canUndo).toBe(steps)
   })
 
@@ -75,8 +78,10 @@ describe('Copy HDR metadata against the real server', () => {
     const editor = useEditorStore()
     await editor.open(sourceId, 'h265-mkv-1080p')
     editor.patch(switchEncoderOps(editor.job!.video!, 'libsvtav1', encoders, caps))
+    const kept = { ...editor.job?.video?.advanced }
     await copyHdr()
     expect(editor.job?.video?.advanced).toEqual({
+      ...kept,
       'mastering-display': 'G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)',
       'content-light': '1000,400',
     })
