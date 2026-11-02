@@ -119,7 +119,7 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   )
 
   await banner.getByRole('button', { name: 'Check group' }).click()
-  const matrix = page.getByRole('dialog', { name: `Check group "${GROUP}"` })
+  const matrix = page.getByRole('dialog', { name: `Check group “${GROUP}”` })
   const rows = matrix.locator('tbody tr')
   const row = (episode: string) =>
     rows.filter({ has: page.locator('.matrix__label', { hasText: episode }) })
