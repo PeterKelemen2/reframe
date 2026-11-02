@@ -8,7 +8,7 @@ which part, in which order, and what each part must offer to the others. Decisio
 [0067](decisions/0067-m8-picture.md) (the lead's choices and one section per task). Status:
 [status.md](status.md). The template is [m7-breakdown.md](m7-breakdown.md). If the lead's
 context is summarised, this file and `status.md` are the source of truth. M8 is done on Linux on
-the branch `m8-picture`; it is **not merged into `main`** (the owner decides), and neither is M7.
+the branch `m8-picture`; the owner had M7 and then M8 merged into `main` on 2026-11-02 (not pushed).
 
 M8's core part (C-5, C-10, [0033](decisions/0033-preview-frames-crop-and-clips.md)) and the
 preview routes ([0049](decisions/0049-s2-system-fs-settings-sources-preview.md)) are done and
@@ -479,11 +479,12 @@ test.
 | 2026-11-02 | **Final checks, run alone on Linux**: `npm run lint`, `fmt:check`, `typecheck` clean; `npm test` 1782 passed; `build:web` built; `gen-api.sh --check` up to date; `npm run test:server` 62 passed in three runs out of four (the first run: 1 failed, `editor.group.server.test.ts` "edits the anime season as 04 says…", which passed alone and in the three runs after; its log was not kept, cause not found; recorded); `npm run e2e` 22 passed twice (44.9 s, 45.2 s), no server and no `/tmp/reframe-dev-*` left; Python `pytest -m "not needs_gpu"` in four chunks 1750 + 2406 + 2648 + 824 = **7628 passed**, 2 skipped, 26 deselected; ruff, ruff format, mypy, mypy `--platform win32` clean |
 | 2026-11-02 | **M8 demo, headless** (0067 "M8 demo, 2026-11-02 (headless)"): all four points pass in Chromium light and dark and Firefox light and dark against a real server and the pinned FFmpeg (12 of 12 checks each) |
 | 2026-11-02 | **M8 demo, headed** once in Chromium on `HDMI-A-1` through the window guard after the owner placed the cursor and the active window there (0067 "M8 demo, 2026-11-02 (headed)"): every point passed; headed Chromium plays the HEVC clip (headless does not); nothing on `DP-1`. **Docs reconciled**: `status.md` (the M8 row Done, not merged; M9 row; F-7 Done; the two feature rows), the plan boxes (every F-7, F-8 and F-15 box; F-17's first, its second waits for M10), 0067 "Not built in M8", "Where M8 ended" below. **Not merged into `main`, not pushed** |
+| 2026-11-02 | **Merged into `main`** at the owner's request: first `m7-batch-season`, then `m8-picture`, each `--no-ff`; not pushed by the lead (`origin/m8-picture` at 9f6f76b exists, not pushed by the lead) |
 
 ## Where M8 ended (2026-11-02)
 
-M8 is done on Linux on the branch `m8-picture` (from `m7-batch-season`). It is **not merged into
-`main`** and nothing is pushed: the owner decides (M7 is not merged either). Built: A (the preview
+M8 is done on Linux on the branch `m8-picture` (from `m7-batch-season`). At the owner's request
+M7 and then M8 were merged into `main` on 2026-11-02 (`--no-ff`); nothing is pushed by the lead. Built: A (the preview
 store and panel, `FrameViewer`, `SplitCompare`), B (the crop store, the Dimensions tab,
 `CropOverlay`), C (`CropMagnifier`, `CropLoupe`, `CropCheckGrid` and its worker), D (the Filters
 tab), E (Settings → Preview, the live preview clip), F (flow 4), and the lead's wave-0 route,
