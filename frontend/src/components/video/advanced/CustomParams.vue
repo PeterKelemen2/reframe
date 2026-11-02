@@ -20,11 +20,20 @@ const check = useParamsCheck()
 const text = computed(() => editor.job?.video?.custom_params ?? '')
 const passthrough = computed(() => editor.job?.video?.passthrough === true)
 
+const failedText = computed(() =>
+  check.value?.state === 'failed' ? t('params.check.failed', { reason: check.value.reason }) : '',
+)
+const checkState = computed(() => {
+  const current = check.value
+  if (current?.state !== 'done') return current?.state
+  return current.issues.length > 0 ? 'refused' : 'accepted'
+})
+
 const issues = computed<ValidationIssue[]>(() => {
   const own = validation.issuesFor(PATH)
   const current = check.value
   if (current?.state === 'failed') {
-    const message = t('params.check.failed', { reason: current.reason })
+    const message = failedText.value
     return [...own, { severity: 'warning', code: 'params.check_failed', path: PATH, message }]
   }
   if (current?.state !== 'done') return own
@@ -56,13 +65,18 @@ function setText(value: string | undefined): void {
       />
       <!-- Not Field's ⓘ: a reveal focuses the field's first button, and it must reach the text. -->
       <p class="custom-params__hint">{{ t('params.help') }}</p>
-      <p
-        v-if="check?.state === 'checking' || (check?.state === 'done' && check.issues.length === 0)"
-        class="custom-params__check"
-        role="status"
-        :data-check="check.state === 'checking' ? 'checking' : 'accepted'"
-      >
-        {{ check.state === 'checking' ? t('params.check.checking') : t('params.check.accepted') }}
+      <!-- Always there: a live region added together with its text is not announced. The
+           field shows the answer's issues, so the region says them to a screen reader only. -->
+      <p class="custom-params__check" role="status" :data-check="checkState">
+        <template v-if="check?.state === 'done' && check.issues.length > 0">
+          <span v-for="(item, index) in check.issues" :key="index" class="rf-sr-only">
+            {{ item.message }}
+          </span>
+        </template>
+        <span v-else-if="check?.state === 'failed'" class="rf-sr-only">{{ failedText }}</span>
+        <span v-else-if="check" class="custom-params__check-text">
+          {{ check.state === 'checking' ? t('params.check.checking') : t('params.check.accepted') }}
+        </span>
       </p>
     </template>
   </Field>
@@ -74,9 +88,14 @@ function setText(value: string | undefined): void {
 }
 
 .custom-params__hint,
-.custom-params__check {
+.custom-params__check-text {
+  display: block;
   margin: var(--rf-space-1) 0 0;
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
+}
+
+.custom-params__check {
+  margin: 0;
 }
 </style>

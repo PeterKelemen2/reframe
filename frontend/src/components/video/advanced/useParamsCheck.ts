@@ -18,7 +18,8 @@ const SHOWN_PATHS = new Set(['video.custom_params', 'video.encoder'])
 
 /**
  * Checks the job's custom parameters with `POST /api/jobs/dry-run` once they stop changing, and
- * again for another job. Only the newest text's answer counts; `null` while there is no text.
+ * again for another job, encoder or shown file. Only the newest answer counts; `null` while
+ * there is no text.
  */
 export function useParamsCheck() {
   const editor = useEditorStore()
@@ -38,8 +39,13 @@ export function useParamsCheck() {
   })
 
   watch(
-    [() => editor.session, () => editor.job?.video?.custom_params ?? ''],
-    ([, text]) => {
+    [
+      () => editor.job?.video?.custom_params ?? '',
+      () => editor.session,
+      () => editor.job?.video?.encoder,
+      () => editor.target?.sourceId,
+    ],
+    ([text]) => {
       if (text.trim() === '') {
         request.cancel()
         check.value = null

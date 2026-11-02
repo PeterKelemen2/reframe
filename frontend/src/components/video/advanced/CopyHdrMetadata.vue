@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { apiQuiet, unwrap } from '@/api/client'
@@ -15,12 +15,20 @@ const editor = useEditorStore()
 const system = useSystemStore()
 const { source } = useJobSource()
 
+const noteId = useId()
 const busy = ref(false)
 const note = ref<{ text: string; failed: boolean } | null>(null)
 const encoderId = computed(() => editor.job?.video?.encoder ?? '')
 const passthrough = computed(() => editor.job?.video?.passthrough === true)
+// The template takes no file's values: each file's encode writes its own source's metadata.
+const inGroup = computed(() => editor.target?.kind === 'group')
 
-watch([() => editor.session, encoderId], () => {
+/** What the answer was asked for: another job, encoder or shown file makes it void. */
+const asked = computed(() =>
+  JSON.stringify([editor.session, encoderId.value, editor.target?.sourceId ?? null]),
+)
+
+watch(asked, () => {
   note.value = null
 })
 
@@ -35,23 +43,30 @@ function nothingCopied(): string {
     : t('params.hdr.fromFrames', { encoder: label })
 }
 
+function labelOf(path: string): string {
+  const key = tokensOf(path).at(-1) as string
+  const options = system.definitions?.video_encoders?.[encoderId.value]?.options ?? []
+  return options.find((option) => option.key === key)?.label ?? key
+}
+
 async function copy(): Promise<void> {
-  const session = editor.session
+  const before = asked.value
   busy.value = true
   note.value = null
   try {
     const body = { job: editor.job as JobSettings }
     const ops = unwrap(await apiQuiet.POST('/api/jobs/hdr-metadata', { body }))
-    if (session !== editor.session) return
+    if (asked.value !== before) return
     if (ops.length === 0) {
       note.value = { text: nothingCopied(), failed: false }
       return
     }
     editor.patch(ops)
-    const options = ops.map((op) => tokensOf(op.path).at(-1)).join(', ')
-    note.value = { text: t('params.hdr.copied', { options }), failed: false }
+    // A mastering display and a content light level at most.
+    const [first, second] = ops.map((op) => labelOf(op.path))
+    note.value = { text: t('params.hdr.copied', { first, second }, ops.length), failed: false }
   } catch (error) {
-    if (session !== editor.session) return
+    if (asked.value !== before) return
     note.value = {
       text: t('params.hdr.failed', { reason: (error as Error).message }),
       failed: true,
@@ -70,11 +85,14 @@ async function copy(): Promise<void> {
       outlined
       size="small"
       :loading="busy"
-      :disabled="passthrough"
+      :disabled="passthrough || inGroup"
+      :aria-describedby="inGroup ? noteId : undefined"
       data-action="copy-hdr"
       @click="copy"
     />
+    <p v-if="inGroup" :id="noteId" class="copy-hdr-metadata__note">{{ t('params.hdr.group') }}</p>
     <p
+      v-else
       class="copy-hdr-metadata__note"
       :class="{ 'copy-hdr-metadata__note--failed': note?.failed }"
       role="status"
