@@ -48,6 +48,15 @@ onScopeDispose(() => {
   preview.panelOpen = false
 })
 
+/** A focused picture wider than its stage scrolls with the arrow keys. */
+function scrollsSideways(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.dataset.field === 'stage' &&
+    target.scrollWidth > target.clientWidth
+  )
+}
+
 /** `←` / `→` step through the frames, except where the arrow keys already do something. */
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
@@ -55,7 +64,7 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
   const target = event.target
-  if (isTextField(target)) return
+  if (isTextField(target) || scrollsSideways(target)) return
   if (
     target instanceof Element &&
     target.closest('[data-crop-handle], [role="slider"], input[type="range"]') !== null

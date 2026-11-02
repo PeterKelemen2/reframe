@@ -3,6 +3,7 @@ import { computed, ref, shallowRef, watch } from 'vue'
 
 import { ApiError, apiQuiet, clientBaseUrl, unwrap } from '@/api/client'
 import type { FrameLink, Frames, JobSettings } from '@/api/types'
+import { useJobSource } from '@/components/summary/useJobSource'
 import { latestRequest } from '@/editor/latest'
 
 import { EDIT_DEBOUNCE, useEditorStore } from './editor'
@@ -48,6 +49,9 @@ export const usePreviewStore = defineStore('preview', () => {
 
   /** The file the frames are of: the editor's shown file; `null` when none is shown. */
   const sourceId = computed<string | null>(() => editor.target?.sourceId ?? null)
+  const { source } = useJobSource()
+  /** The shown file's probe found no video stream: no frame is asked for. */
+  const noVideo = computed(() => source.value !== null && (source.value.video ?? []).length === 0)
   /** Evenly spaced source frames (Settings → Preview's count), in timestamp order. */
   const strip = shallowRef<FrameLink[]>([])
   /** The answer's notes (how an HDR picture was mapped for display, frames left out). */
@@ -85,8 +89,9 @@ export const usePreviewStore = defineStore('preview', () => {
 
   let stripRequest: AbortController | null = null
   let seekRequest: AbortController | null = null
-  // A frame link expires after a few minutes. A failed image asks again once per frame shown,
-  // so a link that never loads cannot ask in a loop.
+  // A frame link expires after a few minutes. A failed image asks again once, and once more
+  // only after a new link of its frame has loaded: each answer signs fresh links, so keying by
+  // link would ask in a loop for one that never loads.
   const retried = new Set<string>()
 
   async function loadStrip(id: string): Promise<void> {
@@ -238,6 +243,14 @@ export const usePreviewStore = defineStore('preview', () => {
     },
   })
 
+  /** Renders the output frame again (it failed, or its link expired). */
+  function renderAgain(): void {
+    output.value = null
+    renderError.value = null
+    rendering.value = true
+    render.schedule(0)
+  }
+
   const needsOutput = computed(() => panelOpen.value && viewMode.value !== 'source')
   /** What the output frame depends on; `null` when none is wanted. */
   const renderKey = computed(() => {
@@ -276,39 +289,43 @@ export const usePreviewStore = defineStore('preview', () => {
   watch(renderKey, scheduleRender)
 
   watch(
-    [sourceId, () => settings.settings?.preview?.sample_frames],
-    ([id], [previous]) => {
-      if (id !== previous) forgetFile()
-      if (id !== null) void loadStrip(id)
+    [sourceId, () => settings.settings?.preview?.sample_frames, noVideo],
+    ([id, , none], [previous]) => {
+      if (id !== previous || none) forgetFile()
+      if (id !== null && !none) void loadStrip(id)
     },
     { immediate: true },
   )
 
-  /**
-   * An image of `frame` did not load. The first time per frame shown, its link is asked for
-   * again (it may have expired); returns `false` when it has been asked for already.
-   */
-  function imageFailed(frame: FrameLink): boolean {
+  // One strip answer gives every thumbnail: a failed strip is asked for once, not per image.
+  function retryKey(frame: FrameLink): string {
     const isSought =
       frame.kind === 'source' && index.value === null && sought.value?.key === frame.key
-    // One strip answer gives every thumbnail: a failed strip is asked for once, not per image.
-    const key = frame.kind === 'output' || isSought ? `${frame.kind}:${frame.key}` : 'strip'
+    return frame.kind === 'output' || isSought ? `${frame.kind}:${frame.key}` : 'strip'
+  }
+
+  /**
+   * An image of `frame` did not load. Its link is asked for again (it may have expired), once
+   * until a new link of it loads; returns `false` when it has been asked for already.
+   */
+  function imageFailed(frame: FrameLink): boolean {
+    const key = retryKey(frame)
     if (retried.has(key)) return false
     retried.add(key)
-    if (frame.kind === 'output') {
-      output.value = null
-      rendering.value = true
-      render.schedule(0)
-    } else if (isSought) {
-      void askFrame(frame.timestamp)
-    } else {
-      void reload()
-    }
+    if (frame.kind === 'output') renderAgain()
+    else if (key === 'strip') void reload()
+    else void askFrame(frame.timestamp)
     return true
+  }
+
+  /** An image of `frame` loaded: a later failure of it asks again. */
+  function imageLoaded(frame: FrameLink): void {
+    retried.delete(retryKey(frame))
   }
 
   return {
     sourceId,
+    noVideo,
     strip,
     notes,
     loading,
@@ -330,6 +347,8 @@ export const usePreviewStore = defineStore('preview', () => {
     step,
     seek,
     reload,
+    renderAgain,
     imageFailed,
+    imageLoaded,
   }
 })

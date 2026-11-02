@@ -131,4 +131,11 @@ describe('the before / after compare', () => {
     await wrapper.find('image').trigger('error')
     expect(wrapper.emitted('failed')).toEqual([[after], [before]])
   })
+
+  it.each(['split', 'side'])('reports an image that loaded (%s)', async (layout) => {
+    const wrapper = await compare({ geometry: null, layout })
+    await wrapper.find('img').trigger('load')
+    await wrapper.find('image').trigger('load')
+    expect(wrapper.emitted('loaded')).toEqual([[after], [before]])
+  })
 })

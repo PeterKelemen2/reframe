@@ -550,7 +550,71 @@ R1: 1 major, 3 minors; R2: 7 majors, 8 minors, 6 nits. The lead reproduced every
 
 ### Fix round — FA (preview panel)
 
-(Task FA writes this section.)
+Each test below failed before its fix (`frontend/src/…`); every one was mutation-checked.
+
+- **R2-7, arrows on a zoomed picture** (review item 2). The stage is a tab stop while zoomed
+  (`tabindex="0"`, `role="group"`, a focus ring; `-1` at *Fit*), so it keeps the focus while
+  the next frame renders. `PreviewPanel` leaves `←` / `→` to the browser when the focused
+  stage is wider than its box (`scrollWidth > clientWidth`): the arrows scroll it. A stage
+  that is only taller still steps, because `←` / `→` scroll nothing there. While "Rendering…"
+  shows, the stage has no picture, so `→` steps. Tests: `PreviewPanel.test.ts` "leaves the
+  arrow keys to a focused stage whose picture is wider than it", `FrameViewer.test.ts` "keeps
+  the focus on the zoomed stage while the next frame is rendered". Repro on the real server
+  (`hdr10-4k`, Output, 200 %), Chromium and Firefox, light and dark: 3× `→` scrolls (Chromium
+  0 → 120 px, Firefox 0 → 138 px), the frame stays "Frame 1 of 10" and the focus stays on the
+  stage. `↓` scrolls too. A frame change with the focus on the stage keeps the focus.
+- **R2-9, a file without video** (review item 3, the panel's part). The store's `noVideo`
+  (from the shown file's probe, `useJobSource`) asks for no strip and no output frame. A new
+  probe without video aborts the strip. The viewer says "This file has no video stream: there
+  are no frames to show.", without *Try again*, the seek field or the view and zoom buttons.
+  Tests: `preview.test.ts` "asks for no strip and no output frame for a file without video",
+  "drops the strip when a new probe of the file finds no video", `FrameViewer.test.ts` "says
+  that a file without video has no frames, and asks for none". Repro (`audio-only.mkv` made with
+  the pinned FFmpeg in the server's media root): no `preview/frames` or `preview/render`
+  request, no *Try again*, in both browsers and themes.
+- **R2-11, the split slider's focus ring**: an inset 3 px ring drawn by `::after` over the
+  whole frame (`:has(.split-compare__range:focus-visible)`), so `overflow: hidden` cannot cut
+  it. Not testable in jsdom (no layout). Checked in screenshots at 0 %, 40 % and 100 % in both
+  browsers and themes: the full ring shows on all four sides at each position.
+- **R2-14, live regions**: the position is `aria-live="polite"`, the seek note and the failed
+  render are alerts (`role="alert"`, PrimeVue's `Message`), and "Rendering…" and "Making the
+  frames…" are `role="status"`. Tests: `FrameViewer.test.ts` "announces the frame position and
+  the note of a seek without a picture", "announces that the output frame is on its way".
+- **R2-15, a failed render**: a `Message` with *Try again* (`preview.renderAgain()`, a new store
+  member), the same as the failed strip. Both *Try again* buttons first move the focus to the
+  stage, which holds the strip's states too. Without this the button goes away while the
+  request runs and the focus drops to the page (found in the browser). Tests:
+  `preview.test.ts` "renders again on request after a failure, and shows the new answer",
+  `FrameViewer.test.ts` "shows a failed render with its reason as an alert, and renders again
+  on Try again", and the strip's *Try again* test, which now checks the focus.
+- **R2-18**: with no file (and with no video), the view and zoom buttons are not shown. A
+  disabled `SelectButton` made its selected label unreadable in both themes. Test: "asks for a
+  file while none is shown, without the view and zoom buttons".
+- **R2-17**: `preview.sought` and `preview.seek.busy` removed.
+- **R1's suspicion, a second expiry**: not keyed by URL. Each answer signs fresh links
+  (`exp` changes every second), so "once per URL" would ask in a loop for an image that never
+  loads. Instead an image that loads (`preview.imageLoaded`, a new store member, called from
+  every `load`, and `SplitCompare`'s new `loaded` event) clears its frame's retry. So each
+  expiry asks again once, and a link that fails right after a new answer stops. Tests:
+  `preview.test.ts` "… again at a second expiry once a new link has loaded" (the strip, a seek
+  frame, the output frame), `FrameViewer.test.ts` "asks again for a frame whose image expired
+  after its new link had loaded", `SplitCompare.test.ts` "reports an image that loaded".
+- **Simplifications**: `SplitCompare` writes the source `<svg><image>` once (one pane with a
+  layout check; the output `<img>` stays in two places). The `FrameViewer` `output` alias is
+  removed.
+- **FD's report, the split with a copied video on `hdr10`**: no defect. On the real server,
+  `preview/render` with `video.passthrough: true` (after Colorspace BT.709 and tone mapping
+  were on) answers the source frame's key as the output frame
+  (`d96dd67522a6a09c-100-0eec55231fe336b9`, kind `output`, the note "The video is copied: the
+  output frames are the source picture."). The panel shows that PNG in both halves, with the
+  view box `0 0 320 180` and an identity transform (the crop store's geometry is `null` while
+  the video is copied). Screenshots of the split at 100 % (source only) and 0 % (output only),
+  with the divider's edges left out: Firefox 0 pixels differ. Chromium has 284 of 72,518
+  pixels that differ by at most 16 of 255 (`<img>` and SVG `<image>` are scaled differently).
+  The two halves look different only because the `hdr10` test pattern's left half (red,
+  green, orange) is not its right half (blue, magenta, cyan).
+- **Not built**: no other change of the stage's scroll position (a new frame starts at the
+  top left, because the stage is empty while the frame renders).
 
 ### Fix round — FB (crop store and Dimensions tab)
 

@@ -3,7 +3,7 @@ import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
 import Message from 'primevue/message'
 import SelectButton from 'primevue/selectbutton'
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { FrameLink } from '@/api/types'
@@ -43,7 +43,6 @@ function boxWidth(frame: FrameLink, zoom: Zoom, pictures = 1): string {
   return `${frame.width * zoom * pictures}px`
 }
 
-const output = computed(() => preview.output)
 const position = computed(() => {
   const frame = preview.current
   if (frame === null) return null
@@ -66,6 +65,16 @@ watch(
 
 function failed(frame: FrameLink): void {
   if (!preview.imageFailed(frame)) broken.value = frame.url
+}
+
+const hasFrames = computed(() => preview.sourceId !== null && !preview.noVideo)
+
+// The button goes away while the frames are made: the stage, where they show, takes the focus.
+const stage = useTemplateRef<HTMLElement>('stage')
+
+function retry(again: () => unknown): void {
+  stage.value?.focus()
+  void again()
 }
 
 const seekValue = ref<number | null>(null)
@@ -92,7 +101,7 @@ const notes = computed(() => [
 
 <template>
   <div class="frame-viewer">
-    <div class="frame-viewer__controls">
+    <div v-if="hasFrames" class="frame-viewer__controls">
       <SelectButton
         :model-value="preview.viewMode"
         :options="views"
@@ -120,29 +129,43 @@ const notes = computed(() => [
     <p v-if="preview.sourceId === null" class="frame-viewer__state" data-state="empty">
       {{ t('preview.empty') }}
     </p>
-    <p
-      v-else-if="preview.loading && preview.strip.length === 0"
-      class="frame-viewer__state"
-      data-state="loading"
-      aria-busy="true"
-    >
-      {{ t('preview.loading') }}
+    <p v-else-if="preview.noVideo" class="frame-viewer__state" data-state="no-video">
+      {{ t('preview.noVideo') }}
     </p>
-    <div v-else-if="preview.error !== null" class="frame-viewer__state" data-state="error">
-      <Message severity="error" :closable="false">
-        {{ t('preview.failed', { reason: preview.error }) }}
-      </Message>
-      <Button
-        :label="t('preview.retry')"
-        severity="secondary"
-        size="small"
-        data-action="retry"
-        @click="preview.reload()"
-      />
-    </div>
     <template v-else>
-      <div class="frame-viewer__stage" data-field="stage" :data-view="preview.viewMode">
-        <p v-if="preview.current === null" class="frame-viewer__state" data-state="no-frames">
+      <!-- A tab stop while zoomed (the arrow keys scroll it); it keeps the focus while the next
+           frame is on its way. -->
+      <div
+        ref="stage"
+        class="frame-viewer__stage"
+        role="group"
+        :aria-label="t('preview.stage')"
+        :tabindex="preview.zoom === 'fit' ? -1 : 0"
+        data-field="stage"
+        :data-view="preview.viewMode"
+      >
+        <p
+          v-if="preview.loading && preview.strip.length === 0"
+          class="frame-viewer__state"
+          role="status"
+          data-state="loading"
+          aria-busy="true"
+        >
+          {{ t('preview.loading') }}
+        </p>
+        <div v-else-if="preview.error !== null" class="frame-viewer__state" data-state="error">
+          <Message severity="error" :closable="false">
+            {{ t('preview.failed', { reason: preview.error }) }}
+          </Message>
+          <Button
+            :label="t('preview.retry')"
+            severity="secondary"
+            size="small"
+            data-action="retry"
+            @click="retry(preview.reload)"
+          />
+        </div>
+        <p v-else-if="preview.current === null" class="frame-viewer__state" data-state="no-frames">
           {{ t('preview.noFrames') }}
         </p>
         <p v-else-if="broken !== null" class="frame-viewer__state" data-state="image-failed">
@@ -162,6 +185,7 @@ const notes = computed(() => [
             :alt="t('preview.picture', { time: time(preview.current.timestamp) })"
             draggable="false"
             data-field="frame"
+            @load="preview.imageLoaded(preview.current)"
             @error="failed(preview.current)"
           />
           <div
@@ -174,16 +198,26 @@ const notes = computed(() => [
             <CropLoupe />
           </div>
         </div>
-        <p
+        <div
           v-else-if="preview.renderError !== null"
-          class="frame-viewer__state frame-viewer__state--error"
+          class="frame-viewer__state"
           data-state="render-failed"
         >
-          {{ t('preview.renderFailed', { reason: preview.renderError }) }}
-        </p>
+          <Message severity="error" :closable="false">
+            {{ t('preview.renderFailed', { reason: preview.renderError }) }}
+          </Message>
+          <Button
+            :label="t('preview.retry')"
+            severity="secondary"
+            size="small"
+            data-action="render-again"
+            @click="retry(preview.renderAgain)"
+          />
+        </div>
         <p
-          v-else-if="output === null"
+          v-else-if="preview.output === null"
           class="frame-viewer__state"
+          role="status"
           data-state="rendering"
           aria-busy="true"
         >
@@ -192,23 +226,32 @@ const notes = computed(() => [
         <img
           v-else-if="preview.viewMode === 'output'"
           class="frame-viewer__image"
-          :style="{ width: boxWidth(output, preview.zoom) }"
-          :src="output.url"
-          :alt="t('preview.outputPicture', { time: time(output.timestamp) })"
+          :style="{ width: boxWidth(preview.output, preview.zoom) }"
+          :src="preview.output.url"
+          :alt="t('preview.outputPicture', { time: time(preview.output.timestamp) })"
           data-field="output"
-          @error="failed(output)"
+          @load="preview.imageLoaded(preview.output)"
+          @error="failed(preview.output)"
         />
         <SplitCompare
           v-else
-          :style="{ width: boxWidth(output, preview.zoom, preview.viewMode === 'side' ? 2 : 1) }"
+          :style="{
+            width: boxWidth(preview.output, preview.zoom, preview.viewMode === 'side' ? 2 : 1),
+          }"
           :before="preview.current"
-          :after="output"
+          :after="preview.output"
           :geometry="crop.geometry?.geometry ?? null"
           :layout="preview.viewMode === 'side' ? 'side' : 'split'"
           @failed="failed"
+          @loaded="preview.imageLoaded"
         />
       </div>
-      <p v-if="position !== null" class="frame-viewer__position" data-field="position">
+      <p
+        v-if="position !== null"
+        class="frame-viewer__position"
+        aria-live="polite"
+        data-field="position"
+      >
         {{ position }}
       </p>
       <div
@@ -234,18 +277,14 @@ const notes = computed(() => [
             alt=""
             draggable="false"
             :style="{ aspectRatio: `${frame.width} / ${frame.height}` }"
+            @load="preview.imageLoaded(frame)"
             @error="failed(frame)"
           />
         </button>
       </div>
     </template>
 
-    <form
-      v-if="preview.sourceId !== null"
-      class="frame-viewer__seek"
-      data-field="seek"
-      @submit.prevent="seek"
-    >
+    <form v-if="hasFrames" class="frame-viewer__seek" data-field="seek" @submit.prevent="seek">
       <label :for="seekId">{{ t('preview.seek.label') }}</label>
       <InputNumber
         v-model="seekValue"
@@ -264,7 +303,12 @@ const notes = computed(() => [
         :loading="preview.seeking"
       />
     </form>
-    <p v-if="preview.seekNote !== null" class="frame-viewer__note" data-field="seek-note">
+    <p
+      v-if="preview.seekNote !== null"
+      class="frame-viewer__note"
+      role="alert"
+      data-field="seek-note"
+    >
       {{ preview.seekNote }}
     </p>
     <ul v-if="notes.length > 0" class="frame-viewer__notes" data-field="notes">
@@ -294,13 +338,14 @@ const notes = computed(() => [
   color: var(--rf-color-text-muted);
 }
 
-.frame-viewer__state--error {
-  color: var(--p-status-error-color);
-}
-
 .frame-viewer__stage {
   overflow: auto;
   max-height: 70vh;
+}
+
+.frame-viewer__stage:focus-visible {
+  outline: 2px solid var(--rf-color-primary);
+  outline-offset: 2px;
 }
 
 .frame-viewer__picture,

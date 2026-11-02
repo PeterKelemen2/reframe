@@ -2,10 +2,12 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { problem } from '@/api/testing/fakes'
+import type { MediaSource } from '@/api/types'
 import { frameLink, previewServer } from '@/components/preview/testing'
 import { mountShell } from '@/components/shell/testing'
 import { useEditorStore } from '@/stores/editor'
 import { usePreviewStore } from '@/stores/preview'
+import { useSourcesStore } from '@/stores/sources'
 
 import FrameViewer from './FrameViewer.vue'
 
@@ -16,10 +18,16 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-async function viewer(options: { open?: boolean; server?: ReturnType<typeof previewServer> } = {}) {
+async function viewer(
+  options: { open?: boolean; server?: ReturnType<typeof previewServer>; video?: false } = {},
+) {
   const server = options.server ?? previewServer()
   const { wrapper } = await mountShell(FrameViewer)
   mounted.push(wrapper)
+  if (options.video === false) {
+    const source = { video: [], audio: [{}] } as unknown as MediaSource
+    useSourcesStore().entries = [{ id: 'movie', path: '/media/movie.mka', source }]
+  }
   const preview = usePreviewStore()
   preview.panelOpen = true
   if (options.open !== false) {
@@ -30,13 +38,26 @@ async function viewer(options: { open?: boolean; server?: ReturnType<typeof prev
 }
 
 describe('the frame viewer', () => {
-  it('asks for a file while none is shown', async () => {
+  it('asks for a file while none is shown, without the view and zoom buttons', async () => {
     const { wrapper } = await viewer({ open: false })
     expect(wrapper.find('[data-state="empty"]').text()).toBe('Open a file to see its frames.')
     expect(wrapper.find('[data-field="seek"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="view-mode"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="zoom"]').exists()).toBe(false)
   })
 
-  it('shows a failed strip with its reason, and asks again on Try again', async () => {
+  it('says that a file without video has no frames, and asks for none', async () => {
+    const { wrapper, server } = await viewer({ video: false })
+    expect(wrapper.find('[data-state="no-video"]').text()).toBe(
+      'This file has no video stream: there are no frames to show.',
+    )
+    expect(server.count('POST /api/preview/frames')).toBe(0)
+    expect(wrapper.find('[data-action="retry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="seek"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="view-mode"]').exists()).toBe(false)
+  })
+
+  it('shows a failed strip with its reason, and asks again on Try again with the stage focused', async () => {
     const server = previewServer()
     server.on('POST /api/preview/frames', () => problem(422, 'preview.failed', 'No video'))
     const { wrapper } = await viewer({ server })
@@ -47,6 +68,7 @@ describe('the frame viewer', () => {
     await wrapper.find('[data-action="retry"]').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-field="thumb"]')).toHaveLength(10)
+    expect(document.activeElement).toBe(wrapper.find('[data-field="stage"]').element)
   })
 
   it('shows the strip, marks the current frame and shows a clicked one', async () => {
@@ -121,24 +143,73 @@ describe('the frame viewer', () => {
     expect(wrapper.find('.split-compare').attributes('style')).toContain('width: 1280px')
   })
 
-  it('shows a failed render with its reason', async () => {
+  it('shows a failed render with its reason as an alert, and renders again on Try again', async () => {
     const server = previewServer()
     server.on('POST /api/preview/render', () => problem(422, 'preview.failed', 'Bad filter'))
     const { wrapper, preview } = await viewer({ server })
     preview.viewMode = 'split'
     await flushPromises()
-    expect(wrapper.find('[data-state="render-failed"]').text()).toBe(
+    const state = wrapper.find('[data-state="render-failed"]')
+    expect(state.find('[role="alert"]').text()).toBe(
       'The output frame could not be made: Bad filter',
     )
+    previewServer()
+    await state.find('[data-action="render-again"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-state="render-failed"]').exists()).toBe(false)
+    expect(wrapper.find('.split-compare').exists()).toBe(true)
+    expect(document.activeElement).toBe(wrapper.find('[data-field="stage"]').element)
   })
 
-  it('shows that the output frame is on its way', async () => {
+  it('announces that the output frame is on its way', async () => {
     const server = previewServer()
     server.on('POST /api/preview/render', () => new Promise(() => {}))
     const { wrapper, preview } = await viewer({ server })
     preview.viewMode = 'output'
     await flushPromises()
+    expect(wrapper.find('[data-state="rendering"]').attributes('role')).toBe('status')
+  })
+
+  it('announces the frame position and the note of a seek without a picture', async () => {
+    const server = previewServer()
+    const { wrapper } = await viewer({ server })
+    expect(wrapper.find('[data-field="position"]').attributes('aria-live')).toBe('polite')
+    server.on('POST /api/preview/frames', { frames: [], notes: ['No picture at 99 s'] })
+    const input = wrapper.find('[data-field="seek"] input')
+    await input.setValue('99')
+    await input.trigger('blur')
+    await wrapper.find('[data-field="seek"]').trigger('submit')
+    await flushPromises()
+    const note = wrapper.find('[data-field="seek-note"]')
+    expect(note.text()).toBe('No picture at 99 s')
+    expect(note.attributes('role')).toBe('alert')
+  })
+
+  it('keeps the focus on the zoomed stage while the next frame is rendered', async () => {
+    const { wrapper, preview, server } = await viewer()
+    preview.viewMode = 'output'
+    preview.zoom = 2
+    await flushPromises()
+    server.on('POST /api/preview/render', () => new Promise(() => {}))
+    const stage = wrapper.find<HTMLElement>('[data-field="stage"]').element
+    stage.focus()
+    expect(document.activeElement).toBe(stage)
+    preview.select(3)
+    await flushPromises()
     expect(wrapper.find('[data-state="rendering"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(stage)
+  })
+
+  it('asks again for a frame whose image expired after its new link had loaded', async () => {
+    const { wrapper, server } = await viewer()
+    const image = () => wrapper.find('[data-field="frame"]')
+    await image().trigger('error')
+    await flushPromises()
+    await image().trigger('load')
+    await image().trigger('error')
+    await flushPromises()
+    expect(server.count('POST /api/preview/frames')).toBe(3)
+    expect(wrapper.find('[data-state="image-failed"]').exists()).toBe(false)
   })
 
   it('asks again for a frame whose image did not load, then shows that it failed', async () => {

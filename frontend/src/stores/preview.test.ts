@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import { type Deferred, deferred, FakeServer, problem } from '@/api/testing/fakes'
-import type { AppSettings, FrameLink, Frames } from '@/api/types'
+import type { AppSettings, FrameLink, Frames, MediaSource } from '@/api/types'
 import { sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 
 import { EDIT_DEBOUNCE, useEditorStore } from './editor'
 import { usePreviewStore } from './preview'
 import { useSettingsStore } from './settings'
+import { useSourcesStore } from './sources'
 
 interface FramesBody {
   source_id: string
@@ -177,6 +178,36 @@ describe('the preview store', () => {
       expect(preview.error).toBeNull()
       expect(preview.strip).toHaveLength(10)
       expect(preview.current?.timestamp).toBe(0.2)
+    })
+
+    it('asks for no strip and no output frame for a file without video', async () => {
+      const source = { video: [], audio: [{}] } as unknown as MediaSource
+      useSourcesStore().entries = [{ id: 'movie', path: '/media/movie.mka', source }]
+      const { preview } = await shown()
+      preview.panelOpen = true
+      preview.viewMode = 'split'
+      await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE)
+      expect(preview.noVideo).toBe(true)
+      expect(sent('/api/preview/frames')).toHaveLength(0)
+      expect(sent('/api/preview/render')).toHaveLength(0)
+      expect(preview.loading).toBe(false)
+      expect(preview.error).toBeNull()
+    })
+
+    it('drops the strip when a new probe of the file finds no video', async () => {
+      holdFrames = true
+      const sources = useSourcesStore()
+      sources.entries = [{ id: 'movie', path: '/media/movie.mkv', source: null }]
+      const { preview } = await shown()
+      expect(preview.loading).toBe(true)
+      const source = { video: [], audio: [{}] } as unknown as MediaSource
+      sources.entries = [{ id: 'movie', path: '/media/movie.mkv', source }]
+      await vi.advanceTimersByTimeAsync(0)
+      expect(
+        signals.find((request) => request.path === '/api/preview/frames')!.signal.aborted,
+      ).toBe(true)
+      expect(sent('/api/preview/frames')).toHaveLength(1)
+      expect(preview.loading).toBe(false)
     })
 
     it('keeps the HDR note of the answer', async () => {
@@ -395,6 +426,20 @@ describe('the preview store', () => {
       expect(preview.renderError).toBe('The job cannot be planned')
       expect(preview.rendering).toBe(false)
     })
+
+    it('renders again on request after a failure, and shows the new answer', async () => {
+      const { preview } = await rendering()
+      renders[0]!.resolve(problem(422, 'preview.failed', 'The job cannot be planned'))
+      await vi.advanceTimersByTimeAsync(0)
+      preview.renderAgain()
+      expect(preview.renderError).toBeNull()
+      expect(preview.rendering).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent('/api/preview/render')).toHaveLength(2)
+      renders[1]!.resolve(renderAnswer(sent('/api/preview/render')[1]!.body as RenderBody))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(preview.output?.kind).toBe('output')
+    })
   })
 
   describe('a frame image that did not load', () => {
@@ -411,6 +456,28 @@ describe('the preview store', () => {
       expect(preview.imageFailed(preview.strip[1]!)).toBe(true)
       await vi.advanceTimersByTimeAsync(0)
       expect(sent('/api/preview/frames')).toHaveLength(3)
+    })
+
+    it('asks for the strip again at a second expiry once a new link has loaded', async () => {
+      const { preview } = await shown()
+      expect(preview.imageFailed(preview.strip[3]!)).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      preview.imageLoaded(preview.strip[3]!)
+      expect(preview.imageFailed(preview.strip[3]!)).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent('/api/preview/frames')).toHaveLength(3)
+    })
+
+    it('asks for the frame of a seek again at a second expiry once a new link has loaded', async () => {
+      const { preview } = await shown()
+      await preview.seek(2.5)
+      expect(preview.imageFailed(preview.current!)).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(preview.imageFailed(preview.current!)).toBe(false)
+      preview.imageLoaded(preview.current!)
+      expect(preview.imageFailed(preview.current!)).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent('/api/preview/frames')).toHaveLength(4)
     })
 
     it('asks for the frame of a seek again', async () => {
@@ -435,6 +502,23 @@ describe('the preview store', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(sent('/api/preview/render')).toHaveLength(2)
       expect(preview.imageFailed(broken)).toBe(false)
+    })
+
+    it('renders the output frame again at a second expiry once a new link has loaded', async () => {
+      const { preview } = await shown()
+      preview.panelOpen = true
+      preview.viewMode = 'output'
+      await vi.advanceTimersByTimeAsync(0)
+      renders[0]!.resolve(renderAnswer(sent('/api/preview/render')[0]!.body as RenderBody))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(preview.imageFailed(preview.output!)).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      renders[1]!.resolve(renderAnswer(sent('/api/preview/render')[1]!.body as RenderBody))
+      await vi.advanceTimersByTimeAsync(0)
+      preview.imageLoaded(preview.output!)
+      expect(preview.imageFailed(preview.output!)).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent('/api/preview/render')).toHaveLength(3)
     })
   })
 })
