@@ -27,6 +27,7 @@ def movie(cli_env: ft.FakeTools, tmp_path: Path) -> Path:
         update={"id": "u-custom", "name": CUSTOM, "category": "Custom", "built_in": False},
         deep=True,
     )
+    preset.video.advanced = {}
     preset.video.custom_params = "aq-mode=3:psy-rd=2.0"
     folder = tmp_path / "config"
     folder.mkdir(parents=True)
@@ -121,7 +122,7 @@ def test_needs_dry_run() -> None:
     job.video.passthrough = True
     assert not needs_dry_run(job)
     job.video.passthrough = False
-    builtin = next(p for p in builtin_presets() if p.id == "h265-mkv-1080p")
+    builtin = next(p for p in builtin_presets() if p.id == "av1-mkv-2160p-4k")
     job.video.encoder = builtin.video.encoder
     job.video.custom_params = builtin.video.custom_params
     assert not needs_dry_run(job, builtin)

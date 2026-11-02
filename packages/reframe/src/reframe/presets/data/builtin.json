@@ -332,7 +332,10 @@
         "preset": "veryslow",
         "profile": "high",
         "level": "4.0",
-        "custom_params": "ref=5:bframes=5",
+        "advanced": {
+          "ref": 5,
+          "bframes": 5
+        },
         "framerate_mode": "peak",
         "framerate": {
           "num": 30,
@@ -420,7 +423,16 @@
         "preset": "faster",
         "profile": "main10",
         "bit_depth": 10,
-        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "advanced": {
+          "strong-intra-smoothing": false,
+          "rect": false,
+          "aq-mode": "1",
+          "rd": 4,
+          "psy-rd": 0.75,
+          "psy-rdoq": 4.0,
+          "rdoq-level": "1",
+          "rskip": "2"
+        },
         "framerate_mode": "peak",
         "framerate": {
           "num": 60,
@@ -484,7 +496,13 @@
         "preset": "medium",
         "profile": "high",
         "level": "4.2",
-        "custom_params": "keyint=30:min-keyint=15:ref=1:bframes=2:b-pyramid=none",
+        "advanced": {
+          "keyint": 30,
+          "min-keyint": 15,
+          "ref": 1,
+          "bframes": 2,
+          "b-pyramid": "none"
+        },
         "framerate_mode": "peak",
         "framerate": {
           "num": 60,
@@ -553,7 +571,14 @@
         "preset": "medium",
         "profile": "high",
         "level": "3.2",
-        "custom_params": "qcomp=0.5:aq-mode=2:aq-strength=0.8:bframes=2:b-adapt=2:b-pyramid=0",
+        "advanced": {
+          "qcomp": 0.5,
+          "aq-mode": "2",
+          "aq-strength": 0.8,
+          "bframes": 2,
+          "b-adapt": "2",
+          "b-pyramid": "none"
+        },
         "framerate_mode": "peak",
         "framerate": {
           "num": 60,
@@ -863,7 +888,16 @@
         "preset": "slow",
         "profile": "main10",
         "bit_depth": 10,
-        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "advanced": {
+          "strong-intra-smoothing": false,
+          "rect": false,
+          "aq-mode": "1",
+          "rd": 4,
+          "psy-rd": 0.75,
+          "psy-rdoq": 4.0,
+          "rdoq-level": "1",
+          "rskip": "2"
+        },
         "framerate_mode": "variable"
       },
       "audio_defaults": {
@@ -928,7 +962,16 @@
         "preset": "slow",
         "profile": "main10",
         "bit_depth": 10,
-        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "advanced": {
+          "strong-intra-smoothing": false,
+          "rect": false,
+          "aq-mode": "1",
+          "rd": 4,
+          "psy-rd": 0.75,
+          "psy-rdoq": 4.0,
+          "rdoq-level": "1",
+          "rskip": "2"
+        },
         "framerate_mode": "variable"
       },
       "audio_defaults": {
@@ -993,7 +1036,16 @@
         "preset": "slow",
         "profile": "main10",
         "bit_depth": 10,
-        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "advanced": {
+          "strong-intra-smoothing": false,
+          "rect": false,
+          "aq-mode": "1",
+          "rd": 4,
+          "psy-rd": 0.75,
+          "psy-rdoq": 4.0,
+          "rdoq-level": "1",
+          "rskip": "2"
+        },
         "framerate_mode": "variable"
       },
       "audio_defaults": {
@@ -1122,7 +1174,15 @@
         "preset": "4",
         "tune": "1",
         "bit_depth": 10,
-        "custom_params": "enable-variance-boost=1:enable-qm=1:ac-bias=1:tf-strength=1:qp-scale-compress-strength=1:sharpness=1:keyint=10s",
+        "advanced": {
+          "enable-variance-boost": true,
+          "enable-qm": true,
+          "ac-bias": 1.0,
+          "tf-strength": 1,
+          "qp-scale-compress-strength": 1,
+          "sharpness": 1
+        },
+        "custom_params": "keyint=10s",
         "framerate_mode": "variable"
       },
       "audio_defaults": {
@@ -1632,7 +1692,18 @@
         },
         "preset": "fast",
         "profile": "high",
-        "custom_params": "keyint=12:min-keyint=1:ref=1:bframes=0:qcomp=0.8:aq-strength=0.5:dct-decimate=0:fast-pskip=0:deblock=-2,-2",
+        "advanced": {
+          "keyint": 12,
+          "min-keyint": 1,
+          "ref": 1,
+          "bframes": 0,
+          "qcomp": 0.8,
+          "aq-strength": 0.5,
+          "dct-decimate": false,
+          "fast-pskip": false,
+          "deblock-alpha": -2,
+          "deblock-beta": -2
+        },
         "framerate_mode": "constant"
       },
       "audio_defaults": {
@@ -1690,7 +1761,14 @@
         },
         "preset": "superfast",
         "profile": "high",
-        "custom_params": "keyint=1:min-keyint=1:ref=1:bframes=0:qcomp=0.8:aq-strength=0.5",
+        "advanced": {
+          "keyint": 1,
+          "min-keyint": 1,
+          "ref": 1,
+          "bframes": 0,
+          "qcomp": 0.8,
+          "aq-strength": 0.5
+        },
         "framerate_mode": "constant"
       },
       "audio_defaults": {

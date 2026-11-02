@@ -91,7 +91,11 @@ async def test_copy_hdr_metadata_fills_master_display_and_max_cll(
         ]
         patched = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), patch))
         master, cll = _fixture_hdr10()
-        assert patched.video.advanced == {"master-display": master, "max-cll": cll}
+        assert patched.video.advanced == {
+            **job.video.advanced,
+            "master-display": master,
+            "max-cll": cll,
+        }
 
         ffmpeg = media.find_ffmpeg()
         assert ffmpeg is not None
