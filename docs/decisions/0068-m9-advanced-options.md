@@ -282,4 +282,59 @@ filled (a transition). Confirmed fixed: the reveal's focus (96b456c).
 
 ### Fix round — FC (core: built-in presets, the override issue, HDR notes)
 
-(FC writes this section.)
+R1-B2 = R2-B1 (decisions 10, 11) and R1-M2 (decision 13), in `packages/reframe` only.
+
+- **The built-in presets (decision 10)**: every entry of the ten presets' custom parameters whose
+  key is the CLI name of an option of the preset's encoder moved into `video.advanced`, in the
+  option's type: x264 *Super HQ*, *Creator*, *Social 25 MB*, *Production Standard* and *Proxy*;
+  x265 *Fast 2160p60 4K HEVC* and the three *H.265 MKV* presets; SVT-AV1 *AV1 MKV 2160p60 4K*.
+  x264 `deblock=-2,-2` is the two parts `deblock-alpha: -2`, `deblock-beta: -2`; HandBrake's
+  `b-pyramid=0` is the choice `none` (x264 takes a choice's name or its index: both write
+  `b_pyramid=0`). Only SVT-AV1 `keyint=10s` stays a custom parameter: the option is a number of
+  frames. The default preset now shows its eight x265 options as changed (Psycho-visual 2,
+  Motion / analysis 4, Rate control 1, Loop filters 1).
+- **The command is the same.** Against a real server (pinned FFmpeg n9.0.2, `hdr10` and
+  `multitrack`, every built-in preset, all runs of a 2-pass job; `jobs/plan` before and after,
+  the params argument parsed key → value, the last value winning): 42 of 52 plans are identical;
+  the other ten differ only in the text of one value with the same meaning: `psy-rdoq` `4.0` → `4`
+  (the four x265 presets) and `b-pyramid` `0` → `none` (*Social 25 MB*, both runs). A test
+  encodes every x264 and x265 built-in with its options and with HandBrake's original string as
+  custom parameters and compares the stream's settings SEI: the same; for SVT-AV1 (no such SEI)
+  the params argument is the same key by key (`tests/presets/test_builtin.py`).
+- **The override issue (decision 11)**: `encoder.custom_param_overrides` at
+  `video.advanced.<key>`, a `warning` naming the value set in the panel when the option is in
+  `video.advanced`, `info` otherwise; the message names the custom parameter and its value ("The
+  custom parameter psy-rd=1.0 sets Psy-RD strength (psy-rd): x265 uses it, not the 1.3 set
+  here."), and its fix removes that entry. A parameter sets an option when it names the option's
+  CLI name as the encoder reads it: in a params argument (x264, x265, SVT-AV1) the forms of
+  `library_key_forms` (`psy_rd`, `no-rect`); for the other encoders the private option's name or
+  the generic option's argument (`bf` → `-bf`). A two-part value sets both parts; of two entries
+  for one option the last one is named. It runs for jobs and templates. It is not one of the
+  custom-parameter refusals that stop the dry run (`video_custom_param_issues`), so a job with it
+  still dry-runs. The real tools' order (the custom parameters come last and win, with and
+  without a params argument) is in testdata/README.md "Custom parameters over advanced options".
+- **The HDR notes (decision 13)**: the `encoder` default of x265 `master-display` / `max-cll` and
+  SVT-AV1 `mastering-display` / `content-light` reads "Reframe writes the source's metadata";
+  the panel's placeholder is "the encoder decides (Reframe writes the source's metadata)" (a
+  longer note was cut off in the field at 1920 px). A test checks that every option that the
+  builder fills from an HDR source says "the source's" in its default.
+- **No schema bump**: an issue code is free text (`ValidationIssue.code: str`), and issues are
+  derived data (the queue validates again); the severities are the existing ones. The built-in
+  presets are read-only package data, not a persisted document; `advanced` and `custom_params`
+  are fields of schema 1, and no `Literal` or enum gets a value. A user preset saved from an old
+  built-in keeps its custom parameters as they are (they are the user's) and now shows the info
+  at each row.
+- **Tests changed with the data**: the anime-season preset document is written again from its
+  derivation (`tests/batch/anime.py`); `needs_dry_run`'s test uses the SVT-AV1 preset (the only
+  built-in with custom parameters); the custom x265 preset of the CLI tests clears its options;
+  the dry run's x264 `vbv-maxrate=1000` case now also gets the info.
+- **Checked in the panel** (headless Chromium and Firefox, light and dark, `hdr10`): psy-rd is
+  changed with ↺ and "default: 2 (preset Slow)"; psy-rd 1.25 set in the panel reaches the command
+  (`…:psy-rd=1.25:…`, once); a custom `psy-rd=1.0` puts the warning under psy-rd, and after ↺ the
+  info; NVENC: `rc-lookahead=20:bf=2` gives the warning at *Look-ahead* (preset value 10) and the
+  info at *B-frames*. psy-rd 0.75 shows as `0.8` until FA's decimals fix (R1-M1).
+- **For the others**: `CopyHdrMetadata.server.test.ts` (FB's) expects the default preset's job
+  to have no options (two tests fail: the preset's eight options are there, and `aq-mode: "1"`
+  survives the switch to SVT-AV1, which has the option). Switching the default preset to another
+  encoder now keeps the options that fit the new one (the custom parameters were cleared).
+- **Not built**: a migration of user presets; a fix that moves a custom parameter into the panel.
