@@ -58,6 +58,14 @@ describe('the Preview section', () => {
     expect(useSettingsStore().settings?.preview).toEqual({ sample_frames: 5, cache_size_mb: 256 })
   })
 
+  it('saves a number once when Tab and the blur after it both send it', async () => {
+    const { input, server } = await mountPreview()
+    input('sample-frames').vm.$emit('update:modelValue', 25)
+    input('sample-frames').vm.$emit('update:modelValue', 25)
+    await flushPromises()
+    expect(server.patches).toEqual([[{ op: 'replace', path: '/preview/sample_frames', value: 25 }]])
+  })
+
   it('keeps the saved number when a field is emptied', async () => {
     const { input, server } = await mountPreview()
     input('sample-frames').vm.$emit('update:modelValue', null)
