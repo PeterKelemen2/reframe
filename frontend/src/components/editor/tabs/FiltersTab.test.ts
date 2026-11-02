@@ -272,6 +272,30 @@ describe('the Filters tab', () => {
     expect(control(wrapper, 'filters.denoise', ToggleSwitch).prop('disabled')).toBe(true)
     expect(control(wrapper, 'filters.denoise.preset', Select).prop('disabled')).toBe(true)
   })
+
+  it('keeps every row reachable by the keyboard for its help while the controls are off', async () => {
+    const { wrapper } = await mountTab({ passthrough: true })
+    const rows = wrapper.findAll('[data-filter]')
+    expect(rows.map((row) => row.attributes('tabindex'))).toEqual(rows.map(() => '0'))
+    ;(wrapper.find('[data-filter="sharpen"]').element as HTMLElement).focus()
+    await flushPromises()
+    expect(wrapper.find('[data-help]').attributes('data-help')).toBe('sharpen')
+  })
+
+  it('leaves the rows out of the tab order while their controls work', async () => {
+    const { wrapper } = await mountTab()
+    expect(wrapper.find('[data-filter="sharpen"]').attributes('tabindex')).toBeUndefined()
+  })
+
+  it('turns every control off for a file without video, and says so', async () => {
+    const { wrapper } = await mountTab({ source: { ...multitrackSource(), video: [] } })
+    expect(wrapper.find('[data-note="no-video"]').text()).toBe(
+      'This file has no video: the filters do not apply.',
+    )
+    expect(wrapper.find('[data-note="passthrough"]').exists()).toBe(false)
+    expect(control(wrapper, 'filters.denoise', ToggleSwitch).prop('disabled')).toBe(true)
+    expect(text(wrapper, '.colour-box__empty')).toBe('This file has no video.')
+  })
 })
 
 describe('the source colour box', () => {
@@ -316,6 +340,35 @@ describe('the source colour box', () => {
     )
     editor.undo()
     expect(editor.job?.filters?.tonemap).toBeUndefined()
+  })
+
+  it('moves the focus to the sentence when the fix button it pressed goes away', async () => {
+    const { wrapper } = await mountTab({
+      source: hdr10Source(),
+      filters: { colorspace: { preset: 'bt709' } },
+    })
+    useValidationStore().issues = [washedOut]
+    await flushPromises()
+    const fix = wrapper.find('[data-colour-sentence] [data-action="fix"]')
+    ;(fix.element as HTMLElement).focus()
+    await fix.trigger('click')
+    useValidationStore().issues = []
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.find('[data-colour-sentence]').element)
+  })
+
+  it('says plainly that an untagged source keeps its colours', async () => {
+    const { wrapper } = await mountTab({ source: multitrackSource() })
+    expect(text(wrapper, '[data-colour-sentence]')).toBe(
+      "Off: the output keeps the source's colours.",
+    )
+  })
+
+  it('says the colours are not known before the file is probed', async () => {
+    const { wrapper } = await mountTab()
+    expect(text(wrapper, '.colour-box__empty')).toBe(
+      "The source's colours are known once the file is probed.",
+    )
   })
 
   it('offers no fix while the server does not ask for tone mapping', async () => {

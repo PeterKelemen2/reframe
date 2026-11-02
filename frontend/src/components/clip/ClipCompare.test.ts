@@ -2,10 +2,12 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { problem, type FakeServer } from '@/api/testing/fakes'
-import type { FrameLink, Frames, PreviewClip } from '@/api/types'
+import type { FrameLink, Frames, JobSettings, PreviewClip } from '@/api/types'
+import { geometryOf, LETTERBOX } from '@/components/dimensions/testing'
 import SplitCompare from '@/components/media/SplitCompare.vue'
 import { frameLink, previewServer } from '@/components/preview/testing'
 import { mountShell } from '@/components/shell/testing'
+import { sampleJob } from '@/editor/testing/samples'
 
 import ClipCompare from './ClipCompare.vue'
 
@@ -40,12 +42,25 @@ function clipFrames(server: FakeServer, id = 'clip-1', leaveOut: number[] = []):
   })
 }
 
+const BARS = { top: 22, bottom: 24, left: 0, right: 0 }
+
+/** The job the clip was made from: the letterbox bars cropped. */
+function madeFrom(): JobSettings {
+  const job = sampleJob()
+  job.dimensions = { ...job.dimensions!, crop: { mode: 'auto', rect: BARS } }
+  return job
+}
+
 async function compare(setup?: (server: FakeServer) => void) {
   const server = previewServer()
   clipFrames(server)
+  server.on('POST /api/jobs/geometry', (request) => {
+    const { job } = request.body as { job: JobSettings }
+    return geometryOf(LETTERBOX, { crop: job.dimensions?.crop?.rect ?? undefined })
+  })
   setup?.(server)
   const { wrapper } = await mountShell(ClipCompare, {
-    props: { clip: CLIP, sourceId: 'movie' },
+    props: { clip: CLIP, sourceId: 'movie', job: madeFrom() },
   })
   mounted.push(wrapper)
   await flushPromises()
@@ -70,6 +85,13 @@ describe('the frame compare of a clip', () => {
     expect(split().props('before').url).toBe('http://server/frames/movie-500-source.png')
     expect(split().props('after').url).toBe('http://server/frames/clip-300.png')
     expect(wrapper.find('[data-field="compare-position"]').text()).toBe('Frame 1 of 5 · 0.5 s')
+  })
+
+  it('crops the source frames as the job the clip was made from says', async () => {
+    const { server, split } = await compare()
+    expect(server.count('POST /api/jobs/geometry')).toBe(1)
+    expect(bodyOf(server, '/api/jobs/geometry')).toEqual({ job: madeFrom() })
+    expect(split().props('geometry')).toMatchObject({ crop: BARS })
   })
 
   it('steps through the times, round from the last to the first', async () => {

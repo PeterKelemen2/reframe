@@ -562,5 +562,48 @@ R1: 1 major, 3 minors; R2: 7 majors, 8 minors, 6 nits. The lead reproduced every
 
 ### Fix round — FD (filters, clip, Settings → Preview)
 
-(Task FD writes this section.)
+`claude-opus-5-5`, 2026-11-02. Each fix has a unit test that failed before it (the failing runs
+are in the scratchpad `fix-fd/filters-before.txt`, `clip-before.txt`); 14 mutations, each caught.
+
+- **R2-3** (focus after *Enable tone mapping*): the fix button moves the focus to the colour
+  box's sentence (`tabindex="-1"`) before it applies the fix, and scrolls it into view once the
+  fix has opened Tone mapping's settings above the box. The sentence stays and says what changed
+  ("… SDR, with tone mapping."). Chosen over Tone mapping's toggle: the fix is the server's and
+  can change anything, the sentence always shows its result.
+- **R2-12, R2-9** (review item 3): a file without video (the source is probed and has no video
+  stream, read with `useJobSource`) turns the controls off like passthrough, with its own note
+  ("This file has no video: the filters do not apply."); the colour box says "This file has no
+  video." and keeps "known once the file is probed" for a file not probed yet. While the controls
+  are off, each row takes the focus itself (`tabindex="0"`, a group named by the filter), so Tab
+  goes from row to row and the help follows.
+- **R2-13** (review item 4): *Encode preview* waits while the job is in automatic or
+  conservative crop without a rectangle and the crop store's `detecting` is true (the hint says
+  "Waiting for crop detection, so that the clip is cropped…"; *Cancel* ends the wait and nothing
+  is sent), then sends the job as it is then. The clip keeps that job; `ClipCompare` asks
+  `POST /api/jobs/geometry` once per clip for it, next to its two frame requests, and gives that
+  geometry to `SplitCompare` (it no longer reads the crop store).
+- **R2-21**: Tab and the blur after it both send the value before the first save is answered,
+  so each number field remembers the value it is saving and does not send it again.
+- **R2-19**: an untagged source with Colorspace off says "Off: the output keeps the source's
+  colours." **R2-20**: the implementation, preset, tune and parameter fields of a filter are
+  stacked (label above the control, as in the track rows), so the chosen value has the row's
+  width ("zscale + tonemap" fits, 310 px at 1600 px). **R2-17**: `filters.help.label` removed.
+
+Checked headless on the real server (`scripts/dev-server.py`, port 8740, pinned FFmpeg, the four
+fixtures and an `audio-only.mkv` made in its media root), Chromium and Firefox, light and dark,
+scripts in the scratchpad `fix-fd/`: on `hdr10`, Colorspace BT.709 by keyboard, Enter on the
+fix: the focus is on the sentence, no fix button is left, the job has `tonemap`, and the split's
+output frame goes from mean RGB 132 / 210 / 51 (Firefox 136 / 212 / 55) to 116 / 99 / 125
+(117 / 101 / 125), the mapped frame. In passthrough, Tab from the tab panel reaches all 11 rows
+and each shows its help. `audio-only.mkv`: the note, the colour box's sentence, 11 of 11 toggles
+off. On `letterbox`, *Encode preview* clicked as soon as the strip shows: the hint shows, the job
+had `rect: null`, the one clip sent has `22 / 24 / 0 / 0`, it is not out of date; after the crop
+is set to none, the compare still shows the clip's 320×134 frame against the source cropped to
+`0 0 320 134`. Typing 25 in the sample count and Tab: one `PUT /api/settings` (set back to 10).
+
+Not built: a focus target in another filter's row; a shorter selected value for an
+implementation with a status (the stacked field shows it whole where it fits); a group case (in a
+group nothing writes the crop, so the clip waits for the detection and is then sent without it).
+Noticed, not looked into (the panel is FA's): in passthrough on `hdr10` the split's output half
+still differs from its source half (`fix-fd/shots/filters-passthrough-*.png`).
 

@@ -3,6 +3,7 @@
   "noJob": "No job is open.",
   "list": "Filters, in the order they are applied",
   "passthrough": "Video passthrough copies the video stream unchanged: the filters do not apply.",
+  "noVideo": "This file has no video: the filters do not apply.",
   "field": {
     "implementation": "Implementation",
     "preset": "Preset",
@@ -25,7 +26,6 @@
     "accepted": "FFmpeg accepts it (one-frame test)."
   },
   "help": {
-    "label": "Help: {filter}",
     "what": "What it does",
     "useWhen": "Use it when",
     "avoidWhen": "Avoid when",
@@ -60,8 +60,10 @@
     "luminanceValue": "{min}–{max} cd/m²",
     "contentLightValue": "{cll} / {fall} cd/m²",
     "noSource": "The source's colours are known once the file is probed.",
+    "noVideo": "This file has no video.",
     "untagged": "the untagged source colours",
     "keep": "Off: the output keeps the source's colours ({from}).",
+    "keepUntagged": "Off: the output keeps the source's colours.",
     "tonemapOnly": "Tone mapping converts {from} to BT.709 SDR.",
     "custom": "Converts {from} with your parameters.",
     "convert": "Converts {from} to {to}.",

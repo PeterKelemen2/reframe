@@ -9,7 +9,7 @@ import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
 import { formatBytes } from '@/components/summary/format'
 
-import { useSetting, useSettingsLocked } from './useSetting'
+import { type SettingControl, useSetting, useSettingsLocked } from './useSetting'
 
 const { t } = useI18n()
 const locked = useSettingsLocked()
@@ -45,10 +45,19 @@ async function clearCache(): Promise<void> {
 
 onMounted(readSize)
 
-// An emptied field keeps the saved number.
-function saveNumber(control: typeof sampleFrames, value: number | null): void {
-  if (value !== null && value !== control.value.value) void control.save(value)
+// An emptied field keeps the saved number. Tab sends the value and the blur right after it sends
+// it again, before the first save has been answered.
+function numberSaver(control: SettingControl<number>): (value: number | null) => Promise<void> {
+  let saving: number | null = null
+  return async (value) => {
+    if (value === null || value === control.value.value || value === saving) return
+    saving = value
+    await control.save(value)
+    if (saving === value) saving = null
+  }
 }
+const saveSampleFrames = numberSaver(sampleFrames)
+const saveCacheLimit = numberSaver(cacheLimit)
 </script>
 
 <template>
@@ -71,7 +80,7 @@ function saveNumber(control: typeof sampleFrames, value: number | null): void {
             :invalid="invalid"
             :disabled="locked"
             data-field="sample-frames"
-            @update:model-value="saveNumber(sampleFrames, $event)"
+            @update:model-value="saveSampleFrames"
           />
         </template>
       </Field>
@@ -91,7 +100,7 @@ function saveNumber(control: typeof sampleFrames, value: number | null): void {
             :invalid="invalid"
             :disabled="locked"
             data-field="cache-limit"
-            @update:model-value="saveNumber(cacheLimit, $event)"
+            @update:model-value="saveCacheLimit"
           />
         </template>
       </Field>

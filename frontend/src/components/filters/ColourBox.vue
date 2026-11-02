@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
-import { computed, useId } from 'vue'
+import { computed, nextTick, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { FilterDef } from '@/api/types'
+import type { Fix, FilterDef } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import { colourName, hdrNames } from '@/components/summary/format'
 import { useJobSource } from '@/components/summary/useJobSource'
@@ -23,6 +23,7 @@ const system = useSystemStore()
 const validation = useValidationStore()
 const { source } = useJobSource()
 const headingId = useId()
+const sentenceEl = useTemplateRef<HTMLElement>('sentenceEl')
 
 const stream = computed(() => source.value?.video?.[0] ?? null)
 
@@ -111,7 +112,9 @@ const sentence = computed(() => {
   const outcome = colourOutcome(video, filters, preset?.custom === true)
   switch (outcome.kind) {
     case 'keep':
-      return t('filters.colour.keep', { from })
+      return sourceColour(video) === null
+        ? t('filters.colour.keepUntagged')
+        : t('filters.colour.keep', { from })
     case 'tonemapOnly':
       return t('filters.colour.tonemapOnly', { from })
     case 'custom':
@@ -130,12 +133,23 @@ const washedOut = computed(
       .issuesFor('filters.colorspace')
       .find((issue) => issue.code === 'filter.hdr_without_tonemap') ?? null,
 )
+
+// The fix button goes once the server agrees; the sentence stays and says what changed.
+async function applyFix(fix: Fix): Promise<void> {
+  sentenceEl.value?.focus()
+  await editor.applyFix(fix)
+  // Settings that the fix turns on open above the box and push the sentence down.
+  await nextTick()
+  sentenceEl.value?.scrollIntoView?.({ block: 'nearest' })
+}
 </script>
 
 <template>
   <section class="colour-box" :aria-labelledby="headingId" data-box="source-colour">
     <h4 :id="headingId" class="colour-box__title">{{ t('filters.colour.title') }}</h4>
-    <p v-if="stream === null" class="colour-box__empty">{{ t('filters.colour.noSource') }}</p>
+    <p v-if="stream === null" class="colour-box__empty">
+      {{ source === null ? t('filters.colour.noSource') : t('filters.colour.noVideo') }}
+    </p>
     <template v-else>
       <dl class="rf-kv-list colour-box__values">
         <KeyValue
@@ -146,7 +160,7 @@ const washedOut = computed(
           :data-colour="row.key"
         />
       </dl>
-      <p class="colour-box__sentence" data-colour-sentence>
+      <p ref="sentenceEl" class="colour-box__sentence" tabindex="-1" data-colour-sentence>
         <span data-sentence>{{ sentence }}</span>
         <template v-if="washedOut !== null">
           <!-- The space keeps the two sentences apart for a screen reader. -->
@@ -162,7 +176,7 @@ const washedOut = computed(
             size="small"
             :disabled="disabled"
             data-action="fix"
-            @click="editor.applyFix(fix)"
+            @click="applyFix(fix)"
           />
         </template>
       </p>
