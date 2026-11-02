@@ -2,16 +2,69 @@
 import { PanelRightClose, PanelRightOpen } from '@lucide/vue'
 import Button from 'primevue/button'
 import vTooltip from 'primevue/tooltip'
-import { useId } from 'vue'
+import { onScopeDispose, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import PreviewClip from '@/components/clip/PreviewClip.vue'
+import type { EditorTabId } from '@/components/editor/tabs/registry'
 import FrameViewer from '@/components/media/FrameViewer.vue'
+import { isTextField } from '@/editor/focus'
+import { usePreviewStore, type ViewMode } from '@/stores/preview'
+import { useUiStore } from '@/stores/ui'
 
 const collapsed = defineModel<boolean>('collapsed', { required: true })
 
 const { t } = useI18n()
 const contentId = useId()
+const preview = usePreviewStore()
+const ui = useUiStore()
+
+/** The view a tab shows; on the other tabs the panel shows the view the user chose. */
+const TAB_VIEWS: Partial<Record<EditorTabId, ViewMode>> = { dimensions: 'source', filters: 'split' }
+const chosen = ref<ViewMode>(preview.viewMode)
+
+watch(
+  () => preview.viewMode,
+  (mode) => {
+    if (TAB_VIEWS[ui.activeTab] === undefined) chosen.value = mode
+  },
+)
+watch(
+  () => ui.activeTab,
+  (tab) => {
+    preview.viewMode = TAB_VIEWS[tab] ?? chosen.value
+  },
+  { immediate: true },
+)
+
+watch(
+  collapsed,
+  (hidden) => {
+    preview.panelOpen = !hidden
+  },
+  { immediate: true },
+)
+onScopeDispose(() => {
+  preview.panelOpen = false
+})
+
+/** `←` / `→` step through the frames, except where the arrow keys already do something. */
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    return
+  }
+  const target = event.target
+  if (isTextField(target)) return
+  if (
+    target instanceof Element &&
+    target.closest('[data-crop-handle], [role="slider"], input[type="range"]') !== null
+  ) {
+    return
+  }
+  event.preventDefault()
+  preview.step(event.key === 'ArrowRight' ? 1 : -1)
+}
 </script>
 
 <template>
@@ -38,7 +91,7 @@ const contentId = useId()
         </template>
       </Button>
     </div>
-    <div v-show="!collapsed" :id="contentId" class="preview-panel__content">
+    <div v-show="!collapsed" :id="contentId" class="preview-panel__content" @keydown="onKeydown">
       <FrameViewer />
       <PreviewClip />
     </div>

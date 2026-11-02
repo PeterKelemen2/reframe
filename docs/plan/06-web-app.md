@@ -508,8 +508,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task D").
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
-- [ ] Pipeline header from `jobs/geometry`.
-- [ ] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay with drag handles.
+- [x] Pipeline header from `jobs/geometry`.
+- [x] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay with drag handles.
 - [ ] `CropMagnifier`: canvas-based. It loads the full-resolution PNG and draws 4 edge strips at
       2×/4×/8× with `imageSmoothingEnabled = false`, a removed-area tint, the crop lines, and a
       cursor loupe.
@@ -517,9 +517,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       of the removed band and puts a warning badge on frames that lose content.
 
 ### F-8 Filters tab
-- [ ] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
+- [x] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
       before/after on the current frame (`preview/render`).
-- [ ] Colorspace source-colour box and the "what will happen" sentence.
+- [x] Colorspace source-colour box and the "what will happen" sentence.
 
 ### F-9 Video tab and advanced options
 - [x] `EncoderPicker` grouped by family, with status dots and reasons. The
