@@ -1,0 +1,288 @@
+[
+  {
+    "key": "bframes",
+    "label": "B-frames",
+    "category": "Frame types / GOP",
+    "type": "int",
+    "min": 0.0,
+    "max": 16.0,
+    "step": 1.0,
+    "choices": null,
+    "default": {
+      "kind": "preset",
+      "values": {
+        "ultrafast": 3,
+        "superfast": 3,
+        "veryfast": 4,
+        "faster": 4,
+        "fast": 4,
+        "medium": 4,
+        "slow": 4,
+        "slower": 8,
+        "veryslow": 8,
+        "placebo": 8
+      },
+      "tunes": ["animation", "zerolatency"]
+    },
+    "help": "Maximum number of consecutive B-frames. 4 is typical; 8 helps animation and static content.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "bframes",
+      "part": null
+    },
+    "requires": [],
+    "unit": "frames"
+  },
+  {
+    "key": "b-adapt",
+    "label": "Adaptive B-frames",
+    "category": "Frame types / GOP",
+    "type": "enum",
+    "min": null,
+    "max": null,
+    "step": null,
+    "choices": [
+      {
+        "value": "0",
+        "label": "Off",
+        "help": "",
+        "ffmpeg_value": null,
+        "bit_depths": null
+      },
+      {
+        "value": "1",
+        "label": "Fast",
+        "help": "",
+        "ffmpeg_value": null,
+        "bit_depths": null
+      },
+      {
+        "value": "2",
+        "label": "Full",
+        "help": "Trellis; slower, better.",
+        "ffmpeg_value": null,
+        "bit_depths": null
+      }
+    ],
+    "default": {
+      "kind": "preset",
+      "values": {
+        "ultrafast": "0",
+        "superfast": "0",
+        "veryfast": "0",
+        "faster": "0",
+        "fast": "0",
+        "medium": "2",
+        "slow": "2",
+        "slower": "2",
+        "veryslow": "2",
+        "placebo": "2"
+      },
+      "tunes": ["zerolatency"]
+    },
+    "help": "How x265 decides where to place B-frames.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "b-adapt",
+      "part": null
+    },
+    "requires": [],
+    "unit": null
+  },
+  {
+    "key": "keyint",
+    "label": "Keyframe interval",
+    "category": "Frame types / GOP",
+    "type": "int",
+    "min": 1.0,
+    "max": 1000.0,
+    "step": 1.0,
+    "choices": null,
+    "default": {
+      "kind": "fixed",
+      "value": 250
+    },
+    "help": "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "keyint",
+      "part": null
+    },
+    "requires": [],
+    "unit": "frames"
+  },
+  {
+    "key": "min-keyint",
+    "label": "Minimum keyframe interval",
+    "category": "Frame types / GOP",
+    "type": "int",
+    "min": 1.0,
+    "max": 1000.0,
+    "step": 1.0,
+    "choices": null,
+    "default": {
+      "kind": "encoder",
+      "note": "auto, from the frame rate"
+    },
+    "help": "Minimum distance between keyframes at scene cuts. Auto follows the frame rate.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "min-keyint",
+      "part": null
+    },
+    "requires": [],
+    "unit": "frames"
+  },
+  {
+    "key": "aq-strength",
+    "label": "AQ strength",
+    "category": "Rate control",
+    "type": "float",
+    "min": 0.0,
+    "max": 3.0,
+    "step": 0.05,
+    "choices": null,
+    "default": {
+      "kind": "preset",
+      "values": {
+        "ultrafast": 0.0,
+        "superfast": 0.0,
+        "veryfast": 1.0,
+        "faster": 1.0,
+        "fast": 1.0,
+        "medium": 1.0,
+        "slow": 1.0,
+        "slower": 1.0,
+        "veryslow": 1.0,
+        "placebo": 1.0
+      },
+      "tunes": ["animation", "grain", "psnr"]
+    },
+    "help": "How strongly adaptive quantisation acts. 0.6–1.2 is typical.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "aq-strength",
+      "part": null
+    },
+    "requires": [
+      {
+        "field": "option:aq-mode",
+        "op": "ne",
+        "value": "0"
+      }
+    ],
+    "unit": null
+  },
+  {
+    "key": "psy-rd",
+    "label": "Psy-RD strength",
+    "category": "Psycho-visual",
+    "type": "float",
+    "min": 0.0,
+    "max": 5.0,
+    "step": 0.1,
+    "choices": null,
+    "default": {
+      "kind": "preset",
+      "values": {
+        "ultrafast": 2.0,
+        "superfast": 2.0,
+        "veryfast": 2.0,
+        "faster": 2.0,
+        "fast": 2.0,
+        "medium": 2.0,
+        "slow": 2.0,
+        "slower": 2.0,
+        "veryslow": 2.0,
+        "placebo": 2.0
+      },
+      "tunes": ["animation", "grain", "psnr", "ssim"]
+    },
+    "help": "Keeps the energy (detail, sharpness) of the source. 2.0 is the default; lower for animation.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "psy-rd",
+      "part": null
+    },
+    "requires": [],
+    "unit": null
+  },
+  {
+    "key": "master-display",
+    "label": "Mastering display",
+    "category": "HDR / colour",
+    "type": "string",
+    "min": null,
+    "max": null,
+    "step": null,
+    "choices": null,
+    "default": {
+      "kind": "encoder",
+      "note": "not written"
+    },
+    "help": "SMPTE ST 2086 mastering display, as G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) in 0.00002 / 0.0001 units. Copy HDR metadata from source fills it.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "master-display",
+      "part": null
+    },
+    "requires": [],
+    "unit": null
+  },
+  {
+    "key": "b-intra",
+    "label": "Intra modes in B-frames",
+    "category": "Frame types / GOP",
+    "type": "bool",
+    "min": null,
+    "max": null,
+    "step": null,
+    "choices": null,
+    "default": {
+      "kind": "preset",
+      "values": {
+        "ultrafast": false,
+        "superfast": false,
+        "veryfast": false,
+        "faster": false,
+        "fast": false,
+        "medium": true,
+        "slow": false,
+        "slower": true,
+        "veryslow": true,
+        "placebo": true
+      },
+      "tunes": ["fastdecode"]
+    },
+    "help": "Also tries intra modes in B-frames. Helps scene changes and fast motion, costs speed.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "b-intra",
+      "part": null
+    },
+    "requires": [],
+    "unit": null
+  },
+  {
+    "key": "pools",
+    "label": "Thread pools",
+    "category": "Performance",
+    "type": "string",
+    "min": null,
+    "max": null,
+    "step": null,
+    "choices": null,
+    "default": {
+      "kind": "encoder",
+      "note": "every CPU thread"
+    },
+    "help": "Worker threads per NUMA node: a number (\"8\"), \"+\" for all CPUs of a node, \"-\" for none, comma-separated per node (\"+,-\"). Not set, x265 uses every CPU.",
+    "mapping": {
+      "kind": "x26x_param",
+      "name": "pools",
+      "part": null
+    },
+    "requires": [],
+    "unit": null
+  }
+]
