@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import Card from '@/components/base/Card.vue'
-import { useReveal } from '@/composables/useReveal'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
-import { tabForPath, useUiStore } from '@/stores/ui'
 
 import { filterChips } from './filters'
 import { formatAspect } from './format'
@@ -17,17 +15,7 @@ import { useGeometry } from './useGeometry'
 const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
-const ui = useUiStore()
 const geometry = useGeometry()
-const body = useTemplateRef<HTMLElement>('body')
-
-// Until the Dimensions and Filters tabs exist, their fields are shown here.
-useReveal(() => {
-  const path = ui.revealed?.path
-  return path && /^(dimensions|filters)\b/.test(path) && tabForPath(path) === 'summary'
-    ? path
-    : null
-}, body)
 
 function size({ width, height }: Size): string {
   return `${width}×${height}`
@@ -74,7 +62,7 @@ const chips = computed(() => filterChips(editor.job?.filters, system.definitions
     :title="t('summary.picture.title')"
     data-card="picture"
   >
-    <div ref="body" class="summary-picture__body">
+    <div class="summary-picture__body">
       <SummaryLink path="dimensions">
         <span
           class="summary-picture__pipeline"

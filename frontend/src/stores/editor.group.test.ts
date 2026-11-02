@@ -1048,6 +1048,21 @@ describe('the editor store, group target', () => {
     scope.stop()
   })
 
+  it('amends nothing in a group: its files detect their own crop', async () => {
+    const editor = await edited()
+    const before = documentOf(editor)
+    const shown = JSON.stringify(editor.job)
+    editor.amend([
+      {
+        op: 'replace',
+        path: '/dimensions/crop/rect',
+        value: { top: 2, bottom: 2, left: 0, right: 0 },
+      },
+    ])
+    expect(documentOf(editor)).toEqual(before)
+    expect(JSON.stringify(editor.job)).toBe(shown)
+  })
+
   it('a new shown file or scope is a new session; perFile names the per-file fields', async () => {
     const editor = await edited()
     const session = editor.session

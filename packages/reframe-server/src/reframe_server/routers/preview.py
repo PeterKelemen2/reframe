@@ -70,6 +70,14 @@ class ClipRequest(BaseModel):
     seconds: PositiveFloat
 
 
+class ClipFramesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    timestamps: list[NonNegativeFloat] = Field(min_length=1, max_length=60)
+    """Seconds from the start of the clip: its frame at ``t`` is the source frame at
+    ``start + t``."""
+
+
 class FrameLink(BaseModel):
     """One PNG frame."""
 
@@ -167,6 +175,19 @@ async def clip_link(clip_id: str, reframe: ReframeDep, config: ConfigDep) -> Med
         raise ProblemError(404, "preview.unknown_clip", "The clip is not in the cache")
     url = CLIP_URL.format(clip_id=clip_id)
     return MediaLink(url=security.sign_media_url(config, url, ttl=CLIP_LINK_TTL))
+
+
+@router.post("/preview/clips/{clip_id}/frames")
+async def clip_frames(
+    clip_id: str, body: ClipFramesRequest, request: Request, reframe: ReframeDep, config: ConfigDep
+) -> Frames:
+    """Frames decoded from a cached clip, for the encoded frame compare when a ``<video>``
+    cannot play it: waits for the frames task. A client that goes away cancels it."""
+    path = await reframe.jobs.preview_clip_path(clip_id)
+    if path is None:
+        raise ProblemError(404, "preview.unknown_clip", "The clip is not in the cache")
+    task = reframe.sources.frames(path, timestamps=body.timestamps)
+    return _links(config, await _wait(request, reframe, task))
 
 
 @router.get("/preview/cache")

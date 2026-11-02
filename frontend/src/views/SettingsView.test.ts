@@ -50,7 +50,7 @@ describe('the Settings view', () => {
     const { wrapper } = await mountView()
     expect(
       wrapper.findAll('[data-section]').map((section) => section.attributes('data-section')),
-    ).toEqual(['tools', 'encoders', 'output', 'languages', 'queue', 'appearance'])
+    ).toEqual(['tools', 'encoders', 'output', 'languages', 'preview', 'queue', 'appearance'])
   })
 
   it('shows read-only settings read-only, with a note', async () => {

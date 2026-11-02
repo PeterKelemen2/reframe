@@ -243,14 +243,10 @@ describe('the Summary tab', () => {
     expect(ui.revealed?.path).toBe('video.rate_control')
   })
 
-  it('shows the fields of tabs that are not built on the Picture card', async () => {
+  it('links the Picture card to the Dimensions and the Filters tab', async () => {
     const { wrapper } = await mountSummary()
-    // A filter chip is not a link while its tab does not exist.
-    expect(wrapper.find('[data-field="filters"] button').exists()).toBe(false)
-    useUiStore().reveal('dimensions.crop')
-    await flushPromises()
-    expect(useUiStore().activeTab).toBe('summary')
-    expect(wrapper.find('.summary-picture__body').classes()).toContain('is-revealed')
+    await wrapper.find('[data-field="filters"] button').trigger('click')
+    expect(useUiStore().activeTab).toBe('filters')
   })
 
   it('groups the issues by severity with their fix buttons, and a fix changes the job', async () => {

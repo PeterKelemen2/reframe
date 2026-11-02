@@ -18,6 +18,7 @@ import StatusBar from '@/components/shell/StatusBar.vue'
 import SourcesPanel from '@/components/sources/SourcesPanel.vue'
 import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
+import { useCropStore } from '@/stores/crop'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 
@@ -26,9 +27,10 @@ const system = useSystemStore()
 const sources = useSourcesStore()
 
 useValidation()
+// Detects the crop of a job opened in automatic or conservative mode, whichever tab is shown.
+useCropStore()
 
-// Collapsed until the user opens it: the preview is a placeholder, and the tabs need the room.
-const previewCollapsed = useLocalStorage('reframe.workspace.previewHidden', true, {
+const previewCollapsed = useLocalStorage('reframe.workspace.previewHidden', false, {
   writeDefaults: false,
 })
 

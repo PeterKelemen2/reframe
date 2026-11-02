@@ -37,6 +37,8 @@ function tab(id: EditorTabId, component: () => Promise<Component>): EditorTab {
  */
 export const EDITOR_TABS: readonly EditorTab[] = [
   tab('summary', () => import('./SummaryTab.vue')),
+  tab('dimensions', () => import('./DimensionsTab.vue')),
+  tab('filters', () => import('./FiltersTab.vue')),
   tab('video', () => import('./VideoTab.vue')),
   tab('audio', () => import('./AudioTab.vue')),
   tab('subtitles', () => import('./SubtitlesTab.vue')),

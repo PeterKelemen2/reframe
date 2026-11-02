@@ -5,6 +5,9 @@ import vTooltip from 'primevue/tooltip'
 import { useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import PreviewClip from '@/components/clip/PreviewClip.vue'
+import FrameViewer from '@/components/media/FrameViewer.vue'
+
 const collapsed = defineModel<boolean>('collapsed', { required: true })
 
 const { t } = useI18n()
@@ -36,7 +39,8 @@ const contentId = useId()
       </Button>
     </div>
     <div v-show="!collapsed" :id="contentId" class="preview-panel__content">
-      <p class="preview-panel__note">{{ t('shell.preview.later') }}</p>
+      <FrameViewer />
+      <PreviewClip />
     </div>
   </aside>
 </template>
@@ -73,11 +77,5 @@ const contentId = useId()
   flex: 1;
   overflow: auto;
   padding: var(--rf-space-3);
-}
-
-.preview-panel__note {
-  margin: 0;
-  color: var(--rf-color-text-muted);
-  font-size: var(--rf-font-size-sm);
 }
 </style>

@@ -258,6 +258,31 @@ describe('the editor store', () => {
       expect(editor.get('/video/rate_control/value')).toBe(20)
     })
 
+    it('amends the job without an undo step: an undo keeps the amended value', async () => {
+      const editor = await opened()
+      const rect = { top: 22, bottom: 24, left: 0, right: 0 }
+      editor.set('/video/preset', 'fast')
+      editor.amend([{ op: 'replace', path: '/dimensions/crop/rect', value: rect }])
+      expect(editor.get('/dimensions/crop/rect')).toEqual(rect)
+      editor.undo()
+      expect(editor.get('/video/preset')).not.toBe('fast')
+      expect(editor.get('/dimensions/crop/rect')).toEqual(rect)
+      expect(editor.canUndo).toBe(false)
+      editor.redo()
+      expect(editor.get('/video/preset')).toBe('fast')
+    })
+
+    it('ends the coalescing run at an amend, so undoing the run keeps the amended value', async () => {
+      const editor = await opened()
+      const rect = { top: 22, bottom: 24, left: 0, right: 0 }
+      editor.set('/video/rate_control/value', 20, { coalesce: 'quality' })
+      editor.amend([{ op: 'replace', path: '/dimensions/crop/rect', value: rect }])
+      editor.set('/video/rate_control/value', 18, { coalesce: 'quality' })
+      editor.undo()
+      expect(editor.get('/video/rate_control/value')).toBe(20)
+      expect(editor.get('/dimensions/crop/rect')).toEqual(rect)
+    })
+
     it('changes nothing for a patch that does not apply', async () => {
       const editor = await opened()
       const job = editor.job

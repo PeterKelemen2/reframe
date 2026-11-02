@@ -148,6 +148,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/preview/clip` `{job, start, seconds}` → 202 | Encoded preview clip |
 | | `GET /api/preview/clips/{id}/link` | A signed clip URL for `<video>` (one hour) |
 | | `GET /api/preview/clips/{id}` | Clip file (HTTP Range: one range → 206, outside the file → 416) |
+| | `POST /api/preview/clips/{id}/frames` `{timestamps}` | Frames decoded from a cached clip, for the encoded frame compare (as `frames`: the request waits; [0067](../decisions/0067-m8-picture.md) item 1) |
 | | `GET /api/preview/cache` · `DELETE /api/preview/cache` | Size of the frame and clip cache; clear it |
 | Definitions | `GET /api/definitions` | `{definitions, naming_variables}`: encoders, option schemas, filters, containers, the naming variables (cached, ETag; `304` on `If-None-Match`) |
 | | `GET /api/languages` | Language list for the picker (cached, ETag) |

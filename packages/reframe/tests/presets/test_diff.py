@@ -56,6 +56,20 @@ def test_changed_leaf_values_have_dotted_paths() -> None:
     ]
 
 
+def test_a_detected_crop_is_not_a_change() -> None:
+    rect = {"top": 22, "bottom": 24, "left": 0, "right": 0}
+    for mode in ("auto", "conservative"):
+        base = edited(dimensions__crop={"mode": mode, "rect": None})
+        assert diff(edited(dimensions__crop={"mode": mode, "rect": rect}), base) == []
+
+
+def test_a_manual_crop_is_a_change() -> None:
+    rect = {"top": 22, "bottom": 24, "left": 0, "right": 0}
+    base = edited(dimensions__crop={"mode": "manual", "rect": rect})
+    template = edited(dimensions__crop={"mode": "manual", "rect": {**rect, "top": 20}})
+    assert [c.path for c in diff(template, base)] == ["dimensions.crop.rect.top"]
+
+
 def test_filters_added_and_removed() -> None:
     template = as_template(preset())
     template.filters.root["denoise"] = FilterConfig(preset="light", implementation="hqdn3d")
