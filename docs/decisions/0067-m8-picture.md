@@ -217,6 +217,17 @@ For the lead (not changed: lead-owned files):
   `video.encoder`), not at `filters.<id>.custom`, and `jobs/validate` does not dry-run: a job with
   `eq=nosuch=1` can be queued and fails at the encode.
 
+Phase 2 (2026-11-02, `m8-picture` merged with task A's panel, dfcca3f; script
+`scratchpad/task-d/split.mjs`, headless Chromium light and dark, Firefox dark, keyboard alone
+on the tab): the panel shows the *Split* view on the Filters tab. Each change asked for exactly
+one `POST /api/preview/render` with the job's new filters, and the split's output half showed
+the new frame: Grayscale on (mean RGB of the output PNG 115 / 100 / 125 → 135 / 135 / 135,
+saturation 0) and off, Sharpen on, its preset (Stronger), tune (Ultrafine), implementation (CAS),
+off. On `hdr10`, Colorspace BT.709 alone renders a clipped, posterised output (mean 132 / 210 /
+51); *Enable tone mapping* renders the tone-mapped frame (mean 116 / 99 / 125, as the source
+frame mapped for display). The source half is uncropped while the crop store is a stub (task B).
+No change of task D's files was needed.
+
 ## Task E — F-15 Settings → Preview, the preview clip
 
 (Task E writes this section.)

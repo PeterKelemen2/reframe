@@ -517,7 +517,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       of the removed band and puts a warning badge on frames that lose content.
 
 ### F-8 Filters tab
-- [ ] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
+- [x] Filter list (toggle + preset + tune), help panel from the definitions, `SplitCompare`
       before/after on the current frame (`preview/render`).
 - [x] Colorspace source-colour box and the "what will happen" sentence.
 
