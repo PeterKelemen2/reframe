@@ -13,6 +13,7 @@
     "200": "200 %"
   },
   "empty": "Open a file to see its frames.",
+  "noVideo": "This file has no video stream: there are no frames to show.",
   "loading": "Making the frames…",
   "failed": "The frames could not be made: {reason}",
   "noFrames": "The file gave no frames.",
@@ -21,13 +22,12 @@
   "renderFailed": "The output frame could not be made: {reason}",
   "imageFailed": "The frame could not be loaded.",
   "strip": "Frames",
+  "stage": "Picture",
   "frame": "Frame at {time}",
   "position": "Frame {n} of {count} · {time}",
-  "sought": "{time}",
   "seek": {
     "label": "Go to a time (seconds)",
-    "go": "Show",
-    "busy": "Making the frame…"
+    "go": "Show"
   },
   "seconds": "{seconds} s",
   "picture": "Source frame at {time}",

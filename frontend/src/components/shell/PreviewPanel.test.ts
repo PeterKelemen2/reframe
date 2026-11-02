@@ -67,6 +67,27 @@ describe('the preview panel', () => {
     expect(preview.index).toBe(1)
   })
 
+  it('leaves the arrow keys to a focused stage whose picture is wider than it', async () => {
+    const { wrapper, preview } = await panel()
+    preview.zoom = 2
+    await flushPromises()
+    const stage = wrapper.find('[data-field="stage"]').element
+    Object.defineProperty(stage, 'clientWidth', { value: 300 })
+    Object.defineProperty(stage, 'scrollWidth', { configurable: true, value: 640 })
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    })
+    stage.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(preview.index).toBe(0)
+
+    Object.defineProperty(stage, 'scrollWidth', { value: 300 })
+    press(stage, 'ArrowRight')
+    expect(preview.index).toBe(1)
+  })
+
   it('leaves the arrow keys to a text field, a slider and a crop handle', async () => {
     const { wrapper, preview } = await panel()
     press(wrapper.find('[data-field="seek"] input').element, 'ArrowRight')

@@ -20,6 +20,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** An image did not load (its link may have expired). */
   failed: [frame: FrameLink]
+  loaded: [frame: FrameLink]
 }>()
 
 const { t } = useI18n()
@@ -53,89 +54,76 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
 
 <template>
   <div class="split-compare" :class="`split-compare--${layout}`" :data-layout="layout">
-    <figure v-if="layout === 'split'" class="split-compare__frame" :style="{ aspectRatio: aspect }">
-      <img
-        class="split-compare__after"
-        :src="after.url"
-        :alt="t('preview.compare.after')"
-        draggable="false"
-        @error="emit('failed', after)"
-      />
-      <svg
-        class="split-compare__before"
-        :viewBox="view.viewBox"
-        preserveAspectRatio="none"
-        :style="{ clipPath: `inset(0 ${100 - position}% 0 0)` }"
-        role="img"
-        :aria-label="t('preview.compare.before')"
-        data-part="before"
-      >
-        <image
-          :href="before.url"
-          :x="-view.crop.left"
-          :y="-view.crop.top"
-          :width="before.width"
-          :height="before.height"
-          :transform="view.transform"
-          preserveAspectRatio="none"
-          @error="emit('failed', before)"
+    <figure class="split-compare__pane">
+      <div class="split-compare__frame" :style="{ aspectRatio: aspect }">
+        <img
+          v-if="layout === 'split'"
+          class="split-compare__after"
+          :src="after.url"
+          :alt="t('preview.compare.after')"
+          draggable="false"
+          @load="emit('loaded', after)"
+          @error="emit('failed', after)"
         />
-      </svg>
-      <span class="split-compare__label split-compare__label--before" aria-hidden="true">
-        {{ t('preview.compare.before') }}
-      </span>
-      <span class="split-compare__label split-compare__label--after" aria-hidden="true">
-        {{ t('preview.compare.after') }}
-      </span>
-      <input
-        v-model.number="position"
-        class="split-compare__range"
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        :aria-label="t('preview.compare.position')"
-        :aria-valuetext="t('preview.compare.valueText', { percent: position })"
-      />
-      <span class="split-compare__divider" :style="{ left: `${position}%` }" aria-hidden="true" />
-    </figure>
-    <template v-else>
-      <figure class="split-compare__side">
-        <div class="split-compare__frame" :style="{ aspectRatio: aspect }">
-          <svg
-            class="split-compare__before"
-            :viewBox="view.viewBox"
+        <svg
+          class="split-compare__before"
+          :viewBox="view.viewBox"
+          preserveAspectRatio="none"
+          :style="layout === 'split' ? { clipPath: `inset(0 ${100 - position}% 0 0)` } : undefined"
+          role="img"
+          :aria-label="t('preview.compare.before')"
+          data-part="before"
+        >
+          <image
+            :href="before.url"
+            :x="-view.crop.left"
+            :y="-view.crop.top"
+            :width="before.width"
+            :height="before.height"
+            :transform="view.transform"
             preserveAspectRatio="none"
-            role="img"
-            :aria-label="t('preview.compare.before')"
-            data-part="before"
-          >
-            <image
-              :href="before.url"
-              :x="-view.crop.left"
-              :y="-view.crop.top"
-              :width="before.width"
-              :height="before.height"
-              :transform="view.transform"
-              preserveAspectRatio="none"
-              @error="emit('failed', before)"
-            />
-          </svg>
-        </div>
-        <figcaption>{{ t('preview.compare.before') }}</figcaption>
-      </figure>
-      <figure class="split-compare__side">
-        <div class="split-compare__frame" :style="{ aspectRatio: aspect }">
-          <img
-            class="split-compare__after"
-            :src="after.url"
-            :alt="t('preview.compare.after')"
-            @error="emit('failed', after)"
+            @load="emit('loaded', before)"
+            @error="emit('failed', before)"
           />
-        </div>
-        <figcaption>{{ t('preview.compare.after') }}</figcaption>
-      </figure>
-    </template>
+        </svg>
+        <template v-if="layout === 'split'">
+          <span class="split-compare__label split-compare__label--before" aria-hidden="true">
+            {{ t('preview.compare.before') }}
+          </span>
+          <span class="split-compare__label split-compare__label--after" aria-hidden="true">
+            {{ t('preview.compare.after') }}
+          </span>
+          <input
+            v-model.number="position"
+            class="split-compare__range"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            :aria-label="t('preview.compare.position')"
+            :aria-valuetext="t('preview.compare.valueText', { percent: position })"
+          />
+          <span
+            class="split-compare__divider"
+            :style="{ left: `${position}%` }"
+            aria-hidden="true"
+          />
+        </template>
+      </div>
+      <figcaption v-if="layout === 'side'">{{ t('preview.compare.before') }}</figcaption>
+    </figure>
+    <figure v-if="layout === 'side'" class="split-compare__pane">
+      <div class="split-compare__frame" :style="{ aspectRatio: aspect }">
+        <img
+          class="split-compare__after"
+          :src="after.url"
+          :alt="t('preview.compare.after')"
+          @load="emit('loaded', after)"
+          @error="emit('failed', after)"
+        />
+      </div>
+      <figcaption>{{ t('preview.compare.after') }}</figcaption>
+    </figure>
   </div>
 </template>
 
@@ -210,12 +198,16 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
   cursor: ew-resize;
 }
 
-.split-compare__range:focus-visible + .split-compare__divider {
-  outline: 2px solid var(--rf-color-primary);
-  outline-offset: 2px;
+/* Inside the frame, over the pictures: its `overflow: hidden` cuts a ring drawn outside. */
+.split-compare__frame:has(.split-compare__range:focus-visible)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 3px var(--rf-color-primary);
+  pointer-events: none;
 }
 
-.split-compare__side figcaption {
+.split-compare__pane figcaption {
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
   text-align: center;
