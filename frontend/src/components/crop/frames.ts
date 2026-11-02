@@ -1,13 +1,11 @@
 import { onScopeDispose, ref, shallowRef, watch } from 'vue'
 
-import { clientBaseUrl } from '@/api/client'
 import type { FrameLink } from '@/api/types'
 import { usePreviewStore } from '@/stores/preview'
 
 /** The frame's PNG. Rejects when the link has expired (or the server cannot be reached). */
 export async function fetchFrame(link: FrameLink): Promise<Blob> {
-  // The link is relative to the server, which is not the page's origin in the desktop app.
-  const response = await fetch(new URL(link.url, clientBaseUrl() || globalThis.location.origin))
+  const response = await fetch(link.url)
   if (!response.ok) throw new Error(`${response.status} for frame ${link.key}`)
   return response.blob()
 }

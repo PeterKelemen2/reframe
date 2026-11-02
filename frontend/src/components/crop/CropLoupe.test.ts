@@ -12,7 +12,7 @@ const crop = fakeCrop()
 vi.mock('@/stores/preview', () => ({ usePreviewStore: () => preview }))
 vi.mock('@/stores/crop', () => ({ useCropStore: () => crop }))
 
-const fetchMock = vi.fn<(url: URL) => Promise<Response>>()
+const fetchMock = vi.fn<(url: string) => Promise<Response>>()
 const mounted: VueWrapper[] = []
 
 beforeEach(() => {

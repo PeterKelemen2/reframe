@@ -6,12 +6,18 @@ import { useI18n } from 'vue-i18n'
 
 import type { FrameLink } from '@/api/types'
 import { formatTime } from '@/components/chapters/chapters'
+import { NO_CROP } from '@/components/dimensions/grid'
 import { type PictureSize, useCropStore } from '@/stores/crop'
 import { usePreviewStore } from '@/stores/preview'
 
-import { type Box, type CheckAnswer, type CheckRequest, removedBands } from './cropCheck'
+import {
+  type Box,
+  type CheckAnswer,
+  type CheckRequest,
+  type CheckResult,
+  removedBands,
+} from './cropCheck'
 import { fetchFrame } from './frames'
-import { NO_CROP } from './magnifier'
 
 /** *Check crop on all frames*: every sample frame with the crop and its detected black bars. */
 const visible = defineModel<boolean>('visible', { required: true })
@@ -22,8 +28,10 @@ const crop = useCropStore()
 
 /** Object URLs of the fetched PNGs, by frame key: the worker reads the same bytes. */
 const images = shallowRef(new Map<string, string>())
-const answers = shallowRef(new Map<string, CheckAnswer>())
+const answers = shallowRef(new Map<string, CheckResult>())
 const failed = ref(false)
+/** Why the worker could not read a frame. */
+const unreadable = ref<string | null>(null)
 let worker: Worker | null = null
 let run = 0
 
@@ -35,6 +43,7 @@ function stop(): void {
   images.value = new Map()
   answers.value = new Map()
   failed.value = false
+  unreadable.value = null
 }
 
 async function check(links: FrameLink[], size: PictureSize): Promise<void> {
@@ -56,7 +65,8 @@ async function check(links: FrameLink[], size: PictureSize): Promise<void> {
   })
   started.addEventListener('message', (event: MessageEvent<CheckAnswer>) => {
     if (worker !== started) return
-    answers.value = new Map(answers.value).set(event.data.key, event.data)
+    if ('error' in event.data) unreadable.value = event.data.error
+    else answers.value = new Map(answers.value).set(event.data.key, event.data)
   })
   worker = started
   links.forEach((link, i) => {
@@ -67,7 +77,7 @@ async function check(links: FrameLink[], size: PictureSize): Promise<void> {
 }
 
 watch(
-  () => [visible.value, preview.strip, crop.rect, crop.sourceSize] as const,
+  [visible, () => preview.strip, () => crop.rect, () => crop.sourceSize],
   ([shown, links, , size]) => {
     if (shown && size !== null) {
       void check(links, size)
@@ -138,6 +148,9 @@ function show(index: number): void {
   >
     <p class="crop-check__intro">{{ t('crop.check.intro') }}</p>
     <p v-if="failed" class="crop-check__state" role="alert">{{ t('crop.check.failed') }}</p>
+    <p v-else-if="unreadable !== null" class="crop-check__state" role="alert">
+      {{ t('crop.check.unreadable', { reason: unreadable }) }}
+    </p>
     <p v-else class="crop-check__state" aria-live="polite" data-check-summary>
       {{
         done
@@ -147,10 +160,10 @@ function show(index: number): void {
     </p>
     <ul class="crop-check__frames">
       <li v-for="item in items" :key="item.link.key">
+        <!-- Its text is its name, so that the bars and the badge are in it. -->
         <button
           type="button"
           class="crop-check__frame"
-          :aria-label="t('crop.check.show', { time: item.time })"
           :data-frame="item.index"
           :data-lost="item.answer === null ? undefined : String(item.answer.lost)"
           @click="show(item.index)"
@@ -170,7 +183,8 @@ function show(index: number): void {
             <span class="crop-check__kept" :style="item.kept" />
           </span>
           <span class="crop-check__caption">
-            <span>{{ item.time }}</span>
+            <span class="rf-sr-only">{{ t('crop.check.show', { time: item.time }) }}</span>
+            <span aria-hidden="true">{{ item.time }}</span>
             <span class="crop-check__bars">
               {{
                 item.bars !== null

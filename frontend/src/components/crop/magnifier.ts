@@ -1,16 +1,15 @@
 import type { CropRect } from '@/api/types'
+import type { Edge } from '@/components/dimensions/grid'
 import type { PictureSize } from '@/stores/crop'
 import type { SourcePoint } from '@/stores/preview'
 
 import type { Box } from './cropCheck'
 
-export type Edge = 'top' | 'bottom' | 'left' | 'right'
 export type MagnifierZoom = 2 | 4 | 8
 
-export const EDGES: readonly Edge[] = ['top', 'bottom', 'left', 'right']
 export const ZOOMS: readonly MagnifierZoom[] = [2, 4, 8]
 
-/** An edge strip's size along its crop line and across it, in CSS pixels. */
+/** The left and right strips' length and every strip's depth, in CSS pixels. */
 export const STRIP_LENGTH = 384
 export const STRIP_DEPTH = 96
 export const LOUPE_SIZE = 160
@@ -19,8 +18,6 @@ export const LOUPE_ZOOM = 4
 const TINT = 'rgba(255, 0, 90, 0.35)'
 const LINE = '#ffd400'
 const GRID = 'rgba(128, 128, 128, 0.6)'
-
-export const NO_CROP: CropRect = { top: 0, bottom: 0, left: 0, right: 0 }
 
 /** Source pixels shown on a canvas: `box` (it may reach past the picture) at `zoom`. */
 export interface View {
@@ -32,7 +29,7 @@ function clamp(value: number, low: number, high: number): number {
   return Math.min(Math.max(value, low), high)
 }
 
-function isHorizontal(edge: Edge): boolean {
+export function isHorizontal(edge: Edge): boolean {
   return edge === 'top' || edge === 'bottom'
 }
 
@@ -50,9 +47,15 @@ function boundary(edge: Edge, rect: CropRect, size: PictureSize): number {
   }
 }
 
+/** The longest strip within `room` CSS pixels that shows whole source pixels at every zoom. */
+export function fittedLength(room: number): number {
+  const step = ZOOMS.at(-1)!
+  return Math.max(0, Math.floor(room / step) * step)
+}
+
 /**
- * The source pixels of an edge strip: the crop line in the middle of its depth, and along the
- * line as many pixels as fit, around `centre` (the pointer's column or row) and inside the picture.
+ * The source pixels of an edge strip `length` CSS pixels long: the crop line in the middle of its
+ * depth, and along the line around `centre` (the pointer's column or row) and inside the picture.
  */
 export function stripView(
   edge: Edge,
@@ -60,25 +63,26 @@ export function stripView(
   size: PictureSize,
   zoom: MagnifierZoom,
   centre: number | null,
+  length: number,
 ): View {
   const across = boundary(edge, rect, size) - STRIP_DEPTH / 2 / zoom
   const depth = STRIP_DEPTH / zoom
   const extent = isHorizontal(edge) ? size.width : size.height
-  const length = Math.min(STRIP_LENGTH / zoom, extent)
-  const along = clamp(Math.round((centre ?? extent / 2) - length / 2), 0, extent - length)
+  const along = Math.min(length / zoom, extent)
+  const start = clamp(Math.round((centre ?? extent / 2) - along / 2), 0, extent - along)
   const box = isHorizontal(edge)
-    ? { x: along, y: across, width: length, height: depth }
-    : { x: across, y: along, width: depth, height: length }
+    ? { x: start, y: across, width: along, height: depth }
+    : { x: across, y: start, width: depth, height: along }
   return { box, zoom }
 }
 
-/** The loupe's source pixels, centred on the pixel under the pointer. */
+/** The loupe's source pixels, with the middle of the pixel under the pointer in its centre. */
 export function loupeView(point: SourcePoint): View {
   const span = LOUPE_SIZE / LOUPE_ZOOM
   return {
     box: {
-      x: Math.floor(point.x) - span / 2,
-      y: Math.floor(point.y) - span / 2,
+      x: Math.floor(point.x) + 0.5 - span / 2,
+      y: Math.floor(point.y) + 0.5 - span / 2,
       width: span,
       height: span,
     },
