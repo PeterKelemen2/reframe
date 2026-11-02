@@ -161,7 +161,72 @@ pinned FFmpeg n9.0.2 and the fixtures `letterbox`, `hdr10`, `hdr10-4k`, `multitr
 
 ## Task D — F-8 the Filters tab
 
-(Task D writes this section.)
+Phase 1 (2026-11-02): `components/editor/tabs/FiltersTab.vue` and `components/filters/`
+(`FilterRow`, `FilterHelp`, `ColourBox`, `filters.ts`, `colour.ts`, `useCustomCheck.ts`),
+`i18n/messages/en/filters.json`. The split before / after is task A's panel (item 5); it is
+checked in phase 2.
+
+Choices where the plan leaves one:
+
+1. **The help panel shows the filter whose row has the focus or was clicked** (no separate help
+   button), so the keyboard reaches every filter's help by tabbing through the toggles.
+2. **Off is a filter missing from `job.filters`.** Colorspace's "Keep source" of 03 is Colorspace
+   off; the sentence then says "Off: the output keeps the source's colours (…)".
+3. **The implementation shown when the job names none is the one the server runs**: the first
+   whose filters passed their test and that has the preset; an untested GPU filter does not count
+   (validation's `usable_filter(...) is True`). With the hardware tests off, Tone mapping turns
+   on as `{preset: "default"}` and shows *zscale + tonemap*. An implementation whose filter is not
+   in the build or failed its run test is listed, disabled, with the reason (`filter_failures` or
+   "… is not in this FFmpeg build"); an untested one (libplacebo, `needs_vulkan`) can be chosen
+   and says so, and validation warns (`filter.implementation_untested`).
+4. **Controls with one choice are left out**: no implementation picker for a filter with one
+   implementation, no preset picker for an implementation with one preset (Grayscale *On*, the
+   custom filter). The tune picker's *Default* is no tune (the preset's plain chain); it is
+   offered only when the preset has one.
+5. **Another implementation is one replace of the filter's config**: the preset and tune of the
+   same id where the implementation has them, else its default preset and no tune; the custom
+   text stays only with a custom preset. Leaving a custom preset sets `custom` to `null`.
+6. **The washed-out warning is shown once**, in the source colour box's sentence with the issue's
+   fixes as buttons; the Colorspace toggle's field leaves `filter.hdr_without_tonemap` out. The
+   button appears only while validation gives the issue.
+7. **The dry run checks the free text of every filter** (the custom filter and the custom presets
+   of the others, which are the same field): `POST /api/jobs/dry-run` with the job 500 ms after the
+   last key press, the newest text only; its `error` issues show at the typed field whatever
+   path the server gave, and a passed test says "FFmpeg accepts it (one-frame test)". A 403
+   `filter.not_allowed` (web mode's allow-list) is shown there as an error.
+8. **Video passthrough** turns every control off, with a note (03 §Video).
+
+What the real server answers (dev server, pinned FFmpeg n9.0.2, web mode, `hdr10.mkv`, script
+`scratchpad/task-d/api_check.py`):
+
+| `filters.custom.custom` | `jobs/validate` | `jobs/dry-run` |
+|---|---|---|
+| `hflip` | the crop info only | `200 []` (0.07 s) |
+| `eq=nosuch=1` | the crop info only | `200` one error `encoder.dry_run_failed` at **`video.custom_params`**: "The test encode of one frame failed: Error applying option 'nosuch' to filter 'eq': Option not found" |
+| `nosuchfilter` | `403 filter.not_allowed` "filters.custom: the FFmpeg filter 'nosuchfilter' is not allowed" | the same 403 |
+| `scale=w=,,` | `403 filter.not_allowed` "filters.custom: FFmpeg's filter syntax cannot be checked here: a filter has no name" | the same 403 |
+
+Encoder detection on that server: 562 filters, `untested_filters: ["libplacebo"]`, no failures.
+
+For the lead (not changed: lead-owned files):
+
+- `useValidation` treats the 403 as a failed validation: the status bar keeps the last counts and
+  no field shows it (the Filters tab shows it from its own check). The same 403 stops
+  `jobs/plan` and `preview/render` of that job.
+- The dry run puts a refused filter at the encoder's fallback path (`video.custom_params`, or
+  `video.encoder`), not at `filters.<id>.custom`, and `jobs/validate` does not dry-run: a job with
+  `eq=nosuch=1` can be queued and fails at the encode.
+
+Phase 2 (2026-11-02, `m8-picture` merged with task A's panel, dfcca3f; script
+`scratchpad/task-d/split.mjs`, headless Chromium light and dark, Firefox dark, keyboard alone
+on the tab): the panel shows the *Split* view on the Filters tab. Each change asked for exactly
+one `POST /api/preview/render` with the job's new filters, and the split's output half showed
+the new frame: Grayscale on (mean RGB of the output PNG 115 / 100 / 125 → 135 / 135 / 135,
+saturation 0) and off, Sharpen on, its preset (Stronger), tune (Ultrafine), implementation (CAS),
+off. On `hdr10`, Colorspace BT.709 alone renders a clipped, posterised output (mean 132 / 210 /
+51); *Enable tone mapping* renders the tone-mapped frame (mean 116 / 99 / 125, as the source
+frame mapped for display). The source half is uncropped while the crop store is a stub (task B).
+No change of task D's files was needed.
 
 ## Task E — F-15 Settings → Preview, the preview clip
 
