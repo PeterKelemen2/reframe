@@ -194,6 +194,15 @@ describe('undo and redo', () => {
     expect(editor.redo).not.toHaveBeenCalled()
   })
 
+  it('undoes the editor from a number field, which keeps no typing of its own to undo', async () => {
+    await mountAt()
+    const target = element('<span class="p-inputnumber"><input data-target type="text"></span>')
+    expect(press('z', { target }).defaultPrevented).toBe(true)
+    press('Z', { shift: true, target })
+    expect(editor.undo).toHaveBeenCalledTimes(1)
+    expect(editor.redo).toHaveBeenCalledTimes(1)
+  })
+
   it('undoes the editor from a check box, which has no typing to undo', async () => {
     await mountAt()
     press('z', { target: element('<input data-target type="checkbox">') })

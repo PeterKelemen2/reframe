@@ -17,6 +17,10 @@ function topModal(): Element | undefined {
   return [...document.querySelectorAll('[aria-modal="true"]:not([class*="-leave-active"])')].at(-1)
 }
 
+function inNumberField(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('.p-inputnumber') !== null
+}
+
 /** Picks, fixes and name corrections are made in the matrix and its popovers: undo them there. */
 function undoesInModal(modal: Element): boolean {
   return modal.matches('.matrix-dialog, .matrix-popover')
@@ -94,8 +98,9 @@ export function useShortcuts(): void {
       return
     }
     if (!undo && !redo) return
-    // Left to the browser: it undoes the typing.
-    if (isTextField(event.target)) return
+    // Left to the browser: it undoes the typing. A number field rewrites its text on every key,
+    // which leaves the browser nothing to undo, so the editor undoes there.
+    if (isTextField(event.target) && !inNumberField(event.target)) return
     event.preventDefault()
     if (undo && editor.canUndo) editor.undo()
     if (redo && editor.canRedo) editor.redo()
