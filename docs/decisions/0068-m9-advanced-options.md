@@ -278,7 +278,37 @@ filled (a transition). Confirmed fixed: the reveal's focus (96b456c).
 
 ### Fix round — FB (Copy HDR metadata, custom parameters)
 
-(FB writes this section.)
+- **R1-B1** (decision 12): while the editor's target is a group (either scope) *Copy HDR
+  metadata* is off, and a note in its place (the button's `aria-describedby`) says "In a group,
+  each file's encode writes its own source's HDR10 metadata, so none is copied into the group."
+  Checked on the real server (pinned FFmpeg, folder `HDR.Show.S01`: two copies of `hdr10`, the
+  second with `mkvpropedit … --set max-content-light=500 --set max-frame-light=100`, group of
+  both, `h265-mkv-1080p`): without a copy E02's command has `max-cll=500,100` and E01's
+  `max-cll=1000,400` (both files have the same mastering display); the button is disabled, a forced click
+  changes nothing, the template's `video.advanced` stays `{}` and E02's command still has
+  `max-cll=500,100`.
+- **R1-m1**: an answer (patch or failure) is dropped when the session, the job's encoder or the
+  target's `sourceId` (a group's shown file) is not what it was when the request went out.
+  `useParamsCheck` watches the encoder and the shown file as well as the text and the session:
+  a change cancels the waiting or running dry run and checks again, so an answer for the old
+  encoder or file is never shown. The lead's `copyHdrStale.test.ts` passes on this branch.
+- **R2-m4**: the status line of the custom parameters is always rendered, `role="status"`
+  (polite), so that a later text is announced. It says "Checking…" and "The encoder accepts
+  them" as before. For a refusal it holds the dry run's issue messages, and for a dry run that
+  did not run it holds that reason, in screen-reader-only text: the field already shows them as
+  issues, so they are not shown twice. Real browser: while checking `status: "Checking with a
+  one-frame test…"`, after the answer `status: "FFmpeg refused 'nosuchparam': Unknown option:
+  nosuchparam."`. Before, the region was removed when the error came.
+- **The copy's note**: one plural message `params.hdr.copied` with the labels of the filled
+  rows from the definitions ("Filled “Mastering display” and “MaxCLL, MaxFALL” from the
+  source.", or the one-row form). The patch has at most two options: a mastering display and a
+  content light level.
+- **Found, not mine** (for the lead): the hardware encoders (NVENC, QSV, AMF, VAAPI) have no
+  *HDR / colour* options, so the panel has no such category for them and the button cannot be
+  reached there. The note "takes the HDR metadata from the frames" only shows in the unit test.
+  The "Done when" case "with an encoder that takes HDR metadata from the frames it says why
+  nothing was copied" therefore does not show in a browser (`AdvancedOptions.vue` mounts the
+  button only in *HDR / colour*).
 
 ### Fix round — FC (core: built-in presets, the override issue, HDR notes)
 

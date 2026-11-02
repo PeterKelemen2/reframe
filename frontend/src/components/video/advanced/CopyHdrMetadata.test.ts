@@ -2,7 +2,7 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { deferred, problem } from '@/api/testing/fakes'
-import type { JsonPatchOp, MediaSource } from '@/api/types'
+import type { EncoderOption, JobTemplate, JsonPatchOp, MediaSource } from '@/api/types'
 import { mountShell } from '@/components/shell/testing'
 import { hdr10Source, multitrackSource } from '@/components/summary/testing'
 import { sampleJob } from '@/editor/testing/samples'
@@ -11,6 +11,7 @@ import { useSourcesStore } from '@/stores/sources'
 
 import { openJob, setUpVideo } from '../testing'
 import CopyHdrMetadata from './CopyHdrMetadata.vue'
+import recorded from './testing/x265-options.json'
 
 const mounted: { unmount(): void }[] = []
 
@@ -25,6 +26,19 @@ const X265_HDR: JsonPatchOp[] = [
   { op: 'add', path: '/video/advanced/max-cll', value: '1000,400' },
 ]
 
+const masterDisplay = (recorded as EncoderOption[]).find(
+  (option) => option.key === 'master-display',
+)!
+const HDR_OPTIONS: EncoderOption[] = [
+  masterDisplay,
+  {
+    ...masterDisplay,
+    key: 'max-cll',
+    label: 'MaxCLL, MaxFALL',
+    mapping: { kind: 'x26x_param', name: 'max-cll' },
+  },
+]
+
 const gone = () => problem(404, 'sources.not_found', 'Source not found', 'hdr10.mkv is gone')
 
 async function mountCopy(
@@ -34,6 +48,7 @@ async function mountCopy(
   job.video = { ...job.video!, encoder: options.encoder ?? 'libx265' }
   if (options.passthrough) job.video.passthrough = true
   const setup = setUpVideo({ job })
+  setup.system.definitions!.video_encoders!.libx265!.options = HDR_OPTIONS
   setup.server.on('POST /api/jobs/hdr-metadata', options.answer ?? X265_HDR)
   const source = options.source ?? hdr10Source()
   useSourcesStore().entries = [{ id: 'source-1', path: source.ref.path, source }]
@@ -63,10 +78,16 @@ describe('Copy HDR metadata from source', () => {
       'master-display': MASTER_DISPLAY,
       'max-cll': '1000,400',
     })
-    expect(note(wrapper)).toBe('Copied master-display, max-cll.')
+    expect(note(wrapper)).toBe('Filled “Mastering display” and “MaxCLL, MaxFALL” from the source.')
     editor.undo()
     expect(editor.job?.video?.advanced).toEqual({})
     expect(editor.canUndo).toBe(false)
+  })
+
+  it('names the one option it filled', async () => {
+    const { wrapper } = await mountCopy({ answer: X265_HDR.slice(1) })
+    await copy(wrapper)
+    expect(note(wrapper)).toBe('Filled “MaxCLL, MaxFALL” from the source.')
   })
 
   it('says the source has no HDR metadata', async () => {
@@ -110,6 +131,54 @@ describe('Copy HDR metadata from source', () => {
     await flushPromises()
     expect(editor.job?.video?.advanced).toEqual({})
     expect(note(wrapper)).toBe('')
+  })
+
+  it('does not copy into the job after its encoder changed while it asked', async () => {
+    const { wrapper, server, editor } = await mountCopy()
+    const answer = deferred<JsonPatchOp[]>()
+    server.on('POST /api/jobs/hdr-metadata', () => answer.promise)
+    await wrapper.find('[data-action="copy-hdr"]').trigger('click')
+    editor.set('/video/encoder', 'libx264')
+    answer.resolve(X265_HDR)
+    await flushPromises()
+    expect(editor.job?.video?.encoder).toBe('libx264')
+    expect(editor.job?.video?.advanced).toEqual({})
+    expect(note(wrapper)).toBe('')
+  })
+
+  it('does not show a failure for the encoder that was set before', async () => {
+    const { wrapper, server, editor } = await mountCopy()
+    const answer = deferred<JsonPatchOp[]>()
+    server.on('POST /api/jobs/hdr-metadata', () => answer.promise)
+    await wrapper.find('[data-action="copy-hdr"]').trigger('click')
+    editor.set('/video/encoder', 'libsvtav1')
+    answer.reject(new Error('The server is not reachable.'))
+    await flushPromises()
+    expect(note(wrapper)).toBe('')
+  })
+
+  it('is off in a group, and says each file’s encode writes its own source’s metadata', async () => {
+    const { wrapper, editor, server } = await mountCopy()
+    const job = editor.job!
+    editor.target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'source-1',
+      job,
+      template: { job } as unknown as JobTemplate,
+      presetId: null,
+      overrides: {},
+      scope: 'group',
+    }
+    await flushPromises()
+    const button = wrapper.find('[data-action="copy-hdr"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    const described = document.getElementById(button.attributes('aria-describedby') ?? '')
+    expect(described?.textContent).toBe(
+      'In a group, each file’s encode writes its own source’s HDR10 metadata, so none is copied into the group.',
+    )
+    await copy(wrapper)
+    expect(server.requests.some((request) => request.path === '/api/jobs/hdr-metadata')).toBe(false)
   })
 
   it('forgets its note when the encoder changes', async () => {

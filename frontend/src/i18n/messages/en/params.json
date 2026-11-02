@@ -9,7 +9,8 @@
   },
   "hdr": {
     "copy": "Copy HDR metadata from source",
-    "copied": "Copied {options}.",
+    "copied": "Filled “{first}” from the source. | Filled “{first}” and “{second}” from the source.",
+    "group": "In a group, each file’s encode writes its own source’s HDR10 metadata, so none is copied into the group.",
     "noMetadata": "Nothing to copy: the source has no HDR10 metadata (mastering display or content light level).",
     "fromFrames": "Nothing to copy: {encoder} takes the HDR metadata from the frames, so it has no options for it.",
     "cannotCarry": "Nothing to copy: {encoder} cannot write HDR10 metadata.",

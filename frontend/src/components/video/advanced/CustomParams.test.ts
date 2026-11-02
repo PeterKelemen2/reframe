@@ -3,7 +3,7 @@ import InputText from 'primevue/inputtext'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { deferred, problem } from '@/api/testing/fakes'
-import type { JobSettings, ValidationIssue } from '@/api/types'
+import type { JobSettings, JobTemplate, ValidationIssue } from '@/api/types'
 import { CHECK_DELAY } from '@/components/filters/useCustomCheck'
 import { mountShell } from '@/components/shell/testing'
 import { issue, sampleJob } from '@/editor/testing/samples'
@@ -76,7 +76,18 @@ describe('the custom parameters field', () => {
     expect(sentTexts(server)).toEqual(['nosuchparam=1'])
     expect(shownIssues(wrapper).join()).toContain("FFmpeg refused 'nosuchparam'")
     expect(wrapper.find('.custom-params').classes()).toContain('rf-field--error')
-    expect(wrapper.find('[data-check]').exists()).toBe(false)
+  })
+
+  it('tells a screen reader the refusal in the status line that said it was checking', async () => {
+    const { wrapper, server } = await mountParams()
+    server.on('POST /api/jobs/dry-run', [refused])
+    await type(wrapper, 'nosuchparam=1')
+    const status = wrapper.find('[role="status"]').element
+    expect(status.textContent).toContain('Checking with a one-frame test')
+    await afterCheckDelay()
+    expect(status.isConnected).toBe(true)
+    expect(status.getAttribute('aria-live') ?? 'polite').toBe('polite')
+    expect(status.textContent?.trim()).toBe(refused.message)
   })
 
   it('shows only the answer for the newest text', async () => {
@@ -145,12 +156,56 @@ describe('the custom parameters field', () => {
     expect(wrapper.find('[data-check]').attributes('data-check')).toBe('accepted')
   })
 
+  it('drops the answer for the encoder that was set before, and checks with the new one', async () => {
+    const { wrapper, server, editor } = await mountParams({ text: 'nosuchparam=1' })
+    const old = deferred<ValidationIssue[]>()
+    server.on('POST /api/jobs/dry-run', () => old.promise)
+    await afterCheckDelay()
+    server.on('POST /api/jobs/dry-run', [])
+    editor.set('/video/encoder', 'libsvtav1')
+    old.resolve([refused])
+    await flushPromises()
+    expect(shownIssues(wrapper)).toEqual([])
+    await afterCheckDelay()
+    const encoders = server.requests
+      .filter((request) => request.path === '/api/jobs/dry-run')
+      .map((request) => (request.body as { job: JobSettings }).job.video?.encoder)
+    expect(encoders).toEqual(['libx265', 'libsvtav1'])
+    expect(wrapper.find('[data-check]').attributes('data-check')).toBe('accepted')
+  })
+
+  it('drops the answer for the group’s file shown before, and checks the one shown now', async () => {
+    const { wrapper, server, editor } = await mountParams({ text: 'nosuchparam=1' })
+    const job = editor.job!
+    const group = {
+      kind: 'group' as const,
+      groupId: 'g1',
+      job,
+      template: { job } as unknown as JobTemplate,
+      presetId: null,
+      overrides: {},
+      scope: 'group' as const,
+    }
+    editor.target = { ...group, sourceId: 'e01' }
+    const old = deferred<ValidationIssue[]>()
+    server.on('POST /api/jobs/dry-run', () => old.promise)
+    await afterCheckDelay()
+    server.on('POST /api/jobs/dry-run', [])
+    editor.target = { ...group, sourceId: 'e02', job: structuredClone(job) }
+    old.resolve([refused])
+    await flushPromises()
+    expect(shownIssues(wrapper)).toEqual([])
+    await afterCheckDelay()
+    expect(sentTexts(server)).toHaveLength(2)
+    expect(wrapper.find('[data-check]').attributes('data-check')).toBe('accepted')
+  })
+
   it('checks nothing without a text', async () => {
     const { wrapper, server } = await mountParams({ text: 'rect=0' })
     await type(wrapper, '')
     await afterCheckDelay()
     expect(sentTexts(server)).toEqual([])
-    expect(wrapper.find('[data-check]').exists()).toBe(false)
+    expect(wrapper.find('[role="status"]').text()).toBe('')
   })
 
   it('says why the test encode did not run', async () => {
@@ -160,11 +215,9 @@ describe('the custom parameters field', () => {
     )
     await type(wrapper, 'psy-rd=2.0')
     await afterCheckDelay()
-    expect(shownIssues(wrapper)).toEqual([
-      expect.stringContaining(
-        'The one-frame test did not run: out.mkv is outside the output folders',
-      ),
-    ])
+    const reason = 'The one-frame test did not run: out.mkv is outside the output folders'
+    expect(shownIssues(wrapper)).toEqual([expect.stringContaining(reason)])
+    expect(wrapper.find('[role="status"]').text()).toBe(reason)
   })
 
   it('takes the focus into its text when revealed', async () => {
