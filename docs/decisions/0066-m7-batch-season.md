@@ -639,3 +639,69 @@ encoding line. No page error.
 Not built: a two-member reset for the rate mode (`Field` has one path, and `components/base` is
 not this task's); the reason lines are shown in a group whether or not the user looks for the
 buttons (one line each, no disclosure).
+
+### Fix round — FU1 (matrix and queueing)
+
+Fixed, each with a test (every test mutation-checked; R2-1's tests fail on the dialog before the
+fix):
+
+- **R2-1** (the matrix's part) While `editor.matrixError` is set, the matrix dialog shows "The
+  matrix could not be updated: …" (`role="alert"`) with *Try again* (`editor.retryMatrix()`),
+  and says what the shown matrix is: "out of date" (the last `resolution`, dimmed and `inert`,
+  so no pick or fix is made on the columns of an older template) or "There is no matrix yet". A
+  focus left in the matrix moves to *Try again*. `Ctrl+Z` still works there.
+- **R2-2** `resolveNow()` is quiet (the contract addition the lead gave FA): `useQueueGroup`
+  shows its failure. `source.stale` → "N file(s) of the group changed since they were opened",
+  "Remove it from the sources and open it again:" and the file names (the group's members that
+  `GET /api/sources` lists without a source); `edit.failed` → no toast (the failed derive showed
+  one); any other problem → its title and detail, as the API toast did.
+- **R2-4** `useShortcuts` lets `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` through while the top modal
+  is the matrix dialog or its popover, outside text fields; every other shortcut stays blocked
+  there, and a dialog over the matrix blocks undo too.
+- **R2-5**, **R2-15** *Open matrix* is the error dialog's default (primary, autofocus). After
+  *Cancel*, Escape and *Queue the valid files* the focus goes back to the element that had it
+  when `queueGroup` started (kept before the dialog opens); after *Open matrix* the matrix
+  focuses the first file with errors.
+- **R2-6** PrimeVue 4.5.5's `Dialog` reads no locale text for its maximize button (only
+  `aria.close`), so `primevueLocale.ts` is unchanged: `MatrixDialog` names the button through
+  `maximizeButtonProps` ("Maximize" / "Restore size", following the `maximize` / `unmaximize`
+  events; the default `secondary text rounded` look kept). First focus: the first shown row's
+  mark; without a matrix yet, the *Problems only* box.
+- **R2-7** The popover is `aria-labelledby` the title of the picker, the row's issues or the
+  name fields (a `titleId` prop).
+- **R2-10** A cell's message has its full text as `title`; the picker shows the message under
+  its title.
+- **R2-11** The `role="status"` region stays in the DOM and changes its text; the V cell's label
+  ends with the video size.
+- **R2-12** Curly quotes in `matrix.json`; **R2-14** `MatrixDialog` uses `editor.resolution`.
+- **R1-10** One toast says what the queue did: "Queued 12 jobs", or "12 jobs added to the queue;
+  10 of them failed" with the first three files and reasons and "… and N more failed jobs: the
+  queue lists them" (the whole list of a second *Add group to queue* ran off the screen). Rows
+  with `batch.override_stale` add "N file(s) are queued without part of their per-file changes …"
+  to that toast (a warning), and the error dialog says how many of the valid files lose part of
+  theirs.
+
+Checked headless against `scripts/dev-server.py` (pinned FFmpeg, `anime-s01`, `anime-s02`) after
+FA's and FS's merge, Chromium and Firefox, each light and dark (32 checks per run, all pass, no
+page error; a member file broken in the temp media root by renaming it aside and writing
+garbage, then put back): the title `Check group “Anime Show S01”`; the maximize button named; the
+first focus on E01's mark; the live region present and empty; the V label `V, E01: Exact match,
+320×180`; E11's A2 message as `title` and in its picker; the three popovers named
+`A2 eng DTS-HD MA→AC-3 5.1 in E11`, `E11`, `Name fields of E11`; E03's A2 *No track* from the
+keyboard, `Ctrl+Z` in the matrix gives `#2` back, `Ctrl+Shift+Z` the pick again, the matrix stays
+open; a changed E02 and a group edit: the line "The matrix could not be updated: A file of the
+group changed on disk since it was opened: …" (FA's text), the matrix dimmed and inert, the focus
+on *Try again*, `Ctrl+Z` takes the edit back; *Add group to queue* toasts the changed file by name
+and no developer text; with the file back, *Try again* clears the line; a group whose first
+resolve fails shows "There is no matrix yet" with the focus on *Problems only*. The queue flow
+from the banner by keyboard: *Open matrix* focused first; after Escape, *Cancel* and *Queue the
+valid files* the focus is on the banner's *Add group to queue*; `Queued 11 jobs`; a second time
+"11 jobs added to the queue; 11 of them failed" (three files, "… and 8 more"); *Open matrix*
+focuses E11's mark; a scope-`file` name on E01's first output track, then the group's two audio
+tracks swapped: E01's row `batch.override_stale`, the dialog says "1 of the valid files loses
+part of its per-file changes". Screenshots read: the failure line, dimmed matrix and the
+text-styled maximize button in light and dark; the error dialog with *Open matrix* primary; the
+capped toast inside the window.
+
+Not built: a different wording of *Add all*'s toast (the same "not added" for jobs added as
+failed; not this finding's); a per-member check of which file changed beyond `GET /api/sources`.

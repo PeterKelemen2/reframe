@@ -274,6 +274,23 @@ describe('queueGroup without errors', () => {
     ])
   })
 
+  it('keeps the toast short when the queue adds every job as failed', async () => {
+    server.on('POST /api/queue', (request) =>
+      (request.body as { jobs: JobSettings[] }).jobs.map((job) =>
+        queued(job, { state: 'failed', error: 'Planned already' }),
+      ),
+    )
+    await setup().queueGroup('g1')
+    const [toast] = toasts()
+    expect(toast?.summary).toBe('12 jobs added to the queue; 12 of them failed')
+    expect(toast?.detail?.split('\n')).toEqual([
+      'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv: Planned already',
+      'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv: Planned already',
+      'Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv: Planned already',
+      '… and 9 more failed jobs: the queue lists them.',
+    ])
+  })
+
   it('says how many files are queued without part of their stale override', async () => {
     editor.resolveNow.mockImplementation(async () =>
       withRow(withRow(animeResolution(), fixedE11()), staleRow(3)),

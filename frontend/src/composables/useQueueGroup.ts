@@ -49,6 +49,8 @@ export interface QueueGroup {
 const ADDED_LIFE = 4_000
 const NOT_ADDED_LIFE = 15_000
 const PROBLEM_LIFE = 10_000
+/** A second *Add group to queue* fails every job: the toast must still fit on the screen. */
+const FAILED_LINES = 3
 
 // Shared by every caller (the group row, the banner, the status bar, the shortcut), so that a
 // second click during a queueing does not queue the group twice.
@@ -122,12 +124,15 @@ export function useQueueGroup(): QueueGroup {
     const stale = staleCount(rows)
     const lines = [
       ...(stale > 0 ? [text('matrix.queue.stale', { n: stale })] : []),
-      ...failed.map((job) =>
+      ...failed.slice(0, FAILED_LINES).map((job) =>
         text('matrix.queue.failedLine', {
           name: fileName(job.settings.source.path),
           reason: job.error ?? text('matrix.queue.failed'),
         }),
       ),
+      ...(failed.length > FAILED_LINES
+        ? [text('matrix.queue.moreFailed', { n: failed.length - FAILED_LINES })]
+        : []),
     ]
     toasts.push({
       severity: lines.length > 0 ? 'warn' : 'success',

@@ -188,6 +188,14 @@ describe('a failed resolve', () => {
     expect(dialog()?.querySelector('.matrix-dialog__matrix')?.hasAttribute('inert')).toBe(false)
   })
 
+  it('moves the focus from the matrix it makes inert to Try again', async () => {
+    await mountDialog()
+    expect(document.activeElement?.closest('.matrix')).not.toBeNull()
+    editor.matrixError = 'Boom'
+    await settle()
+    expect(document.activeElement?.getAttribute('data-role')).toBe('retry')
+  })
+
   it('says that there is no matrix yet when the first resolve failed', async () => {
     editor.resolution = null
     editor.matrixError = 'Boom'
