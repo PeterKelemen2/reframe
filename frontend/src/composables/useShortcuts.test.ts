@@ -1,3 +1,4 @@
+import { flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, reactive, ref } from 'vue'
@@ -116,6 +117,14 @@ describe('Ctrl+O', () => {
     press('o')
     expect(sources.pick).not.toHaveBeenCalled()
   })
+})
+
+it('leaves the detached preview window as it is: no workspace, no file dialog', async () => {
+  const { router } = await mountAt('/preview/s1')
+  press('o')
+  await flushPromises()
+  expect(sources.pick).not.toHaveBeenCalled()
+  expect(router.currentRoute.value.name).toBe('preview-window')
 })
 
 describe('Ctrl+Enter', () => {

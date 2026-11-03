@@ -63,7 +63,8 @@ export function useShortcuts(): void {
 
   function onKeydown(event: KeyboardEvent): void {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
-    if (system.phase !== 'ready') return
+    // The detached preview window shows the preview alone: no editor, no workspace to go to.
+    if (system.phase !== 'ready' || route.meta.bare) return
     const key = event.key.toLowerCase()
     const undo = key === 'z' && !event.shiftKey
     const redo = (key === 'z' && event.shiftKey) || (key === 'y' && !event.shiftKey)
