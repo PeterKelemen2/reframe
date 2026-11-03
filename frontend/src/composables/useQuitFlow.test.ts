@@ -42,7 +42,13 @@ function start(jobs: QueueJob[], owned = true) {
   vi.spyOn(queue, 'cancel').mockImplementation(async (id) => void steps.push(`cancel ${id}`))
   desktopBackend.value = {
     state: 'ready',
-    info: { baseUrl: 'http://127.0.0.1:8731', token: 't', instance: 'i', owned },
+    info: {
+      baseUrl: 'http://127.0.0.1:8731',
+      token: 't',
+      instance: 'i',
+      owned,
+      privateQueue: null,
+    },
   }
   const flow = scope.run(() => useQuitFlow())!
   return { queue, flow }
@@ -83,6 +89,13 @@ describe('the quit flow', () => {
     await close()
     expect(flow.question.value).toEqual({ active: 2, tray: true })
     expect(steps).toEqual(['quitReady'])
+  })
+
+  it('counts the jobs that still run while it asks', async () => {
+    const { queue, flow } = start([job('a', 'running'), job('b', 'running')])
+    await close()
+    queue.jobs = [job('a', 'done'), job('b', 'running')]
+    expect(flow.question.value).toEqual({ active: 1, tray: false })
   })
 
   it('stops the app’s own server with its jobs on Stop jobs and quit', async () => {

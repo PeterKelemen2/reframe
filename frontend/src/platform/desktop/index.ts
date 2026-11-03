@@ -1,12 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { ask, open, save } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
-
-import { createAppI18n } from '@/i18n'
 
 import type {
   DesktopBackend,
@@ -18,27 +16,11 @@ import type {
 
 import { openPreviewWindow, setSettings, settings } from './comfort'
 import { onOpenPaths } from './openPaths'
+import { subscribe } from './subscribe'
+import { openReadable } from './unreadable'
 
 export const BACKEND_STATE_EVENT = 'backend-state'
 export const QUIT_EVENT = 'quit-requested'
-
-/** What a file manager sends for a name that is not UTF-8: that path does not exist. */
-const UNREADABLE = String.fromCodePoint(0xfffd)
-
-/** Turns the listener a Tauri call gives later into the unsubscribe the callers want now. */
-function subscribe(listening: Promise<UnlistenFn>): () => void {
-  let stopped = false
-  let unlisten: UnlistenFn | null = null
-  void listening.then((stop) => {
-    if (stopped) return stop()
-    unlisten = stop
-    return undefined
-  })
-  return () => {
-    stopped = true
-    void unlisten?.()
-  }
-}
 
 function backendError(error: unknown): DesktopBackendError {
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -80,27 +62,13 @@ async function pickFiles({
   return Array.isArray(chosen) ? chosen : [chosen]
 }
 
-/** Says which dropped names cannot be read, and offers the file dialog for them instead. */
-async function offerFileDialog(unreadable: string[], cb: (paths: string[]) => void) {
-  const { t } = createAppI18n().global
-  const names = unreadable.map((path) => path.split(/[\\/]/).pop() ?? path)
-  const chosen = await ask(t('desktop.drop.unreadable', { names: names.join('\n') }), {
-    title: t('desktop.drop.title'),
-    kind: 'warning',
-    okLabel: t('desktop.drop.openFiles'),
-    cancelLabel: t('desktop.drop.cancel'),
-  })
-  if (!chosen) return
-  const paths = await pickFiles({ multiple: true })
-  if (paths.length > 0) cb(paths)
-}
-
 export function createDesktopPlatform(): Platform {
   const desktop: DesktopShell = {
     backendInfo,
 
     onBackendState(cb) {
       return subscribe(
+        'platform.onBackendState',
         listen<DesktopBackendState>(BACKEND_STATE_EVENT, (event) => cb(event.payload)),
       )
     },
@@ -111,7 +79,10 @@ export function createDesktopPlatform(): Platform {
 
     onQuitRequested(cb) {
       if (!inMainWindow()) return () => {}
-      return subscribe(listen(QUIT_EVENT, () => cb()))
+      return subscribe(
+        'platform.onQuitRequested',
+        listen(QUIT_EVENT, () => cb()),
+      )
     },
 
     async quitReady() {
@@ -152,16 +123,12 @@ export function createDesktopPlatform(): Platform {
 
     onFilesDropped(cb) {
       return subscribe(
+        'platform.onFilesDropped',
         getCurrentWebview().onDragDropEvent((event) => {
           if (event.payload.type !== 'drop') return
-          const readable = event.payload.paths.filter((path) => !path.includes(UNREADABLE))
-          const unreadable = event.payload.paths.filter((path) => path.includes(UNREADABLE))
-          if (readable.length > 0) cb(readable)
-          if (unreadable.length > 0) {
-            offerFileDialog(unreadable, cb).catch((error: unknown) =>
-              console.error('platform.onFilesDropped failed', error),
-            )
-          }
+          openReadable(event.payload.paths, cb).catch((error: unknown) =>
+            console.error('platform.onFilesDropped failed', error),
+          )
         }),
       )
     },

@@ -22,7 +22,12 @@ export function useOpenPaths(): void {
     if (system.phase !== 'ready' || waiting.length === 0) return
     const paths = waiting.splice(0)
     void router.push({ name: 'workspace' })
-    sources.open(paths).catch((error: unknown) => {
+    const openAndShow = async (): Promise<void> => {
+      // The file the user opened is shown, also when another one was.
+      const [first] = await sources.open(paths, { select: false })
+      if (first !== undefined) await sources.select(first.id)
+    }
+    openAndShow().catch((error: unknown) => {
       // A failed request is a toast already.
       if (!(error instanceof ApiError)) console.error('opening the paths failed', error)
     })

@@ -2,6 +2,7 @@ import { emit } from '@tauri-apps/api/event'
 import { clearMocks, mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import type { InvokeArgs } from '@tauri-apps/api/core'
 import { flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DesktopBackendState } from '../types'
@@ -42,7 +43,10 @@ async function drag(type: 'enter' | 'over' | 'drop' | 'leave', paths: string[] =
   await flushPromises()
 }
 
-beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}))
+beforeEach(() => {
+  setActivePinia(createPinia())
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+})
 
 afterEach(() => {
   clearMocks()
@@ -92,6 +96,19 @@ describe('the desktop backend', () => {
     await flushPromises()
     await emit(BACKEND_STATE_EVENT, { state: 'starting' })
     expect(states).toEqual([])
+  })
+
+  it('logs a listener the app refuses', async () => {
+    const platform = shell()
+    mockIPC((cmd) =>
+      cmd === 'plugin:event|listen' ? Promise.reject('event.listen not allowed') : null,
+    )
+    platform.desktop!.onBackendState(() => {})
+    await flushPromises()
+    expect(console.error).toHaveBeenCalledWith(
+      'platform.onBackendState failed',
+      'event.listen not allowed',
+    )
   })
 
   it('asks the shell to start the backend again', async () => {

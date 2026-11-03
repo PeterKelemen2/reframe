@@ -9,6 +9,7 @@
     "title": "Desktop app",
     "tray": "Tray icon",
     "trayHelp": "An icon in the system tray shows the queue's progress and has Pause all, Show and Quit. When jobs run, closing the window can then keep Reframe running in the tray.",
-    "failed": "The setting could not be saved: {reason}"
+    "failed": "The setting could not be saved: {reason}",
+    "unreadable": "The setting could not be read: {reason}"
   }
 }

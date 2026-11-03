@@ -29,6 +29,15 @@ export interface DesktopBackend {
   instance: string
   /** The app started this server (its sidecar); else it is another front end's owner. */
   owned: boolean
+  /** Set when the app's sidecar runs on a queue of its own: not saved, not shared. */
+  privateQueue: DesktopPrivateQueue | null
+}
+
+/** Why the shared queue could not be used. */
+export interface DesktopPrivateQueue {
+  reason: 'otherVersion' | 'webServer' | 'lockHeld' | 'unusableToken'
+  /** English text from the shell: who owns the shared queue (version, pid). */
+  detail: string
 }
 
 export interface DesktopBackendError {

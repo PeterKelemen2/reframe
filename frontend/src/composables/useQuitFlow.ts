@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 
 import { desktopBackend } from '@/api/boot'
 import type { QueueJob } from '@/api/types'
@@ -8,7 +8,7 @@ import { useQueueStore } from '@/stores/queue'
 export type QuitAnswer = 'stop' | 'tray' | 'cancel'
 
 export interface QuitQuestion {
-  /** Running and paused jobs of every front end. */
+  /** Running and paused jobs of every front end, now. */
   active: number
   /** *Keep running in tray* is offered. */
   tray: boolean
@@ -23,20 +23,23 @@ function active(jobs: readonly QueueJob[]): QueueJob[] {
  * run, and a when-done `quit` quits. Does nothing in a browser.
  */
 export function useQuitFlow() {
-  const question = ref<QuitQuestion | null>(null)
+  const asked = ref<{ tray: boolean } | null>(null)
   const shell = platform.desktop
-  if (shell === null) return { question, answer: (): Promise<void> => Promise.resolve() }
   const queue = useQueueStore()
+  // A job that ends while the question is open is no longer counted.
+  const question = computed<QuitQuestion | null>(() =>
+    asked.value === null ? null : { active: active(queue.jobs).length, tray: asked.value.tray },
+  )
+  if (shell === null) return { question, answer: (): Promise<void> => Promise.resolve() }
 
   const requested = async (): Promise<void> => {
-    const running = active(queue.jobs).length
-    if (running === 0) return shell.quit()
+    if (active(queue.jobs).length === 0) return shell.quit()
     const { tray } = await shell.settings()
-    question.value = { active: running, tray }
+    asked.value = { tray }
   }
 
   const answer = async (choice: QuitAnswer): Promise<void> => {
-    question.value = null
+    asked.value = null
     if (choice === 'cancel') return
     if (choice === 'tray') return shell.hideMainWindow()
     const backend = desktopBackend.value

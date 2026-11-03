@@ -1,8 +1,0 @@
-{
-  "unreadable": {
-    "title": "A file name cannot be read | {n} file names cannot be read",
-    "text": "Reframe cannot read the name of this file, so it cannot open it:\n{paths}\nChoose it in the file dialog instead? | Reframe cannot read the names of these files, so it cannot open them:\n{paths}\nChoose them in the file dialog instead?",
-    "openFiles": "Open files…",
-    "cancel": "Cancel"
-  }
-}

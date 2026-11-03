@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ServerCrash } from '@lucide/vue'
 import Button from 'primevue/button'
-import { ref } from 'vue'
+import { onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { DesktopBackendError } from '@/platform/types'
@@ -11,6 +11,10 @@ const props = defineProps<{ error: DesktopBackendError; retry: () => Promise<voi
 
 const { t } = useI18n()
 const busy = ref(false)
+const root = useTemplateRef<HTMLElement>('root')
+
+// The screen replaces the whole app: the focus would be on no control.
+onMounted(() => root.value?.querySelector<HTMLElement>('[data-action="retry-backend"]')?.focus())
 
 // The shell's next `backend-state` replaces this screen; the button only waits for the request.
 async function retryNow(): Promise<void> {
@@ -24,7 +28,7 @@ async function retryNow(): Promise<void> {
 </script>
 
 <template>
-  <main class="backend-error" data-phase="failed">
+  <main ref="root" class="backend-error" data-phase="failed">
     <div class="backend-error__box" role="alert">
       <ServerCrash class="backend-error__icon" :size="40" aria-hidden="true" />
       <h1 class="backend-error__title">{{ t('desktop.backend.title') }}</h1>

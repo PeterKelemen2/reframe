@@ -59,4 +59,15 @@ describe('the desktop app’s settings', () => {
     expect(toggle().element.checked).toBe(false)
     expect(wrapper.text()).toContain('The tray needs the library libayatana-appindicator3')
   })
+
+  it('says why when the shell cannot give the setting', async () => {
+    const shell = {
+      settings: () => Promise.reject('desktop_settings not allowed'),
+    } as Partial<DesktopShell> as DesktopShell
+    const { wrapper } = await mountShell(DesktopSection, { props: { shell } })
+    mounted.push(wrapper as VueWrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('The setting could not be read: desktop_settings not allowed')
+    expect(wrapper.find<HTMLInputElement>('[data-field="tray"] input').element.disabled).toBe(true)
+  })
 })
