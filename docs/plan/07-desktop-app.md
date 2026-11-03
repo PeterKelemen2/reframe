@@ -156,15 +156,19 @@ and confirms or revisits this choice. It lists the Windows items as not verified
       remote.
 
 ### D-2 Sidecar build
-- [ ] `desktop/sidecar/build.py`: PyInstaller onedir build of `reframe_server.__main__`. It
+- [x] `desktop/sidecar/build.py`: PyInstaller onedir build of `reframe_server.__main__`. It
       includes the `reframe/definitions/data` and built-in preset files and stamps the version.
-- [ ] Output to `desktop/src-tauri/resources/sidecar/`. It is listed under `bundle.resources`.
-- [ ] The same build makes the frozen `reframe` CLI in the same folder (one set of
+- [x] Output to `desktop/src-tauri/resources/sidecar/`. It is listed under `bundle.resources`.
+- [x] The same build makes the frozen `reframe` CLI in the same folder (one set of
       libraries). The `.deb` and `.rpm` link it as `/usr/bin/reframe`; the Windows installer
       offers to add the folder to the user's `PATH`; the AppImage does not put it on `PATH`
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
-- [ ] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
+      The Windows installer's offer is written, not run: *(Windows testing phase)*.
+- [x] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
       line.
+
+Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". The
+sidecar ships MediaInfo (pymediainfo with its own library).
 
 ### D-3 Sidecar manager (Rust)
 - [ ] Spawn with `tokio::process`. Read the ready line. Keep the managed state.

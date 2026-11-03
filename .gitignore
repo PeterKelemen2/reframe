@@ -23,7 +23,8 @@ frontend/dist-desktop/
 # --- Desktop (Tauri)
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
-desktop/src-tauri/resources/sidecar/
+desktop/src-tauri/resources/sidecar/*
+!desktop/src-tauri/resources/sidecar/README.md
 desktop/src-tauri/resources/tools/
 desktop/spike/src-tauri/target/
 desktop/spike/src-tauri/gen/
