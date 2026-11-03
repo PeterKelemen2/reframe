@@ -252,4 +252,21 @@ def cases(h: Any) -> list[Any]:
             video(**vp9, custom_params="bogus=1"),
             video(**vp9, custom_params="arnr-maxframes=7:g=120"),
         ),
+        # encoder.custom_param_overrides: the custom parameters come last, so they win
+        case(
+            "x265 custom parameter over a set option",
+            "encoder.custom_param_overrides",
+            "video.advanced.psy-rd",
+            warn,
+            video(encoder="libx265", advanced={"psy-rd": 1.5}, custom_params="psy-rd=0.75"),
+            video(encoder="libx265", advanced={"psy-rd": 1.5}, custom_params="fades=1"),
+        ),
+        case(
+            "NVENC custom parameter over an option's default",
+            "encoder.custom_param_overrides",
+            "video.advanced.rc-lookahead",
+            h.INFO,
+            video(encoder="hevc_nvenc", preset="p4", custom_params="rc-lookahead=20"),
+            video(encoder="hevc_nvenc", preset="p4", custom_params="init_qpB=20"),
+        ),
     ]

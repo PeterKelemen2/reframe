@@ -1,0 +1,472 @@
+# 0068 — M9, advanced encoder options: the advanced panel
+
+- Status: accepted
+- Date: 2026-11-02
+- Steps: F-9 (the advanced panel)
+
+## Context
+
+M9 ([08 §M9](../plan/08-roadmap.md#m9--advanced-encoder-options)) builds the advanced panel of
+[03 §Advanced encoder options](../plan/03-features.md#advanced-encoder-options), the one unchecked
+box of [06 §F-9](../plan/06-web-app.md#f-9-video-tab-and-advanced-options), on the core of C-6
+([0035](0035-advanced-option-sets-and-dry-run.md)). Its tasks and waves are in
+[m9-breakdown.md](../m9-breakdown.md). Before any agent, the lead checked the API (2026-11-02, on
+`main` 7fbda7c, a real `reframe-server` from `scripts/dev-server.py` with the pinned FFmpeg n9.0.2
+and the fixtures `hdr10`, `multitrack`; scripts in the lead's scratchpad `lead/api_check.py`,
+`api_check2.py`):
+
+- **The option schema** is in the definitions (`video_encoders[id].options`, definition order).
+  Options per encoder: `libx264` 52, `libx265` 81, `libsvtav1` 38, `libvpx-vp9` 17, `h264_nvenc`
+  24, `hevc_nvenc` 26, `av1_nvenc` 24, `h264_qsv` 17, `hevc_qsv` 19, `av1_qsv` 12, `h264_amf` 28,
+  `hevc_amf` 24, `av1_amf` 25, `h264_vaapi` 8, `hevc_vaapi` 8, `av1_vaapi` 7. x265 by category:
+  Motion / analysis 24, Rate control 17, Frame types / GOP 13, HDR / colour 10, Loop filters 7,
+  Performance 6, Psycho-visual 4 (no *Basic* option); by type: bool 29, int 27, enum 15, float 7,
+  string 3; by default: `preset` 45, `fixed` 25, `encoder` 11. x265 `bframes`: int 0–16, unit
+  `frames`, default `{kind: preset, values: {ultrafast: 3, …, slow: 4, slower: 8, …}, tunes:
+  [animation, zerolatency]}`. The category order is the core's `OPTION_CATEGORIES` (Basic, Rate
+  control, Frame types / GOP, Motion / analysis, Psycho-visual, Loop filters, HDR / colour,
+  Performance); the frontend does not receive it.
+- **The search** (`GET /api/definitions/encoders/libx265/options?q=`): `psy` → `psy-rd`,
+  `psy-rdoq`, `nr-intra`, `nr-inter` (the last two by their help text); `rd` → `rd`,
+  `rdoq-level`, `rd-refine`, `psy-rd`, `psy-rdoq`, `dynamic-rd`, `hrd`, `rskip`; `deblock` →
+  `deblock-tc`, `deblock-beta`, `sao-non-deblock`.
+- **Copy HDR metadata** (`POST /api/jobs/hdr-metadata`) on `hdr10` with `h265-mkv-1080p`
+  (libx265, preset `faster`, 10-bit): `[{op: add, path: /video/advanced/master-display, value:
+  "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)"}, {op: add, path:
+  /video/advanced/max-cll, value: "1000,400"}]`. The plan's command already carries the source's
+  HDR10 metadata without the copy (`-x265-params colorprim=bt2020:…:master-display=…:max-cll=…`):
+  the copy makes the values visible and editable in the panel.
+- **The command**: `advanced: {bframes: 6}` adds `:bframes=6` at the end of `-x265-params`.
+- **The dry run** (`POST /api/jobs/dry-run`, 0.06–0.07 s on `hdr10`): `nosuchparam=1` → `error
+  encoder.custom_param_rejected` at `video.custom_params` ("FFmpeg refused 'nosuchparam': Unknown
+  option: nosuchparam.", fix *Remove nosuchparam=1 from the custom parameters*); `bframes=abc` →
+  the same code ("Invalid value for bframes: abc."); `psy-rd=2.0` → `[]`; `csv=out.csv` → `error
+  encoder.custom_param_file` (no FFmpeg run). `jobs/validate` gives `encoder.custom_param_file`
+  but not `custom_param_rejected`: it does not dry-run, and neither does adding to the queue.
+- **Validation of options** (`jobs/validate`): `{amp: true, rect: false}` → `warning
+  encoder.option_inactive` at `video.advanced.amp`; `{bframes: 99}` → `error encoder.option_invalid`
+  at `video.advanced.bframes` and `error encoder.lookahead_too_short` at
+  `video.advanced.rc-lookahead`; `{psy-rd: "x"}` → `encoder.option_invalid`; `{nosuch: 1}` →
+  `error encoder.option_unknown` at `video.advanced.nosuch`.
+- **Missing**: nothing on the server. The UI had the custom parameters read-only (M4).
+
+## Decision
+
+1. **The panel's place.** *Advanced options* is a collapsible section of the Video tab, after
+   *Encoder settings*; its toggle is 03's "**Advanced…**". Not a dialog: the command drawer,
+   sticky at the tab's foot, stays in view while an option changes (the demo's "the command
+   preview updates at once"), and a validation issue's reveal reaches the option. Whether it is
+   open is page state (`ui.advancedOpen`, `false` at start); `ui.reveal` of
+   `video.advanced.<key>` or `video.custom_params` opens it. Inside it, the layout of 03: the
+   search, *Show only changed* and the categories with their counts beside (or, in a narrow
+   column, above) the shown category's options.
+2. **Changed means stored.** The job keeps only changed options (`VideoSettings.advanced`). An
+   option is changed while its key is in `video.advanced`, whatever its value: a value typed
+   equal to today's default stays (it pins the option when the speed preset changes). ↺ and
+   clearing a field remove the key. The category count is the number of the category's keys in
+   `video.advanced`.
+3. **"At once"** is the drawer's next answer: `jobs/plan` 250 ms after the last edit
+   (`EDIT_DEBOUNCE`, M4), with no other action; each control writes its value into the job as
+   soon as it is committed (a step, a choice, a typed number).
+4. **The search** is the server's (`GET /api/definitions/encoders/{id}/options?q=`: the core's
+   ranking over label, key, CLI name and help), asked for after a short pause in the typing, the
+   newest answer only. The matches show in its order across the categories, each with its
+   category; an empty query brings the category view back.
+5. **Categories**: the core's order (above), then *Custom parameters*. A category without an
+   option for the encoder is not listed. The names are the frontend's i18n keys; a category the
+   frontend does not know is shown by its name, after the known ones.
+6. **The default as placeholder text** (an empty field shows it; a switch or a choice names it
+   beside the control): `fixed` → its value; `preset` → the value for the job's speed preset (the
+   encoder's default preset when the job has none), naming the preset, and that the preset decides
+   ("4 (preset slow)"); a preset missing from `values` → the option is not used at that preset;
+   when the job's tune is one of the option's `tunes`, the text says the tune changes it;
+   `encoder` → the encoder decides (with its note).
+7. **A key the encoder does not define** (from an imported preset or job) is shown after the
+   categories as a row with its value and ↺, so that its `encoder.option_unknown` error has a
+   field.
+8. **Custom parameters** are edited in the panel (no longer read-only): a typing run is one undo
+   step; the text is checked with `POST /api/jobs/dry-run` 500 ms after the typing stops (as the
+   Filters tab's custom filter, M8), and when the field opens with a text; only the newest text's
+   answer counts. The dry run's errors show at the field with validation's issues at
+   `video.custom_params`.
+9. **Copy HDR metadata from source** applies the server's patch as one undo step (in a group, at
+   the page's scope, like any edit). An empty patch says why: the source has no HDR metadata, or
+   the encoder takes it from the frames (it has no such options).
+
+## Consequences
+
+- The skeleton (`ui.advancedOpen`, the section and the stubs) and the contracts are in
+  [m9-breakdown.md](../m9-breakdown.md).
+- A custom parameter FFmpeg refuses is shown at the field and in the dry run only: `jobs/validate`
+  and *Add to queue* do not dry-run, so such a job can be queued and fails at the encode (as the
+  custom filter, M8's L2). Recorded; an owner question.
+
+## Plan changes
+
+- [06 §F-9](../plan/06-web-app.md#f-9-video-tab-and-advanced-options): the `AdvancedOptions` box
+  ticked, with a link to this record. No plan text changed: decisions 10–13 change the built-in
+  presets' data, add a validation rule in the spirit of 0035 and correct two definition notes.
+
+## Task A — F-9 the advanced panel
+
+- **Files**: `AdvancedOptions.vue` (the panel), `OptionRow.vue` (one option), `options.ts` (the
+  category order, the default text, the JSON pointer of a key), `useOptionSearch.ts` (the search
+  request, so that the real-server test can run it), in `components/video/advanced/`. The Video
+  tab needed nothing more: the panel reads passthrough from the job itself.
+- **Layout** (item 1): the search, *Show only changed* and the category list on the left, the
+  shown category's options on the right; in a column narrower than 40rem the categories go above
+  the options (side by side, wrapping), and in one narrower than 30rem a row's label goes above
+  its control. The category with the selection has `aria-current`; a count shows only when it is
+  above 0 (`data-count` always; the screen-reader text says "2 changed options").
+- **Show only changed** filters the shown category's options (and the search's matches); the
+  category list and its counts stay, so the counts say where to look. A category without a
+  changed option says so. Custom parameters count as changed while the text is not empty (they
+  stay shown); their category has no count.
+- **Controls by type**: int and float are an `InputNumber` that writes on commit (Enter, Tab,
+  blur, an arrow-key step), each commit one undo step; float digits are the step's (0.05 → 2).
+  A bool is a switch that shows the default's value while the option is not set (off when the
+  encoder decides) and writes the other value. An enum is `ChoiceSelect` with "Default: …" as its
+  first entry (choosing it removes the key). A string is a text field that writes while typing,
+  one undo step per typing run. Emptying a field removes the key (item 2). ↺ shows on a changed
+  option only (03's mock-up), then the focus goes to the option's control.
+- **The default text** (item 6) is the placeholder of a number or text field and the "Default:"
+  entry of a choice; a switch, and every changed option, has it beside the control
+  ("default: 4 frames (preset Slow)"). The preset is named by its label (the speed slider's
+  "Slow"), values carry their unit, enum values their choice label, bools "on"/"off"; an
+  `encoder` default reads "the encoder decides (auto, from the frame rate)".
+- **Help**: ⓘ shows the option's help and its command-line name ("Command line: rc-lookahead"),
+  so that a search by CLI name shows why it matched.
+- **The search** (item 4) is asked 200 ms after the last key press; while it is on its way the
+  status says "Searching…", then how many match. Choosing a category leaves the search. An
+  encoder without options (one the definitions do not know) matches nothing without asking.
+- **A reveal** of `video.advanced.<key>` selects the option's category, turns *Show only
+  changed* off when the option is not changed, and clears a search whose matches do not hold it;
+  `video.custom_params` selects *Custom parameters* the same way. A key the encoder does not
+  define (item 7) is in the "Not options of <encoder>" group under the shown options, in every
+  view, so its reveal needs nothing more.
+- **Checked on the real server** (pinned FFmpeg n9.0.2, `hdr10`, preset `h265-mkv-1080p`:
+  libx265 at `slow`): "psy" → psy-rd, psy-rdoq, nr-intra, nr-inter; "rc-lookahead" →
+  rc-lookahead; "consecutive" (bframes' help) → bframes; B-frames 6 → `:bframes=6` in the
+  drawer's command; `{rect: false, amp: true}` → the `encoder.option_inactive` warning at the amp
+  row and in Summary, whose link opens the panel at amp; the `h265-nvenc-1080p` preset on this
+  machine (no NVIDIA device) still shows `hevc_nvenc`'s schema (Basic first; one changed option
+  from the preset in Rate control).
+- **Not built**: a count on *Custom parameters*; a changed-option count in the collapsed
+  section's header; a way to type a value outside an option's min/max (the field clamps it, so
+  `encoder.option_invalid` comes only from an imported job).
+- **Known, not mine**: the Video tab is wider than its column at 1280 px (5 px: the frame-rate
+  mode buttons) and at 1024 px (the column is 228 px; the encoder settings' inline fields), with
+  the panel closed too; the panel itself fits at 1920, 1440, 1280 and 1024 px.
+- **Plan box**: 06 §F-9's `AdvancedOptions` box waits for task B's components in the panel.
+
+## Task B — F-9 custom parameters and Copy HDR metadata
+
+Built in `components/video/advanced/` (`CustomParams.vue`, `useParamsCheck.ts`,
+`CopyHdrMetadata.vue`, `i18n/messages/en/params.json`), checked in the skeleton's stub panel.
+
+- **Custom parameters** (item 8): a `Field` at `video.custom_params` with a monospace text box. A
+  typing run is one undo step (`coalesce: 'video.custom_params'`, the blur ends it).
+  `useParamsCheck` sends `POST /api/jobs/dry-run` `CHECK_DELAY` (500 ms, the Filters tab's
+  constant) after the text stops changing, when the field opens with a text, and again for
+  another job (`editor.session`); `latestRequest` keeps only the newest text's answer. The field
+  shows validation's issues at the path and the dry run's issues at `video.custom_params` and
+  `video.encoder` (a test encode that cannot start is reported at the encoder: with parameters
+  typed, they are the likely cause); a dry-run issue that validation already reports (the file
+  rule) shows once. A status line says "Checking…" and, with no issue, that the encoder accepts
+  them; a failed dry run is a warning at the field with the problem's text.
+- **Why not `useCustomCheck` itself**: it checks only on a typing event (not a field that opens
+  with a text, nor an undo), keeps every error of the dry run whatever its path (a refused custom
+  filter would show at this field), and drops a failed request without a word. Its
+  `CHECK_DELAY` and its `latestRequest` pattern are reused.
+- **Copy HDR metadata** (item 9): a button at the top of *HDR / colour*. `POST
+  /api/jobs/hdr-metadata` with the job; the patch goes in with one `editor.patch` (one undo step;
+  in a group at the page's scope). A note says what was copied ("Copied master-display,
+  max-cll."), or why nothing was: the source has no HDR10 metadata (the probe's
+  `hdr.mastering_display` and `hdr.content_light` are missing), a hardware encoder takes it from
+  the frames, or a software encoder without such options (x264, VP9) cannot write it. 03 names
+  only the hardware case; 0035 §6 says x264 and VP9 cannot carry the metadata, so saying they
+  take it from the frames would be wrong. A failed request is the note in the error colour with
+  the problem's text (`apiQuiet`, no toast). An answer for a job that is no longer open is
+  dropped; the note goes when the job or the encoder changes. Both controls are off while the
+  video is passed through.
+- **Checked against the real server** (pinned FFmpeg n9.0.2, `hdr10`, `h265-mkv-1080p`): the
+  dry-run answers and HDR values of the Context above, again; SVT-AV1 gives
+  `mastering-display` `G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001)` and
+  `content-light` `1000,400`; `hevc_nvenc`, `libx264` and `multitrack` give `[]`. A job whose
+  encoder is changed to SVT-AV1 without the picker's conversion dry-runs to `error
+  encoder.dry_run_failed` at `video.encoder` ("this encoder has no profile setting"). Recorded in
+  `CustomParams.server.test.ts` and `CopyHdrMetadata.server.test.ts`.
+- **Deviation, the real-server tests**: they run in the `server` project's Node environment and
+  test `useParamsCheck` and the button's request and patch through the editor store, not the
+  mounted components. A `*.server.test.ts` with `@vitest-environment jsdom` cannot start the
+  server: Vite's asset-URL transform rewrites `devServer.mjs`'s `new URL('../../../../',
+  import.meta.url)` to an `http://localhost:3000/` URL there. The components are checked against
+  the real server in the browser (headless Chromium and Firefox, light and dark).
+- **In task A's panel** (phase 2, headless Chromium and Firefox, light and dark, `hdr10`,
+  `h265-mkv-1080p`): *Copy HDR metadata* shows in *HDR / colour* only; a copy highlights the
+  master-display and max-cll rows and puts *HDR / colour*'s count from 0 to 2, and one `Ctrl+Z`
+  takes both away; the field is the *Custom parameters* category, its dry-run error is visible
+  above the open command drawer (issue line bottom 445 px, drawer top 556 px at 1440×1000); the
+  search "custom" shows it, *Show only changed* keeps it while the text is not empty; the keyboard
+  reaches the button and the field from their categories.
+- **The help is a line under the field, not `Field`'s ⓘ**: a reveal focuses the first focusable
+  element of a `Field`, which is the ⓘ button when the field has help, so Summary's link to
+  `video.custom_params` left the focus on ⓘ instead of in the text. (`Field` and `useReveal` are
+  the lead's: every field with help has this; recorded for the review.)
+- **Not built**: the dry-run issues' fix buttons at the field (`Field` shows none; the Summary
+  lists validation's issues, which have no dry run); a dry run in `jobs/validate` or at *Add to
+  queue* (Consequences).
+
+## Review, 2026-11-02
+
+Two fresh reviews of `m9-advanced-options` at 96b456c (both `claude-opus-5-5`, `high`): R1 (the
+option schema, state, undo, persistence, validation) 2 blockers, 2 majors, 3 minors, 1 nit; R2
+(UI, keyboard, a11y, i18n, layout) 1 blocker (R1's B2), 2 majors, 7 minors, 5 nits. The lead
+reproduced every blocker and major on the merged branch (port 8762; R1's and R2's scripts in the
+lead's scratchpad `lead/r1repro/`, `lead/r2repro/`):
+
+- **R1-B1** (blocker) *Copy HDR metadata* in a group writes the shown file's metadata into the
+  template: a group of `hdr10` and a copy with MaxCLL 500,100 (`mkvpropedit`) encodes E02 with
+  `max-cll=1000,400` after a copy while E01 is shown (without the copy each file's command holds
+  its own). Item 9 ("at the page's scope") was wrong.
+- **R1-B2 = R2-B1** (blocker) ten built-in presets set panel options in `custom_params`, which
+  come last and win: on `h265-mkv-1080p` psy-rd shows "2 (preset Slow)" and psy-rd 1.5 set in the
+  panel gives `…:psy-rd=1.5:…:psy-rd=0.75:…`, no issue. Checked by the lead with the pinned
+  FFmpeg: `-x265-params psy-rd=1.5:aq-mode=2:psy-rd=0.75:aq-mode=1` writes `psy-rd=0.75`,
+  `aq-mode=1` into the stream's settings SEI. Every key of those presets is a modelled option
+  except SVT-AV1 `keyint=10s` (the option is an int) and x264 `deblock=-2,-2` (two parts).
+- **R1-M1** (major) a float field keeps only its step's decimals: psy-rd (step 0.1) typed 1.75 is
+  stored 1.7; a stored 1.75 shows 1.8 and a Tab through the field stores 1.8 (PrimeVue's
+  `InputNumber` writes on every blur). R1-m3: a Tab through an imported `bframes: 99` stores 16.
+- **R1-M2** (major) master-display / max-cll say "the encoder decides (not written)" while the
+  command without them already holds the source's values (the core's definition notes).
+- **R2-M1** (major) Tab moves the focus to controls hidden under the sticky command drawer: 20 of
+  22 stops at 1440 × 1000 with the drawer open (the tab's scroller has no `scroll-padding-bottom`).
+- **R2-M2** (major) with *Show only changed*, ↺ or an emptied text field removes the focused row
+  and the focus falls to `<body>`.
+
+Minors and nits: R1-m1 (a Copy HDR answer applied after the encoder changed), R1-m2 = R2-m3
+(Ctrl+Z inside a number field did nothing: **fixed by the lead**, 80ff653, `useShortcuts`, with
+a test that failed before), R1-n1 = R2-m2 (the search status says "No option matches" while the
+custom field or a changed-only-hidden match shows), R2-m1 (a long unknown value overflows), R2-m4
+(a dry-run refusal is not announced), R2-m5 (the panel forgets its category, search and filter on
+a tab switch), R2-m6 (`Field`'s ⓘ popover is an unnamed modal dialog), R2-m7 (the selected
+category only by a 1.28:1 tint), the nits (the custom category's heading repeats the field's
+label; built-up texts; the "default" line not in the control's description; duplicate reset CSS),
+and the lead's L1 (the open drawer leaves about 200 px of options at 960 px) and L2 (*Repeat
+headers*' default text wraps under its switch). Refuted: the *Show only changed* box that looked
+filled (a transition). Confirmed fixed: the reveal's focus (96b456c).
+
+### Decisions of the review round
+
+10. **Built-in presets set modelled options in `advanced`, not in `custom_params`** (C-6 data):
+    each entry whose key is an option of the preset's encoder moves into `video.advanced` with the
+    option's type; only what no option can hold stays a custom parameter. The command keeps the
+    same values.
+11. **A custom parameter that sets a modelled option is an issue at that option's row**
+    (`encoder.custom_param_overrides`, path `video.advanced.<key>`): a `warning` when
+    `video.advanced` sets the same option (the panel's value is not used), `info` otherwise (the
+    panel's default is not used). It extends 0035's rule that a combination the encoder silently
+    changes is a warning.
+12. **Copy HDR metadata is not offered in a group** (supersedes item 9's group case): each file's
+    encode already writes its own source's HDR10 metadata, and one file's values must not become
+    the template's. The button is off there with a note that says so.
+13. The definitions' default notes of the HDR options say that Reframe writes the source's
+    metadata when the option is not set.
+
+### Fix round — FA (the panel, focus and layout)
+
+Checked headless (Chromium and Firefox, light and dark) against `scripts/dev-server.py` with the
+pinned FFmpeg n9.0.2, `hdr10`, `h265-mkv-1080p`; the reviewers' scripts run again on the branch.
+Each test below failed on the code before the fix.
+
+- **R1-M1, R1-m3** (`OptionRow.vue`, `options.ts`): a float field holds up to 10 decimals
+  (`FLOAT_DIGITS`; a double keeps them exactly below 10⁵, and every float option's maximum is at
+  most 50), whatever its step. PrimeVue's `InputNumber` commits its text, clamped and rounded, on
+  every Tab, Enter and blur; the row now stops those events (capture phase, before PrimeVue) when
+  the text is the one the field had when it got the focus, so a pass through the field writes
+  nothing and the shown text stays. `probe1.mjs`: typed 1.75 → stored 1.75; a stored 1.75 shows
+  "1.75" and a Tab through keeps it; a stored 99 shows "99 frames" and a Tab through keeps 99;
+  typing 12 + Enter and three ArrowUp are still one undo step each. Ctrl+Z / Ctrl+Shift+Z inside
+  the field (80ff653) still undo and redo.
+- **R2-M1, L1** (`CommandPreview.vue`, `EditorTabs.vue`): the drawer publishes its height
+  (`--video-command-drawer-height` on the root, as the status bar does) and the tab's scroller has
+  `scroll-padding-bottom` of that height plus `--rf-space-3`. The scroller is a size container;
+  the open drawer is at most `40cqh` (40 % of the tab, 40 % of the viewport without the container)
+  and its command scrolls inside it. `tab.mjs` (`DRAWER=1 STEPS=22 WIDTH=1440 HEIGHT=1000`): 0 of 22
+  stops under the drawer (before: 20); 60 stops, open and collapsed, Chromium and Firefox, 1920 ×
+  1080 and 1440 × 1000: only the drawer's own controls. At 1440 × 1000 the drawer is 335 of 852 px
+  (0.39).
+- **R2-M2** (`AdvancedOptions.vue`): when an update removes the focused element of the options
+  column, the focus goes to the selected category (or to the search during a search). Chromium
+  blurs a removed element during the update and the text field's blur handler starts a second
+  update before the first one's `updated` hook, so the element is kept until a later focus
+  replaces it (the unit test emulates that blur; Firefox does not blur). `focus.mjs` 4 and 4c: the
+  category button (before: `BODY`).
+- **R1-n1, R2-m2**: the status counts the custom parameters as a match ("1 option matches" for
+  "custom"); matches hidden by *Show only changed* say "No matching option is changed." instead of
+  "No option matches …". `states.mjs`, `probe9.mjs`.
+- **R2-m1**: a long unknown value wraps, and the unknown keys' fields put the key above the value
+  in a column under 30rem, as the option rows. `layout.mjs` at 1024 px with the preview open: the
+  panel's overflow 0 (before: 86 px). The Video tab's own overflow there (encoder picker, hints) is
+  task A's "Known, not mine".
+- **R2-m5** (`view.ts`): the category, the search and *Show only changed* are a reactive object of
+  the module, for the page. `persist.mjs`: kept across Audio → Video.
+- **R2-m6** (`Field.vue`): the help popup has an id that the ⓘ button names in `aria-controls`,
+  `aria-modal="false"` and `aria-labelledby` the button ("About B-frames"). `pop.mjs`: Escape and
+  Tab as before; the focus stays on the button.
+- **R2-m7**: the selected category has a 3 px bar in the primary colour: 6.29:1 on the light
+  panel, 5.94:1 on the dark one (`fa-mark.mjs`).
+- **Nits**: no "Custom parameters" heading above the field of the same label; the help and its
+  "Command line" are one message (`advanced.help`); the "default: …" line is in the control's
+  `aria-describedby` (`Field`'s new optional `description`, joined before the issues' id); ↺ is one
+  component (`ResetButton.vue`) for the option rows and the unknown keys.
+- **L2**: the "default: …" text beside a switch wraps in its own box (`flex: 1 1 10rem`); ↺ comes
+  right after the control. *Repeat headers*' text is beside its switch at 1920, 1440 and 1280 px;
+  in the 196 px column at 1024 px with the preview open it goes under it.
+- **Outside "the popover only"**: `Field`'s `description` prop (for the nit on the default line;
+  the slot's `describedBy` and the attribute `Field` sets carry it).
+- **Not built**: the focus goes to the category, not to the next row; no unit test of the CSS
+  (scroll padding, `40cqh`, the bar, wrapping): the browser runs above check them.
+
+### Fix round — FB (Copy HDR metadata, custom parameters)
+
+- **R1-B1** (decision 12): while the editor's target is a group (either scope) *Copy HDR
+  metadata* is off, and a note in its place (the button's `aria-describedby`) says "In a group,
+  each file's encode writes its own source's HDR10 metadata, so none is copied into the group."
+  Checked on the real server (pinned FFmpeg, folder `HDR.Show.S01`: two copies of `hdr10`, the
+  second with `mkvpropedit … --set max-content-light=500 --set max-frame-light=100`, group of
+  both, `h265-mkv-1080p`): without a copy E02's command has `max-cll=500,100` and E01's
+  `max-cll=1000,400` (both files have the same mastering display); the button is disabled, a forced click
+  changes nothing, the template's `video.advanced` stays `{}` and E02's command still has
+  `max-cll=500,100`.
+- **R1-m1**: an answer (patch or failure) is dropped when the session, the job's encoder or the
+  target's `sourceId` (a group's shown file) is not what it was when the request went out.
+  `useParamsCheck` watches the encoder and the shown file as well as the text and the session:
+  a change cancels the waiting or running dry run and checks again, so an answer for the old
+  encoder or file is never shown. The lead's `copyHdrStale.test.ts` passes on this branch.
+- **R2-m4**: the status line of the custom parameters is always rendered, `role="status"`
+  (polite), so that a later text is announced. It says "Checking…" and "The encoder accepts
+  them" as before. For a refusal it holds the dry run's issue messages, and for a dry run that
+  did not run it holds that reason, in screen-reader-only text: the field already shows them as
+  issues, so they are not shown twice. Real browser: while checking `status: "Checking with a
+  one-frame test…"`, after the answer `status: "FFmpeg refused 'nosuchparam': Unknown option:
+  nosuchparam."`. Before, the region was removed when the error came.
+- **The copy's note**: one plural message `params.hdr.copied` with the labels of the filled
+  rows from the definitions ("Filled “Mastering display” and “MaxCLL, MaxFALL” from the
+  source.", or the one-row form). The patch has at most two options: a mastering display and a
+  content light level.
+- **Found, not mine** (for the lead): the hardware encoders (NVENC, QSV, AMF, VAAPI) have no
+  *HDR / colour* options, so the panel has no such category for them and the button cannot be
+  reached there. The note "takes the HDR metadata from the frames" only shows in the unit test.
+  The "Done when" case "with an encoder that takes HDR metadata from the frames it says why
+  nothing was copied" therefore does not show in a browser (`AdvancedOptions.vue` mounts the
+  button only in *HDR / colour*).
+
+### Fix round — FC (core: built-in presets, the override issue, HDR notes)
+
+R1-B2 = R2-B1 (decisions 10, 11) and R1-M2 (decision 13), in `packages/reframe` only.
+
+- **The built-in presets (decision 10)**: every entry of the ten presets' custom parameters whose
+  key is the CLI name of an option of the preset's encoder moved into `video.advanced`, in the
+  option's type: x264 *Super HQ*, *Creator*, *Social 25 MB*, *Production Standard* and *Proxy*;
+  x265 *Fast 2160p60 4K HEVC* and the three *H.265 MKV* presets; SVT-AV1 *AV1 MKV 2160p60 4K*.
+  x264 `deblock=-2,-2` is the two parts `deblock-alpha: -2`, `deblock-beta: -2`; HandBrake's
+  `b-pyramid=0` is the choice `none` (x264 takes a choice's name or its index: both write
+  `b_pyramid=0`). Only SVT-AV1 `keyint=10s` stays a custom parameter: the option is a number of
+  frames. The default preset now shows its eight x265 options as changed (Psycho-visual 2,
+  Motion / analysis 4, Rate control 1, Loop filters 1).
+- **The command is the same.** Against a real server (pinned FFmpeg n9.0.2, `hdr10` and
+  `multitrack`, every built-in preset, all runs of a 2-pass job; `jobs/plan` before and after,
+  the params argument parsed key → value, the last value winning): 42 of 52 plans are identical;
+  the other ten differ only in the text of one value with the same meaning: `psy-rdoq` `4.0` → `4`
+  (the four x265 presets) and `b-pyramid` `0` → `none` (*Social 25 MB*, both runs). A test
+  encodes every x264 and x265 built-in with its options and with HandBrake's original string as
+  custom parameters and compares the stream's settings SEI: the same; for SVT-AV1 (no such SEI)
+  the params argument is the same key by key (`tests/presets/test_builtin.py`).
+- **The override issue (decision 11)**: `encoder.custom_param_overrides` at
+  `video.advanced.<key>`, a `warning` naming the value set in the panel when the option is in
+  `video.advanced`, `info` otherwise; the message names the custom parameter and its value ("The
+  custom parameter psy-rd=1.0 sets Psy-RD strength (psy-rd): x265 uses it, not the 1.3 set
+  here."), and its fix removes that entry. A parameter sets an option when it names the option's
+  CLI name as the encoder reads it: in a params argument (x264, x265, SVT-AV1) the forms of
+  `library_key_forms` (`psy_rd`, `no-rect`); for the other encoders the private option's name or
+  the generic option's argument (`bf` → `-bf`). A two-part value sets both parts; of two entries
+  for one option the last one is named. It runs for jobs and templates. It is not one of the
+  custom-parameter refusals that stop the dry run (`video_custom_param_issues`), so a job with it
+  still dry-runs. The real tools' order (the custom parameters come last and win, with and
+  without a params argument) is in testdata/README.md "Custom parameters over advanced options".
+- **The HDR notes (decision 13)**: the `encoder` default of x265 `master-display` / `max-cll` and
+  SVT-AV1 `mastering-display` / `content-light` reads "Reframe writes the source's metadata";
+  the panel's placeholder is "the encoder decides (Reframe writes the source's metadata)" (a
+  longer note was cut off in the field at 1920 px). A test checks that every option that the
+  builder fills from an HDR source says "the source's" in its default.
+- **No schema bump**: an issue code is free text (`ValidationIssue.code: str`), and issues are
+  derived data (the queue validates again); the severities are the existing ones. The built-in
+  presets are read-only package data, not a persisted document; `advanced` and `custom_params`
+  are fields of schema 1, and no `Literal` or enum gets a value. A user preset saved from an old
+  built-in keeps its custom parameters as they are (they are the user's) and now shows the info
+  at each row.
+- **Tests changed with the data**: the anime-season preset document is written again from its
+  derivation (`tests/batch/anime.py`); `needs_dry_run`'s test uses the SVT-AV1 preset (the only
+  built-in with custom parameters); the custom x265 preset of the CLI tests clears its options;
+  the dry run's x264 `vbv-maxrate=1000` case now also gets the info.
+- **Checked in the panel** (headless Chromium and Firefox, light and dark, `hdr10`): psy-rd is
+  changed with ↺ and "default: 2 (preset Slow)"; psy-rd 1.25 set in the panel reaches the command
+  (`…:psy-rd=1.25:…`, once); a custom `psy-rd=1.0` puts the warning under psy-rd, and after ↺ the
+  info; NVENC: `rc-lookahead=20:bf=2` gives the warning at *Look-ahead* (preset value 10) and the
+  info at *B-frames*. psy-rd 0.75 shows as `0.8` until FA's decimals fix (R1-M1).
+- **For the others**: `CopyHdrMetadata.server.test.ts` (FB's) expects the default preset's job
+  to have no options (two tests fail: the preset's eight options are there, and `aq-mode: "1"`
+  survives the switch to SVT-AV1, which has the option). Switching the default preset to another
+  encoder now keeps the options that fit the new one (the custom parameters were cleared).
+- **Not built**: a migration of user presets; a fix that moves a custom parameter into the panel.
+
+### Re-run of the repros on the merged branch (2026-11-03)
+
+The lead, on `m9-advanced-options` after FB, FA and FC (port 8763, the pinned FFmpeg, the
+`HDR.Show.S01` group made with `mkvpropedit` in the server's media root): R1-B1 the copy button is
+disabled in the group (`probe8.mjs`: the click waits on "element is not enabled"); R1-B2 / R2-B1
+`h265-mkv-1080p` has no custom parameters, psy-rd 1.5 set in the panel appears once
+(`…:rd=4:psy-rd=1.5:psy-rdoq=4:…`); R1-M1 1.75 typed into the cleared psy-rd field is stored 1.75,
+a stored 1.75 shows "1.75" and a Tab through keeps it, a stored `bframes: 99` stays 99; R1-M2 the
+HDR placeholders read "the encoder decides (Reframe writes the source's metadata)"; R2-M1
+`tab.mjs` 0 of 22 focus stops under the drawer (Chromium, 1440 × 1000) and 0 of 40 (Firefox,
+1920 × 1080); R2-M2 the focus goes to the category after ↺ and after an emptied text field with
+*Show only changed*; the reviewers' vitest repros (`copyHdrStale.test.ts`, `focus.test.ts`) 5
+passed. FB's `CopyHdrMetadata.server.test.ts` expected the default preset's job to have no
+options; after FC it keeps the preset's own (the lead's commit after the FC merge).
+
+Lead mutations, one per fix task, each failed the task's tests and was restored: FB (`inGroup`
+always false), FA (the unchanged-text check inverted: 2 tests), FC (the warning branch turned
+into info: `test_a_parameter_over_a_set_option_is_a_warning_with_both_values`).
+
+## M9 demo, 2026-11-03 (headless)
+
+08 §M9 on `hdr10` with `h265-mkv-1080p` (libx265, preset Slow), a real `reframe-server`
+(`scripts/dev-server.py`, port 8764, the pinned FFmpeg n9.0.2), the lead's driver `lead/demo.mjs`
+at 1880 × 960 with the command drawer open. Chromium light, Chromium dark, Firefox light, Firefox
+dark: 9 of 9 each.
+
+1. Search "psy" lists psy-rd, psy-rdoq (first), nr-intra and nr-inter (by their help text).
+2. B-frames 6 + Enter: the row is highlighted, *Frame types / GOP* shows 1, and the drawer's
+   command holds `bframes=6` 328–331 ms after the Enter with no other action (the drawer's
+   250 ms pause and `jobs/plan`).
+3. *Copy HDR metadata from source* fills Mastering display
+   `G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)` and MaxCLL, MaxFALL
+   `1000,400`; *HDR / colour* shows 2; the note says "Filled “Mastering display” and “MaxCLL,
+   MaxFALL” from the source."
+4. Custom parameters `nosuchparam=1`: the field shows "FFmpeg refused 'nosuchparam': Unknown
+   option: nosuchparam." from the dry run.
+
+Seen in the screenshots: the changed rows' bar and tint, the counts, the preset's own options
+counted (Rate control 1, Motion / analysis 4, Psycho-visual 2, Loop filters 1) and not
+*Modified*; the dry-run error in red under the field's help; dark and light both readable.
+
+## M9 demo, 2026-11-03 (headed)
+
+Once in Chromium on `HDMI-A-1` through `windows.Session.wrapper` (the lead's `lead/headed.py`,
+`PYTHONPATH=<repo>`, `CHROME_DESKTOP` unset), after the owner put the cursor and the active window
+there: 9 of 9, the same values (the command 331 ms after the Enter). KWin placed the one window
+(`chromium-browser`) on `HDMI-A-1` at 10, 10 (1856 × 1003); one admission; nothing on `DP-1`.
+

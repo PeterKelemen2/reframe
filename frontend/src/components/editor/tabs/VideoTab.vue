@@ -10,6 +10,7 @@ import type { JsonPatchOp } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
 import TrackMetadataEditor from '@/components/tracks/TrackMetadataEditor.vue'
+import AdvancedOptions from '@/components/video/advanced/AdvancedOptions.vue'
 import ChoiceSelect from '@/components/video/ChoiceSelect.vue'
 import CommandPreview from '@/components/video/CommandPreview.vue'
 import EncoderBanner from '@/components/video/EncoderBanner.vue'
@@ -29,11 +30,13 @@ import { useOutputLines } from '@/components/video/useOutputLines'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 import { useToastStore } from '@/stores/toasts'
+import { useUiStore } from '@/stores/ui'
 
 const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const toasts = useToastStore()
+const ui = useUiStore()
 const picker = useTemplateRef<InstanceType<typeof EncoderPicker>>('picker')
 const { lines } = useOutputLines()
 
@@ -491,15 +494,16 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
             </div>
           </template>
         </Field>
-        <Field
-          v-if="video.custom_params !== ''"
-          :label="t('video.customParams.label')"
-          path="video.custom_params"
-        >
-          <template #default="{ id }">
-            <code :id="id" class="video-tab__params" tabindex="0">{{ video.custom_params }}</code>
-          </template>
-        </Field>
+      </Section>
+
+      <Section
+        :title="t('advanced.title')"
+        collapsible
+        :collapsed="!ui.advancedOpen"
+        data-section="advanced"
+        @update:collapsed="ui.advancedOpen = !$event"
+      >
+        <AdvancedOptions v-if="ui.advancedOpen" />
       </Section>
 
       <Section :title="t('video.sections.metadata')">
@@ -548,15 +552,5 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
   border-radius: var(--rf-radius-md);
   background: var(--p-status-info-background);
   color: var(--rf-color-text);
-}
-
-.video-tab__params {
-  display: block;
-  padding: var(--rf-space-2);
-  border-radius: var(--rf-radius-sm);
-  background: var(--rf-color-bg);
-  font-family: var(--rf-font-mono);
-  font-size: var(--rf-font-size-sm);
-  overflow-wrap: anywhere;
 }
 </style>

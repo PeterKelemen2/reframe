@@ -67,6 +67,7 @@ from reframe.validation.common import (
 __all__ = [
     "CUSTOM_PARAM_CODES",
     "OPTION_RULE_CODES",
+    "OVERRIDE_CODE",
     "switch_video_encoder",
     "ten_bit_patch",
     "video_availability_issues",
@@ -74,6 +75,7 @@ __all__ = [
     "video_choice_issues",
     "video_container_issues",
     "video_custom_param_issues",
+    "video_custom_param_override_issues",
     "video_option_issues",
     "video_option_rule_issues",
     "video_rate_control_issues",
@@ -1166,6 +1168,68 @@ def video_custom_param_issues(
     if encoder.params_arg is not None:
         return _param_file_issues(encoder, video, target)
     return _own_option_issues(encoder, video, _status(caps, encoder.id), target)
+
+
+OVERRIDE_CODE = "encoder.custom_param_overrides"
+"""The code of :func:`video_custom_param_override_issues`."""
+
+
+def _options_set_by(encoder: VideoEncoderDef, name: str) -> list[EncoderOption]:
+    """The options that the custom parameter ``name`` sets: by the name the encoder reads."""
+    if encoder.params_arg is not None:
+        forms = library_key_forms(name)
+        return [
+            o for o in encoder.options if o.mapping.kind == "x26x_param" and o.mapping.name in forms
+        ]
+    found: list[EncoderOption] = []
+    for option in encoder.options:
+        mapping = option.mapping
+        if mapping.kind == "private_opt":
+            own = mapping.name
+        elif mapping.kind == "ffmpeg_arg":
+            own = mapping.arg.lstrip("-").split(":")[0]
+        else:
+            continue
+        if own == name:
+            found.append(option)
+    return found
+
+
+def video_custom_param_override_issues(
+    video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
+) -> list[ValidationIssue]:
+    """Custom parameters that set an advanced option, at that option's path: they come last,
+    so the encoder uses them. A warning when the option is set too, info otherwise."""
+    if video.passthrough or not video.custom_params.strip():
+        return []
+    encoder = definitions.video_encoders.get(video.encoder)
+    if encoder is None:
+        return []
+    params = split_custom_params(video.custom_params)
+    setting: dict[str, tuple[EncoderOption, CustomParam]] = {}
+    for param in params:
+        for option in _options_set_by(encoder, param.name):
+            setting[option.key] = (option, param)
+    issues: list[ValidationIssue] = []
+    for key, (option, param) in setting.items():
+        typed = f"{param.name}={param.value}"
+        label = f"{option.label} ({key})"
+        remove = _remove_param(params, param, target)
+        path = f"video.advanced.{key}"
+        if key in video.advanced:
+            shown = _value_label(option, video.advanced[key])
+            message = (
+                f"The custom parameter {typed} sets {label}: {encoder.label} uses it, not the "
+                f"{shown} set here."
+            )
+            issues.append(warning(OVERRIDE_CODE, path, message, remove))
+        else:
+            message = (
+                f"The custom parameter {typed} sets {label}: {encoder.label} uses it in place "
+                "of the default."
+            )
+            issues.append(info(OVERRIDE_CODE, path, message, remove))
+    return issues
 
 
 def _convert_candidates(

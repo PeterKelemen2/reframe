@@ -1,5 +1,5 @@
-"""Validation of custom encoder parameters: files they name and the allow-list of the encoders
-without a params argument. Runs no FFmpeg."""
+"""Validation of custom encoder parameters: files they name, the allow-list of the encoders
+without a params argument, and parameters that set an advanced option. Runs no FFmpeg."""
 
 from __future__ import annotations
 
@@ -11,7 +11,14 @@ from types import ModuleType
 import pytest
 
 from reframe.jsonpatch import apply_patch
-from reframe.models import ConstantQuality, EncoderState, EncoderStatus, JobSettings, Severity
+from reframe.models import (
+    ConstantQuality,
+    EncoderState,
+    EncoderStatus,
+    JobSettings,
+    OptionValue,
+    Severity,
+)
 from reframe.presets import builtin_presets
 from reframe.validation import validate_template
 from reframe.validation import video as video_rules
@@ -167,3 +174,88 @@ def test_no_built_in_preset_is_refused() -> None:
         assert video_rules.video_custom_param_issues(preset.video, sc.make_caps(), sc.DEFS) == [], (
             preset.id
         )
+
+
+OVERRIDES = "encoder.custom_param_overrides"
+
+
+def _overrides(
+    encoder: str, custom: str, advanced: dict[str, OptionValue] | None = None
+) -> list[tuple[Severity, str, str]]:
+    s = sc.base()
+    s.job.video.encoder = encoder
+    s.job.video.preset = None
+    s.job.video.custom_params = custom
+    s.job.video.advanced = advanced or {}
+    return [(i.severity, i.path, i.message) for i in s.validate() if i.code == OVERRIDES]
+
+
+def test_a_parameter_over_a_set_option_is_a_warning_with_both_values() -> None:
+    s = sc.base()
+    s.job.video.custom_params = "aq-mode=2:psy-rd=0.75"
+    s.job.video.advanced = {"psy-rd": 1.5}
+    [issue] = [i for i in s.validate() if i.path == "video.advanced.psy-rd"]
+    assert (issue.code, issue.severity) == (OVERRIDES, Severity.WARNING)
+    assert issue.message == (
+        "The custom parameter psy-rd=0.75 sets Psy-RD strength (psy-rd): x265 uses it, not the "
+        "1.5 set here."
+    )
+    (fix,) = issue.fixes
+    assert fix.label == "Remove psy-rd=0.75 from the custom parameters"
+    assert s.apply(fix).job.video.custom_params == "aq-mode=2"
+
+
+def test_a_parameter_over_a_default_is_info() -> None:
+    [(severity, path, message)] = _overrides("libx265", "aq-mode=1")
+    assert (severity, path) == (Severity.INFO, "video.advanced.aq-mode")
+    assert message == (
+        "The custom parameter aq-mode=1 sets Adaptive quantisation (aq-mode): x265 uses it in "
+        "place of the default."
+    )
+
+
+@pytest.mark.parametrize(
+    ("encoder", "custom", "advanced", "expected"),
+    [
+        # x265 reads '_' as '-' and no-<key> as <key>=0
+        ("libx265", "psy_rd=0.5:no-rect=1", {}, ["psy-rd", "rect"]),
+        # one value fills both parts
+        ("libx264", "deblock=-2,-2", {"deblock-alpha": 1}, ["deblock-alpha", "deblock-beta"]),
+        ("libsvtav1", "keyint=10s", {}, ["keyint"]),
+        # written -<name>:v:0 after the options: a private option and a generic one
+        ("hevc_nvenc", "rc-lookahead=20:bf=2", {"rc-lookahead": 10}, ["rc-lookahead", "bf"]),
+        ("libvpx-vp9", "g=120:lag-in-frames=16", {}, ["g", "lag-in-frames"]),
+        ("libx265", "fades=1:ssim-rd=1", {}, []),
+        ("hevc_nvenc", "init_qpB=20", {}, []),
+    ],
+)
+def test_the_options_a_parameter_sets(
+    encoder: str, custom: str, advanced: dict[str, OptionValue], expected: list[str]
+) -> None:
+    found = _overrides(encoder, custom, advanced)
+    assert [path.removeprefix("video.advanced.") for _, path, _ in found] == expected
+    for severity, path, _ in found:
+        set_here = path.removeprefix("video.advanced.") in advanced
+        assert severity is (Severity.WARNING if set_here else Severity.INFO)
+
+
+def test_the_last_entry_is_the_one_named() -> None:
+    [(_, _, message)] = _overrides("libx265", "psy-rd=1:psy-rd=0.75", {"psy-rd": 1.5})
+    assert "psy-rd=0.75" in message
+
+
+def test_a_copied_video_has_no_override() -> None:
+    s = sc.base()
+    s.job.video.passthrough = True
+    s.job.video.custom_params = "psy-rd=0.75"
+    assert not sc.found(s.validate(), OVERRIDES)
+
+
+def test_presets_get_the_override_too() -> None:
+    template = next(p for p in builtin_presets() if p.video.encoder == "libx265")
+    template = template.model_copy(deep=True)
+    template.video.custom_params = "psy-rd=0.75"
+    template.video.advanced["psy-rd"] = 1.5
+    issues = [i for i in validate_template(template, sc.make_caps()) if i.code == OVERRIDES]
+    assert [(i.severity, i.path) for i in issues] == [(Severity.WARNING, "video.advanced.psy-rd")]
+    assert [f.target for i in issues for f in i.fixes] == ["template"]

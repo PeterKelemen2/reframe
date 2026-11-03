@@ -21,7 +21,9 @@ from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.video import (
     CUSTOM_PARAM_CODES,
     OPTION_RULE_CODES,
+    OVERRIDE_CODE,
     video_custom_param_issues,
+    video_custom_param_override_issues,
     video_option_rule_issues,
 )
 
@@ -156,7 +158,12 @@ def custom_params(ctx: JobContext) -> list[ValidationIssue]:
     return video_custom_param_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
 
 
-@template_rule("encoder", *OPTION_RULE_CODES, *CUSTOM_PARAM_CODES)
+@job_rule("encoder", OVERRIDE_CODE)
+def custom_param_overrides(ctx: JobContext) -> list[ValidationIssue]:
+    return video_custom_param_override_issues(ctx.job.video, ctx.definitions, target=ctx.target)
+
+
+@template_rule("encoder", *OPTION_RULE_CODES, *CUSTOM_PARAM_CODES, OVERRIDE_CODE)
 def template_advanced_option_rules(ctx: TemplateContext) -> list[ValidationIssue]:
     """A preset's video settings: the same rules (the option rules and the custom
     parameters), fixes on the template."""
@@ -164,4 +171,5 @@ def template_advanced_option_rules(ctx: TemplateContext) -> list[ValidationIssue
     return [
         *video_option_rule_issues(video, ctx.caps, ctx.definitions, target=ctx.target),
         *video_custom_param_issues(video, ctx.caps, ctx.definitions, target=ctx.target),
+        *video_custom_param_override_issues(video, ctx.definitions, target=ctx.target),
     ]

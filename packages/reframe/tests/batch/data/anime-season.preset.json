@@ -57,8 +57,17 @@
         "level": null,
         "bit_depth": 10,
         "fast_decode": false,
-        "advanced": {},
-        "custom_params": "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2",
+        "advanced": {
+          "strong-intra-smoothing": false,
+          "rect": false,
+          "aq-mode": "1",
+          "rd": 4,
+          "psy-rd": 0.75,
+          "psy-rdoq": 4.0,
+          "rdoq-level": "1",
+          "rskip": "2"
+        },
+        "custom_params": "",
         "metadata": {
           "default": false,
           "forced": false,

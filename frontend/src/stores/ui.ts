@@ -27,14 +27,25 @@ export interface RevealRequest {
   at: number
 }
 
-/** UI state that several areas share: the editor's tab, "show me this field", the matrix. */
+/** The advanced encoder options panel shows the fields at these paths. */
+function inAdvancedPanel(path: string): boolean {
+  return path.startsWith('video.advanced.') || path === 'video.custom_params'
+}
+
+/**
+ * UI state that several areas share: the editor's tab, "show me this field", the matrix, the
+ * advanced panel.
+ */
 export const useUiStore = defineStore('ui', () => {
   const activeTab = ref<EditorTabId>('summary')
   const revealed = ref<RevealRequest | null>(null)
+  /** The Video tab's advanced options panel is open (for the page, across tabs and jobs). */
+  const advancedOpen = ref(false)
 
   /** Switches to the tab of `path`; the element registered for `path` then shows itself. */
   function reveal(path: string): void {
     activeTab.value = tabForPath(path)
+    if (inAdvancedPanel(path)) advancedOpen.value = true
     revealed.value = { path, at: performance.now() }
   }
 
@@ -53,5 +64,14 @@ export const useUiStore = defineStore('ui', () => {
     matrixOpen.value = true
   }
 
-  return { activeTab, revealed, reveal, revealDone, matrixOpen, matrixFocus, openMatrix }
+  return {
+    activeTab,
+    revealed,
+    reveal,
+    revealDone,
+    advancedOpen,
+    matrixOpen,
+    matrixFocus,
+    openMatrix,
+  }
 })

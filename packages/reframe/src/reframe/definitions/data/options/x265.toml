@@ -338,7 +338,7 @@ category = "HDR / colour"
 type = "string"
 help = "SMPTE ST 2086 mastering display, as G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min) in 0.00002 / 0.0001 units. Copy HDR metadata from source fills it."
 mapping = { kind = "x26x_param", name = "master-display" }
-default = { kind = "encoder", note = "not written" }
+default = { kind = "encoder", note = "Reframe writes the source's metadata" }
 
 [[set.x265]]
 key = "max-cll"
@@ -347,7 +347,7 @@ category = "HDR / colour"
 type = "string"
 help = "Content light level as \"MaxCLL,MaxFALL\" in cd/m² (for example 1000,400)."
 mapping = { kind = "x26x_param", name = "max-cll" }
-default = { kind = "encoder", note = "not written" }
+default = { kind = "encoder", note = "Reframe writes the source's metadata" }
 
 [[set.x265]]
 key = "repeat-headers"

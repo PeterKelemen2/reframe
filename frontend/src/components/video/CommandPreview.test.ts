@@ -99,4 +99,30 @@ describe('the command preview', () => {
     )
     expect(wrapper.find('.rf-issue').text()).toContain('No NVENC')
   })
+
+  it('publishes its height while it is shown, for the tab to keep the focus clear of it', async () => {
+    const observed: ResizeObserverCallback[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observed.push(callback)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    try {
+      const { wrapper } = await mountPreview()
+      const entry = { borderBoxSize: [{ blockSize: 334.2, inlineSize: 600 }] }
+      for (const callback of observed) callback([entry] as never, {} as ResizeObserver)
+      const root = document.documentElement.style
+      expect(root.getPropertyValue('--video-command-drawer-height')).toBe('335px')
+      wrapper.unmount()
+      mounted.splice(0)
+      expect(root.getPropertyValue('--video-command-drawer-height')).toBe('')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

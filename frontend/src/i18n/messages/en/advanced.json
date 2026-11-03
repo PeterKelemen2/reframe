@@ -1,0 +1,47 @@
+{
+  "title": "Advanced options",
+  "search": {
+    "label": "Search options",
+    "placeholder": "Search options…",
+    "title": "Search results",
+    "searching": "Searching…",
+    "count": "No option matches | 1 option matches | {n} options match",
+    "none": "No option matches “{query}”.",
+    "noneChanged": "No matching option is changed."
+  },
+  "changedOnly": "Show only changed",
+  "categories": "Option categories",
+  "category": {
+    "basic": "Basic",
+    "rateControl": "Rate control",
+    "frameTypes": "Frame types / GOP",
+    "motion": "Motion / analysis",
+    "psychoVisual": "Psycho-visual",
+    "loopFilters": "Loop filters",
+    "hdr": "HDR / colour",
+    "performance": "Performance",
+    "custom": "Custom parameters"
+  },
+  "changedCount": "no changed options | 1 changed option | {n} changed options",
+  "noneChanged": "No option of this category is changed.",
+  "default": {
+    "beside": "default: {text}",
+    "choice": "Default: {text}",
+    "preset": "{value} (preset {preset})",
+    "notAtPreset": "not used at preset {preset}",
+    "tuned": "{text}; tune {tune} changes it",
+    "byPreset": "set by the speed preset",
+    "encoder": "the encoder decides",
+    "encoderNote": "the encoder decides ({note})"
+  },
+  "value": {
+    "on": "on",
+    "off": "off"
+  },
+  "reset": "Reset {label} to the default",
+  "help": "{help} Command line: {name}",
+  "unknown": {
+    "title": "Not options of {encoder}",
+    "hint": "The job sets these, but the encoder has no such option. Reset them to remove them."
+  }
+}

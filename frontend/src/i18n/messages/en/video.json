@@ -105,9 +105,6 @@
     "noMode": "This encoder has no 10-bit mode.",
     "testFailed": "The 10-bit test encode failed."
   },
-  "customParams": {
-    "label": "Custom parameters"
-  },
   "command": {
     "title": "FFmpeg command",
     "code": "The FFmpeg command of this job",

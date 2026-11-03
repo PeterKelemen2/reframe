@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from reframe.command.video import split_params, video_encoder_args
 from reframe.definitions import Definitions, load_definitions
 from reframe.models import (
     BUILT_IN_CATEGORIES,
@@ -19,8 +20,11 @@ from reframe.models import (
     PresetFile,
     Rational,
     SameAsSource,
+    VideoSettings,
+    VideoStream,
 )
 from reframe.presets import DEFAULT_BUILTIN_ID, builtin_ids, builtin_presets
+from reframe.validation.video import video_custom_param_override_issues
 
 BUILTIN_JSON = (
     Path(__file__).resolve().parents[2] / "src" / "reframe" / "presets" / "data" / "builtin.json"
@@ -166,6 +170,16 @@ def test_video_uses_only_definition_values(preset: Preset, defs: Definitions) ->
     if video.custom_params:
         assert encoder.params_arg is not None, f"{video.encoder} takes no parameter string"
     assert not video.passthrough
+
+
+def test_custom_parameters_hold_only_what_no_option_can(defs: Definitions) -> None:
+    """A custom parameter that sets an option overrides the panel's value for that option."""
+    found = [
+        (preset.id, issue.path)
+        for preset in PRESETS
+        for issue in video_custom_param_override_issues(preset.video, defs)
+    ]
+    assert found == [("av1-mkv-2160p-4k", "video.advanced.keyint")]  # keyint=10s: seconds
 
 
 @pytest.mark.parametrize("preset", PRESETS, ids=IDS)
@@ -441,17 +455,6 @@ def test_subtitle_and_track_selection_follow_handbrake() -> None:
 
 
 def test_handbrake_extra_options_are_kept() -> None:
-    x265 = (
-        "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:"
-        "rskip=2"
-    )
-    for preset_id in (
-        "h265-mkv-1080p",
-        "h265-mkv-720p",
-        "h265-mkv-2160p-4k",
-        "fast-2160p60-4k-hevc",
-    ):
-        assert by_id(preset_id).video.custom_params == x265
     assert by_id("h265-nvenc-1080p").video.advanced == {"rc-lookahead": 10}
     assert by_id("av1-mkv-2160p-4k").video.tune == "1"  # HandBrake "psnr"
     assert by_id("creator-1080p60").audio_defaults.codec_rules[0].extras.samplerate == 48000
@@ -461,12 +464,65 @@ def test_handbrake_extra_options_are_kept() -> None:
     assert all(p.output.align_av_start for p in general)
 
 
-def _params_cases() -> list[tuple[str, str, str]]:
-    cases = []
-    for preset in PRESETS:
-        if preset.video.custom_params:
-            cases.append((preset.id, preset.video.encoder, preset.video.custom_params))
-    return cases
+X265 = (
+    "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2"
+)
+#: HandBrake 1.11.2's ``VideoOptionExtra`` of each built-in that has one.
+HANDBRAKE_EXTRA = {
+    "super-hq-1080p30-surround": "ref=5:bframes=5",
+    "fast-2160p60-4k-hevc": X265,
+    "creator-1080p60": "keyint=30:min-keyint=15:ref=1:bframes=2:b-pyramid=none",
+    "social-25-mb-1-minute-720p60": (
+        "qcomp=0.5:aq-mode=2:aq-strength=0.8:bframes=2:b-adapt=2:b-pyramid=0"
+    ),
+    "h265-mkv-1080p": X265,
+    "h265-mkv-720p": X265,
+    "h265-mkv-2160p-4k": X265,
+    "av1-mkv-2160p-4k": (
+        "enable-variance-boost=1:enable-qm=1:ac-bias=1:tf-strength=1:"
+        "qp-scale-compress-strength=1:sharpness=1:keyint=10s"
+    ),
+    "production-standard": (
+        "keyint=12:min-keyint=1:ref=1:bframes=0:qcomp=0.8:aq-strength=0.5:dct-decimate=0:"
+        "fast-pskip=0:deblock=-2,-2"
+    ),
+    "production-proxy-1080p": "keyint=1:min-keyint=1:ref=1:bframes=0:qcomp=0.8:aq-strength=0.5",
+}
+STREAM = VideoStream.model_validate({"index": 0, "width": 320, "height": 240})
+
+
+def _args(video: VideoSettings) -> list[str]:
+    encoder = load_definitions().video_encoders[video.encoder]
+    # The rate control's own parameters are the same on both sides; a 2-pass run needs a log.
+    single = video.model_copy(update={"rate_control": ConstantQuality(value=22)})
+    return video_encoder_args(
+        encoder, single, STREAM, status=None, run=None, passlog=None, hdr=False
+    )
+
+
+def _settings_sei(video: VideoSettings, out: Path) -> str:
+    from reframe_testing import media
+
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg is not None
+    pix_fmts = load_definitions().video_encoders[video.encoder].pix_fmts
+    source = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25", "-frames:v", "3"]
+    pix_fmt = ["-pix_fmt", pix_fmts[str(video.bit_depth)]]  # type: ignore[index]
+    subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostdin", "-y", *source, *pix_fmt, *_args(video), str(out)],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    match = re.search(rb"options: ([ -~]+)", out.read_bytes())
+    assert match is not None, "no encoder settings SEI"
+    return match.group(1).decode()
+
+
+def _params(video: VideoSettings) -> dict[str, str]:
+    argv = _args(video)
+    flag = next(i for i, arg in enumerate(argv) if arg.endswith("-params:v:0"))
+    return dict(split_params(argv[flag + 1]))
 
 
 #: A bad key in the parameter string is logged as a warning: the exit code stays 0.
@@ -496,12 +552,27 @@ def run_params(encoder: str, bit_depth: int, params: str, defs: Definitions) -> 
 
 
 @pytest.mark.needs_ffmpeg
-@pytest.mark.parametrize(("preset_id", "encoder", "params"), _params_cases())
-def test_handbrake_parameter_strings_work_in_ffmpeg(
-    preset_id: str, encoder: str, params: str, defs: Definitions
-) -> None:
-    stderr = run_params(encoder, by_id(preset_id).video.bit_depth, params, defs)
+@pytest.mark.parametrize("preset_id", sorted(HANDBRAKE_EXTRA))
+def test_handbrake_parameter_strings_work_in_ffmpeg(preset_id: str, defs: Definitions) -> None:
+    video = by_id(preset_id).video
+    stderr = run_params(video.encoder, video.bit_depth, HANDBRAKE_EXTRA[preset_id], defs)
     assert not BAD_PARAM.search(stderr), stderr[-2000:]
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.parametrize("preset_id", sorted(HANDBRAKE_EXTRA))
+def test_the_encoder_gets_handbrakes_settings(preset_id: str, tmp_path: Path) -> None:
+    ours = by_id(preset_id).video
+    handbrake = ours.model_copy(
+        update={"advanced": {}, "custom_params": HANDBRAKE_EXTRA[preset_id]}
+    )
+    if ours.encoder == "libsvtav1":  # SVT-AV1 writes no settings into the stream
+        assert _params(ours) == _params(handbrake)
+        return
+    suffix = ".265" if ours.encoder == "libx265" else ".264"
+    assert _settings_sei(ours, tmp_path / f"ours{suffix}") == _settings_sei(
+        handbrake, tmp_path / f"handbrake{suffix}"
+    )
 
 
 @pytest.mark.needs_ffmpeg
