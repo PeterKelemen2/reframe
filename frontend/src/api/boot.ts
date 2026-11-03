@@ -3,9 +3,15 @@
  * the snapshots. `system.auth` drives it: credentials that become valid (a login) start the
  * session, credentials that stop being valid (a 401, a 4401, a logout) end it.
  */
-import { watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 
 import { platform } from '@/platform'
+import type {
+  DesktopBackend,
+  DesktopBackendError,
+  DesktopBackendState,
+  DesktopShell,
+} from '@/platform/types'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 import { useQueueStore } from '@/stores/queue'
@@ -43,8 +49,10 @@ export const OFFLINE_BACKOFF: Backoff = { initial: 1_000, max: 30_000, factor: 2
 export const HELLO_WAIT = 3_000
 
 export interface BootOptions {
-  /** Default: `platform.backend()`. */
+  /** Default: `platform.backend()`. Not used with a desktop shell. */
   backend?: () => Promise<{ baseUrl: string; token?: string }>
+  /** Default: `platform.desktop`. */
+  desktop?: DesktopShell | null
   /** The web build's token. Default: the address fragment's, else the tab's stored one. */
   token?: string | null
   socket?: SocketFactory
@@ -89,6 +97,37 @@ interface Session {
   stop(): void
 }
 
+/** What the desktop shell last said of its backend; `null` in a browser. */
+export const desktopBackend = shallowRef<DesktopBackendState | null>(null)
+
+/**
+ * The desktop shell's backend once it is ready (after a failure, a Retry can still make it
+ * ready). `changed` gets every later ready backend.
+ */
+function followDesktop(
+  shell: DesktopShell,
+  changed: (info: DesktopBackend) => void,
+): { ready: Promise<DesktopBackend>; stop: () => void } {
+  let first: ((info: DesktopBackend) => void) | null = null
+  const ready = new Promise<DesktopBackend>((resolve) => (first = resolve))
+  function apply(state: DesktopBackendState): void {
+    desktopBackend.value = state
+    if (state.state !== 'ready') return
+    if (first === null) changed(state.info)
+    else {
+      first(state.info)
+      first = null
+    }
+  }
+  // Subscribed before the question, so no change after the answer is missed.
+  const stop = shell.onBackendState(apply)
+  shell.backendInfo().then(
+    (info) => apply({ state: 'ready', info }),
+    (error: DesktopBackendError) => apply({ state: 'failed', error }),
+  )
+  return { ready, stop }
+}
+
 let current: Session | null = null
 
 /**
@@ -104,7 +143,17 @@ export async function boot(options: BootOptions = {}): Promise<void> {
   const random = options.random ?? Math.random
   const offlineBackoff = options.offlineBackoff ?? OFFLINE_BACKOFF
 
-  const backend = await (options.backend ?? (() => platform.backend()))()
+  const shell = options.desktop !== undefined ? options.desktop : platform.desktop
+  let restartConnection: (() => void) | null = null
+  const desktop =
+    shell === null
+      ? null
+      : followDesktop(shell, (info) => {
+          if (info.baseUrl === clientBaseUrl() && info.token === clientToken()) return
+          configureClient({ baseUrl: info.baseUrl, token: info.token })
+          restartConnection?.()
+        })
+  const backend = await (desktop?.ready ?? (options.backend ?? (() => platform.backend()))())
   const token =
     backend.token ?? (options.token !== undefined ? options.token : (addressToken ?? storedToken()))
   if (backend.token === undefined) storeToken(token)
@@ -185,6 +234,13 @@ export async function boot(options: BootOptions = {}): Promise<void> {
     return running
   }
 
+  // A restarted sidecar listens elsewhere: connect there now, not after the retry's backoff.
+  restartConnection = () => {
+    if (running === null) return
+    connection.stop()
+    connection.start()
+  }
+
   function end(): void {
     running = null
     if (system.connection !== 'unauthorized') connection.stop()
@@ -201,6 +257,7 @@ export async function boot(options: BootOptions = {}): Promise<void> {
     connection,
     stop() {
       closed = true
+      desktop?.stop()
       stopWatch()
       stopListening()
       connection.stop()
