@@ -18,6 +18,12 @@ body {
   min-height: 100%;
 }
 
+/* Buttons take the browser's own font otherwise (WebKitGTK: the system font, Chromium: Arial),
+   so PrimeVue's tabs differ in height between engines. Component classes still set their own. */
+button {
+  font: inherit;
+}
+
 :focus-visible {
   outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
   outline-offset: var(--p-focus-ring-offset);

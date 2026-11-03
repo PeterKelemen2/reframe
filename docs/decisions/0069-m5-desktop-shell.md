@@ -36,7 +36,8 @@ KWin 6.8.2 on Wayland, rustc 1.99.1):
    listens for `com.canonical.Unity.LauncherEntry.Update` (`busctl --user list`).
 3. **The Wayland app id is the binary name.** Tauri passes the identifier as the GTK app id only
    with `app.enableGTKAppId` (tauri 2.12.5, `app.rs`); without it the app id is
-   `reframe-desktop`, so the launcher matches the window to `reframe-desktop.desktop`.
+   `reframe-desktop`. The deb and rpm install the desktop entry as `Reframe.desktop` with
+   `StartupWMClass=reframe-desktop` (task A), so the launcher matches the window to that entry.
 4. **Headless checks of the real app are possible here** (no Xvfb, weston, cage,
    WebKitWebDriver or tauri-driver is installed; `sudo` needs a password):
    - `dbus-run-session -- kwin_wayland --virtual --no-lockscreen --socket NAME --exit-with-session
@@ -86,7 +87,7 @@ The lead's choices (binding for every task; the contracts are in the breakdown):
    script defines an app manifest.
 6. **Taskbar progress on Linux is the app's own `LauncherEntry.Update` signal** on the session
    bus (`zbus`, already in the tree through the plugins), for
-   `application://reframe-desktop.desktop` (Context items 2 and 3). Windows keeps
+   `application://Reframe.desktop` (Context items 2 and 3). Windows keeps
    `Window::set_progress_bar`.
 7. **The sidecar is started with `--owner-only`** besides 07's
    `--mode desktop --port 0 --auth token --parent-pid <pid>`. A sidecar that loses the race for
@@ -357,7 +358,7 @@ task C's.
 - The desktop frontend has its own output folder; the Docker image and S-4 still use
   `frontend/dist`.
 - On Linux, taskbar progress shows only where a launcher listens for `LauncherEntry`
-  (KDE Plasma, Ubuntu's dock) and the desktop entry `reframe-desktop.desktop` is installed.
+  (KDE Plasma, Ubuntu's dock) and the desktop entry `Reframe.desktop` is installed.
 - Not verified on Windows (status "Not verified"): everything under `cfg(windows)`.
 
 ## Plan changes
