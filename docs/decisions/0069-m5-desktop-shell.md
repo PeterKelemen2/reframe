@@ -217,7 +217,88 @@ settle.
 
 ### Task C — D-4 desktop platform adapter
 
-(placeholder)
+Phase 1 (2026-11-03): built and checked against B's stub backend (`REFRAME_DESKTOP_STUB_BACKEND`)
+and a web-mode `scripts/dev-server.py`; phase 2 (the quit flow, *Reconnecting…*, the restart
+limit and the when-done actions against B's real sidecar) follows after B merges.
+
+What was built:
+
+- `platform/desktop/index.ts`: `open` / `save` of `plugin-dialog` (the callers' `filters`
+  become one filter `*.srt *.ass` with the extensions, lower case, without the dot; no filters:
+  every file), `getCurrentWebview().onDragDropEvent` (only `drop` is used), `revealItemInDir`
+  and `openUrl` of `plugin-opener`, `requestPermission` + `sendNotification` of
+  `plugin-notification`, `invoke('set_taskbar_progress')`, and the `DesktopShell` members.
+  `backendInfo()` rejects with a `DesktopBackendError`; an IPC failure (a string) becomes
+  `{message, log: null}`. `onQuitRequested` and `quitReady` act only in the window `main`: the
+  preview window loads the same page, and its `quit_ready` must not stand for the main page's.
+- **A dropped name that cannot be read** (U+FFFD, 0001 Consequences D-5): the readable paths
+  open as before; the others are named in the native question of `plugin-dialog`
+  (`message` with two buttons, so `dialog:allow-message`) with **Open files…** · **Cancel**,
+  and **Open files…** opens the file dialog. A native question, not an in-app dialog: the
+  platform module has no component to show, and the drop's callback contract stays as it is.
+- `api/boot.ts`: with a desktop shell it subscribes to `backend-state` before it asks
+  `backend_info`; a rejection shows the error screen and the boot waits for a `ready` state (a
+  Retry). A later `ready` with another `baseUrl` or token calls `configureClient` and restarts
+  the event connection at once (the connection's own retry would wait for its backoff). The
+  state is `desktopBackend` (a `shallowRef` exported by `boot.ts`), read by `App.vue` and the
+  quit flow.
+- `App.vue`: `BackendErrorScreen` (message, log path, **Try again** = `retryBackend()`; the
+  next `backend-state` replaces it), `ReconnectOverlay` over the app with the app `inert`
+  while the state is `starting` after the boot, `QuitDialog` + `useQuitFlow`. `quit_ready` is
+  sent once the queue is read: before that a close would count no jobs. The count is
+  `running` + `paused` of the shared queue (every front end's). **Stop jobs and quit**: own
+  sidecar `quit()`; another owner `POST /api/queue/stop`, a cancel per running or paused job,
+  then `quit()` (a failed cancel keeps the app open, the request's toast says why). When-done
+  `quit`: `queue.$onAction` sees `onPowerCountdown` with `phase: executing` and
+  `action: quit` (the store keeps no executing event in `power`) and calls `quit()`.
+- `progress.rs`: Linux sends `Update` on `com.canonical.Unity.LauncherEntry` (path
+  `/org/reframe/desktop/LauncherEntry`, body `sa{sv}`: `application://Reframe.desktop`,
+  `progress` double 0…1, `progress-visible`) on one session-bus connection kept for the app's
+  lifetime (none when there is no bus: nothing is sent). Windows: `set_progress_bar` of the
+  main window (`Normal` with the percentage, `None` to clear); the conversion is tested on
+  Linux, the call is not compiled here. **The entry is `Reframe.desktop`**, not Context item
+  3's `reframe-desktop.desktop`: Tauri's deb and rpm install `Reframe.desktop` (named after
+  `productName`) with `StartupWMClass=reframe-desktop`, and KDE matches the window (app id
+  `reframe-desktop`) to that entry through it (task A). Decision item 6 and the Consequences
+  read `application://Reframe.desktop` from now on.
+- `capabilities/main.json`: the scaffold's permissions plus `dialog:allow-message` and
+  `opener:allow-open-url` scoped to `http://127.0.0.1:*/api/preview/clips/*` (the clip link).
+  `notification:allow-is-permission-granted` stays: the plugin's own page script calls it at
+  start.
+- The UI split: the desktop build mounts no `FileBrowserDialog` (the server file browser).
+  The rest was already split: reveal in folder (`QueueTable`, `platform.kind`), the when-done
+  `quit` and the tool paths (`system.info.mode === 'desktop'`, the sidecar's mode), the login
+  screen and **Sign out** (password mode only; the app's token comes from Rust).
+
+Checked in the real app (virtual session, the stub backend, WebKitGTK 2.54.2):
+
+- The workspace boots against the server at the stub's address with its token; frames load.
+- **Open files…** opens the GTK file chooser (closed by a KWin script: the page gets `[]`).
+- A job queued and started through the UI: `dbus-monitor --session` shows the app's
+  `LauncherEntry.Update` for `application://Reframe.desktop`: `progress-visible` false at start,
+  then true with 0, 0.567, 1, then false. Spectacle on the same bus sends the same signal
+  (with an `int32` progress), so the form is what KDE apps send.
+- With `document.hidden` true, the job's end is a `org.freedesktop.Notifications.Notify` call
+  (`"Job done"`, `"multitrack (2).mkv"`); the bus has no server, the call fails, and the app goes
+  on (the toast shows, the next requests answer).
+- Reveal in folder sends `org.freedesktop.FileManager1.ShowItems` with
+  `file:///…/multitrack%20(1).mkv`.
+- Open externally of an encoded preview clip reaches the system opener with the signed clip
+  URL (a stand-in `xdg-open` first on the app's `PATH` recorded it); `open_url` of
+  `https://example.org/`, `http://127.0.0.1:8731/api/queue` and `file:///etc/passwd` is refused
+  (`Not allowed to open url …`).
+- The unreadable-name question (`plugin:dialog|message` with the code's arguments) shows as a
+  GTK message dialog; closed, it answers `Cancel`.
+- Without `REFRAME_DESKTOP_STUB_BACKEND` the error screen shows the stub's message; **Try
+  again** calls `backend_retry` (the stub changes nothing). Light and dark.
+
+Not checked in phase 1: a real drop from a file manager (needs the pointer: the lead's headed
+check), the quit dialog on a real close, *Reconnecting…*, the when-done actions (the stub
+quits at once on a close, sends no state changes, and the dev server is in web mode).
+
+Found for others: PrimeVue's `Tab` buttons do not inherit the page font in the real webview
+(`600 14px Adwaita Sans` against the body's `system-ui …` stack), so 0001's F-x line (`font:
+inherit` on buttons) is not done; `styles/main.css` is not task C's.
 
 ### Task D — D-5 single instance, open-with, CLI arguments
 
