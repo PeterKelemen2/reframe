@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { LoaderCircle } from '@lucide/vue'
-import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-/** Over the app while the desktop app's server starts again. */
+/** Over the app while the desktop app's server starts again, or its owner does not answer. */
+const props = defineProps<{
+  /** The server that went away was the app's own sidecar. */
+  owned: boolean
+}>()
+
 const { t } = useI18n()
+const text = computed(() =>
+  props.owned ? t('desktop.reconnecting.text') : t('desktop.reconnecting.owner'),
+)
 const root = useTemplateRef<HTMLElement>('root')
 const box = useTemplateRef<HTMLElement>('box')
 
@@ -33,7 +41,7 @@ onBeforeUnmount(() => {
       <div ref="box" class="reconnect-overlay__box" role="status" tabindex="-1">
         <LoaderCircle class="reconnect-overlay__spinner" :size="32" aria-hidden="true" />
         <h1 class="reconnect-overlay__title">{{ t('desktop.reconnecting.title') }}</h1>
-        <p class="reconnect-overlay__text">{{ t('desktop.reconnecting.text') }}</p>
+        <p class="reconnect-overlay__text">{{ text }}</p>
       </div>
     </div>
   </Teleport>

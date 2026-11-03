@@ -12,7 +12,8 @@
   },
   "reconnecting": {
     "title": "Reconnecting…",
-    "text": "The Reframe server stopped and is starting again. A job that was running ends as interrupted."
+    "text": "The Reframe server stopped and is starting again. A job that was running ends as interrupted.",
+    "owner": "The Reframe server that owns the queue does not answer. Reframe connects again as soon as it can."
   },
   "privateQueue": {
     "label": "Private queue",
