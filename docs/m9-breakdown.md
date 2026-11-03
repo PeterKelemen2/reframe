@@ -7,7 +7,8 @@ Jobs) and §F-9) is the spec; this file says who builds which part, in which ord
 part must offer to the others. Decision: [0068](decisions/0068-m9-advanced-options.md) (the
 lead's choices and one section per task). Status: [status.md](status.md). The template is
 [m8-breakdown.md](m8-breakdown.md). If the lead's context is summarised, this file and
-`status.md` are the source of truth.
+`status.md` are the source of truth. M9 is done on Linux on the branch `m9-advanced-options`
+(2026-11-03); it is not merged into `main` and not pushed: the owner decides.
 
 M9's core part (C-6: the complete option sets with per-preset defaults, the option search, Copy
 HDR metadata, the custom-parameter dry run; [0035](decisions/0035-advanced-option-sets-and-dry-run.md))
@@ -390,3 +391,64 @@ test.
 | 2026-11-02 | **Fix round launched**: FC (877x, core), FB (879x), FA (878x), each `opus` / `high` in its own worktree from d79c856. The reviewers' worktrees removed (no commits; their repros copied into the lead's scratchpad) |
 | 2026-11-02 | **Merged FB** (add10f1; a9f17f6): R1-B1 (Copy HDR off in a group with its note; on the real `HDR.Show.S01` group E02 keeps `max-cll=500,100`), R1-m1 (answers dropped after an encoder or shown-file change, also in `useParamsCheck`), R2-m4 (the status line always rendered, a refusal announced), the copy's note by the rows' labels; 8 tests failed before the fix; 13 mutations caught. Video unit tests 130, lint, typecheck. The lead's mutation (`inGroup` always false) fails `CopyHdrMetadata.test.ts`; restored, touched. Worktree removed. Recorded: the hardware encoders have no *HDR / colour* category, so their "takes it from the frames" note is reached only in the unit test (no button is offered for them) |
 | 2026-11-02 | **Merged FA** (9f5ab94; 7480606): R1-M1 / R1-m3 (10 decimals, a pass through an unchanged field writes nothing), R2-M1 / L1 (the drawer publishes its height; the tab's scroll padding follows it; the open drawer at most `40cqh`; `tab.mjs` 0 of 22 under the drawer), R2-M2 (focus to the category or the search), the search status, R2-m1, R2-m5 (`advanced/view.ts`), R2-m6 (`Field`: `aria-controls`, not modal, named; a new optional prop `description`, accepted by the lead), R2-m7, the nits, L2; 14 tests failed before; 14 mutations caught. The `status.md` F-9 row resolved (FA's sentence after FB's). 1848 unit tests, lint, format, typecheck. The lead's mutation (the unchanged-text check inverted) fails 2 tests; restored, touched. Worktree removed |
+| 2026-11-02 | **Merged FC** (436370a; a373d5e): the ten built-in presets set their options in `video.advanced` (only SVT-AV1 `keyint=10s` stays a custom parameter, with the info); `encoder.custom_param_overrides` (warning with the panel's value, info without; x264 / x265 / SVT-AV1 by the key forms, the other encoders by the private or generic option); the HDR notes; 42 of 52 built-in plans identical, the other 10 differ only in how a value is written (`4.0` → `4`, `b-pyramid` `0` → `none`, a passlog path), and the x264 / x265 settings SEI is identical to HandBrake's strings'; 14 mutations. FB's `CopyHdrMetadata.server.test.ts` expected the preset's job without options: fixed by the lead (32ec4b2). The lead's mutation (the warning branch as info) fails `test_custom_params_rules.py`; restored, touched. No worktree left |
+| 2026-11-03 | **Every blocker and major re-run on the merged branch** (0068 "Re-run of the repros"): all show the fix. **Final checks, run alone on Linux**: Python `pytest -m "not needs_gpu"` in four chunks 1777 + 2391 + 2664 + 824 = **7656 passed**, 2 skipped, 26 deselected; ruff, ruff format, mypy, mypy `--platform win32` clean; `gen-api.sh --check` up to date; `npm run lint`, `fmt:check`, `typecheck` clean; `npm test` 1848 passed; `build:web` built; `npm run test:server` 67 passed; `npm run e2e` 22 passed (43.2 s), no server and no `/tmp/reframe-dev-*` left |
+| 2026-11-03 | **M9 demo, headless** (Chromium light and dark, Firefox light and dark, 9 of 9 each) and **headed** once in Chromium on `HDMI-A-1` through the window guard after the owner placed the cursor and the active window there (9 of 9; nothing on `DP-1`): 0068 "M9 demo". **Docs reconciled**: `status.md` (the M9 row Done on Linux, not merged; F-9 Done; the feature row), 06 §F-9's box ticked, 0068 Plan changes, this section and "Where M9 ended". **Not merged into `main`, not pushed** |
+
+## Where M9 ended (2026-11-03)
+
+M9 is done on Linux on the branch `m9-advanced-options` (from `main` 7fbda7c); not merged into
+`main`, not pushed. Built: A (`AdvancedOptions`, `OptionRow`, the option search, the default
+texts), B (`CustomParams` with the dry run, `CopyHdrMetadata`), the lead's skeleton
+(`ui.advancedOpen`, the reveal that opens the panel), and from the review FA (decimals, focus,
+the drawer's height and scroll padding, the search status, the panel's state for the page, `Field`'s
+help popup), FB (no copy in a group, stale answers, the live dry-run result), FC (the built-in
+presets' options in `video.advanced`, `encoder.custom_param_overrides`, the HDR notes) and the
+lead's two fixes (a reveal focuses the control; Ctrl+Z in a number field undoes the editor).
+
+| Check (alone, Linux, 2026-11-03) | Result |
+|-------|--------|
+| `npm test` | 1848 passed |
+| `npm run test:server` | 67 passed |
+| `npm run e2e` | 22 passed |
+| Python `pytest -m "not needs_gpu"` | 7656 passed, 2 skipped, 26 deselected |
+| lint, format, typecheck, `build:web`, `gen-api.sh --check`, ruff, ruff format, mypy ×2 | clean |
+| M9 demo | headless 4 × 9 of 9; headed (Chromium, `HDMI-A-1`) 9 of 9 |
+
+1. **Recorded, not fixed**:
+   - a custom parameter FFmpeg refuses shows at the field (the dry run) only: `jobs/validate` and
+     *Add to queue* do not dry-run, so such a job can be queued and fails at the encode (as M8's
+     L2);
+   - switching the encoder keeps an option whose key the new encoder also has (x265 `aq-mode` →
+     SVT-AV1 `aq-mode`), although the values mean different things there (M4's
+     `switchEncoderOps` rule; seen more often now that the built-in presets set options);
+   - a user preset saved from an old built-in keeps its custom parameters; its rows show the
+     override issue (no migration);
+   - the hardware encoders have no *HDR / colour* category, so *Copy HDR metadata* is not offered
+     for them and its "takes it from the frames" note is reached only in a unit test;
+   - with the preview panel open, the Video tab overflows its column by 5 px at 1280 px and by
+     253 px at 1024 px (M4's controls; the advanced panel adds none);
+   - each ArrowUp in a number field is its own undo step (as every number field of the app); an
+     issue of an option in another category has no mark in the category list; Firefox makes the
+     drawer's scrolling command a Tab stop; Ctrl+Z inside a text option undoes one character in
+     Chromium and the whole run in Firefox;
+   - no real-server test of the group case of *Copy HDR metadata* (the two-episode HDR group is
+     not a fixture of `scripts/make-testdata.py`; checked by hand, 0068).
+2. **Not built**: a dry run in validation or at *Add to queue*; a fix that moves a custom
+   parameter into the panel; the M8 open items (the Range selector and the rest of m8-breakdown
+   "Where M8 ended").
+3. **Owner questions**, with their defaults kept:
+   - a dry run in `jobs/validate` / at *Add to queue* for custom parameters (and M8's custom
+     filter)? Default: not;
+   - keep options with the same key when the encoder changes, or drop them across encoder
+     families? Default: kept (M4's rule);
+   - *Copy HDR metadata* for a single job writes what the command already writes from the source
+     (it makes the values visible and editable): keep the button? Default: kept (03);
+   - migrate user presets' custom parameters into `video.advanced`? Default: not;
+   - the built-in presets' options now show as changed (highlighted and counted) in the panel:
+     wanted? Default: yes (0068 items 2 and 10);
+   - "the command preview updates at once" is the drawer's next answer, 250 ms after the edit
+     (measured 328–331 ms); the panel is an inline section of the Video tab, not a dialog (0068
+     items 1 and 3).
+4. **Not verified**: Windows and GitHub CI (nothing pushed); WebKit (M10).
+

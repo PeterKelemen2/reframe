@@ -103,7 +103,9 @@ and the fixtures `hdr10`, `multitrack`; scripts in the lead's scratchpad `lead/a
 
 ## Plan changes
 
-None yet.
+- [06 §F-9](../plan/06-web-app.md#f-9-video-tab-and-advanced-options): the `AdvancedOptions` box
+  ticked, with a link to this record. No plan text changed: decisions 10–13 change the built-in
+  presets' data, add a validation rule in the spirit of 0035 and correct two definition notes.
 
 ## Task A — F-9 the advanced panel
 
@@ -419,3 +421,52 @@ R1-B2 = R2-B1 (decisions 10, 11) and R1-M2 (decision 13), in `packages/reframe` 
   survives the switch to SVT-AV1, which has the option). Switching the default preset to another
   encoder now keeps the options that fit the new one (the custom parameters were cleared).
 - **Not built**: a migration of user presets; a fix that moves a custom parameter into the panel.
+
+### Re-run of the repros on the merged branch (2026-11-03)
+
+The lead, on `m9-advanced-options` after FB, FA and FC (port 8763, the pinned FFmpeg, the
+`HDR.Show.S01` group made with `mkvpropedit` in the server's media root): R1-B1 the copy button is
+disabled in the group (`probe8.mjs`: the click waits on "element is not enabled"); R1-B2 / R2-B1
+`h265-mkv-1080p` has no custom parameters, psy-rd 1.5 set in the panel appears once
+(`…:rd=4:psy-rd=1.5:psy-rdoq=4:…`); R1-M1 1.75 typed into the cleared psy-rd field is stored 1.75,
+a stored 1.75 shows "1.75" and a Tab through keeps it, a stored `bframes: 99` stays 99; R1-M2 the
+HDR placeholders read "the encoder decides (Reframe writes the source's metadata)"; R2-M1
+`tab.mjs` 0 of 22 focus stops under the drawer (Chromium, 1440 × 1000) and 0 of 40 (Firefox,
+1920 × 1080); R2-M2 the focus goes to the category after ↺ and after an emptied text field with
+*Show only changed*; the reviewers' vitest repros (`copyHdrStale.test.ts`, `focus.test.ts`) 5
+passed. FB's `CopyHdrMetadata.server.test.ts` expected the default preset's job to have no
+options; after FC it keeps the preset's own (the lead's commit after the FC merge).
+
+Lead mutations, one per fix task, each failed the task's tests and was restored: FB (`inGroup`
+always false), FA (the unchanged-text check inverted: 2 tests), FC (the warning branch turned
+into info: `test_a_parameter_over_a_set_option_is_a_warning_with_both_values`).
+
+## M9 demo, 2026-11-03 (headless)
+
+08 §M9 on `hdr10` with `h265-mkv-1080p` (libx265, preset Slow), a real `reframe-server`
+(`scripts/dev-server.py`, port 8764, the pinned FFmpeg n9.0.2), the lead's driver `lead/demo.mjs`
+at 1880 × 960 with the command drawer open. Chromium light, Chromium dark, Firefox light, Firefox
+dark: 9 of 9 each.
+
+1. Search "psy" lists psy-rd, psy-rdoq (first), nr-intra and nr-inter (by their help text).
+2. B-frames 6 + Enter: the row is highlighted, *Frame types / GOP* shows 1, and the drawer's
+   command holds `bframes=6` 328–331 ms after the Enter with no other action (the drawer's
+   250 ms pause and `jobs/plan`).
+3. *Copy HDR metadata from source* fills Mastering display
+   `G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)` and MaxCLL, MaxFALL
+   `1000,400`; *HDR / colour* shows 2; the note says "Filled “Mastering display” and “MaxCLL,
+   MaxFALL” from the source."
+4. Custom parameters `nosuchparam=1`: the field shows "FFmpeg refused 'nosuchparam': Unknown
+   option: nosuchparam." from the dry run.
+
+Seen in the screenshots: the changed rows' bar and tint, the counts, the preset's own options
+counted (Rate control 1, Motion / analysis 4, Psycho-visual 2, Loop filters 1) and not
+*Modified*; the dry-run error in red under the field's help; dark and light both readable.
+
+## M9 demo, 2026-11-03 (headed)
+
+Once in Chromium on `HDMI-A-1` through `windows.Session.wrapper` (the lead's `lead/headed.py`,
+`PYTHONPATH=<repo>`, `CHROME_DESKTOP` unset), after the owner put the cursor and the active window
+there: 9 of 9, the same values (the command 331 ms after the Enter). KWin placed the one window
+(`chromium-browser`) on `HDMI-A-1` at 10, 10 (1856 × 1003); one admission; nothing on `DP-1`.
+

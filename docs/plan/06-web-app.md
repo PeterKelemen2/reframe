@@ -530,8 +530,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] `EncoderPicker` grouped by family, with status dots and reasons. The
       missing-encoder banner shows the fix buttons from the validation issue.
 - [x] `QualitySlider` with the recommended band. Rate-control switch.
-- [ ] `AdvancedOptions` is generated from the option schema: categories, search, "show only
-      changed", reset, placeholders for defaults, help popovers, "copy HDR metadata".
+- [x] `AdvancedOptions` is generated from the option schema: categories, search, "show only
+      changed", reset, placeholders for defaults, help popovers, "copy HDR metadata"
+      (M9, [decision 0068](../decisions/0068-m9-advanced-options.md)).
 - [x] `CommandPreview` drawer (`jobs/plan`), a light syntax highlighter, copy button.
 
 ### F-10 Audio and subtitles tabs
