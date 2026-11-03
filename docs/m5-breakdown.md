@@ -300,9 +300,56 @@ The tools are in `/tmp/claude-1000/-home-peti-Programming-reframe/29c176cb-e17e-
 - Native dialogs (GTK file chooser) open inside the virtual session too: check that they open (a
   screenshot); picking a file in them is the lead's headed check.
 
-## Fix round
+## Fix round (binding for the fix agents)
 
-(The lead fills it after the reviews.)
+The reviews (R1: 2 majors, 4 minors, 3 nits; R2: 2 majors, 6 minors, 6 nits) are in 0069
+"Review, 2026-11-03". The lead reproduced all four majors (`lead/r2repro/`, R1's `s8` and `s11`).
+Two fix tasks with disjoint files, each `opus` / `high`. A fix of a major comes with a test that
+fails before it. Each task writes its own subsection "Fix round — FX" in 0069.
+
+**Lead decisions** (binding):
+
+1. **A private queue is said, not silent** (R1-M1, R2-M1). `BackendInfo` gets
+   `private_queue: Option<PrivateQueue>` (JSON `privateQueue: {reason, detail} | null`), `reason`
+   one of `otherVersion` (another `api_version`), `webServer` (the owner is a web-mode server),
+   `lockHeld` (the lock is held and no server answers), `unusableToken`; `detail` is English text
+   for the log and the banner's second line (who owns the queue: version, pid). The page shows a
+   banner over every view while it is set: the queue of this window is not saved and not shared,
+   with the reason (localised by `reason`) and `detail`. No switch back while private (a private
+   sidecar may run jobs); recorded as a limit.
+2. **A web-mode owner is not used** (R2-M1): after the health check, `GET /api/system` with the
+   token; `mode` other than `desktop` → `webServer`, the private sidecar. No server change.
+3. **A live owner is not dropped** (R1-M2): the start order goes private only when `server.json`
+   is missing, or names a pid that is not alive. When it names a live pid whose server does not
+   answer, the app keeps trying that owner (state `starting`, so the page shows *Reconnecting…*)
+   and uses it again when it answers. The timings are FB's, written in its section.
+4. **Notifications on the desktop** (R2-M2): a notification event becomes a system notification
+   when `document.hidden` or `!document.hasFocus()` (web and desktop; the toast stays).
+5. **App commands get access control** (R2-m1): the build script's app manifest lists the
+   commands; `main.json` allows all of them, `preview.json` only what the preview page calls.
+   `dialog:allow-save` goes (nothing calls it).
+6. **The tray needs a tray host** (R2-m6): with no `org.kde.StatusNotifierWatcher` on the session
+   bus, `desktop_settings()` reports `tray: false` and switching it on is refused with a message;
+   so the quit dialog never offers *Keep running in tray* with nothing to bring the window back.
+7. **Stop jobs and quit with an owner the app did not start** (R1-n3) stays as built: the queue is
+   stopped and the running and paused jobs are cancelled; waiting jobs stay waiting, as after the
+   app's own sidecar's shutdown. Recorded in 0069.
+8. The lead fixes R1-n1 (the server drops `REFRAME_TOKEN` from its environment once read, so its
+   FFmpeg children do not get it) and its own tool (`vk-close.js`).
+
+| Task | Findings | Owns |
+|------|----------|------|
+| **FB** backend and shell (Rust) | R1-M1 and R2-M1 (decisions 1, 2: the Rust side), R1-M2 (decision 3), R1-m1 (reap the timed-out child), R1-m2 (a drop guard: a panicked supervisor ends `failed`, quit works), R1-m3 (tests for the death signal and the parent re-check, a bounded stop-while-starting, a drift test of the server options against `reframe.remote.owner.SERVER_OPTIONS`, the second exit 75), R2-m1 (decision 5), R2-m6 (decision 6), R1-n2 (`~` / `~/` expanded as the core does; `~user` recorded) | `desktop/src-tauri/**` (all of it: `src/**`, `build.rs`, `capabilities/**`, `Cargo.toml` / `Cargo.lock` with a reason) |
+| **FF** frontend | R2-M2 (decision 4), the private-queue banner (decision 1: the page side; `platform/types.ts` gets `privateQueue`), R2-m2 (one `offerFileDialog`, `text()`, a plural message), R2-m3 (the four tests), R2-m4 (inert on the preview route too, focus to Retry, the dialog's `aria-describedby`, focus back after it), R2-m5 (the preview route only in the desktop build), R2-n1 (open-with selects the first opened file), R2-n3 (the dialog's buttons fit), R2-n5 (a rejected `listen` and `settings()` handled), R2-n6 (the count follows the queue while the dialog is open) | `frontend/**` (any file the findings need) |
+
+FB and FF depend only on the `privateQueue` contract above. FF builds against mocks first, then is
+resumed after FB merges for the real check (a `reframe encode --in-process` holding the lock, an
+`api_version` 2 stand-in, a web-mode server). Merge order: FB, FF. Ports: FB 8700–8709 (socket
+`reframe-fb`, inspector 8709), FF 8752–8759 (socket `reframe-ff`, inspector 8759).
+
+**Recorded, not fixed**: R1-m4 (the Windows job's lifetime: a check for the Windows phase, `IsProcessInJob`),
+R2-n2 (the notification's app name: the lead's headed check), R2-n4 (window and tray texts in
+English, as recorded), the D-8 question of R1 (an update may drop the PATH entry).
 
 ## Rules for every agent (word for word in each brief)
 

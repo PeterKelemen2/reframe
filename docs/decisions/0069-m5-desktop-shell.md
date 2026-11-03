@@ -778,6 +778,42 @@ restored on Wayland (above); the tray's strings are not translated.
   detected rectangle, so the result is not used.
 - **Keep running in tray** hides only the main window; an open preview window stays.
 
+## Review, 2026-11-03
+
+Two fresh reviews (`opus`, effort high) of `m5-desktop-shell` at 2671ca6: R1 the Rust shell and
+the sidecar, R2 the frontend and the integration. Both ran the real app with the frozen sidecar
+and the pinned FFmpeg in the virtual session. The lead reproduced every major before the fixes.
+
+| # | Severity | Finding | Lead's reproduction |
+|---|----------|---------|---------------------|
+| R1-M1 | major | A private queue (another `api_version`, a held lock with no endpoint, an unusable token) runs silently: no warning in the page, the jobs are not saved, and a later CLI starts a second owner the app never shows | R1's `s8` (a `reframe encode --in-process` holds the lock): ready after the 5 s wait, sidecar without `--owner-only`, "Queue: nothing waiting"; a later `reframe encode` started server 374992 next to the app's 373433; the app's queue `[]` |
+| R1-M2 | major | An owner that does not answer `/api/health` for about 15 s is dropped for a private queue and never used again | R1's `s11` (the owner `SIGSTOP`ped for 20 s during an encode): the app on its own private sidecar with `[]`, `reframe queue list` shows the owner's job `running 15.9%` |
+| R2-M1 | major | A web-mode `reframe-server` is taken as the owner; its CORS refuses the app's origin, and the page stays on "cannot be reached" for ever | `lead/r2repro`: `backend_info` `{baseUrl: …:8762, owned: false}`, the page "The Reframe server cannot be reached", 4 `OPTIONS` in the server's log; after that server ended the app started its own sidecar |
+| R2-M2 | major | A notification is sent only when `document.hidden`; WebKitGTK on Wayland keeps it false for a minimised window | `lead/r2repro`: the main window minimised through KWin, a job `done`, `{hidden: false, focus: false}`, 0 `Notify` calls |
+| R1-m1 | minor | The child that missed the 20 s ready line stays a zombie | R1 |
+| R1-m2 | minor | A panic in the supervisor task makes the app impossible to quit (injected panic) | R1 |
+| R1-m3 | minor | Tests pass with the death signal, the parent re-check, the stop-while-starting race or a server option removed | R1 (mutations) |
+| R1-m4 | minor | The Windows job's lifetime is not tested (cannot compile here) | read only |
+| R2-m1 | minor | `dialog:allow-save` granted and unused; the app's commands have no access control (the preview window can call `quit_app`) | R2 |
+| R2-m2 | minor | The unreadable-name question has two copies, English only, no plural | R2 |
+| R2-m3 | minor | Four tests that pass with the code broken (boot's same-address check, the overlay during boot, the preview's seek echo, `take` after stop) | R2 (mutations) |
+| R2-m4 | minor | Focus and `inert` gaps in the overlay, the error screen and the quit dialog | R2 |
+| R2-m5 | minor | The web build has the `/preview/:sourceId` route (a dead end in a browser) | R2 |
+| R2-m6 | minor | With the tray on and no tray host, *Keep running in tray* hides the window with nothing to bring it back | R2 |
+| R1-n1 … n3, R2-n1 … n6 | nit | the token in FFmpeg's environment; `~user` in `REFRAME_DATA_DIR`; waiting jobs of another owner after *Stop jobs and quit*; open-with does not select the file; the notification's app name; the dialog's buttons wrap; English window and tray texts; unhandled `listen` / `settings()` rejections; the dialog's count frozen | R1, R2 |
+
+The lead's decisions for the fix round are in [../m5-breakdown.md](../m5-breakdown.md) "Fix
+round" (1–8). R2 also found that the lead's `vk-close.js` stopped at a stale KWin window; fixed in
+the tool.
+
+### Fix round — FB
+
+(placeholder)
+
+### Fix round — FF
+
+(placeholder)
+
 ## Consequences
 
 - The plan's text of D-1 and of the taskbar row was wrong for this platform; both are fixed
