@@ -165,6 +165,18 @@ describe('the detached preview window', () => {
     expect(main.use(usePreviewStore).viewMode).toBe('split')
   })
 
+  it('sends a frame the user sought to the main window', async () => {
+    const { main } = await mainWithFile()
+    const preview = page(() => followMainWindow())
+    await settle()
+
+    await preview.use(usePreviewStore).seek(2.5)
+    await settle()
+
+    expect(main.use(usePreviewStore).index).toBeNull()
+    expect(main.use(usePreviewStore).sought?.timestamp).toBe(2.5)
+  })
+
   it('tells the main window when it closes', async () => {
     const { detached } = await mainWithFile()
     const preview = page(() => followMainWindow())

@@ -81,6 +81,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
+  vi.unstubAllEnvs()
 })
 
 describe('Ctrl+O', () => {
@@ -120,6 +121,7 @@ describe('Ctrl+O', () => {
 })
 
 it('leaves the detached preview window as it is: no workspace, no file dialog', async () => {
+  vi.stubEnv('VITE_PLATFORM', 'desktop')
   const { router } = await mountAt('/preview/s1')
   press('o')
   await flushPromises()

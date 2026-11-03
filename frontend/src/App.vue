@@ -9,6 +9,7 @@ import BackendErrorScreen from '@/components/shell/BackendErrorScreen.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
 import NavRail from '@/components/shell/NavRail.vue'
+import PrivateQueueBanner from '@/components/shell/PrivateQueueBanner.vue'
 import QuitDialog from '@/components/shell/QuitDialog.vue'
 import ReconnectOverlay from '@/components/shell/ReconnectOverlay.vue'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
@@ -37,6 +38,9 @@ const quit = useQuitFlow()
 const reconnecting = computed(
   () => desktopBackend.value?.state === 'starting' && system.phase !== 'booting',
 )
+const privateQueue = computed(() =>
+  desktopBackend.value?.state === 'ready' ? desktopBackend.value.info.privateQueue : null,
+)
 
 async function retryBackend(): Promise<void> {
   await platform.desktop?.retryBackend()
@@ -61,11 +65,12 @@ watch(
     :retry="retryBackend"
   />
   <RouterView v-else-if="system.phase === 'ready' && route.meta.bare" />
-  <div v-else-if="system.phase === 'ready'" class="app-shell" :inert="reconnecting || undefined">
+  <div v-else-if="system.phase === 'ready'" class="app-shell">
     <NavRail />
     <div class="app-shell__main">
       <!-- Above every view: a when-done countdown must be seen and cancelled wherever the user is. -->
       <PowerBanner />
+      <PrivateQueueBanner v-if="privateQueue" :queue="privateQueue" />
       <RouterView />
     </div>
   </div>

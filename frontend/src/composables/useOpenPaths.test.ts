@@ -56,7 +56,9 @@ describe('the paths the desktop app is opened with', () => {
     await flushPromises()
     system.phase = 'ready'
     await flushPromises()
-    expect(sources.open).toHaveBeenCalledExactlyOnceWith(['/m/file1.mkv', '/m/folder'])
+    expect(sources.open).toHaveBeenCalledExactlyOnceWith(['/m/file1.mkv', '/m/folder'], {
+      select: false,
+    })
   })
 
   it('opens a second launch’s paths at once in the workspace', async () => {
@@ -66,8 +68,22 @@ describe('the paths the desktop app is opened with', () => {
     await flushPromises()
     handOver?.(['/m/other.mkv'])
     await flushPromises()
-    expect(sources.open).toHaveBeenCalledExactlyOnceWith(['/m/other.mkv'])
+    expect(sources.open).toHaveBeenCalledExactlyOnceWith(['/m/other.mkv'], { select: false })
     expect(router.currentRoute.value.name).toBe('workspace')
+  })
+
+  it('shows the first opened file, also when another one was shown', async () => {
+    const { sources, system } = await start()
+    sources.activeId = 'old'
+    vi.mocked(sources.open).mockResolvedValue([
+      { id: 'new1', path: '/m/new1.mkv', source: null },
+      { id: 'new2', path: '/m/new2.mkv', source: null },
+    ])
+    const select = vi.spyOn(sources, 'select').mockResolvedValue()
+    system.phase = 'ready'
+    handOver?.(['/m/season'])
+    await flushPromises()
+    expect(select).toHaveBeenCalledExactlyOnceWith('new1')
   })
 
   it('stops listening with its scope', async () => {

@@ -812,7 +812,102 @@ the tool.
 
 ### Fix round — FF
 
-(placeholder)
+Phase 1 (2026-11-03, against mocks; FB's shell does not send `privateQueue` yet). Phase 2 (the
+banner against FB's real private queues) follows after FB merges.
+
+What was changed (`frontend/` only):
+
+- **R2-M2** (lead decision 4): `api/dispatch.ts` sends the system notification when
+  `document.hidden || !document.hasFocus()`, in the web and the desktop build; the toast stays.
+- **The private-queue banner** (decision 1, the page side): `platform/types.ts` gets
+  `DesktopBackend.privateQueue: {reason, detail} | null` (`DesktopPrivateQueue`).
+  `components/shell/PrivateQueueBanner.vue` sits under the when-done banner, above every view
+  of the main window, while the last `backend-state` is `ready` with a `privateQueue`: *The
+  queue of this window is not saved and not shared.*, the reason (`desktop.privateQueue.reason.*`,
+  one text per `reason`) and the shell's `detail` on a second line. No action, no switch back.
+- **R2-m2**: one `platform/desktop/unreadable.ts` (`openReadable`: the readable paths go to the
+  callback, the others to one native question) for the drop and for open-with; its texts come
+  from `api/text.ts` `text()` (the app's i18n instance, so they follow the locale) and one
+  pluralised set `desktop.unreadable.*`; `openPaths.json` and `desktop.drop.*` are gone. The
+  question names the full paths in both cases (the drop named only the file names).
+- **R2-m3**: the four tests (a new token at the same address; the boot screen, not
+  *Reconnecting…*, while the first start is tried again; a sought frame sent back by the preview
+  window; nothing given once unsubscribed while the shell answers `take_open_paths`).
+- **R2-m4**: `ReconnectOverlay` is teleported to `<body>` and, while it shows, sets `inert` on
+  every other child of `<body>` (the app, the preview route, PrimeVue's dialogs, lists and
+  toasts), takes the focus into its box, and on unmount removes what it set and gives the focus
+  back to the element that had it. Its `z-index` is 10000: PrimeVue adds about 1000 to each
+  overlay opened over another (a select list over the toast container got 2103, above the old
+  2000, in the real app). `BackendErrorScreen` focuses **Try again** when it mounts. `QuitDialog`
+  has `aria-describedby` on its text, and after Cancel or Escape focuses the current view's rail
+  link when PrimeVue's own restore leaves the focus on no control.
+- **R2-m5**: `router/index.ts` registers `/preview/:sourceId` only when `VITE_PLATFORM` is
+  `desktop` (`npm run build:web`: no `/preview/:sourceId` in `dist/`; `dist-desktop` has it).
+- **R2-n1**: `useOpenPaths` opens with `select: false` and then selects the first opened source,
+  so a second launch shows its file also when another one was shown.
+- **R2-n3**: the quit dialog is 34rem wide; its three buttons fit on one line (30rem wrapped
+  *Keep running in tray* and *Stop jobs and quit* to two lines in WebKitGTK).
+- **R2-n5**: `platform/desktop/subscribe.ts` is the one stop/unlisten helper (`index.ts` and
+  `openPaths.ts`); a refused `listen` is logged with the subscription's name. `onOpenPaths` takes
+  nothing after an unsubscribe (before and after `take_open_paths`). `DesktopSection` shows *The
+  setting could not be read: …* when `settings()` rejects (the switch stays disabled).
+- **R2-n6**: `useQuitFlow`'s question counts `queue.jobs` live; the message has a zero form (*No
+  job is running or paused now.*), and the dialog's title is *Quit Reframe?* (*Jobs are running*
+  read wrong over that).
+
+Checked in the real app (debug build, `vk-run.sh` socket `reframe-ff`, inspector 8759, the
+sidecar from source through `REFRAME_DESKTOP_SIDECAR`, the pinned FFmpeg; light and dark through
+`gtk-theme` Adwaita / Adwaita-dark):
+
+- **The notification repro** (R2's): the main window minimised by a KWin script, a short job:
+  `{"hidden": false, "focus": false, "jobs": [["multitrack.mkv", "done"]], "toasts": ["Job
+  done\nmultitrack (1).mkv"]}` and one `org.freedesktop.Notifications.Notify` in `dbus-monitor
+  --session` (`"reframe-desktop"`, `"Job done"`, `"multitrack (1).mkv"`). In the private session
+  a second `Notify` comes only about 60 s later: the bus activates
+  `org.kde.plasma.Notifications.service` (`plasma_waitforname`, which never sees the name there),
+  and the plugin's later calls wait behind it. A session artefact: the owner's Plasma owns the
+  name. After the window was restored KWin left `hasFocus()` false, so the focused case is
+  checked only in the unit test.
+- **The banner**: a `backend-state` `ready` with a `privateQueue` delivered as Rust's emit does
+  (the page's listener object and `runCallback`; `event.emit` is not granted): the banner above
+  the workspace, title, reason and detail readable in light and dark; gone after the next
+  `ready` without it (the sidecar's restart).
+- *Reconnecting…* (`kill -9` of the sidecar with the output-name select list open): `#app` and
+  the toast container `inert`, the overlay's box focused, the list dimmed under the box (with the
+  old `z-index` it was drawn above it), the focus back on the list's option after the restart.
+  Light and dark.
+- The error screen (`REFRAME_DESKTOP_SIDECAR=/bin/false`): **Try again** focused (ring shown) in
+  light and dark, and focused again after a Retry that fails.
+- The quit dialog with the tray on: one line of buttons in light and dark; `aria-describedby`
+  names the text; the running job cancelled while it is open: *No job is running or paused now.*;
+  Cancel and Escape: the focus on the rail's *Workspace* link.
+- `reframe-desktop letterbox.mkv` while `long.mkv` was shown: exit 0, `letterbox.mkv` selected
+  and in the editor. `reframe-desktop` with two names with U+FFFD: the GTK question *2 file names
+  cannot be read* with both full paths, **Open files…** · **Cancel**.
+
+Tests (Vitest; each fails with the code broken, 31 mutations by a script, all killed):
+`api/dispatch.test.ts` (no focus → `Notify`; failed on the old code), `api/boot.test.ts` (a new
+token at the same address), `App.test.ts` (Try again focused; *Reconnecting…* over the app and a
+teleported element, focus in and back; over the preview route; not during the boot; the banner
+over five views with two reasons and gone again; no preview route in the web build; the quit
+dialog's description and focus after Cancel), `previewWindow.test.ts` (seek), `useQuitFlow.test.ts`
+(the live count), `useOpenPaths.test.ts` (the first opened file selected),
+`platform/desktop/openPaths.test.ts` (nothing given after an unsubscribe during the take, nothing
+taken before the listener, a refused listener logged), `platform/desktop/index.test.ts` (a
+refused listener logged), `DesktopSection.test.ts` (a rejected `settings()`).
+
+Deviations and choices: the banner is in the main window only (the preview window has no queue
+to show); the quit dialog's title changed (R2-n6); the unreadable question shows full paths for a
+drop too.
+
+Found for the lead: **a shared `CARGO_TARGET_DIR` mixes worktrees.** Cargo hashes a path
+package by its path inside the workspace, so every worktree's `reframe-desktop` has the same unit
+hash (`deps/reframe_desktop-5a3082ace3973af4`, the same build-script `OUT_DIR`). A `tauri build`
+here once produced an app with FB's app manifest (`backend_info not allowed. Permissions
+associated with this command: allow-backend-info`) and wrote FB's
+`desktop/src-tauri/permissions/autogenerated/` into this worktree. `touch src-tauri/build.rs`
+before the build and `strings … | grep -c allow-backend-info` (0 for this branch) after it gave a
+clean binary.
 
 ## Consequences
 

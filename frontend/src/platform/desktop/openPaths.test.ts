@@ -2,6 +2,7 @@ import { emit } from '@tauri-apps/api/event'
 import type { InvokeArgs } from '@tauri-apps/api/core'
 import { clearMocks, mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OPEN_PATHS_EVENT, onOpenPaths } from './openPaths'
@@ -43,7 +44,10 @@ async function secondLaunch(...paths: string[]) {
   await flushPromises()
 }
 
-beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}))
+beforeEach(() => {
+  setActivePinia(createPinia())
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+})
 
 afterEach(() => {
   clearMocks()
@@ -101,6 +105,40 @@ describe('onOpenPaths', () => {
     stop()
     await secondLaunch('/m/other.mkv')
     expect(opened).not.toHaveBeenCalled()
+  })
+
+  it('gives nothing once unsubscribed while the app answers', async () => {
+    shell()
+    waiting.push('/m/file1.mkv')
+    const opened = vi.fn<(paths: string[]) => void>()
+    let stop: (() => void) | null = null
+    duringFirstTake = () => stop?.()
+    stop = onOpenPaths(opened)
+    await flushPromises()
+    expect(takes).toBe(1)
+    expect(opened).not.toHaveBeenCalled()
+  })
+
+  it('takes nothing when unsubscribed before it listens', async () => {
+    shell()
+    waiting.push('/m/file1.mkv')
+    onOpenPaths(vi.fn<(paths: string[]) => void>())()
+    await flushPromises()
+    expect(takes).toBe(0)
+    expect(waiting).toEqual(['/m/file1.mkv'])
+  })
+
+  it('logs a listener the app refuses', async () => {
+    shell()
+    mockIPC((cmd) =>
+      cmd === 'plugin:event|listen' ? Promise.reject('event.listen not allowed') : null,
+    )
+    onOpenPaths(vi.fn<(paths: string[]) => void>())
+    await flushPromises()
+    expect(console.error).toHaveBeenCalledWith(
+      'platform.onOpenPaths failed',
+      'event.listen not allowed',
+    )
   })
 
   it('reports a name that cannot be read, opens the others, and gives what the file dialog picked', async () => {

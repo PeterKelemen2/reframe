@@ -1,32 +1,14 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { ask, open } from '@tauri-apps/plugin-dialog'
 
-import { createAppI18n } from '@/i18n'
+import { subscribe } from './subscribe'
+import { openReadable } from './unreadable'
 
 export const OPEN_PATHS_EVENT = 'open-paths'
 
-/** What the app gives for a name that is not valid Unicode: that path does not exist. */
-const UNREADABLE = String.fromCodePoint(0xfffd)
-
 function failed(error: unknown): void {
   console.error('platform.onOpenPaths failed', error)
-}
-
-/** Says which paths cannot be read, and offers the file dialog for them instead. */
-async function offerFileDialog(unreadable: string[], cb: (paths: string[]) => void) {
-  const { t } = createAppI18n().global
-  const n = unreadable.length
-  const chosen = await ask(t('openPaths.unreadable.text', { n, paths: unreadable.join('\n') }), {
-    title: t('openPaths.unreadable.title', { n }),
-    kind: 'warning',
-    okLabel: t('openPaths.unreadable.openFiles'),
-    cancelLabel: t('openPaths.unreadable.cancel'),
-  })
-  if (!chosen) return
-  const picked = await open({ multiple: true, directory: false })
-  if (picked !== null && picked.length > 0) cb(picked)
 }
 
 /**
@@ -36,27 +18,24 @@ async function offerFileDialog(unreadable: string[], cb: (paths: string[]) => vo
 export function onOpenPaths(cb: (paths: string[]) => void): () => void {
   if (getCurrentWindow().label !== 'main') return () => {}
   let stopped = false
-  let unlisten: UnlistenFn | null = null
 
+  // A path taken after the unsubscribe would be lost: it is taken only once.
   const take = async (): Promise<void> => {
+    if (stopped) return
     const paths = await invoke<string[]>('take_open_paths')
     if (stopped) return
-    const readable = paths.filter((path) => !path.includes(UNREADABLE))
-    const unreadable = paths.filter((path) => path.includes(UNREADABLE))
-    if (readable.length > 0) cb(readable)
-    if (unreadable.length > 0) await offerFileDialog(unreadable, cb)
+    await openReadable(paths, cb)
   }
-  listen(OPEN_PATHS_EVENT, () => void take().catch(failed))
-    .then((stop) => {
-      if (stopped) return stop()
-      unlisten = stop
+  const unsubscribe = subscribe(
+    'platform.onOpenPaths',
+    listen(OPEN_PATHS_EVENT, () => void take().catch(failed)).then((stop) => {
       // Only once the listener is on: a path that came before it waits, and one after it is an event.
-      return take()
-    })
-    .catch(failed)
-
+      take().catch(failed)
+      return stop
+    }),
+  )
   return () => {
     stopped = true
-    void unlisten?.()
+    unsubscribe()
   }
 }

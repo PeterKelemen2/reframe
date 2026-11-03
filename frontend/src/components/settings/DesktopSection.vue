@@ -26,15 +26,19 @@ const issues = computed<ValidationIssue[]>(() =>
           severity: 'error',
           code: 'desktop.settings',
           path: 'desktop.tray',
-          message: t('window.settings.failed', { reason: failure.value }),
+          message: failure.value,
           fixes: [],
         },
       ],
 )
 
 onMounted(async () => {
-  saved.value = await props.shell.settings()
-  shown.value = saved.value.tray
+  try {
+    saved.value = await props.shell.settings()
+    shown.value = saved.value.tray
+  } catch (error) {
+    failure.value = t('window.settings.unreadable', { reason: String(error) })
+  }
 })
 
 async function setTray(tray: boolean): Promise<void> {
@@ -45,7 +49,7 @@ async function setTray(tray: boolean): Promise<void> {
   try {
     saved.value = await props.shell.setSettings({ ...saved.value, tray })
   } catch (error) {
-    failure.value = String(error)
+    failure.value = t('window.settings.failed', { reason: String(error) })
   } finally {
     saving.value = false
     shown.value = saved.value.tray

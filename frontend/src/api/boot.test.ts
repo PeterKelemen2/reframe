@@ -245,6 +245,7 @@ describe('boot', () => {
       token: 'side',
       instance: 'run-1',
       owned: true,
+      privateQueue: null,
     }
     let listeners: ((state: DesktopBackendState) => void)[]
 
@@ -343,6 +344,17 @@ describe('boot', () => {
       await new Promise((resolve) => setTimeout(resolve, 30))
       expect(sockets).toHaveLength(1)
       expect(socket.closedWith).toBeNull()
+    })
+
+    it('connects again with a new token at the same address', async () => {
+      const first = await readyDesktop({ initial: 60_000, max: 60_000, factor: 1 })
+      send({ state: 'ready', info: { ...sidecar, token: 'new' } })
+      expect(clientToken()).toBe('new')
+      await until(() => sockets.length === 2)
+      expect(first.closedWith).not.toBeNull()
+      const second = sockets[1] as FakeSocket
+      second.open()
+      expect(second.sent).toEqual([JSON.stringify({ type: 'auth', token: 'new' })])
     })
 
     it('stops following the shell when it is shut down', async () => {

@@ -1,7 +1,7 @@
 {
-  "drop": {
-    "title": "A file name cannot be read",
-    "unreadable": "Reframe cannot read the name of this dropped item, so it cannot open it:\n{names}\nChoose it in the file dialog instead?",
+  "unreadable": {
+    "title": "A file name cannot be read | {n} file names cannot be read",
+    "text": "Reframe cannot read the name of this file, so it cannot open it:\n{paths}\nChoose it in the file dialog instead? | Reframe cannot read the names of these files, so it cannot open them:\n{paths}\nChoose them in the file dialog instead?",
     "openFiles": "Open files…",
     "cancel": "Cancel"
   },
@@ -14,9 +14,19 @@
     "title": "Reconnecting…",
     "text": "The Reframe server stopped and is starting again. A job that was running ends as interrupted."
   },
+  "privateQueue": {
+    "label": "Private queue",
+    "title": "The queue of this window is not saved and not shared.",
+    "reason": {
+      "otherVersion": "Another version of Reframe owns the shared queue.",
+      "webServer": "A Reframe server in web mode owns the shared queue.",
+      "lockHeld": "Another Reframe program holds the shared queue, and its server does not answer.",
+      "unusableToken": "The server of the shared queue has a token that this app cannot send."
+    }
+  },
   "quit": {
-    "title": "Jobs are running",
-    "text": "1 job is running or paused. Quitting stops it. | {count} jobs are running or paused. Quitting stops them.",
+    "title": "Quit Reframe?",
+    "text": "No job is running or paused now. | 1 job is running or paused. Quitting stops it. | {count} jobs are running or paused. Quitting stops them.",
     "stop": "Stop jobs and quit",
     "tray": "Keep running in tray",
     "cancel": "Cancel"
