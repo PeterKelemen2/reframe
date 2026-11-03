@@ -125,7 +125,7 @@ Payloads (serde `camelCase`): `BackendInfo { baseUrl, token, instance, owned }`,
 - `quit` (B): `request_quit(&AppHandle)` (what a close does; the tray's Quit calls it; it shows
   the main window first when the page will ask), `on_window_event`, `on_run_event` (`Exit` stops
   the backend), `QUIT_EVENT`, the three commands.
-- `progress` (C): `DESKTOP_ENTRY` = `reframe-desktop.desktop` (0069 Context item 3), the command.
+- `progress` (C): `DESKTOP_ENTRY` = `Reframe.desktop`: Tauri's deb and rpm install the entry under the product name, with `StartupWMClass=reframe-desktop`, the Wayland app id (0069 Context item 3; task A), the command.
 - `open_paths` (D): `single_instance()` (the first plugin), `Pending::from_args(args_os)`,
   `OPEN_PATHS_EVENT`, the command.
 - `comfort` (E): `window_state()` (a plugin), `create_main_window(&AppHandle)` (label `main`,
@@ -419,6 +419,7 @@ write a test, name that defect in one sentence. If you cannot name one, do not w
 | Date | What |
 |------|------|
 | 2026-11-03 | **Wave 0.** Branch `m5-desktop-shell` from `main` 72eb54a. The lead checked the machine (0069 Context): no Xvfb, weston, cage, WebKitWebDriver or tauri-driver; `kwin_wayland --virtual` in a private D-Bus session works, with `spectacle`, KWin scripts and WebKitGTK's inspector socket as the headless driver. D-1 built: `desktop/src-tauri` (stubs per task, contracts above), the CSP checked in the real webview, `beforeBuildCommand` fixed (it runs in `desktop/`), taskbar progress planned as the app's own `LauncherEntry` signal (libunity is not installed), the CI job `desktop`. Frontend: `Platform.desktop`, the `platform/desktop/` folder, the `/preview/:sourceId` bare route and the `useOpenPaths` mount (each with a test that fails without it). |
+| 2026-11-03 | **Merged A** (259ea0d, merge 2a5d936): `desktop/sidecar/build.py` + `sidecar.spec` (one onedir, `reframe-server` and `reframe` share `_internal/`, 98 MB, MediaInfo shipped), the committed placeholder `resources/sidecar/README.md` (a fresh worktree builds), deb/rpm link scripts, the NSIS PATH hook (not run), 14 frozen tests. The lead rebuilt it (47–70 s) and ran the tests: 14 passed; the lead's mutation (no `reframe.presets` data) fails them; restored and rebuilt, 14 pass. Worktree removed. A found that the packages install `Reframe.desktop`, so `DESKTOP_ENTRY` is `Reframe.desktop` (C told) |
 
 ## Where M5 ended
 

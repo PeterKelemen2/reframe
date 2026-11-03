@@ -114,7 +114,102 @@ Each task fills its own section (what it built, its checks with real output, dev
 
 ### Task A — D-2 sidecar build
 
-(placeholder)
+Built (2026-11-03, PyInstaller 6.22.3, hooks-contrib 2026.9, Python 3.14.8, Tauri CLI 2.12.4):
+
+1. **`uv run python desktop/sidecar/build.py`** runs `desktop/sidecar/sidecar.spec`: two
+   `Analysis` (`server_entry.py` → `reframe-server`, `cli_entry.py` → `reframe`), one `EXE`
+   each with `exclude_binaries=True`, and one `COLLECT` named `sidecar`, so both executables
+   share one `_internal/`. Each `Analysis` gets 0001's options as spec values:
+   `collect_data_files` of `babelfish`, `guessit`, `language_data`, `reframe.definitions`,
+   `reframe.presets`, `reframe.tools`; the hidden imports `collect_submodules("babelfish")` and
+   `pymediainfo`; the wheel's `libmediainfo.so*` (or `MediaInfo.dll`) as a binary; `mypy` and
+   `hypothesis` excluded. PyInstaller works in `desktop/sidecar/build/` (git-ignored); the
+   script then moves the onedir into `desktop/src-tauri/resources/sidecar/`. Result here:
+   98,430,522 bytes in 1017 files, 48 s; `reframe-server` 15.9 MB, `reframe` 15.6 MB (each
+   executable carries its own archive of pure-Python modules; the libraries and data files are
+   there once). The build still prints the pymediainfo hook's "MediaInfo shared library not
+   found" warning: it comes from the hook, before the spec adds the library, and the bundled
+   library loads (the MediaInfo test).
+2. **"Stamps the version"**: an ELF executable has no version field, so the stamp is the
+   version that both frozen programs report, and it is the core's `reframe.__version__`.
+   `build.py` refuses to build (exit 1) when `reframe_server.__version__` differs from it,
+   because the frozen CLI starts the frozen server as its owner and both must be one release.
+   The tests see it: `GET /api/health` of the frozen server and `reframe version` of the frozen
+   CLI give `reframe.__version__` of the source tree (a stale build fails them). A Windows file
+   version resource and the Tauri version from the same source are Q-5 / D-8, not built.
+3. **`reframe --version` does not exist**: the CLI has `reframe version` (typer command), and
+   `reframe --version` exits 2 ("No such option"). The test checks `reframe version`. Adding the
+   option is a `packages/` change (the lead's), not made.
+4. **A fresh worktree still builds the app.** `bundle.resources` is
+   `{"resources/sidecar/": "sidecar/"}`. Without the folder, `cargo build` fails in
+   tauri-build: `resource path `resources/sidecar` doesn't exist` (checked); a glob that
+   matches nothing fails too (`GlobPathNotFound`, tauri-utils 2.10.2 `resources.rs`). So
+   `resources/sidecar/README.md` is committed (`.gitignore`: `resources/sidecar/*` with
+   `!…/README.md`), and `build.py` keeps it when it replaces the folder's other entries. With
+   only that file, `cargo fmt --check`, `cargo build`, `cargo clippy --all-targets -- -D
+   warnings`, `cargo test` and `npx tauri build --debug --no-bundle` pass. The README ships in
+   the packages as `sidecar/README.md`.
+5. **Tauri copies the resources into the target folder** (`$CARGO_TARGET_DIR/debug/sidecar/`,
+   98 MB after a build with the sidecar) and does not remove them when the folder later holds
+   only the README. In the shared target, a debug app run *from the target folder* finds that
+   copy at `<resource_dir>/sidecar/reframe-server`; a copy of the binary elsewhere does not.
+6. **Packages** (`npx tauri build --debug --bundles deb,rpm --config '{"bundle":{"active":true}}'`
+   here; `bundle.active` stays `false`): Tauri puts the resources in `/usr/lib/Reframe/`, so
+   the CLI is `/usr/lib/Reframe/sidecar/reframe` (the `.deb`'s `data.tar.gz` and the `.rpm`'s
+   payload, read with `ar` and `bsdtar`: `usr/bin/reframe-desktop`,
+   `usr/lib/Reframe/sidecar/{reframe,reframe-server,README.md,_internal/…}`,
+   `usr/share/applications/Reframe.desktop`; 119 MiB each). `/usr/bin/reframe` cannot be a
+   file of the package: `bundle.linux.deb.files` copies the file a link points to (a link in
+   the source tree fails with "does not exist"). So `linux/link-cli.sh` is the `.deb`'s
+   `postinst` and the `.rpm`'s `%post` (`postInstallScript`), and `linux/unlink-cli.sh` the
+   `prerm` / `%preun` (`preRemoveScript`); the `.rpm` header holds them as `POSTIN` and `PREUN`.
+   The link is made only when `/usr/bin/reframe` is missing or already this package's link (a
+   `reframe` from pip or another package stays, with a message), and removed only on removal
+   (`remove`, rpm `0`), not on an upgrade. `dpkg-deb`, `rpm`, `rpmbuild` and `makensis` are not
+   installed here, so the packages were not installed; the scripts run in tests with their two
+   paths moved into a temporary folder.
+7. **Windows PATH offer** (`bundle.windows.nsis.installerHooks` = `windows/hooks.nsh`):
+   `NSIS_HOOK_POSTINSTALL` asks (not in a silent install) whether to add `$INSTDIR\sidecar` to
+   the user's `PATH` (HKCU, the installer is per-user); `NSIS_HOOK_POSTUNINSTALL` removes it.
+   PowerShell edits the value, because an NSIS string is `NSIS_MAX_STRLEN` long and a longer
+   `PATH` read with `ReadRegStr` would be lost when written back; the value stays
+   `REG_EXPAND_SZ`, then `WM_SETTINGCHANGE` is broadcast. Not verified: nothing here can build
+   or run NSIS (Windows testing phase).
+8. **The AppImage** does not put the CLI on `PATH`: nothing in the bundle config does, and an
+   AppImage has no install step. Not built here (D-8).
+9. **MediaInfo ships in the sidecar.** pymediainfo's wheel carries its own `libmediainfo`
+   (15.3 MB of the 98 MB), so no system package is needed, and without it a probe falls back
+   to ffprobe's bit rates: a stream that ffprobe gives none for stays unknown and every rule
+   that reads bit rates treats it as too high (the MediaInfo test: `vfr.mkv`'s bit rate comes
+   from MediaInfo). MediaInfo is BSD-2-Clause: its notice goes with the licence files of D-8
+   (09 §Licensing). The `MediaInfo.dll` pattern for Windows is not verified.
+10. **The frozen CLI through a link finds its server.** PyInstaller's bootloader resolves the
+    link: `sys.executable` of `/tmp/…/bin/reframe` → `…/sidecar/reframe` is the real file, so
+    `owner_command` starts `…/sidecar/reframe-server` (checked by hand and in a test). So the
+    `/usr/bin/reframe` link works as an owner starter.
+11. **Tests** (`packages/reframe-server/tests/test_frozen_sidecar.py`, kept where it was: it is
+    on the pytest paths; it now reads `desktop/src-tauri/resources/sidecar/`, and the
+    `REFRAME_FROZEN_SERVER` override of the spike is gone): the frozen server's ready line in
+    `--mode desktop --port 0` and its bundled data (health version, definitions, presets,
+    languages, tools manifest, guessit), MediaInfo, the parent watch with its encode; the frozen
+    CLI's version, its `encode --detach` and `queue list` against a running frozen server found
+    through `server.json`, and a run through a link that starts the frozen server next to the
+    real file. These skip without a sidecar build (CI). The package scripts' tests run on any
+    Linux. Mutations, each rebuilt and run: no definitions data, no guessit data, no
+    `pymediainfo` import, no parent watch, `reframe` frozen from the server's entry, the owner
+    looked up next to `argv[0]`; and five in the package scripts. Each failed the test it
+    belongs to.
+
+Not built: a Windows version resource; `--without` switches of the spike's build script; an
+AppImage or NSIS build (D-8); FFmpeg in `resources/tools/` (D-7: `bundled_tool_roots` already
+looks there, one folder above the sidecar).
+
+Found for others: the `.deb` / `.rpm` desktop entry is `Reframe.desktop` (from `productName`),
+not `reframe-desktop.desktop` (Context item 3, `progress::DESKTOP_ENTRY`); its
+`StartupWMClass=reframe-desktop` matches the window, but a `LauncherEntry` for
+`application://reframe-desktop.desktop` will not match the installed entry. Both packages are
+named `reframe` (the `.deb`'s `Package: reframe`, the `.rpm`'s `NAME`). Both are D-8's to
+settle.
 
 ### Task B — D-3 sidecar manager and quit flow
 
