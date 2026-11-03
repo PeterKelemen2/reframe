@@ -36,7 +36,8 @@ KWin 6.8.2 on Wayland, rustc 1.99.1):
    listens for `com.canonical.Unity.LauncherEntry.Update` (`busctl --user list`).
 3. **The Wayland app id is the binary name.** Tauri passes the identifier as the GTK app id only
    with `app.enableGTKAppId` (tauri 2.12.5, `app.rs`); without it the app id is
-   `reframe-desktop`, so the launcher matches the window to `reframe-desktop.desktop`.
+   `reframe-desktop`. The deb and rpm install the desktop entry as `Reframe.desktop` with
+   `StartupWMClass=reframe-desktop` (task A), so the launcher matches the window to that entry.
 4. **Headless checks of the real app are possible here** (no Xvfb, weston, cage,
    WebKitWebDriver or tauri-driver is installed; `sudo` needs a password):
    - `dbus-run-session -- kwin_wayland --virtual --no-lockscreen --socket NAME --exit-with-session
@@ -86,7 +87,7 @@ The lead's choices (binding for every task; the contracts are in the breakdown):
    script defines an app manifest.
 6. **Taskbar progress on Linux is the app's own `LauncherEntry.Update` signal** on the session
    bus (`zbus`, already in the tree through the plugins), for
-   `application://reframe-desktop.desktop` (Context items 2 and 3). Windows keeps
+   `application://Reframe.desktop` (Context items 2 and 3). Windows keeps
    `Window::set_progress_bar`.
 7. **The sidecar is started with `--owner-only`** besides 07's
    `--mode desktop --port 0 --auth token --parent-pid <pid>`. A sidecar that loses the race for
@@ -213,7 +214,130 @@ settle.
 
 ### Task B — D-3 sidecar manager and quit flow
 
-(placeholder)
+**Built** (`desktop/src-tauri/src/backend/`, `quit.rs`; 2026-11-03):
+
+- `backend/mod.rs`: one supervisor task at a time runs the start order and watches what it
+  found; every state change goes to the watch channel that `info()` waits on and, once
+  `attach` ran, to every window as `backend-state`. `stop()` sets a flag that every wait of the
+  supervisor races against, then waits until the task has ended; after it no start runs
+  (`retry` does nothing).
+- `backend/owner.rs`: `server.json` by the core's rule (`REFRAME_DATA_DIR` blank-is-unset, `~`
+  expanded, made absolute, else platformdirs' folder: `XDG_DATA_HOME` or `~/.local/share` +
+  `reframe`, on Windows the local app data folder + `Reframe`; `REFRAME_ENDPOINT_FILE` the
+  same way), `GET /api/health` on `127.0.0.1:<port>` (a 30-line HTTP/1.1 client on
+  `TcpStream`, `Connection: close`, as the spike's shutdown request), the `instance`, the
+  `api_version` and the header-safe token checks of `reframe.remote.owner._endpoint`.
+- `backend/sidecar.rs`: every sidecar is forked by one thread that lives as long as the app
+  (`reframe-sidecar-spawner`, it enters the tokio runtime so the pipes register); the spike's
+  `PR_SET_PDEATHSIG = SIGTERM` with the parent re-check in `pre_exec`; `kill_on_drop`, so a
+  start that the quit abandons kills the child; the token from `getrandom` in `REFRAME_TOKEN`;
+  stdin null, stdout piped (kept open after the ready line), stderr straight into the log
+  file.
+- `backend/job.rs`: the Job Object behind a three-call trait (`create`, `kill_on_close`,
+  `assign`), the real calls under `cfg(windows)` (not compiled here), the order and the
+  handle's lifetime tested with a fake.
+- `quit.rs`: a close of `main` is prevented and goes to `request_quit`; the page is asked
+  (`quit-requested` to `main`, after the window is shown, unminimised and focused) only when
+  it called `quit_ready` and the backend is `ready`, else the app stops the backend and exits
+  0. `RunEvent::Exit` stops the backend too (a second stop returns at once).
+- `main.rs` (the one allowed change): `generate_context!()` is made first and
+  `Backend::start(&context)` reads the resource folder (`tauri::utils::platform::resource_dir`)
+  and, in a `tauri dev` build (`cfg(dev)`), the `devUrl`'s origin for `REFRAME_CORS_ORIGINS`.
+- `Cargo.toml`: `getrandom` 0.4.3 (the spike's `libc::getrandom` is Linux-only; the token is
+  made on Windows too) and, for Windows only, `dirs` 7.0.0 (the known folders that platformdirs
+  uses). Both were already in `Cargo.lock`.
+
+**The start order and the timings chosen:**
+
+| Step | What happens |
+|------|--------------|
+| `server.json` names a server that answers with its `instance` and API 1, token header-safe | used, `owned: false`; no sidecar, no restart policy. Watched with `GET /api/health` every 1 s (2 s timeout); a failed or other-instance answer runs the order again |
+| file missing, not valid, stale (no answer, other instance) | the sidecar with `--owner-only` |
+| another `api_version`, or a token that cannot go in a header (0042 item 3.3) | the sidecar **without** `--owner-only` (the server runs on a private queue and reports `queue.store_busy`); the reason is the first line of that run in `sidecar.log` (`reframe-desktop: Reframe X (pid N) owns the queue, and it speaks API version 2, not 1 as this app does: this server runs on a private queue`). `BackendInfo` has no field for it |
+| the sidecar exits 75 | look for the winner's `server.json` every 50 ms for up to 5 s (`HELD_WAIT`), then run the order again; a second 75 in a row means a lock held without a usable endpoint: 3.3 |
+| ready line within 20 s | then one `GET /api/health` for the `instance` (it fails: `failed`), `ready`, `owned: true` |
+| no ready line in 20 s, an exit before it, a spawn error | `failed` with the log path; no automatic restart (07 lifecycle 2: the error screen and **Retry**) |
+| a ready sidecar ends (any status) | `reframe-desktop: the server ended (<status>)` in the log, `starting`, the order again with a new port and token; the fourth end within 60 s is `failed` (`The server ended 4 times within 60 s (…)`); `backend_retry` starts over with an empty count |
+| quit | `POST /api/system/shutdown` with the token, and the kill when the process has not ended 5 s after the request was sent (the request's own time counts) |
+
+The Rust side never reads `queue.lock`: the `--owner-only` sidecar's exit 75 is the lock
+test, and the second try covers an owner in its exit window (port closed, lock not yet free),
+which the CLI handles by reading the lock.
+
+**Log** (`<data>/logs/sidecar.log`): appended to by every sidecar start, so the error screen's
+log still holds the run that failed; at a start a log over 1 MiB is first renamed to
+`sidecar.log.1` (one old file). The app writes its own lines with a `reframe-desktop:` prefix
+(the 3.3 reason, a sidecar's end, a failed Job Object). Within one run the log is not
+rotated: the sidecar writes it directly (no pipe through the app, so a `kill -9` of the app
+cannot break the server's stderr).
+
+**Deviations from the plan and the breakdown:**
+
+1. 07 §Sidecar lifecycle 1 said the order runs "in the Tauri `setup` hook"; it runs before the
+   builder, on the main thread, as the breakdown's contract and 0001 Decision 1 say (the plan's
+   text is changed below).
+2. The sidecar does not inherit the server's own options from the app's environment
+   (`REFRAME_HOST`, `REFRAME_IDLE_EXIT`, `REFRAME_MEDIA_ROOTS`, … the list of
+   `reframe.remote.owner.SERVER_OPTIONS`), as an owner that the CLI starts: a stray
+   `REFRAME_IDLE_EXIT` would end the app's sidecar, a `REFRAME_HOST` would bind it elsewhere.
+   The folders and `REFRAME_ENDPOINT_FILE` pass through (0069 item 8).
+3. A start failure is not restarted; only a sidecar that ended after its ready line counts
+   against the 3-in-60-s policy.
+4. A Job Object that cannot be made leaves the sidecar running (its parent watch still ends
+   it after a crash) and writes the error to the log.
+5. `quit_ready` is one flag for the process: a reloaded page keeps it (it calls `quit_ready`
+   again anyway).
+6. `Backend::request` carries `#[cfg_attr(not(test), expect(dead_code, …))]` until the tray
+   calls it: task E removes the attribute (the `expect` warns once it is used).
+
+**Checked in the real app** (the debug build, `vk-run.sh` socket `reframe-b`, the inspector
+on 8729, `REFRAME_DESKTOP_SIDECAR` = the worktree's `.venv/bin/reframe-server`, the pinned
+FFmpeg first on `PATH`, `hardware_tests` off; the page is still task C's stub, so it shows
+*Connecting to the Reframe server…* in every screenshot):
+
+- `invoke('backend_info')` →
+  `{"baseUrl": "http://127.0.0.1:38249", "token": "16c0…540d", "instance": "6d2240ca5e3e01b0", "owned": true}`
+  2.8 s after the start; the sidecar is the app's direct child:
+  `…/.venv/bin/python …/.venv/bin/reframe-server --mode desktop --port 0 --auth token --owner-only --parent-pid 57292`.
+- `kill -9` of the app during an x265 encode of `hdr10-4k.mkv` (`kill9.part.mkv` in the
+  output folder): the sidecar and its FFmpeg were gone within 0.22 s and 0.28 s (two runs; the
+  script polls every 50 ms), nothing left; the output folder empty; a server started on the same data folder
+  shows the job `interrupted`, "Reframe was closed while the job was running."; the sidecar's
+  log: `The parent process 59634 ended: the server stops`.
+- A window close (`vk-close.sh`) during an encode, with the stub page (no `quit_ready`): the
+  log has `"POST /api/system/shutdown HTTP/1.1" 204 No Content`, the app exited 0 after 0.42 s and 0.37 s,
+  the sidecar and FFmpeg gone, `.part` removed, the job `interrupted`.
+- With `quit_ready` called and a `quit-requested` listener in the page: a close left the app
+  and the sidecar running and the page received the event once; `hide_main_window` hid the
+  window (the virtual output went black); `quit_app` stopped the sidecar (204) and the app
+  exited 0. The `invoke('quit_app')` promise never settles: the app exits first.
+- A CLI-started owner (`reframe-server --mode desktop --owner-only --idle-exit 30 --port 0`,
+  same data folder, one waiting job): `backend_info` gave its port, its token and
+  `owned: false`; the app had no child but WebKit's two. After `kill -9` of the owner the page
+  got `[{"state": "starting"}, {"state": "ready", "info": {…, "owned": true}}]` within 1 s, the
+  app had its own sidecar, and its queue held the waiting job.
+- `reframe encode multitrack.mkv -o …` in the session: the job showed in the app's sidecar's
+  `GET /api/queue` while it ran (`running`, then `done`; the CLI printed
+  `Summary: 1 done, 0 failed, 0 cancelled, 0 not queued.`).
+- `kill -9` of the sidecar: the page got `starting` then `ready` with a new port (38341 →
+  34407) and token; the old token gets 401 from the new sidecar; the log has
+  `reframe-desktop: the server ended (signal: 9 (SIGKILL))`. During an encode, the restarted
+  sidecar shows the job `interrupted` ("Reframe stopped while the job was running.") and the
+  `.part` file removed.
+- `REFRAME_DESKTOP_SIDECAR=/bin/false`: `backend_info` rejects with
+  `{"message": "The server ended before it was ready (exit status: 1)", "log": "<data>/logs/sidecar.log"}`;
+  `backend_retry` runs the order again with the same result.
+
+**Tests** (25, `cargo test`): `backend/tests.rs` drives the supervisor with shell scripts as
+fake sidecars and a tokio listener as the fake server; they and the sidecar tests are
+`cfg(unix)` (the Windows runner builds without them). A mutation run broke each test function
+at least once (36 mutations, all failing the tests); two survivors showed redundant code (a
+kill that `kill_on_drop` already does, a second stop check), which was removed.
+
+**Not verified**: everything under `cfg(windows)` (the Job Object, `CREATE_NO_WINDOW`, the
+Windows data folder) is not compiled on this machine; the frozen sidecar path
+(`<resources>/sidecar/reframe-server`) waits for task A's build; the running-jobs dialog is
+task C's.
 
 ### Task C — D-4 desktop platform adapter
 
@@ -315,7 +439,7 @@ inherit` on buttons) is not done; `styles/main.css` is not task C's.
 - The desktop frontend has its own output folder; the Docker image and S-4 still use
   `frontend/dist`.
 - On Linux, taskbar progress shows only where a launcher listens for `LauncherEntry`
-  (KDE Plasma, Ubuntu's dock) and the desktop entry `reframe-desktop.desktop` is installed.
+  (KDE Plasma, Ubuntu's dock) and the desktop entry `Reframe.desktop` is installed.
 - Not verified on Windows (status "Not verified"): everything under `cfg(windows)`.
 
 ## Plan changes
@@ -325,3 +449,8 @@ inherit` on buttons) is not done; `styles/main.css` is not task C's.
   `frontend/dist-desktop`.
 - [07 §Native integrations](../plan/07-desktop-app.md#native-integrations): the taskbar row.
 - [07 §Sidecar lifecycle](../plan/07-desktop-app.md#sidecar-lifecycle): `--owner-only` and exit 75.
+  Task B: item 1 runs on the main thread before the builder, not in the `setup` hook (Task B,
+  deviation 1).
+- [07 §D-3](../plan/07-desktop-app.md#d-3-sidecar-manager-rust): four boxes ticked by task B; the
+  Windows box is written and mock-tested on Linux, its "Checked on Windows" waits for the Windows
+  testing phase; the quit-flow box waits for task C's dialog.

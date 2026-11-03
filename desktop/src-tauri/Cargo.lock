@@ -2779,6 +2779,8 @@ dependencies = [
 name = "reframe-desktop"
 version = "0.1.0"
 dependencies = [
+ "dirs",
+ "getrandom 0.4.3",
  "libc",
  "serde",
  "serde_json",

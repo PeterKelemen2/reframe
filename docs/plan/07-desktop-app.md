@@ -51,7 +51,8 @@ Reasons:
 
 ## Sidecar lifecycle
 
-1. In the Tauri `setup` hook, first look for a running owner of the queue (D-3,
+1. On the main thread before the Tauri builder (so the sidecar starts while the webview loads),
+   first look for a running owner of the queue (D-3,
    [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3). When
    one is found, use its address and token and start no sidecar. Otherwise spawn the sidecar
    from the resources directory. Pass
@@ -171,12 +172,12 @@ Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md
 sidecar ships MediaInfo (pymediainfo with its own library).
 
 ### D-3 Sidecar manager (Rust)
-- [ ] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
-- [ ] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
-- [ ] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
+- [x] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
+- [x] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
+- [x] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
       sidecar to it (`windows` crate). Checked on Windows: *(Windows testing phase)*.
 - [ ] The quit flow with the running-jobs dialog.
-- [ ] **Find the owner first**
+- [x] **Find the owner first**
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3),
       in Rust: read `<data>/server.json`; when `GET /api/health` answers with the same
       `instance` and `api_version`, use that server: no sidecar, no restart policy, and
