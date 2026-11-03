@@ -17,7 +17,8 @@ use tauri::Manager;
 fn main() {
     // Before the builder: the owner is looked for, and the sidecar started, while GTK and
     // WebKitGTK load.
-    let backend = backend::Backend::start();
+    let context = tauri::generate_context!();
+    let backend = backend::Backend::start(&context);
     let app = tauri::Builder::default()
         // First: a second launch must reach the running app before anything else starts.
         .plugin(open_paths::single_instance())
@@ -46,7 +47,7 @@ fn main() {
             tray::setup(app.handle())?;
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("the Tauri app is built");
     app.run(quit::on_run_event);
 }
