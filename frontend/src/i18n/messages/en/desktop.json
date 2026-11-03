@@ -6,13 +6,13 @@
     "cancel": "Cancel"
   },
   "backend": {
-    "title": "The Reframe server did not start",
+    "title": "The Reframe server is not running",
     "log": "The server's log is in:",
     "retry": "Try again"
   },
   "reconnecting": {
     "title": "Reconnecting…",
-    "text": "The Reframe server stopped. It is starting again; the queue comes back as it was."
+    "text": "The Reframe server stopped and is starting again. A job that was running ends as interrupted."
   },
   "quit": {
     "title": "Jobs are running",

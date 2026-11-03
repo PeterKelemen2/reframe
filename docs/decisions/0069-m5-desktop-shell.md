@@ -420,9 +420,51 @@ Not checked in phase 1: a real drop from a file manager (needs the pointer: the 
 check), the quit dialog on a real close, *Reconnecting…*, the when-done actions (the stub
 quits at once on a close, sends no state changes, and the dev server is in web mode).
 
-Found for others: PrimeVue's `Tab` buttons do not inherit the page font in the real webview
-(`600 14px Adwaita Sans` against the body's `system-ui …` stack), so 0001's F-x line (`font:
-inherit` on buttons) is not done; `styles/main.css` is not task C's.
+Phase 2 (2026-11-03, B's sidecar manager merged; the sidecar from source through
+`REFRAME_DESKTOP_SIDECAR`, the pinned FFmpeg; virtual session, light and dark):
+
+- `owned: true`, the sidecar a child of the app; the queue's **When done** offers **Quit
+  Reframe** (the server is in desktop mode).
+- A close while an x265 job runs shows the dialog (*1 job is running or paused. Quitting
+  stops it.*, **Cancel** · **Stop jobs and quit**; no tray button: E's setting is still the
+  stub's `tray: false`). **Cancel** and Escape keep the app and the job running. **Stop jobs
+  and quit** exits 0; the sidecar ends (`Finished server process`), no FFmpeg is left, the
+  `.part` file is gone, and the next start shows the job `interrupted`.
+- `kill -9` of the sidecar during the encode: *Reconnecting…* over the app (the status bar
+  says *Connection lost, reconnecting…* under it), then the app again on the new port and
+  token, a new `instance`, the job `interrupted` (*Reframe stopped while the job was running.*).
+- Four `kill -9` within 60 s: the error screen with *The server ended 4 times within 60 s
+  (signal: 9 (SIGKILL))* and the log path; **Try again**: error, *Reconnecting…*, the app,
+  the queue restored.
+- `REFRAME_DESKTOP_SIDECAR=/bin/false`: the error screen with *The server ended before it was
+  ready (exit status: 1)* and the log path; **Try again** gives `starting` then `failed`
+  (heard on `backend-state`) and the same screen. A close there quits at once (exit 0).
+- When-done **Quit Reframe** after a job: the countdown (60 s) in the banner, then the app
+  exits 0 without a dialog and the sidecar ends.
+- An owner started as the CLI does (`reframe-server --mode desktop --owner-only`, the same
+  folders): `owned: false`, no sidecar. A close during its job, **Stop jobs and quit**: the
+  owner logs `POST /api/queue/stop` then `POST /api/queue/<id>/cancel` (204 each), the app
+  exits 0, the owner runs on, and its queue shows the job `cancelled`.
+
+**`quit-requested` and other windows** (tauri 2.12.5 `event/listener.rs`: `emit_to` calls
+`emit_js_filter` on every webview, and a listener whose target is `Any` matches every
+filter): a plain `listen()` in the preview window would get the main window's
+`quit-requested` too. In the real app, on a close, the main page's listeners with target
+`Any` and `WebviewWindow main` fired and one with `WebviewWindow preview` did not. So
+`onQuitRequested` and `quitReady` stay limited to the window `main` (the preview window
+cannot be opened before E, so that page was not tried).
+
+Fixed in phase 2: the error screen's title said *did not start* also after the restart
+limit; it is *The Reframe server is not running*. *Reconnecting…* said the queue comes back
+*as it was*; a running job ends `interrupted`, and the text says so.
+
+Not checked: **Keep running in tray** in the real app (E's tray setting; the branch is
+unit-tested, and B checked `hide_main_window`), a real drop from a file manager (the lead's
+headed check).
+
+Found for others (phase 1, since fixed by the lead): PrimeVue's `Tab` buttons did not
+inherit the page font in the real webview (`600 14px Adwaita Sans` against the body's
+`system-ui …` stack), 0001's F-x line (`font: inherit` on buttons).
 
 ### Task D — D-5 single instance, open-with, CLI arguments
 

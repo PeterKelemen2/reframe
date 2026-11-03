@@ -176,7 +176,7 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 - [x] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
 - [x] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
       sidecar to it (`windows` crate). Checked on Windows: *(Windows testing phase)*.
-- [ ] The quit flow with the running-jobs dialog.
+- [x] The quit flow with the running-jobs dialog.
 - [x] **Find the owner first**
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3),
       in Rust: read `<data>/server.json`; when `GET /api/health` answers with the same
@@ -188,7 +188,7 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       jobs too.
 
 ### D-4 Desktop platform adapter
-- [ ] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
+- [x] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
 - [ ] The desktop build hides web-only UI (server file browser) and shows desktop-only UI
       (reveal, tray settings, when-done power actions).
 

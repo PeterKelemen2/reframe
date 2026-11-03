@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { DesktopBackendError } from '@/platform/types'
 
-/** The desktop app's server did not start (or stopped for good); Retry runs the start again. */
+/** The desktop app has no server: it did not start, or ended too often; Retry starts over. */
 const props = defineProps<{ error: DesktopBackendError; retry: () => Promise<void> }>()
 
 const { t } = useI18n()

@@ -212,14 +212,14 @@ describe('the desktop app shell', () => {
     info: { baseUrl: 'http://127.0.0.1:8731', token: 't', instance: 'i', owned: true },
   } as const
 
-  it('shows why the server did not start, with its log and a Retry', async () => {
+  it('shows why the server is not running, with its log and a Retry', async () => {
     const shell = desktop()
     desktopBackend.value = {
       state: 'failed',
       error: { message: 'No ready line within 20 s', log: '/d/logs/sidecar.log' },
     }
     const { host } = await mountApp('booting')
-    expect(host.querySelector('h1')?.textContent).toBe('The Reframe server did not start')
+    expect(host.querySelector('h1')?.textContent).toBe('The Reframe server is not running')
     expect(host.querySelector('[data-field="message"]')?.textContent).toBe(
       'No ready line within 20 s',
     )
