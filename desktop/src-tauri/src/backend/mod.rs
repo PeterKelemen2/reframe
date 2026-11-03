@@ -11,7 +11,7 @@ mod sidecar;
 mod tests;
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -34,6 +34,31 @@ pub struct BackendInfo {
     pub instance: String,
     /// The app started this server (its sidecar), so quitting stops it.
     pub owned: bool,
+    /// Set when this server runs on a private queue: its jobs are not saved, and other front
+    /// ends do not see them.
+    pub private_queue: Option<PrivateQueue>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateQueue {
+    pub reason: PrivateReason,
+    /// English, for the log and the page: who owns the queue.
+    pub detail: String,
+}
+
+/// Why the queue's owner cannot be used.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrivateReason {
+    /// It speaks another `api_version`.
+    OtherVersion,
+    /// It is a web-mode server, whose CORS refuses the app's page.
+    WebServer,
+    /// The queue lock is held, and no server answers for it.
+    LockHeld,
+    /// Its token cannot be sent in an HTTP header.
+    UnusableToken,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -223,10 +248,13 @@ impl Backend {
         if *shared.stopping.borrow() || shared.running.send_replace(true) {
             return;
         }
-        let task = Arc::clone(shared);
+        let mut task = Supervisor {
+            shared: Arc::clone(shared),
+            ended: false,
+        };
         shared.runtime.spawn(async move {
-            supervise(&task).await;
-            task.running.send_replace(false);
+            supervise(&task.shared).await;
+            task.end();
         });
     }
 
@@ -254,6 +282,32 @@ impl Backend {
         self.0.stopping.send_replace(true);
         let mut running = self.0.running.subscribe();
         let _ = running.wait_for(|running| !running).await;
+    }
+}
+
+/// Marks the supervisor task gone, also when it panicked: else `stop` would wait for ever,
+/// `retry` would do nothing, and the page would keep a stale state.
+struct Supervisor {
+    shared: Arc<Shared>,
+    ended: bool,
+}
+
+impl Supervisor {
+    fn end(&mut self) {
+        self.ended = true;
+    }
+}
+
+impl Drop for Supervisor {
+    fn drop(&mut self) {
+        if !self.ended {
+            let log = self.shared.config.as_ref().ok().map(|config| &config.log);
+            self.shared.fail(
+                "The app stopped watching the server after an error".to_owned(),
+                log,
+            );
+        }
+        self.shared.running.send_replace(false);
     }
 }
 
@@ -288,20 +342,17 @@ async fn supervise(shared: &Shared) {
         cors_origin: config.cors_origin.as_deref(),
         ready_timeout: timing.ready,
     };
+    let endpoint_file = config.endpoint_file.as_path();
     let mut stopping = shared.stopping.subscribe();
     let mut crashes: Vec<Instant> = Vec::new();
-    // Exits 75 in a row: after the first, wait for the winner's endpoint; after the second,
-    // the lock is held by something this app cannot use.
+    // Exits 75 in a row while `server.json` names no live process: after the first, wait for
+    // the winner's endpoint; after the second, the lock is held by something this app cannot use.
     let mut lost_lock = 0;
     loop {
         if !matches!(*shared.state.borrow(), BackendState::Starting) {
             shared.set(BackendState::Starting);
         }
-        let Some(found) = or_stop(
-            &mut stopping,
-            owner::find(&config.endpoint_file, timing.health),
-        )
-        .await
+        let Some(found) = or_stop(&mut stopping, owner::find(endpoint_file, timing.health)).await
         else {
             return;
         };
@@ -314,6 +365,7 @@ async fn supervise(shared: &Shared) {
                         token: endpoint.token,
                         instance: endpoint.instance.clone(),
                         owned: false,
+                        private_queue: None,
                     },
                 });
                 let watched = watch_owner(endpoint.port, &endpoint.instance, timing);
@@ -322,17 +374,18 @@ async fn supervise(shared: &Shared) {
                 }
                 continue;
             }
-            Found::Unusable(reason) => Some(reason),
-            Found::Nothing if lost_lock > 1 => Some(
-                "another Reframe process holds the queue lock, and no server answers in its \
-                 endpoint file"
+            Found::Unusable(private) => Some(private),
+            Found::Nothing if lost_lock > 1 => Some(PrivateQueue {
+                reason: PrivateReason::LockHeld,
+                detail: "Another Reframe process holds the queue lock, and no server of it \
+                         answers (an in-process `reframe` command has none)"
                     .to_owned(),
-            ),
+            }),
             Found::Nothing => None,
         };
         let note = private
             .as_ref()
-            .map(|reason| format!("{reason}: this server runs on a private queue"));
+            .map(|private| format!("{}: this server runs on a private queue", private.detail));
         let started = sidecar::start(spawner, &launch, private.is_none(), note.as_deref());
         let Some(started) = or_stop(&mut stopping, started).await else {
             return;
@@ -340,9 +393,19 @@ async fn supervise(shared: &Shared) {
         let mut sidecar = match started {
             Ok(sidecar) => sidecar,
             Err(StartError::LostLock) => {
-                lost_lock += 1;
-                let starting = wait_for_owner(&config.endpoint_file, timing);
-                if lost_lock == 1 && or_stop(&mut stopping, starting).await.is_none() {
+                let waited = if owner::names_live_process(endpoint_file).await {
+                    // Its server does not answer yet (starting, stopped or busy): keep trying it.
+                    or_stop(&mut stopping, wait_while_alive(endpoint_file, timing)).await
+                } else {
+                    lost_lock += 1;
+                    let starting = wait_for_owner(endpoint_file, timing);
+                    if lost_lock == 1 {
+                        or_stop(&mut stopping, starting).await
+                    } else {
+                        Some(())
+                    }
+                };
+                if waited.is_none() {
                     return;
                 }
                 continue;
@@ -357,12 +420,20 @@ async fn supervise(shared: &Shared) {
                 Some(&config.log),
             );
         };
+        let instance = health["instance"].as_str().unwrap_or_default().to_owned();
+        // The other owner may have ended since: the sidecar then took the lock and wrote
+        // `server.json`, and its queue is the shared one.
+        let private_queue = match private {
+            Some(_) if owner::names_instance(endpoint_file, &instance).await => None,
+            private => private,
+        };
         shared.set(BackendState::Ready {
             info: BackendInfo {
                 base_url: format!("http://127.0.0.1:{}", sidecar.port),
                 token: sidecar.token.clone(),
-                instance: health["instance"].as_str().unwrap_or_default().to_owned(),
+                instance,
                 owned: true,
+                private_queue,
             },
         });
         tokio::select! {
@@ -409,7 +480,7 @@ async fn watch_owner(port: u16, instance: &str, timing: &Timing) {
 }
 
 /// Returns when `server.json` names a server, or after `held_wait`.
-async fn wait_for_owner(endpoint_file: &std::path::Path, timing: &Timing) {
+async fn wait_for_owner(endpoint_file: &Path, timing: &Timing) {
     let deadline = Instant::now() + timing.held_wait;
     while Instant::now() < deadline {
         if !matches!(
@@ -419,6 +490,17 @@ async fn wait_for_owner(endpoint_file: &std::path::Path, timing: &Timing) {
             return;
         }
         tokio::time::sleep(timing.poll).await;
+    }
+}
+
+/// Returns when `server.json` names a server that answers, or no longer names a live process.
+async fn wait_while_alive(endpoint_file: &Path, timing: &Timing) {
+    while matches!(
+        owner::find(endpoint_file, timing.health).await,
+        Found::Nothing
+    ) && owner::names_live_process(endpoint_file).await
+    {
+        tokio::time::sleep(timing.owner_poll).await;
     }
 }
 

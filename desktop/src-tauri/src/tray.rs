@@ -27,11 +27,18 @@ static SHOWN: Mutex<Shown> = Mutex::new(Shown {
 
 /// Creates the tray when the desktop setting is on.
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-    // A library removed since the setting was saved: the app starts without a tray.
-    if crate::desktop_settings::load(app).tray && check_available().is_ok() {
+    // A library removed, or no tray host: the app starts without a tray.
+    if crate::desktop_settings::load(app).tray
+        && tauri::async_runtime::block_on(check_available()).is_ok()
+    {
         create(app)?;
     }
     Ok(())
+}
+
+/// The tray exists and something shows it.
+pub async fn shown(app: &AppHandle) -> bool {
+    app.tray_by_id(ID).is_some() && check_available().await.is_ok()
 }
 
 /// Shows or hides the tray at once.
@@ -124,17 +131,45 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     }
 }
 
-/// Linux loads the indicator library when the tray is made, and panics without it.
-pub fn check_available() -> Result<(), String> {
+/// Linux loads the indicator library when the tray is made, and panics without it. Without a
+/// tray host the icon is not shown, and a window hidden in the tray could not come back.
+pub async fn check_available() -> Result<(), String> {
     #[cfg(target_os = "linux")]
-    if !any_loads(&[c"libayatana-appindicator3.so.1", c"libappindicator3.so.1"]) {
-        return Err(
-            "The tray needs the library libayatana-appindicator3 (or libappindicator3), \
-             which is not installed"
-                .to_owned(),
-        );
+    {
+        if !any_loads(&[c"libayatana-appindicator3.so.1", c"libappindicator3.so.1"]) {
+            return Err(
+                "The tray needs the library libayatana-appindicator3 (or libappindicator3), \
+                 which is not installed"
+                    .to_owned(),
+            );
+        }
+        let host = match zbus::Connection::session().await {
+            Ok(bus) => has_tray_host(&bus).await,
+            Err(_) => false,
+        };
+        if !host {
+            return Err(format!(
+                "This desktop shows no tray icons: no program on the session bus owns \
+                 {TRAY_WATCHER}"
+            ));
+        }
     }
     Ok(())
+}
+
+/// The name a tray host owns on the session bus (the StatusNotifierItem protocol).
+#[cfg(target_os = "linux")]
+const TRAY_WATCHER: &str = "org.kde.StatusNotifierWatcher";
+
+#[cfg(target_os = "linux")]
+async fn has_tray_host(bus: &zbus::Connection) -> bool {
+    let (Ok(dbus), Ok(name)) = (
+        zbus::fdo::DBusProxy::new(bus).await,
+        zbus::names::BusName::try_from(TRAY_WATCHER),
+    ) else {
+        return false;
+    };
+    dbus.name_has_owner(name).await.unwrap_or(false)
 }
 
 #[cfg(target_os = "linux")]
@@ -170,5 +205,48 @@ mod tests {
             c"libreframe-no-such-library.so.1",
             c"libc.so.6"
         ]));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_tray_host_is_a_program_that_owns_the_watcher_name() {
+        use std::io::BufRead;
+
+        /// Ended also when an assertion fails.
+        struct Daemon(std::process::Child);
+        impl Drop for Daemon {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        // A private bus, not the user's session bus.
+        let mut daemon = Daemon(
+            std::process::Command::new("dbus-daemon")
+                .args(["--session", "--nofork", "--print-address=1"])
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let mut address = String::new();
+        std::io::BufReader::new(daemon.0.stdout.take().unwrap())
+            .read_line(&mut address)
+            .unwrap();
+        let connect = async || {
+            zbus::connection::Builder::address(address.trim())
+                .unwrap()
+                .build()
+                .await
+                .unwrap()
+        };
+        let app = connect().await;
+        assert!(!has_tray_host(&app).await);
+        let host = connect().await;
+        // The name Plasma's tray, and the other StatusNotifierItem hosts, own.
+        host.request_name("org.kde.StatusNotifierWatcher")
+            .await
+            .unwrap();
+        assert!(has_tray_host(&app).await);
     }
 }

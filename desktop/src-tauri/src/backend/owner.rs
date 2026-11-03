@@ -1,6 +1,6 @@
 //! Finding a running owner of the queue: the server that `server.json` names, if it answers
-//! `GET /api/health` with the file's `instance` and this app's `api_version`. The folders follow
-//! the core's rules, so the app and a `reframe` CLI read the same file.
+//! `GET /api/health` with the file's `instance` and this app's `api_version`, in desktop mode.
+//! The folders follow the core's rules, so the app and a `reframe` CLI read the same file.
 
 use std::ffi::OsString;
 use std::io;
@@ -10,6 +10,8 @@ use std::time::Duration;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+
+use super::{PrivateQueue, PrivateReason};
 
 /// The server API this app speaks (`GET /api/health`'s `api_version`).
 pub const API_VERSION: u64 = 1;
@@ -32,8 +34,8 @@ pub struct Endpoint {
 #[derive(Debug)]
 pub enum Found {
     Owner(Endpoint),
-    /// An owner runs that this app cannot use; the text says why.
-    Unusable(String),
+    /// An owner runs that this app cannot use.
+    Unusable(PrivateQueue),
     /// No file, a stale one, or its server does not answer.
     Nothing,
 }
@@ -107,22 +109,92 @@ pub async fn find(endpoint_file: &Path, timeout: Duration) -> Found {
         return Found::Nothing; // another program on that port, or another run: the file is stale
     }
     let version = health["version"].as_str().unwrap_or(&endpoint.version);
+    let unusable = |reason, why: String| {
+        Found::Unusable(PrivateQueue {
+            reason,
+            detail: format!(
+                "Reframe {version} (pid {}) owns the queue, and {why}",
+                endpoint.pid
+            ),
+        })
+    };
     if health["api_version"] != API_VERSION {
-        return Found::Unusable(format!(
-            "Reframe {version} (pid {}) owns the queue, and it speaks API version {}, not \
-             {API_VERSION} as this app does",
-            endpoint.pid, health["api_version"]
-        ));
+        let why = format!(
+            "it speaks API version {}, not {API_VERSION} as this app does",
+            health["api_version"]
+        );
+        return unusable(PrivateReason::OtherVersion, why);
     }
     if !usable_token(&endpoint.token) {
-        return Found::Unusable(format!(
-            "Reframe {version} (pid {}) owns the queue, and the token in {} cannot be sent in \
-             an HTTP header",
-            endpoint.pid,
+        let why = format!(
+            "the token in {} cannot be sent in an HTTP header",
             endpoint_file.display()
-        ));
+        );
+        return unusable(PrivateReason::UnusableToken, why);
+    }
+    // A web-mode server's CORS refuses the app's page.
+    let Some(mode) = mode(&endpoint, timeout).await else {
+        return Found::Nothing;
+    };
+    if mode != "desktop" {
+        let why = format!("it is a server in {mode} mode, which this app cannot use");
+        return unusable(PrivateReason::WebServer, why);
     }
     Found::Owner(endpoint)
+}
+
+/// `GET /api/system`'s `mode`; `None` without an answer in time (it waits for a running tool
+/// discovery).
+async fn mode(endpoint: &Endpoint, timeout: Duration) -> Option<String> {
+    let token = Some(endpoint.token.as_str());
+    let Ok((200, body)) = http(endpoint.port, "GET", "/api/system", token, timeout).await else {
+        return None;
+    };
+    let system: serde_json::Value = serde_json::from_slice(&body).ok()?;
+    system["mode"].as_str().map(str::to_owned)
+}
+
+/// `server.json` was written by the server run `instance`.
+pub async fn names_instance(endpoint_file: &Path, instance: &str) -> bool {
+    read_endpoint(endpoint_file)
+        .await
+        .is_some_and(|endpoint| endpoint.instance == instance)
+}
+
+/// `server.json` names a process that runs, whether or not its server answers.
+pub async fn names_live_process(endpoint_file: &Path) -> bool {
+    read_endpoint(endpoint_file)
+        .await
+        .is_some_and(|endpoint| process_alive(endpoint.pid))
+}
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> bool {
+    // 0 and negative values name process groups.
+    let Ok(pid @ 1..) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that the process exists.
+    let sent = unsafe { libc::kill(pid, 0) } == 0;
+    sent || io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_alive(pid: u32) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is used only after OpenProcess succeeded, and closed once.
+    unsafe {
+        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return false;
+        };
+        let mut code = 0u32;
+        let read = GetExitCodeProcess(process, &mut code).is_ok();
+        let _ = CloseHandle(process);
+        read && code == STILL_ACTIVE.0 as u32
+    }
 }
 
 /// The server on `port` still answers with `instance`.
@@ -240,6 +312,34 @@ mod tests {
         );
         let relative = data_dir(env(&[("REFRAME_DATA_DIR", "rel")])).unwrap();
         assert_eq!(relative, std::env::current_dir().unwrap().join("rel"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_home_folder_in_the_data_folder_is_expanded_as_the_core_does() {
+        let data = |value| data_dir(env(&[("HOME", "/home/u"), ("REFRAME_DATA_DIR", value)]));
+        assert_eq!(data("~"), Some(PathBuf::from("/home/u")));
+        assert_eq!(data("~/"), Some(PathBuf::from("/home/u")));
+        assert_eq!(data("~/d/e"), Some(PathBuf::from("/home/u/d/e")));
+        // Another user's home folder is not looked up (the core's expanduser does).
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(data("~other/d"), Some(cwd.join("~other/d")));
+        assert_eq!(data("a/~/b"), Some(cwd.join("a/~/b")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_is_alive_until_it_is_reaped() {
+        assert!(process_alive(std::process::id()));
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert!(!process_alive(pid));
+        // init: another user's process, which this one may not signal.
+        assert!(process_alive(1));
+        // Process groups, not processes.
+        assert!(!process_alive(0));
+        assert!(!process_alive(u32::MAX));
     }
 
     #[cfg(not(windows))]

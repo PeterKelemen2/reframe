@@ -92,6 +92,7 @@ mod tests {
                 token: "t".to_owned(),
                 instance: "i".to_owned(),
                 owned: true,
+                private_queue: None,
             },
         };
         let failed = BackendState::Failed {

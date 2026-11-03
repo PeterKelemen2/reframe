@@ -59,7 +59,12 @@ Reasons:
    `--mode desktop --port 0 --auth token --owner-only --parent-pid <pid>`. The token is
    generated in Rust and passed in `REFRAME_TOKEN`, not on the command line (S-0). A sidecar
    that loses the queue lock to another owner exits 75; then run the order again
-   ([decision 0069](../decisions/0069-m5-desktop-shell.md)).
+   ([decision 0069](../decisions/0069-m5-desktop-shell.md)). An owner whose process runs but
+   whose server does not answer (starting, stopped, busy) is waited for, not replaced. An
+   owner of another API version, a web-mode owner (`GET /api/system`'s `mode`) and one whose
+   token cannot be sent are not used: the sidecar then runs on a private queue, and
+   `backend_info`'s `privateQueue` says why, so the page can say that this window's jobs are
+   not saved or shared (0069 "Fix round — FB").
 2. Read stdout until the ready line `{"event":"ready","port":…}` arrives (20 s timeout). On
    timeout or early exit, show an error screen with the sidecar log path and a **Retry** button.
 3. Keep `{baseUrl, token}` in Tauri managed state. The frontend gets it through
@@ -74,7 +79,7 @@ Reasons:
    (max 3 attempts in 60 s). The queue restores from SQLite, and running jobs become
    `Interrupted`.
 6. **Quit while jobs run**: a dialog offers **Stop jobs and quit** · **Keep running in tray**
-   (only when the tray is on, D-6) · **Cancel**.
+   (only when the tray is on and, on Linux, a tray host shows it, D-6) · **Cancel**.
 
 ## Native integrations
 
@@ -180,7 +185,8 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 - [x] **Find the owner first**
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3),
       in Rust: read `<data>/server.json`; when `GET /api/health` answers with the same
-      `instance` and `api_version`, use that server: no sidecar, no restart policy, and
+      `instance` and `api_version`, and `GET /api/system` with `mode` `desktop`, use that
+      server: no sidecar, no restart policy, and
       **Stop jobs and quit** cancels the jobs through the API. The app's event connection
       keeps that owner from exiting when idle. When it ends, run the order again (a new
       sidecar restores the queue). Otherwise start the sidecar; it publishes `server.json`
@@ -203,6 +209,8 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       (optional, off by default). On Linux; Windows not verified. On Wayland the compositor
       places windows, so only size and maximised state come back; a tray switched off is
       hidden, not removed ([decision 0069](../decisions/0069-m5-desktop-shell.md) "Task E").
+      On Linux the tray is on only while a tray host (`org.kde.StatusNotifierWatcher`) is on
+      the session bus (0069 "Fix round — FB").
 
 ### D-7 Tool bundling
 - [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
