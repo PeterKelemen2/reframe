@@ -8,7 +8,7 @@ part must offer to the others. Decision: [0068](decisions/0068-m9-advanced-optio
 lead's choices and one section per task). Status: [status.md](status.md). The template is
 [m8-breakdown.md](m8-breakdown.md). If the lead's context is summarised, this file and
 `status.md` are the source of truth. M9 is done on Linux on the branch `m9-advanced-options`
-(2026-11-03); it is not merged into `main` and not pushed: the owner decides.
+(2026-11-03); the owner had it merged into `main` the same day (not pushed).
 
 M9's core part (C-6: the complete option sets with per-preset defaults, the option search, Copy
 HDR metadata, the custom-parameter dry run; [0035](decisions/0035-advanced-option-sets-and-dry-run.md))
@@ -397,8 +397,8 @@ test.
 
 ## Where M9 ended (2026-11-03)
 
-M9 is done on Linux on the branch `m9-advanced-options` (from `main` 7fbda7c); not merged into
-`main`, not pushed. Built: A (`AdvancedOptions`, `OptionRow`, the option search, the default
+M9 is done on Linux on the branch `m9-advanced-options` (from `main` 7fbda7c); merged into
+`main` at the owner's request on 2026-11-03 (`--no-ff`), not pushed. Built: A (`AdvancedOptions`, `OptionRow`, the option search, the default
 texts), B (`CustomParams` with the dry run, `CopyHdrMetadata`), the lead's skeleton
 (`ui.advancedOpen`, the reveal that opens the panel), and from the review FA (decimals, focus,
 the drawer's height and scroll padding, the search status, the panel's state for the page, `Field`'s
@@ -451,4 +451,4 @@ lead's two fixes (a reveal focuses the control; Ctrl+Z in a number field undoes 
      (measured 328–331 ms); the panel is an inline section of the Video tab, not a dialog (0068
      items 1 and 3).
 4. **Not verified**: Windows and GitHub CI (nothing pushed); WebKit (M10).
-
+| 2026-11-03 | **Merged into `main`** at the owner's request (`--no-ff`); not pushed |
