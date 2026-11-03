@@ -1,9 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "preview",
-  "description": "The detached preview window: the shell's events, and the preview clip in an external player.",
+  "description": "The detached preview window: the server's address, its error screen's Retry, the shell's settings to read, the taskbar progress its page sends, the shell's events, and the preview clip in an external player.",
   "windows": ["preview"],
   "permissions": [
+    "allow-backend-info",
+    "allow-backend-retry",
+    "allow-desktop-settings",
+    "allow-set-taskbar-progress",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     {

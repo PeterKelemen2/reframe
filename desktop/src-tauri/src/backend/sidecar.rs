@@ -139,11 +139,15 @@ pub async fn start(
                 show(&status)
             )))
         }
-        // Returning drops the child, which kills it.
-        Err(_) => Err(StartError::Failed(format!(
-            "The server was not ready within {} s",
-            launch.ready_timeout.as_secs()
-        ))),
+        Err(_) => {
+            // Killed and reaped here: a dropped child goes to tokio's orphan reaper, which left
+            // a zombie in the app.
+            let _ = child.kill().await;
+            Err(StartError::Failed(format!(
+                "The server was not ready within {} s",
+                launch.ready_timeout.as_secs()
+            )))
+        }
     }
 }
 
@@ -399,5 +403,72 @@ mod tests {
         );
         drop(sidecar);
         fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_sidecar_gets_sigterm_when_the_thread_that_forked_it_ends() {
+        let folder = temp("death");
+        let script = folder.join("sidecar.sh");
+        let term = folder.join("term");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ntrap 'echo term > \"{}\"; exit 0' TERM\n\
+                 printf '{{\"event\":\"ready\",\"port\":9}}\\n'\nwhile :; do sleep 0.02; done\n",
+                term.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let spawner = Spawner::new(tokio::runtime::Handle::current()).unwrap();
+        let log = folder.join("sidecar.log");
+        let program = [script.into_os_string()];
+        let Ok(sidecar) = start(&spawner, &launch(&program, &log), true, None).await else {
+            panic!("not started");
+        };
+        // The spawner's thread ends with its channel, as it does when the app ends.
+        drop(spawner);
+        for _ in 0..100 {
+            if term.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            term.exists(),
+            "the sidecar outlived the thread that forked it"
+        );
+        drop(sidecar);
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_child_whose_parent_ended_before_the_death_signal_was_set_ends_at_once() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let mut child = std::process::Command::new("true");
+        // SAFETY: as in `command`; the parent pid is one this child does not have.
+        unsafe {
+            child.pre_exec(|| death_signal(u32::MAX));
+        }
+        let status = child.status().unwrap();
+        assert_eq!(status.signal(), Some(libc::SIGTERM), "{status}");
+    }
+
+    #[test]
+    fn the_server_options_kept_from_the_sidecar_are_the_cores() {
+        let owner = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/reframe/src/reframe/remote/owner.py"
+        );
+        let source = fs::read_to_string(owner).unwrap();
+        let start = source.find("SERVER_OPTIONS = frozenset(").unwrap();
+        let end = start + source[start..].find(')').unwrap();
+        let mut cores: Vec<&str> = source[start..end].split('"').skip(1).step_by(2).collect();
+        cores.sort_unstable();
+        let mut ours = SERVER_OPTIONS.to_vec();
+        ours.sort_unstable();
+        assert_eq!(ours, cores);
     }
 }

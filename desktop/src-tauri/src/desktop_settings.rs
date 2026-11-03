@@ -59,9 +59,13 @@ pub fn load(app: &AppHandle) -> DesktopSettings {
     file(app).map(|path| read(&path)).unwrap_or_default()
 }
 
+/// The tray is on only while it can bring a hidden window back.
 #[tauri::command]
-pub fn desktop_settings(app: AppHandle) -> DesktopSettings {
-    load(&app)
+pub async fn desktop_settings(app: AppHandle) -> DesktopSettings {
+    let saved = load(&app);
+    DesktopSettings {
+        tray: saved.tray && crate::tray::shown(&app).await,
+    }
 }
 
 /// Saves the settings and applies them at once (the tray comes or goes).
@@ -72,7 +76,7 @@ pub async fn set_desktop_settings(
 ) -> Result<DesktopSettings, String> {
     // Checked first: a tray that cannot be made is not saved as on.
     if settings.tray {
-        crate::tray::check_available()?;
+        crate::tray::check_available().await?;
     }
     let path = file(&app)?;
     write(&path, &settings).map_err(|error| error.to_string())?;
