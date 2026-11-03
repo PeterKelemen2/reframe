@@ -3,9 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type App as VueApp, createApp } from 'vue'
 import { createMemoryHistory } from 'vue-router'
 
+import { desktopBackend } from '@/api/boot'
 import type { QueueJob } from '@/api/types'
 import App from '@/App.vue'
+import { browse } from '@/components/sources/fileBrowser'
 import { platform } from '@/platform'
+import type { DesktopShell } from '@/platform/types'
 import { createAppRouter } from '@/router'
 import { installPlugins } from '@/setup'
 import { type AppPhase, useSystemStore } from '@/stores/system'
@@ -46,6 +49,9 @@ function inPlaceJob(state: QueueJob['state']): QueueJob {
 }
 
 afterEach(() => {
+  platform.desktop = null
+  platform.kind = 'web'
+  desktopBackend.value = null
   app?.unmount()
   app = undefined
   document.body.replaceChildren()
@@ -182,5 +188,130 @@ describe('the app shell', () => {
   it('takes the paths the desktop app was opened with', async () => {
     await mountApp('ready')
     expect(openPaths).toHaveBeenCalled()
+  })
+})
+
+function desktop(shell: Partial<DesktopShell> = {}): DesktopShell {
+  const full = {
+    retryBackend: vi.fn<() => Promise<void>>(async () => {}),
+    onQuitRequested: () => () => {},
+    quitReady: async () => {},
+    quit: vi.fn<() => Promise<void>>(async () => {}),
+    hideMainWindow: vi.fn<() => Promise<void>>(async () => {}),
+    settings: async () => ({ tray: false }),
+    ...shell,
+  } as Partial<DesktopShell> as DesktopShell
+  platform.kind = 'desktop'
+  platform.desktop = full
+  return full
+}
+
+describe('the desktop app shell', () => {
+  const ready = {
+    state: 'ready',
+    info: { baseUrl: 'http://127.0.0.1:8731', token: 't', instance: 'i', owned: true },
+  } as const
+
+  it('shows why the server did not start, with its log and a Retry', async () => {
+    const shell = desktop()
+    desktopBackend.value = {
+      state: 'failed',
+      error: { message: 'No ready line within 20 s', log: '/d/logs/sidecar.log' },
+    }
+    const { host } = await mountApp('booting')
+    expect(host.querySelector('h1')?.textContent).toBe('The Reframe server did not start')
+    expect(host.querySelector('[data-field="message"]')?.textContent).toBe(
+      'No ready line within 20 s',
+    )
+    expect(host.querySelector('[data-field="log"]')?.textContent).toBe('/d/logs/sidecar.log')
+    expect(host.querySelector('.boot-screen')).toBeNull()
+    host.querySelector<HTMLButtonElement>('[data-action="retry-backend"]')?.click()
+    await flushPromises()
+    expect(shell.retryBackend).toHaveBeenCalledOnce()
+
+    // The next start of the server replaces the screen.
+    desktopBackend.value = { state: 'starting' }
+    await flushPromises()
+    expect(host.querySelector('[data-action="retry-backend"]')).toBeNull()
+    expect(host.querySelector('.boot-screen')).not.toBeNull()
+  })
+
+  it('shows the error screen without a log when there is none', async () => {
+    desktop()
+    desktopBackend.value = { state: 'failed', error: { message: 'No server', log: null } }
+    const { host } = await mountApp('booting')
+    expect(host.querySelector('[data-field="message"]')?.textContent).toBe('No server')
+    expect(host.querySelector('[data-field="log"]')).toBeNull()
+  })
+
+  it('shows Reconnecting… over the app while its server starts again', async () => {
+    desktop()
+    desktopBackend.value = ready
+    const { host } = await mountApp('ready')
+    const overlay = () => host.querySelector('[data-overlay="reconnecting"]')
+    expect(overlay()).toBeNull()
+    desktopBackend.value = { state: 'starting' }
+    await flushPromises()
+    expect(overlay()?.textContent).toContain('Reconnecting…')
+    expect(host.querySelector('.app-shell')?.hasAttribute('inert')).toBe(true)
+    desktopBackend.value = ready
+    await flushPromises()
+    expect(overlay()).toBeNull()
+    expect(host.querySelector('.app-shell')?.hasAttribute('inert')).toBe(false)
+  })
+
+  it('opens no server file browser', async () => {
+    desktop()
+    const { host } = await mountApp('ready')
+    void browse({ mode: 'files', multiple: true })
+    await flushPromises()
+    expect(document.querySelector('.file-browser')).toBeNull()
+    expect(host.querySelector('.workspace')).not.toBeNull()
+  })
+
+  async function askToQuit(tray: boolean) {
+    app?.unmount()
+    document.body.replaceChildren()
+    const listeners: (() => void)[] = []
+    const shell = desktop({
+      onQuitRequested(cb) {
+        listeners.push(cb)
+        return () => {}
+      },
+      settings: async () => ({ tray }),
+    })
+    desktopBackend.value = ready
+    await mountApp('ready')
+    app?.runWithContext(() => {
+      const queue = useQueueStore()
+      queue.loaded = true
+      queue.jobs = [{ id: 'a', state: 'running', progress: { percent: 10 } } as QueueJob]
+    })
+    for (const listener of listeners) listener()
+    await flushPromises()
+    const dialog = document.querySelector('[data-dialog="quit"]')
+    return { shell, dialog }
+  }
+
+  it('asks before it quits while a job runs, without the tray when it is off', async () => {
+    const { shell, dialog } = await askToQuit(false)
+    expect(dialog?.textContent).toContain('1 job is running or paused.')
+    expect(dialog?.querySelector('[data-action="quit-tray"]')).toBeNull()
+    dialog?.querySelector<HTMLButtonElement>('[data-action="quit-stop"]')?.click()
+    await flushPromises()
+    expect(shell.quit).toHaveBeenCalledOnce()
+  })
+
+  it('offers the tray when it is on, and Cancel keeps the app', async () => {
+    const { shell, dialog } = await askToQuit(true)
+    dialog?.querySelector<HTMLButtonElement>('[data-action="quit-tray"]')?.click()
+    await flushPromises()
+    expect(shell.hideMainWindow).toHaveBeenCalledOnce()
+
+    const again = await askToQuit(true)
+    again.dialog?.querySelector<HTMLButtonElement>('[data-action="quit-cancel"]')?.click()
+    await flushPromises()
+    expect(again.shell.quit).not.toHaveBeenCalled()
+    expect(again.shell.hideMainWindow).not.toHaveBeenCalled()
   })
 })

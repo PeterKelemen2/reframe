@@ -1,0 +1,24 @@
+{
+  "drop": {
+    "title": "A file name cannot be read",
+    "unreadable": "Reframe cannot read the name of this dropped item, so it cannot open it:\n{names}\nChoose it in the file dialog instead?",
+    "openFiles": "Open files…",
+    "cancel": "Cancel"
+  },
+  "backend": {
+    "title": "The Reframe server did not start",
+    "log": "The server's log is in:",
+    "retry": "Try again"
+  },
+  "reconnecting": {
+    "title": "Reconnecting…",
+    "text": "The Reframe server stopped. It is starting again; the queue comes back as it was."
+  },
+  "quit": {
+    "title": "Jobs are running",
+    "text": "1 job is running or paused. Quitting stops it. | {count} jobs are running or paused. Quitting stops them.",
+    "stop": "Stop jobs and quit",
+    "tray": "Keep running in tray",
+    "cancel": "Cancel"
+  }
+}

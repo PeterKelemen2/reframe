@@ -19,11 +19,11 @@ describe('platform selector', () => {
     await expect(platform.backend()).resolves.toEqual({ baseUrl: window.location.origin })
   })
 
-  it('picks the desktop stub when VITE_PLATFORM=desktop', async () => {
+  it('picks the desktop implementation when VITE_PLATFORM=desktop', async () => {
     vi.stubEnv('VITE_PLATFORM', 'desktop')
     const platform = await loadPlatform()
     expect(platform.kind).toBe('desktop')
-    await expect(platform.backend()).rejects.toThrow('not available in this build yet')
+    expect(platform.desktop).not.toBeNull()
   })
 })
 
