@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 
 import { desktopBackend } from '@/api/boot'
@@ -41,6 +41,15 @@ const reconnecting = computed(
 const privateQueue = computed(() =>
   desktopBackend.value?.state === 'ready' ? desktopBackend.value.info.privateQueue : null,
 )
+// `starting` carries no backend: what *Reconnecting…* says depends on the one that went away.
+const lastOwned = ref(true)
+watch(
+  desktopBackend,
+  (state) => {
+    if (state?.state === 'ready') lastOwned.value = state.info.owned
+  },
+  { immediate: true },
+)
 
 async function retryBackend(): Promise<void> {
   await platform.desktop?.retryBackend()
@@ -76,7 +85,7 @@ watch(
   </div>
   <LoginScreen v-else-if="system.phase === 'login'" />
   <BootScreen v-else :offline="system.phase === 'offline'" />
-  <ReconnectOverlay v-if="reconnecting" />
+  <ReconnectOverlay v-if="reconnecting" :owned="lastOwned" />
   <ShellToasts />
   <!-- The server's file browser: the desktop app has the system's dialogs. -->
   <FileBrowserDialog v-if="platform.kind === 'web'" />

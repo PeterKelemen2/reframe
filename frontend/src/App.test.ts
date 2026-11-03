@@ -289,6 +289,24 @@ describe('the desktop app shell', () => {
     expect(document.activeElement).toBe(link)
   })
 
+  it('says whose server went away: the own sidecar’s jobs end, another owner’s are its own', async () => {
+    desktop()
+    desktopBackend.value = { state: 'ready', info: { ...ready.info, owned: false } }
+    await mountApp('ready')
+    desktopBackend.value = { state: 'starting' }
+    await flushPromises()
+    expect(overlay()?.textContent).toContain(
+      'The Reframe server that owns the queue does not answer.',
+    )
+    expect(overlay()?.textContent).not.toContain('interrupted')
+
+    desktopBackend.value = ready
+    await flushPromises()
+    desktopBackend.value = { state: 'starting' }
+    await flushPromises()
+    expect(overlay()?.textContent).toContain('A job that was running ends as interrupted.')
+  })
+
   it('shows Reconnecting… over the detached preview window too', async () => {
     vi.stubEnv('VITE_PLATFORM', 'desktop')
     desktop()

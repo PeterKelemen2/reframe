@@ -141,6 +141,15 @@ describe('quitting', () => {
     expect(sent('quit_ready')).toEqual([])
   })
 
+  it('leaves quitting and notifying to the main window in the preview window', async () => {
+    const platform = shell('preview')
+    const shown = notifications('granted')
+    await platform.desktop!.quit()
+    await platform.notify('Job done', 'a.mkv')
+    expect(sent('quit_app')).toEqual([])
+    expect(shown).toEqual([])
+  })
+
   it('quits, and hides the window, through the shell, with its failure', async () => {
     const platform = shell()
     await platform.desktop!.quit()

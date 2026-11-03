@@ -38,7 +38,10 @@ async function backendInfo(): Promise<DesktopBackend> {
   }
 }
 
-/** The preview window loads the same page: only the main window's page answers a close. */
+/**
+ * The preview window loads the same page: only the main window's page answers a close, quits
+ * (a when-done quit) and notifies, and the preview window may not call those commands.
+ */
 function inMainWindow(): boolean {
   return getCurrentWindow().label === 'main'
 }
@@ -89,8 +92,8 @@ export function createDesktopPlatform(): Platform {
       if (inMainWindow()) await invoke('quit_ready')
     },
 
-    quit() {
-      return invoke('quit_app')
+    async quit() {
+      if (inMainWindow()) await invoke('quit_app')
     },
 
     hideMainWindow() {
@@ -142,6 +145,7 @@ export function createDesktopPlatform(): Platform {
     },
 
     async notify(title, body) {
+      if (!inMainWindow()) return
       // Resolves at once on the desktop, where no one is asked.
       if ((await requestPermission()) === 'granted') sendNotification({ title, body })
     },

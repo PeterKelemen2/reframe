@@ -1023,6 +1023,41 @@ associated with this command: allow-backend-info`) and wrote FB's
 before the build and `strings … | grep -c allow-backend-info` (0 for this branch) after it gave a
 clean binary.
 
+**Phase 2** (2026-11-04, FB merged; the same setup, `touch src-tauri/build.rs` before the build):
+
+- R1's `s8` (`reframe encode --in-process long.mkv` holds the lock, then the app): `backend_info`
+  after 9 s `{owned: true, privateQueue: {reason: "lockHeld", detail: "Another Reframe process
+  holds the queue lock, and no server of it answers (an in-process `reframe` command has
+  none)"}}`, the sidecar without `--owner-only`, the banner with the lock reason and the detail,
+  light and dark.
+- R2's web-mode case (`reframe-server --port 8752`, defaults): `{owned: true, privateQueue:
+  {reason: "webServer", detail: "Reframe 0.1.0.dev0 (pid 523174) owns the queue, and it is a
+  server in web mode, which this app cannot use"}}`, 0 `OPTIONS` in the web server's log, the
+  banner, light and dark.
+- FB's command ACL: in the main window boot, a job, the quit dialog and **Stop jobs and quit**
+  (own sidecar: exit, the sidecar ended; another owner: `POST /api/queue/stop` and the cancel
+  204, the app gone, the owner running) work. In the preview window the view shows its frames,
+  `backend_info`, `desktop_settings` and `set_taskbar_progress` answer, `take_open_paths` and
+  `set_desktop_settings` are refused, and a when-done quit there logs nothing.
+- Fixed: the preview window called `quit_app` on a when-done quit (refused by the ACL) and would
+  send notifications (`notify` is not granted there, and with the focus rule both windows would
+  notify): `quit()` and `notify()` act only in the main window, as `quitReady` already did.
+- Fixed: *Reconnecting…* said a running job ends interrupted also while another owner does not
+  answer (FB's `s11`: its job runs on). The text follows the last ready backend's `owned`: *The
+  Reframe server that owns the queue does not answer. Reframe connects again as soon as it can.*
+  Checked with a CLI-started owner `SIGSTOP`ped during an encode: that text, then after `SIGCONT`
+  the app back and the job `running`.
+- The tray without a tray host: `desktop_settings` `{tray: false}`; switching it on shows *The
+  setting could not be saved: This desktop shows no tray icons: …* and the switch stays off; the
+  quit dialog offers Cancel and **Stop jobs and quit** only. With E's stand-in watcher on the bus:
+  the switch saves, the item registers, and the quit dialog offers **Keep running in tray**.
+- The preview page never calls `desktop_settings` (only the quit flow's question and the
+  Settings view do, both in the main window), so `preview.json` does not need it.
+
+Tests: `platform/desktop/index.test.ts` (no `quit_app` and no notification from the preview
+window), `App.test.ts` (the *Reconnecting…* text for another owner and for the own sidecar);
+5 mutations, all killed.
+
 ## Consequences
 
 - The plan's text of D-1 and of the taskbar row was wrong for this platform; both are fixed
