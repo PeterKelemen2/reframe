@@ -33,7 +33,7 @@ default-groups = ["dev"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["packages/reframe/src", "packages/reframe-server/src", "testing", "scripts", "desktop/spike/scripts"]
+src = ["packages/reframe/src", "packages/reframe-server/src", "testing", "scripts", "desktop/spike/scripts", "desktop/sidecar"]
 extend-exclude = ["frontend", "desktop/spike/src-tauri", "desktop/spike/ui", "docs", "*.md"]
 
 [tool.ruff.lint]
@@ -72,6 +72,7 @@ files = [
     "testing",
     "scripts",
     "desktop/spike/scripts",
+    "desktop/sidecar",
 ]
 
 [tool.pydantic-mypy]
