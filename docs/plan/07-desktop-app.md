@@ -199,8 +199,10 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 - [ ] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
 
 ### D-6 Windows and comfort
-- [ ] Window state, minimum size (1100×700), detached preview window, theme follow, tray
-      (optional, off by default).
+- [x] Window state, minimum size (1100×700), detached preview window, theme follow, tray
+      (optional, off by default). On Linux; Windows not verified. On Wayland the compositor
+      places windows, so only size and maximised state come back; a tray switched off is
+      hidden, not removed ([decision 0069](../decisions/0069-m5-desktop-shell.md) "Task E").
 
 ### D-7 Tool bundling
 - [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in

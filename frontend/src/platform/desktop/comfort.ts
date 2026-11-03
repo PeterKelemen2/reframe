@@ -1,14 +1,16 @@
+import { invoke } from '@tauri-apps/api/core'
+
 import type { DesktopSettings } from '../types'
 
-// Stub until the desktop settings and the preview window land: the defaults, nothing saved.
 export function settings(): Promise<DesktopSettings> {
-  return Promise.resolve({ tray: false })
+  return invoke<DesktopSettings>('desktop_settings')
 }
 
+/** Rejects with the shell's reason (a string) when the settings cannot be saved or applied. */
 export function setSettings(next: DesktopSettings): Promise<DesktopSettings> {
-  return Promise.resolve(next)
+  return invoke<DesktopSettings>('set_desktop_settings', { settings: next })
 }
 
-export function openPreviewWindow(_sourceId: string): Promise<void> {
-  return Promise.reject(new Error('not available in this build yet'))
+export function openPreviewWindow(sourceId: string): Promise<void> {
+  return invoke('open_preview_window', { sourceId })
 }

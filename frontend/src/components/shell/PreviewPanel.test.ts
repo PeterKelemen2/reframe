@@ -1,12 +1,16 @@
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { previewServer } from '@/components/preview/testing'
+import { platform } from '@/platform'
+import type { DesktopShell } from '@/platform/types'
 import { useEditorStore } from '@/stores/editor'
 import { usePreviewStore } from '@/stores/preview'
+import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
 
 import PreviewPanel from './PreviewPanel.vue'
+import { PREVIEW_CHANNEL } from './previewWindow'
 import { mountShell } from './testing'
 
 const mounted: { unmount(): void }[] = []
@@ -100,5 +104,75 @@ describe('the preview panel', () => {
     await flushPromises()
     press(wrapper.find('input[type="range"]').element, 'ArrowRight')
     expect(preview.index).toBe(0)
+  })
+
+  it('has no preview window to open in the web app', async () => {
+    const { wrapper } = await panel()
+    expect(wrapper.find('[data-action="detach"]').exists()).toBe(false)
+  })
+})
+
+/** What the preview window says to the main window. */
+function previewWindowSays(kind: 'hello' | 'bye'): Promise<void> {
+  const channel = new BroadcastChannel(PREVIEW_CHANNEL)
+  // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a channel has no origin argument
+  channel.postMessage(JSON.stringify({ kind }))
+  channel.close()
+  return new Promise((resolve) => setTimeout(resolve, 10))
+}
+
+describe('the preview panel in the desktop app', () => {
+  let opened: string[]
+  let refusal: string | null
+
+  beforeEach(() => {
+    opened = []
+    refusal = null
+    platform.desktop = {
+      async openPreviewWindow(sourceId: string) {
+        if (refusal !== null) throw refusal
+        opened.push(sourceId)
+      },
+    } as Partial<DesktopShell> as DesktopShell
+  })
+
+  afterEach(() => {
+    platform.desktop = null
+  })
+
+  it('opens the shown file in the preview window', async () => {
+    const { wrapper } = await panel()
+    await wrapper.find('[data-action="detach"]').trigger('click')
+    await flushPromises()
+    expect(opened).toEqual(['movie'])
+  })
+
+  it('shows where the preview is while it is detached, and asks for no output frames', async () => {
+    const { wrapper, preview } = await panel()
+    await previewWindowSays('hello')
+    await flushPromises()
+    expect(wrapper.find('[data-state="detached"]').exists()).toBe(true)
+    expect(wrapper.find('[data-field="stage"]').exists()).toBe(false)
+    expect(preview.panelOpen).toBe(false)
+
+    await wrapper.find('[data-action="focus-window"]').trigger('click')
+    await flushPromises()
+    expect(opened).toEqual(['movie'])
+
+    await previewWindowSays('bye')
+    await flushPromises()
+    expect(wrapper.find('[data-state="detached"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="stage"]').exists()).toBe(true)
+    expect(preview.panelOpen).toBe(true)
+  })
+
+  it('says why the preview window did not open', async () => {
+    refusal = 'Not a source id: ""'
+    const { wrapper } = await panel()
+    await wrapper.find('[data-action="detach"]').trigger('click')
+    await flushPromises()
+    expect(useToastStore().items).toEqual([
+      expect.objectContaining({ severity: 'error', detail: 'Not a source id: ""' }),
+    ])
   })
 })

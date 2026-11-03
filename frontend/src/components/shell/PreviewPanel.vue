@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PanelRightClose, PanelRightOpen } from '@lucide/vue'
+import { PanelRightClose, PanelRightOpen, PictureInPicture2 } from '@lucide/vue'
 import Button from 'primevue/button'
 import vTooltip from 'primevue/tooltip'
 import { onScopeDispose, ref, useId, watch } from 'vue'
@@ -8,9 +8,12 @@ import { useI18n } from 'vue-i18n'
 import PreviewClip from '@/components/clip/PreviewClip.vue'
 import type { EditorTabId } from '@/components/editor/tabs/registry'
 import FrameViewer from '@/components/media/FrameViewer.vue'
-import { isTextField } from '@/editor/focus'
+import { platform } from '@/platform'
 import { usePreviewStore, type ViewMode } from '@/stores/preview'
+import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
+
+import { shareWithPreviewWindow, stepOnArrowKeys } from './previewWindow'
 
 const collapsed = defineModel<boolean>('collapsed', { required: true })
 
@@ -18,6 +21,9 @@ const { t } = useI18n()
 const contentId = useId()
 const preview = usePreviewStore()
 const ui = useUiStore()
+const toasts = useToastStore()
+// Only the desktop app has a preview window to share with.
+const { detached } = platform.desktop === null ? { detached: ref(false) } : shareWithPreviewWindow()
 
 /** The view a tab shows; on the other tabs the panel shows the view the user chose. */
 const TAB_VIEWS: Partial<Record<EditorTabId, ViewMode>> = { dimensions: 'source', filters: 'split' }
@@ -37,10 +43,11 @@ watch(
   { immediate: true },
 )
 
+// While detached, the preview window asks for the output frames.
 watch(
-  collapsed,
-  (hidden) => {
-    preview.panelOpen = !hidden
+  () => !collapsed.value && !detached.value,
+  (open) => {
+    preview.panelOpen = open
   },
   { immediate: true },
 )
@@ -48,31 +55,14 @@ onScopeDispose(() => {
   preview.panelOpen = false
 })
 
-/** A focused picture wider than its stage scrolls with the arrow keys. */
-function scrollsSideways(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    target.dataset.field === 'stage' &&
-    target.scrollWidth > target.clientWidth
-  )
-}
-
-/** `←` / `→` step through the frames, except where the arrow keys already do something. */
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
-    return
+/** Opens the preview window on the shown file, or focuses it (an open one needs no file). */
+async function openWindow(): Promise<void> {
+  if (platform.desktop === null) return
+  try {
+    await platform.desktop.openPreviewWindow(preview.sourceId ?? '')
+  } catch (error) {
+    toasts.push({ severity: 'error', summary: t('window.preview.failed'), detail: String(error) })
   }
-  const target = event.target
-  if (isTextField(target) || scrollsSideways(target)) return
-  if (
-    target instanceof Element &&
-    target.closest('[data-crop-handle], [role="slider"], input[type="range"]') !== null
-  ) {
-    return
-  }
-  event.preventDefault()
-  preview.step(event.key === 'ArrowRight' ? 1 : -1)
 }
 </script>
 
@@ -84,6 +74,21 @@ function onKeydown(event: KeyboardEvent): void {
   >
     <div class="preview-panel__header">
       <h2 v-if="!collapsed" class="preview-panel__title">{{ t('shell.preview.title') }}</h2>
+      <Button
+        v-if="platform.desktop !== null && !collapsed"
+        v-tooltip.left="t('window.preview.detach')"
+        class="preview-panel__detach"
+        text
+        severity="secondary"
+        :aria-label="t('window.preview.detach')"
+        :disabled="preview.sourceId === null"
+        data-action="detach"
+        @click="openWindow"
+      >
+        <template #icon>
+          <PictureInPicture2 :size="18" aria-hidden="true" />
+        </template>
+      </Button>
       <Button
         v-tooltip.left="collapsed ? t('shell.preview.show') : t('shell.preview.hide')"
         class="preview-panel__toggle"
@@ -100,9 +105,26 @@ function onKeydown(event: KeyboardEvent): void {
         </template>
       </Button>
     </div>
-    <div v-show="!collapsed" :id="contentId" class="preview-panel__content" @keydown="onKeydown">
-      <FrameViewer />
-      <PreviewClip />
+    <div
+      v-show="!collapsed"
+      :id="contentId"
+      class="preview-panel__content"
+      @keydown="stepOnArrowKeys"
+    >
+      <div v-if="detached" class="preview-panel__detached" data-state="detached">
+        <p>{{ t('window.preview.detached') }}</p>
+        <Button
+          :label="t('window.preview.focus')"
+          severity="secondary"
+          size="small"
+          data-action="focus-window"
+          @click="openWindow"
+        />
+      </div>
+      <template v-else>
+        <FrameViewer />
+        <PreviewClip />
+      </template>
     </div>
   </aside>
 </template>
@@ -131,8 +153,20 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 .preview-panel__title {
+  flex: 1;
   margin: 0;
   font-size: var(--rf-font-size-md);
+}
+
+.preview-panel__detached {
+  display: grid;
+  justify-items: start;
+  gap: var(--rf-space-2);
+  color: var(--rf-color-text-muted);
+}
+
+.preview-panel__detached p {
+  margin: 0;
 }
 
 .preview-panel__content {

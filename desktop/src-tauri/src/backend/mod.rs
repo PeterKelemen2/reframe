@@ -231,10 +231,6 @@ impl Backend {
     }
 
     /// Sends a request without a body to the current backend; returns the status code.
-    #[cfg_attr(
-        not(all(test, unix)),
-        expect(dead_code, reason = "the tray's Pause all calls it")
-    )]
     pub async fn request(&self, method: &str, path: &str) -> Result<u16, String> {
         let BackendState::Ready { info } = self.state() else {
             return Err("The server is not ready".to_owned());
