@@ -12,6 +12,9 @@ import { type AppPhase, useSystemStore } from '@/stores/system'
 import { useQueueStore } from '@/stores/queue'
 import { useSourcesStore } from '@/stores/sources'
 
+const openPaths = vi.hoisted(() => vi.fn<() => void>())
+vi.mock('@/composables/useOpenPaths', () => ({ useOpenPaths: openPaths }))
+
 let app: VueApp | undefined
 
 // The real app with memory history instead of the URL; the phase is set before the mount, as
@@ -168,5 +171,16 @@ describe('the app shell', () => {
     })
     await flushPromises()
     expect(reload).toHaveBeenCalledWith('s1')
+  })
+
+  it('shows the detached preview window without the app shell', async () => {
+    const { host } = await mountApp('ready', '/preview/s1')
+    expect(host.querySelector('.preview-window')).not.toBeNull()
+    expect(host.querySelector('.nav-rail')).toBeNull()
+  })
+
+  it('takes the paths the desktop app was opened with', async () => {
+    await mountApp('ready')
+    expect(openPaths).toHaveBeenCalled()
   })
 })

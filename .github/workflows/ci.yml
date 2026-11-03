@@ -122,6 +122,43 @@ jobs:
       - run: npm run build:web
       - run: npm run build:desktop
 
+  desktop:
+    # The Tauri shell. The Windows runner is the only place where its cfg(windows) code compiles.
+    name: Desktop shell (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Tauri's Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+
+      # tauri::generate_context! embeds the desktop frontend, so it must be built first.
+      - run: npm ci && npm run build:desktop
+        working-directory: frontend
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+        working-directory: desktop/src-tauri
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: desktop/src-tauri
+      - run: cargo test
+        working-directory: desktop/src-tauri
+
   frontend-server:
     # The frontend against a real reframe-server and a real FFmpeg: the server tests (vitest)
     # and the browser flows (Playwright, Chromium and Firefox). Linux only: the tests find the

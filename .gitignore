@@ -17,6 +17,7 @@ dist/
 # --- Frontend
 node_modules/
 frontend/dist/
+frontend/dist-desktop/
 *.tsbuildinfo
 
 # --- Desktop (Tauri)

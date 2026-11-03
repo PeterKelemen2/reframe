@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 
 import DefaultsDialog from '@/components/defaults/DefaultsDialog.vue'
 import PowerBanner from '@/components/queue/PowerBanner.vue'
@@ -10,6 +10,7 @@ import NavRail from '@/components/shell/NavRail.vue'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
 import FileBrowserDialog from '@/components/sources/FileBrowserDialog.vue'
 import { useInPlaceReload } from '@/components/summary/useInPlaceReload'
+import { useOpenPaths } from '@/composables/useOpenPaths'
 import { useShortcuts } from '@/composables/useShortcuts'
 import { useTheme } from '@/composables/useTheme'
 import { platform } from '@/platform'
@@ -18,11 +19,13 @@ import { useSystemStore } from '@/stores/system'
 
 const system = useSystemStore()
 const queue = useQueueStore()
+const route = useRoute()
 
 // Follows the theme and density saved in the server's settings.
 useTheme()
 useShortcuts()
 useInPlaceReload()
+useOpenPaths()
 
 watch(
   () => queue.overallProgress,
@@ -32,7 +35,8 @@ watch(
 </script>
 
 <template>
-  <div v-if="system.phase === 'ready'" class="app-shell">
+  <RouterView v-if="system.phase === 'ready' && route.meta.bare" />
+  <div v-else-if="system.phase === 'ready'" class="app-shell">
     <NavRail />
     <div class="app-shell__main">
       <!-- Above every view: a when-done countdown must be seen and cancelled wherever the user is. -->

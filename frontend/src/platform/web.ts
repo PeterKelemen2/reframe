@@ -59,5 +59,7 @@ export function createWebPlatform(): Platform {
           ? baseTitle
           : `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}% · ${baseTitle}`
     },
+
+    desktop: null,
   }
 }

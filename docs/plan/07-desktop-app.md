@@ -55,8 +55,10 @@ Reasons:
    [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3). When
    one is found, use its address and token and start no sidecar. Otherwise spawn the sidecar
    from the resources directory. Pass
-   `--mode desktop --port 0 --auth token --parent-pid <pid>`. The token is generated in Rust
-   and passed in `REFRAME_TOKEN`, not on the command line (S-0).
+   `--mode desktop --port 0 --auth token --owner-only --parent-pid <pid>`. The token is
+   generated in Rust and passed in `REFRAME_TOKEN`, not on the command line (S-0). A sidecar
+   that loses the queue lock to another owner exits 75; then run the order again
+   ([decision 0069](../decisions/0069-m5-desktop-shell.md)).
 2. Read stdout until the ready line `{"event":"ready","port":…}` arrives (20 s timeout). On
    timeout or early exit, show an error screen with the sidecar log path and a **Retry** button.
 3. Keep `{baseUrl, token}` in Tauri managed state. The frontend gets it through
@@ -80,7 +82,7 @@ Reasons:
 | Open files / folder, save path | `tauri-plugin-dialog` |
 | Drag and drop with paths | Webview drag-drop event → `Platform.onFilesDropped` |
 | Notifications (job done, queue done, error) | `tauri-plugin-notification` |
-| Taskbar progress | `Window.setProgressBar` (Windows taskbar; Linux launchers that support the Unity LauncherEntry API) |
+| Taskbar progress | `Window.setProgressBar` on Windows. Linux: the app's own Unity `LauncherEntry.Update` signal on the session bus, for launchers that support it (Tauri's needs libunity; [decision 0069](../decisions/0069-m5-desktop-shell.md)) |
 | Single instance + "Open with Reframe" | `tauri-plugin-single-instance`. Paths from argv are forwarded to the running window and probed |
 | File associations (optional) | NSIS registry entries. Linux `.desktop` `MimeType=` |
 | Reveal in folder, open externally | `tauri-plugin-opener` |
@@ -145,11 +147,12 @@ Done when: a short written result for Linux goes into `docs/decisions/0001-deskt
 and confirms or revisits this choice. It lists the Windows items as not verified.
 
 ### D-1 Project scaffold
-- [ ] `desktop/src-tauri` (Tauri 2). `tauri.conf.json`: `devUrl` = Vite dev server,
-      `beforeBuildCommand` = `npm --prefix ../../frontend run build:desktop`, `frontendDist` =
-      the frontend output.
-- [ ] Tauri v2 capability files: grant only the plugin permissions that the app uses.
-- [ ] CSP that allows `connect-src http://127.0.0.1:* ws://127.0.0.1:*` and nothing else
+- [x] `desktop/src-tauri` (Tauri 2). `tauri.conf.json`: `devUrl` = Vite dev server,
+      `beforeBuildCommand` = `npm --prefix ../frontend run build:desktop` (Tauri runs it in
+      `desktop/`), `frontendDist` = the desktop frontend output, `frontend/dist-desktop`
+      ([decision 0069](../decisions/0069-m5-desktop-shell.md)).
+- [x] Tauri v2 capability files: grant only the plugin permissions that the app uses.
+- [x] CSP that allows `connect-src http://127.0.0.1:* ws://127.0.0.1:*` and nothing else
       remote.
 
 ### D-2 Sidecar build
