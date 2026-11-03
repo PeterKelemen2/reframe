@@ -426,7 +426,150 @@ inherit` on buttons) is not done; `styles/main.css` is not task C's.
 
 ### Task D — D-5 single instance, open-with, CLI arguments
 
-(placeholder)
+**Built** (2026-11-03; `src/open_paths.rs`, `platform/desktop/openPaths.ts`,
+`composables/useOpenPaths.ts`, `bundle.fileAssociations`):
+
+- `open_paths::single_instance()` is `tauri-plugin-single-instance` 2.5.5 with a callback. A
+  second launch's arguments (the plugin's `argv` without the executable) are made absolute
+  against the second process's `cwd`, added to `Pending`, the main window is shown,
+  unminimised and focused (as `quit::request_quit` does), and `open-paths` goes to `main`. The
+  second process exits 0 in the plugin. The first launch's arguments go through the same rules
+  in `Pending::from_args` (against `std::env::current_dir()`).
+- **The argument rules** (one function, `absolute_paths`; Windows runs the same code with
+  `std::path`'s Windows rules, not compiled here):
+  - an argument that starts with `-`, and an empty one, is not a path (`reframe-desktop
+    --verbose a.mkv` opens `a.mkv`; a file named `-x.mkv` is opened as `./-x.mkv`);
+  - a relative path is joined to the launch folder; `.` parts and a trailing `/` are dropped
+    (`folder/` → `/cwd/folder`); `..` stays (the server resolves the path);
+  - a relative path without a launch folder (`current_dir()` failed, or the plugin's empty
+    `cwd` when the second process's folder was deleted) is dropped: the server would resolve
+    it against its own folder;
+  - a name that is not valid Unicode becomes U+FFFD (`to_string_lossy`). The plugin already
+    sends the second launch's `argv` and `cwd` that way (Linux D-Bus `Vec<String>`, Windows
+    `WM_COPYDATA` text; both `to_string_lossy` in the plugin's source), so U+FFFD is the only
+    signal for both launches, and the same one as a drop (task C). So `take_open_paths` keeps
+    the contract's `Vec<String>`: each path once, in the order it came.
+- `onOpenPaths(cb)` acts only in the window `main` (the preview window loads the same page
+  and would take the paths). It listens for `open-paths` first and then calls
+  `take_open_paths` once: a path that came before the listener waits, one after it is an
+  event, so none is lost. Each event takes what waits. Paths with U+FFFD are not given to
+  `cb`: the native question of the drop (*A file name cannot be read*, the paths, **Open
+  files…** · **Cancel**, `plugin-dialog` `message`) is asked, and **Open files…** opens the
+  file dialog, whose files go to `cb`.
+- `useOpenPaths()` (mounted in `App.vue` by the lead) keeps what `onOpenPaths` gives until
+  `system.phase` is `ready`, then opens it once with `sources.open(paths)` (files and folders
+  in one probe, as the Sources panel's drop) and goes to the workspace.
+- `bundle.fileAssociations`: `.mkv` `video/x-matroska`, `.mp4` `video/mp4`, `.m2ts` and `.ts`
+  `video/mp2t` (one entry, so `MimeType=` lists it once), `.avi` `video/x-msvideo`, `.mov`
+  `video/quicktime`, `.webm` `video/webm`; each with a `name` (`Reframe.mkv`, …: the Windows
+  file class, else it would be the bare extension) and a `description` (Windows' *Type*
+  column).
+
+**What the packages get** (checked):
+
+- **The `.deb`** (`npx tauri build --debug --bundles deb --config
+  '{"bundle":{"active":true}}'`, Tauri CLI 2.12.4): `usr/share/applications/Reframe.desktop`
+  has `MimeType=video/x-matroska;video/mp4;video/mp2t;video/x-msvideo;video/quicktime;video/webm`
+  and `Exec=reframe-desktop`, **without a field code** (the CLI's template is
+  `Exec={{exec}}`). The `.rpm` uses the same template.
+- **How launchers call that entry** (in a vk-run session, with the entry's `Exec` replaced by
+  a script that records its arguments; GLib's `gio` and KIO's `kioclient` of this machine):
+  `gio launch Reframe.desktop "a b.mp4" Ünnepi.mkv` starts **one process per file** (GIO
+  appends each file as `%f` would); with `%F` it starts one process with both. `kioclient
+  exec file:///…/Ünnepi.mkv` passes the file in both forms. So every launcher reaches the app;
+  with several files the extra processes are second launches that hand over (checked below).
+  A `%F` in the entry needs `bundle.linux.deb.desktopTemplate` / `rpm.desktopTemplate`, which
+  are not this task's keys: left to the lead (D-8).
+- **The MIME names**: shared-mime-info 2.5.1 here names the types `video/matroska` and
+  `video/vnd.avi`, with `video/x-matroska` and `video/x-msvideo` as aliases; older releases
+  use the `x-` names as the canonical ones, and HandBrake's, mpv's and Kdenlive's entries on
+  this machine list them. With only `Reframe.desktop` installed (`XDG_DATA_DIRS` holding it and
+  the system's MIME database) and `update-desktop-database` run, as the packages' triggers do,
+  `gio mime video/matroska`, `video/vnd.avi` and `video/mp2t` give `Reframe.desktop` as the
+  default, and `gio open` / `kioclient exec` (after `kbuildsycoca6`) start it for
+  `.mkv`, `.mp4`, `.avi`, `.m2ts`, `.mov`, `.webm` and a real MPEG-TS `.ts`. A `.ts` file that
+  is not MPEG-TS (a TypeScript file) sniffs as `text/vnd.trolltech.linguist` and is not
+  offered.
+- **The NSIS installer** (read from the CLI's embedded template; `makensis` is not installed,
+  so not built): for each extension `APP_ASSOCIATE` writes, per user (`SHELL_CONTEXT`),
+  `Software\Classes\.mkv` = `Reframe.mkv` (the previous value kept as `Reframe.mkv_backup`),
+  the class's description and icon, and `shell\open\command` = `"$INSTDIR\Reframe.exe" "%1"`
+  (one process per file, the same handover); the uninstaller restores the backup and deletes
+  the class. It sets the extension's default class: whether Windows 10/11 (UserChoice) then
+  asks the user or opens Reframe is not verified.
+
+**Checked in the real app** (the debug build, `vk-run.sh` copy with KWin script logging,
+socket `reframe-d`, inspector 8749, `REFRAME_DESKTOP_SIDECAR` = the worktree's
+`reframe-server`, the pinned FFmpeg first on `PATH`; window state read with KWin scripts
+printing `workspace.activeWindow`):
+
+- `cd media && reframe-desktop "a b.mkv" "season dir/"`: the page showed the workspace with
+  `a b.mkv` selected and `S01E01.mkv`, `S01E02.mkv` from the folder in the Sources panel;
+  `GET /api/sources` gave `…/media/a b.mkv`, `…/media/season dir/S01E01.mkv`,
+  `…/season dir/S01E02.mkv`, 4 s after the start.
+- The window minimised (`kwin-active: none`, `minimized=true`), the page on `/queue`, then
+  from `media/elsewhere/`: `reframe-desktop ../other.mkv "../Ünnepi film – 2.mkv" --verbose`
+  exited **0 after 70–75 ms** (three runs), with no child process (polled every 10 ms); the
+  first window was then `minimized=false`, `active=true` (`kwin-active: reframe-desktop |
+  Reframe`), the page on `/`, and the sources had `…/media/other.mkv` and
+  `…/media/Ünnepi film – 2.mkv` (the season group and both files in the screenshot).
+- `reframe-desktop "../bad\xffname.mkv"` (exit 0): the native question *A file name cannot be
+  read* with `…/elsewhere/../bad�name.mkv`, **Open files…** · **Cancel** over the app (the
+  active window); closed by KWin (= Cancel), nothing opened, the main window active again.
+  Picking a file in the GTK chooser after **Open files…** is the lead's headed check (the
+  Vitest test covers it).
+- `reframe-desktop --some-flag "/…/Árvíztűrő tükörfúrógép.mp4"`: exit 0, the file opened, no
+  toast.
+- `hide_main_window` (the tray's *Keep running*), then `reframe-desktop` without arguments:
+  exit 0, the window shown and active, no new source.
+- **Two launches at the same moment** (what GIO does with two files, no app running):
+  `reframe-desktop one.mkv & reframe-desktop two.mkv &`: one exited 0, the other is the app,
+  and both files opened. Both processes started a sidecar first (the backend starts in
+  `main.rs` before the builder, and the single-instance check runs in the plugin's setup during
+  `build`); the loser's sidecar ended with it (death signal), the winner's own sidecar had
+  lost the queue lock to it (exit 75), so the winner ran its start order again with a third
+  sidecar: the files showed after about 5 s. **For the lead** (`main.rs`): with the
+  single-instance check before `Backend::start` a second launch would start nothing. A plain
+  second launch while the app runs starts no sidecar (it finds the owner through
+  `server.json`).
+- Every close (`vk-close.sh`) exited 0 within 0.5 s; afterwards no `reframe-desktop` or
+  `reframe-server` of this task was left.
+- The first attempt reported an unreadable name with a toast and opened the file dialog at
+  once: the GTK chooser (1200×900 in the 1440×900 output) covered the toast, so the user would
+  not see why it opened. So the report is the drop's question instead (deviation 1).
+
+**Tests**: `cargo test` 8 in `open_paths.rs` (relative, absolute, spaces and accents, flags and
+empty arguments, no launch folder, not Unicode, the second launch's executable, the pending
+queue); Vitest 7 in `platform/desktop/openPaths.test.ts` (the waiting paths then a batch, a
+path handed over just after the first look, nothing waiting, the preview window, unsubscribe,
+the unreadable question with **Open files…**, several unreadable names and **Cancel**) and 3 in
+`composables/useOpenPaths.test.ts` (opened once after ready, a second launch's paths at once
+and in the workspace, unsubscribed with its scope). Mutations (20, a script that applies one,
+runs the file's tests and restores it): each test function failed at least once. Two survived
+the first round and the tests were fixed: the take before the listener (the test now hands a
+path over while the app answers the first look) and the workspace switch (the test now waits
+for the start route).
+
+**Deviations from the plan and the breakdown:**
+
+1. The unreadable-name report is in `platform/desktop/openPaths.ts`, not in `useOpenPaths`
+   (the brief): a composable cannot ask a native question (only `platform/desktop/**` imports
+   Tauri), and the toast tried first was hidden by the file dialog. It repeats task C's
+   private `offerFileDialog` of the drop (a second copy, with its own messages in
+   `openPaths.json`).
+2. `useOpenPaths` goes to the workspace: a second launch on the Queue view would otherwise
+   probe out of sight.
+3. Flags are ignored (not in the plan); `take_open_paths` keeps `Vec<String>`.
+
+**Not built**: a `%F` desktop template (not this task's keys, see above); macOS (`RunEvent::Opened`
+for files from Finder); deep links; a `semver` feature of the plugin (two versions do not run
+side by side).
+
+**Not verified**: Windows (`Reframe.exe a.mkv`, the plugin's `WM_COPYDATA` path and the
+NSIS associations; the argument rules run on Windows' `std::path` and are tested only with
+Linux paths); focus on the real Plasma desktop, where KWin's focus stealing prevention may
+treat a second launch's `set_focus` (no activation token) differently from the virtual
+session: the lead's headed check.
 
 ### Task E — D-6 windows and comfort
 
