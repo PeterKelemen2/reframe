@@ -31,6 +31,14 @@
     "active": false,
     "icon": ["icons/icon.png"],
     "resources": { "resources/sidecar/": "sidecar/" },
+    "fileAssociations": [
+      { "ext": ["mkv"], "mimeType": "video/x-matroska", "name": "Reframe.mkv", "description": "Matroska video" },
+      { "ext": ["mp4"], "mimeType": "video/mp4", "name": "Reframe.mp4", "description": "MPEG-4 video" },
+      { "ext": ["m2ts", "ts"], "mimeType": "video/mp2t", "name": "Reframe.m2ts", "description": "MPEG transport stream" },
+      { "ext": ["avi"], "mimeType": "video/x-msvideo", "name": "Reframe.avi", "description": "AVI video" },
+      { "ext": ["mov"], "mimeType": "video/quicktime", "name": "Reframe.mov", "description": "QuickTime video" },
+      { "ext": ["webm"], "mimeType": "video/webm", "name": "Reframe.webm", "description": "WebM video" }
+    ],
     "linux": {
       "deb": {
         "postInstallScript": "linux/link-cli.sh",

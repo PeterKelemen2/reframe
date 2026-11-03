@@ -193,10 +193,10 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       (reveal, tray settings, when-done power actions).
 
 ### D-5 Single instance, open-with, CLI arguments
-- [ ] `reframe-desktop file1.mkv folder/` (`Reframe.exe …` on Windows) opens the app (or
+- [x] `reframe-desktop file1.mkv folder/` (`Reframe.exe …` on Windows) opens the app (or
       focuses the running one) and probes the paths. `reframe` is always the CLI
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
-- [ ] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
+- [x] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
 
 ### D-6 Windows and comfort
 - [ ] Window state, minimum size (1100×700), detached preview window, theme follow, tray
