@@ -615,7 +615,168 @@ session: the lead's headed check.
 
 ### Task E — D-6 windows and comfort
 
-(placeholder)
+**Built** (2026-11-03; `comfort.rs`, `tray.rs`, `desktop_settings.rs`, `capabilities/preview.json`,
+`platform/desktop/comfort.ts`, `components/shell/PreviewPanel.vue` and `previewWindow.ts`,
+`views/PreviewWindowView.vue`, `views/SettingsView.vue`, `components/settings/DesktopSection.vue`,
+`i18n/messages/en/window.json`):
+
+1. **Window state.** `tauri-plugin-window-state` 2.5.0 with `SIZE | POSITION | MAXIMIZED`, for
+   both windows. Not `VISIBLE` (the default has it): an app quit while hidden in the tray would
+   start hidden. The plugin restores a window inside `build()` (its `on_window_ready` hook runs
+   there) and writes `.window-state.json` in the app's config folder on `RunEvent::Exit`; so each
+   window is built with `visible(false)` and shown after `build()`, and it does not jump. The
+   main window's minimum is 1100×700 (`min_inner_size`).
+2. **The detached preview window.** `open_preview_window(sourceId)` makes the window `preview` on
+   `/preview/<id>` (Tauri serves `index.html` for a path it has no file for, so the router's bare
+   route shows), 960×720, minimum 480×360, or focuses the open one; an id that is not
+   alphanumeric is refused (it would change the route). **The sync is a `BroadcastChannel`**,
+   not Tauri events: both windows are pages of one origin, so the channel needs no command, no
+   event and no permission (checked in the real webview: a message from one window reaches the
+   other; `pagehide` fires when KWin closes the window, and a Web Lock held by the closed page is
+   released). `components/shell/previewWindow.ts` holds both sides:
+   - the main window (the preview panel's scope, desktop build only) sends, on a `hello` and on
+     each change, the editor's file and job (and the sources store's entry of the file), the
+     tab, the view, the zoom and the frame (`index`, `sought`); it asks once at start, so a
+     preview window that outlives a reload of the main page is found again;
+   - the preview window's stores take them (the job as a `job` target; a new file waits a tick,
+     because the preview store resets the frame of a new file), and it sends back what its user
+     chooses: the view, the zoom, the frame (from `select`, `step`, `seek`, so a reset never
+     travels) and the editor's `set`, `patch` and `endCoalescing` (the crop handles), which the
+     main window applies: its undo history gets one step per drag, and the next state brings the
+     job back. A value that comes back equal changes nothing, which ends each round trip.
+   - **While it is open** the main window's panel shows *The preview is in its own window.* and
+     **Show the preview window** (focus), and asks for no output frames (`panelOpen` false; the
+     preview window renders them). **When the preview window closes** (its close button, or
+     the page going away: `bye`), the panel shows the frames again at the frame the preview
+     window last chose. **When the main window closes**, the app quits (B's flow) and the preview
+     window goes with it; with **Keep running in tray** only the main window is hidden.
+   - The preview window shows `FrameViewer` and `PreviewClip` as the panel does (the clip's
+     **Open externally** needs `opener:allow-open-url`, added to `preview.json` with
+     `main.json`'s scope). It mounts no Tauri listener (C's note: `emit_to("main")` reaches
+     every page's `listen`).
+3. **Theme follow: no code was needed.** WebKitGTK 2.54 takes `prefers-color-scheme` from
+   GTK: dark when `gtk-application-prefer-dark-theme` is true or the GTK theme name ends in
+   `-dark`, and it follows a change of either while it runs. Checked in the virtual session:
+   `gsettings set … gtk-theme Adwaita-dark` turned the page dark at once; a `settings.ini` with
+   `gtk-application-prefer-dark-theme=true` and `gtk-theme-name=Breeze` (what KDE writes for a
+   dark scheme) gave dark at start; `gsettings … color-scheme prefer-dark` alone changed
+   nothing. Tauri's tao (0.37.2, its `dbus` feature is on) reads the settings portal's
+   `org.freedesktop.appearance color-scheme` when it makes a window and sets
+   `gtk-application-prefer-dark-theme` from it, and on each `SettingChanged` sets it again.
+   With a stand-in portal on the private bus (`Read`/`ReadOne`, `SettingChanged`): 2 at start →
+   light; 1 → both windows dark within 1 s; 2 → light again; a start with 1 → dark. The owner's
+   desktop (KDE Plasma 6.8 on Wayland) has the portal and reports 1 (`ReadOne`, read only). The
+   app's `system` choice then follows through `matchMedia` as before; `useTheme.ts` is unchanged.
+   The private session's own portal has no Settings interface, and KDE's
+   `xdg-desktop-portal-kde` started there kept reporting 1 whatever the session's kdeglobals
+   said, so the stand-in was used.
+4. **The tray** (`tray.rs`): created at start when `desktop.json` says `tray: true`. Menu: the
+   progress line (disabled; *Queue: 43 %* or *No job is running*, from `show_progress`, kept while
+   the tray is off), **Pause all** (`Backend::request("POST", "/api/queue/pause")`; B's
+   `expect(dead_code)` removed), **Show Reframe**, **Quit** (`quit::request_quit`). The icon is the
+   app's window icon; the tooltip carries the progress too (Windows; tray-icon ignores tooltips on
+   Linux). The menu strings are English in Rust, not vue-i18n (the tray has no page).
+   - **A tray switched off is hidden, not removed** (deviation from the brief's "adds or removes
+     the tray"): on Linux a removed tray's `StatusNotifierItem` stays exported (tray-icon only
+     sets it `Passive` on drop, and libayatana's object stays on the bus), and a tray made again
+     under the same id cannot register (`Unable to register object on path
+     '/org/ayatana/NotificationItem/tray_icon_tray_app_reframe': An object is already exported`)
+     and showed an empty menu. `set_visible(false)` makes the item `Passive` (the SNI
+     specification lets a host hide it; Windows removes the icon), `set_visible(true)` brings it
+     back with its menu.
+   - **Linux without the indicator library**: tray-icon `dlopen`s
+     `libayatana-appindicator3.so.1` or `libappindicator3.so.1` and panics without them (on the
+     main thread, so the app would abort). `check_available` tries the same names first;
+     `set_desktop_settings` then refuses with *The tray needs the library
+     libayatana-appindicator3 (or libappindicator3), which is not installed* and saves nothing;
+     a saved `tray: true` without the library starts without a tray. 0054's note holds:
+     `libayatana-appindicator` 0.6.1 is what this machine has (it warns that it is deprecated).
+5. **`desktop.json`** (`desktop_settings.rs`) in `app_config_dir()`
+   (`$XDG_CONFIG_HOME/org.reframe.desktop/`): read as a JSON object; a missing file, one that is
+   not an object or a `tray` that is not a boolean gives the defaults. A save reads the object
+   again, replaces the known fields, keeps the others (their values unchanged; the keys come out
+   sorted) and replaces the file through `desktop.json.part` and a rename. A broken file is
+   replaced on save. `set_desktop_settings` saves, then shows or hides the tray, and returns the
+   file's settings.
+6. **Settings → Desktop app** (`DesktopSection.vue`, the last section, only when
+   `platform.desktop` is set): the **Tray icon** switch with its help text; a refusal shows the
+   shell's reason under the switch and the switch goes back.
+
+**Checked in the real app** (the debug build, `vk-run.sh` socket `reframe-e`, the inspector on
+8779, `REFRAME_DESKTOP_SIDECAR` = the worktree's `reframe-server`, the pinned FFmpeg first on
+`PATH`; KWin's virtual output 1440×900, Wayland, no Xwayland):
+
+- Window state: resized by a KWin script to 1200×760, closed (B's quit), started again: 1200×760;
+  maximised by a KWin script, quit, started again: 1440×900 maximised, with 1200×760 kept as the
+  size to return to. `.window-state.json` holds `"x": 0, "y": 0` for both windows: **on Wayland a
+  GTK client can neither read nor set its place**, so KWin places the window again (the preview
+  window came back at its 560×600 size but centred). The place is restored only on X11 and
+  Windows; neither ran here (no Xwayland in the session).
+- Minimum size: a KWin script set the main window's frame to 800×500; `innerWidth`/`innerHeight`
+  stayed 1100×700.
+- Preview window: the detach button opened it (960×720, label `preview`,
+  `tauri://localhost/preview/<id>`), at the main window's frame; the main panel showed the note
+  and `panelOpen` false. Dimensions in the main window → the preview window's crop overlay with
+  four handles; a crop typed in the main window (30/30/8/8) → the same rectangle in the preview
+  window; three ArrowDown presses on the preview window's top handle → the main window's top
+  40 → 46 and one undo step (undo → 40 in both). Filters → split with the output frame in the
+  preview window only. A thumbnail and *Side by side* picked in the preview window → the main
+  window's frame 4 and view. Another file picked in the main window → the preview window's file
+  and strip. Closing the preview window (KWin) → the main panel's frames back; the detach button
+  again → the window at frame 5 of 10; **Show the preview window** focused it without a second
+  window.
+- Theme: light and dark screenshots of both windows (point 3), the restored maximised window in
+  dark, Settings in light and dark.
+- Tray: a stand-in `org.kde.StatusNotifierWatcher` (with a host) on the private bus and
+  `dbus-monitor`. Switched on in Settings: `desktop.json` `{"tray": true}`, the app's
+  `RegisterStatusNotifierItem` call, the item `Active` with the menu *No job is running* ·
+  separator · *Pause all* · *Show Reframe* · *Quit* (read with `com.canonical.dbusmenu.GetLayout`).
+  During an encode the line read *Queue: 76 %*, then *No job is running*. **Pause all** clicked
+  with `com.canonical.dbusmenu.Event` during an encode: the sidecar's log has
+  `"POST /api/queue/pause HTTP/1.1" 204` and the job was `paused`. A window close then showed C's
+  dialog with **Keep running in tray**; it hid the window (`document.hidden` true, the output
+  black); the tray's **Show Reframe** showed it again. In a later run the tray's **Quit** during an
+  encode showed the same dialog; **Stop jobs and quit** sent the shutdown request (204), and
+  the app, the sidecar and FFmpeg were gone 3 s later. Switched off: the item `Passive` (a `NewStatus` signal); on again:
+  `Active` with its menu (after the fix of point 4). A field added to `desktop.json` by hand
+  survived two saves. A restart with `tray: true` registered the item at start; a watcher that
+  started after the tray still got the registration.
+- Not seen: a real tray host drawing the icon (no Plasma in the private session).
+
+**Tests**: `cargo test` (`desktop_settings`: a missing file, broken files, unknown fields kept,
+the config folder made and no `.part` left; `tray`: the progress line, a missing library found
+before the tray is made; `comfort`: an id that would leave the preview route). Vitest:
+`platform/desktop/comfort.test.ts` (the three commands and their arguments with
+`@tauri-apps/api/mocks`, a refusal passed on), `components/shell/previewWindow.test.ts` (two
+Pinias as the two pages over a real `BroadcastChannel`: the state when it opens, a tab and crop
+change, another file at its first frame, a drag's edits as one undo step in the main window, the
+user's frame and view sent back, the close, a main page that loads after the preview window,
+nothing sent while no preview window is open), `PreviewPanel.test.ts` (the button opens the shown
+file, the detached state and its focus button, a refusal as a toast, no button in the web build),
+`views/PreviewWindowView.test.ts` (the main window's frame, output frames asked for, the crop
+overlay on Dimensions and the split on Filters, the arrow keys), `DesktopSection.test.ts` and
+`SettingsView.test.ts` (the saved value, a save, a refusal that leaves the switch where it was,
+the section only in the desktop build). The refusal test found a bug: the switch stayed on after
+a refused save, because its model value had not changed; the section now shows its own value.
+Mutation run: 38 mutations (each test function broken at least once), all killed.
+
+**Deviations**: the sync is a `BroadcastChannel` (no Tauri event, no relay command, no
+`main.json` change); a tray switched off is hidden (point 4); the place of a window is not
+restored on Wayland (above); the tray's strings are not translated.
+
+**Found for others** (not changed, not my files):
+
+- `useShortcuts` acts in the preview window: **Ctrl+O there navigates the preview window to
+  the workspace** (checked: `location.pathname` `/`, the app shell inside the preview window; the
+  file dialog itself is refused there, `preview.json` has no `dialog:allow-open`). A
+  `route.meta.bare` check in its key handler would stop it.
+- The preview window's `App.vue` also calls `set_taskbar_progress` (the same values as the main
+  window's) and would call `platform.notify` when hidden (refused: `preview.json` has no
+  notification permission, so nothing shows twice).
+- The preview window runs its own crop detection of the shown file (the crop store starts one per
+  file and page; the server does not cache it). The main window's job already carries the
+  detected rectangle, so the result is not used.
+- **Keep running in tray** hides only the main window; an open preview window stays.
 
 ## Consequences
 

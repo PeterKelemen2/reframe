@@ -5,12 +5,14 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppearanceSection from '@/components/settings/AppearanceSection.vue'
+import DesktopSection from '@/components/settings/DesktopSection.vue'
 import EncodersSection from '@/components/settings/EncodersSection.vue'
 import LanguagesSection from '@/components/settings/LanguagesSection.vue'
 import OutputSection from '@/components/settings/OutputSection.vue'
 import PreviewSection from '@/components/settings/PreviewSection.vue'
 import QueueSection from '@/components/settings/QueueSection.vue'
 import ToolsSection from '@/components/settings/ToolsSection.vue'
+import { platform } from '@/platform'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
@@ -20,7 +22,7 @@ const router = useRouter()
 const system = useSystemStore()
 const settings = useSettingsStore()
 
-const SECTIONS = [
+const ALL_SECTIONS = [
   'tools',
   'encoders',
   'output',
@@ -28,8 +30,12 @@ const SECTIONS = [
   'preview',
   'queue',
   'appearance',
+  'desktop',
 ] as const
-type SectionId = (typeof SECTIONS)[number]
+type SectionId = (typeof ALL_SECTIONS)[number]
+/** The desktop app's own settings exist only there. */
+const SECTIONS: readonly SectionId[] =
+  platform.desktop === null ? ALL_SECTIONS.filter((id) => id !== 'desktop') : ALL_SECTIONS
 
 function sectionTitle(id: SectionId): string {
   switch (id) {
@@ -47,6 +53,8 @@ function sectionTitle(id: SectionId): string {
       return t('settings.queue.title')
     case 'appearance':
       return t('settings.appearance.title')
+    case 'desktop':
+      return t('window.settings.title')
   }
 }
 
@@ -114,7 +122,8 @@ watch([() => route.hash, ready], focusHash)
           <LanguagesSection v-else-if="id === 'languages'" />
           <PreviewSection v-else-if="id === 'preview'" />
           <QueueSection v-else-if="id === 'queue'" />
-          <AppearanceSection v-else />
+          <AppearanceSection v-else-if="id === 'appearance'" />
+          <DesktopSection v-else-if="platform.desktop !== null" :shell="platform.desktop" />
         </div>
       </div>
     </div>

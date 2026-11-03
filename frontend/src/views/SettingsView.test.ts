@@ -2,6 +2,8 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { mountSettings, systemInfo } from '@/components/settings/testing'
+import { platform } from '@/platform'
+import type { DesktopShell } from '@/platform/types'
 import { useSettingsStore } from '@/stores/settings'
 
 import SettingsView from './SettingsView.vue'
@@ -51,6 +53,21 @@ describe('the Settings view', () => {
     expect(
       wrapper.findAll('[data-section]').map((section) => section.attributes('data-section')),
     ).toEqual(['tools', 'encoders', 'output', 'languages', 'preview', 'queue', 'appearance'])
+  })
+
+  it('shows the desktop app’s own settings last, in the desktop app only', async () => {
+    platform.desktop = {
+      settings: async () => ({ tray: true }),
+    } as Partial<DesktopShell> as DesktopShell
+    try {
+      const { wrapper } = await mountView()
+      const sections = wrapper.findAll('[data-section]')
+      expect(sections.at(-1)?.attributes('data-section')).toBe('desktop')
+      expect(wrapper.find('[data-section-link="desktop"]').exists()).toBe(true)
+      expect(wrapper.find('[data-field="tray"] input').element).toHaveProperty('checked', true)
+    } finally {
+      platform.desktop = null
+    }
   })
 
   it('shows read-only settings read-only, with a note', async () => {
