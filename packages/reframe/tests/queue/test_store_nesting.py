@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import json
 import sqlite3
+import sys
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -33,6 +34,8 @@ NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
 #: Deep enough for ``json.loads`` to raise ``RecursionError`` on any thread.
 PARSER_DEPTH = 200_000
+#: A depth that Pydantic's serializer still dumps (pydantic-core's limit is 100 on Windows).
+DUMP_DEPTH = 100 if sys.platform == "win32" else 255
 
 
 def nested(levels: int) -> list[Any]:
@@ -140,7 +143,8 @@ def test_python_facts_behind_the_rule() -> None:
     settings = JobSettings.model_validate(settings_of(300))  # validation: any depth
     with pytest.raises(ValueError, match="depth exceeded"):
         settings.model_dump(mode="json")
-    assert JobSettings.model_validate(settings_of(255)).model_dump(mode="json")
+    assert JobSettings.model_validate(settings_of(DUMP_DEPTH)).model_dump(mode="json")
+    assert MAX_DEPTH < DUMP_DEPTH
 
 
 @pytest.mark.parametrize("levels", [MAX_DEPTH + 1, 300, 1000, PARSER_DEPTH])

@@ -169,19 +169,33 @@ async def test_a_job_that_is_not_in_the_queue(
     assert capsys.readouterr().err == "error: name a job by its id or the start of it.\n"
 
 
+@pytest.mark.parametrize(
+    ("name", "shown"),
+    [
+        pytest.param(
+            "Evil\x1b]0;title\x07.mkv",
+            "Evil�]0;title�.mkv",
+            id="C0",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32", reason="Windows file names cannot hold C0 controls"
+            ),
+        ),
+        pytest.param("Evil\x9b2J.mkv", "Evil�2J.mkv", id="C1"),
+    ],
+)
 async def test_queue_output_shows_no_control_characters(
-    server: Server, capsys: pytest.CaptureFixture[str]
+    server: Server, capsys: pytest.CaptureFixture[str], name: str, shown: str
 ) -> None:
     """A source named with an escape sequence, and a log line with one, reach the terminal as
     U+FFFD: they cannot change the terminal."""
-    job = await add(server, "Evil\x1b]0;title\x07.mkv")
+    job = await add(server, name)
     log = log_file(server.data_dir, job.id)
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_bytes(b"frame=1 \x1b[2J\x1b[31mred\n")
     server.publish()
     assert await cli.run_queue_list(as_json=False) == cli.EXIT_OK
     listed = capsys.readouterr().out
-    assert "Evil�]0;title�.mkv" in listed
+    assert shown in listed
     assert await cli.run_queue_log(job.id, follow=False) == cli.EXIT_OK
     assert capsys.readouterr().out == "frame=1 �[2J�[31mred\n"
 

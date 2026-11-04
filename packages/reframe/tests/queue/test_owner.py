@@ -12,24 +12,27 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import psutil
 import pytest
 
 from reframe.models import AppWarningEvent, JobState
 from reframe.queue.lock import (
     LOCK_FILE,
     WINDOWS_LOCK_OFFSET,
+    FlockBackend,
     MsvcrtBackend,
     StoreLock,
     default_backend,
 )
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import interpreter
 
 from .conftest import Harness, draft, encode_rule, poll, queue_at, recorded
 from .test_facade import PROBE, env  # noqa: F401  (the fixture)
 
 pytestmark = pytest.mark.anyio
+
+WINDOWS = sys.platform == "win32"
 
 #: A second Reframe process. ``create``: ``create()`` and ``close()`` only; ``encode``: a whole
 #: encode of the job given as JSON. Both print one JSON line: the end state and the
@@ -165,11 +168,12 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         async with asyncio.timeout(60):
             line = await owner.stdout.readline()
         assert line.strip() == b"running"
+        held = interpreter(owner.pid)
         lock = env / "data" / LOCK_FILE
-        assert lock.read_text().strip() == str(owner.pid)
+        assert lock.read_text().strip() == str(held.pid)
         busy = StoreLock(lock).acquire()
-        assert (busy.owned, busy.owner) == (False, owner.pid)
-        psutil.Process(owner.pid).kill()  # SIGKILL: no clean-up runs
+        assert (busy.owned, busy.owner) == (False, held.pid)
+        held.kill()  # SIGKILL: no clean-up runs
         await owner.wait()
     finally:
         if owner.returncode is None:
@@ -247,7 +251,7 @@ def test_two_owners_in_one_process_conflict(tmp_path: Path) -> None:
     assert second.acquire().owned
     assert path.read_text() == f"{os.getpid()}\n"
     second.release()
-    assert isinstance(default_backend("linux"), type(default_backend()))
+    assert isinstance(default_backend(), MsvcrtBackend if WINDOWS else FlockBackend)
 
 
 class FakeMsvcrt:

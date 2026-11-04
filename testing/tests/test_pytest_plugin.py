@@ -97,8 +97,8 @@ def test_require_ffmpeg_fails_when_ffmpeg_does_not_run(
     monkeypatch.setenv(REQUIRE_ENV, "1")
     result = inner.runpytest(*PLUGIN, "-k", "real_tool")
     result.assert_outcomes(errors=1, deselected=2)
-    result.stdout.fnmatch_lines(
-        ["*ffmpeg at *ffmpeg does not run: -version exited with 127: error while loading*"]
+    result.stdout.fnmatch_lines(  # the fake is ffmpeg.cmd on Windows
+        ["*ffmpeg at *ffmpeg* does not run: -version exited with 127: error while loading*"]
     )
     assert "ffprobe at" not in result.stdout.str()  # the fake ffprobe -version works
 

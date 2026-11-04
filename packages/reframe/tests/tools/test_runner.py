@@ -658,7 +658,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
     code = "import time\nfor i in range(400):\n    print(i, flush=True)\n    time.sleep(0.01)"
     task = asyncio.ensure_future(
         run_streaming(
-            [sys.executable, "-c", code],
+            [ft.PYTHON, "-c", code],  # not a Windows venv launcher, whose child prints on
             on_stdout_line=lines.append,
             on_stderr_line=None,
             cancel=None,

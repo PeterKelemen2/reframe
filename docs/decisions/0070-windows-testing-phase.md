@@ -59,7 +59,49 @@ Placeholder: filled when A merges.
 
 ## Task B — processes, queue, server and tools
 
-Placeholder: filled when B merges.
+Product defects, each with a test that failed on Windows before the fix:
+
+- **The path jail let a path with a NUL through, in both modes.** On Windows,
+  `Path.resolve(strict=False)` returns a path with an embedded NUL unchanged (`ntpath.realpath`
+  catches the `ValueError`); on Linux it raises. The jail now refuses a NUL before it resolves
+  (400 `path.invalid`). The test covers the web and desktop modes.
+- **A tool that crashed on Windows was reported as a plain failure.** A Windows exception ends a
+  process with an NTSTATUS code (`0xC0000005`, a positive number in Python), not a negative
+  signal. The job error was "Pass 2 failed (exit code 0xC0000005): <last stderr line>". It is
+  now "ffmpeg crashed during pass 2 (exit code 0xC0000005).": a code of `0xC0000000` or more is
+  a crash (`queue.errors.crashed`), as encoder detection already reads it
+  ([0008](0008-encoder-detection-reasons-and-filters.md)).
+- **`scripts/export-openapi.py` failed when it wrote to stdout on Windows.** A pipe gets the
+  ANSI code page (cp1252 cannot encode `→`) and CRLF. It now writes UTF-8 bytes.
+  `gen-api.sh` passes a file name, so CI's api-contract job did not have the defect.
+
+uv's `python.exe` in a venv on Windows is a launcher: it starts the base interpreter as a
+child process, ends with the child's exit code, and its job object kills the child when the
+launcher is killed (checked on the VM). This is not a product defect. A CLI that starts the
+queue's owner (`.venv\Scripts\python.exe -m reframe_server`) uses only the started process's
+exit code, which the launcher passes on (75 stays 75). `server.json` names the interpreter's
+pid. The owner outlives the CLI, a kill of the launcher ends the owner, and the idle exit
+ends both (checked with `reframe.exe encode --detach` on the VM). A job's process is never a
+launcher (on Windows a tool must be an `.exe`), and a pause suspends the whole process tree.
+The tests that compare pids or suspend one process use `reframe_testing.processes.interpreter`
+or the base interpreter.
+
+Test-only causes:
+
+- **Linux-only, or a Windows expectation:** a file name with C0 control characters cannot exist
+  on Windows (skipped there; a C1 case runs everywhere); the lock backend is msvcrt on Windows;
+  two output paths that differ only in case have one key on Windows (`normcase`).
+- **Portable tests:** expected paths built with `os.sep` or `Path`, and JSON-escaped where they are
+  compared with JSON; the `.cmd` fake tools need `REFRAME_ALLOW_SCRIPT_TOOLS`, and a test that
+  clears `REFRAME_*` must keep it; Linux-named fake tools for the `platform="linux"` LIBVA tests;
+  a directory link cannot be replaced by a rename on Windows, so the test removes it first.
+- **Judgement calls:** pydantic-core serializes only 100 levels on Windows (256 on Linux). The
+  queue store's limit of 64 is still below that limit, and the nesting test checks this on both
+  platforms. FFmpeg's Matroska muxer takes quadratic time in the number of subtitle packets on
+  Windows (50, 100 and 200 loops of the 4 s test file: 0.3, 3.6 and 16 s; 200 loops with
+  `-live 1`: 0.25 s). The analysis cancel test therefore writes its 2-hour file as a live file
+  there. That file has no cues and no duration, so on Windows the test does not check the
+  probed duration.
 
 ## Task C — CLI, models, settings, batch and media
 
