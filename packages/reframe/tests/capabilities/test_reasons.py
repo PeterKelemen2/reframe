@@ -273,6 +273,9 @@ def test_crash_without_a_known_text() -> None:
     assert failure.reason == "FFmpeg crashed during the test encode (signal 11)"
     windows = explain_failure("Conversion failed!\n", ctx("hevc_amf"), returncode=0xC0000005)
     assert windows.reason == "FFmpeg crashed during the test encode (exit code 0xC0000005)"
+    # FFmpeg's own -22 (EINVAL) as Windows reports it: a failure with its line, not a crash.
+    averror = explain_failure("Conversion failed!\n", ctx("hevc_amf"), returncode=0xFFFFFFEA)
+    assert averror.reason == "The test encode failed: Conversion failed!"
 
 
 def test_no_message_at_all() -> None:

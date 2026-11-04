@@ -38,13 +38,13 @@ from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
-from reframe.queue.errors import closed_error, crashed, exit_text, printable, stderr_reason
+from reframe.queue.errors import closed_error, exit_text, printable, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
 from reframe.queue.verify import check_output
 from reframe.queue.watchdog import StepWatch, Verdict, tree_cpu_seconds
-from reframe.tools import CancelToken, RunResult, run_streaming
+from reframe.tools import CancelToken, RunResult, crashed, run_streaming
 from reframe.validation import FileSystemView, next_free_path, validate
 from reframe.validation.output import output_path_issues
 

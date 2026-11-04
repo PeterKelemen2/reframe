@@ -15,7 +15,6 @@ __all__ = [
     "QueueError",
     "UnknownJobError",
     "closed_error",
-    "crashed",
     "exit_text",
     "printable",
     "stderr_reason",
@@ -120,12 +119,6 @@ def printable(text: str) -> str:
 
 def _shorten(text: str) -> str:
     return text if len(text) <= MAX_LENGTH else text[: MAX_LENGTH - 1].rstrip() + "…"
-
-
-def crashed(returncode: int | None) -> bool:
-    """The process ended by a POSIX signal, or by a Windows exception: an NTSTATUS error code
-    (``0xC0000005``: access violation)."""
-    return returncode is not None and (returncode < 0 or returncode >= 0xC0000000)
 
 
 def exit_text(returncode: int | None) -> str:

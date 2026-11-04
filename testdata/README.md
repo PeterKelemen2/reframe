@@ -2984,7 +2984,13 @@ Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools 
   process (another pid), passes the exit code through (`SystemExit(75)` gives 75), and a kill of
   the launcher ends the child, also when it was started with `launch_detached`'s flags.
 - A tool that crashes with an access violation exits with `0xC0000005` (positive, as an
-  NTSTATUS code), not with a negative signal number.
+  NTSTATUS code), not with a negative signal number. FFmpeg's own error exit is its negative
+  `AVERROR` as an unsigned 32-bit code: an AAC encode of a silent track shorter than 3 s with
+  loudness normalisation (`EINVAL`, -22) exits with `0xFFFFFFEA` (on Linux 234). FFmpeg's tag
+  codes reach above `0xC0000000` too (`AVERROR_EOF` is `0xDFB9B0BB`), but none has the form of
+  a system exception, `0xC000xxxx`.
+- A just-renamed or just-deleted file can refuse to open for a moment (`PermissionError`): the
+  fake tools' call log needed a retry when read while files came and went.
 - FFmpeg's Matroska muxer, writing a seekable file, takes time quadratic in the number of
   subtitle packets on Windows (50 / 100 / 200 loops of the fixture: 0.34 / 3.6 / 16 s); with
   `-live 1`, or to a pipe or null output, it is linear (200 loops: 0.25 s). On Linux the 1800

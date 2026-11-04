@@ -195,6 +195,25 @@ Platform differences that are not defects:
 Result: `cargo fmt --check` and clippy pass, `cargo test` 20 passed on Windows (the other tests
 of the crate are Linux-only); on Linux 60 passed.
 
+## The full run
+
+The whole suite on Windows, 2026-11-04, `m10-hardening` 926c834 (FFmpeg not on `PATH`):
+7428 passed, 2 failed, 203 skipped, 28 deselected in 35 minutes.
+
+- **A regression of task B's crash rule.** "Any code from `0xC0000000` up is a crash" (copied
+  from encoder detection, 0008) also takes FFmpeg's own error exit: on Windows FFmpeg exits with
+  its negative `AVERROR` as an unsigned 32-bit code (`-22` is `0xFFFFFFEA`), and several of its
+  tag codes are above `0xC0000000` (`AVERROR_EOF` `0xDFB9B0BB`, `AVERROR_BUG` `0xDEB8AABE`, the
+  HTTP codes `0xCxxxxxxx`). So the silent-track encode failure read "ffmpeg crashed", and
+  encoder detection would call an unexplained test-encode failure a crash. One rule now serves
+  both (`reframe.tools.crashed`): a negative code (POSIX signal) or a system exception of the
+  form `0xC000xxxx`, which no FFmpeg code has.
+- **The fake tools' call log** was read while a file was being deleted or scanned, and Windows
+  answered `PermissionError` (once in two full runs). The reader retries briefly on Windows.
+
+Both fixed tests and their files pass on the VM (the capability service tests five times in a
+row) and on Linux. With that, every failure of the Windows run is fixed: Q-1.4 is done.
+
 ## Consequences
 
 Result, 2026-11-04: on `m10-hardening` 13e8cd0 the 233 failed tests and the 3 spike modules
