@@ -224,7 +224,7 @@ whole suite has not run on Windows again since the fixes.
 
 The CI matrix's Windows job (Q-1.1) has never run on GitHub; this phase stands in for it. The
 desktop items of the phase (D-0's Windows items, the M5 demo, D-3's Job Object in the running
-app) are separate runs.
+app) are pending: the owner deferred them to a later date (2026-11-04).
 
 ## Plan changes
 
