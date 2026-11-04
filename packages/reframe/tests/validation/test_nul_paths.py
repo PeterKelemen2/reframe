@@ -48,7 +48,8 @@ def _raises_value_error(call: Callable[[], object]) -> bool:
 def test_python_facts_behind_the_rule(tmp_path: Path) -> None:
     """Recorded with the project's interpreter: the ``exists`` / ``is*`` tests answer ``False``
     for a NUL path (since Python 3.8), every call that passes the path to the OS raises
-    ``ValueError``, and ``abspath`` takes it unchanged."""
+    ``ValueError``, and ``abspath`` takes it unchanged. On Windows ``realpath`` and ``resolve``
+    give the path back instead: they ignore the error unless ``strict``."""
     nul = tmp_path / "Mo\0vie.mkv"
     assert not os.path.exists(nul)
     assert not os.path.lexists(nul)
@@ -61,8 +62,6 @@ def test_python_facts_behind_the_rule(tmp_path: Path) -> None:
     raising: dict[str, Callable[[], object]] = {
         "os.stat": lambda: os.stat(nul),
         "Path.stat": nul.stat,
-        "os.path.realpath": lambda: os.path.realpath(nul),
-        "Path.resolve": nul.resolve,
         "os.path.samefile": lambda: os.path.samefile(nul, tmp_path),
         "os.access": lambda: os.access(nul, os.W_OK),
         "shutil.disk_usage": lambda: shutil.disk_usage(nul),
@@ -70,6 +69,14 @@ def test_python_facts_behind_the_rule(tmp_path: Path) -> None:
         "open": lambda: open(nul, "rb"),  # noqa: SIM115
         "tempfile.TemporaryFile": lambda: tempfile.TemporaryFile(dir=nul),  # noqa: SIM115
     }
+    resolving: dict[str, Callable[[], object]] = {
+        "os.path.realpath": lambda: os.path.realpath(nul),
+        "Path.resolve": nul.resolve,
+    }
+    if sys.platform == "win32":
+        assert [os.path.basename(str(call())) for call in resolving.values()] == [nul.name] * 2
+    else:
+        raising |= resolving
     assert [name for name, call in raising.items() if not _raises_value_error(call)] == []
 
 
@@ -188,9 +195,10 @@ def test_a_nul_in_the_source_path_is_a_clean_error(tmp_path: Path) -> None:
     _no_rule_failed(issues)
     [issue] = [i for i in issues if i.severity is Severity.ERROR]
     assert (issue.code, issue.path, issue.fixes) == ("source.path_unusable", "source", [])
+    shown = str(source).replace("\0", "\\0")
     assert issue.message == (
-        f"The source path {tmp_path}/Mo\\0vie.mkv has a NUL character, which no file system "
-        "allows: no file can have this name. Correct the path."
+        f"The source path {shown} has a NUL character, which no file system allows: no file "
+        "can have this name. Correct the path."
     )
     assert issues[0] == issue  # before the issues of the rules
 

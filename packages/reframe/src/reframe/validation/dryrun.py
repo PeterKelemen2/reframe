@@ -18,7 +18,7 @@ from pathlib import Path
 from reframe.capabilities.reasons import informative_line, normalise_line
 from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, EncoderOption, VideoEncoderDef, load_definitions
-from reframe.definitions.custom_params import CustomParam, split_custom_params
+from reframe.definitions.custom_params import CustomParam, split_custom_params, whole_param
 from reframe.definitions.search import cli_name
 from reframe.jsonpatch import format_pointer, parse_pointer
 from reframe.models.capabilities import CapabilitySnapshot
@@ -62,8 +62,8 @@ DRY_RUN_CODES = (
 _LOG_LEVEL = ("-loglevel", "+level+info")
 
 
-def _without(params: list[CustomParam], dropped: CustomParam) -> str:
-    return ":".join(p.raw for p in params if p is not dropped)
+def _without(params: list[CustomParam], dropped: list[CustomParam]) -> str:
+    return ":".join(p.raw for p in params if not any(p is d for d in dropped))
 
 
 def dry_run_job(job: JobSettings) -> JobSettings:
@@ -267,13 +267,14 @@ class _Attribution:
         return found
 
     def _param_target(self, param: CustomParam) -> _Target:
-        rest = _without(self.params, param)
+        group = whole_param(self.params, param)
+        rest = _without(self.params, group)
         return _Target(
             "video.custom_params",
             "encoder.custom_param_rejected",
             (
                 fix(
-                    f"Remove {param.raw.strip()} from the custom parameters",
+                    f"Remove {':'.join(p.raw for p in group).strip()} from the custom parameters",
                     replace("video.custom_params", rest),
                 ),
             ),

@@ -108,7 +108,7 @@ def test_tool_identity() -> None:
         library_versions={"libavfilter": "11.4.100", "libavcodec": "62.11.100"},
     )
     assert tool_identity(info) == [
-        "/usr/bin/ffmpeg",
+        str(Path("/usr/bin/ffmpeg")),
         "n9.0.2",
         [("libavcodec", "62.11.100"), ("libavfilter", "11.4.100")],
     ]

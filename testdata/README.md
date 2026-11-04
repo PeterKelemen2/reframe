@@ -2945,6 +2945,38 @@ the stream's encoder settings SEI:
   key by key. `keyint=10s` (seconds) stays a custom parameter: the keyint option is a number of
   frames.
 
+### Windows: paths in parameters and filter text, file times (Q-1.4, task A)
+
+Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools fetch`),
+2026-11-04:
+
+- `-x264-params` / `-x265-params` with a Windows path: FFmpeg's dictionary parser splits
+  `key=C:\dir\f` at the drive colon, and the rest (`\dir\f`, also `/dir/f`) is a key without
+  `=`, so FFmpeg refuses the whole argument (`Error setting option x265-params`) and nothing is
+  written. `key=C\:\dir\f` gives the library `C:dirf` (each `\` removed): x265 `csv` and x264
+  `dump-yuv` write that drive-relative name in the working folder. `key=C\:\\dir\\f`,
+  `key='C:\dir\f'` and `key=C\:/dir/f` give the library `C:\dir\f`, and the file is written.
+  Reframe refuses these keys by name, whatever the value.
+- The builder's two-pass x265 plan (`stats=C\:/…/x.part.passlog`) encodes on Windows.
+- Filter text `eq=/contrast=C:\dir\secret.txt` (also with `/`, or `C\:`) is a graph syntax
+  error. Written as one graph token, `'C\:/dir/secret.txt'` (`quote_value`) or `C\\\:/dir/…`,
+  the file is read: its text is in FFmpeg's error. The same holds for `eq='/contrast'=…`,
+  `eq=brightness=0\: /contrast=…` and `unsharp=5:5:/lx=…`.
+- The Windows build's `h264_qsv` has the private options `dual_gfx` and `vcm`, and `hevc_qsv`
+  has `dual_gfx`; the Linux builds have neither.
+- `os.stat()` on NTFS: `st_ctime_ns` is the creation time (equal to `st_birthtime_ns`). A
+  rewrite of the same size followed by `os.utime` back to the old times changes no field but
+  `st_atime`. `FILE_BASIC_INFO.ChangeTime` (`GetFileInformationByHandleEx`) moves on each write
+  and on `os.utime`, but in clock ticks: writes less than one tick apart (1 ms on the VM, 15.6 ms
+  by default) can share it. Reading it takes about as long as `os.stat` (16 µs and 23 µs).
+- A path with a NUL: `os.path.realpath` and `Path.resolve` give it back (`ntpath` ignores the
+  error unless `strict=True`, which raises `OSError`); `os.stat`, `open` and the others raise
+  `ValueError` as on Linux.
+- `os.stat` takes `..` out of a path before it looks at the folders: `C:\t\missing\..\a.mkv`
+  is `C:\t\a.mkv` when `missing` does not exist.
+- A file name `a:b` is the NTFS stream `b` of the file `a`: `shutil.copy` writes it and
+  FFmpeg's `subtitles` filter reads it.
+
 ### The sidecar build and its packages (M5 task A)
 
 PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and tauri-build 2.7.4:

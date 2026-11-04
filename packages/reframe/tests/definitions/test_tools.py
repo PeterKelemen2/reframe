@@ -19,6 +19,7 @@ from typing import Any, cast
 import pytest
 
 from reframe.capabilities.parse import parse_encoder_help
+from reframe.command import escape_value
 from reframe.definitions import (
     ChoiceSetting,
     CodecSupport,
@@ -205,7 +206,10 @@ def _encode_args(
     source = _LAVFI_SMALL if small else _LAVFI_VIDEO
     if params:
         assert encoder.params_arg is not None
-        params_args = [encoder.params_arg, ":".join(f"{k}={v}" for k, v in params.items())]
+        params_args = [
+            encoder.params_arg,
+            ":".join(f"{k}={escape_value(v)}" for k, v in params.items()),
+        ]
     return [
         *source,
         "-frames:v",
