@@ -195,7 +195,7 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 
 ### D-4 Desktop platform adapter
 - [x] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
-- [ ] The desktop build hides web-only UI (server file browser) and shows desktop-only UI
+- [x] The desktop build hides web-only UI (server file browser) and shows desktop-only UI
       (reveal, tray settings, when-done power actions).
 
 ### D-5 Single instance, open-with, CLI arguments

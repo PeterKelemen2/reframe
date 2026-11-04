@@ -9,7 +9,8 @@ builds which part, in which order, and what each part must offer to the others. 
 [0069](decisions/0069-m5-desktop-shell.md) (the lead's choices, what the plan got wrong, and one
 section per task). Status: [status.md](status.md). The template is
 [m9-breakdown.md](m9-breakdown.md). If the lead's context is summarised, this file and
-`status.md` are the source of truth.
+`status.md` are the source of truth. M5 is done on Linux on the branch `m5-desktop-shell`
+(2026-11-04), not merged into `main`.
 
 M5 builds on D-0 ([0001](decisions/0001-desktop-shell.md): the spike's shell, its sidecar
 start, cleanup and PyInstaller options), the shared queue
@@ -481,7 +482,39 @@ write a test, name that defect in one sentence. If you cannot name one, do not w
 | 2026-11-03 | **Reviews R1 and R2 reported** (both `claude-opus-5-5`; 0069 "Review, 2026-11-03"): 4 majors, all reproduced by the lead (R1's `s8` and `s11`, `lead/r2repro`). Fix round planned (section "Fix round", decisions 1–8); **FB** (870x) and **FF** (8752–8759, two-phase) launched. R2's worktree removed; R1's kept for its repro scripts. The lead fixed R1-n1 (the server drops `REFRAME_TOKEN` from its environment once read; a test that failed before) and `vk-close.js` |
 | 2026-11-04 | **Merged FF phase 1** (ed2f825, merge 25d1714): notify when hidden or unfocused (the repro now sends `Notify`), `PrivateQueueBanner` (against a stand-in), one `unreadable.ts` with plural messages, the four tests, overlay / error screen / quit dialog focus and `inert`, the preview route desktop-only, open-with selects, the live count. Lead: lint, format, typecheck, 1938 unit tests, the web build has no Tauri code and no preview route; the lead's mutation (notify only when hidden) fails 1 test; restored. FF's worktree kept for phase 2. **FF found that worktrees sharing `CARGO_TARGET_DIR` share the crate's unit hash and its build-script output** (tauri-build's ACL): a binary can carry another worktree's app manifest; `touch build.rs` before a build; the lead's final checks use a target folder of their own |
 | 2026-11-04 | **Merged FB** (67b5254, merge a1bbae5): `privateQueue` in `BackendInfo` (all four reasons), a web-mode owner not used (`GET /api/system` `mode`), a live owner waited for (`kill(pid, 0)`; the state `starting` meanwhile), the timed-out child reaped, a panic guard, the app manifest (main: 10 commands, preview: 4), `dialog:allow-save` gone, the tray only with a `StatusNotifierWatcher`; 60 cargo tests (6 failed on the old code), 26 mutations; R1's `s8`, `s11`, `s12` and R2's web-mode repro re-run fixed. Lead: fmt, clippy, 60 tests after `touch build.rs`; the lead's mutation (`process_alive` always false) fails 3 tests; restored. FB's stuck wait loop (`pgrep -f` matched itself) stopped by the lead; worktree removed. **FF resumed for phase 2** (the banner in the real app, the overlay text for an owner not the app's, main-only commands from the preview window) |
+| 2026-11-04 | **Merged FF phase 2** (927354f, merge ee4b46c): the banner checked in the real app (`lockHeld` with R1's `s8`, `webServer` with a web-mode server, light and dark), the *Reconnecting…* text for an owner the app did not start, `quit()` and `notify()` only in the main window, the tray refusal without a tray host. The lead took `desktop_settings` out of `preview.json` (0f719c3; its page never reads them). No worktree left |
+| 2026-11-04 | **The M5 demo headed** once on `HDMI-A-1` through the window guard (the owner had put the cursor and VS Code there and said to go ahead without confirmations): native dialog, Dolphin drop, the M4 flow, taskbar progress and notification signals, CLI handoff, quit while a job runs, restart, open-with, `kill -9` (0069 "The lead's checks"). Found: on Plasma Wayland a second launch does not give the running window the focus. **Final checks** alone: Python 7668 passed, `npm test` 1940, `test:server` 67, e2e 22, cargo 60, all lint / format / type checks clean. **Cold start** (release, SSD): warm 1.072 s, page cache dropped 1.180 s |
 
-## Where M5 ended
+## Where M5 ended (2026-11-04)
 
-(The lead fills it at the end.)
+M5 is done on Linux on the branch `m5-desktop-shell` (not merged into `main`, not pushed): D-1 to
+D-6, every box of 07 ticked (the Windows ones written and mock-tested), two reviews and their fixes,
+the demo headless and once headed, the final checks green. Recorded limits are in `status.md`
+("Open items", "Not verified") and 0069.
+
+**Questions for the owner** (each built with the default named; none stopped the run):
+
+1. **Merge into `main`?** Not done; the owner decides.
+2. **Focus on a second launch (Plasma Wayland).** The path is handed over and the file opens, but
+   the running window does not take the keyboard focus: KWin wants an XDG activation token, and
+   the single-instance plugin passes only `argv` and `cwd`. Default: recorded. Fixing it means
+   passing the launcher's `XDG_ACTIVATION_TOKEN` to the running app (a D-Bus call of our own).
+3. **A private queue never switches back** to a shared owner that appears later (it may run jobs
+   of its own). Default: the banner says so. Alternative: a "Use the shared queue" action when idle.
+4. **The notification's app name** is `reframe-desktop` (no `desktop-entry` hint): Plasma likely
+   shows that name. Default: recorded for D-8 (the desktop entry and the app name together).
+5. **The desktop entry and package names** (task A): Tauri's deb / rpm install `Reframe.desktop`
+   and name the packages `reframe`; `Exec=` has no `%F`. Default: kept, for D-8 to settle.
+6. **WebKitGTK's DMA-BUF renderer** (0001): kept; why it delivers about 54–55 pointer events per
+   second was not looked into (it needs the real pointer). Default: recorded.
+7. **`reframe --version`** does not exist (`reframe version` does). Default: not added (a core
+   change outside M5).
+8. **Stop jobs and quit with an owner the app did not start** stops the queue and cancels the
+   running and paused jobs; waiting jobs stay waiting, as with the app's own sidecar. Default: kept.
+9. **Window and tray texts** are English in Rust (not through vue-i18n). Default: recorded.
+10. **Disk**: build folders outside git: `~/.cache/reframe-m5-target` (the agents', 6.6 GB),
+    `~/.cache/reframe-m5-lead-target` (5.3 GB) and `~/.cache/reframe-m5-cold` (108 MB, the lead's),
+    and `desktop/spike/src-tauri/target` (347 MB); all can be deleted and rebuilt. `desktop/spike/` itself stays
+    while its window guard is the way to run the app headed (D-9 may replace it).
+11. **CI**: the new job `desktop` (Ubuntu and Windows) has never run (nothing is pushed); its
+    Windows runner is the first place where the `cfg(windows)` code would compile.
