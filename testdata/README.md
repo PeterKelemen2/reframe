@@ -2944,3 +2944,27 @@ the stream's encoder settings SEI:
   (`tests/presets/test_builtin.py`). SVT-AV1 writes no such SEI; its params argument is the same
   key by key. `keyint=10s` (seconds) stays a custom parameter: the keyint option is a number of
   frames.
+
+### The sidecar build and its packages (M5 task A)
+
+PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and tauri-build 2.7.4:
+
+- A spec with two `Analysis` / `EXE(exclude_binaries=True)` and one `COLLECT` makes one onedir
+  with both executables and one `_internal/`. Each executable is about 15.6–15.9 MB: it carries
+  its own archive of pure-Python modules.
+- The frozen executable started through a symbolic link gets the link's target as
+  `sys.executable`: `reframe queue pause --all` run as `…/bin/reframe` → `…/sidecar/reframe`
+  started `…/sidecar/reframe-server --mode desktop --host 127.0.0.1 --port 0 --owner-only
+  --idle-exit 30`.
+- tauri-build refuses a `bundle.resources` folder that does not exist (`resource path
+  `resources/sidecar` doesn't exist`) and a glob that matches nothing; a folder that holds one
+  file is fine. It copies the resources into `$CARGO_TARGET_DIR/<profile>/` and leaves them there.
+- `bundle.linux.deb.files` copies the file a link points to: a link in the source tree whose
+  target does not exist fails the bundle (`Failed to copy custom files: "linux/reframe-link"
+  does not exist`). So a package cannot ship `/usr/bin/reframe` as a link; its install script
+  makes it.
+- The `.deb` and `.rpm` put `bundle.resources` in `/usr/lib/<productName>/` (here
+  `/usr/lib/Reframe/sidecar/…`); the desktop entry is `/usr/share/applications/Reframe.desktop`
+  with `StartupWMClass=reframe-desktop`; the package name is `reframe`.
+  `postInstallScript` / `preRemoveScript` become the `.deb`'s `postinst` / `prerm` and the
+  `.rpm`'s `POSTIN` / `PREUN` header tags.

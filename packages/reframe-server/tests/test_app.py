@@ -107,6 +107,24 @@ def test_bad_options_exit_2(capsys: pytest.CaptureFixture[str]) -> None:
     assert "desktop mode always uses token auth" in capsys.readouterr().err
 
 
+def test_the_token_is_read_once_and_kept_from_the_servers_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from reframe_server import __main__ as entry
+
+    seen: dict[str, object] = {}
+
+    async def fake_serve(config: ServerConfig) -> int:
+        seen["token"] = config.secret_token
+        seen["environment"] = os.environ.get("REFRAME_TOKEN")
+        return 0
+
+    monkeypatch.setenv("REFRAME_TOKEN", "the-desktop-token")
+    monkeypatch.setattr(entry, "serve", fake_serve)
+    assert entry.main(["--mode", "desktop", "--port", "0"]) == 0
+    assert seen == {"token": "the-desktop-token", "environment": None}
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(
     sys.platform == "win32",

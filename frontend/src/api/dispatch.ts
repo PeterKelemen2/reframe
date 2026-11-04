@@ -42,7 +42,9 @@ function notify(event: EventOf<'notification'>): void {
     detail: event.message || undefined,
     life: NOTIFICATION_LIFE,
   })
-  if (typeof document !== 'undefined' && document.hidden) {
+  // The toast is not seen in a window without the focus: WebKitGTK on Wayland does not make a
+  // minimised window, or one behind others, `hidden`.
+  if (typeof document !== 'undefined' && (document.hidden || !document.hasFocus())) {
     guard('platform.notify', () => platform.notify(event.title, event.message))
   }
 }

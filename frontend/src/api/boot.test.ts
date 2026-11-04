@@ -5,8 +5,10 @@ import { useQueueStore } from '@/stores/queue'
 import { useSourcesStore } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 
-import { boot, shutdown } from './boot'
-import { api, clientToken } from './client'
+import type { DesktopBackend, DesktopBackendState, DesktopShell } from '@/platform/types'
+
+import { boot, desktopBackend, shutdown } from './boot'
+import { api, clientBaseUrl, clientToken } from './client'
 import { FakeServer, FakeSocket, problem } from './testing/fakes'
 import type { AuthStatus } from './types'
 
@@ -218,5 +220,148 @@ describe('boot', () => {
     next.hello()
     await until(() => system.phase === 'ready')
     expect(system.connection).toBe('open')
+  })
+
+  function startDesktop(shell: DesktopShell, reconnect = FAST): Promise<void> {
+    return boot({
+      desktop: shell,
+      backend: () => Promise.reject(new Error('the web backend is not asked')),
+      fetch: server.fetch,
+      socket: (url) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      helloWait: 2_000,
+      offlineBackoff: FAST,
+      random: () => 0,
+      connection: { backoff: reconnect },
+    })
+  }
+
+  describe('in the desktop app', () => {
+    const sidecar: DesktopBackend = {
+      baseUrl: 'http://127.0.0.1:8731',
+      token: 'side',
+      instance: 'run-1',
+      owned: true,
+      privateQueue: null,
+    }
+    let listeners: ((state: DesktopBackendState) => void)[]
+
+    /** The shell's side: `backendInfo` answers with `info`, `send` is a `backend-state` event. */
+    function desktopShell(info: () => Promise<DesktopBackend>): DesktopShell {
+      listeners = []
+      return {
+        backendInfo: info,
+        onBackendState(cb) {
+          listeners.push(cb)
+          return () => (listeners = listeners.filter((listener) => listener !== cb))
+        },
+      } as Partial<DesktopShell> as DesktopShell
+    }
+
+    function send(state: DesktopBackendState): void {
+      for (const listener of listeners) listener(state)
+    }
+
+    async function readyDesktop(reconnect = FAST): Promise<FakeSocket> {
+      const booting = startDesktop(
+        desktopShell(async () => sidecar),
+        reconnect,
+      )
+      await until(() => sockets.length === 1)
+      sockets[0]?.open()
+      sockets[0]?.hello('run-1')
+      await booting
+      return sockets[0] as FakeSocket
+    }
+
+    afterEach(() => {
+      desktopBackend.value = null
+    })
+
+    it('connects to the shell’s backend with its token, and keeps no token in the tab', async () => {
+      const socket = await readyDesktop()
+      expect(socket.url).toBe('ws://127.0.0.1:8731/api/events')
+      expect(socket.sent).toEqual([JSON.stringify({ type: 'auth', token: 'side' })])
+      expect(server.requests.at(-1)?.headers.get('Authorization')).toBe('Bearer side')
+      expect(sessionStorage.getItem('reframe.token')).toBeNull()
+      expect(desktopBackend.value).toEqual({ state: 'ready', info: sidecar })
+      expect(useSystemStore().phase).toBe('ready')
+    })
+
+    it('shows the failure of the first start, and goes on when a Retry makes it ready', async () => {
+      const error = { message: 'No ready line within 20 s', log: '/d/logs/sidecar.log' }
+      const booting = startDesktop(desktopShell(() => Promise.reject(error)))
+      await until(() => desktopBackend.value?.state === 'failed')
+      expect(desktopBackend.value).toEqual({ state: 'failed', error })
+      expect(useSystemStore().phase).toBe('booting')
+      expect(sockets).toEqual([])
+
+      send({ state: 'starting' })
+      expect(desktopBackend.value).toEqual({ state: 'starting' })
+      send({ state: 'ready', info: sidecar })
+      await until(() => sockets.length === 1)
+      sockets[0]?.open()
+      sockets[0]?.hello()
+      await booting
+      expect(useSystemStore().phase).toBe('ready')
+      expect(desktopBackend.value).toEqual({ state: 'ready', info: sidecar })
+    })
+
+    it('connects to a restarted backend’s new address at once, and reads the queue there', async () => {
+      // A reconnect of its own would wait a minute: only the new address can bring the socket.
+      const first = await readyDesktop({ initial: 60_000, max: 60_000, factor: 1 })
+      first.end(1006)
+      send({ state: 'starting' })
+      expect(desktopBackend.value).toEqual({ state: 'starting' })
+      expect(sockets).toHaveLength(1)
+
+      const restarted = {
+        ...sidecar,
+        baseUrl: 'http://127.0.0.1:8732',
+        token: 'new',
+        instance: 'run-2',
+      }
+      send({ state: 'ready', info: restarted })
+      expect(clientBaseUrl()).toBe('http://127.0.0.1:8732')
+      expect(clientToken()).toBe('new')
+      await until(() => sockets.length === 2)
+      const second = sockets[1] as FakeSocket
+      expect(second.url).toBe('ws://127.0.0.1:8732/api/events')
+      second.open()
+      expect(second.sent).toEqual([JSON.stringify({ type: 'auth', token: 'new' })])
+      second.hello('run-2')
+      await until(() => server.count('GET /api/queue') === 2)
+      expect(server.requests.at(-1)?.headers.get('Authorization')).toBe('Bearer new')
+      expect(useSystemStore().instance).toBe('run-2')
+    })
+
+    it('leaves the connection alone when the backend is ready at the same address', async () => {
+      const socket = await readyDesktop()
+      send({ state: 'ready', info: { ...sidecar } })
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(sockets).toHaveLength(1)
+      expect(socket.closedWith).toBeNull()
+    })
+
+    it('connects again with a new token at the same address', async () => {
+      const first = await readyDesktop({ initial: 60_000, max: 60_000, factor: 1 })
+      send({ state: 'ready', info: { ...sidecar, token: 'new' } })
+      expect(clientToken()).toBe('new')
+      await until(() => sockets.length === 2)
+      expect(first.closedWith).not.toBeNull()
+      const second = sockets[1] as FakeSocket
+      second.open()
+      expect(second.sent).toEqual([JSON.stringify({ type: 'auth', token: 'new' })])
+    })
+
+    it('stops following the shell when it is shut down', async () => {
+      await readyDesktop()
+      shutdown()
+      send({ state: 'starting' })
+      expect(desktopBackend.value).toEqual({ state: 'ready', info: sidecar })
+    })
   })
 })

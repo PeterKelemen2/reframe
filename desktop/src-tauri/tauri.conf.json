@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Reframe",
+  "mainBinaryName": "reframe-desktop",
+  "version": "0.1.0",
+  "identifier": "org.reframe.desktop",
+  "build": {
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm --prefix ../frontend run dev:desktop",
+    "beforeBuildCommand": "npm --prefix ../frontend run build:desktop",
+    "frontendDist": "../../frontend/dist-desktop"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*",
+        "img-src": "'self' data: blob: http://127.0.0.1:*",
+        "media-src": "'self' blob: http://127.0.0.1:*",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.png"],
+    "resources": { "resources/sidecar/": "sidecar/" },
+    "fileAssociations": [
+      { "ext": ["mkv"], "mimeType": "video/x-matroska", "name": "Reframe.mkv", "description": "Matroska video" },
+      { "ext": ["mp4"], "mimeType": "video/mp4", "name": "Reframe.mp4", "description": "MPEG-4 video" },
+      { "ext": ["m2ts", "ts"], "mimeType": "video/mp2t", "name": "Reframe.m2ts", "description": "MPEG transport stream" },
+      { "ext": ["avi"], "mimeType": "video/x-msvideo", "name": "Reframe.avi", "description": "AVI video" },
+      { "ext": ["mov"], "mimeType": "video/quicktime", "name": "Reframe.mov", "description": "QuickTime video" },
+      { "ext": ["webm"], "mimeType": "video/webm", "name": "Reframe.webm", "description": "WebM video" }
+    ],
+    "linux": {
+      "deb": {
+        "postInstallScript": "linux/link-cli.sh",
+        "preRemoveScript": "linux/unlink-cli.sh"
+      },
+      "rpm": {
+        "postInstallScript": "linux/link-cli.sh",
+        "preRemoveScript": "linux/unlink-cli.sh"
+      }
+    },
+    "windows": {
+      "nsis": { "installerHooks": "windows/hooks.nsh" }
+    }
+  }
+}

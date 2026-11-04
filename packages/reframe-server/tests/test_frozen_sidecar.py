@@ -1,14 +1,14 @@
-"""The frozen sidecar of the desktop spike (``desktop/spike/scripts/build_sidecar.py``): it
-starts, answers from the data files and the MediaInfo library it must bundle, and ends with its
-encode when the process that started it ends. CI does not build it, so the tests are skipped
-without it."""
+"""The desktop sidecar of ``desktop/sidecar/build.py``: the frozen server starts, answers from the
+data files and the MediaInfo library it must bundle, and ends with its encode when the process
+that started it ends; the frozen CLI next to it uses it as its owner. CI does not build the
+sidecar, so those tests are skipped without it. The package scripts that link the CLI as
+``/usr/bin/reframe`` run on any Linux."""
 
 from __future__ import annotations
 
 import json
 import os
 import queue
-import runpy
 import subprocess
 import sys
 import threading
@@ -22,36 +22,32 @@ import httpx
 import psutil
 import pytest
 
-import reframe_server
+import reframe
 from reframe_server import parent
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 from reframe_testing.server import PROBE_RULE
 
 REPO = Path(__file__).resolve().parents[3]
-FROZEN = Path(
-    os.environ.get("REFRAME_FROZEN_SERVER")
-    or runpy.run_path(str(REPO / "desktop" / "spike" / "scripts" / "spike_paths.py"))[
-        "FROZEN_SERVER"
-    ]
-)
+SIDECAR = REPO / "desktop" / "src-tauri" / "resources" / "sidecar"
+FROZEN = SIDECAR / "reframe-server"
+FROZEN_CLI = SIDECAR / "reframe"
+PACKAGE_SCRIPTS = REPO / "desktop" / "src-tauri" / "linux"
 TOKEN = "frozen-test-" + "x" * 32
 RELEASE_NAME = "Show.Name.S01E02.1080p.BluRay.x264-GRP.mkv"
 
-pytestmark = [
-    pytest.mark.slow,
-    pytest.mark.skipif(
-        not FROZEN.is_file(),
-        reason=f"no frozen sidecar at {FROZEN} (CI does not build it; "
-        "`uv run python -m desktop.spike.scripts.build_sidecar` does)",
-    ),
-]
+needs_sidecar = pytest.mark.skipif(
+    not (FROZEN.is_file() and FROZEN_CLI.is_file()),
+    reason=f"no sidecar build in {SIDECAR} (CI does not build it; "
+    "`uv run python desktop/sidecar/build.py` does)",
+)
 
 
 @dataclass
 class Frozen:
     process: subprocess.Popen[bytes]
     client: httpx.Client
+    env: dict[str, str]
 
 
 class StartFrozen(Protocol):
@@ -70,28 +66,37 @@ def ready_port(process: subprocess.Popen[bytes], limit: float = 30.0) -> int:
 
 
 @pytest.fixture
-def start_frozen(tmp_path: Path, fake_tools: ft.FakeTools) -> Iterator[StartFrozen]:
-    """``start(parent_pid=None, real_tools=False)``: the frozen server in desktop mode, in its
-    own folders, with the fake tools (every probe answers with the ``multitrack`` fixture) or
-    the real FFmpeg."""
+def frozen_env(tmp_path: Path, fake_tools: ft.FakeTools) -> dict[str, str]:
+    """The environment of a frozen program: its own folders, the power dry run, and the fake
+    tools (every probe answers with the ``multitrack`` fixture)."""
     fake_tools.set_scenario(ft.Scenario([PROBE_RULE]))
+    env = {k: v for k, v in os.environ.items() if not k.startswith("REFRAME_")}
+    for name in ("config", "data", "cache"):
+        env[f"REFRAME_{name.upper()}_DIR"] = str(tmp_path / name)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "settings.json").write_text(
+        json.dumps({"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}),
+        encoding="utf-8",
+    )
+    env |= {
+        "REFRAME_FFMPEG": str(fake_tools.ffmpeg),
+        "REFRAME_FFPROBE": str(fake_tools.ffprobe),
+        "REFRAME_POWER_DRY_RUN": "1",
+    }
+    return env
+
+
+@pytest.fixture
+def start_frozen(frozen_env: dict[str, str]) -> Iterator[StartFrozen]:
+    """``start(parent_pid=None, real_tools=False)``: the frozen server in desktop mode, with the
+    fake tools or the real FFmpeg."""
     started: list[Frozen] = []
 
     def start(parent_pid: int | None = None, *, real_tools: bool = False) -> Frozen:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("REFRAME_")}
-        for name in ("config", "data", "cache"):
-            env[f"REFRAME_{name.upper()}_DIR"] = str(tmp_path / name)
-        (tmp_path / "config").mkdir(exist_ok=True)
-        (tmp_path / "config" / "settings.json").write_text(
-            json.dumps({"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}),
-            encoding="utf-8",
-        )
-        tools = (media.find_ffmpeg(), media.find_ffprobe()) if real_tools else (None, None)
-        env |= {
-            "REFRAME_FFMPEG": tools[0] or str(fake_tools.ffmpeg),
-            "REFRAME_FFPROBE": tools[1] or str(fake_tools.ffprobe),
-            "REFRAME_TOKEN": TOKEN,
-        }
+        env = frozen_env | {"REFRAME_TOKEN": TOKEN}
+        if real_tools:
+            env["REFRAME_FFMPEG"] = media.find_ffmpeg() or env["REFRAME_FFMPEG"]
+            env["REFRAME_FFPROBE"] = media.find_ffprobe() or env["REFRAME_FFPROBE"]
         argv = [str(FROZEN), "--mode", "desktop", "--port", "0"]
         if parent_pid is not None:
             argv += ["--parent-pid", str(parent_pid)]
@@ -101,7 +106,7 @@ def start_frozen(tmp_path: Path, fake_tools: ft.FakeTools) -> Iterator[StartFroz
             headers={"Authorization": f"Bearer {TOKEN}"},
             timeout=30,
         )
-        frozen = Frozen(process, client)
+        frozen = Frozen(process, client, env)
         started.append(frozen)
         return frozen
 
@@ -115,12 +120,14 @@ def start_frozen(tmp_path: Path, fake_tools: ft.FakeTools) -> Iterator[StartFroz
         frozen.process.stdout.close()
 
 
+@pytest.mark.slow
+@needs_sidecar
 def test_the_frozen_server_answers_from_its_bundled_data(
     start_frozen: StartFrozen, tmp_path: Path
 ) -> None:
     """A build without a data file starts and answers health, and only fails later."""
     client = start_frozen().client
-    assert client.get("/api/health").json()["version"] == reframe_server.__version__
+    assert client.get("/api/health").json()["version"] == reframe.__version__
     definitions = client.get("/api/definitions").json()["definitions"]
     assert "libx265" in definitions["video_encoders"]
     assert client.get("/api/presets").json()["presets"]
@@ -135,13 +142,7 @@ def test_the_frozen_server_answers_from_its_bundled_data(
     source = tmp_path / "media" / RELEASE_NAME
     source.parent.mkdir()
     source.write_bytes(b"not really matroska")
-    probe = client.post("/api/sources", json={"paths": [str(source)]}).json()
-
-    def probed() -> Any:
-        task = client.get(f"/api/tasks/{probe['task_id']}").json()
-        return task if task["state"] == "done" else None
-
-    source_id = wait_for(probed)["result"]["sources"][0]["id"]
+    source_id = probe(client, source)["id"]
     [name] = client.post("/api/naming/preview", json={"source_ids": [source_id]}).json()
     fields = name["candidates"][0]["fields"]
     assert (fields["season"], fields["episode"], fields["release_group"]) == (1, 2, "GRP")
@@ -167,6 +168,8 @@ def probe(client: httpx.Client, path: Path) -> dict[str, Any]:
 
 
 @pytest.mark.needs_ffmpeg
+@pytest.mark.slow
+@needs_sidecar
 def test_the_frozen_server_reads_bit_rates_with_its_bundled_mediainfo(
     start_frozen: StartFrozen, fixture_media: Callable[[str], Path], tmp_path: Path
 ) -> None:
@@ -195,6 +198,8 @@ def ffmpeg_processes(pid: int) -> list[psutil.Process]:
 
 
 @pytest.mark.needs_ffmpeg
+@pytest.mark.slow
+@needs_sidecar
 def test_the_frozen_server_and_its_encode_end_with_the_process_that_started_it(
     start_frozen: StartFrozen, fixture_media: Callable[[str], Path], tmp_path: Path
 ) -> None:
@@ -234,3 +239,135 @@ def test_the_frozen_server_and_its_encode_end_with_the_process_that_started_it(
     _, alive = psutil.wait_procs(encoders, timeout=5)
     assert alive == []
     assert not part.exists()
+
+
+def run_cli(
+    cli: Path, *args: str, env: dict[str, str], cwd: Path
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(cli), *args], env=env, cwd=cwd, capture_output=True, text=True, timeout=60, check=False
+    )
+
+
+@pytest.mark.slow
+@needs_sidecar
+def test_the_frozen_cli_reports_the_version_of_the_core(
+    frozen_env: dict[str, str], tmp_path: Path
+) -> None:
+    result = run_cli(FROZEN_CLI, "version", env=frozen_env, cwd=tmp_path)
+    assert (result.returncode, result.stdout.strip()) == (0, reframe.__version__)
+
+
+@pytest.mark.slow
+@needs_sidecar
+def test_the_frozen_cli_hands_its_encode_to_the_running_frozen_server(
+    start_frozen: StartFrozen, tmp_path: Path
+) -> None:
+    frozen = start_frozen()
+    source = tmp_path / "media" / "episode.mkv"
+    source.parent.mkdir()
+    source.write_bytes(b"not really matroska")
+    env = {k: v for k, v in frozen.env.items() if k != "REFRAME_TOKEN"}
+    out = tmp_path / "out" / "episode.mkv"
+    encoded = run_cli(
+        FROZEN_CLI, "encode", str(source), "-o", str(out), "--detach", env=env, cwd=tmp_path
+    )
+    assert encoded.returncode == 0, encoded.stderr
+    jobs = frozen.client.get("/api/queue").json()["jobs"]
+    assert [job["settings"]["output"]["path"] for job in jobs] == [str(out)]
+    assert jobs[0]["id"] in encoded.stdout
+    listed = run_cli(FROZEN_CLI, "queue", "list", "--json", env=env, cwd=tmp_path)
+    assert listed.returncode == 0, listed.stderr
+    assert jobs[0]["id"] in listed.stdout
+    assert frozen.process.poll() is None
+
+
+@pytest.mark.slow
+@needs_sidecar
+def test_the_frozen_cli_run_through_a_link_starts_the_frozen_server_next_to_its_file(
+    frozen_env: dict[str, str], tmp_path: Path
+) -> None:
+    """``/usr/bin/reframe`` of the packages is a link to the CLI in the sidecar folder."""
+    link = tmp_path / "bin" / "reframe"
+    link.parent.mkdir()
+    link.symlink_to(FROZEN_CLI)
+    result = run_cli(link, "queue", "pause", "--all", env=frozen_env, cwd=tmp_path)
+    endpoint = Path(frozen_env["REFRAME_DATA_DIR"]) / "server.json"
+    owner = psutil.Process(json.loads(endpoint.read_text(encoding="utf-8"))["pid"])
+    try:
+        assert result.returncode == 0, result.stderr
+        assert Path(owner.exe()) == FROZEN
+    finally:
+        owner.kill()
+        owner.wait(10)
+
+
+def package_script(name: str, root: Path) -> list[str]:
+    """``linux/<name>`` with its two absolute paths moved below ``root``."""
+    text = (PACKAGE_SCRIPTS / name).read_text(encoding="utf-8")
+    for line in ("cli=/usr/lib/Reframe/sidecar/reframe", "link=/usr/bin/reframe"):
+        assert line in text
+        key, value = line.split("=")
+        text = text.replace(line, f"{key}={root}{value}")
+    return ["sh", "-c", text, name]
+
+
+@pytest.fixture
+def root(tmp_path: Path) -> Path:
+    (tmp_path / "usr" / "bin").mkdir(parents=True)
+    (tmp_path / "usr" / "lib" / "Reframe" / "sidecar").mkdir(parents=True)
+    (tmp_path / "usr" / "lib" / "Reframe" / "sidecar" / "reframe").write_text("cli")
+    return tmp_path
+
+
+def installed(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [*package_script("link-cli.sh", root), *argv], capture_output=True, text=True, check=True
+    )
+
+
+def removed(root: Path, argument: str) -> None:
+    subprocess.run([*package_script("unlink-cli.sh", root), argument], check=True)
+
+
+skip_windows = pytest.mark.skipif(sys.platform == "win32", reason="Linux package scripts")
+
+
+@skip_windows
+@pytest.mark.parametrize("argv", [["configure"], ["1"]], ids=["deb", "rpm"])
+def test_installing_links_the_cli_as_usr_bin_reframe(root: Path, argv: list[str]) -> None:
+    installed(root, *argv)
+    link = root / "usr" / "bin" / "reframe"
+    assert link.readlink() == root / "usr" / "lib" / "Reframe" / "sidecar" / "reframe"
+    installed(root, *argv)
+    assert link.read_text() == "cli"
+
+
+@skip_windows
+def test_installing_leaves_a_reframe_that_another_package_put_there(root: Path) -> None:
+    other = root / "usr" / "bin" / "reframe"
+    other.write_text("pip's reframe")
+    result = installed(root, "configure")
+    assert other.read_text() == "pip's reframe"
+    assert not other.is_symlink()
+    assert "stays at" in result.stderr
+
+
+@skip_windows
+@pytest.mark.parametrize(
+    ("argument", "kept"), [("remove", False), ("0", False), ("upgrade", True), ("1", True)]
+)
+def test_removing_the_package_removes_the_link_but_an_upgrade_keeps_it(
+    root: Path, argument: str, kept: bool
+) -> None:
+    installed(root, "configure")
+    removed(root, argument)
+    assert (root / "usr" / "bin" / "reframe").is_symlink() == kept
+
+
+@skip_windows
+def test_removing_the_package_leaves_a_reframe_that_is_not_its_link(root: Path) -> None:
+    other = root / "usr" / "bin" / "reframe"
+    other.symlink_to(root / "elsewhere")
+    removed(root, "remove")
+    assert other.is_symlink()

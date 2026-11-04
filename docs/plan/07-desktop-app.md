@@ -51,12 +51,20 @@ Reasons:
 
 ## Sidecar lifecycle
 
-1. In the Tauri `setup` hook, first look for a running owner of the queue (D-3,
+1. On the main thread before the Tauri builder (so the sidecar starts while the webview loads),
+   first look for a running owner of the queue (D-3,
    [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3). When
    one is found, use its address and token and start no sidecar. Otherwise spawn the sidecar
    from the resources directory. Pass
-   `--mode desktop --port 0 --auth token --parent-pid <pid>`. The token is generated in Rust
-   and passed in `REFRAME_TOKEN`, not on the command line (S-0).
+   `--mode desktop --port 0 --auth token --owner-only --parent-pid <pid>`. The token is
+   generated in Rust and passed in `REFRAME_TOKEN`, not on the command line (S-0). A sidecar
+   that loses the queue lock to another owner exits 75; then run the order again
+   ([decision 0069](../decisions/0069-m5-desktop-shell.md)). An owner whose process runs but
+   whose server does not answer (starting, stopped, busy) is waited for, not replaced. An
+   owner of another API version, a web-mode owner (`GET /api/system`'s `mode`) and one whose
+   token cannot be sent are not used: the sidecar then runs on a private queue, and
+   `backend_info`'s `privateQueue` says why, so the page can say that this window's jobs are
+   not saved or shared (0069 "Fix round — FB").
 2. Read stdout until the ready line `{"event":"ready","port":…}` arrives (20 s timeout). On
    timeout or early exit, show an error screen with the sidecar log path and a **Retry** button.
 3. Keep `{baseUrl, token}` in Tauri managed state. The frontend gets it through
@@ -71,7 +79,7 @@ Reasons:
    (max 3 attempts in 60 s). The queue restores from SQLite, and running jobs become
    `Interrupted`.
 6. **Quit while jobs run**: a dialog offers **Stop jobs and quit** · **Keep running in tray**
-   (only when the tray is on, D-6) · **Cancel**.
+   (only when the tray is on and, on Linux, a tray host shows it, D-6) · **Cancel**.
 
 ## Native integrations
 
@@ -80,7 +88,7 @@ Reasons:
 | Open files / folder, save path | `tauri-plugin-dialog` |
 | Drag and drop with paths | Webview drag-drop event → `Platform.onFilesDropped` |
 | Notifications (job done, queue done, error) | `tauri-plugin-notification` |
-| Taskbar progress | `Window.setProgressBar` (Windows taskbar; Linux launchers that support the Unity LauncherEntry API) |
+| Taskbar progress | `Window.setProgressBar` on Windows. Linux: the app's own Unity `LauncherEntry.Update` signal on the session bus, for launchers that support it (Tauri's needs libunity; [decision 0069](../decisions/0069-m5-desktop-shell.md)) |
 | Single instance + "Open with Reframe" | `tauri-plugin-single-instance`. Paths from argv are forwarded to the running window and probed |
 | File associations (optional) | NSIS registry entries. Linux `.desktop` `MimeType=` |
 | Reveal in folder, open externally | `tauri-plugin-opener` |
@@ -145,34 +153,40 @@ Done when: a short written result for Linux goes into `docs/decisions/0001-deskt
 and confirms or revisits this choice. It lists the Windows items as not verified.
 
 ### D-1 Project scaffold
-- [ ] `desktop/src-tauri` (Tauri 2). `tauri.conf.json`: `devUrl` = Vite dev server,
-      `beforeBuildCommand` = `npm --prefix ../../frontend run build:desktop`, `frontendDist` =
-      the frontend output.
-- [ ] Tauri v2 capability files: grant only the plugin permissions that the app uses.
-- [ ] CSP that allows `connect-src http://127.0.0.1:* ws://127.0.0.1:*` and nothing else
+- [x] `desktop/src-tauri` (Tauri 2). `tauri.conf.json`: `devUrl` = Vite dev server,
+      `beforeBuildCommand` = `npm --prefix ../frontend run build:desktop` (Tauri runs it in
+      `desktop/`), `frontendDist` = the desktop frontend output, `frontend/dist-desktop`
+      ([decision 0069](../decisions/0069-m5-desktop-shell.md)).
+- [x] Tauri v2 capability files: grant only the plugin permissions that the app uses.
+- [x] CSP that allows `connect-src http://127.0.0.1:* ws://127.0.0.1:*` and nothing else
       remote.
 
 ### D-2 Sidecar build
-- [ ] `desktop/sidecar/build.py`: PyInstaller onedir build of `reframe_server.__main__`. It
+- [x] `desktop/sidecar/build.py`: PyInstaller onedir build of `reframe_server.__main__`. It
       includes the `reframe/definitions/data` and built-in preset files and stamps the version.
-- [ ] Output to `desktop/src-tauri/resources/sidecar/`. It is listed under `bundle.resources`.
-- [ ] The same build makes the frozen `reframe` CLI in the same folder (one set of
+- [x] Output to `desktop/src-tauri/resources/sidecar/`. It is listed under `bundle.resources`.
+- [x] The same build makes the frozen `reframe` CLI in the same folder (one set of
       libraries). The `.deb` and `.rpm` link it as `/usr/bin/reframe`; the Windows installer
       offers to add the folder to the user's `PATH`; the AppImage does not put it on `PATH`
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
-- [ ] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
+      The Windows installer's offer is written, not run: *(Windows testing phase)*.
+- [x] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
       line.
 
+Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". The
+sidecar ships MediaInfo (pymediainfo with its own library).
+
 ### D-3 Sidecar manager (Rust)
-- [ ] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
-- [ ] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
-- [ ] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
+- [x] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
+- [x] `backend_info` command. Restart policy. Log sidecar stderr to `<data>/logs/sidecar.log`.
+- [x] Windows: create a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assign the
       sidecar to it (`windows` crate). Checked on Windows: *(Windows testing phase)*.
-- [ ] The quit flow with the running-jobs dialog.
-- [ ] **Find the owner first**
+- [x] The quit flow with the running-jobs dialog.
+- [x] **Find the owner first**
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 3),
       in Rust: read `<data>/server.json`; when `GET /api/health` answers with the same
-      `instance` and `api_version`, use that server: no sidecar, no restart policy, and
+      `instance` and `api_version`, and `GET /api/system` with `mode` `desktop`, use that
+      server: no sidecar, no restart policy, and
       **Stop jobs and quit** cancels the jobs through the API. The app's event connection
       keeps that owner from exiting when idle. When it ends, run the order again (a new
       sidecar restores the queue). Otherwise start the sidecar; it publishes `server.json`
@@ -180,19 +194,23 @@ and confirms or revisits this choice. It lists the Windows items as not verified
       jobs too.
 
 ### D-4 Desktop platform adapter
-- [ ] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
-- [ ] The desktop build hides web-only UI (server file browser) and shows desktop-only UI
+- [x] `frontend/src/platform/desktop.ts` implements `Platform` with the Tauri plugins.
+- [x] The desktop build hides web-only UI (server file browser) and shows desktop-only UI
       (reveal, tray settings, when-done power actions).
 
 ### D-5 Single instance, open-with, CLI arguments
-- [ ] `reframe-desktop file1.mkv folder/` (`Reframe.exe …` on Windows) opens the app (or
+- [x] `reframe-desktop file1.mkv folder/` (`Reframe.exe …` on Windows) opens the app (or
       focuses the running one) and probes the paths. `reframe` is always the CLI
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
-- [ ] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
+- [x] Optional file associations for `.mkv`, `.mp4`, `.m2ts`, `.ts`, `.avi`, `.mov`, `.webm`.
 
 ### D-6 Windows and comfort
-- [ ] Window state, minimum size (1100×700), detached preview window, theme follow, tray
-      (optional, off by default).
+- [x] Window state, minimum size (1100×700), detached preview window, theme follow, tray
+      (optional, off by default). On Linux; Windows not verified. On Wayland the compositor
+      places windows, so only size and maximised state come back; a tray switched off is
+      hidden, not removed ([decision 0069](../decisions/0069-m5-desktop-shell.md) "Task E").
+      On Linux the tray is on only while a tray host (`org.kde.StatusNotifierWatcher`) is on
+      the session bus (0069 "Fix round — FB").
 
 ### D-7 Tool bundling
 - [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in

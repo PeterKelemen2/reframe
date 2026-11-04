@@ -1,0 +1,13 @@
+{
+  "name": "reframe-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Tauri CLI for the Reframe desktop app (the UI is ../frontend)",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

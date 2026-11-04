@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "preview",
+  "description": "The detached preview window: the server's address, its error screen's Retry, the taskbar progress its page sends, the shell's events, and the preview clip in an external player.",
+  "windows": ["preview"],
+  "permissions": [
+    "allow-backend-info",
+    "allow-backend-retry",
+    "allow-set-taskbar-progress",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "http://127.0.0.1:*/api/preview/clips/*" }]
+    }
+  ]
+}

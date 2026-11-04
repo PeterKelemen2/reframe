@@ -46,6 +46,8 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: 'es2023',
+      // The Tauri shell bundles its own build; the server serves `dist`.
+      outDir: platform === 'desktop' ? 'dist-desktop' : 'dist',
     },
     test: {
       projects: [

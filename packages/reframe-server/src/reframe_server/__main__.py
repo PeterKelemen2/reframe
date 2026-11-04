@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import copy
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -142,6 +143,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.set_password:
         return security.set_password_interactive(config)
+    # Read once into the config: the server's own children (FFmpeg, ffprobe) inherit the
+    # environment and have no use for the token.
+    os.environ.pop("REFRAME_TOKEN", None)
     try:
         return asyncio.run(serve(config))
     except KeyboardInterrupt:  # uvicorn re-raises the signal after its clean shutdown

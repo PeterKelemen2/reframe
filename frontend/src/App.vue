@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { watch } from 'vue'
-import { RouterView } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 
+import { desktopBackend } from '@/api/boot'
 import DefaultsDialog from '@/components/defaults/DefaultsDialog.vue'
 import PowerBanner from '@/components/queue/PowerBanner.vue'
+import BackendErrorScreen from '@/components/shell/BackendErrorScreen.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
 import NavRail from '@/components/shell/NavRail.vue'
+import PrivateQueueBanner from '@/components/shell/PrivateQueueBanner.vue'
+import QuitDialog from '@/components/shell/QuitDialog.vue'
+import ReconnectOverlay from '@/components/shell/ReconnectOverlay.vue'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
 import FileBrowserDialog from '@/components/sources/FileBrowserDialog.vue'
 import { useInPlaceReload } from '@/components/summary/useInPlaceReload'
+import { useOpenPaths } from '@/composables/useOpenPaths'
+import { type QuitAnswer, useQuitFlow } from '@/composables/useQuitFlow'
 import { useShortcuts } from '@/composables/useShortcuts'
 import { useTheme } from '@/composables/useTheme'
 import { platform } from '@/platform'
@@ -18,11 +25,40 @@ import { useSystemStore } from '@/stores/system'
 
 const system = useSystemStore()
 const queue = useQueueStore()
+const route = useRoute()
 
 // Follows the theme and density saved in the server's settings.
 useTheme()
 useShortcuts()
 useInPlaceReload()
+useOpenPaths()
+const quit = useQuitFlow()
+
+/** The desktop app's server restarts under a running app (before the first start: the boot screen). */
+const reconnecting = computed(
+  () => desktopBackend.value?.state === 'starting' && system.phase !== 'booting',
+)
+const privateQueue = computed(() =>
+  desktopBackend.value?.state === 'ready' ? desktopBackend.value.info.privateQueue : null,
+)
+// `starting` carries no backend: what *Reconnecting…* says depends on the one that went away.
+const lastOwned = ref(true)
+watch(
+  desktopBackend,
+  (state) => {
+    if (state?.state === 'ready') lastOwned.value = state.info.owned
+  },
+  { immediate: true },
+)
+
+async function retryBackend(): Promise<void> {
+  await platform.desktop?.retryBackend()
+}
+
+// A failed request is a toast already; the app stays open.
+function answerQuit(choice: QuitAnswer): void {
+  quit.answer(choice).catch((error: unknown) => console.error('quit failed', error))
+}
 
 watch(
   () => queue.overallProgress,
@@ -32,18 +68,28 @@ watch(
 </script>
 
 <template>
-  <div v-if="system.phase === 'ready'" class="app-shell">
+  <BackendErrorScreen
+    v-if="desktopBackend?.state === 'failed'"
+    :error="desktopBackend.error"
+    :retry="retryBackend"
+  />
+  <RouterView v-else-if="system.phase === 'ready' && route.meta.bare" />
+  <div v-else-if="system.phase === 'ready'" class="app-shell">
     <NavRail />
     <div class="app-shell__main">
       <!-- Above every view: a when-done countdown must be seen and cancelled wherever the user is. -->
       <PowerBanner />
+      <PrivateQueueBanner v-if="privateQueue" :queue="privateQueue" />
       <RouterView />
     </div>
   </div>
   <LoginScreen v-else-if="system.phase === 'login'" />
   <BootScreen v-else :offline="system.phase === 'offline'" />
+  <ReconnectOverlay v-if="reconnecting" :owned="lastOwned" />
   <ShellToasts />
-  <FileBrowserDialog />
+  <!-- The server's file browser: the desktop app has the system's dialogs. -->
+  <FileBrowserDialog v-if="platform.kind === 'web'" />
+  <QuitDialog :question="quit.question.value" @answer="answerQuit" />
   <DefaultsDialog v-if="system.phase === 'ready'" />
 </template>
 

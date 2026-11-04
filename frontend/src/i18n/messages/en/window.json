@@ -1,0 +1,15 @@
+{
+  "preview": {
+    "detach": "Open the preview in its own window",
+    "detached": "The preview is in its own window.",
+    "focus": "Show the preview window",
+    "failed": "The preview window could not be opened"
+  },
+  "settings": {
+    "title": "Desktop app",
+    "tray": "Tray icon",
+    "trayHelp": "An icon in the system tray shows the queue's progress and has Pause all, Show and Quit. When jobs run, closing the window can then keep Reframe running in the tray.",
+    "failed": "The setting could not be saved: {reason}",
+    "unreadable": "The setting could not be read: {reason}"
+  }
+}

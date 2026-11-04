@@ -89,6 +89,7 @@ describe('dispatch', () => {
   it('shows a notification as a toast, and as a system notification while the page is hidden', () => {
     const notify = vi.spyOn(platform, 'notify').mockResolvedValue(undefined)
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
     dispatch({ type: 'notification', title: 'Job done', message: 'a.mkv', level: 'success' })
     expect(useToastStore().items).toEqual([
       expect.objectContaining({ severity: 'success', summary: 'Job done', detail: 'a.mkv' }),
@@ -99,6 +100,16 @@ describe('dispatch', () => {
     dispatch({ type: 'notification', title: 'Job failed', message: '', level: 'warning' })
     expect(useToastStore().items[1]).toMatchObject({ severity: 'warn', summary: 'Job failed' })
     expect(notify).toHaveBeenCalledWith('Job failed', '')
+  })
+
+  // WebKitGTK on Wayland keeps a minimised window, or one behind others, not hidden.
+  it('sends a system notification while the window is shown but has no focus', () => {
+    const notify = vi.spyOn(platform, 'notify').mockResolvedValue(undefined)
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    dispatch({ type: 'notification', title: 'Job done', message: 'a.mkv', level: 'success' })
+    expect(useToastStore().items).toHaveLength(1)
+    expect(notify).toHaveBeenCalledExactlyOnceWith('Job done', 'a.mkv')
   })
 
   it('records an event of a type it does not know, and does nothing else', () => {
