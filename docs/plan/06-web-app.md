@@ -500,7 +500,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Web: a server file-browser dialog (roots, breadcrumbs, media filter, multi-select). The
       server lists media files only, so the filter narrows that list to a caller's types
       ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task E").
-- [ ] Desktop: native dialogs and drag-and-drop through `Platform`.
+- [x] Desktop: native dialogs and drag-and-drop through `Platform`
+      ([decision 0069](../decisions/0069-m5-desktop-shell.md), "Task C").
 - [x] Probe progress, warnings, batch groups (collapsible), near-match markers.
 
 ### F-6 Summary tab
